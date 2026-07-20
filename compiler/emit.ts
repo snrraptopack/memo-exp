@@ -489,7 +489,7 @@ function emitRegion(
     t.expressionStatement(
       t.callExpression(
         t.memberExpression(t.identifier(regionVar), t.identifier('reconcile')),
-        [t.identifier(site.arrayName)],
+        [t.cloneNode(site.arrayExpr)],
       ),
     ),
   );
@@ -497,7 +497,7 @@ function emitRegion(
     t.expressionStatement(
       t.callExpression(
         t.memberExpression(t.identifier(regionVar), t.identifier('reconcile')),
-        [t.identifier(site.arrayName)],
+        [t.cloneNode(site.arrayExpr)],
       ),
     ),
   );
@@ -567,6 +567,9 @@ function buildInlineRowCreate(
         t.objectExpression([
           t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
           t.objectProperty(t.identifier('entities'), t.arrayExpression([t.identifier('rowId')])),
+          // M5.5: reconcile re-runs this on reused rows so externally
+          // mutated item data (row reads params, not state) re-syncs
+          t.objectProperty(t.identifier('update'), t.identifier('update')),
         ]),
       ),
     ]),

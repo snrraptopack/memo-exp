@@ -36,6 +36,16 @@ export interface ListEntry {
   nodes: Node[];
   /** Entity ids created for this item — unregistered on removal. */
   entities: EntityId[];
+
+  /**
+    * M5.5: re-run the row's guarded update on every reconcile that REUSES
+    * this entry. Rows read their item (a factory param), not module state,
+    * so item-field mutations are otherwise invisible to the access table —
+    * this is what keeps `{todo.title}` honest when an outside source (or a
+    * handler) mutates a retained row's item. Guarded setters make a no-op
+    * sync nearly free; DOM is only touched when data actually changed.
+    */
+   update?: () => void;
 }
 
 export type KeyFn<T> = (item: T) => unknown;
@@ -125,6 +135,7 @@ export function createListRegion<T>(
       if (entry !== undefined) {
         old.delete(k);
         seq[i] = prevIndex.get(k) ?? -1;
+        entry.update?.();  // M5.5: sync retained row with (possibly mutated) item
       } else {
         entry = create(item, rowIdFor(k));
         seq[i] = -1;

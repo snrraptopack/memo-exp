@@ -60,15 +60,16 @@ function validateCondPosition(
 // ---------------------------------------------------------------------
 // pass 1
 // ---------------------------------------------------------------------
-
 function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
   for (const stmt of programPath.node.body) {
-    if (!t.isVariableDeclaration(stmt)) continue;
-    for (const decl of stmt.declarations) {
+    // M5.5: exported state is still state — unwrap the export wrapper
+    const inner = t.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
+    if (!t.isVariableDeclaration(inner)) continue;
+    for (const decl of inner.declarations) {
       if (!t.isIdentifier(decl.id)) continue;
-      if (stmt.kind === 'let' || stmt.kind === 'var') {
+      if (inner.kind === 'let' || inner.kind === 'var') {
         ctx.state.set(decl.id.name, 'let');
-      } else if (stmt.kind === 'const') {
+      } else if (inner.kind === 'const') {
         if (isStoreObject(decl.init)) {
           ctx.state.set(decl.id.name, 'store');
         } else if (isConstCollection(decl.init)) {

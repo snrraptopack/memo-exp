@@ -202,7 +202,8 @@ export function InlineList(id, parent) {
     li0.appendChild(text0);
     return {
       nodes: [li0],
-      entities: [rowId]
+      entities: [rowId],
+      update: update
     };
   }, item => item.id);
   region0.reconcile(items);

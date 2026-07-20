@@ -21,11 +21,13 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { attrExpr, exprReadsState, nodeHasJsx, type Ctx } from './context'
+import { attrExpr, exprReadsState, nodeHasJsx, type Ctx, memberKey, memberRootName, } from './context'
 
 export interface MapSite {
-  /** State variable being mapped (e.g. 'items'). */
+  /** Read/write key of the mapped array (e.g. 'items' or 'store.todos'). */
   arrayName: string;
+  /** The array source expression, cloned into the reconcile calls. */
+  arrayExpr: t.Expression;
   /** Callback param name (e.g. 'item'). */
   itemParam: string;
   /** Key expression if key={...} was given, else null. */
@@ -102,19 +104,37 @@ export function analyzeMapSite(
     throw errorAt.buildCodeFrameError(msg);
   };
 
-  // -- mapped expression: module-level array state (let or const, M5.4) ---
+  // -- mapped expression: module-level array state ------------------------
+  //    items.map(…)        — let/const collection (M5.4)
+  //    store.todos.map(…)  — static path on a store object (M5.5)
   const callee = call.callee as t.MemberExpression;
   const arrayExpr = callee.object;
-  if (
-    !t.isIdentifier(arrayExpr) ||
-    ctx.state.get(arrayExpr.name) !== 'let' &&
-    ctx.state.get(arrayExpr.name) !== 'const'
-  ){
-    fail(
-      'memo-dom: lists must map over module-level array state (let items = [...] or const items = [...]) — R7 L1',
+  let arrayName: string; // read/write key of the array
+  let suffixBase: string; // region suffix base (last path segment)
+  if (t.isIdentifier(arrayExpr)) {
+    const kind = ctx.state.get(arrayExpr.name);
+    if (kind !== 'let' && kind !== 'const') {
+      return fail(
+        'memo-dom: lists must map over module-level array state (let items = [...], const items = [...], or store.todos) — R7 L1',
+      );
+    }
+    arrayName = arrayExpr.name;
+    suffixBase = arrayExpr.name;
+  } else if (t.isMemberExpression(arrayExpr)) {
+    const root = memberRootName(arrayExpr);
+    const key = memberKey(arrayExpr);
+    if (root === null || key === null || !key.includes('.') || ctx.state.get(root) !== 'store') {
+      return fail(
+        'memo-dom: lists must map over module-level array state (let items = [...], const items = [...], or a static store path like store.todos) — R7 L1',
+      );
+    }
+    arrayName = key; // path-keyed, consistent with store writes
+    suffixBase = key.slice(key.lastIndexOf('.') + 1);
+  } else {
+    return fail(
+      'memo-dom: lists must map over module-level array state (let items = [...], const items = [...], or store.todos) — R7 L1',
     );
   }
-  const arrayName = (arrayExpr as t.Identifier).name;
 
   // -- callback: single identifier param, JSX body -----------------------
   if (call.arguments.length !== 1 || !t.isArrowFunctionExpression(call.arguments[0])) {
@@ -192,7 +212,18 @@ export function analyzeMapSite(
     }
   }
 
-  const suffix = nextSuffix(arrayName, usedPrefixes);
+  const suffix = nextSuffix(suffixBase, usedPrefixes);
   const prefix = `${ownerName}/${suffix}`;
-  return { arrayName, itemParam, keyExpr, jsx, form, rowComp, owner: ownerName, suffix, prefix };
+  return {
+    arrayName,
+    arrayExpr:t.cloneNode(arrayExpr),
+    itemParam,
+    keyExpr,
+    jsx,
+    form,
+    rowComp,
+    owner: ownerName,
+    suffix,
+    prefix,
+  };
 }
