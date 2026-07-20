@@ -83,11 +83,40 @@ function depthOf(id: EntityId): number {
 /** Cached id array for the access resolver — rebuilt on registry mutation. */
 let idsCache: EntityId[] | null = null;
 
+/**
+ * M5.6: monotonic registry generation, bumped on every register/unregister.
+ * The access resolver caches write-set resolutions against it — a hit is
+ * only valid while the entity set is unchanged.
+ */
+let generation = 0;
+
+/** Current registry generation (see above). Introspection/resolver only. */
+export function registryGeneration(): number {
+  return generation;
+}
+
+/**
+ * M5.6: registry-change listeners — push-based notification so the access
+ * resolver can keep wildcard expansions incrementally updated instead of
+ * re-matching every pattern against every id on every commit. Listeners
+ * run synchronously; they must be cheap (a few regex tests).
+ */
+type RegistryListener = (id: EntityId, kind: 'add' | 'remove') => void;
+const registryListeners: RegistryListener[] = [];
+
+export function onRegistryChange(fn: RegistryListener): void {
+  registryListeners.push(fn);
+}
+
+function notifyRegistry(id: EntityId, kind: 'add' | 'remove'): void {
+  for (const fn of registryListeners) fn(id, kind);
+}
+
 export function register(entity: Entity): void {
   const parent = entity.parent !== null ? registry.get(entity.parent) : undefined;
   // depth from the parent's number when possible — string scan is the fallback
   entity.depth =
-  parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id);
+    parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id);
   registry.set(entity.id, entity);
 
   if (parent) {
@@ -95,6 +124,8 @@ export function register(entity: Entity): void {
   }
 
   idsCache = null;
+  generation++;
+  notifyRegistry(entity.id, 'add');
 }
 
 /**
@@ -119,9 +150,11 @@ export function unregisterSubtree(id: EntityId): void {
     }
     registry.delete(cur);
     dirtySet.delete(cur);
+    notifyRegistry(cur, 'remove');
   }
 
   idsCache = null;
+  generation++;
 }
 
 /** Single-id unregister takes its subtree with it — same thing. */
@@ -194,6 +227,13 @@ function scheduleCommit(): void {
  *
  * NOTE (deferred design point): if a render() marks NEW ids dirty during the
  * pass, they schedule the next frame, not this one (no cascading commit yet).
+ *
+ * PUBLIC API (M5.6): this is the "flush now" entry point — the memo-dom
+ * equivalent of React's flushSync / Svelte 5's flushSync. With the default
+ * frame scheduler, `markDirty`/`commitWrites` only SCHEDULE a commit; call
+ * `commit()` to run it synchronously (tests, boundary integrations where a
+ * host requires synchronous DOM, e.g. the dom-reconciler-bench contract).
+ * Prefer `setScheduler(fn => fn())` when the WHOLE app should be sync.
  */
 export function commit(): void {
   scheduled = false;

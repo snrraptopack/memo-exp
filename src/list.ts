@@ -36,16 +36,15 @@ export interface ListEntry {
   nodes: Node[];
   /** Entity ids created for this item — unregistered on removal. */
   entities: EntityId[];
-
   /**
-    * M5.5: re-run the row's guarded update on every reconcile that REUSES
-    * this entry. Rows read their item (a factory param), not module state,
-    * so item-field mutations are otherwise invisible to the access table —
-    * this is what keeps `{todo.title}` honest when an outside source (or a
-    * handler) mutates a retained row's item. Guarded setters make a no-op
-    * sync nearly free; DOM is only touched when data actually changed.
-    */
-   update?: () => void;
+   * M5.5: re-run the row's guarded update on every reconcile that REUSES
+   * this entry. Rows read their item (a factory param), not module state,
+   * so item-field mutations are otherwise invisible to the access table —
+   * this is what keeps `{todo.title}` honest when an outside source (or a
+   * handler) mutates a retained row's item. Guarded setters make a no-op
+   * sync nearly free; DOM is only touched when data actually changed.
+   */
+  update?: () => void;
 }
 
 export type KeyFn<T> = (item: T) => unknown;
@@ -122,9 +121,17 @@ export function createListRegion<T>(
     const next = new Map<unknown, ListEntry>();
 
     // ---- pass 1 (forward): reuse or create ----------------------------------
+    // M5.6: nextIndex is fused into this pass (no separate key array + loop),
+    // and we track the in-place fast path: no additions, no removals, and
+    // retained rows already in order — then placement is skipped entirely
+    // (this is the steady-state "content changed, structure didn't" case:
+    // renames, toggles, partial updates).
     const ordered: ListEntry[] = new Array(items.length);
-    const keys: unknown[] = new Array(items.length);
     const seq: number[] = new Array(items.length); // old index per new position (-1 = new)
+    const nextIndex = new Map<unknown, number>();
+    let hasNew = false;
+    let inOrder = true;
+    let lastOld = -1;
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as T;
       const k = key(item);
@@ -134,15 +141,26 @@ export function createListRegion<T>(
       let entry = old.get(k);
       if (entry !== undefined) {
         old.delete(k);
-        seq[i] = prevIndex.get(k) ?? -1;
-        entry.update?.();  // M5.5: sync retained row with (possibly mutated) item
+        const oi = prevIndex.get(k) ?? -1;
+        seq[i] = oi;
+        if (oi <= lastOld) inOrder = false;
+        else lastOld = oi;
+        entry.update?.(); // M5.5: sync retained row with (possibly mutated) item
       } else {
         entry = create(item, rowIdFor(k));
         seq[i] = -1;
+        hasNew = true;
       }
       next.set(k, entry);
+      nextIndex.set(k, i);
       ordered[i] = entry;
-      keys[i] = k;
+    }
+
+    // ---- fast path: pure content sync, zero structural work -----------------
+    if (!hasNew && old.size === 0 && inOrder) {
+      prevIndex = nextIndex;
+      cache = next;
+      return;
     }
 
     // ---- removals BEFORE placement (keeps placement math accurate) ----------
@@ -184,8 +202,6 @@ export function createListRegion<T>(
     flush();
 
     // ---- bookkeeping for the next reconcile ----------------------------------
-    const nextIndex = new Map<unknown, number>();
-    for (let i = 0; i < keys.length; i++) nextIndex.set(keys[i], i);
     prevIndex = nextIndex;
     cache = next;
   }

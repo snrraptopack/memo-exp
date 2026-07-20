@@ -65,7 +65,7 @@ MD.installAccessTable({
 // Row reads 'selected' directly (the L1 rule: props are for item data,
 // shared state is read inside the row), so a click must dirty ALL rows
 // through the table's 'App/CompList/items/Row[*]' pattern.
-let items = [{
+const items = [{
   id: 1,
   label: 'one'
 }, {

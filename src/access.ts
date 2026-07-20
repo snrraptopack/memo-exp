@@ -21,7 +21,7 @@
  * follow-up, deferred until M4 benchmarks say whether it matters.
  */
 
-import { type EntityId } from './kernel';
+import { onRegistryChange, registeredIds, type EntityId } from './kernel';
 
 export interface AccessTable {
   readers: Record<string, string[]>;
@@ -32,6 +32,67 @@ let rootId: EntityId = '';
 let exactReaders = new Map<string, EntityId[]>();
 let wildReaders = new Map<string, RegExp[]>();
 let opaqueVars = new Set<string>();
+
+/**
+ * M5.6 — precompiled, push-maintained matcher state.
+ *
+ * resolveWrites used to pay, PER COMMIT: rebuild the table-key union, then
+ * scan every live id through every matched wildcard regex (O(patterns × ids)
+ * — ~400 regex tests per commit at 100 rows; a generation-keyed cache didn't
+ * help because row add/remove bumps the generation on exactly those steps).
+ * Now:
+ *   - `matchKeys` per write key is cached permanently (registry-independent);
+ *   - wildcard expansions (`wildMatched`) are maintained INCREMENTALLY: a
+ *     kernel registry listener tests only the added/removed id against the
+ *     patterns — O(patterns) per registry change, O(1) per commit;
+ *   - full resolutions are cached against `resVersion`, bumped by installs
+ *     and by any incremental expansion change.
+ * Cached arrays are shared; callers must not mutate them.
+ */
+let allKeysCache: string[] = [];
+let wildMatched = new Map<string, Set<EntityId>>();
+let resVersion = 0;
+const matchKeysCache = new Map<string, string[]>();
+const resolutionCache = new Map<string, { v: number; result: EntityId[] }>();
+
+/** Full (re)build of wildcard expansions against the live registry. */
+function rebuildMatched(): void {
+  wildMatched = new Map();
+  const live = registeredIds();
+  for (const [k, patterns] of wildReaders) {
+    const set = new Set<EntityId>();
+    for (const regex of patterns) {
+      for (const id of live) {
+        if (regex.test(id)) set.add(id);
+      }
+    }
+    wildMatched.set(k, set);
+  }
+}
+
+// Incremental expansion maintenance: test only the changed id.
+onRegistryChange((id, kind) => {
+  if (wildReaders.size === 0) return;
+  let touched = false;
+  if (kind === 'add') {
+    for (const [k, patterns] of wildReaders) {
+      const set = wildMatched.get(k);
+      if (!set) continue;
+      for (const regex of patterns) {
+        if (regex.test(id)) {
+          set.add(id);
+          touched = true;
+          break;
+        }
+      }
+    }
+  } else {
+    for (const set of wildMatched.values()) {
+      if (set.delete(id)) touched = true;
+    }
+  }
+  if (touched) resVersion++;
+});
 
 /** '*' matches any run of non-separator characters within one id segment. */
 function compilePattern(raw: string): RegExp | null {
@@ -55,7 +116,7 @@ export function installAccessTable(table: AccessTable, root: EntityId): void {
 
   for (const [variable, patterns] of Object.entries(table.readers)) {
     for (const p of patterns) {
-      const dedupeKey = `${variable} ${p}`;
+      const dedupeKey = `${variable}${p}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
       const regex = compilePattern(p);
@@ -71,6 +132,13 @@ export function installAccessTable(table: AccessTable, root: EntityId): void {
     }
   }
   for (const v of table.opaque ?? []) opaqueVars.add(v);
+
+  // M5.6: rebuild the precompiled matcher state
+  allKeysCache = [...new Set([...exactReaders.keys(), ...wildReaders.keys()])];
+  matchKeysCache.clear();
+  resolutionCache.clear();
+  rebuildMatched();
+  resVersion++;
 }
 
 /** Clear every installed fragment — test isolation, not app code. */
@@ -79,6 +147,11 @@ export function resetAccessTable(): void {
   exactReaders = new Map();
   wildReaders = new Map();
   opaqueVars = new Set();
+  allKeysCache = [];
+  wildMatched = new Map();
+  matchKeysCache.clear();
+  resolutionCache.clear();
+  resVersion++;
 }
 
 export function isOpaque(variable: string): boolean {
@@ -99,41 +172,43 @@ export function getRootId(): EntityId {
  * 'store.items' invalidates readers of 'store.items.length' (descendant)
  * and of 'store' (ancestor). Segment boundaries prevent 'items' ↔ 'items1'.
  *
- *
  * Returns 'root-subtree' when any write is opaque — the Imba fallback.
  */
 export function resolveWrites(
   writes: readonly string[],
-  liveIds: readonly EntityId[],
+  _liveIds: readonly EntityId[],
 ): EntityId[] | 'root-subtree' {
   if (writes.some(isOpaque)) return 'root-subtree';
 
+  // M5.6: full-resolution cache, valid until any expansion changes
+  const cacheKey = writes.length === 1 ? (writes[0] as string) : writes.join(' ');
+  const hit = resolutionCache.get(cacheKey);
+  if (hit !== undefined && hit.v === resVersion) return hit.result;
+
   const out = new Set<EntityId>();
 
+  // matchKeys per write key: registry-independent, cached permanently
   const matchKeys = new Set<string>();
-  const allKeys = new Set<string>([...exactReaders.keys(), ...wildReaders.keys()]);
-
   for (const w of writes) {
-    for (const k of allKeys) {
-      if (k === w || k.startsWith(`${w}.`) || w.startsWith(`${k}.`)) {
-        matchKeys.add(k);
+    let keys = matchKeysCache.get(w);
+    if (keys === undefined) {
+      keys = [];
+      for (const k of allKeysCache) {
+        if (k === w || k.startsWith(`${w}.`) || w.startsWith(`${k}.`)) {
+          keys.push(k);
+        }
       }
+      matchKeysCache.set(w, keys);
     }
+    for (const k of keys) matchKeys.add(k);
   }
 
   for (const k of matchKeys) {
-      for (const id of exactReaders.get(k) ?? []) out.add(id);
-    }
+    for (const id of exactReaders.get(k) ?? []) out.add(id);
+    for (const id of wildMatched.get(k) ?? []) out.add(id);
+  }
 
-    for (const k of matchKeys) {
-      const patterns = wildReaders.get(k);
-      if (!patterns) continue;
-      for (const regex of patterns) {
-        for (const id of liveIds) {
-          if (regex.test(id)) out.add(id);
-        }
-      }
-    }
-
-  return [...out];
+  const result = [...out];
+  resolutionCache.set(cacheKey, { v: resVersion, result });
+  return result;
 }
