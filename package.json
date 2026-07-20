@@ -1,0 +1,30 @@
+{
+  "name": "memoized-dom",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "dev": "vitest",
+    "bench": "esbuild bench/browser-entry.ts --bundle --outfile=bench/dist/browser-bundle.js --format=iife && bun run bench/run-browser.ts"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/plugin-syntax-jsx": "^8.0.1",
+    "@babel/plugin-transform-typescript": "^8.0.1",
+    "@babel/traverse": "^8.0.4",
+    "@babel/types": "^8.0.4",
+    "@types/babel__core": "^7.20.5",
+    "@types/babel__traverse": "^7.28.0",
+    "@types/bun": "latest",
+    "happy-dom": "^20.11.0",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.1",
+    "puppeteer-core": "^25.3.0"
+  }
+}

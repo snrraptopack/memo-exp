@@ -1,0 +1,389 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`M5 compiler — code generation > attributes commits to the scope that writes (async handlers, timers) 1`] = `
+"import * as MD from "../out-runtime";
+MD.installAccessTable({
+  readers: {
+    "count": ["App", "App/*"]
+  }
+}, "App");
+// Fixture: async commit attribution.
+let count = 0;
+export function AsyncCounter(id, parent) {
+  const $ = {
+    "s0": null
+  };
+  const incLater = async () => {
+    await Promise.resolve();
+    count++;
+    MD.markDirty(id);
+  };
+  const incTimer = () => {
+    setTimeout(() => {
+      count = 10;
+      MD.markDirty(id);
+    }, 0);
+  };
+  const update = () => {
+    MD.setText($, "s0", text2, count);
+  };
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const text0 = document.createTextNode("async");
+  const button0 = document.createElement("button");
+  button0.onclick = incLater;
+  button0.appendChild(text0);
+  const text1 = document.createTextNode("timer");
+  const button1 = document.createElement("button");
+  button1.onclick = incTimer;
+  button1.appendChild(text1);
+  const text2 = document.createTextNode("");
+  MD.setText($, "s0", text2, count);
+  const span0 = document.createElement("span");
+  span0.appendChild(text2);
+  const div0 = document.createElement("div");
+  div0.appendChild(button0);
+  div0.appendChild(button1);
+  div0.appendChild(span0);
+  return div0;
+}"
+`;
+
+exports[`M5 compiler — code generation > compiles component list rows via factory callbacks (R7) 1`] = `
+"import * as MD from "../out-runtime";
+const WRITES_0 = ["selected"];
+MD.installAccessTable({
+  readers: {
+    "items": ["App", "App/*"],
+    "selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
+  }
+}, "App");
+// Fixture: R7 component list rows — a Row component used via .map().
+// Row reads 'selected' directly (the L1 rule: props are for item data,
+// shared state is read inside the row), so a click must dirty ALL rows
+// through the table's 'App/CompList/items/Row[*]' pattern.
+let items = [{
+  id: 1,
+  label: 'one'
+}, {
+  id: 2,
+  label: 'two'
+}];
+let selected = 0;
+function Row(id, parent, item: {
+  id: number;
+  label: string;
+}) {
+  const $ = {
+    "s0": null,
+    "s1": null
+  };
+  const update = () => {
+    MD.setText($, "s0", text0, item.label);
+    MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
+  };
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const text0 = document.createTextNode("");
+  MD.setText($, "s0", text0, item.label);
+  const li0 = document.createElement("li");
+  MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
+  li0.onclick = () => {
+    selected = item.id;
+    MD.commitWrites(WRITES_0);
+  };
+  li0.appendChild(text0);
+  return li0;
+}
+export function CompList(id, parent) {
+  const $ = {};
+  const add = () => {
+    items.push({
+      id: items.length + 1,
+      label: 'three'
+    });
+    MD.markDirty(id);
+  };
+  const update = () => {
+    region0.reconcile(items);
+  };
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const ul0 = document.createElement("ul");
+  const region0 = MD.createListRegion(ul0, id + "/items", (item, rowId) => {
+    const el = Row(rowId, id, item);
+    return {
+      nodes: [el],
+      entities: [rowId]
+    };
+  }, item => item.id);
+  region0.reconcile(items);
+  const text0 = document.createTextNode("add");
+  const button0 = document.createElement("button");
+  button0.onclick = add;
+  button0.appendChild(text0);
+  const div0 = document.createElement("div");
+  div0.appendChild(ul0);
+  div0.appendChild(button0);
+  return div0;
+}"
+`;
+
+exports[`M5 compiler — code generation > compiles inline list rows to regions with row-scoped patterns (R7) 1`] = `
+"import * as MD from "../out-runtime";
+const WRITES_0 = ["selected"];
+MD.installAccessTable({
+  readers: {
+    "items": ["App", "App/*"],
+    "selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
+  }
+}, "App");
+// Fixture: R7 inline list rows — the select-list shape written as plain TSX.
+// 'selected' is read inside row JSX (row pattern) and written by row
+// handlers (commitWrites — rows are multi-instance, never local).
+// 'items.push' routes as a write to 'items' → local markDirty on the owner.
+let items = [{
+  id: 1,
+  label: 'one'
+}, {
+  id: 2,
+  label: 'two'
+}];
+let selected = 0;
+export function InlineList(id, parent) {
+  const $ = {};
+  const add = () => {
+    items.push({
+      id: items.length + 1,
+      label: 'three'
+    });
+    MD.markDirty(id);
+  };
+  const update = () => {
+    region0.reconcile(items);
+  };
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const ul0 = document.createElement("ul");
+  const region0 = MD.createListRegion(ul0, id + "/items", (item, rowId) => {
+    const $ = {
+      "s0": null,
+      "s1": null
+    };
+    const update = () => {
+      MD.setText($, "s0", text0, item.label);
+      MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
+    };
+    MD.register({
+      id: rowId,
+      parent: id,
+      render: update
+    });
+    const text0 = document.createTextNode("");
+    MD.setText($, "s0", text0, item.label);
+    const li0 = document.createElement("li");
+    MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
+    li0.onclick = () => {
+      selected = item.id;
+      MD.commitWrites(WRITES_0);
+    };
+    li0.appendChild(text0);
+    return {
+      nodes: [li0],
+      entities: [rowId]
+    };
+  }, item => item.id);
+  region0.reconcile(items);
+  const text0 = document.createTextNode("add");
+  const button0 = document.createElement("button");
+  button0.onclick = add;
+  button0.appendChild(text0);
+  const div0 = document.createElement("div");
+  div0.appendChild(ul0);
+  div0.appendChild(button0);
+  return div0;
+}"
+`;
+
+exports[`M5 compiler — code generation > compiles repeated children with distinct ids and covering patterns 1`] = `
+"import * as MD from "../out-runtime";
+const WRITES_0 = ["label"];
+MD.installAccessTable({
+  readers: {
+    "label": ["App/Tag", "App/Tag/*", "App/Tag[*]", "App/Tag[*]/*"]
+  }
+}, "App");
+// repeated.tsx — same child mounted twice; instances must get distinct
+// entity ids and the table must cover both.
+let label = 'hello';
+function Tag(id, parent) {
+  const $ = {
+    "s0": null
+  };
+  const update = () => {
+    MD.setText($, "s0", text0, label);
+  };
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const text0 = document.createTextNode("");
+  MD.setText($, "s0", text0, label);
+  const span0 = document.createElement("span");
+  span0.className = "tag";
+  span0.appendChild(text0);
+  return span0;
+}
+export function App(id, parent) {
+  const $ = {};
+  const swap = () => {
+    label = 'world';
+    MD.commitWrites(WRITES_0);
+  };
+  const update = () => {};
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const tag = Tag(id + "/Tag", id);
+  const tag1 = Tag(id + "/Tag[1]", id);
+  const text0 = document.createTextNode("swap");
+  const button0 = document.createElement("button");
+  button0.onclick = swap;
+  button0.appendChild(text0);
+  const div0 = document.createElement("div");
+  div0.appendChild(tag);
+  div0.appendChild(tag1);
+  div0.appendChild(button0);
+  return div0;
+}"
+`;
+
+exports[`M5 compiler — code generation > compiles the counter fixture to the emission form 1`] = `
+"import * as MD from "../out-runtime";
+MD.installAccessTable({
+  readers: {
+    "again": ["App", "App/*"],
+    "count": ["App", "App/*"]
+  }
+}, "App");
+let count = 0;
+let again = 0;
+export function Counter(id, parent) {
+  const $ = {
+    "s0": null,
+    "s1": null
+  };
+  const inc = () => {
+    count++;
+    again++;
+    MD.markDirty(id);
+  };
+  const update = () => {
+    MD.setText($, "s0", text1, count);
+    MD.setText($, "s1", text2, again);
+  };
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const text0 = document.createTextNode("increment");
+  const button0 = document.createElement("button");
+  button0.onclick = inc;
+  button0.appendChild(text0);
+  const text1 = document.createTextNode("");
+  MD.setText($, "s0", text1, count);
+  const span0 = document.createElement("span");
+  span0.appendChild(text1);
+  const text2 = document.createTextNode("");
+  MD.setText($, "s1", text2, again);
+  const span1 = document.createElement("span");
+  span1.appendChild(text2);
+  const div0 = document.createElement("div");
+  div0.className = "counter";
+  div0.appendChild(button0);
+  div0.appendChild(span0);
+  div0.appendChild(span1);
+  return div0;
+}"
+`;
+
+exports[`M5 compiler — code generation > compiles the shared-state fixture with an access table 1`] = `
+"import * as MD from "../out-runtime";
+const WRITES_0 = ["name"];
+MD.installAccessTable({
+  readers: {
+    "name": ["App/Badge", "App/Badge/*"]
+  }
+}, "App");
+// shared.tsx — two siblings sharing module state; the write must route
+// to Badge only, never to App or Editor.
+let name = 'Ada';
+function Badge(id, parent) {
+  const $ = {
+    "s0": null
+  };
+  const update = () => {
+    MD.setText($, "s0", text0, name);
+  };
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const text0 = document.createTextNode("");
+  MD.setText($, "s0", text0, name);
+  const span0 = document.createElement("span");
+  span0.className = "badge";
+  span0.appendChild(text0);
+  return span0;
+}
+function Editor(id, parent) {
+  const $ = {};
+  const rename = () => {
+    name = 'Grace';
+    MD.commitWrites(WRITES_0);
+  };
+  const update = () => {};
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const text0 = document.createTextNode("rename");
+  const button0 = document.createElement("button");
+  button0.onclick = rename;
+  button0.appendChild(text0);
+  return button0;
+}
+export function App(id, parent) {
+  const $ = {};
+  const update = () => {};
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const badge = Badge(id + "/Badge", id);
+  const editor = Editor(id + "/Editor", id);
+  const div0 = document.createElement("div");
+  div0.appendChild(badge);
+  div0.appendChild(editor);
+  return div0;
+}"
+`;

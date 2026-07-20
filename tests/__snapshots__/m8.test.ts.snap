@@ -1,0 +1,85 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`R8 — code generation > compiles a ternary to an anchored region with its own entity 1`] = `
+"import * as MD from "../out-runtime";
+const WRITES_0 = ["loggedIn"];
+const WRITES_1 = ["count"];
+MD.installAccessTable({
+  readers: {
+    "count": ["App", "App/*", "App/when0", "App/when0/*"],
+    "loggedIn": ["App", "App/*", "App/when0", "App/when0/*"]
+  }
+}, "App");
+// Fixture: R8 conditional region — a login toggle written as plain TSX.
+// 'loggedIn' is read ONLY by the region (condition), 'count' only by the
+// then-branch — both must route to 'App/when0', never to the owner. Branch
+// swaps destroy DOM but module state survives, so 'count' persists.
+let loggedIn = false;
+let count = 0;
+export function CondApp(id, parent) {
+  const $ = {};
+  const toggle = () => {
+    loggedIn = !loggedIn;
+    MD.commitWrites(WRITES_0);
+  };
+  const inc = () => {
+    count++;
+    MD.commitWrites(WRITES_1);
+  };
+  const update = () => {};
+  MD.register({
+    id: id,
+    parent: parent,
+    render: update
+  });
+  const text0 = document.createTextNode("toggle");
+  const button0 = document.createElement("button");
+  button0.onclick = toggle;
+  button0.appendChild(text0);
+  const div0 = document.createElement("div");
+  div0.appendChild(button0);
+  MD.register({
+    id: id + "/when0",
+    parent: id,
+    render: () => when0.update()
+  });
+  const when0 = MD.createCondRegion(div0, id + "/when0", () => loggedIn ? 0 : 1, [() => {
+    const $ = {
+      "s0": null
+    };
+    const update = () => {
+      MD.setText($, "s0", text1, count);
+    };
+    const text0 = document.createTextNode("in ");
+    const text1 = document.createTextNode("");
+    MD.setText($, "s0", text1, count);
+    const text2 = document.createTextNode(" ");
+    const text3 = document.createTextNode("+");
+    const button0 = document.createElement("button");
+    button0.onclick = inc;
+    button0.appendChild(text3);
+    const span0 = document.createElement("span");
+    span0.className = "in";
+    span0.appendChild(text0);
+    span0.appendChild(text1);
+    span0.appendChild(text2);
+    span0.appendChild(button0);
+    return {
+      nodes: [span0],
+      update: update
+    };
+  }, () => {
+    const $ = {};
+    const update = () => {};
+    const text0 = document.createTextNode("out");
+    const span0 = document.createElement("span");
+    span0.className = "out";
+    span0.appendChild(text0);
+    return {
+      nodes: [span0],
+      update: update
+    };
+  }]);
+  return div0;
+}"
+`;

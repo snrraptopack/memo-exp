@@ -1,0 +1,661 @@
+# memo-dom — Emission Spec
+
+> **Status:** Normative reference for the compiler (M5). This document defines,
+> rule by rule, what code the compiler emits for any valid source. The Babel
+> plugin (frontend #1) and any future oxc frontend (frontend #2) are both
+> *implementations of this spec* — if emitted output disagrees with this
+> document, the plugin is wrong, not the document.
+>
+> Companion document: `memoized-dom-paradigm.md` (the *why*). This is the *what*.
+>
+> **For agents/contributors:** do not invent emission behavior not covered here.
+> If you hit an uncovered pattern, emit the defined fallback and add the pattern
+> to §10 (open decisions).
+
+---
+
+## 1. Source language model
+
+Users write **plain TypeScript + JSX**. No imports, decorators, hooks, or
+framework primitives are required to make the paradigm work.
+
+```tsx
+let selectedId: number | null = null;   // module-level shared state
+
+function Counter() {
+  let count = 0;                        // component-local state
+  return (
+    <button onClick={() => count++}>
+      count: {count}
+    </button>
+  );
+}
+```
+
+The mental model the user holds: *"I assign variables; the UI updates."*
+Everything below exists to make that sentence true.
+
+## 2. Terminology
+
+| term | meaning |
+|---|---|
+| **entity** | a mounted component instance: `{ id, parent, render }` in the runtime registry |
+| **`$` (slot cache)** | per-instance object holding the previous value of every dynamic slot |
+| **slot** | one dynamic expression in JSX (text interpolation, attribute, class condition, style) |
+| **write-set** | the list of variables a handler provably writes |
+| **access table** | the compile-time `readers` map: variable → entity-id patterns |
+| **opaque** | a variable whose read/write set the compiler cannot prove → root-subtree commit |
+| **root-subtree commit** | dirty the root entity and all descendants (Imba-equivalent fallback) |
+
+## 3. Emission rules
+
+### R1 — Components become entities
+
+Every function/component compiles to a factory taking `(id, parent)` that
+registers an entity whose `render` is the **update branch only**.
+
+```tsx
+function Counter() { let count = 0; return <button>count: {count}</button>; }
+```
+
+emits (skeleton):
+
+```js
+function Counter(id, parent) {
+  let count = 0;
+  const $ = {};
+  /* R2 creation branch … */
+  function update() { /* R4 update branch … */ }
+  register({ id, parent, render: update });
+  return button;
+}
+```
+
+- Entity ids are **hierarchical paths**: `App`, `App/Header`, `App/List/Row[3]`.
+- The compiler generates ids from the lexical nesting path + list keys (R7).
+- **Invariant: parents register before children** (runtime M4 requirement).
+
+### R2 — JSX becomes a creation branch with cached nodes
+
+JSX compiles to direct DOM creation, run once per instance. Every node that an
+update write can touch is stored in a local variable (or on `$`).
+
+```tsx
+<button class="btn">count: {count}</button>
+```
+
+creation branch:
+
+```js
+const button = document.createElement('button');
+button.className = 'btn';               // static: set once, NEVER revisited
+button.append('count: ');
+const t1 = document.createTextNode('');
+button.appendChild(t1);                 // t1 = slot node for {count}
+```
+
+- Static attributes/children are emitted once and never touched again.
+- No virtual nodes, no clone, no template instantiation.
+
+### R3 — Dynamic expressions become numbered slots
+
+Each dynamic expression in a component gets a **stable slot key** (`v1`, `v2`,
+… in source order). The slot's previous value lives in `$[key]`.
+
+Slot kinds and their setters (runtime `setters.ts`):
+
+| source pattern | setter |
+|---|---|
+| `{expr}` in text position | `setText($, key, textNode, expr)` |
+| `attr={expr}` | `setAttr($, key, el, 'attr', expr)` |
+| `class={expr}` (whole) | `setClassName($, key, el, expr)` |
+| `class:list` with `cond` | `setClass($, key, el, 'name', cond)` |
+| `style:prop={expr}` | `setStyle($, key, el, 'prop', expr)` |
+| value/checked on inputs | `setProp($, key, el, 'value', expr)` |
+
+### R4 — Creation seeds the cache directly; updates are guarded
+
+**Creation branch writes initial values directly and records them in `$` —
+it never calls the guarded setters** (redundant DOM writes at mount, measured
+in M4). The update branch only calls guarded setters.
+
+```js
+// creation (emitted once):
+const label0 = `count: ${count}`;
+const t1 = document.createTextNode(label0);
+$.v1 = label0;                          // seed: cache mirrors what was written
+
+// update branch:
+function update() {
+  setText($, 'v1', t1, `count: ${count}`);   // no DOM write when unchanged
+}
+```
+
+**Invariant (M1):** the value cache is always in sync with what was written.
+Creation and update compute the value with the *same expression*, only the
+write mechanism differs.
+
+### R5 — Handlers emit the production form: body + commitWrites
+
+Event handlers compile to a direct closure: the user's body, then a routing
+call with a **hoisted static write-set** (analysis in §4).
+
+```tsx
+<button onClick={() => count++}>
+```
+
+emits:
+
+```js
+const WRITES_1 = ['count'];              // hoisted to module/component scope
+
+button.onclick = () => {
+  count++;
+  commitWrites(WRITES_1);
+};
+```
+
+- No per-event array allocation, no wrapper closures beyond the one handler.
+- If the write-set analysis is inconclusive for the handler body, the
+  write-set is the sentinel `OPAQUE` (§4.4) → root-subtree commit.
+
+### R6 — Shared state stays plain; access table is emitted per module
+
+Module-level `let`/`const` used by components is left untouched — plain JS.
+The compiler additionally emits, once per module:
+
+```js
+installAccessTable(
+  {
+    readers: {
+      selectedId: ['App/SelectList/Row[*]', 'App/Header/Badge'],
+      filter: ['App/Footer'],
+    },
+    opaque: ['prefs'],
+    params: {                       // see §5 — may be empty at launch
+      selectedId: [
+        { pattern: 'App/SelectList/Row[{payload.id}]', via: 'payload' },
+      ],
+    },
+  },
+  'App',
+);
+```
+
+- `readers` values are **exact ids** or `*` wildcard patterns (one segment).
+- The runtime resolver treats `readers` as the over-approximating superset and
+  `params` as the precise subset (§5). At launch, `params` may be omitted and
+  resolution uses `readers` only; the FORMAT must accept `params` from day one.
+
+### R7 — Array `.map()` in JSX becomes a list region
+
+```tsx
+<ul>{items.map(item => <Row item={item} />)}</ul>
+```
+
+emits a `createListRegion` call anchored inside the `<ul>`:
+
+```js
+const region = createListRegion(ul, `${id}`,
+  (item, rowId) => Row(rowId, id, item),
+  (item) => item.id,                // key fn if derivable, else identity
+);
+function update() { region.reconcile(items); }
+```
+
+- Row entity ids: `${listId}/Row[${key}]`.
+- The keyed reconciliation semantics (LIS moves, fragment batching, subtree
+  teardown) are runtime behavior — the compiler only emits the region wiring.
+- If the map callback transforms items (`items.map(i => ({...i}))`), key
+  derivation fails → identity keys + dev-mode warning.
+
+### R8 — Conditionals become anchored regions (DECIDED — §10.1)
+
+`{cond ? <A/> : <B/>}` and `{cond && <A/>}` in **direct JSX child position**
+compile to a conditional region. The region is its own entity; branches are
+NOT entities (L1 bans components inside branches, so there is nothing to
+unregister on a swap).
+
+```tsx
+<div>{loggedIn ? <b>hi</b> : <i>bye</i>}</div>
+```
+
+emits:
+
+```js
+const when0 = createCondRegion(
+  div0,
+  `${id}/when0`,                    // region entity id
+  () => (loggedIn ? 0 : 1),         // pick: branch index
+  [
+    () => { /* branch factory: own $ slots, own update; returns { nodes, update } */ },
+    () => { /* else branch */ },
+  ],
+);
+register({ id: `${id}/when0`, parent: id, render: when0.update });
+```
+
+Semantics:
+
+- The region entity is registered as a child of the owner. **All** state
+  reads inside the conditional — condition AND both branches — are attributed
+  to the region's patterns (`<ownerPath>/when<n>`, `<ownerPath>/when<n>/*`),
+  so any write to them dirties the region, not the owner. Branch handlers
+  therefore always route through the table (never `markDirty(id)` — the
+  owner's update does not touch the region).
+- `update()`: re-evaluate `pick()`. Same branch → run the branch's guarded
+  update closure. Different branch → remove the old branch's nodes, run the
+  new branch factory, insert before the anchor comment (`when:<id>`).
+- `{cond && <A/>}` is a ternary with an empty else branch; a `null`/`false`
+  branch is empty. Text branches are rejected (use a text interpolation).
+- A swap DESTROYS branch DOM state (focus, scroll, `<details>`). Retaining
+  detached branches is a post-L1 option (cache both, like list rows).
+- L1 bans: components inside branches, lists inside branches, conditionals
+  inside list rows, conditionals in attribute position. Each is a clear
+  compile error.
+
+### R9 — Nested component calls are id-stable
+
+A child component call site emits: compute the child id from the lexical path;
+if `registry.has(childId)` skip re-creation (entity persists — state survives
+parent re-render), else invoke the child factory. The parent never reconciles
+child identity — the id *is* the identity.
+
+## 4. Read/write analysis
+
+The compiler builds the access table by walking component bodies. Analysis is
+**syntactic only** — no type information, no interprocedural tracking at launch.
+
+### 4.1 Reads
+
+An identifier is a **read** of a component if it appears in that component's
+update-branch expressions (JSX expressions, conditions, attribute values),
+transitively through local derivations:
+
+```tsx
+const total = items.reduce(...);   // reads: items
+<span>{total}</span>               // reads: total → transitively items
+```
+
+### 4.2 Writes (launch-recognized set)
+
+| pattern | write-set |
+|---|---|
+| `x = v`, `x += v`, `x -= v`, … | `[x]` |
+| `x++`, `x--`, `++x` | `[x]` |
+| `obj.prop = v` (static key) | `[obj]` |
+| `arr.push(v)`, `pop`, `splice`, `sort`, `shift`, `unshift` | `[arr]` |
+| `map.set(k,v)`, `map.delete(k)`, `set.add(v)`, `set.delete(x)` | `[map]`/`[set]` |
+| multiple of the above in one handler | union |
+
+### 4.3 Locality classification
+
+- **Local write**: target is component-local state (declared inside the same
+  component) → route: dirty the origin entity only. No table entry needed.
+- **Shared write**: target is module-level or outer-scope → route via table.
+
+### 4.4 Opaque triggers (→ root-subtree commit)
+
+A variable is **opaque** when any of:
+
+- dynamic member access: `obj[expr]` where `expr` is not a string/number literal
+- assignment through a destructuring with computed/rest patterns
+- the variable is passed by reference to a function the compiler cannot see
+  (third-party call, unanalyzed module function)
+- assignment inside a closure the compiler cannot attribute to a handler
+
+A handler whose write-set contains an opaque variable routes `OPAQUE` →
+`markDirtySubtree(rootId)`. **Never incorrect — only unscoped.**
+
+### 4.5 Analysis levels (ship staging)
+
+- **L1 (launch):** §4.2 table, locality classification, opaque triggers.
+  Everything unrecognized → opaque.
+- **L2 (later):** alias tracking (`const a = items; a.push(x)`), cross-function
+  write propagation within the module, payload-parametrized patterns (§5).
+
+### 4.6 Cross-module state (the ESM constraint)
+
+**Language fact:** ES modules forbid reassigning an imported binding
+(`import { x } from './state'; x = 5` → error). Cross-file shared state
+therefore takes exactly two shapes, and the compiler handles both.
+
+**Shape 1 — state objects (primary pattern):**
+
+```ts
+// state.ts
+export const store = { selectedId: null as number | null, filter: '' };
+// component.ts
+import { store } from './state';
+store.selectedId = item.id;   // legal: property mutation, not rebinding
+```
+
+Table keys become **property paths** (`store.selectedId`), which are syntactic
+and therefore identical across every importing module. L1 supports this fully:
+a read/write of `store.prop` keys on the dotted path, not the object name.
+
+**Shape 2 — exported mutator functions:**
+
+```ts
+// state.ts
+let selectedId: number | null = null;
+export function setSelected(id: number) { selectedId = id; }
+// component.ts
+import { setSelected } from './state';
+onClick={() => setSelected(item.id)}
+```
+
+The write is hidden behind a cross-file call. The compiler resolves it via
+**function summaries**: compiling `state.ts` records `setSelected → writes
+selectedId`; compiling the importer resolves the call through the summary.
+Summaries ship at **L1.5/L2**; at L1 an unresolved cross-file call is **opaque**
+(→ root-subtree commit — correct, merely unscoped).
+
+**Canonical variable ids:** all table keys are module-qualified
+(`./state.ts#store.selectedId`), because two modules may both declare `count`.
+Each compiled file emits a table **fragment**; the bundler merges fragments
+into one app-wide table at build time (resolves former §10.3).
+
+## 5. Parametrized patterns (designed now, implemented in L2)
+
+Purpose: collapse wildcard over-approximation (`Row[*]` wakes 1000 rows to
+change 2) into precise routing.
+
+Format in the access table (`params` key, R6):
+
+```js
+params: {
+  selectedId: [
+    // When the write's payload provides `id`, dirty exactly these instances
+    // INSTEAD of the wildcard superset in `readers`.
+    { pattern: 'App/SelectList/Row[{payload.id}]' },
+    { pattern: 'App/SelectList/Row[{prev.selectedId}]' },  // L2: resolver state
+  ],
+}
+```
+
+Resolver semantics (runtime, L2):
+
+1. `handle`/`commitWrites` receives the payload (event object or explicit arg).
+2. If every written variable has a `params` entry resolvable from the payload,
+   dirty exactly the interpolated ids (+ exact readers from `readers`).
+3. If any interpolation fails (missing field, dead id) → fall back to the
+   `readers` wildcard superset. If that is absent → root-subtree.
+4. The chain never fails upward beyond correctness: interpolation failure
+   degrades precision, never correctness.
+
+**Day-one requirement:** the resolver MUST accept the `params` key (and ignore
+it if unimplemented) so the table format is stable from the first release.
+
+## 6. The commit contract (what emission relies on)
+
+Emission assumes these runtime behaviors (already implemented & tested):
+
+- `commitWrites(writes)` routes via the table; dedupes into the frame's dirty set.
+- Commit renders the dirty set parent-before-child (numeric depth sort).
+- Setter guards make any over-dirtied entity's render nearly free (~1µs).
+- Dead letters (dirtying unmounted ids) are silent no-ops.
+
+## 7. Correctness invariants (test-enforced)
+
+1. **Cache sync:** `$` always mirrors the last written value (R4). Violation
+   produces spurious or missing DOM writes.
+2. **Parent-first registration:** parents register before children (R1).
+3. **Id stability:** entity ids never change across re-renders; list row ids
+   travel with their key across reorders (R7).
+4. **Fallback completeness:** every handler routes somewhere — table, local, or
+   root-subtree. No handler may render the UI stale because analysis succeeded
+   *partially* and silently dropped a write.
+5. **No runtime graph:** emitted code never creates subscription lists,
+   observer sets, or read-tracking proxies. The table is data.
+
+## 8. Worked example A — counter (complete)
+
+Source:
+
+```tsx
+export function Counter() {
+  let count = 0;
+  return <button onClick={() => count++}>count: {count}</button>;
+}
+```
+
+Emission:
+
+```js
+const WRITES_1 = ['count'];
+
+export function Counter(id, parent) {
+  let count = 0;
+  const $ = {};
+
+  // creation branch
+  const button = document.createElement('button');
+  button.append('count: ');
+  const v0 = ` ${count}`;
+  const t1 = document.createTextNode(v0);
+  $.v1 = v0;                              // R4 seed
+  button.appendChild(t1);
+
+  button.onclick = () => {               // R5 production form
+    count++;
+    commitWrites(WRITES_1);
+  };
+
+  function update() {                    // update branch
+    setText($, 'v1', t1, ` ${count}`);
+  }
+
+  register({ id, parent, render: update });   // R1
+  return button;
+}
+
+// module-level emission:
+installAccessTable({ readers: { count: ['App/Counter'] } }, 'App');
+```
+
+(Routing note: `count` is local, so L1 locality classification routes this to
+the origin entity directly; the table entry is the compiler's conservative
+fallback path. Either is correct — prefer local routing when provable.)
+
+## 9. Worked example B — select list (shared state, parametrized)
+
+Source:
+
+```tsx
+let selectedId: number | null = null;
+let items: Item[] = [];
+
+function App() {
+  return (
+    <div>
+      <Badge />
+      <ul>{items.map(item => <Row item={item} />)}</ul>
+      <Footer />
+    </div>
+  );
+}
+
+function Badge() {
+  return <span>{selectedId === null ? 'none' : `selected: ${selectedId}`}</span>;
+}
+
+function Row({ item }: { item: Item }) {
+  return (
+    <li
+      class={selectedId === item.id ? 'selected' : ''}
+      onClick={() => { selectedId = item.id; }}
+    >
+      {item.label}
+    </li>
+  );
+}
+```
+
+Access table emission:
+
+```js
+installAccessTable(
+  {
+    readers: {
+      selectedId: ['App/Badge', 'App/ul/Row[*]'],
+      items: ['App/ul'],
+    },
+    params: {
+      selectedId: [
+        { pattern: 'App/ul/Row[{payload.item.id}]' },   // L2
+      ],
+    },
+  },
+  'App',
+);
+```
+
+Row handler emission:
+
+```js
+li.onclick = () => {
+  selectedId = item.id;
+  commitWrites(WRITES_selectedId, { item });   // payload available for L2 params
+};
+```
+
+At L1, a click dirties `App/Badge` + all live `Row[*]` ids; guards no-op the
+unchanged rows. At L2, it dirties the badge + the two affected rows.
+
+## 10. Open decisions
+
+1. ~~R8 conditional emission shape~~ **RESOLVED (R8):** anchored conditional
+   region, entity-scoped at the region level; branches are factory thunks
+   with their own slot caches, not entities. Detached-branch retention is a
+   post-L1 option.
+2. **`prev.*` resolver state** (L2 parametrized patterns needing "previous
+   value", e.g. the previously-selected row): does the runtime track last
+   values per variable, or does the compiler emit explicit prev-capture in
+   handlers? Leaning: compiler emits prev-capture — keeps the runtime dumb.
+3. ~~Multi-component files / cross-module reads~~ **RESOLVED (§4.6):**
+   canonical module-qualified ids, per-file table fragments merged app-wide at
+   bundle time; store-object property paths at L1, mutator-function summaries
+   at L1.5/L2.
+4. **Dev-mode event log:** production emission omits it (R5); dev builds may
+   wrap handlers with the provenance log (current `handle()` in events.ts).
+
+---
+
+## 11. Known limitations (living list)
+
+> **How to use this section:** every entry is a confirmed gap in the *current
+> implementation* (not the design). When a limitation is fixed, **delete its
+> entry** — this section must always reflect the present state. Resolved
+> batches are noted in §11.6 for history.
+>
+> Last full audit: M5.3 (compiler probes + runtime review).
+
+### 11.2 L1 source-language limits (by design — clear compile errors)
+
+- Conditional-region limits (R8 shipped): no components or lists inside
+  branches, no conditionals inside list rows, no nested conditionals inside
+  branches, no text branches (use an interpolation), direct JSX child only.
+- Fragments (`<>…</>`); spread attributes (`{...props}`); children props /
+  composition slots.
+- Components must be top-level `function` declarations (no arrows); exactly
+  one top-level JSX return per component.
+- Component-local state (per-instance `let` inside the factory) — design
+  agreed (factories run once per mount → always-local commits), not
+  implemented.
+- Lists inside list rows; components inside inline rows.
+- Recursive components — guarded with an explicit compile error (cycle
+  detection in path enumeration); needs lazy creation to support.
+- A component used both statically **and** as a list row — explicit compile
+  error (split it in two); supporting both usages needs pattern union.
+- Arrow-function helpers (`const f = () => …`) get no summaries — calls to
+  them from handlers do not track writes (only `function` declarations are
+  summarized).
+
+### 11.3 Handler / analysis semantics not yet covered
+
+- `try/catch/finally` in handlers — commits are inserted before `return`s and
+  at scope end; an exception mid-handler skips the commit (writes before the
+  throw stay uncommitted). Documented behavior, not a crash.
+- `delete store.x`, `Object.assign(store, …)` — untracked writes.
+- Reads in helper *calls* are summarized (11.1.7); reads through aliasing
+  (`const a = items; a.push(x)`) are not — L2 per §4.5.
+- Re-entrancy: `markDirty` during a running render is untested.
+- Over-invalidation note: a scope's commit fires even when its writes were
+  skipped by an `if` — safe direction, absorbed by setter guards.
+
+### 11.4 Runtime / DOM / lifecycle gaps
+
+- **Props-down reactivity** (child receives updated props without re-creation)
+  — the big expressiveness milestone after R8.
+- Controlled inputs: `value`/`checked` should route to `setProp` (property),
+  not `setAttr`. (`setProp` exists in the runtime; the emitter doesn't use it.)
+- SVG elements (`createElementNS`); style objects; class arrays/objects;
+  attribute-name mapping (`htmlFor`, `tabIndex`).
+- Events on component tags (`<Row onClick={…} />`) silently become props —
+  needs an error or a design.
+- No unmount/cleanup API outside list rows; no lifecycle hooks
+  (`onMount`/`onUnmount`); timers or subscriptions started in a factory body
+  leak.
+- No scheduler flush-now API or priority lanes.
+
+### 11.5 Multi-module, scale & engineering
+
+- Single-module compilation: components must live in one file; cross-file
+  component imports are unsupported (needs the §4.6 fragment design
+  implemented end-to-end).
+- `rootId` collisions across modules; table-install ordering vs. mount order —
+  untested.
+- `resolveWrites` cost at scale (patterns × entities × commits) — unmeasured.
+- Identity-keyed lists of duplicate primitives (`[1, 2, 2]`) throw on
+  duplicate keys — document or add index fallback.
+- No source maps, no Vite plugin/packaging, no HMR story, no dev/prod build
+  split, no userland testing story.
+- Benchmarks pending: parametrized-pattern re-run in the compiler era;
+  compile-time perf on large modules.
+
+### 11.6 Resolved (history)
+
+- **R8 (conditional regions, src/cond.ts + compiler/conds.ts +
+  test/m8.test.ts):** `{cond ? <A/> : <B/>}`, `{cond && <A/>}`,
+  `{cond || <A/>}` in direct JSX child position compile to anchored
+  conditional regions per §R8 — the region registers as its own entity
+  (`<owner>/when<n>`), all condition+branch reads attribute to its patterns,
+  branch handlers route through the table. Same-branch updates run the
+  branch's guarded closure; swaps rebuild DOM but keep module state.
+  Whitespace handling is now React-compatible (edge spaces dropped only
+  when they come from line breaks).
+- **M5.4 (const collections, test/m54.test.ts):** `const items = [...]`,
+  `const m = new Map()/new Set()` classify as mutable state — mutations
+  (push/set/member writes) route as root-keyed writes, rebinding is a
+  compile error ("cannot reassign const collection") instead of a runtime
+  TypeError; R7 lists accept const arrays; `var` classifies as `let`;
+  update-expressions on non-let bindings are compile errors.
+- **M5.3 (silent-miscompile batch, 9 items, test/m53.test.ts):**
+  1. early `return` in a writing scope skipped its commit → commits are now
+     inserted before *every* return of the scope (and at scope end);
+  2. member-chain mutators (`store.items.push(x)`) emitted no commit and
+     polluted the table → root-aware mutator classification: let-root → write
+     to the variable, store → static dotted-path write, dynamic → opaque;
+     mutator callee chains are no longer registered as reads;
+  3. read/write path granularity mismatch → the resolver now matches
+     segment-wise: a write hits readers at equal, descendant, or ancestor
+     dotted paths;
+  4. lists inside repeated children misrouted rows → row patterns expand
+     repeated ancestors (`App/Tag[*]/items/Row[*]`);
+  5. multi-parent components routed to one instance → `parents` is a set;
+     path enumeration walks all parents;
+  6. `key` on a non-row child silently misaligned props → compile error;
+  7. module-level functions were all assumed components → JSX-content
+     classification; helpers get interprocedural read/write **summaries**
+     (module-local §4.6 shape 2); module-level functions can be referenced
+     directly as handlers (table-routed commits, never `markDirty(id)`);
+  8. state-reading props on static children went silently stale → compile
+     error (props are mount-time at L1);
+  9. `{null}`/`{true}` rendered as text → static falsy children are skipped;
+     `setText` coerces null/undefined/booleans to `''`.
+
+---
+
+*End of spec. Implementation order for M5: R1–R6 + R7 (lists) with L1 analysis;
+R8 after decision 10.1; §5 params accepted-but-ignored from the first release.*

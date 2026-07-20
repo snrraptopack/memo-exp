@@ -1,0 +1,265 @@
+/**
+ * context.ts — shared compiler state and pure AST helpers.
+ *
+ * Every module (analysis / handlers / lists / emit) takes the same Ctx, so
+ * the plugin shell in plugin.ts stays a thin visitor wiring layer. One Ctx
+ * is created per compiled module.
+ */
+
+import type { NodePath } from '@babel/traverse';
+import * as t from '@babel/types';
+
+export interface MemoDomOptions {
+  /** Module specifier compiled output imports the runtime from. */
+  runtimePath?: string;
+  /** Entity id of the root component. */
+  rootId?: string;
+}
+
+/**
+ * Reactive-state classification (the two — three — legal ways JS state changes):
+ *   'let'   — rebindable binding; writes are assignments/updates/mutations
+ *   'store' — const plain-object literal; writes are property mutations (path-keyed)
+ *   'const' — const collection (array / Map / Set); writes are mutations only,
+ *             rebinding is a compile error (JS would TypeError at runtime)
+ */
+export type StateKind = 'let' | 'store' | 'const';
+
+export interface CompInfo {
+  /**
+   * Names of ALL parent components (a shared child has several). Empty for
+   * the root. M5.3: was a single `parent` — multi-parent components misrouted.
+   */
+  parents: Set<string>;
+  /** Number of host JSX elements (diagnostic / future suffix paths). */
+  jsxCount: number;
+}
+
+/** A list site owned by a component: region id-prefix is '<path(owner)>/<suffix>'. */
+export interface SiteRef {
+  owner: string;
+  suffix: string;
+}
+
+/** Module-level helper function summary (M5.3 interprocedural analysis). */
+export interface FnSummary {
+  reads: Set<string>;
+  writes: Set<string>;
+  /** True when the helper (transitively) does something unanalyzable. */
+  opaque: boolean;
+}
+
+/** DOM mutating methods — a call through module state mutates in place. */
+export const MUTATOR_METHODS = new Set([
+  'push', 'pop', 'splice', 'sort', 'reverse', 'fill', 'shift', 'unshift',
+  'set', 'delete', 'clear', 'add',
+]);
+
+export interface Ctx {
+  runtimePath: string;
+  rootId: string;
+
+  // ---- module analysis (filled by analysis.ts) ----
+  state: Map<string, StateKind>;
+  comps: Map<string, CompInfo>;
+  compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
+
+  /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural reads/writes. */
+  helpers: Map<string, NodePath<t.FunctionDeclaration>>;
+  helperSummaries: Map<string, FnSummary>;
+
+  compReads: Map<string, Set<string>>;
+  /** parent comp → child comp → number of static JSX references. */
+  childRefCounts: Map<string, Map<string, number>>;
+  /**
+  * Components used as list rows: child comp name → the sites ('<path(owner)>/<suffix>')
+    * at whose 'Row[k]' its instances live. A listed component is multi-instance:
+    * never locality-eligible.
+   */
+  listedSites: Map<string, SiteRef[]>;
+    /** Inline-row reads: '<owner>/<suffix>' → site + state vars read in the row JSX. */
+  rowReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
+  /** Conditional-region reads (R8): '<owner>/when<n>' → site + vars read in condition+branches. */
+  condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
+  // ---- emission accumulators ----
+  header: t.Statement[];
+  readers: Map<string, Set<string>>;
+  opaqueVars: Set<string>;
+  writeConstCounter: number;
+
+  /** Function nodes whose handler analysis already ran (shared declarations). */
+  analyzedFunctions: WeakSet<t.Node>;
+}
+
+export function createCtx(opts: MemoDomOptions = {}): Ctx {
+  return {
+    runtimePath: opts.runtimePath ?? 'memo-dom',
+    rootId: opts.rootId ?? 'App',
+    state: new Map(),
+    comps: new Map(),
+    compPaths: new Map(),
+    helpers: new Map(),
+    helperSummaries: new Map(),
+    compReads: new Map(),
+    childRefCounts: new Map(),
+    listedSites: new Map(),
+    rowReads: new Map(),
+    condReads: new Map(),
+    header: [],
+    readers: new Map(),
+    opaqueVars: new Set(),
+    writeConstCounter: 0,
+    analyzedFunctions: new WeakSet()
+  };
+}
+
+// ---------------------------------------------------------------------
+// AST helpers
+// ---------------------------------------------------------------------
+
+export const md = (name: string): t.MemberExpression =>
+  t.memberExpression(t.identifier('MD'), t.identifier(name));
+
+export function freshWriteConst(ctx: Ctx, writes: readonly string[]): t.Identifier {
+  const id = t.identifier(`WRITES_${ctx.writeConstCounter++}`);
+  ctx.header.push(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        id,
+        t.arrayExpression(writes.map((w) => t.stringLiteral(w))),
+      ),
+    ]),
+  );
+  return id;
+}
+
+/** Static property-path key for `a.b.c` ('a.b.c'), or null if dynamic. */
+export function memberKey(node: t.MemberExpression): string | null {
+  const parts: string[] = [];
+  let cur: t.Expression | t.PrivateName = node;
+  while (t.isMemberExpression(cur)) {
+    if (cur.computed) {
+      if (!t.isStringLiteral(cur.property)) return null;
+      parts.unshift(cur.property.value);
+    } else {
+      if (!t.isIdentifier(cur.property)) return null;
+      parts.unshift(cur.property.name);
+    }
+    cur = cur.object;
+  }
+  if (!t.isIdentifier(cur)) return null;
+  parts.unshift(cur.name);
+  return parts.join('.');
+}
+
+/** Root identifier of a member chain (`a.b[c].d` → 'a'), even when dynamic. */
+export function memberRootName(node: t.MemberExpression): string | null {
+  let cur: t.Expression = node;
+  while (t.isMemberExpression(cur)) cur = cur.object as t.Expression;
+  return t.isIdentifier(cur) ? cur.name : null;
+}
+
+/** `const x = { ...plain properties... }` → store object (§4.6). */
+export function isStoreObject(init: t.Expression | null | undefined): boolean {
+  if (!init || !t.isObjectExpression(init)) return false;
+  return init.properties.every(
+    (p) =>
+      t.isObjectProperty(p) &&
+      !p.computed &&
+      (t.isIdentifier(p.key) || t.isStringLiteral(p.key)),
+  );
+}
+
+
+/** `const x = [...]` / `const m = new Map()` / `new Set()` → const collection (M5.4). */
+export function isConstCollection(init: t.Expression | null | undefined): boolean {
+  if (!init) return false;
+  if (t.isArrayExpression(init)) return true;
+  if (t.isNewExpression(init) && t.isIdentifier(init.callee)) {
+    return ['Map', 'Set', 'WeakMap', 'WeakSet'].includes(init.callee.name);
+  }
+  return false;
+}
+
+/** Unwrap a JSX attribute value: strings pass through, `{expr}` unwraps. */
+export function attrExpr(value: t.JSXAttribute['value']): t.Expression | null {
+  if (value == null) return null;
+  if (t.isStringLiteral(value)) return value;
+  if (t.isJSXExpressionContainer(value)) {
+    return t.isJSXEmptyExpression(value.expression)
+      ? null
+      : (value.expression as t.Expression);
+  }
+  return null; // JSX element as attribute value — unsupported
+}
+
+
+/**
+ * Does an expression reference module state anywhere inside? Manual walk
+ * (no NodePath available in every caller); descends into nested functions —
+ * conservative on purpose.
+ */
+export function exprReadsState(ctx: Ctx, expr: t.Node): boolean {
+  let reads = false;
+  const probe = (n: t.Node): void => {
+    if (reads) return;
+    if (t.isIdentifier(n) && ctx.state.has(n.name)) {
+      reads = true;
+      return;
+    }
+    for (const key of t.VISITOR_KEYS[n.type] ?? []) {
+      const c = (n as any)[key];
+      if (Array.isArray(c)) {
+        for (const x of c) {
+          if (x && typeof x === 'object' && 'type' in x) probe(x as t.Node);
+        }
+      } else if (c && typeof c === 'object' && 'type' in c) {
+        probe(c as t.Node);
+      }
+    }
+  };
+  probe(expr);
+  return reads;
+}
+
+
+
+/** Walk every node under `root` (raw AST walk — no NodePath needed). */
+function walkNodes(root: t.Node, visit: (n: t.Node) => void): void {
+  const walk = (n: t.Node): void => {
+    visit(n);
+    for (const key of t.VISITOR_KEYS[n.type] ?? []) {
+      const c = (n as any)[key];
+      if (Array.isArray(c)) {
+        for (const x of c) {
+          if (x && typeof x === 'object' && 'type' in x) walk(x as t.Node);
+        }
+      } else if (c && typeof c === 'object' && 'type' in c) {
+        walk(c as t.Node);
+      }
+    }
+  };
+  walk(root);
+}
+
+/** Does this raw AST subtree contain JSX? (node-level twin of lists.containsJsx) */
+export function nodeHasJsx(root: t.Node): boolean {
+  let found = false;
+  walkNodes(root, (n) => {
+    if (t.isJSXElement(n) || t.isJSXFragment(n)) found = true;
+  });
+  return found;
+}
+
+/**
+ * All state identifiers referenced in a raw AST subtree, root-keyed
+ * ('store.x.y' contributes 'store' — the resolver's prefix matching covers
+ * dotted write/read paths). Used for R8 region attribution.
+ */
+export function collectStateIds(ctx: Ctx, root: t.Node): Set<string> {
+  const out = new Set<string>();
+  walkNodes(root, (n) => {
+    if (t.isIdentifier(n) && ctx.state.has(n.name)) out.add(n.name);
+  });
+  return out;
+}
