@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { compile } from '../compiler/compile';
@@ -126,12 +126,14 @@ describe('M5.3 fixes — code generation', () => {
       compile(`function C() { return <div key="k">x</div>; }`),
     ).toThrowError(/only meaningful on list rows/);
 
-    // state-reading props on a static child (was: silently stale)
-    expect(() =>
-      compile(
+    // state-reading props on a static child: R10 — allowed, re-pushed via setProps
+    {
+      const code = compile(
         `let a = 0;\nfunction Badge(x) { return <span>{x}</span>; }\nfunction C() { return <div><Badge x={a} /></div>; }`,
-      ),
-    ).toThrowError(/mount-time/);
+      );
+      expect(code).toContain('MD.setProps(id + "/Badge", [a])');
+      expect(code).toContain('MD.registerProps(id, __p)');
+    }
 
     // recursive components (was: infinite factory recursion at runtime)
     expect(() =>

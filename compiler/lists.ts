@@ -21,7 +21,7 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { attrExpr, exprReadsState, nodeHasJsx, type Ctx, memberKey, memberRootName, } from './context'
+import { attrExpr, exprReadsState, memberKey, memberRootName, nodeHasJsx, type Ctx } from './context';
 
 export interface MapSite {
   /** Read/write key of the mapped array (e.g. 'items' or 'store.todos'). */
@@ -40,13 +40,13 @@ export interface MapSite {
   rowComp: string | null;
   /** Owning component's name (patterns expand its full path variants). */
   owner: string;
-    /** '<arrayName>' or '<arrayName><n>' when one owner maps it twice. */
+  /** '<arrayName>' or '<arrayName><n>' when one owner maps it twice. */
   suffix: string;
-    /** Unique site key '<owner>/<suffix>' (pattern bases come from pathVariants). */
+  /** Unique site key '<owner>/<suffix>' (pattern bases come from pathVariants). */
   prefix: string;
 }
 
-/** Is this expression a `.map(...)` call? */
+/** Is this expression a `.map(...)` call? Returns the callee object chain. */
 export function matchMapCall(expr: t.Node): t.CallExpression | null {
   if (!t.isCallExpression(expr)) return null;
   const callee = expr.callee;
@@ -60,7 +60,7 @@ export function matchMapCall(expr: t.Node): t.CallExpression | null {
   return null;
 }
 
-/** Does a subtree contain JSX? */
+/** Does a subtree contain JSX? (path-relative, stops at nothing.) */
 export function containsJsx(p: NodePath): boolean {
   let found = false;
   p.traverse({
@@ -165,20 +165,12 @@ export function analyzeMapSite(
     if (!ctx.comps.has(tag)) {
       fail(`memo-dom: <${tag} /> is not a known component — R7 rows must be declared in the same module`);
     }
-    // props must not read module state (stale-prop footgun on retained rows)
+    // R10: state-reading row props are allowed — the region re-pushes the
+    // row's props box on every reconcile that retains it (updateProps)
     for (const attr of open.attributes) {
       if (t.isJSXSpreadAttribute(attr)) {
         fail('memo-dom: spread attributes are not supported (L1)');
       }
-      const a = attr as t.JSXAttribute;
-      const name = (a.name as t.JSXIdentifier).name;
-      if (name === 'key') continue;
-      const v = attrExpr(a.value);
-      if (v && exprReadsState(ctx, v)) {
-             fail(
-               `memo-dom: prop '${name}' on a list row reads module state — read it inside <${tag}> directly instead (props on retained rows go stale)`,
-             );
-           }
     }
     if (jsx.children.some((c) => !t.isJSXText(c) || c.value.trim() !== '')) {
       fail('memo-dom: children props are not supported (L1)');
@@ -197,6 +189,18 @@ export function analyzeMapSite(
           );
         }
         stack.push(...n.children);
+      } else if (t.isJSXExpressionContainer(n) && t.isExpression(n.expression)) {
+        // conditionals inside rows would be nested regions (R8 L1)
+        const ex = n.expression;
+        if (
+          (t.isConditionalExpression(ex) ||
+            (t.isLogicalExpression(ex) && (ex.operator === '&&' || ex.operator === '||'))) &&
+          nodeHasJsx(ex)
+        ) {
+          fail(
+            'memo-dom: conditionals inside list rows are not supported yet (R8 L1) — hoist the row into a component',
+          );
+        }
       }
     }
   }
@@ -216,7 +220,7 @@ export function analyzeMapSite(
   const prefix = `${ownerName}/${suffix}`;
   return {
     arrayName,
-    arrayExpr:t.cloneNode(arrayExpr),
+    arrayExpr: t.cloneNode(arrayExpr),
     itemParam,
     keyExpr,
     jsx,

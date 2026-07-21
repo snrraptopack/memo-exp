@@ -211,9 +211,10 @@ export function markDirtySubtree(id: EntityId): void {
 }
 
 let scheduled = false;
+let inCommit = false;
 
 function scheduleCommit(): void {
-  if (scheduled) return; // dedupe: 1000 marks → 1 frame
+  if (scheduled || inCommit) return; // dedupe: 1000 marks → 1 frame
   scheduled = true;
   scheduleFn(commit);
 }
@@ -222,11 +223,10 @@ function scheduleCommit(): void {
 // Commit
 // ---------------------------------------------------------------------------
 /**
- * Run one commit pass: re-render the dirty set, parents before children
- * (numeric depth sort — cheap even for 10k dirty entities).
- *
- * NOTE (deferred design point): if a render() marks NEW ids dirty during the
- * pass, they schedule the next frame, not this one (no cascading commit yet).
+ * Run commit passes until the dirty set is empty: re-render the dirty set,
+ * parents before children (numeric depth sort — cheap even for 10k dirty
+ * entities). R10: renders may dirty further ids (props re-push); those join
+ * the SAME commit via the drain loop — no one-frame lag for prop flow.
  *
  * PUBLIC API (M5.6): this is the "flush now" entry point — the memo-dom
  * equivalent of React's flushSync / Svelte 5's flushSync. With the default
@@ -237,18 +237,32 @@ function scheduleCommit(): void {
  */
 export function commit(): void {
   scheduled = false;
-  if (dirtySet.size === 0) return;
+  if (inCommit) return; // reentrancy: the running drain picks up new marks
+  inCommit = true;
+  try {
+    // R10: drain loop — renders may mark further ids (setProps pushing props
+    // to children, update-driven invalidation). Depth-sorted batches keep
+    // parent-before-child within and across passes. A bound guards cycles.
+    for (let pass = 0; pass < 100 && dirtySet.size > 0; pass++) {
+      const batch: Entity[] = [];
+      for (const id of dirtySet) {
+        const e = registry.get(id);
+        if (e) batch.push(e);
+      }
+      dirtySet.clear();
 
-  const batch: Entity[] = [];
-  for (const id of dirtySet) {
-    const e = registry.get(id);
-    if (e) batch.push(e);
+      batch.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
+
+      for (const e of batch) e.render();
+    }
+    if (dirtySet.size > 0) {
+      throw new Error(
+        '[memo-dom] commit cascade exceeded 100 passes — an update is dirtying its own readers (cycle)',
+      );
+    }
+  } finally {
+    inCommit = false;
   }
-  dirtySet.clear();
-
-  batch.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
-
-  for (const e of batch) e.render();
 }
 
 // ---------------------------------------------------------------------------

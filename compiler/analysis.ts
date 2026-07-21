@@ -26,13 +26,14 @@ import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   attrExpr,
+  collectStateIds,
   exprReadsState,
+  isConstCollection,
   isStoreObject,
   memberKey,
   memberRootName,
-  isConstCollection,
-  collectStateIds,
   MUTATOR_METHODS,
+  walkNodes,
   type Ctx,
   type FnSummary,
 } from './context';
@@ -60,6 +61,7 @@ function validateCondPosition(
 // ---------------------------------------------------------------------
 // pass 1
 // ---------------------------------------------------------------------
+
 function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
   for (const stmt of programPath.node.body) {
     // M5.5: exported state is still state — unwrap the export wrapper
@@ -168,18 +170,10 @@ function analyzeComponent(ctx: Ctx, name: string): void {
             'memo-dom: children props are not supported yet (L1)',
           );
         }
-        // props are mount-time: a prop reading module state would go stale
-        for (const attr of open.attributes) {
-          if (t.isJSXSpreadAttribute(attr)) continue; // rejected by its own visitor
-          const a = attr as t.JSXAttribute;
-          const attrName = (a.name as t.JSXIdentifier).name;
-          const v = attrExpr(a.value);
-          if (v && exprReadsState(ctx, v)) {
-            throw el.buildCodeFrameError(
-              `memo-dom: prop '${attrName}' on <${tag}> reads module state — props are mount-time (L1); read the state inside <${tag}> directly`,
-            );
-          }
-        }
+        // R10: state-reading props are allowed — prop reads are collected
+        // by collectReads' generic Identifier/MemberExpression visitors (no
+        // component skip there), so the parent updates exactly when a pushed
+        // value can change. (Was the mount-time ban, now lifted.)
         ctx.comps.get(tag)!.parents.add(name);
         let counts = ctx.childRefCounts.get(name);
         if (!counts) ctx.childRefCounts.set(name, (counts = new Map()));
@@ -419,7 +413,6 @@ function collectReads(ctx: Ctx): void {
     const p = ctx.compPaths.get(name)!;
     const reads = new Set<string>();
     const usedPrefixes = new Map<string, number>();
-
     const usedConds = { count: 0 };
 
     /**
@@ -445,12 +438,37 @@ function collectReads(ctx: Ctx): void {
     }
 
     p.traverse({
+      ConditionalExpression(c) {
+        handleCond(c);
+      },
+      LogicalExpression(l) {
+        handleCond(l);
+      },
       CallExpression(call) {
         const mapCall = matchMapCall(call.node);
         if (mapCall && containsJsx(call)) {
           const site = analyzeMapSite(ctx, mapCall, call, name, usedPrefixes);
           reads.add(site.arrayName); // the owner reads the array
           if (site.form === 'component') {
+            // R10: row-prop reads are OWNER reads — the owner re-pushes row
+            // props via updateProps during reconcile
+            for (const attr of site.jsx.openingElement.attributes) {
+              if (t.isJSXSpreadAttribute(attr)) continue;
+              const a = attr as t.JSXAttribute;
+              if ((a.name as t.JSXIdentifier).name === 'key') continue;
+              const v = attrExpr(a.value);
+              if (!v) continue;
+              walkNodes(v, (n) => {
+                if (t.isIdentifier(n) && ctx.state.has(n.name)) reads.add(n.name);
+                if (t.isMemberExpression(n)) {
+                  const key = memberKey(n);
+                  if (key !== null && key.includes('.')) {
+                    const rootName = key.split('.')[0]!;
+                    if (ctx.state.get(rootName) === 'store') reads.add(key);
+                  }
+                }
+              });
+            }
             const sites = ctx.listedSites.get(site.rowComp!) ?? [];
             if (!sites.some((s) => s.owner === name && s.suffix === site.suffix)) {
               sites.push({ owner: name, suffix: site.suffix });
@@ -506,12 +524,6 @@ function collectReads(ctx: Ctx): void {
       MemberExpression(m) {
         const key = storeReadKey(ctx, m);
         if (key !== null) reads.add(key);
-      },
-      ConditionalExpression(c) {
-        handleCond(c);
-      },
-      LogicalExpression(l) {
-        handleCond(l);
       },
     });
 
@@ -599,7 +611,6 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
     ]);
     for (const v of vars) add(v, patterns);
   }
-
   for (const { owner, suffix, vars } of ctx.condReads.values()) {
     const patterns = pathVariants(ctx, owner).flatMap((v) => [
       `${v}/${suffix}`,

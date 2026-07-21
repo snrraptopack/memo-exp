@@ -41,4 +41,5 @@ export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
 
 export { createCondRegion } from './cond';
+export { registerProps, setProps } from './props';
 export type { CondRegion, CondEntry, CondBranchFactory } from './cond';

@@ -73,15 +73,16 @@ const items = [{
   label: 'two'
 }];
 let selected = 0;
-function Row(id, parent, item: {
-  id: number;
-  label: string;
-}) {
+function Row(id, parent, __p) {
   const $ = {
     "s0": null,
     "s1": null
   };
+  let item = __p[0];
   const update = () => {
+    {
+      item = __p[0];
+    }
     MD.setText($, "s0", text0, item.label);
     MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
   };
@@ -90,6 +91,7 @@ function Row(id, parent, item: {
     parent: parent,
     render: update
   });
+  MD.registerProps(id, __p);
   const text0 = document.createTextNode("");
   MD.setText($, "s0", text0, item.label);
   const li0 = document.createElement("li");
@@ -120,10 +122,14 @@ export function CompList(id, parent) {
   });
   const ul0 = document.createElement("ul");
   const region0 = MD.createListRegion(ul0, id + "/items", (item, rowId) => {
-    const el = Row(rowId, id, item);
+    const el = Row(rowId, id, [item]);
     return {
       nodes: [el],
-      entities: [rowId]
+      entities: [rowId],
+      updateProps: item => {
+        MD.setProps(rowId, [item]);
+        MD.markDirty(rowId);
+      }
     };
   }, item => item.id);
   region0.reconcile(items);

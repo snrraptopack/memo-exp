@@ -63,30 +63,28 @@ export interface Ctx {
   state: Map<string, StateKind>;
   comps: Map<string, CompInfo>;
   compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
-
   /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural reads/writes. */
   helpers: Map<string, NodePath<t.FunctionDeclaration>>;
   helperSummaries: Map<string, FnSummary>;
-
   compReads: Map<string, Set<string>>;
   /** parent comp → child comp → number of static JSX references. */
   childRefCounts: Map<string, Map<string, number>>;
   /**
-  * Components used as list rows: child comp name → the sites ('<path(owner)>/<suffix>')
-    * at whose 'Row[k]' its instances live. A listed component is multi-instance:
-    * never locality-eligible.
+   * Components used as list rows: child comp name → the sites ('<path(owner)>/<suffix>')
+   * at whose 'Row[k]' its instances live. A listed component is multi-instance:
+   * never locality-eligible.
    */
   listedSites: Map<string, SiteRef[]>;
-    /** Inline-row reads: '<owner>/<suffix>' → site + state vars read in the row JSX. */
+  /** Inline-row reads: '<owner>/<suffix>' → site + state vars read in the row JSX. */
   rowReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Conditional-region reads (R8): '<owner>/when<n>' → site + vars read in condition+branches. */
   condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
+
   // ---- emission accumulators ----
   header: t.Statement[];
   readers: Map<string, Set<string>>;
   opaqueVars: Set<string>;
   writeConstCounter: number;
-
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
 }
@@ -109,7 +107,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     readers: new Map(),
     opaqueVars: new Set(),
     writeConstCounter: 0,
-    analyzedFunctions: new WeakSet()
+    analyzedFunctions: new WeakSet(),
   };
 }
 
@@ -170,7 +168,6 @@ export function isStoreObject(init: t.Expression | null | undefined): boolean {
   );
 }
 
-
 /** `const x = [...]` / `const m = new Map()` / `new Set()` → const collection (M5.4). */
 export function isConstCollection(init: t.Expression | null | undefined): boolean {
   if (!init) return false;
@@ -192,7 +189,6 @@ export function attrExpr(value: t.JSXAttribute['value']): t.Expression | null {
   }
   return null; // JSX element as attribute value — unsupported
 }
-
 
 /**
  * Does an expression reference module state anywhere inside? Manual walk
@@ -222,10 +218,8 @@ export function exprReadsState(ctx: Ctx, expr: t.Node): boolean {
   return reads;
 }
 
-
-
 /** Walk every node under `root` (raw AST walk — no NodePath needed). */
-function walkNodes(root: t.Node, visit: (n: t.Node) => void): void {
+export function walkNodes(root: t.Node, visit: (n: t.Node) => void): void {
   const walk = (n: t.Node): void => {
     visit(n);
     for (const key of t.VISITOR_KEYS[n.type] ?? []) {

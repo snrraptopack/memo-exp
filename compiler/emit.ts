@@ -16,7 +16,7 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { attrExpr, md, nodeHasJsx, type Ctx } from './context';
+import { attrExpr, exprReadsState, md, nodeHasJsx, type Ctx } from './context';
 import { analyzeMapSite, matchMapCall, type MapSite } from './lists';
 import { analyzeCondSite, matchCond } from './conds';
 import { buildHandler } from './handlers';
@@ -126,20 +126,71 @@ export function transformComponent(
 
   const kept = node.body.body.filter((s) => s !== returnStmt);
 
-  // Body order matters: register BEFORE creation so children (created and
-  // registered by factory calls inside the creation block) always find
-  // their parent in the registry — the M4 parent-first invariant. The
-  // update closure only runs post-mount, so closing over node variables
-  // declared later in the same scope is safe.
-  node.params = [t.identifier('id'), t.identifier('parent'), ...node.params];
-  node.body = t.blockStatement([
-    cacheDecl(scope.slots),
-    ...kept,
-    updateDecl(scope.updaters),
-    registerStmt(t.identifier('id'), t.identifier('parent')),
-    ...scope.creation,
-    t.returnStatement(t.identifier(rootVar)),
-  ]);
+    // -- R10: props box. User params become locals synced from __p ---------
+    const propNames: string[] = [];
+    for (const p of node.params) {
+      if (!t.isIdentifier(p)) {
+        throw path.buildCodeFrameError(
+          `memo-dom: component '${name}' props must be plain identifier params (R10 L1) — destructure inside the body if needed`,
+        );
+      }
+      propNames.push(p.name);
+    }
+    if (propNames.length > 0) {
+      // re-sync locals from the box at the top of every update
+      scope.updaters.unshift(() =>
+        t.blockStatement(
+          propNames.map((pn, i) =>
+            t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                t.identifier(pn),
+                t.memberExpression(t.identifier('__p'), t.numericLiteral(i), true),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Body order matters: register BEFORE creation so children (created and
+    // registered by factory calls inside the creation block) always find
+    // their parent in the registry — the M4 parent-first invariant. The
+    // update closure only runs post-mount, so closing over node variables
+    // declared later in the same scope is safe.
+    const body: t.Statement[] = [cacheDecl(scope.slots)];
+    if (propNames.length > 0) {
+      body.push(
+        t.variableDeclaration(
+          'let',
+          propNames.map((pn, i) =>
+            t.variableDeclarator(
+              t.identifier(pn),
+              t.memberExpression(t.identifier('__p'), t.numericLiteral(i), true),
+            ),
+          ),
+        ),
+      );
+    }
+    body.push(
+      ...kept,
+      updateDecl(scope.updaters),
+      registerStmt(t.identifier('id'), t.identifier('parent')),
+    );
+    if (propNames.length > 0) {
+      body.push(
+        t.expressionStatement(
+          t.callExpression(md('registerProps'), [t.identifier('id'), t.identifier('__p')]),
+        ),
+      );
+    }
+    body.push(...scope.creation, t.returnStatement(t.identifier(rootVar)));
+
+    node.params =
+      propNames.length > 0
+        ? [t.identifier('id'), t.identifier('parent'), t.identifier('__p')]
+        : [t.identifier('id'), t.identifier('parent')];
+    node.body = t.blockStatement(body);
 }
 
 // ---------------------------------------------------------------------
@@ -240,6 +291,7 @@ function emitElement(
     const varName = seen === 0 ? base : `${base}${seen}`;
     const idSuffix = seen === 0 ? `/${tag}` : `/${tag}[${seen}]`;
     const props: t.Expression[] = [];
+    let needsPush = false;
     for (const attr of open.attributes) {
       const a = attr as t.JSXAttribute;
       const v = attrExpr(a.value);
@@ -248,20 +300,34 @@ function emitElement(
           `memo-dom: prop '${(a.name as t.JSXIdentifier).name}' on <${tag}> must be an expression (L1)`,
         );
       }
+      if (exprReadsState(ctx, v)) needsPush = true;
       props.push(t.cloneNode(v));
     }
+    const childId = t.binaryExpression('+', t.identifier('id'), t.stringLiteral(idSuffix));
     scope.creation.push(
       t.variableDeclaration('const', [
         t.variableDeclarator(
           t.identifier(varName),
           t.callExpression(t.identifier(tag), [
-            t.binaryExpression('+', t.identifier('id'), t.stringLiteral(idSuffix)),
+            childId,
             t.identifier('id'),
-            ...props,
+            ...(props.length > 0 ? [t.arrayExpression(props)] : []),
           ]),
         ),
       ]),
     );
+    // R10: re-push state-reading props inside the parent's update — the box
+    // flows down through setProps (shallow-compare → no-op when unchanged)
+    if (needsPush) {
+      scope.updaters.push(() =>
+        t.expressionStatement(
+          t.callExpression(md('setProps'), [
+            t.binaryExpression('+', t.identifier('id'), t.stringLiteral(idSuffix)),
+            t.arrayExpression(props.map((p) => t.cloneNode(p))),
+          ]),
+        ),
+      );
+    }
     return varName;
   }
 
@@ -513,6 +579,35 @@ function buildComponentRowCreate(site: MapSite): t.ArrowFunctionExpression {
     props.push(t.cloneNode(attrExpr(a.value)!));
   }
   const el = t.identifier('el');
+  const entry: t.ObjectProperty[] = [
+    t.objectProperty(t.identifier('nodes'), t.arrayExpression([el])),
+    t.objectProperty(t.identifier('entities'), t.arrayExpression([t.identifier('rowId')])),
+  ];
+  // R10: retained rows get their props box re-pushed on every reconcile —
+  // item replacement AND item-field mutation both reach the row entity.
+  // The row is ALWAYS dirtied (not just on identity change): the box can
+  // hold the same object whose FIELDS mutated invisibly — the M5.5 case.
+  if (props.length > 0) {
+    entry.push(
+      t.objectProperty(
+        t.identifier('updateProps'),
+        t.arrowFunctionExpression(
+          [t.identifier(site.itemParam)],
+          t.blockStatement([
+            t.expressionStatement(
+              t.callExpression(md('setProps'), [
+                t.identifier('rowId'),
+                t.arrayExpression(props.map((p) => t.cloneNode(p))),
+              ]),
+            ),
+            t.expressionStatement(
+              t.callExpression(md('markDirty'), [t.identifier('rowId')]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
   return t.arrowFunctionExpression(
     [t.identifier(site.itemParam), t.identifier('rowId')],
     t.blockStatement([
@@ -522,19 +617,15 @@ function buildComponentRowCreate(site: MapSite): t.ArrowFunctionExpression {
           t.callExpression(t.identifier(site.rowComp!), [
             t.identifier('rowId'),
             t.identifier('id'), // owner's id — closure over the factory scope
-            ...props,
+            ...(props.length > 0 ? [t.arrayExpression(props)] : []),
           ]),
         ),
       ]),
-      t.returnStatement(
-        t.objectExpression([
-          t.objectProperty(t.identifier('nodes'), t.arrayExpression([el])),
-          t.objectProperty(t.identifier('entities'), t.arrayExpression([t.identifier('rowId')])),
-        ]),
-      ),
+      t.returnStatement(t.objectExpression(entry)),
     ]),
   );
 }
+
 
 /**
  * An inline row is a small entity factory of its own, nested in the owner:

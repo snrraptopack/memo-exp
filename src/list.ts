@@ -45,6 +45,13 @@ export interface ListEntry {
    * sync nearly free; DOM is only touched when data actually changed.
    */
   update?: () => void;
+  /**
+   * R10: component rows only — re-push the row's props box from the current
+   * item on every reconcile that retains this entry. Item replacement AND
+   * item-field mutation both reach the row entity (setProps shallow-compares,
+   * so an unchanged item costs one comparison pass and nothing else).
+   */
+  updateProps?: (item: unknown) => void;
 }
 
 export type KeyFn<T> = (item: T) => unknown;
@@ -145,6 +152,7 @@ export function createListRegion<T>(
         seq[i] = oi;
         if (oi <= lastOld) inOrder = false;
         else lastOld = oi;
+        entry.updateProps?.(item); // R10: re-push the props box (component rows)
         entry.update?.(); // M5.5: sync retained row with (possibly mutated) item
       } else {
         entry = create(item, rowIdFor(k));
