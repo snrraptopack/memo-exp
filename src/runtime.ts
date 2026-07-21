@@ -14,6 +14,7 @@ export {
   registeredIds,
   has,
   markDirty,
+  undirty,
   markDirtySubtree,
   commit,
   setScheduler,

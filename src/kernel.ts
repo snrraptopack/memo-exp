@@ -192,6 +192,16 @@ export function markDirty(id: EntityId): void {
 }
 
 /**
+ * Cancel a pending dirty (M5.7): a list row that just rendered through the
+ * reconcile resync (M5.5 entry.update) must not render a second, identical
+ * time when the commit batch reaches it. Only removes a PENDING entry —
+ * if the row is re-dirtied later (cascade), it renders again as usual.
+ */
+export function undirty(id: EntityId): void {
+  dirtySet.delete(id);
+}
+
+/**
  * Mark an entity and ALL its descendants dirty — the "root commit" fallback
  * for opaque state (spec §4.5 fallback rule). Equivalent to Imba re-rendering
  * from the mounted root: correct under any circumstance, just not scoped.
@@ -244,16 +254,22 @@ export function commit(): void {
     // to children, update-driven invalidation). Depth-sorted batches keep
     // parent-before-child within and across passes. A bound guards cycles.
     for (let pass = 0; pass < 100 && dirtySet.size > 0; pass++) {
+      // M5.7: keep ids IN the dirty set until the moment they render —
+      // a render that runs earlier in this batch (parent list reconcile →
+      // M5.5 row resync) may cancel a row's pending render via undirty().
       const batch: Entity[] = [];
       for (const id of dirtySet) {
         const e = registry.get(id);
         if (e) batch.push(e);
+        else dirtySet.delete(id); // dead letter: dirtied, then unregistered
       }
-      dirtySet.clear();
 
       batch.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
 
-      for (const e of batch) e.render();
+      for (const e of batch) {
+        if (dirtySet.delete(e.id)) e.render();
+      }
+      // ids dirtied DURING renders (cascade) stay in the set → next pass
     }
     if (dirtySet.size > 0) {
       throw new Error(

@@ -29,7 +29,7 @@
  * Object identity keys get stable synthetic id segments (#1, #2, ...).
  */
 
-import { unregisterSubtree, type EntityId } from './kernel';
+import { unregisterSubtree, undirty, type EntityId } from './kernel';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */
@@ -108,7 +108,27 @@ export function createListRegion<T>(
   let cache = new Map<unknown, ListEntry>();
   let prevIndex = new Map<unknown, number>(); // key -> position in the PREVIOUS order
   const syntheticIds = new Map<unknown, string>();
+  const keyToRowId = new Map<unknown, EntityId>(); // M5.7: avoid re-concat per frame
   let syntheticCounter = 0;
+  // M5.7: previous frame's keys + entries in order, for the shape fast path.
+  let prevKeys: unknown[] = [];
+  let prevEntries: ListEntry[] = [];
+  let prevRowIds: EntityId[] = [];
+
+  /**
+   * M5.7: sync a retained row with its (possibly mutated) item, then cancel
+   * its pending dirty — the row just rendered with current state, so a
+   * wildcard-dirtied entry in the commit batch would render it identically
+   * a second time. Component rows (updateProps only, no update closure)
+   * keep their dirty: their render IS the props propagation.
+   */
+  function syncRow(entry: ListEntry, item: T, rowId: EntityId): void {
+    entry.updateProps?.(item); // R10: re-push the props box (component rows)
+    if (entry.update !== undefined) {
+      entry.update(); // M5.5: sync retained row with (possibly mutated) item
+      undirty(rowId); // M5.7: no double render
+    }
+  }
 
   function rowIdFor(k: unknown): EntityId {
     const t = typeof k;
@@ -124,8 +144,27 @@ export function createListRegion<T>(
   }
 
   function reconcile(items: readonly T[]): void {
+    // ---- M5.7 shape fast path ---------------------------------------------
+    // Same length AND every key identical at every position → no additions,
+    // no removals, no reorder is possible: skip ALL map building and LIS.
+    // This is the steady state of every list that only sees content edits.
+    if (items.length === prevKeys.length) {
+      let same = true;
+      for (let i = 0; i < items.length; i++) {
+        if (key(items[i] as T) !== prevKeys[i]) { same = false; break; }
+      }
+      if (same) {
+        for (let i = 0; i < items.length; i++) {
+          syncRow(prevEntries[i]!, items[i] as T, prevRowIds[i]!);
+        }
+        return;
+      }
+    }
+
     const old = cache;
     const next = new Map<unknown, ListEntry>();
+    const keys: unknown[] = new Array(items.length);
+    const rowIds: EntityId[] = new Array(items.length);
 
     // ---- pass 1 (forward): reuse or create ----------------------------------
     // M5.6: nextIndex is fused into this pass (no separate key array + loop),
@@ -146,28 +185,36 @@ export function createListRegion<T>(
         throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
       }
       let entry = old.get(k);
+      let rowId: EntityId;
       if (entry !== undefined) {
         old.delete(k);
+        rowId = keyToRowId.get(k)!;
         const oi = prevIndex.get(k) ?? -1;
         seq[i] = oi;
         if (oi <= lastOld) inOrder = false;
         else lastOld = oi;
-        entry.updateProps?.(item); // R10: re-push the props box (component rows)
-        entry.update?.(); // M5.5: sync retained row with (possibly mutated) item
+        syncRow(entry, item, rowId);
       } else {
-        entry = create(item, rowIdFor(k));
+        rowId = rowIdFor(k);
+        keyToRowId.set(k, rowId);
+        entry = create(item, rowId);
         seq[i] = -1;
         hasNew = true;
       }
       next.set(k, entry);
       nextIndex.set(k, i);
       ordered[i] = entry;
+      keys[i] = k;
+      rowIds[i] = rowId;
     }
 
     // ---- fast path: pure content sync, zero structural work -----------------
     if (!hasNew && old.size === 0 && inOrder) {
       prevIndex = nextIndex;
       cache = next;
+      prevKeys = keys;
+      prevEntries = ordered;
+      prevRowIds = rowIds;
       return;
     }
 
@@ -176,6 +223,7 @@ export function createListRegion<T>(
       for (const n of entry.nodes) n.parentNode?.removeChild(n);
       for (const eid of entry.entities) unregisterSubtree(eid);
       syntheticIds.delete(k);
+      keyToRowId.delete(k);
     }
 
     // ---- pass 2 (reverse): LIS-guided placement ------------------------------
@@ -212,6 +260,9 @@ export function createListRegion<T>(
     // ---- bookkeeping for the next reconcile ----------------------------------
     prevIndex = nextIndex;
     cache = next;
+    prevKeys = keys;
+    prevEntries = ordered;
+    prevRowIds = rowIds;
   }
 
   return {
