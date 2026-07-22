@@ -168,6 +168,10 @@ export function has(id: EntityId): boolean {
   return registry.has(id);
 }
 
+export function getEntity(id: EntityId): Entity | undefined {
+  return registry.get(id);
+}
+
 /**
  * Live entity ids for the access-table resolver. Cached — the array is
  * rebuilt only when the registry mutates, so per-event cost is zero.

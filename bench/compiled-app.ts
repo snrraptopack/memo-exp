@@ -1,6 +1,7 @@
 /**
  * @file compiled-app.ts
  * Benchmark app compiled dynamically from REAL TSX source via compile().
+ * Tests component <Row> with the new single-pass reconcile engine.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

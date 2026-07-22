@@ -29,7 +29,7 @@
  * Object identity keys get stable synthetic id segments (#1, #2, ...).
  */
 
-import { unregisterSubtree, undirty, type EntityId } from './kernel';
+import { unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */
@@ -161,6 +161,13 @@ export function createListRegion<T>(
     if (entry.update !== undefined) {
       entry.update(); // M5.5: sync retained row with (possibly mutated) item
       undirty(rowId); // M5.7: no double render
+    } else {
+      // Component row: render entity update directly in-place and cancel dirty (Layer 1 single-pass fix)
+      const e = getEntity(rowId);
+      if (e) {
+        e.render();
+        undirty(rowId);
+      }
     }
   }
 
