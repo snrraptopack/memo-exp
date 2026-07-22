@@ -42,9 +42,9 @@ export function clearEventLog(): void {
  * This is THE invalidation entry point — handlers and programmatic sources
  * share it, so there is exactly one routing code path in the runtime.
  */
-export function commitWrites(writes: readonly string[]): void {
+export function commitWrites(writes: readonly string[], payload?: Record<string, any>): void {
   // registeredIds() is a cached array (zero per-event allocation) — do not spread it
-   const resolved = resolveWrites(writes, registeredIds());
+  const resolved = resolveWrites(writes, registeredIds(), payload);
   if (resolved === 'root-subtree') {
     markDirtySubtree(getRootId());
     return;

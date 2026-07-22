@@ -33,6 +33,7 @@ export interface AccessTable {
 let rootId: EntityId = '';
 let exactReaders = new Map<string, EntityId[]>();
 let wildReaders = new Map<string, RegExp[]>();
+let paramReaders = new Map<string, string[]>();
 let opaqueVars = new Set<string>();
 
 /**
@@ -133,6 +134,13 @@ export function installAccessTable(table: AccessTable, root: EntityId): void {
       }
     }
   }
+  for (const [variable, list] of Object.entries(table.params ?? {})) {
+    const pList = paramReaders.get(variable) ?? [];
+    for (const entry of list) {
+      if (!pList.includes(entry.pattern)) pList.push(entry.pattern);
+    }
+    paramReaders.set(variable, pList);
+  }
   for (const v of table.opaque ?? []) opaqueVars.add(v);
 
   // M5.6: rebuild the precompiled matcher state
@@ -148,6 +156,7 @@ export function resetAccessTable(): void {
   rootId = '';
   exactReaders = new Map();
   wildReaders = new Map();
+  paramReaders = new Map();
   opaqueVars = new Set();
   allKeysCache = [];
   wildMatched = new Map();
@@ -179,8 +188,25 @@ export function getRootId(): EntityId {
 export function resolveWrites(
   writes: readonly string[],
   _liveIds: readonly EntityId[],
+  payload?: Record<string, any>,
 ): EntityId[] | 'root-subtree' {
   if (writes.some(isOpaque)) return 'root-subtree';
+
+  if (payload) {
+    const out = new Set<EntityId>();
+    for (const w of writes) {
+      const patterns = paramReaders.get(w);
+      if (patterns) {
+        for (const rawPattern of patterns) {
+          const interpolated = rawPattern.replace(/\{([^}]+)\}/g, (_, key) => {
+            return payload[key] !== undefined && payload[key] !== null ? String(payload[key]) : '';
+          });
+          if (interpolated) out.add(interpolated);
+        }
+      }
+    }
+    if (out.size > 0) return [...out];
+  }
 
   // M5.6: full-resolution cache, valid until any expansion changes
   const cacheKey = writes.length === 1 ? (writes[0] as string) : writes.join(' ');

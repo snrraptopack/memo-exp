@@ -14,7 +14,11 @@ MD.installAccessTable({
  * The TSX source code for the Inline Row Benchmark App.
  */
 
+//import { setScheduler } from '../src/kernel';
 import { buildData } from './data';
+
+//setScheduler((fn) => fn()); // sync commit: measure all invalidation+render work
+
 let data = [];
 let selected = null;
 export function BenchAppInline(id, parent) {
