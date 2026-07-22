@@ -101,6 +101,7 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
           if (
             p.node.params.length === 1 &&
             t.isIdentifier(first) &&
+            first.name === 'props' &&
             t.isTSTypeLiteral(first.typeAnnotation?.typeAnnotation)
           ) {
             ctx.objectPropComponents.add(name);
