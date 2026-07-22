@@ -1,19 +1,22 @@
 /**
  * @file run-browser.ts
- * M4.5 — Drives the real-browser benchmark in headless Chromium.
+ * Drives the 4-way real-browser benchmark in headless Chromium.
  * Loads bench/browser.html, runs window.__runAll(), prints the table.
  */
- import puppeteer from 'puppeteer-core';
- import { fileURLToPath } from 'node:url';
- import { dirname } from 'node:path';
+import puppeteer from 'puppeteer-core';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 
- const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 interface BenchRow {
   name: string;
+  tsx: number;
+  inline: number;
   ours: number;
   vanilla: number;
-  ratio: number;
+  ratioTsx: number;
+  ratioInline: number;
 }
 
 const executablePath =
@@ -38,22 +41,26 @@ try {
     return fn();
   });
 
-  console.log('\nmemo-dom vs vanilla — REAL CHROMIUM, median of 7\n');
+  console.log('\n4-WAY REAL CHROMIUM BENCHMARK (median of 7)\n');
   console.log(
     'scenario'.padEnd(28),
-    'memo-dom'.padStart(10),
+    'tsx-comp'.padStart(12),
+    'tsx-inline'.padStart(12),
+    'legacy-ours'.padStart(14),
     'vanilla'.padStart(10),
-    'ratio'.padStart(8),
+    'inline/vanilla'.padStart(16),
   );
-  console.log('-'.repeat(58));
+  console.log('-'.repeat(95));
   for (const r of rows) {
-    const ratio =
-      r.ratio === null || !Number.isFinite(r.ratio) ? '>100x' : `${r.ratio.toFixed(2)}x`;
+    const ratioInline =
+      r.ratioInline === null || !Number.isFinite(r.ratioInline) ? '>100x' : `${r.ratioInline.toFixed(2)}x`;
     console.log(
       r.name.padEnd(28),
-      `${r.ours.toFixed(2)}ms`.padStart(10),
+      `${r.tsx.toFixed(2)}ms`.padStart(12),
+      `${r.inline.toFixed(2)}ms`.padStart(12),
+      `${r.ours.toFixed(2)}ms`.padStart(14),
       `${r.vanilla.toFixed(2)}ms`.padStart(10),
-       ratio.padStart(8),
+      ratioInline.padStart(16),
     );
   }
 } finally {

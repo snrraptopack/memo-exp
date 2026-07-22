@@ -19,6 +19,7 @@ export {
   commit,
   setScheduler,
   resetScheduler,
+  getEntity,
 } from './kernel';
 export type { Entity, EntityId } from './kernel';
 
