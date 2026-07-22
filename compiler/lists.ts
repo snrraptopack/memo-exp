@@ -113,7 +113,9 @@ export function analyzeMapSite(
   let suffixBase: string; // region suffix base (last path segment)
   if (t.isIdentifier(arrayExpr)) {
     const kind = ctx.state.get(arrayExpr.name);
-    if (kind !== 'let' && kind !== 'const') {
+    // R13: computeds are valid list sources (active.map(…) over a filtered
+    // derivation) — the region resyncs when the computed commits downstream
+    if (kind !== 'let' && kind !== 'const' && kind !== 'computed') {
       return fail(
         'memo-dom: lists must map over module-level array state (let items = [...], const items = [...], or store.todos) — R7 L1',
       );

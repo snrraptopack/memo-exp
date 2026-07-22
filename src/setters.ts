@@ -108,3 +108,21 @@ export function setStyle(
   if (value == null) el.style.removeProperty(prop);
   else el.style.setProperty(prop, value);
 }
+
+/**
+ * R13: change detection for computeds. Scalars compare by Object.is;
+ * arrays compare element-wise (Object.is) — a re-derivation that produces
+ * the same contents does NOT propagate downstream. Everything else
+ * (objects, null transitions, type changes) counts as changed.
+ */
+export function computedChanged(prev: unknown, next: unknown): boolean {
+  if (Object.is(prev, next)) return false;
+  if (Array.isArray(prev) && Array.isArray(next)) {
+    if (prev.length !== next.length) return true;
+    for (let i = 0; i < prev.length; i++) {
+      if (!Object.is(prev[i], next[i])) return true;
+    }
+    return false;
+  }
+  return true;
+}

@@ -1,22 +1,21 @@
 /**
- * emit.ts — R1–R4 + R7/R8 emission: component functions → entity factories.
+ * emit.ts — R1–R4 + R7 emission: component functions → entity factories.
  *
  *   R1  factory shape: (id, parent, …props), register before creation
  *   R2  JSX → creation branch with cached node variables (post-order)
  *   R3  dynamic expressions → numbered slots with guarded setters
  *   R4  creation runs the same guarded setters (null cache → first write)
  *   R7  {items.map(item => …)} → createListRegion + row factories
- *   R8  {cond ? <A/> : <B/>}   → createCondRegion + branch factories
  *
  * Emission state is explicit (EmitScope) rather than closure-local so that
- * inline list rows and conditional branches can emit into a NESTED scope:
- * a row/branch is a small factory of its own (own slots, own update),
- * created per item / per swap by its region.
+ * inline list rows can emit into a NESTED scope: an inline row is a small
+ * entity factory of its own (own slots, own update, register parent=id),
+ * created per item by the region.
  */
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { attrExpr, exprReadsState, md, nodeHasJsx, type Ctx } from './context';
+import { attrExpr, exprReadsState, keyPathOf, md, nodeHasJsx, type Ctx, type RowCtx } from './context';
 import { analyzeMapSite, matchMapCall, type MapSite } from './lists';
 import { analyzeCondSite, matchCond } from './conds';
 import { buildHandler } from './handlers';
@@ -53,15 +52,64 @@ function newScope(): EmitScope {
 // shared statement builders
 // ---------------------------------------------------------------------
 
+/**
+ * M5.9: dynamic slots are per-scope LOCALS (`let $s0, $s1, …`), not a cache
+ * object with string keys — the update closure guards inline
+ * (`if ($s0 !== ($t = expr)) { $s0 = $t; …write… }`), which keeps the whole
+ * row update in one inlinable function instead of N calls × string lookups.
+ */
+function slotVar(key: string): t.Identifier {
+  return t.identifier(`$${key}`);
+}
+
+/** Per-scope temp for guard evaluation ($t — $-prefixed, never a user var). */
+const TMP = '$t';
+
 function cacheDecl(slots: string[]): t.Statement {
-  return t.variableDeclaration('const', [
-    t.variableDeclarator(
-      t.identifier('$'),
-      t.objectExpression(
-        slots.map((k) => t.objectProperty(t.stringLiteral(k), t.nullLiteral())),
+  return t.variableDeclaration('let', [
+    ...slots.map((k) => t.variableDeclarator(slotVar(k))),
+    t.variableDeclarator(t.identifier(TMP)),
+  ]);
+}
+
+/**
+ * The inline guarded write shared by every dynamic slot:
+ * `if ($sK !== ($t = EXPR)) { $sK = $t; WRITE($t) }` — used for BOTH the
+ * creation and the update branch: a fresh slot (undefined) never equals a
+ * legit first value except undefined/null/boolean, and for those the
+ * freshly-created DOM node already holds exactly what the write would set
+ * (empty text data, empty className, absent attribute).
+ */
+function slotGuard(
+  key: string,
+  expr: t.Expression,
+  write: (tmp: t.Identifier) => t.Statement,
+): t.Statement {
+  const tmp = (): t.Identifier => t.identifier(TMP);
+  return t.ifStatement(
+    t.binaryExpression('!==', slotVar(key), t.assignmentExpression('=', tmp(), expr)),
+    t.blockStatement([
+      t.expressionStatement(t.assignmentExpression('=', slotVar(key), tmp())),
+      write(tmp()),
+    ]),
+  );
+}
+
+/** The value-normalization shared by text semantics: null/undefined/bool → ''. */
+function textValue(tmp: t.Identifier): t.Expression {
+  return t.conditionalExpression(
+    t.logicalExpression(
+      '||',
+      t.binaryExpression('==', t.cloneNode(tmp), t.nullLiteral()),
+      t.binaryExpression(
+        '===',
+        t.unaryExpression('typeof', t.cloneNode(tmp), true),
+        t.stringLiteral('boolean'),
       ),
     ),
-  ]);
+    t.stringLiteral(''),
+    t.callExpression(t.identifier('String'), [t.cloneNode(tmp)]),
+  );
 }
 
 function updateDecl(updaters: Array<() => t.Statement>): t.Statement {
@@ -120,82 +168,125 @@ export function transformComponent(
   const returnStmt = jsxTop[0]!.node;
   const jsx = returnStmt.argument as t.JSXElement;
 
+  // -- R10: prop names (needed early: R11 row context uses the first one)
+  const propNames: string[] = [];
+  for (const p of node.params) {
+    if (!t.isIdentifier(p)) {
+      throw path.buildCodeFrameError(
+        `memo-dom: component '${name}' props must be plain identifier params (R10 L1) — destructure inside the body if needed`,
+      );
+    }
+    propNames.push(p.name);
+  }
+
+  // -- R11: a listed (multi-instance) component is a list row — handlers
+  // writing its item prop's fields commit locally (markDirty(id)).
+  let rowCtx: RowCtx | undefined;
+  const refs = ctx.listedSites.get(name);
+  if (refs !== undefined && refs.length > 0 && propNames.length > 0) {
+    const keyPaths = refs.map((r) => keyPathOf(r.keyExpr ?? null, r.itemParam ?? ''));
+    const first = JSON.stringify(keyPaths[0]);
+    const merged = keyPaths.every((k) => JSON.stringify(k) === first)
+      ? keyPaths[0]!
+      : null; // disagreeing key fns → unknown → all item writes fall back
+    rowCtx = {
+      itemParam: propNames[0]!,
+      rowIdVar: 'id',
+      keyPath: merged,
+      arrayName: refs[0]!.arrayName ?? '',
+    };
+  }
+
   // -- emit --------------------------------------------------------------
   const scope = newScope();
-  const rootVar = emitElement(ctx, scope, jsx, name, path);
+  const rootVar = emitElement(ctx, scope, jsx, name, path, null, rowCtx);
 
   const kept = node.body.body.filter((s) => s !== returnStmt);
 
-    // -- R10: props box. User params become locals synced from __p ---------
-    const propNames: string[] = [];
-    for (const p of node.params) {
-      if (!t.isIdentifier(p)) {
-        throw path.buildCodeFrameError(
-          `memo-dom: component '${name}' props must be plain identifier params (R10 L1) — destructure inside the body if needed`,
-        );
-      }
-      propNames.push(p.name);
-    }
-    if (propNames.length > 0) {
-      // re-sync locals from the box at the top of every update
-      scope.updaters.unshift(() =>
-        t.blockStatement(
-          propNames.map((pn, i) =>
-            t.expressionStatement(
-              t.assignmentExpression(
-                '=',
-                t.identifier(pn),
-                t.memberExpression(t.identifier('__p'), t.numericLiteral(i), true),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Body order matters: register BEFORE creation so children (created and
-    // registered by factory calls inside the creation block) always find
-    // their parent in the registry — the M4 parent-first invariant. The
-    // update closure only runs post-mount, so closing over node variables
-    // declared later in the same scope is safe.
-    const body: t.Statement[] = [cacheDecl(scope.slots)];
-    if (propNames.length > 0) {
-      body.push(
-        t.variableDeclaration(
-          'let',
-          propNames.map((pn, i) =>
-            t.variableDeclarator(
+  // -- R10: props box. User params become locals synced from __p ---------
+  if (propNames.length > 0) {
+    // re-sync locals from the box at the top of every update
+    scope.updaters.unshift(() =>
+      t.blockStatement(
+        propNames.map((pn, i) =>
+          t.expressionStatement(
+            t.assignmentExpression(
+              '=',
               t.identifier(pn),
               t.memberExpression(t.identifier('__p'), t.numericLiteral(i), true),
             ),
           ),
         ),
-      );
-    }
-    body.push(
-      ...kept,
-      updateDecl(scope.updaters),
-      registerStmt(t.identifier('id'), t.identifier('parent')),
+      ),
     );
-    if (propNames.length > 0) {
-      body.push(
-        t.expressionStatement(
-          t.callExpression(md('registerProps'), [t.identifier('id'), t.identifier('__p')]),
-        ),
-      );
-    }
-    body.push(...scope.creation, t.returnStatement(t.identifier(rootVar)));
+  }
 
-    node.params =
-      propNames.length > 0
-        ? [t.identifier('id'), t.identifier('parent'), t.identifier('__p')]
-        : [t.identifier('id'), t.identifier('parent')];
-    node.body = t.blockStatement(body);
+  // Body order matters: register BEFORE creation so children (created and
+  // registered by factory calls inside the creation block) always find
+  // their parent in the registry — the M4 parent-first invariant. The
+  // update closure only runs post-mount, so closing over node variables
+  // declared later in the same scope is safe.
+  const body: t.Statement[] = [cacheDecl(scope.slots)];
+  if (propNames.length > 0) {
+    body.push(
+      t.variableDeclaration(
+        'let',
+        propNames.map((pn, i) =>
+          t.variableDeclarator(
+            t.identifier(pn),
+            t.memberExpression(t.identifier('__p'), t.numericLiteral(i), true),
+          ),
+        ),
+      ),
+    );
+  }
+  body.push(
+    ...kept,
+    updateDecl(scope.updaters),
+    registerStmt(t.identifier('id'), t.identifier('parent')),
+  );
+  if (propNames.length > 0) {
+    body.push(
+      t.expressionStatement(
+        t.callExpression(md('registerProps'), [t.identifier('id'), t.identifier('__p')]),
+      ),
+    );
+  }
+  body.push(...scope.creation, t.returnStatement(t.identifier(rootVar)));
+
+  node.params =
+    propNames.length > 0
+      ? [t.identifier('id'), t.identifier('parent'), t.identifier('__p')]
+      : [t.identifier('id'), t.identifier('parent')];
+  node.body = t.blockStatement(body);
 }
 
 // ---------------------------------------------------------------------
 // JSX emission
 // ---------------------------------------------------------------------
+
+/**
+ * M5.8: attributes that are really DOM IDL properties — written via
+ * setProp (el.x = v) instead of setAttribute. Conservative set: boolean
+ * and value-bearing properties where the attribute form is only a
+ * DEFAULT (checked, value, …), never reflective state we should stomp.
+ */
+const DOM_PROP_ATTRS = new Set([
+  'checked',
+  'value',
+  'selected',
+  'disabled',
+  'hidden',
+  'multiple',
+  'required',
+  'readonly',
+  'muted',
+  'open',
+  'controls',
+  'loop',
+  'autofocus',
+  'autoplay',
+]);
 
 function freshSlot(scope: EmitScope): string {
   const key = `s${scope.slots.length}`;
@@ -222,16 +313,17 @@ function nodeVar(scope: EmitScope, tag: string): string {
   return `${tag}${n}`;
 }
 
-/** setText($, key, textNode, value) */
+/** M5.9: inline text write — if ($sK !== ($t = expr)) { $sK = $t; node.data = … } */
 function textSetter(key: string, varName: string, expr: t.Expression): () => t.Statement {
   return () =>
-    t.expressionStatement(
-      t.callExpression(md('setText'), [
-        t.identifier('$'),
-        t.stringLiteral(key),
-        t.identifier(varName),
-        t.cloneNode(expr),
-      ]),
+    slotGuard(key, t.cloneNode(expr), (tmp) =>
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.memberExpression(t.identifier(varName), t.identifier('data')),
+          textValue(tmp),
+        ),
+      ),
     );
 }
 
@@ -277,6 +369,7 @@ function emitElement(
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
   nestedIn: 'row' | 'cond' | null = null,
+  rowCtx?: RowCtx,
 ): string {
   const open = el.openingElement;
   const tag = (open.name as t.JSXIdentifier).name;
@@ -300,7 +393,9 @@ function emitElement(
           `memo-dom: prop '${(a.name as t.JSXIdentifier).name}' on <${tag}> must be an expression (L1)`,
         );
       }
-      if (exprReadsState(ctx, v)) needsPush = true;
+      // R12: instance-state reads also need re-push (parent re-renders on
+      // instance writes → this updater re-syncs the child's props box)
+      if (exprReadsState(ctx, v, compName)) needsPush = true;
       props.push(t.cloneNode(v));
     }
     const childId = t.binaryExpression('+', t.identifier('id'), t.stringLiteral(idSuffix));
@@ -368,7 +463,7 @@ function emitElement(
       }
       childVars.push(emitText(scope, t.cloneNode(ex)));
     } else if (t.isJSXElement(child)) {
-      childVars.push(emitElement(ctx, scope, child, compName, compPath, nestedIn));
+      childVars.push(emitElement(ctx, scope, child, compName, compPath, nestedIn, rowCtx));
     } else {
       throw compPath.buildCodeFrameError(
         'memo-dom: spread children are not supported (L1)',
@@ -410,7 +505,7 @@ function emitElement(
           `memo-dom: ${attrName} needs a handler expression (L1)`,
         );
       }
-      const handler = buildHandler(ctx, compPath, v, attrName, compName);
+      const handler = buildHandler(ctx, compPath, v, attrName, compName, rowCtx);
       scope.creation.push(
         t.expressionStatement(
           t.assignmentExpression(
@@ -455,25 +550,58 @@ function emitElement(
     }
     const expr = t.cloneNode(v);
     const key = freshSlot(scope);
+    // M5.8: IDL-property attributes (checked, value, disabled, …) write the
+    // DOM property, not the attribute — faster (no attribute-tree walk) and
+    // semantically correct for state that lives on the element object.
+    const propName = DOM_PROP_ATTRS.has(attrName) ? attrName : null;
+    // M5.9: inline guarded writes (see slotGuard) — no MD.setX call overhead
     const makeCall = (): t.Statement =>
       attrName === 'class'
-        ? t.expressionStatement(
-            t.callExpression(md('setClassName'), [
-              t.identifier('$'),
-              t.stringLiteral(key),
-              t.identifier(varName),
-              t.cloneNode(expr),
-            ]),
+        ? slotGuard(key, t.cloneNode(expr), (tmp) =>
+            t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                t.memberExpression(t.identifier(varName), t.identifier('className')),
+                tmp,
+              ),
+            ),
           )
-        : t.expressionStatement(
-            t.callExpression(md('setAttr'), [
-              t.identifier('$'),
-              t.stringLiteral(key),
-              t.identifier(varName),
-              t.stringLiteral(attrName),
-              t.cloneNode(expr),
-            ]),
-          );
+        : propName !== null
+          ? slotGuard(key, t.cloneNode(expr), (tmp) =>
+              t.expressionStatement(
+                t.assignmentExpression(
+                  '=',
+                  t.memberExpression(t.identifier(varName), t.identifier(propName)),
+                  tmp,
+                ),
+              ),
+            )
+          : slotGuard(key, t.cloneNode(expr), (tmp) =>
+              t.expressionStatement(
+                t.conditionalExpression(
+                  t.logicalExpression(
+                    '||',
+                    t.binaryExpression('==', t.cloneNode(tmp), t.nullLiteral()),
+                    t.binaryExpression('===', t.cloneNode(tmp), t.booleanLiteral(false)),
+                  ),
+                  t.callExpression(
+                    t.memberExpression(t.identifier(varName), t.identifier('removeAttribute')),
+                    [t.stringLiteral(attrName)],
+                  ),
+                  t.callExpression(
+                    t.memberExpression(t.identifier(varName), t.identifier('setAttribute')),
+                    [
+                      t.stringLiteral(attrName),
+                      t.conditionalExpression(
+                        t.binaryExpression('===', t.cloneNode(tmp), t.booleanLiteral(true)),
+                        t.stringLiteral(''),
+                        t.callExpression(t.identifier('String'), [t.cloneNode(tmp)]),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
     scope.creation.push(makeCall());
     scope.updaters.push(makeCall);
   }
@@ -626,7 +754,6 @@ function buildComponentRowCreate(site: MapSite): t.ArrowFunctionExpression {
   );
 }
 
-
 /**
  * An inline row is a small entity factory of its own, nested in the owner:
  * own slot cache, own update closure, register(parent = owner id), and a
@@ -646,7 +773,16 @@ function buildInlineRowCreate(
       (a.name as t.JSXIdentifier).name !== 'key',
   );
   const rowScope = newScope();
-  const rootVar = emitElement(ctx, rowScope, site.jsx, compName, compPath, 'row');
+  // R11: handlers inside the row may write the item's fields — those
+  // commits stay row-local (markDirty(rowId)); key-field writes fall back
+  // to a source-array write handled inside handler analysis.
+  const rowCtx: RowCtx = {
+    itemParam: site.itemParam,
+    rowIdVar: 'rowId',
+    keyPath: keyPathOf(site.keyExpr, site.itemParam),
+    arrayName: site.arrayName,
+  };
+  const rootVar = emitElement(ctx, rowScope, site.jsx, compName, compPath, 'row', rowCtx);
   return t.arrowFunctionExpression(
     [t.identifier(site.itemParam), t.identifier('rowId')],
     t.blockStatement([

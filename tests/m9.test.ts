@@ -8,8 +8,7 @@
  * - component rows: reconcile re-pushes the row's box (updateProps), so
  *   item-field mutation and item replacement both reach retained rows
  * - unmounted child: setProps is a silent dead letter; the box is dropped
-   */
-
+ */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';

@@ -29,6 +29,7 @@ export {
   setAttr,
   setProp,
   setStyle,
+  computedChanged,
 } from './setters';
 export type { SlotCache } from './setters';
 

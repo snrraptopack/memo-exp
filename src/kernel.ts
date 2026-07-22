@@ -114,9 +114,11 @@ function notifyRegistry(id: EntityId, kind: 'add' | 'remove'): void {
 
 export function register(entity: Entity): void {
   const parent = entity.parent !== null ? registry.get(entity.parent) : undefined;
-  // depth from the parent's number when possible — string scan is the fallback
+  // an explicit depth wins (R13 computeds register at -1: recompute BEFORE
+  // any reader renders); else derive from the parent — string scan fallback
   entity.depth =
-    parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id);
+    entity.depth ??
+    (parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id));
   registry.set(entity.id, entity);
 
   if (parent) {
@@ -198,7 +200,9 @@ export function markDirty(id: EntityId): void {
  * if the row is re-dirtied later (cascade), it renders again as usual.
  */
 export function undirty(id: EntityId): void {
-  dirtySet.delete(id);
+  // size gate first: rows are undirtied on EVERY reconcile resync (M5.7)
+  // while almost never actually pending — skip the string hash lookup then
+  if (dirtySet.size !== 0) dirtySet.delete(id);
 }
 
 /**

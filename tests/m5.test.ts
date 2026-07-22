@@ -53,8 +53,9 @@ describe('M5 compiler — code generation', () => {
     // R1: entity factory + register
     expect(code).toContain('function Counter(id, parent)');
     expect(code).toContain('MD.register(');
-    // R3/R4: guarded setters over numbered slots
-    expect(code).toContain('MD.setText($,');
+    // R3/R4 (M5.9 form): inline guarded writes over numbered slot locals
+    expect(code).toContain('if ($s0 !== ($t = count))');
+    expect(code).toContain('text1.data =');
     // R5: 'count' is read only by Counter → local commit, no write-set const
     expect(code).toContain('MD.markDirty(id)');
     expect(code).not.toContain('WRITES_');

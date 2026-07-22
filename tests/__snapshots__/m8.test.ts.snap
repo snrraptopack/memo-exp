@@ -17,7 +17,7 @@ MD.installAccessTable({
 let loggedIn = false;
 let count = 0;
 export function CondApp(id, parent) {
-  const $ = {};
+  let $t;
   const toggle = () => {
     loggedIn = !loggedIn;
     MD.commitWrites(WRITES_0);
@@ -44,15 +44,19 @@ export function CondApp(id, parent) {
     render: () => when0.update()
   });
   const when0 = MD.createCondRegion(div0, id + "/when0", () => loggedIn ? 0 : 1, [() => {
-    const $ = {
-      "s0": null
-    };
+    let $s0, $t;
     const update = () => {
-      MD.setText($, "s0", text1, count);
+      if ($s0 !== ($t = count)) {
+        $s0 = $t;
+        text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+      }
     };
     const text0 = document.createTextNode("in ");
     const text1 = document.createTextNode("");
-    MD.setText($, "s0", text1, count);
+    if ($s0 !== ($t = count)) {
+      $s0 = $t;
+      text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
     const text2 = document.createTextNode(" ");
     const text3 = document.createTextNode("+");
     const button0 = document.createElement("button");
@@ -69,7 +73,7 @@ export function CondApp(id, parent) {
       update: update
     };
   }, () => {
-    const $ = {};
+    let $t;
     const update = () => {};
     const text0 = document.createTextNode("out");
     const span0 = document.createElement("span");

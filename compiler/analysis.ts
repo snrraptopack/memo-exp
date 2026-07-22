@@ -35,6 +35,7 @@ import {
   MUTATOR_METHODS,
   walkNodes,
   type Ctx,
+  type ComputedAnalysis,
   type FnSummary,
 } from './context';
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
@@ -471,7 +472,13 @@ function collectReads(ctx: Ctx): void {
             }
             const sites = ctx.listedSites.get(site.rowComp!) ?? [];
             if (!sites.some((s) => s.owner === name && s.suffix === site.suffix)) {
-              sites.push({ owner: name, suffix: site.suffix });
+              sites.push({
+                owner: name,
+                suffix: site.suffix,
+                itemParam: site.itemParam,
+                keyExpr: site.keyExpr,
+                arrayName: site.arrayName,
+              });
             }
             ctx.listedSites.set(site.rowComp!, sites);
           } else {
@@ -512,6 +519,9 @@ function collectReads(ctx: Ctx): void {
 
       Identifier(id) {
         if (!ctx.state.has(id.node.name)) return;
+        if (ctx.instanceState.get(name)?.has(id.node.name) === true) {
+          return; // R12: instance state SHADOWS module state in its component
+        }
         const parent = id.parentPath;
         if (
           parent.isAssignmentExpression({ operator: '=' }) &&
@@ -531,9 +541,198 @@ function collectReads(ctx: Ctx): void {
   }
 }
 
+/**
+ * R13: analyze a candidate computed initializer — collect the state keys it
+ * reads and decide whether it is a legal derivation.
+ *
+ * Detection is BY REFERENCE (R13.1, replacing the PURE_METHODS whitelist):
+ * any expression that mentions an already-declared state variable is a
+ * derivation — arbitrary method calls, unknown/imported/global functions,
+ * `new`, tagged templates, and local-mutating callbacks are all fine. A
+ * derivation recomputes on every write to its sources and computedChanged
+ * gates what propagates downstream; keeping it a pure function of state is
+ * the author's responsibility (same contract as Vue computed / Svelte $:).
+ *
+ * The blacklist covers only what would corrupt the state model itself:
+ *   - assignments / updates to non-locals (writes belong in handlers)
+ *   - mutator calls on state (mutating a source inside its own derivation)
+ *   - calls to module helpers KNOWN to write state (reuses the same write
+ *     analysis handlers rely on — a precise negative, not a whitelist)
+ *   - await / yield (derivations must be synchronous)
+ * Locals (nested function params, declarators) are collected conservatively
+ * (name-wide), so `reduce((acc, t) => { acc.push(t); return acc; }, [])`
+ * and `(s, t) => (s += t.n, s)` are fine. The walk never early-exits on
+ * impure: read collection continues so a state-touching impure const is
+ * always an ERROR, never a silent plain const.
+ */
+export function analyzeComputed(ctx: Ctx, expr: t.Node): ComputedAnalysis {
+  const reads = new Set<string>();
+  let impure = false;
+  let reason: string | undefined;
+  const locals = new Set<string>();
+  const fail = (r: string): void => {
+    if (!impure) {
+      impure = true;
+      reason = r;
+    }
+  };
+  const noteLocalPattern = (id: t.LVal): void => {
+    if (t.isIdentifier(id)) locals.add(id.name);
+    else {
+      walkNodes(id, (n) => {
+        if (t.isIdentifier(n)) locals.add(n.name);
+      });
+    }
+  };
+  walkNodes(expr, (n) => {
+    if (t.isFunction(n)) {
+      for (const p of n.params) {
+        if (t.isLVal(p)) noteLocalPattern(p);
+      }
+      return;
+    }
+    if (t.isVariableDeclarator(n) && t.isLVal(n.id)) {
+      noteLocalPattern(n.id);
+      return;
+    }
+    if (t.isAssignmentExpression(n)) {
+      const root = t.isIdentifier(n.left)
+        ? n.left.name
+        : t.isMemberExpression(n.left)
+          ? memberRootName(n.left)
+          : null;
+      if (root === null || !locals.has(root)) {
+        fail('contains an assignment — writes belong in handlers, not derivations');
+      }
+      return;
+    }
+    if (t.isUpdateExpression(n)) {
+      const a = n.argument;
+      const root = t.isIdentifier(a)
+        ? a.name
+        : t.isMemberExpression(a)
+          ? memberRootName(a)
+          : null;
+      if (root === null || !locals.has(root)) {
+        fail('contains an update (++/--) — writes belong in handlers, not derivations');
+      }
+      return;
+    }
+    if (t.isAwaitExpression(n) || t.isYieldExpression(n)) {
+      fail('uses await/yield — derivations must be synchronous');
+      return;
+    }
+    if (t.isCallExpression(n)) {
+      const c = n.callee;
+      if (t.isMemberExpression(c)) {
+        const pn =
+          !c.computed && t.isIdentifier(c.property)
+            ? c.property.name
+            : c.computed && t.isStringLiteral(c.property)
+              ? c.property.value
+              : null;
+        if (pn !== null && MUTATOR_METHODS.has(pn)) {
+          const root = t.isIdentifier(c.object)
+            ? c.object.name
+            : t.isMemberExpression(c.object)
+              ? memberRootName(c.object)
+              : null;
+          // mutating LOCALS is fine (reduce accumulators); mutating the
+          // derivation's own source is not
+          if (root !== null && !locals.has(root) && ctx.state.has(root)) {
+            fail(
+              `calls '${pn}' on state '${root}' — mutating a source inside its own derivation; derive from a copy instead`,
+            );
+          }
+        }
+        // every other member call is fine — any object, any method
+      } else if (t.isIdentifier(c) && ctx.helpers.has(c.name)) {
+        const sum = summarizeHelper(ctx, c.name);
+        for (const r of sum.reads) reads.add(r);
+        if (sum.writes.size > 0) {
+          for (const w of sum.writes) reads.add(w); // ensure the error triggers
+          fail(`calls helper '${c.name}' which writes state — writes belong in handlers`);
+        } else if (sum.opaque) {
+          fail(`calls recursive helper '${c.name}' which cannot be analyzed`);
+        }
+      }
+      // unknown / imported / global functions are fine — detection is by
+      // state REFERENCE; what they compute is the author's responsibility
+      return;
+    }
+    if (t.isIdentifier(n)) {
+      if (!locals.has(n.name) && ctx.state.has(n.name)) reads.add(n.name);
+      return;
+    }
+    if (t.isMemberExpression(n) && !n.computed) {
+      const key = memberKey(n);
+      if (key !== null && key.includes('.')) {
+        const root = key.split('.')[0]!;
+        if (!locals.has(root) && ctx.state.get(root) === 'store') reads.add(key);
+      }
+    }
+  });
+  return { reads, impure, reason };
+}
+
+/**
+ * R13: second-pass computed detection (needs the COMPLETE state map, so it
+ * runs after scanModuleState). A module-level `const x = <expression
+ * referencing state>` becomes a computed; a const that references state
+ * while WRITING/MUTATING it (or awaiting) is a compile error — never a
+ * silent plain const. Declared in order, so later computeds may read
+ * earlier ones (chains).
+ */
+function scanComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
+  for (const stmt of programPath.node.body) {
+    const inner = t.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
+    if (!t.isVariableDeclaration(inner) || inner.kind !== 'const') continue;
+    for (const decl of inner.declarations) {
+      if (!t.isIdentifier(decl.id) || decl.init == null) continue;
+      const name = decl.id.name;
+      if (ctx.state.has(name)) continue; // store / const-collection already
+      if (t.isFunction(decl.init) || t.isJSX(decl.init)) continue; // not data
+      const r = analyzeComputed(ctx, decl.init);
+      if (r.impure) {
+        if (r.reads.size > 0) {
+          throw new Error(
+            `memo-dom: const '${name}' is a state derivation but ${r.reason ?? 'cannot be analyzed'}. ` +
+              `Fix the derivation, or make it a 'let' you update in handlers.`,
+          );
+        }
+        continue; // impure but touches no state — a plain const
+      }
+      if (r.reads.size === 0) continue; // constant expression — plain const
+      ctx.state.set(name, 'computed');
+      ctx.computeds.set(name, { reads: r.reads });
+    }
+  }
+}
+
+/**
+ * R12: collect instance state — top-level let/var declarations of each
+ * component body (the factory closure of ONE instance). Runs before
+ * collectReads so instance names shadow module state in read attribution.
+ */
+function scanInstanceState(ctx: Ctx): void {
+  for (const [name, p] of ctx.compPaths) {
+    const vars = new Set<string>();
+    for (const stmt of p.node.body.body) {
+      if (!t.isVariableDeclaration(stmt)) continue;
+      if (stmt.kind !== 'let' && stmt.kind !== 'var') continue;
+      for (const d of stmt.declarations) {
+        if (t.isIdentifier(d.id)) vars.add(d.id.name);
+      }
+    }
+    if (vars.size > 0) ctx.instanceState.set(name, vars);
+  }
+}
+
 export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  scanInstanceState(ctx);
+  scanComputeds(ctx, programPath); // R13: after helpers are known
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)
@@ -617,6 +816,12 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
       `${v}/${suffix}/*`,
     ]);
     for (const v of vars) add(v, patterns);
+  }
+  // R13: computed entities read their source keys (exact id, no patterns —
+  // a computed is a module-level singleton). Depth -1 (emitted by the
+  // plugin) makes them recompute BEFORE any reader renders.
+  for (const [name, info] of ctx.computeds) {
+    for (const key of info.reads) add(key, [`${ctx.rootId}/$computed/${name}`]);
   }
 
   if (ctx.readers.size === 0 && ctx.opaqueVars.size === 0) return null;

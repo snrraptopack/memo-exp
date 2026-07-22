@@ -8,11 +8,6 @@
  *   - fire-and-forget nested callback (setTimeout / .then / subscription)
  *                             → commit at the end of THAT callback
  *
- * M5.3: commits are inserted before EVERY return of the writing scope
- * (early returns used to skip them); mutator calls are member-chain aware
- * (store.items.push → write 'store.items'); calls to module-level helpers
- * fold the callee's read/write summary into the calling scope.
- *
  * Commit form per scope:
  *   opaque (dynamic store path / store mutator) → markDirtySubtree(rootId)
  *   all writes read only by THIS component AND it is single-instance
@@ -21,7 +16,10 @@
  *
  * Multi-instance (listed) components are never locality-eligible: one row
  * writing `selected` must dirty every row, so it routes through the table.
- * Module-level functions used as handlers have no `id` — always the table.
+ *
+ * Mutator-method calls on plain `let` state (items.push(…)) are writes to
+ * the variable itself — precise, routes to its readers. On store objects
+ * they stay opaque (method summaries are an L1.5/L2 feature).
  */
 
 import type { NodePath } from '@babel/traverse';
@@ -33,7 +31,9 @@ import {
   memberKey,
   memberRootName,
   MUTATOR_METHODS,
+  writeTouchesKey,
   type Ctx,
+  type RowCtx,
 } from './context';
 import { summarizeHelper } from './analysis';
 
@@ -50,6 +50,7 @@ export function buildHandler(
   value: t.Expression,
   attrName: string,
   compName: string,
+  rowCtx?: RowCtx,
 ): t.Expression {
   let target:
     | t.ArrowFunctionExpression
@@ -95,7 +96,9 @@ export function buildHandler(
   // a shared declaration (used by several attributes) is analyzed once
   if (!ctx.analyzedFunctions.has(target)) {
     ctx.analyzedFunctions.add(target);
-    analyzeHandler(ctx, target, forceTable ? null : compName);
+    // R11: a handler shared between a row and a non-row site is analyzed
+    // with the FIRST site's row context — pass forceTable for non-row uses.
+    analyzeHandler(ctx, target, forceTable ? null : compName, forceTable ? undefined : rowCtx);
   }
   return t.isIdentifier(value) ? value : (target as t.Expression);
 }
@@ -109,11 +112,9 @@ function readersOfVar(ctx: Ctx, v: string): Set<string> {
   for (const site of ctx.rowReads.values()) {
     if (site.vars.has(v)) out.add('__rows__'); // multi-instance by construction
   }
-
   for (const site of ctx.condReads.values()) {
     if (site.vars.has(v)) out.add('__regions__'); // region-updated, not owner-updated
   }
-
   return out;
 }
 
@@ -121,6 +122,7 @@ function analyzeHandler(
   ctx: Ctx,
   rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
   compName: string | null,
+  rowCtx?: RowCtx,
 ): void {
   // Standalone traversal requires a Program/File root, so analysis runs on
   // a deep clone; commits are appended into the clone's scopes and the
@@ -157,19 +159,63 @@ function analyzeHandler(
   interface ScopeWrites {
     writes: Set<string>;
     rootFallback: boolean;
+    /** R11: this scope writes fields of the row's item → markDirty(rowIdVar). */
+    rowLocal: boolean;
+    /** R12: this scope writes instance state → markDirty(id). */
+    instanceLocal: boolean;
   }
   const scopes = new Map<t.Node, ScopeWrites>();
   const scopeOf = (p: NodePath): ScopeWrites => {
     const fn = p.getFunctionParent()?.node ?? ROOT;
     let s = scopes.get(fn);
-    if (!s) scopes.set(fn, (s = { writes: new Set(), rootFallback: false }));
+    if (!s) {
+      scopes.set(
+        fn,
+        (s = { writes: new Set(), rootFallback: false, rowLocal: false, instanceLocal: false }),
+      );
+    }
     return s;
+  };
+
+  // R11: a member write rooted at the row's item param. Non-key fields are
+  // visible ONLY to this row's DOM → the commit is a local markDirty(rowId).
+  // Key-field writes change the row identity → structural fallback: a normal
+  // write of the source array (full reconcile, re-keys everything).
+  const noteItemWrite = (p: NodePath, node: t.MemberExpression): boolean => {
+    if (rowCtx === undefined) return false;
+    if (memberRootName(node) !== rowCtx.itemParam) return false;
+    const key = memberKey(node); // 'todo.done.x' or null when dynamic
+    if (key === null) {
+      // dynamic path on the item (todo[k] = …): may hit the key — fall back
+      scopeOf(p).writes.add(rowCtx.arrayName);
+      return true;
+    }
+    const segs = key.split('.').slice(1); // strip the item param root
+    if (writeTouchesKey(segs, rowCtx.keyPath)) {
+      scopeOf(p).writes.add(rowCtx.arrayName);
+    } else {
+      scopeOf(p).rowLocal = true;
+    }
+    return true;
   };
 
   const noteMemberWrite = (p: NodePath, node: t.MemberExpression): void => {
     const rootName = memberRootName(node);
-    if (!rootName || !ctx.state.has(rootName)) return; // foreign objects: not tracked
+    if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
+      // R12: mutating a field of an instance-state object — same local commit
+      scopeOf(p).instanceLocal = true;
+      return;
+    }
+    if (!rootName || !ctx.state.has(rootName)) {
+      noteItemWrite(p, node); // R11: row item writes (foreign to module state)
+      return;
+    }
     const kind = ctx.state.get(rootName)!;
+    if (kind === 'computed') {
+      throw p.buildCodeFrameError(
+        `memo-dom: cannot mutate computed '${rootName}' (R13) — it is derived; write its SOURCE state instead`,
+      );
+    }
     const s = scopeOf(p);
     if (kind !== 'store') {
       // reads of root-keyed vars (let/const): any member write is a write
@@ -187,11 +233,20 @@ function analyzeHandler(
     }
   };
 
+  // R12: instance state of the enclosing component — writes are always a
+  // bare markDirty(id), never table routing (the closure belongs to one
+  // instance; listed components included).
+  const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
+
   traverse(wrapper, {
     AssignmentExpression(p) {
       const left = p.node.left;
       if (t.isIdentifier(left)) {
         if (locals.has(left.name)) return;
+        if (instVars?.has(left.name) === true) {
+          scopeOf(p).instanceLocal = true; // R12: per-instance, no table
+          return;
+        }
         const kind = ctx.state.get(left.name);
         if (!kind) {
           throw p.buildCodeFrameError(
@@ -203,13 +258,16 @@ function analyzeHandler(
             `memo-dom: cannot reassign store '${left.name}' — assign a property (${left.name}.field = …) instead`,
           );
         }
-
         if (kind === 'const') {
           throw p.buildCodeFrameError(
             `memo-dom: cannot reassign const collection '${left.name}' — mutate its contents (${left.name}.push(…) / .set(…)) instead`,
           );
         }
-
+        if (kind === 'computed') {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot assign computed '${left.name}' (R13) — it is derived; write its SOURCE state instead and the derivation recomputes`,
+          );
+        }
         scopeOf(p).writes.add(left.name);
       } else if (t.isMemberExpression(left)) {
         noteMemberWrite(p, left);
@@ -219,7 +277,11 @@ function analyzeHandler(
       const arg = p.node.argument;
       if (t.isIdentifier(arg)) {
         if (locals.has(arg.name)) return;
-        const kind = ctx.state.get(arg.name)
+        if (instVars?.has(arg.name) === true) {
+          scopeOf(p).instanceLocal = true; // R12
+          return;
+        }
+        const kind = ctx.state.get(arg.name);
         if (!kind) {
           throw p.buildCodeFrameError(
             `memo-dom: handler updates '${arg.name}', which is neither module state nor a handler local`,
@@ -227,10 +289,11 @@ function analyzeHandler(
         }
         if (kind !== 'let') {
           throw p.buildCodeFrameError(
-            `memo-dom: cannot update '${arg.name}' — it is a const binding; mutate its contents instead`,
+            kind === 'computed'
+              ? `memo-dom: cannot update computed '${arg.name}' (R13) — it is derived; write its SOURCE state instead`
+              : `memo-dom: cannot update '${arg.name}' — it is a const binding; mutate its contents instead`,
           );
         }
-
         scopeOf(p).writes.add(arg.name);
       } else if (t.isMemberExpression(arg)) {
         noteMemberWrite(p, arg);
@@ -259,6 +322,11 @@ function analyzeHandler(
               : null;
           if (rootName && ctx.state.has(rootName)) {
             const kind = ctx.state.get(rootName)!;
+            if (kind === 'computed') {
+              throw p.buildCodeFrameError(
+                `memo-dom: cannot mutate computed '${rootName}' (R13) — it is derived; write its SOURCE state instead`,
+              );
+            }
             if (kind !== 'store') {
               // items.push(…) mutates the collection: a write to the variable
               scopeOf(p).writes.add(rootName);
@@ -272,6 +340,17 @@ function analyzeHandler(
                 scopeOf(p).rootFallback = true;
               }
             }
+          } else if (rowCtx !== undefined && rootName === rowCtx.itemParam) {
+            // R11: mutator on the row item (todo.tags.push(…) / todo.push(…))
+            if (t.isMemberExpression(obj)) {
+              noteItemWrite(p, obj);
+            } else {
+              // mutating the item itself (it IS an array): identity unchanged
+              scopeOf(p).rowLocal = true;
+            }
+          } else if (rootName !== null && instVars?.has(rootName) === true) {
+            // R12: mutator on an instance-state collection (list.push(…))
+            scopeOf(p).instanceLocal = true;
           }
         }
         return;
@@ -293,7 +372,7 @@ function analyzeHandler(
 
   // pass C: one commit per scope, appended inside the clone…
   for (const [fn, s] of scopes) {
-    const commit = buildCommit(ctx, s, compName);
+    const commit = buildCommit(ctx, s, compName, rowCtx);
     if (!commit) continue;
     appendScopeCommit(
       fn as t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
@@ -307,31 +386,64 @@ function analyzeHandler(
 /** The static commit form for one scope's write-set. */
 function buildCommit(
   ctx: Ctx,
-  s: { writes: Set<string>; rootFallback: boolean },
+  s: { writes: Set<string>; rootFallback: boolean; rowLocal: boolean; instanceLocal: boolean },
   compName: string | null,
+  rowCtx?: RowCtx,
 ): t.Statement | null {
+  // R11: row-item writes commit locally — the row id is lexically in scope
+  const rowCommit =
+    s.rowLocal && rowCtx !== undefined
+      ? t.expressionStatement(
+          t.callExpression(md('markDirty'), [t.identifier(rowCtx.rowIdVar)]),
+        )
+      : null;
+  // R12: instance-state writes commit locally too — same markDirty(id) the
+  // allLocal path emits, so dedupe against it below
+  const instCommit = s.instanceLocal
+    ? t.expressionStatement(t.callExpression(md('markDirty'), [t.identifier('id')]))
+    : null;
+  const combine = (other: t.Statement | null, otherIsMarkDirtyId = false): t.Statement | null => {
+    const parts: t.Statement[] = [];
+    if (rowCommit !== null) parts.push(rowCommit);
+    if (instCommit !== null && !otherIsMarkDirtyId) parts.push(instCommit);
+    if (other !== null) parts.push(other);
+    if (parts.length === 0) return null;
+    if (parts.length === 1) return parts[0]!;
+    return t.blockStatement(parts);
+  };
   if (s.rootFallback) {
-    return t.expressionStatement(
-      t.callExpression(md('markDirtySubtree'), [t.stringLiteral(ctx.rootId)]),
+    return combine(
+      t.expressionStatement(
+        t.callExpression(md('markDirtySubtree'), [t.stringLiteral(ctx.rootId)]),
+      ),
     );
   }
-  if (s.writes.size === 0) return null;
+  if (s.writes.size === 0) return combine(null);
 
   const writeList = [...s.writes].sort();
   const allLocal =
     compName !== null && // module-level functions have no entity id
     !ctx.listedSites.has(compName) && // multi-instance is never local
     writeList.every((v) => {
+      // R13: a computed reading this key is a hidden reader — never local
+      for (const info of ctx.computeds.values()) {
+        if (info.reads.has(v)) return false;
+      }
       const readers = readersOfVar(ctx, v);
       return readers.size <= 1 && readers.has(compName);
     });
   if (allLocal) {
-    return t.expressionStatement(
-      t.callExpression(md('markDirty'), [t.identifier('id')]),
+    return combine(
+      t.expressionStatement(
+        t.callExpression(md('markDirty'), [t.identifier('id')]),
+      ),
+      true, // dedupe: the table commit IS markDirty(id) already
     );
   }
-  return t.expressionStatement(
-    t.callExpression(md('commitWrites'), [freshWriteConst(ctx, writeList)]),
+  return combine(
+    t.expressionStatement(
+      t.callExpression(md('commitWrites'), [freshWriteConst(ctx, writeList)]),
+    ),
   );
 }
 

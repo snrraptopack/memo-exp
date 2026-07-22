@@ -10,9 +10,7 @@ MD.installAccessTable({
 // Fixture: async commit attribution.
 let count = 0;
 export function AsyncCounter(id, parent) {
-  const $ = {
-    "s0": null
-  };
+  let $s0, $t;
   const incLater = async () => {
     await Promise.resolve();
     count++;
@@ -25,7 +23,10 @@ export function AsyncCounter(id, parent) {
     }, 0);
   };
   const update = () => {
-    MD.setText($, "s0", text2, count);
+    if ($s0 !== ($t = count)) {
+      $s0 = $t;
+      text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
   };
   MD.register({
     id: id,
@@ -41,7 +42,10 @@ export function AsyncCounter(id, parent) {
   button1.onclick = incTimer;
   button1.appendChild(text1);
   const text2 = document.createTextNode("");
-  MD.setText($, "s0", text2, count);
+  if ($s0 !== ($t = count)) {
+    $s0 = $t;
+    text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
   const span0 = document.createElement("span");
   span0.appendChild(text2);
   const div0 = document.createElement("div");
@@ -74,17 +78,20 @@ const items = [{
 }];
 let selected = 0;
 function Row(id, parent, __p) {
-  const $ = {
-    "s0": null,
-    "s1": null
-  };
+  let $s0, $s1, $t;
   let item = __p[0];
   const update = () => {
     {
       item = __p[0];
     }
-    MD.setText($, "s0", text0, item.label);
-    MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
+    if ($s0 !== ($t = item.label)) {
+      $s0 = $t;
+      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
+    if ($s1 !== ($t = selected === item.id ? 'danger' : '')) {
+      $s1 = $t;
+      li0.className = $t;
+    }
   };
   MD.register({
     id: id,
@@ -93,9 +100,15 @@ function Row(id, parent, __p) {
   });
   MD.registerProps(id, __p);
   const text0 = document.createTextNode("");
-  MD.setText($, "s0", text0, item.label);
+  if ($s0 !== ($t = item.label)) {
+    $s0 = $t;
+    text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
   const li0 = document.createElement("li");
-  MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
+  if ($s1 !== ($t = selected === item.id ? 'danger' : '')) {
+    $s1 = $t;
+    li0.className = $t;
+  }
   li0.onclick = () => {
     selected = item.id;
     MD.commitWrites(WRITES_0);
@@ -104,7 +117,7 @@ function Row(id, parent, __p) {
   return li0;
 }
 export function CompList(id, parent) {
-  const $ = {};
+  let $t;
   const add = () => {
     items.push({
       id: items.length + 1,
@@ -166,7 +179,7 @@ let items = [{
 }];
 let selected = 0;
 export function InlineList(id, parent) {
-  const $ = {};
+  let $t;
   const add = () => {
     items.push({
       id: items.length + 1,
@@ -184,13 +197,16 @@ export function InlineList(id, parent) {
   });
   const ul0 = document.createElement("ul");
   const region0 = MD.createListRegion(ul0, id + "/items", (item, rowId) => {
-    const $ = {
-      "s0": null,
-      "s1": null
-    };
+    let $s0, $s1, $t;
     const update = () => {
-      MD.setText($, "s0", text0, item.label);
-      MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
+      if ($s0 !== ($t = item.label)) {
+        $s0 = $t;
+        text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+      }
+      if ($s1 !== ($t = selected === item.id ? 'danger' : '')) {
+        $s1 = $t;
+        li0.className = $t;
+      }
     };
     MD.register({
       id: rowId,
@@ -198,9 +214,15 @@ export function InlineList(id, parent) {
       render: update
     });
     const text0 = document.createTextNode("");
-    MD.setText($, "s0", text0, item.label);
+    if ($s0 !== ($t = item.label)) {
+      $s0 = $t;
+      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
     const li0 = document.createElement("li");
-    MD.setClassName($, "s1", li0, selected === item.id ? 'danger' : '');
+    if ($s1 !== ($t = selected === item.id ? 'danger' : '')) {
+      $s1 = $t;
+      li0.className = $t;
+    }
     li0.onclick = () => {
       selected = item.id;
       MD.commitWrites(WRITES_0);
@@ -236,11 +258,12 @@ MD.installAccessTable({
 // entity ids and the table must cover both.
 let label = 'hello';
 function Tag(id, parent) {
-  const $ = {
-    "s0": null
-  };
+  let $s0, $t;
   const update = () => {
-    MD.setText($, "s0", text0, label);
+    if ($s0 !== ($t = label)) {
+      $s0 = $t;
+      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
   };
   MD.register({
     id: id,
@@ -248,14 +271,17 @@ function Tag(id, parent) {
     render: update
   });
   const text0 = document.createTextNode("");
-  MD.setText($, "s0", text0, label);
+  if ($s0 !== ($t = label)) {
+    $s0 = $t;
+    text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
   const span0 = document.createElement("span");
   span0.className = "tag";
   span0.appendChild(text0);
   return span0;
 }
 export function App(id, parent) {
-  const $ = {};
+  let $t;
   const swap = () => {
     label = 'world';
     MD.commitWrites(WRITES_0);
@@ -291,18 +317,21 @@ MD.installAccessTable({
 let count = 0;
 let again = 0;
 export function Counter(id, parent) {
-  const $ = {
-    "s0": null,
-    "s1": null
-  };
+  let $s0, $s1, $t;
   const inc = () => {
     count++;
     again++;
     MD.markDirty(id);
   };
   const update = () => {
-    MD.setText($, "s0", text1, count);
-    MD.setText($, "s1", text2, again);
+    if ($s0 !== ($t = count)) {
+      $s0 = $t;
+      text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
+    if ($s1 !== ($t = again)) {
+      $s1 = $t;
+      text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
   };
   MD.register({
     id: id,
@@ -314,11 +343,17 @@ export function Counter(id, parent) {
   button0.onclick = inc;
   button0.appendChild(text0);
   const text1 = document.createTextNode("");
-  MD.setText($, "s0", text1, count);
+  if ($s0 !== ($t = count)) {
+    $s0 = $t;
+    text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
   const span0 = document.createElement("span");
   span0.appendChild(text1);
   const text2 = document.createTextNode("");
-  MD.setText($, "s1", text2, again);
+  if ($s1 !== ($t = again)) {
+    $s1 = $t;
+    text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
   const span1 = document.createElement("span");
   span1.appendChild(text2);
   const div0 = document.createElement("div");
@@ -342,11 +377,12 @@ MD.installAccessTable({
 // to Badge only, never to App or Editor.
 let name = 'Ada';
 function Badge(id, parent) {
-  const $ = {
-    "s0": null
-  };
+  let $s0, $t;
   const update = () => {
-    MD.setText($, "s0", text0, name);
+    if ($s0 !== ($t = name)) {
+      $s0 = $t;
+      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
   };
   MD.register({
     id: id,
@@ -354,14 +390,17 @@ function Badge(id, parent) {
     render: update
   });
   const text0 = document.createTextNode("");
-  MD.setText($, "s0", text0, name);
+  if ($s0 !== ($t = name)) {
+    $s0 = $t;
+    text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
   const span0 = document.createElement("span");
   span0.className = "badge";
   span0.appendChild(text0);
   return span0;
 }
 function Editor(id, parent) {
-  const $ = {};
+  let $t;
   const rename = () => {
     name = 'Grace';
     MD.commitWrites(WRITES_0);
@@ -379,7 +418,7 @@ function Editor(id, parent) {
   return button0;
 }
 export function App(id, parent) {
-  const $ = {};
+  let $t;
   const update = () => {};
   MD.register({
     id: id,

@@ -261,6 +261,51 @@ if `registry.has(childId)` skip re-creation (entity persists — state survives
 parent re-render), else invoke the child factory. The parent never reconciles
 child identity — the id *is* the identity.
 
+### R10 — Props flow down through a mutable props box (DECIDED, implemented in R10/test m9)
+
+**Lifts the last mount-time ban:** prop expressions may read module state
+(previously §L1 threw "props are mount-time"). Props become a second write
+channel into the child — no VDOM, no subscriptions, the same guarded-setter
+machinery as state.
+
+**Props box.** At call sites the compiler wraps positional props in ONE
+array: `Row(childId, id, [todo, sel])`. The component declaration is
+rewritten (user signatures unchanged): `function Row(item, sel)` becomes
+`function Row(id, parent, __p)` with prologue `let item = __p[0], sel = __p[1];`
+(L1: component params must be plain identifiers — no destructuring/defaults
+yet). The box is registered per entity (`registerProps(id, __p)`).
+
+**Re-push.** Any prop expression that reads state makes the PARENT re-push
+inside its own update closure: `MD.setProps(childId, [expr...])` — the full
+array (static positions recompute to equal values and cost one `Object.is`).
+Prop-expression reads count as parent reads, so the parent updates exactly
+when a pushed value can change. `setProps` shallow-compares per index;
+unchanged → no dirty, zero work. Changed → mutate box in place +
+`markDirty(childId)`.
+
+**Child update.** The child's update closure first re-syncs its locals
+(`item = __p[0]; …`), then runs its guarded setters — so a retained child
+receives new prop values with the same no-op-if-equal guarantees as state.
+
+**Cascading commit.** `setProps` runs inside the parent's update, which runs
+inside a commit — so `commit()` becomes a bounded drain loop (depth-sorted
+batches, up to 100 passes, then a cycle error). This replaces the old
+"marks during render wait a frame" note. `scheduleCommit` is suppressed
+while a commit is in progress (reentrancy guard) — marks just join the
+current drain.
+
+**List rows.** A component row's entry gains `updateProps(item)` —
+`setProps(rowId, [expr...])` re-pushing item-derived props on every reconcile
+that retains the row (M5.5's `update` stays for inline rows). Item-field
+mutations and item replacement both reach the row.
+
+**Dead letters & cleanup.** `setProps` on an unmounted id is a no-op; the
+props box is dropped on unregister via the M5.6 registry listener.
+
+**Deliberately unchanged:** child reads are NOT added to the access table —
+routing to the child happens through `markDirty` from `setProps`, keeping
+the table purely about module state.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
@@ -616,6 +661,134 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R12 (instance state, compiler analysis+handlers+emit, test/r12.test.ts):**
+  top-level let/var of a component body is INSTANCE state — one factory
+  closure per instance, readable only by that instance (children get it via
+  R10 props re-push, nested rows via M5.5 resync). Writes are therefore
+  ALWAYS a bare markDirty(id), never table routing; instance names shadow
+  same-named module state in their component.
+- **R13 (auto-detected computeds — option B, no wrapper):** a module-level
+  `const x = <state derivation>` becomes a computed: the compiler rewrites
+  the declaration to a let, and registers a
+  depth-(-1) entity `'<root>/$computed/x'` that recomputes on source-key
+  writes and commits 'x' downstream ONLY when the value changed
+  (`computedChanged`: Object.is scalars, element-wise arrays) — deep
+  memoization: intermediate writes that don't change the derivation produce
+  ZERO downstream renders (proven by execution tests). Chains (computed
+  reading computed) work; writes/mutations TO a computed are compile
+  errors; computeds are valid R7 list sources; a computed reading a key
+  defeats handler allLocal (hidden reader); recompute renders BEFORE any
+  reader via the new explicit-depth support in register (depth -1).
+- **R13.1 (reference-based detection — the whitelist was wrong):** detection
+  is now exactly "the initializer REFERENCES an already-declared state
+  variable (directly or through an analyzable local helper) and is never
+  reassigned". The PURE_METHODS whitelist is removed — the set of allowed
+  callees is unbounded (Array/String/Math/Object/JSON, lodash, date-fns,
+  user helpers…), so no whitelist can be complete, while the set of
+  dangerous SYNTAX is bounded and enumerable. Arbitrary method calls,
+  unknown/imported/global functions, `new`, tagged templates, and
+  local-mutating callbacks (`reduce((acc, t) => { acc.push(t); … }, [])`,
+  `(s, t) => (s += t.n, s)`) are all fine. The remaining blacklist covers
+  only what corrupts the state model itself: assignments/updates to
+  non-locals, mutator calls on state (`todos.sort(cmp)` — derive from a
+  copy), calls to module helpers KNOWN to write state (reuses the handler
+  write-analysis — a precise negative, not a whitelist), and await/yield.
+  Such consts are compile ERRORS with the specific reason, never silent
+  plain consts (read collection no longer early-exits on impure).
+  Non-determinism (Date.now/Math.random) and side effects are the author's
+  responsibility — recompute runs on every source write and
+  `computedChanged` gates what propagates (same contract as Vue computed /
+  Svelte $:). NOTE: computeds remain MODULE-level — they cannot see R12
+  instance state (factory closures); per-instance computeds are future work
+  (per-instance computed entity parented under the instance id).
+- **M5.8 (structural-path cost, src/list.ts + src/kernel.ts):** CDP profiling
+  of the todo bench showed 40% of steps are STRUCTURAL (remove/insert), and
+  the slow path paid 3 maps + 5 arrays per reconcile. Now: ONE record map
+  per region (`{e, id, pos}` replaces cache + keyToRowId + prevIndex +
+  nextIndex), pooled LIS buffers, scratch buffers swapped with live ones
+  (zero allocation in steady state), and the shape fast path compares item
+  REFERENCES (no key-fn calls per row per step). undirty gates on set size.
+  Heap sampling confirms ~zero runtime allocation per step — remaining GC
+  is the bench harness's own strings/objects.
+- **M5.9 (inline guarded writes, compiler/emit.ts):** the slot cache object
+  (`$["s0"]`) is gone. Dynamic slots are per-scope locals (`let $s0, …`)
+  and every dynamic write is an INLINE guard emitted by the compiler:
+  `if ($s0 !== ($t = expr)) { $s0 = $t; text0.data = … }` — no runtime
+  setter call, no string-key lookup; the whole row update stays in one
+  inlinable function (Imba-style compiled output). Also: IDL-property
+  attributes (checked, value, disabled, …, DOM_PROP_ATTRS) write the DOM
+  property instead of the attribute — faster and semantically right; this
+  also cut the todo bench to 2.20 DOM mutations/step, exactly matching
+  Imba/Svelte. The runtime setters remain as the public hand-written API.
+  Results: todo bench 37.7k → 50k ops/sec @100 (gap 2.7x → 1.9x),
+  ~1.7x @6; structural update-every-10th 81ms → ~33ms (tied best),
+  create 1k on par with Imba 2 / Solid.
+- **R11 (row-local item writes — parametrized precision WITHOUT runtime
+  payloads, compiler/context.ts + compiler/handlers.ts + compiler/emit.ts +
+  compiler/analysis.ts, test/m10.test.ts):** a handler inside a list row
+  that writes a field of the row's ITEM (todo.done = …) used to produce no
+  commit at all (item params are foreign to module state). But the write
+  is visible ONLY to that row's DOM — item data reaches rows through
+  reconcile/props, never through the table — and the compiler knows the
+  row statically, so the commit is a plain `markDirty(rowId)` (inline) /
+  `markDirty(id)` (component row): no routing, no wildcard, no sibling
+  renders. Key-field writes change row identity → structural fallback (a
+  normal source-array write → reconcile re-keys); dynamic item paths
+  (todo[k] = …) and disagreeing multi-site key fns fall back the same way;
+  mutators on item fields (todo.tags.push(…)) are row-local too. This
+  supersedes the §5 runtime-payload plan for the common case: precision is
+  achieved at compile time with zero runtime machinery. (§5's payload
+  form remains the design for writes whose target row is NOT lexical —
+  e.g. one row dirtying a sibling by id.)
+- **M5.7 (render-path constant factors, src/list.ts + src/kernel.ts,
+  test/m57.test.ts):** two costs remained after M5.6 — (a) every reconcile
+  rebuilt two full key→index maps even when nothing structural could have
+  changed, and (b) a row dirtied through the table (Row[*]) AND resynced by
+  its parent's reconcile rendered TWICE per commit. Now: reconcile opens
+  with a shape fast path (same length + same key at every position → skip
+  all map building and LIS, straight to row sync); row ids are computed
+  once per key (keyToRowId) instead of re-concatenated per frame; and the
+  commit keeps ids in the dirty set until the moment they render, so the
+  list resync cancels the row's pending turn via the new public
+  `undirty(id)`. Cascade semantics (R10 drain) unchanged — marks added
+  mid-render still reach a later pass. dom-reconciler-bench: 88.2k →
+  103.6k ops/sec at n=6 (+17%), ~+5-8% at n=100; structural bench
+  unchanged (swap/remove best-in-class).
+- **R10 (props-down reactivity, src/props.ts + cascading commit in
+  src/kernel.ts + compiler props box, test/m9.test.ts):** the mount-time
+  props ban is LIFTED — state-reading props (on static children and on list
+  rows) compile and stay live. Props are boxed in one mutable array per
+  entity (`Row(id, parent, [a, b])`; user signatures unchanged); the parent
+  re-pushes state-reading props inside its update (`setProps`, shallow-
+  compare no-op); the child's update re-syncs locals from the box; commit()
+  is now a bounded drain loop so pushed children render in the SAME commit.
+  Component rows re-push + force-dirty on every retaining reconcile (the
+  box can hold a same-reference object whose fields mutated — the M5.5
+  case). Note: the `Owner/*` covering pattern may still render children on
+  unrelated parent writes (§11.3 over-approximation, safe direction).
+- **M5.6 (constant-factor sprint, src/access.ts + src/kernel.ts + src/list.ts,
+  test/m56.test.ts):** per-commit routing cost eliminated — `resolveWrites`
+  previously re-matched every wildcard pattern against every live id on every
+  commit (O(patterns × ids); a generation-keyed cache didn't help because row
+  add/remove bumps the generation on exactly those steps). Now matchKeys is
+  cached permanently per write key, wildcard expansions are maintained
+  INCREMENTALLY via a kernel registry listener (O(patterns) per register/
+  unregister, O(1) per commit), and full resolutions are version-cached.
+  `reconcile` gained the pure-content fast path (no add/remove, order kept →
+  zero structural work, LIS skipped) and fused index bookkeeping. `commit()`
+  is documented as the public flush-now API (the flushSync equivalent).
+  dom-reconciler-bench: 61.9k → 88.2k ops/sec at n=6 (+42%), 19.0k → 36.9k
+  at n=100 (+94%); the gap to Imba 2 converged to ~2.8x at both scales.
+- **M5.5 (retained-row resync + member-path list sources,
+  test/m55.test.ts):** rows read their item (a factory param), not module
+  state, so mutating a retained row's item fields was invisible — the list
+  region now re-runs a reused row's guarded `update()` on every reconcile
+  (DOM touched only on actual change; required by the dom-reconciler-bench
+  contract "sync no matter how the models changed"). List sources may now be
+  static store paths: `{store.todos.map(…)}` (read/write key = dotted path,
+  region suffix = last segment). Exported state (`export const store = …`)
+  is scanned as state. Drove the bench integration; also the fix that makes
+  `checkImplementation` pass.
 - **R8 (conditional regions, src/cond.ts + compiler/conds.ts +
   test/m8.test.ts):** `{cond ? <A/> : <B/>}`, `{cond && <A/>}`,
   `{cond || <A/>}` in direct JSX child position compile to anchored

@@ -23,7 +23,7 @@ export interface MemoDomOptions {
  *   'const' — const collection (array / Map / Set); writes are mutations only,
  *             rebinding is a compile error (JS would TypeError at runtime)
  */
-export type StateKind = 'let' | 'store' | 'const';
+export type StateKind = 'let' | 'store' | 'const' | 'computed';
 
 export interface CompInfo {
   /**
@@ -39,6 +39,10 @@ export interface CompInfo {
 export interface SiteRef {
   owner: string;
   suffix: string;
+  /** R11: row-analysis data for item-write routing in listed components. */
+  itemParam?: string;
+  keyExpr?: t.Expression | null;
+  arrayName?: string;
 }
 
 /** Module-level helper function summary (M5.3 interprocedural analysis). */
@@ -79,6 +83,26 @@ export interface Ctx {
   rowReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Conditional-region reads (R8): '<owner>/when<n>' → site + vars read in condition+branches. */
   condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
+  /**
+   * R12: instance state — component name → top-level let/var names of its
+   * body. Instance state lives in the factory closure of ONE instance: it
+   * is readable only by that instance (it reaches children exclusively via
+   * props, which R10 re-pushes on every parent render; nested rows are
+   * resynced by the M5.5 reconcile machinery). Writes therefore need NO
+   * access-table routing — they are unconditionally `markDirty(id)`.
+   * Instance names SHADOW same-named module state inside their component.
+   */
+  instanceState: Map<string, Set<string>>;
+  /**
+   * R13: auto-detected computeds — module-level `const x = <state
+   * derivation>` (detection by REFERENCE: any expression mentioning state).
+   * reads = the source state keys the derivation reads
+   * (root names for lets/computeds, dotted keys for stores). The compiler
+   * rewrites the declaration to a let + registers a depth-(-1) entity whose
+   * render recomputes and commits 'x' downstream ONLY when the value
+   * actually changed (computedChanged).
+   */
+  computeds: Map<string, { reads: Set<string> }>;
 
   // ---- emission accumulators ----
   header: t.Statement[];
@@ -103,6 +127,8 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     listedSites: new Map(),
     rowReads: new Map(),
     condReads: new Map(),
+    instanceState: new Map(),
+    computeds: new Map(),
     header: [],
     readers: new Map(),
     opaqueVars: new Set(),
@@ -150,6 +176,71 @@ export function memberKey(node: t.MemberExpression): string | null {
   return parts.join('.');
 }
 
+/**
+ * R11 — row context for handler analysis. When a handler lives inside a
+ * list row, writes to the row's item param affect ONLY that row's DOM
+ * (item data flows to the row via reconcile/props; no other entity reads
+ * THIS item through the table), so the commit is a plain markDirty on the
+ * row entity — no access-table routing at all. The compiler knows the row
+ * statically; no runtime payload interpolation is needed.
+ *
+ * Exception: writing the KEY field changes the row's identity (re-keying
+ * is structural), so it falls back to a normal write of the source array.
+ */
+export interface RowCtx {
+  /** The item param name (map callback param / row component's first prop). */
+  itemParam: string;
+  /** Variable holding the row entity id at the handler site ('rowId'|'id'). */
+  rowIdVar: string;
+  /**
+   * Key path relative to itemParam: [] when the key is the item itself
+   * (field writes can never change it), null when the key expression is
+   * not a plain member chain (unknown → all item writes fall back).
+   */
+  keyPath: string[] | null;
+  /** Write key of the source array (fallback for key-field writes). */
+  arrayName: string;
+}
+
+/**
+ * Extract the key path of a row's key={...} expression relative to the
+ * item param: key={todo.id} → ['id']; no key attr → [] (identity key);
+ * anything non-trivial → null (unknown).
+ */
+export function keyPathOf(keyExpr: t.Expression | null, itemParam: string): string[] | null {
+  if (keyExpr === null) return [];
+  const segs: string[] = [];
+  let cur: t.Expression = keyExpr;
+  while (t.isMemberExpression(cur) && !cur.computed) {
+    if (!t.isIdentifier(cur.property)) return null;
+    segs.unshift(cur.property.name);
+    cur = cur.object;
+  }
+  if (!t.isIdentifier(cur, { name: itemParam }) || segs.length === 0) return null;
+  return segs;
+}
+
+/** True when writing `writtenSegs` (relative to the item) can change the key. */
+export function writeTouchesKey(writtenSegs: string[], keyPath: string[] | null): boolean {
+  if (keyPath === null) return true; // unknown key → assume structural
+  if (keyPath.length === 0) return false; // identity key → fields never structural
+  if (writtenSegs.length > keyPath.length) return false; // writes below the key
+  return writtenSegs.every((s, i) => keyPath[i] === s);
+}
+
+export interface ComputedAnalysis {
+  /**
+   * State keys the initializer involves (root names / dotted store keys) —
+   * the computed's sources; when impure, also the keys a forbidden write
+   * targets, so the compile error actually triggers.
+   */
+  reads: Set<string>;
+  /** True when the expression writes/mutates state or is asynchronous. */
+  impure: boolean;
+  /** Human-readable reason when impure (first hit wins). */
+  reason?: string;
+}
+
 /** Root identifier of a member chain (`a.b[c].d` → 'a'), even when dynamic. */
 export function memberRootName(node: t.MemberExpression): string | null {
   let cur: t.Expression = node;
@@ -195,11 +286,12 @@ export function attrExpr(value: t.JSXAttribute['value']): t.Expression | null {
  * (no NodePath available in every caller); descends into nested functions —
  * conservative on purpose.
  */
-export function exprReadsState(ctx: Ctx, expr: t.Node): boolean {
+export function exprReadsState(ctx: Ctx, expr: t.Node, compName?: string): boolean {
+  const inst = compName !== undefined ? ctx.instanceState.get(compName) : undefined;
   let reads = false;
   const probe = (n: t.Node): void => {
     if (reads) return;
-    if (t.isIdentifier(n) && ctx.state.has(n.name)) {
+    if (t.isIdentifier(n) && (ctx.state.has(n.name) || inst?.has(n.name) === true)) {
       reads = true;
       return;
     }
