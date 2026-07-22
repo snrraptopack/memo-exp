@@ -79,6 +79,8 @@ export interface Ctx {
    * never locality-eligible.
    */
   listedSites: Map<string, SiteRef[]>;
+  /** Components declared with one typed object prop (`Row(props: { item: T })`). */
+  objectPropComponents: Set<string>;
   /** Inline-row reads: '<owner>/<suffix>' → site + state vars read in the row JSX. */
   rowReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Conditional-region reads (R8): '<owner>/when<n>' → site + vars read in condition+branches. */
@@ -125,6 +127,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     compReads: new Map(),
     childRefCounts: new Map(),
     listedSites: new Map(),
+    objectPropComponents: new Set(),
     rowReads: new Map(),
     condReads: new Map(),
     instanceState: new Map(),
@@ -171,6 +174,9 @@ export function memberKey(node: t.MemberExpression): string | null {
     }
     cur = cur.object;
   }
+  while (t.isTSNonNullExpression(cur) || t.isTSAsExpression(cur)) {
+    cur = cur.expression;
+  }
   if (!t.isIdentifier(cur)) return null;
   parts.unshift(cur.name);
   return parts.join('.');
@@ -192,6 +198,8 @@ export interface RowCtx {
   itemParam: string;
   /** Variable holding the row entity id at the handler site ('rowId'|'id'). */
   rowIdVar: string;
+  /** Lightweight rows have no entity; item-local writes call this updater. */
+  refreshVar?: string;
   /**
    * Key path relative to itemParam: [] when the key is the item itself
    * (field writes can never change it), null when the key expression is
@@ -244,7 +252,17 @@ export interface ComputedAnalysis {
 /** Root identifier of a member chain (`a.b[c].d` → 'a'), even when dynamic. */
 export function memberRootName(node: t.MemberExpression): string | null {
   let cur: t.Expression = node;
-  while (t.isMemberExpression(cur)) cur = cur.object as t.Expression;
+  while (true) {
+    if (t.isMemberExpression(cur)) {
+      cur = cur.object as t.Expression;
+      continue;
+    }
+    if (t.isTSNonNullExpression(cur) || t.isTSAsExpression(cur)) {
+      cur = cur.expression;
+      continue;
+    }
+    break;
+  }
   return t.isIdentifier(cur) ? cur.name : null;
 }
 

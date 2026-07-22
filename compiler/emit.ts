@@ -19,6 +19,7 @@ import { attrExpr, exprReadsState, keyPathOf, md, nodeHasJsx, type Ctx, type Row
 import { analyzeMapSite, matchMapCall, type MapSite } from './lists';
 import { analyzeCondSite, matchCond } from './conds';
 import { buildHandler } from './handlers';
+import { isLightweightListedComponent } from './analysis';
 
 interface EmitScope {
   slots: string[];
@@ -179,6 +180,8 @@ export function transformComponent(
     propNames.push(p.name);
   }
 
+  const lightweight = isLightweightListedComponent(ctx, name);
+
   // -- R11: a listed (multi-instance) component is a list row — handlers
   // writing its item prop's fields commit locally (markDirty(id)).
   let rowCtx: RowCtx | undefined;
@@ -191,7 +194,8 @@ export function transformComponent(
       : null; // disagreeing key fns → unknown → all item writes fall back
     rowCtx = {
       itemParam: propNames[0]!,
-      rowIdVar: 'id',
+      rowIdVar: lightweight ? '__memoRowId' : 'id',
+      ...(lightweight ? { refreshVar: 'update' } : {}),
       keyPath: merged,
       arrayName: refs[0]!.arrayName ?? '',
     };
@@ -204,7 +208,7 @@ export function transformComponent(
   const kept = node.body.body.filter((s) => s !== returnStmt);
 
   // -- R10: props box. User params become locals synced from __p ---------
-  if (propNames.length > 0) {
+  if (propNames.length > 0 && !lightweight) {
     // re-sync locals from the box at the top of every update
     scope.updaters.unshift(() =>
       t.blockStatement(
@@ -227,7 +231,7 @@ export function transformComponent(
   // update closure only runs post-mount, so closing over node variables
   // declared later in the same scope is safe.
   const body: t.Statement[] = [cacheDecl(scope.slots)];
-  if (propNames.length > 0) {
+  if (propNames.length > 0 && !lightweight) {
     body.push(
       t.variableDeclaration(
         'let',
@@ -243,19 +247,52 @@ export function transformComponent(
   body.push(
     ...kept,
     updateDecl(scope.updaters),
-    registerStmt(t.identifier('id'), t.identifier('parent')),
+    ...(lightweight ? [] : [registerStmt(t.identifier('id'), t.identifier('parent'))]),
   );
-  if (propNames.length > 0) {
+  if (propNames.length > 0 && !lightweight) {
     body.push(
       t.expressionStatement(
         t.callExpression(md('registerProps'), [t.identifier('id'), t.identifier('__p')]),
       ),
     );
   }
-  body.push(...scope.creation, t.returnStatement(t.identifier(rootVar)));
+  body.push(...scope.creation);
+  if (lightweight) {
+    const nextProps = propNames.map((_, i) => t.identifier(`__memoNext${i}`));
+    body.push(
+      t.returnStatement(
+        t.objectExpression([
+          t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
+          t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
+          t.objectProperty(t.identifier('update'), t.identifier('update')),
+          ...(propNames.length > 0
+            ? [
+                t.objectProperty(
+                  t.identifier('updateProps'),
+                  t.arrowFunctionExpression(
+                    nextProps,
+                    t.blockStatement(
+                      propNames.map((pn, i) =>
+                        t.expressionStatement(
+                          t.assignmentExpression('=', t.identifier(pn), nextProps[i]!),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ]
+            : []),
+        ]),
+      ),
+    );
+  } else {
+    body.push(t.returnStatement(t.identifier(rootVar)));
+  }
 
   node.params =
-    propNames.length > 0
+    lightweight
+      ? [...propNames.map((pn) => t.identifier(pn)), t.identifier('__memoRowId')]
+      : propNames.length > 0
       ? [t.identifier('id'), t.identifier('parent'), t.identifier('__p')]
       : [t.identifier('id'), t.identifier('parent')];
   node.body = t.blockStatement(body);
@@ -656,7 +693,7 @@ function emitRegion(
   const regionVar = `region${scope.regionCounter++}`;
   const createFn =
     site.form === 'component'
-      ? buildComponentRowCreate(site)
+      ? buildComponentRowCreate(ctx, site)
       : buildInlineRowCreate(ctx, site, compName, compPath);
 
   const args: t.Expression[] = [
@@ -697,14 +734,71 @@ function emitRegion(
   );
 }
 
-/** (item, rowId) => { nodes: [el], entities: [rowId] } via the row factory. */
-function buildComponentRowCreate(site: MapSite): t.ArrowFunctionExpression {
-  const props: t.Expression[] = [];
+function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpression {
+  const propEntries: Array<{ name: string; value: t.Expression }> = [];
   for (const attr of site.jsx.openingElement.attributes) {
     const a = attr as t.JSXAttribute;
     const name = (a.name as t.JSXIdentifier).name;
     if (name === 'key') continue;
-    props.push(t.cloneNode(attrExpr(a.value)!));
+    propEntries.push({ name, value: t.cloneNode(attrExpr(a.value)!) });
+  }
+  const props = propEntries.map((p) => p.value);
+  const callProps = ctx.objectPropComponents.has(site.rowComp!)
+    ? [
+        t.objectExpression(
+          propEntries.map((p) =>
+            t.objectProperty(t.identifier(p.name), t.cloneNode(p.value), false, true),
+          ),
+        ),
+      ]
+    : props;
+  if (isLightweightListedComponent(ctx, site.rowComp!)) {
+    const entry = t.identifier('entry');
+    return t.arrowFunctionExpression(
+      [t.identifier(site.itemParam), t.identifier('rowId')],
+      t.blockStatement([
+        t.variableDeclaration('const', [
+          t.variableDeclarator(
+            entry,
+            t.callExpression(t.identifier(site.rowComp!), [
+              ...callProps.map((p) => t.cloneNode(p)),
+              t.identifier('rowId'),
+            ]),
+          ),
+        ]),
+        t.returnStatement(
+          t.objectExpression([
+            t.objectProperty(
+              t.identifier('nodes'),
+              t.memberExpression(entry, t.identifier('nodes')),
+            ),
+            t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
+            t.objectProperty(
+              t.identifier('update'),
+              t.memberExpression(entry, t.identifier('update')),
+            ),
+            ...(callProps.length > 0
+              ? [
+                  t.objectProperty(
+                    t.identifier('updateProps'),
+                    t.arrowFunctionExpression(
+                      [t.identifier(site.itemParam)],
+                      t.blockStatement([
+                        t.expressionStatement(
+                          t.callExpression(
+                            t.memberExpression(entry, t.identifier('updateProps')),
+                            callProps.map((p) => t.cloneNode(p)),
+                          ),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ]
+              : []),
+          ]),
+        ),
+      ]),
+    );
   }
   const el = t.identifier('el');
   const entry: t.ObjectProperty[] = [
@@ -715,7 +809,7 @@ function buildComponentRowCreate(site: MapSite): t.ArrowFunctionExpression {
   // item replacement AND item-field mutation both reach the row entity.
   // The row is ALWAYS dirtied (not just on identity change): the box can
   // hold the same object whose FIELDS mutated invisibly — the M5.5 case.
-  if (props.length > 0) {
+  if (callProps.length > 0) {
     entry.push(
       t.objectProperty(
         t.identifier('updateProps'),
@@ -725,7 +819,7 @@ function buildComponentRowCreate(site: MapSite): t.ArrowFunctionExpression {
             t.expressionStatement(
               t.callExpression(md('setProps'), [
                 t.identifier('rowId'),
-                t.arrayExpression(props.map((p) => t.cloneNode(p))),
+                t.arrayExpression(callProps.map((p) => t.cloneNode(p))),
               ]),
             ),
             t.expressionStatement(
@@ -745,7 +839,7 @@ function buildComponentRowCreate(site: MapSite): t.ArrowFunctionExpression {
           t.callExpression(t.identifier(site.rowComp!), [
             t.identifier('rowId'),
             t.identifier('id'), // owner's id — closure over the factory scope
-            ...(props.length > 0 ? [t.arrayExpression(props)] : []),
+            ...(callProps.length > 0 ? [t.arrayExpression(callProps)] : []),
           ]),
         ),
       ]),

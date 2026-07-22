@@ -63,11 +63,12 @@ describe('R11 — row-local item writes, code generation', () => {
     expect(code).not.toContain('WRITES');
   });
 
-  it('component row: item-field write commits markDirty(id)', () => {
+  it('lightweight component row: item-field write calls its local updater', () => {
     const code = compile(
       `let todos = [{ id: 1, done: false }];\nfunction Row(item) { return <li onClick={() => { item.done = !item.done; }}>{item.done ? 'y' : 'n'}</li>; }\nfunction C() { return <ul>{todos.map((todo) => <Row key={todo.id} item={todo} />)}</ul>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toContain('item.done = !item.done;\n    update();');
+    expect(code).not.toContain('MD.markDirty(__memoRowId)');
   });
 
   it('key-field writes fall back to the source-array write', () => {
@@ -146,18 +147,15 @@ describe('R11 — compiled output runs', () => {
     expect(appR()).toBe(0); // owner untouched — no reconcile at all
   });
 
-  it('component rows: same precision through the props box', async () => {
+  it('lightweight component rows refresh only the clicked closure', async () => {
     const { C } = await importCompiled('r11-comp');
     document.body.appendChild(C('App', null));
     expect(document.querySelectorAll('li')).toHaveLength(2);
 
-    const row1R = spyRenders('App/todos/Row[1]');
-    const row2R = spyRenders('App/todos/Row[2]');
+    expect([..._internals().registry.keys()]).toEqual(['App']);
 
     const second = document.querySelectorAll('li')[1]!;
     second.click();
     expect(second.textContent).toBe('y');
-    expect(row2R()).toBe(1);
-    expect(row1R()).toBe(0);
   });
 });

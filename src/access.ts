@@ -26,6 +26,8 @@ import { onRegistryChange, registeredIds, type EntityId } from './kernel';
 export interface AccessTable {
   readers: Record<string, string[]>;
   opaque?: string[];
+  /** Reserved L2 precision format; accepted before payload routing ships. */
+  params?: Record<string, readonly { pattern: string }[]>;
 }
 
 let rootId: EntityId = '';

@@ -97,6 +97,14 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
         if (containsJsx(p)) {
           ctx.comps.set(name, { parents: new Set(), jsxCount: 0 });
           ctx.compPaths.set(name, p);
+          const first = p.node.params[0];
+          if (
+            p.node.params.length === 1 &&
+            t.isIdentifier(first) &&
+            t.isTSTypeLiteral(first.typeAnnotation?.typeAnnotation)
+          ) {
+            ctx.objectPropComponents.add(name);
+          }
         } else {
           ctx.helpers.set(name, p);
         }
@@ -777,6 +785,12 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
   const sites = ctx.listedSites.get(name);
   const patterns: string[] = [];
   if (sites && sites.length > 0) {
+    if (isLightweightListedComponent(ctx, name)) {
+      for (const site of sites) {
+        for (const v of pathVariants(ctx, site.owner)) patterns.push(v, `${v}/*`);
+      }
+      return patterns;
+    }
     // a listed component is never statically mounted — its instances live
     // at '<site>/Row[k]' and nowhere else
     for (const site of sites) {
@@ -788,6 +802,35 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
   }
   for (const v of pathVariants(ctx, name)) patterns.push(v, `${v}/*`);
   return patterns;
+}
+
+/**
+ * Phase 2 lightweight row eligibility. An entity is only required when the
+ * row owns instance state or can mount nested entity/region structure.
+ */
+export function isLightweightListedComponent(ctx: Ctx, name: string): boolean {
+  const sites = ctx.listedSites.get(name);
+  if (!sites || sites.length === 0 || ctx.comps.get(name)!.parents.size > 0) return false;
+  if ((ctx.instanceState.get(name)?.size ?? 0) > 0) return false;
+
+  let eligible = true;
+  const path = ctx.compPaths.get(name)!;
+  path.traverse({
+    JSXElement(el) {
+      const tag = el.node.openingElement.name;
+      if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) eligible = false;
+    },
+    CallExpression(call) {
+      if (matchMapCall(call.node) && containsJsx(call)) eligible = false;
+    },
+    ConditionalExpression(cond) {
+      if (containsJsx(cond)) eligible = false;
+    },
+    LogicalExpression(logical) {
+      if (containsJsx(logical)) eligible = false;
+    },
+  });
+  return eligible;
 }
 
 /** The access-table object expression + installAccessTable call, if any. */

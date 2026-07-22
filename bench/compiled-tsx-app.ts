@@ -1,26 +1,25 @@
 import * as MD from "../src/runtime";
-import { buildData, type RowData } from './data';
-
 const WRITES_0 = ["selected"];
 const WRITES_1 = ["data", "selected"];
 const WRITES_2 = ["data", "selected"];
 const WRITES_3 = ["data", "selected"];
-
 MD.installAccessTable({
   readers: {
     "data": ["AppTsx", "AppTsx/*"],
-    "selected": ["AppTsx/data/Row[*]", "AppTsx/data/Row[*]/*"]
+    "selected": ["AppTsx", "AppTsx/*"]
   }
 }, "AppTsx");
+/**
+ * @file App.tsx
+ * The TSX source code for the Component Row Benchmark App.
+ */
 
-let data: RowData[] = [];
-let selected: number | null = null;
-
-function Row(id: string, parent: string, __p: any[]) {
-  let $s0, $s1, $s2, $t: any;
-  let props = __p[0];
+import { buildData } from './data';
+let data = [];
+let selected = null;
+function Row(props, __memoRowId) {
+  let $s0, $s1, $s2, $t;
   const update = () => {
-    props = __p[0];
     if ($s0 !== ($t = props.item.id)) {
       $s0 = $t;
       text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
@@ -34,12 +33,6 @@ function Row(id: string, parent: string, __p: any[]) {
       li0.className = $t;
     }
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
-  });
-  MD.registerProps(id, __p);
   const text0 = document.createTextNode("");
   if ($s0 !== ($t = props.item.id)) {
     $s0 = $t;
@@ -63,17 +56,23 @@ function Row(id: string, parent: string, __p: any[]) {
   li0.appendChild(text0);
   li0.appendChild(text1);
   li0.appendChild(text2);
-  return li0;
+  return {
+    nodes: [li0],
+    entities: [],
+    update: update,
+    updateProps: __memoNext0 => {
+      props = __memoNext0;
+    }
+  };
 }
-
-export function createCompiledTsxApp() {
-  let $t: any;
+export function BenchApp(id, parent) {
+  let $t;
   const update = () => {
     region0.reconcile(data);
   };
   MD.register({
-    id: 'AppTsx',
-    parent: null,
+    id: id,
+    parent: parent,
     render: update
   });
   const text0 = document.createTextNode("create1k");
@@ -96,14 +95,14 @@ export function createCompiledTsxApp() {
   const button2 = document.createElement("button");
   button2.onclick = () => {
     data = data.concat(buildData(1000));
-    MD.markDirty('AppTsx');
+    MD.markDirty(id);
   };
   button2.appendChild(text2);
   const text3 = document.createTextNode("update");
   const button3 = document.createElement("button");
   button3.onclick = () => {
     for (let i = 0; i < data.length; i += 10) data[i]!.label += ' !!!';
-    MD.markDirty('AppTsx');
+    MD.markDirty(id);
   };
   button3.appendChild(text3);
   const text4 = document.createTextNode("swap");
@@ -114,14 +113,14 @@ export function createCompiledTsxApp() {
       data[1] = data[998]!;
       data[998] = t;
     }
-    MD.markDirty('AppTsx');
+    MD.markDirty(id);
   };
   button4.appendChild(text4);
   const text5 = document.createTextNode("remove");
   const button5 = document.createElement("button");
   button5.onclick = () => {
     data.splice(500, 1);
-    MD.markDirty('AppTsx');
+    MD.markDirty(id);
   };
   button5.appendChild(text5);
   const text6 = document.createTextNode("clear");
@@ -142,17 +141,18 @@ export function createCompiledTsxApp() {
   div0.appendChild(button5);
   div0.appendChild(button6);
   const ul0 = document.createElement("ul");
-  const region0 = MD.createListRegion<RowData>(ul0, "AppTsx/data", (item, rowId) => {
-    const el = Row(rowId, 'AppTsx', [{ item }]);
+  const region0 = MD.createListRegion(ul0, id + "/data", (item, rowId) => {
+    const entry = Row({
+      item
+    }, rowId);
     return {
-      nodes: [el],
-      entities: [rowId],
+      nodes: entry.nodes,
+      entities: [],
+      update: entry.update,
       updateProps: item => {
-        MD.setProps(rowId, [{ item }]);
-      },
-      update: () => {
-        const e = MD.getEntity(rowId);
-        if (e) e.render();
+        entry.updateProps({
+          item
+        });
       }
     };
   }, item => item.id);
@@ -160,21 +160,28 @@ export function createCompiledTsxApp() {
   const div1 = document.createElement("div");
   div1.appendChild(div0);
   div1.appendChild(ul0);
+  return div1;
+}
+
+export function createCompiledTsxApp() {
+  const root = BenchApp('AppTsx', null) as HTMLElement;
+  const toolbar = root.querySelector('.toolbar') as HTMLElement;
+  const ul = root.querySelector('ul') as HTMLElement;
 
   return {
-    root: div1,
+    root,
     click(name: string) {
-      const b = [...div0.children].find(
+      const b = [...toolbar.children].find(
         (c) => (c as HTMLElement).textContent === name,
       ) as HTMLButtonElement;
       if (!b) throw new Error(`Button '${name}' not found in compiled app`);
       b.click();
     },
     selectRow(index: number) {
-      (ul0.children[index] as HTMLElement).click();
+      (ul.children[index] as HTMLElement).click();
     },
     rowCount() {
-      return ul0.children.length;
+      return ul.children.length;
     },
   };
 }

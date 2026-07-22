@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "dev": "vitest",
-    "bench": "esbuild bench/browser-entry.ts --bundle --outfile=bench/dist/browser-bundle.js --format=iife && bun run bench/run-browser.ts"
+    "bench": "bun run bench/build-bench.ts && esbuild bench/browser-entry.ts --bundle --outfile=bench/dist/browser-bundle.js --format=iife && bun run bench/run-browser.ts"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",

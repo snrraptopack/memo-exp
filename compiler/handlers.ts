@@ -394,7 +394,9 @@ function buildCommit(
   const rowCommit =
     s.rowLocal && rowCtx !== undefined
       ? t.expressionStatement(
-          t.callExpression(md('markDirty'), [t.identifier(rowCtx.rowIdVar)]),
+          rowCtx.refreshVar !== undefined
+            ? t.callExpression(t.identifier(rowCtx.refreshVar), [])
+            : t.callExpression(md('markDirty'), [t.identifier(rowCtx.rowIdVar)]),
         )
       : null;
   // R12: instance-state writes commit locally too — same markDirty(id) the

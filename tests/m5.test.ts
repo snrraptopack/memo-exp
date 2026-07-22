@@ -133,11 +133,12 @@ describe('M5 compiler — code generation', () => {
     expect(code).toContain('"App/items/Row[*]"');
   });
 
-  it('compiles component list rows via factory callbacks (R7)', () => {
+  it('compiles eligible component list rows as lightweight factories (M5.10)', () => {
     const code = compile(readFixture('list-component'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
-    expect(code).toContain('Row(rowId, id, [item])');
-    expect(code).toContain('"App/items/Row[*]"');
+    expect(code).toContain('Row(item, rowId)');
+    expect(code).toContain('entities: []');
+    expect(code).toContain('"App", "App/*"');
   });
 
   it('rejects unsupported constructs with actionable errors', () => {
@@ -165,7 +166,7 @@ describe('M5 compiler — code generation', () => {
         `let s = 0; let items = [1];\nfunction Row(sel) { return <li>{sel}</li>; }\nfunction C() { return <ul>{items.map(i => <Row sel={s} />)}</ul>; }`,
       );
       expect(code).toContain('updateProps');
-      expect(code).toContain('MD.setProps(rowId, [s])');
+      expect(code).toContain('entry.updateProps(s)');
     }
 
     expect(() => compile(`function C() { return <><span /></>; }`)).toThrowError(
@@ -326,22 +327,15 @@ describe('M5 compiler — compiled output runs', () => {
     expect(lis[1]!.className).toBe('danger'); // selection survives reconcile
   });
 
-  it('list (component rows): same behavior through factory callbacks', async () => {
+  it('list (component rows): lightweight factories preserve behavior', async () => {
     const { CompList } = await importCompiled('list-component');
     document.body.appendChild(CompList('App', null));
 
     let lis = document.querySelectorAll('li');
     expect(lis).toHaveLength(2);
 
-    expect(registeredIds()).toEqual([
-      'App',
-      'App/items/Row[1]',
-      'App/items/Row[2]',
-    ]);
-    expect(resolveWrites(['selected'], registeredIds())).toEqual([
-      'App/items/Row[1]',
-      'App/items/Row[2]',
-    ]);
+    expect(registeredIds()).toEqual(['App']);
+    expect(resolveWrites(['selected'], registeredIds())).toEqual(['App']);
 
     lis[0]!.click();
     expect(lis[0]!.className).toBe('danger');

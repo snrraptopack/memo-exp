@@ -56,13 +56,13 @@ export function AsyncCounter(id, parent) {
 }"
 `;
 
-exports[`M5 compiler — code generation > compiles component list rows via factory callbacks (R7) 1`] = `
+exports[`M5 compiler — code generation > compiles eligible component list rows as lightweight factories (M5.10) 1`] = `
 "import * as MD from "../out-runtime";
 const WRITES_0 = ["selected"];
 MD.installAccessTable({
   readers: {
     "items": ["App", "App/*"],
-    "selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
+    "selected": ["App", "App/*"]
   }
 }, "App");
 // Fixture: R7 component list rows — a Row component used via .map().
@@ -77,13 +77,9 @@ const items = [{
   label: 'two'
 }];
 let selected = 0;
-function Row(id, parent, __p) {
+function Row(item, __memoRowId) {
   let $s0, $s1, $t;
-  let item = __p[0];
   const update = () => {
-    {
-      item = __p[0];
-    }
     if ($s0 !== ($t = item.label)) {
       $s0 = $t;
       text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
@@ -93,12 +89,6 @@ function Row(id, parent, __p) {
       li0.className = $t;
     }
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
-  });
-  MD.registerProps(id, __p);
   const text0 = document.createTextNode("");
   if ($s0 !== ($t = item.label)) {
     $s0 = $t;
@@ -114,7 +104,14 @@ function Row(id, parent, __p) {
     MD.commitWrites(WRITES_0);
   };
   li0.appendChild(text0);
-  return li0;
+  return {
+    nodes: [li0],
+    entities: [],
+    update: update,
+    updateProps: __memoNext0 => {
+      item = __memoNext0;
+    }
+  };
 }
 export function CompList(id, parent) {
   let $t;
@@ -135,13 +132,13 @@ export function CompList(id, parent) {
   });
   const ul0 = document.createElement("ul");
   const region0 = MD.createListRegion(ul0, id + "/items", (item, rowId) => {
-    const el = Row(rowId, id, [item]);
+    const entry = Row(item, rowId);
     return {
-      nodes: [el],
-      entities: [rowId],
+      nodes: entry.nodes,
+      entities: [],
+      update: entry.update,
       updateProps: item => {
-        MD.setProps(rowId, [item]);
-        MD.markDirty(rowId);
+        entry.updateProps(item);
       }
     };
   }, item => item.id);

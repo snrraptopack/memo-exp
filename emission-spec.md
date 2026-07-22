@@ -661,6 +661,18 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **M5.10 (lightweight listed component rows, compiler/analysis.ts +
+  compiler/emit.ts + compiler/handlers.ts, test/m58.test.ts):** a list-only
+  component with no local `let`/`var` state and no nested entity/region shape
+  now emits as a `ListEntry` factory. It keeps guarded DOM updates and keyed
+  reconciliation but allocates no row registry entity or props box. Shared
+  reads invalidate the list owner, whose reconcile refreshes retained row
+  closures; item-local handler writes call that closure directly. Stateful or
+  structurally complex rows deliberately retain the existing entity path.
+- **L2 table-format compatibility (src/access.ts, test/m58.test.ts):**
+  `AccessTable` accepts deferred `params` patterns now, preserving the public
+  format while payload-aware precision remains a later resolver increment.
+
 - **R12 (instance state, compiler analysis+handlers+emit, test/r12.test.ts):**
   top-level let/var of a component body is INSTANCE state — one factory
   closure per instance, readable only by that instance (children get it via
