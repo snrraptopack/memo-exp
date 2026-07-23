@@ -2,45 +2,85 @@
  * Generated Compiled Output for examples/todo.tsx
  */
 import * as MD from "../src/runtime";
-const WRITES_0 = ["todos"];
-const WRITES_1 = ["todos"];
-const WRITES_2 = ["count"];
+const WRITES_0 = ["completedSet"];
+const WRITES_1 = ["categoryMap"];
+const WRITES_2 = ["categoryMap", "todos"];
+const WRITES_3 = ["completedSet", "todos"];
+const WRITES_4 = ["totalCount"];
+const WRITES_5 = ["completedCount"];
+const WRITES_6 = ["activeCount"];
 MD.installAccessTable({
   readers: {
-    "count": ["TodoApp", "TodoApp/*"],
-    "todos": ["TodoApp", "TodoApp/$computed/count", "TodoApp/*"]
+    "activeCount": ["TodoApp", "TodoApp/*"],
+    "categoryMap": ["TodoApp", "TodoApp/*"],
+    "completedCount": ["TodoApp", "TodoApp/$computed/activeCount", "TodoApp/*"],
+    "completedSet": ["TodoApp", "TodoApp/$computed/completedCount", "TodoApp/*"],
+    "todos": ["TodoApp", "TodoApp/$computed/totalCount", "TodoApp/*"],
+    "totalCount": ["TodoApp", "TodoApp/$computed/activeCount", "TodoApp/*"]
   }
 }, "TodoApp");
+// 1. Array Collection
 let todos = [{
   id: 1,
-  text: 'Learn Memoized DOM Compiler',
-  done: true
+  text: 'Master Memoized DOM Compiler'
 }, {
   id: 2,
-  text: 'Build a Live Todo App',
-  done: false
+  text: 'Test JavaScript Set & Map Collections'
 }, {
   id: 3,
-  text: 'Benchmark Performance',
-  done: false
+  text: 'Verify Computed Derivations'
 }];
-let count = todos.filter(it => it.done).length;
+
+// 2. Set Collection for Completed IDs (Const Collection)
+const completedSet = new Set([1]);
+
+// 3. Map Collection for Todo Categories (Const Collection)
+const categoryMap = new Map([[1, 'Compiler'], [2, 'Reactivity'], [3, 'Performance']]);
+
+// 4. Rule R13 Computed Derivations over Collections
+let totalCount = todos.length;
 MD.register({
-  id: "TodoApp/$computed/count",
+  id: "TodoApp/$computed/totalCount",
   parent: null,
   depth: -1,
   render: () => {
-    const next = todos.filter(it => it.done).length;
-    if (MD.computedChanged(count, next)) {
-      count = next;
-      MD.commitWrites(WRITES_2);
+    const next = todos.length;
+    if (MD.computedChanged(totalCount, next)) {
+      totalCount = next;
+      MD.commitWrites(WRITES_4);
+    }
+  }
+});
+let completedCount = completedSet.size;
+MD.register({
+  id: "TodoApp/$computed/completedCount",
+  parent: null,
+  depth: -1,
+  render: () => {
+    const next = completedSet.size;
+    if (MD.computedChanged(completedCount, next)) {
+      completedCount = next;
+      MD.commitWrites(WRITES_5);
+    }
+  }
+});
+let activeCount = totalCount - completedCount;
+MD.register({
+  id: "TodoApp/$computed/activeCount",
+  parent: null,
+  depth: -1,
+  render: () => {
+    const next = totalCount - completedCount;
+    if (MD.computedChanged(activeCount, next)) {
+      activeCount = next;
+      MD.commitWrites(WRITES_6);
     }
   }
 });
 function TodoItem(props, __memoRowId) {
-  let $s0, $s1, $s2, $t;
+  let $s0, $s1, $s2, $s3, $t;
   const update = () => {
-    if ($s0 !== ($t = props.item.done ? '☑ ' : '☐ ')) {
+    if ($s0 !== ($t = completedSet.has(props.item.id) ? '☑' : '☐')) {
       $s0 = $t;
       text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
     }
@@ -48,34 +88,66 @@ function TodoItem(props, __memoRowId) {
       $s1 = $t;
       text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
     }
-    if ($s2 !== ($t = props.item.done ? 'todo-item done' : 'todo-item')) {
+    if ($s2 !== ($t = categoryMap.get(props.item.id) || 'General')) {
       $s2 = $t;
+      text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
+    if ($s3 !== ($t = completedSet.has(props.item.id) ? 'todo-item done' : 'todo-item')) {
+      $s3 = $t;
       li0.className = $t;
     }
   };
   const text0 = document.createTextNode("");
-  if ($s0 !== ($t = props.item.done ? '☑ ' : '☐ ')) {
+  if ($s0 !== ($t = completedSet.has(props.item.id) ? '☑' : '☐')) {
     $s0 = $t;
     text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
   }
+  const span0 = document.createElement("span");
+  span0.className = "todo-check";
+  span0.onclick = () => {
+    if (completedSet.has(props.item.id)) {
+      completedSet.delete(props.item.id);
+    } else {
+      completedSet.add(props.item.id);
+    }
+    MD.commitWrites(WRITES_0);
+  };
+  span0.appendChild(text0);
   const text1 = document.createTextNode("");
   if ($s1 !== ($t = props.item.text)) {
     $s1 = $t;
     text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
   }
-  const span0 = document.createElement("span");
-  span0.onclick = () => {
-    props.item.done = !props.item.done;
-    update();
-  };
-  span0.appendChild(text0);
-  span0.appendChild(text1);
-  const li0 = document.createElement("li");
-  if ($s2 !== ($t = props.item.done ? 'todo-item done' : 'todo-item')) {
+  const span1 = document.createElement("span");
+  span1.className = "todo-text";
+  span1.appendChild(text1);
+  const text2 = document.createTextNode("🏷️ ");
+  const text3 = document.createTextNode("");
+  if ($s2 !== ($t = categoryMap.get(props.item.id) || 'General')) {
     $s2 = $t;
+    text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
+  const span2 = document.createElement("span");
+  span2.className = "todo-badge";
+  span2.onclick = () => {
+    const current = categoryMap.get(props.item.id) || 'Compiler';
+    const nextCat = current === 'Compiler' ? 'Reactivity' : current === 'Reactivity' ? 'Performance' : 'Compiler';
+    categoryMap.set(props.item.id, nextCat);
+    MD.commitWrites(WRITES_1);
+  };
+  span2.appendChild(text2);
+  span2.appendChild(text3);
+  const div0 = document.createElement("div");
+  div0.className = "todo-content";
+  div0.appendChild(span0);
+  div0.appendChild(span1);
+  div0.appendChild(span2);
+  const li0 = document.createElement("li");
+  if ($s3 !== ($t = completedSet.has(props.item.id) ? 'todo-item done' : 'todo-item')) {
+    $s3 = $t;
     li0.className = $t;
   }
-  li0.appendChild(span0);
+  li0.appendChild(div0);
   return {
     nodes: [li0],
     entities: [],
@@ -86,17 +158,19 @@ function TodoItem(props, __memoRowId) {
   };
 }
 export function TodoApp(id, parent) {
-  let $s0, $s1, $t;
-  let timer = 0;
-  const startTimer = () => setInterval(() => timer++, 1000);
+  let $s0, $s1, $s2, $t;
   const update = () => {
-    if ($s0 !== ($t = timer)) {
+    if ($s0 !== ($t = totalCount)) {
       $s0 = $t;
-      text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
-    }
-    if ($s1 !== ($t = count)) {
-      $s1 = $t;
       text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
+    if ($s1 !== ($t = activeCount)) {
+      $s1 = $t;
+      text5.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    }
+    if ($s2 !== ($t = completedCount)) {
+      $s2 = $t;
+      text7.data = $t == null || typeof $t === "boolean" ? "" : String($t);
     }
     region0.reconcile(todos);
   };
@@ -105,48 +179,78 @@ export function TodoApp(id, parent) {
     parent: parent,
     render: update
   });
-  const text0 = document.createTextNode("⚡ Memoized DOM Todo App ");
-  const text1 = document.createTextNode("");
-  if ($s0 !== ($t = timer)) {
-    $s0 = $t;
-    text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
-  }
+  const text0 = document.createTextNode("⚡ Advanced Reactive Todo App");
   const h10 = document.createElement("h1");
   h10.appendChild(text0);
-  h10.appendChild(text1);
-  const text2 = document.createTextNode("Built with Reactive Memoized DOM ");
-  const text3 = document.createTextNode("");
-  if ($s1 !== ($t = count)) {
-    $s1 = $t;
-    text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
-  }
+  const text1 = document.createTextNode("Powered by Array, Set & Map Collections");
   const p0 = document.createElement("p");
   p0.className = "subtitle";
-  p0.appendChild(text2);
-  p0.appendChild(text3);
-  const text4 = document.createTextNode("➕ Add Task");
+  p0.appendChild(text1);
+  const text2 = document.createTextNode("Total: ");
+  const text3 = document.createTextNode("");
+  if ($s0 !== ($t = totalCount)) {
+    $s0 = $t;
+    text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
+  const strong0 = document.createElement("strong");
+  strong0.appendChild(text3);
+  const div0 = document.createElement("div");
+  div0.className = "stat-pill";
+  div0.appendChild(text2);
+  div0.appendChild(strong0);
+  const text4 = document.createTextNode("Active: ");
+  const text5 = document.createTextNode("");
+  if ($s1 !== ($t = activeCount)) {
+    $s1 = $t;
+    text5.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
+  const strong1 = document.createElement("strong");
+  strong1.appendChild(text5);
+  const div1 = document.createElement("div");
+  div1.className = "stat-pill";
+  div1.appendChild(text4);
+  div1.appendChild(strong1);
+  const text6 = document.createTextNode("Completed: ");
+  const text7 = document.createTextNode("");
+  if ($s2 !== ($t = completedCount)) {
+    $s2 = $t;
+    text7.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  }
+  const strong2 = document.createElement("strong");
+  strong2.appendChild(text7);
+  const div2 = document.createElement("div");
+  div2.className = "stat-pill";
+  div2.appendChild(text6);
+  div2.appendChild(strong2);
+  const div3 = document.createElement("div");
+  div3.className = "stats-bar";
+  div3.appendChild(div0);
+  div3.appendChild(div1);
+  div3.appendChild(div2);
+  const text8 = document.createTextNode("➕ Add Task");
   const button0 = document.createElement("button");
   button0.onclick = () => {
+    const newId = Date.now();
     todos.push({
-      id: Date.now(),
-      text: `New Task #${todos.length + 1}`,
-      done: false
+      id: newId,
+      text: `New Task #${todos.length + 1}`
     });
-    MD.commitWrites(WRITES_0);
+    categoryMap.set(newId, 'General');
+    MD.commitWrites(WRITES_2);
   };
-  button0.appendChild(text4);
-  const text5 = document.createTextNode("🧹 Clear Completed");
+  button0.appendChild(text8);
+  const text9 = document.createTextNode("🧹 Clear Completed");
   const button1 = document.createElement("button");
   button1.onclick = () => {
-    todos = todos.filter(t => !t.done);
-    startTimer();
-    MD.commitWrites(WRITES_1);
+    todos = todos.filter(t => !completedSet.has(t.id));
+    completedSet.clear();
+    MD.commitWrites(WRITES_3);
   };
-  button1.appendChild(text5);
-  const div0 = document.createElement("div");
-  div0.className = "actions";
-  div0.appendChild(button0);
-  div0.appendChild(button1);
+  button1.appendChild(text9);
+  const div4 = document.createElement("div");
+  div4.className = "actions";
+  div4.appendChild(button0);
+  div4.appendChild(button1);
   const ul0 = document.createElement("ul");
   const region0 = MD.createListRegion(ul0, id + "/todos", (item, rowId) => {
     const entry = TodoItem({
@@ -164,11 +268,12 @@ export function TodoApp(id, parent) {
     };
   }, item => item.id);
   region0.reconcile(todos);
-  const div1 = document.createElement("div");
-  div1.className = "todo-card";
-  div1.appendChild(h10);
-  div1.appendChild(p0);
-  div1.appendChild(div0);
-  div1.appendChild(ul0);
-  return div1;
+  const div5 = document.createElement("div");
+  div5.className = "todo-card";
+  div5.appendChild(h10);
+  div5.appendChild(p0);
+  div5.appendChild(div3);
+  div5.appendChild(div4);
+  div5.appendChild(ul0);
+  return div5;
 }

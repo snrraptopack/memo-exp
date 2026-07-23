@@ -115,6 +115,8 @@ export interface Ctx {
   readers: Map<string, Set<string>>;
   opaqueVars: Set<string>;
   writeConstCounter: number;
+  /** Dedupe table for hoisted write-set consts: joined writes → const name. */
+  writeConsts: Map<string, string>;
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
 }
@@ -142,6 +144,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     readers: new Map(),
     opaqueVars: new Set(),
     writeConstCounter: 0,
+    writeConsts: new Map(),
     analyzedFunctions: new WeakSet(),
   };
 }
@@ -154,7 +157,13 @@ export const md = (name: string): t.MemberExpression =>
   t.memberExpression(t.identifier('MD'), t.identifier(name));
 
 export function freshWriteConst(ctx: Ctx, writes: readonly string[]): t.Identifier {
+  // Dedupe: identical write-sets share one hoisted const (a list row with N
+  // handlers writing the same array used to emit N identical WRITES_n).
+  const key = writes.join(' ');
+  const existing = ctx.writeConsts.get(key);
+  if (existing !== undefined) return t.identifier(existing);
   const id = t.identifier(`WRITES_${ctx.writeConstCounter++}`);
+  ctx.writeConsts.set(key, id.name);
   ctx.header.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(

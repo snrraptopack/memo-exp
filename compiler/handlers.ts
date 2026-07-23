@@ -117,6 +117,32 @@ function readersOfVar(ctx: Ctx, v: string): Set<string> {
   }
   return out;
 }
+/**
+ * R11.1: can anything OTHER than the row's own list observe item-field
+ * mutations? The row-local commit (markDirty/update on the row alone) is
+ * sound only when the answer is no. List owners are excluded — their
+ * map-source read is inherent to the list pattern and the reconcile
+ * resyncs their rows (see spec §11.3 for the residual case of an owner
+ * deriving item fields inline, outside a computed).
+ */
+function itemFieldVisibleBeyondList(
+  ctx: Ctx,
+  compName: string | null,
+  rowCtx: RowCtx,
+): boolean {
+  const arr = rowCtx.arrayName;
+  if (arr === '') return true; // unknown source array → conservative
+  for (const info of ctx.computeds.values()) {
+    if (info.reads.has(arr)) return true;
+  }
+  const owners = new Set((ctx.listedSites.get(compName ?? '') ?? []).map((s) => s.owner));
+  if (owners.size === 0 && compName !== null) owners.add(compName); // inline rows
+  for (const reader of readersOfVar(ctx, arr)) {
+    if (reader === '__rows__' || reader === '__regions__') return true;
+    if (!owners.has(reader)) return true;
+  }
+  return false;
+}
 
 function analyzeHandler(
   ctx: Ctx,
@@ -195,6 +221,16 @@ function analyzeHandler(
       scopeOf(p).writes.add(rowCtx.arrayName);
     } else {
       scopeOf(p).rowLocal = true;
+      // R11.1: the row-local shortcut is only sound when NOTHING outside the
+      // row's own list can observe item fields. A computed over the source
+      // array (todos.filter(t => t.done).length) — or any non-owner reader —
+      // sees field mutations too, so the array write must ALSO route through
+      // the table: the computed recomputes, the reader re-renders, and the
+      // resulting reconcile resyncs this row anyway (setter guards absorb
+      // the overlap).
+      if (itemFieldVisibleBeyondList(ctx, compName, rowCtx)) {
+        scopeOf(p).writes.add(rowCtx.arrayName);
+      }
     }
     return true;
   };
