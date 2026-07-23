@@ -97,12 +97,23 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
         if (containsJsx(p)) {
           ctx.comps.set(name, { parents: new Set(), jsxCount: 0 });
           ctx.compPaths.set(name, p);
+          // Declared prop names, captured NOW — transformComponent rewrites
+          // params to (id, parent, __p), so call sites must not read them later.
+          ctx.compPropNames.set(
+            name,
+            p.node.params
+              .filter((pr): pr is t.Identifier => t.isIdentifier(pr))
+              .map((pr) => pr.name),
+          );
           const first = p.node.params[0];
+          const annotation = t.isIdentifier(first)
+            ? first.typeAnnotation?.typeAnnotation
+            : undefined;
           if (
             p.node.params.length === 1 &&
             t.isIdentifier(first) &&
             first.name === 'props' &&
-            t.isTSTypeLiteral(first.typeAnnotation?.typeAnnotation)
+            (t.isTSTypeLiteral(annotation) || t.isTSTypeReference(annotation))
           ) {
             ctx.objectPropComponents.add(name);
           }
@@ -810,27 +821,36 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
  * row owns instance state or can mount nested entity/region structure.
  */
 export function isLightweightListedComponent(ctx: Ctx, name: string): boolean {
-  const sites = ctx.listedSites.get(name);
-  if (!sites || sites.length === 0 || ctx.comps.get(name)!.parents.size > 0) return false;
-  if ((ctx.instanceState.get(name)?.size ?? 0) > 0) return false;
+  const cached = ctx.lightweightCache.get(name);
+  if (cached !== undefined) return cached;
 
-  let eligible = true;
-  const path = ctx.compPaths.get(name)!;
-  path.traverse({
-    JSXElement(el) {
-      const tag = el.node.openingElement.name;
-      if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) eligible = false;
-    },
-    CallExpression(call) {
-      if (matchMapCall(call.node) && containsJsx(call)) eligible = false;
-    },
-    ConditionalExpression(cond) {
-      if (containsJsx(cond)) eligible = false;
-    },
-    LogicalExpression(logical) {
-      if (containsJsx(logical)) eligible = false;
-    },
-  });
+  let eligible = false;
+  const sites = ctx.listedSites.get(name);
+  if (
+    sites !== undefined &&
+    sites.length > 0 &&
+    ctx.comps.get(name)!.parents.size === 0 &&
+    (ctx.instanceState.get(name)?.size ?? 0) === 0
+  ) {
+    eligible = true;
+    const path = ctx.compPaths.get(name)!;
+    path.traverse({
+      JSXElement(el) {
+        const tag = el.node.openingElement.name;
+        if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) eligible = false;
+      },
+      CallExpression(call) {
+        if (matchMapCall(call.node) && containsJsx(call)) eligible = false;
+      },
+      ConditionalExpression(cond) {
+        if (containsJsx(cond)) eligible = false;
+      },
+      LogicalExpression(logical) {
+        if (containsJsx(logical)) eligible = false;
+      },
+    });
+  }
+  ctx.lightweightCache.set(name, eligible);
   return eligible;
 }
 

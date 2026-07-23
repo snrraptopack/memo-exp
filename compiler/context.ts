@@ -81,6 +81,10 @@ export interface Ctx {
   listedSites: Map<string, SiteRef[]>;
   /** Components declared with one typed object prop (`Row(props: { item: T })`). */
   objectPropComponents: Set<string>;
+  /** Declared prop names per component (source order), captured before params are rewritten. */
+  compPropNames: Map<string, string[]>;
+  /** Memoized isLightweightListedComponent results (the eligibility check traverses the AST). */
+  lightweightCache: Map<string, boolean>;
   /** Inline-row reads: '<owner>/<suffix>' → site + state vars read in the row JSX. */
   rowReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Conditional-region reads (R8): '<owner>/when<n>' → site + vars read in condition+branches. */
@@ -128,6 +132,8 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     childRefCounts: new Map(),
     listedSites: new Map(),
     objectPropComponents: new Set(),
+    compPropNames: new Map(),
+    lightweightCache: new Map(),
     rowReads: new Map(),
     condReads: new Map(),
     instanceState: new Map(),

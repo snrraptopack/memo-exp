@@ -269,7 +269,10 @@ channel into the child — no VDOM, no subscriptions, the same guarded-setter
 machinery as state.
 
 **Props box.** At call sites the compiler wraps positional props in ONE
-array: `Row(childId, id, [todo, sel])`. The component declaration is
+array: `Row(childId, id, [todo, sel])` — matched **by name** against the
+callee's declared params, never by JSX attribute order (unknown attribute
+names are a compile error; missing declared props pass `undefined`). The
+component declaration is
 rewritten (user signatures unchanged): `function Row(item, sel)` becomes
 `function Row(id, parent, __p)` with prologue `let item = __p[0], sel = __p[1];`
 (L1: component params must be plain identifiers — no destructuring/defaults
@@ -637,8 +640,6 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   not `setAttr`. (`setProp` exists in the runtime; the emitter doesn't use it.)
 - SVG elements (`createElementNS`); style objects; class arrays/objects;
   attribute-name mapping (`htmlFor`, `tabIndex`).
-- Events on component tags (`<Row onClick={…} />`) silently become props —
-  needs an error or a design.
 - No unmount/cleanup API outside list rows; no lifecycle hooks
   (`onMount`/`onUnmount`); timers or subscriptions started in a factory body
   leak.
@@ -660,6 +661,23 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   compile-time perf on large modules.
 
 ### 11.6 Resolved (history)
+
+- **Post-M5.10 review batch (src/access.ts + src/list.ts + compiler/analysis.ts
+  + compiler/emit.ts, test/m58.test.ts):** three real-world correctness fixes
+  on top of M5.10. (1) `resolveWrites` payload routing now implements spec §5
+  as written: dotted payload paths (`{payload.item.id}`) resolve segment-wise,
+  exact (non-wildcard) readers are kept alongside the precise ids, and ANY
+  interpolation failure — missing field, `prev.*` resolver state, absent
+  params entry — falls back to the `readers` superset instead of returning a
+  partial garbage dirty set (was a silent-stale-UI path). (2) Props are
+  matched BY NAME against the callee's declared params at every call site
+  (static children and list rows, entity and lightweight); positional
+  matching silently misaligned props whenever JSX attribute order differed
+  from declaration order. Unknown attribute names are now a compile error,
+  which also turns events-on-component-tags from a silent prop into an
+  actionable message. (3) Object-prop detection accepts type aliases
+  (`props: RowProps`), not just inline literals, and the lightweight-row
+  eligibility traversal is memoized per component.
 
 - **M5.10 (lightweight listed component rows, compiler/analysis.ts +
   compiler/emit.ts + compiler/handlers.ts, test/m58.test.ts):** a list-only

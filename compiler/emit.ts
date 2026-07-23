@@ -420,7 +420,7 @@ function emitElement(
     const base = tag.charAt(0).toLowerCase() + tag.slice(1);
     const varName = seen === 0 ? base : `${base}${seen}`;
     const idSuffix = seen === 0 ? `/${tag}` : `/${tag}[${seen}]`;
-    const props: t.Expression[] = [];
+    const propEntries: Array<{ name: string; value: t.Expression }> = [];
     let needsPush = false;
     for (const attr of open.attributes) {
       const a = attr as t.JSXAttribute;
@@ -433,8 +433,12 @@ function emitElement(
       // R12: instance-state reads also need re-push (parent re-renders on
       // instance writes → this updater re-syncs the child's props box)
       if (exprReadsState(ctx, v, compName)) needsPush = true;
-      props.push(t.cloneNode(v));
+      propEntries.push({ name: (a.name as t.JSXIdentifier).name, value: t.cloneNode(v) });
     }
+    // Props are matched BY NAME against the callee's declared params — JSX
+    // attribute order is irrelevant (positional matching silently misaligned
+    // props when attribute order and declaration order disagreed).
+    const props = orderCallProps(ctx, tag, propEntries);
     const childId = t.binaryExpression('+', t.identifier('id'), t.stringLiteral(idSuffix));
     scope.creation.push(
       t.variableDeclaration('const', [
@@ -734,6 +738,48 @@ function emitRegion(
   );
 }
 
+/**
+ * Order a call site's props to match the callee's DECLARED param order,
+ * matched by attribute name — never by JSX attribute position. Object-prop
+ * components (`Row(props: {...})`) receive one object literal instead.
+ * Unknown attribute names are a compile error (catches typos and events on
+ * component tags, which L1 has no design for); undeclared-but-missing props
+ * pass `undefined`, matching plain JS call semantics.
+ */
+function orderCallProps(
+  ctx: Ctx,
+  tag: string,
+  entries: Array<{ name: string; value: t.Expression }>,
+): t.Expression[] {
+  if (ctx.objectPropComponents.has(tag)) {
+    return [
+      t.objectExpression(
+        entries.map((e) =>
+          t.objectProperty(
+            t.identifier(e.name),
+            e.value,
+            false,
+            t.isIdentifier(e.value) && e.value.name === e.name,
+          ),
+        ),
+      ),
+    ];
+  }
+  const declared = ctx.compPropNames.get(tag);
+  if (declared === undefined) return entries.map((e) => e.value);
+  const byName = new Map(entries.map((e) => [e.name, e.value]));
+  for (const name of byName.keys()) {
+    if (!declared.includes(name)) {
+      throw new Error(
+        `memo-dom: unknown prop '${name}' on <${tag}> — declared props: ${
+          declared.length > 0 ? declared.join(', ') : '(none)'
+        }`,
+      );
+    }
+  }
+  return declared.map((pn) => byName.get(pn) ?? t.identifier('undefined'));
+}
+
 function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpression {
   const propEntries: Array<{ name: string; value: t.Expression }> = [];
   for (const attr of site.jsx.openingElement.attributes) {
@@ -742,16 +788,7 @@ function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpres
     if (name === 'key') continue;
     propEntries.push({ name, value: t.cloneNode(attrExpr(a.value)!) });
   }
-  const props = propEntries.map((p) => p.value);
-  const callProps = ctx.objectPropComponents.has(site.rowComp!)
-    ? [
-        t.objectExpression(
-          propEntries.map((p) =>
-            t.objectProperty(t.identifier(p.name), t.cloneNode(p.value), false, true),
-          ),
-        ),
-      ]
-    : props;
+  const callProps = orderCallProps(ctx, site.rowComp!, propEntries);
   if (isLightweightListedComponent(ctx, site.rowComp!)) {
     const entry = t.identifier('entry');
     return t.arrowFunctionExpression(

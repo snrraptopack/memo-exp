@@ -40,7 +40,7 @@ const PROP_ORDER_SOURCE = `
 let items = [{ id: 1, label: 'one' }];
 let suffix = '';
 function Row(sfx, item) { return <li>{sfx}{item.label}</li>; }
-function C() { return <ul>{items.map(item => <Row sfx={suffix} item={item} />)}</ul>; }
+function C() { return <ul>{items.map(i => <Row item={i} sfx={suffix} key={i.id} />)}</ul>; }
 `;
 
 const NON_NULL_WRITE_SOURCE = `
@@ -107,9 +107,10 @@ describe('M5.10 - lightweight listed component rows', () => {
     expect(code).toContain('Row(rowId, id, [item])');
   });
 
-  it('recomputes lightweight props in declaration order during reconcile', () => {
+  it('matches row props by name when JSX attribute order differs from declaration order', () => {
     const code = compile(PROP_ORDER_SOURCE, { runtimePath: '../out-runtime' });
-    expect(code).toContain('entry.updateProps(suffix, item)');
+    expect(code).toContain('Row(suffix, i, rowId)');
+    expect(code).toContain('entry.updateProps(suffix, i)');
   });
 
   it('tracks member writes through TypeScript non-null assertions', () => {
@@ -132,5 +133,75 @@ describe('M5.10 - lightweight listed component rows', () => {
       'App',
     );
     expect(resolveWrites(['selected'], [])).toEqual(['App']);
+  });
+
+  it('resolves parametrized patterns from the payload, keeping exact readers', () => {
+    installAccessTable(
+      {
+        readers: { selected: ['App/Badge', 'App/items/Row[*]'] },
+        params: { selected: [{ pattern: 'App/items/Row[{payload.item.id}]' }] },
+      },
+      'App',
+    );
+    expect(resolveWrites(['selected'], [], { item: { id: 42 } })).toEqual([
+      'App/items/Row[42]',
+      'App/Badge',
+    ]);
+  });
+
+  it('falls back to the readers superset when payload interpolation fails', () => {
+    installAccessTable(
+      {
+        readers: { selected: ['App/Badge'] },
+        params: { selected: [{ pattern: 'App/items/Row[{payload.item.id}]' }] },
+      },
+      'App',
+    );
+    // missing payload field → readers superset, never a partial/garbage set
+    expect(resolveWrites(['selected'], [], { item: {} })).toEqual(['App/Badge']);
+    expect(resolveWrites(['selected'], [], {})).toEqual(['App/Badge']);
+  });
+
+  it('treats prev.* patterns as unresolvable and falls back (L2 resolver state)', () => {
+    installAccessTable(
+      {
+        readers: { selected: ['App/Badge'] },
+        params: { selected: [{ pattern: 'App/items/Row[{prev.selected}]' }] },
+      },
+      'App',
+    );
+    expect(resolveWrites(['selected'], [], { selected: 3 })).toEqual(['App/Badge']);
+  });
+
+  it('detects typed object props behind a type alias', () => {
+    const code = compile(
+      `let items = [{ id: 1, label: 'one' }];\n` +
+        `interface RowProps { item: { id: number; label: string } }\n` +
+        `function Row(props: RowProps) { return <li>{props.item.label}</li>; }\n` +
+        `function C() { return <ul>{items.map(item => <Row key={item.id} item={item} />)}</ul>; }`,
+      { runtimePath: '../out-runtime' },
+    );
+    expect(code).toMatch(/Row\(\{\s*item\s*\}, rowId\)/);
+  });
+
+  it('rejects unknown props at call sites instead of misaligning silently', () => {
+    expect(() =>
+      compile(
+        `let items = [{ id: 1 }];\nfunction Row(item) { return <li>{item.id}</li>; }\nfunction C() { return <ul>{items.map(i => <Row key={i.id} item={i} onClick={() => {}} />)}</ul>; }`,
+      ),
+    ).toThrowError(/unknown prop 'onClick' on <Row>/);
+    expect(() =>
+      compile(
+        `function Child(a) { return <span>{a}</span>; }\nfunction C() { return <div><Child a={1} b={2} /></div>; }`,
+      ),
+    ).toThrowError(/unknown prop 'b' on <Child>/);
+  });
+
+  it('matches static child props by name, not attribute order', () => {
+    const code = compile(
+      `function Child(a, b) { return <span>{a}{b}</span>; }\nfunction C() { return <div><Child b={2} a={1} /></div>; }`,
+      { runtimePath: '../out-runtime' },
+    );
+    expect(code).toMatch(/Child\(id \+ "\/Child", id, \[1, 2\]\)/);
   });
 });

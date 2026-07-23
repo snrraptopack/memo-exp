@@ -193,19 +193,54 @@ export function resolveWrites(
   if (writes.some(isOpaque)) return 'root-subtree';
 
   if (payload) {
+    // §5: parametrized patterns collapse wildcard over-approximation into
+    // precise ids. Every written variable must fully interpolate — ANY
+    // failure (missing params entry, unresolvable path, `prev.*` resolver
+    // state, null/undefined value) degrades to the `readers` superset below,
+    // never to a partial or empty dirty set (correctness invariant 4).
     const out = new Set<EntityId>();
+    let precise = true;
     for (const w of writes) {
       const patterns = paramReaders.get(w);
-      if (patterns) {
-        for (const rawPattern of patterns) {
-          const interpolated = rawPattern.replace(/\{([^}]+)\}/g, (_, key) => {
-            return payload[key] !== undefined && payload[key] !== null ? String(payload[key]) : '';
-          });
-          if (interpolated) out.add(interpolated);
-        }
+      if (patterns === undefined || patterns.length === 0) {
+        precise = false;
+        break;
       }
+      for (const rawPattern of patterns) {
+        let failed = false;
+        const interpolated = rawPattern.replace(/\{([^}]+)\}/g, (_m, expr: string) => {
+          const path = expr.trim();
+          // `prev.*` needs resolver state (L2) — unresolvable from a payload
+          if (!path.startsWith('payload.')) {
+            failed = true;
+            return '';
+          }
+          let cur: unknown = payload;
+          for (const seg of path.slice('payload.'.length).split('.')) {
+            if (cur === null || typeof cur !== 'object') {
+              failed = true;
+              return '';
+            }
+            cur = (cur as Record<string, unknown>)[seg];
+          }
+          if (cur === undefined || cur === null) {
+            failed = true;
+            return '';
+          }
+          return String(cur);
+        });
+        if (failed) {
+          precise = false;
+          break;
+        }
+        out.add(interpolated);
+      }
+      if (!precise) break;
+      // §5.2: params REPLACE the wildcard superset, but the variable's exact
+      // (non-wildcard) readers are still dirtied alongside the precise ids.
+      for (const id of exactReaders.get(w) ?? []) out.add(id);
     }
-    if (out.size > 0) return [...out];
+    if (precise && out.size > 0) return [...out];
   }
 
   // M5.6: full-resolution cache, valid until any expansion changes

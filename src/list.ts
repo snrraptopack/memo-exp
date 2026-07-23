@@ -154,7 +154,9 @@ export function createListRegion<T>(
    * its pending dirty — the row just rendered with current state, so a
    * wildcard-dirtied entry in the commit batch would render it identically
    * a second time. Component rows (updateProps only, no update closure)
-   * keep their dirty: their render IS the props propagation.
+   * render their entity update directly in-place: the props box was just
+   * re-pushed above, so the entity renders with current props in the same
+   * pass instead of taking a second turn through the commit drain.
    */
   function syncRow(entry: ListEntry, item: T, rowId: EntityId): void {
     entry.updateProps?.(item); // R10: re-push the props box (component rows)
@@ -162,7 +164,8 @@ export function createListRegion<T>(
       entry.update(); // M5.5: sync retained row with (possibly mutated) item
       undirty(rowId); // M5.7: no double render
     } else {
-      // Component row: render entity update directly in-place and cancel dirty (Layer 1 single-pass fix)
+      // Component row: the entity renders in-place with the box just pushed
+      // above (single pass), then its pending dirty is cancelled like any row.
       const e = getEntity(rowId);
       if (e) {
         e.render();
