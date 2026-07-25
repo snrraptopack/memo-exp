@@ -175,7 +175,9 @@ export function analyzeMapSite(
       }
     }
     if (jsx.children.some((c) => !t.isJSXText(c) || c.value.trim() !== '')) {
-      fail('memo-dom: children props are not supported (L1)');
+      fail(
+        'memo-dom: component children on keyed list row calls are not supported yet',
+      );
     }
   } else {
     form = 'inline';

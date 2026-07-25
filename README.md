@@ -39,6 +39,18 @@ and exact/receiver-bounded function summaries. Pass
 `resolveImport(specifier, importer)` for
 plugin-defined resolution. Cross-file component imports remain unsupported.
 
+Static component children use lazy compiler-owned content slots:
+
+```tsx
+function Frame(props) {
+  return <section>{props.children}</section>;
+}
+
+function App() {
+  return <Frame><strong>Ready</strong></Frame>;
+}
+```
+
 Run the Chromium benchmark:
 
 ```bash
@@ -47,4 +59,5 @@ bun run bench:effects
 bun run bench:invalidation
 bun run bench:linker
 bun run bench:lifecycle
+bun run bench:children
 ```

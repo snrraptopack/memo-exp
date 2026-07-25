@@ -165,7 +165,10 @@ export function TodoApp(_id2, _parent) {
     timer++;
     _MD.markDirty(_id2);
   }, 1000);
-  _MD.cleanup(_id2, () => clearInterval(interval));
+  _MD.cleanup(_id2, () => {
+    clearInterval(interval);
+    console.log('interval cleared');
+  });
   const _update2 = () => {
     if (_slot5 !== (_value2 = timer)) {
       _slot5 = _value2;

@@ -441,6 +441,48 @@ Module-state writes use canonical access-table keys because no component id
 owns them. Their lifetime is module/application-owned, so component `cleanup`
 does not apply.
 
+### R21 - Component children become lazy caller-owned content slots
+
+Nested component JSX is passed through the reserved `children` prop:
+
+```tsx
+function Frame(props) {
+  return <section>{props.children}</section>;
+}
+
+function App() {
+  let count = 0;
+  return <Frame>
+    <button onClick={() => count++}>{count}</button>
+  </Frame>;
+}
+```
+
+The caller emits one stable mount function. The callee invokes it with the
+real host node only if it renders `{props.children}` (or positional
+`{children}`). Child creation is therefore lazy: a callee that omits its slot
+does not create hidden DOM, entities, subscriptions, or cleanup registrations.
+
+The mounted content has its own closure of node variables, scalar guards, and
+an update function. The lexical caller's update invokes that function
+directly. Module reads in the slot still route to the caller, instance writes
+still dirty the caller, and nested components retain caller-owned entity ids.
+The slot is a compiler-owned DOM insertion channel, not a runtime dependency
+or VDOM node.
+
+Current slot contract:
+
+- object-prop components use `function Frame(props)` and
+  `<host>{props.children}</host>`;
+- positional components declare `children` and use
+  `<host>{children}</host>`;
+- a slot may be rendered or forwarded once and must be the sole child of its
+  host insertion element;
+- authored slot content supports host JSX, dynamic text, nested components,
+  lists, conditionals, event handlers, and forwarding through another static
+  component;
+- an explicit `children={...}` prop cannot compete with nested children.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
@@ -756,15 +798,17 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R20 (compiler probes + compiled runtime execution).
+> Last full audit: R21 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
 - Conditional-region limits (R8 shipped): no components or lists inside
   branches, no conditionals inside list rows, no nested conditionals inside
   branches, no text branches (use an interpolation), direct JSX child only.
-- Fragments (`<>…</>`); spread attributes (`{...props}`); children props /
-  composition slots.
+- Fragments (`<>…</>`); spread attributes (`{...props}`).
+- Children slots are static component-call content. They can be rendered or
+  forwarded once as the sole host child; component children on keyed `.map`
+  row calls are not supported yet.
 - Components must be top-level `function` declarations (no arrows); exactly
   one top-level JSX return per component.
 - Lists inside list rows; components inside inline rows.
@@ -772,8 +816,6 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   detection in path enumeration); needs lazy creation to support.
 - A component used both statically **and** as a list row — explicit compile
   error (split it in two); supporting both usages needs pattern union.
-- Module-level arrow helpers (`const f = () => …`) get no summaries. Reachable
-  component-local arrows/functions are instrumented, including nested timers.
 
 ### 11.3 Handler / analysis semantics not yet covered
 
@@ -814,6 +856,11 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R21 (lazy component children slots, compiler/children.ts +
+  tests/r21-children.test.ts):** static component children mount only where
+  the callee renders its reserved slot. Guarded updates remain linked to the
+  lexical owner; nested components, lists, conditions, events, forwarding,
+  and cleanup retain their existing compiler/runtime contracts.
 - **R20 (explicit cleanup and setup callbacks, compiler/lifecycle.ts +
   src/cleanup.ts, tests/r20-cleanup.test.ts):** direct factory timers,
   listeners, constructors, subscriptions, and visible local helpers receive

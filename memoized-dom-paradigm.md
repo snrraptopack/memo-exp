@@ -179,6 +179,10 @@ Properties:
 - **Child state survives parent updates for free**: static child factories run
   only during creation; later parent updates re-push changed props into the
   existing child entity.
+- **Component children are lazy content slots**: the caller emits a mount
+  function and the callee chooses its host insertion point. Mounted content
+  keeps caller-owned scalar guards and a directly linked update closure; no
+  element-description tree or runtime subscription is created.
 - **State is private**: component-local state remains in one factory closure.
   Only that instance can address it, so local writes dirty the owner directly.
 

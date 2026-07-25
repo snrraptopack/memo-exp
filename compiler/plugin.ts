@@ -11,8 +11,9 @@
  * L1 limitations (clear compile errors by design):
  *   - components must be top-level `function` declarations (no arrows)
  *   - exactly one top-level JSX return per component
- *   - no fragments, no spread attributes, no children props
- *   - no conditional JSX (R8 is an open spec decision)
+ *   - no fragments or spread attributes
+ *   - children slots mount once at a direct host insertion point
+ *   - conditional JSX uses the restricted R8 region forms
  *   - no lists inside list rows
  */
 

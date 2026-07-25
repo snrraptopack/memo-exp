@@ -35,6 +35,7 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | Aliases, reflective writes, and unknown calls | Confirmed conservative-boundary gaps | R17 added sound fallbacks; R19 narrows identifiable receivers, roots, and helper-parameter paths |
 | Handler with no recognized write skips rendering | Confirmed drift from the event-boundary contract | R18 invalidates the nearest component/row/region; guarded updates remain scoped |
 | Method-name mutation blacklist | Semantically incomplete and unnecessary | Removed in R19; every reactive receiver call has a bounded receiver effect |
+| JSX component children/composition | Confirmed source-language gap | R21 emits lazy caller-owned content slots linked to the caller's guarded update |
 
 ## Decisions
 
@@ -69,6 +70,20 @@ only serialized after binding resolution. Every state key is module-qualified.
 keys such as `./state.ts#store.selectedId`; it accepts bundler aliases or a host
 resolver. Cross-file component composition is not linked yet.
 
+### Component children
+
+Do not pass eager DOM arrays or element descriptions. The caller emits a stable
+mount function; the callee invokes it only where it renders its reserved
+`children` interpolation. Mounted content keeps a separate scalar-guard/update
+closure, and the lexical caller invokes that update directly. This preserves
+plain closure state and static access routing without a runtime child graph.
+
+The content is caller-owned even though its DOM insertion point belongs to the
+callee, analogous to a compile-time content slot. Static slots support current
+host/component/list/conditional forms and forwarding. Dynamic row-call slots
+remain separate work because retained list entries need per-item slot update
+and teardown ownership.
+
 ### Conservative mutation boundary
 
 Direct roots, static store paths, and literal `Object.assign` sources produce
@@ -99,6 +114,8 @@ change the bounded-effect contract.
 2. Support destructured/default props without losing binding identity.
 3. Expand nested list/conditional/component regions and recursive components.
 4. Add SVG, style-object, class-object, and attribute-name semantics.
+5. Extend children slots to keyed component-row calls and richer insertion
+   positions.
 
 ### P2: measured performance
 
@@ -115,6 +132,9 @@ change the bounded-effect contract.
 5. Keep measuring full-hygiene changes independently; compiler-only
    improvements must not be credited as runtime gains. R20 teardown cost is
    isolated in `bench/lifecycle/README.md`.
+6. Track component-slot mount/update overhead in
+   `bench/children/README.md`; current happy-dom results show mount cost but a
+   near-parity hot update.
 
 ## Benchmark baselines
 

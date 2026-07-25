@@ -41,6 +41,7 @@ import { md } from './identifiers';
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
 import { analyzeCondSite } from './conds';
 import { summarizeHelper } from './helper-summaries';
+import { isChildrenReference } from './children';
 
 /**
  * R8: a JSX-bearing conditional is allowed ONLY as a direct JSX child:
@@ -121,14 +122,10 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
               .map((pr) => pr.name),
           );
           const first = p.node.params[0];
-          const annotation = t.isIdentifier(first)
-            ? first.typeAnnotation?.typeAnnotation
-            : undefined;
           if (
             p.node.params.length === 1 &&
             t.isIdentifier(first) &&
-            first.name === 'props' &&
-            (t.isTSTypeLiteral(annotation) || t.isTSTypeReference(annotation))
+            first.name === 'props'
           ) {
             ctx.objectPropComponents.add(name);
           }
@@ -189,6 +186,7 @@ export function pathVariants(
 function analyzeComponent(ctx: Ctx, name: string): void {
   const p = ctx.compPaths.get(name)!;
   const info = ctx.comps.get(name)!;
+  let childrenUses = 0;
   p.traverse({
     JSXElement(el) {
       const open = el.node.openingElement;
@@ -212,11 +210,6 @@ function analyzeComponent(ctx: Ctx, name: string): void {
             `memo-dom: <${tag} /> is not a known component — L1 components must be top-level function declarations in the same module`,
           );
         }
-        if (el.node.children.some((c) => !t.isJSXText(c) || c.value.trim() !== '')) {
-          throw el.buildCodeFrameError(
-            'memo-dom: children props are not supported yet (L1)',
-          );
-        }
         // R10: state-reading props are allowed — prop reads are collected
         // by collectReads' generic Identifier/MemberExpression visitors (no
         // component skip there), so the parent updates exactly when a pushed
@@ -225,10 +218,39 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         let counts = ctx.childRefCounts.get(name);
         if (!counts) ctx.childRefCounts.set(name, (counts = new Map()));
         counts.set(tag, (counts.get(tag) ?? 0) + 1);
-        el.skip(); // the child owns its own subtree
+        // Nested syntax is a lexical content slot owned by this component.
+        // Continue into it to discover and validate the authored subtree.
         return;
       }
       info.jsxCount++;
+    },
+    JSXExpressionContainer(container) {
+      const expression = container.node.expression;
+      if (
+        !t.isExpression(expression) ||
+        !isChildrenReference(ctx, name, expression)
+      ) {
+        return;
+      }
+      childrenUses++;
+      if (childrenUses > 1) {
+        throw container.buildCodeFrameError(
+          'memo-dom: a component children slot can only be rendered or forwarded once',
+        );
+      }
+      const parent = container.parentPath;
+      if (!parent.isJSXElement()) return;
+      const tag = parent.node.openingElement.name;
+      if (t.isJSXIdentifier(tag) && !/^[A-Z]/.test(tag.name)) {
+        const meaningful = parent.node.children.filter(
+          (child) => !t.isJSXText(child) || child.value.trim() !== '',
+        );
+        if (meaningful.length !== 1) {
+          throw container.buildCodeFrameError(
+            'memo-dom: a component children slot must be the sole child of its host insertion element',
+          );
+        }
+      }
     },
     JSXFragment(f) {
       throw f.buildCodeFrameError(

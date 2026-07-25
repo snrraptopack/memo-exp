@@ -44,6 +44,13 @@ import { analyzeCondSite, matchCond } from './conds';
 import { buildHandler } from './handlers';
 import { isLightweightListedComponent } from './analysis';
 import { transformComponentLifecycle } from './lifecycle';
+import {
+  buildChildrenSlot,
+  emitChildrenIntoParent,
+  hasComponentChildren,
+  isChildrenReference,
+  normalizeJsxText,
+} from './children';
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -318,19 +325,6 @@ const DOM_PROP_ATTRS = new Set([
   'autoplay',
 ]);
 
-/**
- * JSX text normalization (React-compatible): whitespace runs collapse to a
- * single space, but an edge space is dropped only when it comes from a line
- * break. So "in {count}" keeps its trailing space while indentation-only
- * chunks vanish. (Naive trim() used to eat same-line edge spaces — M8 fix.)
- */
-function jsxText(raw: string): string {
-  let v = raw.replace(/\s+/g, ' ');
-  if (/^\s*\n/.test(raw)) v = v.replace(/^ /, '');
-  if (/\n\s*$/.test(raw)) v = v.replace(/ $/, '');
-  return v;
-}
-
 /** M5.9: inline text write — if ($sK !== ($t = expr)) { $sK = $t; node.data = … } */
 function textSetter(
   scope: EmitScope,
@@ -426,6 +420,66 @@ function emitElement(
       if (exprReadsState(ctx, v, compName)) needsPush = true;
       propEntries.push({ name: (a.name as t.JSXIdentifier).name, value: t.cloneNode(v) });
     }
+    if (hasComponentChildren(el.children)) {
+      if (propEntries.some((entry) => entry.name === 'children')) {
+        throw compPath.buildCodeFrameError(
+          `memo-dom: <${tag}> cannot use both a children prop and nested JSX children`,
+        );
+      }
+      const childrenSlot = buildChildrenSlot(
+        ctx,
+        scope,
+        (childScope, parentNode) => {
+          emitChildrenIntoParent(
+            childScope,
+            el.children,
+            parentNode.name,
+            {
+              emitText: (expression) =>
+                emitText(ctx, childScope, expression),
+              emitElement: (element) =>
+                emitElement(
+                  ctx,
+                  childScope,
+                  element,
+                  compName,
+                  compPath,
+                  nestedIn,
+                  rowCtx,
+                  eventOriginId,
+                ),
+              emitList: (call, parentVar) =>
+                emitRegion(
+                  ctx,
+                  childScope,
+                  call,
+                  parentVar,
+                  compName,
+                  compPath,
+                ),
+              emitCondition: (expression, parentVar) =>
+                emitCondRegion(
+                  ctx,
+                  childScope,
+                  expression,
+                  parentVar,
+                  compName,
+                  compPath,
+                ),
+              isForwarded: (expression) =>
+                isChildrenReference(ctx, compName, expression),
+              fail: (message) => {
+                throw compPath.buildCodeFrameError(message);
+              },
+            },
+          );
+        },
+      );
+      propEntries.push({
+        name: 'children',
+        value: t.cloneNode(childrenSlot),
+      });
+    }
     // Props are matched BY NAME against the callee's declared params — JSX
     // attribute order is irrelevant (positional matching silently misaligned
     // props when attribute order and declaration order disagreed).
@@ -466,9 +520,13 @@ function emitElement(
   const childVars: string[] = [];
   const pendingLists: t.CallExpression[] = [];
   const pendingConds: Array<t.ConditionalExpression | t.LogicalExpression> = [];
+  let childrenSlot: t.Expression | null = null;
+  const meaningfulChildren = el.children.filter(
+    (child) => !t.isJSXText(child) || child.value.trim() !== '',
+  );
   for (const child of el.children) {
     if (t.isJSXText(child)) {
-      const value = jsxText(child.value);
+      const value = normalizeJsxText(child.value);
       if (value === '') continue;
       childVars.push(emitText(ctx, scope, t.stringLiteral(value)));
     } else if (t.isJSXExpressionContainer(child)) {
@@ -480,6 +538,15 @@ function emitElement(
       }
       // static falsy children render nothing (M5.3: {null} used to print "null")
       const ex = child.expression;
+      if (isChildrenReference(ctx, compName, ex)) {
+        if (meaningfulChildren.length !== 1) {
+          throw compPath.buildCodeFrameError(
+            'memo-dom: a component children slot must be the sole child of its host insertion element',
+          );
+        }
+        childrenSlot = t.cloneNode(ex);
+        continue;
+      }
       if (
         t.isNullLiteral(ex) ||
         t.isBooleanLiteral(ex) ||
@@ -668,6 +735,18 @@ function emitElement(
         t.callExpression(
           t.memberExpression(t.identifier(varName), t.identifier('appendChild')),
           [t.identifier(cv)],
+        ),
+      ),
+    );
+  }
+  if (childrenSlot !== null) {
+    scope.creation.push(
+      t.ifStatement(
+        t.binaryExpression('!=', t.cloneNode(childrenSlot), t.nullLiteral()),
+        t.expressionStatement(
+          t.callExpression(t.cloneNode(childrenSlot), [
+            t.identifier(varName),
+          ]),
         ),
       ),
     );

@@ -127,7 +127,7 @@ export interface Ctx {
    * never locality-eligible.
    */
   listedSites: Map<string, SiteRef[]>;
-  /** Components declared with one typed object prop (`Row(props: { item: T })`). */
+  /** Components declared with one object prop (`Row(props: { item: T })`). */
   objectPropComponents: Set<string>;
   /** Declared prop names per component (source order), captured before params are rewritten. */
   compPropNames: Map<string, string[]>;

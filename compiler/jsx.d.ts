@@ -5,6 +5,10 @@
 declare function cleanup(disposer: () => void): () => void;
 
 declare namespace JSX {
+  interface ElementChildrenAttribute {
+    children: unknown;
+  }
+
   interface IntrinsicAttributes {
     key?: unknown;
   }
