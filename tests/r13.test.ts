@@ -4,9 +4,9 @@
  * A module-level `const x = <pure state derivation>` becomes a computed:
  * the declaration is rewritten to a let, and a depth-(-1) entity recomputes
  * it whenever a SOURCE key is written — committing 'x' downstream ONLY when
- * the value actually changed (computedChanged: Object.is for scalars,
- * element-wise for arrays). This is deep memoization: intermediate writes
- * that don't change the derivation produce ZERO downstream renders.
+ * the value safely compares unchanged (Object.is primitives and element-wise
+ * equality for distinct primitive arrays). Mutable references propagate
+ * conservatively so in-place changes stay live.
  *
  *   - detection: BY REFERENCE — any expression mentioning declared state is
  *     derived (arbitrary calls / new / local-mutating callbacks are fine;
@@ -201,18 +201,19 @@ describe('R13 — compiled output runs', () => {
     expect(pR()).toBe(1); // exactly ONE render (recompute ran first)
   });
 
-  it('array computeds: membership changes propagate, content-equal ones do not', async () => {
+  it('array computeds propagate retained object changes and membership changes', async () => {
     const mod = await importCompiled('r13-filter');
     document.body.appendChild(mod.W('App', null));
     expect(document.querySelectorAll('li')).toHaveLength(2);
     const listR = spyRenders('App/List');
     const [renameBtn, toggleBtn] = document.querySelectorAll('button');
 
-    renameBtn!.click(); // contents equal (same refs, same membership)
-    expect(listR()).toBe(0); // zero downstream renders
+    renameBtn!.click(); // same membership, but one retained object's field changed
+    expect(document.querySelector('li')!.textContent).toBe('a2');
+    expect(listR()).toBe(1);
 
     toggleBtn!.click(); // membership changes
-    expect(listR()).toBe(1);
+    expect(listR()).toBe(2);
     expect(document.querySelectorAll('li')).toHaveLength(1);
     expect(document.querySelector('li')!.textContent).toBe('b');
   });

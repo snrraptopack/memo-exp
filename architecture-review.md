@@ -30,6 +30,7 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | `{oldVal}` vs `{payload.oldVal}` | The runtime requires the documented `payload.` namespace | Spec examples retain `{payload.*}`; failed interpolation falls back to reader supersets |
 | Payload routing described as deferred | Documentation drift | Runtime comments now describe the shipped resolver |
 | Local derived/computed values stay stale | Confirmed architecture gap | R14 recomputes them in the owner update prologue, after prop resync |
+| Module-derived arrays hide retained object-field writes | Confirmed unsound identity gate | Mutable references now propagate conservatively; distinct equal primitive arrays retain shallow suppression |
 | Timer/promise updates stay stale through a local helper | Confirmed reachability gap | Reachable component-local helpers are instrumented transitively |
 | Timer started during factory initialization | Confirmed lifecycle gap | R20 instruments setup callbacks and binds explicit `cleanup(disposer)` to subtree unregister |
 | Aliases, reflective writes, and unknown calls | Confirmed conservative-boundary gaps | R17 added sound fallbacks; R19 narrows identifiable receivers, roots, and helper-parameter paths |
@@ -135,6 +136,13 @@ change the bounded-effect contract.
 6. Track component-slot mount/update overhead in
    `bench/children/README.md`; current happy-dom results show mount cost but a
    near-parity hot update.
+7. Preserve branch-specific write sets through visible helper calls. Summary
+   unions currently let a runtime dispatch helper invalidate list structure
+   and unrelated derivations for a scalar-only branch. The framework benchmark
+   demonstrates this with `mutatePlain(snapshot, scenario)`: direct bounded
+   mutation improves the 100-row path, but reactive rename/no-change still
+   scale with list size. Optimize the dirty set before masks; a bitmask only
+   makes routing an already-correct set cheaper.
 
 ## Benchmark baselines
 

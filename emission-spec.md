@@ -359,6 +359,12 @@ readers and calls `commitWrites(['x'])` only when `computedChanged(old, next)`
 reports a change. Chained module computeds therefore settle in commit passes
 without a runtime dependency graph.
 
+`computedChanged` uses `Object.is` for primitives and element-wise equality for
+distinct arrays containing only primitives. Mutable object/function
+references, arrays containing them, and derivations returning the same array
+instance propagate conservatively because identity cannot reveal an in-place
+field or structural change.
+
 Detection is by reactive binding reference, including collection/object
 literals. Mutating a source inside its derivation, assigning a computed, or
 using `await`/`yield` is a compile error.
@@ -932,9 +938,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   the declaration to a let, and registers a
   depth-(-1) entity `'<root>/$computed/<module>#x'` that recomputes on source-key
   writes and commits 'x' downstream ONLY when the value changed
-  (`computedChanged`: Object.is scalars, element-wise arrays) — deep
-  memoization: intermediate writes that don't change the derivation produce
-  ZERO downstream renders (proven by execution tests). Chains (computed
+  (`computedChanged`: Object.is primitives, element-wise distinct primitive
+  arrays, conservative mutable references). Intermediate writes whose derived
+  primitive value does not change produce zero downstream renders. Chains (computed
   reading computed) work; writes/mutations TO a computed are compile
   errors; computeds are valid R7 list sources; recompute renders BEFORE any
   reader via the explicit-depth support in register (depth -1).

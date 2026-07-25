@@ -6,6 +6,7 @@ import {
   _internals,
 } from '../src/kernel';
 import {
+  computedChanged,
   setText,
   setClass,
   setAttr,
@@ -106,6 +107,18 @@ describe('M1 setter helpers', () => {
 
     setStyle($, 'c', el, 'color', null);
     expect(el.style.getPropertyValue('color')).toBe('');
+  });
+
+  it('computedChanged suppresses only safely comparable values', () => {
+    expect(computedChanged(1, 1)).toBe(false);
+    expect(computedChanged(Number.NaN, Number.NaN)).toBe(false);
+    expect(computedChanged([1, 'a', null], [1, 'a', null])).toBe(false);
+
+    const item = { id: 1 };
+    expect(computedChanged([item], [item])).toBe(true);
+    const sameArray = [1];
+    expect(computedChanged(sameArray, sameArray)).toBe(true);
+    expect(computedChanged(item, item)).toBe(true);
   });
 
   it('integration: ProfileCard mounts seeded and commits via helpers', () => {
