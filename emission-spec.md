@@ -152,7 +152,7 @@ call with a **hoisted static write-set** (analysis in §4).
 emits:
 
 ```js
-const WRITES_1 = ['count'];              // hoisted to module/component scope
+const WRITES_1 = ['./app.tsx#count'];    // hoisted to module/component scope
 
 button.onclick = () => {
   count++;
@@ -177,12 +177,12 @@ The compiler additionally emits, once per module:
 installAccessTable(
   {
     readers: {
-      selectedId: ['App/SelectList/Row[*]', 'App/Header/Badge'],
-      filter: ['App/Footer'],
+      './state.ts#selectedId': ['App/SelectList/Row[*]', 'App/Header/Badge'],
+      './state.ts#filter': ['App/Footer'],
     },
-    opaque: ['prefs'],
+    opaque: ['./state.ts#prefs'],
     params: {                       // see §5 — may be empty at launch
-      selectedId: [
+      './state.ts#selectedId': [
         { pattern: 'App/SelectList/Row[{payload.id}]', via: 'payload' },
       ],
     },
@@ -427,7 +427,7 @@ A handler whose write-set contains an opaque variable routes `OPAQUE` →
 - **L2 (later):** alias tracking (`const a = items; a.push(x)`), cross-function
   write propagation within the module, payload-parametrized patterns (§5).
 
-### 4.6 Cross-module state target (not yet implemented end-to-end)
+### 4.6 Cross-module state
 
 **Language fact:** ES modules forbid reassigning an imported binding
 (`import { x } from './state'; x = 5` → error). Cross-file shared state
@@ -443,10 +443,9 @@ import { store } from './state';
 store.selectedId = item.id;   // legal: property mutation, not rebinding
 ```
 
-Linked table keys become **property paths** (`store.selectedId`), which are
-syntactic and therefore identical across every importing module after import
-resolution. The current single-module compiler supports dotted paths locally;
-it does not yet resolve imported bindings to their defining module.
+Linked table keys become canonical **module-qualified property paths**
+(`./state.ts#store.selectedId`). `compileModules()` resolves named import
+aliases to their defining export before serialization.
 
 **Shape 2 — exported mutator functions:**
 
@@ -462,13 +461,16 @@ onClick={() => setSelected(item.id)}
 The write is hidden behind a cross-file call. The compiler resolves it via
 **function summaries**: compiling `state.ts` records `setSelected → writes
 selectedId`; compiling the importer resolves the call through the summary.
-Summaries ship at **L1.5/L2**; at L1 an unresolved cross-file call is **opaque**
-(→ root-subtree commit — correct, merely unscoped).
+Linked summaries propagate through imported helper chains. An unresolved
+external call is **opaque** (→ root-subtree commit — correct, merely unscoped).
 
-**Target canonical variable ids:** all linked table keys are module-qualified
+**Canonical variable ids:** all table keys are module-qualified
 (`./state.ts#store.selectedId`), because two modules may both declare `count`.
-Each compiled file emits a table **fragment**; the bundler merges fragments
-into one app-wide table at build time. This linker/bundler stage is still open.
+Each compiled file emits a table **fragment**; the runtime merges installed
+fragments app-wide. `compileModules()` is the graph/link API. It accepts a
+segment-prefix `aliases` map (for example Vite's `@`) or a host
+`resolveImport(specifier, importer)` hook. Cross-file component imports are
+still outside this state-linking scope.
 
 ## 5. Parametrized patterns (designed now, implemented in L2)
 
@@ -643,9 +645,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
    value", e.g. the previously-selected row): does the runtime track last
    values per variable, or does the compiler emit explicit prev-capture in
    handlers? Leaning: compiler emits prev-capture — keeps the runtime dumb.
-3. **Cross-module implementation of §4.6:** canonical module-qualified keys
-   and bundle-time fragment linking remain the target architecture, but the
-   current compiler is still single-module.
+3. **Cross-file component linking:** §4.6 state and mutator imports have
+   canonical identities, but imported component factories still need graph
+   path analysis and entity-id composition.
 4. **Dev-mode event log:** production emission omits it (R5); dev builds may
    wrap handlers with the provenance log (current `handle()` in events.ts).
 
@@ -707,9 +709,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.5 Multi-module, scale & engineering
 
-- Single-module compilation: components must live in one file; cross-file
-  component imports are unsupported (needs the §4.6 fragment design
-  implemented end-to-end).
+- `compileModules()` links imported state objects, live state reads, module
+  computeds, and exported mutator summaries. Components must still live in one
+  file; cross-file component imports are unsupported.
 - `rootId` collisions across modules; table-install ordering vs. mount order —
   untested.
 - Identity-keyed lists of duplicate primitives (`[1, 2, 2]`) throw on
@@ -759,15 +761,14 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 - **R13 (auto-detected computeds — option B, no wrapper):** a module-level
   `const x = <state derivation>` becomes a computed: the compiler rewrites
   the declaration to a let, and registers a
-  depth-(-1) entity `'<root>/$computed/x'` that recomputes on source-key
+  depth-(-1) entity `'<root>/$computed/<module>#x'` that recomputes on source-key
   writes and commits 'x' downstream ONLY when the value changed
   (`computedChanged`: Object.is scalars, element-wise arrays) — deep
   memoization: intermediate writes that don't change the derivation produce
   ZERO downstream renders (proven by execution tests). Chains (computed
   reading computed) work; writes/mutations TO a computed are compile
-  errors; computeds are valid R7 list sources; a computed reading a key
-  defeats handler allLocal (hidden reader); recompute renders BEFORE any
-  reader via the new explicit-depth support in register (depth -1).
+  errors; computeds are valid R7 list sources; recompute renders BEFORE any
+  reader via the explicit-depth support in register (depth -1).
 - **R13.1 (reference-based detection — the whitelist was wrong):** detection
   is now exactly "the initializer REFERENCES an already-declared state
   variable (directly or through an analyzable local helper) and is never

@@ -30,24 +30,30 @@ Chromium processes.
 
 | Scenario | Current | Masked | Relative |
 |---|---:|---:|---:|
-| `filter(2k)`, unrelated write | 85,099 ns | 17.1 ns | 4,976x faster |
-| 32 slots, unrelated dependency group | 123.0 ns | 41.5 ns | 2.96x faster |
-| 32 slots, relevant dependency group | 137.7 ns | 141.0 ns | 0.98x |
-| 32 slots, all groups relevant | 137.3 ns | 134.3 ns | 1.02x |
-| Single cheap slot, relevant | 22.2 ns | 25.1 ns | 0.88x |
+| `filter(2k)`, unrelated write | 91,257 ns | 21.7 ns | 4,118x faster |
+| 32 slots, unrelated dependency group | 151.8 ns | 45.1 ns | 3.31x faster |
+| 32 slots, relevant dependency group | 164.0 ns | 168.4 ns | 0.97x |
+| 32 slots, all groups relevant | 162.3 ns | 176.3 ns | 0.92x |
+| Single cheap slot, relevant | 41.1 ns | 32.4 ns | 1.27x |
 
 The `filter(2k)` source-write case was intentionally excluded from the summary:
 both variants must allocate and filter, and independent-process results ranged
-from 1.28x to 3.09x in favor of the masked closure due to JIT/GC variation.
-There is no architectural reason to credit masks for that work. The relevant
-overhead signal comes from the allocation-free slot scenarios.
+from 1.39x to 3.04x in favor of the masked closure due to JIT/GC variation.
+There is no architectural reason to credit masks for that work. Relevant-path
+behavior is better isolated by the allocation-free slot scenarios, although
+the smallest nanosecond-scale case remains noisy.
 
 ## Interpretation
 
 Masks have a large payoff when they prevent expensive unrelated work and a
-moderate payoff when they skip a group of cheap expressions. They do not help
-when every dependency group must run. For a one-slot/one-source component, the
-prototype bookkeeping costs about 12%.
+moderate payoff when they skip a group of cheap expressions. They do not
+produce a repeatable win when every dependency group must run.
+
+The single-slot case is too small for a stable conclusion: an earlier
+three-process set measured the masked form about 12% slower, while the latest
+set measured it faster and one process in that set was slower. This benchmark
+therefore supports skipping substantial unrelated work, not universal masks or
+a precise cheap-path overhead claim.
 
 This argues for compiler-selected dual-mode emission:
 
@@ -72,7 +78,7 @@ It establishes that the mechanism has a plausible and measurable payoff; it
 does not establish end-to-end framework improvement.
 
 The next proof should implement compiler-only closure masks behind an option,
-compile representative applications, and run the existing four-way Chromium
+compile representative applications, and run the existing three-way Chromium
 benchmark plus dedicated cases containing:
 
 - unrelated writes beside a 1k/10k filter;

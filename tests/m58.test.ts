@@ -80,7 +80,7 @@ describe('M5.10 - lightweight listed component rows', () => {
     const rowFactory = code.slice(code.indexOf('function Row'), code.indexOf('export function C'));
     expect(rowFactory).not.toContain('MD.register({');
     expect(code).toContain('entities: []');
-    expect(code).toContain('"selected": ["App", "App/*"]');
+    expect(code).toContain('"./component.tsx#selected": ["App", "App/*"]');
   });
 
   it('keeps lightweight rows out of the registry and refreshes them through the owner', async () => {
@@ -96,7 +96,7 @@ describe('M5.10 - lightweight listed component rows', () => {
     expect(rows()[0]!.className).toBe('selected');
 
     mod.setSuffix('!');
-    commitWrites(['suffix']);
+    commitWrites(['./component.tsx#suffix']);
     expect(rows()[0]!.textContent).toBe('clicked!');
     expect(rows()[1]!.textContent).toBe('two!');
   });
@@ -115,7 +115,7 @@ describe('M5.10 - lightweight listed component rows', () => {
 
   it('tracks member writes through TypeScript non-null assertions', () => {
     const code = compile(NON_NULL_WRITE_SOURCE, { runtimePath: '../out-runtime' });
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
   });
 
   it('preserves a typed object-prop row contract in lightweight emission', () => {

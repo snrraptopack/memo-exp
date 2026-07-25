@@ -85,7 +85,7 @@ describe('R10 — props flow down', () => {
     const badgeRenders = spyRenders('App/Badge');
 
     mod.inc();
-    commitWrites(['count']);
+    commitWrites(['./component.tsx#count']);
 
     expect(document.querySelector('span')!.textContent).toBe('2'); // n*2 re-synced (count=1)
     expect(appRenders()).toBe(1);
@@ -122,17 +122,17 @@ describe('R10 — props flow down', () => {
 
     // item-field mutation (external, invisible) — reconcile re-pushes the box
     mod.mutateFirst('A');
-    commitWrites(['items']);
+    commitWrites(['./component.tsx#items']);
     expect(lis()[0]!.textContent).toBe('A');
 
     // item replacement with the same key — box gets the NEW object
     mod.replaceSecond('B2');
-    commitWrites(['items']);
+    commitWrites(['./component.tsx#items']);
     expect(lis()[1]!.textContent).toBe('B2');
 
     // state-reading extra prop flows through updateProps too
     mod.setSuffix('!');
-    commitWrites(['suffix']);
+    commitWrites(['./component.tsx#suffix']);
     expect(lis()[0]!.textContent).toBe('A!');
     expect(lis()[1]!.textContent).toBe('B2!');
   });

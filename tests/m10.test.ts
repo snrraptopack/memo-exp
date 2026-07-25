@@ -75,9 +75,9 @@ describe('R11 — row-local item writes, code generation', () => {
     const code = compile(
       `let todos = [{ id: 1 }];\nfunction C() { return <ul>{todos.map((todo) => <li key={todo.id} onClick={() => { todo.id = todo.id + 10; }}>{todo.id}</li>)}</ul>; }`,
     );
-    // structural: routes the array write to the OWNER (its only reader →
-    // local markDirty(id) → reconcile re-keys), NEVER markDirty(rowId)
-    expect(code).toContain('MD.markDirty(id)');
+    // Structural: route the canonical array write to the owner so reconcile
+    // re-keys; never dirty only the old row id.
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
     expect(code).not.toContain('MD.markDirty(rowId)');
   });
 
@@ -85,7 +85,7 @@ describe('R11 — row-local item writes, code generation', () => {
     const code = compile(
       `let todos = [{ id: 1 }];\nfunction C() { return <ul>{todos.map((todo) => <li key={todo.id} onClick={() => { const k = 'id'; todo[k] = 2; }}>{todo.id}</li>)}</ul>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)'); // owner commit → reconcile
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
     expect(code).not.toContain('MD.markDirty(rowId)');
   });
 

@@ -30,6 +30,7 @@ import { transformComponent } from './emit';
  * Depth -1 guarantees the recompute renders BEFORE any reader in a commit.
  */
 function rewriteComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
+  const computedPrefix = `${ctx.rootId}/$computed/${encodeURIComponent(ctx.moduleId)}#`;
   for (const stmtPath of programPath.get('body')) {
     let declNode: t.Node | null | undefined = stmtPath.node;
     if (t.isExportNamedDeclaration(declNode)) declNode = declNode.declaration;
@@ -45,7 +46,7 @@ function rewriteComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
           t.objectExpression([
             t.objectProperty(
               t.identifier('id'),
-              t.stringLiteral(`${ctx.rootId}/$computed/${name}`),
+              t.stringLiteral(`${computedPrefix}${name}`),
             ),
             t.objectProperty(t.identifier('parent'), t.nullLiteral()),
             t.objectProperty(

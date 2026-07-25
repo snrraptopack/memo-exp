@@ -2,11 +2,7 @@
  * @file App.tsx
  * The TSX source code for the Component Row Benchmark App.
  */
-import * as MD from '../src/runtime';
-//import { setScheduler } from '../src/kernel';
 import { buildData, type RowData } from './data';
-
-//setScheduler((fn) => fn()); // sync commit: measure all invalidation+render work
 
 let data: RowData[] = [];
 let selected: number | null = null;

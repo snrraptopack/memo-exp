@@ -62,10 +62,10 @@ acceptable.
 ### Access identity
 
 Within one module, Babel binding identity is authoritative. String names are
-only serialized after binding resolution. Across modules, raw names are
-insufficient; the target remains canonical keys such as
-`./state.ts#store.selectedId`, produced by a linker/bundler stage that does not
-exist yet.
+only serialized after binding resolution. Every state key is module-qualified.
+`compileModules()` resolves imports and exported mutator summaries to canonical
+keys such as `./state.ts#store.selectedId`; it accepts bundler aliases or a host
+resolver. Cross-file component composition is not linked yet.
 
 ## Priority roadmap
 
@@ -76,8 +76,8 @@ exist yet.
 2. Make fallback completeness real for unknown calls, escaped mutable values,
    aliases, `delete`, `Object.assign`, and exception paths.
 3. Specify and implement lifecycle-owned factory callbacks/subscriptions.
-4. Add cross-module canonical state keys and fragment linking before claiming
-   imported-state support.
+4. Extend the implemented state linker to cross-file component composition and
+   bundler adapters.
 
 ### P1: source-language coverage
 
@@ -88,38 +88,21 @@ exist yet.
 
 ### P2: measured performance
 
-1. Prototype compiler-selected per-entity dirty-reason masks. The isolated
-   Chromium benchmark shows a large win for skipped expensive work, ~3× for
-   a skipped 32-expression group, and ~12% overhead for a single cheap slot;
-   see `bench/invalidation-masks.md`.
-2. Profile select/swap/clear paths; they have the largest current gap to
+1. Replace full-graph fixed-point reparsing with cached module facts and a
+   dependency worklist. The initial linker benchmark records the graph-link
+   overhead over prelinked transforms; see `bench/linker/README.md`.
+2. Prototype compiler-selected per-entity dirty-reason masks. The isolated
+   Chromium benchmark shows a large win for skipped expensive work and ~3× for
+   a skipped 32-expression group; relevant nanosecond-scale paths are too noisy
+   for a universal-mask claim. See `bench/invalidation/README.md`.
+3. Profile select/swap/clear paths; they have the largest current gap to
    hand-written vanilla in the browser benchmark.
-3. Add stable compiler-throughput and large-access-table benchmarks.
-4. Measure lifecycle and full-hygiene changes independently; compiler-only
+4. Add stable compiler-throughput and large-access-table benchmarks.
+5. Measure lifecycle and full-hygiene changes independently; compiler-only
    improvements must not be credited as runtime gains.
 
-## Benchmark baseline
+## Benchmark baselines
 
-Chromium benchmark, median of 7 on this machine before the R14 changes:
-
-| Scenario | Component rows | Inline rows | Vanilla |
-|---|---:|---:|---:|
-| create 1k | 22.0 ms | 37.6 ms | 11.2 ms |
-| replace 1k | 26.7 ms | 32.5 ms | 13.6 ms |
-| partial update | 0.8 ms | 0.7 ms | 0.3 ms |
-| select row | 2.7 ms | 4.0 ms | 0.2 ms |
-| swap rows | 1.2 ms | 2.1 ms | 0.1 ms |
-| remove row | 1.9 ms | 1.1 ms | 0.1 ms |
-| create 10k | 166.9 ms | 228.6 ms | 66.7 ms |
-| append 1k to 10k | 33.6 ms | 35.1 ms | 9.1 ms |
-| clear 10k | 62.9 ms | 96.7 ms | 3.3 ms |
-
-R14 adds no work to components without local derivations. Browser results
-should therefore remain statistically flat; correctness tests, DOM mutation
-counts, and profiles should accompany any claim of improvement.
-
-Post-change medians were consistent with that expectation: component/inline
-`create 10k` measured 145.2/182.7 ms, partial update 0.7/0.7 ms, select
-2.7/3.3 ms, and clear 59.7/74.7 ms. The faster creation numbers are treated as
-run-to-run variance, not an R14 gain, because these benchmark sources emit no
-local derivation prologue.
+Benchmark methodology and latest measurements live with each suite under
+`bench/`; see `bench/README.md`. Architecture notes should reference those
+baselines rather than duplicate tables that drift.

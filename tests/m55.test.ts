@@ -50,7 +50,7 @@ describe('M5.5 — member-path list sources, code generation', () => {
     const code = compile(
       `const store = { todos: [{ id: 1 }] };\nfunction C() { return <div><ul>{store.todos.map((t) => <li key={t.id}>{t.id}</li>)}</ul><button onClick={() => { store.todos.push({ id: 2 }); }}>add</button></div>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)'); // read only by C → local
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
   });
 
   it('inline-row entries carry their update closure', () => {
@@ -116,7 +116,7 @@ describe('M5.5 — external mutations resync retained rows', () => {
     mod.store.todos[0].title = 'renamed';
     mod.store.todos[1].completed = true;
     mod.store.counter = 42;
-    commitWrites(['store.counter', 'store.todos']);
+    commitWrites(['./component.tsx#store.counter', './component.tsx#store.todos']);
 
     expect(lis()[0]!.textContent).toBe('renamed'); // row resync (M5.5)
     expect(lis()[1]!.className).toBe('done');
@@ -134,14 +134,14 @@ describe('M5.5 — external mutations resync retained rows', () => {
     const firstText = firstLi.firstChild;
 
     // no-op external commit: same data, reconcile runs, zero DOM mutations
-    commitWrites(['store.counter', 'store.todos']);
+    commitWrites(['./component.tsx#store.counter', './component.tsx#store.todos']);
     expect(document.querySelector('li')).toBe(firstLi);
     expect(document.querySelector('li')!.firstChild).toBe(firstText);
 
     // splice one out and push one in — structure still reconciles by key
     mod.store.todos.splice(0, 1);
     mod.store.todos.push({ id: 3, title: 'three', completed: false });
-    commitWrites(['store.todos']);
+    commitWrites(['./component.tsx#store.todos']);
 
     const lis = document.querySelectorAll('li');
     expect(lis).toHaveLength(2);

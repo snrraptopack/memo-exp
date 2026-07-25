@@ -21,7 +21,7 @@ export type { MemoDomOptions };
 
 export function compile(source: string, opts: MemoDomOptions = {}): string {
   const out = transformSync(source, {
-    filename: 'component.tsx',
+    filename: opts.moduleId ?? './component.tsx',
     plugins: [
       [syntaxJsx as any, {}],
       [memoDomPlugin, opts],

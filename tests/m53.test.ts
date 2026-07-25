@@ -38,26 +38,30 @@ describe('M5.3 fixes — code generation', () => {
       `let n = 0;\nfunction C() { return <button onClick={() => { n++; if (n > 5) return; }}>{n}</button>; }`,
     );
     const handler = code.slice(code.indexOf('onclick'));
-    expect(handler.indexOf('MD.markDirty(id)')).toBeLessThan(handler.indexOf('return;'));
+    expect(handler.indexOf('MD.commitWrites(WRITES_0)')).toBeLessThan(
+      handler.indexOf('return;'),
+    );
 
     // trailing return: commit before it, not dead code after
     const code2 = compile(
       `let n = 0;\nfunction C() { return <button onClick={() => { n++; return; }}>{n}</button>; }`,
     );
     const handler2 = code2.slice(code2.indexOf('onclick'));
-    expect(handler2.indexOf('MD.markDirty(id)')).toBeLessThan(handler2.indexOf('return;'));
+    expect(handler2.indexOf('MD.commitWrites(WRITES_0)')).toBeLessThan(
+      handler2.indexOf('return;'),
+    );
   });
 
   it('member-chain mutators commit the static dotted path', () => {
     const code = compile(
       `const store = { items: [1] };\nfunction C() { return <button onClick={() => { store.items.push(2); }}>{store.items.length}</button>; }`,
     );
-    // 'store.items' is read only by C → local commit, but it MUST exist
-    expect(code).toContain('MD.markDirty(id)');
+    // Module store writes always route through their canonical key.
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
     // the callee chain is no longer registered as a (bogus) read key
-    expect(code).not.toContain('"store.items.push"');
+    expect(code).not.toContain('"./component.tsx#store.items.push"');
     // and the write path itself IS in the table for the resolver
-    expect(code).toContain('"store.items"');
+    expect(code).toContain('"./component.tsx#store.items"');
   });
 
   it('multi-parent components route to every instance', () => {
@@ -81,14 +85,14 @@ describe('M5.3 fixes — code generation', () => {
       `let n = 0;\nfunction bump() { n++; }\nfunction C() { return <button onClick={() => { bump(); }}>{n}</button>; }`,
     );
     expect(code).not.toContain('function bump(id, parent)');
-    // 'n' is read only by C → local commit, but it MUST exist
-    expect(code).toContain('MD.markDirty(id)');
+    // Helper writes retain the module's canonical state identity.
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
 
     // helper with a mutator write
     const code2 = compile(
       `let items = [1];\nfunction addIt(x) { items.push(x); }\nfunction C() { return <button onClick={() => { addIt(2); }}>{items.length}</button>; }`,
     );
-    expect(code2).toContain('MD.markDirty(id)');
+    expect(code2).toContain('MD.commitWrites(WRITES_0)');
   });
 
   it('module-level functions referenced as handlers commit through the table', () => {
@@ -96,7 +100,7 @@ describe('M5.3 fixes — code generation', () => {
       `let n = 0;\nfunction inc() { n++; }\nfunction C() { return <button onClick={inc}>{n}</button>; }`,
     );
     // no `id` in a module-level scope → commitWrites, never markDirty(id)
-    expect(code).toContain('WRITES_0 = ["n"]');
+    expect(code).toContain('WRITES_0 = ["./component.tsx#n"]');
     expect(code).toContain('MD.commitWrites(WRITES_0)');
     expect(code).not.toContain('markDirty(id)');
   });
@@ -105,7 +109,7 @@ describe('M5.3 fixes — code generation', () => {
     const code = compile(
       `let locale = 'en';\nfunction fmt(x) { return locale + ':' + x; }\nfunction C() { return <span>{fmt(1)}</span>; }`,
     );
-    expect(code).toContain('"locale"');
+    expect(code).toContain('"./component.tsx#locale"');
   });
 
   it('falsy literal children emit no text nodes', () => {

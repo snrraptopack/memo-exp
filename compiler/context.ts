@@ -14,7 +14,33 @@ export interface MemoDomOptions {
   runtimePath?: string;
   /** Entity id of the root component. */
   rootId?: string;
+  /**
+   * Stable identity for this source module. Defaults to `./component.tsx`.
+   * Module-state keys are always `<moduleId>#<binding>[.<path>]`.
+   */
+  moduleId?: string;
+  /**
+   * Resolved import metadata supplied by compileModules(). This is public for
+   * bundler integrations that perform their own graph/link pass.
+   */
+  linkedImports?: Record<string, LinkedImport>;
 }
+
+export interface LinkedStateImport {
+  type: 'state';
+  kind: StateKind;
+  /** Canonical root key of the defining export (`./state.ts#store`). */
+  key: string;
+}
+
+export interface LinkedFunctionImport {
+  type: 'function';
+  reads: string[];
+  writes: string[];
+  opaque: boolean;
+}
+
+export type LinkedImport = LinkedStateImport | LinkedFunctionImport;
 
 /**
  * Reactive-state classification (the two — three — legal ways JS state changes):
@@ -62,9 +88,16 @@ export const MUTATOR_METHODS = new Set([
 export interface Ctx {
   runtimePath: string;
   rootId: string;
+  moduleId: string;
 
   // ---- module analysis (filled by analysis.ts) ----
   state: Map<string, StateKind>;
+  /** Local binding name -> canonical state root. */
+  stateKeys: Map<string, string>;
+  /** Imported ES bindings cannot be rebound, even when their export is a `let`. */
+  importedState: Set<string>;
+  /** Linked summaries for imported functions and conservative external calls. */
+  importedFunctions: Map<string, FnSummary>;
   comps: Map<string, CompInfo>;
   compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
   /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural reads/writes. */
@@ -129,10 +162,32 @@ export interface Ctx {
 }
 
 export function createCtx(opts: MemoDomOptions = {}): Ctx {
+  const moduleId = opts.moduleId ?? './component.tsx';
+  const state = new Map<string, StateKind>();
+  const stateKeys = new Map<string, string>();
+  const importedState = new Set<string>();
+  const importedFunctions = new Map<string, FnSummary>();
+  for (const [local, linked] of Object.entries(opts.linkedImports ?? {})) {
+    if (linked.type === 'state') {
+      state.set(local, linked.kind);
+      stateKeys.set(local, linked.key);
+      importedState.add(local);
+    } else {
+      importedFunctions.set(local, {
+        reads: new Set(linked.reads),
+        writes: new Set(linked.writes),
+        opaque: linked.opaque,
+      });
+    }
+  }
   return {
     runtimePath: opts.runtimePath ?? 'memo-dom',
     rootId: opts.rootId ?? 'App',
-    state: new Map(),
+    moduleId,
+    state,
+    stateKeys,
+    importedState,
+    importedFunctions,
     comps: new Map(),
     compPaths: new Map(),
     helpers: new Map(),
@@ -164,10 +219,31 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
 export const md = (name: string): t.MemberExpression =>
   t.memberExpression(t.identifier('MD'), t.identifier(name));
 
+/** Register a state binding while preserving a linker-provided import entry. */
+export function registerState(ctx: Ctx, name: string, kind: StateKind): void {
+  ctx.state.set(name, kind);
+  if (!ctx.stateKeys.has(name)) {
+    ctx.stateKeys.set(name, `${ctx.moduleId}#${name}`);
+  }
+}
+
+/**
+ * Convert a binding-relative analysis key to its defining module identity.
+ * Already-canonical keys (from imported function summaries) pass through.
+ */
+export function canonicalStateKey(ctx: Ctx, key: string): string {
+  if (key.includes('#')) return key;
+  const dot = key.indexOf('.');
+  const root = dot === -1 ? key : key.slice(0, dot);
+  const suffix = dot === -1 ? '' : key.slice(dot);
+  return `${ctx.stateKeys.get(root) ?? root}${suffix}`;
+}
+
 export function freshWriteConst(ctx: Ctx, writes: readonly string[]): t.Identifier {
+  const canonicalWrites = [...new Set(writes.map((w) => canonicalStateKey(ctx, w)))].sort();
   // Dedupe: identical write-sets share one hoisted const (a list row with N
   // handlers writing the same array used to emit N identical WRITES_n).
-  const key = writes.join(' ');
+  const key = canonicalWrites.join(' ');
   const existing = ctx.writeConsts.get(key);
   if (existing !== undefined) return t.identifier(existing);
   const id = t.identifier(`WRITES_${ctx.writeConstCounter++}`);
@@ -176,7 +252,7 @@ export function freshWriteConst(ctx: Ctx, writes: readonly string[]): t.Identifi
     t.variableDeclaration('const', [
       t.variableDeclarator(
         id,
-        t.arrayExpression(writes.map((w) => t.stringLiteral(w))),
+        t.arrayExpression(canonicalWrites.map((w) => t.stringLiteral(w))),
       ),
     ]),
   );

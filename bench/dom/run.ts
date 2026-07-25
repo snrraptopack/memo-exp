@@ -1,7 +1,7 @@
 /**
- * @file run-browser.ts
- * Drives the 4-way real-browser benchmark in headless Chromium.
- * Loads bench/browser.html, runs window.__runAll(), prints the table.
+ * @file run.ts
+ * Drives the 3-way real-browser benchmark in headless Chromium.
+ * Loads browser.html, runs window.__runAll(), prints the table.
  */
 import puppeteer from 'puppeteer-core';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,6 @@ interface BenchRow {
   name: string;
   tsx: number;
   inline: number;
-  ours: number;
   vanilla: number;
   ratioTsx: number;
   ratioInline: number;
@@ -41,12 +40,11 @@ try {
     return fn();
   });
 
-  console.log('\n4-WAY REAL CHROMIUM BENCHMARK (median of 7)\n');
+  console.log('\n3-WAY REAL CHROMIUM BENCHMARK (median of 7)\n');
   console.log(
     'scenario'.padEnd(28),
     'tsx-comp'.padStart(12),
     'tsx-inline'.padStart(12),
-    'legacy-ours'.padStart(14),
     'vanilla'.padStart(10),
     'inline/vanilla'.padStart(16),
   );
@@ -58,7 +56,6 @@ try {
       r.name.padEnd(28),
       `${r.tsx.toFixed(2)}ms`.padStart(12),
       `${r.inline.toFixed(2)}ms`.padStart(12),
-      `${r.ours.toFixed(2)}ms`.padStart(14),
       `${r.vanilla.toFixed(2)}ms`.padStart(10),
       ratioInline.padStart(16),
     );

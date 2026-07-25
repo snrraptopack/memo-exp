@@ -59,27 +59,27 @@ describe('R13 — computeds, code generation', () => {
       `let todos = [{ id: 1, done: false }];\nconst active = todos.filter((t) => !t.done);\nfunction C() { return <ul>{active.map((t) => <li key={t.id}>{t.id}</li>)}</ul>; }`,
     );
     expect(code).toContain('let active =');
-    expect(code).toContain('"App/$computed/active"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#active"');
     expect(code).toContain('depth: -1');
     expect(code).toContain('MD.computedChanged(active, next)');
     expect(code).toContain('MD.commitWrites(WRITES_0)');
     // the computed reads its source through the table
-    expect(code).toContain('"App/$computed/active"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#active"');
   });
 
   it('scalar derivations and chains work', () => {
     const code = compile(
       `let first = 'a';\nlet last = 'b';\nconst full = first + ' ' + last;\nconst shout = full.toUpperCase();\nfunction C() { return <p>{shout}</p>; }`,
     );
-    expect(code).toContain('"App/$computed/full"');
-    expect(code).toContain('"App/$computed/shout"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#full"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#shout"');
   });
 
   it('collection literals derived from state take precedence over mutable-collection classification', () => {
     const code = compile(
       `let count = 1;\nconst pair = [count, count + 1];\nfunction C() { return <p>{pair.join(',')}</p>; }`,
     );
-    expect(code).toContain('"App/$computed/pair"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#pair"');
     expect(code).toContain('MD.computedChanged(pair, next)');
   });
 
@@ -87,7 +87,7 @@ describe('R13 — computeds, code generation', () => {
     const code = compile(
       `const store = { items: [1, 2] };\nconst total = store.items.reduce((s, i) => s + i, 0);\nfunction C() { return <p>{total}</p>; }`,
     );
-    expect(code).toContain('"App/$computed/total"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#total"');
   });
 
   it('detection is by reference — arbitrary calls, new, and local mutations are allowed', () => {
@@ -101,9 +101,9 @@ describe('R13 — computeds, code generation', () => {
         `const ids = todos.reduce((a, t) => { a.push(t.id); return a; }, []);\n` + // local mutation
         `function C() { return <p>{ids.length}</p>; }`,
     );
-    expect(code).toContain('"App/$computed/grouped"');
-    expect(code).toContain('"App/$computed/stamp"');
-    expect(code).toContain('"App/$computed/ids"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#grouped"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#stamp"');
+    expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#ids"');
   });
 
   it('derivations that write or mutate state are a compile error', () => {

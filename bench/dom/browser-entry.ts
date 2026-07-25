@@ -1,16 +1,14 @@
 /**
  * @file browser-entry.ts
  * Real-browser benchmark entry. Bundled by esbuild into browser-bundle.js
- * and driven headlessly by run-browser.ts.
+ * and driven headlessly by run.ts.
  *
- * Compares 4 implementations:
+ * Compares 3 implementations:
  *   1. compiledTsx    (compiled TSX component <Row />)
  *   2. compiledInline (compiled TSX inline <li />)
- *   3. ours           (legacy hand-written prototype)
- *   4. vanilla        (native JS baseline)
+ *   3. vanilla        (native JS baseline)
  */
-import { setScheduler } from '../src/kernel';
-import { createBenchApp } from './ours';
+import { setScheduler } from '../../src/kernel';
 import { createVanillaApp } from './vanilla';
 import { createCompiledTsxApp } from './compiled-tsx-app';
 import { createCompiledInlineApp } from './compiled-inline-app';
@@ -21,17 +19,14 @@ const RUNS = 7;
 
 const compiledTsx = createCompiledTsxApp();
 const compiledInline = createCompiledInlineApp();
-const ours = createBenchApp();
 const vanilla = createVanillaApp();
 
 const divTsx = document.createElement('div');
 const divInline = document.createElement('div');
-const divOurs = document.createElement('div');
 const divVanilla = document.createElement('div');
-document.body.append(divTsx, divInline, divOurs, divVanilla);
+document.body.append(divTsx, divInline, divVanilla);
 divTsx.appendChild(compiledTsx.root);
 divInline.appendChild(compiledInline.root);
-divOurs.appendChild(ours.root);
 divVanilla.appendChild(vanilla.root);
 
 type AppT = {
@@ -79,7 +74,6 @@ export interface BenchRow {
   name: string;
   tsx: number;
   inline: number;
-  ours: number;
   vanilla: number;
   ratioTsx: number;
   ratioInline: number;
@@ -98,11 +92,6 @@ function runAll(): BenchRow[] {
     compiledInline.selectRow(10);
     compiledInline.click('clear');
 
-    ours.click('create1k');
-    ours.click('update');
-    ours.selectRow(10);
-    ours.click('clear');
-
     vanilla.op('create1k');
     vanilla.op('update');
     vanilla.op('clear');
@@ -112,13 +101,11 @@ function runAll(): BenchRow[] {
   for (const s of scenarios) {
     const tTsx = timeOp(() => s.setup(compiledTsx), () => s.op(compiledTsx));
     const tInline = timeOp(() => s.setup(compiledInline), () => s.op(compiledInline));
-    const tOurs = timeOp(() => s.setup(ours), () => s.op(ours));
     const tVanilla = timeOp(() => s.setup(vanilla), () => s.op(vanilla));
     rows.push({
       name: s.name,
       tsx: tTsx,
       inline: tInline,
-      ours: tOurs,
       vanilla: tVanilla,
       ratioTsx: tTsx / tVanilla,
       ratioInline: tInline / tVanilla,

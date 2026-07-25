@@ -1,19 +1,26 @@
 /**
- * @file build-bench.ts
+ * @file build.ts
  * Node/Bun pre-build step for benchmark.
- * Compiles bench/App.tsx and bench/AppInline.tsx using compiler/compile.ts
+ * Compiles App.tsx and AppInline.tsx using the cross-module linker
  * and writes the compiled output to compiled-tsx-app.ts and compiled-inline-app.ts.
  */
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compile } from '../compiler/compile';
+import { compileModules } from '../../compiler/linker';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const dataSource = readFileSync(resolve(__dirname, 'data.ts'), 'utf-8');
 
 // 1. Compile App.tsx
 const appTsxSource = readFileSync(resolve(__dirname, 'App.tsx'), 'utf-8');
-const compiledAppTsx = compile(appTsxSource, { rootId: 'AppTsx', runtimePath: '../src/runtime' });
+const compiledAppTsx = compileModules(
+  {
+    './bench/dom/App.tsx': appTsxSource,
+    './bench/dom/data.ts': dataSource,
+  },
+  { rootId: 'AppTsx', runtimePath: '../../src/runtime' },
+)['./bench/dom/App.tsx']!;
 
 const compiledTsxAppContent = `${compiledAppTsx}
 
@@ -45,7 +52,13 @@ writeFileSync(resolve(__dirname, 'compiled-tsx-app.ts'), compiledTsxAppContent, 
 
 // 2. Compile AppInline.tsx
 const appInlineSource = readFileSync(resolve(__dirname, 'AppInline.tsx'), 'utf-8');
-const compiledAppInline = compile(appInlineSource, { rootId: 'AppInline', runtimePath: '../src/runtime' });
+const compiledAppInline = compileModules(
+  {
+    './bench/dom/AppInline.tsx': appInlineSource,
+    './bench/dom/data.ts': dataSource,
+  },
+  { rootId: 'AppInline', runtimePath: '../../src/runtime' },
+)['./bench/dom/AppInline.tsx']!;
 
 const compiledInlineAppContent = `${compiledAppInline}
 
@@ -75,4 +88,4 @@ export function createCompiledInlineApp() {
 
 writeFileSync(resolve(__dirname, 'compiled-inline-app.ts'), compiledInlineAppContent, 'utf-8');
 
-console.log('Successfully pre-compiled bench/App.tsx and bench/AppInline.tsx using latest compiler!');
+console.log('Successfully compiled the DOM benchmark sources.');

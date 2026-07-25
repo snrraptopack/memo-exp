@@ -9,13 +9,9 @@
  *                             → commit at the end of THAT callback
  *
  * Commit form per scope:
- *   opaque (dynamic store path / store mutator) → markDirtySubtree(rootId)
- *   all writes read only by THIS component AND it is single-instance
- *                                             → markDirty(id)
- *   otherwise                                 → commitWrites(WRITES_n)
- *
- * Multi-instance (listed) components are never locality-eligible: one row
- * writing `selected` must dirty every row, so it routes through the table.
+ *   opaque shared write                    → markDirtySubtree(rootId)
+ *   analyzable module/imported state write → commitWrites(WRITES_n)
+ *   component instance / keyed-row write   → direct local invalidation
  *
  * Mutator-method calls on plain `let` state (items.push(…)) are writes to
  * the variable itself — precise, routes to its readers. On store objects
@@ -386,6 +382,11 @@ function analyzeHandler(
             `memo-dom: handler assigns '${left.name}', which is neither module state nor a handler local — declare it at module level (let) or inside the handler`,
           );
         }
+        if (ctx.importedState.has(left.name)) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot reassign imported state '${left.name}' - ES module imports are read-only; export a mutator or mutate an imported store property`,
+          );
+        }
         if (kind === 'store') {
           throw p.buildCodeFrameError(
             `memo-dom: cannot reassign store '${left.name}' — assign a property (${left.name}.field = …) instead`,
@@ -433,6 +434,11 @@ function analyzeHandler(
         if (!kind) {
           throw p.buildCodeFrameError(
             `memo-dom: handler updates '${arg.name}', which is neither module state nor a handler local`,
+          );
+        }
+        if (ctx.importedState.has(arg.name)) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot update imported state '${arg.name}' - ES module imports are read-only; call an exported mutator instead`,
           );
         }
         if (kind !== 'let') {
@@ -522,9 +528,10 @@ function analyzeHandler(
       if (
         t.isIdentifier(callee) &&
         !componentLocals.has(callee.name) &&
-        ctx.helpers.has(callee.name)
+        (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name))
       ) {
-        const sum = summarizeHelper(ctx, callee.name);
+        const sum =
+          ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
         const s = scopeOf(p);
         for (const w of sum.writes) s.writes.add(w);
         if (sum.opaque) {
@@ -564,15 +571,14 @@ function buildCommit(
             : t.callExpression(md('markDirty'), [t.identifier(rowCtx.rowIdVar)]),
         )
       : null;
-  // R12: instance-state writes commit locally too — same markDirty(id) the
-  // allLocal path emits, so dedupe against it below
+  // R12: instance-state writes commit locally with the shared commit, if any.
   const instCommit = s.instanceLocal
     ? t.expressionStatement(t.callExpression(md('markDirty'), [t.identifier('id')]))
     : null;
-  const combine = (other: t.Statement | null, otherIsMarkDirtyId = false): t.Statement | null => {
+  const combine = (other: t.Statement | null): t.Statement | null => {
     const parts: t.Statement[] = [];
     if (rowCommit !== null) parts.push(rowCommit);
-    if (instCommit !== null && !otherIsMarkDirtyId) parts.push(instCommit);
+    if (instCommit !== null) parts.push(instCommit);
     if (other !== null) parts.push(other);
     if (parts.length === 0) return null;
     if (parts.length === 1) return parts[0]!;
@@ -588,25 +594,6 @@ function buildCommit(
   if (s.writes.size === 0) return combine(null);
 
   const writeList = [...s.writes].sort();
-  const allLocal =
-    compName !== null && // module-level functions have no entity id
-    !ctx.listedSites.has(compName) && // multi-instance is never local
-    writeList.every((v) => {
-      // R13: a computed reading this key is a hidden reader — never local
-      for (const info of ctx.computeds.values()) {
-        if (info.reads.has(v)) return false;
-      }
-      const readers = readersOfVar(ctx, v);
-      return readers.size <= 1 && readers.has(compName);
-    });
-  if (allLocal) {
-    return combine(
-      t.expressionStatement(
-        t.callExpression(md('markDirty'), [t.identifier('id')]),
-      ),
-      true, // dedupe: the table commit IS markDirty(id) already
-    );
-  }
   return combine(
     t.expressionStatement(
       t.callExpression(md('commitWrites'), [freshWriteConst(ctx, writeList)]),

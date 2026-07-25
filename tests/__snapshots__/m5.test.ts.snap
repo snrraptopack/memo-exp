@@ -2,9 +2,10 @@
 
 exports[`M5 compiler — code generation > attributes commits to the scope that writes (async handlers, timers) 1`] = `
 "import * as MD from "../out-runtime";
+const WRITES_0 = ["./component.tsx#count"];
 MD.installAccessTable({
   readers: {
-    "count": ["App", "App/*"]
+    "./component.tsx#count": ["App", "App/*"]
   }
 }, "App");
 // Fixture: async commit attribution.
@@ -14,12 +15,12 @@ export function AsyncCounter(id, parent) {
   const incLater = async () => {
     await Promise.resolve();
     count++;
-    MD.markDirty(id);
+    MD.commitWrites(WRITES_0);
   };
   const incTimer = () => {
     setTimeout(() => {
       count = 10;
-      MD.markDirty(id);
+      MD.commitWrites(WRITES_0);
     }, 0);
   };
   const update = () => {
@@ -58,11 +59,12 @@ export function AsyncCounter(id, parent) {
 
 exports[`M5 compiler — code generation > compiles eligible component list rows as lightweight factories (M5.10) 1`] = `
 "import * as MD from "../out-runtime";
-const WRITES_0 = ["selected"];
+const WRITES_0 = ["./component.tsx#selected"];
+const WRITES_1 = ["./component.tsx#items"];
 MD.installAccessTable({
   readers: {
-    "items": ["App", "App/*"],
-    "selected": ["App", "App/*"]
+    "./component.tsx#items": ["App", "App/*"],
+    "./component.tsx#selected": ["App", "App/*"]
   }
 }, "App");
 // Fixture: R7 component list rows — a Row component used via .map().
@@ -120,7 +122,7 @@ export function CompList(id, parent) {
       id: items.length + 1,
       label: 'three'
     });
-    MD.markDirty(id);
+    MD.commitWrites(WRITES_1);
   };
   const update = () => {
     region0.reconcile(items);
@@ -156,11 +158,12 @@ export function CompList(id, parent) {
 
 exports[`M5 compiler — code generation > compiles inline list rows to regions with row-scoped patterns (R7) 1`] = `
 "import * as MD from "../out-runtime";
-const WRITES_0 = ["selected"];
+const WRITES_0 = ["./component.tsx#selected"];
+const WRITES_1 = ["./component.tsx#items"];
 MD.installAccessTable({
   readers: {
-    "items": ["App", "App/*"],
-    "selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
+    "./component.tsx#items": ["App", "App/*"],
+    "./component.tsx#selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
   }
 }, "App");
 // Fixture: R7 inline list rows — the select-list shape written as plain TSX.
@@ -182,7 +185,7 @@ export function InlineList(id, parent) {
       id: items.length + 1,
       label: 'three'
     });
-    MD.markDirty(id);
+    MD.commitWrites(WRITES_1);
   };
   const update = () => {
     region0.reconcile(items);
@@ -245,10 +248,10 @@ export function InlineList(id, parent) {
 
 exports[`M5 compiler — code generation > compiles repeated children with distinct ids and covering patterns 1`] = `
 "import * as MD from "../out-runtime";
-const WRITES_0 = ["label"];
+const WRITES_0 = ["./component.tsx#label"];
 MD.installAccessTable({
   readers: {
-    "label": ["App/Tag", "App/Tag/*", "App/Tag[*]", "App/Tag[*]/*"]
+    "./component.tsx#label": ["App/Tag", "App/Tag/*", "App/Tag[*]", "App/Tag[*]/*"]
   }
 }, "App");
 // repeated.tsx — same child mounted twice; instances must get distinct
@@ -305,10 +308,11 @@ export function App(id, parent) {
 
 exports[`M5 compiler — code generation > compiles the counter fixture to the emission form 1`] = `
 "import * as MD from "../out-runtime";
+const WRITES_0 = ["./component.tsx#again", "./component.tsx#count"];
 MD.installAccessTable({
   readers: {
-    "again": ["App", "App/*"],
-    "count": ["App", "App/*"]
+    "./component.tsx#again": ["App", "App/*"],
+    "./component.tsx#count": ["App", "App/*"]
   }
 }, "App");
 let count = 0;
@@ -318,7 +322,7 @@ export function Counter(id, parent) {
   const inc = () => {
     count++;
     again++;
-    MD.markDirty(id);
+    MD.commitWrites(WRITES_0);
   };
   const update = () => {
     if ($s0 !== ($t = count)) {
@@ -364,10 +368,10 @@ export function Counter(id, parent) {
 
 exports[`M5 compiler — code generation > compiles the shared-state fixture with an access table 1`] = `
 "import * as MD from "../out-runtime";
-const WRITES_0 = ["name"];
+const WRITES_0 = ["./component.tsx#name"];
 MD.installAccessTable({
   readers: {
-    "name": ["App/Badge", "App/Badge/*"]
+    "./component.tsx#name": ["App/Badge", "App/Badge/*"]
   }
 }, "App");
 // shared.tsx — two siblings sharing module state; the write must route

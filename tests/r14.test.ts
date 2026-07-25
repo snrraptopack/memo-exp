@@ -56,7 +56,7 @@ describe('R14 - code generation', () => {
       function Label(count) { return <span>{count}</span>; }
       function App() { return <Label count={count} />; }
     `);
-    expect(code).toContain('"count": ["App", "App/*"]');
+    expect(code).toContain('"./component.tsx#count": ["App", "App/*"]');
     expect(code).not.toContain('"App/Label"');
     expect(() =>
       compile(`

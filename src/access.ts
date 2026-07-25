@@ -5,7 +5,8 @@
  * In the real pipeline (M5) the COMPILER emits this table per app by analyzing
  * component bodies. In the bootstrap we hand-write it — we are the compiler.
  *
- * readers: variable name -> entity id patterns that READ it.
+ * readers: canonical module-qualified state key -> entity id patterns that
+ * READ it (`./state.ts#store.selectedId`).
  *   - exact id:     'App/Header/Badge'
  *   - '*' wildcard: 'App/SelectList/Row[*]'  ('*' matches within one segment)
  *

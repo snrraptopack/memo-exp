@@ -2,12 +2,12 @@
 
 exports[`R8 — code generation > compiles a ternary to an anchored region with its own entity 1`] = `
 "import * as MD from "../out-runtime";
-const WRITES_0 = ["loggedIn"];
-const WRITES_1 = ["count"];
+const WRITES_0 = ["./component.tsx#loggedIn"];
+const WRITES_1 = ["./component.tsx#count"];
 MD.installAccessTable({
   readers: {
-    "count": ["App", "App/*", "App/when0", "App/when0/*"],
-    "loggedIn": ["App", "App/*", "App/when0", "App/when0/*"]
+    "./component.tsx#count": ["App", "App/*", "App/when0", "App/when0/*"],
+    "./component.tsx#loggedIn": ["App", "App/*", "App/when0", "App/when0/*"]
   }
 }, "App");
 // Fixture: R8 conditional region — a login toggle written as plain TSX.

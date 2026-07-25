@@ -52,8 +52,8 @@ describe('R8 — code generation', () => {
     // branch handlers never markDirty(id) — the owner's update doesn't
     // touch the region; commits route through the table
     expect(code).toContain('MD.commitWrites(WRITES_0)');
-    expect(code).toContain('WRITES_0 = ["loggedIn"]');
-    expect(code).toContain('WRITES_1 = ["count"]');
+    expect(code).toContain('WRITES_0 = ["./component.tsx#loggedIn"]');
+    expect(code).toContain('WRITES_1 = ["./component.tsx#count"]');
   });
 
   it('compiles && with an empty else branch', () => {
@@ -77,7 +77,9 @@ describe('R8 — code generation', () => {
       `let loggedIn = false;\nfunction C() { return <div><span>{loggedIn ? 'bye' : 'hi'}</span>{loggedIn ? <b>a</b> : <i>b</i>}</div>; }`,
     );
     // 'loggedIn' readers: the owner (text ternary) and the region
-    expect(code).toMatch(/"loggedIn": \[[^\]]*"App"[^\]]*"App\/when0"/);
+    expect(code).toMatch(
+      /"\.\/component\.tsx#loggedIn": \[[^\]]*"App"[^\]]*"App\/when0"/,
+    );
   });
 
   it('rejects R8 L1 misuses with actionable errors', () => {
@@ -157,8 +159,14 @@ describe('R8 — compiled output runs', () => {
     // also matched — handler bodies over-approximate reads, which is safe:
     // the owner's guarded setters no-op and it never calls the region)
     expect(registeredIds()).toEqual(['App', 'App/when0']);
-    expect(resolveWrites(['loggedIn'], registeredIds())).toEqual(['App', 'App/when0']);
-    expect(resolveWrites(['count'], registeredIds())).toEqual(['App', 'App/when0']);
+    expect(resolveWrites(['./component.tsx#loggedIn'], registeredIds())).toEqual([
+      'App',
+      'App/when0',
+    ]);
+    expect(resolveWrites(['./component.tsx#count'], registeredIds())).toEqual([
+      'App',
+      'App/when0',
+    ]);
 
     const [toggle] = document.querySelectorAll('button');
     expect(document.querySelector('.out')).not.toBeNull();

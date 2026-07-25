@@ -56,16 +56,16 @@ describe('M5 compiler — code generation', () => {
     // R3/R4 (M5.9 form): inline guarded writes over numbered slot locals
     expect(code).toContain('if ($s0 !== ($t = count))');
     expect(code).toContain('text1.data =');
-    // R5: 'count' is read only by Counter → local commit, no write-set const
-    expect(code).toContain('MD.markDirty(id)');
-    expect(code).not.toContain('WRITES_');
+    // R5: module state always commits through its canonical table key.
+    expect(code).toContain('WRITES_0 = ["./component.tsx#again", "./component.tsx#count"]');
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
   });
 
   it('compiles the shared-state fixture with an access table', () => {
     const code = compile(readFixture('shared'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
     // R5: 'name' is read by Badge, written by Editor → hoisted write set
-    expect(code).toContain('WRITES_0 = ["name"]');
+    expect(code).toContain('WRITES_0 = ["./component.tsx#name"]');
     expect(code).toContain('MD.commitWrites(WRITES_0)');
     // R6: table routes 'name' to Badge's subtree only
     expect(code).toContain('installAccessTable');
@@ -87,20 +87,20 @@ describe('M5 compiler — code generation', () => {
   it('attributes commits to the scope that writes (async handlers, timers)', () => {
     const code = compile(readFixture('async'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
-    // 'count' is read only by AsyncCounter → both commits are local
-    expect(code.match(/MD\.markDirty\(id\)/g)).toHaveLength(2);
+    // Both async write scopes commit the same canonical write set.
+    expect(code.match(/MD\.commitWrites\(WRITES_0\)/g)).toHaveLength(2);
     // the awaited write commits after the await, inside the async body
     const asyncBody = code.slice(
       code.indexOf('const incLater'),
       code.indexOf('const incTimer'),
     );
     expect(asyncBody.indexOf('await Promise.resolve()')).toBeLessThan(
-      asyncBody.indexOf('MD.markDirty(id)'),
+      asyncBody.indexOf('MD.commitWrites(WRITES_0)'),
     );
     // the timer write commits inside the setTimeout callback, not outside it
     const timerCb = code.slice(code.indexOf('setTimeout(() =>'), code.indexOf('}, 0)'));
     expect(timerCb).toContain('count = 10');
-    expect(timerCb).toContain('MD.markDirty(id)');
+    expect(timerCb).toContain('MD.commitWrites(WRITES_0)');
   });
 
   it('wraps implicit-return callbacks and flags dynamic store paths as opaque', () => {
@@ -117,7 +117,7 @@ describe('M5 compiler — code generation', () => {
       `const store = { a: 1 };\nfunction C() { return <button onClick={(k) => { store[k] = 2; }}>go</button>; }`,
     );
     expect(dyn).toContain('MD.markDirtySubtree("App")');
-    expect(dyn).toContain('opaque: ["store"]');
+    expect(dyn).toContain('opaque: ["./component.tsx#store"]');
   });
 
   it('compiles inline list rows to regions with row-scoped patterns (R7)', () => {
@@ -128,7 +128,7 @@ describe('M5 compiler — code generation', () => {
     // rows are multi-instance: the click routes through the table
     expect(code).toContain('MD.commitWrites(WRITES_0)');
     // 'items.push' is a local write: the owner re-renders and reconciles
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toContain('MD.commitWrites(WRITES_1)');
     // row entities live at the bracket pattern
     expect(code).toContain('"App/items/Row[*]"');
   });
@@ -239,7 +239,7 @@ describe('M5 compiler — compiled output runs', () => {
 
     // the compiled access table routes 'name' to Badge only
     expect(registeredIds()).toEqual(['App', 'App/Badge', 'App/Editor']);
-    expect(resolveWrites(['name'], registeredIds())).toEqual(['App/Badge']);
+    expect(resolveWrites(['./component.tsx#name'], registeredIds())).toEqual(['App/Badge']);
 
     button.click();
     expect(badge.textContent).toBe('Grace');
@@ -258,7 +258,7 @@ describe('M5 compiler — compiled output runs', () => {
 
     // the table routes 'label' to BOTH instances
     expect(registeredIds()).toEqual(['App', 'App/Tag', 'App/Tag[1]']);
-    expect(resolveWrites(['label'], registeredIds())).toEqual([
+    expect(resolveWrites(['./component.tsx#label'], registeredIds())).toEqual([
       'App/Tag',
       'App/Tag[1]',
     ]);
@@ -291,7 +291,7 @@ describe('M5 compiler — compiled output runs', () => {
     expect(span.textContent).toBe('10');
   });
 
-  it('list (inline rows): renders, selects via the table, pushes via local commit', async () => {
+  it('list (inline rows): renders, selects and pushes via canonical commits', async () => {
     // the module's root component mounts at rootId — the table's
     // canonical paths are compile-time paths (§4.6)
     const { InlineList } = await importCompiled('list-inline');
@@ -307,7 +307,7 @@ describe('M5 compiler — compiled output runs', () => {
       'App/items/Row[1]',
       'App/items/Row[2]',
     ]);
-    expect(resolveWrites(['selected'], registeredIds())).toEqual([
+    expect(resolveWrites(['./component.tsx#selected'], registeredIds())).toEqual([
       'App/items/Row[1]',
       'App/items/Row[2]',
     ]);
@@ -335,7 +335,7 @@ describe('M5 compiler — compiled output runs', () => {
     expect(lis).toHaveLength(2);
 
     expect(registeredIds()).toEqual(['App']);
-    expect(resolveWrites(['selected'], registeredIds())).toEqual(['App']);
+    expect(resolveWrites(['./component.tsx#selected'], registeredIds())).toEqual(['App']);
 
     lis[0]!.click();
     expect(lis[0]!.className).toBe('danger');

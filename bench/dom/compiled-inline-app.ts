@@ -1,22 +1,24 @@
-import * as MD from "../src/runtime";
-const WRITES_0 = ["data", "selected"];
-const WRITES_1 = ["selected"];
+import * as MD from "../../src/runtime";
+const WRITES_0 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/AppInline.tsx#selected", "./bench/dom/data.ts#nextId"];
+const WRITES_1 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/data.ts#nextId"];
+const WRITES_2 = ["./bench/dom/AppInline.tsx#data"];
+const WRITES_3 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/AppInline.tsx#selected"];
+const WRITES_4 = ["./bench/dom/AppInline.tsx#selected"];
 MD.installAccessTable({
   readers: {
-    "data": ["AppInline", "AppInline/*"],
-    "selected": ["AppInline/data/Row[*]", "AppInline/data/Row[*]/*"]
+    "./bench/dom/AppInline.tsx#data": ["AppInline", "AppInline/*"],
+    "./bench/dom/AppInline.tsx#selected": ["AppInline/data/Row[*]", "AppInline/data/Row[*]/*"],
+    "./bench/dom/data.ts#adjectives": ["AppInline", "AppInline/*"],
+    "./bench/dom/data.ts#colours": ["AppInline", "AppInline/*"],
+    "./bench/dom/data.ts#nextId": ["AppInline", "AppInline/*"],
+    "./bench/dom/data.ts#nouns": ["AppInline", "AppInline/*"]
   }
 }, "AppInline");
 /**
  * @file AppInline.tsx
  * The TSX source code for the Inline Row Benchmark App.
  */
-
-//import { setScheduler } from '../src/kernel';
 import { buildData } from './data';
-
-//setScheduler((fn) => fn()); // sync commit: measure all invalidation+render work
-
 let data = [];
 let selected = null;
 export function BenchAppInline(id, parent) {
@@ -49,14 +51,14 @@ export function BenchAppInline(id, parent) {
   const button2 = document.createElement("button");
   button2.onclick = () => {
     data = data.concat(buildData(1000));
-    MD.markDirty(id);
+    MD.commitWrites(WRITES_1);
   };
   button2.appendChild(text2);
   const text3 = document.createTextNode("update");
   const button3 = document.createElement("button");
   button3.onclick = () => {
     for (let i = 0; i < data.length; i += 10) data[i]!.label += ' !!!';
-    MD.markDirty(id);
+    MD.commitWrites(WRITES_2);
   };
   button3.appendChild(text3);
   const text4 = document.createTextNode("swap");
@@ -67,14 +69,14 @@ export function BenchAppInline(id, parent) {
       data[1] = data[998]!;
       data[998] = t;
     }
-    MD.markDirty(id);
+    MD.commitWrites(WRITES_2);
   };
   button4.appendChild(text4);
   const text5 = document.createTextNode("remove");
   const button5 = document.createElement("button");
   button5.onclick = () => {
     data.splice(500, 1);
-    MD.markDirty(id);
+    MD.commitWrites(WRITES_2);
   };
   button5.appendChild(text5);
   const text6 = document.createTextNode("clear");
@@ -82,7 +84,7 @@ export function BenchAppInline(id, parent) {
   button6.onclick = () => {
     data = [];
     selected = null;
-    MD.commitWrites(WRITES_0);
+    MD.commitWrites(WRITES_3);
   };
   button6.appendChild(text6);
   const div0 = document.createElement("div");
@@ -134,7 +136,7 @@ export function BenchAppInline(id, parent) {
     }
     li0.onclick = () => {
       selected = item.id;
-      MD.commitWrites(WRITES_1);
+      MD.commitWrites(WRITES_4);
     };
     li0.appendChild(text0);
     li0.appendChild(text1);

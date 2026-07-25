@@ -33,14 +33,14 @@ describe('M5.4 — const collections, code generation', () => {
     const code = compile(
       `const items = [1, 2];\nfunction C() { return <button onClick={() => { items.push(3); }}>{items.length}</button>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)'); // read only by C → local
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
   });
 
   it('const Map mutations emit commits', () => {
     const code = compile(
       `const m = new Map();\nfunction C() { return <button onClick={() => { m.set('a', 1); }}>{m.size}</button>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
   });
 
   it('const arrays work as R7 lists', () => {
@@ -68,7 +68,7 @@ describe('M5.4 — const collections, code generation', () => {
     const code = compile(
       `var n = 0;\nfunction C() { return <button onClick={() => { n++; }}>{n}</button>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toContain('MD.commitWrites(WRITES_0)');
   });
 
   it('store reassignment is still rejected', () => {

@@ -26,6 +26,7 @@ import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   attrExpr,
+  canonicalStateKey,
   collectStateIds,
   exprReadsState,
   isConstCollection,
@@ -33,6 +34,7 @@ import {
   memberKey,
   memberRootName,
   MUTATOR_METHODS,
+  registerState,
   walkNodes,
   type Ctx,
   type ComputedAnalysis,
@@ -63,6 +65,20 @@ function validateCondPosition(
 // pass 1
 // ---------------------------------------------------------------------
 
+function validateLinkedImports(ctx: Ctx, programPath: NodePath<t.Program>): void {
+  for (const stmtPath of programPath.get('body')) {
+    if (!stmtPath.isImportDeclaration() || stmtPath.node.importKind === 'type') continue;
+    for (const spec of stmtPath.node.specifiers) {
+      if (t.isImportSpecifier(spec) && spec.importKind === 'type') continue;
+      const local = spec.local.name;
+      if (ctx.importedState.has(local) || ctx.importedFunctions.has(local)) continue;
+      throw stmtPath.buildCodeFrameError(
+        `memo-dom: value import '${local}' requires compileModules() so its reactive identity can be linked`,
+      );
+    }
+  }
+}
+
 function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
   for (const stmt of programPath.node.body) {
     // M5.5: exported state is still state — unwrap the export wrapper
@@ -71,12 +87,12 @@ function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
     for (const decl of inner.declarations) {
       if (!t.isIdentifier(decl.id)) continue;
       if (inner.kind === 'let' || inner.kind === 'var') {
-        ctx.state.set(decl.id.name, 'let');
+        registerState(ctx, decl.id.name, 'let');
       } else if (inner.kind === 'const') {
         if (isStoreObject(decl.init)) {
-          ctx.state.set(decl.id.name, 'store');
+          registerState(ctx, decl.id.name, 'store');
         } else if (isConstCollection(decl.init)) {
-          ctx.state.set(decl.id.name, 'const');
+          registerState(ctx, decl.id.name, 'const');
         }
       }
     }
@@ -388,8 +404,13 @@ export function summarizeHelper(
             }
           }
         }
-      } else if (t.isIdentifier(callee) && ctx.helpers.has(callee.name)) {
-        const sub = summarizeHelper(ctx, callee.name, visiting);
+      } else if (
+        t.isIdentifier(callee) &&
+        (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name))
+      ) {
+        const sub =
+          ctx.importedFunctions.get(callee.name) ??
+          summarizeHelper(ctx, callee.name, visiting);
         for (const r of sub.reads) sum.reads.add(r);
         for (const w of sub.writes) sum.writes.add(w);
         if (sub.opaque) sum.opaque = true;
@@ -550,10 +571,12 @@ function collectReads(ctx: Ctx): void {
         const callee = call.node.callee;
         if (
           t.isIdentifier(callee) &&
-          ctx.helpers.has(callee.name) &&
+          (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name)) &&
           call.scope.getBinding(callee.name)?.scope.path.isProgram() === true
         ) {
-          for (const r of summarizeHelper(ctx, callee.name).reads) reads.add(r);
+          const summary =
+            ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
+          for (const r of summary.reads) reads.add(r);
         }
       },
 
@@ -686,13 +709,16 @@ export function analyzeComputed(ctx: Ctx, expr: t.Node): ComputedAnalysis {
           }
         }
         // every other member call is fine — any object, any method
-      } else if (t.isIdentifier(c) && ctx.helpers.has(c.name)) {
-        const sum = summarizeHelper(ctx, c.name);
+      } else if (
+        t.isIdentifier(c) &&
+        (ctx.helpers.has(c.name) || ctx.importedFunctions.has(c.name))
+      ) {
+        const sum = ctx.importedFunctions.get(c.name) ?? summarizeHelper(ctx, c.name);
         for (const r of sum.reads) reads.add(r);
         if (sum.writes.size > 0) {
           for (const w of sum.writes) reads.add(w); // ensure the error triggers
           fail(`calls helper '${c.name}' which writes state — writes belong in handlers`);
-        } else if (sum.opaque) {
+        } else if (sum.opaque && ctx.helpers.has(c.name)) {
           fail(`calls recursive helper '${c.name}' which cannot be analyzed`);
         }
       }
@@ -746,7 +772,7 @@ function scanComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
         continue; // impure but touches no state — a plain const
       }
       if (r.reads.size === 0) continue; // constant expression — plain const
-      ctx.state.set(name, 'computed');
+      registerState(ctx, name, 'computed');
       ctx.computeds.set(name, { reads: r.reads });
     }
   }
@@ -912,6 +938,7 @@ function scanInstanceComputeds(ctx: Ctx): void {
 }
 
 export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
+  validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
   scanInstanceState(ctx);
@@ -1021,8 +1048,9 @@ export function isLightweightListedComponent(ctx: Ctx, name: string): boolean {
 /** The access-table object expression + installAccessTable call, if any. */
 export function buildAccessTable(ctx: Ctx): t.Statement | null {
   const add = (variable: string, patterns: readonly string[]): void => {
-    let set = ctx.readers.get(variable);
-    if (!set) ctx.readers.set(variable, (set = new Set()));
+    const key = canonicalStateKey(ctx, variable);
+    let set = ctx.readers.get(key);
+    if (!set) ctx.readers.set(key, (set = new Set()));
     for (const p of patterns) set.add(p);
   };
 
@@ -1049,7 +1077,9 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
   // a computed is a module-level singleton). Depth -1 (emitted by the
   // plugin) makes them recompute BEFORE any reader renders.
   for (const [name, info] of ctx.computeds) {
-    for (const key of info.reads) add(key, [`${ctx.rootId}/$computed/${name}`]);
+    const entityId =
+      `${ctx.rootId}/$computed/${encodeURIComponent(ctx.moduleId)}#${name}`;
+    for (const key of info.reads) add(key, [entityId]);
   }
 
   if (ctx.readers.size === 0 && ctx.opaqueVars.size === 0) return null;
@@ -1069,7 +1099,12 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
     tableProps.push(
       t.objectProperty(
         t.identifier('opaque'),
-        t.arrayExpression([...ctx.opaqueVars].sort().map((s) => t.stringLiteral(s))),
+        t.arrayExpression(
+          [...ctx.opaqueVars]
+            .map((s) => canonicalStateKey(ctx, s))
+            .sort()
+            .map((s) => t.stringLiteral(s)),
+        ),
       ),
     );
   }

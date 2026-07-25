@@ -3,21 +3,21 @@
  * Generated Compiled Output for examples/todo.tsx
  */
 import * as MD from "../src/runtime";
-const WRITES_0 = ["completedSet"];
-const WRITES_1 = ["categoryMap"];
-const WRITES_2 = ["categoryMap", "todos"];
-const WRITES_3 = ["completedSet", "todos"];
-const WRITES_4 = ["totalCount"];
-const WRITES_5 = ["completedCount"];
-const WRITES_6 = ["activeCount"];
+const WRITES_0 = ["./component.tsx#completedSet"];
+const WRITES_1 = ["./component.tsx#categoryMap"];
+const WRITES_2 = ["./component.tsx#categoryMap", "./component.tsx#todos"];
+const WRITES_3 = ["./component.tsx#completedSet", "./component.tsx#todos"];
+const WRITES_4 = ["./component.tsx#totalCount"];
+const WRITES_5 = ["./component.tsx#completedCount"];
+const WRITES_6 = ["./component.tsx#activeCount"];
 MD.installAccessTable({
   readers: {
-    "activeCount": ["TodoApp", "TodoApp/*"],
-    "categoryMap": ["TodoApp", "TodoApp/*"],
-    "completedCount": ["TodoApp", "TodoApp/$computed/activeCount", "TodoApp/*"],
-    "completedSet": ["TodoApp", "TodoApp/$computed/completedCount", "TodoApp/*"],
-    "todos": ["TodoApp", "TodoApp/$computed/totalCount", "TodoApp/*"],
-    "totalCount": ["TodoApp", "TodoApp/$computed/activeCount", "TodoApp/*"]
+    "./component.tsx#activeCount": ["TodoApp", "TodoApp/*"],
+    "./component.tsx#categoryMap": ["TodoApp", "TodoApp/*"],
+    "./component.tsx#completedCount": ["TodoApp", "TodoApp/$computed/.%2Fcomponent.tsx#activeCount", "TodoApp/*"],
+    "./component.tsx#completedSet": ["TodoApp", "TodoApp/$computed/.%2Fcomponent.tsx#completedCount", "TodoApp/*"],
+    "./component.tsx#todos": ["TodoApp", "TodoApp/$computed/.%2Fcomponent.tsx#totalCount", "TodoApp/*"],
+    "./component.tsx#totalCount": ["TodoApp", "TodoApp/$computed/.%2Fcomponent.tsx#activeCount", "TodoApp/*"]
   }
 }, "TodoApp");
 // 1. Array Collection
@@ -41,7 +41,7 @@ const categoryMap = new Map([[1, 'Compiler'], [2, 'Reactivity'], [3, 'Performanc
 // 4. Rule R13 Computed Derivations over Collections
 let totalCount = todos.length;
 MD.register({
-  id: "TodoApp/$computed/totalCount",
+  id: "TodoApp/$computed/.%2Fcomponent.tsx#totalCount",
   parent: null,
   depth: -1,
   render: () => {
@@ -54,7 +54,7 @@ MD.register({
 });
 let completedCount = completedSet.size;
 MD.register({
-  id: "TodoApp/$computed/completedCount",
+  id: "TodoApp/$computed/.%2Fcomponent.tsx#completedCount",
   parent: null,
   depth: -1,
   render: () => {
@@ -67,7 +67,7 @@ MD.register({
 });
 let activeCount = totalCount - completedCount;
 MD.register({
-  id: "TodoApp/$computed/activeCount",
+  id: "TodoApp/$computed/.%2Fcomponent.tsx#activeCount",
   parent: null,
   depth: -1,
   render: () => {
