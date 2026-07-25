@@ -25,4 +25,5 @@ Run the Chromium benchmark:
 
 ```bash
 bun run bench
+bun run bench:invalidation
 ```

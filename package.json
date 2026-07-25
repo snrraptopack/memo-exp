@@ -7,7 +7,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "dev": "vitest",
-    "bench": "bun run bench/build-bench.ts && esbuild bench/browser-entry.ts --bundle --outfile=bench/dist/browser-bundle.js --format=iife && bun run bench/run-browser.ts"
+    "bench": "bun run bench/build-bench.ts && esbuild bench/browser-entry.ts --bundle --outfile=bench/dist/browser-bundle.js --format=iife && bun run bench/run-browser.ts",
+    "bench:invalidation": "bun run bench/run-invalidation-browser.ts"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",

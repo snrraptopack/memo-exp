@@ -88,10 +88,14 @@ exist yet.
 
 ### P2: measured performance
 
-1. Profile select/swap/clear paths; they have the largest current gap to
+1. Prototype compiler-selected per-entity dirty-reason masks. The isolated
+   Chromium benchmark shows a large win for skipped expensive work, ~3× for
+   a skipped 32-expression group, and ~12% overhead for a single cheap slot;
+   see `bench/invalidation-masks.md`.
+2. Profile select/swap/clear paths; they have the largest current gap to
    hand-written vanilla in the browser benchmark.
-2. Add stable compiler-throughput and large-access-table benchmarks.
-3. Measure lifecycle and full-hygiene changes independently; compiler-only
+3. Add stable compiler-throughput and large-access-table benchmarks.
+4. Measure lifecycle and full-hygiene changes independently; compiler-only
    improvements must not be credited as runtime gains.
 
 ## Benchmark baseline
