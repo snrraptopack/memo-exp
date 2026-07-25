@@ -1,0 +1,15 @@
+<!--
+  @file angular.html
+  Uses Angular control-flow templates for the shared keyed todo workload.
+-->
+<span>{{ visible().revision ? '' : '' }}</span>
+<ul>
+  @for (todo of visible().todos; track todo.id) {
+    <bench-todo-row
+      [todo]="todo"
+      [forcedRevision]="mode() === 'forced' ? forcedRevision() : 0"
+    />
+  }
+</ul>
+<strong id="remaining">{{ remaining() }}</strong>
+

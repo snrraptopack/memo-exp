@@ -12,7 +12,8 @@
     "bench:invalidation": "bun run bench/invalidation/run.ts",
     "bench:linker": "bun run bench/linker/run.ts",
     "bench:lifecycle": "bun run bench/lifecycle/run.ts",
-    "bench:children": "bun run bench/children/run.ts"
+    "bench:children": "bun run bench/children/run.ts",
+    "bench:frameworks": "cd bench/frameworks && bun run run"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",

@@ -11,6 +11,7 @@ latest measurements, limits, and interpretation.
 | [`linker`](./linker/) | `bun run bench:linker` | Cross-module compiler/linker throughput |
 | [`lifecycle`](./lifecycle/) | `bun run bench:lifecycle` | Production cleanup ownership and entity teardown |
 | [`children`](./children/) | `bun run bench:children` | Production component children mount/update overhead |
+| [`frameworks`](./frameworks/) | `bun run bench:frameworks` | Current framework update-completion scenarios |
 
 Numbers are machine-local and must be compared using repeated processes on the
 same machine. A mechanism-level benchmark is not evidence of end-to-end

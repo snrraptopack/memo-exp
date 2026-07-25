@@ -1,0 +1,1285 @@
+{
+  "browser": "Chrome/150.0.7871.182",
+  "config": {
+    "counts": [
+      10,
+      100,
+      1000
+    ],
+    "iterations": {
+      "10": 100,
+      "100": 50,
+      "1000": 20
+    },
+    "modes": [
+      "forced",
+      "reactive"
+    ],
+    "samples": 5,
+    "scenarios": [
+      "no-change",
+      "rename",
+      "toggle",
+      "move"
+    ],
+    "warmup": 10
+  },
+  "date": "2026-07-25T16:45:02.689Z",
+  "note": "Machine-local update-completion latency; reactive results include each framework scheduler.",
+  "platform": "win32 x64",
+  "results": [
+    {
+      "id": "vanilla",
+      "label": "Vanilla DOM",
+      "version": "browser",
+      "bundle": {
+        "rawBytes": 2133,
+        "gzipBytes": 909
+      },
+      "measurements": [
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 102000.00002980232,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 106000.00001490116,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 86999.99995529652,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 76999.99995529652,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 1133999.999910593,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 1178000.0001192093,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 914000.0000596046,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 1017999.9999701977,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 10050000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 9864999.999850988,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 9464999.999850988,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 11594999.999925494,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 1000.0000149011612,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 6000.000014901161,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 12000.000029802322,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 9000.000059604645,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 2000.0000298023224,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 8000.00011920929,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 13999.999910593033,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 10000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 5000.000074505806,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 14999.999850988388,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 30000.000074505806,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 29999.999701976776,
+          "mutationsPerOp": 2
+        }
+      ]
+    },
+    {
+      "id": "memoized-dom",
+      "label": "memoized-dom TSX",
+      "version": "workspace",
+      "bundle": {
+        "rawBytes": 10663,
+        "gzipBytes": 4085
+      },
+      "measurements": [
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 19000.000059604645,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 20000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 20000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 51000.00001490116,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 42000.00002980232,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 35999.999940395355,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 40000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 91999.99988079071,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 214999.9998509884,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 225000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 214999.9998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 739999.9998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 13999.999985098839,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 31000.00001490116,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 42000.00002980232,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 48999.99998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 37999.99997019768,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 116000.00008940697,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 102000.00002980232,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 104000.00005960464,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 269999.9999254942,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 964999.9998509884,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 930000.0000745058,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 859999.9997764826,
+          "mutationsPerOp": 2
+        }
+      ]
+    },
+    {
+      "id": "solid",
+      "label": "Solid",
+      "version": "1.9.14",
+      "bundle": {
+        "rawBytes": 19885,
+        "gzipBytes": 7799
+      },
+      "measurements": [
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 52999.99997019768,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 31000.00001490116,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 32999.99997019768,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 49000.000059604645,
+          "mutationsPerOp": 3.8
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 253999.99991059303,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 323999.99991059303,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 302000.0000298023,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 210000,
+          "mutationsPerOp": 4
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 2364999.9998509884,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 3205000.000074506,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 2869999.999925494,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 3615000.0002235174,
+          "mutationsPerOp": 4
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 15000,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 15999.999940395355,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 32000.000029802322,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 128999.99998509884,
+          "mutationsPerOp": 3.8
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 14000.000059604645,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 20000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 187999.99997019768,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 847999.9999701977,
+          "mutationsPerOp": 4
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 10000.000149011612,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 20000.000298023224,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 1639999.9998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 8355000.000074506,
+          "mutationsPerOp": 4
+        }
+      ]
+    },
+    {
+      "id": "svelte",
+      "label": "Svelte",
+      "version": "5.56.8",
+      "bundle": {
+        "rawBytes": 52180,
+        "gzipBytes": 20176
+      },
+      "measurements": [
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 33999.99998509884,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 21000.00001490116,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 35000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 35000,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 71999.99988079071,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 67999.99997019768,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 142000.00002980232,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 124000.00005960464,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 980000.0000745058,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 1300000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 910000.0001490116,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 1125000,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 27000.000029802322,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 48000.00004470348,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 61000.00001490116,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 195000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 32000.000029802322,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 70000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 220000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 1217999.9999701977,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 35000.00014901161,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 129999.99970197678,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 1634999.9997764826,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 10680000.000074506,
+          "mutationsPerOp": 2
+        }
+      ]
+    },
+    {
+      "id": "vue",
+      "label": "Vue",
+      "version": "3.5.40",
+      "bundle": {
+        "rawBytes": 65677,
+        "gzipBytes": 26573
+      },
+      "measurements": [
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 230000,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 137999.99997019768,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 106000.00001490116,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 163999.99998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 1040000,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 1250000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 1045999.9999403954,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 1260000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 10345000.000298023,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 10144999.999925494,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 10929999.999701977,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 10980000.000074506,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 48999.99998509884,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 33000.00004470348,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 78999.99998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 214000.00005960464,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 157999.99997019768,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 40000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 306000.00008940697,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 1005999.9999403954,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 2084999.9997764826,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 50000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 4090000.0002235174,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 11844999.999925494,
+          "mutationsPerOp": 2
+        }
+      ]
+    },
+    {
+      "id": "preact",
+      "label": "Preact",
+      "version": "10.29.7",
+      "bundle": {
+        "rawBytes": 21006,
+        "gzipBytes": 8491
+      },
+      "measurements": [
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 193999.99998509884,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 228999.99998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 200999.99994039536,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 227000.00002980232,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 900000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 870000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 1012000.0000298023,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 936000.000089407,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 7205000.000074506,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 7765000.000223517,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 7920000.000298023,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 10710000.000149012,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 106999.99995529652,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 103999.99998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 112999.99997019768,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 88999.99998509884,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 277999.9999701977,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 390000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 318000.0001192093,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 357999.9999701977,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 3079999.999701977,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 2915000.0002235174,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 1994999.9999254942,
+          "mutationsPerOp": 3
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 5744999.999925494,
+          "mutationsPerOp": 3
+        }
+      ]
+    },
+    {
+      "id": "react",
+      "label": "React",
+      "version": "19.2.8",
+      "bundle": {
+        "rawBytes": 194386,
+        "gzipBytes": 61856
+      },
+      "measurements": [
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 105000,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 43000.00004470348,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 47000.00002980232,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 47999.99997019768,
+          "mutationsPerOp": 3.6
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 187999.99997019768,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 180000,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 190000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 177999.99997019768,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "no-change",
+          "nsPerOp": 2004999.9997019768,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "rename",
+          "nsPerOp": 1809999.9997764826,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "toggle",
+          "nsPerOp": 2114999.9998509884,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "forced",
+          "scenario": "move",
+          "nsPerOp": 2430000.000074506,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 140000,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 146000.00001490116,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 195999.99994039536,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 10,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 255000,
+          "mutationsPerOp": 3.6
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 322000.0000298023,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 434000.00005960464,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 560000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 100,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 650000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "no-change",
+          "nsPerOp": 4544999.999925494,
+          "mutationsPerOp": 0
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "rename",
+          "nsPerOp": 6635000.000149012,
+          "mutationsPerOp": 1
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "toggle",
+          "nsPerOp": 6625000,
+          "mutationsPerOp": 2
+        },
+        {
+          "count": 1000,
+          "mode": "reactive",
+          "scenario": "move",
+          "nsPerOp": 6485000.000149012,
+          "mutationsPerOp": 2
+        }
+      ]
+    }
+  ]
+}

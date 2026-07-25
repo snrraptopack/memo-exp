@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "./dist/angular-aot",
+    "rootDir": "."
+  },
+  "angularCompilerOptions": {
+    "compilationMode": "full",
+    "strictTemplates": true
+  },
+  "files": [
+    "./contract.ts",
+    "./model.ts",
+    "./adapters/angular-row.ts",
+    "./adapters/angular.ts",
+    "./entries/angular.ts"
+  ]
+}
