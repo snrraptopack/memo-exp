@@ -75,10 +75,10 @@ describe('M5.10 - lightweight listed component rows', () => {
 
   it('emits a stateless list-only component as a ListEntry factory', () => {
     const code = compile(LIGHT_SOURCE, { runtimePath: '../out-runtime' });
-    expect(code).toContain('function Row(item, sfx, __memoRowId)');
-    expect(code).not.toContain('MD.registerProps');
+    expect(code).toMatch(/function Row\(item, sfx, _id\d*\)/);
+    expect(code).not.toContain('.registerProps');
     const rowFactory = code.slice(code.indexOf('function Row'), code.indexOf('export function C'));
-    expect(rowFactory).not.toContain('MD.register({');
+    expect(rowFactory).not.toContain('.register({');
     expect(code).toContain('entities: []');
     expect(code).toContain('"./component.tsx#selected": ["App", "App/*"]');
   });
@@ -103,25 +103,25 @@ describe('M5.10 - lightweight listed component rows', () => {
 
   it('keeps rows with local state on the existing entity and props-box path', () => {
     const code = compile(STATEFUL_SOURCE, { runtimePath: '../out-runtime' });
-    expect(code).toContain('MD.registerProps(id, __p)');
-    expect(code).toContain('Row(rowId, id, [item])');
+    expect(code).toMatch(/\.registerProps\(_id\d*, _props\d*\)/);
+    expect(code).toMatch(/Row\(_rowId\d*, _id\d*, \[item\]\)/);
   });
 
   it('matches row props by name when JSX attribute order differs from declaration order', () => {
     const code = compile(PROP_ORDER_SOURCE, { runtimePath: '../out-runtime' });
-    expect(code).toContain('Row(suffix, i, rowId)');
-    expect(code).toContain('entry.updateProps(suffix, i)');
+    expect(code).toMatch(/Row\(suffix, i, _rowId\d*\)/);
+    expect(code).toMatch(/_entry\d*\.updateProps\(suffix, i\)/);
   });
 
   it('tracks member writes through TypeScript non-null assertions', () => {
     const code = compile(NON_NULL_WRITE_SOURCE, { runtimePath: '../out-runtime' });
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
   it('preserves a typed object-prop row contract in lightweight emission', () => {
     const code = compile(OBJECT_PROP_ROW_SOURCE, { runtimePath: '../out-runtime' });
-    expect(code).toMatch(/Row\(\{\s*item\s*\}, rowId\)/);
-    expect(code).toMatch(/entry\.updateProps\(\{\s*item\s*\}\)/);
+    expect(code).toMatch(/Row\(\{\s*item\s*\}, _rowId\d*\)/);
+    expect(code).toMatch(/_entry\d*\.updateProps\(\{\s*item\s*\}\)/);
   });
 
   it('accepts deferred parametrized patterns without changing current resolution', () => {
@@ -181,7 +181,7 @@ describe('M5.10 - lightweight listed component rows', () => {
         `function C() { return <ul>{items.map(item => <Row key={item.id} item={item} />)}</ul>; }`,
       { runtimePath: '../out-runtime' },
     );
-    expect(code).toMatch(/Row\(\{\s*item\s*\}, rowId\)/);
+    expect(code).toMatch(/Row\(\{\s*item\s*\}, _rowId\d*\)/);
   });
 
   it('rejects unknown props at call sites instead of misaligning silently', () => {
@@ -202,6 +202,6 @@ describe('M5.10 - lightweight listed component rows', () => {
       `function Child(a, b) { return <span>{a}{b}</span>; }\nfunction C() { return <div><Child b={2} a={1} /></div>; }`,
       { runtimePath: '../out-runtime' },
     );
-    expect(code).toMatch(/Child\(id \+ "\/Child", id, \[1, 2\]\)/);
+    expect(code).toMatch(/Child\(_id\d* \+ "\/Child", _id\d*, \[1, 2\]\)/);
   });
 });

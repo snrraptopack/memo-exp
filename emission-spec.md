@@ -49,6 +49,20 @@ Everything below exists to make that sentence true.
 
 ## 3. Emission rules
 
+### R0 - Generated identifiers are hygienic
+
+Every compiler-owned lexical binding is allocated through one Babel
+scope-aware UID allocator initialized from the original program. The allocator
+reserves user identifiers from the entire source tree, including nested
+callbacks, before emission begins. This covers the runtime namespace, factory
+parameters, props boxes, update functions, slot caches, temporaries, DOM nodes,
+child results, regions, row parameters/entries, computed temporaries, handler
+return temporaries, and hoisted write sets.
+
+Names in the examples below (`id`, `update`, `$t`, `text0`, `WRITES_0`, and so
+on) are semantic labels, not literal output requirements. Property keys,
+runtime entity paths, and canonical state keys remain stable strings.
+
 ### R1 — Components become entities
 
 Every function/component compiles to a factory taking `(id, parent)` that

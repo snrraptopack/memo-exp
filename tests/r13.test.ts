@@ -61,8 +61,8 @@ describe('R13 — computeds, code generation', () => {
     expect(code).toContain('let active =');
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#active"');
     expect(code).toContain('depth: -1');
-    expect(code).toContain('MD.computedChanged(active, next)');
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.computedChanged\(active, _activeNext\d*\)/);
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
     // the computed reads its source through the table
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#active"');
   });
@@ -80,7 +80,7 @@ describe('R13 — computeds, code generation', () => {
       `let count = 1;\nconst pair = [count, count + 1];\nfunction C() { return <p>{pair.join(',')}</p>; }`,
     );
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#pair"');
-    expect(code).toContain('MD.computedChanged(pair, next)');
+    expect(code).toMatch(/\.computedChanged\(pair, _pairNext\d*\)/);
   });
 
   it('store-member derivations read the dotted key', () => {

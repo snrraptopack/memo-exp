@@ -33,22 +33,22 @@ describe('M5.4 — const collections, code generation', () => {
     const code = compile(
       `const items = [1, 2];\nfunction C() { return <button onClick={() => { items.push(3); }}>{items.length}</button>; }`,
     );
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
   it('const Map mutations emit commits', () => {
     const code = compile(
       `const m = new Map();\nfunction C() { return <button onClick={() => { m.set('a', 1); }}>{m.size}</button>; }`,
     );
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
   it('const arrays work as R7 lists', () => {
     const code = compile(
       `const items = [{ id: 1 }];\nlet sel = 0;\nfunction C() { return <ul>{items.map((i) => <li key={i.id} class={sel === i.id ? 'x' : ''}>{i.id}</li>)}</ul>; }`,
     );
-    expect(code).toContain('MD.createListRegion(');
-    expect(code).toContain('region0.reconcile(items)');
+    expect(code).toContain('.createListRegion(');
+    expect(code).toMatch(/_region\d*\.reconcile\(items\)/);
   });
 
   it('rebinding a const collection is a compile error, not a runtime TypeError', () => {
@@ -68,7 +68,7 @@ describe('M5.4 — const collections, code generation', () => {
     const code = compile(
       `var n = 0;\nfunction C() { return <button onClick={() => { n++; }}>{n}</button>; }`,
     );
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
   it('store reassignment is still rejected', () => {

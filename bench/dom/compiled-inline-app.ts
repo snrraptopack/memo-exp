@@ -1,10 +1,10 @@
-import * as MD from "../../src/runtime";
-const WRITES_0 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/AppInline.tsx#selected", "./bench/dom/data.ts#nextId"];
-const WRITES_1 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/data.ts#nextId"];
-const WRITES_2 = ["./bench/dom/AppInline.tsx#data"];
-const WRITES_3 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/AppInline.tsx#selected"];
-const WRITES_4 = ["./bench/dom/AppInline.tsx#selected"];
-MD.installAccessTable({
+import * as _MD from "../../src/runtime";
+const _WRITES_ = ["./bench/dom/AppInline.tsx#data", "./bench/dom/AppInline.tsx#selected", "./bench/dom/data.ts#nextId"];
+const _WRITES_2 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/data.ts#nextId"];
+const _WRITES_3 = ["./bench/dom/AppInline.tsx#data"];
+const _WRITES_4 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/AppInline.tsx#selected"];
+const _WRITES_5 = ["./bench/dom/AppInline.tsx#selected"];
+_MD.installAccessTable({
   readers: {
     "./bench/dom/AppInline.tsx#data": ["AppInline", "AppInline/*"],
     "./bench/dom/AppInline.tsx#selected": ["AppInline/data/Row[*]", "AppInline/data/Row[*]/*"],
@@ -21,137 +21,137 @@ MD.installAccessTable({
 import { buildData } from './data';
 let data = [];
 let selected = null;
-export function BenchAppInline(id, parent) {
-  let $t;
-  const update = () => {
-    region0.reconcile(data);
+export function BenchAppInline(_id, _parent) {
+  let _value;
+  const _update = () => {
+    _region.reconcile(data);
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
   });
-  const text0 = document.createTextNode("create1k");
-  const button0 = document.createElement("button");
-  button0.onclick = () => {
+  const _text = document.createTextNode("create1k");
+  const _button = document.createElement("button");
+  _button.onclick = () => {
     data = buildData(1000);
     selected = null;
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
-  button0.appendChild(text0);
-  const text1 = document.createTextNode("create10k");
-  const button1 = document.createElement("button");
-  button1.onclick = () => {
+  _button.appendChild(_text);
+  const _text2 = document.createTextNode("create10k");
+  const _button2 = document.createElement("button");
+  _button2.onclick = () => {
     data = buildData(10000);
     selected = null;
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
-  button1.appendChild(text1);
-  const text2 = document.createTextNode("append1k");
-  const button2 = document.createElement("button");
-  button2.onclick = () => {
+  _button2.appendChild(_text2);
+  const _text3 = document.createTextNode("append1k");
+  const _button3 = document.createElement("button");
+  _button3.onclick = () => {
     data = data.concat(buildData(1000));
-    MD.commitWrites(WRITES_1);
+    _MD.commitWrites(_WRITES_2);
   };
-  button2.appendChild(text2);
-  const text3 = document.createTextNode("update");
-  const button3 = document.createElement("button");
-  button3.onclick = () => {
+  _button3.appendChild(_text3);
+  const _text4 = document.createTextNode("update");
+  const _button4 = document.createElement("button");
+  _button4.onclick = () => {
     for (let i = 0; i < data.length; i += 10) data[i]!.label += ' !!!';
-    MD.commitWrites(WRITES_2);
+    _MD.commitWrites(_WRITES_3);
   };
-  button3.appendChild(text3);
-  const text4 = document.createTextNode("swap");
-  const button4 = document.createElement("button");
-  button4.onclick = () => {
+  _button4.appendChild(_text4);
+  const _text5 = document.createTextNode("swap");
+  const _button5 = document.createElement("button");
+  _button5.onclick = () => {
     if (data.length > 998) {
       const t = data[1]!;
       data[1] = data[998]!;
       data[998] = t;
     }
-    MD.commitWrites(WRITES_2);
+    _MD.commitWrites(_WRITES_3);
   };
-  button4.appendChild(text4);
-  const text5 = document.createTextNode("remove");
-  const button5 = document.createElement("button");
-  button5.onclick = () => {
+  _button5.appendChild(_text5);
+  const _text6 = document.createTextNode("remove");
+  const _button6 = document.createElement("button");
+  _button6.onclick = () => {
     data.splice(500, 1);
-    MD.commitWrites(WRITES_2);
+    _MD.commitWrites(_WRITES_3);
   };
-  button5.appendChild(text5);
-  const text6 = document.createTextNode("clear");
-  const button6 = document.createElement("button");
-  button6.onclick = () => {
+  _button6.appendChild(_text6);
+  const _text7 = document.createTextNode("clear");
+  const _button7 = document.createElement("button");
+  _button7.onclick = () => {
     data = [];
     selected = null;
-    MD.commitWrites(WRITES_3);
+    _MD.commitWrites(_WRITES_4);
   };
-  button6.appendChild(text6);
-  const div0 = document.createElement("div");
-  div0.className = "toolbar";
-  div0.appendChild(button0);
-  div0.appendChild(button1);
-  div0.appendChild(button2);
-  div0.appendChild(button3);
-  div0.appendChild(button4);
-  div0.appendChild(button5);
-  div0.appendChild(button6);
-  const ul0 = document.createElement("ul");
-  const region0 = MD.createListRegion(ul0, id + "/data", (item, rowId) => {
-    let $s0, $s1, $s2, $t;
-    const update = () => {
-      if ($s0 !== ($t = item.id)) {
-        $s0 = $t;
-        text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  _button7.appendChild(_text7);
+  const _div = document.createElement("div");
+  _div.className = "toolbar";
+  _div.appendChild(_button);
+  _div.appendChild(_button2);
+  _div.appendChild(_button3);
+  _div.appendChild(_button4);
+  _div.appendChild(_button5);
+  _div.appendChild(_button6);
+  _div.appendChild(_button7);
+  const _ul = document.createElement("ul");
+  const _region = _MD.createListRegion(_ul, _id + "/data", (item, _rowId) => {
+    let _slot, _slot2, _slot3, _value2;
+    const _update2 = () => {
+      if (_slot !== (_value2 = item.id)) {
+        _slot = _value2;
+        _text8.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
       }
-      if ($s1 !== ($t = item.label)) {
-        $s1 = $t;
-        text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+      if (_slot2 !== (_value2 = item.label)) {
+        _slot2 = _value2;
+        _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
       }
-      if ($s2 !== ($t = selected === item.id ? 'danger' : '')) {
-        $s2 = $t;
-        li0.className = $t;
+      if (_slot3 !== (_value2 = selected === item.id ? 'danger' : '')) {
+        _slot3 = _value2;
+        _li.className = _value2;
       }
     };
-    MD.register({
-      id: rowId,
-      parent: id,
-      render: update
+    _MD.register({
+      id: _rowId,
+      parent: _id,
+      render: _update2
     });
-    const text0 = document.createTextNode("");
-    if ($s0 !== ($t = item.id)) {
-      $s0 = $t;
-      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    const _text8 = document.createTextNode("");
+    if (_slot !== (_value2 = item.id)) {
+      _slot = _value2;
+      _text8.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    const text1 = document.createTextNode(": ");
-    const text2 = document.createTextNode("");
-    if ($s1 !== ($t = item.label)) {
-      $s1 = $t;
-      text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    const _text9 = document.createTextNode(": ");
+    const _text0 = document.createTextNode("");
+    if (_slot2 !== (_value2 = item.label)) {
+      _slot2 = _value2;
+      _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    const li0 = document.createElement("li");
-    if ($s2 !== ($t = selected === item.id ? 'danger' : '')) {
-      $s2 = $t;
-      li0.className = $t;
+    const _li = document.createElement("li");
+    if (_slot3 !== (_value2 = selected === item.id ? 'danger' : '')) {
+      _slot3 = _value2;
+      _li.className = _value2;
     }
-    li0.onclick = () => {
+    _li.onclick = () => {
       selected = item.id;
-      MD.commitWrites(WRITES_4);
+      _MD.commitWrites(_WRITES_5);
     };
-    li0.appendChild(text0);
-    li0.appendChild(text1);
-    li0.appendChild(text2);
+    _li.appendChild(_text8);
+    _li.appendChild(_text9);
+    _li.appendChild(_text0);
     return {
-      nodes: [li0],
-      entities: [rowId],
-      update: update
+      nodes: [_li],
+      entities: [_rowId],
+      update: _update2
     };
   }, item => item.id);
-  region0.reconcile(data);
-  const div1 = document.createElement("div");
-  div1.appendChild(div0);
-  div1.appendChild(ul0);
-  return div1;
+  _region.reconcile(data);
+  const _div2 = document.createElement("div");
+  _div2.appendChild(_div);
+  _div2.appendChild(_ul);
+  return _div2;
 }
 
 export function createCompiledInlineApp() {

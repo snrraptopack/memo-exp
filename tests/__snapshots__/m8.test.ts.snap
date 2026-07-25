@@ -1,10 +1,10 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`R8 — code generation > compiles a ternary to an anchored region with its own entity 1`] = `
-"import * as MD from "../out-runtime";
-const WRITES_0 = ["./component.tsx#loggedIn"];
-const WRITES_1 = ["./component.tsx#count"];
-MD.installAccessTable({
+"import * as _MD from "../out-runtime";
+const _WRITES_ = ["./component.tsx#loggedIn"];
+const _WRITES_2 = ["./component.tsx#count"];
+_MD.installAccessTable({
   readers: {
     "./component.tsx#count": ["App", "App/*", "App/when0", "App/when0/*"],
     "./component.tsx#loggedIn": ["App", "App/*", "App/when0", "App/when0/*"]
@@ -16,74 +16,74 @@ MD.installAccessTable({
 // swaps destroy DOM but module state survives, so 'count' persists.
 let loggedIn = false;
 let count = 0;
-export function CondApp(id, parent) {
-  let $t;
+export function CondApp(_id, _parent) {
+  let _value;
   const toggle = () => {
     loggedIn = !loggedIn;
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
   const inc = () => {
     count++;
-    MD.commitWrites(WRITES_1);
+    _MD.commitWrites(_WRITES_2);
   };
-  const update = () => {};
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  const _update = () => {};
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
   });
-  const text0 = document.createTextNode("toggle");
-  const button0 = document.createElement("button");
-  button0.onclick = toggle;
-  button0.appendChild(text0);
-  const div0 = document.createElement("div");
-  div0.appendChild(button0);
-  MD.register({
-    id: id + "/when0",
-    parent: id,
-    render: () => when0.update()
+  const _text = document.createTextNode("toggle");
+  const _button = document.createElement("button");
+  _button.onclick = toggle;
+  _button.appendChild(_text);
+  const _div = document.createElement("div");
+  _div.appendChild(_button);
+  _MD.register({
+    id: _id + "/when0",
+    parent: _id,
+    render: () => _when.update()
   });
-  const when0 = MD.createCondRegion(div0, id + "/when0", () => loggedIn ? 0 : 1, [() => {
-    let $s0, $t;
-    const update = () => {
-      if ($s0 !== ($t = count)) {
-        $s0 = $t;
-        text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _when = _MD.createCondRegion(_div, _id + "/when0", () => loggedIn ? 0 : 1, [() => {
+    let _slot, _value2;
+    const _update2 = () => {
+      if (_slot !== (_value2 = count)) {
+        _slot = _value2;
+        _text3.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
       }
     };
-    const text0 = document.createTextNode("in ");
-    const text1 = document.createTextNode("");
-    if ($s0 !== ($t = count)) {
-      $s0 = $t;
-      text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    const _text2 = document.createTextNode("in ");
+    const _text3 = document.createTextNode("");
+    if (_slot !== (_value2 = count)) {
+      _slot = _value2;
+      _text3.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    const text2 = document.createTextNode(" ");
-    const text3 = document.createTextNode("+");
-    const button0 = document.createElement("button");
-    button0.onclick = inc;
-    button0.appendChild(text3);
-    const span0 = document.createElement("span");
-    span0.className = "in";
-    span0.appendChild(text0);
-    span0.appendChild(text1);
-    span0.appendChild(text2);
-    span0.appendChild(button0);
+    const _text4 = document.createTextNode(" ");
+    const _text5 = document.createTextNode("+");
+    const _button2 = document.createElement("button");
+    _button2.onclick = inc;
+    _button2.appendChild(_text5);
+    const _span = document.createElement("span");
+    _span.className = "in";
+    _span.appendChild(_text2);
+    _span.appendChild(_text3);
+    _span.appendChild(_text4);
+    _span.appendChild(_button2);
     return {
-      nodes: [span0],
-      update: update
+      nodes: [_span],
+      update: _update2
     };
   }, () => {
-    let $t;
-    const update = () => {};
-    const text0 = document.createTextNode("out");
-    const span0 = document.createElement("span");
-    span0.className = "out";
-    span0.appendChild(text0);
+    let _value3;
+    const _update3 = () => {};
+    const _text6 = document.createTextNode("out");
+    const _span2 = document.createElement("span");
+    _span2.className = "out";
+    _span2.appendChild(_text6);
     return {
-      nodes: [span0],
-      update: update
+      nodes: [_span2],
+      update: _update3
     };
   }]);
-  return div0;
+  return _div;
 }"
 `;

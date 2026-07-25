@@ -18,9 +18,9 @@ is the median of three independent processes.
 
 | Modules | Source | Prelinked transforms | Linked graph | Linked/module | Overhead |
 |---:|---:|---:|---:|---:|---:|
-| 2 | 0.3 KiB | 30.7 ms | 105.8 ms | 52.9 ms | 3.53x |
-| 8 | 1.1 KiB | 79.5 ms | 245.2 ms | 30.7 ms | 3.08x |
-| 16 | 2.3 KiB | 138.5 ms | 411.4 ms | 25.7 ms | 2.97x |
+| 2 | 0.3 KiB | 33.3 ms | 103.3 ms | 51.6 ms | 2.94x |
+| 8 | 1.1 KiB | 98.4 ms | 249.0 ms | 31.1 ms | 2.66x |
+| 16 | 2.3 KiB | 133.9 ms | 404.1 ms | 25.3 ms | 3.09x |
 
 The prelinked baseline parses and transforms the same sources with `compile()`,
 stable module IDs, and the same canonical import metadata supplied directly.
@@ -40,3 +40,10 @@ optimization should cache parsed AST/module facts and use a dependency
 worklist: reanalyze only importers whose exported summary can change. This
 benchmark is the baseline for that work; correctness must remain covered by
 `tests/r15.test.ts`.
+
+The compiler-wide identifier-hygiene checkpoint added one source-tree
+reservation walk per final transform. Compared with the previous linked medians
+(`105.8`, `245.2`, and `411.4` ms), the new linked results are mixed within
+process noise (`103.3`, `249.0`, and `404.1` ms). These measurements support no
+performance claim in either direction; collision correctness is covered by
+`tests/r16.test.ts`.

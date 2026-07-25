@@ -25,7 +25,7 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | Report | Finding | Current disposition |
 |---|---|---|
 | Duplicate `WRITES_n` arrays | Confirmed in old generated output | Fixed by write-set interning; generated benchmark artifacts refreshed; regression added |
-| `const count = Count(..., [count])` | Confirmed TDZ and semantic shadowing | Child-result binding is now hygienic; compiler-wide generated-name allocation remains P0 |
+| `const count = Count(..., [count])` | Confirmed TDZ and semantic shadowing | Fixed compiler-wide: runtime, factory, slot, node, region, row, computed, handler-temp, and write-set bindings share one Babel UID allocator |
 | State `count` vs prop `count` table collision | Confirmed name-based read attribution | Reads now follow lexical binding identity; prop writes fail clearly instead of routing module state |
 | `{oldVal}` vs `{payload.oldVal}` | The runtime requires the documented `payload.` namespace | Spec examples retain `{payload.*}`; failed interpolation falls back to reader supersets |
 | Payload routing described as deferred | Documentation drift | Runtime comments now describe the shipped resolver |
@@ -71,12 +71,10 @@ resolver. Cross-file component composition is not linked yet.
 
 ### P0: correctness boundaries
 
-1. Replace all fixed emitter names (`id`, `parent`, `update`, `$t`, node/region
-   names, `WRITES_n`) with one compiler-wide hygienic allocator.
-2. Make fallback completeness real for unknown calls, escaped mutable values,
+1. Make fallback completeness real for unknown calls, escaped mutable values,
    aliases, `delete`, `Object.assign`, and exception paths.
-3. Specify and implement lifecycle-owned factory callbacks/subscriptions.
-4. Extend the implemented state linker to cross-file component composition and
+2. Specify and implement lifecycle-owned factory callbacks/subscriptions.
+3. Extend the implemented state linker to cross-file component composition and
    bundler adapters.
 
 ### P1: source-language coverage

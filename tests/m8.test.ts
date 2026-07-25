@@ -43,24 +43,24 @@ describe('R8 — code generation', () => {
   it('compiles a ternary to an anchored region with its own entity', () => {
     const code = compile(readFixture('cond'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
-    expect(code).toContain('MD.createCondRegion(div0, id + "/when0"');
+    expect(code).toMatch(/\.createCondRegion\(_div\d*, _id\d* \+ "\/when0"/);
     // registered as its own entity, render closure over the region variable
-    expect(code).toContain('render: () => when0.update()');
+    expect(code).toMatch(/render: \(\) => _when\d*\.update\(\)/);
     // region vars route to the region, not the owner
     expect(code).toContain('"App/when0"');
     expect(code).toContain('"App/when0/*"');
     // branch handlers never markDirty(id) — the owner's update doesn't
     // touch the region; commits route through the table
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
-    expect(code).toContain('WRITES_0 = ["./component.tsx#loggedIn"]');
-    expect(code).toContain('WRITES_1 = ["./component.tsx#count"]');
+    expect(code.match(/\.commitWrites\(_WRITES_\d*\)/g)).toHaveLength(2);
+    expect(code).toMatch(/_WRITES_\d* = \["\.\/component\.tsx#loggedIn"\]/);
+    expect(code).toMatch(/_WRITES_\d* = \["\.\/component\.tsx#count"\]/);
   });
 
   it('compiles && with an empty else branch', () => {
     const code = compile(
       `let show = false;\nfunction C() { return <div>{show && <b>hi</b>}</div>; }`,
     );
-    expect(code).toContain('MD.createCondRegion(');
+    expect(code).toContain('.createCondRegion(');
     // branches: [thenFactory, null]
     expect(code).toMatch(/createCondRegion\([\s\S]*\[[\s\S]*,\s*null\s*\]\)/);
   });

@@ -44,7 +44,7 @@ describe('R12 — instance state, code generation', () => {
     const code = compile(
       `function Counter() { let n = 0; return <button onClick={() => { n++; }}>{n}</button>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toMatch(/\.markDirty\(_id\d*\)/);
     expect(code).not.toContain('WRITES');
     expect(code).not.toContain('commitWrites');
   });
@@ -53,7 +53,7 @@ describe('R12 — instance state, code generation', () => {
     const code = compile(
       `function Form() { let form = { name: '' }; return <button onClick={() => { form.name = 'x'; }}>{form.name}</button>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toMatch(/\.markDirty\(_id\d*\)/);
     expect(code).not.toContain('commitWrites');
   });
 
@@ -61,7 +61,7 @@ describe('R12 — instance state, code generation', () => {
     const code = compile(
       `function L() { let list = [1]; return <button onClick={() => { list.push(2); }}>{list.length}</button>; }`,
     );
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toMatch(/\.markDirty\(_id\d*\)/);
   });
 
   it('instance state shadows same-named module state', () => {
@@ -69,7 +69,7 @@ describe('R12 — instance state, code generation', () => {
       `let n = 0;\nfunction C() { let n = 10; return <button onClick={() => { n++; }}>{n}</button>; }`,
     );
     // the component's n is its own — no table write for module 'n'
-    expect(code).toContain('MD.markDirty(id)');
+    expect(code).toMatch(/\.markDirty\(_id\d*\)/);
     expect(code).not.toContain('commitWrites');
     // and module 'n' is read by nobody → no table entry for it
     expect(code).not.toContain('"n": [');

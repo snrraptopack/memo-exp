@@ -21,7 +21,7 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { attrExpr, exprReadsState, memberKey, memberRootName, nodeHasJsx, type Ctx } from './context';
+import { attrExpr, memberKey, memberRootName, nodeHasJsx, type Ctx } from './context';
 
 export interface MapSite {
   /** Read/write key of the mapped array (e.g. 'items' or 'store.todos'). */

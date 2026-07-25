@@ -19,7 +19,18 @@
 import type { Visitor } from '@babel/traverse';
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { createCtx, freshWriteConst, md, type Ctx, type MemoDomOptions } from './context';
+import {
+  createCtx,
+  freshWriteConst,
+  type Ctx,
+  type MemoDomOptions,
+} from './context';
+import {
+  generatedIdentifier,
+  initializeGeneratedIdentifiers,
+  md,
+  requireIdentifiers,
+} from './identifiers';
 import { buildAccessTable, runAnalysis } from './analysis';
 import { transformComponent } from './emit';
 
@@ -41,8 +52,9 @@ function rewriteComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
       if (!ctx.computeds.has(name)) continue;
       declNode.kind = 'let';
       const init = t.cloneNode(d.init);
+      const next = generatedIdentifier(ctx, `${name}Next`);
       const registerStmt = t.expressionStatement(
-        t.callExpression(md('register'), [
+        t.callExpression(md(ctx, 'register'), [
           t.objectExpression([
             t.objectProperty(
               t.identifier('id'),
@@ -59,19 +71,19 @@ function rewriteComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
                 [],
                 t.blockStatement([
                   t.variableDeclaration('const', [
-                    t.variableDeclarator(t.identifier('next'), init),
+                    t.variableDeclarator(next, init),
                   ]),
                   t.ifStatement(
-                    t.callExpression(md('computedChanged'), [
+                    t.callExpression(md(ctx, 'computedChanged'), [
                       t.identifier(name),
-                      t.identifier('next'),
+                      t.cloneNode(next),
                     ]),
                     t.blockStatement([
                       t.expressionStatement(
-                        t.assignmentExpression('=', t.identifier(name), t.identifier('next')),
+                        t.assignmentExpression('=', t.identifier(name), t.cloneNode(next)),
                       ),
                       t.expressionStatement(
-                        t.callExpression(md('commitWrites'), [freshWriteConst(ctx, [name])]),
+                        t.callExpression(md(ctx, 'commitWrites'), [freshWriteConst(ctx, [name])]),
                       ),
                     ]),
                   ),
@@ -98,6 +110,7 @@ export default function memoDomPlugin(
   const visitor: Visitor = {
     Program: {
       enter(programPath) {
+        initializeGeneratedIdentifiers(ctx, programPath);
         runAnalysis(ctx, programPath);
       },
       exit(programPath) {
@@ -121,7 +134,11 @@ export default function memoDomPlugin(
         programPath.unshiftContainer(
           'body',
           t.importDeclaration(
-            [t.importNamespaceSpecifier(t.identifier('MD'))],
+            [
+              t.importNamespaceSpecifier(
+                t.identifier(requireIdentifiers(ctx).runtimeId),
+              ),
+            ],
             t.stringLiteral(ctx.runtimePath),
           ),
         );

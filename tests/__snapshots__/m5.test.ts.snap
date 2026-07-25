@@ -1,67 +1,67 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`M5 compiler — code generation > attributes commits to the scope that writes (async handlers, timers) 1`] = `
-"import * as MD from "../out-runtime";
-const WRITES_0 = ["./component.tsx#count"];
-MD.installAccessTable({
+"import * as _MD from "../out-runtime";
+const _WRITES_ = ["./component.tsx#count"];
+_MD.installAccessTable({
   readers: {
     "./component.tsx#count": ["App", "App/*"]
   }
 }, "App");
 // Fixture: async commit attribution.
 let count = 0;
-export function AsyncCounter(id, parent) {
-  let $s0, $t;
+export function AsyncCounter(_id, _parent) {
+  let _slot, _value;
   const incLater = async () => {
     await Promise.resolve();
     count++;
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
   const incTimer = () => {
     setTimeout(() => {
       count = 10;
-      MD.commitWrites(WRITES_0);
+      _MD.commitWrites(_WRITES_);
     }, 0);
   };
-  const update = () => {
-    if ($s0 !== ($t = count)) {
-      $s0 = $t;
-      text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _update = () => {
+    if (_slot !== (_value = count)) {
+      _slot = _value;
+      _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
   });
-  const text0 = document.createTextNode("async");
-  const button0 = document.createElement("button");
-  button0.onclick = incLater;
-  button0.appendChild(text0);
-  const text1 = document.createTextNode("timer");
-  const button1 = document.createElement("button");
-  button1.onclick = incTimer;
-  button1.appendChild(text1);
-  const text2 = document.createTextNode("");
-  if ($s0 !== ($t = count)) {
-    $s0 = $t;
-    text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _text = document.createTextNode("async");
+  const _button = document.createElement("button");
+  _button.onclick = incLater;
+  _button.appendChild(_text);
+  const _text2 = document.createTextNode("timer");
+  const _button2 = document.createElement("button");
+  _button2.onclick = incTimer;
+  _button2.appendChild(_text2);
+  const _text3 = document.createTextNode("");
+  if (_slot !== (_value = count)) {
+    _slot = _value;
+    _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const span0 = document.createElement("span");
-  span0.appendChild(text2);
-  const div0 = document.createElement("div");
-  div0.appendChild(button0);
-  div0.appendChild(button1);
-  div0.appendChild(span0);
-  return div0;
+  const _span = document.createElement("span");
+  _span.appendChild(_text3);
+  const _div = document.createElement("div");
+  _div.appendChild(_button);
+  _div.appendChild(_button2);
+  _div.appendChild(_span);
+  return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles eligible component list rows as lightweight factories (M5.10) 1`] = `
-"import * as MD from "../out-runtime";
-const WRITES_0 = ["./component.tsx#selected"];
-const WRITES_1 = ["./component.tsx#items"];
-MD.installAccessTable({
+"import * as _MD from "../out-runtime";
+const _WRITES_ = ["./component.tsx#selected"];
+const _WRITES_2 = ["./component.tsx#items"];
+_MD.installAccessTable({
   readers: {
     "./component.tsx#items": ["App", "App/*"],
     "./component.tsx#selected": ["App", "App/*"]
@@ -79,88 +79,88 @@ const items = [{
   label: 'two'
 }];
 let selected = 0;
-function Row(item, __memoRowId) {
-  let $s0, $s1, $t;
-  const update = () => {
-    if ($s0 !== ($t = item.label)) {
-      $s0 = $t;
-      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+function Row(item, _id) {
+  let _slot, _slot2, _value;
+  const _update = () => {
+    if (_slot !== (_value = item.label)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
-    if ($s1 !== ($t = selected === item.id ? 'danger' : '')) {
-      $s1 = $t;
-      li0.className = $t;
+    if (_slot2 !== (_value = selected === item.id ? 'danger' : '')) {
+      _slot2 = _value;
+      _li.className = _value;
     }
   };
-  const text0 = document.createTextNode("");
-  if ($s0 !== ($t = item.label)) {
-    $s0 = $t;
-    text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = item.label)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const li0 = document.createElement("li");
-  if ($s1 !== ($t = selected === item.id ? 'danger' : '')) {
-    $s1 = $t;
-    li0.className = $t;
+  const _li = document.createElement("li");
+  if (_slot2 !== (_value = selected === item.id ? 'danger' : '')) {
+    _slot2 = _value;
+    _li.className = _value;
   }
-  li0.onclick = () => {
+  _li.onclick = () => {
     selected = item.id;
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
-  li0.appendChild(text0);
+  _li.appendChild(_text);
   return {
-    nodes: [li0],
+    nodes: [_li],
     entities: [],
-    update: update,
-    updateProps: __memoNext0 => {
-      item = __memoNext0;
+    update: _update,
+    updateProps: _nextProp => {
+      item = _nextProp;
     }
   };
 }
-export function CompList(id, parent) {
-  let $t;
+export function CompList(_id2, _parent) {
+  let _value2;
   const add = () => {
     items.push({
       id: items.length + 1,
       label: 'three'
     });
-    MD.commitWrites(WRITES_1);
+    _MD.commitWrites(_WRITES_2);
   };
-  const update = () => {
-    region0.reconcile(items);
+  const _update2 = () => {
+    _region.reconcile(items);
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  _MD.register({
+    id: _id2,
+    parent: _parent,
+    render: _update2
   });
-  const ul0 = document.createElement("ul");
-  const region0 = MD.createListRegion(ul0, id + "/items", (item, rowId) => {
-    const entry = Row(item, rowId);
+  const _ul = document.createElement("ul");
+  const _region = _MD.createListRegion(_ul, _id2 + "/items", (item, _rowId) => {
+    const _entry = Row(item, _rowId);
     return {
-      nodes: entry.nodes,
+      nodes: _entry.nodes,
       entities: [],
-      update: entry.update,
+      update: _entry.update,
       updateProps: item => {
-        entry.updateProps(item);
+        _entry.updateProps(item);
       }
     };
   }, item => item.id);
-  region0.reconcile(items);
-  const text0 = document.createTextNode("add");
-  const button0 = document.createElement("button");
-  button0.onclick = add;
-  button0.appendChild(text0);
-  const div0 = document.createElement("div");
-  div0.appendChild(ul0);
-  div0.appendChild(button0);
-  return div0;
+  _region.reconcile(items);
+  const _text2 = document.createTextNode("add");
+  const _button = document.createElement("button");
+  _button.onclick = add;
+  _button.appendChild(_text2);
+  const _div = document.createElement("div");
+  _div.appendChild(_ul);
+  _div.appendChild(_button);
+  return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles inline list rows to regions with row-scoped patterns (R7) 1`] = `
-"import * as MD from "../out-runtime";
-const WRITES_0 = ["./component.tsx#selected"];
-const WRITES_1 = ["./component.tsx#items"];
-MD.installAccessTable({
+"import * as _MD from "../out-runtime";
+const _WRITES_ = ["./component.tsx#selected"];
+const _WRITES_2 = ["./component.tsx#items"];
+_MD.installAccessTable({
   readers: {
     "./component.tsx#items": ["App", "App/*"],
     "./component.tsx#selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
@@ -178,78 +178,78 @@ let items = [{
   label: 'two'
 }];
 let selected = 0;
-export function InlineList(id, parent) {
-  let $t;
+export function InlineList(_id, _parent) {
+  let _value;
   const add = () => {
     items.push({
       id: items.length + 1,
       label: 'three'
     });
-    MD.commitWrites(WRITES_1);
+    _MD.commitWrites(_WRITES_2);
   };
-  const update = () => {
-    region0.reconcile(items);
+  const _update = () => {
+    _region.reconcile(items);
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
   });
-  const ul0 = document.createElement("ul");
-  const region0 = MD.createListRegion(ul0, id + "/items", (item, rowId) => {
-    let $s0, $s1, $t;
-    const update = () => {
-      if ($s0 !== ($t = item.label)) {
-        $s0 = $t;
-        text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _ul = document.createElement("ul");
+  const _region = _MD.createListRegion(_ul, _id + "/items", (item, _rowId) => {
+    let _slot, _slot2, _value2;
+    const _update2 = () => {
+      if (_slot !== (_value2 = item.label)) {
+        _slot = _value2;
+        _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
       }
-      if ($s1 !== ($t = selected === item.id ? 'danger' : '')) {
-        $s1 = $t;
-        li0.className = $t;
+      if (_slot2 !== (_value2 = selected === item.id ? 'danger' : '')) {
+        _slot2 = _value2;
+        _li.className = _value2;
       }
     };
-    MD.register({
-      id: rowId,
-      parent: id,
-      render: update
+    _MD.register({
+      id: _rowId,
+      parent: _id,
+      render: _update2
     });
-    const text0 = document.createTextNode("");
-    if ($s0 !== ($t = item.label)) {
-      $s0 = $t;
-      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    const _text = document.createTextNode("");
+    if (_slot !== (_value2 = item.label)) {
+      _slot = _value2;
+      _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    const li0 = document.createElement("li");
-    if ($s1 !== ($t = selected === item.id ? 'danger' : '')) {
-      $s1 = $t;
-      li0.className = $t;
+    const _li = document.createElement("li");
+    if (_slot2 !== (_value2 = selected === item.id ? 'danger' : '')) {
+      _slot2 = _value2;
+      _li.className = _value2;
     }
-    li0.onclick = () => {
+    _li.onclick = () => {
       selected = item.id;
-      MD.commitWrites(WRITES_0);
+      _MD.commitWrites(_WRITES_);
     };
-    li0.appendChild(text0);
+    _li.appendChild(_text);
     return {
-      nodes: [li0],
-      entities: [rowId],
-      update: update
+      nodes: [_li],
+      entities: [_rowId],
+      update: _update2
     };
   }, item => item.id);
-  region0.reconcile(items);
-  const text0 = document.createTextNode("add");
-  const button0 = document.createElement("button");
-  button0.onclick = add;
-  button0.appendChild(text0);
-  const div0 = document.createElement("div");
-  div0.appendChild(ul0);
-  div0.appendChild(button0);
-  return div0;
+  _region.reconcile(items);
+  const _text2 = document.createTextNode("add");
+  const _button = document.createElement("button");
+  _button.onclick = add;
+  _button.appendChild(_text2);
+  const _div = document.createElement("div");
+  _div.appendChild(_ul);
+  _div.appendChild(_button);
+  return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles repeated children with distinct ids and covering patterns 1`] = `
-"import * as MD from "../out-runtime";
-const WRITES_0 = ["./component.tsx#label"];
-MD.installAccessTable({
+"import * as _MD from "../out-runtime";
+const _WRITES_ = ["./component.tsx#label"];
+_MD.installAccessTable({
   readers: {
     "./component.tsx#label": ["App/Tag", "App/Tag/*", "App/Tag[*]", "App/Tag[*]/*"]
   }
@@ -257,59 +257,59 @@ MD.installAccessTable({
 // repeated.tsx — same child mounted twice; instances must get distinct
 // entity ids and the table must cover both.
 let label = 'hello';
-function Tag(id, parent) {
-  let $s0, $t;
-  const update = () => {
-    if ($s0 !== ($t = label)) {
-      $s0 = $t;
-      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+function Tag(_id, _parent) {
+  let _slot, _value;
+  const _update = () => {
+    if (_slot !== (_value = label)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
   });
-  const text0 = document.createTextNode("");
-  if ($s0 !== ($t = label)) {
-    $s0 = $t;
-    text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = label)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const span0 = document.createElement("span");
-  span0.className = "tag";
-  span0.appendChild(text0);
-  return span0;
+  const _span = document.createElement("span");
+  _span.className = "tag";
+  _span.appendChild(_text);
+  return _span;
 }
-export function App(id, parent) {
-  let $t;
+export function App(_id2, _parent2) {
+  let _value2;
   const swap = () => {
     label = 'world';
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
-  const update = () => {};
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  const _update2 = () => {};
+  _MD.register({
+    id: _id2,
+    parent: _parent2,
+    render: _update2
   });
-  const tag = Tag(id + "/Tag", id);
-  const tag1 = Tag(id + "/Tag[1]", id);
-  const text0 = document.createTextNode("swap");
-  const button0 = document.createElement("button");
-  button0.onclick = swap;
-  button0.appendChild(text0);
-  const div0 = document.createElement("div");
-  div0.appendChild(tag);
-  div0.appendChild(tag1);
-  div0.appendChild(button0);
-  return div0;
+  const _tag = Tag(_id2 + "/Tag", _id2);
+  const _tag2 = Tag(_id2 + "/Tag[1]", _id2);
+  const _text2 = document.createTextNode("swap");
+  const _button = document.createElement("button");
+  _button.onclick = swap;
+  _button.appendChild(_text2);
+  const _div = document.createElement("div");
+  _div.appendChild(_tag);
+  _div.appendChild(_tag2);
+  _div.appendChild(_button);
+  return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles the counter fixture to the emission form 1`] = `
-"import * as MD from "../out-runtime";
-const WRITES_0 = ["./component.tsx#again", "./component.tsx#count"];
-MD.installAccessTable({
+"import * as _MD from "../out-runtime";
+const _WRITES_ = ["./component.tsx#again", "./component.tsx#count"];
+_MD.installAccessTable({
   readers: {
     "./component.tsx#again": ["App", "App/*"],
     "./component.tsx#count": ["App", "App/*"]
@@ -317,59 +317,59 @@ MD.installAccessTable({
 }, "App");
 let count = 0;
 let again = 0;
-export function Counter(id, parent) {
-  let $s0, $s1, $t;
+export function Counter(_id, _parent) {
+  let _slot, _slot2, _value;
   const inc = () => {
     count++;
     again++;
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
-  const update = () => {
-    if ($s0 !== ($t = count)) {
-      $s0 = $t;
-      text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _update = () => {
+    if (_slot !== (_value = count)) {
+      _slot = _value;
+      _text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
-    if ($s1 !== ($t = again)) {
-      $s1 = $t;
-      text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    if (_slot2 !== (_value = again)) {
+      _slot2 = _value;
+      _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
   });
-  const text0 = document.createTextNode("increment");
-  const button0 = document.createElement("button");
-  button0.onclick = inc;
-  button0.appendChild(text0);
-  const text1 = document.createTextNode("");
-  if ($s0 !== ($t = count)) {
-    $s0 = $t;
-    text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _text = document.createTextNode("increment");
+  const _button = document.createElement("button");
+  _button.onclick = inc;
+  _button.appendChild(_text);
+  const _text2 = document.createTextNode("");
+  if (_slot !== (_value = count)) {
+    _slot = _value;
+    _text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const span0 = document.createElement("span");
-  span0.appendChild(text1);
-  const text2 = document.createTextNode("");
-  if ($s1 !== ($t = again)) {
-    $s1 = $t;
-    text2.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _span = document.createElement("span");
+  _span.appendChild(_text2);
+  const _text3 = document.createTextNode("");
+  if (_slot2 !== (_value = again)) {
+    _slot2 = _value;
+    _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const span1 = document.createElement("span");
-  span1.appendChild(text2);
-  const div0 = document.createElement("div");
-  div0.className = "counter";
-  div0.appendChild(button0);
-  div0.appendChild(span0);
-  div0.appendChild(span1);
-  return div0;
+  const _span2 = document.createElement("span");
+  _span2.appendChild(_text3);
+  const _div = document.createElement("div");
+  _div.className = "counter";
+  _div.appendChild(_button);
+  _div.appendChild(_span);
+  _div.appendChild(_span2);
+  return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles the shared-state fixture with an access table 1`] = `
-"import * as MD from "../out-runtime";
-const WRITES_0 = ["./component.tsx#name"];
-MD.installAccessTable({
+"import * as _MD from "../out-runtime";
+const _WRITES_ = ["./component.tsx#name"];
+_MD.installAccessTable({
   readers: {
     "./component.tsx#name": ["App/Badge", "App/Badge/*"]
   }
@@ -377,60 +377,60 @@ MD.installAccessTable({
 // shared.tsx — two siblings sharing module state; the write must route
 // to Badge only, never to App or Editor.
 let name = 'Ada';
-function Badge(id, parent) {
-  let $s0, $t;
-  const update = () => {
-    if ($s0 !== ($t = name)) {
-      $s0 = $t;
-      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+function Badge(_id, _parent) {
+  let _slot, _value;
+  const _update = () => {
+    if (_slot !== (_value = name)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
   });
-  const text0 = document.createTextNode("");
-  if ($s0 !== ($t = name)) {
-    $s0 = $t;
-    text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = name)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const span0 = document.createElement("span");
-  span0.className = "badge";
-  span0.appendChild(text0);
-  return span0;
+  const _span = document.createElement("span");
+  _span.className = "badge";
+  _span.appendChild(_text);
+  return _span;
 }
-function Editor(id, parent) {
-  let $t;
+function Editor(_id2, _parent2) {
+  let _value2;
   const rename = () => {
     name = 'Grace';
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
-  const update = () => {};
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  const _update2 = () => {};
+  _MD.register({
+    id: _id2,
+    parent: _parent2,
+    render: _update2
   });
-  const text0 = document.createTextNode("rename");
-  const button0 = document.createElement("button");
-  button0.onclick = rename;
-  button0.appendChild(text0);
-  return button0;
+  const _text2 = document.createTextNode("rename");
+  const _button = document.createElement("button");
+  _button.onclick = rename;
+  _button.appendChild(_text2);
+  return _button;
 }
-export function App(id, parent) {
-  let $t;
-  const update = () => {};
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+export function App(_id3, _parent3) {
+  let _value3;
+  const _update3 = () => {};
+  _MD.register({
+    id: _id3,
+    parent: _parent3,
+    render: _update3
   });
-  const badge = Badge(id + "/Badge", id);
-  const editor = Editor(id + "/Editor", id);
-  const div0 = document.createElement("div");
-  div0.appendChild(badge);
-  div0.appendChild(editor);
-  return div0;
+  const _badge = Badge(_id3 + "/Badge", _id3);
+  const _editor = Editor(_id3 + "/Editor", _id3);
+  const _div = document.createElement("div");
+  _div.appendChild(_badge);
+  _div.appendChild(_editor);
+  return _div;
 }"
 `;

@@ -28,7 +28,6 @@ import {
   attrExpr,
   canonicalStateKey,
   collectStateIds,
-  exprReadsState,
   isConstCollection,
   isStoreObject,
   memberKey,
@@ -40,6 +39,7 @@ import {
   type ComputedAnalysis,
   type FnSummary,
 } from './context';
+import { md } from './identifiers';
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
 import { analyzeCondSite } from './conds';
 
@@ -1110,7 +1110,7 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
   }
   return t.expressionStatement(
     t.callExpression(
-      t.memberExpression(t.identifier('MD'), t.identifier('installAccessTable')),
+      md(ctx, 'installAccessTable'),
       [t.objectExpression(tableProps), t.stringLiteral(ctx.rootId)],
     ),
   );

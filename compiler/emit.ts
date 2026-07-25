@@ -15,39 +15,34 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { attrExpr, exprReadsState, keyPathOf, md, nodeHasJsx, type Ctx, type RowCtx } from './context';
+import {
+  attrExpr,
+  exprReadsState,
+  keyPathOf,
+  nodeHasJsx,
+  type Ctx,
+  type RowCtx,
+} from './context';
+import {
+  componentId,
+  generatedIdentifier,
+  md,
+  requireIdentifiers,
+} from './identifiers';
+import {
+  cacheDecl,
+  freshNodeName,
+  freshSlot,
+  newEmitScope,
+  registerStmt,
+  slotGuard,
+  updateDecl,
+  type EmitScope,
+} from './emission-scope';
 import { analyzeMapSite, matchMapCall, type MapSite } from './lists';
 import { analyzeCondSite, matchCond } from './conds';
 import { buildHandler } from './handlers';
 import { isLightweightListedComponent } from './analysis';
-
-interface EmitScope {
-  slots: string[];
-  creation: t.Statement[];
-  updaters: Array<() => t.Statement>;
-  tagCounters: Map<string, number>;
-  childCounts: Map<string, number>;
-  /** array name → times mapped in this scope (prefix dedupe, source order). */
-  usedPrefixes: Map<string, number>;
-  /** R8 region naming: 'when0', 'when1', … (source order, matches analysis). */
-  usedConds: { count: number };
-  textCounter: number;
-  regionCounter: number;
-}
-
-function newScope(): EmitScope {
-  return {
-    slots: [],
-    creation: [],
-    updaters: [],
-    tagCounters: new Map(),
-    childCounts: new Map(),
-    usedPrefixes: new Map(),
-    usedConds: { count: 0 },
-    textCounter: 0,
-    regionCounter: 0,
-  };
-}
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -59,20 +54,6 @@ function newScope(): EmitScope {
  * (`if ($s0 !== ($t = expr)) { $s0 = $t; …write… }`), which keeps the whole
  * row update in one inlinable function instead of N calls × string lookups.
  */
-function slotVar(key: string): t.Identifier {
-  return t.identifier(`$${key}`);
-}
-
-/** Per-scope temp for guard evaluation ($t — $-prefixed, never a user var). */
-const TMP = '$t';
-
-function cacheDecl(slots: string[]): t.Statement {
-  return t.variableDeclaration('let', [
-    ...slots.map((k) => t.variableDeclarator(slotVar(k))),
-    t.variableDeclarator(t.identifier(TMP)),
-  ]);
-}
-
 /**
  * The inline guarded write shared by every dynamic slot:
  * `if ($sK !== ($t = EXPR)) { $sK = $t; WRITE($t) }` — used for BOTH the
@@ -81,21 +62,6 @@ function cacheDecl(slots: string[]): t.Statement {
  * freshly-created DOM node already holds exactly what the write would set
  * (empty text data, empty className, absent attribute).
  */
-function slotGuard(
-  key: string,
-  expr: t.Expression,
-  write: (tmp: t.Identifier) => t.Statement,
-): t.Statement {
-  const tmp = (): t.Identifier => t.identifier(TMP);
-  return t.ifStatement(
-    t.binaryExpression('!==', slotVar(key), t.assignmentExpression('=', tmp(), expr)),
-    t.blockStatement([
-      t.expressionStatement(t.assignmentExpression('=', slotVar(key), tmp())),
-      write(tmp()),
-    ]),
-  );
-}
-
 /** The value-normalization shared by text semantics: null/undefined/bool → ''. */
 function textValue(tmp: t.Identifier): t.Expression {
   return t.conditionalExpression(
@@ -110,31 +76,6 @@ function textValue(tmp: t.Identifier): t.Expression {
     ),
     t.stringLiteral(''),
     t.callExpression(t.identifier('String'), [t.cloneNode(tmp)]),
-  );
-}
-
-function updateDecl(updaters: Array<() => t.Statement>): t.Statement {
-  return t.variableDeclaration('const', [
-    t.variableDeclarator(
-      t.identifier('update'),
-      t.arrowFunctionExpression([], t.blockStatement(updaters.map((u) => u()))),
-    ),
-  ]);
-}
-
-function registerStmt(
-  idExpr: t.Expression,
-  parentExpr: t.Expression,
-  renderExpr: t.Expression = t.identifier('update'),
-): t.Statement {
-  return t.expressionStatement(
-    t.callExpression(md('register'), [
-      t.objectExpression([
-        t.objectProperty(t.identifier('id'), idExpr),
-        t.objectProperty(t.identifier('parent'), parentExpr),
-        t.objectProperty(t.identifier('render'), renderExpr),
-      ]),
-    ]),
   );
 }
 
@@ -181,6 +122,14 @@ export function transformComponent(
   }
 
   const lightweight = isLightweightListedComponent(ctx, name);
+  const scope = newEmitScope(ctx);
+  const factoryId = generatedIdentifier(ctx, 'id').name;
+  const factoryParent = lightweight ? null : generatedIdentifier(ctx, 'parent').name;
+  const propsBox =
+    propNames.length > 0 && !lightweight
+      ? generatedIdentifier(ctx, 'props').name
+      : null;
+  requireIdentifiers(ctx).registerComponentId(name, factoryId);
 
   // -- R11: a listed (multi-instance) component is a list row — handlers
   // writing its item prop's fields commit locally (markDirty(id)).
@@ -194,15 +143,14 @@ export function transformComponent(
       : null; // disagreeing key fns → unknown → all item writes fall back
     rowCtx = {
       itemParam: propNames[0]!,
-      rowIdVar: lightweight ? '__memoRowId' : 'id',
-      ...(lightweight ? { refreshVar: 'update' } : {}),
+      rowIdVar: factoryId,
+      ...(lightweight ? { refreshVar: scope.updateVar } : {}),
       keyPath: merged,
       arrayName: refs[0]!.arrayName ?? '',
     };
   }
 
   // -- emit --------------------------------------------------------------
-  const scope = newScope();
   const rootVar = emitElement(ctx, scope, jsx, name, path, null, rowCtx);
 
   // R14: local derivations live in the instance closure and recompute at the
@@ -241,7 +189,7 @@ export function transformComponent(
             t.assignmentExpression(
               '=',
               t.identifier(pn),
-              t.memberExpression(t.identifier('__p'), t.numericLiteral(i), true),
+              t.memberExpression(t.identifier(propsBox!), t.numericLiteral(i), true),
             ),
           ),
         ),
@@ -254,7 +202,7 @@ export function transformComponent(
   // their parent in the registry — the M4 parent-first invariant. The
   // update closure only runs post-mount, so closing over node variables
   // declared later in the same scope is safe.
-  const body: t.Statement[] = [cacheDecl(scope.slots)];
+  const body: t.Statement[] = [cacheDecl(scope)];
   if (propNames.length > 0 && !lightweight) {
     body.push(
       t.variableDeclaration(
@@ -262,7 +210,7 @@ export function transformComponent(
         propNames.map((pn, i) =>
           t.variableDeclarator(
             t.identifier(pn),
-            t.memberExpression(t.identifier('__p'), t.numericLiteral(i), true),
+            t.memberExpression(t.identifier(propsBox!), t.numericLiteral(i), true),
           ),
         ),
       ),
@@ -270,25 +218,39 @@ export function transformComponent(
   }
   body.push(
     ...kept,
-    updateDecl(scope.updaters),
-    ...(lightweight ? [] : [registerStmt(t.identifier('id'), t.identifier('parent'))]),
+    updateDecl(scope),
+    ...(lightweight
+      ? []
+      : [
+          registerStmt(
+            ctx,
+            t.identifier(factoryId),
+            t.identifier(factoryParent!),
+            t.identifier(scope.updateVar),
+          ),
+        ]),
   );
   if (propNames.length > 0 && !lightweight) {
     body.push(
       t.expressionStatement(
-        t.callExpression(md('registerProps'), [t.identifier('id'), t.identifier('__p')]),
+        t.callExpression(md(ctx, 'registerProps'), [
+          t.identifier(factoryId),
+          t.identifier(propsBox!),
+        ]),
       ),
     );
   }
   body.push(...scope.creation);
   if (lightweight) {
-    const nextProps = propNames.map((_, i) => t.identifier(`__memoNext${i}`));
+    const nextProps = propNames.map((_, i) =>
+      generatedIdentifier(ctx, `nextProp${i}`),
+    );
     body.push(
       t.returnStatement(
         t.objectExpression([
           t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
           t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
-          t.objectProperty(t.identifier('update'), t.identifier('update')),
+          t.objectProperty(t.identifier('update'), t.identifier(scope.updateVar)),
           ...(propNames.length > 0
             ? [
                 t.objectProperty(
@@ -315,10 +277,14 @@ export function transformComponent(
 
   node.params =
     lightweight
-      ? [...propNames.map((pn) => t.identifier(pn)), t.identifier('__memoRowId')]
+      ? [...propNames.map((pn) => t.identifier(pn)), t.identifier(factoryId)]
       : propNames.length > 0
-      ? [t.identifier('id'), t.identifier('parent'), t.identifier('__p')]
-      : [t.identifier('id'), t.identifier('parent')];
+      ? [
+          t.identifier(factoryId),
+          t.identifier(factoryParent!),
+          t.identifier(propsBox!),
+        ]
+      : [t.identifier(factoryId), t.identifier(factoryParent!)];
   node.body = t.blockStatement(body);
 }
 
@@ -349,12 +315,6 @@ const DOM_PROP_ATTRS = new Set([
   'autoplay',
 ]);
 
-function freshSlot(scope: EmitScope): string {
-  const key = `s${scope.slots.length}`;
-  scope.slots.push(key);
-  return key;
-}
-
 /**
  * JSX text normalization (React-compatible): whitespace runs collapse to a
  * single space, but an edge space is dropped only when it comes from a line
@@ -368,16 +328,15 @@ function jsxText(raw: string): string {
   return v;
 }
 
-function nodeVar(scope: EmitScope, tag: string): string {
-  const n = scope.tagCounters.get(tag) ?? 0;
-  scope.tagCounters.set(tag, n + 1);
-  return `${tag}${n}`;
-}
-
 /** M5.9: inline text write — if ($sK !== ($t = expr)) { $sK = $t; node.data = … } */
-function textSetter(key: string, varName: string, expr: t.Expression): () => t.Statement {
+function textSetter(
+  scope: EmitScope,
+  key: string,
+  varName: string,
+  expr: t.Expression,
+): () => t.Statement {
   return () =>
-    slotGuard(key, t.cloneNode(expr), (tmp) =>
+    slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
       t.expressionStatement(
         t.assignmentExpression(
           '=',
@@ -388,8 +347,8 @@ function textSetter(key: string, varName: string, expr: t.Expression): () => t.S
     );
 }
 
-function emitText(scope: EmitScope, expr: t.Expression): string {
-  const varName = `text${scope.textCounter++}`;
+function emitText(ctx: Ctx, scope: EmitScope, expr: t.Expression): string {
+  const varName = generatedIdentifier(ctx, `text${scope.textCounter++}`).name;
   if (t.isStringLiteral(expr)) {
     // static text: no slot, content baked into the node
     scope.creation.push(
@@ -405,7 +364,7 @@ function emitText(scope: EmitScope, expr: t.Expression): string {
     );
     return varName;
   }
-  const key = freshSlot(scope);
+  const key = freshSlot(ctx, scope);
   scope.creation.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(
@@ -417,7 +376,7 @@ function emitText(scope: EmitScope, expr: t.Expression): string {
       ),
     ]),
   );
-  const setter = textSetter(key, varName, expr);
+  const setter = textSetter(scope, key, varName, expr);
   scope.creation.push(setter()); // R4: creation seeds through the same guarded setter
   scope.updaters.push(setter);
   return varName;
@@ -446,9 +405,7 @@ function emitElement(
     // A generated child result must never shadow a user/module binding. The
     // old `const count = Count(..., [count])` both hit the TDZ in its own
     // initializer and changed every later `count` reference in the factory.
-    const varName = compPath.scope.hasBinding(candidate)
-      ? compPath.scope.generateUidIdentifier(candidate).name
-      : candidate;
+    const varName = generatedIdentifier(ctx, candidate).name;
     const idSuffix = seen === 0 ? `/${tag}` : `/${tag}[${seen}]`;
     const propEntries: Array<{ name: string; value: t.Expression }> = [];
     let needsPush = false;
@@ -469,14 +426,18 @@ function emitElement(
     // attribute order is irrelevant (positional matching silently misaligned
     // props when attribute order and declaration order disagreed).
     const props = orderCallProps(ctx, tag, propEntries);
-    const childId = t.binaryExpression('+', t.identifier('id'), t.stringLiteral(idSuffix));
+    const childId = t.binaryExpression(
+      '+',
+      componentId(ctx, compName),
+      t.stringLiteral(idSuffix),
+    );
     scope.creation.push(
       t.variableDeclaration('const', [
         t.variableDeclarator(
           t.identifier(varName),
           t.callExpression(t.identifier(tag), [
             childId,
-            t.identifier('id'),
+            componentId(ctx, compName),
             ...(props.length > 0 ? [t.arrayExpression(props)] : []),
           ]),
         ),
@@ -487,8 +448,8 @@ function emitElement(
     if (needsPush) {
       scope.updaters.push(() =>
         t.expressionStatement(
-          t.callExpression(md('setProps'), [
-            t.binaryExpression('+', t.identifier('id'), t.stringLiteral(idSuffix)),
+          t.callExpression(md(ctx, 'setProps'), [
+            t.binaryExpression('+', componentId(ctx, compName), t.stringLiteral(idSuffix)),
             t.arrayExpression(props.map((p) => t.cloneNode(p))),
           ]),
         ),
@@ -505,7 +466,7 @@ function emitElement(
     if (t.isJSXText(child)) {
       const value = jsxText(child.value);
       if (value === '') continue;
-      childVars.push(emitText(scope, t.stringLiteral(value)));
+      childVars.push(emitText(ctx, scope, t.stringLiteral(value)));
     } else if (t.isJSXExpressionContainer(child)) {
       if (t.isJSXEmptyExpression(child.expression)) continue;
       if (!t.isExpression(child.expression)) {
@@ -532,7 +493,7 @@ function emitElement(
         pendingConds.push(condExpr); // conditional regions own their nodes
         continue;
       }
-      childVars.push(emitText(scope, t.cloneNode(ex)));
+      childVars.push(emitText(ctx, scope, t.cloneNode(ex)));
     } else if (t.isJSXElement(child)) {
       childVars.push(emitElement(ctx, scope, child, compName, compPath, nestedIn, rowCtx));
     } else {
@@ -542,7 +503,7 @@ function emitElement(
     }
   }
 
-  const varName = nodeVar(scope, tag);
+  const varName = freshNodeName(ctx, scope, tag);
   scope.creation.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(
@@ -620,7 +581,7 @@ function emitElement(
       );
     }
     const expr = t.cloneNode(v);
-    const key = freshSlot(scope);
+    const key = freshSlot(ctx, scope);
     // M5.8: IDL-property attributes (checked, value, disabled, …) write the
     // DOM property, not the attribute — faster (no attribute-tree walk) and
     // semantically correct for state that lives on the element object.
@@ -628,7 +589,7 @@ function emitElement(
     // M5.9: inline guarded writes (see slotGuard) — no MD.setX call overhead
     const makeCall = (): t.Statement =>
       attrName === 'class'
-        ? slotGuard(key, t.cloneNode(expr), (tmp) =>
+        ? slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
             t.expressionStatement(
               t.assignmentExpression(
                 '=',
@@ -638,7 +599,7 @@ function emitElement(
             ),
           )
         : propName !== null
-          ? slotGuard(key, t.cloneNode(expr), (tmp) =>
+          ? slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
               t.expressionStatement(
                 t.assignmentExpression(
                   '=',
@@ -647,7 +608,7 @@ function emitElement(
                 ),
               ),
             )
-          : slotGuard(key, t.cloneNode(expr), (tmp) =>
+          : slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
               t.expressionStatement(
                 t.conditionalExpression(
                   t.logicalExpression(
@@ -724,7 +685,10 @@ function emitRegion(
 ): void {
   const site = analyzeMapSite(ctx, call, compPath, compName, scope.usedPrefixes);
 
-  const regionVar = `region${scope.regionCounter++}`;
+  const regionVar = generatedIdentifier(
+    ctx,
+    `region${scope.regionCounter++}`,
+  ).name;
   const createFn =
     site.form === 'component'
       ? buildComponentRowCreate(ctx, site)
@@ -732,7 +696,7 @@ function emitRegion(
 
   const args: t.Expression[] = [
     t.identifier(parentElVar),
-    t.binaryExpression('+', t.identifier('id'), t.stringLiteral(`/${site.suffix}`)),
+    t.binaryExpression('+', componentId(ctx, compName), t.stringLiteral(`/${site.suffix}`)),
     createFn,
   ];
   if (site.keyExpr !== null) {
@@ -744,7 +708,7 @@ function emitRegion(
     t.variableDeclaration('const', [
       t.variableDeclarator(
         t.identifier(regionVar),
-        t.callExpression(md('createListRegion'), args),
+        t.callExpression(md(ctx, 'createListRegion'), args),
       ),
     ]),
   );
@@ -819,17 +783,18 @@ function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpres
     propEntries.push({ name, value: t.cloneNode(attrExpr(a.value)!) });
   }
   const callProps = orderCallProps(ctx, site.rowComp!, propEntries);
+  const rowId = generatedIdentifier(ctx, 'rowId');
   if (isLightweightListedComponent(ctx, site.rowComp!)) {
-    const entry = t.identifier('entry');
+    const entry = generatedIdentifier(ctx, 'entry');
     return t.arrowFunctionExpression(
-      [t.identifier(site.itemParam), t.identifier('rowId')],
+      [t.identifier(site.itemParam), t.cloneNode(rowId)],
       t.blockStatement([
         t.variableDeclaration('const', [
           t.variableDeclarator(
             entry,
             t.callExpression(t.identifier(site.rowComp!), [
               ...callProps.map((p) => t.cloneNode(p)),
-              t.identifier('rowId'),
+              t.cloneNode(rowId),
             ]),
           ),
         ]),
@@ -867,10 +832,10 @@ function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpres
       ]),
     );
   }
-  const el = t.identifier('el');
+  const el = generatedIdentifier(ctx, 'rowElement');
   const entry: t.ObjectProperty[] = [
     t.objectProperty(t.identifier('nodes'), t.arrayExpression([el])),
-    t.objectProperty(t.identifier('entities'), t.arrayExpression([t.identifier('rowId')])),
+    t.objectProperty(t.identifier('entities'), t.arrayExpression([t.cloneNode(rowId)])),
   ];
   // R10: retained rows get their props box re-pushed on every reconcile —
   // item replacement AND item-field mutation both reach the row entity.
@@ -884,13 +849,13 @@ function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpres
           [t.identifier(site.itemParam)],
           t.blockStatement([
             t.expressionStatement(
-              t.callExpression(md('setProps'), [
-                t.identifier('rowId'),
+              t.callExpression(md(ctx, 'setProps'), [
+                t.cloneNode(rowId),
                 t.arrayExpression(callProps.map((p) => t.cloneNode(p))),
               ]),
             ),
             t.expressionStatement(
-              t.callExpression(md('markDirty'), [t.identifier('rowId')]),
+              t.callExpression(md(ctx, 'markDirty'), [t.cloneNode(rowId)]),
             ),
           ]),
         ),
@@ -898,14 +863,14 @@ function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpres
     );
   }
   return t.arrowFunctionExpression(
-    [t.identifier(site.itemParam), t.identifier('rowId')],
+    [t.identifier(site.itemParam), t.cloneNode(rowId)],
     t.blockStatement([
       t.variableDeclaration('const', [
         t.variableDeclarator(
           el,
           t.callExpression(t.identifier(site.rowComp!), [
-            t.identifier('rowId'),
-            t.identifier('id'), // owner's id — closure over the factory scope
+            t.cloneNode(rowId),
+            componentId(ctx, site.owner), // owner's id — closure over the factory scope
             ...(callProps.length > 0 ? [t.arrayExpression(callProps)] : []),
           ]),
         ),
@@ -933,31 +898,37 @@ function buildInlineRowCreate(
       t.isJSXSpreadAttribute(a) ||
       (a.name as t.JSXIdentifier).name !== 'key',
   );
-  const rowScope = newScope();
+  const rowScope = newEmitScope(ctx);
+  const rowId = generatedIdentifier(ctx, 'rowId').name;
   // R11: handlers inside the row may write the item's fields — those
   // commits stay row-local (markDirty(rowId)); key-field writes fall back
   // to a source-array write handled inside handler analysis.
   const rowCtx: RowCtx = {
     itemParam: site.itemParam,
-    rowIdVar: 'rowId',
+    rowIdVar: rowId,
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
     arrayName: site.arrayName,
   };
   const rootVar = emitElement(ctx, rowScope, site.jsx, compName, compPath, 'row', rowCtx);
   return t.arrowFunctionExpression(
-    [t.identifier(site.itemParam), t.identifier('rowId')],
+    [t.identifier(site.itemParam), t.identifier(rowId)],
     t.blockStatement([
-      cacheDecl(rowScope.slots),
-      updateDecl(rowScope.updaters),
-      registerStmt(t.identifier('rowId'), t.identifier('id')),
+      cacheDecl(rowScope),
+      updateDecl(rowScope),
+      registerStmt(
+        ctx,
+        t.identifier(rowId),
+        componentId(ctx, compName),
+        t.identifier(rowScope.updateVar),
+      ),
       ...rowScope.creation,
       t.returnStatement(
         t.objectExpression([
           t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
-          t.objectProperty(t.identifier('entities'), t.arrayExpression([t.identifier('rowId')])),
+          t.objectProperty(t.identifier('entities'), t.arrayExpression([t.identifier(rowId)])),
           // M5.5: reconcile re-runs this on reused rows so externally
           // mutated item data (row reads params, not state) re-syncs
-          t.objectProperty(t.identifier('update'), t.identifier('update')),
+          t.objectProperty(t.identifier('update'), t.identifier(rowScope.updateVar)),
         ]),
       ),
     ]),
@@ -984,7 +955,7 @@ function emitCondRegion(
   compPath: NodePath<t.FunctionDeclaration>,
 ): void {
   const site = analyzeCondSite(expr, compPath, scope.usedConds);
-  const regionVar = site.suffix; // 'when0', 'when1', … — valid JS identifiers
+  const regionVar = generatedIdentifier(ctx, site.suffix).name;
 
   const pick = t.arrowFunctionExpression([], t.cloneNode(site.pickExpr));
   const branchFns: t.Expression[] = [site.thenJsx, site.elseJsx].map((jsx) =>
@@ -995,8 +966,9 @@ function emitCondRegion(
   // during createCondRegion's initial update)
   scope.creation.push(
     registerStmt(
-      t.binaryExpression('+', t.identifier('id'), t.stringLiteral(`/${site.suffix}`)),
-      t.identifier('id'),
+      ctx,
+      t.binaryExpression('+', componentId(ctx, compName), t.stringLiteral(`/${site.suffix}`)),
+      componentId(ctx, compName),
       t.arrowFunctionExpression(
         [],
         t.callExpression(
@@ -1010,9 +982,13 @@ function emitCondRegion(
     t.variableDeclaration('const', [
       t.variableDeclarator(
         t.identifier(regionVar),
-        t.callExpression(md('createCondRegion'), [
+        t.callExpression(md(ctx, 'createCondRegion'), [
           t.identifier(parentElVar),
-          t.binaryExpression('+', t.identifier('id'), t.stringLiteral(`/${site.suffix}`)),
+          t.binaryExpression(
+            '+',
+            componentId(ctx, compName),
+            t.stringLiteral(`/${site.suffix}`),
+          ),
           pick,
           t.arrayExpression(branchFns),
         ]),
@@ -1034,18 +1010,18 @@ function buildBranchCreate(
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
 ): t.ArrowFunctionExpression {
-  const branchScope = newScope();
+  const branchScope = newEmitScope(ctx);
   const rootVar = emitElement(ctx, branchScope, jsx, compName, compPath, 'cond');
   return t.arrowFunctionExpression(
     [],
     t.blockStatement([
-      cacheDecl(branchScope.slots),
-      updateDecl(branchScope.updaters),
+      cacheDecl(branchScope),
+      updateDecl(branchScope),
       ...branchScope.creation,
       t.returnStatement(
         t.objectExpression([
           t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
-          t.objectProperty(t.identifier('update'), t.identifier('update')),
+          t.objectProperty(t.identifier('update'), t.identifier(branchScope.updateVar)),
         ]),
       ),
     ]),

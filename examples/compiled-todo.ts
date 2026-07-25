@@ -2,15 +2,15 @@
 /**
  * Generated Compiled Output for examples/todo.tsx
  */
-import * as MD from "../src/runtime";
-const WRITES_0 = ["./component.tsx#completedSet"];
-const WRITES_1 = ["./component.tsx#categoryMap"];
-const WRITES_2 = ["./component.tsx#categoryMap", "./component.tsx#todos"];
-const WRITES_3 = ["./component.tsx#completedSet", "./component.tsx#todos"];
-const WRITES_4 = ["./component.tsx#totalCount"];
-const WRITES_5 = ["./component.tsx#completedCount"];
-const WRITES_6 = ["./component.tsx#activeCount"];
-MD.installAccessTable({
+import * as _MD from "../src/runtime";
+const _WRITES_ = ["./component.tsx#completedSet"];
+const _WRITES_2 = ["./component.tsx#categoryMap"];
+const _WRITES_3 = ["./component.tsx#categoryMap", "./component.tsx#todos"];
+const _WRITES_4 = ["./component.tsx#completedSet", "./component.tsx#todos"];
+const _WRITES_5 = ["./component.tsx#totalCount"];
+const _WRITES_6 = ["./component.tsx#completedCount"];
+const _WRITES_7 = ["./component.tsx#activeCount"];
+_MD.installAccessTable({
   readers: {
     "./component.tsx#activeCount": ["TodoApp", "TodoApp/*"],
     "./component.tsx#categoryMap": ["TodoApp", "TodoApp/*"],
@@ -40,241 +40,241 @@ const categoryMap = new Map([[1, 'Compiler'], [2, 'Reactivity'], [3, 'Performanc
 
 // 4. Rule R13 Computed Derivations over Collections
 let totalCount = todos.length;
-MD.register({
+_MD.register({
   id: "TodoApp/$computed/.%2Fcomponent.tsx#totalCount",
   parent: null,
   depth: -1,
   render: () => {
-    const next = todos.length;
-    if (MD.computedChanged(totalCount, next)) {
-      totalCount = next;
-      MD.commitWrites(WRITES_4);
+    const _totalCountNext = todos.length;
+    if (_MD.computedChanged(totalCount, _totalCountNext)) {
+      totalCount = _totalCountNext;
+      _MD.commitWrites(_WRITES_5);
     }
   }
 });
 let completedCount = completedSet.size;
-MD.register({
+_MD.register({
   id: "TodoApp/$computed/.%2Fcomponent.tsx#completedCount",
   parent: null,
   depth: -1,
   render: () => {
-    const next = completedSet.size;
-    if (MD.computedChanged(completedCount, next)) {
-      completedCount = next;
-      MD.commitWrites(WRITES_5);
+    const _completedCountNext = completedSet.size;
+    if (_MD.computedChanged(completedCount, _completedCountNext)) {
+      completedCount = _completedCountNext;
+      _MD.commitWrites(_WRITES_6);
     }
   }
 });
 let activeCount = totalCount - completedCount;
-MD.register({
+_MD.register({
   id: "TodoApp/$computed/.%2Fcomponent.tsx#activeCount",
   parent: null,
   depth: -1,
   render: () => {
-    const next = totalCount - completedCount;
-    if (MD.computedChanged(activeCount, next)) {
-      activeCount = next;
-      MD.commitWrites(WRITES_6);
+    const _activeCountNext = totalCount - completedCount;
+    if (_MD.computedChanged(activeCount, _activeCountNext)) {
+      activeCount = _activeCountNext;
+      _MD.commitWrites(_WRITES_7);
     }
   }
 });
-function TodoItem(props, __memoRowId) {
-  let $s0, $s1, $s2, $s3, $t;
-  const update = () => {
-    if ($s0 !== ($t = completedSet.has(props.item.id) ? '☑' : '☐')) {
-      $s0 = $t;
-      text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+function TodoItem(props, _id) {
+  let _slot, _slot2, _slot3, _slot4, _value;
+  const _update = () => {
+    if (_slot !== (_value = completedSet.has(props.item.id) ? '☑' : '☐')) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
-    if ($s1 !== ($t = props.item.text)) {
-      $s1 = $t;
-      text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    if (_slot2 !== (_value = props.item.text)) {
+      _slot2 = _value;
+      _text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
-    if ($s2 !== ($t = categoryMap.get(props.item.id) || 'General')) {
-      $s2 = $t;
-      text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    if (_slot3 !== (_value = categoryMap.get(props.item.id) || 'General')) {
+      _slot3 = _value;
+      _text4.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
-    if ($s3 !== ($t = completedSet.has(props.item.id) ? 'todo-item done' : 'todo-item')) {
-      $s3 = $t;
-      li0.className = $t;
+    if (_slot4 !== (_value = completedSet.has(props.item.id) ? 'todo-item done' : 'todo-item')) {
+      _slot4 = _value;
+      _li.className = _value;
     }
   };
-  const text0 = document.createTextNode("");
-  if ($s0 !== ($t = completedSet.has(props.item.id) ? '☑' : '☐')) {
-    $s0 = $t;
-    text0.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = completedSet.has(props.item.id) ? '☑' : '☐')) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const span0 = document.createElement("span");
-  span0.className = "todo-check";
-  span0.onclick = () => {
+  const _span = document.createElement("span");
+  _span.className = "todo-check";
+  _span.onclick = () => {
     if (completedSet.has(props.item.id)) {
       completedSet.delete(props.item.id);
     } else {
       completedSet.add(props.item.id);
     }
-    MD.commitWrites(WRITES_0);
+    _MD.commitWrites(_WRITES_);
   };
-  span0.appendChild(text0);
-  const text1 = document.createTextNode("");
-  if ($s1 !== ($t = props.item.text)) {
-    $s1 = $t;
-    text1.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  _span.appendChild(_text);
+  const _text2 = document.createTextNode("");
+  if (_slot2 !== (_value = props.item.text)) {
+    _slot2 = _value;
+    _text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const span1 = document.createElement("span");
-  span1.className = "todo-text";
-  span1.appendChild(text1);
-  const text2 = document.createTextNode("🏷️ ");
-  const text3 = document.createTextNode("");
-  if ($s2 !== ($t = categoryMap.get(props.item.id) || 'General')) {
-    $s2 = $t;
-    text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _span2 = document.createElement("span");
+  _span2.className = "todo-text";
+  _span2.appendChild(_text2);
+  const _text3 = document.createTextNode("🏷️ ");
+  const _text4 = document.createTextNode("");
+  if (_slot3 !== (_value = categoryMap.get(props.item.id) || 'General')) {
+    _slot3 = _value;
+    _text4.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const span2 = document.createElement("span");
-  span2.className = "todo-badge";
-  span2.onclick = () => {
+  const _span3 = document.createElement("span");
+  _span3.className = "todo-badge";
+  _span3.onclick = () => {
     const current = categoryMap.get(props.item.id) || 'Compiler';
     const nextCat = current === 'Compiler' ? 'Reactivity' : current === 'Reactivity' ? 'Performance' : 'Compiler';
     categoryMap.set(props.item.id, nextCat);
-    MD.commitWrites(WRITES_1);
+    _MD.commitWrites(_WRITES_2);
   };
-  span2.appendChild(text2);
-  span2.appendChild(text3);
-  const div0 = document.createElement("div");
-  div0.className = "todo-content";
-  div0.appendChild(span0);
-  div0.appendChild(span1);
-  div0.appendChild(span2);
-  const li0 = document.createElement("li");
-  if ($s3 !== ($t = completedSet.has(props.item.id) ? 'todo-item done' : 'todo-item')) {
-    $s3 = $t;
-    li0.className = $t;
+  _span3.appendChild(_text3);
+  _span3.appendChild(_text4);
+  const _div = document.createElement("div");
+  _div.className = "todo-content";
+  _div.appendChild(_span);
+  _div.appendChild(_span2);
+  _div.appendChild(_span3);
+  const _li = document.createElement("li");
+  if (_slot4 !== (_value = completedSet.has(props.item.id) ? 'todo-item done' : 'todo-item')) {
+    _slot4 = _value;
+    _li.className = _value;
   }
-  li0.appendChild(div0);
+  _li.appendChild(_div);
   return {
-    nodes: [li0],
+    nodes: [_li],
     entities: [],
-    update: update,
-    updateProps: __memoNext0 => {
-      props = __memoNext0;
+    update: _update,
+    updateProps: _nextProp => {
+      props = _nextProp;
     }
   };
 }
-export function TodoApp(id, parent) {
-  let $s0, $s1, $s2, $t;
-  const update = () => {
-    if ($s0 !== ($t = totalCount)) {
-      $s0 = $t;
-      text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+export function TodoApp(_id2, _parent) {
+  let _slot5, _slot6, _slot7, _value2;
+  const _update2 = () => {
+    if (_slot5 !== (_value2 = totalCount)) {
+      _slot5 = _value2;
+      _text8.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    if ($s1 !== ($t = activeCount)) {
-      $s1 = $t;
-      text5.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    if (_slot6 !== (_value2 = activeCount)) {
+      _slot6 = _value2;
+      _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    if ($s2 !== ($t = completedCount)) {
-      $s2 = $t;
-      text7.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+    if (_slot7 !== (_value2 = completedCount)) {
+      _slot7 = _value2;
+      _text10.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    region0.reconcile(todos);
+    _region.reconcile(todos);
   };
-  MD.register({
-    id: id,
-    parent: parent,
-    render: update
+  _MD.register({
+    id: _id2,
+    parent: _parent,
+    render: _update2
   });
-  const text0 = document.createTextNode("⚡ Advanced Reactive Todo App");
-  const h10 = document.createElement("h1");
-  h10.appendChild(text0);
-  const text1 = document.createTextNode("Powered by Array, Set & Map Collections");
-  const p0 = document.createElement("p");
-  p0.className = "subtitle";
-  p0.appendChild(text1);
-  const text2 = document.createTextNode("Total: ");
-  const text3 = document.createTextNode("");
-  if ($s0 !== ($t = totalCount)) {
-    $s0 = $t;
-    text3.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _text5 = document.createTextNode("⚡ Advanced Reactive Todo App");
+  const _h = document.createElement("h1");
+  _h.appendChild(_text5);
+  const _text6 = document.createTextNode("Powered by Array, Set & Map Collections");
+  const _p = document.createElement("p");
+  _p.className = "subtitle";
+  _p.appendChild(_text6);
+  const _text7 = document.createTextNode("Total: ");
+  const _text8 = document.createTextNode("");
+  if (_slot5 !== (_value2 = totalCount)) {
+    _slot5 = _value2;
+    _text8.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
   }
-  const strong0 = document.createElement("strong");
-  strong0.appendChild(text3);
-  const div0 = document.createElement("div");
-  div0.className = "stat-pill";
-  div0.appendChild(text2);
-  div0.appendChild(strong0);
-  const text4 = document.createTextNode("Active: ");
-  const text5 = document.createTextNode("");
-  if ($s1 !== ($t = activeCount)) {
-    $s1 = $t;
-    text5.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _strong = document.createElement("strong");
+  _strong.appendChild(_text8);
+  const _div2 = document.createElement("div");
+  _div2.className = "stat-pill";
+  _div2.appendChild(_text7);
+  _div2.appendChild(_strong);
+  const _text9 = document.createTextNode("Active: ");
+  const _text0 = document.createTextNode("");
+  if (_slot6 !== (_value2 = activeCount)) {
+    _slot6 = _value2;
+    _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
   }
-  const strong1 = document.createElement("strong");
-  strong1.appendChild(text5);
-  const div1 = document.createElement("div");
-  div1.className = "stat-pill";
-  div1.appendChild(text4);
-  div1.appendChild(strong1);
-  const text6 = document.createTextNode("Completed: ");
-  const text7 = document.createTextNode("");
-  if ($s2 !== ($t = completedCount)) {
-    $s2 = $t;
-    text7.data = $t == null || typeof $t === "boolean" ? "" : String($t);
+  const _strong2 = document.createElement("strong");
+  _strong2.appendChild(_text0);
+  const _div3 = document.createElement("div");
+  _div3.className = "stat-pill";
+  _div3.appendChild(_text9);
+  _div3.appendChild(_strong2);
+  const _text1 = document.createTextNode("Completed: ");
+  const _text10 = document.createTextNode("");
+  if (_slot7 !== (_value2 = completedCount)) {
+    _slot7 = _value2;
+    _text10.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
   }
-  const strong2 = document.createElement("strong");
-  strong2.appendChild(text7);
-  const div2 = document.createElement("div");
-  div2.className = "stat-pill";
-  div2.appendChild(text6);
-  div2.appendChild(strong2);
-  const div3 = document.createElement("div");
-  div3.className = "stats-bar";
-  div3.appendChild(div0);
-  div3.appendChild(div1);
-  div3.appendChild(div2);
-  const text8 = document.createTextNode("➕ Add Task");
-  const button0 = document.createElement("button");
-  button0.onclick = () => {
+  const _strong3 = document.createElement("strong");
+  _strong3.appendChild(_text10);
+  const _div4 = document.createElement("div");
+  _div4.className = "stat-pill";
+  _div4.appendChild(_text1);
+  _div4.appendChild(_strong3);
+  const _div5 = document.createElement("div");
+  _div5.className = "stats-bar";
+  _div5.appendChild(_div2);
+  _div5.appendChild(_div3);
+  _div5.appendChild(_div4);
+  const _text11 = document.createTextNode("➕ Add Task");
+  const _button = document.createElement("button");
+  _button.onclick = () => {
     const newId = Date.now();
     todos.push({
       id: newId,
       text: `New Task #${todos.length + 1}`
     });
     categoryMap.set(newId, 'General');
-    MD.commitWrites(WRITES_2);
+    _MD.commitWrites(_WRITES_3);
   };
-  button0.appendChild(text8);
-  const text9 = document.createTextNode("🧹 Clear Completed");
-  const button1 = document.createElement("button");
-  button1.onclick = () => {
+  _button.appendChild(_text11);
+  const _text12 = document.createTextNode("🧹 Clear Completed");
+  const _button2 = document.createElement("button");
+  _button2.onclick = () => {
     todos = todos.filter(t => !completedSet.has(t.id));
     completedSet.clear();
-    MD.commitWrites(WRITES_3);
+    _MD.commitWrites(_WRITES_4);
   };
-  button1.appendChild(text9);
-  const div4 = document.createElement("div");
-  div4.className = "actions";
-  div4.appendChild(button0);
-  div4.appendChild(button1);
-  const ul0 = document.createElement("ul");
-  const region0 = MD.createListRegion(ul0, id + "/todos", (item, rowId) => {
-    const entry = TodoItem({
+  _button2.appendChild(_text12);
+  const _div6 = document.createElement("div");
+  _div6.className = "actions";
+  _div6.appendChild(_button);
+  _div6.appendChild(_button2);
+  const _ul = document.createElement("ul");
+  const _region = _MD.createListRegion(_ul, _id2 + "/todos", (item, _rowId) => {
+    const _entry = TodoItem({
       item
-    }, rowId);
+    }, _rowId);
     return {
-      nodes: entry.nodes,
+      nodes: _entry.nodes,
       entities: [],
-      update: entry.update,
+      update: _entry.update,
       updateProps: item => {
-        entry.updateProps({
+        _entry.updateProps({
           item
         });
       }
     };
   }, item => item.id);
-  region0.reconcile(todos);
-  const div5 = document.createElement("div");
-  div5.className = "todo-card";
-  div5.appendChild(h10);
-  div5.appendChild(p0);
-  div5.appendChild(div3);
-  div5.appendChild(div4);
-  div5.appendChild(ul0);
-  return div5;
+  _region.reconcile(todos);
+  const _div7 = document.createElement("div");
+  _div7.className = "todo-card";
+  _div7.appendChild(_h);
+  _div7.appendChild(_p);
+  _div7.appendChild(_div5);
+  _div7.appendChild(_div6);
+  _div7.appendChild(_ul);
+  return _div7;
 }

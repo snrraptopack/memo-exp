@@ -41,16 +41,16 @@ describe('M5.5 — member-path list sources, code generation', () => {
     const code = compile(
       `const store = { todos: [{ id: 1, title: 'a' }] };\nfunction C() { return <ul>{store.todos.map((t) => <li key={t.id}>{t.title}</li>)}</ul>; }`,
     );
-    expect(code).toContain('MD.createListRegion(');
-    expect(code).toContain('region0.reconcile(store.todos)');
-    expect(code).toContain('id + "/todos"'); // suffix = last segment
+    expect(code).toContain('.createListRegion(');
+    expect(code).toMatch(/_region\d*\.reconcile\(store\.todos\)/);
+    expect(code).toMatch(/_id\d* \+ "\/todos"/); // suffix = last segment
   });
 
   it('store-path mutator writes route to the list owner', () => {
     const code = compile(
       `const store = { todos: [{ id: 1 }] };\nfunction C() { return <div><ul>{store.todos.map((t) => <li key={t.id}>{t.id}</li>)}</ul><button onClick={() => { store.todos.push({ id: 2 }); }}>add</button></div>; }`,
     );
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
   it('inline-row entries carry their update closure', () => {
@@ -58,7 +58,7 @@ describe('M5.5 — member-path list sources, code generation', () => {
       `const items = [{ id: 1 }];\nfunction C() { return <ul>{items.map((i) => <li key={i.id}>{i.id}</li>)}</ul>; }`,
     );
     // entry object: { nodes: [li0], entities: [rowId], update }
-    expect(code).toMatch(/entities: \[rowId\],\s*update/);
+    expect(code).toMatch(/entities: \[_rowId\d*\],\s*update/);
   });
 
   it('non-store member sources are rejected', () => {

@@ -36,8 +36,8 @@ describe('R14 - code generation', () => {
       function B() { return <button onClick={() => count++}>{count}</button>; }
       function App() { return <div><A /><B /></div>; }
     `);
-    expect(code.match(/const WRITES_/g)).toHaveLength(1);
-    expect(code.match(/MD\.commitWrites\(WRITES_0\)/g)).toHaveLength(2);
+    expect(code.match(/const _WRITES_\d*/g)).toHaveLength(1);
+    expect(code.match(/\.commitWrites\(_WRITES_\d*\)/g)).toHaveLength(2);
   });
 
   it('uses a hygienic child result binding when component and state names collide', () => {
@@ -81,7 +81,7 @@ describe('R14 - code generation', () => {
     expect(code).toContain('doubled = count * 2');
     expect(code).toContain("label = 'v=' + doubled");
     const timer = code.slice(code.indexOf('setTimeout'), code.indexOf('}, 0)'));
-    expect(timer).toContain('MD.markDirty(id)');
+    expect(timer).toMatch(/\.markDirty\(_id\d*\)/);
   });
 
   it('rejects local derivations that mutate their reactive sources', () => {

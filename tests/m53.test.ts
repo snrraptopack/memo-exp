@@ -38,7 +38,7 @@ describe('M5.3 fixes — code generation', () => {
       `let n = 0;\nfunction C() { return <button onClick={() => { n++; if (n > 5) return; }}>{n}</button>; }`,
     );
     const handler = code.slice(code.indexOf('onclick'));
-    expect(handler.indexOf('MD.commitWrites(WRITES_0)')).toBeLessThan(
+    expect(handler.indexOf('.commitWrites(')).toBeLessThan(
       handler.indexOf('return;'),
     );
 
@@ -47,7 +47,7 @@ describe('M5.3 fixes — code generation', () => {
       `let n = 0;\nfunction C() { return <button onClick={() => { n++; return; }}>{n}</button>; }`,
     );
     const handler2 = code2.slice(code2.indexOf('onclick'));
-    expect(handler2.indexOf('MD.commitWrites(WRITES_0)')).toBeLessThan(
+    expect(handler2.indexOf('.commitWrites(')).toBeLessThan(
       handler2.indexOf('return;'),
     );
   });
@@ -57,7 +57,7 @@ describe('M5.3 fixes — code generation', () => {
       `const store = { items: [1] };\nfunction C() { return <button onClick={() => { store.items.push(2); }}>{store.items.length}</button>; }`,
     );
     // Module store writes always route through their canonical key.
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
     // the callee chain is no longer registered as a (bogus) read key
     expect(code).not.toContain('"./component.tsx#store.items.push"');
     // and the write path itself IS in the table for the resolver
@@ -84,15 +84,15 @@ describe('M5.3 fixes — code generation', () => {
     const code = compile(
       `let n = 0;\nfunction bump() { n++; }\nfunction C() { return <button onClick={() => { bump(); }}>{n}</button>; }`,
     );
-    expect(code).not.toContain('function bump(id, parent)');
+    expect(code).not.toMatch(/function bump\([^)]*,[^)]*\)/);
     // Helper writes retain the module's canonical state identity.
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
 
     // helper with a mutator write
     const code2 = compile(
       `let items = [1];\nfunction addIt(x) { items.push(x); }\nfunction C() { return <button onClick={() => { addIt(2); }}>{items.length}</button>; }`,
     );
-    expect(code2).toContain('MD.commitWrites(WRITES_0)');
+    expect(code2).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
   it('module-level functions referenced as handlers commit through the table', () => {
@@ -100,9 +100,9 @@ describe('M5.3 fixes — code generation', () => {
       `let n = 0;\nfunction inc() { n++; }\nfunction C() { return <button onClick={inc}>{n}</button>; }`,
     );
     // no `id` in a module-level scope → commitWrites, never markDirty(id)
-    expect(code).toContain('WRITES_0 = ["./component.tsx#n"]');
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
-    expect(code).not.toContain('markDirty(id)');
+    expect(code).toMatch(/_WRITES_\d* = \["\.\/component\.tsx#n"\]/);
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
+    expect(code).not.toContain('markDirty');
   });
 
   it('helper calls in JSX fold their summarized reads into the component', () => {
@@ -135,8 +135,8 @@ describe('M5.3 fixes — code generation', () => {
       const code = compile(
         `let a = 0;\nfunction Badge(x) { return <span>{x}</span>; }\nfunction C() { return <div><Badge x={a} /></div>; }`,
       );
-      expect(code).toContain('MD.setProps(id + "/Badge", [a])');
-      expect(code).toContain('MD.registerProps(id, __p)');
+      expect(code).toMatch(/\.setProps\(_id\d* \+ "\/Badge", \[a\]\)/);
+      expect(code).toMatch(/\.registerProps\(_id\d*, _props\d*\)/);
     }
 
     // recursive components (was: infinite factory recursion at runtime)

@@ -23,7 +23,6 @@ import _traverse from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   freshWriteConst,
-  md,
   memberKey,
   memberRootName,
   MUTATOR_METHODS,
@@ -32,6 +31,11 @@ import {
   type Ctx,
   type RowCtx,
 } from './context';
+import {
+  componentId,
+  generatedIdentifier,
+  md,
+} from './identifiers';
 import { summarizeHelper } from './analysis';
 
 // @babel/traverse is CJS; under ESM the function lands on `.default`.
@@ -547,6 +551,7 @@ function analyzeHandler(
     const commit = buildCommit(ctx, s, compName, rowCtx);
     if (!commit) continue;
     appendScopeCommit(
+      ctx,
       fn as t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
       commit,
     );
@@ -568,12 +573,14 @@ function buildCommit(
       ? t.expressionStatement(
           rowCtx.refreshVar !== undefined
             ? t.callExpression(t.identifier(rowCtx.refreshVar), [])
-            : t.callExpression(md('markDirty'), [t.identifier(rowCtx.rowIdVar)]),
+            : t.callExpression(md(ctx, 'markDirty'), [t.identifier(rowCtx.rowIdVar)]),
         )
       : null;
   // R12: instance-state writes commit locally with the shared commit, if any.
-  const instCommit = s.instanceLocal
-    ? t.expressionStatement(t.callExpression(md('markDirty'), [t.identifier('id')]))
+  const instCommit = s.instanceLocal && compName !== null
+    ? t.expressionStatement(
+        t.callExpression(md(ctx, 'markDirty'), [componentId(ctx, compName)]),
+      )
     : null;
   const combine = (other: t.Statement | null): t.Statement | null => {
     const parts: t.Statement[] = [];
@@ -587,7 +594,7 @@ function buildCommit(
   if (s.rootFallback) {
     return combine(
       t.expressionStatement(
-        t.callExpression(md('markDirtySubtree'), [t.stringLiteral(ctx.rootId)]),
+        t.callExpression(md(ctx, 'markDirtySubtree'), [t.stringLiteral(ctx.rootId)]),
       ),
     );
   }
@@ -596,7 +603,7 @@ function buildCommit(
   const writeList = [...s.writes].sort();
   return combine(
     t.expressionStatement(
-      t.callExpression(md('commitWrites'), [freshWriteConst(ctx, writeList)]),
+      t.callExpression(md(ctx, 'commitWrites'), [freshWriteConst(ctx, writeList)]),
     ),
   );
 }
@@ -608,6 +615,7 @@ function buildCommit(
  * wrapped so its return value survives (it can feed a promise chain).
  */
 function appendScopeCommit(
+  ctx: Ctx,
   fn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
   commit: t.Statement,
 ): void {
@@ -616,11 +624,11 @@ function appendScopeCommit(
     fn.body.body.push(commit);
     return;
   }
-  const ret = t.identifier('__memoRet');
+  const ret = generatedIdentifier(ctx, 'returnValue');
   fn.body = t.blockStatement([
     t.variableDeclaration('const', [t.variableDeclarator(ret, fn.body as t.Expression)]),
     commit,
-    t.returnStatement(t.identifier('__memoRet')),
+    t.returnStatement(t.cloneNode(ret)),
   ]);
 }
 

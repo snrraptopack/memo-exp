@@ -58,7 +58,7 @@ describe('R11 — row-local item writes, code generation', () => {
     const code = compile(
       `let todos = [{ id: 1, done: false }];\nfunction C() { return <ul>{todos.map((todo) => <li key={todo.id} onClick={() => { todo.done = !todo.done; }}>{todo.done ? 'y' : 'n'}</li>)}</ul>; }`,
     );
-    expect(code).toContain('MD.markDirty(rowId)');
+    expect(code).toMatch(/\.\w*markDirty\(_rowId\d*\)/);
     // the item write must NOT route through the array's write key
     expect(code).not.toContain('WRITES');
   });
@@ -67,8 +67,8 @@ describe('R11 — row-local item writes, code generation', () => {
     const code = compile(
       `let todos = [{ id: 1, done: false }];\nfunction Row(item) { return <li onClick={() => { item.done = !item.done; }}>{item.done ? 'y' : 'n'}</li>; }\nfunction C() { return <ul>{todos.map((todo) => <Row key={todo.id} item={todo} />)}</ul>; }`,
     );
-    expect(code).toContain('item.done = !item.done;\n    update();');
-    expect(code).not.toContain('MD.markDirty(__memoRowId)');
+    expect(code).toMatch(/item\.done = !item\.done;\s+_update\d*\(\)/);
+    expect(code).not.toContain('markDirty');
   });
 
   it('key-field writes fall back to the source-array write', () => {
@@ -77,23 +77,23 @@ describe('R11 — row-local item writes, code generation', () => {
     );
     // Structural: route the canonical array write to the owner so reconcile
     // re-keys; never dirty only the old row id.
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
-    expect(code).not.toContain('MD.markDirty(rowId)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
+    expect(code).not.toContain('markDirty');
   });
 
   it('dynamic item paths fall back to the source-array write', () => {
     const code = compile(
       `let todos = [{ id: 1 }];\nfunction C() { return <ul>{todos.map((todo) => <li key={todo.id} onClick={() => { const k = 'id'; todo[k] = 2; }}>{todo.id}</li>)}</ul>; }`,
     );
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
-    expect(code).not.toContain('MD.markDirty(rowId)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
+    expect(code).not.toContain('markDirty');
   });
 
   it('mixed scope: item-field write + state write → both commits', () => {
     const code = compile(
       `let n = 0;\nlet todos = [{ id: 1, done: false }];\nfunction C() { return <ul>{todos.map((todo) => <li key={todo.id} onClick={() => { todo.done = !todo.done; n++; }}>{n}{todo.done ? 'y' : 'n'}</li>)}</ul>; }`,
     );
-    expect(code).toContain('MD.markDirty(rowId)'); // item write stays local
+    expect(code).toMatch(/\.markDirty\(_rowId\d*\)/); // item write stays local
     // n is read by every row (Row[*] readers) → still routes the table
     expect(code).toContain('MD.commitWrites');
   });

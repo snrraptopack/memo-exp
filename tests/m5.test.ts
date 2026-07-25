@@ -51,35 +51,37 @@ describe('M5 compiler — code generation', () => {
     const code = compile(readFixture('counter'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
     // R1: entity factory + register
-    expect(code).toContain('function Counter(id, parent)');
-    expect(code).toContain('MD.register(');
+    expect(code).toMatch(/function Counter\(_id\d*, _parent\d*\)/);
+    expect(code).toContain('.register(');
     // R3/R4 (M5.9 form): inline guarded writes over numbered slot locals
-    expect(code).toContain('if ($s0 !== ($t = count))');
-    expect(code).toContain('text1.data =');
+    expect(code).toMatch(/if \(_slot\d* !== \(_value\d* = count\)\)/);
+    expect(code).toMatch(/_text\d*\.data =/);
     // R5: module state always commits through its canonical table key.
-    expect(code).toContain('WRITES_0 = ["./component.tsx#again", "./component.tsx#count"]');
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(
+      /_WRITES_\d* = \["\.\/component\.tsx#again", "\.\/component\.tsx#count"\]/,
+    );
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
   it('compiles the shared-state fixture with an access table', () => {
     const code = compile(readFixture('shared'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
     // R5: 'name' is read by Badge, written by Editor → hoisted write set
-    expect(code).toContain('WRITES_0 = ["./component.tsx#name"]');
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/_WRITES_\d* = \["\.\/component\.tsx#name"\]/);
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
     // R6: table routes 'name' to Badge's subtree only
     expect(code).toContain('installAccessTable');
     expect(code).toContain('"App/Badge"');
     // composition: factories receive (childId, parentId)
-    expect(code).toContain('Badge(id + "/Badge", id)');
-    expect(code).toContain('Editor(id + "/Editor", id)');
+    expect(code).toMatch(/Badge\(_id\d* \+ "\/Badge", _id\d*\)/);
+    expect(code).toMatch(/Editor\(_id\d* \+ "\/Editor", _id\d*\)/);
   });
 
   it('compiles repeated children with distinct ids and covering patterns', () => {
     const code = compile(readFixture('repeated'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
     // second instance gets a bracket-suffixed id and its own variable
-    expect(code).toContain('id + "/Tag[1]"');
+    expect(code).toMatch(/_id\d* \+ "\/Tag\[1\]"/);
     // the table covers every instance: exact, bracket wildcard, subtrees
     expect(code).toContain('"App/Tag[*]"');
   });
@@ -88,19 +90,19 @@ describe('M5 compiler — code generation', () => {
     const code = compile(readFixture('async'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
     // Both async write scopes commit the same canonical write set.
-    expect(code.match(/MD\.commitWrites\(WRITES_0\)/g)).toHaveLength(2);
+    expect(code.match(/\.commitWrites\(_WRITES_\d*\)/g)).toHaveLength(2);
     // the awaited write commits after the await, inside the async body
     const asyncBody = code.slice(
       code.indexOf('const incLater'),
       code.indexOf('const incTimer'),
     );
     expect(asyncBody.indexOf('await Promise.resolve()')).toBeLessThan(
-      asyncBody.indexOf('MD.commitWrites(WRITES_0)'),
+      asyncBody.indexOf('.commitWrites('),
     );
     // the timer write commits inside the setTimeout callback, not outside it
     const timerCb = code.slice(code.indexOf('setTimeout(() =>'), code.indexOf('}, 0)'));
     expect(timerCb).toContain('count = 10');
-    expect(timerCb).toContain('MD.commitWrites(WRITES_0)');
+    expect(timerCb).toContain('.commitWrites(');
   });
 
   it('wraps implicit-return callbacks and flags dynamic store paths as opaque', () => {
@@ -109,26 +111,26 @@ describe('M5 compiler — code generation', () => {
     const chain = compile(
       `let n = 0;\nfunction C() { return <button onClick={() => { Promise.resolve().then(() => n = 5); }}>go</button>; }`,
     );
-    expect(chain).toContain('__memoRet');
-    expect(chain).toContain('return __memoRet');
+    expect(chain).toMatch(/const _returnValue\d* =/);
+    expect(chain).toMatch(/return _returnValue\d*/);
 
     // store[k] = v — a dynamic path is unanalyzable → opaque, root commit
     const dyn = compile(
       `const store = { a: 1 };\nfunction C() { return <button onClick={(k) => { store[k] = 2; }}>go</button>; }`,
     );
-    expect(dyn).toContain('MD.markDirtySubtree("App")');
+    expect(dyn).toContain('.markDirtySubtree("App")');
     expect(dyn).toContain('opaque: ["./component.tsx#store"]');
   });
 
   it('compiles inline list rows to regions with row-scoped patterns (R7)', () => {
     const code = compile(readFixture('list-inline'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
-    expect(code).toContain('MD.createListRegion(ul0, id + "/items"');
-    expect(code).toContain('region0.reconcile(items)');
+    expect(code).toMatch(/\.createListRegion\(_ul\d*, _id\d* \+ "\/items"/);
+    expect(code).toMatch(/_region\d*\.reconcile\(items\)/);
     // rows are multi-instance: the click routes through the table
-    expect(code).toContain('MD.commitWrites(WRITES_0)');
+    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
     // 'items.push' is a local write: the owner re-renders and reconciles
-    expect(code).toContain('MD.commitWrites(WRITES_1)');
+    expect(code.match(/\.commitWrites\(_WRITES_\d*\)/g)).toHaveLength(2);
     // row entities live at the bracket pattern
     expect(code).toContain('"App/items/Row[*]"');
   });
@@ -136,7 +138,7 @@ describe('M5 compiler — code generation', () => {
   it('compiles eligible component list rows as lightweight factories (M5.10)', () => {
     const code = compile(readFixture('list-component'), { runtimePath: '../out-runtime' });
     expect(code).toMatchSnapshot();
-    expect(code).toContain('Row(item, rowId)');
+    expect(code).toMatch(/Row\(item, _rowId\d*\)/);
     expect(code).toContain('entities: []');
     expect(code).toContain('"App", "App/*"');
   });
@@ -166,7 +168,7 @@ describe('M5 compiler — code generation', () => {
         `let s = 0; let items = [1];\nfunction Row(sel) { return <li>{sel}</li>; }\nfunction C() { return <ul>{items.map(i => <Row sel={s} />)}</ul>; }`,
       );
       expect(code).toContain('updateProps');
-      expect(code).toContain('entry.updateProps(s)');
+      expect(code).toMatch(/_entry\d*\.updateProps\(s\)/);
     }
 
     expect(() => compile(`function C() { return <><span /></>; }`)).toThrowError(

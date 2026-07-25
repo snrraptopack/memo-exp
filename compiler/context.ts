@@ -8,6 +8,7 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { generatedIdentifier, type GeneratedIdentifiers } from './identifiers';
 
 export interface MemoDomOptions {
   /** Module specifier compiled output imports the runtime from. */
@@ -159,6 +160,8 @@ export interface Ctx {
   writeConsts: Map<string, string>;
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
+  /** Compiler-wide allocator initialized from the original Program scope. */
+  identifiers: GeneratedIdentifiers | null;
 }
 
 export function createCtx(opts: MemoDomOptions = {}): Ctx {
@@ -209,15 +212,13 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     writeConstCounter: 0,
     writeConsts: new Map(),
     analyzedFunctions: new WeakSet(),
+    identifiers: null,
   };
 }
 
 // ---------------------------------------------------------------------
 // AST helpers
 // ---------------------------------------------------------------------
-
-export const md = (name: string): t.MemberExpression =>
-  t.memberExpression(t.identifier('MD'), t.identifier(name));
 
 /** Register a state binding while preserving a linker-provided import entry. */
 export function registerState(ctx: Ctx, name: string, kind: StateKind): void {
@@ -246,7 +247,7 @@ export function freshWriteConst(ctx: Ctx, writes: readonly string[]): t.Identifi
   const key = canonicalWrites.join(' ');
   const existing = ctx.writeConsts.get(key);
   if (existing !== undefined) return t.identifier(existing);
-  const id = t.identifier(`WRITES_${ctx.writeConstCounter++}`);
+  const id = generatedIdentifier(ctx, `WRITES_${ctx.writeConstCounter++}`);
   ctx.writeConsts.set(key, id.name);
   ctx.header.push(
     t.variableDeclaration('const', [
