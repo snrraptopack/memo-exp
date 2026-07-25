@@ -43,6 +43,8 @@ Run the Chromium benchmark:
 
 ```bash
 bun run bench
+bun run bench:effects
 bun run bench:invalidation
 bun run bench:linker
+bun run bench:lifecycle
 ```

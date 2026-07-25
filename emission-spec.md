@@ -393,6 +393,54 @@ is emitted. The owning instance is already the exact invalidation unit, so
 recomputing its local derivations is both simpler and cheaper. Local derivation
 writes/mutations and async initializers are compile errors.
 
+### R20 - Factory callbacks and explicit cleanup are entity-owned
+
+A component may start callback-based work directly in its factory. The
+callback receives its own normal-exit invalidation, without requiring an event
+handler wrapper:
+
+```tsx
+function Clock() {
+  let time = Date.now();
+  const interval = setInterval(() => {
+    time = Date.now();
+  }, 1000);
+  cleanup(() => clearInterval(interval));
+  return <time>{time}</time>;
+}
+```
+
+The compiler lowers the ownership call and instruments the callback:
+
+```ts
+const interval = setInterval(() => {
+  time = Date.now();
+  MD.markDirty(id);
+}, 1000);
+MD.cleanup(id, () => clearInterval(interval));
+```
+
+`cleanup(disposer)` is valid only during direct component-factory execution.
+It accepts one synchronous disposer. Teardown runs descendants before owners
+and each owner's disposers in reverse registration order. All disposers run
+even when one throws; errors are reported after the subtree is fully removed.
+
+Callback discovery is independent of API and method names. Inline functions
+and visible function references passed to calls or constructors during factory
+setup are analyzed in their own execution scopes. This covers timers, promise
+callbacks, DOM listeners, observers, and application subscriptions without a
+compiler-maintained lifecycle API list. Cancellation remains explicit:
+
+```ts
+cleanup(subscribe(receive));
+cleanup(() => window.removeEventListener(...));
+```
+
+Callbacks retained during module initialization also receive commits.
+Module-state writes use canonical access-table keys because no component id
+owns them. Their lifetime is module/application-owned, so component `cleanup`
+does not apply.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
@@ -708,7 +756,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R19 (compiler probes + compiled runtime execution).
+> Last full audit: R20 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
@@ -733,9 +781,6 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   at scope end; an exception mid-handler skips the commit (writes before the
   throw stay uncommitted). Exception-path semantics require a separate design
   and performance decision.
-- Timers/subscriptions registered directly during factory initialization are
-  not instrumented. Only callbacks reachable from an analyzed handler/helper
-  currently receive commits.
 - R14 rejects direct writes in local derivations, but does not yet fold a
   component-local helper's write summary into derivation purity checking.
 - Over-invalidation note: a scope's commit fires even when its writes were
@@ -745,9 +790,11 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 - SVG elements (`createElementNS`); style objects; class arrays/objects;
   attribute-name mapping (`htmlFor`, `tabIndex`).
-- No unmount/cleanup API outside list rows; no lifecycle hooks
-  (`onMount`/`onUnmount`); timers or subscriptions started in a factory body
-  leak.
+- No mount hook or effect primitive. `cleanup(disposer)` owns synchronous
+  component teardown; async disposer promises are not awaited.
+- A factory that registers cleanup and then throws before entity registration
+  leaves that registration orphaned. Factory exception teardown needs a
+  separate decision; event handlers remain free of generated `try/finally`.
 - No priority lanes. `commit()` is the synchronous flush-now API.
 
 ### 11.5 Multi-module, scale & engineering
@@ -767,6 +814,12 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R20 (explicit cleanup and setup callbacks, compiler/lifecycle.ts +
+  src/cleanup.ts, tests/r20-cleanup.test.ts):** direct factory timers,
+  listeners, constructors, subscriptions, and visible local helpers receive
+  callback-owned normal-exit commits. `cleanup(disposer)` lowers with the
+  hygienic entity id and runs on root or keyed-row subtree teardown.
+  Module-initialization callbacks table-route canonical state writes.
 - **R19 (receiver-bounded effects, compiler/helper-summaries.ts +
   compiler/handlers.ts + compiler/linker.ts, tests/r19.test.ts):** method names
   no longer encode mutation semantics. Every reactive receiver method call is

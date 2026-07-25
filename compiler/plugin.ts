@@ -33,6 +33,10 @@ import {
 } from './identifiers';
 import { buildAccessTable, runAnalysis } from './analysis';
 import { transformComponent } from './emit';
+import {
+  rejectUnownedCleanup,
+  transformProgramCallbacks,
+} from './lifecycle';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -112,8 +116,11 @@ export default function memoDomPlugin(
       enter(programPath) {
         initializeGeneratedIdentifiers(ctx, programPath);
         runAnalysis(ctx, programPath);
+        transformProgramCallbacks(ctx, programPath);
       },
       exit(programPath) {
+        rejectUnownedCleanup(programPath);
+
         // safety net: any JSX left over lived outside a component function
         programPath.traverse({
           JSXElement(p) {

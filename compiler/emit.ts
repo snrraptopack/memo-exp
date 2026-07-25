@@ -43,6 +43,7 @@ import { analyzeMapSite, matchMapCall, type MapSite } from './lists';
 import { analyzeCondSite, matchCond } from './conds';
 import { buildHandler } from './handlers';
 import { isLightweightListedComponent } from './analysis';
+import { transformComponentLifecycle } from './lifecycle';
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -149,6 +150,8 @@ export function transformComponent(
       arrayName: refs[0]!.arrayName ?? '',
     };
   }
+
+  transformComponentLifecycle(ctx, path, name, factoryId, rowCtx);
 
   // -- emit --------------------------------------------------------------
   const rootVar = emitElement(ctx, scope, jsx, name, path, null, rowCtx);

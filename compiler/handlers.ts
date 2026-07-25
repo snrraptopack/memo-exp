@@ -54,13 +54,13 @@ import { summarizeHelper } from './helper-summaries';
 // @babel/traverse is CJS; under ESM the function lands on `.default`.
 const traverse: typeof _traverse = (_traverse as any).default ?? (_traverse as any);
 
-type HandlerFn =
+export type HandlerFn =
   | t.ArrowFunctionExpression
   | t.FunctionExpression
   | t.FunctionDeclaration;
 
 /** Resolve a component-local helper declared directly in the factory body. */
-function resolveLocalHelper(
+export function resolveLocalHelper(
   compPath: NodePath<t.FunctionDeclaration>,
   name: string,
 ): HandlerFn | null {
@@ -73,6 +73,34 @@ function resolveLocalHelper(
   return init && (t.isArrowFunctionExpression(init) || t.isFunctionExpression(init))
     ? init
     : null;
+}
+
+/**
+ * Instrument a callback that executes outside the component's synchronous
+ * factory call. The callback owns its normal-exit commit; no event boundary
+ * or exception wrapper is introduced.
+ */
+export function instrumentComponentCallback(
+  ctx: Ctx,
+  compPath: NodePath<t.FunctionDeclaration>,
+  target: HandlerFn,
+  compName: string,
+  rowCtx?: RowCtx,
+): void {
+  if (ctx.analyzedFunctions.has(target)) return;
+  instrumentReachableLocalHelpers(ctx, compPath, target, compName, rowCtx);
+  ctx.analyzedFunctions.add(target);
+  analyzeHandler(ctx, target, compName, rowCtx, false);
+}
+
+/** Instrument a module-owned callback through canonical access-table writes. */
+export function instrumentSharedCallback(
+  ctx: Ctx,
+  target: HandlerFn,
+): void {
+  if (ctx.analyzedFunctions.has(target)) return;
+  ctx.analyzedFunctions.add(target);
+  analyzeHandler(ctx, target, null, undefined, false);
 }
 
 /**

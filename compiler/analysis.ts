@@ -719,6 +719,12 @@ function scanInstanceComputeds(ctx: Ctx): void {
           reason = 'uses yield; per-instance derivations must be synchronous';
         }
         initPath.traverse({
+          Function(fn) {
+            // A deferred callback captures reactive bindings but does not make
+            // the setup call's return value a derivation. Lifecycle analysis
+            // instruments the callback in its own execution scope.
+            fn.skip();
+          },
           ReferencedIdentifier(p) {
             noteIdentifier(p);
           },
@@ -852,6 +858,12 @@ export function isLightweightListedComponent(ctx: Ctx, name: string): boolean {
         if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) eligible = false;
       },
       CallExpression(call) {
+        if (
+          t.isIdentifier(call.node.callee, { name: 'cleanup' }) &&
+          call.scope.getBinding('cleanup') === undefined
+        ) {
+          eligible = false;
+        }
         if (matchMapCall(call.node) && containsJsx(call)) eligible = false;
       },
       ConditionalExpression(cond) {

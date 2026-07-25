@@ -31,7 +31,7 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | Payload routing described as deferred | Documentation drift | Runtime comments now describe the shipped resolver |
 | Local derived/computed values stay stale | Confirmed architecture gap | R14 recomputes them in the owner update prologue, after prop resync |
 | Timer/promise updates stay stale through a local helper | Confirmed reachability gap | Reachable component-local helpers are instrumented transitively |
-| Timer started during factory initialization | Still unsupported | Needs lifecycle ownership plus an instrumentation/fallback rule |
+| Timer started during factory initialization | Confirmed lifecycle gap | R20 instruments setup callbacks and binds explicit `cleanup(disposer)` to subtree unregister |
 | Aliases, reflective writes, and unknown calls | Confirmed conservative-boundary gaps | R17 added sound fallbacks; R19 narrows identifiable receivers, roots, and helper-parameter paths |
 | Handler with no recognized write skips rendering | Confirmed drift from the event-boundary contract | R18 invalidates the nearest component/row/region; guarded updates remain scoped |
 | Method-name mutation blacklist | Semantically incomplete and unnecessary | Removed in R19; every reactive receiver call has a bounded receiver effect |
@@ -54,13 +54,12 @@ component subtrees and benefit from change-gated propagation.
 
 Commit where the write runs, not when the originating event promise settles.
 That gives correct timing for `await`, timers, and promise callbacks and avoids
-replaying a handler-wide write set. The compiler currently guarantees this for
-callbacks lexically reachable from analyzed handlers/helpers.
-
-Factory-started timers and subscriptions need an explicit lifecycle design:
-ownership, cleanup on subtree unregister, and a conservative invalidation
-boundary when callback writes escape analysis. Silent support claims are not
-acceptable.
+replaying a handler-wide write set. The compiler guarantees this for callbacks
+lexically reachable from analyzed handlers/helpers, factory setup
+calls/constructors, and module initialization. Factory resources use explicit
+`cleanup(disposer)` ownership. Root and keyed-row unregister drain descendants
+before owners and each owner in LIFO order. Module-started work table-routes
+writes but remains module/application-owned.
 
 ### Access identity
 
@@ -91,8 +90,7 @@ change the bounded-effect contract.
 ### P0: correctness boundaries
 
 1. Decide exception-path commit semantics with dedicated performance evidence.
-2. Specify and implement lifecycle-owned factory callbacks/subscriptions.
-3. Extend the implemented state linker to cross-file component composition and
+2. Extend the implemented state linker to cross-file component composition and
    bundler adapters.
 
 ### P1: source-language coverage
@@ -114,8 +112,9 @@ change the bounded-effect contract.
 3. Profile select/swap/clear paths; they have the largest current gap to
    hand-written vanilla in the browser benchmark.
 4. Add stable compiler-throughput and large-access-table benchmarks.
-5. Measure lifecycle and full-hygiene changes independently; compiler-only
-   improvements must not be credited as runtime gains.
+5. Keep measuring full-hygiene changes independently; compiler-only
+   improvements must not be credited as runtime gains. R20 teardown cost is
+   isolated in `bench/lifecycle/README.md`.
 
 ## Benchmark baselines
 

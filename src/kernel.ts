@@ -9,7 +9,7 @@
  *   4. The commit cycle      — re-renders exactly the dirty set, parent-before-child
  *
  * It knows NOTHING about components, state, or events. Those are compiler
- * concerns layered on top. Keep this file dependency-free and tiny.
+ * concerns layered on top. Keep this file focused on entity lifetime.
  *
  * M4 hardening (benchmark-driven):
  *   - Entity carries `children` + precomputed `depth`: subtree teardown is
@@ -22,6 +22,8 @@
  * children, so child links exist. Violations don't corrupt rendering — they
  * only orphan children from subtree teardown.
  */
+
+import { disposeOwnerCleanups } from './cleanup';
 
 export type EntityId = string;
 
@@ -143,20 +145,41 @@ export function unregisterSubtree(id: EntityId): void {
   }
 
   const stack: EntityId[] = [id];
+  const teardown: EntityId[] = [];
+  const cleanupErrors: unknown[] = [];
   while (stack.length > 0) {
     const cur = stack.pop()!;
     const e = registry.get(cur);
     if (!e) continue;
+    teardown.push(cur);
     if (e.children) {
       for (const c of e.children) stack.push(c);
     }
+  }
+
+  // Children leave before their owners. Remove the complete subtree from the
+  // live registry before invoking user teardown so reentrant invalidation and
+  // unregister calls become dead letters.
+  teardown.reverse();
+  for (const cur of teardown) {
     registry.delete(cur);
     dirtySet.delete(cur);
     notifyRegistry(cur, 'remove');
   }
+  for (const cur of teardown) {
+    cleanupErrors.push(...disposeOwnerCleanups(cur));
+  }
 
   idsCache = null;
   generation++;
+
+  if (cleanupErrors.length === 1) throw cleanupErrors[0];
+  if (cleanupErrors.length > 1) {
+    throw new AggregateError(
+      cleanupErrors,
+      `[memo-dom] ${cleanupErrors.length} cleanup disposers failed while unregistering '${id}'`,
+    );
+  }
 }
 
 /** Single-id unregister takes its subtree with it — same thing. */

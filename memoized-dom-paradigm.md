@@ -211,11 +211,12 @@ promise callback commits inside that callback. This is more precise than
 committing the handler's full write-set again when its promise settles.
 
 **Non-event state changes** (websocket, timers): compiler-visible callbacks
-reachable from handlers and component-local helpers receive the same inserted
-commits. Callbacks registered during factory initialization and mutations
-hidden in external code still need a lifecycle/boundary design; they must not
-be described as supported until the compiler can instrument them or emit a
-conservative root fallback.
+reachable from handlers, factory setup, component-local helpers, and module
+initialization receive the same scope-owned commits. Factory resources are
+explicitly entity-owned with `cleanup(disposer)` and drain when their root or
+keyed row unregisters. Mutations hidden entirely inside external code still
+need a visible callback or host boundary; passing state to unknown code only
+bounds effects completed during that analyzed call.
 
 ## 7. Traces
 

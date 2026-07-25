@@ -61,9 +61,10 @@ export function TodoApp() {
 
   let timer = 0
 
-  setInterval(() => {
+  const interval = setInterval(() => {
     timer++;
   }, 1000);
+  cleanup(() => clearInterval(interval));
 
   return (
     <div class="todo-card">

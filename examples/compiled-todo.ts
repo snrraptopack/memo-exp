@@ -161,9 +161,11 @@ function TodoItem(props, _id) {
 export function TodoApp(_id2, _parent) {
   let _slot5, _slot6, _slot7, _slot8, _value2;
   let timer = 0;
-  setInterval(() => {
+  const interval = setInterval(() => {
     timer++;
+    _MD.markDirty(_id2);
   }, 1000);
+  _MD.cleanup(_id2, () => clearInterval(interval));
   const _update2 = () => {
     if (_slot5 !== (_value2 = timer)) {
       _slot5 = _value2;
@@ -257,7 +259,11 @@ export function TodoApp(_id2, _parent) {
   const _text13 = document.createTextNode("🧹 Clear Completed");
   const _button2 = document.createElement("button");
   _button2.onclick = () => {
-    todos = todos.filter(t => !completedSet.has(t.id));
+    todos = todos.filter(t => {
+      const _returnValue = !completedSet.has(t.id);
+      _MD.commitWrites(_WRITES_);
+      return _returnValue;
+    });
     completedSet.clear();
     _MD.commitWrites(_WRITES_4);
   };

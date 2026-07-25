@@ -9,6 +9,7 @@ latest measurements, limits, and interpretation.
 | [`effects`](./effects/) | `bun run bench:effects` | Production receiver-bounded versus root invalidation |
 | [`invalidation`](./invalidation/) | `bun run bench:invalidation` | Dirty-reason mask update-evaluation prototype |
 | [`linker`](./linker/) | `bun run bench:linker` | Cross-module compiler/linker throughput |
+| [`lifecycle`](./lifecycle/) | `bun run bench:lifecycle` | Production cleanup ownership and entity teardown |
 
 Numbers are machine-local and must be compared using repeated processes on the
 same machine. A mechanism-level benchmark is not evidence of end-to-end
