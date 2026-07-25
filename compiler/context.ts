@@ -37,11 +37,22 @@ export interface LinkedStateImport {
 export interface LinkedFunctionImport {
   type: 'function';
   reads: string[];
+  /** Directly proven state writes. */
   writes: string[];
-  opaque: boolean;
+  /** Conservative effects bounded to serialized state roots. */
+  boundedWrites: string[];
+  /** Effects on arguments, expressed as paths relative to each argument. */
+  parameterWrites: ParameterWrite[];
+  /** Effects may extend beyond every known root and argument. */
+  unbounded: boolean;
 }
 
 export type LinkedImport = LinkedStateImport | LinkedFunctionImport;
+
+export interface ParameterWrite {
+  index: number;
+  path: string[];
+}
 
 /**
  * Reactive-state classification (the two — three — legal ways JS state changes):
@@ -75,16 +86,19 @@ export interface SiteRef {
 /** Module-level helper function summary (M5.3 interprocedural analysis). */
 export interface FnSummary {
   reads: Set<string>;
+  /** Directly proven state writes. */
   writes: Set<string>;
-  /** True when the helper (transitively) does something unanalyzable. */
-  opaque: boolean;
+  /** Conservative effects bounded to module-state roots. */
+  boundedWrites: Set<string>;
+  /** Effects on arguments, expressed as paths relative to each argument. */
+  parameterWrites: ParameterWrite[];
+  /** True when effects cannot be bounded to known roots or arguments. */
+  unbounded: boolean;
 }
 
-/** DOM mutating methods — a call through module state mutates in place. */
-export const MUTATOR_METHODS = new Set([
-  'push', 'pop', 'splice', 'sort', 'reverse', 'fill', 'shift', 'unshift',
-  'set', 'delete', 'clear', 'add',
-]);
+export type HelperPath = NodePath<
+  t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
+>;
 
 export interface Ctx {
   runtimePath: string;
@@ -101,8 +115,8 @@ export interface Ctx {
   importedFunctions: Map<string, FnSummary>;
   comps: Map<string, CompInfo>;
   compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
-  /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural reads/writes. */
-  helpers: Map<string, NodePath<t.FunctionDeclaration>>;
+  /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural effects. */
+  helpers: Map<string, HelperPath>;
   helperSummaries: Map<string, FnSummary>;
   compReads: Map<string, Set<string>>;
   /** parent comp → child comp → number of static JSX references. */
@@ -154,7 +168,6 @@ export interface Ctx {
   // ---- emission accumulators ----
   header: t.Statement[];
   readers: Map<string, Set<string>>;
-  opaqueVars: Set<string>;
   writeConstCounter: number;
   /** Dedupe table for hoisted write-set consts: joined writes → const name. */
   writeConsts: Map<string, string>;
@@ -181,7 +194,12 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
       importedFunctions.set(local, {
         reads: new Set(linked.reads),
         writes: new Set(linked.writes),
-        opaque: linked.opaque,
+        boundedWrites: new Set(linked.boundedWrites),
+        parameterWrites: linked.parameterWrites.map((effect) => ({
+          index: effect.index,
+          path: [...effect.path],
+        })),
+        unbounded: linked.unbounded,
       });
     }
   }
@@ -210,7 +228,6 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     computeds: new Map(),
     header: [],
     readers: new Map(),
-    opaqueVars: new Set(),
     writeConstCounter: 0,
     writeConsts: new Map(),
     analyzedFunctions: new WeakSet(),

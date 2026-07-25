@@ -22,6 +22,7 @@ import {
   isStoreObject,
   type LinkedImport,
   type MemoDomOptions,
+  type ParameterWrite,
   type StateKind,
 } from './context';
 
@@ -49,7 +50,9 @@ interface FunctionExport {
   type: 'function';
   reads: string[];
   writes: string[];
-  opaque: boolean;
+  boundedWrites: string[];
+  parameterWrites: ParameterWrite[];
+  unbounded: boolean;
 }
 
 type LinkedExport = StateExport | FunctionExport;
@@ -174,7 +177,20 @@ function analyzeManifest(
               type: 'function',
               reads: [...summary.reads].map((key) => canonicalStateKey(ctx, key)).sort(),
               writes: [...summary.writes].map((key) => canonicalStateKey(ctx, key)).sort(),
-              opaque: summary.opaque,
+              boundedWrites: [...summary.boundedWrites]
+                .map((key) => canonicalStateKey(ctx, key))
+                .sort(),
+              parameterWrites: summary.parameterWrites
+                .map((effect) => ({
+                  index: effect.index,
+                  path: [...effect.path],
+                }))
+                .sort(
+                  (a, b) =>
+                    a.index - b.index ||
+                    a.path.join('.').localeCompare(b.path.join('.')),
+                ),
+              unbounded: summary.unbounded,
             };
           }
         }
@@ -217,6 +233,20 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
           if (t.isVariableDeclaration(inner)) {
             for (const decl of inner.declarations) {
               if (!t.isIdentifier(decl.id)) continue;
+              if (
+                t.isArrowFunctionExpression(decl.init) ||
+                t.isFunctionExpression(decl.init)
+              ) {
+                locals.set(decl.id.name, {
+                  type: 'function',
+                  reads: [],
+                  writes: [],
+                  boundedWrites: [],
+                  parameterWrites: [],
+                  unbounded: true,
+                });
+                continue;
+              }
               let kind: StateKind | undefined;
               if (inner.kind === 'let' || inner.kind === 'var') kind = 'let';
               else if (isStoreObject(decl.init)) kind = 'store';
@@ -234,7 +264,9 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
               type: 'function',
               reads: [],
               writes: [],
-              opaque: true,
+              boundedWrites: [],
+              parameterWrites: [],
+              unbounded: true,
             });
           }
         }
@@ -323,13 +355,15 @@ function linkImports(
   for (const ref of manifest.imports) {
     const target = resolveModule(entry.id, ref.source, entries, options);
     if (target === undefined) {
-      // Calls through external imports are conservatively opaque. If the
+      // Calls through external imports are conservatively unbounded. If the
       // binding is only read as ordinary data, it remains non-reactive.
       linked[ref.local] = {
         type: 'function',
         reads: [],
         writes: [],
-        opaque: true,
+        boundedWrites: [],
+        parameterWrites: [],
+        unbounded: true,
       };
       continue;
     }
@@ -345,7 +379,9 @@ function linkImports(
         type: 'function',
         reads: [],
         writes: [],
-        opaque: true,
+        boundedWrites: [],
+        parameterWrites: [],
+        unbounded: true,
       };
       continue;
     }
@@ -356,7 +392,9 @@ function linkImports(
             type: 'function',
             reads: [...targetExport.reads],
             writes: [...targetExport.writes],
-            opaque: targetExport.opaque,
+            boundedWrites: [...targetExport.boundedWrites],
+            parameterWrites: [...targetExport.parameterWrites],
+            unbounded: targetExport.unbounded,
           };
   }
   return linked;

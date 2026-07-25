@@ -35,7 +35,8 @@ const output = compileModules(modules, {
 
 All compiler paths emit canonical keys such as
 `./src/state.ts#store.selectedId`. `compileModules()` resolves named imports
-and mutator summaries. Pass `resolveImport(specifier, importer)` for
+and exact/receiver-bounded function summaries. Pass
+`resolveImport(specifier, importer)` for
 plugin-defined resolution. Cross-file component imports remain unsupported.
 
 Run the Chromium benchmark:

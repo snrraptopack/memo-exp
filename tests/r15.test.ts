@@ -140,7 +140,7 @@ describe('R15 - cross-module code generation', () => {
     expect(output['./app.tsx']).not.toContain('MD.markDirtySubtree');
   });
 
-  it('makes unresolved imported calls conservatively opaque', () => {
+  it('makes unresolved imported calls conservatively unbounded', () => {
     const output = compileModules({
       './app.tsx': `
         import { mutate } from 'third-party';

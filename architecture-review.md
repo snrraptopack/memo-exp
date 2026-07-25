@@ -1,6 +1,6 @@
 # Architecture Review and Way Forward
 
-> Audit date: 2026-07-24. This is an implementation status review. The
+> Audit date: 2026-07-25. This is an implementation status review. The
 > normative emission contract remains `emission-spec.md`; the product intent
 > remains `memoized-dom-paradigm.md`.
 
@@ -32,8 +32,9 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | Local derived/computed values stay stale | Confirmed architecture gap | R14 recomputes them in the owner update prologue, after prop resync |
 | Timer/promise updates stay stale through a local helper | Confirmed reachability gap | Reachable component-local helpers are instrumented transitively |
 | Timer started during factory initialization | Still unsupported | Needs lifecycle ownership plus an instrumentation/fallback rule |
-| Aliases, reflective writes, and unknown calls | Confirmed conservative-fallback gaps | R17 tracks local provenance, handles `delete`/`Object.assign`, and marks mutable escapes opaque |
+| Aliases, reflective writes, and unknown calls | Confirmed conservative-boundary gaps | R17 added sound fallbacks; R19 narrows identifiable receivers, roots, and helper-parameter paths |
 | Handler with no recognized write skips rendering | Confirmed drift from the event-boundary contract | R18 invalidates the nearest component/row/region; guarded updates remain scoped |
+| Method-name mutation blacklist | Semantically incomplete and unnecessary | Removed in R19; every reactive receiver call has a bounded receiver effect |
 
 ## Decisions
 
@@ -65,19 +66,25 @@ acceptable.
 
 Within one module, Babel binding identity is authoritative. String names are
 only serialized after binding resolution. Every state key is module-qualified.
-`compileModules()` resolves imports and exported mutator summaries to canonical
+`compileModules()` resolves imports and exported function summaries to canonical
 keys such as `./state.ts#store.selectedId`; it accepts bundler aliases or a host
 resolver. Cross-file component composition is not linked yet.
 
-### Opaque mutation boundary
+### Conservative mutation boundary
 
-Static precision remains the fast path: direct roots, static store paths,
-collection mutators, and literal `Object.assign` sources emit interned write
-sets. When alias provenance becomes ambiguous or mutable state crosses an
-unknown call boundary, the writing scope dirties the root subtree. Commits are
-still emitted on normal exits; exception-path behavior remains an explicit P0
-decision. The opaque fallback is the correctness floor; later dirty-reason
-masks may reduce work inside the subtree without weakening it.
+Direct roots, static store paths, and literal `Object.assign` sources produce
+exact interned write sets. Every call on a reactive receiver produces a
+bounded effect for that receiver, independent of method name. Dynamic paths,
+identifiable aliases/destructuring sources, and direct reactive root arguments
+retain finite root boundaries. Visible helpers preserve relative parameter
+paths through local and linked calls.
+
+Only a summary with no finite receiver, argument, instance, row, or state root
+dirties the root subtree. Unresolved imported functions are the current common
+case. Commits are still emitted on normal exits; exception-path behavior
+remains an explicit P0 decision. Dirty-reason masks may later skip independent
+work inside a selected entity, but they do not replace access-table routing or
+change the bounded-effect contract.
 
 ## Priority roadmap
 

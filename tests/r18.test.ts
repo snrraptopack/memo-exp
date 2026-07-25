@@ -71,10 +71,10 @@ describe('R18 - scoped event-boundary invalidation', () => {
     expect(button.textContent?.trim()).toBe('2');
   });
 
-  it('emits component-local rather than root-subtree invalidation', () => {
+  it('emits receiver-bounded rather than root-subtree invalidation', () => {
     const code = compile(source);
     expect(code).toMatch(
-      /values\.filter\(Boolean\);\s+_MD\d*\.markDirty\(_id\d*\)/,
+      /values\.filter\(Boolean\);\s+_MD\d*\.commitWrites\(_WRITES_\d*\)/,
     );
     expect(code).not.toContain('markDirtySubtree');
   });

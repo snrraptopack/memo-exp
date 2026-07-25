@@ -125,6 +125,18 @@ export function moduleOrigin(
   };
 }
 
+/** Append a helper-summary path to an argument's resolved reactive origin. */
+export function extendOrigin(
+  origin: ReactiveOrigin,
+  relativePath: readonly string[],
+): ReactiveOrigin {
+  if (origin.key === null) return origin;
+  return {
+    ...origin,
+    key: [origin.key, ...relativePath].join('.'),
+  };
+}
+
 export function staticAssignedKeys(
   target: ReactiveOrigin,
   sources: readonly (t.Expression | t.SpreadElement | t.JSXNamespacedName | t.ArgumentPlaceholder)[],

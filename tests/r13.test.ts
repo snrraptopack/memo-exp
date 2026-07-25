@@ -11,7 +11,8 @@
  *   - detection: BY REFERENCE — any expression mentioning declared state is
  *     derived (arbitrary calls / new / local-mutating callbacks are fine;
  *     no method whitelist)
- *   - derivations that write/mutate state (or await) are a COMPILE ERROR
+ *   - direct proven writes to state (or await) are a COMPILE ERROR
+ *   - receiver-method semantics are author-owned; no method-name table
  *   - writes TO a computed are a compile error (write the source)
  *   - chains: a computed may read another computed
  *   - ordering: recompute renders before any reader (depth -1)
@@ -106,19 +107,20 @@ describe('R13 — computeds, code generation', () => {
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#ids"');
   });
 
-  it('derivations that write or mutate state are a compile error', () => {
+  it('derivations reject proven writes without inferring method semantics', () => {
     // assignment to state inside the initializer
     expect(() =>
       compile(
         `let count = 0;\nconst x = (count = 5);\nfunction C() { return <p>{x}</p>; }`,
       ),
     ).toThrowError(/state derivation but contains an assignment/);
-    // mutating a source inside its own derivation
+    // Method semantics are not inferred from spelling. Authors must keep
+    // derivations observationally pure.
     expect(() =>
       compile(
         `let todos = [1, 2];\nconst s = todos.sort((a, b) => a - b);\nfunction C() { return <p>{s}</p>; }`,
       ),
-    ).toThrowError(/state derivation but calls 'sort' on state 'todos'/);
+    ).not.toThrow();
     // calling a helper known to write state
     expect(() =>
       compile(

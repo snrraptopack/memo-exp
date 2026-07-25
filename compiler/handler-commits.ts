@@ -1,8 +1,8 @@
 /**
  * handler-commits.ts - write-scope commit construction and insertion.
  *
- * Converts analyzed scope effects into local, routed, or opaque invalidation
- * statements and inserts them on every normal function exit.
+ * Converts analyzed scope effects into local, routed, or unbounded
+ * invalidation statements and inserts them on every normal function exit.
  */
 
 import * as t from '@babel/types';

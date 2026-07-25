@@ -147,11 +147,12 @@ component.
 
 ### Fallback rule
 
-If the compiler cannot prove the read/write set of some code (dynamic member
-access `obj[expr]`, reflection, state escaping to third-party libs), that state
-is marked **opaque**. Any event whose write-set includes opaque state falls back
-to **root-scoped commit** — Imba's exact behavior. Correctness never depends on
-the analysis; only speed does.
+If the compiler cannot prove an exact write, it first finds the narrowest
+finite boundary it can name. A call on `store.items` or a dynamic write through
+`store[key]` is bounded to that receiver/root and routed only to its observers.
+The compiler does not classify method names; false positives are absorbed by
+guarded update closures. Only effects with no identifiable receiver, argument,
+instance, row, or state root fall back to a root-scoped commit.
 
 ## 5. Internal Entity Model (runtime, invisible to user)
 
@@ -246,13 +247,16 @@ handler: items = reverse(items)
   → DOM work: appendChild moves only; zero row re-execution, zero recreation.
 ```
 
-### 7.4 Opaque fallback
+### 7.4 Conservative boundaries
 
 ```
 handler: state[someKey()] = x      // compiler cannot prove keys
-  → write-set opaque → dirty set = { ROOT }
-  → full tree re-render with value-cached setters no-op-ing unchanged writes.
-  → exactly Imba's behavior. Never broken, just not optimal.
+  → bounded effect = state root
+  → access table selects observers of state
+  → their value-cached setters no-op unchanged writes.
+
+handler: unresolvedImport()        // no finite effect boundary
+  → unbounded effect → dirty set = { ROOT subtree }
 ```
 
 ## 8. What the User Writes
@@ -279,17 +283,16 @@ internal.
 1. **Props are read-set edges.** `CartList` reads `items`, passes `item` to
    `Row` → `Row` transitively reads `items`. The analysis must flow through
    props, closures, and loop bodies. This is the bulk of compiler work.
-2. **Method-call mutation.** `items.push(x)` is not an assignment. The compiler
-   must treat mutating method calls on analyzed state as writes (known mutable
-   method list: push/pop/splice/sort/set/delete/add/...), or mark the state
-   opaque.
-3. **Dynamic access.** `obj[computed]` → opaque (see Fallback rule).
+2. **Method-call effects.** `items.anyMethod()` is conservatively bounded to
+   `items`; no built-in or third-party method semantics table is required.
+3. **Dynamic access.** `obj[computed]` retains a bounded `obj` root when its
+   provenance is known (see Fallback rule).
 4. **Aliasing.** `const a = items; a.push(x)` — writes must be tracked through
-   local aliases (conservative alias analysis; when unsure → opaque).
+   local aliases (conservative alias analysis; when unsure → bounded roots).
 5. **Cross-component shared state.** Module-level variables read by many
    components are fine (they're just big read-sets), but the table must stay
    precise enough that common events don't degrade to root-commit. Measure and
-   tune what gets marked opaque.
+   tune conservative receiver/root boundaries.
 6. **SSR / hydration.** Creation branch must be able to *adopt* server-rendered
    nodes (populate `$` from existing DOM, matched by deterministic order/IDs)
    instead of creating. Server output embeds entity IDs as marker attributes or
@@ -320,8 +323,10 @@ internal.
 
 - **Entity** — a mounted component instance with ID, node cache, state, status.
 - **Dirty set** — the set of entity IDs scheduled for re-render this frame.
-- **Opaque state** — state whose read/write set the compiler cannot prove;
-  writes to it trigger root-scoped commit.
+- **Bounded effect** — a conservative possible write attached to a finite
+  reactive receiver/root.
+- **Unbounded effect** — an effect with no finite reactive boundary; it
+  triggers root-subtree commit.
 - **Origin** — the entity whose handler processed the triggering event.
 - **Root commit** — re-render from the mounted root (Imba behavior; our fallback).
 - **Value-cached setter** — a DOM write guarded by previous-value comparison.

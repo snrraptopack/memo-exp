@@ -105,7 +105,7 @@ describe('M5 compiler — code generation', () => {
     expect(timerCb).toContain('.commitWrites(');
   });
 
-  it('wraps implicit-return callbacks and flags dynamic store paths as opaque', () => {
+  it('wraps implicit-return callbacks and bounds dynamic store paths to the store', () => {
     // implicit-return arrow in a fire-and-forget chain: the commit is
     // injected without losing the callback's return value
     const chain = compile(
@@ -114,12 +114,14 @@ describe('M5 compiler — code generation', () => {
     expect(chain).toMatch(/const _returnValue\d* =/);
     expect(chain).toMatch(/return _returnValue\d*/);
 
-    // store[k] = v — a dynamic path is unanalyzable → opaque, root commit
+    // store[k] = v — the path is imprecise but bounded to the store root
     const dyn = compile(
       `const store = { a: 1 };\nfunction C() { return <button onClick={(k) => { store[k] = 2; }}>go</button>; }`,
     );
-    expect(dyn).toContain('.markDirtySubtree("App")');
-    expect(dyn).toContain('opaque: ["./component.tsx#store"]');
+    expect(dyn).toContain('["./component.tsx#store"]');
+    expect(dyn).toContain('.commitWrites(');
+    expect(dyn).not.toContain('markDirtySubtree');
+    expect(dyn).not.toContain('opaque:');
   });
 
   it('compiles inline list rows to regions with row-scoped patterns (R7)', () => {

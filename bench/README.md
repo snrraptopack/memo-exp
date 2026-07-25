@@ -6,6 +6,7 @@ latest measurements, limits, and interpretation.
 | Suite | Command | Measures |
 |---|---|---|
 | [`dom`](./dom/) | `bun run bench` | End-to-end list operations in real Chromium |
+| [`effects`](./effects/) | `bun run bench:effects` | Production receiver-bounded versus root invalidation |
 | [`invalidation`](./invalidation/) | `bun run bench:invalidation` | Dirty-reason mask update-evaluation prototype |
 | [`linker`](./linker/) | `bun run bench:linker` | Cross-module compiler/linker throughput |
 

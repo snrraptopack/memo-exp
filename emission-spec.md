@@ -42,9 +42,11 @@ Everything below exists to make that sentence true.
 | **entity** | a mounted component instance: `{ id, parent, render }` in the runtime registry |
 | **`$` (slot cache)** | per-instance object holding the previous value of every dynamic slot |
 | **slot** | one dynamic expression in JSX (text interpolation, attribute, class condition, style) |
-| **write-set** | the list of variables a handler provably writes |
+| **write-set** | state paths an execution scope may have changed |
 | **access table** | the compile-time `readers` map: variable → entity-id patterns |
-| **opaque** | a variable whose read/write set the compiler cannot prove → root-subtree commit |
+| **exact effect** | a state path directly proven to change |
+| **bounded effect** | a conservative write boundary attached to a known receiver/argument path |
+| **unbounded effect** | an effect with no finite state receiver/argument boundary → root-subtree commit |
 | **root-subtree commit** | dirty the root entity and all descendants (Imba-equivalent fallback) |
 
 ## 3. Emission rules
@@ -182,8 +184,10 @@ button.onclick = () => {
 - A handler with no recognized write still invalidates its nearest entity:
   component, list row, or conditional region. This preserves the
   event-triggered rendering contract without widening to the mounted root.
-- If the write-set analysis is inconclusive for the handler body, the
-  write-set is the sentinel `OPAQUE` (§4.4) → root-subtree commit.
+- Receiver and argument effects that can be attached to a known state path are
+  bounded and routed through the access table (§4.4).
+- Only an effect with no finite state boundary is `UNBOUNDED` (§4.4) and emits
+  a root-subtree commit.
 
 ### R6 — Shared state stays plain; access table is emitted per module
 
@@ -197,7 +201,6 @@ installAccessTable(
       './state.ts#selectedId': ['App/SelectList/Row[*]', 'App/Header/Badge'],
       './state.ts#filter': ['App/Footer'],
     },
-    opaque: ['./state.ts#prefs'],
     params: {                       // see §5 — may be empty at launch
       './state.ts#selectedId': [
         { pattern: 'App/SelectList/Row[{payload.id}]', via: 'payload' },
@@ -414,10 +417,10 @@ const total = items.reduce(...);   // reads: items
 | `x = v`, `x += v`, `x -= v`, … | `[x]` |
 | `x++`, `x--`, `++x` | `[x]` |
 | `store.prop = v`, `delete store.prop` (static key) | `[store.prop]` |
-| `arr.push(v)`, `pop`, `splice`, `sort`, `shift`, `unshift` | `[arr]` |
-| `map.set(k,v)`, `map.delete(k)`, `set.add(v)`, `set.delete(x)` | `[map]`/`[set]` |
+| `receiver.anyMethod(...)` | bounded to `[receiver]` |
 | `Object.assign(store, { static: value })` | `[store.static]` |
 | local alias of any recognized target | preserves the target provenance |
+| visible helper parameter effect | append its relative path to the caller argument |
 | multiple of the above in one handler | union |
 
 ### 4.3 Locality classification
@@ -426,34 +429,50 @@ const total = items.reduce(...);   // reads: items
   component) → route: dirty the origin entity only. No table entry needed.
 - **Shared write**: target is module-level or outer-scope → route via table.
 
-### 4.4 Opaque triggers (→ root-subtree commit)
+### 4.4 Bounded and unbounded effects
 
-A variable is **opaque** when any of:
+The compiler does not classify method names. Every method call on a reactive
+receiver emits a bounded receiver effect:
 
-- dynamic member access: `obj[expr]` where `expr` is not a string/number literal
-- assignment through a destructuring with computed/rest patterns
-- the variable is passed by reference to a function the compiler cannot see
-  (third-party call, unanalyzed module function)
-- an alias is reassigned or extracted by destructuring and one exact target
-  can no longer be proved
-- `Object.assign` has a dynamic target or non-literal source
-- assignment inside a closure the compiler cannot attribute to a handler
+```ts
+items.push(x);             // bounded: items
+items.filter(fn);          // bounded: items
+store.items.custom();      // bounded: store.items
+```
 
-A handler whose write-set contains an opaque variable routes `OPAQUE` →
-`markDirtySubtree(rootId)`. **Never incorrect — only unscoped.**
+This is conservative but scoped. The access table invokes only observers of
+the receiver path. Their value guards suppress unchanged DOM writes. A pure
+method therefore costs reader update evaluation, not a root render or
+unconditional DOM work. Future dirty-reason masks may skip independent work
+inside those readers without changing this effect contract.
 
-Unclassified receiver methods do not imply a write. The recognized mutator
-set is a blacklist, not a purity whitelist: custom methods outside that set
-remain the author's semantic responsibility. Likewise, passing a member value
-such as `items.length` does not escape the `items` reference; direct reactive
-root arguments such as `thirdParty(items)` do trigger the opaque fallback.
+Visible helper summaries retain module paths and structured parameter-relative
+paths. For example, `function mutate(target) { target.value++ }` called as
+`mutate(store)` produces `store.value`. A direct reactive root passed to
+unknown code is bounded to that root for mutations completed in the analyzed
+call scope. Passing `items.length` passes its resulting value, not the `items`
+reference, and does not imply an `items` effect.
+
+Imprecise paths remain bounded whenever their root is known:
+
+- `store[key] = value` → `store`
+- `Object.assign(store, dynamicPatch)` → `store`
+- ambiguous aliases/destructuring with identifiable source roots → those roots
+- row-item receiver calls → the row, or the source list when the key may change
+
+`markDirtySubtree(rootId)` is reserved for calls/summaries whose effects cannot
+be attached to any finite receiver, argument, instance, row, or state root.
+Unresolved imported functions are the current common case. Factory-started or
+externally retained future callbacks remain lifecycle work; a commit after the
+current call cannot make an unknown future mutation observable.
 
 ### 4.5 Analysis boundary
 
 Current analysis is binding-aware across local aliases and module helper
-summaries. It keeps exact paths when the target is provable and falls back for
-mutable escapes instead of silently omitting a commit. Payload-parametrized
-patterns (§5) remain the precision mechanism for non-lexical row targets.
+summaries, including top-level function declarations and function/arrow
+variables. It keeps exact paths where provable and otherwise chooses the
+narrowest receiver/root boundary it can identify. Payload-parametrized patterns
+(§5) remain the precision mechanism for non-lexical row targets.
 
 ### 4.6 Cross-module state
 
@@ -489,8 +508,9 @@ onClick={() => setSelected(item.id)}
 The write is hidden behind a cross-file call. The compiler resolves it via
 **function summaries**: compiling `state.ts` records `setSelected → writes
 selectedId`; compiling the importer resolves the call through the summary.
-Linked summaries propagate through imported helper chains. An unresolved
-external call is **opaque** (→ root-subtree commit — correct, merely unscoped).
+Linked summaries propagate exact, bounded, and parameter-relative effects
+through imported helper chains. An unresolved external import is unbounded
+(→ root-subtree commit — correct, merely unscoped).
 
 **Canonical variable ids:** all table keys are module-qualified
 (`./state.ts#store.selectedId`), because two modules may both declare `count`.
@@ -688,7 +708,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R17 (compiler probes + compiled runtime execution).
+> Last full audit: R19 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
@@ -733,7 +753,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 ### 11.5 Multi-module, scale & engineering
 
 - `compileModules()` links imported state objects, live state reads, module
-  computeds, and exported mutator summaries. Components must still live in one
+  computeds, and exported exact/bounded function summaries. Components must
+  still live in one
   file; cross-file component imports are unsupported.
 - `rootId` collisions across modules; table-install ordering vs. mount order —
   untested.
@@ -746,6 +767,16 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R19 (receiver-bounded effects, compiler/helper-summaries.ts +
+  compiler/handlers.ts + compiler/linker.ts, tests/r19.test.ts):** method names
+  no longer encode mutation semantics. Every reactive receiver method call is
+  conservatively bounded to that receiver and routed only to its observers;
+  guarded updates absorb pure-call false positives. Visible helpers preserve
+  structured parameter-relative paths through local and cross-module calls.
+  Dynamic store paths and identifiable alias/destructuring roots remain
+  bounded. Root-subtree invalidation is reserved for genuinely unbounded
+  summaries such as unresolved imported functions.
+
 - **R18 (scoped event-boundary invalidation, compiler/handlers.ts +
   compiler/emit.ts, tests/r18.test.ts):** an event handler with no recognized
   write no longer becomes a no-op invalidation boundary. It dirties its
@@ -753,14 +784,13 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   rows invoke their local updater. The guarded update branch absorbs unchanged
   values. Known shared/local writes retain their existing precise routing.
 
-- **R17 (opaque mutation correctness, compiler/mutation-analysis.ts +
+- **R17 (conservative mutation correctness, compiler/mutation-analysis.ts +
   compiler/helper-summaries.ts + compiler/handlers.ts, tests/r17.test.ts):**
   local aliases retain binding-aware provenance; mutable reassignment and
-  destructuring fall back conservatively; `delete` and static
-  `Object.assign` emit exact keys while dynamic sources fall back; mutable
-  state passed to unknown calls or helper parameters cannot go stale. The
-  fallback dirties the root subtree only when precision is not provable;
-  ordinary direct and static-path writes keep table routing.
+  destructuring stay conservative; `delete` and static `Object.assign` emit
+  exact keys; mutable state passed to calls or helper parameters cannot go
+  stale. R19 subsequently narrowed identifiable conservative effects from
+  root-subtree fallback to receiver/root routing.
 
 - **Post-M5.10 review batch (src/access.ts + src/list.ts + compiler/analysis.ts
   + compiler/emit.ts, test/m58.test.ts):** three real-world correctness fixes
@@ -817,11 +847,10 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   dangerous SYNTAX is bounded and enumerable. Arbitrary method calls,
   unknown/imported/global functions, `new`, tagged templates, and
   local-mutating callbacks (`reduce((acc, t) => { acc.push(t); … }, [])`,
-  `(s, t) => (s += t.n, s)`) are all fine. The remaining blacklist covers
-  only what corrupts the state model itself: assignments/updates to
-  non-locals, mutator calls on state (`todos.sort(cmp)` — derive from a
-  copy), calls to module helpers KNOWN to write state (reuses the handler
-  write-analysis — a precise negative, not a whitelist), and await/yield.
+  `(s, t) => (s += t.n, s)`) are all fine. Rejected forms are direct
+  assignments/updates to non-locals, calls to module helpers known to perform
+  direct state writes, and await/yield. Receiver-method purity is an
+  author-owned derivation contract; the compiler has no method-name table.
   Such consts are compile ERRORS with the specific reason, never silent
   plain consts (read collection no longer early-exits on impure).
   Non-determinism (Date.now/Math.random) and side effects are the author's
@@ -937,9 +966,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   1. early `return` in a writing scope skipped its commit → commits are now
      inserted before *every* return of the scope (and at scope end);
   2. member-chain mutators (`store.items.push(x)`) emitted no commit and
-     polluted the table → root-aware mutator classification: let-root → write
-     to the variable, store → static dotted-path write, dynamic → opaque;
-     mutator callee chains are no longer registered as reads;
+     polluted the table → root-aware mutator classification was introduced;
+     R19 later replaced method classification with bounded receiver effects;
   3. read/write path granularity mismatch → the resolver now matches
      segment-wise: a write hits readers at equal, descendant, or ancestor
      dotted paths;

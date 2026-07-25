@@ -3,14 +3,13 @@
  * M3 — Origin-aware handler wrapping + the event log.
  * M4 — commitWrites() extracted: programmatic ops (non-DOM-event sources like
  *      websocket messages, timers, or benchmark scenarios) route their
- *      write-sets through the exact same table as event handlers.
+ *      effects through the exact same table as event handlers.
  *
- * handle() is what the M5 compiler wraps every user event handler in:
+ * handle() is the optional provenance-recording event boundary:
  *   1. run user code (plain assignments — no interception, no proxies)
  *   2. record provenance in the event log (origin, writes, timestamp)
- *   3. route the handler's STATIC write-set through the access table:
- *        - any opaque write -> root-subtree commit (Imba fallback)
- *        - otherwise        -> dirty exactly the resolved live readers
+ *   3. route the handler's static exact/bounded effects through the access
+ *      table; a table-level unbounded result selects the root subtree.
  *
  * The user never sees this. Their handler is a plain closure; the wrapper and
  * the write-set are compiler-generated.
@@ -38,7 +37,8 @@ export function clearEventLog(): void {
 }
 
 /**
- * Route a write-set through the static access table and dirty the readers.
+ * Route exact or bounded effects through the static access table and dirty
+ * their readers.
  * This is THE invalidation entry point — handlers and programmatic sources
  * share it, so there is exactly one routing code path in the runtime.
  */

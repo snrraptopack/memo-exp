@@ -32,7 +32,6 @@ import {
   isStoreObject,
   memberKey,
   memberRootName,
-  MUTATOR_METHODS,
   registerState,
   walkNodes,
   type Ctx,
@@ -101,9 +100,9 @@ function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
 
 /**
  * Top-level `function` declarations split by content: with JSX → component
- * (transformed), without → helper (left alone, summarized). M5.3: previously
- * every top-level function was treated as a component, so helpers were
- * impossible and the error message blamed the wrong rule.
+ * (transformed), without → helper (left alone, summarized). Top-level arrow
+ * and function-expression variables without JSX are helpers as well. M5.3
+ * previously treated every declaration as a component.
  */
 function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
   programPath.traverse({
@@ -138,6 +137,17 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
         }
       }
       p.skip(); // nested functions are never top-level components/helpers
+    },
+    VariableDeclarator(p) {
+      if (!p.scope.path.isProgram() || !t.isIdentifier(p.node.id)) return;
+      const init = p.get('init');
+      if (
+        (init.isArrowFunctionExpression() || init.isFunctionExpression()) &&
+        !containsJsx(init)
+      ) {
+        ctx.helpers.set(p.node.id.name, init);
+        init.skip();
+      }
     },
   });
 }
@@ -268,23 +278,15 @@ function analyzeComponent(ctx: Ctx, name: string): void {
 // shared read/write classifiers
 // ---------------------------------------------------------------------
 
-/** Is this member expression the callee of a mutator call (store.items.push)? */
-function isMutatorCallee(m: NodePath<t.MemberExpression>): boolean {
+/** Is this complete member expression being invoked (`store.items.method()`)? */
+function isMemberCallCallee(m: NodePath<t.MemberExpression>): boolean {
   const parent = m.parentPath;
-  if (!parent.isCallExpression() || parent.node.callee !== m.node) return false;
-  const prop = m.node.property;
-  const pn =
-    !m.node.computed && t.isIdentifier(prop)
-      ? prop.name
-      : m.node.computed && t.isStringLiteral(prop)
-        ? prop.value
-        : null;
-  return pn !== null && MUTATOR_METHODS.has(pn);
+  return parent.isCallExpression() && parent.node.callee === m.node;
 }
 
 /**
  * The dotted read key of a store member expression ('store.items.length'),
- * or null when it is not a read (write target, mutator callee, non-store).
+ * or null when it is not a read (write target, method callee, non-store).
  */
 function storeReadKey(ctx: Ctx, m: NodePath<t.MemberExpression>): string | null {
   const key = memberKey(m.node);
@@ -299,7 +301,7 @@ function storeReadKey(ctx: Ctx, m: NodePath<t.MemberExpression>): string | null 
   ) {
     return null; // write target, not a read
   }
-  if (isMutatorCallee(m)) return null; // the object chain registers itself
+  if (isMemberCallCallee(m)) return null; // the object chain registers itself
   return key;
 }
 
@@ -480,9 +482,8 @@ function collectReads(ctx: Ctx): void {
  * gates what propagates downstream; keeping it a pure function of state is
  * the author's responsibility (same contract as Vue computed / Svelte $:).
  *
- * The blacklist covers only what would corrupt the state model itself:
+ * Rejected syntax covers only what would corrupt the state model itself:
  *   - assignments / updates to non-locals (writes belong in handlers)
- *   - mutator calls on state (mutating a source inside its own derivation)
  *   - calls to module helpers KNOWN to write state (reuses the same write
  *     analysis handlers rely on — a precise negative, not a whitelist)
  *   - await / yield (derivations must be synchronous)
@@ -551,29 +552,7 @@ export function analyzeComputed(ctx: Ctx, expr: t.Node): ComputedAnalysis {
     }
     if (t.isCallExpression(n)) {
       const c = n.callee;
-      if (t.isMemberExpression(c)) {
-        const pn =
-          !c.computed && t.isIdentifier(c.property)
-            ? c.property.name
-            : c.computed && t.isStringLiteral(c.property)
-              ? c.property.value
-              : null;
-        if (pn !== null && MUTATOR_METHODS.has(pn)) {
-          const root = t.isIdentifier(c.object)
-            ? c.object.name
-            : t.isMemberExpression(c.object)
-              ? memberRootName(c.object)
-              : null;
-          // mutating LOCALS is fine (reduce accumulators); mutating the
-          // derivation's own source is not
-          if (root !== null && !locals.has(root) && ctx.state.has(root)) {
-            fail(
-              `calls '${pn}' on state '${root}' — mutating a source inside its own derivation; derive from a copy instead`,
-            );
-          }
-        }
-        // every other member call is fine — any object, any method
-      } else if (
+      if (
         t.isIdentifier(c) &&
         (ctx.helpers.has(c.name) || ctx.importedFunctions.has(c.name))
       ) {
@@ -582,7 +561,7 @@ export function analyzeComputed(ctx: Ctx, expr: t.Node): ComputedAnalysis {
         if (sum.writes.size > 0) {
           for (const w of sum.writes) reads.add(w); // ensure the error triggers
           fail(`calls helper '${c.name}' which writes state — writes belong in handlers`);
-        } else if (sum.opaque && ctx.helpers.has(c.name)) {
+        } else if (sum.unbounded && ctx.helpers.has(c.name)) {
           fail(`calls recursive helper '${c.name}' which cannot be analyzed`);
         }
       }
@@ -723,23 +702,6 @@ function scanInstanceComputeds(ctx: Ctx): void {
             : t.isMemberExpression(node)
               ? memberRootName(node)
               : null;
-        const noteCall = (p: NodePath<t.CallExpression>): void => {
-          const callee = p.node.callee;
-          if (!t.isMemberExpression(callee)) return;
-          const prop = callee.property;
-          const method =
-            !callee.computed && t.isIdentifier(prop)
-              ? prop.name
-              : callee.computed && t.isStringLiteral(prop)
-                ? prop.value
-                : null;
-          if (method === null || !MUTATOR_METHODS.has(method)) return;
-          const root = mutationRoot(callee.object);
-          if (root !== null && bindingIsReactive(root, p)) {
-            reason = `calls '${method}' on reactive state '${root}'`;
-          }
-        };
-
         if (initPath.isReferencedIdentifier()) noteIdentifier(initPath);
         if (initPath.isAssignmentExpression()) {
           const root = mutationRoot(initPath.node.left);
@@ -751,8 +713,6 @@ function scanInstanceComputeds(ctx: Ctx): void {
           if (root !== null && bindingIsReactive(root, initPath)) {
             reason = 'contains an update (++/--) to reactive state';
           }
-        } else if (initPath.isCallExpression()) {
-          noteCall(initPath);
         } else if (initPath.isAwaitExpression()) {
           reason = 'uses await; per-instance derivations must be synchronous';
         } else if (initPath.isYieldExpression()) {
@@ -773,9 +733,6 @@ function scanInstanceComputeds(ctx: Ctx): void {
             if (root !== null && bindingIsReactive(root, p)) {
               reason = 'contains an update (++/--) to reactive state';
             }
-          },
-          CallExpression(p) {
-            noteCall(p);
           },
           AwaitExpression() {
             reason = 'uses await; per-instance derivations must be synchronous';
@@ -946,7 +903,7 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
     for (const key of info.reads) add(key, [entityId]);
   }
 
-  if (ctx.readers.size === 0 && ctx.opaqueVars.size === 0) return null;
+  if (ctx.readers.size === 0) return null;
 
   const readerProps = [...ctx.readers.entries()]
     .sort(([a], [b]) => (a < b ? -1 : 1))
@@ -956,26 +913,18 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
         t.arrayExpression([...set].sort().map((s) => t.stringLiteral(s))),
       ),
     );
-  const tableProps: t.ObjectProperty[] = [
-    t.objectProperty(t.identifier('readers'), t.objectExpression(readerProps)),
-  ];
-  if (ctx.opaqueVars.size > 0) {
-    tableProps.push(
-      t.objectProperty(
-        t.identifier('opaque'),
-        t.arrayExpression(
-          [...ctx.opaqueVars]
-            .map((s) => canonicalStateKey(ctx, s))
-            .sort()
-            .map((s) => t.stringLiteral(s)),
-        ),
-      ),
-    );
-  }
   return t.expressionStatement(
     t.callExpression(
       md(ctx, 'installAccessTable'),
-      [t.objectExpression(tableProps), t.stringLiteral(ctx.rootId)],
+      [
+        t.objectExpression([
+          t.objectProperty(
+            t.identifier('readers'),
+            t.objectExpression(readerProps),
+          ),
+        ]),
+        t.stringLiteral(ctx.rootId),
+      ],
     ),
   );
 }

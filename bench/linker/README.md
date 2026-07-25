@@ -18,9 +18,9 @@ is the median of three independent processes.
 
 | Modules | Source | Prelinked transforms | Linked graph | Linked/module | Overhead |
 |---:|---:|---:|---:|---:|---:|
-| 2 | 0.3 KiB | 33.1 ms | 121.8 ms | 60.9 ms | 3.32x |
-| 8 | 1.1 KiB | 95.6 ms | 241.8 ms | 30.2 ms | 2.63x |
-| 16 | 2.3 KiB | 140.8 ms | 453.4 ms | 28.3 ms | 3.30x |
+| 2 | 0.3 KiB | 42.2 ms | 130.7 ms | 65.4 ms | 3.10x |
+| 8 | 1.1 KiB | 126.0 ms | 329.7 ms | 41.2 ms | 2.62x |
+| 16 | 2.3 KiB | 173.3 ms | 543.8 ms | 34.0 ms | 3.14x |
 
 The prelinked baseline parses and transforms the same sources with `compile()`,
 stable module IDs, and the same canonical import metadata supplied directly.
@@ -48,8 +48,16 @@ process noise (`103.3`, `249.0`, and `404.1` ms). These measurements support no
 performance claim in either direction; collision correctness is covered by
 `tests/r16.test.ts`.
 
-The R17 opaque-provenance checkpoint produced mixed linked medians versus that
+The R17 conservative-provenance checkpoint produced mixed linked medians versus that
 run: `121.8`, `241.8`, and `453.4` ms. The 2- and 16-module cases were slower
 while the 8-module case was slightly faster; 16-module linked samples ranged
 from `353.9` to `464.4` ms across processes. This supports no optimization
 claim and reinforces the dependency-worklist priority above.
+
+The R19 bounded-effect summary checkpoint serializes exact, receiver-bounded,
+and structured parameter-relative effects. Linked medians were `130.7`,
+`329.7`, and `543.8` ms; process ranges were `130.5–133.7`, `322.3–342.6`,
+and `531.6–577.4` ms. Absolute times rose from R17, but prelinked medians rose
+similarly. Normalized linker overhead is now `3.10x`, `2.62x`, and `3.14x`
+versus R17's `3.32x`, `2.63x`, and `3.30x`. This supports no speedup or
+regression claim; it records the cost after changing the summary contract.

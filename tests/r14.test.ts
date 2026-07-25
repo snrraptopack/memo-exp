@@ -84,16 +84,15 @@ describe('R14 - code generation', () => {
     expect(timer).toMatch(/\.markDirty\(_id\d*\)/);
   });
 
-  it('rejects local derivations that mutate their reactive sources', () => {
-    expect(() =>
-      compile(`
+  it('does not infer local-derivation method semantics from method names', () => {
+    const code = compile(`
         function App() {
           let items = [2, 1];
           const sorted = items.sort();
           return <p>{sorted.join(',')}</p>;
         }
-      `),
-    ).toThrowError(/local const 'sorted'.*calls 'sort' on reactive state 'items'/);
+      `);
+    expect(code).toContain('sorted = items.sort()');
   });
 });
 

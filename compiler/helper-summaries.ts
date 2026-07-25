@@ -1,22 +1,23 @@
 /**
  * helper-summaries.ts - interprocedural effects for module-local helpers.
  *
- * Summaries preserve exact module write keys where provenance is provable.
- * Parameter mutations, dynamic paths, recursive calls, and mutable values
- * passed to unknown code are marked opaque for conservative callers.
+ * Summaries distinguish exact writes from effects conservatively bounded to
+ * a receiver. Parameter receiver effects are retained by argument position,
+ * so callers can map them back to their own state. Only effects with no
+ * finite receiver/argument boundary are unbounded.
  */
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   memberKey,
-  MUTATOR_METHODS,
   type Ctx,
   type FnSummary,
 } from './context';
 import {
   AliasTracker,
   callArgumentExpressions,
+  extendOrigin,
   memberName,
   moduleOrigin,
   staticAssignedKeys,
@@ -32,21 +33,34 @@ export function summarizeHelper(
   const cached = ctx.helperSummaries.get(name);
   if (cached) return cached;
   if (visiting.has(name)) {
-    return { reads: new Set(), writes: new Set(), opaque: true };
+    return {
+      reads: new Set(),
+      writes: new Set(),
+      boundedWrites: new Set(),
+      parameterWrites: [],
+      unbounded: true,
+    };
   }
 
   const path = ctx.helpers.get(name)!;
   const locals = new Set<string>();
-  const parameters = new Set(
-    path.node.params.filter(t.isIdentifier).map((param) => param.name),
+  const parameterIndexes = new Map(
+    path.node.params.flatMap((param, index) =>
+      t.isIdentifier(param) ? [[param.name, index] as const] : [],
+    ),
   );
   const summary: FnSummary = {
     reads: new Set(),
     writes: new Set(),
-    opaque: false,
+    boundedWrites: new Set(),
+    parameterWrites: [],
+    unbounded: false,
   };
   const aliases = new AliasTracker((bindingName, binding) => {
-    if (parameters.has(bindingName) && binding?.scope.block === path.node) {
+    if (
+      parameterIndexes.has(bindingName) &&
+      binding?.scope.block === path.node
+    ) {
       return { locality: 'prop', root: bindingName, key: bindingName };
     }
     const kind = ctx.state.get(bindingName);
@@ -74,22 +88,48 @@ export function summarizeHelper(
     },
   });
 
-  const markOpaque = (origin: ReactiveOrigin): void => {
-    summary.opaque = true;
-    if (origin.locality !== 'module') return;
-    summary.writes.add(origin.root);
-    ctx.opaqueVars.add(origin.root);
+  const addParameterWrite = (index: number, path: string[]): void => {
+    if (
+      summary.parameterWrites.some(
+        (effect) =>
+          effect.index === index &&
+          effect.path.length === path.length &&
+          effect.path.every((part, partIndex) => part === path[partIndex]),
+      )
+    ) {
+      return;
+    }
+    summary.parameterWrites.push({ index, path });
+  };
+
+  const noteReceiverEffect = (origin: ReactiveOrigin): void => {
+    if (origin.locality === 'module') {
+      summary.boundedWrites.add(origin.key ?? origin.root);
+      return;
+    }
+    if (origin.locality === 'prop') {
+      const index = parameterIndexes.get(origin.root);
+      if (index !== undefined) {
+        const path =
+          origin.key === null ? [] : origin.key.split('.').slice(1);
+        addParameterWrite(index, path);
+        return;
+      }
+    }
+    summary.unbounded = true;
   };
 
   const noteOriginWrite = (origin: ReactiveOrigin): void => {
-    if (origin.locality !== 'module') {
-      summary.opaque = true;
+    if (origin.locality === 'prop') {
+      noteReceiverEffect(origin);
+    } else if (origin.locality !== 'module') {
+      summary.unbounded = true;
     } else if (origin.stateKind !== 'store') {
       summary.writes.add(origin.root);
     } else if (origin.key !== null && origin.key.includes('.')) {
       summary.writes.add(origin.key);
     } else {
-      markOpaque(origin);
+      summary.boundedWrites.add(origin.root);
     }
   };
 
@@ -101,14 +141,14 @@ export function summarizeHelper(
     if (origin !== null) noteOriginWrite(origin);
   };
 
-  const markOpaqueArguments = (
+  const noteBoundedArguments = (
     nodePath: NodePath,
     args: t.CallExpression['arguments'],
   ): void => {
     for (const expression of callArgumentExpressions(args)) {
       if (!t.isIdentifier(expression)) continue;
       const origin = aliases.resolveExpression(nodePath.scope, expression);
-      if (origin !== null) markOpaque(origin);
+      if (origin !== null) noteReceiverEffect(origin);
     }
   };
 
@@ -124,7 +164,7 @@ export function summarizeHelper(
             declarator.node.init as t.Expression,
           )
         ) {
-          markOpaque(origin);
+          noteReceiverEffect(origin);
         }
       }
     },
@@ -137,7 +177,7 @@ export function summarizeHelper(
               assignment.scope,
               assignment.node.right,
             );
-            if (origin !== null) markOpaque(origin);
+            if (origin !== null) noteReceiverEffect(origin);
           }
         } else if (ctx.state.has(left.name)) {
           summary.writes.add(left.name);
@@ -151,7 +191,7 @@ export function summarizeHelper(
             assignment.node.right,
           )
         ) {
-          markOpaque(origin);
+          noteReceiverEffect(origin);
         }
       }
     },
@@ -187,32 +227,30 @@ export function summarizeHelper(
               ? aliases.resolveExpression(call.scope, targetArg)
               : null;
           if (target !== null) {
-            if (
-              target.locality === 'module' &&
-              target.stateKind === 'store'
-            ) {
-              const keys = staticAssignedKeys(
-                target,
-                call.node.arguments.slice(1),
-              );
-              if (keys === null) markOpaque(target);
-              else for (const key of keys) summary.writes.add(key);
+            const keys = staticAssignedKeys(
+              target,
+              call.node.arguments.slice(1),
+            );
+            if (keys === null) {
+              noteReceiverEffect(target);
             } else {
-              noteOriginWrite(target);
+              for (const key of keys) {
+                noteOriginWrite({ ...target, key });
+              }
             }
           }
           return;
         }
 
-        if (method !== null && MUTATOR_METHODS.has(method)) {
-          if (t.isExpression(callee.object)) {
-            const origin = aliases.resolveExpression(call.scope, callee.object);
-            if (origin !== null) noteOriginWrite(origin);
-          }
-          return;
+        const receiver =
+          t.isExpression(callee.object)
+            ? aliases.resolveExpression(call.scope, callee.object)
+            : null;
+        if (receiver !== null) {
+          noteReceiverEffect(receiver);
+        } else {
+          noteBoundedArguments(call, call.node.arguments);
         }
-
-        markOpaqueArguments(call, call.node.arguments);
         return;
       }
 
@@ -225,13 +263,23 @@ export function summarizeHelper(
           summarizeHelper(ctx, callee.name, visiting);
         for (const read of nested.reads) summary.reads.add(read);
         for (const write of nested.writes) summary.writes.add(write);
-        if (nested.opaque) {
-          summary.opaque = true;
-          markOpaqueArguments(call, call.node.arguments);
+        for (const write of nested.boundedWrites) {
+          summary.boundedWrites.add(write);
+        }
+        for (const effect of nested.parameterWrites) {
+          const argument = call.node.arguments[effect.index];
+          if (argument === undefined || !t.isExpression(argument)) continue;
+          const origin = aliases.resolveExpression(call.scope, argument);
+          if (origin !== null) {
+            noteReceiverEffect(extendOrigin(origin, effect.path));
+          }
+        }
+        if (nested.unbounded) {
+          summary.unbounded = true;
         }
         return;
       }
-      markOpaqueArguments(call, call.node.arguments);
+      noteBoundedArguments(call, call.node.arguments);
     },
     Identifier(identifier) {
       const identifierName = identifier.node.name;
@@ -272,15 +320,11 @@ function storeReadKey(
   ) {
     return null;
   }
-  if (isMutatorCallee(member)) return null;
+  if (isMemberCallCallee(member)) return null;
   return key;
 }
 
-function isMutatorCallee(member: NodePath<t.MemberExpression>): boolean {
+function isMemberCallCallee(member: NodePath<t.MemberExpression>): boolean {
   const parent = member.parentPath;
-  if (!parent.isCallExpression() || parent.node.callee !== member.node) {
-    return false;
-  }
-  const method = memberName(member.node);
-  return method !== null && MUTATOR_METHODS.has(method);
+  return parent.isCallExpression() && parent.node.callee === member.node;
 }

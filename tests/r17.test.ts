@@ -1,6 +1,6 @@
 /**
- * R17 proves conservative mutation correctness for aliases, reflective
- * writes, unknown callees, mutable aliases, and destructured references.
+ * R17 proves bounded mutation correctness for aliases, reflective writes,
+ * visible callees, mutable aliases, and destructured references.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -79,7 +79,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
 
 function importCompiled(): Promise<any> {
-  return import('./fixtures/out/r17-opaque.compiled.ts');
+  const specifier = './fixtures/out/r17-bounded.compiled.ts';
+  return import(specifier);
 }
 
 function button(id: string): HTMLButtonElement {
@@ -90,11 +91,11 @@ function output(id: string): string | null {
   return document.querySelector<HTMLOutputElement>(`#${id}`)!.textContent;
 }
 
-describe('R17 - opaque mutation correctness', () => {
+describe('R17 - bounded mutation correctness', () => {
   beforeAll(async () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(
-      join(outDir, 'r17-opaque.compiled.ts'),
+      join(outDir, 'r17-bounded.compiled.ts'),
       compile(source, { runtimePath: '../out-runtime' }),
     );
     resetAccessTable();
@@ -130,7 +131,7 @@ describe('R17 - opaque mutation correctness', () => {
     expect(output('items')).toBe('2');
   });
 
-  it('falls back for a mutable value extracted by destructuring', () => {
+  it('bounds a mutable value extracted by destructuring to its source store', () => {
     button('destructure').click();
     expect(output('nested')).toBe('1');
   });
@@ -142,7 +143,7 @@ describe('R17 - opaque mutation correctness', () => {
     expect(output('value')).toBe('2');
   });
 
-  it('falls back when mutable state escapes to an opaque helper parameter', () => {
+  it('maps visible helper parameter writes back to the caller path', () => {
     button('unknown').click();
     expect(output('value')).toBe('1');
   });
@@ -152,11 +153,11 @@ describe('R17 - opaque mutation correctness', () => {
     expect(output('removable')).toBe('missing');
   });
 
-  it('emits exact keys where provable and subtree fallback where not', () => {
+  it('emits exact and receiver-bounded keys without subtree fallback', () => {
     const code = compile(source, { runtimePath: '../out-runtime' });
-    expect(code).toMatch(/\["[^"]+#items"\]/);
+    expect(code).toContain('"./component.tsx#items"');
     expect(code).toMatch(/\["[^"]+#store\.value"\]/);
-    expect(code).toContain('markDirtySubtree("App")');
+    expect(code).not.toContain('markDirtySubtree');
   });
 
 });

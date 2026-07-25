@@ -57,7 +57,9 @@ function measure(modules: Record<string, string>): Row {
             type: 'function',
             reads: [`${stateId}#value`],
             writes: [`${stateId}#value`],
-            opaque: false,
+            boundedWrites: [],
+            parameterWrites: [],
+            unbounded: false,
           },
         },
       });

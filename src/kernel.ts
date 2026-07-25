@@ -210,9 +210,9 @@ export function undirty(id: EntityId): void {
 }
 
 /**
- * Mark an entity and ALL its descendants dirty — the "root commit" fallback
- * for opaque state (spec §4.5 fallback rule). Equivalent to Imba re-rendering
- * from the mounted root: correct under any circumstance, just not scoped.
+ * Mark an entity and ALL its descendants dirty — the fallback for an
+ * unbounded effect (spec §4.4). Equivalent to re-rendering from the mounted
+ * root: correct under any circumstance, just not scoped.
  *
  * NOTE: prefix scan (rare fallback path); teardown uses the children links.
  */
