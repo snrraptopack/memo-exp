@@ -159,19 +159,27 @@ function TodoItem(props, _id) {
   };
 }
 export function TodoApp(_id2, _parent) {
-  let _slot5, _slot6, _slot7, _value2;
+  let _slot5, _slot6, _slot7, _slot8, _value2;
+  let timer = 0;
+  setInterval(() => {
+    timer++;
+  }, 1000);
   const _update2 = () => {
-    if (_slot5 !== (_value2 = totalCount)) {
+    if (_slot5 !== (_value2 = timer)) {
       _slot5 = _value2;
-      _text8.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+      _text6.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    if (_slot6 !== (_value2 = activeCount)) {
+    if (_slot6 !== (_value2 = totalCount)) {
       _slot6 = _value2;
-      _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+      _text9.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    if (_slot7 !== (_value2 = completedCount)) {
+    if (_slot7 !== (_value2 = activeCount)) {
       _slot7 = _value2;
-      _text10.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+      _text1.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+    }
+    if (_slot8 !== (_value2 = completedCount)) {
+      _slot8 = _value2;
+      _text11.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
     _region.reconcile(todos);
   };
@@ -180,55 +188,61 @@ export function TodoApp(_id2, _parent) {
     parent: _parent,
     render: _update2
   });
-  const _text5 = document.createTextNode("⚡ Advanced Reactive Todo App");
+  const _text5 = document.createTextNode("⚡ Advanced Reactive Todo App timer-");
+  const _text6 = document.createTextNode("");
+  if (_slot5 !== (_value2 = timer)) {
+    _slot5 = _value2;
+    _text6.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+  }
   const _h = document.createElement("h1");
   _h.appendChild(_text5);
-  const _text6 = document.createTextNode("Powered by Array, Set & Map Collections");
+  _h.appendChild(_text6);
+  const _text7 = document.createTextNode("Powered by Array, Set & Map Collections");
   const _p = document.createElement("p");
   _p.className = "subtitle";
-  _p.appendChild(_text6);
-  const _text7 = document.createTextNode("Total: ");
-  const _text8 = document.createTextNode("");
-  if (_slot5 !== (_value2 = totalCount)) {
-    _slot5 = _value2;
-    _text8.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+  _p.appendChild(_text7);
+  const _text8 = document.createTextNode("Total: ");
+  const _text9 = document.createTextNode("");
+  if (_slot6 !== (_value2 = totalCount)) {
+    _slot6 = _value2;
+    _text9.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
   }
   const _strong = document.createElement("strong");
-  _strong.appendChild(_text8);
+  _strong.appendChild(_text9);
   const _div2 = document.createElement("div");
   _div2.className = "stat-pill";
-  _div2.appendChild(_text7);
+  _div2.appendChild(_text8);
   _div2.appendChild(_strong);
-  const _text9 = document.createTextNode("Active: ");
-  const _text0 = document.createTextNode("");
-  if (_slot6 !== (_value2 = activeCount)) {
-    _slot6 = _value2;
-    _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+  const _text0 = document.createTextNode("Active: ");
+  const _text1 = document.createTextNode("");
+  if (_slot7 !== (_value2 = activeCount)) {
+    _slot7 = _value2;
+    _text1.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
   }
   const _strong2 = document.createElement("strong");
-  _strong2.appendChild(_text0);
+  _strong2.appendChild(_text1);
   const _div3 = document.createElement("div");
   _div3.className = "stat-pill";
-  _div3.appendChild(_text9);
+  _div3.appendChild(_text0);
   _div3.appendChild(_strong2);
-  const _text1 = document.createTextNode("Completed: ");
-  const _text10 = document.createTextNode("");
-  if (_slot7 !== (_value2 = completedCount)) {
-    _slot7 = _value2;
-    _text10.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+  const _text10 = document.createTextNode("Completed: ");
+  const _text11 = document.createTextNode("");
+  if (_slot8 !== (_value2 = completedCount)) {
+    _slot8 = _value2;
+    _text11.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
   }
   const _strong3 = document.createElement("strong");
-  _strong3.appendChild(_text10);
+  _strong3.appendChild(_text11);
   const _div4 = document.createElement("div");
   _div4.className = "stat-pill";
-  _div4.appendChild(_text1);
+  _div4.appendChild(_text10);
   _div4.appendChild(_strong3);
   const _div5 = document.createElement("div");
   _div5.className = "stats-bar";
   _div5.appendChild(_div2);
   _div5.appendChild(_div3);
   _div5.appendChild(_div4);
-  const _text11 = document.createTextNode("➕ Add Task");
+  const _text12 = document.createTextNode("➕ Add Task");
   const _button = document.createElement("button");
   _button.onclick = () => {
     const newId = Date.now();
@@ -239,15 +253,15 @@ export function TodoApp(_id2, _parent) {
     categoryMap.set(newId, 'General');
     _MD.commitWrites(_WRITES_3);
   };
-  _button.appendChild(_text11);
-  const _text12 = document.createTextNode("🧹 Clear Completed");
+  _button.appendChild(_text12);
+  const _text13 = document.createTextNode("🧹 Clear Completed");
   const _button2 = document.createElement("button");
   _button2.onclick = () => {
     todos = todos.filter(t => !completedSet.has(t.id));
     completedSet.clear();
     _MD.commitWrites(_WRITES_4);
   };
-  _button2.appendChild(_text12);
+  _button2.appendChild(_text13);
   const _div6 = document.createElement("div");
   _div6.className = "actions";
   _div6.appendChild(_button);

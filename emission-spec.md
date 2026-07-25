@@ -179,6 +179,9 @@ button.onclick = () => {
 - Writes in async continuations and nested timer/promise callbacks commit in
   their own function scope. Component-local helpers reachable from a handler
   are analyzed transitively.
+- A handler with no recognized write still invalidates its nearest entity:
+  component, list row, or conditional region. This preserves the
+  event-triggered rendering contract without widening to the mounted root.
 - If the write-set analysis is inconclusive for the handler body, the
   write-set is the sentinel `OPAQUE` (§4.4) → root-subtree commit.
 
@@ -404,15 +407,17 @@ const total = items.reduce(...);   // reads: items
 <span>{total}</span>               // reads: total → transitively items
 ```
 
-### 4.2 Writes (launch-recognized set)
+### 4.2 Recognized writes
 
 | pattern | write-set |
 |---|---|
 | `x = v`, `x += v`, `x -= v`, … | `[x]` |
 | `x++`, `x--`, `++x` | `[x]` |
-| `obj.prop = v` (static key) | `[obj]` |
+| `store.prop = v`, `delete store.prop` (static key) | `[store.prop]` |
 | `arr.push(v)`, `pop`, `splice`, `sort`, `shift`, `unshift` | `[arr]` |
 | `map.set(k,v)`, `map.delete(k)`, `set.add(v)`, `set.delete(x)` | `[map]`/`[set]` |
+| `Object.assign(store, { static: value })` | `[store.static]` |
+| local alias of any recognized target | preserves the target provenance |
 | multiple of the above in one handler | union |
 
 ### 4.3 Locality classification
@@ -429,17 +434,26 @@ A variable is **opaque** when any of:
 - assignment through a destructuring with computed/rest patterns
 - the variable is passed by reference to a function the compiler cannot see
   (third-party call, unanalyzed module function)
+- an alias is reassigned or extracted by destructuring and one exact target
+  can no longer be proved
+- `Object.assign` has a dynamic target or non-literal source
 - assignment inside a closure the compiler cannot attribute to a handler
 
 A handler whose write-set contains an opaque variable routes `OPAQUE` →
 `markDirtySubtree(rootId)`. **Never incorrect — only unscoped.**
 
-### 4.5 Analysis levels (ship staging)
+Unclassified receiver methods do not imply a write. The recognized mutator
+set is a blacklist, not a purity whitelist: custom methods outside that set
+remain the author's semantic responsibility. Likewise, passing a member value
+such as `items.length` does not escape the `items` reference; direct reactive
+root arguments such as `thirdParty(items)` do trigger the opaque fallback.
 
-- **L1 (launch):** §4.2 table, locality classification, opaque triggers.
-  Everything unrecognized → opaque.
-- **L2 (later):** alias tracking (`const a = items; a.push(x)`), cross-function
-  write propagation within the module, payload-parametrized patterns (§5).
+### 4.5 Analysis boundary
+
+Current analysis is binding-aware across local aliases and module helper
+summaries. It keeps exact paths when the target is provable and falls back for
+mutable escapes instead of silently omitting a commit. Payload-parametrized
+patterns (§5) remain the precision mechanism for non-lexical row targets.
 
 ### 4.6 Cross-module state
 
@@ -674,7 +688,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R14 (compiler probes + runtime execution + benchmark).
+> Last full audit: R17 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
@@ -697,18 +711,13 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 - `try/catch/finally` in handlers — commits are inserted before `return`s and
   at scope end; an exception mid-handler skips the commit (writes before the
-  throw stay uncommitted). Documented behavior, not a crash.
-- `delete store.x`, `Object.assign(store, …)` — untracked writes.
-- Reads in helper *calls* are summarized (11.1.7); reads through aliasing
-  (`const a = items; a.push(x)`) are not — L2 per §4.5.
+  throw stay uncommitted). Exception-path semantics require a separate design
+  and performance decision.
 - Timers/subscriptions registered directly during factory initialization are
   not instrumented. Only callbacks reachable from an analyzed handler/helper
   currently receive commits.
 - R14 rejects direct writes in local derivations, but does not yet fold a
   component-local helper's write summary into derivation purity checking.
-- Generated child-result bindings are hygienic; the remaining fixed internal
-  names (`id`, `parent`, `update`, `$t`, slot/node names) still need one
-  compiler-wide allocator before arbitrary user bindings are collision-proof.
 - Over-invalidation note: a scope's commit fires even when its writes were
   skipped by an `if` — safe direction, absorbed by setter guards.
 
@@ -736,6 +745,22 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   compile-time perf on large modules.
 
 ### 11.6 Resolved (history)
+
+- **R18 (scoped event-boundary invalidation, compiler/handlers.ts +
+  compiler/emit.ts, tests/r18.test.ts):** an event handler with no recognized
+  write no longer becomes a no-op invalidation boundary. It dirties its
+  nearest registered component, inline row, or conditional region; lightweight
+  rows invoke their local updater. The guarded update branch absorbs unchanged
+  values. Known shared/local writes retain their existing precise routing.
+
+- **R17 (opaque mutation correctness, compiler/mutation-analysis.ts +
+  compiler/helper-summaries.ts + compiler/handlers.ts, tests/r17.test.ts):**
+  local aliases retain binding-aware provenance; mutable reassignment and
+  destructuring fall back conservatively; `delete` and static
+  `Object.assign` emit exact keys while dynamic sources fall back; mutable
+  state passed to unknown calls or helper parameters cannot go stale. The
+  fallback dirties the root subtree only when precision is not provable;
+  ordinary direct and static-path writes keep table routing.
 
 - **Post-M5.10 review batch (src/access.ts + src/list.ts + compiler/analysis.ts
   + compiler/emit.ts, test/m58.test.ts):** three real-world correctness fixes

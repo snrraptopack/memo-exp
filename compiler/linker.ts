@@ -12,8 +12,9 @@ import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { runAnalysis, summarizeHelper } from './analysis';
+import { runAnalysis } from './analysis';
 import { compile } from './compile';
+import { summarizeHelper } from './helper-summaries';
 import {
   canonicalStateKey,
   createCtx,

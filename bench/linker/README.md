@@ -18,9 +18,9 @@ is the median of three independent processes.
 
 | Modules | Source | Prelinked transforms | Linked graph | Linked/module | Overhead |
 |---:|---:|---:|---:|---:|---:|
-| 2 | 0.3 KiB | 33.3 ms | 103.3 ms | 51.6 ms | 2.94x |
-| 8 | 1.1 KiB | 98.4 ms | 249.0 ms | 31.1 ms | 2.66x |
-| 16 | 2.3 KiB | 133.9 ms | 404.1 ms | 25.3 ms | 3.09x |
+| 2 | 0.3 KiB | 33.1 ms | 121.8 ms | 60.9 ms | 3.32x |
+| 8 | 1.1 KiB | 95.6 ms | 241.8 ms | 30.2 ms | 2.63x |
+| 16 | 2.3 KiB | 140.8 ms | 453.4 ms | 28.3 ms | 3.30x |
 
 The prelinked baseline parses and transforms the same sources with `compile()`,
 stable module IDs, and the same canonical import metadata supplied directly.
@@ -47,3 +47,9 @@ reservation walk per final transform. Compared with the previous linked medians
 process noise (`103.3`, `249.0`, and `404.1` ms). These measurements support no
 performance claim in either direction; collision correctness is covered by
 `tests/r16.test.ts`.
+
+The R17 opaque-provenance checkpoint produced mixed linked medians versus that
+run: `121.8`, `241.8`, and `453.4` ms. The 2- and 16-module cases were slower
+while the 8-module case was slightly faster; 16-module linked samples ranged
+from `353.9` to `464.4` ms across processes. This supports no optimization
+claim and reinforces the dependency-worklist priority above.

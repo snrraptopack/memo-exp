@@ -40,7 +40,11 @@ export function AsyncCounter(_id, _parent) {
   _button.appendChild(_text);
   const _text2 = document.createTextNode("timer");
   const _button2 = document.createElement("button");
-  _button2.onclick = incTimer;
+  _button2.onclick = _event => {
+    const _returnValue = incTimer(_event);
+    _MD.markDirty(_id);
+    return _returnValue;
+  };
   _button2.appendChild(_text2);
   const _text3 = document.createTextNode("");
   if (_slot !== (_value = count)) {

@@ -58,9 +58,16 @@ function TodoItem(props: { item: Todo }) {
 }
 
 export function TodoApp() {
+
+  let timer = 0
+
+  setInterval(() => {
+    timer++;
+  }, 1000);
+
   return (
     <div class="todo-card">
-      <h1>⚡ Advanced Reactive Todo App</h1>
+      <h1>⚡ Advanced Reactive Todo App timer-{timer}</h1>
       <p class="subtitle">Powered by Array, Set & Map Collections</p>
 
       <div class="stats-bar">

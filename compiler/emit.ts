@@ -390,6 +390,7 @@ function emitElement(
   compPath: NodePath<t.FunctionDeclaration>,
   nestedIn: 'row' | 'cond' | null = null,
   rowCtx?: RowCtx,
+  eventOriginId?: t.Expression,
 ): string {
   const open = el.openingElement;
   const tag = (open.name as t.JSXIdentifier).name;
@@ -495,7 +496,18 @@ function emitElement(
       }
       childVars.push(emitText(ctx, scope, t.cloneNode(ex)));
     } else if (t.isJSXElement(child)) {
-      childVars.push(emitElement(ctx, scope, child, compName, compPath, nestedIn, rowCtx));
+      childVars.push(
+        emitElement(
+          ctx,
+          scope,
+          child,
+          compName,
+          compPath,
+          nestedIn,
+          rowCtx,
+          eventOriginId,
+        ),
+      );
     } else {
       throw compPath.buildCodeFrameError(
         'memo-dom: spread children are not supported (L1)',
@@ -537,7 +549,15 @@ function emitElement(
           `memo-dom: ${attrName} needs a handler expression (L1)`,
         );
       }
-      const handler = buildHandler(ctx, compPath, v, attrName, compName, rowCtx);
+      const handler = buildHandler(
+        ctx,
+        compPath,
+        v,
+        attrName,
+        compName,
+        rowCtx,
+        eventOriginId,
+      );
       scope.creation.push(
         t.expressionStatement(
           t.assignmentExpression(
@@ -909,7 +929,16 @@ function buildInlineRowCreate(
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
     arrayName: site.arrayName,
   };
-  const rootVar = emitElement(ctx, rowScope, site.jsx, compName, compPath, 'row', rowCtx);
+  const rootVar = emitElement(
+    ctx,
+    rowScope,
+    site.jsx,
+    compName,
+    compPath,
+    'row',
+    rowCtx,
+    t.identifier(rowId),
+  );
   return t.arrowFunctionExpression(
     [t.identifier(site.itemParam), t.identifier(rowId)],
     t.blockStatement([
@@ -956,10 +985,17 @@ function emitCondRegion(
 ): void {
   const site = analyzeCondSite(expr, compPath, scope.usedConds);
   const regionVar = generatedIdentifier(ctx, site.suffix).name;
+  const regionId = t.binaryExpression(
+    '+',
+    componentId(ctx, compName),
+    t.stringLiteral(`/${site.suffix}`),
+  );
 
   const pick = t.arrowFunctionExpression([], t.cloneNode(site.pickExpr));
   const branchFns: t.Expression[] = [site.thenJsx, site.elseJsx].map((jsx) =>
-    jsx !== null ? buildBranchCreate(ctx, jsx, compName, compPath) : t.nullLiteral(),
+    jsx !== null
+      ? buildBranchCreate(ctx, jsx, compName, compPath, regionId)
+      : t.nullLiteral(),
   );
 
   // register BEFORE creation (parent-first invariant; branch factories run
@@ -967,7 +1003,7 @@ function emitCondRegion(
   scope.creation.push(
     registerStmt(
       ctx,
-      t.binaryExpression('+', componentId(ctx, compName), t.stringLiteral(`/${site.suffix}`)),
+      t.cloneNode(regionId),
       componentId(ctx, compName),
       t.arrowFunctionExpression(
         [],
@@ -984,11 +1020,7 @@ function emitCondRegion(
         t.identifier(regionVar),
         t.callExpression(md(ctx, 'createCondRegion'), [
           t.identifier(parentElVar),
-          t.binaryExpression(
-            '+',
-            componentId(ctx, compName),
-            t.stringLiteral(`/${site.suffix}`),
-          ),
+          t.cloneNode(regionId),
           pick,
           t.arrayExpression(branchFns),
         ]),
@@ -1009,9 +1041,19 @@ function buildBranchCreate(
   jsx: t.JSXElement,
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
+  regionId: t.Expression,
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx);
-  const rootVar = emitElement(ctx, branchScope, jsx, compName, compPath, 'cond');
+  const rootVar = emitElement(
+    ctx,
+    branchScope,
+    jsx,
+    compName,
+    compPath,
+    'cond',
+    undefined,
+    regionId,
+  );
   return t.arrowFunctionExpression(
     [],
     t.blockStatement([

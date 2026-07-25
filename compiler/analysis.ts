@@ -11,8 +11,8 @@
  *      summaries folded in
  *
  * Also owns pathVariants (every static path a component can live at),
- * componentPatterns (incl. listed-row sites), summarizeHelper (module-local
- * function summaries), and buildAccessTable (Program.exit).
+ * componentPatterns (including listed-row sites) and buildAccessTable
+ * (Program.exit). Module helper effects live in helper-summaries.ts.
  *
  * M5.3 fixes living here:
  *   - helpers are no longer mistaken for components (and vice versa)
@@ -37,11 +37,11 @@ import {
   walkNodes,
   type Ctx,
   type ComputedAnalysis,
-  type FnSummary,
 } from './context';
 import { md } from './identifiers';
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
 import { analyzeCondSite } from './conds';
+import { summarizeHelper } from './helper-summaries';
 
 /**
  * R8: a JSX-bearing conditional is allowed ONLY as a direct JSX child:
@@ -301,142 +301,6 @@ function storeReadKey(ctx: Ctx, m: NodePath<t.MemberExpression>): string | null 
   }
   if (isMutatorCallee(m)) return null; // the object chain registers itself
   return key;
-}
-
-// ---------------------------------------------------------------------
-// helper summaries (module-local function summaries, §4.6 shape 2 subset)
-// ---------------------------------------------------------------------
-
-/**
- * Read/write summary of a module-level helper, memoized and cycle-safe.
- * A recursive helper's summary is marked opaque — callers fall back to a
- * root-subtree commit (never incorrect, only unscoped).
- */
-export function summarizeHelper(
-  ctx: Ctx,
-  name: string,
-  visiting: Set<string> = new Set(),
-): FnSummary {
-  const cached = ctx.helperSummaries.get(name);
-  if (cached) return cached;
-  if (visiting.has(name)) {
-    return { reads: new Set(), writes: new Set(), opaque: true };
-  }
-  const p = ctx.helpers.get(name)!;
-  const locals = new Set<string>();
-  const sum: FnSummary = { reads: new Set(), writes: new Set(), opaque: false };
-
-  visiting.add(name);
-
-  // locals declared anywhere in the helper (params, declarators, nested params)
-  p.traverse({
-    VariableDeclarator(d) {
-      if (t.isIdentifier(d.node.id)) locals.add(d.node.id.name);
-    },
-    Function(f) {
-      for (const param of f.node.params) {
-        if (t.isIdentifier(param)) locals.add(param.name);
-      }
-    },
-  });
-
-  const noteMemberWrite = (node: t.MemberExpression): void => {
-    const rootName = memberRootName(node);
-    if (!rootName || !ctx.state.has(rootName)) return;
-    if (ctx.state.get(rootName) !== 'store') {
-      sum.writes.add(rootName); // member write on a root-keyed var (let/const)
-      return;
-    }
-    const key = memberKey(node);
-    if (key !== null && key.includes('.')) {
-      sum.writes.add(key);
-    } else {
-      ctx.opaqueVars.add(rootName);
-      sum.opaque = true;
-    }
-  };
-
-  p.traverse({
-    AssignmentExpression(ap) {
-      const left = ap.node.left;
-      if (t.isIdentifier(left)) {
-        if (!locals.has(left.name) && ctx.state.has(left.name)) sum.writes.add(left.name);
-      } else if (t.isMemberExpression(left)) {
-        noteMemberWrite(left);
-      }
-    },
-    UpdateExpression(up) {
-      const arg = up.node.argument;
-      if (t.isIdentifier(arg)) {
-        if (!locals.has(arg.name) && ctx.state.has(arg.name)) sum.writes.add(arg.name);
-      } else if (t.isMemberExpression(arg)) {
-        noteMemberWrite(arg);
-      }
-    },
-    CallExpression(cp) {
-      const callee = cp.node.callee;
-      if (t.isMemberExpression(callee)) {
-        const prop = callee.property;
-        const pn =
-          !callee.computed && t.isIdentifier(prop)
-            ? prop.name
-            : callee.computed && t.isStringLiteral(prop)
-              ? prop.value
-              : null;
-        if (pn !== null && MUTATOR_METHODS.has(pn)) {
-          const obj = callee.object;
-          const rootName = t.isIdentifier(obj)
-            ? obj.name
-            : t.isMemberExpression(obj)
-              ? memberRootName(obj)
-              : null;
-          if (rootName && ctx.state.has(rootName)) {
-            if (ctx.state.get(rootName) !== 'store') {
-              sum.writes.add(rootName); // mutating a let/const collection in place
-            } else {
-              const key = t.isMemberExpression(obj) ? memberKey(obj) : null;
-              if (key !== null) {
-                sum.writes.add(key);
-              } else {
-                ctx.opaqueVars.add(rootName);
-                sum.opaque = true;
-              }
-            }
-          }
-        }
-      } else if (
-        t.isIdentifier(callee) &&
-        (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name))
-      ) {
-        const sub =
-          ctx.importedFunctions.get(callee.name) ??
-          summarizeHelper(ctx, callee.name, visiting);
-        for (const r of sub.reads) sum.reads.add(r);
-        for (const w of sub.writes) sum.writes.add(w);
-        if (sub.opaque) sum.opaque = true;
-      }
-    },
-    Identifier(id) {
-      const n = id.node.name;
-      if (!ctx.state.has(n) || locals.has(n)) return;
-      const parent = id.parentPath;
-      if (
-        parent.isAssignmentExpression({ operator: '=' }) &&
-        parent.node.left === id.node
-      ) {
-        return; // write target, not a read
-      }
-      sum.reads.add(n);
-    },
-    MemberExpression(m) {
-      const key = storeReadKey(ctx, m);
-      if (key !== null) sum.reads.add(key);
-    },
-  });
-
-  visiting.delete(name);
-  ctx.helperSummaries.set(name, sum);
-  return sum;
 }
 
 // ---------------------------------------------------------------------

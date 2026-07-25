@@ -32,6 +32,8 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | Local derived/computed values stay stale | Confirmed architecture gap | R14 recomputes them in the owner update prologue, after prop resync |
 | Timer/promise updates stay stale through a local helper | Confirmed reachability gap | Reachable component-local helpers are instrumented transitively |
 | Timer started during factory initialization | Still unsupported | Needs lifecycle ownership plus an instrumentation/fallback rule |
+| Aliases, reflective writes, and unknown calls | Confirmed conservative-fallback gaps | R17 tracks local provenance, handles `delete`/`Object.assign`, and marks mutable escapes opaque |
+| Handler with no recognized write skips rendering | Confirmed drift from the event-boundary contract | R18 invalidates the nearest component/row/region; guarded updates remain scoped |
 
 ## Decisions
 
@@ -67,12 +69,21 @@ only serialized after binding resolution. Every state key is module-qualified.
 keys such as `./state.ts#store.selectedId`; it accepts bundler aliases or a host
 resolver. Cross-file component composition is not linked yet.
 
+### Opaque mutation boundary
+
+Static precision remains the fast path: direct roots, static store paths,
+collection mutators, and literal `Object.assign` sources emit interned write
+sets. When alias provenance becomes ambiguous or mutable state crosses an
+unknown call boundary, the writing scope dirties the root subtree. Commits are
+still emitted on normal exits; exception-path behavior remains an explicit P0
+decision. The opaque fallback is the correctness floor; later dirty-reason
+masks may reduce work inside the subtree without weakening it.
+
 ## Priority roadmap
 
 ### P0: correctness boundaries
 
-1. Make fallback completeness real for unknown calls, escaped mutable values,
-   aliases, `delete`, `Object.assign`, and exception paths.
+1. Decide exception-path commit semantics with dedicated performance evidence.
 2. Specify and implement lifecycle-owned factory callbacks/subscriptions.
 3. Extend the implemented state linker to cross-file component composition and
    bundler adapters.

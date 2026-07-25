@@ -160,6 +160,8 @@ export interface Ctx {
   writeConsts: Map<string, string>;
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
+  /** Whether a shared handler already emits a commit in its event scope. */
+  handlerHasRootCommit: WeakMap<t.Node, boolean>;
   /** Compiler-wide allocator initialized from the original Program scope. */
   identifiers: GeneratedIdentifiers | null;
 }
@@ -212,6 +214,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     writeConstCounter: 0,
     writeConsts: new Map(),
     analyzedFunctions: new WeakSet(),
+    handlerHasRootCommit: new WeakMap(),
     identifiers: null,
   };
 }

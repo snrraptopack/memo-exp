@@ -22,7 +22,6 @@ import type { NodePath } from '@babel/traverse';
 import _traverse from '@babel/traverse';
 import * as t from '@babel/types';
 import {
-  freshWriteConst,
   memberKey,
   memberRootName,
   MUTATOR_METHODS,
@@ -32,11 +31,24 @@ import {
   type RowCtx,
 } from './context';
 import {
-  componentId,
-  generatedIdentifier,
-  md,
-} from './identifiers';
-import { summarizeHelper } from './analysis';
+  appendScopeCommit,
+  buildScopeCommit,
+  createScopeWrites,
+  type ScopeWrites,
+} from './handler-commits';
+import {
+  buildEventOriginCommit,
+  wrapSharedHandlerWithOrigin,
+} from './handler-origin';
+import {
+  AliasTracker,
+  callArgumentExpressions,
+  memberName,
+  moduleOrigin,
+  staticAssignedKeys,
+  type ReactiveOrigin,
+} from './mutation-analysis';
+import { summarizeHelper } from './helper-summaries';
 
 // @babel/traverse is CJS; under ESM the function lands on `.default`.
 const traverse: typeof _traverse = (_traverse as any).default ?? (_traverse as any);
@@ -86,7 +98,7 @@ function instrumentReachableLocalHelpers(
     if (helper === null || ctx.analyzedFunctions.has(helper)) continue;
     ctx.analyzedFunctions.add(helper); // cycle guard
     instrumentReachableLocalHelpers(ctx, compPath, helper, compName, rowCtx);
-    analyzeHandler(ctx, helper, compName, rowCtx);
+    analyzeHandler(ctx, helper, compName, rowCtx, false);
   }
 }
 
@@ -101,6 +113,7 @@ export function buildHandler(
   attrName: string,
   compName: string,
   rowCtx?: RowCtx,
+  eventOriginId?: t.Expression,
 ): t.Expression {
   let target:
     | t.ArrowFunctionExpression
@@ -151,7 +164,35 @@ export function buildHandler(
     ctx.analyzedFunctions.add(target);
     // R11: a handler shared between a row and a non-row site is analyzed
     // with the FIRST site's row context — pass forceTable for non-row uses.
-    analyzeHandler(ctx, target, forceTable ? null : compName, forceTable ? undefined : rowCtx);
+    analyzeHandler(
+      ctx,
+      target,
+      forceTable ? null : compName,
+      forceTable ? undefined : rowCtx,
+      !forceTable && !t.isIdentifier(value),
+      eventOriginId,
+    );
+  }
+  if (forceTable) {
+    const summary = summarizeHelper(ctx, (value as t.Identifier).name);
+    if (summary.writes.size === 0 && !summary.opaque) {
+      return wrapSharedHandlerWithOrigin(
+        ctx,
+        value as t.Identifier,
+        buildEventOriginCommit(ctx, compName, rowCtx, eventOriginId),
+      );
+    }
+  }
+  if (
+    t.isIdentifier(value) &&
+    !forceTable &&
+    ctx.handlerHasRootCommit.get(target) === false
+  ) {
+    return wrapSharedHandlerWithOrigin(
+      ctx,
+      value,
+      buildEventOriginCommit(ctx, compName, rowCtx, eventOriginId),
+    );
   }
   return t.isIdentifier(value) ? value : (target as t.Expression);
 }
@@ -202,6 +243,8 @@ function analyzeHandler(
   rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
   compName: string | null,
   rowCtx?: RowCtx,
+  eventBoundary = false,
+  eventOriginId?: t.Expression,
 ): void {
   // Standalone traversal requires a Program/File root, so analysis runs on
   // a deep clone; commits are appended into the clone's scopes and the
@@ -217,6 +260,44 @@ function analyzeHandler(
     ]),
   );
 
+  const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
+  const instComputeds =
+    compName !== null ? ctx.instanceComputeds.get(compName) : undefined;
+  const propNames =
+    compName !== null ? new Set(ctx.compPropNames.get(compName) ?? []) : new Set<string>();
+  const componentLocals = new Set<string>([
+    ...propNames,
+    ...(instVars ?? []),
+    ...(instComputeds?.keys() ?? []),
+  ]);
+  if (compName !== null) {
+    for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
+      if (t.isVariableDeclaration(stmt)) {
+        for (const d of stmt.declarations) {
+          if (t.isIdentifier(d.id)) componentLocals.add(d.id.name);
+        }
+      } else if (t.isFunctionDeclaration(stmt) && stmt.id) {
+        componentLocals.add(stmt.id.name);
+      }
+    }
+  }
+
+  const aliases = new AliasTracker((name, binding) => {
+    if (binding !== undefined) return null;
+    if (rowCtx !== undefined && name === rowCtx.itemParam) {
+      return { locality: 'row', root: name, key: name };
+    }
+    if (instVars?.has(name) === true) {
+      return { locality: 'instance', root: name, key: name };
+    }
+    if (propNames.has(name)) {
+      return { locality: 'prop', root: name, key: name };
+    }
+    if (componentLocals.has(name)) return null;
+    const kind = ctx.state.get(name);
+    return kind === undefined ? null : moduleOrigin(name, kind);
+  });
+
   const locals = new Set<string>();
   for (const param of clonedFn.params) {
     if (t.isIdentifier(param)) locals.add(param.name);
@@ -225,7 +306,12 @@ function analyzeHandler(
   // pass A: locals declared anywhere inside the handler
   traverse(wrapper, {
     VariableDeclarator(p) {
-      if (t.isIdentifier(p.node.id)) locals.add(p.node.id.name);
+      if (t.isIdentifier(p.node.id)) {
+        locals.add(p.node.id.name);
+        if (p.parentPath.isVariableDeclaration()) {
+          aliases.trackDeclarator(p.scope, p.node);
+        }
+      }
     },
     Function(p) {
       for (const param of p.node.params) {
@@ -235,23 +321,12 @@ function analyzeHandler(
   });
 
   // pass B: writes grouped by innermost enclosing function scope
-  interface ScopeWrites {
-    writes: Set<string>;
-    rootFallback: boolean;
-    /** R11: this scope writes fields of the row's item → markDirty(rowIdVar). */
-    rowLocal: boolean;
-    /** R12: this scope writes instance state → markDirty(id). */
-    instanceLocal: boolean;
-  }
   const scopes = new Map<t.Node, ScopeWrites>();
   const scopeOf = (p: NodePath): ScopeWrites => {
     const fn = p.getFunctionParent()?.node ?? ROOT;
     let s = scopes.get(fn);
     if (!s) {
-      scopes.set(
-        fn,
-        (s = { writes: new Set(), rootFallback: false, rowLocal: false, instanceLocal: false }),
-      );
+      scopes.set(fn, (s = createScopeWrites()));
     }
     return s;
   };
@@ -288,6 +363,76 @@ function analyzeHandler(
     return true;
   };
 
+  const markOpaqueOrigin = (p: NodePath, origin: ReactiveOrigin): void => {
+    const s = scopeOf(p);
+    if (origin.locality === 'module') {
+      ctx.opaqueVars.add(origin.root);
+      s.rootFallback = true;
+    } else if (origin.locality === 'instance') {
+      s.instanceLocal = true;
+    } else if (origin.locality === 'row') {
+      s.rowLocal = true;
+      if (rowCtx !== undefined) s.writes.add(rowCtx.arrayName);
+    } else {
+      s.rootFallback = true;
+    }
+  };
+
+  const noteOriginWrite = (p: NodePath, origin: ReactiveOrigin): void => {
+    if (origin.locality === 'instance') {
+      scopeOf(p).instanceLocal = true;
+      return;
+    }
+    if (origin.locality === 'row') {
+      if (rowCtx === undefined || origin.key === null) {
+        markOpaqueOrigin(p, origin);
+        return;
+      }
+      const segs = origin.key.split('.').slice(1);
+      if (writeTouchesKey(segs, rowCtx.keyPath)) {
+        scopeOf(p).writes.add(rowCtx.arrayName);
+      } else {
+        scopeOf(p).rowLocal = true;
+        if (itemFieldVisibleBeyondList(ctx, compName, rowCtx)) {
+          scopeOf(p).writes.add(rowCtx.arrayName);
+        }
+      }
+      return;
+    }
+    if (origin.locality === 'prop') {
+      throw p.buildCodeFrameError(
+        `memo-dom: cannot mutate prop '${origin.root}' outside a keyed row - copy it to component-local state first`,
+      );
+    }
+    if (origin.stateKind === 'computed') {
+      throw p.buildCodeFrameError(
+        `memo-dom: cannot mutate computed '${origin.root}' (R13) - it is derived; write its SOURCE state instead`,
+      );
+    }
+    if (origin.stateKind !== 'store') {
+      scopeOf(p).writes.add(origin.root);
+      return;
+    }
+    if (origin.key !== null && origin.key.includes('.')) {
+      scopeOf(p).writes.add(origin.key);
+    } else {
+      markOpaqueOrigin(p, origin);
+    }
+  };
+
+  const markOpaqueArguments = (
+    p: NodePath,
+    args: t.CallExpression['arguments'],
+  ): void => {
+    for (const expression of callArgumentExpressions(args)) {
+      // Member reads pass their resulting value, not the reactive root
+      // reference. Unknown property value semantics remain user-owned.
+      if (!t.isIdentifier(expression)) continue;
+      const origin = aliases.resolveExpression(p.scope, expression);
+      if (origin !== null) markOpaqueOrigin(p, origin);
+    }
+  };
+
   const noteMemberWrite = (p: NodePath, node: t.MemberExpression): void => {
     const rootName = memberRootName(node);
     if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
@@ -301,6 +446,11 @@ function analyzeHandler(
       );
     }
     if (noteItemWrite(p, node)) return;
+    const origin = aliases.resolveExpression(p.scope, node);
+    if (origin !== null) {
+      noteOriginWrite(p, origin);
+      return;
+    }
     if (rootName !== null && propNames.has(rootName)) {
       throw p.buildCodeFrameError(
         `memo-dom: cannot mutate prop '${rootName}' outside a keyed row — copy it to component-local state first`,
@@ -334,33 +484,32 @@ function analyzeHandler(
   // R12: instance state of the enclosing component — writes are always a
   // bare markDirty(id), never table routing (the closure belongs to one
   // instance; listed components included).
-  const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
-  const instComputeds =
-    compName !== null ? ctx.instanceComputeds.get(compName) : undefined;
-  const propNames =
-    compName !== null ? new Set(ctx.compPropNames.get(compName) ?? []) : new Set<string>();
-  const componentLocals = new Set<string>([
-    ...propNames,
-    ...(instVars ?? []),
-    ...(instComputeds?.keys() ?? []),
-  ]);
-  if (compName !== null) {
-    for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
-      if (t.isVariableDeclaration(stmt)) {
-        for (const d of stmt.declarations) {
-          if (t.isIdentifier(d.id)) componentLocals.add(d.id.name);
-        }
-      } else if (t.isFunctionDeclaration(stmt) && stmt.id) {
-        componentLocals.add(stmt.id.name);
-      }
-    }
-  }
-
   traverse(wrapper, {
+    VariableDeclarator(p) {
+      if (
+        !t.isIdentifier(p.node.id) &&
+        p.node.init !== null
+      ) {
+        for (
+          const origin of aliases.referencedOrigins(
+            p.scope,
+            p.node.init as t.Expression,
+          )
+        ) {
+          markOpaqueOrigin(p, origin);
+        }
+      }
+    },
     AssignmentExpression(p) {
       const left = p.node.left;
       if (t.isIdentifier(left)) {
-        if (locals.has(left.name)) return;
+        if (locals.has(left.name)) {
+          if (t.isIdentifier(p.node.right)) {
+            const origin = aliases.resolveExpression(p.scope, p.node.right);
+            if (origin !== null) markOpaqueOrigin(p, origin);
+          }
+          return;
+        }
         if (instComputeds?.has(left.name)) {
           throw p.buildCodeFrameError(
             `memo-dom: cannot assign per-instance derivation '${left.name}' (R14) — write its source instead`,
@@ -409,6 +558,10 @@ function analyzeHandler(
         scopeOf(p).writes.add(left.name);
       } else if (t.isMemberExpression(left)) {
         noteMemberWrite(p, left);
+      } else {
+        for (const origin of aliases.referencedOrigins(p.scope, p.node.right)) {
+          markOpaqueOrigin(p, origin);
+        }
       }
     },
     UpdateExpression(p) {
@@ -457,6 +610,14 @@ function analyzeHandler(
         noteMemberWrite(p, arg);
       }
     },
+    UnaryExpression(p) {
+      if (
+        p.node.operator === 'delete' &&
+        t.isMemberExpression(p.node.argument)
+      ) {
+        noteMemberWrite(p, p.node.argument);
+      }
+    },
     CallExpression(p) {
       const callee = p.node.callee;
 
@@ -464,6 +625,34 @@ function analyzeHandler(
       // decides — let → write to the variable; store → static dotted-path
       // write, dynamic chain → opaque
       if (t.isMemberExpression(callee)) {
+        const method = memberName(callee);
+        if (
+          method === 'assign' &&
+          t.isIdentifier(callee.object, { name: 'Object' })
+        ) {
+          const targetArg = p.node.arguments[0];
+          const target =
+            targetArg !== undefined && t.isExpression(targetArg)
+              ? aliases.resolveExpression(p.scope, targetArg)
+              : null;
+          if (target !== null) {
+            if (
+              target.locality === 'module' &&
+              target.stateKind === 'store'
+            ) {
+              const keys = staticAssignedKeys(target, p.node.arguments.slice(1));
+              if (keys === null) {
+                markOpaqueOrigin(p, target);
+              } else {
+                for (const key of keys) scopeOf(p).writes.add(key);
+              }
+            } else {
+              noteOriginWrite(p, target);
+            }
+          }
+          return;
+        }
+
         const prop = callee.property;
         const pn =
           !callee.computed && t.isIdentifier(prop)
@@ -473,6 +662,13 @@ function analyzeHandler(
               : null;
         if (pn !== null && MUTATOR_METHODS.has(pn)) {
           const obj = callee.object;
+          if (t.isExpression(obj)) {
+            const origin = aliases.resolveExpression(p.scope, obj);
+            if (origin !== null) {
+              noteOriginWrite(p, origin);
+              return;
+            }
+          }
           const rootName = t.isIdentifier(obj)
             ? obj.name
             : t.isMemberExpression(obj)
@@ -524,6 +720,9 @@ function analyzeHandler(
             );
           }
         }
+        // Unclassified receiver methods follow the source-language contract:
+        // only the mutation blacklist implies a receiver write.
+        markOpaqueArguments(p, p.node.arguments);
         return;
       }
 
@@ -541,14 +740,33 @@ function analyzeHandler(
         if (sum.opaque) {
           for (const w of sum.writes) ctx.opaqueVars.add(w);
           s.rootFallback = true;
+          markOpaqueArguments(p, p.node.arguments);
         }
+        return;
       }
+      markOpaqueArguments(p, p.node.arguments);
     },
   });
 
+  const rootHasCommit = scopes.has(ROOT);
+  ctx.handlerHasRootCommit.set(rootFn, rootHasCommit);
+
+  // A DOM event remains an invalidation boundary even when static analysis
+  // finds no write in the handler itself. Start from its nearest entity.
+  if (eventBoundary && !scopes.has(ROOT)) {
+    const eventScope = createScopeWrites();
+    eventScope.eventOrigin = buildEventOriginCommit(
+      ctx,
+      compName,
+      rowCtx,
+      eventOriginId,
+    );
+    scopes.set(ROOT, eventScope);
+  }
+
   // pass C: one commit per scope, appended inside the clone…
   for (const [fn, s] of scopes) {
-    const commit = buildCommit(ctx, s, compName, rowCtx);
+    const commit = buildScopeCommit(ctx, s, compName, rowCtx);
     if (!commit) continue;
     appendScopeCommit(
       ctx,
@@ -558,113 +776,4 @@ function analyzeHandler(
   }
   // …then adopt the mutated body (params are untouched)
   rootFn.body = clonedFn.body;
-}
-
-/** The static commit form for one scope's write-set. */
-function buildCommit(
-  ctx: Ctx,
-  s: { writes: Set<string>; rootFallback: boolean; rowLocal: boolean; instanceLocal: boolean },
-  compName: string | null,
-  rowCtx?: RowCtx,
-): t.Statement | null {
-  // R11: row-item writes commit locally — the row id is lexically in scope
-  const rowCommit =
-    s.rowLocal && rowCtx !== undefined
-      ? t.expressionStatement(
-          rowCtx.refreshVar !== undefined
-            ? t.callExpression(t.identifier(rowCtx.refreshVar), [])
-            : t.callExpression(md(ctx, 'markDirty'), [t.identifier(rowCtx.rowIdVar)]),
-        )
-      : null;
-  // R12: instance-state writes commit locally with the shared commit, if any.
-  const instCommit = s.instanceLocal && compName !== null
-    ? t.expressionStatement(
-        t.callExpression(md(ctx, 'markDirty'), [componentId(ctx, compName)]),
-      )
-    : null;
-  const combine = (other: t.Statement | null): t.Statement | null => {
-    const parts: t.Statement[] = [];
-    if (rowCommit !== null) parts.push(rowCommit);
-    if (instCommit !== null) parts.push(instCommit);
-    if (other !== null) parts.push(other);
-    if (parts.length === 0) return null;
-    if (parts.length === 1) return parts[0]!;
-    return t.blockStatement(parts);
-  };
-  if (s.rootFallback) {
-    return combine(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'markDirtySubtree'), [t.stringLiteral(ctx.rootId)]),
-      ),
-    );
-  }
-  if (s.writes.size === 0) return combine(null);
-
-  const writeList = [...s.writes].sort();
-  return combine(
-    t.expressionStatement(
-      t.callExpression(md(ctx, 'commitWrites'), [freshWriteConst(ctx, writeList)]),
-    ),
-  );
-}
-
-/**
- * Append a commit to a function body so it runs on EVERY exit path (M5.3):
- * a clone is inserted before each `return` belonging to this scope, and the
- * commit itself goes at the end. An implicit-return arrow (`() => expr`) is
- * wrapped so its return value survives (it can feed a promise chain).
- */
-function appendScopeCommit(
-  ctx: Ctx,
-  fn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
-  commit: t.Statement,
-): void {
-  if (t.isBlockStatement(fn.body)) {
-    insertBeforeReturns(fn.body, commit);
-    fn.body.body.push(commit);
-    return;
-  }
-  const ret = generatedIdentifier(ctx, 'returnValue');
-  fn.body = t.blockStatement([
-    t.variableDeclaration('const', [t.variableDeclarator(ret, fn.body as t.Expression)]),
-    commit,
-    t.returnStatement(t.cloneNode(ret)),
-  ]);
-}
-
-/**
- * Insert a clone of `commit` before every `return` in this scope. Nested
- * functions are skipped — their returns belong to their own scopes (and get
- * their own commits). A bare `if (x) return` consequent is wrapped in a
- * block. Writes followed by an early return used to commit never (dead code
- * after the return); now each exit path commits first.
- */
-function insertBeforeReturns(node: t.Node, commit: t.Statement): void {
-  if (t.isFunction(node)) return;
-  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-    const child = (node as any)[key];
-    if (Array.isArray(child)) {
-      for (let i = 0; i < child.length; i++) {
-        const c = child[i];
-        if (!c || typeof c !== 'object' || !('type' in c)) continue;
-        if (t.isFunction(c)) continue;
-        if (t.isReturnStatement(c)) {
-          child.splice(i, 0, t.cloneNode(commit));
-          i++;
-          continue;
-        }
-        insertBeforeReturns(c as t.Node, commit);
-      }
-    } else if (child && typeof child === 'object' && 'type' in child) {
-      if (t.isFunction(child)) continue;
-      if (t.isReturnStatement(child)) {
-        (node as any)[key] = t.blockStatement([
-          t.cloneNode(commit),
-          child as t.ReturnStatement,
-        ]);
-        continue;
-      }
-      insertBeforeReturns(child as t.Node, commit);
-    }
-  }
 }

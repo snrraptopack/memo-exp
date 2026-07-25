@@ -17,15 +17,15 @@ Chromium processes.
 
 | Scenario | Component rows | Inline rows | Vanilla | Component/vanilla | Inline/vanilla |
 |---|---:|---:|---:|---:|---:|
-| create 1k | 20.4 ms | 29.0 ms | 7.8 ms | 2.62x | 3.72x |
-| replace 1k | 18.1 ms | 23.8 ms | 7.9 ms | 2.29x | 3.01x |
-| partial update | 0.7 ms | 0.6 ms | 0.3 ms | 2.33x | 2.00x |
-| select row | 0.5 ms | 1.4 ms | 0.2 ms | 2.50x | 7.00x |
-| swap rows | 1.6 ms | 2.0 ms | 0.1 ms | 16.00x | 20.00x |
-| remove row | 0.9 ms | 1.1 ms | <=0.1 ms | noisy | noisy |
-| create 10k | 139.7 ms | 205.0 ms | 65.8 ms | 2.12x | 3.12x |
-| append 1k to 10k | 24.5 ms | 38.7 ms | 7.2 ms | 3.40x | 5.38x |
-| clear 10k | 17.1 ms | 39.4 ms | 3.5 ms | 4.89x | 11.26x |
+| create 1k | 18.1 ms | 28.6 ms | 8.3 ms | 2.18x | 3.45x |
+| replace 1k | 17.7 ms | 24.5 ms | 7.6 ms | 2.33x | 3.22x |
+| partial update | 0.7 ms | 0.7 ms | 0.4 ms | 1.75x | 1.75x |
+| select row | 0.5 ms | 1.8 ms | 0.2 ms | 2.50x | 9.00x |
+| swap rows | 1.5 ms | 2.1 ms | 0.1 ms | 15.00x | 21.00x |
+| remove row | 1.1 ms | 1.1 ms | <=0.1 ms | noisy | noisy |
+| create 10k | 131.1 ms | 196.3 ms | 66.2 ms | 1.98x | 2.97x |
+| append 1k to 10k | 26.7 ms | 34.2 ms | 6.2 ms | 4.31x | 5.52x |
+| clear 10k | 16.9 ms | 37.7 ms | 3.4 ms | 4.97x | 11.09x |
 
 ## Interpretation
 
