@@ -7,7 +7,6 @@ import {
   makeSnapshot,
   mutatePlain,
   remaining,
-  updateImmutable,
   type Snapshot,
   type Todo,
 } from '../model';
@@ -32,7 +31,10 @@ function publishMemoizedControls(
 
 function MemoizedRow(props: { todo: Todo; forcedRevision: number }) {
   return (
-    <li class={props.todo.completed ? 'completed' : ''}>
+    <li
+      class={props.todo.completed ? 'completed' : ''}
+      data-id={String(props.todo.id)}
+    >
       {props.forcedRevision ? props.todo.title : props.todo.title}
     </li>
   );
@@ -49,7 +51,7 @@ export function MemoizedApp() {
       mutatePlain(store.snapshot, scenario);
       forcedRevision++;
     } else {
-      store.snapshot = updateImmutable(store.snapshot, scenario);
+      mutatePlain(store.snapshot, scenario);
     }
   };
   publishMemoizedControls(reset, run);

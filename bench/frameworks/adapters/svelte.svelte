@@ -27,6 +27,7 @@
   export function run(scenario: BenchScenario): void {
     if (mode === 'forced') {
       mutatePlain(forcedSnapshot, scenario);
+      forcedSnapshot = { ...forcedSnapshot };
       forcedRevision++;
     } else {
       mutatePlain(reactiveSnapshot, scenario);
@@ -37,10 +38,9 @@
 <span>{visible.revision ? '' : ''}</span>
 <ul>
   {#each visible.todos as todo (todo.id)}
-    <li class:completed={todo.completed}>
+    <li class:completed={todo.completed} data-id={todo.id}>
       {forcedRevision && mode === 'forced' ? todo.title : todo.title}
     </li>
   {/each}
 </ul>
 <strong id="remaining">{remainingCount}</strong>
-

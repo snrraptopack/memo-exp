@@ -27,7 +27,14 @@ let resolveCommit: (() => void) | undefined;
 
 const TodoRow = memo(function TodoRow(props: { todo: Todo; forcedRevision: number }) {
   void props.forcedRevision;
-  return <li className={props.todo.completed ? 'completed' : ''}>{props.todo.title}</li>;
+  return (
+    <li
+      className={props.todo.completed ? 'completed' : ''}
+      data-id={String(props.todo.id)}
+    >
+      {props.todo.title}
+    </li>
+  );
 });
 
 function App(props: { initial: Snapshot; mode: BenchMode }) {
@@ -95,7 +102,9 @@ window.__frameworkBench = {
     return {
       rows: target.querySelectorAll('li').length,
       firstTitle: target.querySelector('li')?.textContent ?? '',
+      order: Array.from(target.querySelectorAll('li'), (row) => row.dataset.id).join(','),
       remaining: Number(target.querySelector('#remaining')?.textContent ?? -1),
+      state: Array.from(target.querySelectorAll('li'), (row) => `${row.dataset.id}:${row.classList.contains('completed') ? 1 : 0}:${row.textContent?.trim() ?? ''}`).join('|'),
     };
   },
 };

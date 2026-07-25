@@ -74,7 +74,9 @@ window.__frameworkBench = {
     return {
       rows: root.querySelectorAll('li').length,
       firstTitle: root.querySelector('li')?.textContent ?? '',
+      order: Array.from(root.querySelectorAll('li'), (row) => row.dataset.id).join(','),
       remaining: Number(root.querySelector('#remaining')?.textContent ?? -1),
+      state: Array.from(root.querySelectorAll('li'), (row) => `${row.dataset.id}:${row.classList.contains('completed') ? 1 : 0}:${row.textContent?.trim() ?? ''}`).join('|'),
     };
   },
 };

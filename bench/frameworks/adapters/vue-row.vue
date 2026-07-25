@@ -12,7 +12,7 @@ defineProps<{
 </script>
 
 <template>
-  <li :class="{ completed: todo.completed }">
+  <li :class="{ completed: todo.completed }" :data-id="todo.id">
     {{ forcedRevision ? todo.title : todo.title }}
   </li>
 </template>

@@ -2,7 +2,6 @@
   @file angular-row.html
   Renders one Angular todo row while consuming the forced revision input.
 -->
-<li [class.completed]="todo().completed">
+<li [class.completed]="todo().completed" [attr.data-id]="todo().id">
   {{ forcedRevision() ? todo().title : todo().title }}
 </li>
-

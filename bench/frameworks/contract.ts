@@ -8,7 +8,9 @@ export type BenchScenario = 'no-change' | 'rename' | 'toggle' | 'move';
 export interface ValidationResult {
   rows: number;
   firstTitle: string;
+  order: string;
   remaining: number;
+  state: string;
 }
 
 export interface FrameworkBench {
@@ -25,4 +27,3 @@ declare global {
     __frameworkBench: FrameworkBench;
   }
 }
-

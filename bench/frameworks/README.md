@@ -8,6 +8,8 @@ framework's state mechanism and scheduler.
 The adapters use their normal authored formats (`.tsx`, `.vue`, `.svelte`, and
 Angular templates). Each sample runs deterministic no-change, rename, toggle,
 and keyed-move operations at 10, 100, and 1,000 rows.
+After every sample, an independent model verifies every rendered title,
+completed class, stable-ID order, row count, and derived remaining count.
 
 - `forced`: mutate the model and explicitly request an update.
 - `reactive`: update through the adapter's normal reactive path.
@@ -29,13 +31,13 @@ Median microseconds per completed operation on 2026-07-25; lower is better.
 
 | Adapter | Forced no-change | Forced rename | Forced toggle | Forced move | Reactive no-change | Reactive rename | Reactive toggle | Reactive move |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Vanilla DOM | 1134 | 1178 | 914 | 1018 | 2 | 8 | 14 | 10 |
-| memoized-dom TSX | 42 | 36 | 40 | 92 | 38 | 116 | 102 | 104 |
-| Solid 1.9.14 | 254 | 324 | 302 | 210 | 14 | 20 | 188 | 848 |
-| Svelte 5.56.8 | 72 | 68 | 142 | 124 | 32 | 70 | 220 | 1218 |
-| Vue 3.5.40 | 1040 | 1250 | 1046 | 1260 | 158 | 40 | 306 | 1006 |
-| Preact 10.29.7 | 900 | 870 | 1012 | 936 | 278 | 390 | 318 | 358 |
-| React 19.2.8 | 188 | 180 | 190 | 178 | 322 | 434 | 560 | 650 |
+| Vanilla DOM | 1264 | 1046 | 960 | 1082 | 2 | 6 | 8 | 12 |
+| memoized-dom TSX | 38 | 32 | 28 | 84 | 34 | 46 | 56 | 120 |
+| Solid 1.9.14 | 160 | 204 | 160 | 174 | 6 | 14 | 114 | 608 |
+| Svelte 5.56.8 | 116 | 104 | 232 | 206 | 50 | 68 | 154 | 1066 |
+| Vue 3.5.40 | 926 | 1116 | 1382 | 1490 | 236 | 66 | 566 | 1284 |
+| Preact 10.29.7 | 1806 | 1798 | 1762 | 1882 | 464 | 552 | 678 | 640 |
+| React 19.2.8 | 184 | 222 | 260 | 326 | 592 | 448 | 798 | 1026 |
 
 Angular builds through its production AOT/linker path but was excluded from
 this recorded run. Imba is not included.

@@ -26,8 +26,9 @@ window.__frameworkBench = {
     return {
       rows: target.querySelectorAll('li').length,
       firstTitle: target.querySelector('li')?.textContent?.trim() ?? '',
+      order: Array.from(target.querySelectorAll('li'), (row) => row.dataset.id).join(','),
       remaining: Number(target.querySelector('#remaining')?.textContent ?? -1),
+      state: Array.from(target.querySelectorAll('li'), (row) => `${row.dataset.id}:${row.classList.contains('completed') ? 1 : 0}:${row.textContent?.trim() ?? ''}`).join('|'),
     };
   },
 };
-

@@ -32,6 +32,39 @@ export async function measureInPage(
     return sorted[Math.floor(sorted.length / 2)]!;
   }
 
+  function expectedView(
+    count: number,
+    scenario: BenchScenario,
+    iterations: number,
+  ): { order: string; remaining: number; state: string } {
+    const todos = Array.from({ length: count }, (_, index) => ({
+      completed: index % 3 === 0,
+      id: index + 1,
+      title: `Todo ${index + 1}`,
+    }));
+    for (let sequence = 0; sequence < iterations; sequence++) {
+      if (todos.length === 0) break;
+      const index = (sequence * 17 + 3) % todos.length;
+      const todo = todos[index]!;
+      if (scenario === 'rename') {
+        todo.title = `Todo ${todo.id} / ${sequence + 1}`;
+      } else if (scenario === 'toggle') {
+        todo.completed = !todo.completed;
+      } else if (scenario === 'move' && todos.length > 1) {
+        const length = todos.length;
+        const [moved] = todos.splice(index, 1);
+        todos.splice((index + 1) % length, 0, moved!);
+      }
+    }
+    return {
+      order: todos.map((todo) => todo.id).join(','),
+      remaining: todos.filter((todo) => !todo.completed).length,
+      state: todos
+        .map((todo) => `${todo.id}:${todo.completed ? 1 : 0}:${todo.title}`)
+        .join('|'),
+    };
+  }
+
   for (const mode of config.modes) {
     for (const count of config.counts) {
       for (const scenario of config.scenarios) {
@@ -71,11 +104,13 @@ export async function measureInPage(
           observer.disconnect();
 
           const validation = bench.validate();
+          const expected = expectedView(count, scenario, iterations);
           if (
             validation.rows !== count ||
             validation.firstTitle.length === 0 ||
-            validation.remaining < 0 ||
-            validation.remaining > count
+            validation.order !== expected.order ||
+            validation.remaining !== expected.remaining ||
+            validation.state !== expected.state
           ) {
             throw new Error(
               `${bench.id} failed ${mode}/${scenario}/${count}: ${JSON.stringify(validation)}`,

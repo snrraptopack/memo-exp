@@ -35,7 +35,11 @@ function TodoRow(props: { todo: Todo }) {
     if (mode() === 'forced') void forcedRevision();
     return props.todo.completed;
   };
-  return <li classList={{ completed: completed() }}>{title()}</li>;
+  return (
+    <li classList={{ completed: completed() }} data-id={String(props.todo.id)}>
+      {title()}
+    </li>
+  );
 }
 
 const remainingCount = createMemo(() => remaining(visible()));
@@ -81,8 +85,9 @@ window.__frameworkBench = {
     return {
       rows: target.querySelectorAll('li').length,
       firstTitle: target.querySelector('li')?.textContent?.trim() ?? '',
+      order: Array.from(target.querySelectorAll('li'), (row) => row.dataset.id).join(','),
       remaining: Number(target.querySelector('#remaining')?.textContent ?? -1),
+      state: Array.from(target.querySelectorAll('li'), (row) => `${row.dataset.id}:${row.classList.contains('completed') ? 1 : 0}:${row.textContent?.trim() ?? ''}`).join('|'),
     };
   },
 };
-

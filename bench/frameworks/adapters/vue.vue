@@ -23,7 +23,10 @@ const visible = computed(() => {
   return mode.value === 'forced' ? forcedSnapshot : reactiveSnapshot.value;
 });
 
-const remainingCount = computed(() => remaining(visible.value));
+const remainingCount = computed(() => {
+  if (mode.value === 'forced') void forcedRevision.value;
+  return remaining(visible.value);
+});
 
 function mutateReactive(scenario: BenchScenario): void {
   mutatePlain(reactiveSnapshot.value as Snapshot, scenario);
