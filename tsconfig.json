@@ -5,7 +5,7 @@
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "allowJs": true,
     "types": ["bun"],
 
@@ -30,5 +30,5 @@
   },
 
   "include": ["src", "compiler", "examples", "test"],
-  "exclude": ["test/fixtures"]
+  "exclude": ["test/fixtures", "examples/compiled-todo.ts"]
 }

@@ -1,8 +1,6 @@
 import * as MD from "../src/runtime";
 const WRITES_0 = ["data", "selected"];
-const WRITES_1 = ["data", "selected"];
-const WRITES_2 = ["data", "selected"];
-const WRITES_3 = ["selected"];
+const WRITES_1 = ["selected"];
 MD.installAccessTable({
   readers: {
     "data": ["AppInline", "AppInline/*"],
@@ -44,7 +42,7 @@ export function BenchAppInline(id, parent) {
   button1.onclick = () => {
     data = buildData(10000);
     selected = null;
-    MD.commitWrites(WRITES_1);
+    MD.commitWrites(WRITES_0);
   };
   button1.appendChild(text1);
   const text2 = document.createTextNode("append1k");
@@ -84,7 +82,7 @@ export function BenchAppInline(id, parent) {
   button6.onclick = () => {
     data = [];
     selected = null;
-    MD.commitWrites(WRITES_2);
+    MD.commitWrites(WRITES_0);
   };
   button6.appendChild(text6);
   const div0 = document.createElement("div");
@@ -136,7 +134,7 @@ export function BenchAppInline(id, parent) {
     }
     li0.onclick = () => {
       selected = item.id;
-      MD.commitWrites(WRITES_3);
+      MD.commitWrites(WRITES_1);
     };
     li0.appendChild(text0);
     li0.appendChild(text1);

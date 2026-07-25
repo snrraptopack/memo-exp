@@ -14,11 +14,9 @@
  *   root-subtree commit — exactly Imba's behavior. Never incorrect, just not
  *   scoped (spec §4.5 fallback rule).
  *
- * HONEST LIMITATION: patterns over-approximate. 'Row[*]' dirties ALL live rows
- * even when only two could visibly change; the value-cached setters absorb
- * that slack (guarded writes no-op). The sharpening path — patterns
- * parametrized by event payload, e.g. 'Row[{e.payload.id}]' — is a known
- * follow-up, deferred until M4 benchmarks say whether it matters.
+ * HONEST LIMITATION: ordinary 'Row[*]' readers over-approximate and dirty all
+ * matching live rows. Parametrized payload patterns can narrow this when the
+ * compiler has a precise target; otherwise guarded writes absorb the slack.
  */
 
 import { onRegistryChange, registeredIds, type EntityId } from './kernel';
@@ -26,7 +24,7 @@ import { onRegistryChange, registeredIds, type EntityId } from './kernel';
 export interface AccessTable {
   readers: Record<string, string[]>;
   opaque?: string[];
-  /** Reserved L2 precision format; accepted before payload routing ships. */
+  /** L2 precision patterns, interpolated from commitWrites(..., payload). */
   params?: Record<string, readonly { pattern: string }[]>;
 }
 

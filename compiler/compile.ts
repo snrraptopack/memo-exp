@@ -23,9 +23,9 @@ export function compile(source: string, opts: MemoDomOptions = {}): string {
   const out = transformSync(source, {
     filename: 'component.tsx',
     plugins: [
-      [syntaxJsx, {}],
+      [syntaxJsx as any, {}],
       [memoDomPlugin, opts],
-      [transformTypescript, { isTSX: true }],
+      [transformTypescript as any, { isTSX: true }],
     ],
     configFile: false,
     babelrc: false,

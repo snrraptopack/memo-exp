@@ -75,6 +75,14 @@ describe('R13 — computeds, code generation', () => {
     expect(code).toContain('"App/$computed/shout"');
   });
 
+  it('collection literals derived from state take precedence over mutable-collection classification', () => {
+    const code = compile(
+      `let count = 1;\nconst pair = [count, count + 1];\nfunction C() { return <p>{pair.join(',')}</p>; }`,
+    );
+    expect(code).toContain('"App/$computed/pair"');
+    expect(code).toContain('MD.computedChanged(pair, next)');
+  });
+
   it('store-member derivations read the dotted key', () => {
     const code = compile(
       `const store = { items: [1, 2] };\nconst total = store.items.reduce((s, i) => s + i, 0);\nfunction C() { return <p>{total}</p>; }`,

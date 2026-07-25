@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Generated Compiled Output for examples/todo.tsx
  */

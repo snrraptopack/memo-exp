@@ -205,6 +205,30 @@ export function transformComponent(
   const scope = newScope();
   const rootVar = emitElement(ctx, scope, jsx, name, path, null, rowCtx);
 
+  // R14: local derivations live in the instance closure and recompute at the
+  // front of update(). Props re-sync is unshifted below, so final order is:
+  // props -> derivations (source order) -> child/DOM guarded writes.
+  const localComputeds = ctx.instanceComputeds.get(name);
+  if (localComputeds !== undefined) {
+    for (const stmt of node.body.body) {
+      if (
+        t.isVariableDeclaration(stmt, { kind: 'const' }) &&
+        stmt.declarations.some((d) => t.isIdentifier(d.id) && localComputeds.has(d.id.name))
+      ) {
+        (stmt as t.VariableDeclaration).kind = 'let';
+      }
+    }
+    scope.updaters.unshift(() =>
+      t.blockStatement(
+        [...localComputeds].map(([computedName, expr]) =>
+          t.expressionStatement(
+            t.assignmentExpression('=', t.identifier(computedName), t.cloneNode(expr)),
+          ),
+        ),
+      ),
+    );
+  }
+
   const kept = node.body.body.filter((s) => s !== returnStmt);
 
   // -- R10: props box. User params become locals synced from __p ---------
@@ -418,7 +442,13 @@ function emitElement(
     const seen = scope.childCounts.get(tag) ?? 0;
     scope.childCounts.set(tag, seen + 1);
     const base = tag.charAt(0).toLowerCase() + tag.slice(1);
-    const varName = seen === 0 ? base : `${base}${seen}`;
+    const candidate = seen === 0 ? base : `${base}${seen}`;
+    // A generated child result must never shadow a user/module binding. The
+    // old `const count = Count(..., [count])` both hit the TDZ in its own
+    // initializer and changed every later `count` reference in the factory.
+    const varName = compPath.scope.hasBinding(candidate)
+      ? compPath.scope.generateUidIdentifier(candidate).name
+      : candidate;
     const idSuffix = seen === 0 ? `/${tag}` : `/${tag}[${seen}]`;
     const propEntries: Array<{ name: string; value: t.Expression }> = [];
     let needsPush = false;

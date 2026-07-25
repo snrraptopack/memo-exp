@@ -1,15 +1,28 @@
 # memoized-dom
 
-To install dependencies:
+Analyzed, memoized real-DOM rendering for plain TypeScript + JSX.
+
+Start with:
+
+- `memoized-dom-paradigm.md` for the product and architecture constraints.
+- `emission-spec.md` for the normative compiler contract.
+- `architecture-review.md` for current implementation status and priorities.
+
+Install dependencies:
 
 ```bash
 bun install
 ```
 
-To run:
+Run tests:
 
 ```bash
-bun run index.ts
+bun run test
+bun run typecheck
 ```
 
-This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Run the Chromium benchmark:
+
+```bash
+bun run bench
+```

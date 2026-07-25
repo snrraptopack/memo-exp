@@ -99,8 +99,10 @@ button.appendChild(t1);                 // t1 = slot node for {count}
 
 ### R3 — Dynamic expressions become numbered slots
 
-Each dynamic expression in a component gets a **stable slot key** (`v1`, `v2`,
-… in source order). The slot's previous value lives in `$[key]`.
+Each dynamic expression in a component gets a stable scalar cache binding
+(`$s0`, `$s1`, … in source order). A shared `$t` temporary evaluates each
+expression once. Emission is inline; compiled hot paths do not call runtime
+setter helpers or perform string-keyed cache lookups.
 
 Slot kinds and their setters (runtime `setters.ts`):
 
@@ -113,27 +115,30 @@ Slot kinds and their setters (runtime `setters.ts`):
 | `style:prop={expr}` | `setStyle($, key, el, 'prop', expr)` |
 | value/checked on inputs | `setProp($, key, el, 'value', expr)` |
 
-### R4 — Creation seeds the cache directly; updates are guarded
+### R4 — Creation and update share one inline guard
 
-**Creation branch writes initial values directly and records them in `$` —
-it never calls the guarded setters** (redundant DOM writes at mount, measured
-in M4). The update branch only calls guarded setters.
+Creation emits the same inline guard used by the update closure. A fresh cache
+binding is `undefined`; DOM defaults already represent `undefined`, null, and
+boolean text correctly, while every other initial value enters the guarded
+write.
 
 ```js
-// creation (emitted once):
-const label0 = `count: ${count}`;
-const t1 = document.createTextNode(label0);
-$.v1 = label0;                          // seed: cache mirrors what was written
-
-// update branch:
-function update() {
-  setText($, 'v1', t1, `count: ${count}`);   // no DOM write when unchanged
+let $s0, $t;
+const update = () => {
+  if ($s0 !== ($t = `count: ${count}`)) {
+    $s0 = $t;
+    text0.data = String($t);
+  }
+};
+const text0 = document.createTextNode('');
+if ($s0 !== ($t = `count: ${count}`)) {
+  $s0 = $t;
+  text0.data = String($t);
 }
 ```
 
 **Invariant (M1):** the value cache is always in sync with what was written.
-Creation and update compute the value with the *same expression*, only the
-write mechanism differs.
+Creation and update compute the value with the same expression and guard.
 
 ### R5 — Handlers emit the production form: body + commitWrites
 
@@ -156,6 +161,10 @@ button.onclick = () => {
 ```
 
 - No per-event array allocation, no wrapper closures beyond the one handler.
+- Identical sorted write-sets share one hoisted constant module-wide.
+- Writes in async continuations and nested timer/promise callbacks commit in
+  their own function scope. Component-local helpers reachable from a handler
+  are analyzed transitively.
 - If the write-set analysis is inconclusive for the handler body, the
   write-set is the sentinel `OPAQUE` (§4.4) → root-subtree commit.
 
@@ -309,10 +318,66 @@ props box is dropped on unregister via the M5.6 registry listener.
 routing to the child happens through `markDirty` from `setProps`, keeping
 the table purely about module state.
 
+### R12 — Component-local state stays in the instance closure
+
+Top-level component `let`/`var` bindings and mutable `const` collections or
+plain objects are per-instance state. The factory runs once per instance, so
+these bindings naturally persist in its closure. Their writes always emit
+`markDirty(id)`; they never enter the app-wide access table.
+
+Instance bindings shadow same-spelled module bindings. Analysis follows Babel
+binding identity, not identifier text. A component prop is also a local
+binding: assigning or mutating it outside the keyed-row rule is a compile
+error rather than a write to same-named module state.
+
+### R13 — Module derivations are ordered computed entities
+
+A module-level `const x = <expression referencing reactive module state>` is
+rewritten to `let` and paired with a depth-`-1` computed entity. Source writes
+dirty that entity through the normal access table; it recomputes before normal
+readers and calls `commitWrites(['x'])` only when `computedChanged(old, next)`
+reports a change. Chained module computeds therefore settle in commit passes
+without a runtime dependency graph.
+
+Detection is by reactive binding reference, including collection/object
+literals. Mutating a source inside its derivation, assigning a computed, or
+using `await`/`yield` is a compile error.
+
+### R14 — Per-instance derivations recompute in the owner update
+
+A top-level component `const` whose initializer references a prop, instance
+state, module state, or an earlier local derivation is a per-instance
+derivation. It is rewritten to `let`, initialized during creation, and
+reassigned in source order at the start of `update()`:
+
+```tsx
+function Counter(value) {
+  let count = 1;
+  const total = count + value;
+  return <button onClick={() => count++}>{total}</button>;
+}
+```
+
+```js
+let count = 1;
+let total = count + value;
+const update = () => {
+  value = __p[0];          // R10 prop resync first
+  total = count + value;   // R14 derivation next
+  // guarded DOM/child writes last
+};
+```
+
+No computed entity, access-table key, change-propagation write, or subscription
+is emitted. The owning instance is already the exact invalidation unit, so
+recomputing its local derivations is both simpler and cheaper. Local derivation
+writes/mutations and async initializers are compile errors.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
-**syntactic only** — no type information, no interprocedural tracking at launch.
+syntactic and binding-aware, with summaries for module function declarations
+and reachable component-local function/arrow helpers. It uses no type checker.
 
 ### 4.1 Reads
 
@@ -362,11 +427,11 @@ A handler whose write-set contains an opaque variable routes `OPAQUE` →
 - **L2 (later):** alias tracking (`const a = items; a.push(x)`), cross-function
   write propagation within the module, payload-parametrized patterns (§5).
 
-### 4.6 Cross-module state (the ESM constraint)
+### 4.6 Cross-module state target (not yet implemented end-to-end)
 
 **Language fact:** ES modules forbid reassigning an imported binding
 (`import { x } from './state'; x = 5` → error). Cross-file shared state
-therefore takes exactly two shapes, and the compiler handles both.
+therefore takes exactly two shapes, and the linker design must handle both.
 
 **Shape 1 — state objects (primary pattern):**
 
@@ -378,9 +443,10 @@ import { store } from './state';
 store.selectedId = item.id;   // legal: property mutation, not rebinding
 ```
 
-Table keys become **property paths** (`store.selectedId`), which are syntactic
-and therefore identical across every importing module. L1 supports this fully:
-a read/write of `store.prop` keys on the dotted path, not the object name.
+Linked table keys become **property paths** (`store.selectedId`), which are
+syntactic and therefore identical across every importing module after import
+resolution. The current single-module compiler supports dotted paths locally;
+it does not yet resolve imported bindings to their defining module.
 
 **Shape 2 — exported mutator functions:**
 
@@ -399,10 +465,10 @@ selectedId`; compiling the importer resolves the call through the summary.
 Summaries ship at **L1.5/L2**; at L1 an unresolved cross-file call is **opaque**
 (→ root-subtree commit — correct, merely unscoped).
 
-**Canonical variable ids:** all table keys are module-qualified
+**Target canonical variable ids:** all linked table keys are module-qualified
 (`./state.ts#store.selectedId`), because two modules may both declare `count`.
 Each compiled file emits a table **fragment**; the bundler merges fragments
-into one app-wide table at build time (resolves former §10.3).
+into one app-wide table at build time. This linker/bundler stage is still open.
 
 ## 5. Parametrized patterns (designed now, implemented in L2)
 
@@ -471,40 +537,36 @@ export function Counter() {
 Emission:
 
 ```js
-const WRITES_1 = ['count'];
-
 export function Counter(id, parent) {
   let count = 0;
-  const $ = {};
+  let $s0, $t;
 
-  // creation branch
+  const update = () => {
+    if ($s0 !== ($t = count)) {
+      $s0 = $t;
+      text.data = String($t);
+    }
+  };
+  register({ id, parent, render: update });
+
   const button = document.createElement('button');
   button.append('count: ');
-  const v0 = ` ${count}`;
-  const t1 = document.createTextNode(v0);
-  $.v1 = v0;                              // R4 seed
-  button.appendChild(t1);
-
-  button.onclick = () => {               // R5 production form
-    count++;
-    commitWrites(WRITES_1);
-  };
-
-  function update() {                    // update branch
-    setText($, 'v1', t1, ` ${count}`);
+  const text = document.createTextNode('');
+  if ($s0 !== ($t = count)) {
+    $s0 = $t;
+    text.data = String($t);
   }
-
-  register({ id, parent, render: update });   // R1
+  button.appendChild(text);
+  button.onclick = () => {
+    count++;
+    markDirty(id); // R12: exact owner, no access-table routing
+  };
   return button;
 }
-
-// module-level emission:
-installAccessTable({ readers: { count: ['App/Counter'] } }, 'App');
 ```
 
-(Routing note: `count` is local, so L1 locality classification routes this to
-the origin entity directly; the table entry is the compiler's conservative
-fallback path. Either is correct — prefer local routing when provable.)
+No access-table entry or write-set constant is emitted for `count`: it is an
+instance binding and only this closure can read or write it.
 
 ## 9. Worked example B — select list (shared state, parametrized)
 
@@ -581,10 +643,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
    value", e.g. the previously-selected row): does the runtime track last
    values per variable, or does the compiler emit explicit prev-capture in
    handlers? Leaning: compiler emits prev-capture — keeps the runtime dumb.
-3. ~~Multi-component files / cross-module reads~~ **RESOLVED (§4.6):**
-   canonical module-qualified ids, per-file table fragments merged app-wide at
-   bundle time; store-object property paths at L1, mutator-function summaries
-   at L1.5/L2.
+3. **Cross-module implementation of §4.6:** canonical module-qualified keys
+   and bundle-time fragment linking remain the target architecture, but the
+   current compiler is still single-module.
 4. **Dev-mode event log:** production emission omits it (R5); dev builds may
    wrap handlers with the provenance log (current `handle()` in events.ts).
 
@@ -597,7 +658,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: M5.3 (compiler probes + runtime review).
+> Last full audit: R14 (compiler probes + runtime execution + benchmark).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
@@ -608,17 +669,13 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   composition slots.
 - Components must be top-level `function` declarations (no arrows); exactly
   one top-level JSX return per component.
-- Component-local state (per-instance `let` inside the factory) — design
-  agreed (factories run once per mount → always-local commits), not
-  implemented.
 - Lists inside list rows; components inside inline rows.
 - Recursive components — guarded with an explicit compile error (cycle
   detection in path enumeration); needs lazy creation to support.
 - A component used both statically **and** as a list row — explicit compile
   error (split it in two); supporting both usages needs pattern union.
-- Arrow-function helpers (`const f = () => …`) get no summaries — calls to
-  them from handlers do not track writes (only `function` declarations are
-  summarized).
+- Module-level arrow helpers (`const f = () => …`) get no summaries. Reachable
+  component-local arrows/functions are instrumented, including nested timers.
 
 ### 11.3 Handler / analysis semantics not yet covered
 
@@ -628,22 +685,25 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 - `delete store.x`, `Object.assign(store, …)` — untracked writes.
 - Reads in helper *calls* are summarized (11.1.7); reads through aliasing
   (`const a = items; a.push(x)`) are not — L2 per §4.5.
-- Re-entrancy: `markDirty` during a running render is untested.
+- Timers/subscriptions registered directly during factory initialization are
+  not instrumented. Only callbacks reachable from an analyzed handler/helper
+  currently receive commits.
+- R14 rejects direct writes in local derivations, but does not yet fold a
+  component-local helper's write summary into derivation purity checking.
+- Generated child-result bindings are hygienic; the remaining fixed internal
+  names (`id`, `parent`, `update`, `$t`, slot/node names) still need one
+  compiler-wide allocator before arbitrary user bindings are collision-proof.
 - Over-invalidation note: a scope's commit fires even when its writes were
   skipped by an `if` — safe direction, absorbed by setter guards.
 
 ### 11.4 Runtime / DOM / lifecycle gaps
 
-- **Props-down reactivity** (child receives updated props without re-creation)
-  — the big expressiveness milestone after R8.
-- Controlled inputs: `value`/`checked` should route to `setProp` (property),
-  not `setAttr`. (`setProp` exists in the runtime; the emitter doesn't use it.)
 - SVG elements (`createElementNS`); style objects; class arrays/objects;
   attribute-name mapping (`htmlFor`, `tabIndex`).
 - No unmount/cleanup API outside list rows; no lifecycle hooks
   (`onMount`/`onUnmount`); timers or subscriptions started in a factory body
   leak.
-- No scheduler flush-now API or priority lanes.
+- No priority lanes. `commit()` is the synchronous flush-now API.
 
 ### 11.5 Multi-module, scale & engineering
 
@@ -652,7 +712,6 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   implemented end-to-end).
 - `rootId` collisions across modules; table-install ordering vs. mount order —
   untested.
-- `resolveWrites` cost at scale (patterns × entities × commits) — unmeasured.
 - Identity-keyed lists of duplicate primitives (`[1, 2, 2]`) throw on
   duplicate keys — document or add index fallback.
 - No source maps, no Vite plugin/packaging, no HMR story, no dev/prod build

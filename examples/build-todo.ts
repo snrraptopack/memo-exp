@@ -12,7 +12,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const todoSource = readFileSync(resolve(__dirname, 'todo.tsx'), 'utf-8');
 const compiledTodo = compile(todoSource, { rootId: 'TodoApp', runtimePath: '../src/runtime' });
 
-const outputContent = `/**
+const outputContent = `// @ts-nocheck
+/**
  * Generated Compiled Output for examples/todo.tsx
  */
 ${compiledTodo}

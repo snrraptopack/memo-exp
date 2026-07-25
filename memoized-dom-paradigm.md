@@ -56,23 +56,26 @@ contribution and the reason the framework exists.
 Every component's render compiles into two branches:
 
 - **Creation branch (runs once per instance):** creates real DOM nodes, sets all
-  static attributes once, caches every node and dynamic text node on a
-  per-instance cache object (`$`), then never runs again.
+  static attributes once, and closes over nodes plus scalar slot caches, then
+  never runs again.
 - **Update branch (runs on re-render):** executes *only* the dynamic writes.
 
 Conceptual compiler output:
 
 ```js
-render() {
-  const $ = this.$ || (this.$ = {});
-  if (!$.rendered) {
-    $.h1 = this.appendChild(document.createElement('h1'));
-    $.h1.className = 'header';        // static: set once, never revisited
-    $.t1 = $.h1.appendChild(document.createTextNode(number));
-  } else {
-    if ($.v1 !== number) $.t1.data = ($.v1 = number);  // dynamic only
-  }
-  $.rendered = true;
+function Counter(id, parent) {
+  let number = 0;
+  let $s0, $t;
+  const update = () => {
+    if ($s0 !== ($t = number)) {
+      $s0 = $t;
+      text.data = String($t);
+    }
+  };
+  register({ id, parent, render: update });
+  const text = document.createTextNode('');
+  update(); // seeds the scalar cache and initial DOM value
+  return text;
 }
 ```
 
@@ -97,7 +100,8 @@ no lost focus/video/`<details>` state). Identity travels with the item.
 - After any DOM event is handled, a re-render is scheduled.
 - Scheduling is deduped and batched to the next animation frame: 1000 triggers →
   1 render pass.
-- If the handler is async, another commit is scheduled when the promise settles.
+- Async functions and nested callbacks commit at the lexical scope where each
+  write actually runs, including continuations after `await`.
 - Rationale: virtually all state changes in a UI originate from user interaction,
   so the event system is the natural invalidation source — no subscriptions.
 
@@ -158,22 +162,24 @@ type Entity = {
   id: string;                 // "App/CartList/Row[item-42]"
   parent: string | null;
   children: Set<string>;
-  $: NodeCache;               // cached real DOM nodes + previous dynamic values
-  state: Record<string, any>; // component-local state cells (compiler-lifted)
-  status: 'clean' | 'dirty';
+  depth: number;
+  render: () => void;         // update closure only
 };
 ```
+
+Component state, DOM nodes, slot caches, and local derivations stay in the
+factory closure. Keeping them out of the registry makes the hot entity record
+small and lets JavaScript engines optimize direct lexical access.
 
 Properties:
 
 - **IDs are stable across reorders** because list identity is keyed by item
   (Mechanism 4.3). A moved row keeps its ID, state, cache, and nodes.
-- **Child state survives parent re-render for free**: parent re-executes,
-  regenerates child calls, runtime looks up by ID — existing entity found, reused.
-  No reconciliation of identity is ever needed.
-- **State is private**: component-local `let` declarations are lifted into the
-  entity's `state` record. Only the owner mutates them, which is what makes the
-  static read/write table sound for local state.
+- **Child state survives parent updates for free**: static child factories run
+  only during creation; later parent updates re-push changed props into the
+  existing child entity.
+- **State is private**: component-local state remains in one factory closure.
+  Only that instance can address it, so local writes dirty the owner directly.
 
 ## 6. The Commit Cycle (precise)
 
@@ -198,12 +204,17 @@ USER EVENT (click / input / keydown / ...)
          dirtySet.clear()
 ```
 
-**Async handlers:** wrap the returned promise; on settle, run steps 3–5 again
-(the handler's write-set is the same; values are simply newer).
+**Async handlers:** the compiler inserts a commit after the writes in each
+function scope. A write after `await` commits in that continuation; a timer or
+promise callback commits inside that callback. This is more precise than
+committing the handler's full write-set again when its promise settles.
 
-**Non-event state changes** (websocket, timers): these APIs are wrapped by the
-runtime (or the compiler rewrites them) to schedule the same commit path.
-In the worst case: schedule a root commit — still Imba-equivalent.
+**Non-event state changes** (websocket, timers): compiler-visible callbacks
+reachable from handlers and component-local helpers receive the same inserted
+commits. Callbacks registered during factory initialization and mutations
+hidden in external code still need a lifecycle/boundary design; they must not
+be described as supported until the compiler can instrument them or emit a
+conservative root fallback.
 
 ## 7. Traces
 

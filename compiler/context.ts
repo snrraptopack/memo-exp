@@ -100,6 +100,13 @@ export interface Ctx {
    */
   instanceState: Map<string, Set<string>>;
   /**
+   * R14: per-instance derivations. Unlike module computeds, these need no
+   * registry entity or access-table key: the owning instance already renders
+   * for every source write/prop push, so its update prologue recomputes them.
+   * Map value preserves source order for chained derivations.
+   */
+  instanceComputeds: Map<string, Map<string, t.Expression>>;
+  /**
    * R13: auto-detected computeds — module-level `const x = <state
    * derivation>` (detection by REFERENCE: any expression mentioning state).
    * reads = the source state keys the derivation reads
@@ -139,6 +146,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     rowReads: new Map(),
     condReads: new Map(),
     instanceState: new Map(),
+    instanceComputeds: new Map(),
     computeds: new Map(),
     header: [],
     readers: new Map(),
@@ -187,6 +195,7 @@ export function memberKey(node: t.MemberExpression): string | null {
       if (!t.isIdentifier(cur.property)) return null;
       parts.unshift(cur.property.name);
     }
+    if (t.isSuper(cur.object)) return null;
     cur = cur.object;
   }
   while (t.isTSNonNullExpression(cur) || t.isTSAsExpression(cur)) {
@@ -237,6 +246,7 @@ export function keyPathOf(keyExpr: t.Expression | null, itemParam: string): stri
   while (t.isMemberExpression(cur) && !cur.computed) {
     if (!t.isIdentifier(cur.property)) return null;
     segs.unshift(cur.property.name);
+    if (t.isSuper(cur.object)) return null;
     cur = cur.object;
   }
   if (!t.isIdentifier(cur, { name: itemParam }) || segs.length === 0) return null;
@@ -269,7 +279,8 @@ export function memberRootName(node: t.MemberExpression): string | null {
   let cur: t.Expression = node;
   while (true) {
     if (t.isMemberExpression(cur)) {
-      cur = cur.object as t.Expression;
+      if (t.isSuper(cur.object)) return null;
+      cur = cur.object;
       continue;
     }
     if (t.isTSNonNullExpression(cur) || t.isTSAsExpression(cur)) {

@@ -275,6 +275,7 @@ function storeReadKey(ctx: Ctx, m: NodePath<t.MemberExpression>): string | null 
   if (!key || !key.includes('.')) return null;
   const rootName = key.split('.')[0]!;
   if (ctx.state.get(rootName) !== 'store') return null;
+  if (m.scope.getBinding(rootName)?.scope.path.isProgram() !== true) return null;
   const parent = m.parentPath;
   if (
     parent.isAssignmentExpression({ operator: '=' }) &&
@@ -480,12 +481,23 @@ function collectReads(ctx: Ctx): void {
               const v = attrExpr(a.value);
               if (!v) continue;
               walkNodes(v, (n) => {
-                if (t.isIdentifier(n) && ctx.state.has(n.name)) reads.add(n.name);
+                if (
+                  t.isIdentifier(n) &&
+                  ctx.state.has(n.name) &&
+                  call.scope.getBinding(n.name)?.scope.path.isProgram() === true
+                ) {
+                  reads.add(n.name);
+                }
                 if (t.isMemberExpression(n)) {
                   const key = memberKey(n);
                   if (key !== null && key.includes('.')) {
                     const rootName = key.split('.')[0]!;
-                    if (ctx.state.get(rootName) === 'store') reads.add(key);
+                    if (
+                      ctx.state.get(rootName) === 'store' &&
+                      call.scope.getBinding(rootName)?.scope.path.isProgram() === true
+                    ) {
+                      reads.add(key);
+                    }
                   }
                 }
               });
@@ -508,7 +520,11 @@ function collectReads(ctx: Ctx): void {
             const cbPath = call.get('arguments')[0];
             cbPath?.traverse({
               Identifier(id) {
-                if (id.node.name !== site.itemParam && ctx.state.has(id.node.name)) {
+                if (
+                  id.node.name !== site.itemParam &&
+                  ctx.state.has(id.node.name) &&
+                  id.scope.getBinding(id.node.name)?.scope.path.isProgram() === true
+                ) {
                   rowVars.add(id.node.name);
                 }
               },
@@ -532,16 +548,20 @@ function collectReads(ctx: Ctx): void {
         }
         // helper calls: the callee's summarized reads belong to this component
         const callee = call.node.callee;
-        if (t.isIdentifier(callee) && ctx.helpers.has(callee.name)) {
+        if (
+          t.isIdentifier(callee) &&
+          ctx.helpers.has(callee.name) &&
+          call.scope.getBinding(callee.name)?.scope.path.isProgram() === true
+        ) {
           for (const r of summarizeHelper(ctx, callee.name).reads) reads.add(r);
         }
       },
 
       Identifier(id) {
         if (!ctx.state.has(id.node.name)) return;
-        if (ctx.instanceState.get(name)?.has(id.node.name) === true) {
-          return; // R12: instance state SHADOWS module state in its component
-        }
+        // Static-table keys identify module bindings, not same-spelled props,
+        // instance state, or local derivations.
+        if (id.scope.getBinding(id.node.name)?.scope.path.isProgram() !== true) return;
         const parent = id.parentPath;
         if (
           parent.isAssignmentExpression({ operator: '=' }) &&
@@ -710,7 +730,10 @@ function scanComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
     for (const decl of inner.declarations) {
       if (!t.isIdentifier(decl.id) || decl.init == null) continue;
       const name = decl.id.name;
-      if (ctx.state.has(name)) continue; // store / const-collection already
+      // A collection/object literal that references earlier state is a
+      // derivation, not independently mutable state. Detection-by-reference
+      // takes precedence over the initializer-shape classification.
+      if (ctx.state.get(name) === 'let' || ctx.state.get(name) === 'computed') continue;
       if (t.isFunction(decl.init) || t.isJSX(decl.init)) continue; // not data
       const r = analyzeComputed(ctx, decl.init);
       if (r.impure) {
@@ -739,12 +762,152 @@ function scanInstanceState(ctx: Ctx): void {
     const vars = new Set<string>();
     for (const stmt of p.node.body.body) {
       if (!t.isVariableDeclaration(stmt)) continue;
-      if (stmt.kind !== 'let' && stmt.kind !== 'var') continue;
+      if (stmt.kind !== 'let' && stmt.kind !== 'var' && stmt.kind !== 'const') continue;
       for (const d of stmt.declarations) {
-        if (t.isIdentifier(d.id)) vars.add(d.id.name);
+        if (!t.isIdentifier(d.id)) continue;
+        if (
+          stmt.kind === 'let' ||
+          stmt.kind === 'var' ||
+          isStoreObject(d.init) ||
+          isConstCollection(d.init)
+        ) {
+          vars.add(d.id.name);
+        }
       }
     }
     if (vars.size > 0) ctx.instanceState.set(name, vars);
+  }
+}
+
+/**
+ * R14: discover top-level component consts derived from instance state,
+ * reactive props, module state, or an earlier local derivation.
+ *
+ * Local derivations are deliberately cheaper than R13 module computeds:
+ * the owner is already the exact invalidation unit, so update() recomputes
+ * them in source order before guarded DOM writes. No entity, write-set, or
+ * runtime dependency edge is needed.
+ */
+function scanInstanceComputeds(ctx: Ctx): void {
+  for (const [compName, compPath] of ctx.compPaths) {
+    const reactiveBindings = new Set<unknown>();
+
+    for (const param of compPath.node.params) {
+      if (!t.isIdentifier(param)) continue;
+      const binding = compPath.scope.getBinding(param.name);
+      if (binding) reactiveBindings.add(binding);
+    }
+    for (const name of ctx.instanceState.get(compName) ?? []) {
+      const binding = compPath.scope.getBinding(name);
+      if (binding) reactiveBindings.add(binding);
+    }
+    for (const name of ctx.state.keys()) {
+      const binding = compPath.scope.getBinding(name);
+      if (binding?.scope.path.isProgram()) reactiveBindings.add(binding);
+    }
+
+    const computeds = new Map<string, t.Expression>();
+    const statements = compPath.get('body').get('body');
+    for (const stmtPath of statements) {
+      if (!stmtPath.isVariableDeclaration({ kind: 'const' })) continue;
+      for (const declPath of stmtPath.get('declarations')) {
+        const decl = declPath.node;
+        if (!t.isIdentifier(decl.id) || decl.init == null || t.isFunction(decl.init)) continue;
+        const initPath = declPath.get('init');
+        if (!initPath.isExpression()) continue;
+
+        let readsReactive = false;
+        let reason: string | null = null;
+        const bindingIsReactive = (name: string, at: NodePath): boolean => {
+          const binding = at.scope.getBinding(name);
+          return binding !== undefined && reactiveBindings.has(binding);
+        };
+        const noteIdentifier = (p: NodePath): void => {
+          if (t.isIdentifier(p.node) && bindingIsReactive(p.node.name, p)) {
+            readsReactive = true;
+          }
+        };
+        const mutationRoot = (node: t.Node): string | null =>
+          t.isIdentifier(node)
+            ? node.name
+            : t.isMemberExpression(node)
+              ? memberRootName(node)
+              : null;
+        const noteCall = (p: NodePath<t.CallExpression>): void => {
+          const callee = p.node.callee;
+          if (!t.isMemberExpression(callee)) return;
+          const prop = callee.property;
+          const method =
+            !callee.computed && t.isIdentifier(prop)
+              ? prop.name
+              : callee.computed && t.isStringLiteral(prop)
+                ? prop.value
+                : null;
+          if (method === null || !MUTATOR_METHODS.has(method)) return;
+          const root = mutationRoot(callee.object);
+          if (root !== null && bindingIsReactive(root, p)) {
+            reason = `calls '${method}' on reactive state '${root}'`;
+          }
+        };
+
+        if (initPath.isReferencedIdentifier()) noteIdentifier(initPath);
+        if (initPath.isAssignmentExpression()) {
+          const root = mutationRoot(initPath.node.left);
+          if (root !== null && bindingIsReactive(root, initPath)) {
+            reason = 'contains an assignment to reactive state';
+          }
+        } else if (initPath.isUpdateExpression()) {
+          const root = mutationRoot(initPath.node.argument);
+          if (root !== null && bindingIsReactive(root, initPath)) {
+            reason = 'contains an update (++/--) to reactive state';
+          }
+        } else if (initPath.isCallExpression()) {
+          noteCall(initPath);
+        } else if (initPath.isAwaitExpression()) {
+          reason = 'uses await; per-instance derivations must be synchronous';
+        } else if (initPath.isYieldExpression()) {
+          reason = 'uses yield; per-instance derivations must be synchronous';
+        }
+        initPath.traverse({
+          ReferencedIdentifier(p) {
+            noteIdentifier(p);
+          },
+          AssignmentExpression(p) {
+            const root = mutationRoot(p.node.left);
+            if (root !== null && bindingIsReactive(root, p)) {
+              reason = 'contains an assignment to reactive state';
+            }
+          },
+          UpdateExpression(p) {
+            const root = mutationRoot(p.node.argument);
+            if (root !== null && bindingIsReactive(root, p)) {
+              reason = 'contains an update (++/--) to reactive state';
+            }
+          },
+          CallExpression(p) {
+            noteCall(p);
+          },
+          AwaitExpression() {
+            reason = 'uses await; per-instance derivations must be synchronous';
+          },
+          YieldExpression() {
+            reason = 'uses yield; per-instance derivations must be synchronous';
+          },
+        });
+
+        if (!readsReactive) continue;
+        if (reason !== null) {
+          throw declPath.buildCodeFrameError(
+            `memo-dom: local const '${decl.id.name}' is a per-instance derivation but ${reason}`,
+          );
+        }
+        computeds.set(decl.id.name, t.cloneNode(decl.init));
+        const binding = compPath.scope.getBinding(decl.id.name);
+        if (binding) reactiveBindings.add(binding);
+        ctx.instanceState.get(compName)?.delete(decl.id.name);
+      }
+    }
+    if (computeds.size > 0) ctx.instanceComputeds.set(compName, computeds);
   }
 }
 
@@ -753,6 +916,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanComponents(ctx, programPath);
   scanInstanceState(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
+  scanInstanceComputeds(ctx); // R14: module computeds are now valid sources
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)

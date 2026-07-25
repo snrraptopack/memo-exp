@@ -31,6 +31,7 @@ import {
   memberKey,
   memberRootName,
   MUTATOR_METHODS,
+  walkNodes,
   writeTouchesKey,
   type Ctx,
   type RowCtx,
@@ -39,6 +40,55 @@ import { summarizeHelper } from './analysis';
 
 // @babel/traverse is CJS; under ESM the function lands on `.default`.
 const traverse: typeof _traverse = (_traverse as any).default ?? (_traverse as any);
+
+type HandlerFn =
+  | t.ArrowFunctionExpression
+  | t.FunctionExpression
+  | t.FunctionDeclaration;
+
+/** Resolve a component-local helper declared directly in the factory body. */
+function resolveLocalHelper(
+  compPath: NodePath<t.FunctionDeclaration>,
+  name: string,
+): HandlerFn | null {
+  const binding = compPath.scope.getBinding(name);
+  const decl = binding?.path;
+  if (!decl || decl.getFunctionParent() !== compPath) return null;
+  if (decl.isFunctionDeclaration()) return decl.node;
+  if (!decl.isVariableDeclarator()) return null;
+  const init = decl.node.init;
+  return init && (t.isArrowFunctionExpression(init) || t.isFunctionExpression(init))
+    ? init
+    : null;
+}
+
+/**
+ * Instrument component-local helpers reachable from a handler. This closes
+ * the stale-timer gap where `onClick={() => start()}` called
+ * `start = () => setInterval(() => local++, 1000)`: the write lives in a
+ * different function AST, so analyzing only the JSX handler cannot see it.
+ */
+function instrumentReachableLocalHelpers(
+  ctx: Ctx,
+  compPath: NodePath<t.FunctionDeclaration>,
+  root: HandlerFn,
+  compName: string,
+  rowCtx?: RowCtx,
+): void {
+  const names = new Set<string>();
+  walkNodes(root.body, (node) => {
+    if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
+      names.add(node.callee.name);
+    }
+  });
+  for (const name of names) {
+    const helper = resolveLocalHelper(compPath, name);
+    if (helper === null || ctx.analyzedFunctions.has(helper)) continue;
+    ctx.analyzedFunctions.add(helper); // cycle guard
+    instrumentReachableLocalHelpers(ctx, compPath, helper, compName, rowCtx);
+    analyzeHandler(ctx, helper, compName, rowCtx);
+  }
+}
 
 /**
  * Resolve a JSX handler attribute to an analyzable function, augmenting
@@ -95,6 +145,9 @@ export function buildHandler(
 
   // a shared declaration (used by several attributes) is analyzed once
   if (!ctx.analyzedFunctions.has(target)) {
+    if (!forceTable) {
+      instrumentReachableLocalHelpers(ctx, compPath, target, compName, rowCtx);
+    }
     ctx.analyzedFunctions.add(target);
     // R11: a handler shared between a row and a non-row site is analyzed
     // with the FIRST site's row context — pass forceTable for non-row uses.
@@ -242,10 +295,19 @@ function analyzeHandler(
       scopeOf(p).instanceLocal = true;
       return;
     }
-    if (!rootName || !ctx.state.has(rootName)) {
-      noteItemWrite(p, node); // R11: row item writes (foreign to module state)
-      return;
+    if (rootName !== null && instComputeds?.has(rootName)) {
+      throw p.buildCodeFrameError(
+        `memo-dom: cannot mutate per-instance derivation '${rootName}' (R14) — write its source instead`,
+      );
     }
+    if (noteItemWrite(p, node)) return;
+    if (rootName !== null && propNames.has(rootName)) {
+      throw p.buildCodeFrameError(
+        `memo-dom: cannot mutate prop '${rootName}' outside a keyed row — copy it to component-local state first`,
+      );
+    }
+    if (rootName !== null && componentLocals.has(rootName)) return;
+    if (!rootName || !ctx.state.has(rootName)) return;
     const kind = ctx.state.get(rootName)!;
     if (kind === 'computed') {
       throw p.buildCodeFrameError(
@@ -273,15 +335,50 @@ function analyzeHandler(
   // bare markDirty(id), never table routing (the closure belongs to one
   // instance; listed components included).
   const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
+  const instComputeds =
+    compName !== null ? ctx.instanceComputeds.get(compName) : undefined;
+  const propNames =
+    compName !== null ? new Set(ctx.compPropNames.get(compName) ?? []) : new Set<string>();
+  const componentLocals = new Set<string>([
+    ...propNames,
+    ...(instVars ?? []),
+    ...(instComputeds?.keys() ?? []),
+  ]);
+  if (compName !== null) {
+    for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
+      if (t.isVariableDeclaration(stmt)) {
+        for (const d of stmt.declarations) {
+          if (t.isIdentifier(d.id)) componentLocals.add(d.id.name);
+        }
+      } else if (t.isFunctionDeclaration(stmt) && stmt.id) {
+        componentLocals.add(stmt.id.name);
+      }
+    }
+  }
 
   traverse(wrapper, {
     AssignmentExpression(p) {
       const left = p.node.left;
       if (t.isIdentifier(left)) {
         if (locals.has(left.name)) return;
+        if (instComputeds?.has(left.name)) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot assign per-instance derivation '${left.name}' (R14) — write its source instead`,
+          );
+        }
         if (instVars?.has(left.name) === true) {
           scopeOf(p).instanceLocal = true; // R12: per-instance, no table
           return;
+        }
+        if (propNames.has(left.name)) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot assign prop '${left.name}' — copy it to component-local let state first`,
+          );
+        }
+        if (componentLocals.has(left.name)) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot assign component-local const '${left.name}'`,
+          );
         }
         const kind = ctx.state.get(left.name);
         if (!kind) {
@@ -313,9 +410,24 @@ function analyzeHandler(
       const arg = p.node.argument;
       if (t.isIdentifier(arg)) {
         if (locals.has(arg.name)) return;
+        if (instComputeds?.has(arg.name)) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot update per-instance derivation '${arg.name}' (R14) — write its source instead`,
+          );
+        }
         if (instVars?.has(arg.name) === true) {
           scopeOf(p).instanceLocal = true; // R12
           return;
+        }
+        if (propNames.has(arg.name)) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot update prop '${arg.name}' — copy it to component-local let state first`,
+          );
+        }
+        if (componentLocals.has(arg.name)) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot update component-local const '${arg.name}'`,
+          );
         }
         const kind = ctx.state.get(arg.name);
         if (!kind) {
@@ -356,7 +468,16 @@ function analyzeHandler(
             : t.isMemberExpression(obj)
               ? memberRootName(obj)
               : null;
-          if (rootName && ctx.state.has(rootName)) {
+          if (rootName !== null && instComputeds?.has(rootName)) {
+            throw p.buildCodeFrameError(
+              `memo-dom: cannot mutate per-instance derivation '${rootName}' (R14) — write its source instead`,
+            );
+          }
+          if (
+            rootName &&
+            !componentLocals.has(rootName) &&
+            ctx.state.has(rootName)
+          ) {
             const kind = ctx.state.get(rootName)!;
             if (kind === 'computed') {
               throw p.buildCodeFrameError(
@@ -387,6 +508,10 @@ function analyzeHandler(
           } else if (rootName !== null && instVars?.has(rootName) === true) {
             // R12: mutator on an instance-state collection (list.push(…))
             scopeOf(p).instanceLocal = true;
+          } else if (rootName !== null && propNames.has(rootName)) {
+            throw p.buildCodeFrameError(
+              `memo-dom: cannot mutate prop '${rootName}' outside a keyed row — copy it to component-local state first`,
+            );
           }
         }
         return;
@@ -394,7 +519,11 @@ function analyzeHandler(
 
       // calls to module-level helpers: fold the callee's summary into this
       // scope (M5.3 — writes inside helpers used to vanish silently)
-      if (t.isIdentifier(callee) && ctx.helpers.has(callee.name)) {
+      if (
+        t.isIdentifier(callee) &&
+        !componentLocals.has(callee.name) &&
+        ctx.helpers.has(callee.name)
+      ) {
         const sum = summarizeHelper(ctx, callee.name);
         const s = scopeOf(p);
         for (const w of sum.writes) s.writes.add(w);
