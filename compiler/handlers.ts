@@ -166,9 +166,13 @@ export function buildHandler(
           binding?.scope.path.isProgram() === true &&
           ctx.helpers.has(value.name);
       }
-    } else if (decl && decl.isFunctionDeclaration() && ctx.helpers.has(value.name)) {
-      target = decl.node; // module-level function used directly as a handler
-      forceTable = true;
+    } else if (decl && decl.isFunctionDeclaration()) {
+      if (ctx.helpers.has(value.name)) {
+        target = decl.node;
+        forceTable = true;
+      } else {
+        target = resolveLocalHelper(compPath, value.name);
+      }
     }
     if (!target) {
       throw compPath.buildCodeFrameError(
@@ -207,6 +211,18 @@ export function buildHandler(
   }
   if (forceTable) {
     const summary = summarizeHelper(ctx, (value as t.Identifier).name);
+    if (target.async) {
+      const immediate = createScopeWrites();
+      for (const write of summary.writes) immediate.writes.add(write);
+      for (const write of summary.boundedWrites) immediate.writes.add(write);
+      immediate.rootFallback = summary.unbounded;
+      return wrapSharedHandlerWithOrigin(
+        ctx,
+        value as t.Identifier,
+        buildScopeCommit(ctx, immediate, null) ??
+          buildEventOriginCommit(ctx, compName, rowCtx, eventOriginId),
+      );
+    }
     if (
       summary.writes.size === 0 &&
       summary.boundedWrites.size === 0 &&
@@ -222,7 +238,7 @@ export function buildHandler(
   if (
     t.isIdentifier(value) &&
     !forceTable &&
-    ctx.handlerHasRootCommit.get(target) === false
+    (ctx.handlerHasRootCommit.get(target) === false || target.async)
   ) {
     return wrapSharedHandlerWithOrigin(
       ctx,
@@ -260,14 +276,15 @@ function itemFieldVisibleBeyondList(
   compName: string | null,
   rowCtx: RowCtx,
 ): boolean {
-  const arr = rowCtx.arrayName;
-  if (arr === '') return true; // unknown source array → conservative
+  if (rowCtx.sourceLocal) return true;
+  const source = rowCtx.sourceKey;
+  if (source === '') return true; // unknown source -> conservative
   for (const info of ctx.computeds.values()) {
-    if (info.reads.has(arr)) return true;
+    if (info.reads.has(source)) return true;
   }
   const owners = new Set((ctx.listedSites.get(compName ?? '') ?? []).map((s) => s.owner));
   if (owners.size === 0 && compName !== null) owners.add(compName); // inline rows
-  for (const reader of readersOfVar(ctx, arr)) {
+  for (const reader of readersOfVar(ctx, source)) {
     if (reader === '__rows__' || reader === '__regions__') return true;
     if (!owners.has(reader)) return true;
   }
@@ -366,23 +383,31 @@ function analyzeHandler(
     }
     return s;
   };
+  const noteSourceWrite = (p: NodePath): void => {
+    const scope = scopeOf(p);
+    if (rowCtx?.sourceLocal) {
+      scope.rowOwnerLocal = true;
+    } else if (rowCtx !== undefined) {
+      scope.writes.add(rowCtx.sourceKey);
+    }
+  };
 
   // R11: a member write rooted at the row's item param. Non-key fields are
   // visible ONLY to this row's DOM → the commit is a local markDirty(rowId).
   // Key-field writes change the row identity → structural fallback: a normal
-  // write of the source array (full reconcile, re-keys everything).
+  // invalidation of the collection source (full reconcile, re-keys everything).
   const noteItemWrite = (p: NodePath, node: t.MemberExpression): boolean => {
     if (rowCtx === undefined) return false;
     if (memberRootName(node) !== rowCtx.itemParam) return false;
     const key = memberKey(node); // 'todo.done.x' or null when dynamic
     if (key === null) {
       // dynamic path on the item (todo[k] = …): may hit the key — fall back
-      scopeOf(p).writes.add(rowCtx.arrayName);
+      noteSourceWrite(p);
       return true;
     }
     const segs = key.split('.').slice(1); // strip the item param root
     if (writeTouchesKey(segs, rowCtx.keyPath)) {
-      scopeOf(p).writes.add(rowCtx.arrayName);
+      noteSourceWrite(p);
     } else {
       scopeOf(p).rowLocal = true;
       // R11.1: the row-local shortcut is only sound when NOTHING outside the
@@ -393,7 +418,7 @@ function analyzeHandler(
       // resulting reconcile resyncs this row anyway (setter guards absorb
       // the overlap).
       if (itemFieldVisibleBeyondList(ctx, compName, rowCtx)) {
-        scopeOf(p).writes.add(rowCtx.arrayName);
+        noteSourceWrite(p);
       }
     }
     return true;
@@ -410,16 +435,16 @@ function analyzeHandler(
         return;
       }
       if (origin.key === null) {
-        scopeOf(p).writes.add(rowCtx.arrayName);
+        noteSourceWrite(p);
         return;
       }
       const segs = origin.key.split('.').slice(1);
       if (writeTouchesKey(segs, rowCtx.keyPath)) {
-        scopeOf(p).writes.add(rowCtx.arrayName);
+        noteSourceWrite(p);
       } else {
         scopeOf(p).rowLocal = true;
         if (itemFieldVisibleBeyondList(ctx, compName, rowCtx)) {
-          scopeOf(p).writes.add(rowCtx.arrayName);
+          noteSourceWrite(p);
         }
       }
       return;
@@ -466,8 +491,8 @@ function analyzeHandler(
         (rowCtx.keyPath === null || rowCtx.keyPath.length > 0)
       ) {
         // An arbitrary item method can change the key, so re-establish row
-        // identity through source-list reconciliation.
-        scopeOf(p).writes.add(rowCtx.arrayName);
+        // identity through collection-view reconciliation.
+        noteSourceWrite(p);
       } else {
         noteOriginWrite(p, origin);
       }
@@ -611,7 +636,7 @@ function analyzeHandler(
         }
         if (kind === 'const') {
           throw p.buildCodeFrameError(
-            `memo-dom: cannot reassign const collection '${left.name}' — mutate its contents (${left.name}.push(…) / .set(…)) instead`,
+            `memo-dom: cannot reassign mutable const root '${left.name}' - mutate the object instead`,
           );
         }
         if (kind === 'computed') {

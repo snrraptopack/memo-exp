@@ -18,9 +18,9 @@ is the median of three independent processes.
 
 | Modules | Source | Prelinked transforms | Linked graph | Linked/module | Overhead |
 |---:|---:|---:|---:|---:|---:|
-| 2 | 0.3 KiB | 42.2 ms | 130.7 ms | 65.4 ms | 3.10x |
-| 8 | 1.1 KiB | 126.0 ms | 329.7 ms | 41.2 ms | 2.62x |
-| 16 | 2.3 KiB | 173.3 ms | 543.8 ms | 34.0 ms | 3.14x |
+| 2 | 0.3 KiB | 28.0 ms | 76.4 ms | 38.2 ms | 2.42x |
+| 8 | 1.1 KiB | 88.8 ms | 201.0 ms | 25.1 ms | 2.18x |
+| 16 | 2.3 KiB | 112.1 ms | 327.0 ms | 20.4 ms | 2.78x |
 
 The prelinked baseline parses and transforms the same sources with `compile()`,
 stable module IDs, and the same canonical import metadata supplied directly.
@@ -56,8 +56,16 @@ claim and reinforces the dependency-worklist priority above.
 
 The R19 bounded-effect summary checkpoint serializes exact, receiver-bounded,
 and structured parameter-relative effects. Linked medians were `130.7`,
-`329.7`, and `543.8` ms; process ranges were `130.5–133.7`, `322.3–342.6`,
-and `531.6–577.4` ms. Absolute times rose from R17, but prelinked medians rose
+`329.7`, and `543.8` ms; process ranges were `130.5-133.7`, `322.3-342.6`,
+and `531.6-577.4` ms. Absolute times rose from R17, but prelinked medians rose
 similarly. Normalized linker overhead is now `3.10x`, `2.62x`, and `3.14x`
 versus R17's `3.32x`, `2.63x`, and `3.30x`. This supports no speedup or
 regression claim; it records the cost after changing the summary contract.
+
+The R22 component-graph checkpoint adds component export discovery, placement
+edges, and one final graph traversal. Linked process ranges were `64.5-87.6`,
+`193.8-204.0`, and `312.0-334.5` ms for 2/8/16 modules. The corresponding
+prelinked baselines also fell substantially from the R19 run. Normalized
+overhead is now `2.42x`, `2.18x`, and `2.78x`; these measurements show no R22
+regression but do not isolate or support a speedup claim. Cross-file factory
+runtime parity is measured separately in `bench/components/README.md`.

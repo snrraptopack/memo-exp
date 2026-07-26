@@ -11,6 +11,8 @@ latest measurements, limits, and interpretation.
 | [`linker`](./linker/) | `bun run bench:linker` | Cross-module compiler/linker throughput |
 | [`lifecycle`](./lifecycle/) | `bun run bench:lifecycle` | Production cleanup ownership and entity teardown |
 | [`children`](./children/) | `bun run bench:children` | Production component children mount/update overhead |
+| [`components`](./components/) | `bun run bench:components` | Same-file versus linked component runtime/compiler cost |
+| [`local-state`](./local-state/) | `bun run bench:local-state` | Module versus instance collection row ownership |
 | [`frameworks`](./frameworks/) | `bun run bench:frameworks` | Current framework update-completion scenarios |
 
 Numbers are machine-local and must be compared using repeated processes on the

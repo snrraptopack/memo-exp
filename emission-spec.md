@@ -489,6 +489,100 @@ Current slot contract:
   component;
 - an explicit `children={...}` prop cannot compete with nested children.
 
+### R22 - Cross-file components keep caller identity and defining-file analysis
+
+`compileModules()` links a component import to the component factory compiled
+in its defining module:
+
+```tsx
+// Row.tsx
+export function Row(props) {
+  return <li>{props.item.title}</li>;
+}
+
+// App.tsx
+import { Row as TodoRow } from '@/Row';
+export function App() {
+  return <TodoRow item={selected} />;
+}
+```
+
+The emitted ES import remains unchanged for the host bundler. The call uses the
+normal factory ABI and a caller-derived id:
+
+```js
+TodoRow(id + '/TodoRow', id, [{ item: selected }]);
+```
+
+The linker carries declared prop order/object-prop shape to the call site, so
+cross-file prop matching has exactly R10 semantics. Nested JSX children remain
+lazy R21 slots owned by the lexical caller. Cleanup and callback resources
+remain owned by the entity created in the defining factory.
+
+Access routing stays static and precise across the file boundary. During graph
+linking, each component declaration receives every live placement pattern
+derived from its callers. The defining module emits its state-reader fragment
+against those caller paths; aliases therefore affect entity suffixes but never
+state identity. Local descendants inherit the linked parent placements.
+
+Keyed component rows use the same rule. Their linked placement is
+`<caller>/<list>/Row[*]`; row mode, key path, and canonical collection key are
+supplied to the defining compilation so entity/lightweight ABI selection and
+key-write fallback remain consistent.
+
+- Named imports, named default function exports, import aliases, configured
+  path aliases, and host-resolved modules are linkable.
+- A component cannot be mounted both statically and as a keyed row.
+- Cross-module recursive component graphs are compile errors.
+- Namespace component imports and unresolved external JSX factories are
+  rejected: the compiler cannot prove their factory ABI.
+
+### R23 - Instance collections and async named helpers keep their ownership boundary
+
+An ordered collection view declared in a component factory may be an R7 list
+source. It remains instance state:
+
+```tsx
+function App() {
+  let todos = [{ id: 1, title: 'a' }];
+  return <ul>{todos.map(todo =>
+    <Row key={todo.id} item={todo} />
+  )}</ul>;
+}
+```
+
+List analysis records the source locality as `instance`; it does not register
+the binding in the module-state map and does not serialize an access key.
+Assignments and receiver calls on local scalars, plain objects, arrays, or
+constructor-created objects dirty the owner directly. This includes `Map`,
+`Set`, `WeakMap`, `WeakSet`, and user-defined instances without a type or
+method-semantics list. Ordered list views may be arrays/static object paths or
+synchronous local derivations such as
+`Array.from(map)`, `[...set]`, and `Object.entries(store)`. The owner update
+recomputes those views before reconciliation.
+
+An item write in a component row refreshes the row and dirties the list owner:
+the owner may have local derivations or need to re-establish key identity.
+Stateful/structural rows use their entity parent id. Intrinsically lightweight
+rows receive the owner id as an extra compiler-internal factory argument and
+retain their allocation-free row ABI.
+
+A named function declaration directly inside a component is a legal event
+handler, equivalent to a component-local function expression. Resolution uses
+the lexical Babel binding, never text-only lookup.
+
+Async named helpers have two completion boundaries without generated
+`try/finally`:
+
+- the event call site refreshes immediately after invocation, reflecting
+  synchronous pre-`await` writes such as `loading = true`;
+- the async helper commits on normal function completion, reflecting writes
+  performed after suspension.
+
+For module helpers, both commits route the helper's canonical summarized write
+set. For instance helpers, both target the nearest owning entity. Rejection or
+throw behavior remains governed by the normal-exit-only R5 contract.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
@@ -554,7 +648,7 @@ Imprecise paths remain bounded whenever their root is known:
 - `store[key] = value` → `store`
 - `Object.assign(store, dynamicPatch)` → `store`
 - ambiguous aliases/destructuring with identifiable source roots → those roots
-- row-item receiver calls → the row, or the source list when the key may change
+- row-item receiver calls -> the row, or its collection view when the key may change
 
 `markDirtySubtree(rootId)` is reserved for calls/summaries whose effects cannot
 be attached to any finite receiver, argument, instance, row, or state root.
@@ -613,8 +707,8 @@ through imported helper chains. An unresolved external import is unbounded
 Each compiled file emits a table **fragment**; the runtime merges installed
 fragments app-wide. `compileModules()` is the graph/link API. It accepts a
 segment-prefix `aliases` map (for example Vite's `@`) or a host
-`resolveImport(specifier, importer)` hook. Cross-file component imports are
-still outside this state-linking scope.
+`resolveImport(specifier, importer)` hook. R22 uses the same graph identities
+and resolver for component factories and their caller-derived placements.
 
 ## 5. Parametrized patterns (designed now, implemented in L2)
 
@@ -789,9 +883,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
    value", e.g. the previously-selected row): does the runtime track last
    values per variable, or does the compiler emit explicit prev-capture in
    handlers? Leaning: compiler emits prev-capture — keeps the runtime dumb.
-3. **Cross-file component linking:** §4.6 state and mutator imports have
-   canonical identities, but imported component factories still need graph
-   path analysis and entity-id composition.
+3. **Bundler graph adapters:** §4.6 state and mutator imports have
+   canonical identities. R22 now links imported factories, graph paths, and
+   entity-id composition; production bundlers still need graph adapters.
 4. **Dev-mode event log:** production emission omits it (R5); dev builds may
    wrap handlers with the provenance log (current `handle()` in events.ts).
 
@@ -804,7 +898,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R21 (compiler probes + compiled runtime execution).
+> Last full audit: R23 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
@@ -847,10 +941,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.5 Multi-module, scale & engineering
 
-- `compileModules()` links imported state objects, live state reads, module
-  computeds, and exported exact/bounded function summaries. Components must
-  still live in one
-  file; cross-file component imports are unsupported.
+- `compileModules()` is an in-memory graph API; no Vite/esbuild adapter feeds
+  resolved source graphs into it yet.
 - `rootId` collisions across modules; table-install ordering vs. mount order —
   untested.
 - Identity-keyed lists of duplicate primitives (`[1, 2, 2]`) throw on
@@ -862,6 +954,18 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R23 (instance collections and async named helpers, compiler/lists.ts +
+  compiler/handlers.ts + tests/r23-local-state.test.ts):** component-owned
+  arrays/object paths and ordered views derived from Map, Set, or objects
+  reconcile in the owner without entering module access tables; WeakMap and
+  WeakSet scalar derivations use the same owner invalidation. Lexical named
+  handlers resolve directly. Async helpers expose
+  pre-await event writes and normal-completion continuation writes.
+- **R22 (cross-file component graph, compiler/component-linker.ts +
+  tests/r22-components.test.ts):** named/default imported factories retain
+  caller ids, defining-file state readers, prop shape, lazy children,
+  callback commits, cleanup ownership, and keyed-row mode across aliases.
+  Recursive and mixed static/row graphs fail during linking.
 - **R21 (lazy component children slots, compiler/children.ts +
   tests/r21-children.test.ts):** static component children mount only where
   the callee renders its reserved slot. Guarded updates remain linked to the
@@ -1062,11 +1166,11 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   branch's guarded closure; swaps rebuild DOM but keep module state.
   Whitespace handling is now React-compatible (edge spaces dropped only
   when they come from line breaks).
-- **M5.4 (const collections, test/m54.test.ts):** `const items = [...]`,
-  `const m = new Map()/new Set()` classify as mutable state — mutations
-  (push/set/member writes) route as root-keyed writes, rebinding is a
-  compile error ("cannot reassign const collection") instead of a runtime
-  TypeError; R7 lists accept const arrays; `var` classifies as `let`;
+- **M5.4 (mutable const roots, test/m54.test.ts):** arrays and
+  constructor-created objects classify as mutable state; mutations invalidate
+  their bounded readers while rebinding is a compile error ("cannot reassign
+  mutable const root") instead of a runtime TypeError; R7 lists accept const
+  arrays; `var` classifies as `let`;
   update-expressions on non-let bindings are compile errors.
 - **M5.3 (silent-miscompile batch, 9 items, test/m53.test.ts):**
   1. early `return` in a writing scope skipped its commit → commits are now

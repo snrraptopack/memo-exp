@@ -37,6 +37,7 @@ import { transformComponent } from './emit';
 import {
   rejectUnownedCleanup,
   transformProgramCallbacks,
+  transformSharedAsyncHelpers,
 } from './lifecycle';
 
 /**
@@ -118,6 +119,7 @@ export default function memoDomPlugin(
         initializeGeneratedIdentifiers(ctx, programPath);
         runAnalysis(ctx, programPath);
         transformProgramCallbacks(ctx, programPath);
+        transformSharedAsyncHelpers(ctx);
       },
       exit(programPath) {
         rejectUnownedCleanup(programPath);

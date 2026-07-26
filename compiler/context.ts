@@ -25,6 +25,10 @@ export interface MemoDomOptions {
    * bundler integrations that perform their own graph/link pass.
    */
   linkedImports?: Record<string, LinkedImport>;
+  /** Caller-derived runtime placements for components declared in this file. */
+  linkedComponentPaths?: Record<string, string[]>;
+  /** Cross-file keyed-row uses for components declared in this file. */
+  linkedComponentRows?: Record<string, LinkedComponentRowUse[]>;
 }
 
 export interface LinkedStateImport {
@@ -47,7 +51,30 @@ export interface LinkedFunctionImport {
   unbounded: boolean;
 }
 
-export type LinkedImport = LinkedStateImport | LinkedFunctionImport;
+export interface LinkedComponentImport {
+  type: 'component';
+  /** Canonical declaration identity (`./Row.tsx#Row`). */
+  key: string;
+  /** Declared positional prop names, or the single object-prop binding. */
+  props: string[];
+  objectProps: boolean;
+  /** Whether keyed-row compilation can use the allocation-free row ABI. */
+  listLightweight: boolean;
+}
+
+export interface LinkedComponentRowUse {
+  /** Key path relative to the row callback parameter, or null. */
+  keyPath: string[] | null;
+  /** Canonical module key or binding-relative instance key of the source. */
+  sourceKey: string;
+  /** The reactive collection source belongs to one caller component instance. */
+  sourceLocal: boolean;
+}
+
+export type LinkedImport =
+  | LinkedStateImport
+  | LinkedFunctionImport
+  | LinkedComponentImport;
 
 export interface ParameterWrite {
   index: number;
@@ -58,7 +85,7 @@ export interface ParameterWrite {
  * Reactive-state classification (the two — three — legal ways JS state changes):
  *   'let'   — rebindable binding; writes are assignments/updates/mutations
  *   'store' — const plain-object literal; writes are property mutations (path-keyed)
- *   'const' — const collection (array / Map / Set); writes are mutations only,
+ *   'const' - constructor-created object or array; mutations are allowed,
  *             rebinding is a compile error (JS would TypeError at runtime)
  */
 export type StateKind = 'let' | 'store' | 'const' | 'computed';
@@ -80,7 +107,9 @@ export interface SiteRef {
   /** R11: row-analysis data for item-write routing in listed components. */
   itemParam?: string;
   keyExpr?: t.Expression | null;
-  arrayName?: string;
+  sourceKey?: string;
+  /** Instance sources invalidate their owner directly, never through a table. */
+  sourceLocal?: boolean;
 }
 
 /** Module-level helper function summary (M5.3 interprocedural analysis). */
@@ -113,6 +142,11 @@ export interface Ctx {
   importedState: Set<string>;
   /** Linked summaries for imported functions and conservative external calls. */
   importedFunctions: Map<string, FnSummary>;
+  importedComponents: Map<string, LinkedComponentImport>;
+  /** Graph-linked placements for declarations in this module. */
+  linkedComponentPaths: Map<string, string[]>;
+  /** Graph-linked keyed-row modes for declarations in this module. */
+  linkedComponentRows: Map<string, LinkedComponentRowUse[]>;
   comps: Map<string, CompInfo>;
   compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
   /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural effects. */
@@ -185,12 +219,13 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
   const stateKeys = new Map<string, string>();
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
+  const importedComponents = new Map<string, LinkedComponentImport>();
   for (const [local, linked] of Object.entries(opts.linkedImports ?? {})) {
     if (linked.type === 'state') {
       state.set(local, linked.kind);
       stateKeys.set(local, linked.key);
       importedState.add(local);
-    } else {
+    } else if (linked.type === 'function') {
       importedFunctions.set(local, {
         reads: new Set(linked.reads),
         writes: new Set(linked.writes),
@@ -201,7 +236,18 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
         })),
         unbounded: linked.unbounded,
       });
+    } else {
+      importedComponents.set(local, {
+        ...linked,
+        props: [...linked.props],
+      });
     }
+  }
+  const objectPropComponents = new Set<string>();
+  const compPropNames = new Map<string, string[]>();
+  for (const [local, component] of importedComponents) {
+    compPropNames.set(local, [...component.props]);
+    if (component.objectProps) objectPropComponents.add(local);
   }
   return {
     runtimePath: opts.runtimePath ?? 'memo-dom',
@@ -211,6 +257,23 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     stateKeys,
     importedState,
     importedFunctions,
+    importedComponents,
+    linkedComponentPaths: new Map(
+      Object.entries(opts.linkedComponentPaths ?? {}).map(([name, paths]) => [
+        name,
+        [...paths],
+      ]),
+    ),
+    linkedComponentRows: new Map(
+      Object.entries(opts.linkedComponentRows ?? {}).map(([name, uses]) => [
+        name,
+        uses.map((use) => ({
+          keyPath: use.keyPath === null ? null : [...use.keyPath],
+          sourceKey: use.sourceKey,
+          sourceLocal: use.sourceLocal,
+        })),
+      ]),
+    ),
     comps: new Map(),
     compPaths: new Map(),
     helpers: new Map(),
@@ -218,8 +281,8 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     compReads: new Map(),
     childRefCounts: new Map(),
     listedSites: new Map(),
-    objectPropComponents: new Set(),
-    compPropNames: new Map(),
+    objectPropComponents,
+    compPropNames,
     lightweightCache: new Map(),
     rowReads: new Map(),
     condReads: new Map(),
@@ -312,7 +375,7 @@ export function memberKey(node: t.MemberExpression): string | null {
  * statically; no runtime payload interpolation is needed.
  *
  * Exception: writing the KEY field changes the row's identity (re-keying
- * is structural), so it falls back to a normal write of the source array.
+ * is structural), so it falls back to invalidating the collection source.
  */
 export interface RowCtx {
   /** The item param name (map callback param / row component's first prop). */
@@ -327,8 +390,12 @@ export interface RowCtx {
    * not a plain member chain (unknown → all item writes fall back).
    */
   keyPath: string[] | null;
-  /** Write key of the source array (fallback for key-field writes). */
-  arrayName: string;
+  /** Reactive source key used when an item write affects collection identity. */
+  sourceKey: string;
+  /** Instance sources invalidate the row's parent owner directly. */
+  sourceLocal?: boolean;
+  /** Generated binding holding that parent owner id. */
+  ownerIdVar?: string;
 }
 
 /**
@@ -400,14 +467,17 @@ export function isStoreObject(init: t.Expression | null | undefined): boolean {
   );
 }
 
-/** `const x = [...]` / `const m = new Map()` / `new Set()` → const collection (M5.4). */
-export function isConstCollection(init: t.Expression | null | undefined): boolean {
+/**
+ * Constructor-created objects and arrays are mutable const roots.
+ *
+ * This is intentionally constructor-agnostic: receiver invalidation does not
+ * depend on a built-in collection or method-semantics table.
+ */
+export function isConstObjectState(
+  init: t.Expression | null | undefined,
+): boolean {
   if (!init) return false;
-  if (t.isArrayExpression(init)) return true;
-  if (t.isNewExpression(init) && t.isIdentifier(init.callee)) {
-    return ['Map', 'Set', 'WeakMap', 'WeakSet'].includes(init.callee.name);
-  }
-  return false;
+  return t.isArrayExpression(init) || t.isNewExpression(init);
 }
 
 /** Unwrap a JSX attribute value: strings pass through, `{expr}` unwraps. */
@@ -429,10 +499,17 @@ export function attrExpr(value: t.JSXAttribute['value']): t.Expression | null {
  */
 export function exprReadsState(ctx: Ctx, expr: t.Node, compName?: string): boolean {
   const inst = compName !== undefined ? ctx.instanceState.get(compName) : undefined;
+  const derived =
+    compName !== undefined ? ctx.instanceComputeds.get(compName) : undefined;
   let reads = false;
   const probe = (n: t.Node): void => {
     if (reads) return;
-    if (t.isIdentifier(n) && (ctx.state.has(n.name) || inst?.has(n.name) === true)) {
+    if (
+      t.isIdentifier(n) &&
+      (ctx.state.has(n.name) ||
+        inst?.has(n.name) === true ||
+        derived?.has(n.name) === true)
+    ) {
       reads = true;
       return;
     }

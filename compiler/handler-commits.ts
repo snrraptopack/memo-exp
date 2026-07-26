@@ -22,6 +22,8 @@ export interface ScopeWrites {
   rootFallback: boolean;
   /** This scope writes fields observed by one keyed row. */
   rowLocal: boolean;
+  /** This scope may affect the instance-owned collection backing the row. */
+  rowOwnerLocal: boolean;
   /** This scope writes state owned by one component instance. */
   instanceLocal: boolean;
   /** Scoped event fallback when a handler has no recognized write. */
@@ -33,6 +35,7 @@ export function createScopeWrites(): ScopeWrites {
     writes: new Set(),
     rootFallback: false,
     rowLocal: false,
+    rowOwnerLocal: false,
     instanceLocal: false,
     eventOrigin: null,
   };
@@ -63,11 +66,20 @@ export function buildScopeCommit(
           ]),
         )
       : null;
+  const rowOwnerCommit =
+    scope.rowOwnerLocal && rowCtx?.ownerIdVar !== undefined
+      ? t.expressionStatement(
+          t.callExpression(md(ctx, 'markDirty'), [
+            t.identifier(rowCtx.ownerIdVar),
+          ]),
+        )
+      : null;
 
   const combine = (routed: t.Statement | null): t.Statement | null => {
     const parts: t.Statement[] = [];
     if (scope.eventOrigin !== null) parts.push(scope.eventOrigin);
     if (rowCommit !== null) parts.push(rowCommit);
+    if (rowOwnerCommit !== null) parts.push(rowOwnerCommit);
     if (instanceCommit !== null) parts.push(instanceCommit);
     if (routed !== null) parts.push(routed);
     if (parts.length === 0) return null;

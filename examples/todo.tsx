@@ -3,31 +3,63 @@ export interface Todo {
   text: string;
 }
 
-// 1. Array Collection
+// 1. Module-Level State (Rule R7 L1 List Compliance)
 let todos: Todo[] = [
   { id: 1, text: 'Master Memoized DOM Compiler' },
-  { id: 2, text: 'Test JavaScript Set & Map Collections' },
-  { id: 3, text: 'Verify Computed Derivations' }
+  { id: 2, text: 'Test Real-World Async API Fetching' },
+  { id: 3, text: 'Verify Zero-Import Reactivity' }
 ];
 
-// 2. Set Collection for Completed IDs (Const Collection)
-const completedSet = new Set<number>([1]);
+let isLoading = false;
+let statusMessage = 'Ready';
 
-// 3. Map Collection for Todo Categories (Const Collection)
+// 2. Set & Map Collections
+const completedSet = new Set<number>([1]);
 const categoryMap = new Map<number, string>([
   [1, 'Compiler'],
-  [2, 'Reactivity'],
+  [2, 'Network'],
   [3, 'Performance']
 ]);
 
-// 4. Rule R13 Computed Derivations over Collections
+// 3. Computed Derivations (Rule R13)
 const totalCount = todos.length;
 const completedCount = completedSet.size;
 const activeCount = totalCount - completedCount;
 
+// 4. Async API Fetch Handler
+async function fetchRemoteTodos() {
+  isLoading = true;
+  statusMessage = 'Fetching 10 live todos from JSONPlaceholder API...';
+
+  try {
+    const res = await fetch('https://jsonplaceholder.typicode.com/todos?_limit=10');
+    const data = await res.json();
+
+    todos = data.map((item: any) => ({
+      id: item.id + 100,
+      text: item.title
+    }));
+
+    completedSet.clear();
+    data.forEach((item: any) => {
+      if (item.completed) completedSet.add(item.id + 100);
+    });
+
+    statusMessage = 'Successfully loaded remote API todos!';
+  } catch (err) {
+    statusMessage = 'Failed to fetch remote todos!';
+  } finally {
+    isLoading = false;
+  }
+}
+
+// 5. Item Component
 function TodoItem(props: { item: Todo }) {
+  const isDone = completedSet.has(props.item.id);
+  const category = categoryMap.get(props.item.id) || 'General';
+
   return (
-    <li class={completedSet.has(props.item.id) ? 'todo-item done' : 'todo-item'}>
+    <li class={isDone ? 'todo-item done' : 'todo-item'}>
       <div class="todo-content">
         <span
           class="todo-check"
@@ -39,48 +71,47 @@ function TodoItem(props: { item: Todo }) {
             }
           }}
         >
-          {completedSet.has(props.item.id) ? '☑' : '☐'}
+          {isDone ? '☑' : '☐'}
         </span>
         <span class="todo-text">{props.item.text}</span>
         <span
           class="todo-badge"
           onClick={() => {
-            const current = categoryMap.get(props.item.id) || 'Compiler';
-            const nextCat = current === 'Compiler' ? 'Reactivity' : current === 'Reactivity' ? 'Performance' : 'Compiler';
+            const nextCat =
+              category === 'Compiler'
+                ? 'Network'
+                : category === 'Network'
+                ? 'Performance'
+                : 'Compiler';
             categoryMap.set(props.item.id, nextCat);
           }}
         >
-          🏷️ {categoryMap.get(props.item.id) || 'General'}
+          🏷️ {category}
         </span>
       </div>
     </li>
   );
 }
 
+// 6. Main Application Component
 export function TodoApp() {
-
-  let timer = 0
-
-  const interval = setInterval(() => {
-    timer++;
-  }, 1000);
-  cleanup(() => {
-    clearInterval(interval)
-    console.log('interval cleared')
-  });
-
   return (
     <div class="todo-card">
-      <h1>⚡ Advanced Reactive Todo App timer-{timer}</h1>
-      <p class="subtitle">Powered by Array, Set & Map Collections</p>
+      <h1>⚡ Advanced Reactive Todo App</h1>
+      <p class="subtitle">{statusMessage}</p>
 
+      {/* Stats Bar */}
       <div class="stats-bar">
         <div class="stat-pill">Total: <strong>{totalCount}</strong></div>
         <div class="stat-pill">Active: <strong>{activeCount}</strong></div>
         <div class="stat-pill">Completed: <strong>{completedCount}</strong></div>
       </div>
 
+      {/* Actions */}
       <div class="actions">
+        <button onClick={() => fetchRemoteTodos()} disabled={isLoading}>
+          {isLoading ? '⏳ Loading API...' : '🌐 Load Remote API Todos'}
+        </button>
         <button
           onClick={() => {
             const newId = Date.now();
@@ -103,6 +134,7 @@ export function TodoApp() {
         </button>
       </div>
 
+      {/* Todo List */}
       <ul>
         {todos.map((item) => (
           <TodoItem key={item.id} item={item} />

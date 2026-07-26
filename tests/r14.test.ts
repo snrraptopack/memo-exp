@@ -198,7 +198,7 @@ describe('R14 - compiled execution', () => {
     expect(span.textContent).toBe('1');
   });
 
-  it('treats a component-local const collection as instance state', async () => {
+  it('treats a component-local mutable const root as instance state', async () => {
     const { App } = await importCompiled('r14-const-collection');
     document.body.appendChild(App('App', null));
     const button = document.querySelector('button')!;

@@ -28,7 +28,7 @@ import {
   attrExpr,
   canonicalStateKey,
   collectStateIds,
-  isConstCollection,
+  isConstObjectState,
   isStoreObject,
   memberKey,
   memberRootName,
@@ -71,7 +71,13 @@ function validateLinkedImports(ctx: Ctx, programPath: NodePath<t.Program>): void
     for (const spec of stmtPath.node.specifiers) {
       if (t.isImportSpecifier(spec) && spec.importKind === 'type') continue;
       const local = spec.local.name;
-      if (ctx.importedState.has(local) || ctx.importedFunctions.has(local)) continue;
+      if (
+        ctx.importedState.has(local) ||
+        ctx.importedFunctions.has(local) ||
+        ctx.importedComponents.has(local)
+      ) {
+        continue;
+      }
       throw stmtPath.buildCodeFrameError(
         `memo-dom: value import '${local}' requires compileModules() so its reactive identity can be linked`,
       );
@@ -91,7 +97,7 @@ function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
       } else if (inner.kind === 'const') {
         if (isStoreObject(decl.init)) {
           registerState(ctx, decl.id.name, 'store');
-        } else if (isConstCollection(decl.init)) {
+        } else if (isConstObjectState(decl.init)) {
           registerState(ctx, decl.id.name, 'const');
         }
       }
@@ -159,6 +165,8 @@ export function pathVariants(
   name: string,
   visiting: Set<string> = new Set(),
 ): string[] {
+  const linked = ctx.linkedComponentPaths.get(name);
+  if (linked !== undefined) return [...linked];
   if (visiting.has(name)) {
     throw ctx.compPaths.get(name)!.buildCodeFrameError(
       `memo-dom: recursive component '${name}' — components cannot render themselves (L1)`,
@@ -205,16 +213,17 @@ function analyzeComponent(ctx: Ctx, name: string): void {
       }
       const tag = open.name.name;
       if (/^[A-Z]/.test(tag)) {
-        if (!ctx.comps.has(tag)) {
+        const localComponent = ctx.comps.has(tag);
+        if (!localComponent && !ctx.importedComponents.has(tag)) {
           throw el.buildCodeFrameError(
-            `memo-dom: <${tag} /> is not a known component — L1 components must be top-level function declarations in the same module`,
+            `memo-dom: <${tag} /> is not a linked component factory`,
           );
         }
         // R10: state-reading props are allowed — prop reads are collected
         // by collectReads' generic Identifier/MemberExpression visitors (no
         // component skip there), so the parent updates exactly when a pushed
         // value can change. (Was the mount-time ban, now lifted.)
-        ctx.comps.get(tag)!.parents.add(name);
+        if (localComponent) ctx.comps.get(tag)!.parents.add(name);
         let counts = ctx.childRefCounts.get(name);
         if (!counts) ctx.childRefCounts.set(name, (counts = new Map()));
         counts.set(tag, (counts.get(tag) ?? 0) + 1);
@@ -379,7 +388,7 @@ function collectReads(ctx: Ctx): void {
         const mapCall = matchMapCall(call.node);
         if (mapCall && containsJsx(call)) {
           const site = analyzeMapSite(ctx, mapCall, call, name, usedPrefixes);
-          reads.add(site.arrayName); // the owner reads the array
+          if (!site.sourceLocal) reads.add(site.sourceKey);
           if (site.form === 'component') {
             // R10: row-prop reads are OWNER reads — the owner re-pushes row
             // props via updateProps during reconcile
@@ -418,7 +427,8 @@ function collectReads(ctx: Ctx): void {
                 suffix: site.suffix,
                 itemParam: site.itemParam,
                 keyExpr: site.keyExpr,
-                arrayName: site.arrayName,
+                sourceKey: site.sourceKey,
+                sourceLocal: site.sourceLocal,
               });
             }
             ctx.listedSites.set(site.rowComp!, sites);
@@ -660,7 +670,7 @@ function scanInstanceState(ctx: Ctx): void {
           stmt.kind === 'let' ||
           stmt.kind === 'var' ||
           isStoreObject(d.init) ||
-          isConstCollection(d.init)
+          isConstObjectState(d.init)
         ) {
           vars.add(d.id.name);
         }
@@ -704,6 +714,12 @@ function scanInstanceComputeds(ctx: Ctx): void {
       for (const declPath of stmtPath.get('declarations')) {
         const decl = declPath.node;
         if (!t.isIdentifier(decl.id) || decl.init == null || t.isFunction(decl.init)) continue;
+        if (
+          ctx.instanceState.get(compName)?.has(decl.id.name) === true &&
+          (isStoreObject(decl.init) || isConstObjectState(decl.init))
+        ) {
+          continue;
+        }
         const initPath = declPath.get('init');
         if (!initPath.isExpression()) continue;
 
@@ -799,7 +815,13 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   for (const [name] of ctx.comps) pathVariants(ctx, name);
   collectReads(ctx);
 
-  for (const [comp, sites] of ctx.listedSites) {
+  const listedComponents = new Set([
+    ...ctx.listedSites.keys(),
+    ...ctx.linkedComponentRows.keys(),
+  ]);
+  for (const comp of listedComponents) {
+    if (ctx.importedComponents.has(comp)) continue;
+    const sites = ctx.listedSites.get(comp) ?? [];
     const p = ctx.compPaths.get(comp)!;
     // a listed component renders at '<site>/Row[k]', so its own static path
     // never matches runtime ids — a list INSIDE one would misroute
@@ -815,7 +837,10 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
       );
     }
     // used both as a row AND a static child: patterns would drop one usage
-    if (sites.length > 0 && ctx.comps.get(comp)!.parents.size > 0) {
+    if (
+      (sites.length > 0 || ctx.linkedComponentRows.has(comp)) &&
+      ctx.comps.get(comp)!.parents.size > 0
+    ) {
       throw p.buildCodeFrameError(
         `memo-dom: <${comp}> is used both as a list row and as a static child — split it into two components (R7 L1)`,
       );
@@ -834,6 +859,10 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
  * repeated ancestors and multi-parent chains into '[*]' variants.
  */
 export function componentPatterns(ctx: Ctx, name: string): string[] {
+  const linked = ctx.linkedComponentPaths.get(name);
+  if (linked !== undefined) {
+    return linked.flatMap((path) => [path, `${path}/*`]);
+  }
   const sites = ctx.listedSites.get(name);
   const patterns: string[] = [];
   if (sites && sites.length > 0) {
@@ -861,42 +890,53 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
  * row owns instance state or can mount nested entity/region structure.
  */
 export function isLightweightListedComponent(ctx: Ctx, name: string): boolean {
+  const imported = ctx.importedComponents.get(name);
+  if (imported !== undefined) return imported.listLightweight;
+
   const cached = ctx.lightweightCache.get(name);
   if (cached !== undefined) return cached;
 
   let eligible = false;
   const sites = ctx.listedSites.get(name);
+  const linkedRows = ctx.linkedComponentRows.get(name);
   if (
-    sites !== undefined &&
-    sites.length > 0 &&
+    ((sites !== undefined && sites.length > 0) ||
+      (linkedRows !== undefined && linkedRows.length > 0)) &&
     ctx.comps.get(name)!.parents.size === 0 &&
-    (ctx.instanceState.get(name)?.size ?? 0) === 0
+    isListLightweightCandidate(ctx, name)
   ) {
     eligible = true;
-    const path = ctx.compPaths.get(name)!;
-    path.traverse({
-      JSXElement(el) {
-        const tag = el.node.openingElement.name;
-        if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) eligible = false;
-      },
-      CallExpression(call) {
-        if (
-          t.isIdentifier(call.node.callee, { name: 'cleanup' }) &&
-          call.scope.getBinding('cleanup') === undefined
-        ) {
-          eligible = false;
-        }
-        if (matchMapCall(call.node) && containsJsx(call)) eligible = false;
-      },
-      ConditionalExpression(cond) {
-        if (containsJsx(cond)) eligible = false;
-      },
-      LogicalExpression(logical) {
-        if (containsJsx(logical)) eligible = false;
-      },
-    });
   }
   ctx.lightweightCache.set(name, eligible);
+  return eligible;
+}
+
+/** Intrinsic row shape used by the graph linker before a component is listed. */
+export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
+  if ((ctx.instanceState.get(name)?.size ?? 0) > 0) return false;
+  let eligible = true;
+  const path = ctx.compPaths.get(name)!;
+  path.traverse({
+    JSXElement(el) {
+      const tag = el.node.openingElement.name;
+      if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) eligible = false;
+    },
+    CallExpression(call) {
+      if (
+        t.isIdentifier(call.node.callee, { name: 'cleanup' }) &&
+        call.scope.getBinding('cleanup') === undefined
+      ) {
+        eligible = false;
+      }
+      if (matchMapCall(call.node) && containsJsx(call)) eligible = false;
+    },
+    ConditionalExpression(cond) {
+      if (containsJsx(cond)) eligible = false;
+    },
+    LogicalExpression(logical) {
+      if (containsJsx(logical)) eligible = false;
+    },
+  });
   return eligible;
 }
 

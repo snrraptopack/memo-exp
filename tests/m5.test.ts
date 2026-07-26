@@ -152,11 +152,14 @@ describe('M5 compiler — code generation', () => {
       ),
     ).toThrowError(/direct JSX child/);
 
-    expect(() =>
-      compile(
+    {
+      const code = compile(
         `function C() { const xs = [1]; return <ul>{xs.map(x => <li>{x}</li>)}</ul>; }`,
-      ),
-    ).toThrowError(/module-level array state/);
+      );
+      expect(code).toContain('createListRegion');
+      expect(code).toContain('.reconcile(xs)');
+      expect(code).not.toContain('"./component.tsx#xs"');
+    }
 
     expect(() =>
       compile(

@@ -129,10 +129,19 @@ export function transformComponent(
     propNames.push(p.name);
   }
 
+  const refs = ctx.listedSites.get(name) ?? [];
+  const linkedRefs = ctx.linkedComponentRows.get(name) ?? [];
+  const sourceLocal =
+    refs.some((ref) => ref.sourceLocal === true) ||
+    linkedRefs.some((ref) => ref.sourceLocal);
   const lightweight = isLightweightListedComponent(ctx, name);
   const scope = newEmitScope(ctx);
   const factoryId = generatedIdentifier(ctx, 'id').name;
   const factoryParent = lightweight ? null : generatedIdentifier(ctx, 'parent').name;
+  const factoryOwner =
+    lightweight && sourceLocal
+      ? generatedIdentifier(ctx, 'owner').name
+      : null;
   const propsBox =
     propNames.length > 0 && !lightweight
       ? generatedIdentifier(ctx, 'props').name
@@ -142,9 +151,11 @@ export function transformComponent(
   // -- R11: a listed (multi-instance) component is a list row — handlers
   // writing its item prop's fields commit locally (markDirty(id)).
   let rowCtx: RowCtx | undefined;
-  const refs = ctx.listedSites.get(name);
-  if (refs !== undefined && refs.length > 0 && propNames.length > 0) {
-    const keyPaths = refs.map((r) => keyPathOf(r.keyExpr ?? null, r.itemParam ?? ''));
+  if ((refs.length > 0 || linkedRefs.length > 0) && propNames.length > 0) {
+    const keyPaths = [
+      ...refs.map((r) => keyPathOf(r.keyExpr ?? null, r.itemParam ?? '')),
+      ...linkedRefs.map((r) => r.keyPath),
+    ];
     const first = JSON.stringify(keyPaths[0]);
     const merged = keyPaths.every((k) => JSON.stringify(k) === first)
       ? keyPaths[0]!
@@ -154,7 +165,14 @@ export function transformComponent(
       rowIdVar: factoryId,
       ...(lightweight ? { refreshVar: scope.updateVar } : {}),
       keyPath: merged,
-      arrayName: refs[0]!.arrayName ?? '',
+      sourceKey:
+        refs[0]?.sourceKey ??
+        linkedRefs[0]?.sourceKey ??
+        '',
+      sourceLocal,
+      ...(sourceLocal
+        ? { ownerIdVar: factoryOwner ?? factoryParent! }
+        : {}),
     };
   }
 
@@ -287,7 +305,11 @@ export function transformComponent(
 
   node.params =
     lightweight
-      ? [...propNames.map((pn) => t.identifier(pn)), t.identifier(factoryId)]
+      ? [
+          ...propNames.map((pn) => t.identifier(pn)),
+          t.identifier(factoryId),
+          ...(factoryOwner === null ? [] : [t.identifier(factoryOwner)]),
+        ]
       : propNames.length > 0
       ? [
           t.identifier(factoryId),
@@ -820,7 +842,7 @@ function emitRegion(
     t.expressionStatement(
       t.callExpression(
         t.memberExpression(t.identifier(regionVar), t.identifier('reconcile')),
-        [t.cloneNode(site.arrayExpr)],
+        [t.cloneNode(site.sourceExpr)],
       ),
     ),
   );
@@ -828,7 +850,7 @@ function emitRegion(
     t.expressionStatement(
       t.callExpression(
         t.memberExpression(t.identifier(regionVar), t.identifier('reconcile')),
-        [t.cloneNode(site.arrayExpr)],
+        [t.cloneNode(site.sourceExpr)],
       ),
     ),
   );
@@ -897,6 +919,9 @@ function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpres
             t.callExpression(t.identifier(site.rowComp!), [
               ...callProps.map((p) => t.cloneNode(p)),
               t.cloneNode(rowId),
+              ...(site.sourceLocal
+                ? [componentId(ctx, site.owner)]
+                : []),
             ]),
           ),
         ]),
@@ -1009,7 +1034,11 @@ function buildInlineRowCreate(
     itemParam: site.itemParam,
     rowIdVar: rowId,
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
-    arrayName: site.arrayName,
+    sourceKey: site.sourceKey,
+    sourceLocal: site.sourceLocal,
+    ...(site.sourceLocal
+      ? { ownerIdVar: componentId(ctx, compName).name }
+      : {}),
   };
   const rootVar = emitElement(
     ctx,

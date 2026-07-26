@@ -37,6 +37,10 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | Handler with no recognized write skips rendering | Confirmed drift from the event-boundary contract | R18 invalidates the nearest component/row/region; guarded updates remain scoped |
 | Method-name mutation blacklist | Semantically incomplete and unnecessary | Removed in R19; every reactive receiver call has a bounded receiver effect |
 | JSX component children/composition | Confirmed source-language gap | R21 emits lazy caller-owned content slots linked to the caller's guarded update |
+| Cross-file component composition | Confirmed graph-linking gap | R22 links factory shape, caller paths, keyed-row mode, children, callbacks, and cleanup across named/default imports |
+| Component-local collection lists | Confirmed module-only R7 gap | R23 keeps instance roots private while arrays/object paths and derived Map/Set/object views reconcile in the owner |
+| Named local declaration as handler | Confirmed resolver gap | R23 resolves lexical function declarations and instruments reachable writes |
+| Async module helper called by an event | Confirmed post-await gap | R23 commits the summary immediately at the event and again on normal async completion |
 
 ## Decisions
 
@@ -54,22 +58,26 @@ component subtrees and benefit from change-gated propagation.
 
 ### Async and external work
 
-Commit where the write runs, not when the originating event promise settles.
-That gives correct timing for `await`, timers, and promise callbacks and avoids
-replaying a handler-wide write set. The compiler guarantees this for callbacks
+Commit where the write runs. Async named helpers have two conservative
+observable phases: their event call site commits after synchronous invocation
+to expose pre-await writes, and the helper commits again on normal completion
+to expose continuation writes. Instance helpers target their owner directly;
+module helpers route canonical summaries. The compiler guarantees callbacks
 lexically reachable from analyzed handlers/helpers, factory setup
 calls/constructors, and module initialization. Factory resources use explicit
 `cleanup(disposer)` ownership. Root and keyed-row unregister drain descendants
 before owners and each owner in LIFO order. Module-started work table-routes
-writes but remains module/application-owned.
+writes but remains module/application-owned. No exception wrapper or implicit
+cleanup is introduced.
 
 ### Access identity
 
 Within one module, Babel binding identity is authoritative. String names are
 only serialized after binding resolution. Every state key is module-qualified.
-`compileModules()` resolves imports and exported function summaries to canonical
-keys such as `./state.ts#store.selectedId`; it accepts bundler aliases or a host
-resolver. Cross-file component composition is not linked yet.
+`compileModules()` resolves imports, exported function summaries, and component
+factory identities; it accepts bundler aliases or a host resolver. The
+component graph maps defining-file reader analysis back to caller-derived
+entity paths, including import aliases and keyed rows.
 
 ### Component children
 
@@ -106,8 +114,7 @@ change the bounded-effect contract.
 ### P0: correctness boundaries
 
 1. Decide exception-path commit semantics with dedicated performance evidence.
-2. Extend the implemented state linker to cross-file component composition and
-   bundler adapters.
+2. Define bundler adapter integration around the implemented graph API.
 
 ### P1: source-language coverage
 
@@ -143,6 +150,14 @@ change the bounded-effect contract.
    mutation improves the 100-row path, but reactive rename/no-change still
    scale with list size. Optimize the dirty set before masks; a bitmask only
    makes routing an already-correct set cheaper.
+8. Keep cross-file component runtime parity and compiler latency separate.
+   `bench/components/README.md` finds no runtime adapter cost; graph compilation
+   remains about four times the one-file application latency on this small
+   case because fixed-point passes reparse modules.
+9. Preserve lightweight rows for instance-backed collections by passing their
+   owner id through the internal row ABI. `bench/local-state/README.md` records
+   mount parity and no measured update penalty for the conservative row-plus-
+   owner path; broader browser workloads still decide future grouping work.
 
 ## Benchmark baselines
 

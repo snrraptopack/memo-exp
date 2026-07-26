@@ -1,5 +1,5 @@
 /**
- * M5.4 — const collections as reactive state.
+ * M5.4 - mutable const roots as reactive state.
  *
  * `const items = [...]` / `const m = new Map()` follow JS semantics: the
  * binding never changes, the CONTENTS do. Mutations (push/set/member writes)
@@ -28,7 +28,7 @@ function importCompiled(name: string): Promise<any> {
   return import(specifier);
 }
 
-describe('M5.4 — const collections, code generation', () => {
+describe('M5.4 - mutable const roots, code generation', () => {
   it('const array mutations emit commits', () => {
     const code = compile(
       `const items = [1, 2];\nfunction C() { return <button onClick={() => { items.push(3); }}>{items.length}</button>; }`,
@@ -51,12 +51,12 @@ describe('M5.4 — const collections, code generation', () => {
     expect(code).toMatch(/_region\d*\.reconcile\(items\)/);
   });
 
-  it('rebinding a const collection is a compile error, not a runtime TypeError', () => {
+  it('rebinding a mutable const root is a compile error, not a runtime TypeError', () => {
     expect(() =>
       compile(
         `const items = [1];\nfunction C() { return <button onClick={() => { items = [2]; }}>x</button>; }`,
       ),
-    ).toThrowError(/cannot reassign const collection/);
+    ).toThrowError(/cannot reassign mutable const root/);
     expect(() =>
       compile(
         `const items = [1];\nfunction C() { return <button onClick={() => { items++; }}>x</button>; }`,

@@ -14,13 +14,24 @@ import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { runAnalysis } from './analysis';
 import { compile } from './compile';
+import {
+  linkComponentGraph,
+  type ComponentGraphNode,
+} from './component-linker';
+import {
+  analyzedComponentDeclarations,
+  analyzedComponentExport,
+  discoverComponentExports,
+  type ComponentExportInfo,
+} from './component-manifest';
 import { summarizeHelper } from './helper-summaries';
 import {
   canonicalStateKey,
   createCtx,
-  isConstCollection,
+  isConstObjectState,
   isStoreObject,
   type LinkedImport,
+  type LinkedComponentRowUse,
   type MemoDomOptions,
   type ParameterWrite,
   type StateKind,
@@ -55,7 +66,11 @@ interface FunctionExport {
   unbounded: boolean;
 }
 
-type LinkedExport = StateExport | FunctionExport;
+interface ComponentExport extends ComponentExportInfo {
+  type: 'component';
+}
+
+type LinkedExport = StateExport | FunctionExport | ComponentExport;
 
 interface ImportRef {
   local: string;
@@ -66,6 +81,7 @@ interface ImportRef {
 interface ModuleManifest {
   exports: Record<string, LinkedExport>;
   imports: ImportRef[];
+  components: ComponentGraphNode[];
 }
 
 interface ModuleEntry {
@@ -117,6 +133,18 @@ function importRefs(program: t.Program): ImportRef[] {
 function exportedLocals(program: t.Program): Map<string, string> {
   const out = new Map<string, string>();
   for (const stmt of program.body) {
+    if (t.isExportDefaultDeclaration(stmt)) {
+      if (
+        (t.isFunctionDeclaration(stmt.declaration) ||
+          t.isClassDeclaration(stmt.declaration)) &&
+        stmt.declaration.id != null
+      ) {
+        out.set('default', stmt.declaration.id.name);
+      } else if (t.isIdentifier(stmt.declaration)) {
+        out.set('default', stmt.declaration.name);
+      }
+      continue;
+    }
     if (!t.isExportNamedDeclaration(stmt)) continue;
     if (stmt.source !== null) {
       throw new Error(
@@ -160,6 +188,13 @@ function analyzeManifest(
         runAnalysis(ctx, programPath);
         const exports: Record<string, LinkedExport> = {};
         for (const [exported, local] of exportedLocals(programPath.node)) {
+          if (ctx.comps.has(local)) {
+            exports[exported] = {
+              type: 'component',
+              ...analyzedComponentExport(ctx, entry.id, local),
+            };
+            continue;
+          }
           const kind = ctx.state.get(local);
           if (kind !== undefined) {
             exports[exported] = {
@@ -197,6 +232,7 @@ function analyzeManifest(
         manifest = {
           exports,
           imports: importRefs(programPath.node),
+          components: analyzedComponentDeclarations(entry.id, ctx),
         };
       },
     },
@@ -228,6 +264,10 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
     visitor: {
       Program(programPath) {
         const locals = new Map<string, LinkedExport>();
+        const components = discoverComponentExports(programPath, entry.id);
+        for (const [name, component] of components) {
+          locals.set(name, { type: 'component', ...component });
+        }
         for (const stmt of programPath.node.body) {
           const inner = t.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
           if (t.isVariableDeclaration(inner)) {
@@ -250,7 +290,7 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
               let kind: StateKind | undefined;
               if (inner.kind === 'let' || inner.kind === 'var') kind = 'let';
               else if (isStoreObject(decl.init)) kind = 'store';
-              else if (isConstCollection(decl.init)) kind = 'const';
+              else if (isConstObjectState(decl.init)) kind = 'const';
               if (kind !== undefined) {
                 locals.set(decl.id.name, {
                   type: 'state',
@@ -259,7 +299,11 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
                 });
               }
             }
-          } else if (t.isFunctionDeclaration(inner) && inner.id != null) {
+          } else if (
+            t.isFunctionDeclaration(inner) &&
+            inner.id != null &&
+            !components.has(inner.id.name)
+          ) {
             locals.set(inner.id.name, {
               type: 'function',
               reads: [],
@@ -275,7 +319,7 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
           const value = locals.get(local);
           if (value !== undefined) exports[exported] = value;
         }
-        manifest = { exports, imports: importRefs(programPath.node) };
+        manifest = { exports, imports: importRefs(programPath.node), components: [] };
       },
     },
   });
@@ -385,17 +429,30 @@ function linkImports(
       };
       continue;
     }
-    linked[ref.local] =
-      targetExport.type === 'state'
-        ? { type: 'state', kind: targetExport.kind, key: targetExport.key }
-        : {
-            type: 'function',
-            reads: [...targetExport.reads],
-            writes: [...targetExport.writes],
-            boundedWrites: [...targetExport.boundedWrites],
-            parameterWrites: [...targetExport.parameterWrites],
-            unbounded: targetExport.unbounded,
-          };
+    if (targetExport.type === 'state') {
+      linked[ref.local] = {
+        type: 'state',
+        kind: targetExport.kind,
+        key: targetExport.key,
+      };
+    } else if (targetExport.type === 'component') {
+      linked[ref.local] = {
+        type: 'component',
+        key: targetExport.key,
+        props: [...targetExport.props],
+        objectProps: targetExport.objectProps,
+        listLightweight: targetExport.listLightweight,
+      };
+    } else {
+      linked[ref.local] = {
+        type: 'function',
+        reads: [...targetExport.reads],
+        writes: [...targetExport.writes],
+        boundedWrites: [...targetExport.boundedWrites],
+        parameterWrites: [...targetExport.parameterWrites],
+        unbounded: targetExport.unbounded,
+      };
+    }
   }
   return linked;
 }
@@ -443,6 +500,10 @@ export function compileModules(
     }
   }
 
+  const componentGraph = linkComponentGraph(
+    [...manifests.values()].flatMap((manifest) => manifest.components),
+    options.rootId ?? 'App',
+  );
   const output: Record<string, string> = {};
   for (const entry of entries.values()) {
     const manifest = manifests.get(entry.id)!;
@@ -454,14 +515,31 @@ export function compileModules(
         manifests.get(target.id)?.exports[ref.imported] === undefined
       ) {
         throw new Error(
-          `memo-dom: '${ref.imported}' is not a linkable state/function export of '${ref.source}'`,
+          `memo-dom: '${ref.imported}' is not a linkable state, function, or component export of '${ref.source}'`,
         );
+      }
+    }
+    const linkedComponentPaths: Record<string, string[]> = {};
+    const linkedComponentRows: Record<string, LinkedComponentRowUse[]> = {};
+    for (const declaration of manifest.components) {
+      linkedComponentPaths[declaration.local] = [
+        ...(componentGraph.paths.get(declaration.key) ?? []),
+      ];
+      const rows = componentGraph.rows.get(declaration.key);
+      if (rows !== undefined) {
+        linkedComponentRows[declaration.local] = rows.map((row) => ({
+          keyPath: row.keyPath === null ? null : [...row.keyPath],
+          sourceKey: row.sourceKey,
+          sourceLocal: row.sourceLocal,
+        }));
       }
     }
     output[entry.originalId] = compile(entry.source, {
       ...compilerOptions(options),
       moduleId: entry.id,
       linkedImports,
+      linkedComponentPaths,
+      linkedComponentRows,
     });
   }
   return output;

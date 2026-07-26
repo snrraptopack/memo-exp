@@ -190,6 +190,18 @@ export function transformProgramCallbacks(
   });
 }
 
+/**
+ * Async module helpers own their normal-completion commit because callers
+ * cannot represent writes that occur after the returned promise suspends.
+ * Event call sites may additionally commit the summary immediately to expose
+ * synchronous pre-await writes.
+ */
+export function transformSharedAsyncHelpers(ctx: Ctx): void {
+  for (const helper of ctx.helpers.values()) {
+    if (helper.node.async) instrumentSharedCallback(ctx, helper.node);
+  }
+}
+
 /** Reject cleanup syntax outside a component instead of leaving a runtime trap. */
 export function rejectUnownedCleanup(programPath: NodePath<t.Program>): void {
   programPath.traverse({

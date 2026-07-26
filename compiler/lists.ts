@@ -3,11 +3,12 @@
  *
  * Recognizes `{items.map(item => <JSX/>)}` in JSX child position, validates
  * the L1 form, and computes the deterministic id-prefix each region uses
- * ('<ownerPath>/<arrayName>'), shared by analysis (pattern generation) and
+ * ('<ownerPath>/<sourceKey>'), shared by analysis (pattern generation) and
  * emission (region creation) so table patterns always match runtime ids.
  *
  * L1 form rules (each violation is a clear compile error):
- *   - the mapped expression must be a module-level `let` state variable
+ *   - the mapped view must be reactive module state, instance state, or a
+ *     synchronous derivation of either
  *   - single identifier callback param (no destructuring)
  *   - callback body is exactly one JSX element, either
  *       a) a component reference:  <Row key={item.id} item={item} />
@@ -24,10 +25,12 @@ import * as t from '@babel/types';
 import { attrExpr, memberKey, memberRootName, nodeHasJsx, type Ctx } from './context';
 
 export interface MapSite {
-  /** Read/write key of the mapped array (e.g. 'items' or 'store.todos'). */
-  arrayName: string;
-  /** The array source expression, cloned into the reconcile calls. */
-  arrayExpr: t.Expression;
+  /** Reactive source key (e.g. 'items' or 'store.todos'). */
+  sourceKey: string;
+  /** Ordered source expression, cloned into the reconcile calls. */
+  sourceExpr: t.Expression;
+  /** Instance roots invalidate their owner directly, not an access table. */
+  sourceLocal: boolean;
   /** Callback param name (e.g. 'item'). */
   itemParam: string;
   /** Key expression if key={...} was given, else null. */
@@ -40,7 +43,7 @@ export interface MapSite {
   rowComp: string | null;
   /** Owning component's name (patterns expand its full path variants). */
   owner: string;
-  /** '<arrayName>' or '<arrayName><n>' when one owner maps it twice. */
+  /** '<sourceKey>' or '<sourceKey><n>' when one owner maps it twice. */
   suffix: string;
   /** Unique site key '<owner>/<suffix>' (pattern bases come from pathVariants). */
   prefix: string;
@@ -80,12 +83,12 @@ export function containsJsx(p: NodePath): boolean {
  * walked in source order in BOTH passes so analysis and emission agree.
  */
 export function nextSuffix(
-  arrayName: string,
+  sourceKey: string,
   usedPrefixes: Map<string, number>,
 ): string {
-  const seen = usedPrefixes.get(arrayName) ?? 0;
-  usedPrefixes.set(arrayName, seen + 1);
-  return seen === 0 ? arrayName : `${arrayName}${seen}`;
+  const seen = usedPrefixes.get(sourceKey) ?? 0;
+  usedPrefixes.set(sourceKey, seen + 1);
+  return seen === 0 ? sourceKey : `${sourceKey}${seen}`;
 }
 
 /**
@@ -104,37 +107,54 @@ export function analyzeMapSite(
     throw errorAt.buildCodeFrameError(msg);
   };
 
-  // -- mapped expression: module-level array state ------------------------
-  //    items.map(…)        — let/const collection (M5.4)
-  //    store.todos.map(…)  — static path on a store object (M5.5)
+  // -- mapped expression: ordered reactive collection view ----------------
   const callee = call.callee as t.MemberExpression;
-  const arrayExpr = callee.object;
-  let arrayName: string; // read/write key of the array
+  const sourceExpr = callee.object;
+  let sourceKey: string;
+  let sourceLocal = false;
   let suffixBase: string; // region suffix base (last path segment)
-  if (t.isIdentifier(arrayExpr)) {
-    const kind = ctx.state.get(arrayExpr.name);
+  if (t.isIdentifier(sourceExpr)) {
+    const localSource =
+      ctx.instanceState.get(ownerName)?.has(sourceExpr.name) === true ||
+      ctx.instanceComputeds.get(ownerName)?.has(sourceExpr.name) === true;
+    const kind = ctx.state.get(sourceExpr.name);
     // R13: computeds are valid list sources (active.map(…) over a filtered
     // derivation) — the region resyncs when the computed commits downstream
-    if (kind !== 'let' && kind !== 'const' && kind !== 'computed') {
+    if (
+      !localSource &&
+      kind !== 'let' &&
+      kind !== 'const' &&
+      kind !== 'computed'
+    ) {
       return fail(
-        'memo-dom: lists must map over module-level array state (let items = [...], const items = [...], or store.todos) — R7 L1',
+        'memo-dom: list views must come from reactive module or component state',
       );
     }
-    arrayName = arrayExpr.name;
-    suffixBase = arrayExpr.name;
-  } else if (t.isMemberExpression(arrayExpr)) {
-    const root = memberRootName(arrayExpr);
-    const key = memberKey(arrayExpr);
-    if (root === null || key === null || !key.includes('.') || ctx.state.get(root) !== 'store') {
+    sourceKey = sourceExpr.name;
+    sourceLocal = localSource;
+    suffixBase = sourceExpr.name;
+  } else if (t.isMemberExpression(sourceExpr)) {
+    const root = memberRootName(sourceExpr);
+    const key = memberKey(sourceExpr);
+    const localRoot =
+      root !== null &&
+      ctx.instanceState.get(ownerName)?.has(root) === true;
+    if (
+      root === null ||
+      key === null ||
+      !key.includes('.') ||
+      (!localRoot && ctx.state.get(root) !== 'store')
+    ) {
       return fail(
-        'memo-dom: lists must map over module-level array state (let items = [...], const items = [...], or a static store path like store.todos) — R7 L1',
+        'memo-dom: list member views must be a static path on reactive module or component state',
       );
     }
-    arrayName = key; // path-keyed, consistent with store writes
+    sourceKey = key;
+    sourceLocal = localRoot;
     suffixBase = key.slice(key.lastIndexOf('.') + 1);
   } else {
     return fail(
-      'memo-dom: lists must map over module-level array state (let items = [...], const items = [...], or store.todos) — R7 L1',
+      'memo-dom: assign an ordered collection view to reactive state or a local derivation before mapping it',
     );
   }
 
@@ -164,8 +184,8 @@ export function analyzeMapSite(
   if (/^[A-Z]/.test(tag)) {
     form = 'component';
     rowComp = tag;
-    if (!ctx.comps.has(tag)) {
-      fail(`memo-dom: <${tag} /> is not a known component — R7 rows must be declared in the same module`);
+    if (!ctx.comps.has(tag) && !ctx.importedComponents.has(tag)) {
+      fail(`memo-dom: <${tag} /> is not a linked component factory`);
     }
     // R10: state-reading row props are allowed — the region re-pushes the
     // row's props box on every reconcile that retains it (updateProps)
@@ -223,8 +243,9 @@ export function analyzeMapSite(
   const suffix = nextSuffix(suffixBase, usedPrefixes);
   const prefix = `${ownerName}/${suffix}`;
   return {
-    arrayName,
-    arrayExpr: t.cloneNode(arrayExpr),
+    sourceKey,
+    sourceExpr: t.cloneNode(sourceExpr),
+    sourceLocal,
     itemParam,
     keyExpr,
     jsx,

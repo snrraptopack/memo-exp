@@ -36,14 +36,18 @@ export function AsyncCounter(_id, _parent) {
   });
   const _text = document.createTextNode("async");
   const _button = document.createElement("button");
-  _button.onclick = incLater;
+  _button.onclick = _event => {
+    const _returnValue = incLater(_event);
+    _MD.markDirty(_id);
+    return _returnValue;
+  };
   _button.appendChild(_text);
   const _text2 = document.createTextNode("timer");
   const _button2 = document.createElement("button");
-  _button2.onclick = _event => {
-    const _returnValue = incTimer(_event);
+  _button2.onclick = _event2 => {
+    const _returnValue2 = incTimer(_event2);
     _MD.markDirty(_id);
-    return _returnValue;
+    return _returnValue2;
   };
   _button2.appendChild(_text2);
   const _text3 = document.createTextNode("");

@@ -66,13 +66,13 @@ describe('M5.5 — member-path list sources, code generation', () => {
       compile(
         `let items = [1];\nfunction C() { return <ul>{foo.items.map((i) => <li>{i}</li>)}</ul>; }`,
       ),
-    ).toThrowError(/module-level array state/);
+    ).toThrowError(/list member views/);
     // dynamic path on a store
     expect(() =>
       compile(
         `const store = { items: [1] };\nlet k = 'items';\nfunction C() { return <ul>{store[k].map((i) => <li>{i}</li>)}</ul>; }`,
       ),
-    ).toThrowError(/module-level array state/);
+    ).toThrowError(/list member views/);
   });
 });
 
