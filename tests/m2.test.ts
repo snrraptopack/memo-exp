@@ -6,7 +6,10 @@ import {
   _internals,
 } from '@memoized-dom/runtime/testing';
 import { createListRegion, type ListEntry } from '@memoized-dom/runtime/testing';
-import { TodoList, type Todo } from '../examples/todo-list';
+import {
+  TodoList,
+  type Todo,
+} from './fixtures/hand-compiled/todo-list';
 
 function freshTodos(): Todo[] {
   return [

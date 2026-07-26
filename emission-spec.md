@@ -985,6 +985,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   and performance decision.
 - R14 rejects direct writes in local derivations, but does not yet fold a
   component-local helper's write summary into derivation purity checking.
+- A keyed component mutation through a non-item prop refreshes that row and
+  invalidates the root subtree. Linking caller-side canonical state origins
+  into component prop effects can narrow this fallback later.
 - Over-invalidation note: a scope's commit fires even when its writes were
   skipped by an `if` — safe direction, absorbed by setter guards.
 

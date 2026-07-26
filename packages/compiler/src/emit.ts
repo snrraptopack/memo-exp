@@ -971,6 +971,7 @@ function buildComponentRowCreate(
   const lightweight = isLightweightListedComponent(ctx, rowComp);
   const rowChildCtx: RowCtx = {
     itemParam: site.itemParam,
+    itemPath: [],
     rowIdVar: rowId.name,
     refreshVar: rowRefresh.name,
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
@@ -1250,6 +1251,7 @@ function buildInlineRowCreate(
   // to a source-array write handled inside handler analysis.
   const rowCtx: RowCtx = {
     itemParam: site.itemParam,
+    itemPath: [],
     rowIdVar: rowId,
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
     sourceKey: site.sourceKey,

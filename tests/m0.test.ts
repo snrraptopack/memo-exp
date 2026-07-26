@@ -6,7 +6,7 @@ import {
   unregister,
   _internals,
 } from '@memoized-dom/runtime/testing';
-import { Counter } from '../examples/counter';
+import { Counter } from './fixtures/hand-compiled/counter';
 
 describe('M0 kernel', () => {
   beforeEach(() => {

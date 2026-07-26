@@ -74,11 +74,14 @@ describe('Vite 8 adapter', () => {
       await server.environments.client.transformRequest('/src/Label.tsx');
     const state =
       await server.environments.client.transformRequest('/src/state.ts');
+    const row =
+      await server.environments.client.transformRequest('/src/Row.tsx');
 
     expect(app?.code).toContain('function App(_id');
     expect(app?.code).toContain('Label(_id');
     expect(label?.code).toContain('function Label(_id');
     expect(state?.code).toContain('commitWrites');
+    expect(row?.code).toContain('markDirtySubtree("App")');
   });
 
   it('invalidates the managed graph and requests a full reload', async () => {

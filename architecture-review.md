@@ -105,6 +105,13 @@ identifiable aliases/destructuring sources, and direct reactive root arguments
 retain finite root boundaries. Visible helpers preserve relative parameter
 paths through local and linked calls.
 
+Within keyed components, the row item boundary is its actual prop path
+(`item` or `props.item`), not the whole props object. Writes through another
+prop refresh the row and conservatively invalidate the root because the
+defining module cannot yet serialize that runtime prop's caller-side canonical
+state identity. This is a correctness fallback; graph-linked prop origins can
+later narrow it without changing authored code.
+
 Only a summary with no finite receiver, argument, instance, row, or state root
 dirties the root subtree. Unresolved imported functions are the current common
 case. Commits are still emitted on normal exits; exception-path behavior

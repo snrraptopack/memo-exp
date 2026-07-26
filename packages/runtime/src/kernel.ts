@@ -30,7 +30,7 @@ export type EntityId = string;
 /**
  * A mounted component instance.
  * `render` is the UPDATE branch only — the creation branch ran once at mount
- * and cached its nodes in a closure (see examples/counter.ts).
+ * and cached its nodes in a closure.
  * `depth` and `children` are managed by register(); callers only provide
  * id, parent, render.
  */

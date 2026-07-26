@@ -385,8 +385,10 @@ export function memberKey(node: t.MemberExpression): string | null {
  * is structural), so it falls back to invalidating the collection source.
  */
 export interface RowCtx {
-  /** The item param name (map callback param / row component's first prop). */
+  /** Root binding containing the row item (map param, item, or props). */
   itemParam: string;
+  /** Static path from itemParam to the item; generic object props use ['item']. */
+  itemPath: string[];
   /** Variable holding the row entity id at the handler site ('rowId'|'id'). */
   rowIdVar: string;
   /** Lightweight rows have no entity; item-local writes call this updater. */

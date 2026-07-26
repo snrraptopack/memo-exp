@@ -107,11 +107,11 @@ export function transformComponent(
     )
       ? keyPaths[0]!
       : null;
+    const directItem = localBindingForProp(propPlan, 'item');
+    const propsObject = objectBindingName(propPlan);
     rowCtx = {
-      itemParam:
-        localBindingForProp(propPlan, 'item') ??
-        objectBindingName(propPlan) ??
-        propPlan.bindings[0]!,
+      itemParam: directItem ?? propsObject ?? propPlan.bindings[0]!,
+      itemPath: directItem === null && propsObject !== null ? ['item'] : [],
       rowIdVar: factoryId,
       ...(lightweight ? { refreshVar: scope.updateVar } : {}),
       keyPath: merged,

@@ -14,7 +14,7 @@ import {
   setStyle,
   type SlotCache,
 } from '@memoized-dom/runtime/testing';
-import { ProfileCard } from '../examples/profile-card';
+import { ProfileCard } from './fixtures/hand-compiled/profile-card';
 
 /** Count writes to a Text node's data by shadowing the accessor on the instance. */
 function spyTextWrites(node: Text) {

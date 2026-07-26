@@ -1,7 +1,7 @@
 /**
  * Measures the built package graphs and the real todo browser bundle.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
@@ -9,8 +9,9 @@ const root = resolve(import.meta.dirname, '../..');
 const staticImport =
   /\b(?:from\s*|import\s*)["'](\.[^"']+)["']/g;
 
-function packageGraph(entry: string): string[] {
-  const pending = [resolve(root, entry)];
+function packageGraph(entries: string | readonly string[]): string[] {
+  const list = typeof entries === 'string' ? [entries] : entries;
+  const pending = list.map((entry) => resolve(root, entry));
   const visited = new Set<string>();
 
   while (pending.length > 0) {
@@ -27,8 +28,11 @@ function packageGraph(entry: string): string[] {
   return [...visited];
 }
 
-function measure(label: string, entry: string): void {
-  const files = packageGraph(entry);
+function measure(
+  label: string,
+  entries: string | readonly string[],
+): void {
+  const files = packageGraph(entries);
   const raw = files.reduce(
     (total, file) => total + readFileSync(file).byteLength,
     0,
@@ -42,7 +46,17 @@ function measure(label: string, entry: string): void {
   );
 }
 
+function browserAssets(directory: string): string[] {
+  const absolute = resolve(root, directory);
+  return readdirSync(absolute, {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
+    .map((entry) => resolve(entry.parentPath, entry.name));
+}
+
 measure('runtime', 'packages/runtime/dist/index.js');
 measure('compiler', 'packages/compiler/dist/index.js');
 measure('Vite adapter', 'packages/vite/dist/index.js');
-measure('todo browser', 'examples/dist/bundle.js');
+measure('todo browser', browserAssets('examples/dist/assets'));

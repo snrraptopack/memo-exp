@@ -6,7 +6,11 @@ import {
   _internals,
 } from '@memoized-dom/runtime/testing';
 import { getEventLog, clearEventLog } from '@memoized-dom/runtime/testing';
-import { SelectListApp, __resetSelectListState, type Item } from '../examples/select-list';
+import {
+  SelectListApp,
+  __resetSelectListState,
+  type Item,
+} from './fixtures/hand-compiled/select-list';
 
 function items(): Item[] {
   return [

@@ -1,5 +1,5 @@
 /**
- * @file counter.ts
+ * Legacy hand-compiled counter fixture retained for runtime regression tests.
  * A HAND-COMPILED component — what the M5 compiler will emit from a plain
  * component. Refactored in M1 to route every dynamic write through the
  * setter helpers.

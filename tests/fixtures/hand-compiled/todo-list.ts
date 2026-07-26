@@ -1,5 +1,5 @@
 /**
- * @file todo-list.ts
+ * Legacy hand-compiled list fixture retained for runtime regression tests.
  * HAND-COMPILED component: a keyed list of row ENTITIES.
  *
  * Demonstrates the M2 contract:

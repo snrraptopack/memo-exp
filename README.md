@@ -67,6 +67,17 @@ export default defineConfig({
 
 See `packages/vite/README.md` for the adapter and HMR contract.
 
+Run the multi-module todo application through that adapter:
+
+```bash
+bun run example:dev
+bun run example:build
+bun run example:preview
+```
+
+The application under `examples/` imports only authored modules. Vite owns
+resolution, graph collection, production bundling, and development reloads.
+
 Static component children use lazy compiler-owned content slots:
 
 ```tsx

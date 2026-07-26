@@ -411,6 +411,23 @@ function analyzeHandler(
       scope.writes.add(rowCtx.sourceKey);
     }
   };
+  const rowRelativePath = (originKey: string): string[] | null => {
+    if (rowCtx === undefined) return null;
+    const segments = originKey.split('.').slice(1);
+    if (
+      rowCtx.itemPath.some(
+        (segment, index) => segments[index] !== segment,
+      )
+    ) {
+      return null;
+    }
+    return segments.slice(rowCtx.itemPath.length);
+  };
+  const noteNonItemRowProp = (p: NodePath): void => {
+    const scope = scopeOf(p);
+    scope.rowLocal = true;
+    scope.rootFallback = true;
+  };
 
   // R11: a member write rooted at the row's item param. Non-key fields are
   // visible ONLY to this row's DOM → the commit is a local markDirty(rowId).
@@ -422,10 +439,22 @@ function analyzeHandler(
     const key = memberKey(node); // 'todo.done.x' or null when dynamic
     if (key === null) {
       // dynamic path on the item (todo[k] = …): may hit the key — fall back
-      noteSourceWrite(p);
+      if (rowCtx.itemPath.length === 0) {
+        noteSourceWrite(p);
+      } else {
+        noteNonItemRowProp(p);
+      }
       return true;
     }
-    const segs = key.split('.').slice(1); // strip the item param root
+    const segs = key.split('.').slice(1);
+    if (
+      rowCtx.itemPath.some(
+        (segment, index) => segs[index] !== segment,
+      )
+    ) {
+      return false;
+    }
+    segs.splice(0, rowCtx.itemPath.length);
     if (writeTouchesKey(segs, rowCtx.keyPath)) {
       noteSourceWrite(p);
     } else {
@@ -455,10 +484,18 @@ function analyzeHandler(
         return;
       }
       if (origin.key === null) {
-        noteSourceWrite(p);
+        if (rowCtx.itemPath.length === 0) {
+          noteSourceWrite(p);
+        } else {
+          noteNonItemRowProp(p);
+        }
         return;
       }
-      const segs = origin.key.split('.').slice(1);
+      const segs = rowRelativePath(origin.key);
+      if (segs === null) {
+        noteNonItemRowProp(p);
+        return;
+      }
       if (writeTouchesKey(segs, rowCtx.keyPath)) {
         noteSourceWrite(p);
       } else {
@@ -505,7 +542,20 @@ function analyzeHandler(
         scopeOf(p).rootFallback = true;
         return;
       }
-      const receiverIsItem = origin.key === null || origin.key === origin.root;
+      if (origin.key === null) {
+        if (rowCtx.itemPath.length === 0) {
+          noteSourceWrite(p);
+        } else {
+          noteNonItemRowProp(p);
+        }
+        return;
+      }
+      const relative = rowRelativePath(origin.key);
+      if (relative === null) {
+        noteNonItemRowProp(p);
+        return;
+      }
+      const receiverIsItem = relative.length === 0;
       if (
         receiverIsItem &&
         (rowCtx.keyPath === null || rowCtx.keyPath.length > 0)

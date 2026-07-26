@@ -1,5 +1,5 @@
 /**
- * @file profile-card.ts
+ * Legacy hand-compiled setter fixture retained for runtime regression tests.
  * HAND-COMPILED component exercising every M1 setter:
  *   setText (name), setClass (online dot), setAttr (data-status),
  *   setProp (input.value)

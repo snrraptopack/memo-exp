@@ -1,5 +1,5 @@
 /**
- * @file select-list.ts
+ * Legacy hand-compiled routing fixture retained for runtime regression tests.
  * HAND-COMPILED demo app for M3: module-level shared state, a hand-written
  * access table, and handlers that NEVER call markDirty directly — handle()
  * routes their static write-sets to exactly the components that read what
