@@ -4,8 +4,8 @@
  * component. Refactored in M1 to route every dynamic write through the
  * setter helpers.
  */
-import { register, markDirty, type EntityId } from '../src/kernel';
-import { setText, type SlotCache } from '../src/setters';
+import { register, markDirty, type EntityId } from '@memoized-dom/runtime';
+import { setText, type SlotCache } from '@memoized-dom/runtime';
 
 export function Counter(id: EntityId, parent: EntityId | null = null): HTMLButtonElement {
   // ---- state: component-local, private to this instance -------------------

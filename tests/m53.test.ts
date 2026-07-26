@@ -11,14 +11,14 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { compile } from '../compiler/compile';
+import { compile } from '@memoized-dom/compiler';
 import {
   unregister,
   setScheduler,
   resetScheduler,
   _internals,
-} from '../src/kernel';
-import { installAccessTable, resetAccessTable, resolveWrites } from '../src/access';
+} from '@memoized-dom/runtime/testing';
+import { installAccessTable, resetAccessTable, resolveWrites } from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -193,7 +193,7 @@ describe('M5.3 fixes — compiled output runs', () => {
     for (const [name, src] of Object.entries(SOURCES)) {
       writeFileSync(
         join(outDir, `${name}.compiled.ts`),
-        compile(src, { runtimePath: '../out-runtime' }),
+        compile(src, { runtimePath: '@memoized-dom/runtime' }),
       );
     }
   });

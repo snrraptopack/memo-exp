@@ -7,13 +7,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { compile } from '../compiler/compile';
+import { compile } from '@memoized-dom/compiler';
 import {
   _internals,
   resetScheduler,
   setScheduler,
   unregister,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 
 const source = `
   const values = [1];
@@ -45,7 +45,7 @@ describe('R18 - scoped event-boundary invalidation', () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(
       join(outDir, 'r18-event.compiled.ts'),
-      compile(source, { runtimePath: '../out-runtime' }),
+      compile(source, { runtimePath: '@memoized-dom/runtime' }),
     );
   });
 

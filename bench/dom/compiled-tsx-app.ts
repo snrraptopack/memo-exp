@@ -1,4 +1,4 @@
-import * as _MD from "../../src/runtime";
+import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./bench/dom/App.tsx#selected"];
 const _WRITES_2 = ["./bench/dom/App.tsx#data", "./bench/dom/App.tsx#selected", "./bench/dom/data.ts#nextId"];
 const _WRITES_3 = ["./bench/dom/App.tsx#data", "./bench/dom/data.ts#nextId"];
@@ -7,7 +7,7 @@ const _WRITES_5 = ["./bench/dom/App.tsx#data", "./bench/dom/App.tsx#selected"];
 _MD.installAccessTable({
   readers: {
     "./bench/dom/App.tsx#data": ["AppTsx", "AppTsx/*"],
-    "./bench/dom/App.tsx#selected": ["AppTsx", "AppTsx/*"],
+    "./bench/dom/App.tsx#selected": ["AppTsx/data/Row[*]", "AppTsx/data/Row[*]/*"],
     "./bench/dom/data.ts#adjectives": ["AppTsx", "AppTsx/*"],
     "./bench/dom/data.ts#colours": ["AppTsx", "AppTsx/*"],
     "./bench/dom/data.ts#nextId": ["AppTsx", "AppTsx/*"],
@@ -32,9 +32,9 @@ function Row(props, _id) {
       _slot2 = _value;
       _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
-    if (_slot3 !== (_value = selected === props.item.id ? 'danger' : '')) {
+    if (_slot3 !== (_value = _MD.classValue(selected === props.item.id ? 'danger' : ''))) {
       _slot3 = _value;
-      _li.className = _value;
+      _MD.setClassValue(_li, _value);
     }
   };
   const _text = document.createTextNode("");
@@ -49,9 +49,9 @@ function Row(props, _id) {
     _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
   const _li = document.createElement("li");
-  if (_slot3 !== (_value = selected === props.item.id ? 'danger' : '')) {
+  if (_slot3 !== (_value = _MD.classValue(selected === props.item.id ? 'danger' : ''))) {
     _slot3 = _value;
-    _li.className = _value;
+    _MD.setClassValue(_li, _value);
   }
   _li.onclick = () => {
     selected = props.item.id;
@@ -61,7 +61,7 @@ function Row(props, _id) {
   _li.appendChild(_text2);
   _li.appendChild(_text3);
   return {
-    nodes: [_li],
+    nodes: _MD.rootNodes(_li),
     entities: [],
     update: _update,
     updateProps: _nextProp => {
@@ -136,7 +136,7 @@ export function BenchApp(_id2, _parent) {
   };
   _button7.appendChild(_text0);
   const _div = document.createElement("div");
-  _div.className = "toolbar";
+  _MD.setClassValue(_div, "toolbar");
   _div.appendChild(_button);
   _div.appendChild(_button2);
   _div.appendChild(_button3);
@@ -153,7 +153,8 @@ export function BenchApp(_id2, _parent) {
       nodes: _entry.nodes,
       entities: [],
       update: _entry.update,
-      updateProps: item => {
+      updateProps: _nextItem => {
+        item = _nextItem;
         _entry.updateProps({
           item
         });

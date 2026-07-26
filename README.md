@@ -18,21 +18,33 @@ bun install
 Run tests:
 
 ```bash
+bun run build
 bun run test
 bun run typecheck
 ```
 
+The repository is a Bun workspace with independent packages:
+
+| Package | Ownership |
+|---|---|
+| `@memoized-dom/runtime` | Dependency-free browser registry, routing, regions, lifecycle, and DOM updates |
+| `@memoized-dom/compiler` | Babel-based analysis, linking, and TypeScript/JSX emission |
+
+Root dependencies are development tools only. Babel dependencies belong to the
+compiler package; Happy DOM, Vitest, Puppeteer, esbuild, TypeScript, and type
+packages are not runtime dependencies.
+
 Compile a connected graph when reactive state crosses file boundaries:
 
 ```ts
-import { compileModules } from './compiler';
+import { compileModules } from '@memoized-dom/compiler';
 
 const output = compileModules(modules, {
-  runtimePath: 'memo-dom',
   aliases: { '@': './src' }, // mirror resolve.alias from Vite
 });
 ```
 
+The default emitted runtime import is `@memoized-dom/runtime`.
 All compiler paths emit canonical keys such as
 `./src/state.ts#store.selectedId`. `compileModules()` resolves named imports
 and exact/receiver-bounded function summaries. Pass
@@ -64,4 +76,5 @@ bun run bench:children
 bun run bench:components
 bun run bench:local-state
 bun run bench:jsx
+bun run bench:size
 ```

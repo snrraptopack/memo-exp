@@ -2,7 +2,7 @@
 /**
  * Generated from examples/TodoItem.tsx; rebuild with bun run examples/build-todo.ts.
  */
-import * as _MD from "../../src/runtime";
+import * as _MD from "@memoized-dom/runtime";
 export function TodoItem(props, _id) {
   let _slot, _slot2, _slot3, _slot4, _value;
   let isDone = props.completedSet.has(props.item.id);

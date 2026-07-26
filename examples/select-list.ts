@@ -12,11 +12,11 @@
  *   │   └── Row[*]        reads: selectedId    writes: selectedId (on click)
  *   └── Footer            reads: filter        writes: filter (input), prefs (opaque)
  */
-import { register, type EntityId } from '../src/kernel';
-import { installAccessTable } from '../src/access';
-import { handle } from '../src/events';
-import { createListRegion, type ListEntry } from '../src/list';
-import { setText, setClass, type SlotCache } from '../src/setters';
+import { register, type EntityId } from '@memoized-dom/runtime';
+import { installAccessTable } from '@memoized-dom/runtime';
+import { handle } from '@memoized-dom/runtime';
+import { createListRegion, type ListEntry } from '@memoized-dom/runtime';
+import { setText, setClass, type SlotCache } from '@memoized-dom/runtime';
 
 // ---- module state (shared across components) ---------------------------------
 let selectedId: number | null = null;

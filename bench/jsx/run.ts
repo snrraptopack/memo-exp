@@ -9,12 +9,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { Window } from 'happy-dom';
-import { compile } from '../../compiler/compile';
+import { compile } from '@memoized-dom/compiler';
 import {
   resetScheduler,
   setScheduler,
   unregister,
-} from '../../src/kernel';
+} from '@memoized-dom/runtime';
 
 const outDir = new URL('./dist/', import.meta.url);
 mkdirSync(outDir, { recursive: true });
@@ -50,14 +50,14 @@ const spreadSource = `
 writeFileSync(
   new URL('explicit.compiled.ts', outDir),
   compile(explicitSource, {
-    runtimePath: '../../../src/runtime',
+    runtimePath: '@memoized-dom/runtime',
     moduleId: './bench/jsx/explicit.tsx',
   }),
 );
 writeFileSync(
   new URL('spread.compiled.ts', outDir),
   compile(spreadSource, {
-    runtimePath: '../../../src/runtime',
+    runtimePath: '@memoized-dom/runtime',
     moduleId: './bench/jsx/spread.tsx',
   }),
 );

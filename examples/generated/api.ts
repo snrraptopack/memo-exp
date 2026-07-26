@@ -2,7 +2,7 @@
 /**
  * Generated from examples/api.ts; rebuild with bun run examples/build-todo.ts.
  */
-import * as _MD from "../../src/runtime";
+import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["/examples/db.ts#completedSet", "/examples/db.ts#state.isLoading", "/examples/db.ts#state.statusMessage", "/examples/db.ts#todos"];
 const _WRITES_2 = ["/examples/db.ts#todos"];
 const _WRITES_3 = ["/examples/db.ts#completedSet"];

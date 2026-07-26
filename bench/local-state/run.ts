@@ -9,12 +9,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { Window } from 'happy-dom';
-import { compile } from '../../compiler/compile';
+import { compile } from '@memoized-dom/compiler';
 import {
   resetScheduler,
   setScheduler,
   unregister,
-} from '../../src/kernel';
+} from '@memoized-dom/runtime';
 
 const outDir = new URL('./dist/', import.meta.url);
 mkdirSync(outDir, { recursive: true });
@@ -50,14 +50,14 @@ const localSource = `
 writeFileSync(
   new URL('module.ts', outDir),
   compile(moduleSource, {
-    runtimePath: '../../../src/runtime',
+    runtimePath: '@memoized-dom/runtime',
     moduleId: './bench/local-state/module.tsx',
   }),
 );
 writeFileSync(
   new URL('local.ts', outDir),
   compile(localSource, {
-    runtimePath: '../../../src/runtime',
+    runtimePath: '@memoized-dom/runtime',
     moduleId: './bench/local-state/local.tsx',
   }),
 );

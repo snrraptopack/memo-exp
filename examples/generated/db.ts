@@ -2,7 +2,7 @@
 /**
  * Generated from examples/db.ts; rebuild with bun run examples/build-todo.ts.
  */
-import * as _MD from "../../src/runtime";
+import * as _MD from "@memoized-dom/runtime";
 // Exported array state
 export let todos = [{
   id: 1,

@@ -1,3 +1,5 @@
+/** Public compiler package entry. */
+
 export { compile, type MemoDomOptions } from './compile';
 export {
   compileModules,

@@ -8,12 +8,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { Window } from 'happy-dom';
-import { compile } from '../../compiler/compile';
+import { compile } from '@memoized-dom/compiler';
 import {
   resetScheduler,
   setScheduler,
   unregister,
-} from '../../src/kernel';
+} from '@memoized-dom/runtime';
 
 const outDir = new URL('./dist/', import.meta.url);
 mkdirSync(outDir, { recursive: true });
@@ -39,14 +39,14 @@ const slottedSource = `
 writeFileSync(
   new URL('direct.compiled.ts', outDir),
   compile(directSource, {
-    runtimePath: '../../../src/runtime',
+    runtimePath: '@memoized-dom/runtime',
     moduleId: './bench/children/direct.tsx',
   }),
 );
 writeFileSync(
   new URL('slotted.compiled.ts', outDir),
   compile(slottedSource, {
-    runtimePath: '../../../src/runtime',
+    runtimePath: '@memoized-dom/runtime',
     moduleId: './bench/children/slotted.tsx',
   }),
 );

@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`M5 compiler — code generation > attributes commits to the scope that writes (async handlers, timers) 1`] = `
-"import * as _MD from "../out-runtime";
+"import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#count"];
 _MD.installAccessTable({
   readers: {
@@ -66,7 +66,7 @@ export function AsyncCounter(_id, _parent) {
 `;
 
 exports[`M5 compiler — code generation > compiles eligible component list rows as lightweight factories (M5.10) 1`] = `
-"import * as _MD from "../out-runtime";
+"import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#selected"];
 const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable({
@@ -166,7 +166,7 @@ export function CompList(_id2, _parent) {
 `;
 
 exports[`M5 compiler — code generation > compiles inline list rows to regions with row-scoped patterns (R7) 1`] = `
-"import * as _MD from "../out-runtime";
+"import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#selected"];
 const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable({
@@ -256,7 +256,7 @@ export function InlineList(_id, _parent) {
 `;
 
 exports[`M5 compiler — code generation > compiles repeated children with distinct ids and covering patterns 1`] = `
-"import * as _MD from "../out-runtime";
+"import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#label"];
 _MD.installAccessTable({
   readers: {
@@ -316,7 +316,7 @@ export function App(_id2, _parent2) {
 `;
 
 exports[`M5 compiler — code generation > compiles the counter fixture to the emission form 1`] = `
-"import * as _MD from "../out-runtime";
+"import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#again", "./component.tsx#count"];
 _MD.installAccessTable({
   readers: {
@@ -376,7 +376,7 @@ export function Counter(_id, _parent) {
 `;
 
 exports[`M5 compiler — code generation > compiles the shared-state fixture with an access table 1`] = `
-"import * as _MD from "../out-runtime";
+"import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#name"];
 _MD.installAccessTable({
   readers: {

@@ -12,15 +12,15 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { compile } from '../compiler/compile';
+import { compile } from '@memoized-dom/compiler';
 import {
   unregister,
   registeredIds,
   setScheduler,
   resetScheduler,
   _internals,
-} from '../src/kernel';
-import { resetAccessTable, resolveWrites } from '../src/access';
+} from '@memoized-dom/runtime/testing';
+import { resetAccessTable, resolveWrites } from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, 'fixtures');
@@ -41,7 +41,7 @@ function importCompiled(name: string): Promise<any> {
 
 describe('R8 — code generation', () => {
   it('compiles a ternary to an anchored region with its own entity', () => {
-    const code = compile(readFixture('cond'), { runtimePath: '../out-runtime' });
+    const code = compile(readFixture('cond'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
     expect(code).toMatch(/\.createCondRegion\(_div\d*, _id\d* \+ "\/when0"/);
     // registered as its own entity, render closure over the region variable
@@ -136,7 +136,7 @@ describe('R8 — compiled output runs', () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(
       join(outDir, 'cond.compiled.ts'),
-      compile(readFixture('cond'), { runtimePath: '../out-runtime' }),
+      compile(readFixture('cond'), { runtimePath: '@memoized-dom/runtime' }),
     );
   });
 
@@ -196,7 +196,7 @@ describe('R8 — compiled output runs', () => {
     const src = `let show = false;\nexport function C() { const t = () => { show = !show; }; return <div><button onClick={t}>t</button>{show && <b>hi</b>}</div>; }`;
     writeFileSync(
       join(outDir, 'cond-and.compiled.ts'),
-      compile(src, { runtimePath: '../out-runtime' }),
+      compile(src, { runtimePath: '@memoized-dom/runtime' }),
     );
     const { C } = await importCompiled('cond-and');
     document.body.appendChild(C('App', null));

@@ -1,5 +1,5 @@
-import { compile } from '../../compiler/compile';
-import { compileModules } from '../../compiler/linker';
+import { compile } from '@memoized-dom/compiler';
+import { compileModules } from '@memoized-dom/compiler';
 
 interface Row {
   modules: number;

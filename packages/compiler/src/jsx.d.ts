@@ -4,6 +4,7 @@
  */
 declare function cleanup(disposer: () => void): () => void;
 
+/** Minimal JSX declarations for compiler package source fixtures. */
 declare namespace JSX {
   interface ElementChildrenAttribute {
     children: unknown;

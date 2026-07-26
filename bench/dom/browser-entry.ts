@@ -8,7 +8,7 @@
  *   2. compiledInline (compiled TSX inline <li />)
  *   3. vanilla        (native JS baseline)
  */
-import { setScheduler } from '../../src/kernel';
+import { setScheduler } from '@memoized-dom/runtime';
 import { createVanillaApp } from './vanilla';
 import { createCompiledTsxApp } from './compiled-tsx-app';
 import { createCompiledInlineApp } from './compiled-inline-app';

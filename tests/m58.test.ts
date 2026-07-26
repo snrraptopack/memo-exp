@@ -4,10 +4,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { compile } from '../compiler/compile';
-import { _internals, resetScheduler, setScheduler, unregister } from '../src/kernel';
-import { installAccessTable, resetAccessTable, resolveWrites } from '../src/access';
-import { commitWrites } from '../src/events';
+import { compile } from '@memoized-dom/compiler';
+import { _internals, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
+import { installAccessTable, resetAccessTable, resolveWrites } from '@memoized-dom/runtime/testing';
+import { commitWrites } from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -61,7 +61,7 @@ function importCompiled(): Promise<any> {
 describe('M5.10 - lightweight listed component rows', () => {
   beforeAll(() => {
     mkdirSync(outDir, { recursive: true });
-    writeFileSync(join(outDir, 'm510-light.compiled.ts'), compile(LIGHT_SOURCE, { runtimePath: '../out-runtime' }));
+    writeFileSync(join(outDir, 'm510-light.compiled.ts'), compile(LIGHT_SOURCE, { runtimePath: '@memoized-dom/runtime' }));
   });
 
   beforeEach(() => {
@@ -74,7 +74,7 @@ describe('M5.10 - lightweight listed component rows', () => {
   afterEach(() => resetScheduler());
 
   it('emits a stateless list-only component as a ListEntry factory', () => {
-    const code = compile(LIGHT_SOURCE, { runtimePath: '../out-runtime' });
+    const code = compile(LIGHT_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/function Row\(item, sfx, _id\d*\)/);
     expect(code).not.toContain('.registerProps');
     const rowFactory = code.slice(code.indexOf('function Row'), code.indexOf('export function C'));
@@ -102,24 +102,24 @@ describe('M5.10 - lightweight listed component rows', () => {
   });
 
   it('keeps rows with local state on the existing entity and props-box path', () => {
-    const code = compile(STATEFUL_SOURCE, { runtimePath: '../out-runtime' });
+    const code = compile(STATEFUL_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/\.registerProps\(_id\d*, _props\d*\)/);
     expect(code).toMatch(/Row\(_rowId\d*, _id\d*, \[item\]\)/);
   });
 
   it('matches row props by name when JSX attribute order differs from declaration order', () => {
-    const code = compile(PROP_ORDER_SOURCE, { runtimePath: '../out-runtime' });
+    const code = compile(PROP_ORDER_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/Row\(suffix, i, _rowId\d*\)/);
     expect(code).toMatch(/_entry\d*\.updateProps\(suffix, i\)/);
   });
 
   it('tracks member writes through TypeScript non-null assertions', () => {
-    const code = compile(NON_NULL_WRITE_SOURCE, { runtimePath: '../out-runtime' });
+    const code = compile(NON_NULL_WRITE_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
   it('preserves a typed object-prop row contract in lightweight emission', () => {
-    const code = compile(OBJECT_PROP_ROW_SOURCE, { runtimePath: '../out-runtime' });
+    const code = compile(OBJECT_PROP_ROW_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/Row\(\{\s*item\s*\}, _rowId\d*\)/);
     expect(code).toMatch(/_entry\d*\.updateProps\(\{\s*item\s*\}\)/);
   });
@@ -179,7 +179,7 @@ describe('M5.10 - lightweight listed component rows', () => {
         `interface RowProps { item: { id: number; label: string } }\n` +
         `function Row(props: RowProps) { return <li>{props.item.label}</li>; }\n` +
         `function C() { return <ul>{items.map(item => <Row key={item.id} item={item} />)}</ul>; }`,
-      { runtimePath: '../out-runtime' },
+      { runtimePath: '@memoized-dom/runtime' },
     );
     expect(code).toMatch(/Row\(\{\s*item\s*\}, _rowId\d*\)/);
   });
@@ -200,7 +200,7 @@ describe('M5.10 - lightweight listed component rows', () => {
   it('matches static child props by name, not attribute order', () => {
     const code = compile(
       `function Child(a, b) { return <span>{a}{b}</span>; }\nfunction C() { return <div><Child b={2} a={1} /></div>; }`,
-      { runtimePath: '../out-runtime' },
+      { runtimePath: '@memoized-dom/runtime' },
     );
     expect(code).toMatch(/Child\(_id\d* \+ "\/Child", _id\d*, \[1, 2\]\)/);
   });

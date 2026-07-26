@@ -5,7 +5,7 @@ import {
   markDirty,
   unregister,
   _internals,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 import { Counter } from '../examples/counter';
 
 describe('M0 kernel', () => {

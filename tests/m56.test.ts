@@ -19,13 +19,13 @@ import {
   commit,
   markDirty,
   _internals,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 import {
   installAccessTable,
   resetAccessTable,
   resolveWrites,
-} from '../src/access';
-import { createListRegion } from '../src/list';
+} from '@memoized-dom/runtime/testing';
+import { createListRegion } from '@memoized-dom/runtime/testing';
 
 describe('M5.6 — cached write resolution', () => {
   beforeEach(() => {

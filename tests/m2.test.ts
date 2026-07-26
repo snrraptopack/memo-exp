@@ -4,8 +4,8 @@ import {
   resetScheduler,
   unregister,
   _internals,
-} from '../src/kernel';
-import { createListRegion, type ListEntry } from '../src/list';
+} from '@memoized-dom/runtime/testing';
+import { createListRegion, type ListEntry } from '@memoized-dom/runtime/testing';
 import { TodoList, type Todo } from '../examples/todo-list';
 
 function freshTodos(): Todo[] {

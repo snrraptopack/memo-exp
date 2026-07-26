@@ -7,14 +7,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { compile } from '../compiler/compile';
-import { resetAccessTable } from '../src/access';
+import { compile } from '@memoized-dom/compiler';
+import { resetAccessTable } from '@memoized-dom/runtime/testing';
 import {
   _internals,
   resetScheduler,
   setScheduler,
   unregister,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 
 const source = `
   const _MD = 'module';
@@ -75,7 +75,7 @@ describe('R16 - compiler-wide identifier hygiene', () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(
       join(outDir, 'r16-hygiene.compiled.ts'),
-      compile(source, { runtimePath: '../out-runtime' }),
+      compile(source, { runtimePath: '@memoized-dom/runtime' }),
     );
   });
 
@@ -93,7 +93,7 @@ describe('R16 - compiler-wide identifier hygiene', () => {
   });
 
   it('allocates compiler bindings away from every user binding', () => {
-    const code = compile(source, { runtimePath: '../out-runtime' });
+    const code = compile(source, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/import \* as _MD\d+ from/);
     expect(code).not.toContain('const count = Row(');
     expect(code).toMatch(/function App\(_id\d+, _parent\d+, _props\d+\)/);

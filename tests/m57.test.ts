@@ -20,10 +20,10 @@ import {
   commit,
   markDirty,
   _internals,
-} from '../src/kernel';
-import { installAccessTable, resetAccessTable } from '../src/access';
-import { createListRegion } from '../src/list';
-import { registerProps, setProps } from '../src/props';
+} from '@memoized-dom/runtime/testing';
+import { installAccessTable, resetAccessTable } from '@memoized-dom/runtime/testing';
+import { createListRegion } from '@memoized-dom/runtime/testing';
+import { registerProps, setProps } from '@memoized-dom/runtime/testing';
 
 function resetRegistry(): void {
   _internals().registry.forEach((_, id) => unregister(id));

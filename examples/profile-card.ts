@@ -7,8 +7,8 @@
  * Notice the shape: creation builds nodes, then the update branch is invoked
  * ONCE at mount to seed everything. One code path, no special-casing.
  */
-import { register, markDirty, type EntityId } from '../src/kernel';
-import { setText, setClass, setAttr, setProp, type SlotCache } from '../src/setters';
+import { register, markDirty, type EntityId } from '@memoized-dom/runtime';
+import { setText, setClass, setAttr, setProp, type SlotCache } from '@memoized-dom/runtime';
 
 export function ProfileCard(
   id: EntityId,

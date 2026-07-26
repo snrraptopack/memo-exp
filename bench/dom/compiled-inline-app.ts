@@ -1,4 +1,4 @@
-import * as _MD from "../../src/runtime";
+import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./bench/dom/AppInline.tsx#data", "./bench/dom/AppInline.tsx#selected", "./bench/dom/data.ts#nextId"];
 const _WRITES_2 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/data.ts#nextId"];
 const _WRITES_3 = ["./bench/dom/AppInline.tsx#data"];
@@ -88,7 +88,7 @@ export function BenchAppInline(_id, _parent) {
   };
   _button7.appendChild(_text7);
   const _div = document.createElement("div");
-  _div.className = "toolbar";
+  _MD.setClassValue(_div, "toolbar");
   _div.appendChild(_button);
   _div.appendChild(_button2);
   _div.appendChild(_button3);
@@ -108,9 +108,9 @@ export function BenchAppInline(_id, _parent) {
         _slot2 = _value2;
         _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
       }
-      if (_slot3 !== (_value2 = selected === item.id ? 'danger' : '')) {
+      if (_slot3 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
         _slot3 = _value2;
-        _li.className = _value2;
+        _MD.setClassValue(_li, _value2);
       }
     };
     _MD.register({
@@ -130,9 +130,9 @@ export function BenchAppInline(_id, _parent) {
       _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
     const _li = document.createElement("li");
-    if (_slot3 !== (_value2 = selected === item.id ? 'danger' : '')) {
+    if (_slot3 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
       _slot3 = _value2;
-      _li.className = _value2;
+      _MD.setClassValue(_li, _value2);
     }
     _li.onclick = () => {
       selected = item.id;

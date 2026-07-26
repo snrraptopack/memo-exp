@@ -4,7 +4,7 @@ import {
   resetScheduler,
   unregister,
   _internals,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 import {
   computedChanged,
   setText,
@@ -13,7 +13,7 @@ import {
   setProp,
   setStyle,
   type SlotCache,
-} from '../src/setters';
+} from '@memoized-dom/runtime/testing';
 import { ProfileCard } from '../examples/profile-card';
 
 /** Count writes to a Text node's data by shadowing the accessor on the instance. */

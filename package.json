@@ -1,12 +1,15 @@
 {
   "name": "memoized-dom",
-  "module": "index.ts",
   "type": "module",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "dev": "vitest",
+    "build": "bun run --cwd packages/runtime build && bun run --cwd packages/compiler build",
+    "test": "bun run build && vitest run",
+    "typecheck": "bun run build && tsc --noEmit",
+    "dev": "bun run build && vitest",
     "bench": "bun run bench/dom/build.ts && esbuild bench/dom/browser-entry.ts --bundle --outfile=bench/dom/dist/browser-bundle.js --format=iife && bun run bench/dom/run.ts",
     "bench:effects": "bun run bench/effects/run.ts",
     "bench:invalidation": "bun run bench/invalidation/run.ts",
@@ -16,25 +19,20 @@
     "bench:components": "bun run bench/components/run.ts",
     "bench:local-state": "bun run bench/local-state/run.ts",
     "bench:jsx": "bun run bench/jsx/run.ts",
+    "bench:size": "bun run bench/package-size/run.ts",
     "bench:frameworks": "cd bench/frameworks && bun run run"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.1",
-    "@babel/plugin-syntax-jsx": "^8.0.1",
-    "@babel/plugin-transform-typescript": "^8.0.1",
-    "@babel/traverse": "^8.0.4",
-    "@babel/types": "^8.0.4",
+    "@memoized-dom/compiler": "workspace:*",
+    "@memoized-dom/runtime": "workspace:*",
     "@types/babel__core": "^7.20.5",
     "@types/babel__traverse": "^7.28.0",
     "@types/bun": "latest",
-    "happy-dom": "^20.11.0",
-    "vitest": "^4.1.10"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
+    "@types/node": "^26.0.0",
     "esbuild": "^0.28.1",
-    "puppeteer-core": "^25.3.0"
+    "happy-dom": "^20.11.0",
+    "puppeteer-core": "^25.3.0",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

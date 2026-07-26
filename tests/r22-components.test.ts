@@ -17,8 +17,8 @@ import {
   it,
   vi,
 } from 'vitest';
-import { compileModules } from '../compiler/linker';
-import { resetAccessTable, resolveWrites } from '../src/access';
+import { compileModules } from '@memoized-dom/compiler';
+import { resetAccessTable, resolveWrites } from '@memoized-dom/runtime/testing';
 import {
   _internals,
   has,
@@ -26,7 +26,7 @@ import {
   resetScheduler,
   setScheduler,
   unregister,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -41,7 +41,7 @@ function writeCompiled(
 ): void {
   const output = compileModules(modules, {
     aliases: { '@': `./${prefix}` },
-    runtimePath: '../../out-runtime',
+    runtimePath: '@memoized-dom/runtime',
   });
   for (const [id, code] of Object.entries(output)) {
     const target = join(outDir, id.slice(2).replace(/\.tsx?$/, '.ts'));

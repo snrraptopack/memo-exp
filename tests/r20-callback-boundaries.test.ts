@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { compile } from '../compiler/compile';
+import { compile } from '@memoized-dom/compiler';
 
 describe('R20 - ordinary callback boundaries', () => {
   it('keeps a non-template map as a pure local derivation', () => {

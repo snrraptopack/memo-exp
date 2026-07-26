@@ -9,16 +9,16 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { compile } from '../compiler/compile';
-import { compileModules } from '../compiler/linker';
-import { resetAccessTable, resolveWrites } from '../src/access';
+import { compile } from '@memoized-dom/compiler';
+import { compileModules } from '@memoized-dom/compiler';
+import { resetAccessTable, resolveWrites } from '@memoized-dom/runtime/testing';
 import {
   _internals,
   registeredIds,
   resetScheduler,
   setScheduler,
   unregister,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -78,7 +78,7 @@ describe('R15 - cross-module code generation', () => {
   });
 
   it('qualifies same-named state by its defining module', () => {
-    const output = compileModules(MODULES, { runtimePath: '../out-runtime' });
+    const output = compileModules(MODULES, { runtimePath: '@memoized-dom/runtime' });
     const app = output['./r15-app.tsx']!;
 
     expect(app).toContain('"./r15-state-a.ts#count"');
@@ -156,7 +156,7 @@ describe('R15 - cross-module code generation', () => {
 describe('R15 - cross-module execution', () => {
   beforeAll(() => {
     mkdirSync(outDir, { recursive: true });
-    const output = compileModules(MODULES, { runtimePath: '../out-runtime' });
+    const output = compileModules(MODULES, { runtimePath: '@memoized-dom/runtime' });
     for (const [id, code] of Object.entries(output)) {
       const file = id.endsWith('.tsx') ? `${id.slice(2, -4)}.ts` : id.slice(2);
       writeFileSync(join(outDir, file), code);

@@ -6,8 +6,8 @@
  * verifies render counts plus zero guarded writes before timing either path.
  */
 
-import { installAccessTable, resetAccessTable } from '../../src/access';
-import { commitWrites } from '../../src/events';
+import { installAccessTable, resetAccessTable } from '@memoized-dom/runtime';
+import { commitWrites } from '@memoized-dom/runtime';
 import {
   commit,
   markDirtySubtree,
@@ -15,7 +15,7 @@ import {
   resetScheduler,
   setScheduler,
   unregister,
-} from '../../src/kernel';
+} from '@memoized-dom/runtime';
 
 interface Counters {
   renders: number;

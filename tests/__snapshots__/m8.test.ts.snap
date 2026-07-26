@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`R8 — code generation > compiles a ternary to an anchored region with its own entity 1`] = `
-"import * as _MD from "../out-runtime";
+"import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#loggedIn"];
 const _WRITES_2 = ["./component.tsx#count"];
 _MD.installAccessTable({

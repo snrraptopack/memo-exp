@@ -9,13 +9,13 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { Window } from 'happy-dom';
-import { compile } from '../../compiler/compile';
-import { compileModules } from '../../compiler/linker';
+import { compile } from '@memoized-dom/compiler';
+import { compileModules } from '@memoized-dom/compiler';
 import {
   resetScheduler,
   setScheduler,
   unregister,
-} from '../../src/kernel';
+} from '@memoized-dom/runtime';
 
 const outDir = new URL('./dist/', import.meta.url);
 mkdirSync(outDir, { recursive: true });
@@ -49,12 +49,12 @@ const splitSources = {
 writeFileSync(
   new URL('same.ts', outDir),
   compile(sameFileSource, {
-    runtimePath: '../../../src/runtime',
+    runtimePath: '@memoized-dom/runtime',
     moduleId: './bench/components/same.tsx',
   }),
 );
 const splitOutput = compileModules(splitSources, {
-  runtimePath: '../../../src/runtime',
+  runtimePath: '@memoized-dom/runtime',
 });
 writeFileSync(new URL('child.ts', outDir), splitOutput['./bench/components/child.tsx']!);
 writeFileSync(new URL('app.ts', outDir), splitOutput['./bench/components/app.tsx']!);

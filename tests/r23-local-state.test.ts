@@ -16,14 +16,14 @@ import {
   expect,
   it,
 } from 'vitest';
-import { compile } from '../compiler/compile';
-import { resetAccessTable } from '../src/access';
+import { compile } from '@memoized-dom/compiler';
+import { resetAccessTable } from '@memoized-dom/runtime/testing';
 import {
   _internals,
   resetScheduler,
   setScheduler,
   unregister,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -167,7 +167,7 @@ describe('R23 - stable local state', () => {
     for (const [name, source] of Object.entries(SOURCES)) {
       writeFileSync(
         join(outDir, `${name}.compiled.ts`),
-        compile(source, { runtimePath: '../out-runtime' }),
+        compile(source, { runtimePath: '@memoized-dom/runtime' }),
       );
     }
   });

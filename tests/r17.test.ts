@@ -15,14 +15,14 @@ import {
   expect,
   it,
 } from 'vitest';
-import { compile } from '../compiler/compile';
-import { resetAccessTable } from '../src/access';
+import { compile } from '@memoized-dom/compiler';
+import { resetAccessTable } from '@memoized-dom/runtime/testing';
 import {
   _internals,
   resetScheduler,
   setScheduler,
   unregister,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 
 const source = `
   const items = [];
@@ -96,7 +96,7 @@ describe('R17 - bounded mutation correctness', () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(
       join(outDir, 'r17-bounded.compiled.ts'),
-      compile(source, { runtimePath: '../out-runtime' }),
+      compile(source, { runtimePath: '@memoized-dom/runtime' }),
     );
     resetAccessTable();
     await importCompiled();
@@ -154,7 +154,7 @@ describe('R17 - bounded mutation correctness', () => {
   });
 
   it('emits exact and receiver-bounded keys without subtree fallback', () => {
-    const code = compile(source, { runtimePath: '../out-runtime' });
+    const code = compile(source, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toContain('"./component.tsx#items"');
     expect(code).toMatch(/\["[^"]+#store\.value"\]/);
     expect(code).not.toContain('markDirtySubtree');

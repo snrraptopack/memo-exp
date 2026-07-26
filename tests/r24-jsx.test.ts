@@ -16,15 +16,15 @@ import {
   expect,
   it,
 } from 'vitest';
-import { compile } from '../compiler/compile';
-import { compileModules } from '../compiler/linker';
-import { resetAccessTable } from '../src/access';
+import { compile } from '@memoized-dom/compiler';
+import { compileModules } from '@memoized-dom/compiler';
+import { resetAccessTable } from '@memoized-dom/runtime/testing';
 import {
   _internals,
   resetScheduler,
   setScheduler,
   unregister,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -192,31 +192,31 @@ describe('R24 - authored JSX semantics', () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(
       join(outDir, 'r24-parameter.compiled.ts'),
-      compile(PARAMETER_SOURCE, { runtimePath: '../out-runtime' }),
+      compile(PARAMETER_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
     writeFileSync(
       join(outDir, 'r24-body.compiled.ts'),
-      compile(BODY_SOURCE, { runtimePath: '../out-runtime' }),
+      compile(BODY_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
     writeFileSync(
       join(outDir, 'r24-default.compiled.ts'),
-      compile(DEFAULT_SOURCE, { runtimePath: '../out-runtime' }),
+      compile(DEFAULT_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
     writeFileSync(
       join(outDir, 'r24-fragment.compiled.ts'),
-      compile(FRAGMENT_SOURCE, { runtimePath: '../out-runtime' }),
+      compile(FRAGMENT_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
     writeFileSync(
       join(outDir, 'r24-spread.compiled.ts'),
-      compile(SPREAD_SOURCE, { runtimePath: '../out-runtime' }),
+      compile(SPREAD_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
     writeFileSync(
       join(outDir, 'r24-svg.compiled.ts'),
-      compile(SVG_SOURCE, { runtimePath: '../out-runtime' }),
+      compile(SVG_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
     writeFileSync(
       join(outDir, 'r24-row-children.compiled.ts'),
-      compile(ROW_CHILDREN_SOURCE, { runtimePath: '../out-runtime' }),
+      compile(ROW_CHILDREN_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
   });
 

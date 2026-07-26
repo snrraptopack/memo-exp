@@ -1,0 +1,27 @@
+{
+  "name": "@memoized-dom/compiler",
+  "version": "0.0.1",
+  "description": "Binding-aware TypeScript and JSX compiler for memoized-dom",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.js --platform=node --format=esm --target=node20 --packages=external --minify && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/plugin-syntax-jsx": "^8.0.1",
+    "@babel/plugin-transform-typescript": "^8.0.1",
+    "@babel/traverse": "^8.0.4",
+    "@babel/types": "^8.0.4"
+  }
+}

@@ -16,15 +16,15 @@ import {
   expect,
   it,
 } from 'vitest';
-import { compile } from '../compiler/compile';
-import { compileModules } from '../compiler/linker';
-import { resetAccessTable } from '../src/access';
+import { compile } from '@memoized-dom/compiler';
+import { compileModules } from '@memoized-dom/compiler';
+import { resetAccessTable } from '@memoized-dom/runtime/testing';
 import {
   _internals,
   resetScheduler,
   setScheduler,
   unregister,
-} from '../src/kernel';
+} from '@memoized-dom/runtime/testing';
 
 const source = `
   const values = [1];
@@ -80,7 +80,7 @@ describe('R19 - receiver-bounded execution', () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(
       join(outDir, 'r19-bounded.compiled.ts'),
-      compile(source, { runtimePath: '../out-runtime' }),
+      compile(source, { runtimePath: '@memoized-dom/runtime' }),
     );
     resetAccessTable();
     await importCompiled();

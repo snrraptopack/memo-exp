@@ -13,7 +13,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { compile } from '../compiler/compile';
+import { compile } from '@memoized-dom/compiler';
 import {
   register,
   unregister,
@@ -21,8 +21,8 @@ import {
   setScheduler,
   resetScheduler,
   _internals,
-} from '../src/kernel';
-import { resolveWrites } from '../src/access';
+} from '@memoized-dom/runtime/testing';
+import { resolveWrites } from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, 'fixtures');
@@ -48,7 +48,7 @@ function importCompiled(name: string): Promise<any> {
 
 describe('M5 compiler — code generation', () => {
   it('compiles the counter fixture to the emission form', () => {
-    const code = compile(readFixture('counter'), { runtimePath: '../out-runtime' });
+    const code = compile(readFixture('counter'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
     // R1: entity factory + register
     expect(code).toMatch(/function Counter\(_id\d*, _parent\d*\)/);
@@ -64,7 +64,7 @@ describe('M5 compiler — code generation', () => {
   });
 
   it('compiles the shared-state fixture with an access table', () => {
-    const code = compile(readFixture('shared'), { runtimePath: '../out-runtime' });
+    const code = compile(readFixture('shared'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
     // R5: 'name' is read by Badge, written by Editor → hoisted write set
     expect(code).toMatch(/_WRITES_\d* = \["\.\/component\.tsx#name"\]/);
@@ -78,7 +78,7 @@ describe('M5 compiler — code generation', () => {
   });
 
   it('compiles repeated children with distinct ids and covering patterns', () => {
-    const code = compile(readFixture('repeated'), { runtimePath: '../out-runtime' });
+    const code = compile(readFixture('repeated'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
     // second instance gets a bracket-suffixed id and its own variable
     expect(code).toMatch(/_id\d* \+ "\/Tag\[1\]"/);
@@ -87,7 +87,7 @@ describe('M5 compiler — code generation', () => {
   });
 
   it('attributes commits to the scope that writes (async handlers, timers)', () => {
-    const code = compile(readFixture('async'), { runtimePath: '../out-runtime' });
+    const code = compile(readFixture('async'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
     // Both async write scopes commit the same canonical write set.
     expect(code.match(/\.commitWrites\(_WRITES_\d*\)/g)).toHaveLength(2);
@@ -125,7 +125,7 @@ describe('M5 compiler — code generation', () => {
   });
 
   it('compiles inline list rows to regions with row-scoped patterns (R7)', () => {
-    const code = compile(readFixture('list-inline'), { runtimePath: '../out-runtime' });
+    const code = compile(readFixture('list-inline'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
     expect(code).toMatch(/\.createListRegion\(_ul\d*, _id\d* \+ "\/items"/);
     expect(code).toMatch(/_region\d*\.reconcile\(items\)/);
@@ -138,7 +138,7 @@ describe('M5 compiler — code generation', () => {
   });
 
   it('compiles eligible component list rows as lightweight factories (M5.10)', () => {
-    const code = compile(readFixture('list-component'), { runtimePath: '../out-runtime' });
+    const code = compile(readFixture('list-component'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
     expect(code).toMatch(/Row\(item, _rowId\d*\)/);
     expect(code).toContain('entities: []');
@@ -202,7 +202,7 @@ describe('M5 compiler — compiled output runs', () => {
     for (const name of ['counter', 'shared', 'repeated', 'async', 'list-inline', 'list-component']) {
       writeFileSync(
         join(outDir, `${name}.compiled.ts`),
-        compile(readFixture(name), { runtimePath: '../out-runtime' }),
+        compile(readFixture(name), { runtimePath: '@memoized-dom/runtime' }),
       );
     }
   });

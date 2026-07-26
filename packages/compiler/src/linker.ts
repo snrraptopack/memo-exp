@@ -369,7 +369,7 @@ function resolveModule(
       resolved = specifier;
     }
   }
-  const base = canonicalModuleId(resolved);
+  const base = canonicalModuleId(resolved ?? specifier);
   const candidates = [
     base,
     `${base}.ts`,

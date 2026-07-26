@@ -7,7 +7,7 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compileModules } from '../../compiler/linker';
+import { compileModules } from '@memoized-dom/compiler';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataSource = readFileSync(resolve(__dirname, 'data.ts'), 'utf-8');
@@ -19,7 +19,7 @@ const compiledAppTsx = compileModules(
     './bench/dom/App.tsx': appTsxSource,
     './bench/dom/data.ts': dataSource,
   },
-  { rootId: 'AppTsx', runtimePath: '../../src/runtime' },
+  { rootId: 'AppTsx', runtimePath: '@memoized-dom/runtime' },
 )['./bench/dom/App.tsx']!;
 
 const compiledTsxAppContent = `${compiledAppTsx}
@@ -57,7 +57,7 @@ const compiledAppInline = compileModules(
     './bench/dom/AppInline.tsx': appInlineSource,
     './bench/dom/data.ts': dataSource,
   },
-  { rootId: 'AppInline', runtimePath: '../../src/runtime' },
+  { rootId: 'AppInline', runtimePath: '@memoized-dom/runtime' },
 )['./bench/dom/AppInline.tsx']!;
 
 const compiledInlineAppContent = `${compiledAppInline}

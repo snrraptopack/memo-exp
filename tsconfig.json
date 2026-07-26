@@ -1,13 +1,13 @@
 {
   "compilerOptions": {
     // Environment setup & latest features
-    "lib": ["ESNext","DOM"],
+    "lib": ["ESNext","DOM","DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "preserve",
     "allowJs": true,
-    "types": ["bun"],
+    "types": ["bun","node"],
 
     // Bundler mode
     "moduleResolution": "bundler",
@@ -29,6 +29,11 @@
 
   },
 
-  "include": ["src", "compiler", "examples", "test"],
-  "exclude": ["test/fixtures", "examples/compiled-todo.ts"]
+  "include": ["packages", "examples"],
+  "exclude": [
+    "**/dist",
+    "**/generated",
+    "tests/fixtures/**",
+    "bench/frameworks"
+  ]
 }

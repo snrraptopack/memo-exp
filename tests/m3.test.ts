@@ -4,8 +4,8 @@ import {
   resetScheduler,
   unregister,
   _internals,
-} from '../src/kernel';
-import { getEventLog, clearEventLog } from '../src/events';
+} from '@memoized-dom/runtime/testing';
+import { getEventLog, clearEventLog } from '@memoized-dom/runtime/testing';
 import { SelectListApp, __resetSelectListState, type Item } from '../examples/select-list';
 
 function items(): Item[] {

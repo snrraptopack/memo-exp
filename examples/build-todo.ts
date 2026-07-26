@@ -5,7 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compileModules } from '../compiler/linker';
+import { compileModules } from '@memoized-dom/compiler';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sourceFiles = ['db.ts', 'api.ts', 'TodoItem.tsx', 'todo.tsx'];
@@ -17,7 +17,7 @@ const sources = Object.fromEntries(
 );
 const output = compileModules(sources, {
   rootId: 'TodoApp',
-  runtimePath: '../../src/runtime',
+  runtimePath: '@memoized-dom/runtime',
 });
 const generatedDir = resolve(__dirname, 'generated');
 mkdirSync(generatedDir, { recursive: true });

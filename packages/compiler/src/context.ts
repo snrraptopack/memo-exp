@@ -257,7 +257,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     });
   }
   return {
-    runtimePath: opts.runtimePath ?? 'memo-dom',
+    runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
     rootId: opts.rootId ?? 'App',
     moduleId,
     state,

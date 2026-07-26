@@ -6,8 +6,8 @@
  */
 
 import { performance } from 'node:perf_hooks';
-import { cleanup } from '../../src/cleanup';
-import { register, unregister } from '../../src/kernel';
+import { cleanup } from '@memoized-dom/runtime';
+import { register, unregister } from '@memoized-dom/runtime';
 
 interface Scenario {
   name: string;

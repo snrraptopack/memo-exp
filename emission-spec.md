@@ -1,4 +1,4 @@
-# memo-dom — Emission Spec
+# memoized-dom — Emission Spec
 
 > **Status:** Normative reference for the compiler (M5). This document defines,
 > rule by rule, what code the compiler emits for any valid source. The Babel
@@ -1015,37 +1015,44 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
-- **R24 (authored JSX semantics, compiler/components + compiler/emission +
-  compiler/jsx + src/dom-props.ts + src/dom-values.ts,
+- **R24 (authored JSX semantics, packages/compiler/src/components +
+  packages/compiler/src/emission + packages/compiler/src/jsx +
+  packages/runtime/src/dom-props.ts + packages/runtime/src/dom-values.ts,
   tests/r24-jsx.test.ts):** prop patterns/defaults replay from their props box;
   fragments preserve ordered roots; host/component spreads preserve override
   order; class/style/DOM/SVG mappings use DOM-aware patching; keyed component
   rows own one current-item children slot per runtime row.
-- **R23 (instance collections and async named helpers, compiler/lists.ts +
-  compiler/handlers.ts + tests/r23-local-state.test.ts):** component-owned
+- **R23 (instance collections and async named helpers,
+  packages/compiler/src/lists.ts + packages/compiler/src/handlers.ts +
+  tests/r23-local-state.test.ts):** component-owned
   arrays/object paths and ordered views derived from Map, Set, or objects
   reconcile in the owner without entering module access tables; WeakMap and
   WeakSet scalar derivations use the same owner invalidation. Lexical named
   handlers resolve directly. Async helpers expose
   pre-await event writes and normal-completion continuation writes.
-- **R22 (cross-file component graph, compiler/component-linker.ts +
+- **R22 (cross-file component graph,
+  packages/compiler/src/component-linker.ts +
   tests/r22-components.test.ts):** named/default imported factories retain
   caller ids, defining-file state readers, prop shape, lazy children,
   callback commits, cleanup ownership, and keyed-row mode across aliases.
   Recursive and mixed static/row graphs fail during linking.
-- **R21 (lazy component children slots, compiler/components/children.ts +
+- **R21 (lazy component children slots,
+  packages/compiler/src/components/children.ts +
   tests/r21-children.test.ts):** static component children mount only where
   the callee renders its reserved slot. Guarded updates remain linked to the
   lexical owner; nested components, lists, conditions, events, forwarding,
   and cleanup retain their existing compiler/runtime contracts.
-- **R20 (explicit cleanup and setup callbacks, compiler/lifecycle.ts +
-  src/cleanup.ts, tests/r20-cleanup.test.ts):** direct factory timers,
+- **R20 (explicit cleanup and setup callbacks,
+  packages/compiler/src/lifecycle.ts + packages/runtime/src/cleanup.ts,
+  tests/r20-cleanup.test.ts):** direct factory timers,
   listeners, constructors, subscriptions, and visible local helpers receive
   callback-owned normal-exit commits. `cleanup(disposer)` lowers with the
   hygienic entity id and runs on root or keyed-row subtree teardown.
   Module-initialization callbacks table-route canonical state writes.
-- **R19 (receiver-bounded effects, compiler/helper-summaries.ts +
-  compiler/handlers.ts + compiler/linker.ts, tests/r19.test.ts):** method names
+- **R19 (receiver-bounded effects,
+  packages/compiler/src/helper-summaries.ts +
+  packages/compiler/src/handlers.ts + packages/compiler/src/linker.ts,
+  tests/r19.test.ts):** method names
   no longer encode mutation semantics. Every reactive receiver method call is
   conservatively bounded to that receiver and routed only to its observers;
   guarded updates absorb pure-call false positives. Visible helpers preserve
@@ -1054,23 +1061,28 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   bounded. Root-subtree invalidation is reserved for genuinely unbounded
   summaries such as unresolved imported functions.
 
-- **R18 (scoped event-boundary invalidation, compiler/handlers.ts +
-  compiler/emit.ts, tests/r18.test.ts):** an event handler with no recognized
+- **R18 (scoped event-boundary invalidation,
+  packages/compiler/src/handlers.ts + packages/compiler/src/emit.ts,
+  tests/r18.test.ts):** an event handler with no recognized
   write no longer becomes a no-op invalidation boundary. It dirties its
   nearest registered component, inline row, or conditional region; lightweight
   rows invoke their local updater. The guarded update branch absorbs unchanged
   values. Known shared/local writes retain their existing precise routing.
 
-- **R17 (conservative mutation correctness, compiler/mutation-analysis.ts +
-  compiler/helper-summaries.ts + compiler/handlers.ts, tests/r17.test.ts):**
+- **R17 (conservative mutation correctness,
+  packages/compiler/src/mutation-analysis.ts +
+  packages/compiler/src/helper-summaries.ts +
+  packages/compiler/src/handlers.ts, tests/r17.test.ts):**
   local aliases retain binding-aware provenance; mutable reassignment and
   destructuring stay conservative; `delete` and static `Object.assign` emit
   exact keys; mutable state passed to calls or helper parameters cannot go
   stale. R19 subsequently narrowed identifiable conservative effects from
   root-subtree fallback to receiver/root routing.
 
-- **Post-M5.10 review batch (src/access.ts + src/list.ts + compiler/analysis.ts
-  + compiler/emit.ts, test/m58.test.ts):** three real-world correctness fixes
+- **Post-M5.10 review batch (packages/runtime/src/access.ts +
+  packages/runtime/src/list.ts + packages/compiler/src/analysis.ts +
+  packages/compiler/src/emit.ts, tests/m58.test.ts):** three real-world
+  correctness fixes
   on top of M5.10. (1) `resolveWrites` payload routing now implements spec §5
   as written: dotted payload paths (`{payload.item.id}`) resolve segment-wise,
   exact (non-wildcard) readers are kept alongside the precise ids, and ANY
@@ -1086,19 +1098,22 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   (`props: RowProps`), not just inline literals, and the lightweight-row
   eligibility traversal is memoized per component.
 
-- **M5.10 (lightweight listed component rows, compiler/analysis.ts +
-  compiler/emit.ts + compiler/handlers.ts, test/m58.test.ts):** a list-only
+- **M5.10 (lightweight listed component rows,
+  packages/compiler/src/analysis.ts + packages/compiler/src/emit.ts +
+  packages/compiler/src/handlers.ts, tests/m58.test.ts):** a list-only
   component with no local `let`/`var` state and no nested entity/region shape
   now emits as a `ListEntry` factory. It keeps guarded DOM updates and keyed
   reconciliation but allocates no row registry entity or props box. Shared
   reads invalidate the list owner, whose reconcile refreshes retained row
   closures; item-local handler writes call that closure directly. Stateful or
   structurally complex rows deliberately retain the existing entity path.
-- **L2 table-format compatibility (src/access.ts, test/m58.test.ts):**
+- **L2 table-format compatibility (packages/runtime/src/access.ts,
+  tests/m58.test.ts):**
   `AccessTable` accepts deferred `params` patterns now, preserving the public
   format while payload-aware precision remains a later resolver increment.
 
-- **R12 (instance state, compiler analysis+handlers+emit, test/r12.test.ts):**
+- **R12 (instance state, compiler analysis+handlers+emit,
+  tests/r12.test.ts):**
   top-level let/var of a component body is INSTANCE state — one factory
   closure per instance, readable only by that instance (children get it via
   R10 props re-push, nested rows via M5.5 resync). Writes are therefore
@@ -1136,7 +1151,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   Svelte $:). NOTE: computeds remain MODULE-level — they cannot see R12
   instance state (factory closures); per-instance computeds are future work
   (per-instance computed entity parented under the instance id).
-- **M5.8 (structural-path cost, src/list.ts + src/kernel.ts):** CDP profiling
+- **M5.8 (structural-path cost, packages/runtime/src/list.ts +
+  packages/runtime/src/kernel.ts):** CDP profiling
   of the todo bench showed 40% of steps are STRUCTURAL (remove/insert), and
   the slow path paid 3 maps + 5 arrays per reconcile. Now: ONE record map
   per region (`{e, id, pos}` replaces cache + keyToRowId + prevIndex +
@@ -1145,7 +1161,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   REFERENCES (no key-fn calls per row per step). undirty gates on set size.
   Heap sampling confirms ~zero runtime allocation per step — remaining GC
   is the bench harness's own strings/objects.
-- **M5.9 (inline guarded writes, compiler/emit.ts):** the slot cache object
+- **M5.9 (inline guarded writes, packages/compiler/src/emit.ts):** the slot
+  cache object
   (`$["s0"]`) is gone. Dynamic slots are per-scope locals (`let $s0, …`)
   and every dynamic write is an INLINE guard emitted by the compiler:
   `if ($s0 !== ($t = expr)) { $s0 = $t; text0.data = … }` — no runtime
@@ -1159,8 +1176,10 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   ~1.7x @6; structural update-every-10th 81ms → ~33ms (tied best),
   create 1k on par with Imba 2 / Solid.
 - **R11 (row-local item writes — parametrized precision WITHOUT runtime
-  payloads, compiler/context.ts + compiler/handlers.ts + compiler/emit.ts +
-  compiler/analysis.ts, test/m10.test.ts):** a handler inside a list row
+  payloads, packages/compiler/src/context.ts +
+  packages/compiler/src/handlers.ts + packages/compiler/src/emit.ts +
+  packages/compiler/src/analysis.ts, tests/m10.test.ts):** a handler inside a
+  list row
   that writes a field of the row's ITEM (todo.done = …) used to produce no
   commit at all (item params are foreign to module state). But the write
   is visible ONLY to that row's DOM — item data reaches rows through
@@ -1175,8 +1194,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   achieved at compile time with zero runtime machinery. (§5's payload
   form remains the design for writes whose target row is NOT lexical —
   e.g. one row dirtying a sibling by id.)
-- **M5.7 (render-path constant factors, src/list.ts + src/kernel.ts,
-  test/m57.test.ts):** two costs remained after M5.6 — (a) every reconcile
+- **M5.7 (render-path constant factors, packages/runtime/src/list.ts +
+  packages/runtime/src/kernel.ts,
+  tests/m57.test.ts):** two costs remained after M5.6 — (a) every reconcile
   rebuilt two full key→index maps even when nothing structural could have
   changed, and (b) a row dirtied through the table (Row[*]) AND resynced by
   its parent's reconcile rendered TWICE per commit. Now: reconcile opens
@@ -1189,8 +1209,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   mid-render still reach a later pass. dom-reconciler-bench: 88.2k →
   103.6k ops/sec at n=6 (+17%), ~+5-8% at n=100; structural bench
   unchanged (swap/remove best-in-class).
-- **R10 (props-down reactivity, src/props.ts + cascading commit in
-  src/kernel.ts + compiler props box, test/m9.test.ts):** the mount-time
+- **R10 (props-down reactivity, packages/runtime/src/props.ts + cascading
+  commit in packages/runtime/src/kernel.ts + compiler props box,
+  tests/m9.test.ts):** the mount-time
   props ban is LIFTED — state-reading props (on static children and on list
   rows) compile and stay live. Props are boxed in one mutable array per
   entity (`Row(id, parent, [a, b])`; user signatures unchanged); the parent
@@ -1201,8 +1222,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   box can hold a same-reference object whose fields mutated — the M5.5
   case). Note: the `Owner/*` covering pattern may still render children on
   unrelated parent writes (§11.3 over-approximation, safe direction).
-- **M5.6 (constant-factor sprint, src/access.ts + src/kernel.ts + src/list.ts,
-  test/m56.test.ts):** per-commit routing cost eliminated — `resolveWrites`
+- **M5.6 (constant-factor sprint, packages/runtime/src/access.ts +
+  packages/runtime/src/kernel.ts + packages/runtime/src/list.ts,
+  tests/m56.test.ts):** per-commit routing cost eliminated — `resolveWrites`
   previously re-matched every wildcard pattern against every live id on every
   commit (O(patterns × ids); a generation-keyed cache didn't help because row
   add/remove bumps the generation on exactly those steps). Now matchKeys is
@@ -1215,7 +1237,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   dom-reconciler-bench: 61.9k → 88.2k ops/sec at n=6 (+42%), 19.0k → 36.9k
   at n=100 (+94%); the gap to Imba 2 converged to ~2.8x at both scales.
 - **M5.5 (retained-row resync + member-path list sources,
-  test/m55.test.ts):** rows read their item (a factory param), not module
+  tests/m55.test.ts):** rows read their item (a factory param), not module
   state, so mutating a retained row's item fields was invisible — the list
   region now re-runs a reused row's guarded `update()` on every reconcile
   (DOM touched only on actual change; required by the dom-reconciler-bench
@@ -1224,8 +1246,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   region suffix = last segment). Exported state (`export const store = …`)
   is scanned as state. Drove the bench integration; also the fix that makes
   `checkImplementation` pass.
-- **R8 (conditional regions, src/cond.ts + compiler/conds.ts +
-  test/m8.test.ts):** `{cond ? <A/> : <B/>}`, `{cond && <A/>}`,
+- **R8 (conditional regions, packages/runtime/src/cond.ts +
+  packages/compiler/src/conds.ts +
+  tests/m8.test.ts):** `{cond ? <A/> : <B/>}`, `{cond && <A/>}`,
   `{cond || <A/>}` in direct JSX child position compile to anchored
   conditional regions per §R8 — the region registers as its own entity
   (`<owner>/when<n>`), all condition+branch reads attribute to its patterns,
@@ -1233,13 +1256,13 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   branch's guarded closure; swaps rebuild DOM but keep module state.
   Whitespace handling is now React-compatible (edge spaces dropped only
   when they come from line breaks).
-- **M5.4 (mutable const roots, test/m54.test.ts):** arrays and
+- **M5.4 (mutable const roots, tests/m54.test.ts):** arrays and
   constructor-created objects classify as mutable state; mutations invalidate
   their bounded readers while rebinding is a compile error ("cannot reassign
   mutable const root") instead of a runtime TypeError; R7 lists accept const
   arrays; `var` classifies as `let`;
   update-expressions on non-let bindings are compile errors.
-- **M5.3 (silent-miscompile batch, 9 items, test/m53.test.ts):**
+- **M5.3 (silent-miscompile batch, 9 items, tests/m53.test.ts):**
   1. early `return` in a writing scope skipped its commit → commits are now
      inserted before *every* return of the scope (and at scope end);
   2. member-chain mutators (`store.items.push(x)`) emitted no commit and

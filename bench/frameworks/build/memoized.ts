@@ -4,7 +4,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { compileModules } from '../../../compiler/linker';
+import { compileModules } from '@memoized-dom/compiler';
 
 export function compileMemoized(root: string): string {
   const sourceId = './bench/frameworks/dist/memoized.generated.ts';
@@ -15,12 +15,12 @@ export function compileMemoized(root: string): string {
     { [sourceId]: source, [modelId]: model },
     {
       rootId: 'FrameworkBench',
-      runtimePath: '../../../src/runtime',
+      runtimePath: '@memoized-dom/runtime',
     },
   )[sourceId]!;
 
   const bootstrap = `
-import { setScheduler } from '../../../src/kernel';
+import { setScheduler } from '@memoized-dom/runtime';
 const target = document.querySelector('#app');
 target.appendChild(MemoizedApp('FrameworkBench', null));
 let currentMode = 'reactive';

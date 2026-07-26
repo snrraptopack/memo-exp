@@ -8,9 +8,9 @@
  *   - list changes (add/remove/reorder) go through the commit cycle:
  *     handler mutates `items` -> markDirty(listId) -> render() -> reconcile()
  */
-import { register, markDirty, type EntityId } from '../src/kernel';
-import { createListRegion, type ListEntry } from '../src/list';
-import { setText, setClass, type SlotCache } from '../src/setters';
+import { register, markDirty, type EntityId } from '@memoized-dom/runtime';
+import { createListRegion, type ListEntry } from '@memoized-dom/runtime';
+import { setText, setClass, type SlotCache } from '@memoized-dom/runtime';
 
 export interface Todo {
   id: number;

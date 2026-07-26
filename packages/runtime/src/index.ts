@@ -1,5 +1,5 @@
 /**
- * runtime.ts — the single module compiled output imports from.
+ * Runtime package entry imported by compiler output.
  *
  * The compiler emits `import * as MD from '<runtimePath>'` and calls every
  * primitive through the `MD.` namespace, so this barrel must re-export the

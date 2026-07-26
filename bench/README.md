@@ -14,6 +14,7 @@ latest measurements, limits, and interpretation.
 | [`components`](./components/) | `bun run bench:components` | Same-file versus linked component runtime/compiler cost |
 | [`local-state`](./local-state/) | `bun run bench:local-state` | Module versus instance collection row ownership |
 | [`jsx`](./jsx/) | `bun run bench:jsx` | Specialized versus ordered-spread authored JSX paths |
+| [`package-size`](./package-size/) | `bun run bench:size` | Built package and real todo browser bundle size |
 | [`frameworks`](./frameworks/) | `bun run bench:frameworks` | Current framework update-completion scenarios |
 
 Numbers are machine-local and must be compared using repeated processes on the
