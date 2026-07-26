@@ -39,14 +39,15 @@ Everything below exists to make that sentence true.
 
 | term | meaning |
 |---|---|
-| **entity** | a mounted component instance: `{ id, parent, render }` in the runtime registry |
+| **entity** | a schedulable runtime record: `{ id, parent, render, phase? }`; components and computeds use the render phase, reactive effects use the effect phase |
 | **`$` (slot cache)** | per-instance object holding the previous value of every dynamic slot |
 | **slot** | one dynamic expression in JSX (text interpolation, attribute, class condition, style) |
 | **write-set** | state paths an execution scope may have changed |
 | **access table** | the compile-time `readers` map: variable → entity-id patterns |
-| **exact effect** | a state path directly proven to change |
-| **bounded effect** | a conservative write boundary attached to a known receiver/argument path |
-| **unbounded effect** | an effect with no finite state receiver/argument boundary → root-subtree commit |
+| **reactive effect** | a component-owned `effect(() => ...)` callback that reruns after one of its statically discovered inputs changes |
+| **exact write effect** | a state path directly proven to change |
+| **bounded write effect** | a conservative write boundary attached to a known receiver/argument path |
+| **unbounded write effect** | a write effect with no finite state receiver/argument boundary → root-subtree commit |
 | **root-subtree commit** | dirty the root entity and all descendants (Imba-equivalent fallback) |
 
 ## 3. Emission rules
@@ -186,7 +187,7 @@ button.onclick = () => {
   event-triggered rendering contract without widening to the mounted root.
 - Receiver and argument effects that can be attached to a known state path are
   bounded and routed through the access table (§4.4).
-- Only an effect with no finite state boundary is `UNBOUNDED` (§4.4) and emits
+- Only a write effect with no finite state boundary is `UNBOUNDED` (§4.4) and emits
   a root-subtree commit.
 
 ### R6 — Shared state stays plain; access table is emitted per module
@@ -233,6 +234,13 @@ function update() { region.reconcile(items); }
 ```
 
 - Row entity ids: `${listId}/Row[${key}]`.
+- The mapped view may be canonical module state, component instance state, a
+  synchronous local derivation, or a component prop binding/static member
+  path. Destructuring does not change prop reactivity: R24 replays the props
+  box before the owner's update reconciles the refreshed view.
+- Module sources enter the access table. Instance, derivation, and prop sources
+  are owner-local; local writes or R10 `setProps` dirty the owner, whose update
+  calls `region.reconcile(source)`.
 - The keyed reconciliation semantics (LIS moves, fragment batching, subtree
   teardown) are runtime behavior — the compiler only emits the region wiring.
 - If the map callback transforms items (`items.map(i => ({...i}))`), key
@@ -667,6 +675,119 @@ re-pushes callee props and updates mounted caller content. Stateful callee
 locals survive item mutation/replacement while both views observe the current
 item.
 
+### R26 - Reactive effects are component-owned post-render entities
+
+`effect(callback)` is the optional escape hatch for synchronizing reactive
+state with work outside JSX:
+
+```tsx
+let source = 1;
+let sink = 0;
+
+function App() {
+  effect(() => {
+    sink = source * 2;
+    const controller = startExternalWork(source);
+    return () => controller.abort();
+  });
+
+  return <output>{sink}</output>;
+}
+```
+
+The intrinsic is recognized by binding identity. It must be an unbound global
+named `effect`; a lexically declared or imported binding with that name is an
+ordinary function. A valid intrinsic call:
+
+- is a direct top-level expression statement in a component body;
+- has exactly one inline arrow or function expression;
+- has a synchronous, non-generator callback.
+
+Other locations and callback forms are compile errors. Async work may be
+started inside the synchronous callback, but its teardown must remain
+synchronous.
+
+Each accepted call receives a stable source-order index. After the owner's DOM
+creation statements, emission registers:
+
+```js
+MD.registerEffect(id + "/$effects/0", id, () => {
+  // authored callback, including normal R5/R20 write commits
+});
+```
+
+`$effects` is a reserved two-segment namespace. The effect entity is parented
+to its component owner, so unregistering the owner also unregisters the effect.
+The effect entity has `phase: "effect"` and its initial execution is scheduled
+through `markDirty`; registration never calls the authored callback directly.
+An effect with no reactive reads therefore runs once after creation and is not
+subscribed to later writes.
+
+Dependency collection is static, binding-aware, and conservative:
+
+- Canonical module-state/member reads add the effect id directly to that
+  access-table key.
+- A module derivation read subscribes to the derivation's canonical key; R13
+  propagation dirties the effect only when the computed value propagates.
+- Prop, instance-state, and local-derivation reads are reduced transitively to
+  local source roots. The owner marks the effect dirty after its guarded DOM
+  writes. Numeric dirty reasons suppress marks for unrelated exact local
+  writes; an unscoped reason reruns every possibly affected local effect.
+- Reads summarized through visible module helpers join the module dependency
+  set.
+- Reads inside nested timers, promises, listeners, or other deferred callbacks
+  are dependencies of those callbacks, not of the surrounding effect run.
+- Conditional reads form a static union. There is no runtime read tracking or
+  dynamic subscription replacement.
+
+The commit drain is two-phase. All pending component/computed render work,
+including cascaded child prop updates, drains before any reactive effect runs.
+If an effect write creates new render work, render work again takes priority
+before further effects. Effects observe the DOM produced by the completed
+render phase, are deduplicated with the normal dirty set, and run at most once
+for the dependency changes already merged into that pending execution.
+
+Writes made by the direct effect callback use the ordinary local/shared routing,
+but their normal-exit commits are execution-aware. The compiler emits one
+invocation-local boolean per syntactic write/call site, sets it without changing
+the expression's value when that site executes, and guards only that site's
+static commit:
+
+```js
+let didWrite = false;
+if (count < 2) didWrite = true, count++;
+if (didWrite) MD.commitWrites(WRITES_count);
+```
+
+A skipped branch emits no write commit. A conditional effect may therefore
+write one of its own dependencies and stabilize; each actual write schedules
+the next render/effect pass. An unconditional or otherwise genuine feedback
+loop still terminates with the normal 100-pass cascade error. Deferred nested
+callbacks retain the ordinary R5/R20 normal-exit behavior because they execute
+at their own future invalidation boundary.
+
+Passing a reactive value as an argument to an unknown API in the direct effect
+body is read-only consumption, not a bounded hidden write. This permits normal
+external synchronization such as `console.log(count)` and `send(count)` without
+self-invalidating the effect. A mutation hidden inside that unknown API does
+not propagate. Direct assignments/updates, method calls on reactive receivers,
+and parameter writes proven by visible helper summaries remain writable and
+use the execution guards above.
+
+The callback may return `undefined` or one synchronous disposer. Before a
+rerun, the runtime invokes the previous disposer exactly once, then installs
+the newly returned disposer. Unregistering the effect invokes its latest
+disposer exactly once. Any other return value is a runtime `TypeError`.
+Ownership is automatic: authored code must not wrap an effect in
+`cleanup(...)`. R20 `cleanup(disposer)` remains the explicit ownership form for
+non-reactive factory resources such as timers and listeners.
+
+“Post-render” does not mean “attached to `document`.” With the default browser
+scheduler, initial execution occurs on the scheduled frame and normally follows
+the caller inserting the returned root. The factory ABI still permits detached
+creation, custom synchronous schedulers, and SSR schedulers that never flush;
+R26 does not define a separate post-attachment mount hook.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
@@ -694,7 +815,7 @@ const total = items.reduce(...);   // reads: items
 | `receiver.anyMethod(...)` | bounded to `[receiver]` |
 | `Object.assign(store, { static: value })` | `[store.static]` |
 | local alias of any recognized target | preserves the target provenance |
-| visible helper parameter effect | append its relative path to the caller argument |
+| visible helper parameter write effect | append its relative path to the caller argument |
 | multiple of the above in one handler | union |
 
 ### 4.3 Locality classification
@@ -703,10 +824,10 @@ const total = items.reduce(...);   // reads: items
   component) → route: dirty the origin entity only. No table entry needed.
 - **Shared write**: target is module-level or outer-scope → route via table.
 
-### 4.4 Bounded and unbounded effects
+### 4.4 Bounded and unbounded write effects
 
 The compiler does not classify method names. Every method call on a reactive
-receiver emits a bounded receiver effect:
+receiver emits a bounded receiver write effect:
 
 ```ts
 items.push(x);             // bounded: items
@@ -718,7 +839,7 @@ This is conservative but scoped. The access table invokes only observers of
 the receiver path. Their value guards suppress unchanged DOM writes. A pure
 method therefore costs reader update evaluation, not a root render or
 unconditional DOM work. Production numeric dirty reasons may skip unrelated
-local derivations inside those readers without changing this effect contract;
+local derivations inside those readers without changing this write-effect contract;
 a bitmask remains a possible representation optimization.
 
 Visible helper summaries retain module paths and structured parameter-relative
@@ -831,7 +952,10 @@ it if unimplemented) so the table format is stable from the first release.
 Emission assumes these runtime behaviors (already implemented & tested):
 
 - `commitWrites(writes)` routes via the table; dedupes into the frame's dirty set.
-- Commit renders the dirty set parent-before-child (numeric depth sort).
+- Commit drains component/computed render entities parent-before-child (numeric
+  depth sort), including work dirtied by render cascades.
+- Reactive effect entities drain only when no render entity is pending. Effect
+  writes may enqueue another render phase in the same bounded commit drain.
 - Setter guards make any over-dirtied entity's render nearly free (~1µs).
 - Dead letters (dirtying unmounted ids) are silent no-ops.
 
@@ -847,6 +971,13 @@ Emission assumes these runtime behaviors (already implemented & tested):
    *partially* and silently dropped a write.
 5. **No runtime graph:** emitted code never creates subscription lists,
    observer sets, or read-tracking proxies. The table is data.
+6. **Effect phase ordering:** a reactive effect never runs while component or
+   computed render work is pending (R26).
+7. **Effect teardown ownership:** the previous returned disposer runs once
+   before rerun, and the latest disposer runs once on unmount (R26).
+8. **Effect write execution:** a direct effect callback commits only write/call
+   sites that executed during that invocation; skipped conditional sites do not
+   keep the effect dirty (R26).
 
 ## 8. Worked example A — counter (complete)
 
@@ -984,7 +1115,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R24 (compiler probes + compiled runtime execution).
+> Last full audit: R26 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
@@ -994,6 +1125,10 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 - Children slots can be rendered or forwarded once as the sole host child.
 - Components must be top-level `function` declarations (no arrows); exactly
   one top-level JSX return per component.
+- Reactive effects must be direct top-level component statements with exactly
+  one inline synchronous callback (R26). There are no module/root effects,
+  named callback forms, nested/conditional effect declarations, or async
+  effect callbacks.
 - Lists inside list rows; components inside inline rows.
 - Recursive components — guarded with an explicit compile error (cycle
   detection in path enumeration); needs lazy creation to support.
@@ -1008,8 +1143,13 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   and performance decision.
 - R14 rejects direct writes in local derivations, but does not yet fold a
   component-local helper's write summary into derivation purity checking.
-- Over-invalidation note: a scope's commit fires even when its writes were
-  skipped by an `if` — safe direction, absorbed by setter guards.
+- Over-invalidation note: ordinary handler/deferred-callback commits fire even
+  when their writes were skipped by an `if` — safe direction, absorbed by
+  setter guards. Direct R26 effect callbacks are execution-aware because they
+  may subscribe to their own writes.
+- Genuine effect feedback loops are not rejected statically. An unconditional
+  write to an effect's own dependency reruns until the bounded 100-pass cascade
+  error reports the cycle.
 
 ### 11.4 Runtime / DOM / lifecycle gaps
 
@@ -1017,8 +1157,10 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   should currently return `<svg>` or an SVG-only root such as `<g>`/`<path>`;
   ambiguous roots such as `<title>` are HTML unless nested directly under an
   authored SVG host.
-- No mount hook or effect primitive. `cleanup(disposer)` owns synchronous
-  component teardown; async disposer promises are not awaited.
+- Reactive effects are post-render entities, not post-attachment mount hooks.
+  Detached creation and custom synchronous schedulers do not guarantee that
+  the returned root is connected to `document` when the initial effect runs.
+  Effect and `cleanup(disposer)` teardown promises are not awaited.
 - A factory that registers cleanup and then throws before entity registration
   leaves that registration orphaned. Factory exception teardown needs a
   separate decision; event handlers remain free of generated `try/finally`.
@@ -1039,6 +1181,19 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R7/R24 correction (prop-backed list views,
+  packages/compiler/src/lists.ts, tests/m5.test.ts +
+  tests/r22-components.test.ts):** destructured prop bindings and static member
+  paths on a props object are owner-local reactive list sources. Props-box
+  replay precedes reconciliation after `setProps`.
+- **R26 (component-owned reactive effects,
+  packages/compiler/src/effects.ts + packages/runtime/src/effect.ts +
+  packages/runtime/src/kernel.ts, tests/r26-effect.test.ts):** unbound
+  top-level `effect(() => ...)` callbacks receive static module/local
+  dependencies, run only after render/computed work drains, propagate ordinary
+  compiler-visible writes through per-site execution guards, permit conditional
+  feedback to stabilize, retain the cascade guard for genuine cycles, and own
+  one returned teardown across reruns and unmount.
 - **R25 (dependency-selected local derivations,
   packages/compiler/src/components/local-derived.ts +
   packages/runtime/src/dirty-reasons.ts, tests/r14.test.ts +
@@ -1082,7 +1237,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   callback-owned normal-exit commits. `cleanup(disposer)` lowers with the
   hygienic entity id and runs on root or keyed-row subtree teardown.
   Module-initialization callbacks table-route canonical state writes.
-- **R19 (receiver-bounded effects,
+- **R19 (receiver-bounded write effects,
   packages/compiler/src/helper-summaries.ts +
   packages/compiler/src/handlers.ts + packages/compiler/src/linker.ts,
   tests/r19.test.ts):** method names

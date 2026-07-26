@@ -3,7 +3,8 @@
 > **Status:** Design spec. This document is the single source of truth for what we are
 > building and why. Future agents/contributors: read this fully before writing code.
 > Do not introduce VDOM, signals, or user-facing state primitives — they are
-> explicitly out of scope (see Non-Goals).
+> explicitly out of scope (see Non-Goals). `effect` and `cleanup` are
+> compiler-owned lifecycle/synchronization intrinsics, not state containers.
 
 ---
 
@@ -23,7 +24,7 @@ to the user.
 
 ## 2. The Paradigm in One Sentence
 
-> **Memoized real-DOM rendering (à la Imba) where event-triggered re-render is
+> **Memoized real-DOM rendering (à la Imba) where callback-triggered re-render is
 > scoped by compile-time read/write analysis, so the runtime re-renders only the
 > component instances that can observe what an event changed — never the whole tree.**
 
@@ -33,8 +34,10 @@ re-rendering from the mounted root on every event.
 
 ## 3. Design Constraints (non-negotiable)
 
-1. **Zero user-facing primitives.** The user imports nothing to make the paradigm
-   work. No `signal()`, no `emit()`, no `cached()`, no `commit()` in user code.
+1. **Zero required reactive-state primitives.** The user imports nothing to make
+   variables or JSX reactive. No `signal()`, no `emit()`, no `cached()`, no
+   `commit()` in user code. Optional compiler intrinsics such as `effect()` and
+   `cleanup()` express lifecycle ownership, not reactive state.
 2. **No runtime dependency graph.** No subscription lists, no observer sets, no
    read-tracking proxies in the hot path. Dependency information is computed at
    **compile time** from the AST.
@@ -46,10 +49,11 @@ re-rendering from the mounted root on every event.
 5. **Compiler-first.** Anywhere a choice exists between runtime cleverness and
    compile-time knowledge, the compiler wins.
 
-## 4. The Five Mechanisms
+## 4. The Six Mechanisms
 
 Mechanisms 1–4 are borrowed from Imba (production-proven). Mechanism 5 is our
-contribution and the reason the framework exists.
+contribution and the reason the framework exists. Mechanism 6 is the explicit
+external-synchronization escape hatch made possible by the same static layer.
 
 ### 4.1 Split creation / update branches (compiler)
 
@@ -151,12 +155,47 @@ If the compiler cannot prove an exact write, it first finds the narrowest
 finite boundary it can name. A call on `store.items` or a dynamic write through
 `store[key]` is bounded to that receiver/root and routed only to its observers.
 The compiler does not classify method names; false positives are absorbed by
-guarded update closures. Only effects with no identifiable receiver, argument,
-instance, row, or state root fall back to a root-scoped commit.
+guarded update closures. Only write effects with no identifiable receiver,
+argument, instance, row, or state root fall back to a root-scoped commit.
+
+### 4.6 Component-owned post-render effects (compiler + runtime)
+
+JSX and ordinary variable updates require no primitive. Work that intentionally
+synchronizes reactive values with an external system uses `effect`:
+
+```tsx
+function Presence(roomId) {
+  effect(() => {
+    const connection = connect(roomId);
+    return () => connection.disconnect();
+  });
+
+  return <output>{roomId}</output>;
+}
+```
+
+The compiler discovers the callback's immediate module, prop, local-state, and
+local-derivation reads. It emits static routing to a child effect entity; no
+runtime read tracking or dependency array exists. Render/computed entities
+drain first, then effects. A returned disposer runs before rerun and on
+unmount.
+
+Direct effect writes use compiler-generated per-site execution flags. Only
+write/call sites that actually ran commit. This lets a conditional feedback
+effect stabilize while the existing bounded cascade guard still reports a
+genuine unconditional loop. `cleanup(disposer)` remains the non-reactive
+factory-resource ownership form.
+
+Reactive values passed to unknown APIs in the direct effect body are read-only
+inputs. Passing `count` to `console.log`, `send`, or another external API
+subscribes the effect to `count` but does not claim that the API mutated it.
+Hidden mutation through such an argument intentionally does not propagate;
+direct writes, reactive receiver methods, and writes summarized through visible
+helpers remain compiler-owned mutation paths.
 
 ## 5. Internal Entity Model (runtime, invisible to user)
 
-Each mounted component instance is an entity:
+Each schedulable component, computed, or reactive effect is an entity:
 
 ```ts
 type Entity = {
@@ -164,7 +203,8 @@ type Entity = {
   parent: string | null;
   children: Set<string>;
   depth: number;
-  render: (reasons?) => void; // update closure only
+  phase?: 'render' | 'effect';
+  render: (reasons?) => void; // component update, computed, or effect callback
 };
 ```
 
@@ -176,6 +216,11 @@ Entities whose local dependency graph has independent groups may receive
 compiler-generated numeric dirty reasons. Reasons only select closure-local
 derivation replay; an absent reason means full replay. They do not expose
 state to the registry or change component identity.
+
+Reactive effect entities use the reserved `owner/$effects/index` namespace and
+are parented to their component owner. Their registry callback owns only the
+latest returned disposer; dependencies remain static access-table data or
+compiler-emitted owner invalidations.
 
 Properties:
 
@@ -207,10 +252,13 @@ USER EVENT (click / input / keydown / ...)
   │
   ├─ 4. schedule frame (deduped; multiple events merge into one pass)
   │
-  └─ 5. on animation frame:
-         for id in dirtySet (parent-before-child order):
-           entity = registry[id]; if (!entity) continue   // unmounted: skip
-           entity.render()      // update branch only; setters no-op unchanged values
+  └─ 5. on animation frame, bounded drain:
+         while dirtySet is not empty:
+           if any render/computed entity is pending:
+             run those parent-before-child
+           else:
+             run pending effect entities
+           writes/cascaded props join the same dirty set
          dirtySet.clear()
 ```
 
@@ -226,6 +274,11 @@ explicitly entity-owned with `cleanup(disposer)` and drain when their root or
 keyed row unregisters. Mutations hidden entirely inside external code still
 need a visible callback or host boundary; passing state to unknown code only
 bounds effects completed during that analyzed call.
+
+**Reactive external synchronization:** `effect(() => ...)` receives a static
+read-set and joins the same dirty set, but executes only after render/computed
+work has drained. Its initial run is post-render, not a distinct guarantee that
+a detached factory root has been attached to `document`.
 
 ## 7. Traces
 
@@ -261,18 +314,18 @@ handler: items = reverse(items)
 
 ```
 handler: state[someKey()] = x      // compiler cannot prove keys
-  → bounded effect = state root
+  → bounded write effect = state root
   → access table selects observers of state
   → their value-cached setters no-op unchanged writes.
 
-handler: unresolvedImport()        // no finite effect boundary
-  → unbounded effect → dirty set = { ROOT subtree }
+handler: unresolvedImport()        // no finite write-effect boundary
+  → unbounded write effect → dirty set = { ROOT subtree }
 ```
 
 ## 8. What the User Writes
 
 ```tsx
-// No imports. No primitives. Plain variables, plain handlers.
+// No imports or state wrappers. Plain variables, plain handlers.
 let selectedId = null;
 
 function Row({ item }) {
@@ -285,15 +338,17 @@ function Row({ item }) {
 }
 ```
 
-The user-visible contract ends there. Everything in §4–§6 is generated or
-internal.
+For ordinary UI state, the user-visible contract ends there. External
+synchronization may additionally use the ambient `effect` intrinsic shown in
+§4.6; it still has no imported state wrapper or dependency array. Everything
+else in §4–§6 is generated or internal.
 
 ## 9. Hard Problems (known, tracked)
 
 1. **Props are read-set edges.** `CartList` reads `items`, passes `item` to
    `Row` → `Row` transitively reads `items`. The analysis must flow through
    props, closures, and loop bodies. This is the bulk of compiler work.
-2. **Method-call effects.** `items.anyMethod()` is conservatively bounded to
+2. **Method-call write effects.** `items.anyMethod()` is conservatively bounded to
    `items`; no built-in or third-party method semantics table is required.
 3. **Dynamic access.** `obj[computed]` retains a bounded `obj` root when its
    provenance is known (see Fallback rule).
@@ -310,6 +365,10 @@ internal.
    cursor-hydration work plugs in here.)
 7. **Dead entities.** Events resolving to unmounted IDs are skipped silently;
    optional dev-mode warning.
+8. **Effect feedback and attachment.** Direct effect writes must preserve
+   branch execution so stabilizing feedback does not become a false cycle.
+   Post-render scheduling is distinct from detecting when a detached root is
+   attached to `document`.
 
 ## 10. Non-Goals
 
@@ -326,16 +385,21 @@ internal.
   - swap rows (target: node moves only, zero row re-execution),
   - partial update (target: O(changed rows), no tree walk).
 - create 1k/10k rows: no worse than vanilla-class frameworks (pure mount cost).
+- effect correctness: render-before-effect ordering, one rerun per batch,
+  teardown-before-rerun/unmount, stabilizing conditional feedback, and bounded
+  failure for genuine cycles.
 - DX test: a React user can read a component and understand it with zero
   framework-specific knowledge.
 
 ## 12. Glossary
 
-- **Entity** — a mounted component instance with ID, node cache, state, status.
+- **Entity** — a schedulable component, computed, or reactive effect record.
 - **Dirty set** — the set of entity IDs scheduled for re-render this frame.
-- **Bounded effect** — a conservative possible write attached to a finite
+- **Reactive effect** — a component-owned post-render callback with statically
+  discovered dependencies and automatic returned teardown ownership.
+- **Bounded write effect** — a conservative possible write attached to a finite
   reactive receiver/root.
-- **Unbounded effect** — an effect with no finite reactive boundary; it
+- **Unbounded write effect** — a possible write with no finite reactive boundary; it
   triggers root-subtree commit.
 - **Origin** — the entity whose handler processed the triggering event.
 - **Root commit** — re-render from the mounted root (Imba behavior; our fallback).

@@ -1,15 +1,15 @@
 /**
  * @file entry.ts
- * Browser entry point for the Todo App.
+ * Browser entry point for the E-Commerce Cart App example.
  */
-import { TodoApp } from './todo';
+import { CartApp } from './CartApp';
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  const factory = TodoApp as unknown as (
+  const factory = CartApp as unknown as (
     id: string,
     parent: string | null,
   ) => Node;
-  const appNode = factory('TodoApp', null);
+  const appNode = factory('CartApp', null);
   rootElement.appendChild(appNode);
 }

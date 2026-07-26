@@ -118,6 +118,37 @@ describe('R22 - cross-file component composition', () => {
       `,
     });
 
+    writeCompiled('r22-prop-list', {
+      './r22-prop-list/row.tsx': `
+        export function Row(item) {
+          return <li class="prop-row">{item.label}</li>;
+        }
+      `,
+      './r22-prop-list/list.tsx': `
+        import { Row } from './row';
+        export function List({ items }) {
+          return <ul>{items.map(item =>
+            <Row key={item.id} item={item} />
+          )}</ul>;
+        }
+      `,
+      './r22-prop-list/app.tsx': `
+        import { List } from './list';
+        export function App() {
+          let items = [
+            { id: 1, label: "a" },
+            { id: 2, label: "b" },
+          ];
+          return <main>
+            <button id="remove-prop-row" onClick={() => {
+              items = items.slice(0, -1);
+            }}>remove</button>
+            <List items={items} />
+          </main>;
+        }
+      `,
+    });
+
     writeCompiled('r22-timer', {
       './r22-timer/clock.tsx': `
         export let ticks = 0;
@@ -191,6 +222,21 @@ describe('R22 - cross-file component composition', () => {
     expect(rows().map((row) => row.textContent)).toEqual(['a!', 'b']);
     document.querySelector<HTMLButtonElement>('#remove')!.click();
     expect(rows().map((row) => row.textContent)).toEqual(['a!']);
+  });
+
+  it('reconciles an imported keyed list from a refreshed destructured prop', async () => {
+    const { App } = await importFixture(
+      './fixtures/out/r22-prop-list/app.ts',
+    );
+    document.body.appendChild(App('App', null));
+    const labels = () =>
+      [...document.querySelectorAll('.prop-row')].map(
+        (row) => row.textContent,
+      );
+
+    expect(labels()).toEqual(['a', 'b']);
+    document.querySelector<HTMLButtonElement>('#remove-prop-row')!.click();
+    expect(labels()).toEqual(['a']);
   });
 
   it('keeps direct factory timers owned by the imported entity', async () => {

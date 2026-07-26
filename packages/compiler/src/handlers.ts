@@ -55,6 +55,7 @@ import { applyLinkedPropEffect } from './components/prop-effects';
 import {
   componentPropProjectionOrigins,
 } from './components/prop-projections';
+import { generatedIdentifier } from './identifiers';
 
 // @babel/traverse is CJS; under ESM the function lands on `.default`.
 const traverse: typeof _traverse = (_traverse as any).default ?? (_traverse as any);
@@ -91,11 +92,20 @@ export function instrumentComponentCallback(
   target: HandlerFn,
   compName: string,
   rowCtx?: RowCtx,
+  executionAwareRoot = false,
 ): void {
   if (ctx.analyzedFunctions.has(target)) return;
   instrumentReachableLocalHelpers(ctx, compPath, target, compName, rowCtx);
   ctx.analyzedFunctions.add(target);
-  analyzeHandler(ctx, target, compName, rowCtx, false);
+  analyzeHandler(
+    ctx,
+    target,
+    compName,
+    rowCtx,
+    false,
+    undefined,
+    executionAwareRoot,
+  );
 }
 
 /** Instrument a module-owned callback through canonical access-table writes. */
@@ -319,6 +329,7 @@ function analyzeHandler(
   rowCtx?: RowCtx,
   eventBoundary = false,
   eventOriginId?: t.Expression,
+  executionAwareRoot = false,
 ): void {
   // Standalone traversal requires a Program/File root, so analysis runs on
   // a deep clone; commits are appended into the clone's scopes and the
@@ -408,6 +419,10 @@ function analyzeHandler(
 
   // pass B: writes grouped by innermost enclosing function scope
   const scopes = new Map<t.Node, ScopeWrites>();
+  const executionSites = new Map<
+    t.Node,
+    { path: NodePath; writes: ScopeWrites; flag?: t.Identifier }
+  >();
   const scopeOf = (p: NodePath): ScopeWrites => {
     const fn = p.getFunctionParent()?.node ?? ROOT;
     let s = scopes.get(fn);
@@ -416,13 +431,32 @@ function analyzeHandler(
     }
     return s;
   };
-  const noteSourceWrite = (p: NodePath): void => {
-    const scope = scopeOf(p);
-    if (rowCtx?.sourceLocal) {
-      scope.rowOwnerLocal = true;
-    } else if (rowCtx !== undefined) {
-      scope.writes.add(rowCtx.sourceKey);
+  const mutateScope = (
+    p: NodePath,
+    mutate: (scope: ScopeWrites) => void,
+  ): void => {
+    mutate(scopeOf(p));
+    if (
+      !executionAwareRoot ||
+      p.getFunctionParent()?.node !== ROOT
+    ) {
+      return;
     }
+    let site = executionSites.get(p.node);
+    if (site === undefined) {
+      site = { path: p, writes: createScopeWrites() };
+      executionSites.set(p.node, site);
+    }
+    mutate(site.writes);
+  };
+  const noteSourceWrite = (p: NodePath): void => {
+    mutateScope(p, (scope) => {
+      if (rowCtx?.sourceLocal) {
+        scope.rowOwnerLocal = true;
+      } else if (rowCtx !== undefined) {
+        scope.writes.add(rowCtx.sourceKey);
+      }
+    });
   };
   const rowRelativePath = (originKey: string): string[] | null => {
     if (rowCtx === undefined) return null;
@@ -440,35 +474,38 @@ function analyzeHandler(
     p: NodePath,
     origin?: ReactiveOrigin,
   ): void => {
-    const scope = scopeOf(p);
-    if (
-      origin !== undefined &&
-      compName !== null &&
-      applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
-    ) {
-      return;
-    }
-    scope.rowLocal = true;
-    scope.rootFallback = true;
+    mutateScope(p, (scope) => {
+      if (
+        origin !== undefined &&
+        compName !== null &&
+        applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
+      ) {
+        return;
+      }
+      scope.rowLocal = true;
+      scope.rootFallback = true;
+    });
   };
   const notePropWrite = (
     p: NodePath,
     origin: ReactiveOrigin,
   ): void => {
-    const scope = scopeOf(p);
-    if (
-      compName === null ||
-      !applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
-    ) {
-      if (rowCtx === undefined) {
-        if (compName !== null) {
-          recordInstanceWrite(scope, origin.root);
+    mutateScope(p, (scope) => {
+      if (
+        compName === null ||
+        !applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
+      ) {
+        if (rowCtx === undefined) {
+          if (compName !== null) {
+            recordInstanceWrite(scope, origin.root);
+          }
+          scope.rootFallback = true;
+        } else {
+          scope.rowLocal = true;
+          scope.rootFallback = true;
         }
-        scope.rootFallback = true;
-      } else {
-        noteNonItemRowProp(p);
       }
-    }
+    });
   };
 
   // R11: a member write rooted at the row's item param. Non-key fields are
@@ -500,7 +537,9 @@ function analyzeHandler(
     if (writeTouchesKey(segs, rowCtx.keyPath)) {
       noteSourceWrite(p);
     } else {
-      scopeOf(p).rowLocal = true;
+      mutateScope(p, (scope) => {
+        scope.rowLocal = true;
+      });
       // R11.1: the row-local shortcut is only sound when NOTHING outside the
       // row's own list can observe item fields. A computed over the source
       // array (todos.filter(t => t.done).length) — or any non-owner reader —
@@ -517,12 +556,16 @@ function analyzeHandler(
 
   const noteOriginWrite = (p: NodePath, origin: ReactiveOrigin): void => {
     if (origin.locality === 'instance') {
-      recordInstanceWrite(scopeOf(p), origin.root);
+      mutateScope(p, (scope) => {
+        recordInstanceWrite(scope, origin.root);
+      });
       return;
     }
     if (origin.locality === 'row') {
       if (rowCtx === undefined) {
-        scopeOf(p).rootFallback = true;
+        mutateScope(p, (scope) => {
+          scope.rootFallback = true;
+        });
         return;
       }
       if (origin.key === null) {
@@ -541,7 +584,9 @@ function analyzeHandler(
       if (writeTouchesKey(segs, rowCtx.keyPath)) {
         noteSourceWrite(p);
       } else {
-        scopeOf(p).rowLocal = true;
+        mutateScope(p, (scope) => {
+          scope.rowLocal = true;
+        });
         if (itemFieldVisibleBeyondList(ctx, compName, rowCtx)) {
           noteSourceWrite(p);
         }
@@ -558,15 +603,21 @@ function analyzeHandler(
       );
     }
     if (origin.stateKind !== 'store') {
-      scopeOf(p).writes.add(origin.root);
+      mutateScope(p, (scope) => {
+        scope.writes.add(origin.root);
+      });
       return;
     }
     if (origin.key !== null && origin.key.includes('.')) {
-      scopeOf(p).writes.add(origin.key);
+      mutateScope(p, (scope) => {
+        scope.writes.add(origin.key!);
+      });
     } else {
       // A dynamic store path is imprecise, but it is still bounded to the
       // store root. Prefix matching reaches every observer of that store.
-      scopeOf(p).writes.add(origin.root);
+      mutateScope(p, (scope) => {
+        scope.writes.add(origin.root);
+      });
     }
   };
 
@@ -575,12 +626,16 @@ function analyzeHandler(
     origin: ReactiveOrigin,
   ): void => {
     if (origin.locality === 'instance') {
-      recordInstanceWrite(scopeOf(p), origin.root);
+      mutateScope(p, (scope) => {
+        recordInstanceWrite(scope, origin.root);
+      });
       return;
     }
     if (origin.locality === 'row') {
       if (rowCtx === undefined) {
-        scopeOf(p).rootFallback = true;
+        mutateScope(p, (scope) => {
+          scope.rootFallback = true;
+        });
         return;
       }
       if (origin.key === null) {
@@ -618,13 +673,26 @@ function analyzeHandler(
         `memo-dom: cannot mutate computed '${origin.root}' (R13) - write its SOURCE state instead`,
       );
     }
-    scopeOf(p).writes.add(origin.key ?? origin.root);
+    mutateScope(p, (scope) => {
+      scope.writes.add(origin.key ?? origin.root);
+    });
   };
 
   const noteBoundedArguments = (
     p: NodePath,
     args: t.CallExpression['arguments'],
   ): void => {
+    if (
+      executionAwareRoot &&
+      p.getFunctionParent()?.node === ROOT
+    ) {
+      // The direct effect body is an external-synchronization boundary.
+      // Passing reactive values to unknown APIs is consumption, not a hidden
+      // reactive mutation; otherwise calls such as console.log(count) would
+      // commit count and subscribe-trigger themselves forever. Visible helper
+      // summaries and direct receiver mutations remain writable paths.
+      return;
+    }
     for (const expression of callArgumentExpressions(args)) {
       // A member expression passes its resulting value, not necessarily the
       // reactive container. Property-value semantics remain author-owned.
@@ -646,7 +714,9 @@ function analyzeHandler(
     const rootName = memberRootName(node);
     if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
       // R12: mutating a field of an instance-state object — same local commit
-      recordInstanceWrite(scopeOf(p), rootName!);
+      mutateScope(p, (scope) => {
+        recordInstanceWrite(scope, rootName!);
+      });
       return;
     }
     if (
@@ -680,19 +750,20 @@ function analyzeHandler(
         `memo-dom: cannot mutate computed '${rootName}' (R13) — it is derived; write its SOURCE state instead`,
       );
     }
-    const s = scopeOf(p);
-    if (kind !== 'store') {
-      // reads of root-keyed vars (let/const): any member write is a write
-      // to the variable (items[0] = x, items.length = 0, …)
-      s.writes.add(rootName);
-      return;
-    }
-    const key = memberKey(node);
-    if (key !== null && key.includes('.')) {
-      s.writes.add(key);
-    } else {
-      s.writes.add(rootName);
-    }
+    mutateScope(p, (scope) => {
+      if (kind !== 'store') {
+        // reads of root-keyed vars (let/const): any member write is a write
+        // to the variable (items[0] = x, items.length = 0, …)
+        scope.writes.add(rootName);
+        return;
+      }
+      const key = memberKey(node);
+      if (key !== null && key.includes('.')) {
+        scope.writes.add(key);
+      } else {
+        scope.writes.add(rootName);
+      }
+    });
   };
 
   // R12: instance state of the enclosing component — writes are always a
@@ -730,7 +801,9 @@ function analyzeHandler(
           );
         }
         if (instVars?.has(left.name) === true) {
-          recordInstanceWrite(scopeOf(p), left.name);
+          mutateScope(p, (scope) => {
+            recordInstanceWrite(scope, left.name);
+          });
           return;
         }
         if (propNames.has(left.name)) {
@@ -769,7 +842,9 @@ function analyzeHandler(
             `memo-dom: cannot assign computed '${left.name}' (R13) — it is derived; write its SOURCE state instead and the derivation recomputes`,
           );
         }
-        scopeOf(p).writes.add(left.name);
+        mutateScope(p, (scope) => {
+          scope.writes.add(left.name);
+        });
       } else if (t.isMemberExpression(left)) {
         noteMemberWrite(p, left);
       } else {
@@ -788,7 +863,9 @@ function analyzeHandler(
           );
         }
         if (instVars?.has(arg.name) === true) {
-          recordInstanceWrite(scopeOf(p), arg.name);
+          mutateScope(p, (scope) => {
+            recordInstanceWrite(scope, arg.name);
+          });
           return;
         }
         if (propNames.has(arg.name)) {
@@ -819,7 +896,9 @@ function analyzeHandler(
               : `memo-dom: cannot update '${arg.name}' — it is a const binding; mutate its contents instead`,
           );
         }
-        scopeOf(p).writes.add(arg.name);
+        mutateScope(p, (scope) => {
+          scope.writes.add(arg.name);
+        });
       } else if (t.isMemberExpression(arg)) {
         noteMemberWrite(p, arg);
       }
@@ -857,7 +936,9 @@ function analyzeHandler(
               if (keys === null) {
                 noteReceiverEffect(p, target);
               } else {
-                for (const key of keys) scopeOf(p).writes.add(key);
+                mutateScope(p, (scope) => {
+                  for (const key of keys) scope.writes.add(key);
+                });
               }
             } else {
               noteOriginWrite(p, target);
@@ -901,9 +982,13 @@ function analyzeHandler(
       ) {
         const sum =
           ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
-        const s = scopeOf(p);
-        for (const w of sum.writes) s.writes.add(w);
-        for (const w of sum.boundedWrites) s.writes.add(w);
+        mutateScope(p, (scope) => {
+          for (const w of sum.writes) scope.writes.add(w);
+          for (const w of sum.boundedWrites) scope.writes.add(w);
+          if (sum.unbounded) {
+            scope.rootFallback = true;
+          }
+        });
         for (const effect of sum.parameterWrites) {
           const argument = p.node.arguments[effect.index];
           if (argument === undefined || !t.isExpression(argument)) continue;
@@ -912,9 +997,6 @@ function analyzeHandler(
             if (isComputedOrigin(origin)) continue;
             noteReceiverEffect(p, extendOrigin(origin, effect.path));
           }
-        }
-        if (sum.unbounded) {
-          s.rootFallback = true;
         }
         return;
       }
@@ -940,9 +1022,51 @@ function analyzeHandler(
     scopes.set(ROOT, eventScope);
   }
 
+  const guardedRootSites: Array<{
+    path: NodePath;
+    writes: ScopeWrites;
+    flag?: t.Identifier;
+    commit: t.Statement;
+  }> = [];
+  if (executionAwareRoot) {
+    for (const site of executionSites.values()) {
+      const commit = buildScopeCommit(
+        ctx,
+        site.writes,
+        compName,
+        rowCtx,
+      );
+      if (commit !== null) {
+        guardedRootSites.push({ ...site, commit });
+      }
+    }
+  }
+
+  for (const site of guardedRootSites) {
+    site.flag = generatedIdentifier(ctx, 'didWrite');
+  }
+
+  // Instrument deepest expressions first so wrapping an outer expression
+  // retains flags already inserted into its children.
+  guardedRootSites
+    .sort((a, b) => pathDepth(b.path) - pathDepth(a.path))
+    .forEach((site) => markExecutionSite(site.path, site.flag!));
+
   // pass C: one commit per scope, appended inside the clone…
   for (const [fn, s] of scopes) {
-    const commit = buildScopeCommit(ctx, s, compName, rowCtx);
+    const commit =
+      executionAwareRoot && fn === ROOT
+        ? guardedRootSites.length === 0
+          ? null
+          : t.blockStatement(
+              guardedRootSites.map((site) =>
+                t.ifStatement(
+                  t.cloneNode(site.flag!),
+                  t.cloneNode(site.commit),
+                ),
+              ),
+            )
+        : buildScopeCommit(ctx, s, compName, rowCtx);
     if (!commit) continue;
     appendScopeCommit(
       ctx,
@@ -950,6 +1074,61 @@ function analyzeHandler(
       commit,
     );
   }
+
+  if (guardedRootSites.length > 0) {
+    if (!t.isBlockStatement(clonedFn.body)) {
+      throw new Error(
+        'memo-dom: execution-aware callback commit did not produce a block body',
+      );
+    }
+    clonedFn.body.body.unshift(
+      t.variableDeclaration('let', guardedRootSites.map((site) =>
+        t.variableDeclarator(
+          t.cloneNode(site.flag!),
+          t.booleanLiteral(false),
+        ),
+      )),
+    );
+  }
   // …then adopt the mutated body (params are untouched)
   rootFn.body = clonedFn.body;
+}
+
+function pathDepth(path: NodePath): number {
+  let depth = 0;
+  let current: NodePath | null = path;
+  while (current.parentPath !== null) {
+    depth++;
+    current = current.parentPath;
+  }
+  return depth;
+}
+
+function markExecutionSite(path: NodePath, flag: t.Identifier): void {
+  const mark = t.assignmentExpression(
+    '=',
+    t.cloneNode(flag),
+    t.booleanLiteral(true),
+  );
+  if (path.isVariableDeclarator()) {
+    const init = path.node.init;
+    if (init === null || !t.isExpression(init)) {
+      throw new Error(
+        'memo-dom: execution-aware variable site has no expression initializer',
+      );
+    }
+    path.node.init = t.sequenceExpression([mark, init]);
+    return;
+  }
+  if (!path.isExpression()) {
+    throw new Error(
+      `memo-dom: unsupported execution-aware write site '${path.node.type}'`,
+    );
+  }
+  path.replaceWith(
+    t.sequenceExpression([
+      mark,
+      path.node,
+    ]),
+  );
 }

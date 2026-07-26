@@ -1,6 +1,6 @@
 # Architecture Review and Way Forward
 
-> Audit date: 2026-07-25. This is an implementation status review. The
+> Audit date: 2026-07-26. This is an implementation status review. The
 > normative emission contract remains `emission-spec.md`; the product intent
 > remains `memoized-dom-paradigm.md`.
 
@@ -8,17 +8,19 @@
 
 The compiler performs whole-module analysis before emission:
 
-1. Classify module state, components, helpers, instance state, and derivations.
+1. Classify module state, components, helpers, instance state, derivations, and
+   reactive effects.
 2. Build component/list/conditional paths and binding-aware read sets.
 3. Insert invalidation at the function scope where each write executes.
 4. Emit one-shot DOM creation plus closure-based update functions with inline
    scalar guards.
-5. Install a static access-table fragment for shared-state routing.
+5. Install a static access-table fragment for shared-state/effect routing.
 
 The runtime owns only registry topology, dirty scheduling, access resolution,
-props boxes, keyed regions, and commit draining. Component state, DOM nodes,
-slot caches, and per-instance derivations stay in factory closures. There is no
-VDOM, signal cell, subscription graph, or runtime read tracking.
+props boxes, keyed regions, render-before-effect commit draining, and returned
+effect teardown. Component state, DOM nodes, slot caches, and per-instance
+derivations stay in factory closures. There is no VDOM, signal cell,
+subscription graph, or runtime read tracking.
 
 ## Issue disposition
 
@@ -44,6 +46,11 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | Destructured/default props and body projections | Confirmed stale-binding gap | R24 replays projections before dependent derivations and DOM writes |
 | Fragments, spreads, rich DOM values, and SVG | Confirmed JSX/DOM gap | R24 preserves ordered roots/overrides and emits specialized or general DOM-aware updates |
 | Component children on keyed rows | Confirmed first-item capture/identity gap | R24 owns one current-item slot under each runtime row id |
+| Unrelated local writes replay every derivation | Confirmed avoidable per-instance work | R25 emits numeric reasons only when the local dependency structure can skip a replay group |
+| No reactive external-synchronization primitive | Confirmed reactivity gap | R26 emits statically routed component-owned effect entities with render-first ordering and automatic returned teardown |
+| Conditional effect feedback falsely cycles | Confirmed static normal-exit over-invalidation | R26 guards each direct effect write/call site by whether it executed; stabilizing feedback settles while genuine loops retain the cascade guard |
+| `effect(() => console.log(count))` self-invalidates | Confirmed unknown-argument boundary conflict | Direct effect arguments crossing unknown APIs are read-only inputs; visible/direct writes and reactive receiver methods remain writable |
+| List sourced from a destructured prop is rejected | Confirmed R7 classifier omission | Prop bindings and static prop member paths are owner-local list sources; R10/R24 refresh the binding before reconciliation |
 
 ## Decisions
 
@@ -80,6 +87,28 @@ before owners and each owner in LIFO order. Module-started work table-routes
 writes but remains module/application-owned. No exception wrapper or implicit
 cleanup is introduced.
 
+### Reactive effects
+
+`effect(() => ...)` is an optional compiler intrinsic for synchronizing
+reactive values with systems outside JSX; it is not a state wrapper or a hook
+with a dependency array. Immediate module/local/prop/derivation reads are
+collected statically and routed to a child `owner/$effects/index` entity.
+Render/computed entities always drain before effect entities. The latest
+returned synchronous disposer runs before rerun and on unmount.
+
+Direct effect writes retain ordinary local/shared routing but use per-site
+execution booleans. Skipped conditional sites do not commit, so finite
+feedback may stabilize. An actually unconditional feedback loop remains
+bounded by the 100-pass cascade guard. Values passed to unknown APIs in the
+direct effect body are read-only consumption: they establish reads without
+claiming a hidden mutation. Visible helper summaries, direct writes, and calls
+on reactive receivers remain mutation paths.
+
+Initial effects are post-render, not a separate post-attachment mount hook.
+The normal browser frame usually follows insertion of the returned root, but
+detached factories, synchronous custom schedulers, and SSR do not imply
+`node.isConnected`.
+
 ### Access identity
 
 Within one module, Babel binding identity is authoritative. String names are
@@ -107,7 +136,7 @@ before updating mounted caller content.
 
 Direct roots, static store paths, and literal `Object.assign` sources produce
 exact interned write sets. Every call on a reactive receiver produces a
-bounded effect for that receiver, independent of method name. Dynamic paths,
+bounded write effect for that receiver, independent of method name. Dynamic paths,
 identifiable aliases/destructuring sources, and direct reactive root arguments
 retain finite root boundaries. Visible helpers preserve relative parameter
 paths through local and linked calls.
@@ -126,7 +155,7 @@ case. Commits are still emitted on normal exits; exception-path behavior
 remains an explicit P0 decision. Numeric dirty reasons now skip unrelated
 local derivations inside selected entities. A bitmask may later replace their
 representation, but neither mechanism replaces access-table routing or
-changes the bounded-effect contract.
+changes the bounded-write-effect contract.
 
 ## Priority roadmap
 
@@ -134,6 +163,8 @@ changes the bounded-effect contract.
 
 1. Decide exception-path commit semantics with dedicated performance evidence.
 2. Validate root-id installation across independently mounted linked graphs.
+3. Decide whether a future host mount ABI should provide a distinct
+   post-attachment effect phase; R26 currently promises post-render only.
 
 ### P1: source-language coverage
 
@@ -155,6 +186,8 @@ changes the bounded-effect contract.
 3. Profile select/swap/clear paths; they have the largest current gap to
    hand-written vanilla in the browser benchmark.
 4. Add stable compiler-throughput and large-access-table benchmarks.
+5. Add effect mount/rerun/teardown and feedback-drain benchmarks without
+   conflating compiler overhead with runtime scheduling.
 
 ### Packaging and host integration
 

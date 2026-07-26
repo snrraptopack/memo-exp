@@ -7,8 +7,8 @@
  * emission (region creation) so table patterns always match runtime ids.
  *
  * L1 form rules (each violation is a clear compile error):
- *   - the mapped view must be reactive module state, instance state, or a
- *     synchronous derivation of either
+ *   - the mapped view must be reactive module state, component props,
+ *     instance state, or a synchronous derivation of those
  *   - single identifier callback param (no destructuring)
  *   - callback body is exactly one JSX element, either
  *       a) a component reference:  <Row key={item.id} item={item} />
@@ -114,9 +114,12 @@ export function analyzeMapSite(
   let sourceLocal = false;
   let suffixBase: string; // region suffix base (last path segment)
   if (t.isIdentifier(sourceExpr)) {
+    const propBindings =
+      ctx.componentProps.get(ownerName)?.bindings ?? [];
     const localSource =
       ctx.instanceState.get(ownerName)?.has(sourceExpr.name) === true ||
-      ctx.instanceDerivedBindings.get(ownerName)?.has(sourceExpr.name) === true;
+      ctx.instanceDerivedBindings.get(ownerName)?.has(sourceExpr.name) === true ||
+      propBindings.includes(sourceExpr.name);
     const kind = ctx.state.get(sourceExpr.name);
     // R13: computeds are valid list sources (active.map(…) over a filtered
     // derivation) — the region resyncs when the computed commits downstream
@@ -127,7 +130,7 @@ export function analyzeMapSite(
       kind !== 'computed'
     ) {
       return fail(
-        'memo-dom: list views must come from reactive module or component state',
+        'memo-dom: list views must come from reactive module state, component props, component state, or a local derivation',
       );
     }
     sourceKey = sourceExpr.name;
@@ -136,9 +139,12 @@ export function analyzeMapSite(
   } else if (t.isMemberExpression(sourceExpr)) {
     const root = memberRootName(sourceExpr);
     const key = memberKey(sourceExpr);
+    const propBindings =
+      ctx.componentProps.get(ownerName)?.bindings ?? [];
     const localRoot =
       root !== null &&
-      ctx.instanceState.get(ownerName)?.has(root) === true;
+      (ctx.instanceState.get(ownerName)?.has(root) === true ||
+        propBindings.includes(root));
     if (
       root === null ||
       key === null ||
@@ -146,7 +152,7 @@ export function analyzeMapSite(
       (!localRoot && ctx.state.get(root) !== 'store')
     ) {
       return fail(
-        'memo-dom: list member views must be a static path on reactive module or component state',
+        'memo-dom: list member views must be a static path on reactive module state, component props, or component state',
       );
     }
     sourceKey = key;

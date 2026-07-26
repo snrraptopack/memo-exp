@@ -58,10 +58,18 @@ function instrumentArgument(
   argument: t.CallExpression['arguments'][number],
   compName: string,
   rowCtx?: RowCtx,
+  executionAwareRoot = false,
 ): void {
   if (t.isArrowFunctionExpression(argument) || t.isFunctionExpression(argument)) {
     if (nodeHasJsx(argument.body)) return;
-    instrumentComponentCallback(ctx, compPath, argument, compName, rowCtx);
+    instrumentComponentCallback(
+      ctx,
+      compPath,
+      argument,
+      compName,
+      rowCtx,
+      executionAwareRoot,
+    );
   } else if (t.isIdentifier(argument)) {
     instrumentIdentifier(ctx, compPath, argument.name, compName, rowCtx);
   }
@@ -112,6 +120,9 @@ export function transformComponentLifecycle(
     CallExpression(call) {
       const directFactoryCall = call.getFunctionParent() === compPath;
       const originalCallee = call.node.callee;
+      const intrinsicEffect =
+        t.isIdentifier(originalCallee, { name: 'effect' }) &&
+        call.scope.getBinding('effect') === undefined;
 
       if (
         t.isIdentifier(originalCallee, { name: 'cleanup' }) &&
@@ -147,7 +158,14 @@ export function transformComponentLifecycle(
         );
       }
       for (const argument of call.node.arguments) {
-        instrumentArgument(ctx, compPath, argument, compName, rowCtx);
+        instrumentArgument(
+          ctx,
+          compPath,
+          argument,
+          compName,
+          rowCtx,
+          intrinsicEffect,
+        );
       }
     },
     NewExpression(call) {

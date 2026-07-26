@@ -137,6 +137,32 @@ describe('M5 compiler — code generation', () => {
     expect(code).toContain('"App/items/Row[*]"');
   });
 
+  it('accepts destructured and object props as owner-local list sources (R7/R24)', () => {
+    const destructured = compile(`
+      function List({ items }) {
+        return <ul>{items.map(item =>
+          <li key={item.id}>{item.label}</li>
+        )}</ul>;
+      }
+    `);
+    expect(destructured).toContain('.reconcile(items)');
+    expect(destructured).not.toContain(
+      '"./component.tsx#items"',
+    );
+
+    const objectProp = compile(`
+      function List(props) {
+        return <ul>{props.items.map(item =>
+          <li key={item.id}>{item.label}</li>
+        )}</ul>;
+      }
+    `);
+    expect(objectProp).toContain('.reconcile(props.items)');
+    expect(objectProp).not.toContain(
+      '"./component.tsx#props.items"',
+    );
+  });
+
   it('compiles eligible component list rows as lightweight factories (M5.10)', () => {
     const code = compile(readFixture('list-component'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();

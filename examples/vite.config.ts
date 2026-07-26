@@ -8,8 +8,8 @@ export default defineConfig({
   root: import.meta.dirname,
   plugins: [
     memoizedDom({
-      entries: 'todo.tsx',
-      rootId: 'TodoApp',
+      entries: 'CartApp.tsx',
+      rootId: 'CartApp',
     }),
   ],
 });
