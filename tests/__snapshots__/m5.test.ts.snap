@@ -94,9 +94,9 @@ function Row(item, _id) {
       _slot = _value;
       _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
     }
-    if (_slot2 !== (_value = selected === item.id ? 'danger' : '')) {
+    if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
       _slot2 = _value;
-      _li.className = _value;
+      _MD.setClassValue(_li, _value);
     }
   };
   const _text = document.createTextNode("");
@@ -105,9 +105,9 @@ function Row(item, _id) {
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
   const _li = document.createElement("li");
-  if (_slot2 !== (_value = selected === item.id ? 'danger' : '')) {
+  if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
     _slot2 = _value;
-    _li.className = _value;
+    _MD.setClassValue(_li, _value);
   }
   _li.onclick = () => {
     selected = item.id;
@@ -115,7 +115,7 @@ function Row(item, _id) {
   };
   _li.appendChild(_text);
   return {
-    nodes: [_li],
+    nodes: _MD.rootNodes(_li),
     entities: [],
     update: _update,
     updateProps: _nextProp => {
@@ -147,7 +147,8 @@ export function CompList(_id2, _parent) {
       nodes: _entry.nodes,
       entities: [],
       update: _entry.update,
-      updateProps: item => {
+      updateProps: _nextItem => {
+        item = _nextItem;
         _entry.updateProps(item);
       }
     };
@@ -211,9 +212,9 @@ export function InlineList(_id, _parent) {
         _slot = _value2;
         _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
       }
-      if (_slot2 !== (_value2 = selected === item.id ? 'danger' : '')) {
+      if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
         _slot2 = _value2;
-        _li.className = _value2;
+        _MD.setClassValue(_li, _value2);
       }
     };
     _MD.register({
@@ -227,9 +228,9 @@ export function InlineList(_id, _parent) {
       _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
     const _li = document.createElement("li");
-    if (_slot2 !== (_value2 = selected === item.id ? 'danger' : '')) {
+    if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
       _slot2 = _value2;
-      _li.className = _value2;
+      _MD.setClassValue(_li, _value2);
     }
     _li.onclick = () => {
       selected = item.id;
@@ -284,7 +285,7 @@ function Tag(_id, _parent) {
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
   const _span = document.createElement("span");
-  _span.className = "tag";
+  _MD.setClassValue(_span, "tag");
   _span.appendChild(_text);
   return _span;
 }
@@ -366,7 +367,7 @@ export function Counter(_id, _parent) {
   const _span2 = document.createElement("span");
   _span2.appendChild(_text3);
   const _div = document.createElement("div");
-  _div.className = "counter";
+  _MD.setClassValue(_div, "counter");
   _div.appendChild(_button);
   _div.appendChild(_span);
   _div.appendChild(_span2);
@@ -404,7 +405,7 @@ function Badge(_id, _parent) {
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
   const _span = document.createElement("span");
-  _span.className = "badge";
+  _MD.setClassValue(_span, "badge");
   _span.appendChild(_text);
   return _span;
 }

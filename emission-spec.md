@@ -583,6 +583,68 @@ For module helpers, both commits route the helper's canonical summarized write
 set. For instance helpers, both target the nearest owning entity. Rejection or
 throw behavior remains governed by the normal-exit-only R5 contract.
 
+### R24 - Authored JSX retains JavaScript and DOM semantics
+
+Component props may use defaults and destructuring in the parameter or in
+ordered top-level body declarations:
+
+```tsx
+function Child({ value: current = 0, nested: { label } = {}, ...rest }) {
+  return <output>{current}:{label}:{rest.extra}</output>;
+}
+
+function Other(props) {
+  const { value = 0 } = props;
+  const doubled = value * 2;
+  return <output>{doubled}</output>;
+}
+```
+
+The mutable props box remains the source of truth. Every update replays
+parameter projections, body projections, and dependent local derivations in
+source order before guarded child/DOM writes:
+
+`props box -> parameter bindings -> body projections -> local derivations -> DOM`
+
+Projected bindings are compiler-read-only. Aliases, nesting, object/array
+patterns, property defaults, whole-parameter defaults, and object rest retain
+ordinary JavaScript semantics. Closed object patterns reject unknown static
+JSX props; generic `props` bindings and object rest accept them. R22 manifests
+serialize this same contract across modules.
+
+Fragments emit real `DocumentFragment` creation branches. Child operations are
+inserted in authored source order, including list/conditional anchors. A
+fragment component or lightweight keyed row snapshots all root nodes before
+insertion so reconciliation owns the complete root range.
+
+Spread-bearing host and component calls preserve JavaScript source-order
+overrides by constructing one ordered object. Component objects are projected
+onto the callee's R10 contract. Hosts use `patchDomProps`; hosts without
+spreads retain specialized inline scalar guards. Explicit events after the
+final spread remain compiler-instrumented. An event supplied by an unresolved
+spread receives a conservative normal-completion root fallback and no
+generated exception wrapper.
+
+DOM values follow authored JSX conventions:
+
+- class strings, nested arrays, and conditional objects normalize for HTML or
+  SVG;
+- style strings and objects are diffed, camelCase keys are hyphenated, custom
+  properties use `setProperty`, and finite numbers receive `px` except for
+  unitless properties;
+- IDL properties and aliases such as `tabIndex`, `htmlFor`, and
+  `crossOrigin` use DOM-aware assignment/removal;
+- `<svg>` and SVG-only roots use `createElementNS`; descendants inherit SVG
+  until `<foreignObject>`, and names such as `strokeWidth` map to canonical
+  SVG attributes.
+
+Nested children on a keyed component row create one lazy R21 slot per runtime
+row. Its owner base is the row id, preventing sibling entity collisions. On
+retention, the row factory first replaces its captured item binding, then
+re-pushes callee props and updates mounted caller content. Stateful callee
+locals survive item mutation/replacement while both views observe the current
+item.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
@@ -898,17 +960,14 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R23 (compiler probes + compiled runtime execution).
+> Last full audit: R24 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
 - Conditional-region limits (R8 shipped): no components or lists inside
   branches, no conditionals inside list rows, no nested conditionals inside
   branches, no text branches (use an interpolation), direct JSX child only.
-- Fragments (`<>…</>`); spread attributes (`{...props}`).
-- Children slots are static component-call content. They can be rendered or
-  forwarded once as the sole host child; component children on keyed `.map`
-  row calls are not supported yet.
+- Children slots can be rendered or forwarded once as the sole host child.
 - Components must be top-level `function` declarations (no arrows); exactly
   one top-level JSX return per component.
 - Lists inside list rows; components inside inline rows.
@@ -930,8 +989,10 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.4 Runtime / DOM / lifecycle gaps
 
-- SVG elements (`createElementNS`); style objects; class arrays/objects;
-  attribute-name mapping (`htmlFor`, `tabIndex`).
+- Namespace context does not cross the component factory ABI. An SVG component
+  should currently return `<svg>` or an SVG-only root such as `<g>`/`<path>`;
+  ambiguous roots such as `<title>` are HTML unless nested directly under an
+  authored SVG host.
 - No mount hook or effect primitive. `cleanup(disposer)` owns synchronous
   component teardown; async disposer promises are not awaited.
 - A factory that registers cleanup and then throws before entity registration
@@ -954,6 +1015,12 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R24 (authored JSX semantics, compiler/components + compiler/emission +
+  compiler/jsx + src/dom-props.ts + src/dom-values.ts,
+  tests/r24-jsx.test.ts):** prop patterns/defaults replay from their props box;
+  fragments preserve ordered roots; host/component spreads preserve override
+  order; class/style/DOM/SVG mappings use DOM-aware patching; keyed component
+  rows own one current-item children slot per runtime row.
 - **R23 (instance collections and async named helpers, compiler/lists.ts +
   compiler/handlers.ts + tests/r23-local-state.test.ts):** component-owned
   arrays/object paths and ordered views derived from Map, Set, or objects
@@ -966,7 +1033,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   caller ids, defining-file state readers, prop shape, lazy children,
   callback commits, cleanup ownership, and keyed-row mode across aliases.
   Recursive and mixed static/row graphs fail during linking.
-- **R21 (lazy component children slots, compiler/children.ts +
+- **R21 (lazy component children slots, compiler/components/children.ts +
   tests/r21-children.test.ts):** static component children mount only where
   the callee renders its reserved slot. Guarded updates remain linked to the
   lexical owner; nested components, lists, conditions, events, forwarding,

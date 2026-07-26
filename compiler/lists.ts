@@ -116,7 +116,7 @@ export function analyzeMapSite(
   if (t.isIdentifier(sourceExpr)) {
     const localSource =
       ctx.instanceState.get(ownerName)?.has(sourceExpr.name) === true ||
-      ctx.instanceComputeds.get(ownerName)?.has(sourceExpr.name) === true;
+      ctx.instanceDerivedBindings.get(ownerName)?.has(sourceExpr.name) === true;
     const kind = ctx.state.get(sourceExpr.name);
     // R13: computeds are valid list sources (active.map(…) over a filtered
     // derivation) — the region resyncs when the computed commits downstream
@@ -189,16 +189,6 @@ export function analyzeMapSite(
     }
     // R10: state-reading row props are allowed — the region re-pushes the
     // row's props box on every reconcile that retains it (updateProps)
-    for (const attr of open.attributes) {
-      if (t.isJSXSpreadAttribute(attr)) {
-        fail('memo-dom: spread attributes are not supported (L1)');
-      }
-    }
-    if (jsx.children.some((c) => !t.isJSXText(c) || c.value.trim() !== '')) {
-      fail(
-        'memo-dom: component children on keyed list row calls are not supported yet',
-      );
-    }
   } else {
     form = 'inline';
     // no nested component references inside inline rows

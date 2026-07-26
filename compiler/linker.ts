@@ -23,7 +23,7 @@ import {
   analyzedComponentExport,
   discoverComponentExports,
   type ComponentExportInfo,
-} from './component-manifest';
+} from './components/manifest';
 import { summarizeHelper } from './helper-summaries';
 import {
   canonicalStateKey,
@@ -441,6 +441,8 @@ function linkImports(
         key: targetExport.key,
         props: [...targetExport.props],
         objectProps: targetExport.objectProps,
+        acceptsUnknownProps: targetExport.acceptsUnknownProps,
+        hasWholeDefault: targetExport.hasWholeDefault,
         listLightweight: targetExport.listLightweight,
       };
     } else {

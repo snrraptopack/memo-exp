@@ -1,17 +1,18 @@
 /**
  * plugin.ts — the memo-dom Babel plugin (compiler frontend #1), thin shell.
  *
- * Implements emission spec R1–R7 at analysis level L1; the work lives in:
- *   context.ts   — shared state + AST helpers
- *   analysis.ts  — pass 1: state/components/composition/reads + access table
- *   handlers.ts  — R5: per-scope write analysis and commit emission
- *   lists.ts     — R7: map-site analysis and validation
- *   emit.ts      — R1–R4/R7 emission: components and rows → entity factories
+ * Coordinates the emission-spec passes; implementation is partitioned into:
+ *   context.ts              - shared binding and canonical identity facts
+ *   analysis.ts             - module/component/read analysis and access table
+ *   handlers.ts             - per-scope effects and commit emission
+ *   emission/component.ts   - source components to runtime factories
+ *   emit.ts                 - DOM nodes and structural regions
+ *   components/ and jsx/    - prop/slot contracts and authored JSX semantics
  *
  * L1 limitations (clear compile errors by design):
  *   - components must be top-level `function` declarations (no arrows)
  *   - exactly one top-level JSX return per component
- *   - no fragments or spread attributes
+ *   - spread attributes preserve overrides through general DOM patching
  *   - children slots mount once at a direct host insertion point
  *   - conditional JSX uses the restricted R8 region forms
  *   - no lists inside list rows
@@ -33,7 +34,7 @@ import {
   requireIdentifiers,
 } from './identifiers';
 import { buildAccessTable, runAnalysis } from './analysis';
-import { transformComponent } from './emit';
+import { transformComponent } from './emission/component';
 import {
   rejectUnownedCleanup,
   transformProgramCallbacks,
@@ -129,6 +130,11 @@ export default function memoDomPlugin(
           JSXElement(p) {
             throw p.buildCodeFrameError(
               'memo-dom: JSX outside a component function — components must be top-level function declarations (L1)',
+            );
+          },
+          JSXFragment(p) {
+            throw p.buildCodeFrameError(
+              'memo-dom: JSX outside a component function - components must be top-level function declarations',
             );
           },
         });

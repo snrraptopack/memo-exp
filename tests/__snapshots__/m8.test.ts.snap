@@ -63,7 +63,7 @@ export function CondApp(_id, _parent) {
     _button2.onclick = inc;
     _button2.appendChild(_text5);
     const _span = document.createElement("span");
-    _span.className = "in";
+    _MD.setClassValue(_span, "in");
     _span.appendChild(_text2);
     _span.appendChild(_text3);
     _span.appendChild(_text4);
@@ -77,7 +77,7 @@ export function CondApp(_id, _parent) {
     const _update3 = () => {};
     const _text6 = document.createTextNode("out");
     const _span2 = document.createElement("span");
-    _span2.className = "out";
+    _MD.setClassValue(_span2, "out");
     _span2.appendChild(_text6);
     return {
       nodes: [_span2],

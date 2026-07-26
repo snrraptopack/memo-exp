@@ -1,13 +1,13 @@
 /**
- * emission-scope.ts - generated bindings and statements shared by emitters.
+ * emission/scope.ts - generated bindings and statements shared by emitters.
  *
  * Owns per-factory slots, updater declarations, guarded writes, and entity
  * registration so emit.ts can focus on component and JSX structure.
  */
 
 import * as t from '@babel/types';
-import type { Ctx } from './context';
-import { generatedIdentifier, md } from './identifiers';
+import type { Ctx } from '../context';
+import { generatedIdentifier, md } from '../identifiers';
 
 export interface EmitScope {
   slots: string[];

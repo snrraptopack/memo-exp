@@ -8,6 +8,10 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import type {
+  ComponentPropsPlan,
+  LocalDerivation,
+} from './components/props';
 import { generatedIdentifier, type GeneratedIdentifiers } from './identifiers';
 
 export interface MemoDomOptions {
@@ -55,9 +59,12 @@ export interface LinkedComponentImport {
   type: 'component';
   /** Canonical declaration identity (`./Row.tsx#Row`). */
   key: string;
-  /** Declared positional prop names, or the single object-prop binding. */
+  /** Declared positional names or closed object-pattern property names. */
   props: string[];
   objectProps: boolean;
+  /** Generic object bindings and object rest accept additional properties. */
+  acceptsUnknownProps: boolean;
+  hasWholeDefault: boolean;
   /** Whether keyed-row compilation can use the allocation-free row ABI. */
   listLightweight: boolean;
 }
@@ -161,10 +168,8 @@ export interface Ctx {
    * never locality-eligible.
    */
   listedSites: Map<string, SiteRef[]>;
-  /** Components declared with one object prop (`Row(props: { item: T })`). */
-  objectPropComponents: Set<string>;
-  /** Declared prop names per component (source order), captured before params are rewritten. */
-  compPropNames: Map<string, string[]>;
+  /** Local and imported JSX call contracts, captured before params are rewritten. */
+  componentProps: Map<string, ComponentPropsPlan>;
   /** Memoized isLightweightListedComponent results (the eligibility check traverses the AST). */
   lightweightCache: Map<string, boolean>;
   /** Inline-row reads: '<owner>/<suffix>' → site + state vars read in the row JSX. */
@@ -181,13 +186,10 @@ export interface Ctx {
    * Instance names SHADOW same-named module state inside their component.
    */
   instanceState: Map<string, Set<string>>;
-  /**
-   * R14: per-instance derivations. Unlike module computeds, these need no
-   * registry entity or access-table key: the owning instance already renders
-   * for every source write/prop push, so its update prologue recomputes them.
-   * Map value preserves source order for chained derivations.
-   */
-  instanceComputeds: Map<string, Map<string, t.Expression>>;
+  /** Ordered local binding/pattern derivations replayed in the owner update. */
+  instanceDerivations: Map<string, LocalDerivation[]>;
+  /** All bindings introduced by local derivations, for locality and writes. */
+  instanceDerivedBindings: Map<string, Set<string>>;
   /**
    * R13: auto-detected computeds — module-level `const x = <state
    * derivation>` (detection by REFERENCE: any expression mentioning state).
@@ -243,11 +245,16 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
       });
     }
   }
-  const objectPropComponents = new Set<string>();
-  const compPropNames = new Map<string, string[]>();
+  const componentProps = new Map<string, ComponentPropsPlan>();
   for (const [local, component] of importedComponents) {
-    compPropNames.set(local, [...component.props]);
-    if (component.objectProps) objectPropComponents.add(local);
+    componentProps.set(local, {
+      mode: component.objectProps ? 'object' : 'positional',
+      names: [...component.props],
+      acceptsUnknown: component.acceptsUnknownProps,
+      bindings: [],
+      params: [],
+      hasWholeDefault: component.hasWholeDefault,
+    });
   }
   return {
     runtimePath: opts.runtimePath ?? 'memo-dom',
@@ -281,13 +288,13 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     compReads: new Map(),
     childRefCounts: new Map(),
     listedSites: new Map(),
-    objectPropComponents,
-    compPropNames,
+    componentProps,
     lightweightCache: new Map(),
     rowReads: new Map(),
     condReads: new Map(),
     instanceState: new Map(),
-    instanceComputeds: new Map(),
+    instanceDerivations: new Map(),
+    instanceDerivedBindings: new Map(),
     computeds: new Map(),
     header: [],
     readers: new Map(),
@@ -500,7 +507,9 @@ export function attrExpr(value: t.JSXAttribute['value']): t.Expression | null {
 export function exprReadsState(ctx: Ctx, expr: t.Node, compName?: string): boolean {
   const inst = compName !== undefined ? ctx.instanceState.get(compName) : undefined;
   const derived =
-    compName !== undefined ? ctx.instanceComputeds.get(compName) : undefined;
+    compName !== undefined ? ctx.instanceDerivedBindings.get(compName) : undefined;
+  const props =
+    compName !== undefined ? ctx.componentProps.get(compName)?.bindings : undefined;
   let reads = false;
   const probe = (n: t.Node): void => {
     if (reads) return;
@@ -508,7 +517,8 @@ export function exprReadsState(ctx: Ctx, expr: t.Node, compName?: string): boole
       t.isIdentifier(n) &&
       (ctx.state.has(n.name) ||
         inst?.has(n.name) === true ||
-        derived?.has(n.name) === true)
+        derived?.has(n.name) === true ||
+        props?.includes(n.name) === true)
     ) {
       reads = true;
       return;
@@ -528,22 +538,27 @@ export function exprReadsState(ctx: Ctx, expr: t.Node, compName?: string): boole
   return reads;
 }
 
-/** Walk every node under `root` (raw AST walk — no NodePath needed). */
-export function walkNodes(root: t.Node, visit: (n: t.Node) => void): void {
-  const walk = (n: t.Node): void => {
-    visit(n);
+/** Walk raw AST nodes; a `false` visitor result skips that node's children. */
+export function walkNodes(
+  root: t.Node,
+  visit: (node: t.Node, parent: t.Node | null) => void | boolean,
+): void {
+  const walk = (n: t.Node, parent: t.Node | null): void => {
+    if (visit(n, parent) === false) return;
     for (const key of t.VISITOR_KEYS[n.type] ?? []) {
       const c = (n as any)[key];
       if (Array.isArray(c)) {
         for (const x of c) {
-          if (x && typeof x === 'object' && 'type' in x) walk(x as t.Node);
+          if (x && typeof x === 'object' && 'type' in x) {
+            walk(x as t.Node, n);
+          }
         }
       } else if (c && typeof c === 'object' && 'type' in c) {
-        walk(c as t.Node);
+        walk(c as t.Node, n);
       }
     }
   };
-  walk(root);
+  walk(root, null);
 }
 
 /** Does this raw AST subtree contain JSX? (node-level twin of lists.containsJsx) */

@@ -15,6 +15,7 @@
     "bench:children": "bun run bench/children/run.ts",
     "bench:components": "bun run bench/components/run.ts",
     "bench:local-state": "bun run bench/local-state/run.ts",
+    "bench:jsx": "bun run bench/jsx/run.ts",
     "bench:frameworks": "cd bench/frameworks && bun run run"
   },
   "devDependencies": {

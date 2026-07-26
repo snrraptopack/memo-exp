@@ -1,5 +1,5 @@
 /**
- * component-manifest.ts - component facts serialized by the module linker.
+ * components/manifest.ts - component facts serialized by the module linker.
  *
  * This module owns AST-level component discovery and converts analyzed local
  * composition/list sites into canonical graph edges. Graph traversal itself
@@ -8,22 +8,25 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { isListLightweightCandidate } from './analysis';
+import { isListLightweightCandidate } from '../analysis';
 import {
   canonicalStateKey,
   keyPathOf,
   type Ctx,
-} from './context';
+} from '../context';
 import {
   type ComponentGraphEdge,
   type ComponentGraphNode,
-} from './component-linker';
-import { containsJsx } from './lists';
+} from '../component-linker';
+import { containsJsx } from '../lists';
+import { analyzeComponentProps } from './props';
 
 export interface ComponentExportInfo {
   key: string;
   props: string[];
   objectProps: boolean;
+  acceptsUnknownProps: boolean;
+  hasWholeDefault: boolean;
   listLightweight: boolean;
 }
 
@@ -41,14 +44,13 @@ export function discoverComponentExports(
         path.scope.parent?.path.isProgram() === true &&
         containsJsx(path)
       ) {
+        const props = analyzeComponentProps(path.node.params);
         components.set(name, {
           key: `${moduleId}#${name}`,
-          props: path.node.params
-            .filter((param): param is t.Identifier => t.isIdentifier(param))
-            .map((param) => param.name),
-          objectProps:
-            path.node.params.length === 1 &&
-            t.isIdentifier(path.node.params[0], { name: 'props' }),
+          props: [...props.names],
+          objectProps: props.mode === 'object',
+          acceptsUnknownProps: props.acceptsUnknown,
+          hasWholeDefault: props.hasWholeDefault,
           listLightweight: false,
         });
       }
@@ -64,10 +66,13 @@ export function analyzedComponentExport(
   moduleId: string,
   local: string,
 ): ComponentExportInfo {
+  const props = ctx.componentProps.get(local)!;
   return {
     key: `${moduleId}#${local}`,
-    props: [...(ctx.compPropNames.get(local) ?? [])],
-    objectProps: ctx.objectPropComponents.has(local),
+    props: [...props.names],
+    objectProps: props.mode === 'object',
+    acceptsUnknownProps: props.acceptsUnknown,
+    hasWholeDefault: props.hasWholeDefault,
     listLightweight: isListLightweightCandidate(ctx, local),
   };
 }

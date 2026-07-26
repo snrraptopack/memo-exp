@@ -1,23 +1,42 @@
 /**
  * @file build-todo.ts
- * Compiles examples/todo.tsx using compiler/compile.ts into examples/compiled-todo.ts.
+ * Compiles the complete multi-module todo graph into examples/generated.
  */
-import { writeFileSync, readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compile } from '../compiler/compile';
+import { compileModules } from '../compiler/linker';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const sourceFiles = ['db.ts', 'api.ts', 'TodoItem.tsx', 'todo.tsx'];
+const sources = Object.fromEntries(
+  sourceFiles.map((file) => [
+    `/examples/${file}`,
+    readFileSync(resolve(__dirname, file), 'utf-8'),
+  ]),
+);
+const output = compileModules(sources, {
+  rootId: 'TodoApp',
+  runtimePath: '../../src/runtime',
+});
+const generatedDir = resolve(__dirname, 'generated');
+mkdirSync(generatedDir, { recursive: true });
 
-const todoSource = readFileSync(resolve(__dirname, 'todo.tsx'), 'utf-8');
-const compiledTodo = compile(todoSource, { rootId: 'TodoApp', runtimePath: '../src/runtime' });
-
-const outputContent = `// @ts-nocheck
+for (const file of sourceFiles) {
+  const id = `/examples/${file}`;
+  const outputFile = file.replace(/\.tsx$/, '.ts');
+  writeFileSync(
+    resolve(generatedDir, outputFile),
+    `// @ts-nocheck
 /**
- * Generated Compiled Output for examples/todo.tsx
+ * Generated from examples/${file}; rebuild with bun run examples/build-todo.ts.
  */
-${compiledTodo}
-`;
+${output[id]}
+`,
+    'utf-8',
+  );
+}
 
-writeFileSync(resolve(__dirname, 'compiled-todo.ts'), outputContent, 'utf-8');
-console.log('Successfully compiled examples/todo.tsx into examples/compiled-todo.ts!');
+console.log(
+  `Successfully compiled ${sourceFiles.length} todo modules into examples/generated.`,
+);

@@ -44,6 +44,9 @@ export type { EventRecord } from './events';
 
 export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
+export { rootNodes } from './jsx-dom';
+export { patchDomProps, setDomValue } from './dom-props';
+export { classValue, setClassValue, setStyleValue } from './dom-values';
 
 export { createCondRegion } from './cond';
 export { registerProps, setProps } from './props';

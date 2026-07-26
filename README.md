@@ -36,8 +36,9 @@ const output = compileModules(modules, {
 All compiler paths emit canonical keys such as
 `./src/state.ts#store.selectedId`. `compileModules()` resolves named imports
 and exact/receiver-bounded function summaries. Pass
-`resolveImport(specifier, importer)` for
-plugin-defined resolution. Cross-file component imports remain unsupported.
+`resolveImport(specifier, importer)` for plugin-defined resolution. Cross-file
+component imports retain the linked factory, props, children, cleanup, and
+canonical state identity.
 
 Static component children use lazy compiler-owned content slots:
 
@@ -60,4 +61,7 @@ bun run bench:invalidation
 bun run bench:linker
 bun run bench:lifecycle
 bun run bench:children
+bun run bench:components
+bun run bench:local-state
+bun run bench:jsx
 ```

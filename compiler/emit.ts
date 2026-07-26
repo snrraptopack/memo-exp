@@ -1,12 +1,12 @@
 /**
- * emit.ts — R1–R4 + R7 emission: component functions → entity factories.
+ * emit.ts - JSX DOM nodes and structural-region emission.
  *
- *   R1  factory shape: (id, parent, …props), register before creation
  *   R2  JSX → creation branch with cached node variables (post-order)
  *   R3  dynamic expressions → numbered slots with guarded setters
  *   R4  creation runs the same guarded setters (null cache → first write)
  *   R7  {items.map(item => …)} → createListRegion + row factories
  *
+ * Component factory ABI and registration live in emission/component.ts.
  * Emission state is explicit (EmitScope) rather than closure-local so that
  * inline list rows can emit into a NESTED scope: an inline row is a small
  * entity factory of its own (own slots, own update, register parent=id),
@@ -19,7 +19,6 @@ import {
   attrExpr,
   exprReadsState,
   keyPathOf,
-  nodeHasJsx,
   type Ctx,
   type RowCtx,
 } from './context';
@@ -27,7 +26,6 @@ import {
   componentId,
   generatedIdentifier,
   md,
-  requireIdentifiers,
 } from './identifiers';
 import {
   cacheDecl,
@@ -38,19 +36,33 @@ import {
   slotGuard,
   updateDecl,
   type EmitScope,
-} from './emission-scope';
-import { analyzeMapSite, matchMapCall, type MapSite } from './lists';
-import { analyzeCondSite, matchCond } from './conds';
+} from './emission/scope';
+import { analyzeMapSite, type MapSite } from './lists';
+import { analyzeCondSite } from './conds';
 import { buildHandler } from './handlers';
 import { isLightweightListedComponent } from './analysis';
-import { transformComponentLifecycle } from './lifecycle';
 import {
   buildChildrenSlot,
   emitChildrenIntoParent,
   hasComponentChildren,
   isChildrenReference,
-  normalizeJsxText,
-} from './children';
+  type JsxChild,
+} from './components/children';
+import {
+  collectDirectChildren,
+  type DirectChildOperation,
+  type JsxNode,
+} from './jsx/children';
+import {
+  buildOrderedAttributes,
+  jsxAttributeName,
+} from './jsx/attributes';
+import { createElementExpression, isSvgElement } from './jsx/svg';
+import {
+  buildSpreadComponentPropUpdate,
+  callPropsFromObject,
+  orderCallProps,
+} from './components/calls';
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -91,239 +103,6 @@ function textValue(tmp: t.Identifier): t.Expression {
 // component transform
 // ---------------------------------------------------------------------
 
-export function transformComponent(
-  ctx: Ctx,
-  path: NodePath<t.FunctionDeclaration>,
-  name: string,
-): void {
-  const node = path.node;
-
-  // -- find the single top-level JSX return -----------------------------
-  const returns: NodePath<t.ReturnStatement>[] = [];
-  path.get('body').traverse({
-    ReturnStatement(r) {
-      returns.push(r);
-    },
-    Function(f) {
-      f.skip(); // returns inside nested functions/handlers don't count
-    },
-  });
-  const topLevel = returns.filter((r) => r.getFunctionParent() === path);
-  const jsxTop = topLevel.filter((r) => t.isJSXElement(r.node.argument));
-  if (jsxTop.length !== 1 || topLevel.length !== 1) {
-    throw path.buildCodeFrameError(
-      `memo-dom: component '${name}' must have exactly one top-level JSX return (L1)`,
-    );
-  }
-  const returnStmt = jsxTop[0]!.node;
-  const jsx = returnStmt.argument as t.JSXElement;
-
-  // -- R10: prop names (needed early: R11 row context uses the first one)
-  const propNames: string[] = [];
-  for (const p of node.params) {
-    if (!t.isIdentifier(p)) {
-      throw path.buildCodeFrameError(
-        `memo-dom: component '${name}' props must be plain identifier params (R10 L1) — destructure inside the body if needed`,
-      );
-    }
-    propNames.push(p.name);
-  }
-
-  const refs = ctx.listedSites.get(name) ?? [];
-  const linkedRefs = ctx.linkedComponentRows.get(name) ?? [];
-  const sourceLocal =
-    refs.some((ref) => ref.sourceLocal === true) ||
-    linkedRefs.some((ref) => ref.sourceLocal);
-  const lightweight = isLightweightListedComponent(ctx, name);
-  const scope = newEmitScope(ctx);
-  const factoryId = generatedIdentifier(ctx, 'id').name;
-  const factoryParent = lightweight ? null : generatedIdentifier(ctx, 'parent').name;
-  const factoryOwner =
-    lightweight && sourceLocal
-      ? generatedIdentifier(ctx, 'owner').name
-      : null;
-  const propsBox =
-    propNames.length > 0 && !lightweight
-      ? generatedIdentifier(ctx, 'props').name
-      : null;
-  requireIdentifiers(ctx).registerComponentId(name, factoryId);
-
-  // -- R11: a listed (multi-instance) component is a list row — handlers
-  // writing its item prop's fields commit locally (markDirty(id)).
-  let rowCtx: RowCtx | undefined;
-  if ((refs.length > 0 || linkedRefs.length > 0) && propNames.length > 0) {
-    const keyPaths = [
-      ...refs.map((r) => keyPathOf(r.keyExpr ?? null, r.itemParam ?? '')),
-      ...linkedRefs.map((r) => r.keyPath),
-    ];
-    const first = JSON.stringify(keyPaths[0]);
-    const merged = keyPaths.every((k) => JSON.stringify(k) === first)
-      ? keyPaths[0]!
-      : null; // disagreeing key fns → unknown → all item writes fall back
-    rowCtx = {
-      itemParam: propNames[0]!,
-      rowIdVar: factoryId,
-      ...(lightweight ? { refreshVar: scope.updateVar } : {}),
-      keyPath: merged,
-      sourceKey:
-        refs[0]?.sourceKey ??
-        linkedRefs[0]?.sourceKey ??
-        '',
-      sourceLocal,
-      ...(sourceLocal
-        ? { ownerIdVar: factoryOwner ?? factoryParent! }
-        : {}),
-    };
-  }
-
-  transformComponentLifecycle(ctx, path, name, factoryId, rowCtx);
-
-  // -- emit --------------------------------------------------------------
-  const rootVar = emitElement(ctx, scope, jsx, name, path, null, rowCtx);
-
-  // R14: local derivations live in the instance closure and recompute at the
-  // front of update(). Props re-sync is unshifted below, so final order is:
-  // props -> derivations (source order) -> child/DOM guarded writes.
-  const localComputeds = ctx.instanceComputeds.get(name);
-  if (localComputeds !== undefined) {
-    for (const stmt of node.body.body) {
-      if (
-        t.isVariableDeclaration(stmt, { kind: 'const' }) &&
-        stmt.declarations.some((d) => t.isIdentifier(d.id) && localComputeds.has(d.id.name))
-      ) {
-        (stmt as t.VariableDeclaration).kind = 'let';
-      }
-    }
-    scope.updaters.unshift(() =>
-      t.blockStatement(
-        [...localComputeds].map(([computedName, expr]) =>
-          t.expressionStatement(
-            t.assignmentExpression('=', t.identifier(computedName), t.cloneNode(expr)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  const kept = node.body.body.filter((s) => s !== returnStmt);
-
-  // -- R10: props box. User params become locals synced from __p ---------
-  if (propNames.length > 0 && !lightweight) {
-    // re-sync locals from the box at the top of every update
-    scope.updaters.unshift(() =>
-      t.blockStatement(
-        propNames.map((pn, i) =>
-          t.expressionStatement(
-            t.assignmentExpression(
-              '=',
-              t.identifier(pn),
-              t.memberExpression(t.identifier(propsBox!), t.numericLiteral(i), true),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Body order matters: register BEFORE creation so children (created and
-  // registered by factory calls inside the creation block) always find
-  // their parent in the registry — the M4 parent-first invariant. The
-  // update closure only runs post-mount, so closing over node variables
-  // declared later in the same scope is safe.
-  const body: t.Statement[] = [cacheDecl(scope)];
-  if (propNames.length > 0 && !lightweight) {
-    body.push(
-      t.variableDeclaration(
-        'let',
-        propNames.map((pn, i) =>
-          t.variableDeclarator(
-            t.identifier(pn),
-            t.memberExpression(t.identifier(propsBox!), t.numericLiteral(i), true),
-          ),
-        ),
-      ),
-    );
-  }
-  body.push(
-    ...kept,
-    updateDecl(scope),
-    ...(lightweight
-      ? []
-      : [
-          registerStmt(
-            ctx,
-            t.identifier(factoryId),
-            t.identifier(factoryParent!),
-            t.identifier(scope.updateVar),
-          ),
-        ]),
-  );
-  if (propNames.length > 0 && !lightweight) {
-    body.push(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'registerProps'), [
-          t.identifier(factoryId),
-          t.identifier(propsBox!),
-        ]),
-      ),
-    );
-  }
-  body.push(...scope.creation);
-  if (lightweight) {
-    const nextProps = propNames.map((_, i) =>
-      generatedIdentifier(ctx, `nextProp${i}`),
-    );
-    body.push(
-      t.returnStatement(
-        t.objectExpression([
-          t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
-          t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
-          t.objectProperty(t.identifier('update'), t.identifier(scope.updateVar)),
-          ...(propNames.length > 0
-            ? [
-                t.objectProperty(
-                  t.identifier('updateProps'),
-                  t.arrowFunctionExpression(
-                    nextProps,
-                    t.blockStatement(
-                      propNames.map((pn, i) =>
-                        t.expressionStatement(
-                          t.assignmentExpression('=', t.identifier(pn), nextProps[i]!),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ]
-            : []),
-        ]),
-      ),
-    );
-  } else {
-    body.push(t.returnStatement(t.identifier(rootVar)));
-  }
-
-  node.params =
-    lightweight
-      ? [
-          ...propNames.map((pn) => t.identifier(pn)),
-          t.identifier(factoryId),
-          ...(factoryOwner === null ? [] : [t.identifier(factoryOwner)]),
-        ]
-      : propNames.length > 0
-      ? [
-          t.identifier(factoryId),
-          t.identifier(factoryParent!),
-          t.identifier(propsBox!),
-        ]
-      : [t.identifier(factoryId), t.identifier(factoryParent!)];
-  node.body = t.blockStatement(body);
-}
-
-// ---------------------------------------------------------------------
-// JSX emission
-// ---------------------------------------------------------------------
-
 /**
  * M5.8: attributes that are really DOM IDL properties — written via
  * setProp (el.x = v) instead of setAttribute. Conservative set: boolean
@@ -338,13 +117,18 @@ const DOM_PROP_ATTRS = new Set([
   'hidden',
   'multiple',
   'required',
-  'readonly',
+  'readOnly',
   'muted',
   'open',
   'controls',
   'loop',
-  'autofocus',
-  'autoplay',
+  'autoFocus',
+  'autoPlay',
+  'tabIndex',
+]);
+const DOM_MAPPED_ATTRS = new Set([
+  'htmlFor',
+  'crossOrigin',
 ]);
 
 /** M5.9: inline text write — if ($sK !== ($t = expr)) { $sK = $t; node.data = … } */
@@ -401,6 +185,242 @@ function emitText(ctx: Ctx, scope: EmitScope, expr: t.Expression): string {
   return varName;
 }
 
+function expressionReadsBinding(node: t.Node, name: string): boolean {
+  let found = false;
+  t.traverseFast(node, (child) => {
+    if (t.isIdentifier(child, { name })) found = true;
+  });
+  return found;
+}
+
+export function emitNode(
+  ctx: Ctx,
+  scope: EmitScope,
+  node: JsxNode,
+  compName: string,
+  compPath: NodePath<t.FunctionDeclaration>,
+  nestedIn: 'row' | 'cond' | null = null,
+  rowCtx?: RowCtx,
+  eventOriginId?: t.Expression,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
+): string {
+  return t.isJSXFragment(node)
+    ? emitFragment(
+        ctx,
+        scope,
+        node,
+        compName,
+        compPath,
+        nestedIn,
+        rowCtx,
+        eventOriginId,
+        inSvg,
+        ownerId,
+      )
+    : emitElement(
+        ctx,
+        scope,
+        node,
+        compName,
+        compPath,
+        nestedIn,
+        rowCtx,
+        eventOriginId,
+        inSvg,
+        ownerId,
+      );
+}
+
+function emitFragment(
+  ctx: Ctx,
+  scope: EmitScope,
+  fragment: t.JSXFragment,
+  compName: string,
+  compPath: NodePath<t.FunctionDeclaration>,
+  nestedIn: 'row' | 'cond' | null,
+  rowCtx?: RowCtx,
+  eventOriginId?: t.Expression,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
+): string {
+  const operations = collectDirectChildren(fragment.children, {
+    emitText: (expression) => emitText(ctx, scope, expression),
+    emitNode: (node) =>
+      emitNode(
+        ctx,
+        scope,
+        node,
+        compName,
+        compPath,
+        nestedIn,
+        rowCtx,
+        eventOriginId,
+        inSvg,
+        ownerId,
+      ),
+    isForwarded: (expression) =>
+      isChildrenReference(ctx, compName, expression),
+    fail: (message) => {
+      throw compPath.buildCodeFrameError(message);
+    },
+  });
+  const variable = freshNodeName(ctx, scope, 'fragment');
+  scope.creation.push(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        t.identifier(variable),
+        t.callExpression(
+          t.memberExpression(
+            t.identifier('document'),
+            t.identifier('createDocumentFragment'),
+          ),
+          [],
+        ),
+      ),
+    ]),
+  );
+  emitDirectChildOperations(
+    ctx,
+    scope,
+    operations,
+    variable,
+    compName,
+    compPath,
+    inSvg,
+    ownerId,
+  );
+  return variable;
+}
+
+function emitDirectChildOperations(
+  ctx: Ctx,
+  scope: EmitScope,
+  operations: DirectChildOperation[],
+  parentVar: string,
+  compName: string,
+  compPath: NodePath<t.FunctionDeclaration>,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
+): void {
+  for (const operation of operations) {
+    if (operation.type === 'node') {
+      scope.creation.push(
+        t.expressionStatement(
+          t.callExpression(
+            t.memberExpression(
+              t.identifier(parentVar),
+              t.identifier('appendChild'),
+            ),
+            [t.identifier(operation.variable)],
+          ),
+        ),
+      );
+    } else if (operation.type === 'slot') {
+      scope.creation.push(
+        t.ifStatement(
+          t.binaryExpression(
+            '!=',
+            t.cloneNode(operation.expression),
+            t.nullLiteral(),
+          ),
+          t.expressionStatement(
+            t.callExpression(t.cloneNode(operation.expression), [
+              t.identifier(parentVar),
+            ]),
+          ),
+        ),
+      );
+    } else if (operation.type === 'list') {
+      emitRegion(
+        ctx,
+        scope,
+        operation.expression,
+        parentVar,
+        compName,
+        compPath,
+        inSvg,
+        ownerId,
+      );
+    } else {
+      emitCondRegion(
+        ctx,
+        scope,
+        operation.expression,
+        parentVar,
+        compName,
+        compPath,
+        inSvg,
+        ownerId,
+      );
+    }
+  }
+}
+
+function buildAuthoredChildrenSlot(
+  ctx: Ctx,
+  ownerScope: EmitScope,
+  children: readonly JsxChild[],
+  compName: string,
+  compPath: NodePath<t.FunctionDeclaration>,
+  nestedIn: 'row' | 'cond' | null,
+  rowCtx: RowCtx | undefined,
+  eventOriginId: t.Expression | undefined,
+  inSvg: boolean,
+  ownerId: t.Expression,
+): t.Identifier {
+  return buildChildrenSlot(ctx, ownerScope, (childScope, parentNode) => {
+    emitChildrenIntoParent(
+      childScope,
+      children,
+      parentNode.name,
+      {
+        emitText: (expression) => emitText(ctx, childScope, expression),
+        emitNode: (node) =>
+          emitNode(
+            ctx,
+            childScope,
+            node,
+            compName,
+            compPath,
+            nestedIn,
+            rowCtx,
+            eventOriginId,
+            inSvg,
+            ownerId,
+          ),
+        emitList: (call, parentVar) =>
+          emitRegion(
+            ctx,
+            childScope,
+            call,
+            parentVar,
+            compName,
+            compPath,
+            inSvg,
+            ownerId,
+          ),
+        emitCondition: (expression, parentVar) =>
+          emitCondRegion(
+            ctx,
+            childScope,
+            expression,
+            parentVar,
+            compName,
+            compPath,
+            inSvg,
+            ownerId,
+          ),
+        isForwarded: (expression) =>
+          isChildrenReference(ctx, compName, expression),
+        fail: (message) => {
+          throw compPath.buildCodeFrameError(message);
+        },
+      },
+    );
+  });
+}
+
 function emitElement(
   ctx: Ctx,
   scope: EmitScope,
@@ -410,6 +430,8 @@ function emitElement(
   nestedIn: 'row' | 'cond' | null = null,
   rowCtx?: RowCtx,
   eventOriginId?: t.Expression,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
 ): string {
   const open = el.openingElement;
   const tag = (open.name as t.JSXIdentifier).name;
@@ -428,87 +450,109 @@ function emitElement(
     const varName = generatedIdentifier(ctx, candidate).name;
     const idSuffix = seen === 0 ? `/${tag}` : `/${tag}[${seen}]`;
     const propEntries: Array<{ name: string; value: t.Expression }> = [];
+    const componentHasSpread = open.attributes.some((attribute) =>
+      t.isJSXSpreadAttribute(attribute),
+    );
+    let orderedPropObject: t.ObjectExpression | null = null;
     let needsPush = false;
+    if (componentHasSpread) {
+      const ordered = buildOrderedAttributes(open.attributes, {
+        fail: (message) => {
+          throw compPath.buildCodeFrameError(message);
+        },
+      });
+      orderedPropObject = ordered.expression;
+      needsPush = ordered.sources.some((source) =>
+        exprReadsState(ctx, source, compName) ||
+        (rowCtx !== undefined &&
+          expressionReadsBinding(source, rowCtx.itemParam)),
+      );
+    } else {
     for (const attr of open.attributes) {
       const a = attr as t.JSXAttribute;
-      const v = attrExpr(a.value);
+      const v =
+        a.value == null ? t.booleanLiteral(true) : attrExpr(a.value);
       if (v == null) {
         throw compPath.buildCodeFrameError(
-          `memo-dom: prop '${(a.name as t.JSXIdentifier).name}' on <${tag}> must be an expression (L1)`,
+          `memo-dom: prop '${jsxAttributeName(
+            a.name,
+          )}' on <${tag}> must be an expression`,
         );
       }
       // R12: instance-state reads also need re-push (parent re-renders on
       // instance writes → this updater re-syncs the child's props box)
-      if (exprReadsState(ctx, v, compName)) needsPush = true;
-      propEntries.push({ name: (a.name as t.JSXIdentifier).name, value: t.cloneNode(v) });
+      if (
+        exprReadsState(ctx, v, compName) ||
+        (rowCtx !== undefined &&
+          expressionReadsBinding(v, rowCtx.itemParam))
+      ) {
+        needsPush = true;
+      }
+      propEntries.push({
+        name: jsxAttributeName(a.name),
+        value: t.cloneNode(v),
+      });
+    }
     }
     if (hasComponentChildren(el.children)) {
-      if (propEntries.some((entry) => entry.name === 'children')) {
+      if (
+        open.attributes.some(
+          (attribute) =>
+            t.isJSXAttribute(attribute) &&
+            jsxAttributeName(attribute.name) === 'children',
+        )
+      ) {
         throw compPath.buildCodeFrameError(
           `memo-dom: <${tag}> cannot use both a children prop and nested JSX children`,
         );
       }
-      const childrenSlot = buildChildrenSlot(
+      const childrenSlot = buildAuthoredChildrenSlot(
         ctx,
         scope,
-        (childScope, parentNode) => {
-          emitChildrenIntoParent(
-            childScope,
-            el.children,
-            parentNode.name,
-            {
-              emitText: (expression) =>
-                emitText(ctx, childScope, expression),
-              emitElement: (element) =>
-                emitElement(
-                  ctx,
-                  childScope,
-                  element,
-                  compName,
-                  compPath,
-                  nestedIn,
-                  rowCtx,
-                  eventOriginId,
-                ),
-              emitList: (call, parentVar) =>
-                emitRegion(
-                  ctx,
-                  childScope,
-                  call,
-                  parentVar,
-                  compName,
-                  compPath,
-                ),
-              emitCondition: (expression, parentVar) =>
-                emitCondRegion(
-                  ctx,
-                  childScope,
-                  expression,
-                  parentVar,
-                  compName,
-                  compPath,
-                ),
-              isForwarded: (expression) =>
-                isChildrenReference(ctx, compName, expression),
-              fail: (message) => {
-                throw compPath.buildCodeFrameError(message);
-              },
-            },
-          );
-        },
+        el.children,
+        compName,
+        compPath,
+        nestedIn,
+        rowCtx,
+        eventOriginId,
+        inSvg,
+        ownerId,
       );
-      propEntries.push({
-        name: 'children',
-        value: t.cloneNode(childrenSlot),
-      });
+      if (orderedPropObject !== null) {
+        orderedPropObject.properties.push(
+          t.objectProperty(
+            t.identifier('children'),
+            t.cloneNode(childrenSlot),
+          ),
+        );
+      } else {
+        propEntries.push({
+          name: 'children',
+          value: t.cloneNode(childrenSlot),
+        });
+      }
     }
     // Props are matched BY NAME against the callee's declared params — JSX
     // attribute order is irrelevant (positional matching silently misaligned
     // props when attribute order and declaration order disagreed).
-    const props = orderCallProps(ctx, tag, propEntries);
+    let props: t.Expression[];
+    if (orderedPropObject !== null) {
+      const propObject = generatedIdentifier(ctx, `${base}Props`);
+      scope.creation.push(
+        t.variableDeclaration('const', [
+          t.variableDeclarator(
+            t.cloneNode(propObject),
+            t.cloneNode(orderedPropObject),
+          ),
+        ]),
+      );
+      props = callPropsFromObject(ctx, tag, propObject);
+    } else {
+      props = orderCallProps(ctx, tag, propEntries);
+    }
     const childId = t.binaryExpression(
       '+',
-      componentId(ctx, compName),
+      t.cloneNode(ownerId),
       t.stringLiteral(idSuffix),
     );
     scope.creation.push(
@@ -517,7 +561,7 @@ function emitElement(
           t.identifier(varName),
           t.callExpression(t.identifier(tag), [
             childId,
-            componentId(ctx, compName),
+            t.cloneNode(ownerId),
             ...(props.length > 0 ? [t.arrayExpression(props)] : []),
           ]),
         ),
@@ -527,84 +571,73 @@ function emitElement(
     // flows down through setProps (shallow-compare → no-op when unchanged)
     if (needsPush) {
       scope.updaters.push(() =>
-        t.expressionStatement(
-          t.callExpression(md(ctx, 'setProps'), [
-            t.binaryExpression('+', componentId(ctx, compName), t.stringLiteral(idSuffix)),
-            t.arrayExpression(props.map((p) => t.cloneNode(p))),
-          ]),
-        ),
+        orderedPropObject === null
+          ? t.expressionStatement(
+              t.callExpression(md(ctx, 'setProps'), [
+                t.binaryExpression(
+                  '+',
+                  t.cloneNode(ownerId),
+                  t.stringLiteral(idSuffix),
+                ),
+                t.arrayExpression(props.map((p) => t.cloneNode(p))),
+              ]),
+            )
+          : buildSpreadComponentPropUpdate(
+              ctx,
+              tag,
+              ownerId,
+              idSuffix,
+              orderedPropObject,
+            ),
       );
     }
     return varName;
   }
 
-  // -- host element: children first (post-order creation) ----------------
-  const childVars: string[] = [];
-  const pendingLists: t.CallExpression[] = [];
-  const pendingConds: Array<t.ConditionalExpression | t.LogicalExpression> = [];
-  let childrenSlot: t.Expression | null = null;
-  const meaningfulChildren = el.children.filter(
-    (child) => !t.isJSXText(child) || child.value.trim() !== '',
-  );
-  for (const child of el.children) {
-    if (t.isJSXText(child)) {
-      const value = normalizeJsxText(child.value);
-      if (value === '') continue;
-      childVars.push(emitText(ctx, scope, t.stringLiteral(value)));
-    } else if (t.isJSXExpressionContainer(child)) {
-      if (t.isJSXEmptyExpression(child.expression)) continue;
-      if (!t.isExpression(child.expression)) {
-        throw compPath.buildCodeFrameError(
-          'memo-dom: unsupported expression in JSX child position (L1)',
-        );
-      }
-      // static falsy children render nothing (M5.3: {null} used to print "null")
-      const ex = child.expression;
-      if (isChildrenReference(ctx, compName, ex)) {
-        if (meaningfulChildren.length !== 1) {
-          throw compPath.buildCodeFrameError(
-            'memo-dom: a component children slot must be the sole child of its host insertion element',
-          );
-        }
-        childrenSlot = t.cloneNode(ex);
-        continue;
-      }
-      if (
-        t.isNullLiteral(ex) ||
-        t.isBooleanLiteral(ex) ||
-        t.isIdentifier(ex, { name: 'undefined' })
-      ) {
-        continue;
-      }
-      const mapCall = matchMapCall(ex);
-      if (mapCall) {
-        pendingLists.push(mapCall); // regions own their nodes; no childVar
-        continue;
-      }
-      const condExpr = matchCond(ex);
-      if (condExpr !== null && nodeHasJsx(condExpr)) {
-        pendingConds.push(condExpr); // conditional regions own their nodes
-        continue;
-      }
-      childVars.push(emitText(ctx, scope, t.cloneNode(ex)));
-    } else if (t.isJSXElement(child)) {
-      childVars.push(
-        emitElement(
-          ctx,
-          scope,
-          child,
-          compName,
-          compPath,
-          nestedIn,
-          rowCtx,
-          eventOriginId,
-        ),
-      );
-    } else {
-      throw compPath.buildCodeFrameError(
-        'memo-dom: spread children are not supported (L1)',
-      );
-    }
+  const elementSvg = isSvgElement(tag, inSvg);
+  const childSvg = elementSvg && tag !== 'foreignObject';
+
+  // Children emit post-order; insertion operations retain authored order.
+  const childOperations = collectDirectChildren(el.children, {
+    emitText: (expression) => emitText(ctx, scope, expression),
+    emitNode: (node) =>
+      emitNode(
+        ctx,
+        scope,
+        node,
+        compName,
+        compPath,
+        nestedIn,
+        rowCtx,
+        eventOriginId,
+        childSvg,
+        ownerId,
+      ),
+    isForwarded: (expression) =>
+      isChildrenReference(ctx, compName, expression),
+    fail: (message) => {
+      throw compPath.buildCodeFrameError(message);
+    },
+  });
+  if (
+    nestedIn !== null &&
+    childOperations.some((operation) => operation.type === 'list')
+  ) {
+    throw compPath.buildCodeFrameError(
+      `memo-dom: nested lists inside ${
+        nestedIn === 'row' ? 'list rows' : 'conditional branches'
+      } are not supported yet`,
+    );
+  }
+  if (
+    nestedIn !== null &&
+    childOperations.some((operation) => operation.type === 'condition')
+  ) {
+    throw compPath.buildCodeFrameError(
+      `memo-dom: conditionals inside ${
+        nestedIn === 'row' ? 'list rows' : 'conditional branches'
+      } are not supported yet`,
+    );
   }
 
   const varName = freshNodeName(ctx, scope, tag);
@@ -612,18 +645,56 @@ function emitElement(
     t.variableDeclaration('const', [
       t.variableDeclarator(
         t.identifier(varName),
-        t.callExpression(
-          t.memberExpression(t.identifier('document'), t.identifier('createElement')),
-          [t.stringLiteral(tag)],
-        ),
+        createElementExpression(tag, elementSvg),
       ),
     ]),
   );
 
   // -- attributes ---------------------------------------------------------
-  for (const attr of open.attributes) {
+  const hasSpread = open.attributes.some((attribute) =>
+    t.isJSXSpreadAttribute(attribute),
+  );
+  if (hasSpread) {
+    const ordered = buildOrderedAttributes(open.attributes, {
+      eventValue: (name, value) => {
+        const handler = buildHandler(
+          ctx,
+          compPath,
+          value,
+          name,
+          compName,
+          rowCtx,
+          eventOriginId,
+        );
+        const binding = generatedIdentifier(ctx, `${name}Handler`);
+        scope.creation.push(
+          t.variableDeclaration('const', [
+            t.variableDeclarator(t.cloneNode(binding), handler),
+          ]),
+        );
+        return binding;
+      },
+      fail: (message) => {
+        throw compPath.buildCodeFrameError(message);
+      },
+    });
+    const patch = (): t.Statement =>
+      t.expressionStatement(
+        t.callExpression(md(ctx, 'patchDomProps'), [
+          t.identifier(varName),
+          t.cloneNode(ordered.expression),
+          t.stringLiteral(ctx.rootId),
+          t.arrayExpression(
+            ordered.safeEventKeys.map((name) => t.stringLiteral(name)),
+          ),
+        ]),
+      );
+    scope.creation.push(patch());
+    scope.updaters.push(patch);
+  } else {
+    for (const attr of open.attributes) {
     const a = attr as t.JSXAttribute;
-    const attrName = (a.name as t.JSXIdentifier).name;
+    const attrName = jsxAttributeName(a.name);
 
     // backstop: row-root keys are stripped before emission, so any key
     // reaching here is misuse (analysis catches static cases with a nicer
@@ -663,14 +734,32 @@ function emitElement(
     }
 
     if (t.isStringLiteral(a.value)) {
-      if (attrName === 'class') {
+      if (attrName === 'class' || attrName === 'className') {
         scope.creation.push(
           t.expressionStatement(
-            t.assignmentExpression(
-              '=',
-              t.memberExpression(t.identifier(varName), t.identifier('className')),
+            t.callExpression(md(ctx, 'setClassValue'), [
+              t.identifier(varName),
               t.stringLiteral(a.value.value),
-            ),
+            ]),
+          ),
+        );
+      } else if (attrName === 'style') {
+        scope.creation.push(
+          t.expressionStatement(
+            t.callExpression(md(ctx, 'setStyleValue'), [
+              t.identifier(varName),
+              t.stringLiteral(a.value.value),
+            ]),
+          ),
+        );
+      } else if (DOM_MAPPED_ATTRS.has(attrName) || elementSvg) {
+        scope.creation.push(
+          t.expressionStatement(
+            t.callExpression(md(ctx, 'setDomValue'), [
+              t.identifier(varName),
+              t.stringLiteral(attrName),
+              t.stringLiteral(a.value.value),
+            ]),
           ),
         );
       } else {
@@ -686,38 +775,57 @@ function emitElement(
       continue;
     }
 
-    const v = attrExpr(a.value);
+    const v =
+      a.value == null ? t.booleanLiteral(true) : attrExpr(a.value);
     if (v == null || t.isStringLiteral(v)) {
       throw compPath.buildCodeFrameError(
         `memo-dom: attribute '${attrName}' needs a string or an expression (L1)`,
       );
     }
     const expr = t.cloneNode(v);
+    if (attrName === 'style') {
+      const setStyle = (): t.Statement =>
+        t.expressionStatement(
+          t.callExpression(md(ctx, 'setStyleValue'), [
+            t.identifier(varName),
+            t.cloneNode(expr),
+          ]),
+        );
+      scope.creation.push(setStyle());
+      scope.updaters.push(setStyle);
+      continue;
+    }
     const key = freshSlot(ctx, scope);
     // M5.8: IDL-property attributes (checked, value, disabled, …) write the
     // DOM property, not the attribute — faster (no attribute-tree walk) and
     // semantically correct for state that lives on the element object.
-    const propName = DOM_PROP_ATTRS.has(attrName) ? attrName : null;
+    const propName =
+      !elementSvg && DOM_PROP_ATTRS.has(attrName) ? attrName : null;
     // M5.9: inline guarded writes (see slotGuard) — no MD.setX call overhead
     const makeCall = (): t.Statement =>
-      attrName === 'class'
-        ? slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+      attrName === 'class' || attrName === 'className'
+        ? slotGuard(
+            scope,
+            key,
+            t.callExpression(md(ctx, 'classValue'), [t.cloneNode(expr)]),
+            (tmp) =>
             t.expressionStatement(
-              t.assignmentExpression(
-                '=',
-                t.memberExpression(t.identifier(varName), t.identifier('className')),
+              t.callExpression(md(ctx, 'setClassValue'), [
+                t.identifier(varName),
                 tmp,
-              ),
+              ]),
             ),
           )
-        : propName !== null
+        : propName !== null ||
+            DOM_MAPPED_ATTRS.has(attrName) ||
+            elementSvg
           ? slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
               t.expressionStatement(
-                t.assignmentExpression(
-                  '=',
-                  t.memberExpression(t.identifier(varName), t.identifier(propName)),
+                t.callExpression(md(ctx, 'setDomValue'), [
+                  t.identifier(varName),
+                  t.stringLiteral(attrName),
                   tmp,
-                ),
+                ]),
               ),
             )
           : slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
@@ -749,48 +857,18 @@ function emitElement(
     scope.creation.push(makeCall());
     scope.updaters.push(makeCall);
   }
-
-  // -- append children ------------------------------------------------------
-  for (const cv of childVars) {
-    scope.creation.push(
-      t.expressionStatement(
-        t.callExpression(
-          t.memberExpression(t.identifier(varName), t.identifier('appendChild')),
-          [t.identifier(cv)],
-        ),
-      ),
-    );
-  }
-  if (childrenSlot !== null) {
-    scope.creation.push(
-      t.ifStatement(
-        t.binaryExpression('!=', t.cloneNode(childrenSlot), t.nullLiteral()),
-        t.expressionStatement(
-          t.callExpression(t.cloneNode(childrenSlot), [
-            t.identifier(varName),
-          ]),
-        ),
-      ),
-    );
   }
 
-  // -- regions (the parent element exists by now) ---------------------------
-  if (pendingLists.length > 0 && nestedIn !== null) {
-    throw compPath.buildCodeFrameError(
-      `memo-dom: nested lists inside ${nestedIn === 'row' ? 'list rows' : 'conditional branches'} are not supported yet (L1)`,
-    );
-  }
-  if (pendingConds.length > 0 && nestedIn !== null) {
-    throw compPath.buildCodeFrameError(
-      `memo-dom: conditionals inside ${nestedIn === 'row' ? 'list rows' : 'conditional branches'} are not supported yet (R8 L1)`,
-    );
-  }
-  for (const call of pendingLists) {
-    emitRegion(ctx, scope, call, varName, compName, compPath);
-  }
-  for (const expr of pendingConds) {
-    emitCondRegion(ctx, scope, expr, varName, compName, compPath);
-  }
+  emitDirectChildOperations(
+    ctx,
+    scope,
+    childOperations,
+    varName,
+    compName,
+    compPath,
+    childSvg,
+    ownerId,
+  );
 
   return varName;
 }
@@ -806,6 +884,8 @@ function emitRegion(
   parentElVar: string,
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
 ): void {
   const site = analyzeMapSite(ctx, call, compPath, compName, scope.usedPrefixes);
 
@@ -815,12 +895,30 @@ function emitRegion(
   ).name;
   const createFn =
     site.form === 'component'
-      ? buildComponentRowCreate(ctx, site)
-      : buildInlineRowCreate(ctx, site, compName, compPath);
+      ? buildComponentRowCreate(
+          ctx,
+          site,
+          compName,
+          compPath,
+          inSvg,
+          ownerId,
+        )
+      : buildInlineRowCreate(
+          ctx,
+          site,
+          compName,
+          compPath,
+          inSvg,
+          ownerId,
+        );
 
   const args: t.Expression[] = [
     t.identifier(parentElVar),
-    t.binaryExpression('+', componentId(ctx, compName), t.stringLiteral(`/${site.suffix}`)),
+    t.binaryExpression(
+      '+',
+      t.cloneNode(ownerId),
+      t.stringLiteral(`/${site.suffix}`),
+    ),
     createFn,
   ];
   if (site.keyExpr !== null) {
@@ -856,153 +954,271 @@ function emitRegion(
   );
 }
 
-/**
- * Order a call site's props to match the callee's DECLARED param order,
- * matched by attribute name — never by JSX attribute position. Object-prop
- * components (`Row(props: {...})`) receive one object literal instead.
- * Unknown attribute names are a compile error (catches typos and events on
- * component tags, which L1 has no design for); undeclared-but-missing props
- * pass `undefined`, matching plain JS call semantics.
- */
-function orderCallProps(
+/** Build one keyed component-row factory and its retained-item replay. */
+function buildComponentRowCreate(
   ctx: Ctx,
-  tag: string,
-  entries: Array<{ name: string; value: t.Expression }>,
-): t.Expression[] {
-  if (ctx.objectPropComponents.has(tag)) {
-    return [
-      t.objectExpression(
-        entries.map((e) =>
-          t.objectProperty(
-            t.identifier(e.name),
-            e.value,
-            false,
-            t.isIdentifier(e.value) && e.value.name === e.name,
-          ),
-        ),
-      ),
-    ];
-  }
-  const declared = ctx.compPropNames.get(tag);
-  if (declared === undefined) return entries.map((e) => e.value);
-  const byName = new Map(entries.map((e) => [e.name, e.value]));
-  for (const name of byName.keys()) {
-    if (!declared.includes(name)) {
-      throw new Error(
-        `memo-dom: unknown prop '${name}' on <${tag}> — declared props: ${
-          declared.length > 0 ? declared.join(', ') : '(none)'
-        }`,
-      );
+  site: MapSite,
+  compName: string,
+  compPath: NodePath<t.FunctionDeclaration>,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
+): t.ArrowFunctionExpression {
+  const rowComp = site.rowComp!;
+  const rowId = generatedIdentifier(ctx, 'rowId');
+  const nextItem = generatedIdentifier(ctx, 'nextItem');
+  const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
+  const rowScope = newEmitScope(ctx);
+  const lightweight = isLightweightListedComponent(ctx, rowComp);
+  const rowChildCtx: RowCtx = {
+    itemParam: site.itemParam,
+    rowIdVar: rowId.name,
+    refreshVar: rowRefresh.name,
+    keyPath: keyPathOf(site.keyExpr, site.itemParam),
+    sourceKey: site.sourceKey,
+    sourceLocal: site.sourceLocal,
+    ...(site.sourceLocal && t.isIdentifier(ownerId)
+      ? { ownerIdVar: ownerId.name }
+      : {}),
+  };
+  const attributes = site.jsx.openingElement.attributes.filter(
+    (attribute) =>
+      t.isJSXSpreadAttribute(attribute) ||
+      jsxAttributeName(attribute.name) !== 'key',
+  );
+  const hasSpread = attributes.some((attribute) =>
+    t.isJSXSpreadAttribute(attribute),
+  );
+  const propEntries: Array<{ name: string; value: t.Expression }> = [];
+  let propObjectExpression: t.ObjectExpression | null = null;
+
+  if (hasSpread) {
+    propObjectExpression = buildOrderedAttributes(attributes, {
+      fail: (message) => {
+        throw compPath.buildCodeFrameError(message);
+      },
+    }).expression;
+  } else {
+    for (const attribute of attributes) {
+      const direct = attribute as t.JSXAttribute;
+      const value =
+        direct.value == null
+          ? t.booleanLiteral(true)
+          : attrExpr(direct.value);
+      if (value === null) {
+        throw compPath.buildCodeFrameError(
+          `memo-dom: prop '${jsxAttributeName(
+            direct.name,
+          )}' on <${rowComp}> must be an expression`,
+        );
+      }
+      propEntries.push({
+        name: jsxAttributeName(direct.name),
+        value: t.cloneNode(value),
+      });
     }
   }
-  return declared.map((pn) => byName.get(pn) ?? t.identifier('undefined'));
-}
 
-function buildComponentRowCreate(ctx: Ctx, site: MapSite): t.ArrowFunctionExpression {
-  const propEntries: Array<{ name: string; value: t.Expression }> = [];
-  for (const attr of site.jsx.openingElement.attributes) {
-    const a = attr as t.JSXAttribute;
-    const name = (a.name as t.JSXIdentifier).name;
-    if (name === 'key') continue;
-    propEntries.push({ name, value: t.cloneNode(attrExpr(a.value)!) });
+  if (hasComponentChildren(site.jsx.children)) {
+    if (
+      attributes.some(
+        (attribute) =>
+          t.isJSXAttribute(attribute) &&
+          jsxAttributeName(attribute.name) === 'children',
+      )
+    ) {
+      throw compPath.buildCodeFrameError(
+        `memo-dom: <${rowComp}> cannot use both a children prop and nested JSX children`,
+      );
+    }
+    const childrenSlot = buildAuthoredChildrenSlot(
+      ctx,
+      rowScope,
+      site.jsx.children,
+      compName,
+      compPath,
+      'row',
+      rowChildCtx,
+      rowId,
+      inSvg,
+      rowId,
+    );
+    if (propObjectExpression !== null) {
+      propObjectExpression.properties.push(
+        t.objectProperty(t.identifier('children'), t.cloneNode(childrenSlot)),
+      );
+    } else {
+      propEntries.push({
+        name: 'children',
+        value: t.cloneNode(childrenSlot),
+      });
+    }
   }
-  const callProps = orderCallProps(ctx, site.rowComp!, propEntries);
-  const rowId = generatedIdentifier(ctx, 'rowId');
-  if (isLightweightListedComponent(ctx, site.rowComp!)) {
-    const entry = generatedIdentifier(ctx, 'entry');
-    return t.arrowFunctionExpression(
-      [t.identifier(site.itemParam), t.cloneNode(rowId)],
-      t.blockStatement([
-        t.variableDeclaration('const', [
-          t.variableDeclarator(
-            entry,
-            t.callExpression(t.identifier(site.rowComp!), [
-              ...callProps.map((p) => t.cloneNode(p)),
-              t.cloneNode(rowId),
-              ...(site.sourceLocal
-                ? [componentId(ctx, site.owner)]
-                : []),
-            ]),
-          ),
-        ]),
-        t.returnStatement(
-          t.objectExpression([
-            t.objectProperty(
-              t.identifier('nodes'),
-              t.memberExpression(entry, t.identifier('nodes')),
-            ),
-            t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
-            t.objectProperty(
-              t.identifier('update'),
-              t.memberExpression(entry, t.identifier('update')),
-            ),
-            ...(callProps.length > 0
-              ? [
-                  t.objectProperty(
-                    t.identifier('updateProps'),
-                    t.arrowFunctionExpression(
-                      [t.identifier(site.itemParam)],
-                      t.blockStatement([
-                        t.expressionStatement(
-                          t.callExpression(
-                            t.memberExpression(entry, t.identifier('updateProps')),
-                            callProps.map((p) => t.cloneNode(p)),
-                          ),
-                        ),
-                      ]),
-                    ),
-                  ),
-                ]
-              : []),
-          ]),
+
+  const prefixStatements: t.Statement[] = [];
+  let callProps: t.Expression[];
+  if (propObjectExpression !== null) {
+    const propObject = generatedIdentifier(ctx, `${rowComp}Props`);
+    prefixStatements.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.cloneNode(propObject),
+          t.cloneNode(propObjectExpression),
         ),
       ]),
     );
+    callProps = callPropsFromObject(ctx, rowComp, propObject);
+  } else {
+    callProps = orderCallProps(ctx, rowComp, propEntries);
   }
-  const el = generatedIdentifier(ctx, 'rowElement');
-  const entry: t.ObjectProperty[] = [
-    t.objectProperty(t.identifier('nodes'), t.arrayExpression([el])),
-    t.objectProperty(t.identifier('entities'), t.arrayExpression([t.cloneNode(rowId)])),
+
+  const updateStatements: t.Statement[] = [
+    t.expressionStatement(
+      t.assignmentExpression(
+        '=',
+        t.identifier(site.itemParam),
+        t.cloneNode(nextItem),
+      ),
+    ),
   ];
-  // R10: retained rows get their props box re-pushed on every reconcile —
-  // item replacement AND item-field mutation both reach the row entity.
-  // The row is ALWAYS dirtied (not just on identity change): the box can
-  // hold the same object whose FIELDS mutated invisibly — the M5.5 case.
-  if (callProps.length > 0) {
-    entry.push(
+  let nextCallProps = callProps.map((prop) => t.cloneNode(prop));
+  if (propObjectExpression !== null) {
+    const nextProps = generatedIdentifier(ctx, `next${rowComp}Props`);
+    updateStatements.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.cloneNode(nextProps),
+          t.cloneNode(propObjectExpression),
+        ),
+      ]),
+    );
+    nextCallProps = callPropsFromObject(ctx, rowComp, nextProps);
+  }
+
+  const result = generatedIdentifier(
+    ctx,
+    lightweight ? 'entry' : 'rowElement',
+  );
+  if (lightweight) {
+    updateStatements.push(
+      t.expressionStatement(
+        t.callExpression(
+          t.memberExpression(t.cloneNode(result), t.identifier('updateProps')),
+          nextCallProps,
+        ),
+      ),
+    );
+  } else {
+    updateStatements.push(
+      t.expressionStatement(
+        t.callExpression(md(ctx, 'setProps'), [
+          t.cloneNode(rowId),
+          t.arrayExpression(nextCallProps),
+        ]),
+      ),
+      t.expressionStatement(
+        t.callExpression(md(ctx, 'markDirty'), [t.cloneNode(rowId)]),
+      ),
+    );
+  }
+  if (rowScope.updaters.length > 0) {
+    updateStatements.push(
+      t.expressionStatement(
+        t.callExpression(t.identifier(rowScope.updateVar), []),
+      ),
+    );
+  }
+
+  const entryProperties: t.ObjectProperty[] = lightweight
+    ? [
+        t.objectProperty(
+          t.identifier('nodes'),
+          t.memberExpression(t.cloneNode(result), t.identifier('nodes')),
+        ),
+        t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
+        t.objectProperty(
+          t.identifier('update'),
+          t.memberExpression(t.cloneNode(result), t.identifier('update')),
+        ),
+      ]
+    : [
+        t.objectProperty(
+          t.identifier('nodes'),
+          t.callExpression(md(ctx, 'rootNodes'), [t.cloneNode(result)]),
+        ),
+        t.objectProperty(
+          t.identifier('entities'),
+          t.arrayExpression([t.cloneNode(rowId)]),
+        ),
+      ];
+  if (callProps.length > 0 || rowScope.updaters.length > 0) {
+    entryProperties.push(
       t.objectProperty(
         t.identifier('updateProps'),
         t.arrowFunctionExpression(
-          [t.identifier(site.itemParam)],
-          t.blockStatement([
-            t.expressionStatement(
-              t.callExpression(md(ctx, 'setProps'), [
-                t.cloneNode(rowId),
-                t.arrayExpression(callProps.map((p) => t.cloneNode(p))),
-              ]),
-            ),
-            t.expressionStatement(
-              t.callExpression(md(ctx, 'markDirty'), [t.cloneNode(rowId)]),
-            ),
-          ]),
+          [t.cloneNode(nextItem)],
+          t.blockStatement(updateStatements),
         ),
       ),
     );
   }
+
   return t.arrowFunctionExpression(
     [t.identifier(site.itemParam), t.cloneNode(rowId)],
     t.blockStatement([
+      ...(rowScope.updaters.length > 0
+        ? [cacheDecl(rowScope), updateDecl(rowScope)]
+        : []),
+      ...rowScope.creation,
+      ...prefixStatements,
       t.variableDeclaration('const', [
         t.variableDeclarator(
-          el,
-          t.callExpression(t.identifier(site.rowComp!), [
-            t.cloneNode(rowId),
-            componentId(ctx, site.owner), // owner's id — closure over the factory scope
-            ...(callProps.length > 0 ? [t.arrayExpression(callProps)] : []),
-          ]),
+          t.cloneNode(result),
+          lightweight
+            ? t.callExpression(t.identifier(rowComp), [
+                ...callProps.map((prop) => t.cloneNode(prop)),
+                t.cloneNode(rowId),
+                ...(site.sourceLocal ? [t.cloneNode(ownerId)] : []),
+              ])
+            : t.callExpression(t.identifier(rowComp), [
+                t.cloneNode(rowId),
+                t.cloneNode(ownerId),
+                ...(callProps.length > 0
+                  ? [t.arrayExpression(callProps)]
+                  : []),
+              ]),
         ),
       ]),
-      t.returnStatement(t.objectExpression(entry)),
+      ...(rowScope.updaters.length > 0
+        ? [
+            t.variableDeclaration('const', [
+              t.variableDeclarator(
+                t.cloneNode(rowRefresh),
+                t.arrowFunctionExpression(
+                  [],
+                  t.blockStatement([
+                    t.expressionStatement(
+                      lightweight
+                        ? t.callExpression(
+                            t.memberExpression(
+                              t.cloneNode(result),
+                              t.identifier('update'),
+                            ),
+                            [],
+                          )
+                        : t.callExpression(md(ctx, 'markDirty'), [
+                            t.cloneNode(rowId),
+                          ]),
+                    ),
+                    t.expressionStatement(
+                      t.callExpression(t.identifier(rowScope.updateVar), []),
+                    ),
+                  ]),
+                ),
+              ),
+            ]),
+          ]
+        : []),
+      t.returnStatement(t.objectExpression(entryProperties)),
     ]),
   );
 }
@@ -1018,6 +1234,8 @@ function buildInlineRowCreate(
   site: MapSite,
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
 ): t.ArrowFunctionExpression {
   // 'key' is region metadata, not a DOM attribute — strip before emission
   site.jsx.openingElement.attributes = site.jsx.openingElement.attributes.filter(
@@ -1037,7 +1255,11 @@ function buildInlineRowCreate(
     sourceKey: site.sourceKey,
     sourceLocal: site.sourceLocal,
     ...(site.sourceLocal
-      ? { ownerIdVar: componentId(ctx, compName).name }
+      ? {
+          ownerIdVar: t.isIdentifier(ownerId)
+            ? ownerId.name
+            : componentId(ctx, compName).name,
+        }
       : {}),
   };
   const rootVar = emitElement(
@@ -1049,6 +1271,8 @@ function buildInlineRowCreate(
     'row',
     rowCtx,
     t.identifier(rowId),
+    inSvg,
+    t.identifier(rowId),
   );
   return t.arrowFunctionExpression(
     [t.identifier(site.itemParam), t.identifier(rowId)],
@@ -1058,7 +1282,7 @@ function buildInlineRowCreate(
       registerStmt(
         ctx,
         t.identifier(rowId),
-        componentId(ctx, compName),
+        t.cloneNode(ownerId),
         t.identifier(rowScope.updateVar),
       ),
       ...rowScope.creation,
@@ -1093,19 +1317,29 @@ function emitCondRegion(
   parentElVar: string,
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
 ): void {
   const site = analyzeCondSite(expr, compPath, scope.usedConds);
   const regionVar = generatedIdentifier(ctx, site.suffix).name;
   const regionId = t.binaryExpression(
     '+',
-    componentId(ctx, compName),
+    t.cloneNode(ownerId),
     t.stringLiteral(`/${site.suffix}`),
   );
 
   const pick = t.arrowFunctionExpression([], t.cloneNode(site.pickExpr));
   const branchFns: t.Expression[] = [site.thenJsx, site.elseJsx].map((jsx) =>
     jsx !== null
-      ? buildBranchCreate(ctx, jsx, compName, compPath, regionId)
+      ? buildBranchCreate(
+          ctx,
+          jsx,
+          compName,
+          compPath,
+          regionId,
+          inSvg,
+          ownerId,
+        )
       : t.nullLiteral(),
   );
 
@@ -1115,7 +1349,7 @@ function emitCondRegion(
     registerStmt(
       ctx,
       t.cloneNode(regionId),
-      componentId(ctx, compName),
+      t.cloneNode(ownerId),
       t.arrowFunctionExpression(
         [],
         t.callExpression(
@@ -1153,6 +1387,8 @@ function buildBranchCreate(
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
   regionId: t.Expression,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, compName),
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx);
   const rootVar = emitElement(
@@ -1164,6 +1400,8 @@ function buildBranchCreate(
     'cond',
     undefined,
     regionId,
+    inSvg,
+    ownerId,
   );
   return t.arrowFunctionExpression(
     [],

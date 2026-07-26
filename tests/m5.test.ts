@@ -176,13 +176,13 @@ describe('M5 compiler — code generation', () => {
       expect(code).toMatch(/_entry\d*\.updateProps\(s\)/);
     }
 
-    expect(() => compile(`function C() { return <><span /></>; }`)).toThrowError(
-      /fragments/,
+    expect(compile(`function C() { return <><span /></>; }`)).toContain(
+      'createDocumentFragment',
     );
 
-    expect(() =>
+    expect(
       compile(`function C() { return <div {...{ a: 1 }} />; }`),
-    ).toThrowError(/spread attributes/);
+    ).toContain('patchDomProps');
 
     expect(() =>
       compile(`let s = 0;\nfunction C() { return <button onClick={() => { mystery = 1; }} />; }`),

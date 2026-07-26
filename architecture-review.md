@@ -41,6 +41,9 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 | Component-local collection lists | Confirmed module-only R7 gap | R23 keeps instance roots private while arrays/object paths and derived Map/Set/object views reconcile in the owner |
 | Named local declaration as handler | Confirmed resolver gap | R23 resolves lexical function declarations and instruments reachable writes |
 | Async module helper called by an event | Confirmed post-await gap | R23 commits the summary immediately at the event and again on normal async completion |
+| Destructured/default props and body projections | Confirmed stale-binding gap | R24 replays projections before dependent derivations and DOM writes |
+| Fragments, spreads, rich DOM values, and SVG | Confirmed JSX/DOM gap | R24 preserves ordered roots/overrides and emits specialized or general DOM-aware updates |
+| Component children on keyed rows | Confirmed first-item capture/identity gap | R24 owns one current-item slot under each runtime row id |
 
 ## Decisions
 
@@ -88,10 +91,10 @@ closure, and the lexical caller invokes that update directly. This preserves
 plain closure state and static access routing without a runtime child graph.
 
 The content is caller-owned even though its DOM insertion point belongs to the
-callee, analogous to a compile-time content slot. Static slots support current
-host/component/list/conditional forms and forwarding. Dynamic row-call slots
-remain separate work because retained list entries need per-item slot update
-and teardown ownership.
+callee, analogous to a compile-time content slot. Static calls link slot
+updates to the lexical owner. Keyed calls allocate one slot closure per row,
+use the row id as its entity base, and replay the retained row's current item
+before updating mounted caller content.
 
 ### Conservative mutation boundary
 
@@ -119,11 +122,9 @@ change the bounded-effect contract.
 ### P1: source-language coverage
 
 1. Fold reachable local-helper summaries into R14 purity checks.
-2. Support destructured/default props without losing binding identity.
-3. Expand nested list/conditional/component regions and recursive components.
-4. Add SVG, style-object, class-object, and attribute-name semantics.
-5. Extend children slots to keyed component-row calls and richer insertion
-   positions.
+2. Expand nested list/conditional/component regions and recursive components.
+3. Support richer children-slot insertion positions while retaining one-mount
+   ownership.
 
 ### P2: measured performance
 
@@ -158,6 +159,9 @@ change the bounded-effect contract.
    owner id through the internal row ABI. `bench/local-state/README.md` records
    mount parity and no measured update penalty for the conservative row-plus-
    owner path; broader browser workloads still decide future grouping work.
+10. Preserve specialized explicit-attribute emission while optimizing the
+    ordered spread patcher. `bench/jsx/README.md` currently measures about
+    1.11x mount and 1.20x rich-update cost for spreads under happy-dom.
 
 ## Benchmark baselines
 

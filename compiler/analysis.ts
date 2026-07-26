@@ -41,7 +41,12 @@ import { md } from './identifiers';
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
 import { analyzeCondSite } from './conds';
 import { summarizeHelper } from './helper-summaries';
-import { isChildrenReference } from './children';
+import { isChildrenReference } from './components/children';
+import {
+  analyzeComponentProps,
+  bindingNames,
+  type LocalDerivation,
+} from './components/props';
 
 /**
  * R8: a JSX-bearing conditional is allowed ONLY as a direct JSX child:
@@ -53,7 +58,10 @@ function validateCondPosition(
 ): void {
   const parent = c.parentPath;
   const grand = parent?.parentPath;
-  if (!parent?.isJSXExpressionContainer() || !grand?.isJSXElement()) {
+  if (
+    !parent?.isJSXExpressionContainer() ||
+    (!grand?.isJSXElement() && !grand?.isJSXFragment())
+  ) {
     throw c.buildCodeFrameError(
       'memo-dom: conditional rendering must be a direct JSX child: <div>{cond ? <A/> : <B/>}</div>',
     );
@@ -119,21 +127,17 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
         if (containsJsx(p)) {
           ctx.comps.set(name, { parents: new Set(), jsxCount: 0 });
           ctx.compPaths.set(name, p);
-          // Declared prop names, captured NOW — transformComponent rewrites
-          // params to (id, parent, __p), so call sites must not read them later.
-          ctx.compPropNames.set(
-            name,
-            p.node.params
-              .filter((pr): pr is t.Identifier => t.isIdentifier(pr))
-              .map((pr) => pr.name),
-          );
-          const first = p.node.params[0];
-          if (
-            p.node.params.length === 1 &&
-            t.isIdentifier(first) &&
-            first.name === 'props'
-          ) {
-            ctx.objectPropComponents.add(name);
+          try {
+            ctx.componentProps.set(
+              name,
+              analyzeComponentProps(p.node.params),
+            );
+          } catch (error) {
+            throw p.buildCodeFrameError(
+              `memo-dom: invalid props for component '${name}': ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
           }
         } else {
           ctx.helpers.set(name, p);
@@ -261,16 +265,6 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         }
       }
     },
-    JSXFragment(f) {
-      throw f.buildCodeFrameError(
-        'memo-dom: fragments are not supported yet (L1)',
-      );
-    },
-    JSXSpreadAttribute(s) {
-      throw s.buildCodeFrameError(
-        'memo-dom: spread attributes are not supported (L1)',
-      );
-    },
     ConditionalExpression(c) {
       if (containsJsx(c)) validateCondPosition(c);
     },
@@ -292,7 +286,7 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         const grand = parent?.parentPath;
         if (
           !parent?.isJSXExpressionContainer() ||
-          !grand?.isJSXElement()
+          (!grand?.isJSXElement() && !grand?.isJSXFragment())
         ) {
           throw call.buildCodeFrameError(
             'memo-dom: list rendering must be a direct JSX child: <ul>{items.map(item => <Row />)}</ul>',
@@ -544,8 +538,12 @@ export function analyzeComputed(ctx: Ctx, expr: t.Node): ComputedAnalysis {
       });
     }
   };
-  walkNodes(expr, (n) => {
+  walkNodes(expr, (n, parent) => {
     if (t.isFunction(n)) {
+      const executesAsPartOfExpression =
+        parent !== null &&
+        (t.isCallExpression(parent) || t.isNewExpression(parent));
+      if (!executesAsPartOfExpression) return false;
       for (const p of n.params) {
         if (t.isLVal(p)) noteLocalPattern(p);
       }
@@ -689,13 +687,12 @@ function scanInstanceState(ctx: Ctx): void {
  * them in source order before guarded DOM writes. No entity, write-set, or
  * runtime dependency edge is needed.
  */
-function scanInstanceComputeds(ctx: Ctx): void {
+function scanInstanceDerivations(ctx: Ctx): void {
   for (const [compName, compPath] of ctx.compPaths) {
     const reactiveBindings = new Set<unknown>();
 
-    for (const param of compPath.node.params) {
-      if (!t.isIdentifier(param)) continue;
-      const binding = compPath.scope.getBinding(param.name);
+    for (const name of ctx.componentProps.get(compName)?.bindings ?? []) {
+      const binding = compPath.scope.getBinding(name);
       if (binding) reactiveBindings.add(binding);
     }
     for (const name of ctx.instanceState.get(compName) ?? []) {
@@ -707,14 +704,24 @@ function scanInstanceComputeds(ctx: Ctx): void {
       if (binding?.scope.path.isProgram()) reactiveBindings.add(binding);
     }
 
-    const computeds = new Map<string, t.Expression>();
+    const derivations: LocalDerivation[] = [];
+    const derivedBindings = new Set<string>();
     const statements = compPath.get('body').get('body');
     for (const stmtPath of statements) {
       if (!stmtPath.isVariableDeclaration({ kind: 'const' })) continue;
       for (const declPath of stmtPath.get('declarations')) {
         const decl = declPath.node;
-        if (!t.isIdentifier(decl.id) || decl.init == null || t.isFunction(decl.init)) continue;
         if (
+          (!t.isIdentifier(decl.id) &&
+            !t.isObjectPattern(decl.id) &&
+            !t.isArrayPattern(decl.id)) ||
+          decl.init == null ||
+          t.isFunction(decl.init)
+        ) {
+          continue;
+        }
+        if (
+          t.isIdentifier(decl.id) &&
           ctx.instanceState.get(compName)?.has(decl.id.name) === true &&
           (isStoreObject(decl.init) || isConstObjectState(decl.init))
         ) {
@@ -788,17 +795,32 @@ function scanInstanceComputeds(ctx: Ctx): void {
 
         if (!readsReactive) continue;
         if (reason !== null) {
+          const names = bindingNames(decl.id);
           throw declPath.buildCodeFrameError(
-            `memo-dom: local const '${decl.id.name}' is a per-instance derivation but ${reason}`,
+            `memo-dom: local const '${
+              names.join(', ') || '<pattern>'
+            }' is a per-instance derivation but ${reason}`,
           );
         }
-        computeds.set(decl.id.name, t.cloneNode(decl.init));
-        const binding = compPath.scope.getBinding(decl.id.name);
-        if (binding) reactiveBindings.add(binding);
-        ctx.instanceState.get(compName)?.delete(decl.id.name);
+        const names = bindingNames(decl.id);
+        derivations.push({
+          declaration: stmtPath.node,
+          target: t.cloneNode(decl.id),
+          source: t.cloneNode(decl.init),
+          bindings: names,
+        });
+        for (const name of names) {
+          derivedBindings.add(name);
+          const binding = compPath.scope.getBinding(name);
+          if (binding) reactiveBindings.add(binding);
+          ctx.instanceState.get(compName)?.delete(name);
+        }
       }
     }
-    if (computeds.size > 0) ctx.instanceComputeds.set(compName, computeds);
+    if (derivations.length > 0) {
+      ctx.instanceDerivations.set(compName, derivations);
+      ctx.instanceDerivedBindings.set(compName, derivedBindings);
+    }
   }
 }
 
@@ -808,7 +830,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanComponents(ctx, programPath);
   scanInstanceState(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
-  scanInstanceComputeds(ctx); // R14: module computeds are now valid sources
+  scanInstanceDerivations(ctx); // R14/R24: ordered local projections/computeds
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)

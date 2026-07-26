@@ -1,5 +1,5 @@
 /**
- * children.ts - compiler-owned content slots for static component children.
+ * components/children.ts - compiler-owned content slots for component children.
  *
  * A slot defers child creation until the callee mounts it into a real host
  * node. Its update closure remains attached to the lexical owner's update so
@@ -7,16 +7,20 @@
  */
 
 import * as t from '@babel/types';
-import { nodeHasJsx, type Ctx } from './context';
+import { nodeHasJsx, type Ctx } from '../context';
 import {
   cacheDecl,
   newEmitScope,
   updateDecl,
   type EmitScope,
-} from './emission-scope';
-import { generatedIdentifier } from './identifiers';
-import { matchMapCall } from './lists';
-import { matchCond } from './conds';
+} from '../emission/scope';
+import { generatedIdentifier } from '../identifiers';
+import { matchMapCall } from '../lists';
+import { matchCond } from '../conds';
+import {
+  localBindingForProp,
+  objectBindingName,
+} from './props';
 
 export type EmitChildSlot = (
   scope: EmitScope,
@@ -26,7 +30,7 @@ export type JsxChild = t.JSXElement['children'][number];
 
 export interface ChildContentEmitters {
   emitText(expression: t.Expression): string;
-  emitElement(element: t.JSXElement): string;
+  emitNode(node: t.JSXElement | t.JSXFragment): string;
   emitList(call: t.CallExpression, parentVar: string): void;
   emitCondition(
     expression: t.ConditionalExpression | t.LogicalExpression,
@@ -60,18 +64,25 @@ export function isChildrenReference(
   compName: string,
   expression: t.Expression,
 ): boolean {
-  const params = ctx.compPropNames.get(compName) ?? [];
-  if (ctx.objectPropComponents.has(compName)) {
+  const plan = ctx.componentProps.get(compName);
+  if (plan === undefined) return false;
+  const objectBinding = objectBindingName(plan);
+  if (objectBinding !== null) {
     return (
       t.isMemberExpression(expression) &&
       !expression.computed &&
-      t.isIdentifier(expression.object, { name: params[0] }) &&
+      t.isIdentifier(expression.object, { name: objectBinding }) &&
       t.isIdentifier(expression.property, { name: 'children' })
     );
   }
+  const local = localBindingForProp(plan, 'children');
+  if (local !== null) {
+    return t.isIdentifier(expression, { name: local });
+  }
   return (
-    t.isIdentifier(expression, { name: 'children' }) &&
-    params.includes('children')
+    t.isIdentifier(expression) &&
+    expression.name === 'children' &&
+    ctx.instanceDerivedBindings.get(compName)?.has('children') === true
   );
 }
 
@@ -170,8 +181,8 @@ export function emitChildrenIntoParent(
       if (value !== '') append(emitters.emitText(t.stringLiteral(value)));
       continue;
     }
-    if (t.isJSXElement(child)) {
-      append(emitters.emitElement(child));
+    if (t.isJSXElement(child) || t.isJSXFragment(child)) {
+      append(emitters.emitNode(child));
       continue;
     }
     if (!t.isJSXExpressionContainer(child)) {

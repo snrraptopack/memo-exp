@@ -314,20 +314,24 @@ function analyzeHandler(
   );
 
   const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
-  const instComputeds =
-    compName !== null ? ctx.instanceComputeds.get(compName) : undefined;
+  const instDerived =
+    compName !== null ? ctx.instanceDerivedBindings.get(compName) : undefined;
   const propNames =
-    compName !== null ? new Set(ctx.compPropNames.get(compName) ?? []) : new Set<string>();
+    compName !== null
+      ? new Set(ctx.componentProps.get(compName)?.bindings ?? [])
+      : new Set<string>();
   const componentLocals = new Set<string>([
     ...propNames,
     ...(instVars ?? []),
-    ...(instComputeds?.keys() ?? []),
+    ...(instDerived ?? []),
   ]);
   if (compName !== null) {
     for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
       if (t.isVariableDeclaration(stmt)) {
         for (const d of stmt.declarations) {
-          if (t.isIdentifier(d.id)) componentLocals.add(d.id.name);
+          for (const name of Object.keys(t.getBindingIdentifiers(d.id))) {
+            componentLocals.add(name);
+          }
         }
       } else if (t.isFunctionDeclaration(stmt) && stmt.id) {
         componentLocals.add(stmt.id.name);
@@ -531,7 +535,7 @@ function analyzeHandler(
       scopeOf(p).instanceLocal = true;
       return;
     }
-    if (rootName !== null && instComputeds?.has(rootName)) {
+    if (rootName !== null && instDerived?.has(rootName)) {
       throw p.buildCodeFrameError(
         `memo-dom: cannot mutate per-instance derivation '${rootName}' (R14) — write its source instead`,
       );
@@ -599,7 +603,7 @@ function analyzeHandler(
           }
           return;
         }
-        if (instComputeds?.has(left.name)) {
+        if (instDerived?.has(left.name)) {
           throw p.buildCodeFrameError(
             `memo-dom: cannot assign per-instance derivation '${left.name}' (R14) — write its source instead`,
           );
@@ -657,7 +661,7 @@ function analyzeHandler(
       const arg = p.node.argument;
       if (t.isIdentifier(arg)) {
         if (locals.has(arg.name)) return;
-        if (instComputeds?.has(arg.name)) {
+        if (instDerived?.has(arg.name)) {
           throw p.buildCodeFrameError(
             `memo-dom: cannot update per-instance derivation '${arg.name}' (R14) — write its source instead`,
           );
@@ -746,7 +750,7 @@ function analyzeHandler(
           : t.isMemberExpression(callee.object)
             ? memberRootName(callee.object)
             : null;
-        if (receiverRoot !== null && instComputeds?.has(receiverRoot)) {
+        if (receiverRoot !== null && instDerived?.has(receiverRoot)) {
           throw p.buildCodeFrameError(
             `memo-dom: cannot mutate per-instance derivation '${receiverRoot}' (R14) - write its source instead`,
           );
