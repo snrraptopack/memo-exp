@@ -7,7 +7,15 @@
  * - identical write sets share one hoisted constant
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -15,6 +23,7 @@ import { compile } from '@memoized-dom/compiler';
 import { resetAccessTable } from '@memoized-dom/runtime/testing';
 import {
   _internals,
+  markDirty,
   resetScheduler,
   setScheduler,
   unregister,
@@ -94,6 +103,19 @@ describe('R14 - code generation', () => {
       `);
     expect(code).toContain('sorted = items.sort()');
   });
+
+  it('tracks callback captures after the receiver proves a derivation', () => {
+    expect(() =>
+      compile(`
+        function App() {
+          let count = 0;
+          let items = [1];
+          const invalid = items.map(() => count++);
+          return <output>{invalid.length}</output>;
+        }
+      `),
+    ).toThrowError(/contains an update .* to reactive state/);
+  });
 });
 
 const SOURCES: Record<string, string> = {
@@ -134,6 +156,38 @@ const SOURCES: Record<string, string> = {
     export function App() {
       const items = [1];
       return <button onClick={() => items.push(items.length + 1)}>{items.length}</button>;
+    }
+  `,
+  'r14-selective': `
+    function derive(value) {
+      return Math.abs(value);
+    }
+    export function App() {
+      let left = -1;
+      let right = -2;
+      let unrelated = 0;
+      const leftValue = derive(left);
+      const rightValue = derive(right);
+      return <main>
+        <button id="left" onClick={() => left--}>left</button>
+        <button id="both" onClick={() => {
+          left--;
+          right--;
+        }}>both</button>
+        <button id="unrelated" onClick={() => unrelated++}>other</button>
+        <output>{leftValue}:{rightValue}:{unrelated}</output>
+      </main>;
+    }
+  `,
+  'r14-callback-dependency': `
+    export function App() {
+      let items = [{ done: false }, { done: true }];
+      let showDone = false;
+      let unrelated = 0;
+      const visible = items.filter(item => item.done === showDone);
+      return <button onClick={() => showDone = !showDone}>
+        {visible[0].done ? "done" : "active"}
+      </button>;
     }
   `,
 };
@@ -204,5 +258,41 @@ describe('R14 - compiled execution', () => {
     const button = document.querySelector('button')!;
     button.click();
     expect(button.textContent).toBe('2');
+  });
+
+  it('replays only reachable derivations and keeps full invalidation safe', async () => {
+    const derive = vi.spyOn(Math, 'abs');
+    const { App } = await importCompiled('r14-selective');
+    document.body.appendChild(App('App', null));
+    const output = document.querySelector('output')!;
+    expect(output.textContent).toBe('1:2:0');
+
+    derive.mockClear();
+    document.querySelector<HTMLButtonElement>('#unrelated')!.click();
+    expect(derive).not.toHaveBeenCalled();
+    expect(output.textContent).toBe('1:2:1');
+
+    document.querySelector<HTMLButtonElement>('#left')!.click();
+    expect(derive).toHaveBeenCalledTimes(1);
+    expect(output.textContent).toBe('2:2:1');
+
+    derive.mockClear();
+    document.querySelector<HTMLButtonElement>('#both')!.click();
+    expect(derive).toHaveBeenCalledTimes(2);
+    expect(output.textContent).toBe('3:3:1');
+
+    derive.mockClear();
+    markDirty('App');
+    expect(derive).toHaveBeenCalledTimes(2);
+    derive.mockRestore();
+  });
+
+  it('replays a derivation when a captured callback dependency changes', async () => {
+    const { App } = await importCompiled('r14-callback-dependency');
+    const button = App('App', null) as HTMLButtonElement;
+    document.body.appendChild(button);
+    expect(button.textContent).toContain('active');
+    button.click();
+    expect(button.textContent).toContain('done');
   });
 });

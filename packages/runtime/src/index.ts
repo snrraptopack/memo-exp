@@ -21,7 +21,12 @@ export {
   resetScheduler,
   getEntity,
 } from './kernel';
-export type { Entity, EntityId } from './kernel';
+export type {
+  DirtyReasonInput,
+  DirtyReasons,
+  Entity,
+  EntityId,
+} from './kernel';
 export { cleanup } from './cleanup';
 export type { CleanupDisposer } from './cleanup';
 

@@ -30,14 +30,20 @@ The table records the median reported value from three independent processes.
 
 | Scenario | Module-owned | Instance-owned | Relative |
 |---|---:|---:|---:|
-| Mount + unmount | 4,350,883.0 ns | 4,256,380.0 ns | 0.98x |
-| Row + owner update | 33,191.8 ns | 25,358.4 ns | 0.76x |
+| Mount + unmount | 6,055,452.0 ns | 6,282,052.0 ns | 1.04x |
+| Row + owner update | 46,050.1 ns | 35,104.9 ns | 0.76x |
 
-Mount ratios across processes were `0.91x-0.98x`; update ratios were
-`0.58x-0.78x`. The result supports no local-ownership penalty in this shape,
+Mount ratios across processes were `0.98x-1.06x`; update ratios were
+`0.60x-0.84x`. The result supports no meaningful local-ownership penalty in this shape,
 not a universal instance-state speedup. The module path pays access resolution
 and module-computed propagation; the instance path directly refreshes its
 lightweight row and marks its owner.
+
+These measurements include the local-derived dual-mode checkpoint. This
+one-source owner retains unconditional replay and bare `markDirty(id)`, so the
+reason channel adds no generated dependency checks to this application.
+Absolute happy-dom timings moved substantially from the prior run; only the
+same-process relative result is interpreted.
 
 An initial entity-row implementation measured median process ratios of `1.32x`
 for mount and `1.43x` for update. Profiling the generated shape showed that the

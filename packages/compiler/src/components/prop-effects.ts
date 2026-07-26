@@ -2,7 +2,10 @@
  * Maps defining-module prop mutations to caller-resolved state boundaries.
  */
 import type { Ctx, RowCtx } from '../context';
-import type { ScopeWrites } from '../handler-commits';
+import {
+  recordInstanceWrite,
+  type ScopeWrites,
+} from '../handler-commits';
 import type { ReactiveOrigin } from '../mutation-analysis';
 import {
   objectBindingName,
@@ -52,7 +55,7 @@ export function applyLinkedPropEffect(
   if (access === null) return false;
 
   if (rowCtx === undefined) {
-    scope.instanceLocal = true;
+    recordInstanceWrite(scope, origin.root);
   } else {
     scope.rowLocal = true;
   }

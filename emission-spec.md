@@ -342,13 +342,15 @@ the table purely about module state.
 
 Top-level component `let`/`var` bindings and mutable `const` collections or
 plain objects are per-instance state. The factory runs once per instance, so
-these bindings naturally persist in its closure. Their writes always emit
-`markDirty(id)`; they never enter the app-wide access table.
+these bindings naturally persist in its closure. Their writes dirty the owner
+directly; they never enter the app-wide access table. Components with no
+skippable local-derivation group emit bare `markDirty(id)`. Selective
+components add a compiler-assigned numeric reason.
 
 Instance bindings shadow same-spelled module bindings. Analysis follows Babel
-binding identity, not identifier text. A component prop is also a local
-binding: assigning or mutating it outside the keyed-row rule is a compile
-error rather than a write to same-named module state.
+binding identity, not identifier text. Reassigning a component prop remains a
+compile error. Receiver mutation through a prop refreshes the child/row and
+uses its graph-linked canonical caller boundary when available.
 
 ### R13 — Module derivations are ordered computed entities
 
@@ -395,9 +397,22 @@ const update = () => {
 ```
 
 No computed entity, access-table key, change-propagation write, or subscription
-is emitted. The owning instance is already the exact invalidation unit, so
-recomputing its local derivations is both simpler and cheaper. Local derivation
-writes/mutations and async initializers are compile errors.
+is emitted. Direct dependency roots are propagated transitively through
+chained derivations. Consecutive derivations with the same root set form one
+replay group without changing source order.
+
+Emission is structural dual mode, with no method or cost whitelist. If every
+exact local source reaches every derivation, `update()` remains unconditional
+and no reasons are emitted. Otherwise one exact write uses a scalar numeric
+reason and multiple writes use a hoisted reason array; the runtime unions
+different pending reasons into a Set. Unscoped access-table, props, row-owner,
+and opaque marks pass `null`, which replays every derivation conservatively.
+Local derivation writes/mutations and async initializers are compile errors.
+
+A selective owner accepts `reasons = null` and guards each dependency group
+with a scalar comparison or `reasons.has(groupReason)`. Value guards remain
+after derivation selection; a written source need not change the rendered
+value.
 
 ### R20 - Factory callbacks and explicit cleanup are entity-owned
 
@@ -702,8 +717,9 @@ store.items.custom();      // bounded: store.items
 This is conservative but scoped. The access table invokes only observers of
 the receiver path. Their value guards suppress unchanged DOM writes. A pure
 method therefore costs reader update evaluation, not a root render or
-unconditional DOM work. Future dirty-reason masks may skip independent work
-inside those readers without changing this effect contract.
+unconditional DOM work. Production numeric dirty reasons may skip unrelated
+local derivations inside those readers without changing this effect contract;
+a bitmask remains a possible representation optimization.
 
 Visible helper summaries retain module paths and structured parameter-relative
 paths. For example, `function mutate(target) { target.value++ }` called as
@@ -1023,6 +1039,15 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R25 (dependency-selected local derivations,
+  packages/compiler/src/components/local-derived.ts +
+  packages/runtime/src/dirty-reasons.ts, tests/r14.test.ts +
+  tests/m0.test.ts):** local derivations retain transitive dependency roots.
+  Structural dual mode emits numeric reasons only when an exact local source
+  can skip a replay group. One pending reason stays scalar, different batched
+  reasons promote to a Set, and every unscoped mark overrides them with
+  conservative full replay. Callback captures join dependencies only after an
+  outer reactive read proves the expression is a derivation.
 - **R24 (authored JSX semantics, packages/compiler/src/components +
   packages/compiler/src/emission + packages/compiler/src/jsx +
   packages/runtime/src/dom-props.ts + packages/runtime/src/dom-values.ts,
@@ -1124,9 +1149,10 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   tests/r12.test.ts):**
   top-level let/var of a component body is INSTANCE state — one factory
   closure per instance, readable only by that instance (children get it via
-  R10 props re-push, nested rows via M5.5 resync). Writes are therefore
-  ALWAYS a bare markDirty(id), never table routing; instance names shadow
-  same-named module state in their component.
+  R10 props re-push, nested rows via M5.5 resync). Writes never use table
+  routing: they mark the exact owner, optionally with a compiler-assigned
+  numeric local-derivation reason; instance names shadow same-named module
+  state in their component.
 - **R13 (auto-detected computeds — option B, no wrapper):** a module-level
   `const x = <state derivation>` becomes a computed: the compiler rewrites
   the declaration to a let, and registers a

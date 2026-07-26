@@ -13,6 +13,7 @@ latest measurements, limits, and interpretation.
 | [`children`](./children/) | `bun run bench:children` | Production component children mount/update overhead |
 | [`components`](./components/) | `bun run bench:components` | Same-file versus linked component runtime/compiler cost |
 | [`local-state`](./local-state/) | `bun run bench:local-state` | Module versus instance collection row ownership |
+| [`local-derived`](./local-derived/) | `bun run bench:local-derived` | Dependency-selected component-local derivation replay |
 | [`jsx`](./jsx/) | `bun run bench:jsx` | Specialized versus ordered-spread authored JSX paths |
 | [`package-size`](./package-size/) | `bun run bench:size` | Built package and real todo browser bundle size |
 | [`frameworks`](./frameworks/) | `bun run bench:frameworks` | Current framework update-completion scenarios |

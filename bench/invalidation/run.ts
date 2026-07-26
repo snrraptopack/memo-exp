@@ -1,8 +1,8 @@
 /**
  * Prototype benchmark for compiler-generated per-entity dirty-reason masks.
  *
- * This intentionally does NOT modify production compiler/runtime behavior.
- * It isolates update evaluation in real Chromium:
+ * This intentionally does not use production scalar/Set dirty reasons. It
+ * isolates the alternative bitmask representation in real Chromium:
  *   current - R14-style unconditional local derivation/slot evaluation
  *   masked  - compiler-known dirty bits gate the same work
  *

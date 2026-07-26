@@ -50,14 +50,21 @@ VDOM, signal cell, subscription graph, or runtime read tracking.
 ### Per-instance derivations
 
 Do not create one computed entity per component instance. The owner is already
-the exact invalidation unit, so local derivations are reassigned in source order
-inside its existing update prologue:
+the exact invalidation unit. Local derivations stay in its existing update
+prologue and retain source order:
 
 `prop resync -> local derivations -> child/DOM guarded writes`
 
 This has no registry allocation, table key, downstream commit, or scheduling
 pass. Module computeds remain depth-`-1` entities because they can feed unrelated
 component subtrees and benefit from change-gated propagation.
+
+The compiler uses structural dual mode. If every exact local source reaches
+every derivation, the prologue remains unconditional and writes use bare
+`markDirty(id)`. When the dependency graph has skippable groups, writes carry
+numeric reasons. One reason remains a scalar; a frame that batches different
+reasons promotes them to a Set. Unscoped table, props, owner, and fallback
+marks mean full replay. No method-name or cost whitelist is involved.
 
 ### Async and external work
 
@@ -116,9 +123,10 @@ identity cannot be bounded retains the root fallback.
 Only a summary with no finite receiver, argument, instance, row, or state root
 dirties the root subtree. Unresolved imported functions are the current common
 case. Commits are still emitted on normal exits; exception-path behavior
-remains an explicit P0 decision. Dirty-reason masks may later skip independent
-work inside a selected entity, but they do not replace access-table routing or
-change the bounded-effect contract.
+remains an explicit P0 decision. Numeric dirty reasons now skip unrelated
+local derivations inside selected entities. A bitmask may later replace their
+representation, but neither mechanism replaces access-table routing or
+changes the bounded-effect contract.
 
 ## Priority roadmap
 
@@ -139,10 +147,11 @@ change the bounded-effect contract.
 1. Replace full-graph fixed-point reparsing with cached module facts and a
    dependency worklist. The initial linker benchmark records the graph-link
    overhead over prelinked transforms; see `bench/linker/README.md`.
-2. Prototype compiler-selected per-entity dirty-reason masks. The isolated
-   Chromium benchmark shows a large win for skipped expensive work and ~3× for
-   a skipped 32-expression group; relevant nanosecond-scale paths are too noisy
-   for a universal-mask claim. See `bench/invalidation/README.md`.
+2. A/B the production scalar/Set dirty reasons against a 32-bit mask
+   representation. Structural dual mode now skips unrelated local derivations;
+   the isolated Chromium prototype suggests masks may lower dispatch overhead,
+   but relevant nanosecond-scale paths remain too noisy for a universal claim.
+   See `bench/invalidation/README.md` and `bench/local-derived/README.md`.
 3. Profile select/swap/clear paths; they have the largest current gap to
    hand-written vanilla in the browser benchmark.
 4. Add stable compiler-throughput and large-access-table benchmarks.

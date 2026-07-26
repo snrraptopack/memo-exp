@@ -24,8 +24,16 @@
  */
 
 import { disposeOwnerCleanups } from './cleanup';
+import {
+  clearDirtyReasons,
+  mergeDirtyReasons,
+  takeDirtyReasons,
+  type DirtyReasonInput,
+  type DirtyReasons,
+} from './dirty-reasons';
 
 export type EntityId = string;
+export type { DirtyReasonInput, DirtyReasons } from './dirty-reasons';
 
 /**
  * A mounted component instance.
@@ -37,7 +45,7 @@ export type EntityId = string;
 export interface Entity {
   id: EntityId;
   parent: EntityId | null;
-  render: () => void;
+  render: (reasons?: DirtyReasons) => void;
   depth?: number;
   children?: Set<EntityId>;
 }
@@ -164,6 +172,7 @@ export function unregisterSubtree(id: EntityId): void {
   for (const cur of teardown) {
     registry.delete(cur);
     dirtySet.delete(cur);
+    clearDirtyReasons(cur);
     notifyRegistry(cur, 'remove');
   }
   for (const cur of teardown) {
@@ -214,8 +223,15 @@ export function registeredIds(): readonly EntityId[] {
  * Dead letters (spec §9.7): marking an unmounted id is a silent no-op.
  * Dev builds may warn here later.
  */
-export function markDirty(id: EntityId): void {
+export function markDirty(
+  id: EntityId,
+  reason?: DirtyReasonInput,
+): void {
   if (!registry.has(id)) return;
+  const wasDirty = dirtySet.has(id);
+  if (reason !== undefined || wasDirty) {
+    mergeDirtyReasons(id, wasDirty, reason);
+  }
   dirtySet.add(id);
   scheduleCommit();
 }
@@ -229,7 +245,9 @@ export function markDirty(id: EntityId): void {
 export function undirty(id: EntityId): void {
   // size gate first: rows are undirtied on EVERY reconcile resync (M5.7)
   // while almost never actually pending — skip the string hash lookup then
-  if (dirtySet.size !== 0) dirtySet.delete(id);
+  if (dirtySet.size !== 0 && dirtySet.delete(id)) {
+    clearDirtyReasons(id);
+  }
 }
 
 /**
@@ -245,6 +263,7 @@ export function markDirtySubtree(id: EntityId): void {
   for (const key of registry.keys()) {
     if (key === id || key.startsWith(prefix)) {
       dirtySet.add(key);
+      clearDirtyReasons(key);
       marked = true;
     }
   }
@@ -292,13 +311,18 @@ export function commit(): void {
       for (const id of dirtySet) {
         const e = registry.get(id);
         if (e) batch.push(e);
-        else dirtySet.delete(id); // dead letter: dirtied, then unregistered
+        else {
+          dirtySet.delete(id); // dead letter: dirtied, then unregistered
+          clearDirtyReasons(id);
+        }
       }
 
       batch.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
 
       for (const e of batch) {
-        if (dirtySet.delete(e.id)) e.render();
+        if (dirtySet.delete(e.id)) {
+          e.render(takeDirtyReasons(e.id));
+        }
       }
       // ids dirtied DURING renders (cascade) stay in the set → next pass
     }

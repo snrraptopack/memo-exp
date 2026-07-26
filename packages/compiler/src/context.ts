@@ -206,6 +206,10 @@ export interface Ctx {
   instanceDerivations: Map<string, LocalDerivation[]>;
   /** All bindings introduced by local derivations, for locality and writes. */
   instanceDerivedBindings: Map<string, Set<string>>;
+  /** Numeric dirty reasons for exact local write roots. */
+  instanceReasonIds: Map<string, Map<string, number>>;
+  /** Components whose local dependency graph has skippable work. */
+  selectiveDerivationComponents: Set<string>;
   /**
    * R13: auto-detected computeds — module-level `const x = <state
    * derivation>` (detection by REFERENCE: any expression mentioning state).
@@ -223,6 +227,9 @@ export interface Ctx {
   writeConstCounter: number;
   /** Dedupe table for hoisted write-set consts: joined writes → const name. */
   writeConsts: Map<string, string>;
+  reasonConstCounter: number;
+  /** Dedupe table for hoisted multi-reason arrays. */
+  reasonConsts: Map<string, string>;
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
   /** Whether a shared handler already emits a commit in its event scope. */
@@ -327,11 +334,15 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     instanceState: new Map(),
     instanceDerivations: new Map(),
     instanceDerivedBindings: new Map(),
+    instanceReasonIds: new Map(),
+    selectiveDerivationComponents: new Set(),
     computeds: new Map(),
     header: [],
     readers: new Map(),
     writeConstCounter: 0,
     writeConsts: new Map(),
+    reasonConstCounter: 0,
+    reasonConsts: new Map(),
     analyzedFunctions: new WeakSet(),
     handlerHasRootCommit: new WeakMap(),
     identifiers: null,
@@ -376,6 +387,33 @@ export function freshWriteConst(ctx: Ctx, writes: readonly string[]): t.Identifi
       t.variableDeclarator(
         id,
         t.arrayExpression(canonicalWrites.map((w) => t.stringLiteral(w))),
+      ),
+    ]),
+  );
+  return id;
+}
+
+/** Hoist and dedupe a sorted array used to batch local dirty reasons. */
+export function freshReasonConst(
+  ctx: Ctx,
+  reasons: readonly number[],
+): t.Identifier {
+  const unique = [...new Set(reasons)].sort((a, b) => a - b);
+  const key = unique.join(' ');
+  const existing = ctx.reasonConsts.get(key);
+  if (existing !== undefined) return t.identifier(existing);
+  const id = generatedIdentifier(
+    ctx,
+    `REASONS_${ctx.reasonConstCounter++}`,
+  );
+  ctx.reasonConsts.set(key, id.name);
+  ctx.header.push(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        id,
+        t.arrayExpression(
+          unique.map((reason) => t.numericLiteral(reason)),
+        ),
       ),
     ]),
   );

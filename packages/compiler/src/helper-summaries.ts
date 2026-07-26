@@ -68,6 +68,8 @@ export function summarizeHelper(
     if (binding !== undefined && !binding.scope.path.isProgram()) return null;
     return moduleOrigin(bindingName, kind);
   });
+  const isComputedOrigin = (origin: ReactiveOrigin): boolean =>
+    origin.stateKind === 'computed' || ctx.state.get(origin.root) === 'computed';
 
   visiting.add(name);
   path.traverse({
@@ -103,6 +105,12 @@ export function summarizeHelper(
   };
 
   const noteReceiverEffect = (origin: ReactiveOrigin): void => {
+    if (isComputedOrigin(origin)) {
+      // Computeds are read-only values. Passing one to a helper or utility
+      // does not imply a write; only directly visible mutations should be
+      // rejected by the caller-side handler analysis.
+      return;
+    }
     if (origin.locality === 'module') {
       summary.boundedWrites.add(origin.key ?? origin.root);
       return;
@@ -148,7 +156,9 @@ export function summarizeHelper(
     for (const expression of callArgumentExpressions(args)) {
       if (!t.isIdentifier(expression)) continue;
       const origin = aliases.resolveExpression(nodePath.scope, expression);
-      if (origin !== null) noteReceiverEffect(origin);
+      if (origin !== null && !isComputedOrigin(origin)) {
+        noteReceiverEffect(origin);
+      }
     }
   };
 

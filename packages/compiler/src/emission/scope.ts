@@ -13,6 +13,8 @@ export interface EmitScope {
   slots: string[];
   tempVar: string;
   updateVar: string;
+  /** Optional dependency reasons accepted by the owner updater. */
+  reasonVar: string | null;
   creation: t.Statement[];
   updaters: Array<() => t.Statement>;
   tagCounters: Map<string, number>;
@@ -28,6 +30,7 @@ export function newEmitScope(ctx: Ctx): EmitScope {
     slots: [],
     tempVar: generatedIdentifier(ctx, 'value').name,
     updateVar: generatedIdentifier(ctx, 'update').name,
+    reasonVar: null,
     creation: [],
     updaters: [],
     tagCounters: new Map(),
@@ -88,7 +91,14 @@ export function updateDecl(scope: EmitScope): t.Statement {
     t.variableDeclarator(
       t.identifier(scope.updateVar),
       t.arrowFunctionExpression(
-        [],
+        scope.reasonVar === null
+          ? []
+          : [
+              t.assignmentPattern(
+                t.identifier(scope.reasonVar),
+                t.nullLiteral(),
+              ),
+            ],
         t.blockStatement(scope.updaters.map((updater) => updater())),
       ),
     ),

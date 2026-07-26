@@ -38,6 +38,8 @@ export interface LocalDerivation {
   source: t.Expression;
   /** Every binding introduced by target. */
   bindings: string[];
+  /** Transitive non-derived roots that can change this value. */
+  sources: string[];
 }
 
 /** Normalize a component's source parameters into its JSX call contract. */

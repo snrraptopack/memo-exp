@@ -34,6 +34,7 @@ import {
   appendScopeCommit,
   buildScopeCommit,
   createScopeWrites,
+  recordInstanceWrite,
   type ScopeWrites,
 } from './handler-commits';
 import {
@@ -380,6 +381,8 @@ function analyzeHandler(
     const kind = ctx.state.get(name);
     return kind === undefined ? null : moduleOrigin(name, kind);
   });
+  const isComputedOrigin = (origin: ReactiveOrigin): boolean =>
+    origin.stateKind === 'computed' || ctx.state.get(origin.root) === 'computed';
 
   const locals = new Set<string>();
   for (const param of clonedFn.params) {
@@ -458,7 +461,9 @@ function analyzeHandler(
       !applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
     ) {
       if (rowCtx === undefined) {
-        scope.instanceLocal = compName !== null;
+        if (compName !== null) {
+          recordInstanceWrite(scope, origin.root);
+        }
         scope.rootFallback = true;
       } else {
         noteNonItemRowProp(p);
@@ -512,7 +517,7 @@ function analyzeHandler(
 
   const noteOriginWrite = (p: NodePath, origin: ReactiveOrigin): void => {
     if (origin.locality === 'instance') {
-      scopeOf(p).instanceLocal = true;
+      recordInstanceWrite(scopeOf(p), origin.root);
       return;
     }
     if (origin.locality === 'row') {
@@ -570,7 +575,7 @@ function analyzeHandler(
     origin: ReactiveOrigin,
   ): void => {
     if (origin.locality === 'instance') {
-      scopeOf(p).instanceLocal = true;
+      recordInstanceWrite(scopeOf(p), origin.root);
       return;
     }
     if (origin.locality === 'row') {
@@ -625,7 +630,15 @@ function analyzeHandler(
       // reactive container. Property-value semantics remain author-owned.
       if (!t.isIdentifier(expression)) continue;
       const origin = aliases.resolveExpression(p.scope, expression);
-      if (origin !== null) noteReceiverEffect(p, origin);
+      if (origin === null) continue;
+      // Computeds are read-only derived values. Passing/capturing one through
+      // an arbitrary utility is value consumption, not a visible mutation. If
+      // user code mutates it behind an unanalyzable boundary, that mutation is
+      // intentionally outside the reactive write model and will not propagate.
+      // Direct visible writes/mutators still throw in noteOriginWrite and
+      // noteReceiverEffect.
+      if (isComputedOrigin(origin)) continue;
+      noteReceiverEffect(p, origin);
     }
   };
 
@@ -633,7 +646,7 @@ function analyzeHandler(
     const rootName = memberRootName(node);
     if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
       // R12: mutating a field of an instance-state object — same local commit
-      scopeOf(p).instanceLocal = true;
+      recordInstanceWrite(scopeOf(p), rootName!);
       return;
     }
     if (
@@ -717,7 +730,7 @@ function analyzeHandler(
           );
         }
         if (instVars?.has(left.name) === true) {
-          scopeOf(p).instanceLocal = true; // R12: per-instance, no table
+          recordInstanceWrite(scopeOf(p), left.name);
           return;
         }
         if (propNames.has(left.name)) {
@@ -775,7 +788,7 @@ function analyzeHandler(
           );
         }
         if (instVars?.has(arg.name) === true) {
-          scopeOf(p).instanceLocal = true; // R12
+          recordInstanceWrite(scopeOf(p), arg.name);
           return;
         }
         if (propNames.has(arg.name)) {
@@ -896,6 +909,7 @@ function analyzeHandler(
           if (argument === undefined || !t.isExpression(argument)) continue;
           const origin = aliases.resolveExpression(p.scope, argument);
           if (origin !== null) {
+            if (isComputedOrigin(origin)) continue;
             noteReceiverEffect(p, extendOrigin(origin, effect.path));
           }
         }

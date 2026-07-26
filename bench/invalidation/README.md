@@ -1,7 +1,8 @@
 # Dirty-Reason Mask Prototype Benchmark
 
-> Date: 2026-07-25. Real headless Chromium. This benchmark evaluates an
-> architecture prototype; production compiler/runtime behavior is unchanged.
+> Date: 2026-07-25. Real headless Chromium. This benchmark evaluates a bitmask
+> representation prototype. Production currently uses scalar/Set numeric
+> reasons for structurally selected component-local derivation graphs.
 
 Run:
 
@@ -70,6 +71,12 @@ This argues for compiler-selected dual-mode emission:
 6. Use one unsigned 32-bit word for the common case and a segmented/fallback
    form only for components exceeding 32 dependency groups.
 
+The production R25 implementation now follows points 1-5 without adopting the
+bitmask representation. It emits no reason channel when every exact local
+source reaches every derivation. Selective graphs use one numeric scalar or a
+Set of batched reasons and retain ordinary value guards. End-to-end
+happy-dom measurements are recorded in `bench/local-derived/README.md`.
+
 ## Limits and next measurement
 
 This microbenchmark deliberately excludes access-table routing, scheduling,
@@ -77,9 +84,9 @@ list reconciliation, and real DOM writes so it can isolate update evaluation.
 It establishes that the mechanism has a plausible and measurable payoff; it
 does not establish end-to-end framework improvement.
 
-The next proof should implement compiler-only closure masks behind an option,
-compile representative applications, and run the existing three-way Chromium
-benchmark plus dedicated cases containing:
+The next proof should A/B a bitmask branch against the production scalar/Set
+representation, compile representative applications, and run the existing
+three-way Chromium benchmark plus dedicated cases containing:
 
 - unrelated writes beside a 1k/10k filter;
 - chained local derivations;

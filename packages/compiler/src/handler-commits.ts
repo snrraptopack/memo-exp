@@ -7,6 +7,7 @@
 
 import * as t from '@babel/types';
 import {
+  freshReasonConst,
   freshWriteConst,
   type Ctx,
   type RowCtx,
@@ -26,6 +27,8 @@ export interface ScopeWrites {
   rowOwnerLocal: boolean;
   /** This scope writes state owned by one component instance. */
   instanceLocal: boolean;
+  /** Exact instance or prop roots written by this scope. */
+  instanceWrites: Set<string>;
   /** Scoped event fallback when a handler has no recognized write. */
   eventOrigin: t.Statement | null;
 }
@@ -37,8 +40,18 @@ export function createScopeWrites(): ScopeWrites {
     rowLocal: false,
     rowOwnerLocal: false,
     instanceLocal: false,
+    instanceWrites: new Set(),
     eventOrigin: null,
   };
+}
+
+/** Record an exact write to state owned by one component instance. */
+export function recordInstanceWrite(
+  scope: ScopeWrites,
+  source: string,
+): void {
+  scope.instanceLocal = true;
+  scope.instanceWrites.add(source);
 }
 
 /** Build the static commit form for one analyzed function scope. */
@@ -58,14 +71,29 @@ export function buildScopeCommit(
               ]),
         )
       : null;
-  const instanceCommit =
-    scope.instanceLocal && compName !== null
-      ? t.expressionStatement(
-          t.callExpression(md(ctx, 'markDirty'), [
-            componentId(ctx, compName),
-          ]),
-        )
-      : null;
+  let instanceCommit: t.Statement | null = null;
+  if (scope.instanceLocal && compName !== null) {
+    const reasonIds = ctx.instanceReasonIds.get(compName);
+    const reasons = [...scope.instanceWrites]
+      .map((source) => reasonIds?.get(source))
+      .filter((reason): reason is number => reason !== undefined)
+      .sort((a, b) => a - b);
+    const exact =
+      scope.instanceWrites.size > 0 &&
+      reasons.length === scope.instanceWrites.size;
+    instanceCommit = t.expressionStatement(
+      t.callExpression(md(ctx, 'markDirty'), [
+        componentId(ctx, compName),
+        ...(exact
+          ? [
+              reasons.length === 1
+                ? t.numericLiteral(reasons[0]!)
+                : freshReasonConst(ctx, reasons),
+            ]
+          : []),
+      ]),
+    );
+  }
   const rowOwnerCommit =
     scope.rowOwnerLocal && rowCtx?.ownerIdVar !== undefined
       ? t.expressionStatement(

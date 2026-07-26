@@ -21,6 +21,7 @@
     "bench:children": "bun run bench/children/run.ts",
     "bench:components": "bun run bench/components/run.ts",
     "bench:local-state": "bun run bench/local-state/run.ts",
+    "bench:local-derived": "bun run bench/local-derived/run.ts",
     "bench:jsx": "bun run bench/jsx/run.ts",
     "bench:vite": "bun run --cwd packages/vite bench",
     "bench:size": "bun run bench/package-size/run.ts",

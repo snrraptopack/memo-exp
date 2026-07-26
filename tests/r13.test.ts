@@ -145,6 +145,28 @@ describe('R13 — computeds, code generation', () => {
     ).toThrowError(/cannot mutate computed 'active'/);
   });
 
+  it('allows computed values to be passed through read-only utilities', () => {
+    expect(() =>
+      compile(
+        `let todos = [1, 2];\n` +
+          `const totalCount = todos.length;\n` +
+          `function consume(value: unknown) { console.log(value); }\n` +
+          `function C() { return <button onClick={() => { consume(totalCount); }}>{totalCount}</button>; }`,
+      ),
+    ).not.toThrow();
+  });
+
+  it('allows computed values captured by utility callbacks', () => {
+    expect(() =>
+      compile(
+        `let todos = [1, 2];\n` +
+          `const totalCount = todos.length;\n` +
+          `function effect(fn: () => void) { fn(); }\n` +
+          `function C() { effect(() => console.log(totalCount)); return <p>{totalCount}</p>; }`,
+      ),
+    ).not.toThrow();
+  });
+
   it('plain consts (no state reads) stay untouched', () => {
     const code = compile(`const x = 42;\nfunction C() { return <p>{x}</p>; }`);
     expect(code).not.toContain('$computed');

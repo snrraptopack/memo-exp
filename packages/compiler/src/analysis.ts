@@ -689,23 +689,26 @@ function scanInstanceState(ctx: Ctx): void {
  */
 function scanInstanceDerivations(ctx: Ctx): void {
   for (const [compName, compPath] of ctx.compPaths) {
-    const reactiveBindings = new Set<unknown>();
+    const reactiveBindings = new Map<unknown, string>();
 
     for (const name of ctx.componentProps.get(compName)?.bindings ?? []) {
       const binding = compPath.scope.getBinding(name);
-      if (binding) reactiveBindings.add(binding);
+      if (binding) reactiveBindings.set(binding, name);
     }
     for (const name of ctx.instanceState.get(compName) ?? []) {
       const binding = compPath.scope.getBinding(name);
-      if (binding) reactiveBindings.add(binding);
+      if (binding) reactiveBindings.set(binding, name);
     }
     for (const name of ctx.state.keys()) {
       const binding = compPath.scope.getBinding(name);
-      if (binding?.scope.path.isProgram()) reactiveBindings.add(binding);
+      if (binding?.scope.path.isProgram()) {
+        reactiveBindings.set(binding, name);
+      }
     }
 
     const derivations: LocalDerivation[] = [];
     const derivedBindings = new Set<string>();
+    const derivedSources = new Map<string, Set<string>>();
     const statements = compPath.get('body').get('body');
     for (const stmtPath of statements) {
       if (!stmtPath.isVariableDeclaration({ kind: 'const' })) continue;
@@ -730,15 +733,21 @@ function scanInstanceDerivations(ctx: Ctx): void {
         const initPath = declPath.get('init');
         if (!initPath.isExpression()) continue;
 
-        let readsReactive = false;
+        const directReads = new Set<string>();
         let reason: string | null = null;
         const bindingIsReactive = (name: string, at: NodePath): boolean => {
           const binding = at.scope.getBinding(name);
           return binding !== undefined && reactiveBindings.has(binding);
         };
         const noteIdentifier = (p: NodePath): void => {
-          if (t.isIdentifier(p.node) && bindingIsReactive(p.node.name, p)) {
-            readsReactive = true;
+          if (!t.isIdentifier(p.node)) return;
+          const binding = p.scope.getBinding(p.node.name);
+          const source =
+            binding === undefined
+              ? undefined
+              : reactiveBindings.get(binding);
+          if (source !== undefined) {
+            directReads.add(source);
           }
         };
         const mutationRoot = (node: t.Node): string | null =>
@@ -793,7 +802,28 @@ function scanInstanceDerivations(ctx: Ctx): void {
           },
         });
 
-        if (!readsReactive) continue;
+        if (directReads.size === 0) continue;
+        // A callback-only reference does not make setup work such as
+        // setInterval() a derivation. Once an outer read proves this is a
+        // derivation, however, synchronous callbacks such as filter/map and
+        // unknown call contracts may contribute dependencies and writes.
+        initPath.traverse({
+          ReferencedIdentifier(p) {
+            noteIdentifier(p);
+          },
+          AssignmentExpression(p) {
+            const root = mutationRoot(p.node.left);
+            if (root !== null && bindingIsReactive(root, p)) {
+              reason = 'contains an assignment to reactive state';
+            }
+          },
+          UpdateExpression(p) {
+            const root = mutationRoot(p.node.argument);
+            if (root !== null && bindingIsReactive(root, p)) {
+              reason = 'contains an update (++/--) to reactive state';
+            }
+          },
+        });
         if (reason !== null) {
           const names = bindingNames(decl.id);
           throw declPath.buildCodeFrameError(
@@ -803,16 +833,24 @@ function scanInstanceDerivations(ctx: Ctx): void {
           );
         }
         const names = bindingNames(decl.id);
+        const sources = new Set<string>();
+        for (const read of directReads) {
+          const upstream = derivedSources.get(read);
+          if (upstream === undefined) sources.add(read);
+          else for (const source of upstream) sources.add(source);
+        }
         derivations.push({
           declaration: stmtPath.node,
           target: t.cloneNode(decl.id),
           source: t.cloneNode(decl.init),
           bindings: names,
+          sources: [...sources].sort(),
         });
         for (const name of names) {
           derivedBindings.add(name);
+          derivedSources.set(name, new Set(sources));
           const binding = compPath.scope.getBinding(name);
-          if (binding) reactiveBindings.add(binding);
+          if (binding) reactiveBindings.set(binding, name);
           ctx.instanceState.get(compName)?.delete(name);
         }
       }
@@ -820,6 +858,30 @@ function scanInstanceDerivations(ctx: Ctx): void {
     if (derivations.length > 0) {
       ctx.instanceDerivations.set(compName, derivations);
       ctx.instanceDerivedBindings.set(compName, derivedBindings);
+      const exactSources = new Set<string>([
+        ...(ctx.instanceState.get(compName) ?? []),
+        ...(ctx.componentProps.get(compName)?.bindings ?? []),
+      ]);
+      const selective = [...exactSources].some((source) =>
+        derivations.some(
+          (derivation) => !derivation.sources.includes(source),
+        ),
+      );
+      if (selective) {
+        const reasonSources = new Set<string>([
+          ...exactSources,
+          ...derivations.flatMap((derivation) => derivation.sources),
+        ]);
+        ctx.instanceReasonIds.set(
+          compName,
+          new Map(
+            [...reasonSources]
+              .sort()
+              .map((source, index) => [source, index]),
+          ),
+        );
+        ctx.selectiveDerivationComponents.add(compName);
+      }
     }
   }
 }

@@ -22,13 +22,13 @@ import {
 } from '../identifiers';
 import { transformComponentLifecycle } from '../lifecycle';
 import {
-  buildDerivationReplay,
   buildPropDeclaration,
   buildPropReplay,
   localBindingForProp,
   objectBindingName,
   runtimeParameter,
 } from '../components/props';
+import { buildLocalDerivationReplay } from '../components/local-derived';
 import {
   cacheDecl,
   newEmitScope,
@@ -76,6 +76,10 @@ export function transformComponent(
     linkedRefs.some((ref) => ref.sourceLocal);
   const lightweight = isLightweightListedComponent(ctx, name);
   const scope = newEmitScope(ctx);
+  const localDerivations = ctx.instanceDerivations.get(name);
+  if (ctx.selectiveDerivationComponents.has(name)) {
+    scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
+  }
   const factoryId = generatedIdentifier(ctx, 'id').name;
   const factoryParent = lightweight
     ? null
@@ -127,16 +131,16 @@ export function transformComponent(
   transformComponentLifecycle(ctx, path, name, factoryId, rowCtx);
   const rootVar = emitNode(ctx, scope, jsx, name, path, null, rowCtx);
 
-  const localDerivations = ctx.instanceDerivations.get(name);
   if (localDerivations !== undefined) {
     for (const derivation of localDerivations) {
       derivation.declaration.kind = 'let';
     }
     scope.updaters.unshift(() =>
-      t.blockStatement(
-        localDerivations.map((derivation) =>
-          buildDerivationReplay(derivation),
-        ),
+      buildLocalDerivationReplay(
+        ctx,
+        name,
+        scope.reasonVar,
+        localDerivations,
       ),
     );
   }

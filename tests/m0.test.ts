@@ -3,6 +3,7 @@ import {
   setScheduler,
   resetScheduler,
   markDirty,
+  register,
   unregister,
   _internals,
 } from '@memoized-dom/runtime/testing';
@@ -60,6 +61,38 @@ describe('M0 kernel', () => {
     expect(renders).toBe(1); // ...one render total
     expect(document.body.textContent).toBe('count: 3'); // final state correct
 
+    resetScheduler();
+  });
+
+  it('unions exact dirty reasons and lets a full mark override them', () => {
+    let pump: (() => void) | null = null;
+    setScheduler((fn) => {
+      pump = fn;
+    });
+    const renders: unknown[] = [];
+    register({
+      id: 'Reasoned',
+      parent: null,
+      render: (reasons) => {
+        renders.push(reasons);
+      },
+    });
+
+    markDirty('Reasoned', 1);
+    markDirty('Reasoned', 2);
+    markDirty('Reasoned', 1);
+    pump!();
+    expect(renders).toHaveLength(1);
+    expect(renders[0]).toBeInstanceOf(Set);
+    expect([...(renders[0] as ReadonlySet<number>)]).toEqual([1, 2]);
+
+    markDirty('Reasoned', 1);
+    markDirty('Reasoned');
+    markDirty('Reasoned', 2);
+    pump!();
+    expect(renders[1]).toBeNull();
+
+    unregister('Reasoned');
     resetScheduler();
   });
 

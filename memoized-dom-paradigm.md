@@ -164,13 +164,18 @@ type Entity = {
   parent: string | null;
   children: Set<string>;
   depth: number;
-  render: () => void;         // update closure only
+  render: (reasons?) => void; // update closure only
 };
 ```
 
 Component state, DOM nodes, slot caches, and local derivations stay in the
 factory closure. Keeping them out of the registry makes the hot entity record
 small and lets JavaScript engines optimize direct lexical access.
+
+Entities whose local dependency graph has independent groups may receive
+compiler-generated numeric dirty reasons. Reasons only select closure-local
+derivation replay; an absent reason means full replay. They do not expose
+state to the registry or change component identity.
 
 Properties:
 
