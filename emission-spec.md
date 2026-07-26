@@ -612,6 +612,13 @@ ordinary JavaScript semantics. Closed object patterns reject unknown static
 JSX props; generic `props` bindings and object rest accept them. R22 manifests
 serialize this same contract across modules.
 
+Component manifests also serialize caller-side prop origins. Direct canonical
+state values and member paths remain exact across static and keyed calls;
+forwarded props append their path while traversing the acyclic component
+graph. Mutating a linked prop refreshes the defining child entity or row and
+commits the union of its canonical caller keys. Any spread, external prop, or
+other source whose shared identity cannot be bounded keeps a root fallback.
+
 Fragments emit real `DocumentFragment` creation branches. Child operations are
 inserted in authored source order, including list/conditional anchors. A
 fragment component or lightweight keyed row snapshots all root nodes before
@@ -985,9 +992,6 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   and performance decision.
 - R14 rejects direct writes in local derivations, but does not yet fold a
   component-local helper's write summary into derivation purity checking.
-- A keyed component mutation through a non-item prop refreshes that row and
-  invalidates the root subtree. Linking caller-side canonical state origins
-  into component prop effects can narrow this fallback later.
 - Over-invalidation note: a scope's commit fires even when its writes were
   skipped by an `if` — safe direction, absorbed by setter guards.
 

@@ -6,7 +6,14 @@
  * concrete/wildcard paths used by defining-module access-table emission.
  */
 
-import type { LinkedComponentRowUse } from './context';
+import type {
+  LinkedComponentPropSource,
+  LinkedComponentRowUse,
+} from './context';
+import type {
+  ComponentPropSourceRefs,
+} from './components/prop-origins';
+import { linkComponentPropSources } from './components/prop-linker';
 
 export interface ComponentGraphEdge {
   target: string;
@@ -15,6 +22,7 @@ export interface ComponentGraphEdge {
   keyPath?: string[] | null;
   sourceKey?: string;
   sourceLocal?: boolean;
+  propSources?: ComponentPropSourceRefs;
 }
 
 export interface ComponentGraphNode {
@@ -27,6 +35,7 @@ export interface ComponentGraphNode {
 export interface LinkedComponentGraph {
   paths: Map<string, string[]>;
   rows: Map<string, LinkedComponentRowUse[]>;
+  propSources: Map<string, Map<string, LinkedComponentPropSource>>;
 }
 
 function assertAcyclic(nodes: Map<string, ComponentGraphNode>): void {
@@ -113,5 +122,7 @@ export function linkComponentGraph(
   for (const key of nodes.keys()) {
     paths.set(key, [...(pathSets.get(key) ?? [])].sort());
   }
-  return { paths, rows };
+
+  const propSources = linkComponentPropSources(nodes, roots);
+  return { paths, rows, propSources };
 }

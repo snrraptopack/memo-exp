@@ -48,3 +48,24 @@ still scales with the receiver's observer count; dirty-reason masks may later
 skip independent work inside those selected entities. The result does not
 measure the cost of the user method itself, real DOM setters, list
 reconciliation, or compiler-selected dirty-reason masks.
+
+## Canonical-Prop Checkpoint
+
+> Date: 2026-07-26. Bun 1.3.14 on Windows.
+
+Graph-linked component props now select the same production bounded route
+measured above. A child mutation such as `props.selected.clear()` commits the
+caller's canonical key when its origin is known; unresolved shared identities
+still use the root fallback. Three new independent processes produced these
+per-cell medians:
+
+| Receiver readers | Exact canonical key | Root fallback | Root / exact |
+|---:|---:|---:|---:|
+| 1 | 2,620.9 ns | 1,489,294.3 ns | 568.23x |
+| 32 | 37,442.1 ns | 1,438,366.7 ns | 38.42x |
+| 256 | 209,462.4 ns | 1,633,819.4 ns | 7.80x |
+
+Absolute timings varied substantially between processes, so this checkpoint
+supports the routing decision, not a claim that the runtime itself became
+faster. Vite integration tests verify that linked row and forwarded static
+props choose the exact route.

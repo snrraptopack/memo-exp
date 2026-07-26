@@ -186,6 +186,30 @@ export function localBindingForProp(
   return null;
 }
 
+/** Declared prop name that introduced one local binding. */
+export function propNameForBinding(
+  plan: ComponentPropsPlan,
+  binding: string,
+): string | null {
+  if (plan.mode === 'positional') {
+    return plan.names.includes(binding) ? binding : null;
+  }
+  if (plan.params.length !== 1) return null;
+  const target = parameterTarget(plan.params[0]!);
+  if (!t.isObjectPattern(target)) return null;
+  for (const property of target.properties) {
+    if (!t.isObjectProperty(property) || property.computed) continue;
+    if (
+      !Object.keys(t.getBindingIdentifiers(property.value)).includes(binding)
+    ) {
+      continue;
+    }
+    if (t.isIdentifier(property.key)) return property.key.name;
+    if (t.isStringLiteral(property.key)) return property.key.value;
+  }
+  return null;
+}
+
 export function parameterTarget(param: ComponentParam): PropTarget {
   if (t.isRestElement(param)) {
     throw new Error('rest component parameters are not supported');

@@ -50,6 +50,10 @@ import {
   type ReactiveOrigin,
 } from './mutation-analysis';
 import { summarizeHelper } from './helper-summaries';
+import { applyLinkedPropEffect } from './components/prop-effects';
+import {
+  componentPropProjectionOrigins,
+} from './components/prop-projections';
 
 // @babel/traverse is CJS; under ESM the function lands on `.default`.
 const traverse: typeof _traverse = (_traverse as any).default ?? (_traverse as any);
@@ -332,6 +336,10 @@ function analyzeHandler(
   const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
   const instDerived =
     compName !== null ? ctx.instanceDerivedBindings.get(compName) : undefined;
+  const projectedProps =
+    compName === null
+      ? new Map<string, ReactiveOrigin>()
+      : componentPropProjectionOrigins(ctx, compName);
   const propNames =
     compName !== null
       ? new Set(ctx.componentProps.get(compName)?.bindings ?? [])
@@ -357,6 +365,8 @@ function analyzeHandler(
 
   const aliases = new AliasTracker((name, binding) => {
     if (binding !== undefined) return null;
+    const projected = projectedProps.get(name);
+    if (projected !== undefined) return projected;
     if (rowCtx !== undefined && name === rowCtx.itemParam) {
       return { locality: 'row', root: name, key: name };
     }
@@ -423,10 +433,37 @@ function analyzeHandler(
     }
     return segments.slice(rowCtx.itemPath.length);
   };
-  const noteNonItemRowProp = (p: NodePath): void => {
+  const noteNonItemRowProp = (
+    p: NodePath,
+    origin?: ReactiveOrigin,
+  ): void => {
     const scope = scopeOf(p);
+    if (
+      origin !== undefined &&
+      compName !== null &&
+      applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
+    ) {
+      return;
+    }
     scope.rowLocal = true;
     scope.rootFallback = true;
+  };
+  const notePropWrite = (
+    p: NodePath,
+    origin: ReactiveOrigin,
+  ): void => {
+    const scope = scopeOf(p);
+    if (
+      compName === null ||
+      !applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
+    ) {
+      if (rowCtx === undefined) {
+        scope.instanceLocal = compName !== null;
+        scope.rootFallback = true;
+      } else {
+        noteNonItemRowProp(p);
+      }
+    }
   };
 
   // R11: a member write rooted at the row's item param. Non-key fields are
@@ -493,7 +530,7 @@ function analyzeHandler(
       }
       const segs = rowRelativePath(origin.key);
       if (segs === null) {
-        noteNonItemRowProp(p);
+        noteNonItemRowProp(p, origin);
         return;
       }
       if (writeTouchesKey(segs, rowCtx.keyPath)) {
@@ -507,9 +544,8 @@ function analyzeHandler(
       return;
     }
     if (origin.locality === 'prop') {
-      throw p.buildCodeFrameError(
-        `memo-dom: cannot mutate prop '${origin.root}' outside a keyed row - copy it to component-local state first`,
-      );
+      notePropWrite(p, origin);
+      return;
     }
     if (origin.stateKind === 'computed') {
       throw p.buildCodeFrameError(
@@ -552,7 +588,7 @@ function analyzeHandler(
       }
       const relative = rowRelativePath(origin.key);
       if (relative === null) {
-        noteNonItemRowProp(p);
+        noteNonItemRowProp(p, origin);
         return;
       }
       const receiverIsItem = relative.length === 0;
@@ -569,9 +605,8 @@ function analyzeHandler(
       return;
     }
     if (origin.locality === 'prop') {
-      throw p.buildCodeFrameError(
-        `memo-dom: cannot call a stateful method on prop '${origin.root}' outside a keyed row - copy it to component-local state first`,
-      );
+      notePropWrite(p, origin);
+      return;
     }
     if (origin.stateKind === 'computed') {
       throw p.buildCodeFrameError(
@@ -601,7 +636,11 @@ function analyzeHandler(
       scopeOf(p).instanceLocal = true;
       return;
     }
-    if (rootName !== null && instDerived?.has(rootName)) {
+    if (
+      rootName !== null &&
+      instDerived?.has(rootName) &&
+      !projectedProps.has(rootName)
+    ) {
       throw p.buildCodeFrameError(
         `memo-dom: cannot mutate per-instance derivation '${rootName}' (R14) — write its source instead`,
       );
@@ -613,9 +652,12 @@ function analyzeHandler(
       return;
     }
     if (rootName !== null && propNames.has(rootName)) {
-      throw p.buildCodeFrameError(
-        `memo-dom: cannot mutate prop '${rootName}' outside a keyed row — copy it to component-local state first`,
-      );
+      notePropWrite(p, {
+        locality: 'prop',
+        root: rootName,
+        key: memberKey(node),
+      });
+      return;
     }
     if (rootName !== null && componentLocals.has(rootName)) return;
     if (!rootName || !ctx.state.has(rootName)) return;
@@ -816,7 +858,11 @@ function analyzeHandler(
           : t.isMemberExpression(callee.object)
             ? memberRootName(callee.object)
             : null;
-        if (receiverRoot !== null && instDerived?.has(receiverRoot)) {
+        if (
+          receiverRoot !== null &&
+          instDerived?.has(receiverRoot) &&
+          !projectedProps.has(receiverRoot)
+        ) {
           throw p.buildCodeFrameError(
             `memo-dom: cannot mutate per-instance derivation '${receiverRoot}' (R14) - write its source instead`,
           );

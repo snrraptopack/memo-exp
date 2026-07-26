@@ -107,10 +107,11 @@ paths through local and linked calls.
 
 Within keyed components, the row item boundary is its actual prop path
 (`item` or `props.item`), not the whole props object. Writes through another
-prop refresh the row and conservatively invalidate the root because the
-defining module cannot yet serialize that runtime prop's caller-side canonical
-state identity. This is a correctness fallback; graph-linked prop origins can
-later narrow it without changing authored code.
+prop refresh the row and use component-graph provenance to commit the
+caller-side canonical state identity. Provenance flows through direct and
+forwarded props, including destructured aliases. Multiple call sites union
+their finite keys. A spread, external prop, or other source whose shared
+identity cannot be bounded retains the root fallback.
 
 Only a summary with no finite receiver, argument, instance, row, or state root
 dirties the root subtree. Unresolved imported functions are the current common

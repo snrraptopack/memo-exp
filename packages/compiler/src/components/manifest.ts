@@ -20,6 +20,9 @@ import {
 } from '../component-linker';
 import { containsJsx } from '../lists';
 import { analyzeComponentProps } from './props';
+import {
+  collectComponentPropSources,
+} from './prop-origins';
 
 export interface ComponentExportInfo {
   key: string;
@@ -89,11 +92,23 @@ export function analyzedComponentDeclarations(
   const declarations: ComponentGraphNode[] = [];
   for (const local of ctx.comps.keys()) {
     const edges: ComponentGraphEdge[] = [];
+    const propSources = collectComponentPropSources(ctx, local);
     for (const [tag, count] of ctx.childRefCounts.get(local) ?? []) {
       const target = componentTarget(ctx, tag);
-      edges.push({ target, suffix: `/${tag}`, mode: 'static' });
+      const sources = propSources.get(tag);
+      edges.push({
+        target,
+        suffix: `/${tag}`,
+        mode: 'static',
+        ...(sources === undefined ? {} : { propSources: sources }),
+      });
       if (count > 1) {
-        edges.push({ target, suffix: `/${tag}[*]`, mode: 'static' });
+        edges.push({
+          target,
+          suffix: `/${tag}[*]`,
+          mode: 'static',
+          ...(sources === undefined ? {} : { propSources: sources }),
+        });
       }
     }
     for (const [tag, sites] of ctx.listedSites) {
@@ -109,6 +124,9 @@ export function analyzedComponentDeclarations(
               ? site.sourceKey ?? ''
               : canonicalStateKey(ctx, site.sourceKey ?? ''),
           sourceLocal: site.sourceLocal ?? false,
+          ...(propSources.get(tag) === undefined
+            ? {}
+            : { propSources: propSources.get(tag)! }),
         });
       }
     }

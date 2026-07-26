@@ -38,7 +38,14 @@ import {
 } from './context';
 
 export interface CompileModulesOptions
-  extends Omit<MemoDomOptions, 'moduleId' | 'linkedImports'> {
+  extends Omit<
+    MemoDomOptions,
+    | 'moduleId'
+    | 'linkedImports'
+    | 'linkedComponentPaths'
+    | 'linkedComponentRows'
+    | 'linkedComponentPropSources'
+  > {
   /**
    * Bundler-style import aliases. Prefixes match on a segment boundary, so
    * `{ '@': './src' }` resolves both `@/state` and `@/features/todos`.
@@ -523,6 +530,9 @@ export function compileModules(
     }
     const linkedComponentPaths: Record<string, string[]> = {};
     const linkedComponentRows: Record<string, LinkedComponentRowUse[]> = {};
+    const linkedComponentPropSources: NonNullable<
+      MemoDomOptions['linkedComponentPropSources']
+    > = {};
     for (const declaration of manifest.components) {
       linkedComponentPaths[declaration.local] = [
         ...(componentGraph.paths.get(declaration.key) ?? []),
@@ -535,6 +545,18 @@ export function compileModules(
           sourceLocal: row.sourceLocal,
         }));
       }
+      const propSources = componentGraph.propSources.get(declaration.key);
+      if (propSources !== undefined) {
+        linkedComponentPropSources[declaration.local] = Object.fromEntries(
+          [...propSources].map(([prop, source]) => [
+            prop,
+            {
+              keys: [...source.keys],
+              rootFallback: source.rootFallback,
+            },
+          ]),
+        );
+      }
     }
     output[entry.originalId] = compile(entry.source, {
       ...compilerOptions(options),
@@ -542,6 +564,7 @@ export function compileModules(
       linkedImports,
       linkedComponentPaths,
       linkedComponentRows,
+      linkedComponentPropSources,
     });
   }
   return output;

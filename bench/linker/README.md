@@ -69,3 +69,19 @@ prelinked baselines also fell substantially from the R19 run. Normalized
 overhead is now `2.42x`, `2.18x`, and `2.78x`; these measurements show no R22
 regression but do not isolate or support a speedup claim. Cross-file factory
 runtime parity is measured separately in `bench/components/README.md`.
+
+The 2026-07-26 canonical-prop checkpoint adds caller-side prop provenance
+collection and one topological propagation over the existing component graph.
+Three independent processes produced these per-cell medians:
+
+| Modules | Prelinked | Linked graph | Linked/module | Overhead |
+|---:|---:|---:|---:|---:|
+| 2 | 61.7 ms | 150.3 ms | 75.2 ms | 2.83x |
+| 8 | 154.4 ms | 375.9 ms | 47.0 ms | 2.45x |
+| 16 | 222.3 ms | 708.8 ms | 44.3 ms | 3.19x |
+
+The benchmark graph does not pass mutable state through props, so this measures
+the unconditional collection cost but does not isolate it from parser,
+fixed-point, dependency-version, or machine variance. The result supports no
+speedup or regression claim. A dedicated dependency-worklist implementation
+still needs an A/B run against this checkpoint.

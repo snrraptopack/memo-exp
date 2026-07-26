@@ -33,6 +33,11 @@ export interface MemoDomOptions {
   linkedComponentPaths?: Record<string, string[]>;
   /** Cross-file keyed-row uses for components declared in this file. */
   linkedComponentRows?: Record<string, LinkedComponentRowUse[]>;
+  /** Caller-resolved state boundaries for each declaration's named props. */
+  linkedComponentPropSources?: Record<
+    string,
+    Record<string, LinkedComponentPropSource>
+  >;
 }
 
 export interface LinkedStateImport {
@@ -76,6 +81,13 @@ export interface LinkedComponentRowUse {
   sourceKey: string;
   /** The reactive collection source belongs to one caller component instance. */
   sourceLocal: boolean;
+}
+
+export interface LinkedComponentPropSource {
+  /** Canonical state boundaries that may supply this prop. */
+  keys: string[];
+  /** At least one call site cannot be bounded to canonical module state. */
+  rootFallback: boolean;
 }
 
 export type LinkedImport =
@@ -154,6 +166,10 @@ export interface Ctx {
   linkedComponentPaths: Map<string, string[]>;
   /** Graph-linked keyed-row modes for declarations in this module. */
   linkedComponentRows: Map<string, LinkedComponentRowUse[]>;
+  linkedComponentPropSources: Map<
+    string,
+    Map<string, LinkedComponentPropSource>
+  >;
   comps: Map<string, CompInfo>;
   compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
   /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural effects. */
@@ -280,6 +296,22 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
           sourceLocal: use.sourceLocal,
         })),
       ]),
+    ),
+    linkedComponentPropSources: new Map(
+      Object.entries(opts.linkedComponentPropSources ?? {}).map(
+        ([component, sources]) => [
+          component,
+          new Map(
+            Object.entries(sources).map(([name, source]) => [
+              name,
+              {
+                keys: [...source.keys],
+                rootFallback: source.rootFallback,
+              },
+            ]),
+          ),
+        ],
+      ),
     ),
     comps: new Map(),
     compPaths: new Map(),
