@@ -947,7 +947,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
    handlers? Leaning: compiler emits prev-capture — keeps the runtime dumb.
 3. **Bundler graph adapters:** §4.6 state and mutator imports have
    canonical identities. R22 now links imported factories, graph paths, and
-   entity-id composition; production bundlers still need graph adapters.
+   entity-id composition. The Vite 8 adapter is implemented; other hosts can
+   supply graph collection through the same resolver contract.
 4. **Dev-mode event log:** production emission omits it (R5); dev builds may
    wrap handlers with the provenance log (current `handle()` in events.ts).
 
@@ -1002,14 +1003,14 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.5 Multi-module, scale & engineering
 
-- `compileModules()` is an in-memory graph API; no Vite/esbuild adapter feeds
-  resolved source graphs into it yet.
 - `rootId` collisions across modules; table-install ordering vs. mount order —
   untested.
 - Identity-keyed lists of duplicate primitives (`[1, 2, 2]`) throw on
   duplicate keys — document or add index fallback.
-- No source maps, no Vite plugin/packaging, no HMR story, no dev/prod build
-  split, no userland testing story.
+- Compiler transforms do not emit source maps.
+- Vite changes conservatively reload the page; state-preserving component HMR
+  is not supported.
+- No dev/prod compiler-mode split or documented userland testing harness.
 - Benchmarks pending: parametrized-pattern re-run in the compiler era;
   compile-time perf on large modules.
 

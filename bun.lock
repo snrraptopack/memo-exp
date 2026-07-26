@@ -7,6 +7,7 @@
       "devDependencies": {
         "@memoized-dom/compiler": "workspace:*",
         "@memoized-dom/runtime": "workspace:*",
+        "@memoized-dom/vite": "workspace:*",
         "@types/babel__core": "^7.20.5",
         "@types/babel__traverse": "^7.28.0",
         "@types/bun": "latest",
@@ -15,6 +16,7 @@
         "happy-dom": "^20.11.0",
         "puppeteer-core": "^25.3.0",
         "typescript": "^5",
+        "vite": "^8.0.0",
         "vitest": "^4.1.10",
       },
     },
@@ -32,6 +34,16 @@
     "packages/runtime": {
       "name": "@memoized-dom/runtime",
       "version": "0.0.1",
+    },
+    "packages/vite": {
+      "name": "@memoized-dom/vite",
+      "version": "0.0.1",
+      "dependencies": {
+        "@memoized-dom/compiler": "workspace:*",
+      },
+      "peerDependencies": {
+        "vite": "^8.0.0",
+      },
     },
   },
   "packages": {
@@ -152,6 +164,8 @@
     "@memoized-dom/compiler": ["@memoized-dom/compiler@workspace:packages/compiler"],
 
     "@memoized-dom/runtime": ["@memoized-dom/runtime@workspace:packages/runtime"],
+
+    "@memoized-dom/vite": ["@memoized-dom/vite@workspace:packages/vite"],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.1.6", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1", "@emnapi/runtime": "^1.7.1" } }, "sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg=="],
 

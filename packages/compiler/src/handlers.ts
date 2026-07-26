@@ -156,6 +156,22 @@ export function buildHandler(
   if (t.isArrowFunctionExpression(value) || t.isFunctionExpression(value)) {
     target = value;
   } else if (t.isIdentifier(value)) {
+    const imported = ctx.importedFunctions.get(value.name);
+    if (imported !== undefined) {
+      const writes = createScopeWrites();
+      for (const write of imported.writes) writes.writes.add(write);
+      for (const write of imported.boundedWrites) {
+        writes.writes.add(write);
+      }
+      writes.rootFallback = imported.unbounded;
+      return wrapSharedHandlerWithOrigin(
+        ctx,
+        value,
+        buildScopeCommit(ctx, writes, null) ??
+          buildEventOriginCommit(ctx, compName, rowCtx, eventOriginId),
+      );
+    }
+
     const binding = compPath.scope.getBinding(value.name);
     const decl = binding?.path;
     if (decl && decl.isVariableDeclarator()) {

@@ -29,7 +29,7 @@
 
   },
 
-  "include": ["packages", "examples"],
+  "include": ["packages/*/src", "examples"],
   "exclude": [
     "**/dist",
     "**/generated",

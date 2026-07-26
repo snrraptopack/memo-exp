@@ -1,0 +1,28 @@
+{
+  "name": "@memoized-dom/vite",
+  "version": "0.0.1",
+  "description": "Vite 8 adapter for connected memoized-dom module graphs",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.js --platform=node --format=esm --target=node20 --packages=external --minify && tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts",
+    "bench": "bun run ./bench/run.ts"
+  },
+  "dependencies": {
+    "@memoized-dom/compiler": "workspace:*"
+  },
+  "peerDependencies": {
+    "vite": "^8.0.0"
+  }
+}

@@ -29,6 +29,7 @@ The repository is a Bun workspace with independent packages:
 |---|---|
 | `@memoized-dom/runtime` | Dependency-free browser registry, routing, regions, lifecycle, and DOM updates |
 | `@memoized-dom/compiler` | Babel-based analysis, linking, and TypeScript/JSX emission |
+| `@memoized-dom/vite` | Vite 8 graph collection, linked transforms, and conservative full-reload HMR |
 
 Root dependencies are development tools only. Babel dependencies belong to the
 compiler package; Happy DOM, Vitest, Puppeteer, esbuild, TypeScript, and type
@@ -51,6 +52,20 @@ and exact/receiver-bounded function summaries. Pass
 `resolveImport(specifier, importer)` for plugin-defined resolution. Cross-file
 component imports retain the linked factory, props, children, cleanup, and
 canonical state identity.
+
+For Vite applications, configure the graph entry once and let Vite provide
+the real alias and extension resolution:
+
+```ts
+import { defineConfig } from 'vite';
+import memoizedDom from '@memoized-dom/vite';
+
+export default defineConfig({
+  plugins: [memoizedDom({ entries: 'src/App.tsx', rootId: 'App' })],
+});
+```
+
+See `packages/vite/README.md` for the adapter and HMR contract.
 
 Static component children use lazy compiler-owned content slots:
 
@@ -76,5 +91,6 @@ bun run bench:children
 bun run bench:components
 bun run bench:local-state
 bun run bench:jsx
+bun run bench:vite
 bun run bench:size
 ```

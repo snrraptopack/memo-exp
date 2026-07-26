@@ -117,7 +117,7 @@ change the bounded-effect contract.
 ### P0: correctness boundaries
 
 1. Decide exception-path commit semantics with dedicated performance evidence.
-2. Define bundler adapter integration around the implemented graph API.
+2. Validate root-id installation across independently mounted linked graphs.
 
 ### P1: source-language coverage
 
@@ -138,6 +138,16 @@ change the bounded-effect contract.
 3. Profile select/swap/clear paths; they have the largest current gap to
    hand-written vanilla in the browser benchmark.
 4. Add stable compiler-throughput and large-access-table benchmarks.
+
+### Packaging and host integration
+
+The runtime, compiler, and Vite 8 adapter are separate workspace packages.
+The Vite adapter collects static value imports through the host resolver,
+compiles one connected graph per Vite environment, and caches linked output.
+Managed-file changes invalidate that graph and request a full browser reload:
+the current factory closures and module state cannot be replaced safely by
+state-preserving HMR. Other bundlers should receive separate adapter packages
+over the same `compileModules()` host-resolver contract.
 5. Keep measuring full-hygiene changes independently; compiler-only
    improvements must not be credited as runtime gains. R20 teardown cost is
    isolated in `bench/lifecycle/README.md`.

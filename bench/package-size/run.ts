@@ -44,4 +44,5 @@ function measure(label: string, entry: string): void {
 
 measure('runtime', 'packages/runtime/dist/index.js');
 measure('compiler', 'packages/compiler/dist/index.js');
+measure('Vite adapter', 'packages/vite/dist/index.js');
 measure('todo browser', 'examples/dist/bundle.js');
