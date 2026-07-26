@@ -1,19 +1,17 @@
 import { todos, completedSet, categoryMap, state } from './db';
 import { fetchRemoteTodos } from './api';
 import { TodoItem } from './TodoItem';
-import { log } from './logger';
-
 
 const totalCount = todos.length;
 const completedCount = completedSet.size;
 const activeCount = totalCount - completedCount;
 
 export function TodoApp() {
-  log(() => console.log('TodoApp total count', totalCount));
+  effect(() => console.log('TodoApp total count', totalCount));
 
-  log(() => console.log('TodoApp active count', activeCount));
+  effect(() => console.log('TodoApp active count', activeCount));
 
-  log(() => console.log('TodoApp completed count', completedCount));
+  effect(() => console.log('TodoApp completed count', completedCount));
 
   return (
     <div class="todo-card">

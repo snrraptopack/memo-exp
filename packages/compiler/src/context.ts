@@ -144,6 +144,20 @@ export interface FnSummary {
   unbounded: boolean;
 }
 
+/** One compiler-owned reactive side effect declared in a component body. */
+export interface EffectSite {
+  /** Stable source-order suffix within the owning component. */
+  index: number;
+  /** Source statement removed from ordinary factory initialization. */
+  statement: t.ExpressionStatement;
+  /** Callback registered with the runtime after DOM creation. */
+  callback: t.ArrowFunctionExpression | t.FunctionExpression;
+  /** Canonical or binding-relative module state read by the callback. */
+  moduleReads: Set<string>;
+  /** Instance state/prop roots that can change callback observations. */
+  localReads: Set<string>;
+}
+
 export type HelperPath = NodePath<
   t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
 >;
@@ -210,6 +224,8 @@ export interface Ctx {
   instanceReasonIds: Map<string, Map<string, number>>;
   /** Components whose local dependency graph has skippable work. */
   selectiveDerivationComponents: Set<string>;
+  /** Compiler-owned reactive effects, in source order per component. */
+  effects: Map<string, EffectSite[]>;
   /**
    * R13: auto-detected computeds — module-level `const x = <state
    * derivation>` (detection by REFERENCE: any expression mentioning state).
@@ -336,6 +352,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     instanceDerivedBindings: new Map(),
     instanceReasonIds: new Map(),
     selectiveDerivationComponents: new Set(),
+    effects: new Map(),
     computeds: new Map(),
     header: [],
     readers: new Map(),

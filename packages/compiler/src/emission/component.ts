@@ -30,6 +30,10 @@ import {
 } from '../components/props';
 import { buildLocalDerivationReplay } from '../components/local-derived';
 import {
+  buildEffectRegistrations,
+  buildLocalEffectInvalidations,
+} from '../effects';
+import {
   cacheDecl,
   newEmitScope,
   registerStmt,
@@ -77,7 +81,13 @@ export function transformComponent(
   const lightweight = isLightweightListedComponent(ctx, name);
   const scope = newEmitScope(ctx);
   const localDerivations = ctx.instanceDerivations.get(name);
-  if (ctx.selectiveDerivationComponents.has(name)) {
+  const effects = ctx.effects.get(name);
+  const hasLocalEffects =
+    effects?.some((site) => site.localReads.size > 0) === true;
+  if (
+    ctx.selectiveDerivationComponents.has(name) ||
+    hasLocalEffects
+  ) {
     scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
   }
   const factoryId = generatedIdentifier(ctx, 'id').name;
@@ -144,7 +154,24 @@ export function transformComponent(
       ),
     );
   }
-  const kept = node.body.body.filter((statement) => statement !== returnStmt);
+  if (effects !== undefined && hasLocalEffects) {
+    scope.updaters.push(() =>
+      buildLocalEffectInvalidations(
+        ctx,
+        name,
+        factoryId,
+        scope.reasonVar,
+        effects,
+      ),
+    );
+  }
+  const effectStatements = new Set<t.Statement>(
+    effects?.map((site) => site.statement) ?? [],
+  );
+  const kept = node.body.body.filter(
+    (statement) =>
+      statement !== returnStmt && !effectStatements.has(statement),
+  );
 
   if (propSlotCount > 0 && !lightweight) {
     scope.updaters.unshift(() =>
@@ -202,6 +229,9 @@ export function transformComponent(
     );
   }
   body.push(...scope.creation);
+  if (effects !== undefined) {
+    body.push(...buildEffectRegistrations(ctx, factoryId, effects));
+  }
   if (lightweight) {
     const nextProps = propPlan.params.map((_, index) =>
       generatedIdentifier(ctx, `nextProp${index}`),

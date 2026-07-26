@@ -90,6 +90,24 @@ function App() {
 }
 ```
 
+Reactive side effects use the compiler intrinsic `effect`. Dependencies are
+discovered statically; a returned teardown runs before a rerun and when the
+owning component unmounts:
+
+```tsx
+function App() {
+  effect(() => {
+    const connection = connect(activeRoom);
+    return () => connection.disconnect();
+  });
+
+  return <strong>{activeRoom}</strong>;
+}
+```
+
+Use `cleanup(disposer)` for component-owned resources that are not reactive
+effects.
+
 Run the Chromium benchmark:
 
 ```bash

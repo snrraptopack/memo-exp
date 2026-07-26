@@ -46,6 +46,8 @@ export interface Entity {
   id: EntityId;
   parent: EntityId | null;
   render: (reasons?: DirtyReasons) => void;
+  /** Effects drain only after all ordinary render work is complete. */
+  phase?: 'render' | 'effect';
   depth?: number;
   children?: Set<EntityId>;
 }
@@ -307,16 +309,23 @@ export function commit(): void {
       // M5.7: keep ids IN the dirty set until the moment they render —
       // a render that runs earlier in this batch (parent list reconcile →
       // M5.5 row resync) may cancel a row's pending render via undirty().
-      const batch: Entity[] = [];
+      const pending: Entity[] = [];
       for (const id of dirtySet) {
         const e = registry.get(id);
-        if (e) batch.push(e);
+        if (e) pending.push(e);
         else {
           dirtySet.delete(id); // dead letter: dirtied, then unregistered
           clearDirtyReasons(id);
         }
       }
 
+      // Render/computed work always drains before side effects. This gives
+      // effects a coherent post-DOM view even when parent renders cascade
+      // prop updates into deeper children over several drain passes.
+      const hasRenderWork = pending.some((e) => e.phase !== 'effect');
+      const batch = hasRenderWork
+        ? pending.filter((e) => e.phase !== 'effect')
+        : pending;
       batch.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
 
       for (const e of batch) {

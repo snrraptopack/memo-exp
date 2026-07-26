@@ -40,6 +40,7 @@ import {
   transformProgramCallbacks,
   transformSharedAsyncHelpers,
 } from './lifecycle';
+import { rejectUnownedEffects } from './effects';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -124,6 +125,7 @@ export default function memoDomPlugin(
       },
       exit(programPath) {
         rejectUnownedCleanup(programPath);
+        rejectUnownedEffects(programPath);
 
         // safety net: any JSX left over lived outside a component function
         programPath.traverse({

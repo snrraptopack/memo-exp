@@ -47,6 +47,7 @@ import {
   bindingNames,
   type LocalDerivation,
 } from './components/props';
+import { scanEffects } from './effects';
 
 /**
  * R8: a JSX-bearing conditional is allowed ONLY as a direct JSX child:
@@ -379,6 +380,14 @@ function collectReads(ctx: Ctx): void {
         handleCond(l);
       },
       CallExpression(call) {
+        if (
+          t.isIdentifier(call.node.callee, { name: 'effect' }) &&
+          call.scope.getBinding('effect') === undefined
+        ) {
+          // Effect reads belong to the effect entity, not its owner.
+          call.skip();
+          return;
+        }
         const mapCall = matchMapCall(call.node);
         if (mapCall && containsJsx(call)) {
           const site = analyzeMapSite(ctx, mapCall, call, name, usedPrefixes);
@@ -893,6 +902,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanInstanceState(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
   scanInstanceDerivations(ctx); // R14/R24: ordered local projections/computeds
+  scanEffects(ctx);
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)
@@ -1007,8 +1017,10 @@ export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
     },
     CallExpression(call) {
       if (
-        t.isIdentifier(call.node.callee, { name: 'cleanup' }) &&
-        call.scope.getBinding('cleanup') === undefined
+        (t.isIdentifier(call.node.callee, { name: 'cleanup' }) &&
+          call.scope.getBinding('cleanup') === undefined) ||
+        (t.isIdentifier(call.node.callee, { name: 'effect' }) &&
+          call.scope.getBinding('effect') === undefined)
       ) {
         eligible = false;
       }
@@ -1051,6 +1063,16 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
       `${v}/${suffix}/*`,
     ]);
     for (const v of vars) add(v, patterns);
+  }
+  for (const [component, sites] of ctx.effects) {
+    const ownerPatterns = componentPatterns(ctx, component)
+      .filter((pattern) => !pattern.endsWith('/*'));
+    for (const site of sites) {
+      const patterns = ownerPatterns.map(
+        (pattern) => `${pattern}/$effects/${site.index}`,
+      );
+      for (const read of site.moduleReads) add(read, patterns);
+    }
   }
   // R13: computed entities read their source keys (exact id, no patterns —
   // a computed is a module-level singleton). Depth -1 (emitted by the
