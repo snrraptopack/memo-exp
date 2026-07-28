@@ -45,8 +45,13 @@ export interface LocalDerivation {
 export interface ControlFlowDerivation {
   /** Pure authored control flow retained for initial factory evaluation. */
   statement: t.IfStatement | t.SwitchStatement;
-  /** Mutable locals assigned on every control-flow path. */
+  /** Mutable locals assigned by the control-flow calculation. */
   bindings: string[];
+  /** Initializers restored before replay when the control flow is partial. */
+  resets: Array<{
+    binding: string;
+    source: t.Expression;
+  }>;
   /** Transitive non-derived roots that can change the calculation. */
   sources: string[];
 }

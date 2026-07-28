@@ -48,6 +48,31 @@ describe('R27 - render-prelude code generation', () => {
     expect(textWrite).toBeGreaterThan(replay);
   });
 
+  it('resets initializer-backed partial calculations before replay', () => {
+    const code = compile(`
+      export function App() {
+        let step = 1;
+        let title = '';
+        switch (step) {
+          case 1:
+            title = 'one';
+            break;
+          case 2:
+            title = 'two';
+            break;
+        }
+        return <button onClick={() => step++}>{title}</button>;
+      }
+    `);
+    const update = code.indexOf('const _update');
+    const reset = code.indexOf("title = ''", update);
+    const replay = code.indexOf('switch (step)', update);
+    const textWrite = code.indexOf('.data =', update);
+    expect(reset).toBeGreaterThan(update);
+    expect(replay).toBeGreaterThan(reset);
+    expect(textWrite).toBeGreaterThan(replay);
+  });
+
   it('retains imperative reactive gates as one-time setup', () => {
     const code = compile(`
       let enabled = true;
@@ -98,6 +123,27 @@ const SOURCES: Record<string, string> = {
           label = 'done';
       }
       return <button onClick={() => status++}>{label}</button>;
+    }
+  `,
+  'r27-partial-control': `
+    export function App() {
+      let step = 1;
+      let title = 'unmatched';
+      switch (step) {
+        case 1:
+          title = 'one';
+          break;
+        case 2:
+          title = 'two';
+          break;
+      }
+      let enabled = true;
+      let gate = 'off';
+      if (enabled) gate = 'on';
+      return <main>
+        <button id="step" onClick={() => step++}>{title}</button>
+        <button id="gate" onClick={() => enabled = !enabled}>{gate}</button>
+      </main>;
     }
   `,
   'r27-early-return': `
@@ -236,6 +282,25 @@ describe('R27 - compiled render preludes', () => {
     expect(button.textContent).toBe('running');
     button.click();
     expect(button.textContent).toBe('done');
+  });
+
+  it('restores initializers for unmatched switch and if paths', async () => {
+    const { App } = await importCompiled('r27-partial-control');
+    document.body.appendChild(App('App', null));
+    const step = document.querySelector<HTMLButtonElement>('#step')!;
+    const gate = document.querySelector<HTMLButtonElement>('#gate')!;
+
+    expect(step.textContent).toBe('one');
+    step.click();
+    expect(step.textContent).toBe('two');
+    step.click();
+    expect(step.textContent).toBe('unmatched');
+
+    expect(gate.textContent).toBe('on');
+    gate.click();
+    expect(gate.textContent).toBe('off');
+    gate.click();
+    expect(gate.textContent).toBe('on');
   });
 
   it('lowers JSX early-return chains to one stable switching region', async () => {

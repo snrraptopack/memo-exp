@@ -1092,68 +1092,99 @@ function sameBindings(left: Set<string>, right: Set<string>): boolean {
   );
 }
 
+interface ReplayControlShape {
+  bindings: Set<string>;
+  /** Bindings that are not assigned on at least one control-flow path. */
+  partial: Set<string>;
+}
+
 /**
- * Return locals assigned on every path, or null when a branch contains
- * imperative work, fallthrough, partial assignment, or unsupported syntax.
+ * Return locals assigned by a replay-safe calculation. Partial paths are
+ * tracked so emission can restore the declaration initializer before replay.
  */
 function replayBindingsForStatement(
   statement: t.Statement,
-): Set<string> | null {
+): ReplayControlShape | null {
   if (t.isExpressionStatement(statement)) {
     const target = replayAssignmentTarget(statement);
-    return target === null ? null : new Set([target]);
+    return target === null
+      ? null
+      : {
+          bindings: new Set([target]),
+          partial: new Set(),
+        };
   }
   if (t.isBlockStatement(statement)) {
     const bindings = new Set<string>();
+    const partial = new Set<string>();
     for (const child of statement.body) {
-      const childBindings = replayBindingsForStatement(child);
-      if (childBindings === null) return null;
-      for (const binding of childBindings) {
+      const childShape = replayBindingsForStatement(child);
+      if (childShape === null) return null;
+      for (const binding of childShape.bindings) {
         if (bindings.has(binding)) return null;
         bindings.add(binding);
       }
+      for (const binding of childShape.partial) partial.add(binding);
     }
-    return bindings.size === 0 ? null : bindings;
+    return bindings.size === 0 ? null : { bindings, partial };
   }
   if (t.isIfStatement(statement)) {
     const alternate = statement.alternate;
+    if (!replayExpressionIsPure(statement.test)) return null;
+    const consequent = replayBindingsForStatement(statement.consequent);
+    if (consequent === null) return null;
+    if (alternate == null) {
+      return {
+        bindings: consequent.bindings,
+        partial: new Set([
+          ...consequent.bindings,
+          ...consequent.partial,
+        ]),
+      };
+    }
+    const alternateBindings = replayBindingsForStatement(alternate);
     if (
-      alternate == null ||
-      !replayExpressionIsPure(statement.test)
+      alternateBindings === null ||
+      !sameBindings(consequent.bindings, alternateBindings.bindings)
     ) {
       return null;
     }
-    const consequent = replayBindingsForStatement(statement.consequent);
-    const alternateBindings = replayBindingsForStatement(alternate);
-    return consequent !== null &&
-      alternateBindings !== null &&
-      sameBindings(consequent, alternateBindings)
-      ? consequent
-      : null;
+    return {
+      bindings: consequent.bindings,
+      partial: new Set([
+        ...consequent.partial,
+        ...alternateBindings.partial,
+      ]),
+    };
   }
   return null;
 }
 
 function replayBindingsForSwitch(
   statement: t.SwitchStatement,
-): Set<string> | null {
-  if (
-    !replayExpressionIsPure(statement.discriminant) ||
-    !statement.cases.some((item) => item.test === null)
-  ) {
-    return null;
-  }
-  let common: Set<string> | null = null;
+): ReplayControlShape | null {
+  if (!replayExpressionIsPure(statement.discriminant)) return null;
+  let common: ReplayControlShape | null = null;
   for (const item of statement.cases) {
     const test = item.test;
     if (test != null && !replayExpressionIsPure(test)) return null;
     const body = [...item.consequent];
     if (body.at(-1) && t.isBreakStatement(body.at(-1)!)) body.pop();
     if (body.some((child) => t.isBreakStatement(child))) return null;
-    const bindings = replayBindingsForStatement(t.blockStatement(body));
-    if (bindings === null) return null;
-    if (common === null) common = bindings;
-    else if (!sameBindings(common, bindings)) return null;
+    const shape = replayBindingsForStatement(t.blockStatement(body));
+    if (shape === null) return null;
+    if (common === null) {
+      common = shape;
+    } else {
+      if (!sameBindings(common.bindings, shape.bindings)) return null;
+      for (const binding of shape.partial) common.partial.add(binding);
+    }
+  }
+  if (
+    common !== null &&
+    !statement.cases.some((item) => item.test === null)
+  ) {
+    for (const binding of common.bindings) common.partial.add(binding);
   }
   return common;
 }
@@ -1169,9 +1200,11 @@ function violationBelongsTo(
 }
 
 /**
- * Classify pure, exhaustive top-level if/switch calculations. The authored
- * statement still initializes its locals once in the factory; emission also
- * clones it into the dependency-selected render prelude.
+ * Classify pure top-level if/switch calculations. The authored statement
+ * still initializes its locals once in the factory; emission also clones it
+ * into the dependency-selected render prelude. Partial calculations restore
+ * their declaration initializers first so an unmatched path cannot retain a
+ * value from the previous replay.
  */
 function scanInstanceControlFlow(ctx: Ctx): void {
   for (const [compName, compPath] of ctx.compPaths) {
@@ -1204,13 +1237,15 @@ function scanInstanceControlFlow(ctx: Ctx): void {
         continue;
       }
       const path = statementPath as ReplayControlPath;
-      const bindings = path.isIfStatement()
+      const shape = path.isIfStatement()
         ? replayBindingsForStatement(path.node)
         : replayBindingsForSwitch(path.node);
-      if (bindings === null) continue;
+      if (shape === null) continue;
 
       let eligible = true;
-      for (const name of bindings) {
+      const resets: ControlFlowDerivation['resets'] = [];
+      const resetPaths: NodePath<t.Expression>[] = [];
+      for (const name of shape.bindings) {
         const binding = compPath.scope.getBinding(name);
         const declaration = binding?.path;
         const declarationStatement = declaration?.parentPath;
@@ -1227,27 +1262,52 @@ function scanInstanceControlFlow(ctx: Ctx): void {
           eligible = false;
           break;
         }
+        if (shape.partial.has(name)) {
+          const initPath = declaration.get('init');
+          if (
+            !initPath.isExpression() ||
+            !replayExpressionIsPure(initPath.node)
+          ) {
+            eligible = false;
+            break;
+          }
+          resets.push({
+            binding: name,
+            source: initPath.node,
+          });
+          resetPaths.push(initPath);
+        }
       }
       if (!eligible) continue;
 
       const reads = new Set<string>();
-      path.traverse({
+      const noteIdentifier = (identifierPath: NodePath<t.Identifier>) => {
+        const binding = identifierPath.scope.getBinding(
+          identifierPath.node.name,
+        );
+        const source =
+          binding === undefined
+            ? undefined
+            : reactiveBindings.get(binding);
+        if (source !== undefined) reads.add(source);
+      };
+      const visitor = {
         Function(functionPath) {
           functionPath.skip();
         },
         ReferencedIdentifier(identifierPath) {
-          const binding = identifierPath.scope.getBinding(
-            identifierPath.node.name,
-          );
-          const source =
-            binding === undefined
-              ? undefined
-              : reactiveBindings.get(binding);
-          if (source !== undefined) reads.add(source);
+          if (identifierPath.isIdentifier()) noteIdentifier(identifierPath);
         },
-      });
+      } satisfies Parameters<NodePath['traverse']>[0];
+      path.traverse(visitor);
+      for (const resetPath of resetPaths) {
+        if (resetPath.isReferencedIdentifier()) {
+          noteIdentifier(resetPath);
+        }
+        resetPath.traverse(visitor);
+      }
       if (reads.size === 0) continue;
-      for (const name of bindings) {
+      for (const name of shape.bindings) {
         if (reads.has(name)) {
           throw path.buildCodeFrameError(
             `memo-dom: reactive control-flow derivation '${name}' reads its own previous value`,
@@ -1257,10 +1317,11 @@ function scanInstanceControlFlow(ctx: Ctx): void {
 
       controls.push({
         statement: path.node,
-        bindings: [...bindings].sort(),
+        bindings: [...shape.bindings].sort(),
+        resets,
         sources: [...reads].sort(),
       });
-      for (const name of bindings) {
+      for (const name of shape.bindings) {
         derivedBindings.add(name);
         const binding = compPath.scope.getBinding(name);
         if (binding) reactiveBindings.set(binding, name);

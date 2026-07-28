@@ -817,9 +817,13 @@ R26 does not define a separate post-attachment mount hook.
 ### R27 - Component render preludes and structural returns
 
 Component execution is split into one-time factory setup and a
-compiler-generated render prelude. Top-level pure, exhaustive `if`/`switch`
-statements that assign the same local `let`/`var` targets on every path are
-replayed in source order with expression derivations:
+compiler-generated render prelude. Top-level pure `if`/`switch` statements
+that assign the same local `let`/`var` targets in each authored branch are
+replayed in source order with expression derivations. Exhaustive control flow
+replays directly. For a missing `else` or `default`, each partially assigned
+target must have a pure declaration initializer; emission restores that
+initializer before replay so an unmatched path cannot retain the previous
+branch's value:
 
 `prop replay -> const/if/switch prelude -> DOM/child/region setters -> effects`
 

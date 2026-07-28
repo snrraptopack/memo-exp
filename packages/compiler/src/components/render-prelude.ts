@@ -1,9 +1,10 @@
 /**
  * Ordered replay for pure component-body calculations.
  *
- * Const derivations and exhaustive if/switch assignments share one source
- * order. Dirty reasons guard adjacent calculations with equal dependencies;
- * a reason-less update conservatively runs every calculation.
+ * Const derivations and pure if/switch assignments share one source order.
+ * Partial controls restore their initializer-backed fallbacks before replay.
+ * Dirty reasons guard adjacent calculations with equal dependencies; a
+ * reason-less update conservatively runs every calculation.
  */
 import * as t from '@babel/types';
 import type { Ctx } from '../context';
@@ -47,7 +48,18 @@ export function buildRenderPreludeReplay(
       order: order.get(control.statement) ?? Number.MAX_SAFE_INTEGER,
       sequence: sequence++,
       sources: control.sources,
-      statement: t.cloneNode(control.statement, true),
+      statement: t.blockStatement([
+        ...control.resets.map((reset) =>
+          t.expressionStatement(
+            t.assignmentExpression(
+              '=',
+              t.identifier(reset.binding),
+              t.cloneNode(reset.source, true),
+            ),
+          ),
+        ),
+        t.cloneNode(control.statement, true),
+      ]),
     })),
   ].sort(
     (left, right) =>
