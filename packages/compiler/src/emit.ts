@@ -17,9 +17,7 @@ import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   attrExpr,
-  exprReadsInstanceState,
   exprReadsState,
-  keyPathOf,
   nodeHasJsx,
   type Ctx,
   type RowCtx,
@@ -30,23 +28,16 @@ import {
   md,
 } from './identifiers';
 import {
-  cacheDecl,
   freshNodeName,
   freshSlot,
-  newEmitScope,
-  registerStmt,
   slotGuard,
-  updateDecl,
   type EmitScope,
 } from './emission/scope';
-import { analyzeMapSite, type MapSite } from './lists';
-import { analyzeCondSite } from './conds';
 import {
   buildHandler,
   instrumentComponentCallback,
   resolveLocalHelper,
 } from './handlers';
-import { isLightweightListedComponent } from './analysis';
 import {
   buildChildrenSlot,
   emitChildrenIntoParent,
@@ -69,6 +60,11 @@ import {
   callPropsFromObject,
   orderCallProps,
 } from './components/calls';
+import {
+  buildBranchCreate as buildConditionalBranchCreate,
+  emitConditionalRegion,
+} from './emission/conditional-region';
+import { emitListRegion } from './emission/list-region';
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -905,503 +901,17 @@ function emitRegion(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): void {
-  const site = analyzeMapSite(ctx, call, compPath, compName, scope.usedPrefixes);
-
-  const regionVar = generatedIdentifier(
+  emitListRegion(
     ctx,
-    `region${scope.regionCounter++}`,
-  ).name;
-  const createFn =
-    site.form === 'component'
-      ? buildComponentRowCreate(
-          ctx,
-          site,
-          compName,
-          compPath,
-          inSvg,
-          ownerId,
-        )
-      : buildInlineRowCreate(
-          ctx,
-          site,
-          compName,
-          compPath,
-          inSvg,
-          ownerId,
-        );
-
-  const args: t.Expression[] = [
-    t.identifier(parentElVar),
-    t.binaryExpression(
-      '+',
-      t.cloneNode(ownerId),
-      t.stringLiteral(`/${site.suffix}`),
-    ),
-    createFn,
-  ];
-  if (site.keyExpr !== null) {
-    args.push(
-      t.arrowFunctionExpression(
-        [
-          t.cloneNode(site.itemPattern, true),
-          ...(site.indexParam === null
-            ? []
-            : [t.identifier(site.indexParam)]),
-        ],
-        t.cloneNode(site.keyExpr),
-      ),
-    );
-  }
-  scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(regionVar),
-        t.callExpression(md(ctx, 'createListRegion'), args),
-      ),
-    ]),
-  );
-  scope.disposableRegions.push(regionVar);
-
-  // initial population + every owner render re-reconciles (region diffs)
-  scope.creation.push(
-    t.expressionStatement(
-      t.callExpression(
-        t.memberExpression(t.identifier(regionVar), t.identifier('reconcile')),
-        [t.cloneNode(site.sourceExpr)],
-      ),
-    ),
-  );
-  scope.updaters.push(() =>
-    t.expressionStatement(
-      t.callExpression(
-        t.memberExpression(t.identifier(regionVar), t.identifier('reconcile')),
-        [t.cloneNode(site.sourceExpr)],
-      ),
-    ),
-  );
-}
-
-/** Build one keyed component-row factory and its retained-item replay. */
-function buildComponentRowCreate(
-  ctx: Ctx,
-  site: MapSite,
-  compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
-  inSvg = false,
-  ownerId: t.Expression = componentId(ctx, compName),
-): t.ArrowFunctionExpression {
-  const rowComp = site.rowComp!;
-  const rowId = generatedIdentifier(ctx, 'rowId');
-  const nextItem = generatedIdentifier(ctx, 'nextItem');
-  const nextIndex =
-    site.indexParam === null
-      ? null
-      : generatedIdentifier(ctx, 'nextIndex');
-  const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
-  const rowScope = newEmitScope(ctx);
-  const lightweight = isLightweightListedComponent(ctx, rowComp);
-  const rowChildCtx: RowCtx = {
-    itemParam: site.itemParam,
-    itemPath: [],
-    rowIdVar: rowId.name,
-    refreshVar: rowRefresh.name,
-    keyPath: keyPathOf(site.keyExpr, site.itemParam),
-    sourceKey: site.sourceKey,
-    sourceLocal: site.sourceLocal,
-    ...(site.sourceLocal && t.isIdentifier(ownerId)
-      ? { ownerIdVar: ownerId.name }
-      : {}),
-  };
-  const attributes = site.jsx.openingElement.attributes.filter(
-    (attribute) =>
-      t.isJSXSpreadAttribute(attribute) ||
-      jsxAttributeName(attribute.name) !== 'key',
-  );
-  const hasSpread = attributes.some((attribute) =>
-    t.isJSXSpreadAttribute(attribute),
-  );
-  const propEntries: Array<{ name: string; value: t.Expression }> = [];
-  let propObjectExpression: t.ObjectExpression | null = null;
-
-  if (hasSpread) {
-    propObjectExpression = buildOrderedAttributes(attributes, {
-      fail: (message) => {
-        throw compPath.buildCodeFrameError(message);
-      },
-    }).expression;
-  } else {
-    for (const attribute of attributes) {
-      const direct = attribute as t.JSXAttribute;
-      const value =
-        direct.value == null
-          ? t.booleanLiteral(true)
-          : attrExpr(direct.value);
-      if (value === null) {
-        throw compPath.buildCodeFrameError(
-          `memo-dom: prop '${jsxAttributeName(
-            direct.name,
-          )}' on <${rowComp}> must be an expression`,
-        );
-      }
-      propEntries.push({
-        name: jsxAttributeName(direct.name),
-        value: t.cloneNode(value),
-      });
-    }
-  }
-
-  if (hasComponentChildren(site.jsx.children)) {
-    if (
-      attributes.some(
-        (attribute) =>
-          t.isJSXAttribute(attribute) &&
-          jsxAttributeName(attribute.name) === 'children',
-      )
-    ) {
-      throw compPath.buildCodeFrameError(
-        `memo-dom: <${rowComp}> cannot use both a children prop and nested JSX children`,
-      );
-    }
-    const childrenSlot = buildAuthoredChildrenSlot(
-      ctx,
-      rowScope,
-      site.jsx.children,
-      compName,
-      compPath,
-      'row',
-      rowChildCtx,
-      rowId,
-      inSvg,
-      rowId,
-    );
-    if (propObjectExpression !== null) {
-      propObjectExpression.properties.push(
-        t.objectProperty(t.identifier('children'), t.cloneNode(childrenSlot)),
-      );
-    } else {
-      propEntries.push({
-        name: 'children',
-        value: t.cloneNode(childrenSlot),
-      });
-    }
-  }
-
-  const prefixStatements: t.Statement[] = [];
-  let callProps: t.Expression[];
-  if (propObjectExpression !== null) {
-    const propObject = generatedIdentifier(ctx, `${rowComp}Props`);
-    prefixStatements.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.cloneNode(propObject),
-          t.cloneNode(propObjectExpression),
-        ),
-      ]),
-    );
-    callProps = callPropsFromObject(ctx, rowComp, propObject);
-  } else {
-    callProps = orderCallProps(ctx, rowComp, propEntries);
-  }
-
-  const updateStatements: t.Statement[] = [
-    t.expressionStatement(
-      t.assignmentExpression(
-        '=',
-        t.cloneNode(site.itemPattern, true),
-        t.cloneNode(nextItem),
-      ),
-    ),
-  ];
-  if (nextIndex !== null && site.indexParam !== null) {
-    updateStatements.push(
-      t.expressionStatement(
-        t.assignmentExpression(
-          '=',
-          t.identifier(site.indexParam),
-          t.cloneNode(nextIndex),
-        ),
-      ),
-    );
-  }
-  let nextCallProps = callProps.map((prop) => t.cloneNode(prop));
-  if (propObjectExpression !== null) {
-    const nextProps = generatedIdentifier(ctx, `next${rowComp}Props`);
-    updateStatements.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.cloneNode(nextProps),
-          t.cloneNode(propObjectExpression),
-        ),
-      ]),
-    );
-    nextCallProps = callPropsFromObject(ctx, rowComp, nextProps);
-  }
-
-  const result = generatedIdentifier(
-    ctx,
-    lightweight ? 'entry' : 'rowElement',
-  );
-  if (lightweight) {
-    updateStatements.push(
-      t.expressionStatement(
-        t.callExpression(
-          t.memberExpression(t.cloneNode(result), t.identifier('updateProps')),
-          nextCallProps,
-        ),
-      ),
-    );
-  } else {
-    updateStatements.push(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'setProps'), [
-          t.cloneNode(rowId),
-          t.arrayExpression(nextCallProps),
-        ]),
-      ),
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'markDirty'), [t.cloneNode(rowId)]),
-      ),
-    );
-  }
-  if (rowScope.updaters.length > 0) {
-    updateStatements.push(
-      t.expressionStatement(
-        t.callExpression(t.identifier(rowScope.updateVar), []),
-      ),
-    );
-  }
-
-  const entryProperties: t.ObjectProperty[] = lightweight
-    ? [
-        t.objectProperty(
-          t.identifier('nodes'),
-          t.memberExpression(t.cloneNode(result), t.identifier('nodes')),
-        ),
-        t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
-        t.objectProperty(
-          t.identifier('update'),
-          t.memberExpression(t.cloneNode(result), t.identifier('update')),
-        ),
-      ]
-    : [
-        t.objectProperty(
-          t.identifier('nodes'),
-          t.callExpression(md(ctx, 'rootNodes'), [t.cloneNode(result)]),
-        ),
-        t.objectProperty(
-          t.identifier('entities'),
-          t.arrayExpression([t.cloneNode(rowId)]),
-        ),
-      ];
-  if (callProps.length > 0 || rowScope.updaters.length > 0) {
-    entryProperties.push(
-      t.objectProperty(
-        t.identifier('updateProps'),
-        t.arrowFunctionExpression(
-          [
-            t.cloneNode(nextItem),
-            ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
-          ],
-          t.blockStatement(updateStatements),
-        ),
-      ),
-    );
-  }
-
-  return t.arrowFunctionExpression(
-    [
-      t.cloneNode(site.itemPattern, true),
-      t.cloneNode(rowId),
-      ...(site.indexParam === null
-        ? []
-        : [t.identifier(site.indexParam)]),
-    ],
-    t.blockStatement([
-      ...(rowScope.updaters.length > 0
-        ? [cacheDecl(rowScope), updateDecl(rowScope)]
-        : []),
-      ...rowScope.creation,
-      ...prefixStatements,
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.cloneNode(result),
-          lightweight
-            ? t.callExpression(t.identifier(rowComp), [
-                ...callProps.map((prop) => t.cloneNode(prop)),
-                t.cloneNode(rowId),
-                ...(site.sourceLocal ? [t.cloneNode(ownerId)] : []),
-              ])
-            : t.callExpression(t.identifier(rowComp), [
-                t.cloneNode(rowId),
-                t.cloneNode(ownerId),
-                ...(callProps.length > 0
-                  ? [t.arrayExpression(callProps)]
-                  : []),
-              ]),
-        ),
-      ]),
-      ...(rowScope.updaters.length > 0
-        ? [
-            t.variableDeclaration('const', [
-              t.variableDeclarator(
-                t.cloneNode(rowRefresh),
-                t.arrowFunctionExpression(
-                  [],
-                  t.blockStatement([
-                    t.expressionStatement(
-                      lightweight
-                        ? t.callExpression(
-                            t.memberExpression(
-                              t.cloneNode(result),
-                              t.identifier('update'),
-                            ),
-                            [],
-                          )
-                        : t.callExpression(md(ctx, 'markDirty'), [
-                            t.cloneNode(rowId),
-                          ]),
-                    ),
-                    t.expressionStatement(
-                      t.callExpression(t.identifier(rowScope.updateVar), []),
-                    ),
-                  ]),
-                ),
-              ),
-            ]),
-          ]
-        : []),
-      t.returnStatement(t.objectExpression(entryProperties)),
-    ]),
-  );
-}
-
-/**
- * An inline row is a small entity factory of its own, nested in the owner:
- * own slot cache, own update closure, register(parent = owner id), and a
- * ListEntry return. Emitted into a fresh EmitScope so its variables and
- * slots never collide with the owner's.
- */
-function buildInlineRowCreate(
-  ctx: Ctx,
-  site: MapSite,
-  compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
-  inSvg = false,
-  ownerId: t.Expression = componentId(ctx, compName),
-): t.ArrowFunctionExpression {
-  // 'key' is region metadata, not a DOM attribute — strip before emission
-  site.jsx.openingElement.attributes = site.jsx.openingElement.attributes.filter(
-    (a) =>
-      t.isJSXSpreadAttribute(a) ||
-      (a.name as t.JSXIdentifier).name !== 'key',
-  );
-  const rowScope = newEmitScope(ctx);
-  const rowId = generatedIdentifier(ctx, 'rowId').name;
-  const nextItem =
-    site.indexParam === null
-      ? null
-      : generatedIdentifier(ctx, 'nextItem');
-  const nextIndex =
-    site.indexParam === null
-      ? null
-      : generatedIdentifier(ctx, 'nextIndex');
-  // R11: handlers inside the row may write the item's fields — those
-  // commits stay row-local (markDirty(rowId)); key-field writes fall back
-  // to a source-array write handled inside handler analysis.
-  const rowCtx: RowCtx = {
-    itemParam: site.itemParam,
-    itemPath: [],
-    rowIdVar: rowId,
-    keyPath: keyPathOf(site.keyExpr, site.itemParam),
-    sourceKey: site.sourceKey,
-    sourceLocal: site.sourceLocal,
-    ...(site.sourceLocal
-      ? {
-          ownerIdVar: t.isIdentifier(ownerId)
-            ? ownerId.name
-            : componentId(ctx, compName).name,
-        }
-      : {}),
-  };
-  const rootVar = emitElement(
-    ctx,
-    rowScope,
-    site.jsx,
+    scope,
+    call,
+    parentElVar,
     compName,
     compPath,
-    'row',
-    rowCtx,
-    t.identifier(rowId),
+    emitNode,
+    buildAuthoredChildrenSlot,
     inSvg,
-    t.identifier(rowId),
-  );
-  const bindingUpdates: t.Statement[] =
-    nextItem === null
-      ? []
-      : [
-          t.expressionStatement(
-            t.assignmentExpression(
-              '=',
-              t.cloneNode(site.itemPattern, true),
-              t.cloneNode(nextItem),
-            ),
-          ),
-        ];
-  if (nextIndex !== null && site.indexParam !== null) {
-    bindingUpdates.push(
-      t.expressionStatement(
-        t.assignmentExpression(
-          '=',
-          t.identifier(site.indexParam),
-          t.cloneNode(nextIndex),
-        ),
-      ),
-    );
-  }
-  return t.arrowFunctionExpression(
-    [
-      t.cloneNode(site.itemPattern, true),
-      t.identifier(rowId),
-      ...(site.indexParam === null
-        ? []
-        : [t.identifier(site.indexParam)]),
-    ],
-    t.blockStatement([
-      cacheDecl(rowScope),
-      updateDecl(rowScope),
-      registerStmt(
-        ctx,
-        t.identifier(rowId),
-        t.cloneNode(ownerId),
-        t.identifier(rowScope.updateVar),
-      ),
-      ...rowScope.creation,
-      t.returnStatement(
-        t.objectExpression([
-          t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
-          t.objectProperty(t.identifier('entities'), t.arrayExpression([t.identifier(rowId)])),
-          ...(nextItem === null
-            ? []
-            : [
-                t.objectProperty(
-                  t.identifier('updateProps'),
-                  t.arrowFunctionExpression(
-                    [
-                      t.cloneNode(nextItem),
-                      ...(nextIndex === null
-                        ? []
-                        : [t.cloneNode(nextIndex)]),
-                    ],
-                    t.blockStatement(bindingUpdates),
-                  ),
-                ),
-              ]),
-          // M5.5: reconcile re-runs this on reused rows so externally
-          // mutated item data (row reads params, not state) re-syncs
-          t.objectProperty(t.identifier('update'), t.identifier(rowScope.updateVar)),
-        ]),
-      ),
-    ]),
+    ownerId,
   );
 }
 
@@ -1427,81 +937,18 @@ function emitCondRegion(
   ownerId: t.Expression = componentId(ctx, compName),
   forwardFromOwner = false,
 ): void {
-  const site = analyzeCondSite(expr, compPath, scope.usedConds);
-  const regionVar = generatedIdentifier(ctx, site.suffix).name;
-  const regionId = t.binaryExpression(
-    '+',
-    t.cloneNode(ownerId),
-    t.stringLiteral(`/${site.suffix}`),
+  emitConditionalRegion(
+    ctx,
+    scope,
+    expr,
+    parentElVar,
+    compName,
+    compPath,
+    emitNode,
+    inSvg,
+    ownerId,
+    forwardFromOwner,
   );
-
-  const pick = t.arrowFunctionExpression([], t.cloneNode(site.pickExpr));
-  const branchFns: t.Expression[] = site.branches.map((jsx) =>
-    jsx !== null
-      ? buildBranchCreate(
-          ctx,
-          jsx,
-          compName,
-          compPath,
-          regionId,
-          inSvg,
-          regionId,
-          false,
-          scope.usedConds,
-        )
-      : t.nullLiteral(),
-  );
-
-  // register BEFORE creation (parent-first invariant; branch factories run
-  // during createCondRegion's initial update)
-  scope.creation.push(
-    registerStmt(
-      ctx,
-      t.cloneNode(regionId),
-      t.cloneNode(ownerId),
-      t.arrowFunctionExpression(
-        [],
-        t.callExpression(
-          t.memberExpression(t.identifier(regionVar), t.identifier('update')),
-          [],
-        ),
-      ),
-    ),
-  );
-  scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(regionVar),
-        t.callExpression(md(ctx, 'createCondRegion'), [
-          t.identifier(parentElVar),
-          t.cloneNode(regionId),
-          pick,
-          t.arrayExpression(branchFns),
-        ]),
-      ),
-    ]),
-  );
-  if (
-    forwardFromOwner ||
-    exprReadsInstanceState(ctx, expr, compName)
-  ) {
-    scope.updaters.push(() =>
-      t.expressionStatement(
-        t.callExpression(
-          t.memberExpression(
-            t.identifier(regionVar),
-            t.identifier('update'),
-          ),
-          [],
-        ),
-      ),
-    );
-  }
-  scope.disposableRegions.push(regionVar);
-  scope.disposableEntities.push(t.cloneNode(regionId));
-  // Module dependencies dirty the region through the access table. An
-  // instance-owned dependency has no table identity, so the owner forwards
-  // its update explicitly.
 }
 
 /**
@@ -1520,75 +967,16 @@ export function buildBranchCreate(
   allowConditions = false,
   usedConds?: { count: number },
 ): t.ArrowFunctionExpression {
-  const branchScope = newEmitScope(ctx);
-  if (usedConds !== undefined) branchScope.usedConds = usedConds;
-  const rootVar = emitNode(
+  return buildConditionalBranchCreate(
     ctx,
-    branchScope,
     jsx,
     compName,
     compPath,
-    allowConditions ? null : 'cond',
-    undefined,
     regionId,
+    emitNode,
     inSvg,
     ownerId,
-  );
-  const properties: t.ObjectProperty[] = [
-    t.objectProperty(
-      t.identifier('nodes'),
-      t.callExpression(md(ctx, 'rootNodes'), [
-        t.identifier(rootVar),
-      ]),
-    ),
-    t.objectProperty(
-      t.identifier('update'),
-      t.identifier(branchScope.updateVar),
-    ),
-  ];
-  if (
-    branchScope.disposableRegions.length > 0 ||
-    branchScope.disposableEntities.length > 0
-  ) {
-    const disposeStatements: t.Statement[] = [
-      ...branchScope.disposableRegions.map((region) =>
-        t.expressionStatement(
-          t.callExpression(
-            t.memberExpression(
-              t.identifier(region),
-              t.identifier('dispose'),
-            ),
-            [],
-          ),
-        ),
-      ),
-      ...branchScope.disposableEntities.map((entity) =>
-        t.expressionStatement(
-          t.callExpression(md(ctx, 'unregisterSubtree'), [
-            t.cloneNode(entity),
-          ]),
-        ),
-      ),
-    ];
-    properties.push(
-      t.objectProperty(
-        t.identifier('dispose'),
-        t.arrowFunctionExpression(
-          [],
-          t.blockStatement(disposeStatements),
-        ),
-      ),
-    );
-  }
-  return t.arrowFunctionExpression(
-    [],
-    t.blockStatement([
-      cacheDecl(branchScope),
-      updateDecl(branchScope),
-      ...branchScope.creation,
-      t.returnStatement(
-        t.objectExpression(properties),
-      ),
-    ]),
+    allowConditions,
+    usedConds,
   );
 }

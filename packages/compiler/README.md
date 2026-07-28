@@ -4,9 +4,10 @@ The top-level files are orchestration and whole-program passes:
 
 | Path | Responsibility |
 |---|---|
-| `src/analysis.ts` | Binding-aware module/component read analysis |
-| `src/context.ts` | Shared analysis facts and canonical identities |
-| `src/emit.ts` | JSX DOM and structural-region emission |
+| `src/analysis.ts` | Analysis orchestration, JSX validation, and read attribution |
+| `src/context.ts` | Stable facade for shared context types and AST utilities |
+| `src/emit.ts` | Host JSX DOM emission and structural-region dispatch |
+| `src/handlers.ts` | Handler resolution and callback instrumentation |
 | `src/linker.ts` | Connected module-graph compilation |
 | `src/module-control-flow.ts` | Pure module if/switch computed classification |
 | `src/plugin.ts` | Babel pass ordering and final module rewrite |
@@ -15,9 +16,13 @@ Domain folders keep related implementation details discoverable:
 
 | Folder | Responsibility |
 |---|---|
+| `src/analysis/` | Computeds, component paths, instance preludes, and access tables |
 | `src/components/` | Prop contracts, content slots, and linker manifests |
-| `src/emission/` | Component factory and generated-scope builders |
+| `src/context/` | Compiler data model/context construction and raw AST helpers |
+| `src/emission/` | Component factories, generated scopes, and list/conditional regions |
+| `src/handlers/` | Mutation traversal and commit-routing analysis |
 | `src/jsx/` | Ordered attributes, child classification, and namespaces |
 
-There are no compatibility forwarding files. When a module changes ownership,
-imports should point directly to its domain folder.
+The top-level analysis, context, emitter, and handler modules intentionally
+remain stable facades. Cross-domain callers use those facades; implementation
+modules within a domain import their siblings directly.

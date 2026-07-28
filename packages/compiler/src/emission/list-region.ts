@@ -1,0 +1,566 @@
+import type { NodePath } from '@babel/traverse';
+import * as t from '@babel/types';
+import {
+  attrExpr,
+  keyPathOf,
+  type Ctx,
+  type RowCtx,
+} from '../context';
+import {
+  componentId,
+  generatedIdentifier,
+  md,
+} from '../identifiers';
+import { analyzeMapSite, type MapSite } from '../lists';
+import { isLightweightListedComponent } from '../analysis';
+import {
+  hasComponentChildren,
+  type JsxChild,
+} from '../components/children';
+import {
+  buildOrderedAttributes,
+  jsxAttributeName,
+} from '../jsx/attributes';
+import {
+  callPropsFromObject,
+  orderCallProps,
+} from '../components/calls';
+import {
+  cacheDecl,
+  newEmitScope,
+  registerStmt,
+  updateDecl,
+  type EmitScope,
+} from './scope';
+import type { NodeEmitter } from './node-emitter';
+
+export type AuthoredChildrenSlotBuilder = (
+  ctx: Ctx,
+  ownerScope: EmitScope,
+  children: readonly JsxChild[],
+  componentName: string,
+  componentPath: NodePath<t.FunctionDeclaration>,
+  nestedIn: 'row' | 'cond' | null,
+  rowContext: RowCtx | undefined,
+  eventOriginId: t.Expression | undefined,
+  inSvg: boolean,
+  ownerId: t.Expression,
+) => t.Identifier;
+
+/** Emit a keyed list region and its row factory. */
+export function emitListRegion(
+  ctx: Ctx,
+  scope: EmitScope,
+  call: t.CallExpression,
+  parentElementVariable: string,
+  componentName: string,
+  componentPath: NodePath<t.FunctionDeclaration>,
+  emitNode: NodeEmitter,
+  buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, componentName),
+): void {
+  const site = analyzeMapSite(
+    ctx,
+    call,
+    componentPath,
+    componentName,
+    scope.usedPrefixes,
+  );
+  const regionVariable = generatedIdentifier(
+    ctx,
+    `region${scope.regionCounter++}`,
+  ).name;
+  const createFactory =
+    site.form === 'component'
+      ? buildComponentRowCreate(
+          ctx,
+          site,
+          componentName,
+          componentPath,
+          buildAuthoredChildrenSlot,
+          inSvg,
+          ownerId,
+        )
+      : buildInlineRowCreate(
+          ctx,
+          site,
+          componentName,
+          componentPath,
+          emitNode,
+          inSvg,
+          ownerId,
+        );
+
+  const args: t.Expression[] = [
+    t.identifier(parentElementVariable),
+    t.binaryExpression(
+      '+',
+      t.cloneNode(ownerId),
+      t.stringLiteral(`/${site.suffix}`),
+    ),
+    createFactory,
+  ];
+  if (site.keyExpr !== null) {
+    args.push(
+      t.arrowFunctionExpression(
+        [
+          t.cloneNode(site.itemPattern, true),
+          ...(site.indexParam === null
+            ? []
+            : [t.identifier(site.indexParam)]),
+        ],
+        t.cloneNode(site.keyExpr),
+      ),
+    );
+  }
+  scope.creation.push(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        t.identifier(regionVariable),
+        t.callExpression(md(ctx, 'createListRegion'), args),
+      ),
+    ]),
+  );
+  scope.disposableRegions.push(regionVariable);
+
+  const reconcile = (): t.Statement =>
+    t.expressionStatement(
+      t.callExpression(
+        t.memberExpression(
+          t.identifier(regionVariable),
+          t.identifier('reconcile'),
+        ),
+        [t.cloneNode(site.sourceExpr)],
+      ),
+    );
+  scope.creation.push(reconcile());
+  scope.updaters.push(reconcile);
+}
+
+function buildComponentRowCreate(
+  ctx: Ctx,
+  site: MapSite,
+  componentName: string,
+  componentPath: NodePath<t.FunctionDeclaration>,
+  buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, componentName),
+): t.ArrowFunctionExpression {
+  const rowComponent = site.rowComp!;
+  const rowId = generatedIdentifier(ctx, 'rowId');
+  const nextItem = generatedIdentifier(ctx, 'nextItem');
+  const nextIndex =
+    site.indexParam === null
+      ? null
+      : generatedIdentifier(ctx, 'nextIndex');
+  const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
+  const rowScope = newEmitScope(ctx);
+  const lightweight = isLightweightListedComponent(ctx, rowComponent);
+  const rowContext: RowCtx = {
+    itemParam: site.itemParam,
+    itemPath: [],
+    rowIdVar: rowId.name,
+    refreshVar: rowRefresh.name,
+    keyPath: keyPathOf(site.keyExpr, site.itemParam),
+    sourceKey: site.sourceKey,
+    sourceLocal: site.sourceLocal,
+    ...(site.sourceLocal && t.isIdentifier(ownerId)
+      ? { ownerIdVar: ownerId.name }
+      : {}),
+  };
+  const attributes = site.jsx.openingElement.attributes.filter(
+    (attribute) =>
+      t.isJSXSpreadAttribute(attribute) ||
+      jsxAttributeName(attribute.name) !== 'key',
+  );
+  const hasSpread = attributes.some((attribute) =>
+    t.isJSXSpreadAttribute(attribute),
+  );
+  const propEntries: Array<{ name: string; value: t.Expression }> = [];
+  let propObjectExpression: t.ObjectExpression | null = null;
+
+  if (hasSpread) {
+    propObjectExpression = buildOrderedAttributes(attributes, {
+      fail: (message) => {
+        throw componentPath.buildCodeFrameError(message);
+      },
+    }).expression;
+  } else {
+    for (const attribute of attributes) {
+      const direct = attribute as t.JSXAttribute;
+      const value =
+        direct.value == null ? t.booleanLiteral(true) : attrExpr(direct.value);
+      if (value === null) {
+        throw componentPath.buildCodeFrameError(
+          `memo-dom: prop '${jsxAttributeName(
+            direct.name,
+          )}' on <${rowComponent}> must be an expression`,
+        );
+      }
+      propEntries.push({
+        name: jsxAttributeName(direct.name),
+        value: t.cloneNode(value),
+      });
+    }
+  }
+
+  if (hasComponentChildren(site.jsx.children)) {
+    if (
+      attributes.some(
+        (attribute) =>
+          t.isJSXAttribute(attribute) &&
+          jsxAttributeName(attribute.name) === 'children',
+      )
+    ) {
+      throw componentPath.buildCodeFrameError(
+        `memo-dom: <${rowComponent}> cannot use both a children prop and nested JSX children`,
+      );
+    }
+    const childrenSlot = buildAuthoredChildrenSlot(
+      ctx,
+      rowScope,
+      site.jsx.children,
+      componentName,
+      componentPath,
+      'row',
+      rowContext,
+      rowId,
+      inSvg,
+      rowId,
+    );
+    if (propObjectExpression !== null) {
+      propObjectExpression.properties.push(
+        t.objectProperty(
+          t.identifier('children'),
+          t.cloneNode(childrenSlot),
+        ),
+      );
+    } else {
+      propEntries.push({
+        name: 'children',
+        value: t.cloneNode(childrenSlot),
+      });
+    }
+  }
+
+  const prefixStatements: t.Statement[] = [];
+  let callProps: t.Expression[];
+  if (propObjectExpression !== null) {
+    const propObject = generatedIdentifier(ctx, `${rowComponent}Props`);
+    prefixStatements.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.cloneNode(propObject),
+          t.cloneNode(propObjectExpression),
+        ),
+      ]),
+    );
+    callProps = callPropsFromObject(ctx, rowComponent, propObject);
+  } else {
+    callProps = orderCallProps(ctx, rowComponent, propEntries);
+  }
+
+  const updateStatements: t.Statement[] = [
+    t.expressionStatement(
+      t.assignmentExpression(
+        '=',
+        t.cloneNode(site.itemPattern, true),
+        t.cloneNode(nextItem),
+      ),
+    ),
+  ];
+  if (nextIndex !== null && site.indexParam !== null) {
+    updateStatements.push(
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.identifier(site.indexParam),
+          t.cloneNode(nextIndex),
+        ),
+      ),
+    );
+  }
+  let nextCallProps = callProps.map((prop) => t.cloneNode(prop));
+  if (propObjectExpression !== null) {
+    const nextProps = generatedIdentifier(ctx, `next${rowComponent}Props`);
+    updateStatements.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.cloneNode(nextProps),
+          t.cloneNode(propObjectExpression),
+        ),
+      ]),
+    );
+    nextCallProps = callPropsFromObject(ctx, rowComponent, nextProps);
+  }
+
+  const result = generatedIdentifier(
+    ctx,
+    lightweight ? 'entry' : 'rowElement',
+  );
+  if (lightweight) {
+    updateStatements.push(
+      t.expressionStatement(
+        t.callExpression(
+          t.memberExpression(
+            t.cloneNode(result),
+            t.identifier('updateProps'),
+          ),
+          nextCallProps,
+        ),
+      ),
+    );
+  } else {
+    updateStatements.push(
+      t.expressionStatement(
+        t.callExpression(md(ctx, 'setProps'), [
+          t.cloneNode(rowId),
+          t.arrayExpression(nextCallProps),
+        ]),
+      ),
+      t.expressionStatement(
+        t.callExpression(md(ctx, 'markDirty'), [t.cloneNode(rowId)]),
+      ),
+    );
+  }
+  if (rowScope.updaters.length > 0) {
+    updateStatements.push(
+      t.expressionStatement(
+        t.callExpression(t.identifier(rowScope.updateVar), []),
+      ),
+    );
+  }
+
+  const entryProperties: t.ObjectProperty[] = lightweight
+    ? [
+        t.objectProperty(
+          t.identifier('nodes'),
+          t.memberExpression(t.cloneNode(result), t.identifier('nodes')),
+        ),
+        t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
+        t.objectProperty(
+          t.identifier('update'),
+          t.memberExpression(t.cloneNode(result), t.identifier('update')),
+        ),
+      ]
+    : [
+        t.objectProperty(
+          t.identifier('nodes'),
+          t.callExpression(md(ctx, 'rootNodes'), [t.cloneNode(result)]),
+        ),
+        t.objectProperty(
+          t.identifier('entities'),
+          t.arrayExpression([t.cloneNode(rowId)]),
+        ),
+      ];
+  if (callProps.length > 0 || rowScope.updaters.length > 0) {
+    entryProperties.push(
+      t.objectProperty(
+        t.identifier('updateProps'),
+        t.arrowFunctionExpression(
+          [
+            t.cloneNode(nextItem),
+            ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
+          ],
+          t.blockStatement(updateStatements),
+        ),
+      ),
+    );
+  }
+
+  return t.arrowFunctionExpression(
+    [
+      t.cloneNode(site.itemPattern, true),
+      t.cloneNode(rowId),
+      ...(site.indexParam === null
+        ? []
+        : [t.identifier(site.indexParam)]),
+    ],
+    t.blockStatement([
+      ...(rowScope.updaters.length > 0
+        ? [cacheDecl(rowScope), updateDecl(rowScope)]
+        : []),
+      ...rowScope.creation,
+      ...prefixStatements,
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.cloneNode(result),
+          lightweight
+            ? t.callExpression(t.identifier(rowComponent), [
+                ...callProps.map((prop) => t.cloneNode(prop)),
+                t.cloneNode(rowId),
+                ...(site.sourceLocal ? [t.cloneNode(ownerId)] : []),
+              ])
+            : t.callExpression(t.identifier(rowComponent), [
+                t.cloneNode(rowId),
+                t.cloneNode(ownerId),
+                ...(callProps.length > 0
+                  ? [t.arrayExpression(callProps)]
+                  : []),
+              ]),
+        ),
+      ]),
+      ...(rowScope.updaters.length > 0
+        ? [
+            t.variableDeclaration('const', [
+              t.variableDeclarator(
+                t.cloneNode(rowRefresh),
+                t.arrowFunctionExpression(
+                  [],
+                  t.blockStatement([
+                    t.expressionStatement(
+                      lightweight
+                        ? t.callExpression(
+                            t.memberExpression(
+                              t.cloneNode(result),
+                              t.identifier('update'),
+                            ),
+                            [],
+                          )
+                        : t.callExpression(md(ctx, 'markDirty'), [
+                            t.cloneNode(rowId),
+                          ]),
+                    ),
+                    t.expressionStatement(
+                      t.callExpression(
+                        t.identifier(rowScope.updateVar),
+                        [],
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ]),
+          ]
+        : []),
+      t.returnStatement(t.objectExpression(entryProperties)),
+    ]),
+  );
+}
+
+function buildInlineRowCreate(
+  ctx: Ctx,
+  site: MapSite,
+  componentName: string,
+  componentPath: NodePath<t.FunctionDeclaration>,
+  emitNode: NodeEmitter,
+  inSvg = false,
+  ownerId: t.Expression = componentId(ctx, componentName),
+): t.ArrowFunctionExpression {
+  site.jsx.openingElement.attributes =
+    site.jsx.openingElement.attributes.filter(
+      (attribute) =>
+        t.isJSXSpreadAttribute(attribute) ||
+        (attribute.name as t.JSXIdentifier).name !== 'key',
+    );
+  const rowScope = newEmitScope(ctx);
+  const rowId = generatedIdentifier(ctx, 'rowId').name;
+  const nextItem =
+    site.indexParam === null ? null : generatedIdentifier(ctx, 'nextItem');
+  const nextIndex =
+    site.indexParam === null ? null : generatedIdentifier(ctx, 'nextIndex');
+  const rowContext: RowCtx = {
+    itemParam: site.itemParam,
+    itemPath: [],
+    rowIdVar: rowId,
+    keyPath: keyPathOf(site.keyExpr, site.itemParam),
+    sourceKey: site.sourceKey,
+    sourceLocal: site.sourceLocal,
+    ...(site.sourceLocal
+      ? {
+          ownerIdVar: t.isIdentifier(ownerId)
+            ? ownerId.name
+            : componentId(ctx, componentName).name,
+        }
+      : {}),
+  };
+  const rootVariable = emitNode(
+    ctx,
+    rowScope,
+    site.jsx,
+    componentName,
+    componentPath,
+    'row',
+    rowContext,
+    t.identifier(rowId),
+    inSvg,
+    t.identifier(rowId),
+  );
+  const bindingUpdates: t.Statement[] =
+    nextItem === null
+      ? []
+      : [
+          t.expressionStatement(
+            t.assignmentExpression(
+              '=',
+              t.cloneNode(site.itemPattern, true),
+              t.cloneNode(nextItem),
+            ),
+          ),
+        ];
+  if (nextIndex !== null && site.indexParam !== null) {
+    bindingUpdates.push(
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.identifier(site.indexParam),
+          t.cloneNode(nextIndex),
+        ),
+      ),
+    );
+  }
+
+  return t.arrowFunctionExpression(
+    [
+      t.cloneNode(site.itemPattern, true),
+      t.identifier(rowId),
+      ...(site.indexParam === null
+        ? []
+        : [t.identifier(site.indexParam)]),
+    ],
+    t.blockStatement([
+      cacheDecl(rowScope),
+      updateDecl(rowScope),
+      registerStmt(
+        ctx,
+        t.identifier(rowId),
+        t.cloneNode(ownerId),
+        t.identifier(rowScope.updateVar),
+      ),
+      ...rowScope.creation,
+      t.returnStatement(
+        t.objectExpression([
+          t.objectProperty(
+            t.identifier('nodes'),
+            t.arrayExpression([t.identifier(rootVariable)]),
+          ),
+          t.objectProperty(
+            t.identifier('entities'),
+            t.arrayExpression([t.identifier(rowId)]),
+          ),
+          ...(nextItem === null
+            ? []
+            : [
+                t.objectProperty(
+                  t.identifier('updateProps'),
+                  t.arrowFunctionExpression(
+                    [
+                      t.cloneNode(nextItem),
+                      ...(nextIndex === null
+                        ? []
+                        : [t.cloneNode(nextIndex)]),
+                    ],
+                    t.blockStatement(bindingUpdates),
+                  ),
+                ),
+              ]),
+          t.objectProperty(
+            t.identifier('update'),
+            t.identifier(rowScope.updateVar),
+          ),
+        ]),
+      ),
+    ]),
+  );
+}
