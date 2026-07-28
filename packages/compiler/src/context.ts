@@ -156,6 +156,8 @@ export interface EffectSite {
   moduleReads: Set<string>;
   /** Instance state/prop roots that can change callback observations. */
   localReads: Set<string>;
+  /** Instance local derivations read by the callback. */
+  localDerivationReads: Set<string>;
 }
 
 export type HelperPath = NodePath<

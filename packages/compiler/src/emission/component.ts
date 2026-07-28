@@ -83,7 +83,9 @@ export function transformComponent(
   const localDerivations = ctx.instanceDerivations.get(name);
   const effects = ctx.effects.get(name);
   const hasLocalEffects =
-    effects?.some((site) => site.localReads.size > 0) === true;
+    effects?.some(
+      (site) => site.localReads.size > 0 || site.localDerivationReads.size > 0,
+    ) === true;
   if (
     ctx.selectiveDerivationComponents.has(name) ||
     hasLocalEffects
@@ -162,6 +164,7 @@ export function transformComponent(
         factoryId,
         scope.reasonVar,
         effects,
+        scope,
       ),
     );
   }

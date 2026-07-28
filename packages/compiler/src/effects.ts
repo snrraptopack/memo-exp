@@ -15,7 +15,9 @@ import {
   type EffectSite,
 } from './context';
 import { summarizeHelper } from './helper-summaries';
-import { md } from './identifiers';
+import { generatedIdentifier, md } from './identifiers';
+
+import type { EmitScope } from './emission/scope';
 
 function isIntrinsicEffect(
   call: NodePath<t.CallExpression>,
@@ -39,7 +41,7 @@ function collectEffectReads(
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
   callbackPath: NodePath<t.ArrowFunctionExpression | t.FunctionExpression>,
-): Pick<EffectSite, 'moduleReads' | 'localReads'> {
+): Pick<EffectSite, 'moduleReads' | 'localReads' | 'localDerivationReads'> {
   const moduleReads = new Set<string>();
   const directLocalReads = new Set<string>();
   const bindings = new Map<unknown, { source: string; local: boolean }>();
@@ -134,6 +136,15 @@ function collectEffectReads(
   });
 
   const localReads = new Set<string>();
+  const localDerivationReads = new Set<string>();
+
+  const rawDirectLocalReads = new Set<string>();
+  for (const source of directLocalReads) {
+    if (localRoots.has(source)) {
+      rawDirectLocalReads.add(source);
+    }
+  }
+
   const expandLocal = (source: string, visiting: Set<string>): void => {
     if (visiting.has(source)) return;
     const upstream = derivedSources.get(source);
@@ -143,6 +154,10 @@ function collectEffectReads(
       return;
     }
     visiting.add(source);
+    const isDirectlyReadRaw = upstream.some((root) => rawDirectLocalReads.has(root));
+    if (!isDirectlyReadRaw) {
+      localDerivationReads.add(source);
+    }
     for (const next of upstream) expandLocal(next, visiting);
     visiting.delete(source);
   };
@@ -150,7 +165,7 @@ function collectEffectReads(
     expandLocal(source, new Set());
   }
 
-  return { moduleReads, localReads };
+  return { moduleReads, localReads, localDerivationReads };
 }
 
 /**
@@ -291,15 +306,67 @@ export function buildLocalEffectInvalidations(
   factoryId: string,
   reasonVar: string | null,
   sites: EffectSite[],
+  scope?: EmitScope,
 ): t.Statement {
   const statements = sites
-    .filter((site) => site.localReads.size > 0)
+    .filter(
+      (site) => site.localReads.size > 0 || site.localDerivationReads.size > 0,
+    )
     .map((site) => {
-      const mark = t.expressionStatement(
+      let mark: t.Statement = t.expressionStatement(
         t.callExpression(md(ctx, 'markDirty'), [
           effectId(factoryId, site.index),
         ]),
       );
+
+      if (site.localDerivationReads.size > 0 && scope !== undefined) {
+        const checks: t.Expression[] = [];
+        const updates: t.Statement[] = [];
+
+        for (const derivName of site.localDerivationReads) {
+          const slotName = generatedIdentifier(
+            ctx,
+            `eff${site.index}_${derivName}`,
+          ).name;
+          scope.creation.push(
+            t.variableDeclaration('let', [
+              t.variableDeclarator(
+                t.identifier(slotName),
+                t.identifier(derivName),
+              ),
+            ]),
+          );
+          checks.push(
+            t.binaryExpression(
+              '!==',
+              t.identifier(slotName),
+              t.identifier(derivName),
+            ),
+          );
+          updates.push(
+            t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                t.identifier(slotName),
+                t.identifier(derivName),
+              ),
+            ),
+          );
+        }
+
+        const condition =
+          checks.length === 1
+            ? checks[0]!
+            : checks.reduce((left, right) =>
+                t.logicalExpression('||', left, right),
+              );
+
+        mark = t.ifStatement(
+          condition,
+          t.blockStatement([...updates, mark]),
+        );
+      }
+
       if (reasonVar === null) return mark;
       const condition = localEffectCondition(
         ctx,
