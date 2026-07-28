@@ -985,7 +985,16 @@ function analyzeHandler(
         mutateScope(p, (scope) => {
           for (const w of sum.writes) scope.writes.add(w);
           for (const w of sum.boundedWrites) scope.writes.add(w);
-          if (sum.unbounded) {
+          // Guard: in an effect callback's direct body (executionAwareRoot=true,
+          // call is at the ROOT function scope), calling an unbounded external
+          // function is CONSUMPTION — the same reasoning noteBoundedArguments
+          // applies to reactive values passed as arguments. Without this guard,
+          // any unbounded imported call (e.g. getEventLog()) sets rootFallback=true
+          // which emits markDirtySubtree(rootId) into the effect body, causing
+          // an infinite commit cascade (100-pass guard fires).
+          const isEffectBodyDirectCall =
+            executionAwareRoot && p.getFunctionParent()?.node === ROOT;
+          if (sum.unbounded && !isEffectBodyDirectCall) {
             scope.rootFallback = true;
           }
         });
