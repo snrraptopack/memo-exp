@@ -947,7 +947,15 @@ function emitRegion(
   ];
   if (site.keyExpr !== null) {
     args.push(
-      t.arrowFunctionExpression([t.identifier(site.itemParam)], t.cloneNode(site.keyExpr)),
+      t.arrowFunctionExpression(
+        [
+          t.identifier(site.itemParam),
+          ...(site.indexParam === null
+            ? []
+            : [t.identifier(site.indexParam)]),
+        ],
+        t.cloneNode(site.keyExpr),
+      ),
     );
   }
   scope.creation.push(
@@ -991,6 +999,10 @@ function buildComponentRowCreate(
   const rowComp = site.rowComp!;
   const rowId = generatedIdentifier(ctx, 'rowId');
   const nextItem = generatedIdentifier(ctx, 'nextItem');
+  const nextIndex =
+    site.indexParam === null
+      ? null
+      : generatedIdentifier(ctx, 'nextIndex');
   const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
   const rowScope = newEmitScope(ctx);
   const lightweight = isLightweightListedComponent(ctx, rowComp);
@@ -1106,6 +1118,17 @@ function buildComponentRowCreate(
       ),
     ),
   ];
+  if (nextIndex !== null && site.indexParam !== null) {
+    updateStatements.push(
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.identifier(site.indexParam),
+          t.cloneNode(nextIndex),
+        ),
+      ),
+    );
+  }
   let nextCallProps = callProps.map((prop) => t.cloneNode(prop));
   if (propObjectExpression !== null) {
     const nextProps = generatedIdentifier(ctx, `next${rowComp}Props`);
@@ -1181,7 +1204,10 @@ function buildComponentRowCreate(
       t.objectProperty(
         t.identifier('updateProps'),
         t.arrowFunctionExpression(
-          [t.cloneNode(nextItem)],
+          [
+            t.cloneNode(nextItem),
+            ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
+          ],
           t.blockStatement(updateStatements),
         ),
       ),
@@ -1189,7 +1215,13 @@ function buildComponentRowCreate(
   }
 
   return t.arrowFunctionExpression(
-    [t.identifier(site.itemParam), t.cloneNode(rowId)],
+    [
+      t.identifier(site.itemParam),
+      t.cloneNode(rowId),
+      ...(site.indexParam === null
+        ? []
+        : [t.identifier(site.indexParam)]),
+    ],
     t.blockStatement([
       ...(rowScope.updaters.length > 0
         ? [cacheDecl(rowScope), updateDecl(rowScope)]
@@ -1271,6 +1303,14 @@ function buildInlineRowCreate(
   );
   const rowScope = newEmitScope(ctx);
   const rowId = generatedIdentifier(ctx, 'rowId').name;
+  const nextItem =
+    site.indexParam === null
+      ? null
+      : generatedIdentifier(ctx, 'nextItem');
+  const nextIndex =
+    site.indexParam === null
+      ? null
+      : generatedIdentifier(ctx, 'nextIndex');
   // R11: handlers inside the row may write the item's fields — those
   // commits stay row-local (markDirty(rowId)); key-field writes fall back
   // to a source-array write handled inside handler analysis.
@@ -1301,8 +1341,37 @@ function buildInlineRowCreate(
     inSvg,
     t.identifier(rowId),
   );
+  const bindingUpdates: t.Statement[] =
+    nextItem === null
+      ? []
+      : [
+          t.expressionStatement(
+            t.assignmentExpression(
+              '=',
+              t.identifier(site.itemParam),
+              t.cloneNode(nextItem),
+            ),
+          ),
+        ];
+  if (nextIndex !== null && site.indexParam !== null) {
+    bindingUpdates.push(
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.identifier(site.indexParam),
+          t.cloneNode(nextIndex),
+        ),
+      ),
+    );
+  }
   return t.arrowFunctionExpression(
-    [t.identifier(site.itemParam), t.identifier(rowId)],
+    [
+      t.identifier(site.itemParam),
+      t.identifier(rowId),
+      ...(site.indexParam === null
+        ? []
+        : [t.identifier(site.indexParam)]),
+    ],
     t.blockStatement([
       cacheDecl(rowScope),
       updateDecl(rowScope),
@@ -1317,6 +1386,22 @@ function buildInlineRowCreate(
         t.objectExpression([
           t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
           t.objectProperty(t.identifier('entities'), t.arrayExpression([t.identifier(rowId)])),
+          ...(nextItem === null
+            ? []
+            : [
+                t.objectProperty(
+                  t.identifier('updateProps'),
+                  t.arrowFunctionExpression(
+                    [
+                      t.cloneNode(nextItem),
+                      ...(nextIndex === null
+                        ? []
+                        : [t.cloneNode(nextIndex)]),
+                    ],
+                    t.blockStatement(bindingUpdates),
+                  ),
+                ),
+              ]),
           // M5.5: reconcile re-runs this on reused rows so externally
           // mutated item data (row reads params, not state) re-syncs
           t.objectProperty(t.identifier('update'), t.identifier(rowScope.updateVar)),

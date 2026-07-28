@@ -51,10 +51,10 @@ export interface ListEntry {
    * item-field mutation both reach the row entity (setProps shallow-compares,
    * so an unchanged item costs one comparison pass and nothing else).
    */
-  updateProps?: (item: unknown) => void;
+  updateProps?: (item: unknown, index: number) => void;
 }
 
-export type KeyFn<T> = (item: T) => unknown;
+export type KeyFn<T> = (item: T, index: number) => unknown;
 
 /** Default key: the item itself (reference identity for objects). */
 const identityKey = <T>(item: T): unknown => item;
@@ -116,7 +116,7 @@ function lisPositions(seq: number[]): boolean[] {
 export function createListRegion<T>(
   parent: Node,
   idPrefix: EntityId,
-  create: (item: T, rowId: EntityId) => ListEntry,
+  create: (item: T, rowId: EntityId, index: number) => ListEntry,
   key: KeyFn<T> = identityKey,
 ): ListRegion<T> {
   const endAnchor = document.createComment(`list:${idPrefix}`);
@@ -160,8 +160,13 @@ export function createListRegion<T>(
    * re-pushed above, so the entity renders with current props in the same
    * pass instead of taking a second turn through the commit drain.
    */
-  function syncRow(entry: ListEntry, item: T, rowId: EntityId): void {
-    entry.updateProps?.(item); // R10: re-push the props box (component rows)
+  function syncRow(
+    entry: ListEntry,
+    item: T,
+    rowId: EntityId,
+    index: number,
+  ): void {
+    entry.updateProps?.(item, index); // R7/R10: refresh callback bindings
     if (entry.update !== undefined) {
       entry.update(); // M5.5: sync retained row with (possibly mutated) item
       undirty(rowId); // M5.7: no double render
@@ -201,7 +206,7 @@ export function createListRegion<T>(
       }
       if (same) {
         for (let i = 0; i < items.length; i++) {
-          syncRow(prevEntries[i]!, items[i] as T, prevRowIds[i]!);
+          syncRow(prevEntries[i]!, items[i] as T, prevRowIds[i]!, i);
         }
         return;
       }
@@ -226,7 +231,7 @@ export function createListRegion<T>(
     let lastOld = -1;
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as T;
-      const k = key(item);
+      const k = key(item, i);
       if (next.has(k)) {
         throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
       }
@@ -237,10 +242,10 @@ export function createListRegion<T>(
         if (rec.pos <= lastOld) inOrder = false;
         else lastOld = rec.pos;
         rec.pos = i;
-        syncRow(rec.e, item, rec.id);
+        syncRow(rec.e, item, rec.id, i);
       } else {
         const rowId = rowIdFor(k);
-        rec = { e: create(item, rowId), id: rowId, pos: i };
+        rec = { e: create(item, rowId, i), id: rowId, pos: i };
         seq[i] = -1;
         hasNew = true;
       }

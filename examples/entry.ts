@@ -1,15 +1,15 @@
 /**
  * @file entry.ts
- * Browser entry point for the Real-Time System Dashboard example.
+ * Browser entry point for the Music Player example.
  */
-import { DashboardApp } from './dashboard/DashboardApp';
+import { MusicApp } from './music/MusicApp';
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  const factory = DashboardApp as unknown as (
+  const factory = MusicApp as unknown as (
     id: string,
     parent: string | null,
   ) => Node;
-  const appNode = factory('DashboardApp', null);
+  const appNode = factory('MusicApp', null);
   rootElement.appendChild(appNode);
 }

@@ -9,7 +9,7 @@
  * L1 form rules (each violation is a clear compile error):
  *   - the mapped view must be reactive module state, component props,
  *     instance state, or a synchronous derivation of those
- *   - single identifier callback param (no destructuring)
+ *   - item identifier plus an optional index identifier (no destructuring)
  *   - callback body is exactly one JSX element, either
  *       a) a component reference:  <Row key={item.id} item={item} />
  *          — props must not read module state (rows read shared state
@@ -33,6 +33,8 @@ export interface MapSite {
   sourceLocal: boolean;
   /** Callback param name (e.g. 'item'). */
   itemParam: string;
+  /** Optional callback index param name (e.g. 'index'). */
+  indexParam: string | null;
   /** Key expression if key={...} was given, else null. */
   keyExpr: t.Expression | null;
   /** The row JSX element. */
@@ -164,15 +166,25 @@ export function analyzeMapSite(
     );
   }
 
-  // -- callback: single identifier param, JSX body -----------------------
+  // -- callback: item + optional index identifiers, JSX body ------------
   if (call.arguments.length !== 1 || !t.isArrowFunctionExpression(call.arguments[0])) {
     fail('memo-dom: list rendering expects items.map(item => <JSX />) — R7 L1');
   }
   const cb = call.arguments[0] as t.ArrowFunctionExpression;
-  if (cb.params.length !== 1 || !t.isIdentifier(cb.params[0])) {
-    fail('memo-dom: list callback must take a single identifier param (item) — R7 L1');
+  if (
+    cb.params.length < 1 ||
+    cb.params.length > 2 ||
+    !cb.params.every((param) => t.isIdentifier(param))
+  ) {
+    fail(
+      'memo-dom: list callback must take an item identifier and optional index identifier — R7 L1',
+    );
   }
   const itemParam = (cb.params[0] as t.Identifier).name;
+  const indexParam =
+    cb.params.length === 2
+      ? (cb.params[1] as t.Identifier).name
+      : null;
   if (!t.isJSXElement(cb.body)) {
     fail('memo-dom: list callback body must be exactly one JSX element — R7 L1');
   }
@@ -243,6 +255,7 @@ export function analyzeMapSite(
     sourceExpr: t.cloneNode(sourceExpr),
     sourceLocal,
     itemParam,
+    indexParam,
     keyExpr,
     jsx,
     form,

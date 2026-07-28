@@ -220,15 +220,15 @@ installAccessTable(
 ### R7 — Array `.map()` in JSX becomes a list region
 
 ```tsx
-<ul>{items.map(item => <Row item={item} />)}</ul>
+<ul>{items.map((item, index) => <Row item={item} index={index} />)}</ul>
 ```
 
 emits a `createListRegion` call anchored inside the `<ul>`:
 
 ```js
 const region = createListRegion(ul, `${id}`,
-  (item, rowId) => Row(rowId, id, item),
-  (item) => item.id,                // key fn if derivable, else identity
+  (item, rowId, index) => Row(rowId, id, item, index),
+  (item, index) => item.id,         // key fn if supplied, else identity
 );
 function update() { region.reconcile(items); }
 ```
@@ -241,6 +241,9 @@ function update() { region.reconcile(items); }
 - Module sources enter the access table. Instance, derivation, and prop sources
   are owner-local; local writes or R10 `setProps` dirty the owner, whose update
   calls `region.reconcile(source)`.
+- The map callback accepts an item identifier and an optional index identifier.
+  Reconciliation refreshes both bindings for retained rows, so index reads and
+  props update after keyed reorders without recreating row DOM.
 - The keyed reconciliation semantics (LIS moves, fragment batching, subtree
   teardown) are runtime behavior — the compiler only emits the region wiring.
 - If the map callback transforms items (`items.map(i => ({...i}))`), key
