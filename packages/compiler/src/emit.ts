@@ -19,6 +19,7 @@ import {
   attrExpr,
   exprReadsState,
   keyPathOf,
+  nodeHasJsx,
   type Ctx,
   type RowCtx,
 } from './context';
@@ -39,7 +40,11 @@ import {
 } from './emission/scope';
 import { analyzeMapSite, type MapSite } from './lists';
 import { analyzeCondSite } from './conds';
-import { buildHandler } from './handlers';
+import {
+  buildHandler,
+  instrumentComponentCallback,
+  resolveLocalHelper,
+} from './handlers';
 import { isLightweightListedComponent } from './analysis';
 import {
   buildChildrenSlot,
@@ -487,6 +492,25 @@ function emitElement(
           expressionReadsBinding(v, rowCtx.itemParam))
       ) {
         needsPush = true;
+      }
+      // Instrument function-valued props so writes to parent instance state
+      // inside them produce the correct markDirty call. This is the same
+      // treatment that callbacks passed to setInterval/addEventListener get
+      // via transformComponentLifecycle — component prop functions that close
+      // over parent state need identical treatment (R12 local invalidation).
+      // Guard: skip JSX-bearing functions — those are component definitions,
+      // not callbacks. The analyzedFunctions WeakSet in instrumentComponentCallback
+      // prevents double-instrumentation if the same function was already seen
+      // through a native onClick attribute on the same component.
+      if (t.isArrowFunctionExpression(v) || t.isFunctionExpression(v)) {
+        if (!nodeHasJsx(v.body)) {
+          instrumentComponentCallback(ctx, compPath, v, compName, rowCtx);
+        }
+      } else if (t.isIdentifier(v)) {
+        const localFn = resolveLocalHelper(compPath, v.name);
+        if (localFn !== null && !nodeHasJsx(localFn.body)) {
+          instrumentComponentCallback(ctx, compPath, localFn, compName, rowCtx);
+        }
       }
       propEntries.push({
         name: jsxAttributeName(a.name),
