@@ -241,9 +241,15 @@ function update() { region.reconcile(items); }
 - Module sources enter the access table. Instance, derivation, and prop sources
   are owner-local; local writes or R10 `setProps` dirty the owner, whose update
   calls `region.reconcile(source)`.
-- The map callback accepts an item identifier and an optional index identifier.
-  Reconciliation refreshes both bindings for retained rows, so index reads and
-  props update after keyed reorders without recreating row DOM.
+- The map callback accepts an item identifier, object/array binding pattern,
+  and an optional index identifier. Reconciliation replays the item pattern
+  and refreshes the index for retained rows, so destructured values, index
+  reads, and props update after keyed reorders without recreating row DOM.
+- The callback JSX may be a concise arrow body or the sole return statement in
+  a block body. Other callback statements are not structural row setup.
+- A component row may own further list regions. Its listed instance paths are
+  used as the nested list's owner bases, so keyed children reconcile below the
+  outer `Row[key]` and update when replacement props refresh the row.
 - The keyed reconciliation semantics (LIS moves, fragment batching, subtree
   teardown) are runtime behavior — the compiler only emits the region wiring.
 - If the map callback transforms items (`items.map(i => ({...i}))`), key
@@ -255,9 +261,13 @@ function update() { region.reconcile(items); }
 `{a ? <A/> : b ? <B/> : <C/>}`, and `{cond && <A/>}` in **direct JSX child
 position** compile to a conditional region. A chain is one multi-branch
 region, not nested binary regions. The region is its own entity; branches are
-NOT entities. A branch may be an element, fragment, or empty value and may own
-mounted components and mapped-list regions. Owned structures are disposed
-when the branch is replaced.
+NOT entities. A branch may be an element, fragment, renderable text
+expression, or empty value and may own mounted components, mapped-list
+regions, and nested conditional regions. Nested region ids are rooted below
+their enclosing region or inline-row entity, and enclosing updates forward to
+them; replacing the owner disposes the nested subtree. A conditional
+containing only text values remains an ordinary dynamic text setter and does
+not allocate a structural region.
 
 ```tsx
 <div>{loggedIn ? <b>hi</b> : <i>bye</i>}</div>
@@ -292,8 +302,9 @@ Semantics:
   update closure. Different branch → remove the old branch's nodes, run the
   new branch factory, insert before the anchor comment (`when:<id>`).
 - `{cond && <A/>}` is a ternary with an empty else branch; a `null`/`false`
-  branch is empty. JSX fragment branches retain multi-node ownership. Text
-  branches are rejected (use a text interpolation).
+  branch is empty. JSX fragment branches retain multi-node ownership.
+  Renderable text expressions become text-node branches; all-text
+  conditionals remain ordinary interpolations.
 - A swap DESTROYS branch DOM state (focus, scroll, `<details>`). Retaining
   detached branches is a post-L1 option (cache both, like list rows).
 - Components mounted inside a branch receive ids below the conditional entity
@@ -302,10 +313,10 @@ Semantics:
   `<owner>/when<n>/<list>/Row[key]`. Inline and component rows are supported;
   replacing the branch disposes the list cache and unregisters its row
   subtrees.
-- L1 bans: recursively nested conditionals inside an ordinary conditional
-  branch, lists/conditionals inside list rows, and conditional regions in
-  attribute position. An R27 early-return branch may own an analyzed
-  conditional region; replacing the return branch disposes its nested region.
+- L1 bans: nested lists and component calls inside inline rows, and
+  conditional regions in attribute position. Ordinary branches, R27
+  early-return branches, inline rows, and component rows may own nested
+  conditional regions; replacing an owner disposes its nested region.
 
 ### R9 — Nested component calls are id-stable
 
@@ -1188,11 +1199,9 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
-- Conditional-region limits: no conditionals inside list rows, no recursive
-  nested conditionals inside ordinary conditional branches, no text branches
-  (use an interpolation), direct JSX child only. Chained ternaries, fragment
-  branches, mounted components, and mapped inline/component rows are
-  supported.
+- Conditional regions must be direct JSX children. Chained/nested ternaries,
+  fragment/text/empty branches, mounted components, inline-row conditionals,
+  and mapped inline/component rows are supported.
 - Children slots can be rendered or forwarded once as the sole host child.
 - Components must be top-level `function` declarations (no arrows). R27
   supports structural tail returns; arbitrary branch-specific statements
@@ -1201,7 +1210,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   one inline synchronous callback (R26). There are no module/root effects,
   named callback forms, nested/conditional effect declarations, or async
   effect callbacks.
-- Lists inside list rows; components inside inline rows.
+- Nested lists and component calls inside inline rows. Component rows may own
+  nested list regions.
 - Recursive components — guarded with an explicit compile error (cycle
   detection in path enumeration); needs lazy creation to support.
 - A component used both statically **and** as a list row — explicit compile

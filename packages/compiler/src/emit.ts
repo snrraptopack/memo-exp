@@ -293,6 +293,7 @@ function emitFragment(
     variable,
     compName,
     compPath,
+    nestedIn,
     inSvg,
     ownerId,
   );
@@ -306,6 +307,7 @@ function emitDirectChildOperations(
   parentVar: string,
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
+  nestedIn: 'row' | 'cond' | null = null,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): void {
@@ -358,6 +360,7 @@ function emitDirectChildOperations(
         compPath,
         inSvg,
         ownerId,
+        nestedIn !== null,
       );
     }
   }
@@ -416,6 +419,7 @@ function buildAuthoredChildrenSlot(
             compPath,
             inSvg,
             ownerId,
+            nestedIn !== null,
           ),
         isForwarded: (expression) =>
           isChildrenReference(ctx, compName, expression),
@@ -653,17 +657,6 @@ function emitElement(
       'memo-dom: nested lists inside list rows are not supported yet',
     );
   }
-  if (
-    nestedIn !== null &&
-    childOperations.some((operation) => operation.type === 'condition')
-  ) {
-    throw compPath.buildCodeFrameError(
-      `memo-dom: conditionals inside ${
-        nestedIn === 'row' ? 'list rows' : 'conditional branches'
-      } are not supported yet`,
-    );
-  }
-
   const varName = freshNodeName(ctx, scope, tag);
   scope.creation.push(
     t.variableDeclaration('const', [
@@ -890,6 +883,7 @@ function emitElement(
     varName,
     compName,
     compPath,
+    nestedIn,
     childSvg,
     ownerId,
   );
@@ -949,7 +943,7 @@ function emitRegion(
     args.push(
       t.arrowFunctionExpression(
         [
-          t.identifier(site.itemParam),
+          t.cloneNode(site.itemPattern, true),
           ...(site.indexParam === null
             ? []
             : [t.identifier(site.indexParam)]),
@@ -1113,7 +1107,7 @@ function buildComponentRowCreate(
     t.expressionStatement(
       t.assignmentExpression(
         '=',
-        t.identifier(site.itemParam),
+        t.cloneNode(site.itemPattern, true),
         t.cloneNode(nextItem),
       ),
     ),
@@ -1216,7 +1210,7 @@ function buildComponentRowCreate(
 
   return t.arrowFunctionExpression(
     [
-      t.identifier(site.itemParam),
+      t.cloneNode(site.itemPattern, true),
       t.cloneNode(rowId),
       ...(site.indexParam === null
         ? []
@@ -1348,7 +1342,7 @@ function buildInlineRowCreate(
           t.expressionStatement(
             t.assignmentExpression(
               '=',
-              t.identifier(site.itemParam),
+              t.cloneNode(site.itemPattern, true),
               t.cloneNode(nextItem),
             ),
           ),
@@ -1366,7 +1360,7 @@ function buildInlineRowCreate(
   }
   return t.arrowFunctionExpression(
     [
-      t.identifier(site.itemParam),
+      t.cloneNode(site.itemPattern, true),
       t.identifier(rowId),
       ...(site.indexParam === null
         ? []
@@ -1431,6 +1425,7 @@ function emitCondRegion(
   compPath: NodePath<t.FunctionDeclaration>,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
+  forwardFromOwner = false,
 ): void {
   const site = analyzeCondSite(expr, compPath, scope.usedConds);
   const regionVar = generatedIdentifier(ctx, site.suffix).name;
@@ -1486,7 +1481,10 @@ function emitCondRegion(
       ),
     ]),
   );
-  if (exprReadsInstanceState(ctx, expr, compName)) {
+  if (
+    forwardFromOwner ||
+    exprReadsInstanceState(ctx, expr, compName)
+  ) {
     scope.updaters.push(() =>
       t.expressionStatement(
         t.callExpression(

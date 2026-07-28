@@ -60,11 +60,6 @@ function validateBranchJsx(jsx: JsxNode, fail: (msg: string) => never): void {
       t.isExpression(node.expression)
     ) {
       const expression = node.expression;
-      if (matchCond(expression) !== null && nodeHasJsx(expression)) {
-        fail(
-          'memo-dom: nested conditionals inside branches are not supported yet — hoist the inner conditional into a component',
-        );
-      }
       if (matchMapCall(expression) !== null && nodeHasJsx(expression)) {
         continue;
       }
@@ -120,8 +115,15 @@ export function analyzeCondSite(
   const resolveBranch = (node: t.Node | null): JsxNode | null => {
     if (node === null || isEmptyBranch(node)) return null;
     if (t.isJSXElement(node) || t.isJSXFragment(node)) return node;
+    if (t.isExpression(node)) {
+      return t.jsxFragment(
+        t.jsxOpeningFragment(),
+        t.jsxClosingFragment(),
+        [t.jsxExpressionContainer(t.cloneNode(node, true))],
+      );
+    }
     return fail(
-      'memo-dom: conditional branches must be JSX elements/fragments or null/false — for text use an interpolation',
+      'memo-dom: conditional branches must be JSX, renderable text expressions, or null/false',
     );
   };
   const branches = branchNodes.map(resolveBranch);

@@ -179,6 +179,18 @@ export function pathVariants(
       `memo-dom: recursive component '${name}' — components cannot render themselves (L1)`,
     );
   }
+  const listedSites = ctx.listedSites.get(name);
+  if (listedSites !== undefined && listedSites.length > 0) {
+    visiting.add(name);
+    const out = listedSites.flatMap((site) =>
+      pathVariants(ctx, site.owner, visiting).map(
+        (ownerPath) =>
+          `${ownerPath}/${site.suffix}/Row[*]`,
+      ),
+    );
+    visiting.delete(name);
+    return [...new Set(out)];
+  }
   const info = ctx.comps.get(name)!;
   const conditionalSites = ctx.conditionalComponentSites.get(name) ?? [];
   if (info.parents.size === 0 && conditionalSites.length === 0) {
@@ -470,48 +482,84 @@ function collectReads(ctx: Ctx): void {
      */
     function handleCond(
       c: NodePath<t.ConditionalExpression> | NodePath<t.LogicalExpression>,
+      parentSuffix: string | null = null,
     ): void {
       const node = c.node;
       if (!containsJsx(c)) return; // attribute ternaries etc.: plain reads
       const site = analyzeCondSite(node, c, usedConds);
-      const branchPaths: NodePath[] = t.isConditionalExpression(node)
-        ? [
-            c.get('consequent') as NodePath,
-            c.get('alternate') as NodePath,
-          ]
-        : [c.get('right') as NodePath];
+      const fullSuffix =
+        parentSuffix === null
+          ? site.suffix
+          : `${parentSuffix}/${site.suffix}`;
+      const branchPaths: NodePath[] = [];
+      if (c.isConditionalExpression()) {
+        let current = c as NodePath;
+        while (current.isConditionalExpression()) {
+          branchPaths.push(current.get('consequent') as NodePath);
+          current = current.get('alternate') as NodePath;
+        }
+        branchPaths.push(current);
+      } else {
+        branchPaths.push(c.get('right') as NodePath);
+      }
       for (const branchPath of branchPaths) {
         const branchPrefixes = new Map<string, number>();
         const branchChildren = new Map<string, number>();
+        if (
+          (branchPath.isConditionalExpression() ||
+            branchPath.isLogicalExpression()) &&
+          containsJsx(branchPath)
+        ) {
+          handleCond(
+            branchPath as
+              | NodePath<t.ConditionalExpression>
+              | NodePath<t.LogicalExpression>,
+            fullSuffix,
+          );
+          continue;
+        }
         if (branchPath.isJSXElement()) {
           recordConditionalComponent(
             branchPath,
-            site.suffix,
+            fullSuffix,
             branchChildren,
           );
         }
         branchPath.traverse({
+          ConditionalExpression(inner) {
+            if (!containsJsx(inner)) return;
+            handleCond(inner, fullSuffix);
+            inner.skip();
+          },
+          LogicalExpression(inner) {
+            if (!containsJsx(inner)) return;
+            handleCond(inner, fullSuffix);
+            inner.skip();
+          },
           JSXElement(element) {
             recordConditionalComponent(
               element,
-              site.suffix,
+              fullSuffix,
               branchChildren,
             );
           },
           CallExpression(call) {
             collectConditionalMap(
               call,
-              site.suffix,
+              fullSuffix,
               branchPrefixes,
             );
           },
         });
       }
       const vars = collectStateIds(ctx, node);
-      if (vars.size > 0) {
-        ctx.condReads.set(`${name}/${site.suffix}`, {
+      // Nested regions replay through their enclosing branch updater. Keep
+      // module routing at the outermost region so one write cannot schedule
+      // both ancestor and descendant regions for the same calculation.
+      if (vars.size > 0 && parentSuffix === null) {
+        ctx.condReads.set(`${name}/${fullSuffix}`, {
           owner: name,
-          suffix: site.suffix,
+          suffix: fullSuffix,
           vars,
         });
       }
@@ -1433,19 +1481,6 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
     if (ctx.importedComponents.has(comp)) continue;
     const sites = ctx.listedSites.get(comp) ?? [];
     const p = ctx.compPaths.get(comp)!;
-    // a listed component renders at '<site>/Row[k]', so its own static path
-    // never matches runtime ids — a list INSIDE one would misroute
-    const bad: NodePath[] = [];
-    p.traverse({
-      CallExpression(c) {
-        if (bad.length === 0 && matchMapCall(c.node) && containsJsx(c)) bad.push(c);
-      },
-    });
-    if (bad.length > 0) {
-      throw bad[0]!.buildCodeFrameError(
-        'memo-dom: lists inside list-row components are not supported yet (R7 L1)',
-      );
-    }
     // used both as a row AND a static child: patterns would drop one usage
     if (
       (sites.length > 0 || ctx.linkedComponentRows.has(comp)) &&

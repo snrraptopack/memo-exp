@@ -15,7 +15,7 @@
  *   - spread attributes preserve overrides through general DOM patching
  *   - children slots mount once at a direct host insertion point
  *   - conditional JSX uses anchored R8/R27 regions
- *   - no lists inside list rows
+ *   - no nested lists or component calls inside inline rows
  */
 
 import type { Visitor } from '@babel/traverse';

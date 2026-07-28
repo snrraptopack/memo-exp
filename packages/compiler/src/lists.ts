@@ -9,8 +9,8 @@
  * L1 form rules (each violation is a clear compile error):
  *   - the mapped view must be reactive module state, component props,
  *     instance state, or a synchronous derivation of those
- *   - item identifier plus an optional index identifier (no destructuring)
- *   - callback body is exactly one JSX element, either
+ *   - item identifier/object/array pattern plus an optional index identifier
+ *   - callback body is one JSX element, either concise or a single return
  *       a) a component reference:  <Row key={item.id} item={item} />
  *          — props must not read module state (rows read shared state
  *            directly inside their own JSX; props are for item data)
@@ -22,7 +22,7 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { attrExpr, memberKey, memberRootName, nodeHasJsx, type Ctx } from './context';
+import { attrExpr, memberKey, memberRootName, type Ctx } from './context';
 
 export interface MapSite {
   /** Reactive source key (e.g. 'items' or 'store.todos'). */
@@ -31,7 +31,9 @@ export interface MapSite {
   sourceExpr: t.Expression;
   /** Instance roots invalidate their owner directly, not an access table. */
   sourceLocal: boolean;
-  /** Callback param name (e.g. 'item'). */
+  /** Runtime callback target, including supported destructuring patterns. */
+  itemPattern: t.Identifier | t.ObjectPattern | t.ArrayPattern;
+  /** Representative item binding used by row mutation analysis. */
   itemParam: string;
   /** Optional callback index param name (e.g. 'index'). */
   indexParam: string | null;
@@ -171,24 +173,63 @@ export function analyzeMapSite(
     fail('memo-dom: list rendering expects items.map(item => <JSX />) — R7 L1');
   }
   const cb = call.arguments[0] as t.ArrowFunctionExpression;
+  const firstParam = cb.params[0];
+  const secondParam = cb.params[1];
   if (
     cb.params.length < 1 ||
     cb.params.length > 2 ||
-    !cb.params.every((param) => t.isIdentifier(param))
+    (!t.isIdentifier(firstParam) &&
+      !t.isObjectPattern(firstParam) &&
+      !t.isArrayPattern(firstParam)) ||
+    (secondParam !== undefined && !t.isIdentifier(secondParam))
   ) {
     fail(
-      'memo-dom: list callback must take an item identifier and optional index identifier — R7 L1',
+      'memo-dom: list callback must take an item binding pattern and optional index identifier — R7 L1',
     );
   }
-  const itemParam = (cb.params[0] as t.Identifier).name;
+  const rawPattern = firstParam as
+    | t.Identifier
+    | t.ObjectPattern
+    | t.ArrayPattern;
+  const itemPattern = t.cloneNode(rawPattern, true);
+  t.traverseFast(itemPattern, (node) => {
+    if (
+      t.isIdentifier(node) ||
+      t.isObjectPattern(node) ||
+      t.isArrayPattern(node) ||
+      t.isRestElement(node) ||
+      t.isAssignmentPattern(node)
+    ) {
+      node.typeAnnotation = null;
+    }
+  });
+  const itemBindings = Object.keys(t.getBindingIdentifiers(itemPattern));
+  if (itemBindings.length === 0) {
+    fail('memo-dom: list callback item pattern must bind at least one name — R7 L1');
+  }
+  const itemParam = t.isIdentifier(itemPattern)
+    ? itemPattern.name
+    : itemBindings[0]!;
   const indexParam =
     cb.params.length === 2
       ? (cb.params[1] as t.Identifier).name
       : null;
-  if (!t.isJSXElement(cb.body)) {
-    fail('memo-dom: list callback body must be exactly one JSX element — R7 L1');
+  const returned =
+    t.isBlockStatement(cb.body) &&
+    cb.body.body.length === 1 &&
+    t.isReturnStatement(cb.body.body[0])
+      ? cb.body.body[0].argument
+      : null;
+  const jsx = t.isJSXElement(cb.body)
+    ? cb.body
+    : t.isJSXElement(returned)
+      ? returned
+      : null;
+  if (jsx === null) {
+    return fail(
+      'memo-dom: list callback body must be one JSX element or a block containing only return <JSX /> — R7 L1',
+    );
   }
-  const jsx = cb.body as t.JSXElement; // guarded above
 
   // -- row form -----------------------------------------------------------
   const open = jsx.openingElement;
@@ -221,18 +262,6 @@ export function analyzeMapSite(
           );
         }
         stack.push(...n.children);
-      } else if (t.isJSXExpressionContainer(n) && t.isExpression(n.expression)) {
-        // conditionals inside rows would be nested regions (R8 L1)
-        const ex = n.expression;
-        if (
-          (t.isConditionalExpression(ex) ||
-            (t.isLogicalExpression(ex) && (ex.operator === '&&' || ex.operator === '||'))) &&
-          nodeHasJsx(ex)
-        ) {
-          fail(
-            'memo-dom: conditionals inside list rows are not supported yet (R8 L1) — hoist the row into a component',
-          );
-        }
       }
     }
   }
@@ -254,6 +283,7 @@ export function analyzeMapSite(
     sourceKey,
     sourceExpr: t.cloneNode(sourceExpr),
     sourceLocal,
+    itemPattern,
     itemParam,
     indexParam,
     keyExpr,

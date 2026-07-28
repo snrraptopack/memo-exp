@@ -82,27 +82,21 @@ describe('R8 — code generation', () => {
     );
   });
 
-  it('rejects R8 L1 misuses with actionable errors', () => {
-    // conditional inside a list row
-    expect(() =>
-      compile(
-        `let c = false; let items = [1];\nfunction C() { return <ul>{items.map(i => <li key={i}>{c ? <b>a</b> : null}</li>)}</ul>; }`,
-      ),
-    ).toThrowError(/conditionals inside list rows/);
+  it('accepts nested/mixed composition and rejects non-child regions', () => {
+    const row = compile(
+      `let c = false; let items = [1];\nfunction C() { return <ul>{items.map(i => <li key={i}>{c ? <b>a</b> : null}</li>)}</ul>; }`,
+    );
+    expect(row).toContain('.createCondRegion(');
 
-    // nested conditional inside a branch
-    expect(() =>
-      compile(
-        `let a = false; let b = false;\nfunction C() { return <div>{a ? <span>{b ? <b>x</b> : null}</span> : null}</div>; }`,
-      ),
-    ).toThrowError(/nested conditionals/);
+    const nested = compile(
+      `let a = false; let b = false;\nfunction C() { return <div>{a ? <span>{b ? <b>x</b> : null}</span> : null}</div>; }`,
+    );
+    expect(nested.match(/\.createCondRegion\(/g)).toHaveLength(2);
 
-    // text branch
-    expect(() =>
-      compile(
-        `let c = false;\nfunction C() { return <div>{c ? 'yes' : <b>no</b>}</div>; }`,
-      ),
-    ).toThrowError(/branches must be JSX elements/);
+    const mixed = compile(
+      `let c = false;\nfunction C() { return <div>{c ? 'yes' : <b>no</b>}</div>; }`,
+    );
+    expect(mixed).toContain('.createCondRegion(');
 
     // non-child position
     expect(() =>
