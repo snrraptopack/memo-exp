@@ -339,6 +339,8 @@ function emitComponentReturnRegion(
                 regionId,
                 false,
                 owner,
+                true,
+                scope.usedConds,
               ),
             ),
           ),

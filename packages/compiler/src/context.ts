@@ -161,6 +161,13 @@ export interface EffectSite {
   localDerivationReads: Set<string>;
 }
 
+export interface ModuleControlFlowDerivation {
+  statement: t.IfStatement | t.SwitchStatement;
+  bindings: string[];
+  sources: string[];
+  entityId: string;
+}
+
 export type HelperPath = NodePath<
   t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
 >;
@@ -243,6 +250,8 @@ export interface Ctx {
    * actually changed (computedChanged).
    */
   computeds: Map<string, { reads: Set<string> }>;
+  /** Pure exhaustive module-level if/switch calculations. */
+  moduleControlFlow: ModuleControlFlowDerivation[];
 
   // ---- emission accumulators ----
   header: t.Statement[];
@@ -363,6 +372,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     selectiveDerivationComponents: new Set(),
     effects: new Map(),
     computeds: new Map(),
+    moduleControlFlow: [],
     header: [],
     readers: new Map(),
     writeConstCounter: 0,

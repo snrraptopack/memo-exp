@@ -56,6 +56,56 @@ function componentReturns(
   return returns;
 }
 
+function canHoistPastEarlyReturn(statement: t.Statement): boolean {
+  if (t.isFunctionDeclaration(statement)) return true;
+  if (t.isVariableDeclaration(statement)) {
+    return statement.declarations.every(
+      (declaration) =>
+        declaration.init == null ||
+        t.isFunction(declaration.init) ||
+        expressionCanHoist(declaration.init),
+    );
+  }
+  if (t.isSwitchStatement(statement) || t.isIfStatement(statement)) {
+    let safe = true;
+    t.traverseFast(statement, (node) => {
+      if (
+        t.isCallExpression(node) ||
+        t.isOptionalCallExpression(node) ||
+        t.isNewExpression(node) ||
+        t.isAwaitExpression(node) ||
+        t.isYieldExpression(node) ||
+        t.isThrowStatement(node) ||
+        t.isTaggedTemplateExpression(node) ||
+        t.isUpdateExpression(node)
+      ) {
+        safe = false;
+      }
+    });
+    return safe;
+  }
+  return t.isTypeScript(statement);
+}
+
+function expressionCanHoist(expression: t.Expression): boolean {
+  let safe = true;
+  t.traverseFast(expression, (node) => {
+    if (
+      t.isCallExpression(node) ||
+      t.isOptionalCallExpression(node) ||
+      t.isNewExpression(node) ||
+      t.isAwaitExpression(node) ||
+      t.isYieldExpression(node) ||
+      t.isTaggedTemplateExpression(node) ||
+      t.isAssignmentExpression(node) ||
+      t.isUpdateExpression(node)
+    ) {
+      safe = false;
+    }
+  });
+  return safe;
+}
+
 function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
   if (!statement.cases.some((item) => item.test == null)) return null;
   const branches: JsxNode[] = [];
@@ -139,17 +189,34 @@ export function analyzeComponentReturns(
     const tests: t.Expression[] = [];
     const branches: JsxNode[] = [];
     const statements = new Set<t.Statement>([final!]);
-    for (let index = body.length - 2; index >= 0; index--) {
+    let firstEarlyReturn = -1;
+    let hoistable = true;
+    for (let index = 0; index < body.length - 1; index++) {
       const statement = body[index]!;
-      if (!t.isIfStatement(statement) || statement.alternate !== null) break;
-      const returned = soleJsxReturn(statement.consequent);
-      if (returned === null) break;
-      tests.unshift(t.cloneNode(statement.test));
-      branches.unshift(returned.jsx);
-      statements.add(statement);
+      if (t.isIfStatement(statement) && statement.alternate == null) {
+        const returned = soleJsxReturn(statement.consequent);
+        if (returned !== null) {
+          if (firstEarlyReturn === -1) firstEarlyReturn = index;
+          tests.push(t.cloneNode(statement.test));
+          branches.push(returned.jsx);
+          statements.add(statement);
+          continue;
+        }
+      }
+      if (
+        firstEarlyReturn !== -1 &&
+        !canHoistPastEarlyReturn(statement)
+      ) {
+        hoistable = false;
+        break;
+      }
     }
     branches.push(fallback.jsx);
-    if (branches.length === returns.length && branches.length > 1) {
+    if (
+      hoistable &&
+      branches.length === returns.length &&
+      branches.length > 1
+    ) {
       let pick: t.Expression = t.numericLiteral(branches.length - 1);
       for (let index = tests.length - 1; index >= 0; index--) {
         pick = t.conditionalExpression(

@@ -8,6 +8,7 @@ The top-level files are orchestration and whole-program passes:
 | `src/context.ts` | Shared analysis facts and canonical identities |
 | `src/emit.ts` | JSX DOM and structural-region emission |
 | `src/linker.ts` | Connected module-graph compilation |
+| `src/module-control-flow.ts` | Pure module if/switch computed classification |
 | `src/plugin.ts` | Babel pass ordering and final module rewrite |
 
 Domain folders keep related implementation details discoverable:

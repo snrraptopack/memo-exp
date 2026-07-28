@@ -51,20 +51,26 @@ subscription graph, or runtime read tracking.
 | Conditional effect feedback falsely cycles | Confirmed static normal-exit over-invalidation | R26 guards each direct effect write/call site by whether it executed; stabilizing feedback settles while genuine loops retain the cascade guard |
 | `effect(() => console.log(count))` self-invalidates | Confirmed unknown-argument boundary conflict | Direct effect arguments crossing unknown APIs are read-only inputs; visible/direct writes and reactive receiver methods remain writable |
 | List sourced from a destructured prop is rejected | Confirmed R7 classifier omission | Prop bindings and static prop member paths are owner-local list sources; R10/R24 refresh the binding before reconciliation |
+| Component-body `if`/`switch` calculations stay stale | Confirmed render-prelude gap | R27 combines pure exhaustive statement derivations with expression derivations in source order and applies R25 dirty-reason selection |
+| JSX early returns rerun or cannot compose | Confirmed structural-return gap | R27 lowers tail early-return chains and terminal JSX if/switch forms to one stable region with owned subtree disposal |
+| Chained JSX ternary rejected as a non-JSX branch | Confirmed binary-analyzer gap | R27 flattens right-associated chains into one multi-branch conditional region and supports fragment branches |
+| Module-level pure `if`/`switch` is one-time only | Confirmed shared-derived-state gap | R28 emits depth-(-1) singleton flow computeds with per-target change gating and canonical cross-module routing |
 
 ## Decisions
 
 ### Per-instance derivations
 
 Do not create one computed entity per component instance. The owner is already
-the exact invalidation unit. Local derivations stay in its existing update
-prologue and retain source order:
+the exact invalidation unit. Local expression and pure control-flow
+derivations stay in its existing update prelude and retain source order:
 
-`prop resync -> local derivations -> child/DOM guarded writes`
+`prop resync -> const/if/switch prelude -> child/DOM/region guarded writes`
 
 This has no registry allocation, table key, downstream commit, or scheduling
-pass. Module computeds remain depth-`-1` entities because they can feed unrelated
-component subtrees and benefit from change-gated propagation.
+pass. Module expression and statement computeds remain depth-`-1` entities
+because they can feed unrelated component subtrees and benefit from
+change-gated propagation. R28 statement computeds replay one exhaustive
+`if`/`switch` per source update and commit each changed target independently.
 
 The compiler uses structural dual mode. If every exact local source reaches
 every derivation, the prologue remains unconditional and writes use bare
@@ -169,8 +175,9 @@ changes the bounded-write-effect contract.
 ### P1: source-language coverage
 
 1. Fold reachable local-helper summaries into R14 purity checks.
-2. Expand nested conditional regions, lists inside list rows, and recursive
-   components. Mounted components and mapped lists inside conditional
+2. Expand recursively nested ordinary conditional regions, lists inside list
+   rows, and recursive components. Early-return regions may own one analyzed
+   conditional; mounted components and mapped lists inside conditional
    branches are supported.
 3. Support richer children-slot insertion positions while retaining one-mount
    ownership.

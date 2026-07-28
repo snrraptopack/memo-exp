@@ -19,7 +19,7 @@
 import type { EntityId } from './kernel';
 
 export interface CondEntry {
-  /** Root nodes of the mounted branch (L1: exactly one). */
+  /** Root nodes of the mounted branch (elements or fragment children). */
   nodes: Node[];
   /** The branch's guarded update closure. */
   update: () => void;
@@ -34,6 +34,8 @@ export interface CondRegion {
   update(): void;
   /** Currently mounted branch index. */
   index(): number;
+  /** Drain the mounted branch and remove the stable anchor. */
+  dispose(): void;
 }
 
 export function createCondRegion(
@@ -70,10 +72,21 @@ export function createCondRegion(
     current = idx;
   }
 
+  function dispose(): void {
+    if (entry !== null) {
+      entry.dispose?.();
+      for (const node of entry.nodes) node.parentNode?.removeChild(node);
+      entry = null;
+    }
+    anchor.parentNode?.removeChild(anchor);
+    current = -1;
+  }
+
   update(); // mount the initial branch
 
   return {
     update,
     index: () => current,
+    dispose,
   };
 }

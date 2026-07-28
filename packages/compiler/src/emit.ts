@@ -1356,7 +1356,7 @@ function emitCondRegion(
   );
 
   const pick = t.arrowFunctionExpression([], t.cloneNode(site.pickExpr));
-  const branchFns: t.Expression[] = [site.thenJsx, site.elseJsx].map((jsx) =>
+  const branchFns: t.Expression[] = site.branches.map((jsx) =>
     jsx !== null
       ? buildBranchCreate(
           ctx,
@@ -1365,6 +1365,9 @@ function emitCondRegion(
           compPath,
           regionId,
           inSvg,
+          regionId,
+          false,
+          scope.usedConds,
         )
       : t.nullLiteral(),
   );
@@ -1411,6 +1414,8 @@ function emitCondRegion(
       ),
     );
   }
+  scope.disposableRegions.push(regionVar);
+  scope.disposableEntities.push(t.cloneNode(regionId));
   // Module dependencies dirty the region through the access table. An
   // instance-owned dependency has no table identity, so the owner forwards
   // its update explicitly.
@@ -1429,15 +1434,18 @@ export function buildBranchCreate(
   regionId: t.Expression,
   inSvg = false,
   ownerId: t.Expression = regionId,
+  allowConditions = false,
+  usedConds?: { count: number },
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx);
+  if (usedConds !== undefined) branchScope.usedConds = usedConds;
   const rootVar = emitNode(
     ctx,
     branchScope,
     jsx,
     compName,
     compPath,
-    'cond',
+    allowConditions ? null : 'cond',
     undefined,
     regionId,
     inSvg,

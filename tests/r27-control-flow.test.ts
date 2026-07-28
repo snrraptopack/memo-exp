@@ -147,6 +147,49 @@ const SOURCES: Record<string, string> = {
       </main>;
     }
   `,
+  'r27-chained-ternary': `
+    function First({ onNext }) {
+      return <button id="first" onClick={onNext}>first</button>;
+    }
+    function Second({ onNext }) {
+      return <button id="second" onClick={onNext}>second</button>;
+    }
+    function Third() {
+      return <article id="third">third</article>;
+    }
+    export function App() {
+      let step = 1;
+      return <main>
+        {step === 1
+          ? <First onNext={() => step = 2} />
+          : step === 2
+            ? <Second onNext={() => step = 3} />
+            : <Third />}
+      </main>;
+    }
+  `,
+  'r27-return-with-condition': `
+    function Editing({ onBusy }) {
+      return <button id="busy" onClick={onBusy}>busy</button>;
+    }
+    function Preview() {
+      return <p id="preview">preview</p>;
+    }
+    export function App() {
+      let busy = false;
+      let editing = true;
+      if (busy) {
+        return <button id="resume" onClick={() => busy = false}>resume</button>;
+      }
+      const toggle = () => { editing = !editing; };
+      return <main>
+        <button id="toggle-view" onClick={toggle}>toggle</button>
+        {editing
+          ? <Editing onBusy={() => busy = true} />
+          : <Preview />}
+      </main>;
+    }
+  `,
 };
 
 describe('R27 - compiled render preludes', () => {
@@ -235,5 +278,36 @@ describe('R27 - compiled render preludes', () => {
       ['connect'],
       ['disconnect'],
     ]);
+  });
+
+  it('flattens chained JSX ternaries into one multi-branch region', async () => {
+    const { App } = await importCompiled('r27-chained-ternary');
+    document.body.appendChild(App('App', null));
+
+    document.querySelector<HTMLButtonElement>('#first')!.click();
+    expect(document.querySelector('#first')).toBeNull();
+    expect(document.querySelector('#second')?.textContent).toBe('second');
+
+    document.querySelector<HTMLButtonElement>('#second')!.click();
+    expect(document.querySelector('#second')).toBeNull();
+    expect(document.querySelector('#third')?.textContent).toBe('third');
+  });
+
+  it('disposes a conditional nested in an early-return branch', async () => {
+    const { App } = await importCompiled('r27-return-with-condition');
+    document.body.appendChild(App('App', null));
+    expect(_internals().registry.has('App/when0')).toBe(true);
+
+    document.querySelector<HTMLButtonElement>('#toggle-view')!.click();
+    expect(document.querySelector('#preview')?.textContent).toBe('preview');
+
+    document.querySelector<HTMLButtonElement>('#toggle-view')!.click();
+    document.querySelector<HTMLButtonElement>('#busy')!.click();
+    expect(document.querySelector('#resume')?.textContent).toBe('resume');
+    expect(_internals().registry.has('App/when0')).toBe(false);
+
+    document.querySelector<HTMLButtonElement>('#resume')!.click();
+    expect(document.querySelector('#toggle-view')).not.toBeNull();
+    expect(_internals().registry.has('App/when0')).toBe(true);
   });
 });

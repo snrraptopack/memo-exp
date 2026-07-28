@@ -1,36 +1,23 @@
 /**
- * conds.ts — R8 conditional-site analysis (pure: no emission here, see emit.ts).
+ * conds.ts - conditional-site analysis.
  *
- * Recognizes `{cond ? <A/> : <B/>}` and `{cond && <A/>}` / `{cond || <A/>}`
- * in direct JSX child position (position itself is enforced by the caller),
- * validates the L1 form, and names the region ('when0', 'when1', … per
- * owner, source order — analysis and emission share the counter convention
- * so table patterns always match runtime ids).
- *
- * L1 form rules (each a clear compile error):
- *   - branches must be JSX elements or empty (null / false / undefined) —
- *     text branches are rejected (use a text interpolation)
- *   - statically mounted components are branch-owned entities
- *   - mapped lists may be nested in branches and are branch-owned
- *   - no nested conditionals inside branches
- *   - no key={...} outside a mapped row (meaningless there)
+ * Direct JSX-child ternaries and logical conditions become anchored regions.
+ * Right-associated ternary chains flatten into one multi-branch region.
  */
-
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { nodeHasJsx } from './context';
 import { matchMapCall } from './lists';
+import type { JsxNode } from './jsx/children';
 
 export interface CondSite {
-  /** The full pick expression `test ? 0 : 1` (index of the branch to mount). */
+  /** Expression selecting an index in branches. */
   pickExpr: t.Expression;
-  thenJsx: t.JSXElement | null;
-  elseJsx: t.JSXElement | null;
-  /** 'when0', 'when1', … per owner, source order. */
+  branches: (JsxNode | null)[];
+  /** `when0`, `when1`, ... per owner, source order. */
   suffix: string;
 }
 
-/** A ternary, or a logical && / || — the R8 conditional source forms. */
 export function matchCond(
   expr: t.Node,
 ): t.ConditionalExpression | t.LogicalExpression | null {
@@ -44,7 +31,6 @@ export function matchCond(
   return null;
 }
 
-/** Is this node empty-branch material? (null / false / undefined) */
 function isEmptyBranch(node: t.Node): boolean {
   return (
     t.isNullLiteral(node) ||
@@ -53,92 +39,99 @@ function isEmptyBranch(node: t.Node): boolean {
   );
 }
 
-/** Branch content rules — walks the raw JSX tree (no NodePaths here). */
-function validateBranchJsx(jsx: t.JSXElement, fail: (msg: string) => never): void {
+function validateBranchJsx(jsx: JsxNode, fail: (msg: string) => never): void {
   const stack: t.Node[] = [jsx];
   while (stack.length > 0) {
-    const n = stack.pop()!;
-    if (t.isJSXElement(n)) {
-      for (const attr of n.openingElement.attributes) {
-        if (!t.isJSXSpreadAttribute(attr) && (attr.name as t.JSXIdentifier).name === 'key') {
+    const node = stack.pop()!;
+    if (t.isJSXElement(node)) {
+      for (const attribute of node.openingElement.attributes) {
+        if (
+          !t.isJSXSpreadAttribute(attribute) &&
+          (attribute.name as t.JSXIdentifier).name === 'key'
+        ) {
           fail('memo-dom: key={...} is only meaningful on list rows');
         }
       }
-      stack.push(...n.children);
-    } else if (t.isJSXExpressionContainer(n) && t.isExpression(n.expression)) {
-      const ex = n.expression;
-      if (matchCond(ex) !== null && nodeHasJsx(ex)) {
+      stack.push(...node.children);
+    } else if (t.isJSXFragment(node)) {
+      stack.push(...node.children);
+    } else if (
+      t.isJSXExpressionContainer(node) &&
+      t.isExpression(node.expression)
+    ) {
+      const expression = node.expression;
+      if (matchCond(expression) !== null && nodeHasJsx(expression)) {
         fail(
-          'memo-dom: nested conditionals inside branches are not supported yet (R8 L1) — hoist the inner conditional into a component',
+          'memo-dom: nested conditionals inside branches are not supported yet — hoist the inner conditional into a component',
         );
       }
-      if (matchMapCall(ex) !== null && nodeHasJsx(ex)) {
-        // analyzeMapSite validates the callback. Do not walk a component row
-        // as if it were a statically mounted component in the branch.
+      if (matchMapCall(expression) !== null && nodeHasJsx(expression)) {
         continue;
       }
     }
   }
 }
 
-/**
- * Validate and describe a conditional site. `errorAt` provides code frames;
- * `usedConds` is the owner's region counter (shared by both passes).
- */
 export function analyzeCondSite(
   expr: t.ConditionalExpression | t.LogicalExpression,
   errorAt: Pick<NodePath, 'buildCodeFrameError'>,
   usedConds: { count: number },
 ): CondSite {
-  const fail = (msg: string): never => {
-    throw errorAt.buildCodeFrameError(msg);
+  const fail = (message: string): never => {
+    throw errorAt.buildCodeFrameError(message);
   };
 
   let pickExpr: t.Expression;
-  let thenNode: t.Node;
-  let elseNode: t.Node | null;
-
+  let branchNodes: (t.Node | null)[];
   if (t.isConditionalExpression(expr)) {
-    pickExpr = t.conditionalExpression(
-      t.cloneNode(expr.test),
-      t.numericLiteral(0),
-      t.numericLiteral(1),
-    );
-    thenNode = expr.consequent;
-    elseNode = expr.alternate;
+    const tests: t.Expression[] = [];
+    branchNodes = [];
+    let current: t.Expression = expr;
+    while (t.isConditionalExpression(current)) {
+      tests.push(t.cloneNode(current.test));
+      branchNodes.push(current.consequent);
+      current = current.alternate;
+    }
+    branchNodes.push(current);
+    pickExpr = t.numericLiteral(branchNodes.length - 1);
+    for (let index = tests.length - 1; index >= 0; index--) {
+      pickExpr = t.conditionalExpression(
+        tests[index]!,
+        t.numericLiteral(index),
+        pickExpr,
+      );
+    }
   } else if (expr.operator === '&&') {
-    // {cond && <A/>} — mount A when truthy, nothing otherwise
     pickExpr = t.conditionalExpression(
       t.cloneNode(expr.left),
       t.numericLiteral(0),
       t.numericLiteral(1),
     );
-    thenNode = expr.right;
-    elseNode = null;
+    branchNodes = [expr.right, null];
   } else {
-    // {cond || <A/>} — mount A when FALSY: swap the branch indexes
     pickExpr = t.conditionalExpression(
       t.cloneNode(expr.left),
       t.numericLiteral(1),
       t.numericLiteral(0),
     );
-    thenNode = expr.right;
-    elseNode = null;
+    branchNodes = [expr.right, null];
   }
 
-  const resolveBranch = (n: t.Node | null): t.JSXElement | null => {
-    if (n === null || isEmptyBranch(n)) return null;
-    if (t.isJSXElement(n)) return n;
+  const resolveBranch = (node: t.Node | null): JsxNode | null => {
+    if (node === null || isEmptyBranch(node)) return null;
+    if (t.isJSXElement(node) || t.isJSXFragment(node)) return node;
     return fail(
-      'memo-dom: conditional branches must be JSX elements or null/false — for text use an interpolation: {cond ? msgA : msgB}',
+      'memo-dom: conditional branches must be JSX elements/fragments or null/false — for text use an interpolation',
     );
   };
+  const branches = branchNodes.map(resolveBranch);
+  for (const branch of branches) {
+    if (branch !== null) validateBranchJsx(branch, fail);
+  }
 
-  const thenJsx = resolveBranch(thenNode);
-  const elseJsx = resolveBranch(elseNode);
-  if (thenJsx !== null) validateBranchJsx(thenJsx, fail);
-  if (elseJsx !== null) validateBranchJsx(elseJsx, fail);
-
-  const suffix = `when${usedConds.count++}`;
-  return { pickExpr, thenJsx, elseJsx, suffix };
+  return {
+    pickExpr,
+    branches,
+    suffix: `when${usedConds.count++}`,
+  };
 }

@@ -53,6 +53,21 @@ and exact/receiver-bounded function summaries. Pass
 component imports retain the linked factory, props, children, cleanup, and
 canonical state identity.
 
+Pure module-level control flow can derive exported reactive values:
+
+```tsx
+// theme.ts
+import { darkMode } from './settings';
+
+export let theme;
+if (darkMode) theme = darkTheme;
+else theme = lightTheme;
+```
+
+The owning module emits a singleton computed entity. Imported sources and
+exported results retain canonical cross-module routing, and readers update
+only when the selected value changes.
+
 For Vite applications, configure the graph entry once and let Vite provide
 the real alias and extension resolution:
 
@@ -107,6 +122,11 @@ function App() {
 
 Use `cleanup(disposer)` for component-owned resources that are not reactive
 effects.
+
+Pure exhaustive component `if`/`switch` calculations participate in the
+source-ordered render prelude. JSX early returns, JSX-returning terminal
+switches, and chained JSX ternaries lower to stable structural regions; the
+component factory is not rerun when a branch changes.
 
 Run the Chromium benchmark:
 

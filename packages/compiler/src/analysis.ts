@@ -49,6 +49,7 @@ import {
   type LocalDerivation,
 } from './components/props';
 import { scanEffects } from './effects';
+import { scanModuleControlFlow } from './module-control-flow';
 
 /**
  * R8: a JSX-bearing conditional is allowed ONLY as a direct JSX child:
@@ -1352,6 +1353,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanComponents(ctx, programPath);
   scanInstanceState(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
+  scanModuleControlFlow(ctx, programPath, analyzeComputed);
   scanInstanceDerivations(ctx); // R14/R24: ordered local projections/computeds
   scanInstanceControlFlow(ctx);
   finalizeInstancePreludes(ctx);
@@ -1542,6 +1544,9 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
     const entityId =
       `${ctx.rootId}/$computed/${encodeURIComponent(ctx.moduleId)}#${name}`;
     for (const key of info.reads) add(key, [entityId]);
+  }
+  for (const flow of ctx.moduleControlFlow) {
+    for (const key of flow.sources) add(key, [flow.entityId]);
   }
 
   if (ctx.readers.size === 0) return null;

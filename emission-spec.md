@@ -248,11 +248,13 @@ function update() { region.reconcile(items); }
 
 ### R8 — Conditionals become anchored regions (DECIDED — §10.1)
 
-`{cond ? <A/> : <B/>}` and `{cond && <A/>}` in **direct JSX child position**
-compile to a conditional region. The region is its own entity; branches are
-NOT entities. A branch may own mounted components and mapped-list regions;
-their entities are nested below the conditional id and disposed when the
-branch is replaced.
+`{cond ? <A/> : <B/>}`, right-associated chains such as
+`{a ? <A/> : b ? <B/> : <C/>}`, and `{cond && <A/>}` in **direct JSX child
+position** compile to a conditional region. A chain is one multi-branch
+region, not nested binary regions. The region is its own entity; branches are
+NOT entities. A branch may be an element, fragment, or empty value and may own
+mounted components and mapped-list regions. Owned structures are disposed
+when the branch is replaced.
 
 ```tsx
 <div>{loggedIn ? <b>hi</b> : <i>bye</i>}</div>
@@ -287,7 +289,8 @@ Semantics:
   update closure. Different branch → remove the old branch's nodes, run the
   new branch factory, insert before the anchor comment (`when:<id>`).
 - `{cond && <A/>}` is a ternary with an empty else branch; a `null`/`false`
-  branch is empty. Text branches are rejected (use a text interpolation).
+  branch is empty. JSX fragment branches retain multi-node ownership. Text
+  branches are rejected (use a text interpolation).
 - A swap DESTROYS branch DOM state (focus, scroll, `<details>`). Retaining
   detached branches is a post-L1 option (cache both, like list rows).
 - Components mounted inside a branch receive ids below the conditional entity
@@ -296,9 +299,10 @@ Semantics:
   `<owner>/when<n>/<list>/Row[key]`. Inline and component rows are supported;
   replacing the branch disposes the list cache and unregisters its row
   subtrees.
-- L1 bans: nested conditionals, lists inside list rows, conditionals inside
-  list rows, and conditional regions in attribute position. Each is a clear
-  compile error.
+- L1 bans: recursively nested conditionals inside an ordinary conditional
+  branch, lists/conditionals inside list rows, and conditional regions in
+  attribute position. An R27 early-return branch may own an analyzed
+  conditional region; replacing the return branch disposes its nested region.
 
 ### R9 — Nested component calls are id-stable
 
@@ -387,6 +391,19 @@ field or structural change.
 Detection is by reactive binding reference, including collection/object
 literals. Mutating a source inside its derivation, assigning a computed, or
 using `await`/`yield` is a compile error.
+
+An exhaustive module-level `if` or `switch` that assigns the same top-level
+`let`/`var` targets on every path is the statement form of a module computed.
+The statement performs initial module evaluation once, then one depth-`-1`
+singleton entity snapshots all targets and replays the statement when a
+source changes. Each target is committed independently only when
+`computedChanged(previous, current)` reports a change. Targets are
+compiler-owned computed state and cannot be assigned elsewhere.
+
+Imported sources and exported targets use the same canonical keys as
+expression computeds. `compileModules()` therefore supports:
+
+`imported source -> owning module flow entity -> exported computed target -> imported reader`
 
 ### R14 — Per-instance derivations recompute in the owner update
 
@@ -797,6 +814,42 @@ the caller inserting the returned root. The factory ABI still permits detached
 creation, custom synchronous schedulers, and SSR schedulers that never flush;
 R26 does not define a separate post-attachment mount hook.
 
+### R27 - Component render preludes and structural returns
+
+Component execution is split into one-time factory setup and a
+compiler-generated render prelude. Top-level pure, exhaustive `if`/`switch`
+statements that assign the same local `let`/`var` targets on every path are
+replayed in source order with expression derivations:
+
+`prop replay -> const/if/switch prelude -> DOM/child/region setters -> effects`
+
+Transitive source roots and R25 numeric dirty reasons apply to the combined
+ordered prelude. Imperative control flow containing calls or resource work is
+not replayed; reactive external synchronization belongs in one stable
+top-level R26 effect with its conditional behavior inside the callback.
+
+Supported JSX return control flow lowers to one anchored return region:
+
+- JSX early-return chains followed by a final JSX return;
+- terminal JSX-returning `if/else`;
+- terminal exhaustive JSX-returning `switch`.
+
+Pure calculations, function declarations, and deferred handler declarations
+may appear between an early return and the final return. Imperative setup may
+not cross that boundary because hoisting it into one-time factory setup would
+change whether it executes. Return branch swaps dispose nested components,
+lists, conditional regions, effects, and their DOM before mounting the next
+branch. The component factory itself never reruns.
+
+### R28 - Module control-flow derivations use canonical computed routing
+
+R13 statement computeds are graph-linkable module singletons. Their source
+sets may contain local or named-import state, including static store paths and
+earlier computeds. Their targets may be exported and imported by components
+or later derivations. Access tables route canonical source keys to the owning
+flow entity; changed targets then commit their own canonical keys. Distinct
+modules with the same local target name do not collide.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
@@ -1124,17 +1177,19 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R26 (compiler probes + compiled runtime execution).
+> Last full audit: R28 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
-- Conditional-region limits (R8 shipped): no conditionals inside list rows,
-  no nested conditionals inside branches, no text branches (use an
-  interpolation), direct JSX child only. Mounted components plus mapped
-  inline and component rows are supported inside branches.
+- Conditional-region limits: no conditionals inside list rows, no recursive
+  nested conditionals inside ordinary conditional branches, no text branches
+  (use an interpolation), direct JSX child only. Chained ternaries, fragment
+  branches, mounted components, and mapped inline/component rows are
+  supported.
 - Children slots can be rendered or forwarded once as the sole host child.
-- Components must be top-level `function` declarations (no arrows); exactly
-  one top-level JSX return per component.
+- Components must be top-level `function` declarations (no arrows). R27
+  supports structural tail returns; arbitrary branch-specific statements
+  between JSX returns remain unsupported.
 - Reactive effects must be direct top-level component statements with exactly
   one inline synchronous callback (R26). There are no module/root effects,
   named callback forms, nested/conditional effect declarations, or async
