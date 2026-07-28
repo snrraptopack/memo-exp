@@ -83,20 +83,6 @@ describe('R8 — code generation', () => {
   });
 
   it('rejects R8 L1 misuses with actionable errors', () => {
-    // component inside a branch
-    expect(() =>
-      compile(
-        `let c = false;\nfunction Badge() { return <b />; }\nfunction C() { return <div>{c ? <Badge /> : null}</div>; }`,
-      ),
-    ).toThrowError(/inside a conditional branch/);
-
-    // list inside a branch
-    expect(() =>
-      compile(
-        `let c = false; let items = [1];\nfunction C() { return <div>{c ? <ul>{items.map(i => <li key={i}>{i}</li>)}</ul> : null}</div>; }`,
-      ),
-    ).toThrowError(/lists inside conditional branches/);
-
     // conditional inside a list row
     expect(() =>
       compile(

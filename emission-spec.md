@@ -250,8 +250,9 @@ function update() { region.reconcile(items); }
 
 `{cond ? <A/> : <B/>}` and `{cond && <A/>}` in **direct JSX child position**
 compile to a conditional region. The region is its own entity; branches are
-NOT entities (L1 bans components inside branches, so there is nothing to
-unregister on a swap).
+NOT entities. A branch may own mounted components and mapped-list regions;
+their entities are nested below the conditional id and disposed when the
+branch is replaced.
 
 ```tsx
 <div>{loggedIn ? <b>hi</b> : <i>bye</i>}</div>
@@ -265,7 +266,7 @@ const when0 = createCondRegion(
   `${id}/when0`,                    // region entity id
   () => (loggedIn ? 0 : 1),         // pick: branch index
   [
-    () => { /* branch factory: own $ slots, own update; returns { nodes, update } */ },
+    () => { /* branch factory: returns { nodes, update, dispose? } */ },
     () => { /* else branch */ },
   ],
 );
@@ -279,7 +280,9 @@ Semantics:
   to the region's patterns (`<ownerPath>/when<n>`, `<ownerPath>/when<n>/*`),
   so any write to them dirties the region, not the owner. Branch handlers
   therefore always route through the table (never `markDirty(id)` — the
-  owner's update does not touch the region).
+  owner's update does not touch the region). Instance state, props, and local
+  derivations have no access-table identity, so an owner update explicitly
+  refreshes a conditional that closes over any of them.
 - `update()`: re-evaluate `pick()`. Same branch → run the branch's guarded
   update closure. Different branch → remove the old branch's nodes, run the
   new branch factory, insert before the anchor comment (`when:<id>`).
@@ -287,8 +290,14 @@ Semantics:
   branch is empty. Text branches are rejected (use a text interpolation).
 - A swap DESTROYS branch DOM state (focus, scroll, `<details>`). Retaining
   detached branches is a post-L1 option (cache both, like list rows).
-- L1 bans: components inside branches, lists inside branches, conditionals
-  inside list rows, conditionals in attribute position. Each is a clear
+- Components mounted inside a branch receive ids below the conditional entity
+  and are unregistered with their complete subtree when the branch changes.
+- A mapped list inside a branch is emitted under
+  `<owner>/when<n>/<list>/Row[key]`. Inline and component rows are supported;
+  replacing the branch disposes the list cache and unregisters its row
+  subtrees.
+- L1 bans: nested conditionals, lists inside list rows, conditionals inside
+  list rows, and conditional regions in attribute position. Each is a clear
   compile error.
 
 ### R9 — Nested component calls are id-stable
@@ -1119,9 +1128,10 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
-- Conditional-region limits (R8 shipped): no components or lists inside
-  branches, no conditionals inside list rows, no nested conditionals inside
-  branches, no text branches (use an interpolation), direct JSX child only.
+- Conditional-region limits (R8 shipped): no conditionals inside list rows,
+  no nested conditionals inside branches, no text branches (use an
+  interpolation), direct JSX child only. Mounted components plus mapped
+  inline and component rows are supported inside branches.
 - Children slots can be rendered or forwarded once as the sole host child.
 - Components must be top-level `function` declarations (no arrows); exactly
   one top-level JSX return per component.

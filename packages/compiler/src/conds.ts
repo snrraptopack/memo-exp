@@ -10,9 +10,10 @@
  * L1 form rules (each a clear compile error):
  *   - branches must be JSX elements or empty (null / false / undefined) —
  *     text branches are rejected (use a text interpolation)
- *   - no component references inside branches (branches are not entities)
- *   - no lists or nested conditionals inside branches (no nested regions)
- *   - no key={...} inside branches (meaningless there)
+ *   - statically mounted components are branch-owned entities
+ *   - mapped lists may be nested in branches and are branch-owned
+ *   - no nested conditionals inside branches
+ *   - no key={...} outside a mapped row (meaningless there)
  */
 
 import type { NodePath } from '@babel/traverse';
@@ -58,12 +59,6 @@ function validateBranchJsx(jsx: t.JSXElement, fail: (msg: string) => never): voi
   while (stack.length > 0) {
     const n = stack.pop()!;
     if (t.isJSXElement(n)) {
-      const tag = n.openingElement.name;
-      if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) {
-        fail(
-          `memo-dom: component <${tag.name}> inside a conditional branch — branches are not entities (R8 L1); put the conditional inside <${tag.name}> instead`,
-        );
-      }
       for (const attr of n.openingElement.attributes) {
         if (!t.isJSXSpreadAttribute(attr) && (attr.name as t.JSXIdentifier).name === 'key') {
           fail('memo-dom: key={...} is only meaningful on list rows');
@@ -78,9 +73,9 @@ function validateBranchJsx(jsx: t.JSXElement, fail: (msg: string) => never): voi
         );
       }
       if (matchMapCall(ex) !== null && nodeHasJsx(ex)) {
-        fail(
-          'memo-dom: lists inside conditional branches are not supported yet (R8 L1) — hoist the list into a component',
-        );
+        // analyzeMapSite validates the callback. Do not walk a component row
+        // as if it were a statically mounted component in the branch.
+        continue;
       }
     }
   }

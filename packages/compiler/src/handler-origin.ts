@@ -40,7 +40,7 @@ export function buildEventOriginCommit(
 /** A shared module handler needs a closure over its call site's entity ID. */
 export function wrapSharedHandlerWithOrigin(
   ctx: Ctx,
-  handler: t.Identifier,
+  handler: t.Expression,
   originCommit: t.Statement,
 ): t.ArrowFunctionExpression {
   const event = generatedIdentifier(ctx, 'event');

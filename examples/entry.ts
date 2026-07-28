@@ -1,15 +1,15 @@
 /**
  * @file entry.ts
- * Browser entry point for the E-Commerce Cart App example.
+ * Browser entry point for the Real-Time System Dashboard example.
  */
-import { CartApp } from './CartApp';
+import { DashboardApp } from './dashboard/DashboardApp';
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  const factory = CartApp as unknown as (
+  const factory = DashboardApp as unknown as (
     id: string,
     parent: string | null,
   ) => Node;
-  const appNode = factory('CartApp', null);
+  const appNode = factory('DashboardApp', null);
   rootElement.appendChild(appNode);
 }

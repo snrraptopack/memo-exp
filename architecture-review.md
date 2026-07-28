@@ -169,7 +169,9 @@ changes the bounded-write-effect contract.
 ### P1: source-language coverage
 
 1. Fold reachable local-helper summaries into R14 purity checks.
-2. Expand nested list/conditional/component regions and recursive components.
+2. Expand nested conditional regions, lists inside list rows, and recursive
+   components. Mounted components and mapped lists inside conditional
+   branches are supported.
 3. Support richer children-slot insertion positions while retaining one-mount
    ownership.
 

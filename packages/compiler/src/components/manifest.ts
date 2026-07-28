@@ -111,6 +111,18 @@ export function analyzedComponentDeclarations(
         });
       }
     }
+    for (const [tag, sites] of ctx.conditionalComponentSites) {
+      for (const site of sites) {
+        if (site.owner !== local) continue;
+        const sources = propSources.get(tag);
+        edges.push({
+          target: componentTarget(ctx, tag),
+          suffix: `/${site.suffix}`,
+          mode: 'static',
+          ...(sources === undefined ? {} : { propSources: sources }),
+        });
+      }
+    }
     for (const [tag, sites] of ctx.listedSites) {
       for (const site of sites) {
         if (site.owner !== local) continue;

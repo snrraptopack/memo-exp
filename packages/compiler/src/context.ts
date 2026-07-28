@@ -200,6 +200,8 @@ export interface Ctx {
    * never locality-eligible.
    */
   listedSites: Map<string, SiteRef[]>;
+  /** Components mounted lexically inside conditional branch factories. */
+  conditionalComponentSites: Map<string, SiteRef[]>;
   /** Local and imported JSX call contracts, captured before params are rewritten. */
   componentProps: Map<string, ComponentPropsPlan>;
   /** Memoized isLightweightListedComponent results (the eligibility check traverses the AST). */
@@ -345,6 +347,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     compReads: new Map(),
     childRefCounts: new Map(),
     listedSites: new Map(),
+    conditionalComponentSites: new Map(),
     componentProps,
     lightweightCache: new Map(),
     rowReads: new Map(),
@@ -626,6 +629,36 @@ export function exprReadsState(ctx: Ctx, expr: t.Node, compName?: string): boole
     }
   };
   probe(expr);
+  return reads;
+}
+
+/**
+ * Does a raw expression reference state owned by one component instance?
+ *
+ * Structural regions route module-state reads through the static access
+ * table. Instance state, props, and local derivations have no table identity,
+ * so an owner update must explicitly refresh a region that closes over them.
+ */
+export function exprReadsInstanceState(
+  ctx: Ctx,
+  expr: t.Node,
+  compName: string,
+): boolean {
+  const roots = new Set<string>([
+    ...(ctx.instanceState.get(compName) ?? []),
+    ...(ctx.instanceDerivedBindings.get(compName) ?? []),
+    ...(ctx.componentProps.get(compName)?.bindings ?? []),
+  ]);
+  if (roots.size === 0) return false;
+
+  let reads = false;
+  walkNodes(expr, (node) => {
+    if (t.isIdentifier(node) && roots.has(node.name)) {
+      reads = true;
+      return false;
+    }
+    return reads ? false : undefined;
+  });
   return reads;
 }
 

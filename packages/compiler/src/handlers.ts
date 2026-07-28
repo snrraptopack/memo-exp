@@ -55,6 +55,10 @@ import { applyLinkedPropEffect } from './components/prop-effects';
 import {
   componentPropProjectionOrigins,
 } from './components/prop-projections';
+import {
+  objectBindingName,
+  propNameForBinding,
+} from './components/props';
 import { generatedIdentifier } from './identifiers';
 
 // @babel/traverse is CJS; under ESM the function lands on `.default`.
@@ -167,6 +171,29 @@ export function buildHandler(
   // module-level functions have no `id` in scope: their commits always route
   // through the table, never markDirty(id)
   let forceTable = false;
+  const propPlan = ctx.componentProps.get(compName);
+  const propObject =
+    propPlan === undefined ? null : objectBindingName(propPlan);
+  const propHandler =
+    propPlan !== undefined &&
+    ((t.isIdentifier(value) &&
+      propNameForBinding(propPlan, value.name) !== null) ||
+      (t.isMemberExpression(value) &&
+        propObject !== null &&
+        memberRootName(value) === propObject));
+
+  if (propHandler) {
+    return wrapSharedHandlerWithOrigin(
+      ctx,
+      value,
+      buildEventOriginCommit(
+        ctx,
+        compName,
+        rowCtx,
+        eventOriginId,
+      ),
+    );
+  }
 
   if (t.isArrowFunctionExpression(value) || t.isFunctionExpression(value)) {
     target = value;

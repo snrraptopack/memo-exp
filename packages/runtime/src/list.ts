@@ -62,6 +62,8 @@ const identityKey = <T>(item: T): unknown => item;
 export interface ListRegion<T> {
   reconcile(items: readonly T[]): void;
   size(): number;
+  /** Remove retained nodes and unregister every entity owned by the region. */
+  dispose(): void;
 }
 
 /**
@@ -303,8 +305,25 @@ export function createListRegion<T>(
     prevItems = items.slice();
   }
 
+  function dispose(): void {
+    for (const [key, rec] of cache) {
+      for (const node of rec.e.nodes) node.parentNode?.removeChild(node);
+      for (const entity of rec.e.entities) unregisterSubtree(entity);
+      syntheticIds.delete(key);
+    }
+    cache.clear();
+    nextMap.clear();
+    prevItems = [];
+    prevEntries.length = 0;
+    prevRowIds.length = 0;
+    nextEntries.length = 0;
+    nextRowIds.length = 0;
+    endAnchor.parentNode?.removeChild(endAnchor);
+  }
+
   return {
     reconcile,
     size: () => cache.size,
+    dispose,
   };
 }

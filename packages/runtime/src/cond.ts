@@ -9,9 +9,9 @@
  *
  * Branch semantics (spec §R8):
  *   - update() re-evaluates pick(). Same branch → the branch's own guarded
- *     update closure runs. Different branch → the old branch's nodes are
- *     REMOVED (L1: branches are not entities, nothing to unregister) and the
- *     new branch factory runs, inserting before the anchor.
+ *     update closure runs. Different branch → compiler-owned components and
+ *     list regions drain, the old nodes are removed, and the new branch
+ *     factory runs before the anchor.
  *   - A swap destroys branch-local DOM state (focus, scroll); module state
  *     survives, so re-mounting a branch reflects current state.
  */
@@ -23,6 +23,8 @@ export interface CondEntry {
   nodes: Node[];
   /** The branch's guarded update closure. */
   update: () => void;
+  /** Drain structural regions retained by this branch before replacement. */
+  dispose?: () => void;
 }
 
 export type CondBranchFactory = () => CondEntry;
@@ -54,6 +56,7 @@ export function createCondRegion(
       return;
     }
     if (entry !== null) {
+      entry.dispose?.();
       for (const node of entry.nodes) node.parentNode?.removeChild(node);
       entry = null;
     }

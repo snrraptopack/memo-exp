@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>⚡ Memoized DOM - E-Commerce Cart (Local State & Destructuring)</title>
+  <title>⚡ Memoized DOM - Example Applications</title>
   <style>
     :root {
       --bg: #0b0f19;
@@ -16,6 +16,7 @@
       --primary-hover: #0284c7;
       --accent: #10b981;
       --danger: #ef4444;
+      --warning: #f59e0b;
     }
     * {
       box-sizing: border-box;
@@ -30,15 +31,15 @@
       display: flex;
       justify-content: center;
     }
-    .cart-app-container {
+    .cart-app-container, .dashboard-container {
       width: 100%;
       max-width: 960px;
     }
-    .app-header {
+    .app-header, .dashboard-header {
       margin-bottom: 2rem;
       text-align: center;
     }
-    .app-header h1 {
+    .app-header h1, .dashboard-header h1 {
       margin: 0 0 0.5rem 0;
       font-size: 1.85rem;
       color: var(--primary);
@@ -48,13 +49,14 @@
       color: var(--subtext);
       font-size: 0.95rem;
     }
-    .category-filters {
+    .category-filters, .dashboard-tabs {
       display: flex;
       gap: 10px;
       justify-content: center;
       flex-wrap: wrap;
+      margin-bottom: 1.5rem;
     }
-    .filter-btn, .add-item-btn {
+    .filter-btn, .add-item-btn, .tab-btn, .live-toggle-btn {
       background: rgba(255, 255, 255, 0.06);
       color: var(--subtext);
       border: 1px solid var(--card-border);
@@ -64,10 +66,15 @@
       cursor: pointer;
       transition: all 0.2s ease;
     }
-    .filter-btn.active {
+    .filter-btn.active, .tab-btn.active {
       background: var(--primary);
       color: #0b0f19;
       border-color: var(--primary);
+    }
+    .live-toggle-btn.active {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--accent);
+      border-color: var(--accent);
     }
     .add-item-btn {
       background: rgba(16, 185, 129, 0.15);
@@ -259,6 +266,113 @@
     .promo-btn:hover {
       background: rgba(255, 255, 255, 0.1);
     }
+
+    /* Dashboard Styles */
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-top: 6px;
+    }
+    .status-badge.healthy {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .status-badge.degraded {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.25rem;
+    }
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .metric-card-header h3 {
+      margin: 0;
+      font-size: 0.95rem;
+      color: var(--subtext);
+    }
+    .metric-card-header .subtitle {
+      font-size: 0.75rem;
+      color: var(--primary);
+      font-weight: bold;
+    }
+    .metric-value {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .metric-value .num {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .metric-value .unit {
+      font-size: 0.9rem;
+      color: var(--subtext);
+    }
+
+    .logs-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .logs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .logs-header h3 {
+      margin: 0;
+      font-size: 1.1rem;
+      color: var(--text);
+    }
+    .btn-clear {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .logs-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .log-item {
+      font-family: monospace;
+      font-size: 0.85rem;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.25);
+      display: flex;
+      gap: 12px;
+    }
+    .log-item.info { color: #38bdf8; }
+    .log-item.warn { color: #f59e0b; }
+    .log-item.error { color: #f87171; }
   </style>
 </head>
 <body>

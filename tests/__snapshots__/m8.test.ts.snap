@@ -69,7 +69,7 @@ export function CondApp(_id, _parent) {
     _span.appendChild(_text4);
     _span.appendChild(_button2);
     return {
-      nodes: [_span],
+      nodes: _MD.rootNodes(_span),
       update: _update2
     };
   }, () => {
@@ -80,7 +80,7 @@ export function CondApp(_id, _parent) {
     _MD.setClassValue(_span2, "out");
     _span2.appendChild(_text6);
     return {
-      nodes: [_span2],
+      nodes: _MD.rootNodes(_span2),
       update: _update3
     };
   }]);

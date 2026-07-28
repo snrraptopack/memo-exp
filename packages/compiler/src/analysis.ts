@@ -178,9 +178,17 @@ export function pathVariants(
     );
   }
   const info = ctx.comps.get(name)!;
-  if (info.parents.size === 0) return [ctx.rootId];
+  const conditionalSites = ctx.conditionalComponentSites.get(name) ?? [];
+  if (info.parents.size === 0 && conditionalSites.length === 0) {
+    return [ctx.rootId];
+  }
   visiting.add(name);
   const out: string[] = [];
+  for (const site of conditionalSites) {
+    for (const ownerPath of pathVariants(ctx, site.owner, visiting)) {
+      out.push(`${ownerPath}/${site.suffix}`);
+    }
+  }
   for (const parent of info.parents) {
     const count = ctx.childRefCounts.get(parent)?.get(name) ?? 1;
     for (const pp of pathVariants(ctx, parent, visiting)) {
@@ -351,6 +359,109 @@ function collectReads(ctx: Ctx): void {
     const usedConds = { count: 0 };
 
     /**
+     * A list nested in a conditional branch is emitted below the conditional
+     * entity (`<owner>/whenN/<list>`). The condition owns source/prop replay;
+     * this pass still records component-row placement and inline-row reads so
+     * routing matches the nested runtime ids.
+     */
+    function collectConditionalMap(
+      call: NodePath<t.CallExpression>,
+      condSuffix: string,
+      branchPrefixes: Map<string, number>,
+    ): void {
+      const mapCall = matchMapCall(call.node);
+      if (mapCall === null || !containsJsx(call)) return;
+      const site = analyzeMapSite(
+        ctx,
+        mapCall,
+        call,
+        name,
+        branchPrefixes,
+      );
+      const nestedSuffix = `${condSuffix}/${site.suffix}`;
+
+      if (site.form === 'component') {
+        const sites = ctx.listedSites.get(site.rowComp!) ?? [];
+        if (
+          !sites.some(
+            (existing) =>
+              existing.owner === name &&
+              existing.suffix === nestedSuffix,
+          )
+        ) {
+          sites.push({
+            owner: name,
+            suffix: nestedSuffix,
+            itemParam: site.itemParam,
+            keyExpr: site.keyExpr,
+            sourceKey: site.sourceKey,
+            sourceLocal: site.sourceLocal,
+          });
+        }
+        ctx.listedSites.set(site.rowComp!, sites);
+      } else {
+        const rowVars = new Set<string>();
+        const cbPath = call.get('arguments')[0];
+        cbPath?.traverse({
+          Identifier(id) {
+            if (
+              id.node.name !== site.itemParam &&
+              ctx.state.has(id.node.name) &&
+              id.scope.getBinding(id.node.name)?.scope.path.isProgram() === true
+            ) {
+              rowVars.add(id.node.name);
+            }
+          },
+          CallExpression(inner) {
+            const callee = inner.node.callee;
+            if (t.isIdentifier(callee) && ctx.helpers.has(callee.name)) {
+              for (const read of summarizeHelper(ctx, callee.name).reads) {
+                rowVars.add(read);
+              }
+            }
+          },
+        });
+        if (rowVars.size > 0) {
+          ctx.rowReads.set(`${name}/${nestedSuffix}`, {
+            owner: name,
+            suffix: nestedSuffix,
+            vars: rowVars,
+          });
+        }
+      }
+      call.skip();
+    }
+
+    function recordConditionalComponent(
+      element: NodePath<t.JSXElement>,
+      condSuffix: string,
+      childCounts: Map<string, number>,
+    ): void {
+      const tag = element.node.openingElement.name;
+      if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
+      if (!ctx.comps.has(tag.name) && !ctx.importedComponents.has(tag.name)) {
+        throw element.buildCodeFrameError(
+          `memo-dom: <${tag.name} /> is not a linked component factory`,
+        );
+      }
+
+      const seen = childCounts.get(tag.name) ?? 0;
+      childCounts.set(tag.name, seen + 1);
+      const componentSuffix =
+        seen === 0 ? tag.name : `${tag.name}[${seen}]`;
+      const suffix = `${condSuffix}/${componentSuffix}`;
+      const sites = ctx.conditionalComponentSites.get(tag.name) ?? [];
+      if (
+        !sites.some(
+          (site) => site.owner === name && site.suffix === suffix,
+        )
+      ) {
+        sites.push({ owner: name, suffix });
+      }
+      ctx.conditionalComponentSites.set(tag.name, sites);
+    }
+
+    /**
      * R8: a JSX-bearing conditional is a REGION — every state var read in
      * the condition OR either branch is attributed to the region's patterns
      * ('<owner>/when<n>'), so writes dirty the region, not the owner.
@@ -361,6 +472,39 @@ function collectReads(ctx: Ctx): void {
       const node = c.node;
       if (!containsJsx(c)) return; // attribute ternaries etc.: plain reads
       const site = analyzeCondSite(node, c, usedConds);
+      const branchPaths: NodePath[] = t.isConditionalExpression(node)
+        ? [
+            c.get('consequent') as NodePath,
+            c.get('alternate') as NodePath,
+          ]
+        : [c.get('right') as NodePath];
+      for (const branchPath of branchPaths) {
+        const branchPrefixes = new Map<string, number>();
+        const branchChildren = new Map<string, number>();
+        if (branchPath.isJSXElement()) {
+          recordConditionalComponent(
+            branchPath,
+            site.suffix,
+            branchChildren,
+          );
+        }
+        branchPath.traverse({
+          JSXElement(element) {
+            recordConditionalComponent(
+              element,
+              site.suffix,
+              branchChildren,
+            );
+          },
+          CallExpression(call) {
+            collectConditionalMap(
+              call,
+              site.suffix,
+              branchPrefixes,
+            );
+          },
+        });
+      }
       const vars = collectStateIds(ctx, node);
       if (vars.size > 0) {
         ctx.condReads.set(`${name}/${site.suffix}`, {
@@ -904,10 +1048,10 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanInstanceDerivations(ctx); // R14/R24: ordered local projections/computeds
   scanEffects(ctx);
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
+  collectReads(ctx);
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)
   for (const [name] of ctx.comps) pathVariants(ctx, name);
-  collectReads(ctx);
 
   const listedComponents = new Set([
     ...ctx.listedSites.keys(),
@@ -933,7 +1077,8 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
     // used both as a row AND a static child: patterns would drop one usage
     if (
       (sites.length > 0 || ctx.linkedComponentRows.has(comp)) &&
-      ctx.comps.get(comp)!.parents.size > 0
+      (ctx.comps.get(comp)!.parents.size > 0 ||
+        (ctx.conditionalComponentSites.get(comp)?.length ?? 0) > 0)
     ) {
       throw p.buildCodeFrameError(
         `memo-dom: <${comp}> is used both as a list row and as a static child — split it into two components (R7 L1)`,
@@ -962,7 +1107,14 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
   if (sites && sites.length > 0) {
     if (isLightweightListedComponent(ctx, name)) {
       for (const site of sites) {
-        for (const v of pathVariants(ctx, site.owner)) patterns.push(v, `${v}/*`);
+        const containerEnd = site.suffix.lastIndexOf('/');
+        const container =
+          containerEnd < 0
+            ? ''
+            : `/${site.suffix.slice(0, containerEnd)}`;
+        for (const v of pathVariants(ctx, site.owner)) {
+          patterns.push(`${v}${container}`, `${v}${container}/*`);
+        }
       }
       return patterns;
     }

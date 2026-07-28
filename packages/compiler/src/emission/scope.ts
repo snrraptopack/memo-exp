@@ -23,6 +23,10 @@ export interface EmitScope {
   usedConds: { count: number };
   textCounter: number;
   regionCounter: number;
+  /** Structural regions whose retained entries drain with this scope. */
+  disposableRegions: string[];
+  /** Component entity ids created lexically inside this scope. */
+  disposableEntities: t.Expression[];
 }
 
 export function newEmitScope(ctx: Ctx): EmitScope {
@@ -39,6 +43,8 @@ export function newEmitScope(ctx: Ctx): EmitScope {
     usedConds: { count: 0 },
     textCounter: 0,
     regionCounter: 0,
+    disposableRegions: [],
+    disposableEntities: [],
   };
 }
 

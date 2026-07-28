@@ -17,6 +17,7 @@ import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   attrExpr,
+  exprReadsInstanceState,
   exprReadsState,
   keyPathOf,
   nodeHasJsx,
@@ -591,6 +592,7 @@ function emitElement(
         ),
       ]),
     );
+    scope.disposableEntities.push(t.cloneNode(childId));
     // R10: re-push state-reading props inside the parent's update — the box
     // flows down through setProps (shallow-compare → no-op when unchanged)
     if (needsPush) {
@@ -644,13 +646,11 @@ function emitElement(
     },
   });
   if (
-    nestedIn !== null &&
+    nestedIn === 'row' &&
     childOperations.some((operation) => operation.type === 'list')
   ) {
     throw compPath.buildCodeFrameError(
-      `memo-dom: nested lists inside ${
-        nestedIn === 'row' ? 'list rows' : 'conditional branches'
-      } are not supported yet`,
+      'memo-dom: nested lists inside list rows are not supported yet',
     );
   }
   if (
@@ -958,6 +958,7 @@ function emitRegion(
       ),
     ]),
   );
+  scope.disposableRegions.push(regionVar);
 
   // initial population + every owner render re-reconciles (region diffs)
   scope.creation.push(
@@ -1364,7 +1365,6 @@ function emitCondRegion(
           compPath,
           regionId,
           inSvg,
-          ownerId,
         )
       : t.nullLiteral(),
   );
@@ -1398,8 +1398,22 @@ function emitCondRegion(
       ),
     ]),
   );
-  // NOTE: the owner's update does NOT call whenN.update() — the region is
-  // dirtied through the access table (its reads are attributed to it).
+  if (exprReadsInstanceState(ctx, expr, compName)) {
+    scope.updaters.push(() =>
+      t.expressionStatement(
+        t.callExpression(
+          t.memberExpression(
+            t.identifier(regionVar),
+            t.identifier('update'),
+          ),
+          [],
+        ),
+      ),
+    );
+  }
+  // Module dependencies dirty the region through the access table. An
+  // instance-owned dependency has no table identity, so the owner forwards
+  // its update explicitly.
 }
 
 /**
@@ -1414,7 +1428,6 @@ function buildBranchCreate(
   compPath: NodePath<t.FunctionDeclaration>,
   regionId: t.Expression,
   inSvg = false,
-  ownerId: t.Expression = componentId(ctx, compName),
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx);
   const rootVar = emitElement(
@@ -1427,8 +1440,54 @@ function buildBranchCreate(
     undefined,
     regionId,
     inSvg,
-    ownerId,
+    regionId,
   );
+  const properties: t.ObjectProperty[] = [
+    t.objectProperty(
+      t.identifier('nodes'),
+      t.callExpression(md(ctx, 'rootNodes'), [
+        t.identifier(rootVar),
+      ]),
+    ),
+    t.objectProperty(
+      t.identifier('update'),
+      t.identifier(branchScope.updateVar),
+    ),
+  ];
+  if (
+    branchScope.disposableRegions.length > 0 ||
+    branchScope.disposableEntities.length > 0
+  ) {
+    const disposeStatements: t.Statement[] = [
+      ...branchScope.disposableRegions.map((region) =>
+        t.expressionStatement(
+          t.callExpression(
+            t.memberExpression(
+              t.identifier(region),
+              t.identifier('dispose'),
+            ),
+            [],
+          ),
+        ),
+      ),
+      ...branchScope.disposableEntities.map((entity) =>
+        t.expressionStatement(
+          t.callExpression(md(ctx, 'unregisterSubtree'), [
+            t.cloneNode(entity),
+          ]),
+        ),
+      ),
+    ];
+    properties.push(
+      t.objectProperty(
+        t.identifier('dispose'),
+        t.arrowFunctionExpression(
+          [],
+          t.blockStatement(disposeStatements),
+        ),
+      ),
+    );
+  }
   return t.arrowFunctionExpression(
     [],
     t.blockStatement([
@@ -1436,10 +1495,7 @@ function buildBranchCreate(
       updateDecl(branchScope),
       ...branchScope.creation,
       t.returnStatement(
-        t.objectExpression([
-          t.objectProperty(t.identifier('nodes'), t.arrayExpression([t.identifier(rootVar)])),
-          t.objectProperty(t.identifier('update'), t.identifier(branchScope.updateVar)),
-        ]),
+        t.objectExpression(properties),
       ),
     ]),
   );

@@ -25,37 +25,31 @@ export function TodoApp() {
         <div class="stat-pill">Completed: <strong>{completedCount}</strong></div>
       </div>
 
-      {/* Actions */}
+      {/* Control Actions */}
       <div class="actions">
-        <button onClick={() => fetchRemoteTodos()} disabled={state.isLoading}>
-          {state.isLoading ? '⏳ Loading API...' : '🌐 Load Remote API Todos'}
-        </button>
         <button
+          class="btn primary"
           onClick={() => {
-            const newId = Date.now();
             todos.push({
-              id: newId,
-              text: `New Task #${todos.length + 1}`
+              id: Date.now(),
+              text: `Local Todo #${todos.length + 1}`
             });
-            categoryMap.set(newId, 'General');
           }}
         >
-          ➕ Add Task
+          ➕ Add Local Todo
         </button>
+
         <button
-          onClick={() => {
-            const filtered = todos.filter((t) => !completedSet.has(t.id));
-            todos.length = 0;
-            todos.push(...filtered);
-            completedSet.clear();
-          }}
+          class="btn secondary"
+          onClick={() => fetchRemoteTodos()}
+          disabled={state.isLoading}
         >
-          🧹 Clear Completed
+          {state.isLoading ? '⌛ Loading...' : '🌐 Load Remote API Todos'}
         </button>
       </div>
 
       {/* Todo List */}
-      <ul>
+      <ul class="todo-list">
         {todos.map((item) => (
           <TodoItem
             key={item.id}

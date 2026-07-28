@@ -1,4 +1,4 @@
-import { getEventLog } from '@memoized-dom/runtime'
+import { getEventLog } from '@memoized-dom/runtime';
 import { INITIAL_PRODUCTS, type CartItemData } from './cart-db';
 import { CartList } from './CartList';
 import { OrderSummary } from './OrderSummary';
@@ -12,8 +12,8 @@ export function CartApp() {
 
   const itemCount = items.length;
 
-  effect(() => console.log(itemCount,getEventLog()))
-  console.log("expect only once")
+  effect(() => console.log(itemCount, getEventLog()));
+  console.log("expect only once");
 
   // Local Derivations (R14 - Owner Update Prologue Replay)
   const filteredItems = categoryFilter === 'ALL'
