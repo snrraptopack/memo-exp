@@ -42,6 +42,15 @@ export interface LocalDerivation {
   sources: string[];
 }
 
+export interface ControlFlowDerivation {
+  /** Pure authored control flow retained for initial factory evaluation. */
+  statement: t.IfStatement | t.SwitchStatement;
+  /** Mutable locals assigned on every control-flow path. */
+  bindings: string[];
+  /** Transitive non-derived roots that can change the calculation. */
+  sources: string[];
+}
+
 /** Normalize a component's source parameters into its JSX call contract. */
 export function analyzeComponentProps(
   params: t.FunctionDeclaration['params'],

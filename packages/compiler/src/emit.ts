@@ -1421,16 +1421,17 @@ function emitCondRegion(
  * NO register (branches are not entities — a swap just removes their nodes).
  * Emitted into a fresh EmitScope so variables and slots never collide.
  */
-function buildBranchCreate(
+export function buildBranchCreate(
   ctx: Ctx,
-  jsx: t.JSXElement,
+  jsx: JsxNode,
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
   regionId: t.Expression,
   inSvg = false,
+  ownerId: t.Expression = regionId,
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx);
-  const rootVar = emitElement(
+  const rootVar = emitNode(
     ctx,
     branchScope,
     jsx,
@@ -1440,7 +1441,7 @@ function buildBranchCreate(
     undefined,
     regionId,
     inSvg,
-    regionId,
+    ownerId,
   );
   const properties: t.ObjectProperty[] = [
     t.objectProperty(

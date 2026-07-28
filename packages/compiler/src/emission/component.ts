@@ -14,7 +14,7 @@ import {
   type Ctx,
   type RowCtx,
 } from '../context';
-import { emitNode } from '../emit';
+import { buildBranchCreate, emitNode } from '../emit';
 import {
   generatedIdentifier,
   md,
@@ -28,7 +28,11 @@ import {
   objectBindingName,
   runtimeParameter,
 } from '../components/props';
-import { buildLocalDerivationReplay } from '../components/local-derived';
+import { buildRenderPreludeReplay } from '../components/render-prelude';
+import {
+  analyzeComponentReturns,
+  type ComponentReturnPlan,
+} from '../components/return-plan';
 import {
   buildEffectRegistrations,
   buildLocalEffectInvalidations,
@@ -39,7 +43,6 @@ import {
   registerStmt,
   updateDecl,
 } from './scope';
-import type { JsxNode } from '../jsx/children';
 
 export function transformComponent(
   ctx: Ctx,
@@ -47,30 +50,7 @@ export function transformComponent(
   name: string,
 ): void {
   const node = path.node;
-  const returns: NodePath<t.ReturnStatement>[] = [];
-  path.get('body').traverse({
-    ReturnStatement(returnPath) {
-      returns.push(returnPath);
-    },
-    Function(functionPath) {
-      functionPath.skip();
-    },
-  });
-  const topLevel = returns.filter(
-    (returnPath) => returnPath.getFunctionParent() === path,
-  );
-  const jsxTop = topLevel.filter(
-    (returnPath) =>
-      t.isJSXElement(returnPath.node.argument) ||
-      t.isJSXFragment(returnPath.node.argument),
-  );
-  if (jsxTop.length !== 1 || topLevel.length !== 1) {
-    throw path.buildCodeFrameError(
-      `memo-dom: component '${name}' must have exactly one top-level JSX return (L1)`,
-    );
-  }
-  const returnStmt = jsxTop[0]!.node;
-  const jsx = returnStmt.argument as JsxNode;
+  const returns = analyzeComponentReturns(path, name);
   const propPlan = ctx.componentProps.get(name)!;
   const propSlotCount = propPlan.params.length;
   const refs = ctx.listedSites.get(name) ?? [];
@@ -81,6 +61,7 @@ export function transformComponent(
   const lightweight = isLightweightListedComponent(ctx, name);
   const scope = newEmitScope(ctx);
   const localDerivations = ctx.instanceDerivations.get(name);
+  const controlFlow = ctx.instanceControlFlow.get(name);
   const effects = ctx.effects.get(name);
   const hasLocalEffects =
     effects?.some(
@@ -141,18 +122,32 @@ export function transformComponent(
   }
 
   transformComponentLifecycle(ctx, path, name, factoryId, rowCtx);
-  const rootVar = emitNode(ctx, scope, jsx, name, path, null, rowCtx);
+  const rootVar =
+    'jsx' in returns
+      ? emitNode(ctx, scope, returns.jsx, name, path, null, rowCtx)
+      : emitComponentReturnRegion(
+          ctx,
+          scope,
+          returns,
+          name,
+          path,
+          factoryId,
+        );
 
   if (localDerivations !== undefined) {
     for (const derivation of localDerivations) {
       derivation.declaration.kind = 'let';
     }
+  }
+  if (localDerivations !== undefined || controlFlow !== undefined) {
     scope.updaters.unshift(() =>
-      buildLocalDerivationReplay(
+      buildRenderPreludeReplay(
         ctx,
         name,
         scope.reasonVar,
-        localDerivations,
+        node.body.body,
+        localDerivations ?? [],
+        controlFlow ?? [],
       ),
     );
   }
@@ -173,7 +168,11 @@ export function transformComponent(
   );
   const kept = node.body.body.filter(
     (statement) =>
-      statement !== returnStmt && !effectStatements.has(statement),
+      !(
+        'jsx' in returns
+          ? statement === returns.statement
+          : returns.statements.has(statement)
+      ) && !effectStatements.has(statement),
   );
 
   if (propSlotCount > 0 && !lightweight) {
@@ -290,4 +289,73 @@ export function transformComponent(
         ]
       : [t.identifier(factoryId), t.identifier(factoryParent!)];
   node.body = t.blockStatement(body);
+}
+
+function emitComponentReturnRegion(
+  ctx: Ctx,
+  scope: ReturnType<typeof newEmitScope>,
+  plan: ComponentReturnPlan,
+  name: string,
+  path: NodePath<t.FunctionDeclaration>,
+  factoryId: string,
+): string {
+  const fragment = generatedIdentifier(ctx, 'returnRoot').name;
+  const region = generatedIdentifier(ctx, 'returnRegion').name;
+  const owner = t.identifier(factoryId);
+  const regionId = t.binaryExpression(
+    '+',
+    t.cloneNode(owner),
+    t.stringLiteral('/$return'),
+  );
+  scope.creation.push(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        t.identifier(fragment),
+        t.callExpression(
+          t.memberExpression(
+            t.identifier('document'),
+            t.identifier('createDocumentFragment'),
+          ),
+          [],
+        ),
+      ),
+    ]),
+  );
+  scope.creation.push(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        t.identifier(region),
+        t.callExpression(md(ctx, 'createCondRegion'), [
+          t.identifier(fragment),
+          t.cloneNode(regionId),
+          t.cloneNode(plan.pick),
+          t.arrayExpression(
+            plan.branches.map((jsx) =>
+              buildBranchCreate(
+                ctx,
+                jsx,
+                name,
+                path,
+                regionId,
+                false,
+                owner,
+              ),
+            ),
+          ),
+        ]),
+      ),
+    ]),
+  );
+  scope.updaters.push(() =>
+    t.expressionStatement(
+      t.callExpression(
+        t.memberExpression(
+          t.identifier(region),
+          t.identifier('update'),
+        ),
+        [],
+      ),
+    ),
+  );
+  return fragment;
 }

@@ -56,6 +56,11 @@ function collectEffectReads(
       derivedSources.set(binding, derivation.sources);
     }
   }
+  for (const derivation of ctx.instanceControlFlow.get(compName) ?? []) {
+    for (const binding of derivation.bindings) {
+      derivedSources.set(binding, derivation.sources);
+    }
+  }
 
   for (const name of localRoots) {
     const binding = compPath.scope.getBinding(name);

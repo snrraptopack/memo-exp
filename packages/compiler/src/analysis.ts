@@ -45,6 +45,7 @@ import { isChildrenReference } from './components/children';
 import {
   analyzeComponentProps,
   bindingNames,
+  type ControlFlowDerivation,
   type LocalDerivation,
 } from './components/props';
 import { scanEffects } from './effects';
@@ -1039,6 +1040,312 @@ function scanInstanceDerivations(ctx: Ctx): void {
   }
 }
 
+type ReplayControlPath = NodePath<t.IfStatement | t.SwitchStatement>;
+
+function replayExpressionIsPure(expression: t.Expression): boolean {
+  let pure = true;
+  t.traverseFast(expression, (node) => {
+    if (
+      t.isAssignmentExpression(node) ||
+      t.isUpdateExpression(node) ||
+      t.isAwaitExpression(node) ||
+      t.isYieldExpression(node) ||
+      t.isNewExpression(node) ||
+      t.isTaggedTemplateExpression(node) ||
+      t.isFunction(node)
+    ) {
+      pure = false;
+      return;
+    }
+    if (t.isCallExpression(node) || t.isOptionalCallExpression(node)) {
+      const callee = node.callee;
+      pure =
+        pure &&
+        t.isMemberExpression(callee) &&
+        !callee.computed &&
+        t.isIdentifier(callee.object, { name: 'Math' }) &&
+        t.isIdentifier(callee.property);
+    }
+  });
+  return pure;
+}
+
+function replayAssignmentTarget(
+  statement: t.Statement,
+): string | null {
+  if (
+    !t.isExpressionStatement(statement) ||
+    !t.isAssignmentExpression(statement.expression, { operator: '=' }) ||
+    !t.isIdentifier(statement.expression.left) ||
+    !replayExpressionIsPure(statement.expression.right)
+  ) {
+    return null;
+  }
+  return statement.expression.left.name;
+}
+
+function sameBindings(left: Set<string>, right: Set<string>): boolean {
+  return (
+    left.size === right.size &&
+    [...left].every((binding) => right.has(binding))
+  );
+}
+
+/**
+ * Return locals assigned on every path, or null when a branch contains
+ * imperative work, fallthrough, partial assignment, or unsupported syntax.
+ */
+function replayBindingsForStatement(
+  statement: t.Statement,
+): Set<string> | null {
+  if (t.isExpressionStatement(statement)) {
+    const target = replayAssignmentTarget(statement);
+    return target === null ? null : new Set([target]);
+  }
+  if (t.isBlockStatement(statement)) {
+    const bindings = new Set<string>();
+    for (const child of statement.body) {
+      const childBindings = replayBindingsForStatement(child);
+      if (childBindings === null) return null;
+      for (const binding of childBindings) {
+        if (bindings.has(binding)) return null;
+        bindings.add(binding);
+      }
+    }
+    return bindings.size === 0 ? null : bindings;
+  }
+  if (t.isIfStatement(statement)) {
+    const alternate = statement.alternate;
+    if (
+      alternate == null ||
+      !replayExpressionIsPure(statement.test)
+    ) {
+      return null;
+    }
+    const consequent = replayBindingsForStatement(statement.consequent);
+    const alternateBindings = replayBindingsForStatement(alternate);
+    return consequent !== null &&
+      alternateBindings !== null &&
+      sameBindings(consequent, alternateBindings)
+      ? consequent
+      : null;
+  }
+  return null;
+}
+
+function replayBindingsForSwitch(
+  statement: t.SwitchStatement,
+): Set<string> | null {
+  if (
+    !replayExpressionIsPure(statement.discriminant) ||
+    !statement.cases.some((item) => item.test === null)
+  ) {
+    return null;
+  }
+  let common: Set<string> | null = null;
+  for (const item of statement.cases) {
+    const test = item.test;
+    if (test != null && !replayExpressionIsPure(test)) return null;
+    const body = [...item.consequent];
+    if (body.at(-1) && t.isBreakStatement(body.at(-1)!)) body.pop();
+    if (body.some((child) => t.isBreakStatement(child))) return null;
+    const bindings = replayBindingsForStatement(t.blockStatement(body));
+    if (bindings === null) return null;
+    if (common === null) common = bindings;
+    else if (!sameBindings(common, bindings)) return null;
+  }
+  return common;
+}
+
+function violationBelongsTo(
+  violation: NodePath,
+  statement: t.Statement,
+): boolean {
+  return (
+    violation.node === statement ||
+    violation.findParent((parent) => parent.node === statement) !== null
+  );
+}
+
+/**
+ * Classify pure, exhaustive top-level if/switch calculations. The authored
+ * statement still initializes its locals once in the factory; emission also
+ * clones it into the dependency-selected render prelude.
+ */
+function scanInstanceControlFlow(ctx: Ctx): void {
+  for (const [compName, compPath] of ctx.compPaths) {
+    const reactiveBindings = new Map<unknown, string>();
+    for (const name of ctx.componentProps.get(compName)?.bindings ?? []) {
+      const binding = compPath.scope.getBinding(name);
+      if (binding) reactiveBindings.set(binding, name);
+    }
+    for (const name of ctx.instanceState.get(compName) ?? []) {
+      const binding = compPath.scope.getBinding(name);
+      if (binding) reactiveBindings.set(binding, name);
+    }
+    for (const name of ctx.instanceDerivedBindings.get(compName) ?? []) {
+      const binding = compPath.scope.getBinding(name);
+      if (binding) reactiveBindings.set(binding, name);
+    }
+    for (const name of ctx.state.keys()) {
+      const binding = compPath.scope.getBinding(name);
+      if (binding?.scope.path.isProgram()) reactiveBindings.set(binding, name);
+    }
+
+    const controls: ControlFlowDerivation[] = [];
+    const derivedBindings =
+      ctx.instanceDerivedBindings.get(compName) ?? new Set<string>();
+    for (const statementPath of compPath.get('body').get('body')) {
+      if (
+        !statementPath.isIfStatement() &&
+        !statementPath.isSwitchStatement()
+      ) {
+        continue;
+      }
+      const path = statementPath as ReplayControlPath;
+      const bindings = path.isIfStatement()
+        ? replayBindingsForStatement(path.node)
+        : replayBindingsForSwitch(path.node);
+      if (bindings === null) continue;
+
+      let eligible = true;
+      for (const name of bindings) {
+        const binding = compPath.scope.getBinding(name);
+        const declaration = binding?.path;
+        const declarationStatement = declaration?.parentPath;
+        if (
+          binding === undefined ||
+          !declaration?.isVariableDeclarator() ||
+          !declarationStatement?.isVariableDeclaration() ||
+          (declarationStatement.node.kind !== 'let' &&
+            declarationStatement.node.kind !== 'var') ||
+          binding.constantViolations.some(
+            (violation) => !violationBelongsTo(violation, path.node),
+          )
+        ) {
+          eligible = false;
+          break;
+        }
+      }
+      if (!eligible) continue;
+
+      const reads = new Set<string>();
+      path.traverse({
+        Function(functionPath) {
+          functionPath.skip();
+        },
+        ReferencedIdentifier(identifierPath) {
+          const binding = identifierPath.scope.getBinding(
+            identifierPath.node.name,
+          );
+          const source =
+            binding === undefined
+              ? undefined
+              : reactiveBindings.get(binding);
+          if (source !== undefined) reads.add(source);
+        },
+      });
+      if (reads.size === 0) continue;
+      for (const name of bindings) {
+        if (reads.has(name)) {
+          throw path.buildCodeFrameError(
+            `memo-dom: reactive control-flow derivation '${name}' reads its own previous value`,
+          );
+        }
+      }
+
+      controls.push({
+        statement: path.node,
+        bindings: [...bindings].sort(),
+        sources: [...reads].sort(),
+      });
+      for (const name of bindings) {
+        derivedBindings.add(name);
+        const binding = compPath.scope.getBinding(name);
+        if (binding) reactiveBindings.set(binding, name);
+        ctx.instanceState.get(compName)?.delete(name);
+      }
+    }
+    if (controls.length > 0) {
+      ctx.instanceControlFlow.set(compName, controls);
+      ctx.instanceDerivedBindings.set(compName, derivedBindings);
+    }
+  }
+}
+
+function finalizeInstancePreludes(ctx: Ctx): void {
+  for (const [compName] of ctx.compPaths) {
+    const locals = ctx.instanceDerivations.get(compName) ?? [];
+    const controls = ctx.instanceControlFlow.get(compName) ?? [];
+    if (locals.length === 0 && controls.length === 0) continue;
+
+    const graph = new Map<string, Set<string>>();
+    for (const derivation of locals) {
+      for (const binding of derivation.bindings) {
+        graph.set(binding, new Set(derivation.sources));
+      }
+    }
+    for (const control of controls) {
+      for (const binding of control.bindings) {
+        graph.set(binding, new Set(control.sources));
+      }
+    }
+    const rootsOf = (
+      source: string,
+      visiting = new Set<string>(),
+    ): Set<string> => {
+      const upstream = graph.get(source);
+      if (upstream === undefined) return new Set([source]);
+      if (visiting.has(source)) return new Set([source]);
+      const next = new Set(visiting).add(source);
+      const roots = new Set<string>();
+      for (const item of upstream) {
+        for (const root of rootsOf(item, next)) roots.add(root);
+      }
+      return roots;
+    };
+    for (const derivation of locals) {
+      derivation.sources = [
+        ...new Set(
+          derivation.sources.flatMap((source) => [...rootsOf(source)]),
+        ),
+      ].sort();
+    }
+    for (const control of controls) {
+      control.sources = [
+        ...new Set(
+          control.sources.flatMap((source) => [...rootsOf(source)]),
+        ),
+      ].sort();
+    }
+
+    const exactSources = new Set<string>([
+      ...(ctx.instanceState.get(compName) ?? []),
+      ...(ctx.componentProps.get(compName)?.bindings ?? []),
+    ]);
+    const work = [...locals, ...controls];
+    const selective = [...exactSources].some((source) =>
+      work.some((derivation) => !derivation.sources.includes(source)),
+    );
+    ctx.selectiveDerivationComponents.delete(compName);
+    ctx.instanceReasonIds.delete(compName);
+    if (!selective) continue;
+    const reasonSources = new Set<string>([
+      ...exactSources,
+      ...work.flatMap((derivation) => derivation.sources),
+    ]);
+    ctx.instanceReasonIds.set(
+      compName,
+      new Map(
+        [...reasonSources]
+          .sort()
+          .map((source, index) => [source, index]),
+      ),
+    );
+    ctx.selectiveDerivationComponents.add(compName);
+  }
+}
+
 export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
@@ -1046,6 +1353,8 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanInstanceState(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
   scanInstanceDerivations(ctx); // R14/R24: ordered local projections/computeds
+  scanInstanceControlFlow(ctx);
+  finalizeInstancePreludes(ctx);
   scanEffects(ctx);
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   collectReads(ctx);

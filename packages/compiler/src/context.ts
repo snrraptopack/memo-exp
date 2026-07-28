@@ -10,6 +10,7 @@ import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import type {
   ComponentPropsPlan,
+  ControlFlowDerivation,
   LocalDerivation,
 } from './components/props';
 import { generatedIdentifier, type GeneratedIdentifiers } from './identifiers';
@@ -222,6 +223,8 @@ export interface Ctx {
   instanceState: Map<string, Set<string>>;
   /** Ordered local binding/pattern derivations replayed in the owner update. */
   instanceDerivations: Map<string, LocalDerivation[]>;
+  /** Pure top-level if/switch calculations replayed in source order. */
+  instanceControlFlow: Map<string, ControlFlowDerivation[]>;
   /** All bindings introduced by local derivations, for locality and writes. */
   instanceDerivedBindings: Map<string, Set<string>>;
   /** Numeric dirty reasons for exact local write roots. */
@@ -354,6 +357,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     condReads: new Map(),
     instanceState: new Map(),
     instanceDerivations: new Map(),
+    instanceControlFlow: new Map(),
     instanceDerivedBindings: new Map(),
     instanceReasonIds: new Map(),
     selectiveDerivationComponents: new Set(),

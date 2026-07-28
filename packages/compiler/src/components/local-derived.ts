@@ -17,7 +17,7 @@ function or(expressions: t.Expression[]): t.Expression {
   );
 }
 
-function reasonCondition(
+export function reasonCondition(
   reasonVar: string,
   reasons: number[],
 ): t.Expression {
