@@ -29,8 +29,8 @@ export type {
 } from './kernel';
 export { cleanup } from './cleanup';
 export type { CleanupDisposer } from './cleanup';
-export { registerEffect } from './effect';
-export type { EffectCallback } from './effect';
+export { registerConditionalEffect, registerEffect } from './effect';
+export type { EffectCallback, EffectCondition } from './effect';
 
 export {
   setText,

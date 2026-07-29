@@ -20,6 +20,7 @@ import { matchCond } from '../conds';
 import {
   localBindingForProp,
   objectBindingName,
+  propNameForBinding,
 } from './props';
 
 export type EmitChildSlot = (
@@ -83,6 +84,50 @@ export function isChildrenReference(
     t.isIdentifier(expression) &&
     expression.name === 'children' &&
     ctx.instanceDerivedBindings.get(compName)?.has('children') === true
+  );
+}
+
+/** Declared render-prop name referenced by one interpolation/forwarding site. */
+export function renderPropReferenceName(
+  ctx: Ctx,
+  compName: string,
+  expression: t.Expression,
+): string | null {
+  const plan = ctx.componentProps.get(compName);
+  if (plan === undefined) return null;
+  const objectBinding = objectBindingName(plan);
+  if (
+    objectBinding !== null &&
+    t.isMemberExpression(expression) &&
+    !expression.computed &&
+    t.isIdentifier(expression.object, { name: objectBinding }) &&
+    t.isIdentifier(expression.property)
+  ) {
+    return expression.property.name;
+  }
+  if (t.isIdentifier(expression)) {
+    const declared = propNameForBinding(plan, expression.name);
+    if (declared !== null) return declared;
+    if (
+      expression.name === 'children' &&
+      ctx.instanceDerivedBindings.get(compName)?.has('children') === true
+    ) {
+      return 'children';
+    }
+  }
+  return null;
+}
+
+/** Is this expression one of the component's compiler-owned mount slots? */
+export function isRenderPropReference(
+  ctx: Ctx,
+  compName: string,
+  expression: t.Expression,
+): boolean {
+  const name = renderPropReferenceName(ctx, compName, expression);
+  return (
+    name !== null &&
+    ctx.componentProps.get(compName)?.renderProps.includes(name) === true
   );
 }
 

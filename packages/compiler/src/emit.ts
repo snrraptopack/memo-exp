@@ -42,7 +42,7 @@ import {
   buildChildrenSlot,
   emitChildrenIntoParent,
   hasComponentChildren,
-  isChildrenReference,
+  isRenderPropReference,
   type JsxChild,
 } from './components/children';
 import {
@@ -263,7 +263,7 @@ function emitFragment(
         ownerId,
       ),
     isForwarded: (expression) =>
-      isChildrenReference(ctx, compName, expression),
+      isRenderPropReference(ctx, compName, expression),
     fail: (message) => {
       throw compPath.buildCodeFrameError(message);
     },
@@ -291,6 +291,7 @@ function emitFragment(
     compName,
     compPath,
     nestedIn,
+    rowCtx,
     inSvg,
     ownerId,
   );
@@ -305,6 +306,7 @@ function emitDirectChildOperations(
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,
   nestedIn: 'row' | 'cond' | null = null,
+  rowCtx?: RowCtx,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): void {
@@ -346,6 +348,7 @@ function emitDirectChildOperations(
         compPath,
         inSvg,
         ownerId,
+        rowCtx,
       );
     } else {
       emitCondRegion(
@@ -405,6 +408,7 @@ function buildAuthoredChildrenSlot(
             compPath,
             inSvg,
             ownerId,
+            rowCtx,
           ),
         emitCondition: (expression, parentVar) =>
           emitCondRegion(
@@ -419,13 +423,43 @@ function buildAuthoredChildrenSlot(
             nestedIn !== null,
           ),
         isForwarded: (expression) =>
-          isChildrenReference(ctx, compName, expression),
+          isRenderPropReference(ctx, compName, expression),
         fail: (message) => {
           throw compPath.buildCodeFrameError(message);
         },
       },
     );
   });
+}
+
+function buildAuthoredRenderValueSlot(
+  ctx: Ctx,
+  ownerScope: EmitScope,
+  value: t.Expression,
+  compName: string,
+  compPath: NodePath<t.FunctionDeclaration>,
+  nestedIn: 'row' | 'cond' | null,
+  rowCtx: RowCtx | undefined,
+  eventOriginId: t.Expression | undefined,
+  inSvg: boolean,
+  ownerId: t.Expression,
+): t.Identifier {
+  const children: JsxChild[] =
+    t.isJSXElement(value) || t.isJSXFragment(value)
+      ? [value]
+      : [t.jsxExpressionContainer(value)];
+  return buildAuthoredChildrenSlot(
+    ctx,
+    ownerScope,
+    children,
+    compName,
+    compPath,
+    nestedIn,
+    rowCtx,
+    eventOriginId,
+    inSvg,
+    ownerId,
+  );
 }
 
 function emitElement(
@@ -457,6 +491,19 @@ function emitElement(
     const varName = generatedIdentifier(ctx, candidate).name;
     const idSuffix = seen === 0 ? `/${tag}` : `/${tag}[${seen}]`;
     const propEntries: Array<{ name: string; value: t.Expression }> = [];
+    const targetPlan = ctx.componentProps.get(tag);
+    if (
+      hasComponentChildren(el.children) &&
+      open.attributes.some(
+        (attribute) =>
+          t.isJSXAttribute(attribute) &&
+          jsxAttributeName(attribute.name) === 'children',
+      )
+    ) {
+      throw compPath.buildCodeFrameError(
+        `memo-dom: <${tag}> cannot use both a children prop and nested JSX children`,
+      );
+    }
     const componentHasSpread = open.attributes.some((attribute) =>
       t.isJSXSpreadAttribute(attribute),
     );
@@ -469,14 +516,53 @@ function emitElement(
         },
       });
       orderedPropObject = ordered.expression;
-      needsPush = ordered.sources.some((source) =>
-        exprReadsState(ctx, source, compName) ||
+      for (const property of orderedPropObject.properties) {
+        if (
+          !t.isObjectProperty(property) ||
+          property.computed ||
+          !t.isExpression(property.value)
+        ) {
+          continue;
+        }
+        const propName = t.isIdentifier(property.key)
+          ? property.key.name
+          : t.isStringLiteral(property.key)
+            ? property.key.value
+            : null;
+        if (propName === null) continue;
+        if (targetPlan?.renderProps.includes(propName) === true) {
+          if (isRenderPropReference(ctx, compName, property.value)) continue;
+          if (!nodeHasJsx(property.value)) {
+            throw compPath.buildCodeFrameError(
+              `memo-dom: render prop '${propName}' on <${tag}> must be JSX, a JSX-bearing conditional/list, or a forwarded render prop`,
+            );
+          }
+          property.value = buildAuthoredRenderValueSlot(
+            ctx,
+            scope,
+            property.value,
+            compName,
+            compPath,
+            nestedIn,
+            rowCtx,
+            eventOriginId,
+            inSvg,
+            ownerId,
+          );
+        } else if (nodeHasJsx(property.value)) {
+          throw compPath.buildCodeFrameError(
+            `memo-dom: JSX prop '${propName}' on <${tag}> is not rendered by the callee; interpolate that prop in <${tag}> to declare a render slot`,
+          );
+        }
+      }
+      needsPush =
+        exprReadsState(ctx, orderedPropObject, compName) ||
         (rowCtx !== undefined &&
-          expressionReadsBinding(source, rowCtx.itemParam)),
-      );
+          expressionReadsBinding(orderedPropObject, rowCtx.itemParam));
     } else {
     for (const attr of open.attributes) {
       const a = attr as t.JSXAttribute;
+      const propName = jsxAttributeName(a.name);
       const v =
         a.value == null ? t.booleanLiteral(true) : attrExpr(a.value);
       if (v == null) {
@@ -484,6 +570,41 @@ function emitElement(
           `memo-dom: prop '${jsxAttributeName(
             a.name,
           )}' on <${tag}> must be an expression`,
+        );
+      }
+      if (targetPlan?.renderProps.includes(propName) === true) {
+        if (isRenderPropReference(ctx, compName, v)) {
+          propEntries.push({
+            name: propName,
+            value: t.cloneNode(v),
+          });
+          continue;
+        }
+        if (!nodeHasJsx(v)) {
+          throw compPath.buildCodeFrameError(
+            `memo-dom: render prop '${propName}' on <${tag}> must be JSX, a JSX-bearing conditional/list, or a forwarded render prop`,
+          );
+        }
+        propEntries.push({
+          name: propName,
+          value: buildAuthoredRenderValueSlot(
+            ctx,
+            scope,
+            v,
+            compName,
+            compPath,
+            nestedIn,
+            rowCtx,
+            eventOriginId,
+            inSvg,
+            ownerId,
+          ),
+        });
+        continue;
+      }
+      if (nodeHasJsx(v)) {
+        throw compPath.buildCodeFrameError(
+          `memo-dom: JSX prop '${propName}' on <${tag}> is not rendered by the callee; interpolate that prop in <${tag}> to declare a render slot`,
         );
       }
       // R12: instance-state reads also need re-push (parent re-renders on
@@ -515,7 +636,7 @@ function emitElement(
         }
       }
       propEntries.push({
-        name: jsxAttributeName(a.name),
+        name: propName,
         value: t.cloneNode(v),
       });
     }
@@ -661,19 +782,11 @@ function emitElement(
         ownerId,
       ),
     isForwarded: (expression) =>
-      isChildrenReference(ctx, compName, expression),
+      isRenderPropReference(ctx, compName, expression),
     fail: (message) => {
       throw compPath.buildCodeFrameError(message);
     },
   });
-  if (
-    nestedIn === 'row' &&
-    childOperations.some((operation) => operation.type === 'list')
-  ) {
-    throw compPath.buildCodeFrameError(
-      'memo-dom: nested lists inside list rows are not supported yet',
-    );
-  }
   const varName = freshNodeName(ctx, scope, tag);
   scope.creation.push(
     t.variableDeclaration('const', [
@@ -905,6 +1018,7 @@ function emitElement(
     compName,
     compPath,
     nestedIn,
+    rowCtx,
     childSvg,
     ownerId,
   );
@@ -925,6 +1039,7 @@ function emitRegion(
   compPath: NodePath<t.FunctionDeclaration>,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
+  parentRow?: RowCtx,
 ): void {
   emitListRegion(
     ctx,
@@ -937,6 +1052,7 @@ function emitRegion(
     buildAuthoredChildrenSlot,
     inSvg,
     ownerId,
+    parentRow,
   );
 }
 

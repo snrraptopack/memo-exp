@@ -130,6 +130,7 @@ export function analyzeMapSite(
   errorAt: Pick<NodePath, 'buildCodeFrameError'>,
   ownerName: string,
   usedPrefixes: Map<string, number>,
+  parentRow?: Pick<MapSite, 'itemParam' | 'sourceKey' | 'sourceLocal'>,
 ): MapSite {
   const fail = (msg: string): never => {
     throw errorAt.buildCodeFrameError(msg);
@@ -173,18 +174,23 @@ export function analyzeMapSite(
       root !== null &&
       (ctx.instanceState.get(ownerName)?.has(root) === true ||
         propBindings.includes(root));
+    const rowRelative =
+      root !== null &&
+      key !== null &&
+      parentRow !== undefined &&
+      root === parentRow.itemParam;
     if (
       root === null ||
       key === null ||
       !key.includes('.') ||
-      (!localRoot && ctx.state.get(root) !== 'store')
+      (!rowRelative && !localRoot && ctx.state.get(root) !== 'store')
     ) {
       return fail(
         'memo-dom: list member views must be a static path on reactive module state, component props, or component state',
       );
     }
-    sourceKey = key;
-    sourceLocal = localRoot;
+    sourceKey = rowRelative ? parentRow.sourceKey : key;
+    sourceLocal = rowRelative ? parentRow.sourceLocal : localRoot;
     suffixBase = key.slice(key.lastIndexOf('.') + 1);
   } else if (t.isExpression(sourceExpr) && isStaticPrimitiveArray(sourceExpr)) {
     // A literal primitive tuple has no mutable source to invalidate. It can
@@ -282,20 +288,7 @@ export function analyzeMapSite(
     // row's props box on every reconcile that retains it (updateProps)
   } else {
     form = 'inline';
-    // no nested component references inside inline rows
-    const stack: t.Node[] = [...jsx.children];
-    while (stack.length > 0) {
-      const n = stack.pop()!;
-      if (t.isJSXElement(n)) {
-        const n2 = n.openingElement.name;
-        if (t.isJSXIdentifier(n2) && /^[A-Z]/.test(n2.name)) {
-          fail(
-            `memo-dom: component <${n2.name} /> inside an inline list row — use a component row instead: items.map(item => <Row item={item} />)`,
-          );
-        }
-        stack.push(...n.children);
-      }
-    }
+
   }
 
   // -- key extraction -----------------------------------------------------

@@ -105,20 +105,49 @@ function App() {
 }
 ```
 
+JSX may also travel through a named prop when the callee renders that prop as
+its sole host content:
+
+```tsx
+function Frame({ content }) {
+  return <section>{content}</section>;
+}
+
+function App() {
+  const views = {
+    ready: <strong>Ready</strong>,
+    waiting: <em>Waiting</em>,
+  };
+  return <Frame content={views[status]} />;
+}
+```
+
+The compiler lowers the selected value to a caller-owned mount slot and a
+finite conditional region. It does not create a virtual-node value. A prop
+cannot be used as both scalar data and JSX content in one linked application.
+
 Reactive side effects use the compiler intrinsic `effect`. Dependencies are
 discovered statically; a returned teardown runs before a rerun and when the
 owning component unmounts:
 
 ```tsx
 function App() {
-  effect(() => {
+  const sync = () => {
     const connection = connect(activeRoom);
     return () => connection.disconnect();
-  });
+  };
+
+  if (enabled) effect(sync);
 
   return <strong>{activeRoom}</strong>;
 }
 ```
+
+Conditional effects use a stable controller. While the condition is false no
+callback entity exists; entering creates and runs it, dependency changes rerun
+the active callback with teardown first, and leaving tears it down. Module
+effects support the same local named and conditional forms as singleton
+entities.
 
 Use `cleanup(disposer)` for component-owned resources that are not reactive
 effects.
@@ -134,9 +163,13 @@ same stable DOM regions:
 const fallback = <p>Waiting</p>;
 const Tag = compact ? 'section' : 'article';
 const View = detailed ? Details : Summary;
+const Host = chooseHost(compact); // finite returns or linked return type
 
 return <Tag>{ready ? <View /> : fallback}</Tag>;
 ```
+
+Finite intrinsic candidates may come from local helper returns, an imported
+helper's string-literal return contract, or a typed intrinsic registry.
 
 Trusted raw markup can use reactive `innerHTML={markup}`. It is unsanitized and
 cannot be combined with compiler-managed children on the same element.

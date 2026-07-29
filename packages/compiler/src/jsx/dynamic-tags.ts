@@ -7,7 +7,7 @@
  */
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { memberKey, type Ctx } from '../context';
+import { memberKey, memberRootName, type Ctx } from '../context';
 
 interface DynamicTagCandidate {
   compare: t.Expression;
@@ -71,6 +71,58 @@ function propertyValue(
   return current;
 }
 
+function localFunctionReturns(
+  at: NodePath,
+  name: string,
+): t.Expression[] {
+  const binding = at.scope.getBinding(name);
+  if (binding === undefined) return [];
+
+  let fn:
+    | t.FunctionDeclaration
+    | t.FunctionExpression
+    | t.ArrowFunctionExpression
+    | null = null;
+  if (binding.path.isFunctionDeclaration()) {
+    fn = binding.path.node;
+  } else if (
+    binding.path.isVariableDeclarator() &&
+    (t.isFunctionExpression(binding.path.node.init) ||
+      t.isArrowFunctionExpression(binding.path.node.init))
+  ) {
+    fn = binding.path.node.init;
+  }
+  if (fn === null) return [];
+  if (t.isExpression(fn.body)) return [fn.body];
+
+  const returns: t.Expression[] = [];
+  const visit = (node: t.Node): void => {
+    if (t.isFunction(node)) return;
+    if (t.isReturnStatement(node)) {
+      if (t.isExpression(node.argument)) returns.push(node.argument);
+      return;
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(child)) {
+        for (const entry of child) {
+          if (entry != null && typeof entry === 'object' && 'type' in entry) {
+            visit(entry as t.Node);
+          }
+        }
+      } else if (
+        child != null &&
+        typeof child === 'object' &&
+        'type' in child
+      ) {
+        visit(child as t.Node);
+      }
+    }
+  };
+  for (const statement of fn.body.body) visit(statement);
+  return returns;
+}
+
 function collectCandidates(
   ctx: Ctx,
   at: NodePath,
@@ -125,9 +177,39 @@ function collectCandidates(
     }
     return;
   }
+  if (t.isCallExpression(current) && t.isIdentifier(current.callee)) {
+    for (const candidate of ctx.functionTagCandidates.get(current.callee.name) ??
+      []) {
+      collectCandidates(
+        ctx,
+        at,
+        t.stringLiteral(candidate),
+        output,
+        visiting,
+      );
+    }
+    for (const returned of localFunctionReturns(at, current.callee.name)) {
+      collectCandidates(ctx, at, returned, output, visiting);
+    }
+    return;
+  }
   if (t.isMemberExpression(current)) {
     const value = propertyValue(at, current);
-    if (value !== null) collectCandidates(ctx, at, value, output, visiting);
+    if (value !== null) {
+      collectCandidates(ctx, at, value, output, visiting);
+      return;
+    }
+    const root = memberRootName(current);
+    if (root === null) return;
+    for (const candidate of ctx.stateTagCandidates.get(root) ?? []) {
+      collectCandidates(
+        ctx,
+        at,
+        t.stringLiteral(candidate),
+        output,
+        visiting,
+      );
+    }
   }
 }
 

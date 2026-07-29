@@ -27,6 +27,8 @@ export interface ComponentPropsPlan {
   params: ComponentParam[];
   /** The sole object envelope has a whole-parameter default. */
   hasWholeDefault: boolean;
+  /** Props consumed as compiler-owned mount slots rather than scalar values. */
+  renderProps: string[];
 }
 
 export interface LocalDerivation {
@@ -72,6 +74,7 @@ export function analyzeComponentProps(
       bindings: [],
       params: [],
       hasWholeDefault: false,
+      renderProps: [],
     };
   }
 
@@ -94,6 +97,7 @@ export function analyzeComponentProps(
       bindings: bindingNames(firstTarget),
       params: plain.map((param) => t.cloneNode(param)),
       hasWholeDefault: t.isAssignmentPattern(plain[0]),
+      renderProps: [],
     };
   }
 
@@ -114,6 +118,7 @@ export function analyzeComponentProps(
     bindings: plain.flatMap((param) => bindingNames(parameterTarget(param))),
     params: plain.map((param) => t.cloneNode(param)),
     hasWholeDefault: false,
+    renderProps: [],
   };
 }
 

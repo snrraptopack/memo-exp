@@ -886,9 +886,10 @@ component, list, and conditional passes own the expanded tree, so there is no
 virtual-node allocation and no component-factory rerun. Rendering the same
 alias twice creates two independent DOM/component instances.
 
-JSX aliases are render values, not general JavaScript data. Passing one to an
-ordinary function, storing it in a non-JSX object/array, or using one as an
-attribute/prop value remains a compile error.
+JSX aliases are render values, not general JavaScript data. R36 extends render
+positions to proven named render props and static local JSX collections.
+Passing JSX to ordinary functions, escaping it, or storing it in arbitrary
+mutable JavaScript data remains a compile error.
 
 ### R30 - Finite dynamic JSX tags use stable conditional regions
 
@@ -906,17 +907,17 @@ candidates lower to existing R8 branch factories whose picker compares the
 current selector value by identity. Retaining the same candidate preserves its
 DOM/component instance; changing it disposes the previous branch and mounts the
 new one. Candidate discovery covers declaration initializers, direct binding
-assignments, static local object-member initializers, and direct assignments to
-that member.
+assignments, static local object-member initializers, direct assignments to
+that member, and the finite R35 helper/typed-registry forms.
 
 Finite intrinsic candidates may also come from an exported reactive state's
 TypeScript string-literal union. The module linker preserves that candidate set
 across named imports and re-exports.
 
-Arbitrary function-returned tag identities, open-ended imported selectors,
-computed member names, and candidates that are neither valid intrinsic names
-nor linked component factories are rejected. This keeps component prop
-contracts and graph identities statically knowable.
+Open-ended function-returned identities, untyped imported selectors, and
+candidates that are neither valid intrinsic names nor linked component
+factories are rejected. This keeps component prop contracts and graph
+identities statically knowable.
 
 ### R31 - Explicit `innerHTML` is a guarded raw-HTML property
 
@@ -955,6 +956,108 @@ Registering an existing singleton id first unregisters its prior subtree and
 invokes its latest disposer. Emission also registers an `import.meta.hot`
 dispose callback that unregisters the singleton, preventing duplicate work and
 resource leaks during module reevaluation.
+
+### R33 - Named and conditional effects retain stable controller identity
+
+`effect(callback)` accepts an inline synchronous callback or a local named
+function/const function. A component or module top-level `if` may contain only
+effect declarations, empty statements, and nested effect-only `if` statements:
+
+```tsx
+const sync = () => {
+  const resource = open(room);
+  return () => resource.close();
+};
+
+if (enabled) effect(sync);
+```
+
+An unconditional effect keeps the R26/R32 entity shape. A conditional effect
+adds one stable controller at the source-order effect id and creates its
+callback entity at `<controller>/$active` only while the combined branch
+condition is true. `false -> true` registers and runs a fresh lifecycle;
+callback dependency changes rerun the active child with teardown first;
+`true -> false` unregisters the child and runs teardown. Remaining true retains
+the child rather than recreating it.
+
+Condition reads route to the controller and callback reads to the active
+child. Component-local writes and derivation reasons follow the same split.
+Branches containing other imperative statements are rejected because moving
+them into reactive execution would change one-time setup semantics. Imported
+named callbacks currently require a local synchronous wrapper so caller-side
+write and cleanup instrumentation remains sound.
+
+### R34 - Inline map rows may own nested components and row-relative lists
+
+```tsx
+groups.map(group => (
+  <article key={group.id}>
+    <Badge label={group.label} />
+    {group.children.map(child => (
+      <span key={child.id}>{child.label}</span>
+    ))}
+  </article>
+))
+```
+
+Nested ownership is rooted below `<outer-region>/Row[*]`. Components register
+below the row id and nested lists reconcile below the same row owner. A nested
+source may be a static member path rooted at the outer item. Retaining an outer
+key updates its current item binding before its updater runs, so immutable
+replacement with the same keys refreshes nested props and sources without
+recreating retained DOM/entities.
+
+### R35 - Helpers and typed registries extend finite dynamic-tag proofs
+
+R30 discovery follows local helper return expressions:
+
+```tsx
+function chooseHost(compact) {
+  return compact ? 'section' : 'article';
+}
+const Host = chooseHost(compact);
+```
+
+Across modules, a helper's declared finite string-literal return type is the
+candidate contract. A typed registry such as
+`Record<Mode, 'main' | 'aside'>` contributes all intrinsic values even through
+a computed key. Local returns may also name component bindings visible in the
+consumer. Cross-module helper metadata carries intrinsic strings only because
+hidden component bindings cannot be emitted safely in the caller.
+
+Runtime selection still compares the current value by identity and mounts one
+ordinary R8 branch. Open-ended helper returns and untyped mutable registries
+remain compile errors.
+
+### R36 - JSX render props and finite local collections remain direct DOM
+
+A named prop becomes a compiler mount slot when the callee consumes it as its
+sole host content and linked call-site evidence supplies JSX:
+
+```tsx
+function Frame({ content }) {
+  return <section>{content}</section>;
+}
+return <Frame content={ready ? <Panel /> : <Empty />} />;
+```
+
+The caller emits one stable mount function through R21. The callee invokes it
+into the real host once; guarded setters and structural regions remain attached
+to the lexical caller's updater. Elements, fragments, JSX-bearing
+conditionals/logicals/maps, aliases, forwarding, and explicit props interleaved
+with ordered spreads are supported.
+
+Component-local const objects and arrays containing JSX may be selected by
+direct property/index access. Static selection expands one entry. Expression
+selection lowers all entries to a finite conditional region with a null
+fallback. Declarations disappear before DOM analysis, so there are no runtime
+virtual-node objects or broad subtree rerenders.
+
+Scalar TypeScript declarations and actual local/cross-module scalar call sites
+disambiguate sole text interpolations such as `<code>{markup}</code>`. The
+linker rejects a prop used as both scalar data and JSX content. A render prop
+may be rendered or forwarded once and must be the sole content of its host
+insertion point.
 
 ## 4. Read/write analysis
 
@@ -1283,30 +1386,35 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R32 (compiler probes + compiled runtime execution).
+> Last full audit: R36 (compiler probes, paradigm matrix, example build, and
+> compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
-- Conditional regions must be direct JSX children. Chained/nested ternaries,
-  fragment/text/empty branches, mounted components, inline-row conditionals,
-  and mapped inline/component rows are supported.
-- Children slots can be rendered or forwarded once as the sole host child.
+- Conditional regions must be direct JSX children or values of a proven
+  render prop. Chained/nested ternaries, fragment/text/empty branches, mounted
+  components, inline-row conditionals, and mapped inline/component rows are
+  supported.
+- Children and named render slots can be rendered or forwarded once as the
+  sole host child. One prop cannot mix scalar and JSX call contracts.
 - Components must be top-level `function` declarations (no arrows). R27
   supports structural tail returns; arbitrary branch-specific statements
   between JSX returns remain unsupported.
-- Reactive effects must be direct top-level component or module statements
-  with exactly one inline synchronous callback (R26/R32). Named callback
-  forms, nested/conditional declarations, and async callbacks are unsupported.
-- JSX values are component-local compile-time render aliases. They cannot yet
-  be passed as props or stored in general objects/arrays (R29).
+- Reactive effects must be direct top-level component/module statements or
+  live in an effect-only top-level `if` tree. Inline and local named
+  synchronous callbacks are supported. Imported named callbacks require a
+  local wrapper; async/generator callbacks remain unsupported.
+- JSX values may be caller-owned named render props or entries in a static
+  component-local const object/array selected by direct access. Arbitrary
+  JavaScript storage, mutation, escaping, and indirect collection operations
+  remain unsupported.
 - Dynamic JSX tags require a finite set of intrinsic-string or linked-component
-  candidates. Open-ended runtime selectors and computed member names are
-  unsupported (R30).
+  candidates. Local helper returns, linked finite intrinsic return types, and
+  typed computed registries are supported. Open-ended selectors remain
+  unsupported.
 - Inline `.map()` sources may be finite arrays of primitive literals (including
   TypeScript casts). Mutable or calculated collection expressions must still be
   assigned to reactive state or a local derivation before mapping (R7).
-- Nested lists and component calls inside inline rows. Component rows may own
-  nested list regions.
 - Recursive components — guarded with an explicit compile error (cycle
   detection in path enumeration); needs lazy creation to support.
 - A component used both statically **and** as a list row — explicit compile
@@ -1358,6 +1466,17 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R33-R36 (effects and JSX composition,
+  packages/compiler/src/effects.ts +
+  packages/compiler/src/emission/list-region.ts +
+  packages/compiler/src/jsx/dynamic-tags.ts +
+  packages/compiler/src/components/jsx-values.ts,
+  tests/r33-named-conditional-effect.test.ts through
+  tests/r36-jsx-render-props.test.ts +
+  tests/jsx-paradigm-matrix.test.ts):** stable conditional/named effects,
+  nested inline-row ownership, helper/registry finite dynamic tags, named JSX
+  render props, finite JSX collections, and linked scalar/slot
+  disambiguation.
 - **R29-R32 (JSX composition and module effects,
   packages/compiler/src/components/jsx-values.ts +
   packages/compiler/src/jsx/dynamic-tags.ts +

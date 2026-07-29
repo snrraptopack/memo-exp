@@ -31,6 +31,7 @@ export interface ComponentExportInfo {
   acceptsUnknownProps: boolean;
   hasWholeDefault: boolean;
   listLightweight: boolean;
+  renderProps: string[];
 }
 
 /** Discover enough component shape to bootstrap the first import-link pass. */
@@ -55,6 +56,7 @@ export function discoverComponentExports(
           acceptsUnknownProps: props.acceptsUnknown,
           hasWholeDefault: props.hasWholeDefault,
           listLightweight: false,
+          renderProps: [],
         });
       }
       path.skip();
@@ -77,6 +79,7 @@ export function analyzedComponentExport(
     acceptsUnknownProps: props.acceptsUnknown,
     hasWholeDefault: props.hasWholeDefault,
     listLightweight: isListLightweightCandidate(ctx, local),
+    renderProps: [...props.renderProps],
   };
 }
 
@@ -112,6 +115,18 @@ export function analyzedComponentDeclarations(
       }
     }
     for (const [tag, sites] of ctx.conditionalComponentSites) {
+      for (const site of sites) {
+        if (site.owner !== local) continue;
+        const sources = propSources.get(tag);
+        edges.push({
+          target: componentTarget(ctx, tag),
+          suffix: `/${site.suffix}`,
+          mode: 'static',
+          ...(sources === undefined ? {} : { propSources: sources }),
+        });
+      }
+    }
+    for (const [tag, sites] of ctx.rowComponentSites) {
       for (const site of sites) {
         if (site.owner !== local) continue;
         const sources = propSources.get(tag);

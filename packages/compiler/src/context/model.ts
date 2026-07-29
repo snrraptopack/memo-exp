@@ -39,6 +39,8 @@ export interface MemoDomOptions {
     string,
     Record<string, LinkedComponentPropSource>
   >;
+  /** Linker-resolved render-slot props for declarations in this module. */
+  linkedComponentRenderProps?: Record<string, string[]>;
 }
 
 export interface LinkedStateImport {
@@ -52,6 +54,8 @@ export interface LinkedStateImport {
 
 export interface LinkedFunctionImport {
   type: 'function';
+  /** Finite intrinsic-tag identities declared by the helper return type. */
+  tagCandidates?: string[];
   reads: string[];
   /** Directly proven state writes. */
   writes: string[];
@@ -75,6 +79,8 @@ export interface LinkedComponentImport {
   hasWholeDefault: boolean;
   /** Whether keyed-row compilation can use the allocation-free row ABI. */
   listLightweight: boolean;
+  /** Props consumed as compiler-owned mount slots. */
+  renderProps?: string[];
 }
 
 export interface LinkedComponentRowUse {
@@ -152,23 +158,30 @@ export interface EffectSite {
   /** Stable source-order suffix within the owning component. */
   index: number;
   /** Source statement removed from ordinary factory initialization. */
-  statement: t.ExpressionStatement;
+  statement: t.Statement;
   /** Callback registered with the runtime after DOM creation. */
-  callback: t.ArrowFunctionExpression | t.FunctionExpression;
+  callback: t.Expression;
   /** Canonical or binding-relative module state read by the callback. */
   moduleReads: Set<string>;
   /** Instance state/prop roots that can change callback observations. */
   localReads: Set<string>;
   /** Instance local derivations read by the callback. */
   localDerivationReads: Set<string>;
+  /** Reactive activation gate for a conditional effect. */
+  condition: t.Expression | null;
+  conditionModuleReads: Set<string>;
+  conditionLocalReads: Set<string>;
+  conditionLocalDerivationReads: Set<string>;
 }
 
 /** One singleton reactive effect declared directly at module scope. */
 export interface ModuleEffectSite {
   index: number;
-  statement: t.ExpressionStatement;
-  callback: t.ArrowFunctionExpression | t.FunctionExpression;
+  statement: t.Statement;
+  callback: t.Expression;
   moduleReads: Set<string>;
+  condition: t.Expression | null;
+  conditionModuleReads: Set<string>;
   entityId: string;
 }
 
@@ -194,6 +207,7 @@ export interface Ctx {
   stateKeys: Map<string, string>;
   /** Finite intrinsic-tag identities proven by state type annotations. */
   stateTagCandidates: Map<string, string[]>;
+  functionTagCandidates: Map<string, string[]>;
   /** Imported ES bindings cannot be rebound, even when their export is a `let`. */
   importedState: Set<string>;
   /** Linked summaries for imported functions and conservative external calls. */
@@ -207,6 +221,7 @@ export interface Ctx {
     string,
     Map<string, LinkedComponentPropSource>
   >;
+  linkedComponentRenderProps: Map<string, string[]>;
   comps: Map<string, CompInfo>;
   compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
   /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural effects. */
@@ -223,6 +238,8 @@ export interface Ctx {
   listedSites: Map<string, SiteRef[]>;
   /** Components mounted lexically inside conditional branch factories. */
   conditionalComponentSites: Map<string, SiteRef[]>;
+  /** Components mounted beneath keyed inline host-row factories. */
+  rowComponentSites: Map<string, SiteRef[]>;
   /** Local and imported JSX call contracts, captured before params are rewritten. */
   componentProps: Map<string, ComponentPropsPlan>;
   /** Memoized isLightweightListedComponent results (the eligibility check traverses the AST). */
@@ -290,6 +307,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
   const state = new Map<string, StateKind>();
   const stateKeys = new Map<string, string>();
   const stateTagCandidates = new Map<string, string[]>();
+  const functionTagCandidates = new Map<string, string[]>();
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
@@ -302,6 +320,9 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
       }
       importedState.add(local);
     } else if (linked.type === 'function') {
+      if (linked.tagCandidates !== undefined) {
+        functionTagCandidates.set(local, [...linked.tagCandidates]);
+      }
       importedFunctions.set(local, {
         reads: new Set(linked.reads),
         writes: new Set(linked.writes),
@@ -328,8 +349,14 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
       bindings: [],
       params: [],
       hasWholeDefault: component.hasWholeDefault,
+      renderProps: [...(component.renderProps ?? [])],
     });
   }
+  const linkedComponentRenderProps = new Map(
+    Object.entries(opts.linkedComponentRenderProps ?? {}).map(
+      ([component, props]) => [component, [...props]],
+    ),
+  );
   return {
     runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
     rootId: opts.rootId ?? 'App',
@@ -337,6 +364,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     state,
     stateKeys,
     stateTagCandidates,
+    functionTagCandidates,
     importedState,
     importedFunctions,
     importedComponents,
@@ -380,7 +408,9 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     childRefCounts: new Map(),
     listedSites: new Map(),
     conditionalComponentSites: new Map(),
+    rowComponentSites: new Map(),
     componentProps,
+    linkedComponentRenderProps,
     lightweightCache: new Map(),
     rowReads: new Map(),
     condReads: new Map(),

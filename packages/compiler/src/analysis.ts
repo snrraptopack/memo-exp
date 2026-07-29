@@ -29,6 +29,7 @@ import {
   isConstObjectState,
   isStoreObject,
   memberKey,
+  nodeHasJsx,
   registerState,
   walkNodes,
   type Ctx,
@@ -36,7 +37,10 @@ import {
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
 import { analyzeCondSite } from './conds';
 import { summarizeHelper } from './helper-summaries';
-import { isChildrenReference } from './components/children';
+import {
+  isRenderPropReference,
+  renderPropReferenceName,
+} from './components/children';
 import { analyzeComponentProps } from './components/props';
 import { scanEffects } from './effects';
 import { scanModuleControlFlow } from './module-control-flow';
@@ -71,14 +75,34 @@ export { buildAccessTable } from './analysis/access-table';
  * <div>{cond ? <A/> : <B/>}</div>. Full form validation is analyzeCondSite
  * (run in collectReads); here we only fix the position and skip the subtree.
  */
+function isRenderAttributePosition(
+  ctx: Ctx,
+  container: NodePath<t.JSXExpressionContainer> | null | undefined,
+): boolean {
+  const attribute = container?.parentPath;
+  if (!attribute?.isJSXAttribute()) return false;
+  const opening = attribute.parentPath;
+  if (!opening.isJSXOpeningElement()) return false;
+  const tag = opening.node.name;
+  if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return false;
+  const name = attribute.node.name;
+  const attrName = t.isJSXIdentifier(name) ? name.name : name.name.name;
+  return (
+    ctx.componentProps.get(tag.name)?.renderProps.includes(attrName) === true
+  );
+}
+
 function validateCondPosition(
+  ctx: Ctx,
   c: NodePath<t.ConditionalExpression> | NodePath<t.LogicalExpression>,
 ): void {
   const parent = c.parentPath;
   const grand = parent?.parentPath;
   if (
     !parent?.isJSXExpressionContainer() ||
-    (!grand?.isJSXElement() && !grand?.isJSXFragment())
+    (!grand?.isJSXElement() &&
+      !grand?.isJSXFragment() &&
+      !isRenderAttributePosition(ctx, parent))
   ) {
     throw c.buildCodeFrameError(
       'memo-dom: conditional rendering must be a direct JSX child: <div>{cond ? <A/> : <B/>}</div>',
@@ -184,6 +208,316 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
   });
 }
 
+function scalarTsType(
+  type: t.TSType,
+  program: t.Program,
+  visiting = new Set<string>(),
+): boolean {
+  if (
+    t.isTSStringKeyword(type) ||
+    t.isTSNumberKeyword(type) ||
+    t.isTSBooleanKeyword(type) ||
+    t.isTSBigIntKeyword(type) ||
+    t.isTSSymbolKeyword(type) ||
+    t.isTSNullKeyword(type) ||
+    t.isTSUndefinedKeyword(type) ||
+    t.isTSLiteralType(type)
+  ) {
+    return true;
+  }
+  if (t.isTSParenthesizedType(type)) {
+    return scalarTsType(type.typeAnnotation, program, visiting);
+  }
+  if (t.isTSUnionType(type)) {
+    return type.types.every((member) =>
+      scalarTsType(member, program, visiting),
+    );
+  }
+  if (t.isTSTypeReference(type) && t.isIdentifier(type.typeName)) {
+    const name = type.typeName.name;
+    if (visiting.has(name)) return false;
+    const next = new Set(visiting);
+    next.add(name);
+    for (const statement of program.body) {
+      const declaration = t.isExportNamedDeclaration(statement)
+        ? statement.declaration
+        : statement;
+      if (
+        t.isTSTypeAliasDeclaration(declaration) &&
+        declaration.id.name === name
+      ) {
+        return scalarTsType(declaration.typeAnnotation, program, next);
+      }
+    }
+  }
+  return false;
+}
+
+function declaredScalarProp(
+  componentPath: NodePath<t.FunctionDeclaration>,
+  prop: string,
+): boolean {
+  const scalarDefault = (expression: t.Expression): boolean =>
+    t.isStringLiteral(expression) ||
+    t.isNumericLiteral(expression) ||
+    t.isBooleanLiteral(expression) ||
+    t.isBigIntLiteral(expression) ||
+    (t.isUnaryExpression(expression) &&
+      (expression.operator === '+' || expression.operator === '-') &&
+      t.isNumericLiteral(expression.argument));
+  for (const parameter of componentPath.node.params) {
+    if (t.isTSParameterProperty(parameter)) continue;
+    if (
+      t.isAssignmentPattern(parameter) &&
+      t.isIdentifier(parameter.left, { name: prop }) &&
+      scalarDefault(parameter.right)
+    ) {
+      return true;
+    }
+    if (
+      t.isAssignmentPattern(parameter) &&
+      t.isObjectPattern(parameter.left) &&
+      t.isObjectExpression(parameter.right)
+    ) {
+      const defaultProperty = parameter.right.properties.find((property) => {
+        if (!t.isObjectProperty(property) || property.computed) return false;
+        const name = t.isIdentifier(property.key)
+          ? property.key.name
+          : t.isStringLiteral(property.key)
+            ? property.key.value
+            : null;
+        return name === prop;
+      });
+      if (
+        t.isObjectProperty(defaultProperty) &&
+        t.isExpression(defaultProperty.value) &&
+        scalarDefault(defaultProperty.value)
+      ) {
+        return true;
+      }
+    }
+    const parameterTarget = t.isAssignmentPattern(parameter)
+      ? parameter.left
+      : parameter;
+    if (!t.isObjectPattern(parameterTarget)) continue;
+    for (const property of parameterTarget.properties) {
+      if (!t.isObjectProperty(property) || property.computed) continue;
+      const name = t.isIdentifier(property.key)
+        ? property.key.name
+        : t.isStringLiteral(property.key)
+          ? property.key.value
+          : null;
+      if (
+        name === prop &&
+        t.isAssignmentPattern(property.value) &&
+        scalarDefault(property.value.right)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  const first = componentPath.node.params[0];
+  if (first == null || t.isTSParameterProperty(first)) return false;
+  const target = t.isAssignmentPattern(first) ? first.left : first;
+  if (
+    !t.isIdentifier(target) &&
+    !t.isObjectPattern(target) &&
+    !t.isArrayPattern(target)
+  ) {
+    return false;
+  }
+  const annotation = target.typeAnnotation;
+  if (!t.isTSTypeAnnotation(annotation)) return false;
+  const program = componentPath.findParent((path) => path.isProgram());
+  if (!program?.isProgram()) return false;
+
+  let shape = annotation.typeAnnotation;
+  if (t.isTSTypeReference(shape) && t.isIdentifier(shape.typeName)) {
+    const referenceName = shape.typeName.name;
+    const declaration = program.node.body
+      .map((statement) =>
+        t.isExportNamedDeclaration(statement)
+          ? statement.declaration
+          : statement,
+      )
+      .find(
+        (candidate) =>
+          (t.isTSInterfaceDeclaration(candidate) ||
+            t.isTSTypeAliasDeclaration(candidate)) &&
+          candidate.id.name === referenceName,
+      );
+    if (t.isTSInterfaceDeclaration(declaration)) {
+      shape = t.tsTypeLiteral(declaration.body.body);
+    } else if (t.isTSTypeAliasDeclaration(declaration)) {
+      shape = declaration.typeAnnotation;
+    }
+  }
+  if (!t.isTSTypeLiteral(shape)) return false;
+  for (const member of shape.members) {
+    if (!t.isTSPropertySignature(member) || member.computed) continue;
+    const name = t.isIdentifier(member.key)
+      ? member.key.name
+      : t.isStringLiteral(member.key)
+        ? member.key.value
+        : null;
+    if (
+      name === prop &&
+      t.isTSTypeAnnotation(member.typeAnnotation)
+    ) {
+      return scalarTsType(
+        member.typeAnnotation.typeAnnotation,
+        program.node,
+      );
+    }
+  }
+  return false;
+}
+
+function expressionCarriesJsx(
+  path: NodePath,
+  visiting = new Set<t.Node>(),
+): boolean {
+  if (nodeHasJsx(path.node)) return true;
+  if (visiting.has(path.node)) return false;
+  visiting.add(path.node);
+  if (path.isIdentifier()) {
+    const binding = path.scope.getBinding(path.node.name);
+    if (binding?.path.isVariableDeclarator()) {
+      const init = binding.path.get('init');
+      return !Array.isArray(init) && init.node != null
+        ? expressionCarriesJsx(init, visiting)
+        : false;
+    }
+  }
+  if (path.isMemberExpression()) {
+    const object = path.get('object');
+    return !Array.isArray(object) && expressionCarriesJsx(object, visiting);
+  }
+  return false;
+}
+
+/**
+ * Discover props that are consumed as mount slots. Direct JSX-child use is
+ * the defining contract; forwarding through another declared render prop is
+ * propagated to a fixed point for wrapper components.
+ */
+function scanRenderProps(ctx: Ctx): void {
+  for (const [name, componentPath] of ctx.compPaths) {
+    const plan = ctx.componentProps.get(name)!;
+    componentPath.traverse({
+      JSXExpressionContainer(path) {
+        if (
+          !path.parentPath?.isJSXElement() &&
+          !path.parentPath?.isJSXFragment()
+        ) {
+          return;
+        }
+        const expression = path.node.expression;
+        if (!t.isExpression(expression)) return;
+        const prop = renderPropReferenceName(ctx, name, expression);
+        if (prop === null) return;
+        const parent = path.parentPath;
+        const meaningful = parent.isJSXElement()
+          ? parent.node.children.filter(
+              (child) => !t.isJSXText(child) || child.value.trim() !== '',
+            )
+          : [path.node];
+        if (
+          (prop === 'children' || meaningful.length === 1) &&
+          !declaredScalarProp(componentPath, prop) &&
+          !plan.renderProps.includes(prop)
+        ) {
+          plan.renderProps.push(prop);
+        }
+      },
+    });
+  }
+
+  // A local scalar call disambiguates an otherwise-untyped sole
+  // interpolation (`<strong>{label}</strong>`) as ordinary text.
+  for (const [owner, ownerPath] of ctx.compPaths) {
+    ownerPath.traverse({
+      JSXElement(path) {
+        const tag = path.node.openingElement.name;
+        if (!t.isJSXIdentifier(tag) || !ctx.comps.has(tag.name)) return;
+        const target = ctx.componentProps.get(tag.name)!;
+        for (const attributePath of path.get('openingElement').get('attributes')) {
+          if (!attributePath.isJSXAttribute()) continue;
+          const name = attributePath.node.name;
+          const prop = t.isJSXIdentifier(name) ? name.name : name.name.name;
+          if (!target.renderProps.includes(prop)) continue;
+          const value = attributePath.get('value');
+          if (
+            value.isJSXExpressionContainer() &&
+            t.isExpression(value.node.expression)
+          ) {
+            const expressionPath = value.get('expression');
+            if (
+              !Array.isArray(expressionPath) &&
+              (expressionCarriesJsx(expressionPath) ||
+                (t.isExpression(expressionPath.node) &&
+                  renderPropReferenceName(
+                    ctx,
+                    owner,
+                    expressionPath.node,
+                  ) !== null))
+            ) {
+              continue;
+            }
+          }
+          target.renderProps = target.renderProps.filter(
+            (candidate) => candidate !== prop,
+          );
+        }
+      },
+    });
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [name, componentPath] of ctx.compPaths) {
+      const plan = ctx.componentProps.get(name)!;
+      componentPath.traverse({
+        JSXAttribute(path) {
+          const container = path.get('value');
+          if (
+            !container.isJSXExpressionContainer() ||
+            !t.isExpression(container.node.expression)
+          ) {
+            return;
+          }
+          const sourceProp = renderPropReferenceName(
+            ctx,
+            name,
+            container.node.expression,
+          );
+          if (sourceProp === null || plan.renderProps.includes(sourceProp)) {
+            return;
+          }
+          const opening = path.parentPath;
+          if (!opening.isJSXOpeningElement()) return;
+          const tag = opening.node.name;
+          if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
+          const target = ctx.componentProps.get(tag.name);
+          const attr = path.node.name;
+          const attrName = t.isJSXIdentifier(attr) ? attr.name : attr.name.name;
+          if (target?.renderProps.includes(attrName) === true) {
+            plan.renderProps.push(sourceProp);
+            changed = true;
+          }
+        },
+      });
+    }
+  }
+
+  for (const [component, renderProps] of ctx.linkedComponentRenderProps) {
+    const plan = ctx.componentProps.get(component);
+    if (plan !== undefined) plan.renderProps = [...renderProps];
+  }
+}
+
 /**
  * Every static path variant at which instances of `name` can live: walks ALL
  * parents (multi-parent components) and expands repeated edges into '[*]'
@@ -196,7 +530,7 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
 function analyzeComponent(ctx: Ctx, name: string): void {
   const p = ctx.compPaths.get(name)!;
   const info = ctx.comps.get(name)!;
-  let childrenUses = 0;
+  const renderPropUses = new Map<string, number>();
   p.traverse({
     JSXElement(el) {
       const open = el.node.openingElement;
@@ -239,14 +573,16 @@ function analyzeComponent(ctx: Ctx, name: string): void {
       const expression = container.node.expression;
       if (
         !t.isExpression(expression) ||
-        !isChildrenReference(ctx, name, expression)
+        !isRenderPropReference(ctx, name, expression)
       ) {
         return;
       }
-      childrenUses++;
-      if (childrenUses > 1) {
+      const prop = renderPropReferenceName(ctx, name, expression)!;
+      const uses = (renderPropUses.get(prop) ?? 0) + 1;
+      renderPropUses.set(prop, uses);
+      if (uses > 1) {
         throw container.buildCodeFrameError(
-          'memo-dom: a component children slot can only be rendered or forwarded once',
+          `memo-dom: render prop '${prop}' can only be rendered or forwarded once`,
         );
       }
       const parent = container.parentPath;
@@ -258,13 +594,13 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         );
         if (meaningful.length !== 1) {
           throw container.buildCodeFrameError(
-            'memo-dom: a component children slot must be the sole child of its host insertion element',
+            `memo-dom: render prop '${prop}' must be the sole child of its host insertion element`,
           );
         }
       }
     },
     ConditionalExpression(c) {
-      if (containsJsx(c)) validateCondPosition(c);
+      if (containsJsx(c)) validateCondPosition(ctx, c);
     },
     LogicalExpression(l) {
       if (containsJsx(l)) {
@@ -273,7 +609,7 @@ function analyzeComponent(ctx: Ctx, name: string): void {
             'memo-dom: only && / || conditionals are supported (R8 L1), not ??',
           );
         }
-        validateCondPosition(l);
+        validateCondPosition(ctx, l);
       }
     },
     CallExpression(call) {
@@ -284,7 +620,9 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         const grand = parent?.parentPath;
         if (
           !parent?.isJSXExpressionContainer() ||
-          (!grand?.isJSXElement() && !grand?.isJSXFragment())
+          (!grand?.isJSXElement() &&
+            !grand?.isJSXFragment() &&
+            !isRenderAttributePosition(ctx, parent))
         ) {
           throw call.buildCodeFrameError(
             'memo-dom: list rendering must be a direct JSX child: <ul>{items.map(item => <Row />)}</ul>',
@@ -389,34 +727,7 @@ function collectReads(ctx: Ctx): void {
         }
         ctx.listedSites.set(site.rowComp!, sites);
       } else {
-        const rowVars = new Set<string>();
-        const cbPath = call.get('arguments')[0];
-        cbPath?.traverse({
-          Identifier(id) {
-            if (
-              id.node.name !== site.itemParam &&
-              ctx.state.has(id.node.name) &&
-              id.scope.getBinding(id.node.name)?.scope.path.isProgram() === true
-            ) {
-              rowVars.add(id.node.name);
-            }
-          },
-          CallExpression(inner) {
-            const callee = inner.node.callee;
-            if (t.isIdentifier(callee) && ctx.helpers.has(callee.name)) {
-              for (const read of summarizeHelper(ctx, callee.name).reads) {
-                rowVars.add(read);
-              }
-            }
-          },
-        });
-        if (rowVars.size > 0) {
-          ctx.rowReads.set(`${name}/${nestedSuffix}`, {
-            owner: name,
-            suffix: nestedSuffix,
-            vars: rowVars,
-          });
-        }
+        collectInlineRowSite(call, site, nestedSuffix);
       }
       call.skip();
     }
@@ -448,6 +759,123 @@ function collectReads(ctx: Ctx): void {
         sites.push({ owner: name, suffix });
       }
       ctx.conditionalComponentSites.set(tag.name, sites);
+    }
+
+    function recordRowComponent(
+      element: NodePath<t.JSXElement>,
+      containerSuffix: string,
+      childCounts: Map<string, number>,
+    ): void {
+      const tag = element.node.openingElement.name;
+      if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
+      if (!ctx.comps.has(tag.name) && !ctx.importedComponents.has(tag.name)) {
+        throw element.buildCodeFrameError(
+          `memo-dom: <${tag.name} /> is not a linked component factory`,
+        );
+      }
+      const seen = childCounts.get(tag.name) ?? 0;
+      childCounts.set(tag.name, seen + 1);
+      const componentSuffix =
+        seen === 0 ? tag.name : `${tag.name}[${seen}]`;
+      const suffix =
+        `${containerSuffix}/Row[*]/${componentSuffix}`;
+      const sites = ctx.rowComponentSites.get(tag.name) ?? [];
+      if (
+        !sites.some(
+          (site) => site.owner === name && site.suffix === suffix,
+        )
+      ) {
+        sites.push({ owner: name, suffix });
+      }
+      ctx.rowComponentSites.set(tag.name, sites);
+    }
+
+    function recordListedSite(site: ReturnType<typeof analyzeMapSite>, suffix: string): void {
+      const sites = ctx.listedSites.get(site.rowComp!) ?? [];
+      if (
+        !sites.some(
+          (existing) =>
+            existing.owner === name && existing.suffix === suffix,
+        )
+      ) {
+        sites.push({
+          owner: name,
+          suffix,
+          itemParam: site.itemParam,
+          keyExpr: site.keyExpr,
+          sourceKey: site.sourceKey,
+          sourceLocal: site.sourceLocal,
+        });
+      }
+      ctx.listedSites.set(site.rowComp!, sites);
+    }
+
+    function collectInlineRowSite(
+      call: NodePath<t.CallExpression>,
+      site: ReturnType<typeof analyzeMapSite>,
+      containerSuffix: string,
+    ): void {
+      const callbackPath = call.get('arguments')[0];
+      if (callbackPath === undefined) return;
+      const rowVars = new Set<string>();
+      const childCounts = new Map<string, number>();
+      const nestedPrefixes = new Map<string, number>();
+
+      callbackPath.traverse({
+        Identifier(id) {
+          if (
+            id.node.name !== site.itemParam &&
+            ctx.state.has(id.node.name) &&
+            id.scope.getBinding(id.node.name)?.scope.path.isProgram() === true
+          ) {
+            rowVars.add(id.node.name);
+          }
+        },
+        JSXElement(element) {
+          recordRowComponent(element, containerSuffix, childCounts);
+        },
+        CallExpression(inner) {
+          const nestedMap = matchMapCall(inner.node);
+          if (nestedMap !== null && containsJsx(inner)) {
+            const nestedSite = analyzeMapSite(
+              ctx,
+              nestedMap,
+              inner,
+              name,
+              nestedPrefixes,
+              site,
+            );
+            const nestedSuffix =
+              `${containerSuffix}/Row[*]/${nestedSite.suffix}`;
+            if (nestedSite.form === 'component') {
+              recordListedSite(nestedSite, nestedSuffix);
+            } else {
+              collectInlineRowSite(inner, nestedSite, nestedSuffix);
+            }
+            inner.skip();
+            return;
+          }
+          const callee = inner.node.callee;
+          if (
+            t.isIdentifier(callee) &&
+            (ctx.helpers.has(callee.name) ||
+              ctx.importedFunctions.has(callee.name))
+          ) {
+            const summary =
+              ctx.importedFunctions.get(callee.name) ??
+              summarizeHelper(ctx, callee.name);
+            for (const read of summary.reads) rowVars.add(read);
+          }
+        },
+      });
+
+      if (rowVars.size > 0) {
+        ctx.rowReads.set(`${name}/${containerSuffix}`, {
+          owner: name,
+          suffix: containerSuffix,
+          vars: rowVars,
+        });
+      }
     }
 
     /**
@@ -605,34 +1033,7 @@ function collectReads(ctx: Ctx): void {
             }
             ctx.listedSites.set(site.rowComp!, sites);
           } else {
-            // reads inside the ROW belong to the row pattern — traverse the
-            // callback only, never the callee (the array is an owner read)
-            const rowVars = new Set<string>();
-            const cbPath = call.get('arguments')[0];
-            cbPath?.traverse({
-              Identifier(id) {
-                if (
-                  id.node.name !== site.itemParam &&
-                  ctx.state.has(id.node.name) &&
-                  id.scope.getBinding(id.node.name)?.scope.path.isProgram() === true
-                ) {
-                  rowVars.add(id.node.name);
-                }
-              },
-              CallExpression(inner) {
-                const c = inner.node.callee;
-                if (t.isIdentifier(c) && ctx.helpers.has(c.name)) {
-                  for (const r of summarizeHelper(ctx, c.name).reads) rowVars.add(r);
-                }
-              },
-            });
-            if (rowVars.size > 0) {
-              ctx.rowReads.set(`${name}/${site.suffix}`, {
-                owner: name,
-                suffix: site.suffix,
-                vars: rowVars,
-              });
-            }
+            collectInlineRowSite(call, site, site.suffix);
           }
           call.skip(); // callback contents are not owner reads
           return;
@@ -701,6 +1102,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  scanRenderProps(ctx);
   normalizeComponentJsxValues(ctx);
   normalizeDynamicTags(ctx);
   scanInstanceState(ctx);

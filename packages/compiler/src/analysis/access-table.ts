@@ -36,14 +36,24 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
       (pattern) => !pattern.endsWith('/*'),
     );
     for (const site of sites) {
-      const patterns = ownerPatterns.map(
+      const basePatterns = ownerPatterns.map(
         (pattern) => `${pattern}/$effects/${site.index}`,
       );
-      for (const read of site.moduleReads) add(read, patterns);
+      const callbackPatterns =
+        site.condition === null
+          ? basePatterns
+          : basePatterns.map((pattern) => `${pattern}/$active`);
+      for (const read of site.moduleReads) add(read, callbackPatterns);
+      for (const read of site.conditionModuleReads) add(read, basePatterns);
     }
   }
   for (const site of ctx.moduleEffects) {
-    for (const read of site.moduleReads) add(read, [site.entityId]);
+    const callbackId =
+      site.condition === null ? site.entityId : `${site.entityId}/$active`;
+    for (const read of site.moduleReads) add(read, [callbackId]);
+    for (const read of site.conditionModuleReads) {
+      add(read, [site.entityId]);
+    }
   }
   for (const [name, info] of ctx.computeds) {
     const entityId =

@@ -16,6 +16,7 @@ import {
 } from './kernel';
 
 export type EffectCallback = () => void | CleanupDisposer;
+export type EffectCondition = () => unknown;
 
 export function registerEffect(
   id: EntityId,
@@ -53,5 +54,44 @@ export function registerEffect(
   });
 
   // Initial execution uses the same batched post-render phase as reruns.
+  markDirty(id);
+}
+
+/**
+ * Stable activation controller for a conditionally-owned effect.
+ *
+ * Re-evaluating a truthy condition keeps the existing child registration.
+ * A truthy/false transition is the only operation that creates or disposes
+ * the active effect lifecycle.
+ */
+export function registerConditionalEffect(
+  id: EntityId,
+  parent: EntityId | null,
+  condition: EffectCondition,
+  callback: EffectCallback,
+): void {
+  const activeId = `${id}/$active`;
+  let active = false;
+
+  if (has(id)) unregisterSubtree(id);
+
+  register({
+    id,
+    parent,
+    phase: 'effect',
+    render() {
+      const next = Boolean(condition());
+      if (next === active) return;
+      active = next;
+      if (active) registerEffect(activeId, id, callback);
+      else unregisterSubtree(activeId);
+    },
+  });
+
+  cleanup(id, () => {
+    active = false;
+    if (has(activeId)) unregisterSubtree(activeId);
+  });
+
   markDirty(id);
 }

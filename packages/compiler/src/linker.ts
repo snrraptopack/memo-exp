@@ -25,18 +25,23 @@ import {
   type ComponentExportInfo,
 } from './components/manifest';
 import { summarizeHelper } from './helper-summaries';
-import { moduleStateStringCandidates } from './analysis/type-candidates';
+import {
+  moduleFunctionStringCandidates,
+  moduleStateStringCandidates,
+} from './analysis/type-candidates';
 import {
   canonicalStateKey,
   createCtx,
   isConstObjectState,
   isStoreObject,
+  nodeHasJsx,
   type LinkedImport,
   type LinkedComponentRowUse,
   type MemoDomOptions,
   type ParameterWrite,
   type StateKind,
 } from './context';
+import { isRenderPropReference } from './components/children';
 
 export interface CompileModulesOptions
   extends Omit<
@@ -46,6 +51,7 @@ export interface CompileModulesOptions
     | 'linkedComponentPaths'
     | 'linkedComponentRows'
     | 'linkedComponentPropSources'
+    | 'linkedComponentRenderProps'
   > {
   /**
    * Bundler-style import aliases. Prefixes match on a segment boundary, so
@@ -68,6 +74,7 @@ interface StateExport {
 
 interface FunctionExport {
   type: 'function';
+  tagCandidates: string[];
   reads: string[];
   writes: string[];
   boundedWrites: string[];
@@ -91,6 +98,18 @@ interface ModuleManifest {
   exports: Record<string, LinkedExport>;
   imports: ImportRef[];
   components: ComponentGraphNode[];
+  componentUsages: ComponentPropUsage[];
+}
+
+interface ComponentPropUsage {
+  target: string;
+  prop: string;
+  kind: 'jsx' | 'scalar';
+}
+
+interface RenderUsage {
+  jsx: Set<string>;
+  scalar: Set<string>;
 }
 
 interface ModuleEntry {
@@ -116,6 +135,64 @@ function compilerOptions(options: CompileModulesOptions): MemoDomOptions {
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
     ...(options.rootId === undefined ? {} : { rootId: options.rootId }),
   };
+}
+
+function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPropUsage[] {
+  const usages = new Map<string, ComponentPropUsage>();
+  const record = (
+    target: string,
+    prop: string,
+    kind: ComponentPropUsage['kind'],
+  ): void => {
+    usages.set(`${target}\0${prop}\0${kind}`, { target, prop, kind });
+  };
+
+  for (const [owner, componentPath] of ctx.compPaths) {
+    componentPath.traverse({
+      JSXElement(path) {
+        const opening = path.node.openingElement;
+        const tag = opening.name;
+        if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
+        const target =
+          ctx.importedComponents.get(tag.name)?.key ??
+          (ctx.comps.has(tag.name) ? `${ctx.moduleId}#${tag.name}` : null);
+        if (target === null) return;
+
+        for (const attribute of opening.attributes) {
+          if (!t.isJSXAttribute(attribute)) continue;
+          const name = t.isJSXIdentifier(attribute.name)
+            ? attribute.name.name
+            : attribute.name.name.name;
+          const value = attribute.value;
+          if (
+            t.isJSXElement(value) ||
+            t.isJSXFragment(value) ||
+            (t.isJSXExpressionContainer(value) &&
+              t.isExpression(value.expression) &&
+              (nodeHasJsx(value.expression) ||
+                isRenderPropReference(ctx, owner, value.expression)))
+          ) {
+            record(target, name, 'jsx');
+          } else {
+            record(target, name, 'scalar');
+          }
+        }
+        if (
+          path.node.children.some(
+            (child) => !t.isJSXText(child) || child.value.trim() !== '',
+          )
+        ) {
+          record(target, 'children', 'jsx');
+        }
+      },
+    });
+  }
+  return [...usages.values()].sort(
+    (a, b) =>
+      a.target.localeCompare(b.target) ||
+      a.prop.localeCompare(b.prop) ||
+      a.kind.localeCompare(b.kind),
+  );
 }
 
 function importRefs(program: t.Program): ImportRef[] {
@@ -196,6 +273,9 @@ function analyzeManifest(
         });
         runAnalysis(ctx, programPath);
         const exports: Record<string, LinkedExport> = {};
+        const functionTagCandidates = moduleFunctionStringCandidates(
+          programPath.node,
+        );
         for (const [exported, local] of exportedLocals(programPath.node)) {
           if (ctx.comps.has(local)) {
             exports[exported] = {
@@ -220,6 +300,11 @@ function analyzeManifest(
           if (summary !== undefined) {
             exports[exported] = {
               type: 'function',
+              tagCandidates: [
+                ...(functionTagCandidates.get(local) ??
+                  ctx.functionTagCandidates.get(local) ??
+                  []),
+              ],
               reads: [...summary.reads].map((key) => canonicalStateKey(ctx, key)).sort(),
               writes: [...summary.writes].map((key) => canonicalStateKey(ctx, key)).sort(),
               boundedWrites: [...summary.boundedWrites]
@@ -243,6 +328,7 @@ function analyzeManifest(
           exports,
           imports: importRefs(programPath.node),
           components: analyzedComponentDeclarations(entry.id, ctx),
+          componentUsages: analyzedComponentUsages(ctx),
         };
       },
     },
@@ -275,6 +361,9 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
       Program(programPath) {
         const locals = new Map<string, LinkedExport>();
         const tagCandidates = moduleStateStringCandidates(programPath.node);
+        const functionTagCandidates = moduleFunctionStringCandidates(
+          programPath.node,
+        );
         const components = discoverComponentExports(programPath, entry.id);
         for (const [name, component] of components) {
           locals.set(name, { type: 'component', ...component });
@@ -290,6 +379,9 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
               ) {
                 locals.set(decl.id.name, {
                   type: 'function',
+                  tagCandidates: [
+                    ...(functionTagCandidates.get(decl.id.name) ?? []),
+                  ],
                   reads: [],
                   writes: [],
                   boundedWrites: [],
@@ -318,6 +410,9 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
           ) {
             locals.set(inner.id.name, {
               type: 'function',
+              tagCandidates: [
+                ...(functionTagCandidates.get(inner.id.name) ?? []),
+              ],
               reads: [],
               writes: [],
               boundedWrites: [],
@@ -331,7 +426,12 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
           const value = locals.get(local);
           if (value !== undefined) exports[exported] = value;
         }
-        manifest = { exports, imports: importRefs(programPath.node), components: [] };
+        manifest = {
+          exports,
+          imports: importRefs(programPath.node),
+          components: [],
+          componentUsages: [],
+        };
       },
     },
   });
@@ -406,6 +506,7 @@ function linkImports(
   manifests: Map<string, ModuleManifest>,
   entries: Map<string, ModuleEntry>,
   options: CompileModulesOptions,
+  renderUsage?: ReadonlyMap<string, RenderUsage>,
 ): Record<string, LinkedImport> {
   const linked: Record<string, LinkedImport> = {};
   for (const ref of manifest.imports) {
@@ -415,6 +516,7 @@ function linkImports(
       // binding is only read as ordinary data, it remains non-reactive.
       linked[ref.local] = {
         type: 'function',
+        tagCandidates: [],
         reads: [],
         writes: [],
         boundedWrites: [],
@@ -433,6 +535,7 @@ function linkImports(
       // Early fixed-point passes may not have discovered a re-export yet.
       linked[ref.local] = {
         type: 'function',
+        tagCandidates: [],
         reads: [],
         writes: [],
         boundedWrites: [],
@@ -449,6 +552,11 @@ function linkImports(
         tagCandidates: [...targetExport.tagCandidates],
       };
     } else if (targetExport.type === 'component') {
+      const usage = renderUsage?.get(targetExport.key);
+      const renderProps = targetExport.renderProps.filter(
+        (prop) =>
+          usage?.scalar.has(prop) !== true || usage.jsx.has(prop),
+      );
       linked[ref.local] = {
         type: 'component',
         key: targetExport.key,
@@ -457,10 +565,12 @@ function linkImports(
         acceptsUnknownProps: targetExport.acceptsUnknownProps,
         hasWholeDefault: targetExport.hasWholeDefault,
         listLightweight: targetExport.listLightweight,
+        renderProps,
       };
     } else {
       linked[ref.local] = {
         type: 'function',
+        tagCandidates: [...targetExport.tagCandidates],
         reads: [...targetExport.reads],
         writes: [...targetExport.writes],
         boundedWrites: [...targetExport.boundedWrites],
@@ -515,6 +625,27 @@ export function compileModules(
     }
   }
 
+  const renderUsage = new Map<string, RenderUsage>();
+  for (const manifest of manifests.values()) {
+    for (const usage of manifest.componentUsages) {
+      let target = renderUsage.get(usage.target);
+      if (target === undefined) {
+        target = { jsx: new Set(), scalar: new Set() };
+        renderUsage.set(usage.target, target);
+      }
+      target[usage.kind].add(usage.prop);
+    }
+  }
+  for (const [target, usage] of renderUsage) {
+    for (const prop of usage.jsx) {
+      if (usage.scalar.has(prop)) {
+        throw new Error(
+          `memo-dom: component '${target}' prop '${prop}' is used as both scalar data and JSX content; split the prop or component contract`,
+        );
+      }
+    }
+  }
+
   const componentGraph = linkComponentGraph(
     [...manifests.values()].flatMap((manifest) => manifest.components),
     options.rootId ?? 'App',
@@ -522,7 +653,14 @@ export function compileModules(
   const output: Record<string, string> = {};
   for (const entry of entries.values()) {
     const manifest = manifests.get(entry.id)!;
-    const linkedImports = linkImports(entry, manifest, manifests, entries, options);
+    const linkedImports = linkImports(
+      entry,
+      manifest,
+      manifests,
+      entries,
+      options,
+      renderUsage,
+    );
     for (const ref of manifest.imports) {
       const target = resolveModule(entry.id, ref.source, entries, options);
       if (
@@ -538,6 +676,9 @@ export function compileModules(
     const linkedComponentRows: Record<string, LinkedComponentRowUse[]> = {};
     const linkedComponentPropSources: NonNullable<
       MemoDomOptions['linkedComponentPropSources']
+    > = {};
+    const linkedComponentRenderProps: NonNullable<
+      MemoDomOptions['linkedComponentRenderProps']
     > = {};
     for (const declaration of manifest.components) {
       linkedComponentPaths[declaration.local] = [
@@ -563,6 +704,19 @@ export function compileModules(
           ]),
         );
       }
+      const exported = Object.values(manifest.exports).find(
+        (candidate) =>
+          candidate.type === 'component' &&
+          candidate.key === declaration.key,
+      );
+      if (exported?.type === 'component') {
+        const usage = renderUsage.get(declaration.key);
+        linkedComponentRenderProps[declaration.local] =
+          exported.renderProps.filter(
+            (prop) =>
+              usage?.scalar.has(prop) !== true || usage.jsx.has(prop),
+          );
+      }
     }
     output[entry.originalId] = compile(entry.source, {
       ...compilerOptions(options),
@@ -571,6 +725,7 @@ export function compileModules(
       linkedComponentPaths,
       linkedComponentRows,
       linkedComponentPropSources,
+      linkedComponentRenderProps,
     });
   }
   return output;

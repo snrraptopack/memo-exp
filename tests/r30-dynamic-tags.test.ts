@@ -182,7 +182,7 @@ describe('R30 - dynamic tags', () => {
   it('rejects selectors whose possible tag identities are unknown', () => {
     expect(() =>
       compile(`
-        function chooseTag() { return Math.random() ? "div" : "span"; }
+        function chooseTag() { return String(Math.random()); }
         export function App() {
           const Tag = chooseTag();
           return <Tag />;

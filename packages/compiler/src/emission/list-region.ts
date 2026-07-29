@@ -3,6 +3,7 @@ import * as t from '@babel/types';
 import {
   attrExpr,
   keyPathOf,
+  nodeHasJsx,
   type Ctx,
   type RowCtx,
 } from '../context';
@@ -15,6 +16,7 @@ import { analyzeMapSite, type MapSite } from '../lists';
 import { isLightweightListedComponent } from '../analysis';
 import {
   hasComponentChildren,
+  isRenderPropReference,
   type JsxChild,
 } from '../components/children';
 import {
@@ -59,6 +61,7 @@ export function emitListRegion(
   buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
+  parentRow?: RowCtx,
 ): void {
   const site = analyzeMapSite(
     ctx,
@@ -66,6 +69,13 @@ export function emitListRegion(
     componentPath,
     componentName,
     scope.usedPrefixes,
+    parentRow === undefined
+      ? undefined
+      : {
+          itemParam: parentRow.itemParam,
+          sourceKey: parentRow.sourceKey,
+          sourceLocal: parentRow.sourceLocal ?? false,
+        },
   );
   const regionVariable = generatedIdentifier(
     ctx,
@@ -179,6 +189,25 @@ function buildComponentRowCreate(
   );
   const propEntries: Array<{ name: string; value: t.Expression }> = [];
   let propObjectExpression: t.ObjectExpression | null = null;
+  const targetPlan = ctx.componentProps.get(rowComponent);
+  const renderValueSlot = (value: t.Expression): t.Identifier => {
+    const children: JsxChild[] =
+      t.isJSXElement(value) || t.isJSXFragment(value)
+        ? [value]
+        : [t.jsxExpressionContainer(value)];
+    return buildAuthoredChildrenSlot(
+      ctx,
+      rowScope,
+      children,
+      componentName,
+      componentPath,
+      'row',
+      rowContext,
+      rowId,
+      inSvg,
+      rowId,
+    );
+  };
 
   if (hasSpread) {
     propObjectExpression = buildOrderedAttributes(attributes, {
@@ -186,9 +215,38 @@ function buildComponentRowCreate(
         throw componentPath.buildCodeFrameError(message);
       },
     }).expression;
+    for (const property of propObjectExpression.properties) {
+      if (
+        !t.isObjectProperty(property) ||
+        property.computed ||
+        !t.isExpression(property.value)
+      ) {
+        continue;
+      }
+      const propName = t.isIdentifier(property.key)
+        ? property.key.name
+        : t.isStringLiteral(property.key)
+          ? property.key.value
+          : null;
+      if (propName === null) continue;
+      if (targetPlan?.renderProps.includes(propName) === true) {
+        if (isRenderPropReference(ctx, componentName, property.value)) continue;
+        if (!nodeHasJsx(property.value)) {
+          throw componentPath.buildCodeFrameError(
+            `memo-dom: render prop '${propName}' on <${rowComponent}> must be JSX, a JSX-bearing conditional/list, or a forwarded render prop`,
+          );
+        }
+        property.value = renderValueSlot(property.value);
+      } else if (nodeHasJsx(property.value)) {
+        throw componentPath.buildCodeFrameError(
+          `memo-dom: JSX prop '${propName}' on <${rowComponent}> is not rendered by the callee; interpolate that prop in <${rowComponent}> to declare a render slot`,
+        );
+      }
+    }
   } else {
     for (const attribute of attributes) {
       const direct = attribute as t.JSXAttribute;
+      const propName = jsxAttributeName(direct.name);
       const value =
         direct.value == null ? t.booleanLiteral(true) : attrExpr(direct.value);
       if (value === null) {
@@ -198,8 +256,32 @@ function buildComponentRowCreate(
           )}' on <${rowComponent}> must be an expression`,
         );
       }
+      if (targetPlan?.renderProps.includes(propName) === true) {
+        if (isRenderPropReference(ctx, componentName, value)) {
+          propEntries.push({
+            name: propName,
+            value: t.cloneNode(value),
+          });
+          continue;
+        }
+        if (!nodeHasJsx(value)) {
+          throw componentPath.buildCodeFrameError(
+            `memo-dom: render prop '${propName}' on <${rowComponent}> must be JSX, a JSX-bearing conditional/list, or a forwarded render prop`,
+          );
+        }
+        propEntries.push({
+          name: propName,
+          value: renderValueSlot(value),
+        });
+        continue;
+      }
+      if (nodeHasJsx(value)) {
+        throw componentPath.buildCodeFrameError(
+          `memo-dom: JSX prop '${propName}' on <${rowComponent}> is not rendered by the callee; interpolate that prop in <${rowComponent}> to declare a render slot`,
+        );
+      }
       propEntries.push({
-        name: jsxAttributeName(direct.name),
+        name: propName,
         value: t.cloneNode(value),
       });
     }
@@ -456,8 +538,7 @@ function buildInlineRowCreate(
     );
   const rowScope = newEmitScope(ctx);
   const rowId = generatedIdentifier(ctx, 'rowId').name;
-  const nextItem =
-    site.indexParam === null ? null : generatedIdentifier(ctx, 'nextItem');
+  const nextItem = generatedIdentifier(ctx, 'nextItem');
   const nextIndex =
     site.indexParam === null ? null : generatedIdentifier(ctx, 'nextIndex');
   const rowContext: RowCtx = {
@@ -488,17 +569,15 @@ function buildInlineRowCreate(
     t.identifier(rowId),
   );
   const bindingUpdates: t.Statement[] =
-    nextItem === null
-      ? []
-      : [
-          t.expressionStatement(
-            t.assignmentExpression(
-              '=',
-              t.cloneNode(site.itemPattern, true),
-              t.cloneNode(nextItem),
-            ),
-          ),
-        ];
+    [
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.cloneNode(site.itemPattern, true),
+          t.cloneNode(nextItem),
+        ),
+      ),
+    ];
   if (nextIndex !== null && site.indexParam !== null) {
     bindingUpdates.push(
       t.expressionStatement(
@@ -539,22 +618,18 @@ function buildInlineRowCreate(
             t.identifier('entities'),
             t.arrayExpression([t.identifier(rowId)]),
           ),
-          ...(nextItem === null
-            ? []
-            : [
-                t.objectProperty(
-                  t.identifier('updateProps'),
-                  t.arrowFunctionExpression(
-                    [
-                      t.cloneNode(nextItem),
-                      ...(nextIndex === null
-                        ? []
-                        : [t.cloneNode(nextIndex)]),
-                    ],
-                    t.blockStatement(bindingUpdates),
-                  ),
-                ),
-              ]),
+          t.objectProperty(
+            t.identifier('updateProps'),
+            t.arrowFunctionExpression(
+              [
+                t.cloneNode(nextItem),
+                ...(nextIndex === null
+                  ? []
+                  : [t.cloneNode(nextIndex)]),
+              ],
+              t.blockStatement(bindingUpdates),
+            ),
+          ),
           t.objectProperty(
             t.identifier('update'),
             t.identifier(rowScope.updateVar),

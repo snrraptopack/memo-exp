@@ -30,12 +30,22 @@ export function pathVariants(
 
   const info = ctx.comps.get(name)!;
   const conditionalSites = ctx.conditionalComponentSites.get(name) ?? [];
-  if (info.parents.size === 0 && conditionalSites.length === 0) {
+  const rowSites = ctx.rowComponentSites.get(name) ?? [];
+  if (
+    info.parents.size === 0 &&
+    conditionalSites.length === 0 &&
+    rowSites.length === 0
+  ) {
     return [ctx.rootId];
   }
   visiting.add(name);
   const output: string[] = [];
   for (const site of conditionalSites) {
+    for (const ownerPath of pathVariants(ctx, site.owner, visiting)) {
+      output.push(`${ownerPath}/${site.suffix}`);
+    }
+  }
+  for (const site of rowSites) {
     for (const ownerPath of pathVariants(ctx, site.owner, visiting)) {
       output.push(`${ownerPath}/${site.suffix}`);
     }

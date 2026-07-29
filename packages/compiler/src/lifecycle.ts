@@ -33,10 +33,18 @@ function instrumentIdentifier(
   name: string,
   compName: string,
   rowCtx?: RowCtx,
+  executionAwareRoot = false,
 ): void {
   const local = resolveLocalHelper(compPath, name);
   if (local !== null) {
-    instrumentComponentCallback(ctx, compPath, local, compName, rowCtx);
+    instrumentComponentCallback(
+      ctx,
+      compPath,
+      local,
+      compName,
+      rowCtx,
+      executionAwareRoot,
+    );
     return;
   }
 
@@ -49,7 +57,9 @@ function instrumentIdentifier(
     return;
   }
   const shared = functionFromBinding(binding.path);
-  if (shared !== null) instrumentSharedCallback(ctx, shared);
+  if (shared !== null) {
+    instrumentSharedCallback(ctx, shared, executionAwareRoot);
+  }
 }
 
 function instrumentArgument(
@@ -71,7 +81,14 @@ function instrumentArgument(
       executionAwareRoot,
     );
   } else if (t.isIdentifier(argument)) {
-    instrumentIdentifier(ctx, compPath, argument.name, compName, rowCtx);
+    instrumentIdentifier(
+      ctx,
+      compPath,
+      argument.name,
+      compName,
+      rowCtx,
+      executionAwareRoot,
+    );
   }
 }
 
@@ -79,6 +96,7 @@ function instrumentSharedIdentifier(
   ctx: Ctx,
   programPath: NodePath<t.Program>,
   name: string,
+  executionAwareRoot = false,
 ): void {
   const binding = programPath.scope.getBinding(name);
   if (
@@ -89,7 +107,9 @@ function instrumentSharedIdentifier(
     return;
   }
   const shared = functionFromBinding(binding.path);
-  if (shared !== null) instrumentSharedCallback(ctx, shared);
+  if (shared !== null) {
+    instrumentSharedCallback(ctx, shared, executionAwareRoot);
+  }
 }
 
 function instrumentSharedArgument(
@@ -102,7 +122,12 @@ function instrumentSharedArgument(
     if (nodeHasJsx(argument.body)) return;
     instrumentSharedCallback(ctx, argument, executionAwareRoot);
   } else if (t.isIdentifier(argument)) {
-    instrumentSharedIdentifier(ctx, programPath, argument.name);
+    instrumentSharedIdentifier(
+      ctx,
+      programPath,
+      argument.name,
+      executionAwareRoot,
+    );
   }
 }
 

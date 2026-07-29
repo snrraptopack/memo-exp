@@ -65,7 +65,11 @@ export function transformComponent(
   const effects = ctx.effects.get(name);
   const hasLocalEffects =
     effects?.some(
-      (site) => site.localReads.size > 0 || site.localDerivationReads.size > 0,
+      (site) =>
+        site.localReads.size > 0 ||
+        site.localDerivationReads.size > 0 ||
+        site.conditionLocalReads.size > 0 ||
+        site.conditionLocalDerivationReads.size > 0,
     ) === true;
   if (
     ctx.selectiveDerivationComponents.has(name) ||
