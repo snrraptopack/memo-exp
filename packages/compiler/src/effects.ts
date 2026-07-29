@@ -13,6 +13,7 @@ import {
   memberRootName,
   type Ctx,
   type EffectSite,
+  type ModuleEffectSite,
 } from './context';
 import { summarizeHelper } from './helper-summaries';
 import { generatedIdentifier, md } from './identifiers';
@@ -173,10 +174,118 @@ function collectEffectReads(
   return { moduleReads, localReads, localDerivationReads };
 }
 
+function collectModuleEffectReads(
+  ctx: Ctx,
+  callbackPath: NodePath<t.ArrowFunctionExpression | t.FunctionExpression>,
+): Set<string> {
+  const reads = new Set<string>();
+  const noteIdentifier = (path: NodePath<t.Identifier>): void => {
+    const name = path.node.name;
+    if (
+      !ctx.state.has(name) ||
+      path.scope.getBinding(name)?.scope.path.isProgram() !== true
+    ) {
+      return;
+    }
+    const parent = path.parentPath;
+    if (
+      ctx.state.get(name) === 'store' &&
+      parent?.isMemberExpression() &&
+      parent.node.object === path.node
+    ) {
+      return;
+    }
+    reads.add(name);
+  };
+
+  callbackPath.traverse({
+    Function(path) {
+      path.skip();
+    },
+    ReferencedIdentifier(path) {
+      if (path.isIdentifier()) noteIdentifier(path);
+    },
+    MemberExpression(path) {
+      const key = memberKey(path.node);
+      const root = memberRootName(path.node);
+      if (
+        key !== null &&
+        root !== null &&
+        ctx.state.get(root) === 'store' &&
+        path.scope.getBinding(root)?.scope.path.isProgram() === true
+      ) {
+        reads.add(key);
+      }
+    },
+    CallExpression(path) {
+      const callee = path.node.callee;
+      if (
+        !t.isIdentifier(callee) ||
+        path.scope.getBinding(callee.name)?.scope.path.isProgram() !== true ||
+        (!ctx.helpers.has(callee.name) &&
+          !ctx.importedFunctions.has(callee.name))
+      ) {
+        return;
+      }
+      const summary =
+        ctx.importedFunctions.get(callee.name) ??
+        summarizeHelper(ctx, callee.name);
+      for (const read of summary.reads) reads.add(read);
+    },
+  });
+  return reads;
+}
+
+function scanModuleEffects(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
+  const sites: ModuleEffectSite[] = [];
+  for (const statementPath of programPath.get('body')) {
+    if (!statementPath.isExpressionStatement()) continue;
+    const expressionPath = statementPath.get('expression');
+    if (!expressionPath.isCallExpression() || !isIntrinsicEffect(expressionPath)) {
+      continue;
+    }
+    const args = expressionPath.get('arguments');
+    const callbackPath = args[0];
+    if (
+      args.length !== 1 ||
+      callbackPath === undefined ||
+      (!callbackPath.isArrowFunctionExpression() &&
+        !callbackPath.isFunctionExpression())
+    ) {
+      throw expressionPath.buildCodeFrameError(
+        'memo-dom: effect() requires exactly one inline callback',
+      );
+    }
+    if (callbackPath.node.async || callbackPath.node.generator) {
+      throw callbackPath.buildCodeFrameError(
+        'memo-dom: effect callback must be synchronous; start async work inside it and return a synchronous teardown',
+      );
+    }
+    const index = sites.length;
+    sites.push({
+      index,
+      statement: statementPath.node,
+      callback: callbackPath.node,
+      moduleReads: collectModuleEffectReads(ctx, callbackPath),
+      entityId:
+        `${ctx.rootId}/$module-effects/` +
+        `${encodeURIComponent(ctx.moduleId)}/${index}`,
+    });
+  }
+  ctx.moduleEffects.push(...sites);
+}
+
 /**
  * Discover and validate direct component-body effect statements.
  */
-export function scanEffects(ctx: Ctx): void {
+export function scanEffects(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
+  scanModuleEffects(ctx, programPath);
   for (const [compName, compPath] of ctx.compPaths) {
     const sites: EffectSite[] = [];
     const accepted = new Set<t.CallExpression>();
@@ -399,6 +508,55 @@ export function buildEffectRegistrations(
       ]),
     ),
   );
+}
+
+function importMetaHot(): t.MemberExpression {
+  return t.memberExpression(
+    t.metaProperty(t.identifier('import'), t.identifier('meta')),
+    t.identifier('hot'),
+  );
+}
+
+/** Lower direct module effects to stable singleton registrations. */
+export function rewriteModuleEffects(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
+  if (ctx.moduleEffects.length === 0) return;
+  const statementPaths = new Map(
+    programPath.get('body').map((statementPath) => [
+      statementPath.node,
+      statementPath,
+    ]),
+  );
+  for (const site of ctx.moduleEffects) {
+    const statementPath = statementPaths.get(site.statement);
+    if (statementPath === undefined) continue;
+    const registration = t.expressionStatement(
+      t.callExpression(md(ctx, 'registerEffect'), [
+        t.stringLiteral(site.entityId),
+        t.nullLiteral(),
+        t.cloneNode(site.callback, true),
+      ]),
+    );
+    const hmrCleanup = t.ifStatement(
+      importMetaHot(),
+      t.expressionStatement(
+        t.callExpression(
+          t.memberExpression(importMetaHot(), t.identifier('dispose')),
+          [
+            t.arrowFunctionExpression(
+              [],
+              t.callExpression(md(ctx, 'unregisterSubtree'), [
+                t.stringLiteral(site.entityId),
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+    statementPath.replaceWithMultiple([registration, hmrCleanup]);
+  }
 }
 
 /** Reject effect syntax that was not consumed by component emission. */

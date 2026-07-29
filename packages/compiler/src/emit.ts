@@ -112,6 +112,7 @@ function textValue(tmp: t.Identifier): t.Expression {
  * DEFAULT (checked, value, …), never reflective state we should stomp.
  */
 const DOM_PROP_ATTRS = new Set([
+  'innerHTML',
   'checked',
   'value',
   'selected',
@@ -622,6 +623,26 @@ function emitElement(
 
   const elementSvg = isSvgElement(tag, inSvg);
   const childSvg = elementSvg && tag !== 'foreignObject';
+  const innerHtmlAttribute = open.attributes.find(
+    (attribute) =>
+      t.isJSXAttribute(attribute) &&
+      jsxAttributeName(attribute.name) === 'innerHTML',
+  );
+  if (innerHtmlAttribute !== undefined) {
+    if (elementSvg) {
+      throw compPath.buildCodeFrameError(
+        'memo-dom: innerHTML is only supported on HTML elements',
+      );
+    }
+    const hasMeaningfulChildren = el.children.some(
+      (child) => !t.isJSXText(child) || child.value.trim() !== '',
+    );
+    if (hasMeaningfulChildren) {
+      throw compPath.buildCodeFrameError(
+        'memo-dom: an element using innerHTML cannot also have JSX children',
+      );
+    }
+  }
 
   // Children emit post-order; insertion operations retain authored order.
   const childOperations = collectDirectChildren(el.children, {
@@ -765,7 +786,11 @@ function emitElement(
             ]),
           ),
         );
-      } else if (DOM_MAPPED_ATTRS.has(attrName) || elementSvg) {
+      } else if (
+        attrName === 'innerHTML' ||
+        DOM_MAPPED_ATTRS.has(attrName) ||
+        elementSvg
+      ) {
         scope.creation.push(
           t.expressionStatement(
             t.callExpression(md(ctx, 'setDomValue'), [

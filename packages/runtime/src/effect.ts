@@ -7,16 +7,25 @@
  */
 
 import { cleanup, type CleanupDisposer } from './cleanup';
-import { markDirty, register, type EntityId } from './kernel';
+import {
+  has,
+  markDirty,
+  register,
+  unregisterSubtree,
+  type EntityId,
+} from './kernel';
 
 export type EffectCallback = () => void | CleanupDisposer;
 
 export function registerEffect(
   id: EntityId,
-  parent: EntityId,
+  parent: EntityId | null,
   callback: EffectCallback,
 ): void {
   let disposer: CleanupDisposer | undefined;
+
+  // Stable singleton ids make module reevaluation/HMR teardown-safe.
+  if (has(id)) unregisterSubtree(id);
 
   register({
     id,

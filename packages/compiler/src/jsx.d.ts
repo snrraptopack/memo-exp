@@ -5,8 +5,8 @@
 declare function cleanup(disposer: () => void): () => void;
 
 /**
- * Run a compiler-tracked side effect after DOM updates. A returned teardown
- * runs before the next execution and when the owning component unmounts.
+ * Run a compiler-tracked side effect after DOM updates. At component scope,
+ * teardown follows the owner; at module scope the effect is a singleton.
  */
 declare function effect(callback: () => void | (() => void)): void;
 

@@ -67,6 +67,30 @@ export function matchMapCall(expr: t.Node): t.CallExpression | null {
   return null;
 }
 
+function isStaticPrimitiveArray(expression: t.Expression): boolean {
+  let current = expression;
+  while (
+    t.isTSAsExpression(current) ||
+    t.isTSTypeAssertion(current) ||
+    t.isTSNonNullExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return (
+    t.isArrayExpression(current) &&
+    current.elements.every(
+      (element) =>
+        element != null &&
+        !t.isSpreadElement(element) &&
+        (t.isStringLiteral(element) ||
+          t.isNumericLiteral(element) ||
+          t.isBooleanLiteral(element) ||
+          t.isNullLiteral(element) ||
+          t.isBigIntLiteral(element)),
+    )
+  );
+}
+
 /** Does a subtree contain JSX? (path-relative, stops at nothing.) */
 export function containsJsx(p: NodePath): boolean {
   let found = false;
@@ -162,6 +186,14 @@ export function analyzeMapSite(
     sourceKey = key;
     sourceLocal = localRoot;
     suffixBase = key.slice(key.lastIndexOf('.') + 1);
+  } else if (t.isExpression(sourceExpr) && isStaticPrimitiveArray(sourceExpr)) {
+    // A literal primitive tuple has no mutable source to invalidate. It can
+    // still own reactive row entities when the callback reads shared state.
+    // Reconciliation remains stable because primitive item identity does not
+    // change when the authored array expression is evaluated again.
+    sourceKey = '$static-list';
+    sourceLocal = true;
+    suffixBase = '$static-list';
   } else {
     return fail(
       'memo-dom: assign an ordered collection view to reactive state or a local derivation before mapping it',

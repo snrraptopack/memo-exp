@@ -149,6 +149,22 @@ describe('R7 - indexed map callbacks', () => {
     expect(code).toMatch(/\(item, _rowId\d*, index\) =>/);
   });
 
+  it('accepts inline finite primitive arrays, including TypeScript casts', () => {
+    const code = compile(`
+      type Tab = "preview" | "code" | "raw";
+      let selected: Tab = "preview";
+      export function App() {
+        return <nav>
+          {(["preview", "code", "raw"] as Tab[]).map((tab) =>
+            <button class={selected === tab ? "active" : ""}>{tab}</button>
+          )}
+        </nav>;
+      }
+    `);
+    expect(code).toContain('.createListRegion(');
+    expect(code).toContain('/$static-list');
+  });
+
   it('accepts object and array item binding patterns', () => {
     const objectCode = compile(DESTRUCTURED_SOURCE);
     expect(objectCode).toMatch(/\(\{\s*id,\s*title\s*\}, _rowId\d*, index\) =>/);

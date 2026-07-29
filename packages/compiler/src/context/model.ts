@@ -46,6 +46,8 @@ export interface LinkedStateImport {
   kind: StateKind;
   /** Canonical root key of the defining export (`./state.ts#store`). */
   key: string;
+  /** Finite intrinsic-tag identities declared by a string-literal union. */
+  tagCandidates?: string[];
 }
 
 export interface LinkedFunctionImport {
@@ -161,6 +163,15 @@ export interface EffectSite {
   localDerivationReads: Set<string>;
 }
 
+/** One singleton reactive effect declared directly at module scope. */
+export interface ModuleEffectSite {
+  index: number;
+  statement: t.ExpressionStatement;
+  callback: t.ArrowFunctionExpression | t.FunctionExpression;
+  moduleReads: Set<string>;
+  entityId: string;
+}
+
 export interface ModuleControlFlowDerivation {
   statement: t.IfStatement | t.SwitchStatement;
   bindings: string[];
@@ -181,6 +192,8 @@ export interface Ctx {
   state: Map<string, StateKind>;
   /** Local binding name -> canonical state root. */
   stateKeys: Map<string, string>;
+  /** Finite intrinsic-tag identities proven by state type annotations. */
+  stateTagCandidates: Map<string, string[]>;
   /** Imported ES bindings cannot be rebound, even when their export is a `let`. */
   importedState: Set<string>;
   /** Linked summaries for imported functions and conservative external calls. */
@@ -240,6 +253,8 @@ export interface Ctx {
   selectiveDerivationComponents: Set<string>;
   /** Compiler-owned reactive effects, in source order per component. */
   effects: Map<string, EffectSite[]>;
+  /** Module-owned singleton effects, in source order. */
+  moduleEffects: ModuleEffectSite[];
   /**
    * R13: auto-detected computeds — module-level `const x = <state
    * derivation>` (detection by REFERENCE: any expression mentioning state).
@@ -274,6 +289,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
   const moduleId = opts.moduleId ?? './component.tsx';
   const state = new Map<string, StateKind>();
   const stateKeys = new Map<string, string>();
+  const stateTagCandidates = new Map<string, string[]>();
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
@@ -281,6 +297,9 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     if (linked.type === 'state') {
       state.set(local, linked.kind);
       stateKeys.set(local, linked.key);
+      if (linked.tagCandidates !== undefined) {
+        stateTagCandidates.set(local, [...linked.tagCandidates]);
+      }
       importedState.add(local);
     } else if (linked.type === 'function') {
       importedFunctions.set(local, {
@@ -317,6 +336,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     moduleId,
     state,
     stateKeys,
+    stateTagCandidates,
     importedState,
     importedFunctions,
     importedComponents,
@@ -371,6 +391,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     instanceReasonIds: new Map(),
     selectiveDerivationComponents: new Set(),
     effects: new Map(),
+    moduleEffects: [],
     computeds: new Map(),
     moduleControlFlow: [],
     header: [],

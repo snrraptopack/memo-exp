@@ -25,6 +25,7 @@ import {
   type ComponentExportInfo,
 } from './components/manifest';
 import { summarizeHelper } from './helper-summaries';
+import { moduleStateStringCandidates } from './analysis/type-candidates';
 import {
   canonicalStateKey,
   createCtx,
@@ -62,6 +63,7 @@ interface StateExport {
   type: 'state';
   kind: StateKind;
   key: string;
+  tagCandidates: string[];
 }
 
 interface FunctionExport {
@@ -208,6 +210,7 @@ function analyzeManifest(
               type: 'state',
               kind,
               key: ctx.stateKeys.get(local) ?? `${entry.id}#${local}`,
+              tagCandidates: [...(ctx.stateTagCandidates.get(local) ?? [])],
             };
             continue;
           }
@@ -271,6 +274,7 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
     visitor: {
       Program(programPath) {
         const locals = new Map<string, LinkedExport>();
+        const tagCandidates = moduleStateStringCandidates(programPath.node);
         const components = discoverComponentExports(programPath, entry.id);
         for (const [name, component] of components) {
           locals.set(name, { type: 'component', ...component });
@@ -303,6 +307,7 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
                   type: 'state',
                   kind,
                   key: `${entry.id}#${decl.id.name}`,
+                  tagCandidates: [...(tagCandidates.get(decl.id.name) ?? [])],
                 });
               }
             }
@@ -441,6 +446,7 @@ function linkImports(
         type: 'state',
         kind: targetExport.kind,
         key: targetExport.key,
+        tagCandidates: [...targetExport.tagCandidates],
       };
     } else if (targetExport.type === 'component') {
       linked[ref.local] = {

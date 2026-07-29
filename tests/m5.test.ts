@@ -172,11 +172,10 @@ describe('M5 compiler — code generation', () => {
   });
 
   it('rejects unsupported constructs with actionable errors', () => {
-    expect(() =>
-      compile(
-        `function C() { const x = 1 > 0 ? <span>a</span> : null; return <div>{x}</div>; }`,
-      ),
-    ).toThrowError(/direct JSX child/);
+    const jsxValue = compile(
+      `function C() { const x = 1 > 0 ? <span>a</span> : null; return <div>{x}</div>; }`,
+    );
+    expect(jsxValue).toContain('.createCondRegion(');
 
     {
       const code = compile(
@@ -187,11 +186,10 @@ describe('M5 compiler — code generation', () => {
       expect(code).not.toContain('"./component.tsx#xs"');
     }
 
-    expect(() =>
-      compile(
-        `let xs = [1];\nfunction C() { const rows = xs.map(x => <li>{x}</li>); return <div>{rows}</div>; }`,
-      ),
-    ).toThrowError(/direct JSX child/);
+    const listValue = compile(
+      `let xs = [1];\nfunction C() { const rows = xs.map(x => <li>{x}</li>); return <div>{rows}</div>; }`,
+    );
+    expect(listValue).toContain('.createListRegion(');
 
     // R10: state-reading row props — allowed, re-pushed on every reconcile
     {

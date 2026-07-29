@@ -53,6 +53,9 @@ import {
   scanInstanceControlFlow,
 } from './analysis/instance-control-flow';
 import { pathVariants } from './analysis/component-graph';
+import { normalizeComponentJsxValues } from './components/jsx-values';
+import { normalizeDynamicTags } from './jsx/dynamic-tags';
+import { moduleStateStringCandidates } from './analysis/type-candidates';
 
 export { analyzeComputed } from './analysis/computed';
 export {
@@ -109,6 +112,7 @@ function validateLinkedImports(ctx: Ctx, programPath: NodePath<t.Program>): void
 }
 
 function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
+  const tagCandidates = moduleStateStringCandidates(programPath.node);
   for (const stmt of programPath.node.body) {
     // M5.5: exported state is still state — unwrap the export wrapper
     const inner = t.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
@@ -122,6 +126,12 @@ function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
           registerState(ctx, decl.id.name, 'store');
         } else if (isConstObjectState(decl.init)) {
           registerState(ctx, decl.id.name, 'const');
+        }
+      }
+      if (ctx.state.has(decl.id.name)) {
+        const candidates = tagCandidates.get(decl.id.name);
+        if (candidates !== undefined) {
+          ctx.stateTagCandidates.set(decl.id.name, [...candidates]);
         }
       }
     }
@@ -691,13 +701,15 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  normalizeComponentJsxValues(ctx);
+  normalizeDynamicTags(ctx);
   scanInstanceState(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
   scanModuleControlFlow(ctx, programPath, analyzeComputed);
   scanInstanceDerivations(ctx); // R14/R24: ordered local projections/computeds
   scanInstanceControlFlow(ctx);
   finalizeInstancePreludes(ctx);
-  scanEffects(ctx);
+  scanEffects(ctx, programPath);
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   collectReads(ctx);
   // acyclicity check runs unconditionally — a state-free recursive component

@@ -123,6 +123,24 @@ function App() {
 Use `cleanup(disposer)` for component-owned resources that are not reactive
 effects.
 
+Direct module-scope effects are linked singleton entities. Imported reactive
+state participates through its defining-module identity, and the latest
+teardown runs during module reevaluation/HMR disposal.
+
+Component-local JSX render values and finite dynamic tags compile through the
+same stable DOM regions:
+
+```tsx
+const fallback = <p>Waiting</p>;
+const Tag = compact ? 'section' : 'article';
+const View = detailed ? Details : Summary;
+
+return <Tag>{ready ? <View /> : fallback}</Tag>;
+```
+
+Trusted raw markup can use reactive `innerHTML={markup}`. It is unsanitized and
+cannot be combined with compiler-managed children on the same element.
+
 Pure exhaustive component `if`/`switch` calculations participate in the
 source-ordered render prelude. JSX early returns, JSX-returning terminal
 switches, and chained JSX ternaries lower to stable structural regions; the

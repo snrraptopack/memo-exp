@@ -98,12 +98,11 @@ describe('R8 — code generation', () => {
     );
     expect(mixed).toContain('.createCondRegion(');
 
-    // non-child position
-    expect(() =>
-      compile(
-        `let c = false;\nfunction C() { const x = c ? <b>a</b> : null; return <div>{x}</div>; }`,
-      ),
-    ).toThrowError(/direct JSX child/);
+    // R29 expands a component-local JSX value into its render position.
+    const jsxValue = compile(
+      `let c = false;\nfunction C() { const x = c ? <b>a</b> : null; return <div>{x}</div>; }`,
+    );
+    expect(jsxValue).toContain('.createCondRegion(');
   });
 });
 

@@ -868,6 +868,94 @@ or later derivations. Access tables route canonical source keys to the owning
 flow entity; changed targets then commit their own canonical keys. Distinct
 modules with the same local target name do not collide.
 
+### R29 - Component-local JSX values are compile-time render aliases
+
+A top-level component `const` whose initializer contains JSX may be returned,
+rendered as a child, aliased through another local const, or used as a list
+callback return:
+
+```tsx
+const fallback = <Empty />;
+const selected = ready ? <Panel /> : fallback;
+return <main>{selected}</main>;
+```
+
+Before binding/read analysis, every render use expands to an independent clone
+of the authored JSX. The declaration is then removed. The normal direct DOM,
+component, list, and conditional passes own the expanded tree, so there is no
+virtual-node allocation and no component-factory rerun. Rendering the same
+alias twice creates two independent DOM/component instances.
+
+JSX aliases are render values, not general JavaScript data. Passing one to an
+ordinary function, storing it in a non-JSX object/array, or using one as an
+attribute/prop value remains a compile error.
+
+### R30 - Finite dynamic JSX tags use stable conditional regions
+
+An uppercase identifier or member tag may select from statically discoverable
+intrinsic strings or linked component factories:
+
+```tsx
+const Tag = compact ? 'section' : 'article';
+const View = detailed ? Details : Summary;
+return <><Tag /><View /><registry.Shell /></>;
+```
+
+One-candidate aliases lower directly to the ordinary static tag. Multiple
+candidates lower to existing R8 branch factories whose picker compares the
+current selector value by identity. Retaining the same candidate preserves its
+DOM/component instance; changing it disposes the previous branch and mounts the
+new one. Candidate discovery covers declaration initializers, direct binding
+assignments, static local object-member initializers, and direct assignments to
+that member.
+
+Finite intrinsic candidates may also come from an exported reactive state's
+TypeScript string-literal union. The module linker preserves that candidate set
+across named imports and re-exports.
+
+Arbitrary function-returned tag identities, open-ended imported selectors,
+computed member names, and candidates that are neither valid intrinsic names
+nor linked component factories are rejected. This keeps component prop
+contracts and graph identities statically knowable.
+
+### R31 - Explicit `innerHTML` is a guarded raw-HTML property
+
+`innerHTML={markup}` uses the same numbered-slot guard as other scalar DOM
+properties and writes through `setDomValue`; it never emits an `innerHTML`
+attribute. Static string values also use the property path. An element with
+explicit `innerHTML` cannot own compiled JSX children, and SVG usage is
+rejected, preventing raw replacement from detaching compiler-owned nodes.
+
+The runtime intentionally does not sanitize markup. Authored code is
+responsible for passing trusted or application-sanitized HTML.
+
+### R32 - Module effects are linked singleton entities
+
+A direct module-scope `effect(() => ...)` has the same inline synchronous
+callback contract and render-priority scheduling as R26, but no component
+owner:
+
+```tsx
+import { session } from './state';
+
+effect(() => {
+  persist(session);
+  return () => stopPersistence();
+});
+```
+
+Its canonical id is
+`<rootId>/$module-effects/<encoded-moduleId>/<source-order-index>` and its
+parent is `null`. Local and imported reads use linker-provided canonical state
+keys, so writes in any connected module dirty the singleton through the normal
+access table. Direct callback writes retain execution-aware commit routing.
+A zero-dependency module effect runs once after module evaluation.
+
+Registering an existing singleton id first unregisters its prior subtree and
+invokes its latest disposer. Emission also registers an `import.meta.hot`
+dispose callback that unregisters the singleton, preventing duplicate work and
+resource leaks during module reevaluation.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is
@@ -1195,7 +1283,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R28 (compiler probes + compiled runtime execution).
+> Last full audit: R32 (compiler probes + compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
 
@@ -1206,10 +1294,17 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 - Components must be top-level `function` declarations (no arrows). R27
   supports structural tail returns; arbitrary branch-specific statements
   between JSX returns remain unsupported.
-- Reactive effects must be direct top-level component statements with exactly
-  one inline synchronous callback (R26). There are no module/root effects,
-  named callback forms, nested/conditional effect declarations, or async
-  effect callbacks.
+- Reactive effects must be direct top-level component or module statements
+  with exactly one inline synchronous callback (R26/R32). Named callback
+  forms, nested/conditional declarations, and async callbacks are unsupported.
+- JSX values are component-local compile-time render aliases. They cannot yet
+  be passed as props or stored in general objects/arrays (R29).
+- Dynamic JSX tags require a finite set of intrinsic-string or linked-component
+  candidates. Open-ended runtime selectors and computed member names are
+  unsupported (R30).
+- Inline `.map()` sources may be finite arrays of primitive literals (including
+  TypeScript casts). Mutable or calculated collection expressions must still be
+  assigned to reactive state or a local derivation before mapping (R7).
 - Nested lists and component calls inside inline rows. Component rows may own
   nested list regions.
 - Recursive components — guarded with an explicit compile error (cycle
@@ -1263,6 +1358,13 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R29-R32 (JSX composition and module effects,
+  packages/compiler/src/components/jsx-values.ts +
+  packages/compiler/src/jsx/dynamic-tags.ts +
+  packages/compiler/src/effects.ts, tests/r29-jsx-values.test.ts through
+  tests/r32-module-effect.test.ts):** component-local JSX render aliases,
+  finite dynamic intrinsic/component/member selectors, guarded raw
+  `innerHTML`, and teardown/HMR-safe linked module singleton effects.
 - **R7/R24 correction (prop-backed list views,
   packages/compiler/src/lists.ts, tests/m5.test.ts +
   tests/r22-components.test.ts):** destructured prop bindings and static member

@@ -131,7 +131,7 @@ describe('R26 — effect code generation and validation', () => {
     expect(code).not.toContain('.registerEffect(');
   });
 
-  it('rejects unsupported effect locations and callback forms', () => {
+  it('rejects unsupported component effect locations and callback forms', () => {
     expect(() =>
       compile(`
         export function App() {
@@ -150,12 +150,18 @@ describe('R26 — effect code generation and validation', () => {
       `),
     ).toThrowError(/must be synchronous/);
 
-    expect(() =>
-      compile(`
-        effect(() => console.log("module"));
-        export function App() { return <main>ready</main>; }
-      `),
-    ).toThrowError(/only valid .* component body/);
+  });
+
+  it('lowers a direct module effect to a singleton registration', () => {
+    const code = compile(`
+      let count = 0;
+      effect(() => console.log("module:" + count));
+      export function App() { return <main>{count}</main>; }
+    `);
+    expect(code).toContain('.registerEffect(');
+    expect(code).toContain('/$module-effects/');
+    expect(code).toContain('parent');
+    expect(code).toContain('import.meta.hot.dispose');
   });
 });
 

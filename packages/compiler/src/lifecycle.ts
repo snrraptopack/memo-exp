@@ -96,10 +96,11 @@ function instrumentSharedArgument(
   ctx: Ctx,
   programPath: NodePath<t.Program>,
   argument: t.CallExpression['arguments'][number],
+  executionAwareRoot = false,
 ): void {
   if (t.isArrowFunctionExpression(argument) || t.isFunctionExpression(argument)) {
     if (nodeHasJsx(argument.body)) return;
-    instrumentSharedCallback(ctx, argument);
+    instrumentSharedCallback(ctx, argument, executionAwareRoot);
   } else if (t.isIdentifier(argument)) {
     instrumentSharedIdentifier(ctx, programPath, argument.name);
   }
@@ -188,6 +189,9 @@ export function transformProgramCallbacks(
   programPath.traverse({
     CallExpression(call) {
       if (call.getFunctionParent() !== null) return;
+      const intrinsicEffect =
+        t.isIdentifier(call.node.callee, { name: 'effect' }) &&
+        call.scope.getBinding('effect') === undefined;
       if (t.isIdentifier(call.node.callee)) {
         instrumentSharedIdentifier(
           ctx,
@@ -196,7 +200,12 @@ export function transformProgramCallbacks(
         );
       }
       for (const argument of call.node.arguments) {
-        instrumentSharedArgument(ctx, programPath, argument);
+        instrumentSharedArgument(
+          ctx,
+          programPath,
+          argument,
+          intrinsicEffect,
+        );
       }
     },
     NewExpression(call) {

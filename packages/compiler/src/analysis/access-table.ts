@@ -42,6 +42,9 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
       for (const read of site.moduleReads) add(read, patterns);
     }
   }
+  for (const site of ctx.moduleEffects) {
+    for (const read of site.moduleReads) add(read, [site.entityId]);
+  }
   for (const [name, info] of ctx.computeds) {
     const entityId =
       `${ctx.rootId}/$computed/${encodeURIComponent(ctx.moduleId)}#${name}`;

@@ -19,6 +19,7 @@ interface EventRecord {
 const propSnapshots = new WeakMap<Element, Map<string, unknown>>();
 const eventSnapshots = new WeakMap<Element, Map<string, EventRecord>>();
 const HTML_PROPERTIES = new Set([
+  'innerHTML',
   'checked',
   'value',
   'selected',
@@ -245,5 +246,5 @@ function setScalarDomValue(
 }
 
 function propertyEmptyValue(name: string): unknown {
-  return name === 'value' ? '' : false;
+  return name === 'value' || name === 'innerHTML' ? '' : false;
 }

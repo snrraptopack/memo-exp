@@ -40,7 +40,10 @@ import {
   transformProgramCallbacks,
   transformSharedAsyncHelpers,
 } from './lifecycle';
-import { rejectUnownedEffects } from './effects';
+import {
+  rejectUnownedEffects,
+  rewriteModuleEffects,
+} from './effects';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -194,6 +197,7 @@ export default function memoDomPlugin(
         transformSharedAsyncHelpers(ctx);
       },
       exit(programPath) {
+        rewriteModuleEffects(ctx, programPath);
         rejectUnownedCleanup(programPath);
         rejectUnownedEffects(programPath);
 

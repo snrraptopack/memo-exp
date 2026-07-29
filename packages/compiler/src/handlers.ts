@@ -94,10 +94,19 @@ export function instrumentComponentCallback(
 export function instrumentSharedCallback(
   ctx: Ctx,
   target: HandlerFn,
+  executionAwareRoot = false,
 ): void {
   if (ctx.analyzedFunctions.has(target)) return;
   ctx.analyzedFunctions.add(target);
-  analyzeHandler(ctx, target, null, undefined, false);
+  analyzeHandler(
+    ctx,
+    target,
+    null,
+    undefined,
+    false,
+    undefined,
+    executionAwareRoot,
+  );
 }
 
 /**
