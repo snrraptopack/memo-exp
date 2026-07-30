@@ -44,7 +44,7 @@ export function emitConditionalRegion(
   const pick = t.arrowFunctionExpression([], t.cloneNode(site.pickExpr));
   const branchFactories: t.Expression[] = site.branches.map((jsx) =>
     jsx !== null
-      ? buildBranchCreate(
+      ? buildConditionalBranchCreate(
           ctx,
           jsx,
           componentName,
@@ -110,7 +110,7 @@ export function emitConditionalRegion(
 }
 
 /** Build a non-entity branch factory with isolated slots and cleanup. */
-export function buildBranchCreate(
+export function buildConditionalBranchCreate(
   ctx: Ctx,
   jsx: JsxNode,
   componentName: string,

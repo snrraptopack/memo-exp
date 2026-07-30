@@ -13,7 +13,7 @@ export type ComponentParam = Exclude<
   t.FunctionDeclaration['params'][number],
   t.TSParameterProperty
 >;
-export type PropTarget = t.Identifier | t.ObjectPattern | t.ArrayPattern;
+type PropTarget = t.Identifier | t.ObjectPattern | t.ArrayPattern;
 
 export interface ComponentPropsPlan {
   mode: 'positional' | 'object';
@@ -241,7 +241,7 @@ export function propNameForBinding(
   return null;
 }
 
-export function parameterTarget(param: ComponentParam): PropTarget {
+function parameterTarget(param: ComponentParam): PropTarget {
   if (t.isRestElement(param)) {
     throw new Error('rest component parameters are not supported');
   }

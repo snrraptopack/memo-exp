@@ -1,5 +1,6 @@
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import {
   attrExpr,
   keyPathOf,
@@ -29,24 +30,6 @@ function callbackJsx(
     return callback.body.body[0].argument;
   }
   return null;
-}
-
-function runtimePattern(
-  pattern: t.Identifier | t.ObjectPattern | t.ArrayPattern,
-): typeof pattern {
-  const cloned = t.cloneNode(pattern, true);
-  t.traverseFast(cloned, (node) => {
-    if (
-      t.isIdentifier(node) ||
-      t.isObjectPattern(node) ||
-      t.isArrayPattern(node) ||
-      t.isRestElement(node) ||
-      t.isAssignmentPattern(node)
-    ) {
-      node.typeAnnotation = null;
-    }
-  });
-  return cloned;
 }
 
 /**
@@ -93,7 +76,7 @@ export function buildRenderCallbackAdapter(
     );
   }
 
-  const itemPattern = runtimePattern(first);
+  const itemPattern = cloneRuntimeBindingPattern(first);
   const itemBindings = Object.keys(t.getBindingIdentifiers(itemPattern));
   if (itemBindings.length === 0) {
     throw componentPath.buildCodeFrameError(

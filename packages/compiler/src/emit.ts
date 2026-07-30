@@ -62,7 +62,7 @@ import {
   orderCallProps,
 } from './components/calls';
 import {
-  buildBranchCreate as buildConditionalBranchCreate,
+  buildConditionalBranchCreate,
   emitConditionalRegion,
 } from './emission/conditional-region';
 import { emitListRegion } from './emission/list-region';

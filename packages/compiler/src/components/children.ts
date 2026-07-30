@@ -18,7 +18,6 @@ import { generatedIdentifier, md } from '../identifiers';
 import { matchMapCall } from '../lists';
 import { matchCond } from '../conds';
 import {
-  localBindingForProp,
   objectBindingName,
   propNameForBinding,
 } from './props';
@@ -58,34 +57,6 @@ export function normalizeJsxText(raw: string): string {
 export function hasComponentChildren(children: readonly JsxChild[]): boolean {
   return children.some(
     (child) => !t.isJSXText(child) || child.value.trim() !== '',
-  );
-}
-
-/** Is an interpolation the component's reserved children-slot reference? */
-export function isChildrenReference(
-  ctx: Ctx,
-  compName: string,
-  expression: t.Expression,
-): boolean {
-  const plan = ctx.componentProps.get(compName);
-  if (plan === undefined) return false;
-  const objectBinding = objectBindingName(plan);
-  if (objectBinding !== null) {
-    return (
-      t.isMemberExpression(expression) &&
-      !expression.computed &&
-      t.isIdentifier(expression.object, { name: objectBinding }) &&
-      t.isIdentifier(expression.property, { name: 'children' })
-    );
-  }
-  const local = localBindingForProp(plan, 'children');
-  if (local !== null) {
-    return t.isIdentifier(expression, { name: local });
-  }
-  return (
-    t.isIdentifier(expression) &&
-    expression.name === 'children' &&
-    ctx.instanceDerivedBindings.get(compName)?.has('children') === true
   );
 }
 

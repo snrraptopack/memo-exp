@@ -1267,6 +1267,42 @@ source-order overrides, mount it once, and omit it from DOM patching. No
 callbacks because `{ ref: local }` has already read `local` under ordinary
 JavaScript semantics.
 
+### Planned R45-R48 - lifecycle and composition hardening
+
+These rules describe the next implementation batch, not current behavior.
+They become normative R-rules only after their compiler/runtime tests pass.
+
+**R45 - Mount transactions and reentrancy.** Component construction, initial
+ref mounting, and initial effect registration form one transaction. Reactive
+writes made while that transaction is open may record invalidations, but the
+scheduler must not execute their updaters until every DOM slot, structural
+region, entity, and disposer in the transaction has been initialized. Closing
+the outermost transaction drains the queued work through the normal scheduler;
+it does not rerender or recreate the component.
+
+**R46 - Failure-isolated teardown.** Teardown preserves reverse ownership
+order and attempts every ref disposer, effect cleanup, nested entity cleanup,
+DOM removal, and registration removal even when an earlier operation throws.
+The runtime reports one failure directly or several failures as an aggregate
+only after the owned structure has been fully dismantled. Disposers remain
+idempotent.
+
+**R47 - Namespace propagation through components.** A component factory
+receives the namespace context of its mount position. Ambiguous intrinsic
+roots such as `<title>` use the caller's SVG context when mounted below an SVG
+host, while an explicit `<svg>` establishes SVG context and HTML remains the
+default. The context must cross local, linked, conditional, list-row, dynamic
+component, and render-slot factory boundaries without introducing runtime JSX
+values.
+
+**R48 - Unified static and list-row component usage.** Component planning
+unions all proven usage patterns instead of rejecting a component used both
+as an ordinary mount and as a keyed row. Each call site still selects the
+specialized ownership ABI: ordinary mounts use component/entity ownership;
+list mounts use row-relative identity and return row-local disposal metadata.
+The union must preserve DOM identity, parametrized dependencies, and cleanup
+without runtime component rerendering.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is

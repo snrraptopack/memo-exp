@@ -8,7 +8,7 @@
 
 import * as t from '@babel/types';
 
-export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 const SVG_ONLY_TAGS = new Set([
   'animate',

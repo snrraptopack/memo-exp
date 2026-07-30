@@ -70,12 +70,9 @@ import { moduleStateStringCandidates } from './analysis/type-candidates';
 import { foldRenderCallbackSubtreeReads } from './analysis/component-reads';
 import { scanRefProps } from './components/ref-props';
 
-export { analyzeComputed } from './analysis/computed';
 export {
-  componentPatterns,
   isLightweightListedComponent,
   isListLightweightCandidate,
-  pathVariants,
 } from './analysis/component-graph';
 export { buildAccessTable } from './analysis/access-table';
 

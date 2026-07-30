@@ -12,42 +12,17 @@ import * as t from '@babel/types';
 import type { Ctx } from '../context';
 import { generatedIdentifier } from '../identifiers';
 import { matchMapCall } from '../lists';
-
-function transparentExpression(expression: t.Expression): t.Expression {
-  while (
-    t.isTSAsExpression(expression) ||
-    t.isTSTypeAssertion(expression) ||
-    t.isTSNonNullExpression(expression) ||
-    t.isTSInstantiationExpression(expression)
-  ) {
-    expression = expression.expression;
-  }
-  return expression;
-}
-
-function staticPrimitiveArray(expression: t.Expression): boolean {
-  const current = transparentExpression(expression);
-  return (
-    t.isArrayExpression(current) &&
-    current.elements.every(
-      (element) =>
-        element != null &&
-        !t.isSpreadElement(element) &&
-        (t.isStringLiteral(element) ||
-          t.isNumericLiteral(element) ||
-          t.isBooleanLiteral(element) ||
-          t.isNullLiteral(element) ||
-          t.isBigIntLiteral(element)),
-    )
-  );
-}
+import {
+  isStaticPrimitiveList,
+  transparentListExpression,
+} from './source-shapes';
 
 function directSourceShape(expression: t.Expression): boolean {
-  const current = transparentExpression(expression);
+  const current = transparentListExpression(expression);
   return (
     t.isIdentifier(current) ||
     t.isMemberExpression(current) ||
-    staticPrimitiveArray(current)
+    isStaticPrimitiveList(current)
   );
 }
 
