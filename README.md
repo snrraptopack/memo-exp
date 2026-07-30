@@ -238,3 +238,16 @@ bun run bench:jsx
 bun run bench:vite
 bun run bench:size
 ```
+
+Agent code-health checks should run Fallow from the package being analyzed:
+
+```bash
+cd packages/compiler
+fallow list
+fallow dead-code
+fallow health --hotspots --targets
+fallow audit --base HEAD~1
+```
+
+Treat findings as candidates: trace removals, avoid blind auto-fixes, and run
+the repository tests and typecheck after edits.
