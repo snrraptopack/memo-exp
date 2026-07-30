@@ -14,7 +14,7 @@ import {
   updateDecl,
   type EmitScope,
 } from '../emission/scope';
-import { generatedIdentifier } from '../identifiers';
+import { generatedIdentifier, md } from '../identifiers';
 import { matchMapCall } from '../lists';
 import { matchCond } from '../conds';
 import {
@@ -26,6 +26,7 @@ import {
 export type EmitChildSlot = (
   scope: EmitScope,
   parentNode: t.Identifier,
+  ownerId: t.Identifier,
 ) => void;
 export type JsxChild = t.JSXElement['children'][number];
 
@@ -38,6 +39,7 @@ export interface ChildContentEmitters {
     parentVar: string,
   ): void;
   isForwarded(expression: t.Expression): boolean;
+  emitForwarded(expression: t.Expression, parentVar: string): void;
   fail(message: string): never;
 }
 
@@ -139,6 +141,7 @@ export function isRenderPropReference(
 export function buildChildrenSlot(
   ctx: Ctx,
   ownerScope: EmitScope,
+  identityOwner: t.Expression,
   emit: EmitChildSlot,
 ): t.Identifier {
   const childScope = newEmitScope(ctx);
@@ -147,56 +150,250 @@ export function buildChildrenSlot(
   childScope.usedConds = ownerScope.usedConds;
 
   const updateHolder = generatedIdentifier(ctx, 'childrenUpdate');
+  const additionalUpdates = generatedIdentifier(ctx, 'childrenUpdates');
+  const mountSequence = generatedIdentifier(ctx, 'childrenMountSequence');
   const mount = generatedIdentifier(ctx, 'children');
   const parentNode = generatedIdentifier(ctx, 'childrenParent');
-  emit(childScope, parentNode);
+  const mountOwner = generatedIdentifier(ctx, 'childrenOwner');
+  const mountKey = generatedIdentifier(ctx, 'childrenKey');
+  const slotOwner = generatedIdentifier(ctx, 'childrenSlot');
+  const nextUpdate = generatedIdentifier(ctx, 'childrenNextUpdate');
+  const active = generatedIdentifier(ctx, 'childrenActive');
+  const dispose = generatedIdentifier(ctx, 'childrenDispose');
+  emit(childScope, parentNode, slotOwner);
 
   ownerScope.creation.push(
     t.variableDeclaration('let', [
       t.variableDeclarator(t.cloneNode(updateHolder), t.nullLiteral()),
+      t.variableDeclarator(t.cloneNode(additionalUpdates), t.nullLiteral()),
+      t.variableDeclarator(t.cloneNode(mountSequence), t.numericLiteral(0)),
     ]),
     t.variableDeclaration('const', [
       t.variableDeclarator(
         t.cloneNode(mount),
         t.arrowFunctionExpression(
-          [t.cloneNode(parentNode)],
+          [
+            t.cloneNode(parentNode),
+            t.cloneNode(mountOwner),
+            t.cloneNode(mountKey),
+          ],
           t.blockStatement([
-            t.ifStatement(
-              t.binaryExpression(
-                '!==',
-                t.cloneNode(updateHolder),
-                t.nullLiteral(),
-              ),
-              t.throwStatement(
-                t.newExpression(t.identifier('Error'), [
-                  t.stringLiteral(
-                    '[memo-dom] a component children slot can only be mounted once',
+            t.variableDeclaration('const', [
+              t.variableDeclarator(
+                t.cloneNode(slotOwner),
+                t.conditionalExpression(
+                  t.binaryExpression(
+                    '===',
+                    t.cloneNode(mountSequence),
+                    t.numericLiteral(0),
                   ),
-                ]),
+                  t.cloneNode(identityOwner, true),
+                  t.binaryExpression(
+                    '+',
+                    t.binaryExpression(
+                      '+',
+                      t.cloneNode(identityOwner, true),
+                      t.stringLiteral('/$slot['),
+                    ),
+                    t.binaryExpression(
+                      '+',
+                      t.cloneNode(mountSequence),
+                      t.stringLiteral(']'),
+                    ),
+                  ),
+                ),
               ),
+            ]),
+            t.expressionStatement(
+              t.updateExpression('++', t.cloneNode(mountSequence)),
             ),
+            t.variableDeclaration('let', [
+              t.variableDeclarator(
+                t.cloneNode(active),
+                t.booleanLiteral(true),
+              ),
+            ]),
             cacheDecl(childScope),
             updateDecl(childScope),
             ...childScope.creation,
-            t.expressionStatement(
-              t.assignmentExpression(
-                '=',
+            t.ifStatement(
+              t.binaryExpression(
+                '===',
                 t.cloneNode(updateHolder),
-                t.identifier(childScope.updateVar),
+                t.nullLiteral(),
               ),
+              t.expressionStatement(
+                t.assignmentExpression(
+                  '=',
+                  t.cloneNode(updateHolder),
+                  t.identifier(childScope.updateVar),
+                ),
+              ),
+              t.blockStatement([
+                t.ifStatement(
+                  t.binaryExpression(
+                    '===',
+                    t.cloneNode(additionalUpdates),
+                    t.nullLiteral(),
+                  ),
+                  t.expressionStatement(
+                    t.assignmentExpression(
+                      '=',
+                      t.cloneNode(additionalUpdates),
+                      t.newExpression(t.identifier('Set'), []),
+                    ),
+                  ),
+                ),
+                t.expressionStatement(
+                  t.callExpression(
+                    t.memberExpression(
+                      t.cloneNode(additionalUpdates),
+                      t.identifier('add'),
+                    ),
+                    [t.identifier(childScope.updateVar)],
+                  ),
+                ),
+              ]),
             ),
+            t.variableDeclaration('const', [
+              t.variableDeclarator(
+                t.cloneNode(dispose),
+                t.arrowFunctionExpression(
+                  [],
+                  t.blockStatement([
+                    t.ifStatement(
+                      t.unaryExpression('!', t.cloneNode(active)),
+                      t.returnStatement(),
+                    ),
+                    t.expressionStatement(
+                      t.assignmentExpression(
+                        '=',
+                        t.cloneNode(active),
+                        t.booleanLiteral(false),
+                      ),
+                    ),
+                    t.ifStatement(
+                      t.binaryExpression(
+                        '===',
+                        t.cloneNode(updateHolder),
+                        t.identifier(childScope.updateVar),
+                      ),
+                      t.expressionStatement(
+                        t.assignmentExpression(
+                          '=',
+                          t.cloneNode(updateHolder),
+                          t.nullLiteral(),
+                        ),
+                      ),
+                      t.ifStatement(
+                        t.binaryExpression(
+                          '!==',
+                          t.cloneNode(additionalUpdates),
+                          t.nullLiteral(),
+                        ),
+                        t.expressionStatement(
+                          t.callExpression(
+                            t.memberExpression(
+                              t.cloneNode(additionalUpdates),
+                              t.identifier('delete'),
+                            ),
+                            [t.identifier(childScope.updateVar)],
+                          ),
+                        ),
+                      ),
+                    ),
+                    ...childScope.disposableRegions.map((region) =>
+                      t.expressionStatement(
+                        t.callExpression(
+                          t.memberExpression(
+                            t.identifier(region),
+                            t.identifier('dispose'),
+                          ),
+                          [],
+                        ),
+                      ),
+                    ),
+                    ...childScope.disposableEntities.map((entity) =>
+                      t.expressionStatement(
+                        t.callExpression(md(ctx, 'unregisterSubtree'), [
+                          t.cloneNode(entity, true),
+                        ]),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ]),
+            t.expressionStatement(
+              t.callExpression(md(ctx, 'cleanup'), [
+                t.cloneNode(mountOwner),
+                t.cloneNode(dispose),
+              ]),
+            ),
+            t.returnStatement(t.cloneNode(dispose)),
           ]),
         ),
       ),
     ]),
   );
   ownerScope.updaters.push(() =>
-    t.ifStatement(
-      t.binaryExpression('!==', t.cloneNode(updateHolder), t.nullLiteral()),
-      t.expressionStatement(t.callExpression(t.cloneNode(updateHolder), [])),
-    ),
+    t.blockStatement([
+      t.ifStatement(
+        t.binaryExpression('!==', t.cloneNode(updateHolder), t.nullLiteral()),
+        t.expressionStatement(t.callExpression(t.cloneNode(updateHolder), [])),
+      ),
+      t.ifStatement(
+        t.binaryExpression(
+          '!==',
+          t.cloneNode(additionalUpdates),
+          t.nullLiteral(),
+        ),
+        t.forOfStatement(
+          t.variableDeclaration('const', [
+            t.variableDeclarator(t.cloneNode(nextUpdate)),
+          ]),
+          t.cloneNode(additionalUpdates),
+          t.expressionStatement(
+            t.callExpression(t.cloneNode(nextUpdate), []),
+          ),
+        ),
+      ),
+    ]),
   );
   return mount;
+}
+
+/** Mount one forwarded slot with a structural owner and track branch teardown. */
+export function emitForwardedSlotMount(
+  ctx: Ctx,
+  scope: EmitScope,
+  expression: t.Expression,
+  parentVar: string,
+  ownerId: t.Expression,
+): void {
+  const disposer = generatedIdentifier(ctx, 'slotDispose');
+  const key = scope.forwardedSlotCounter++;
+  scope.creation.push(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        t.cloneNode(disposer),
+        t.conditionalExpression(
+          t.binaryExpression(
+            '==',
+            t.cloneNode(expression, true),
+            t.nullLiteral(),
+          ),
+          t.nullLiteral(),
+          t.callExpression(t.cloneNode(expression, true), [
+            t.identifier(parentVar),
+            t.cloneNode(ownerId, true),
+            t.stringLiteral(String(key)),
+          ]),
+        ),
+      ),
+    ]),
+  );
+  scope.disposableCallbacks.push(disposer);
 }
 
 /** Emit lazy slot content into a callee-provided host in source order. */
@@ -247,16 +444,7 @@ export function emitChildrenIntoParent(
       continue;
     }
     if (emitters.isForwarded(expression)) {
-      scope.creation.push(
-        t.ifStatement(
-          t.binaryExpression('!=', t.cloneNode(expression), t.nullLiteral()),
-          t.expressionStatement(
-            t.callExpression(t.cloneNode(expression), [
-              t.identifier(parentVar),
-            ]),
-          ),
-        ),
-      );
+      emitters.emitForwarded(expression, parentVar);
       continue;
     }
     const mapCall = matchMapCall(expression);

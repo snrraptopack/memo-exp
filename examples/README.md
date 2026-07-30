@@ -19,6 +19,8 @@ The active application demonstrates:
 - keyed component rows containing nested keyed task lists;
 - helper-selected dynamic intrinsic tags;
 - named JSX render props;
+- top-level arrow components and repeated sibling render slots;
+- caller-owned component render callbacks over a calculated list source;
 - linked module state and imported mutations.
 
 The class-todo, CMS, incident, cart, dashboard, music, todo, and wizard

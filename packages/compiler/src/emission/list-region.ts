@@ -82,7 +82,9 @@ export function emitListRegion(
     `region${scope.regionCounter++}`,
   ).name;
   const createFactory =
-    site.form === 'component'
+    site.form === 'callback'
+      ? buildCallbackRowCreate(ctx, site)
+      : site.form === 'component'
       ? buildComponentRowCreate(
           ctx,
           site,
@@ -111,7 +113,32 @@ export function emitListRegion(
     ),
     createFactory,
   ];
-  if (site.keyExpr !== null) {
+  if (site.form === 'callback') {
+    const keyTarget = t.memberExpression(
+      t.cloneNode(site.renderCallback!, true),
+      t.identifier('key'),
+    );
+    args.push(
+      t.arrowFunctionExpression(
+        [
+          t.cloneNode(site.itemPattern, true),
+          ...(site.indexParam === null
+            ? []
+            : [t.identifier(site.indexParam)]),
+        ],
+        t.conditionalExpression(
+          t.binaryExpression('==', t.cloneNode(keyTarget), t.nullLiteral()),
+          t.cloneNode(site.itemPattern, true) as t.Expression,
+          t.callExpression(t.cloneNode(keyTarget), [
+            t.cloneNode(site.itemPattern, true) as t.Expression,
+            ...(site.indexParam === null
+              ? []
+              : [t.identifier(site.indexParam)]),
+          ]),
+        ),
+      ),
+    );
+  } else if (site.keyExpr !== null) {
     args.push(
       t.arrowFunctionExpression(
         [
@@ -148,6 +175,35 @@ export function emitListRegion(
   scope.updaters.push(reconcile);
 }
 
+function buildCallbackRowCreate(
+  ctx: Ctx,
+  site: MapSite,
+): t.ArrowFunctionExpression {
+  const rowId = generatedIdentifier(ctx, 'renderRowId');
+  return t.arrowFunctionExpression(
+    [
+      t.cloneNode(site.itemPattern, true),
+      t.cloneNode(rowId),
+      ...(site.indexParam === null
+        ? []
+        : [t.identifier(site.indexParam)]),
+    ],
+    t.callExpression(
+      t.memberExpression(
+        t.cloneNode(site.renderCallback!, true),
+        t.identifier('create'),
+      ),
+      [
+        t.cloneNode(site.itemPattern, true) as t.Expression,
+        t.cloneNode(rowId),
+        ...(site.indexParam === null
+          ? []
+          : [t.identifier(site.indexParam)]),
+      ],
+    ),
+  );
+}
+
 function buildComponentRowCreate(
   ctx: Ctx,
   site: MapSite,
@@ -179,7 +235,7 @@ function buildComponentRowCreate(
       ? { ownerIdVar: ownerId.name }
       : {}),
   };
-  const attributes = site.jsx.openingElement.attributes.filter(
+  const attributes = site.jsx!.openingElement.attributes.filter(
     (attribute) =>
       t.isJSXSpreadAttribute(attribute) ||
       jsxAttributeName(attribute.name) !== 'key',
@@ -287,7 +343,7 @@ function buildComponentRowCreate(
     }
   }
 
-  if (hasComponentChildren(site.jsx.children)) {
+  if (hasComponentChildren(site.jsx!.children)) {
     if (
       attributes.some(
         (attribute) =>
@@ -302,7 +358,7 @@ function buildComponentRowCreate(
     const childrenSlot = buildAuthoredChildrenSlot(
       ctx,
       rowScope,
-      site.jsx.children,
+      site.jsx!.children,
       componentName,
       componentPath,
       'row',
@@ -530,8 +586,8 @@ function buildInlineRowCreate(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
 ): t.ArrowFunctionExpression {
-  site.jsx.openingElement.attributes =
-    site.jsx.openingElement.attributes.filter(
+  site.jsx!.openingElement.attributes =
+    site.jsx!.openingElement.attributes.filter(
       (attribute) =>
         t.isJSXSpreadAttribute(attribute) ||
         (attribute.name as t.JSXIdentifier).name !== 'key',
@@ -559,7 +615,7 @@ function buildInlineRowCreate(
   const rootVariable = emitNode(
     ctx,
     rowScope,
-    site.jsx,
+    site.jsx!,
     componentName,
     componentPath,
     'row',

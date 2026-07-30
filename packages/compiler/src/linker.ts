@@ -44,6 +44,7 @@ import {
 } from './context';
 import { isRenderPropReference } from './components/children';
 import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
+import { normalizeComponentDeclarations } from './components/declarations';
 
 export interface CompileModulesOptions
   extends Omit<
@@ -368,6 +369,7 @@ function analyzeManifest(
   const analysisPlugin = (): { visitor: { Program(path: NodePath<t.Program>): void } } => ({
     visitor: {
       Program(programPath) {
+        normalizeComponentDeclarations(programPath);
         const authoredImports = importRefs(programPath.node);
         const ctx = createCtx({
           ...compilerOptions(options),
@@ -471,6 +473,7 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
   const discoveryPlugin = (): { visitor: { Program(path: NodePath<t.Program>): void } } => ({
     visitor: {
       Program(programPath) {
+        normalizeComponentDeclarations(programPath);
         const locals = new Map<string, LinkedExport>();
         const tagCandidates = moduleStateStringCandidates(programPath.node);
         const functionTagCandidates = moduleFunctionStringCandidates(
@@ -659,6 +662,8 @@ function linkedDynamicCandidates(
           hasWholeDefault: candidate.hasWholeDefault,
           listLightweight: candidate.listLightweight,
           renderProps: [...candidate.renderProps],
+          renderCallbacks: [...candidate.renderCallbacks],
+          subtreeReads: [...candidate.subtreeReads],
         };
       }
     }
@@ -741,6 +746,8 @@ function linkImports(
         hasWholeDefault: targetExport.hasWholeDefault,
         listLightweight: targetExport.listLightweight,
         renderProps,
+        renderCallbacks: [...targetExport.renderCallbacks],
+        subtreeReads: [...targetExport.subtreeReads],
       };
     } else {
       linked[ref.local] = {

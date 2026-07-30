@@ -114,6 +114,31 @@ const SOURCES: Record<string, string> = {
       </Outer>;
     }
   `,
+  'r21-rich': `
+    let shown = true;
+    export let disposed = 0;
+    function Worker() {
+      cleanup(() => disposed++);
+      return <small>worker</small>;
+    }
+    function Frame(props) {
+      return <main>
+        before
+        <div class="primary">{props.children}</div>
+        <aside>{props.children}</aside>
+        after
+      </main>;
+    }
+    export function App() {
+      let count = 0;
+      return <Frame>
+        <button onClick={() => count++}>{count}</button>
+        <button class="toggle" onClick={() => shown = !shown}>toggle</button>
+        {shown ? <em>shown</em> : <i>hidden</i>}
+        <Worker />
+      </Frame>;
+    }
+  `,
 };
 
 function importFixture(specifier: string): Promise<any> {
@@ -133,6 +158,8 @@ const IMPORTS: Record<string, () => Promise<any>> = {
     importFixture('./fixtures/out/r21-regions.compiled.ts'),
   'r21-forward': () =>
     importFixture('./fixtures/out/r21-forward.compiled.ts'),
+  'r21-rich': () =>
+    importFixture('./fixtures/out/r21-rich.compiled.ts'),
 };
 
 describe('R21 - component children slots', () => {
@@ -215,20 +242,32 @@ describe('R21 - component children slots', () => {
     button.click();
     expect(button.textContent).toBe('1');
   });
+
+  it('mounts a slot among siblings and intentionally mounts it more than once', async () => {
+    const mod = await IMPORTS['r21-rich']!();
+    document.body.appendChild(mod.App('App', null));
+    expect(document.querySelectorAll('main > div button').length).toBe(2);
+    expect(document.querySelectorAll('main > aside button').length).toBe(2);
+    expect(document.querySelectorAll('em').length).toBe(2);
+    expect(document.querySelectorAll('small').length).toBe(2);
+
+    document.querySelector<HTMLButtonElement>('.primary button')!.click();
+    expect(
+      [...document.querySelectorAll('button:not(.toggle)')].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(['1', '1']);
+
+    document.querySelector<HTMLButtonElement>('.toggle')!.click();
+    expect(document.querySelectorAll('em').length).toBe(0);
+    expect(document.querySelectorAll('i').length).toBe(2);
+
+    unregister('App');
+    expect(mod.disposed).toBe(2);
+  });
 });
 
 describe('R21 - children diagnostics', () => {
-  it('requires a direct sole host insertion point', () => {
-    expect(() =>
-      compile(`
-        function Frame(props) {
-          return <section>before {props.children}</section>;
-        }
-        function App() { return <Frame><b>child</b></Frame>; }
-      `),
-    ).toThrowError(/must be the sole child/);
-  });
-
   it('rejects competing explicit and nested children', () => {
     expect(() =>
       compile(`
@@ -240,14 +279,4 @@ describe('R21 - children diagnostics', () => {
     ).toThrowError(/cannot use both a children prop and nested JSX children/);
   });
 
-  it('rejects mounting or forwarding the same slot twice', () => {
-    expect(() =>
-      compile(`
-        function Frame(props) {
-          return <main><div>{props.children}</div><aside>{props.children}</aside></main>;
-        }
-        function App() { return <Frame><b>child</b></Frame>; }
-      `),
-    ).toThrowError(/can only be rendered or forwarded once/);
-  });
 });

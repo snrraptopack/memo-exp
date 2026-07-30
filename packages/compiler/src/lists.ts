@@ -23,6 +23,7 @@
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { attrExpr, memberKey, memberRootName, type Ctx } from './context';
+import { matchRenderCallbackMap } from './components/render-callbacks';
 
 export interface MapSite {
   /** Reactive source key (e.g. 'items' or 'store.todos'). */
@@ -39,12 +40,14 @@ export interface MapSite {
   indexParam: string | null;
   /** Key expression if key={...} was given, else null. */
   keyExpr: t.Expression | null;
-  /** The row JSX element. */
-  jsx: t.JSXElement;
-  /** 'component' for <Row/>, 'inline' for a host element. */
-  form: 'component' | 'inline';
+  /** The row JSX element, absent for a delegated render callback. */
+  jsx: t.JSXElement | null;
+  /** Component/host JSX or a caller-owned delegated row factory. */
+  form: 'component' | 'inline' | 'callback';
   /** Component name when form === 'component'. */
   rowComp: string | null;
+  /** Callback prop invoked by the callee when form === 'callback'. */
+  renderCallback: t.Expression | null;
   /** Owning component's name (patterns expand its full path variants). */
   owner: string;
   /** '<sourceKey>' or '<sourceKey><n>' when one owner maps it twice. */
@@ -263,22 +266,45 @@ export function analyzeMapSite(
     : t.isJSXElement(returned)
       ? returned
       : null;
-  if (jsx === null) {
+  const renderInvocation = matchRenderCallbackMap(ctx, ownerName, call);
+  if (jsx === null && renderInvocation === null) {
     return fail(
       'memo-dom: list callback body must be one JSX element or a block containing only return <JSX /> — R7 L1',
     );
   }
 
   // -- row form -----------------------------------------------------------
-  const open = jsx.openingElement;
-  if (!t.isJSXIdentifier(open.name)) {
+  const open = jsx?.openingElement ?? null;
+  if (open !== null && !t.isJSXIdentifier(open.name)) {
     fail('memo-dom: namespaced JSX tags are not supported (L1)');
   }
-  const tag = (open.name as t.JSXIdentifier).name;
+  const tag =
+    open !== null && t.isJSXIdentifier(open.name) ? open.name.name : null;
   let form: MapSite['form'];
   let rowComp: string | null = null;
+  let renderCallback: t.Expression | null = null;
 
-  if (/^[A-Z]/.test(tag)) {
+  if (renderInvocation !== null) {
+    if (
+      !t.isIdentifier(itemPattern) ||
+      renderInvocation.arguments.length < 1 ||
+      renderInvocation.arguments.length > 2 ||
+      !t.isIdentifier(renderInvocation.arguments[0], {
+        name: itemPattern.name,
+      }) ||
+      (renderInvocation.arguments.length === 2 &&
+        (indexParam === null ||
+          !t.isIdentifier(renderInvocation.arguments[1], {
+            name: indexParam,
+          })))
+    ) {
+      fail(
+        'memo-dom: render callback maps must pass their item and optional index bindings directly',
+      );
+    }
+    form = 'callback';
+    renderCallback = t.cloneNode(renderInvocation.target, true);
+  } else if (tag !== null && /^[A-Z]/.test(tag)) {
     form = 'component';
     rowComp = tag;
     if (!ctx.comps.has(tag) && !ctx.importedComponents.has(tag)) {
@@ -293,7 +319,7 @@ export function analyzeMapSite(
 
   // -- key extraction -----------------------------------------------------
   let keyExpr: t.Expression | null = null;
-  for (const attr of open.attributes) {
+  for (const attr of open?.attributes ?? []) {
     if (t.isJSXSpreadAttribute(attr)) continue;
     const a = attr as t.JSXAttribute;
     if ((a.name as t.JSXIdentifier).name === 'key') {
@@ -315,6 +341,7 @@ export function analyzeMapSite(
     jsx,
     form,
     rowComp,
+    renderCallback,
     owner: ownerName,
     suffix,
     prefix,

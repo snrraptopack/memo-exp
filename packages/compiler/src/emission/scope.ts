@@ -27,6 +27,10 @@ export interface EmitScope {
   disposableRegions: string[];
   /** Component entity ids created lexically inside this scope. */
   disposableEntities: t.Expression[];
+  /** Lazy content-slot mounts disposed when this structural scope swaps. */
+  disposableCallbacks: t.Identifier[];
+  /** Source-order identity for forwarded slot mounts in this scope. */
+  forwardedSlotCounter: number;
 }
 
 export function newEmitScope(ctx: Ctx): EmitScope {
@@ -45,6 +49,8 @@ export function newEmitScope(ctx: Ctx): EmitScope {
     regionCounter: 0,
     disposableRegions: [],
     disposableEntities: [],
+    disposableCallbacks: [],
+    forwardedSlotCounter: 0,
   };
 }
 

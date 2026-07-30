@@ -191,11 +191,11 @@ describe('JSX paradigm matrix', () => {
         }
       `,
     });
-    expect(jsx['./Value.tsx']).toContain('content(_output)');
+    expect(jsx['./Value.tsx']).toContain('content(_output, _id, "0")');
     expect(jsx['./App.tsx']).toContain('document.createElement("strong")');
   });
 
-  it('rejects ambiguous, multiply-mounted, and non-rendered JSX contracts', () => {
+  it('rejects ambiguous and non-rendered JSX contracts while allowing repeated slots', () => {
     expect(() =>
       compileModules({
         './Value.tsx': `
@@ -215,7 +215,7 @@ describe('JSX paradigm matrix', () => {
       }),
     ).toThrow(/both scalar data and JSX content/);
 
-    expect(() =>
+    expect(
       compile(`
         function Duplicate({ content }) {
           return <main><div>{content}</div><aside>{content}</aside></main>;
@@ -224,7 +224,7 @@ describe('JSX paradigm matrix', () => {
           return <Duplicate content={<strong>twice</strong>} />;
         }
       `),
-    ).toThrow(/can only be rendered or forwarded once/);
+    ).toContain('document.createElement("strong")');
 
     expect(() =>
       compile(`

@@ -37,10 +37,12 @@ import {
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
 import { analyzeCondSite } from './conds';
 import { summarizeHelper } from './helper-summaries';
+import { renderPropReferenceName } from './components/children';
 import {
-  isRenderPropReference,
-  renderPropReferenceName,
-} from './components/children';
+  isRenderCallbackJsxRoot,
+  matchRenderCallbackMap,
+  scanRenderCallbacks,
+} from './components/render-callbacks';
 import { analyzeComponentProps } from './components/props';
 import { scanEffects } from './effects';
 import { scanModuleControlFlow } from './module-control-flow';
@@ -59,11 +61,13 @@ import {
 import { pathVariants } from './analysis/component-graph';
 import { normalizeComponentJsxValues } from './components/jsx-values';
 import { normalizeRenderFunctions } from './components/render-functions';
+import { normalizeCalculatedListSources } from './lists/calculated-sources';
 import {
   normalizeDynamicTags,
   scanLocalDynamicComponentCandidates,
 } from './jsx/dynamic-tags';
 import { moduleStateStringCandidates } from './analysis/type-candidates';
+import { foldRenderCallbackSubtreeReads } from './analysis/component-reads';
 
 export { analyzeComputed } from './analysis/computed';
 export {
@@ -454,8 +458,10 @@ function expressionCarriesJsx(
  * propagated to a fixed point for wrapper components.
  */
 function scanRenderProps(ctx: Ctx): void {
+  const potential = new Map<string, Set<string>>();
   for (const [name, componentPath] of ctx.compPaths) {
-    const plan = ctx.componentProps.get(name)!;
+    const candidates = new Set<string>();
+    potential.set(name, candidates);
     componentPath.traverse({
       JSXExpressionContainer(path) {
         if (
@@ -468,37 +474,74 @@ function scanRenderProps(ctx: Ctx): void {
         if (!t.isExpression(expression)) return;
         const prop = renderPropReferenceName(ctx, name, expression);
         if (prop === null) return;
-        const parent = path.parentPath;
-        const meaningful = parent.isJSXElement()
-          ? parent.node.children.filter(
-              (child) => !t.isJSXText(child) || child.value.trim() !== '',
-            )
-          : [path.node];
-        if (
-          (prop === 'children' || meaningful.length === 1) &&
-          !declaredScalarProp(componentPath, prop) &&
-          !plan.renderProps.includes(prop)
-        ) {
-          plan.renderProps.push(prop);
-        }
+        if (!declaredScalarProp(componentPath, prop)) candidates.add(prop);
       },
     });
+    if (
+      (componentPath.parentPath?.isExportNamedDeclaration() ||
+        componentPath.parentPath?.isExportDefaultDeclaration()) &&
+      !ctx.linkedComponentRenderProps.has(name)
+    ) {
+      const plan = ctx.componentProps.get(name)!;
+      for (const candidate of candidates) {
+        if (!plan.renderProps.includes(candidate)) {
+          plan.renderProps.push(candidate);
+        }
+      }
+    }
   }
 
-  // A local scalar call disambiguates an otherwise-untyped sole
-  // interpolation (`<strong>{label}</strong>`) as ordinary text.
+  // Untyped interpolation is scalar by default. Positive caller JSX evidence
+  // declares a mount slot; linked callers provide the same evidence through
+  // linkedComponentRenderProps below. This avoids guessing from host layout.
+  const localUsage = new Map<
+    string,
+    Map<string, { scalar: boolean; jsx: boolean; at: NodePath }>
+  >();
   for (const [owner, ownerPath] of ctx.compPaths) {
     ownerPath.traverse({
       JSXElement(path) {
         const tag = path.node.openingElement.name;
         if (!t.isJSXIdentifier(tag) || !ctx.comps.has(tag.name)) return;
         const target = ctx.componentProps.get(tag.name)!;
+        const candidates = potential.get(tag.name);
+        if (candidates === undefined) return;
+        let byProp = localUsage.get(tag.name);
+        if (byProp === undefined) {
+          byProp = new Map();
+          localUsage.set(tag.name, byProp);
+        }
+        if (
+          candidates.has('children') &&
+          path.node.children.some(
+            (child) =>
+              !t.isJSXText(child) || child.value.trim() !== '',
+          ) &&
+          !target.renderProps.includes('children')
+        ) {
+          target.renderProps.push('children');
+          byProp.set('children', {
+            scalar: false,
+            jsx: true,
+            at: path,
+          });
+        }
         for (const attributePath of path.get('openingElement').get('attributes')) {
           if (!attributePath.isJSXAttribute()) continue;
           const name = attributePath.node.name;
           const prop = t.isJSXIdentifier(name) ? name.name : name.name.name;
-          if (!target.renderProps.includes(prop)) continue;
+          if (
+            !candidates.has(prop)
+          ) {
+            continue;
+          }
+          const usage = byProp.get(prop) ?? {
+            scalar: false,
+            jsx: false,
+            at: attributePath,
+          };
           const value = attributePath.get('value');
+          let carriesJsx = false;
           if (
             value.isJSXExpressionContainer() &&
             t.isExpression(value.node.expression)
@@ -514,15 +557,36 @@ function scanRenderProps(ctx: Ctx): void {
                     expressionPath.node,
                   ) !== null))
             ) {
-              continue;
+              carriesJsx = true;
             }
           }
-          target.renderProps = target.renderProps.filter(
-            (candidate) => candidate !== prop,
-          );
+          if (carriesJsx) usage.jsx = true;
+          else usage.scalar = true;
+          byProp.set(prop, usage);
         }
       },
     });
+  }
+  for (const [component, byProp] of localUsage) {
+    const plan = ctx.componentProps.get(component)!;
+    for (const [prop, usage] of byProp) {
+      if (usage.scalar && usage.jsx) {
+        if (prop === 'children') {
+          if (!plan.renderProps.includes(prop)) plan.renderProps.push(prop);
+          continue;
+        }
+        throw usage.at.buildCodeFrameError(
+          `memo-dom: prop '${prop}' on <${component}> is used as both scalar data and JSX content`,
+        );
+      }
+      if (usage.jsx) {
+        if (!plan.renderProps.includes(prop)) plan.renderProps.push(prop);
+      } else if (usage.scalar) {
+        plan.renderProps = plan.renderProps.filter(
+          (candidate) => candidate !== prop,
+        );
+      }
+    }
   }
 
   let changed = true;
@@ -581,7 +645,6 @@ function scanRenderProps(ctx: Ctx): void {
 function analyzeComponent(ctx: Ctx, name: string): void {
   const p = ctx.compPaths.get(name)!;
   const info = ctx.comps.get(name)!;
-  const renderPropUses = new Map<string, number>();
   p.traverse({
     JSXElement(el) {
       const open = el.node.openingElement;
@@ -593,6 +656,7 @@ function analyzeComponent(ctx: Ctx, name: string): void {
       // key is region metadata — meaningless (and misleading) elsewhere
       for (const attr of open.attributes) {
         if (!t.isJSXSpreadAttribute(attr) && (attr.name as t.JSXIdentifier).name === 'key') {
+          if (isRenderCallbackJsxRoot(ctx, el)) continue;
           throw el.buildCodeFrameError(
             'memo-dom: key={...} is only meaningful on list rows: items.map(item => <Row key={item.id} />)',
           );
@@ -614,41 +678,35 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         let counts = ctx.childRefCounts.get(name);
         if (!counts) ctx.childRefCounts.set(name, (counts = new Map()));
         counts.set(tag, (counts.get(tag) ?? 0) + 1);
+        if (
+          el.node.children.some(
+            (child) =>
+              !t.isJSXText(child) || child.value.trim() !== '',
+          ) ||
+          open.attributes.some((attribute) => {
+            if (
+              t.isJSXSpreadAttribute(attribute) ||
+              ctx.componentProps
+                .get(tag)
+                ?.renderProps.includes(
+                  t.isJSXIdentifier(attribute.name)
+                    ? attribute.name.name
+                    : attribute.name.name.name,
+                ) !== true
+            ) {
+              return false;
+            }
+            const value = attrExpr(attribute.value);
+            return value !== null && nodeHasJsx(value);
+          })
+        ) {
+          ctx.renderSlotOwners.add(name);
+        }
         // Nested syntax is a lexical content slot owned by this component.
         // Continue into it to discover and validate the authored subtree.
         return;
       }
       info.jsxCount++;
-    },
-    JSXExpressionContainer(container) {
-      const expression = container.node.expression;
-      if (
-        !t.isExpression(expression) ||
-        !isRenderPropReference(ctx, name, expression)
-      ) {
-        return;
-      }
-      const prop = renderPropReferenceName(ctx, name, expression)!;
-      const uses = (renderPropUses.get(prop) ?? 0) + 1;
-      renderPropUses.set(prop, uses);
-      if (uses > 1) {
-        throw container.buildCodeFrameError(
-          `memo-dom: render prop '${prop}' can only be rendered or forwarded once`,
-        );
-      }
-      const parent = container.parentPath;
-      if (!parent.isJSXElement()) return;
-      const tag = parent.node.openingElement.name;
-      if (t.isJSXIdentifier(tag) && !/^[A-Z]/.test(tag.name)) {
-        const meaningful = parent.node.children.filter(
-          (child) => !t.isJSXText(child) || child.value.trim() !== '',
-        );
-        if (meaningful.length !== 1) {
-          throw container.buildCodeFrameError(
-            `memo-dom: render prop '${prop}' must be the sole child of its host insertion element`,
-          );
-        }
-      }
     },
     ConditionalExpression(c) {
       if (containsJsx(c)) validateCondPosition(ctx, c);
@@ -665,7 +723,11 @@ function analyzeComponent(ctx: Ctx, name: string): void {
     },
     CallExpression(call) {
       const mapCall = matchMapCall(call.node);
-      if (mapCall && containsJsx(call)) {
+      if (
+        mapCall &&
+        (containsJsx(call) ||
+          matchRenderCallbackMap(ctx, name, mapCall) !== null)
+      ) {
         // allowed ONLY as a direct JSX child: <ul>{items.map(...)}</ul>
         const parent = call.parentPath;
         const grand = parent?.parentPath;
@@ -1037,13 +1099,17 @@ function collectReads(ctx: Ctx): void {
           return;
         }
         const mapCall = matchMapCall(call.node);
-        if (mapCall && containsJsx(call)) {
+        if (
+          mapCall &&
+          (containsJsx(call) ||
+            matchRenderCallbackMap(ctx, name, mapCall) !== null)
+        ) {
           const site = analyzeMapSite(ctx, mapCall, call, name, usedPrefixes);
           if (!site.sourceLocal) reads.add(site.sourceKey);
           if (site.form === 'component') {
             // R10: row-prop reads are OWNER reads — the owner re-pushes row
             // props via updateProps during reconcile
-            for (const attr of site.jsx.openingElement.attributes) {
+            for (const attr of site.jsx!.openingElement.attributes) {
               if (t.isJSXSpreadAttribute(attr)) continue;
               const a = attr as t.JSXAttribute;
               if ((a.name as t.JSXIdentifier).name === 'key') continue;
@@ -1153,11 +1219,13 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  scanRenderCallbacks(ctx);
   normalizeRenderFunctions(ctx);
   scanLocalDynamicComponentCandidates(ctx, programPath);
   scanRenderProps(ctx);
   normalizeComponentJsxValues(ctx);
   normalizeDynamicTags(ctx);
+  normalizeCalculatedListSources(ctx);
   scanInstanceState(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
   scanModuleControlFlow(ctx, programPath, analyzeComputed);
@@ -1167,6 +1235,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanEffects(ctx, programPath);
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   collectReads(ctx);
+  foldRenderCallbackSubtreeReads(ctx);
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)
   for (const [name] of ctx.comps) pathVariants(ctx, name);

@@ -1,6 +1,7 @@
 import * as t from '@babel/types';
 import type { Ctx } from '../context';
 import { containsJsx, matchMapCall } from '../lists';
+import { expandRenderSlotPaths } from './slot-paths';
 
 /** Resolve every static runtime path at which a component may be mounted. */
 export function pathVariants(
@@ -68,7 +69,10 @@ export function pathVariants(
 export function componentPatterns(ctx: Ctx, name: string): string[] {
   const linked = ctx.linkedComponentPaths.get(name);
   if (linked !== undefined) {
-    return linked.flatMap((path) => [path, `${path}/*`]);
+    return expandRenderSlotPaths(
+      ctx,
+      linked.flatMap((path) => [path, `${path}/*`]),
+    );
   }
   const sites = ctx.listedSites.get(name);
   const patterns: string[] = [];
@@ -85,7 +89,7 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
           );
         }
       }
-      return patterns;
+      return expandRenderSlotPaths(ctx, patterns);
     }
     for (const site of sites) {
       for (const variant of pathVariants(ctx, site.owner)) {
@@ -95,12 +99,12 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
         );
       }
     }
-    return patterns;
+    return expandRenderSlotPaths(ctx, patterns);
   }
   for (const variant of pathVariants(ctx, name)) {
     patterns.push(variant, `${variant}/*`);
   }
-  return patterns;
+  return expandRenderSlotPaths(ctx, patterns);
 }
 
 /** Whether a listed component can use the allocation-free row ABI. */

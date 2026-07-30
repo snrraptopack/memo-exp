@@ -7,7 +7,13 @@
  */
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { memberKey, memberRootName, type Ctx } from '../context';
+import {
+  attrExpr,
+  memberKey,
+  memberRootName,
+  nodeHasJsx,
+  type Ctx,
+} from '../context';
 import type { ComponentPropsPlan } from '../components/props';
 
 interface DynamicTagCandidate {
@@ -28,6 +34,7 @@ function linkedComponentPlan(
     params: [],
     hasWholeDefault: component.hasWholeDefault,
     renderProps: [...(component.renderProps ?? [])],
+    renderCallbacks: [...(component.renderCallbacks ?? [])],
   };
 }
 
@@ -74,6 +81,8 @@ export function installLinkedDynamicComponentImports(
           hasWholeDefault: candidate.hasWholeDefault,
           listLightweight: candidate.listLightweight,
           renderProps: [...(candidate.renderProps ?? [])],
+          renderCallbacks: [...(candidate.renderCallbacks ?? [])],
+          subtreeReads: [...(candidate.subtreeReads ?? [])],
         };
         ctx.importedComponents.set(local, component);
         ctx.componentProps.set(local, linkedComponentPlan(component));
@@ -554,6 +563,10 @@ function selectorName(selector: t.Expression): string {
 
 /** Lower dynamic identifier/member JSX names before component validation. */
 export function normalizeDynamicTags(ctx: Ctx): void {
+  const propUsage = new Map<
+    string,
+    Map<string, { scalar: boolean; jsx: boolean; at: NodePath }>
+  >();
   for (const [, componentPath] of ctx.compPaths) {
     componentPath.scope.crawl();
     const elements: NodePath<t.JSXElement>[] = [];
@@ -601,6 +614,34 @@ export function normalizeDynamicTags(ctx: Ctx): void {
           )}' has no finite string or linked-component candidates`,
         );
       }
+      for (const candidate of unique) {
+        if (!t.isJSXIdentifier(candidate.tag)) continue;
+        const plan = ctx.componentProps.get(candidate.tag.name);
+        if (plan === undefined || plan.renderProps.length === 0) continue;
+        let byProp = propUsage.get(candidate.tag.name);
+        if (byProp === undefined) {
+          byProp = new Map();
+          propUsage.set(candidate.tag.name, byProp);
+        }
+        for (const attribute of elementPath.node.openingElement.attributes) {
+          if (
+            t.isJSXSpreadAttribute(attribute) ||
+            !t.isJSXIdentifier(attribute.name) ||
+            !plan.renderProps.includes(attribute.name.name)
+          ) {
+            continue;
+          }
+          const value = attrExpr(attribute.value);
+          const usage = byProp.get(attribute.name.name) ?? {
+            scalar: false,
+            jsx: false,
+            at: elementPath,
+          };
+          if (value !== null && nodeHasJsx(value)) usage.jsx = true;
+          else usage.scalar = true;
+          byProp.set(attribute.name.name, usage);
+        }
+      }
       if (unique.length === 1) {
         elementPath.replaceWith(cloneWithTag(elementPath.node, unique[0]!.tag));
         continue;
@@ -619,5 +660,20 @@ export function normalizeDynamicTags(ctx: Ctx): void {
       );
     }
     componentPath.scope.crawl();
+  }
+  for (const [component, byProp] of propUsage) {
+    const plan = ctx.componentProps.get(component)!;
+    for (const [prop, usage] of byProp) {
+      if (usage.scalar && usage.jsx) {
+        throw usage.at.buildCodeFrameError(
+          `memo-dom: dynamic component prop '${prop}' is used as both scalar data and JSX content`,
+        );
+      }
+      if (usage.scalar) {
+        plan.renderProps = plan.renderProps.filter(
+          (candidate) => candidate !== prop,
+        );
+      }
+    }
   }
 }

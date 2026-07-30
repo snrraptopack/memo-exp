@@ -2,6 +2,7 @@ import * as t from '@babel/types';
 import { canonicalStateKey, type Ctx } from '../context';
 import { md } from '../identifiers';
 import { componentPatterns, pathVariants } from './component-graph';
+import { expandRenderSlotPaths } from './slot-paths';
 
 /** Build and install the module's state-reader access table. */
 export function buildAccessTable(ctx: Ctx): t.Statement | null {
@@ -18,17 +19,23 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
     for (const variable of variables) add(variable, patterns);
   }
   for (const { owner, suffix, vars } of ctx.rowReads.values()) {
-    const patterns = pathVariants(ctx, owner).flatMap((variant) => [
-      `${variant}/${suffix}/Row[*]`,
-      `${variant}/${suffix}/Row[*]/*`,
-    ]);
+    const patterns = expandRenderSlotPaths(
+      ctx,
+      pathVariants(ctx, owner).flatMap((variant) => [
+        `${variant}/${suffix}/Row[*]`,
+        `${variant}/${suffix}/Row[*]/*`,
+      ]),
+    );
     for (const variable of vars) add(variable, patterns);
   }
   for (const { owner, suffix, vars } of ctx.condReads.values()) {
-    const patterns = pathVariants(ctx, owner).flatMap((variant) => [
-      `${variant}/${suffix}`,
-      `${variant}/${suffix}/*`,
-    ]);
+    const patterns = expandRenderSlotPaths(
+      ctx,
+      pathVariants(ctx, owner).flatMap((variant) => [
+        `${variant}/${suffix}`,
+        `${variant}/${suffix}/*`,
+      ]),
+    );
     for (const variable of vars) add(variable, patterns);
   }
   for (const [component, sites] of ctx.effects) {

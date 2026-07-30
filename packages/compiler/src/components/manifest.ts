@@ -23,6 +23,7 @@ import { analyzeComponentProps } from './props';
 import {
   collectComponentPropSources,
 } from './prop-origins';
+import { componentSubtreeReads } from '../analysis/component-reads';
 
 export interface ComponentExportInfo {
   key: string;
@@ -32,6 +33,8 @@ export interface ComponentExportInfo {
   hasWholeDefault: boolean;
   listLightweight: boolean;
   renderProps: string[];
+  renderCallbacks: string[];
+  subtreeReads: string[];
 }
 
 /** Discover enough component shape to bootstrap the first import-link pass. */
@@ -58,6 +61,8 @@ export function discoverComponentExports(
           hasWholeDefault: props.hasWholeDefault,
           listLightweight: false,
           renderProps: [],
+          renderCallbacks: [],
+          subtreeReads: [],
         });
       }
       path.skip();
@@ -81,6 +86,10 @@ export function analyzedComponentExport(
     hasWholeDefault: props.hasWholeDefault,
     listLightweight: isListLightweightCandidate(ctx, local),
     renderProps: [...props.renderProps],
+    renderCallbacks: [...props.renderCallbacks],
+    subtreeReads: [...componentSubtreeReads(ctx, local)]
+      .map((key) => canonicalStateKey(ctx, key))
+      .sort(),
   };
 }
 

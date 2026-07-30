@@ -20,6 +20,7 @@ export {
   setScheduler,
   resetScheduler,
   getEntity,
+  renderDescendants,
 } from './kernel';
 export type {
   DirtyReasonInput,

@@ -207,6 +207,44 @@ export function getEntity(id: EntityId): Entity | undefined {
 }
 
 /**
+ * Render the already-mounted descendants of one compiler-owned structural
+ * entity, parent before child, and cancel duplicate scheduled renders.
+ * Render-callback rows use this when their JSX contains component entities
+ * whose lexical dependencies belong to the callback caller.
+ */
+export function renderDescendants(id: EntityId): void {
+  const visitRenderPhase = (parent: Entity): void => {
+    if (parent.children === undefined) return;
+    for (const childId of parent.children) {
+      const child = registry.get(childId);
+      if (child === undefined) continue;
+      if (child.phase !== 'effect') {
+        child.render();
+        undirty(childId);
+      }
+      visitRenderPhase(child);
+    }
+  };
+  const visitEffectPhase = (parent: Entity): void => {
+    if (parent.children === undefined) return;
+    for (const childId of parent.children) {
+      const child = registry.get(childId);
+      if (child === undefined) continue;
+      if (child.phase === 'effect') {
+        child.render();
+        undirty(childId);
+      }
+      visitEffectPhase(child);
+    }
+  };
+  const owner = registry.get(id);
+  if (owner !== undefined) {
+    visitRenderPhase(owner);
+    visitEffectPhase(owner);
+  }
+}
+
+/**
  * Live entity ids for the access-table resolver. Cached — the array is
  * rebuilt only when the registry mutates, so per-event cost is zero.
  * Callers MUST NOT mutate the returned array.

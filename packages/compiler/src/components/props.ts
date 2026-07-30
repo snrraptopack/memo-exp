@@ -29,6 +29,8 @@ export interface ComponentPropsPlan {
   hasWholeDefault: boolean;
   /** Props consumed as compiler-owned mount slots rather than scalar values. */
   renderProps: string[];
+  /** Props invoked by structural list sites as caller-owned row factories. */
+  renderCallbacks: string[];
 }
 
 export interface LocalDerivation {
@@ -75,6 +77,7 @@ export function analyzeComponentProps(
       params: [],
       hasWholeDefault: false,
       renderProps: [],
+      renderCallbacks: [],
     };
   }
 
@@ -98,6 +101,7 @@ export function analyzeComponentProps(
       params: plain.map((param) => t.cloneNode(param)),
       hasWholeDefault: t.isAssignmentPattern(plain[0]),
       renderProps: [],
+      renderCallbacks: [],
     };
   }
 
@@ -119,6 +123,7 @@ export function analyzeComponentProps(
     params: plain.map((param) => t.cloneNode(param)),
     hasWholeDefault: false,
     renderProps: [],
+    renderCallbacks: [],
   };
 }
 

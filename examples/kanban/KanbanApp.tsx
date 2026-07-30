@@ -2,7 +2,8 @@
  * @file KanbanApp.tsx
  * Root component for the Kanban Studio example.
  * Demonstrates R33 (Named Conditional Effect), R34 (Inline Row Composition),
- * R35 (Helper Dynamic Tags), and R36 (JSX Render Props / Collections).
+ * R35 (Helper Dynamic Tags), R36 (JSX Render Props / Collections), and the
+ * R40-R43 static composition phase.
  */
 import {
   columns,
@@ -13,7 +14,24 @@ import {
 } from './kanban-state';
 import { KanbanColumn } from './KanbanColumn';
 
-export function KanbanApp() {
+const BoardList = ({ items, renderItem }: {
+  items: typeof columns;
+  renderItem: (item: (typeof columns)[number]) => unknown;
+}) => (
+  <div class="kanban-grid">
+    {items.map((item) => renderItem(item))}
+  </div>
+);
+
+const RepeatedFeature = ({ content }: { content: unknown }) => (
+  <div class="composition-feature">
+    <span>Compiled twice:</span>
+    <b>{content}</b>
+    <i>{content}</i>
+  </div>
+);
+
+export const KanbanApp = () => {
   console.log('⚡ [RENDER] KanbanApp root component executed');
 
   let newTitle = '';
@@ -35,8 +53,9 @@ export function KanbanApp() {
       <header class="kanban-header">
         <h1>📌 Memoized DOM Kanban Board</h1>
         <p class="subtitle">
-          Demonstrating <strong>R33 Conditional Effects</strong>, <strong>R34 Nested Rows</strong>, <strong>R35 Helper Dynamic Tags</strong>, & <strong>R36 JSX Render Props</strong>.
+          Demonstrating static effects, nested rows, render slots, and caller-owned render callbacks.
         </p>
+        <RepeatedFeature content={<small>stable slot identity</small>} />
 
         <form class="add-task-form" onSubmit={handleCreateTask}>
           <input
@@ -74,12 +93,16 @@ export function KanbanApp() {
         </div>
       </header>
 
-      <main class="kanban-grid">
-        {/* R34: Keyed column iteration rendering KanbanColumn with nested child component mappings */}
-        {columns.map((col) => (
-          <KanbanColumn key={col.id} column={col} />
-        ))}
+      {/* R40 arrow component + R41 linked caller-owned render callback +
+          R42 calculated collection source. */}
+      <main>
+        <BoardList
+          items={columns.filter((column) => column.tasks.length >= 0)}
+          renderItem={(column) => (
+            <KanbanColumn key={column.id} column={column} />
+          )}
+        />
       </main>
     </div>
   );
-}
+};

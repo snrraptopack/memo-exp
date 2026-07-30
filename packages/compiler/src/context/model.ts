@@ -85,6 +85,10 @@ export interface LinkedComponentImport {
   listLightweight: boolean;
   /** Props consumed as compiler-owned mount slots. */
   renderProps?: string[];
+  /** Props consumed as caller-owned structural row factories. */
+  renderCallbacks?: string[];
+  /** Canonical module dependencies read by this component and descendants. */
+  subtreeReads?: string[];
 }
 
 export interface LinkedDynamicComponentCandidate
@@ -251,6 +255,12 @@ export interface Ctx {
   /** parent comp → child comp → number of static JSX references. */
   childRefCounts: Map<string, Map<string, number>>;
   /**
+   * Lexical component owners that author one or more deferred render slots.
+   * Runtime mounts after the first receive a `$slot[n]` identity segment;
+   * access-table paths expand only for these owners.
+   */
+  renderSlotOwners: Set<string>;
+  /**
    * Components used as list rows: child comp name → the sites ('<path(owner)>/<suffix>')
    * at whose 'Row[k]' its instances live. A listed component is multi-instance:
    * never locality-eligible.
@@ -388,6 +398,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
       params: [],
       hasWholeDefault: component.hasWholeDefault,
       renderProps: [...(component.renderProps ?? [])],
+      renderCallbacks: [...(component.renderCallbacks ?? [])],
     });
   }
   const linkedComponentRenderProps = new Map(
@@ -448,6 +459,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     helperSummaries: new Map(),
     compReads: new Map(),
     childRefCounts: new Map(),
+    renderSlotOwners: new Set(),
     listedSites: new Map(),
     conditionalComponentSites: new Map(),
     rowComponentSites: new Map(),

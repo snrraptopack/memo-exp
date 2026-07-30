@@ -539,14 +539,17 @@ still dirty the caller, and nested components retain caller-owned entity ids.
 The slot is a compiler-owned DOM insertion channel, not a runtime dependency
 or VDOM node.
 
-Current slot contract:
+Slot contract:
 
 - object-prop components use `function Frame(props)` and
   `<host>{props.children}</host>`;
 - positional components declare `children` and use
   `<host>{children}</host>`;
-- a slot may be rendered or forwarded once and must be the sole child of its
-  host insertion element;
+- a slot may appear among ordinary host siblings and may be intentionally
+  mounted or forwarded more than once;
+- the first live mount retains the lexical identity path; later mounts use a
+  collision-free `$slot[n]` segment, and static `$slot[*]` reader paths route
+  module writes to every live structural/entity mount;
 - authored slot content supports host JSX, dynamic text, nested components,
   lists, conditionals, event handlers, and forwarding through another static
   component;
@@ -1122,8 +1125,8 @@ Supported flow is a concise JSX expression, a JSX return, tail early-return
 return `switch`, optionally preceded by pure identifier `const` calculations.
 Functions are synchronous and use identifier parameters with optional
 defaults. Render functions are compile-time values: escaping them,
-side-effectful bodies, arbitrary storage, and callback forwarding across
-component/module APIs are rejected.
+side-effectful bodies, and arbitrary storage are rejected. R41 separately
+defines structural callback props for reusable list component/module APIs.
 
 ### R39 - Direct JSX arrays flatten into stable render positions
 
@@ -1149,6 +1152,83 @@ broad subtree reruns.
 Dynamic JSX-array spreads are rejected. They would require runtime JSX values
 and a virtual-node reconciliation protocol. Dynamic data collections should
 render through `.map()` instead.
+
+### R40 - Arrow and function-expression components normalize to factories
+
+Top-level synchronous uppercase `const` arrows and function expressions that
+contain JSX are component declarations:
+
+```tsx
+export const Card = ({ title }) => <article>{title}</article>;
+const Panel = function Panel(props) {
+  return <section>{props.children}</section>;
+};
+```
+
+A declaration prepass canonicalizes them to the existing component-function
+pipeline before analysis and module linking. This adds no runtime wrapper or
+function-object dispatch. Mutable (`let`/`var`), async, generator, anonymous
+mismatched-name, and nested component expressions remain unsupported because
+their identity is not one static component declaration.
+
+### R41 - Render callbacks are caller-owned compiled row adapters
+
+Reusable list APIs may invoke a callback prop from a structural map:
+
+```tsx
+function List({ items, renderItem }) {
+  return <ul>{items.map((item, index) => renderItem(item, index))}</ul>;
+}
+
+return <List
+  items={items}
+  renderItem={(item, index) => (
+    <Card key={item.id} item={item} index={index} />
+  )}
+/>;
+```
+
+The caller compiles the callback to a specialized `{ create, key }` adapter.
+The callee's ordinary R7 keyed region calls `create`; it never receives a JSX
+object. Live row refresh functions remain indexed by the lexical caller, while
+row DOM identity and teardown remain keyed by the callee list. Component
+manifests serialize callback contracts and transitive canonical dependencies,
+so the same ownership works across modules. Callback rows may contain
+component trees; refresh is scoped to the affected row descendants and keyed
+removal drains their cleanup.
+
+Render callbacks are synchronous inline arrows/function expressions with an
+item binding pattern and optional index. The callee passes its item and
+optional index bindings directly. Arbitrary escaping or storage is not a
+runtime-renderable protocol.
+
+### R42 - Calculated list sources use the normal derivation contract
+
+An expression immediately feeding structural `.map()` is hoisted to a
+component-local derivation:
+
+```tsx
+items
+  .filter(matches)
+  .customCollectionOperation()
+  .map(item => <Row key={item.id} item={item} />)
+```
+
+The existing derivation prelude replays it before list reconciliation. The
+compiler does not maintain method allowlists or infer whether a JavaScript or
+library method mutates, allocates, returns a collection, or returns
+`undefined`. Authors own that ordinary JavaScript contract. Direct writes to
+reactive state and async control remain derivation errors because replaying
+them would violate memoized-dom's reactive semantics.
+
+### R43 - Render slots support rich placement and repeated mounts
+
+Children and named JSX props share one deferred mount ABI. A callee can place
+a slot between siblings or mount it at several host positions. Each invocation
+gets isolated node caches, structural regions, component identities, and an
+idempotent disposer. The caller updater uses a scalar fast path for one mount
+and allocates a `Set` only when a second live mount exists. Structural owner
+cleanup removes update registrations and drains nested regions/entities.
 
 ## 4. Read/write analysis
 
@@ -1477,7 +1557,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R39 (compiler probes, paradigm matrix, example build, and
+> Last full audit: R43 (compiler probes, paradigm matrix, example build, and
 > compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
@@ -1486,11 +1566,12 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   render prop. Chained/nested ternaries, fragment/text/empty branches, mounted
   components, inline-row conditionals, and mapped inline/component rows are
   supported.
-- Children and named render slots can be rendered or forwarded once as the
-  sole host child. One prop cannot mix scalar and JSX call contracts.
-- Components must be top-level `function` declarations (no arrows). R27
-  supports structural tail returns; arbitrary branch-specific statements
-  between JSX returns remain unsupported.
+- Children and named render slots may appear among siblings and have several
+  live mounts. One prop cannot mix scalar and JSX call contracts.
+- Components may be top-level function declarations or synchronous uppercase
+  `const` arrows/function expressions. R27 supports structural tail returns;
+  arbitrary branch-specific statements between JSX returns remain
+  unsupported.
 - Reactive effects must be direct top-level component/module statements or
   live in an effect-only top-level `if` tree. Inline and local named
   synchronous callbacks are supported. Imported named callbacks require a
@@ -1502,17 +1583,19 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   and indirect collection operations remain unsupported.
 - JSX-returning functions are compile-time local render macros. Synchronous
   identifier/default parameters and pure return control flow are supported,
-  including direct named `.map()` callbacks. Escaping callbacks,
-  side-effectful bodies, destructured parameters, and callback forwarding
-  across component/module APIs remain unsupported.
+  including direct named `.map()` callbacks. Reusable component/module list
+  APIs additionally support declared caller-owned render callbacks. General
+  escaping, side-effectful render bodies, and open runtime JSX callbacks
+  remain unsupported.
 - Dynamic JSX tags require a finite set of intrinsic-string or linked-component
   candidates. Local and linked helper/registry component candidates, linked
   finite intrinsic return types, and typed computed registries are supported.
   Linked component candidates must be exported. Open-ended selectors remain
   unsupported.
-- Inline `.map()` sources may be finite arrays of primitive literals (including
-  TypeScript casts). Mutable or calculated collection expressions must still be
-  assigned to reactive state or a local derivation before mapping (R7).
+- Structural `.map()` sources may be finite primitive arrays, reactive
+  bindings/member paths, or arbitrary synchronous calculated expressions.
+  Calculated expressions use the author-owned derivation purity/return-value
+  contract; method names are never classified by the compiler.
 - Recursive components — guarded with an explicit compile error (cycle
   detection in path enumeration); needs lazy creation to support.
 - A component used both statically **and** as a list row — explicit compile
@@ -1563,6 +1646,19 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   compile-time perf on large modules.
 
 ### 11.6 Resolved (history)
+
+- **R40-R43 (static component and reusable render composition,
+  packages/compiler/src/components/declarations.ts +
+  packages/compiler/src/components/render-callbacks.ts +
+  packages/compiler/src/emission/render-callback.ts +
+  packages/compiler/src/lists/calculated-sources.ts +
+  packages/compiler/src/analysis/slot-paths.ts,
+  tests/r40-component-expressions.test.ts through
+  tests/r42-calculated-list-sources.test.ts +
+  tests/r21-children.test.ts):** top-level component expressions,
+  cross-component/module caller-owned render callbacks, arbitrary calculated
+  list sources without API whitelists, and repeated/sibling structural slots
+  with stable identity and cleanup.
 
 - **R37-R39 (linked and functional JSX composition,
   packages/compiler/src/jsx/dynamic-tags.ts +

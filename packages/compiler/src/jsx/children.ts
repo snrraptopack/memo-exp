@@ -39,10 +39,6 @@ export function collectDirectChildren(
   emitters: DirectChildEmitters,
 ): DirectChildOperation[] {
   const result: DirectChildOperation[] = [];
-  const meaningful = children.filter(
-    (child) => !t.isJSXText(child) || child.value.trim() !== '',
-  );
-
   for (const child of children) {
     if (t.isJSXText(child)) {
       const value = normalizeJsxText(child.value);
@@ -68,11 +64,6 @@ export function collectDirectChildren(
 
     const expression = child.expression;
     if (emitters.isForwarded(expression)) {
-      if (meaningful.length !== 1) {
-        emitters.fail(
-          'memo-dom: a component children slot must be the sole child of its host insertion element',
-        );
-      }
       result.push({ type: 'slot', expression: t.cloneNode(expression) });
       continue;
     }

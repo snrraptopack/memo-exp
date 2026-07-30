@@ -40,6 +40,7 @@ import {
 } from './handlers';
 import {
   buildChildrenSlot,
+  emitForwardedSlotMount,
   emitChildrenIntoParent,
   hasComponentChildren,
   isRenderPropReference,
@@ -65,6 +66,7 @@ import {
   emitConditionalRegion,
 } from './emission/conditional-region';
 import { emitListRegion } from './emission/list-region';
+import { buildRenderCallbackAdapter } from './emission/render-callback';
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -324,19 +326,12 @@ function emitDirectChildOperations(
         ),
       );
     } else if (operation.type === 'slot') {
-      scope.creation.push(
-        t.ifStatement(
-          t.binaryExpression(
-            '!=',
-            t.cloneNode(operation.expression),
-            t.nullLiteral(),
-          ),
-          t.expressionStatement(
-            t.callExpression(t.cloneNode(operation.expression), [
-              t.identifier(parentVar),
-            ]),
-          ),
-        ),
+      emitForwardedSlotMount(
+        ctx,
+        scope,
+        operation.expression,
+        parentVar,
+        ownerId,
       );
     } else if (operation.type === 'list') {
       emitRegion(
@@ -378,7 +373,11 @@ function buildAuthoredChildrenSlot(
   inSvg: boolean,
   ownerId: t.Expression,
 ): t.Identifier {
-  return buildChildrenSlot(ctx, ownerScope, (childScope, parentNode) => {
+  return buildChildrenSlot(
+    ctx,
+    ownerScope,
+    ownerId,
+    (childScope, parentNode, slotOwner) => {
     emitChildrenIntoParent(
       childScope,
       children,
@@ -396,7 +395,7 @@ function buildAuthoredChildrenSlot(
             rowCtx,
             eventOriginId,
             inSvg,
-            ownerId,
+            slotOwner,
           ),
         emitList: (call, parentVar) =>
           emitRegion(
@@ -407,7 +406,7 @@ function buildAuthoredChildrenSlot(
             compName,
             compPath,
             inSvg,
-            ownerId,
+            slotOwner,
             rowCtx,
           ),
         emitCondition: (expression, parentVar) =>
@@ -419,17 +418,26 @@ function buildAuthoredChildrenSlot(
             compName,
             compPath,
             inSvg,
-            ownerId,
+            slotOwner,
             nestedIn !== null,
           ),
         isForwarded: (expression) =>
           isRenderPropReference(ctx, compName, expression),
+        emitForwarded: (expression, parentVar) =>
+          emitForwardedSlotMount(
+            ctx,
+            childScope,
+            expression,
+            parentVar,
+            slotOwner,
+          ),
         fail: (message) => {
           throw compPath.buildCodeFrameError(message);
         },
       },
     );
-  });
+    },
+  );
 }
 
 function buildAuthoredRenderValueSlot(
@@ -530,7 +538,18 @@ function emitElement(
             ? property.key.value
             : null;
         if (propName === null) continue;
-        if (targetPlan?.renderProps.includes(propName) === true) {
+        if (targetPlan?.renderCallbacks.includes(propName) === true) {
+          property.value = buildRenderCallbackAdapter(
+            ctx,
+            scope,
+            property.value,
+            compName,
+            compPath,
+            emitNode,
+            inSvg,
+            ownerId,
+          );
+        } else if (targetPlan?.renderProps.includes(propName) === true) {
           if (isRenderPropReference(ctx, compName, property.value)) continue;
           if (!nodeHasJsx(property.value)) {
             throw compPath.buildCodeFrameError(
@@ -571,6 +590,22 @@ function emitElement(
             a.name,
           )}' on <${tag}> must be an expression`,
         );
+      }
+      if (targetPlan?.renderCallbacks.includes(propName) === true) {
+        propEntries.push({
+          name: propName,
+          value: buildRenderCallbackAdapter(
+            ctx,
+            scope,
+            v,
+            compName,
+            compPath,
+            emitNode,
+            inSvg,
+            ownerId,
+          ),
+        });
+        continue;
       }
       if (targetPlan?.renderProps.includes(propName) === true) {
         if (isRenderPropReference(ctx, compName, v)) {

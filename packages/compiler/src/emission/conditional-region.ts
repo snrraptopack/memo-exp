@@ -153,9 +153,22 @@ export function buildBranchCreate(
 
   if (
     branchScope.disposableRegions.length > 0 ||
-    branchScope.disposableEntities.length > 0
+    branchScope.disposableEntities.length > 0 ||
+    branchScope.disposableCallbacks.length > 0
   ) {
     const disposeStatements: t.Statement[] = [
+      ...branchScope.disposableCallbacks.map((callback) =>
+        t.ifStatement(
+          t.binaryExpression(
+            '!==',
+            t.cloneNode(callback),
+            t.nullLiteral(),
+          ),
+          t.expressionStatement(
+            t.callExpression(t.cloneNode(callback), []),
+          ),
+        ),
+      ),
       ...branchScope.disposableRegions.map((region) =>
         t.expressionStatement(
           t.callExpression(
