@@ -1022,8 +1022,8 @@ Across modules, a helper's declared finite string-literal return type is the
 candidate contract. A typed registry such as
 `Record<Mode, 'main' | 'aside'>` contributes all intrinsic values even through
 a computed key. Local returns may also name component bindings visible in the
-consumer. Cross-module helper metadata carries intrinsic strings only because
-hidden component bindings cannot be emitted safely in the caller.
+consumer. R37 permits cross-module component candidates when their defining
+module exports those component factories.
 
 Runtime selection still compares the current value by identity and mounts one
 ordinary R8 branch. Open-ended helper returns and untyped mutable registries
@@ -1058,6 +1058,97 @@ disambiguate sole text interpolations such as `<code>{markup}</code>`. The
 linker rejects a prop used as both scalar data and JSX content. A render prop
 may be rendered or forwarded once and must be the sole content of its host
 insertion point.
+
+### R37 - Linked component selectors preserve finite factory candidates
+
+An exported helper or static registry may select exported component factories:
+
+```tsx
+// views.tsx
+export function Preview() { return <p>Preview</p>; }
+export function Code() { return <pre>Code</pre>; }
+export function selectView(mode) {
+  return mode === 'preview' ? Preview : Code;
+}
+
+// App.tsx
+const View = selectView(mode);
+return <View />;
+```
+
+The linker records canonical component candidate keys. The consumer
+synthesizes ordinary component imports and lowers the dynamic tag through the
+same R30 conditional region used for local selectors. Same-candidate updates
+retain the component and re-push changed props; candidate changes dispose the
+old subtree before mounting the new one.
+
+Every linked candidate must be exported by its defining module. Hidden
+component bindings are rejected because the consumer cannot legally import
+their factories. Metadata propagates through named imported helpers and
+imported static registries; it does not create an open-ended runtime component
+protocol.
+
+### R38 - JSX-returning functions are compile-time render macros
+
+Lowercase module helpers and component-local functions whose supported return
+flow contains JSX may be called in render composition:
+
+```tsx
+function renderStatus(status, message = 'waiting') {
+  if (status === 'ready') return <strong>{message}</strong>;
+  return <em>Waiting</em>;
+}
+
+const renderItem = (item, index) => (
+  <li key={item.id}>{index}: {item.label}</li>
+);
+
+return <main>
+  {renderStatus(status)}
+  <ul>{items.map(renderItem)}</ul>
+</main>;
+```
+
+The compiler substitutes call arguments, optional defaults, and pure top-level
+identifier `const` expressions into cloned return JSX. It removes the helper
+and feeds the expansion to the ordinary host, component, conditional, and list
+passes. Direct JSX is spliced into its child position; JSX-bearing return
+conditionals become R8 regions. A statically local render function used as the
+sole `.map()` callback becomes an equivalent inline arrow before R7 analysis,
+preserving keyed row identity.
+
+Supported flow is a concise JSX expression, a JSX return, tail early-return
+`if` statements plus fallback, exhaustive return `if/else`, or exhaustive
+return `switch`, optionally preceded by pure identifier `const` calculations.
+Functions are synchronous and use identifier parameters with optional
+defaults. Render functions are compile-time values: escaping them,
+side-effectful bodies, arbitrary storage, and callback forwarding across
+component/module APIs are rejected.
+
+### R39 - Direct JSX arrays flatten into stable render positions
+
+Static JSX-bearing arrays may be rendered directly:
+
+```tsx
+const leading = [<Heading />, null];
+const views = [
+  ...leading,
+  [ready ? <Panel /> : <Empty />],
+  items.map(item => <Row key={item.id} item={item} />),
+];
+return <main>{views}</main>;
+```
+
+Component-local aliases, inline child arrays, nested arrays, JSX-array helper
+results, and spreads resolving to another static const array flatten to
+compiler fragments before DOM analysis. Holes and static `null`/boolean
+entries emit no node. Elements retain lexical positions, conditionals become
+R8 regions, and `.map()` entries remain R7 keyed regions. No parent factory or
+broad subtree reruns.
+
+Dynamic JSX-array spreads are rejected. They would require runtime JSX values
+and a virtual-node reconciliation protocol. Dynamic data collections should
+render through `.map()` instead.
 
 ## 4. Read/write analysis
 
@@ -1386,7 +1477,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 > entry** — this section must always reflect the present state. Resolved
 > batches are noted in §11.6 for history.
 >
-> Last full audit: R36 (compiler probes, paradigm matrix, example build, and
+> Last full audit: R39 (compiler probes, paradigm matrix, example build, and
 > compiled runtime execution).
 
 ### 11.2 L1 source-language limits (by design — clear compile errors)
@@ -1405,12 +1496,19 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   synchronous callbacks are supported. Imported named callbacks require a
   local wrapper; async/generator callbacks remain unsupported.
 - JSX values may be caller-owned named render props or entries in a static
-  component-local const object/array selected by direct access. Arbitrary
-  JavaScript storage, mutation, escaping, and indirect collection operations
-  remain unsupported.
+  component-local const object/array. Arrays may be selected or rendered
+  directly, including nested arrays and statically resolvable spreads.
+  Arbitrary JavaScript storage, mutation, escaping, dynamic JSX-array spreads,
+  and indirect collection operations remain unsupported.
+- JSX-returning functions are compile-time local render macros. Synchronous
+  identifier/default parameters and pure return control flow are supported,
+  including direct named `.map()` callbacks. Escaping callbacks,
+  side-effectful bodies, destructured parameters, and callback forwarding
+  across component/module APIs remain unsupported.
 - Dynamic JSX tags require a finite set of intrinsic-string or linked-component
-  candidates. Local helper returns, linked finite intrinsic return types, and
-  typed computed registries are supported. Open-ended selectors remain
+  candidates. Local and linked helper/registry component candidates, linked
+  finite intrinsic return types, and typed computed registries are supported.
+  Linked component candidates must be exported. Open-ended selectors remain
   unsupported.
 - Inline `.map()` sources may be finite arrays of primitive literals (including
   TypeScript casts). Mutable or calculated collection expressions must still be
@@ -1466,6 +1564,15 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.6 Resolved (history)
 
+- **R37-R39 (linked and functional JSX composition,
+  packages/compiler/src/jsx/dynamic-tags.ts +
+  packages/compiler/src/components/render-functions.ts +
+  packages/compiler/src/components/jsx-values.ts +
+  packages/compiler/src/linker.ts,
+  tests/r37-linked-dynamic-components.test.ts through
+  tests/r39-direct-jsx-collections.test.ts):** linked exported component
+  selectors, compile-time JSX-returning helpers/direct map callbacks, and
+  flattened static JSX collections with stable conditional/list ownership.
 - **R33-R36 (effects and JSX composition,
   packages/compiler/src/effects.ts +
   packages/compiler/src/emission/list-region.ts +

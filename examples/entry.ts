@@ -1,15 +1,15 @@
 /**
  * @file entry.ts
- * Browser entry point for the Music Player example.
+ * Browser entry point for the Kanban Board example.
  */
-import { MusicApp } from './music/MusicApp';
+import { KanbanApp } from './kanban/KanbanApp';
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  const factory = MusicApp as unknown as (
+  const factory = KanbanApp as unknown as (
     id: string,
     parent: string | null,
   ) => Node;
-  const appNode = factory('MusicApp', null);
+  const appNode = factory('KanbanApp', null);
   rootElement.appendChild(appNode);
 }

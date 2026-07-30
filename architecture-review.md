@@ -55,6 +55,9 @@ subscription graph, or runtime read tracking.
 | JSX early returns rerun or cannot compose | Confirmed structural-return gap | R27 lowers tail early-return chains and terminal JSX if/switch forms to one stable region with owned subtree disposal |
 | Chained JSX ternary rejected as a non-JSX branch | Confirmed binary-analyzer gap | R27 flattens right-associated chains into one multi-branch conditional region and supports fragment branches |
 | Module-level pure `if`/`switch` is one-time only | Confirmed shared-derived-state gap | R28 emits depth-(-1) singleton flow computeds with per-target change gating and canonical cross-module routing |
+| Imported helper/registry cannot select component factories | Confirmed linked JSX-composition gap | R37 serializes exported component candidates and synthesizes legal consumer imports before R30 lowering |
+| JSX-returning helpers leave runtime JSX values | Confirmed direct-DOM composition gap | R38 expands synchronous pure render helpers and named map callbacks before host/region analysis |
+| Static JSX arrays must be manually indexed | Confirmed collection-composition gap | R39 flattens direct, nested, helper-returned, and statically spread JSX arrays while preserving R8/R7 regions |
 
 ## Decisions
 

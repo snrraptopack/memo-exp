@@ -36,12 +36,14 @@ import {
   isStoreObject,
   nodeHasJsx,
   type LinkedImport,
+  type LinkedDynamicComponentCandidate,
   type LinkedComponentRowUse,
   type MemoDomOptions,
   type ParameterWrite,
   type StateKind,
 } from './context';
 import { isRenderPropReference } from './components/children';
+import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
 
 export interface CompileModulesOptions
   extends Omit<
@@ -70,11 +72,13 @@ interface StateExport {
   kind: StateKind;
   key: string;
   tagCandidates: string[];
+  componentCandidates: string[];
 }
 
 interface FunctionExport {
   type: 'function';
   tagCandidates: string[];
+  componentCandidates: string[];
   reads: string[];
   writes: string[];
   boundedWrites: string[];
@@ -195,6 +199,104 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
   );
 }
 
+function componentCandidateKeys(
+  ctx: ReturnType<typeof createCtx>,
+  names: readonly string[],
+): string[] {
+  return [
+    ...new Set(
+      names.flatMap((name) => {
+        const imported = ctx.importedComponents.get(name);
+        if (imported !== undefined) return [imported.key];
+        return ctx.comps.has(name) ? [`${ctx.moduleId}#${name}`] : [];
+      }),
+    ),
+  ].sort();
+}
+
+function directComponentNames(
+  expression: t.Expression,
+  componentNames: ReadonlySet<string>,
+  output: Set<string>,
+): void {
+  while (
+    t.isTSAsExpression(expression) ||
+    t.isTSTypeAssertion(expression) ||
+    t.isTSNonNullExpression(expression)
+  ) {
+    expression = expression.expression;
+  }
+  if (t.isIdentifier(expression)) {
+    if (componentNames.has(expression.name)) output.add(expression.name);
+    return;
+  }
+  if (t.isConditionalExpression(expression)) {
+    directComponentNames(expression.consequent, componentNames, output);
+    directComponentNames(expression.alternate, componentNames, output);
+    return;
+  }
+  if (t.isLogicalExpression(expression)) {
+    directComponentNames(expression.right, componentNames, output);
+    return;
+  }
+  if (t.isObjectExpression(expression)) {
+    for (const property of expression.properties) {
+      if (t.isObjectProperty(property) && t.isExpression(property.value)) {
+        directComponentNames(property.value, componentNames, output);
+      }
+    }
+    return;
+  }
+  if (t.isArrayExpression(expression)) {
+    for (const element of expression.elements) {
+      if (element != null && !t.isSpreadElement(element)) {
+        directComponentNames(element, componentNames, output);
+      }
+    }
+  }
+}
+
+function directFunctionComponentNames(
+  fn:
+    | t.FunctionDeclaration
+    | t.FunctionExpression
+    | t.ArrowFunctionExpression,
+  componentNames: ReadonlySet<string>,
+): string[] {
+  const output = new Set<string>();
+  if (t.isExpression(fn.body)) {
+    directComponentNames(fn.body, componentNames, output);
+    return [...output];
+  }
+  const visit = (node: t.Node): void => {
+    if (t.isFunction(node)) return;
+    if (t.isReturnStatement(node)) {
+      if (t.isExpression(node.argument)) {
+        directComponentNames(node.argument, componentNames, output);
+      }
+      return;
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(child)) {
+        for (const entry of child) {
+          if (entry != null && typeof entry === 'object' && 'type' in entry) {
+            visit(entry as t.Node);
+          }
+        }
+      } else if (
+        child != null &&
+        typeof child === 'object' &&
+        'type' in child
+      ) {
+        visit(child as t.Node);
+      }
+    }
+  };
+  for (const statement of fn.body.body) visit(statement);
+  return [...output];
+}
+
 function importRefs(program: t.Program): ImportRef[] {
   const refs: ImportRef[] = [];
   for (const stmt of program.body) {
@@ -266,11 +368,13 @@ function analyzeManifest(
   const analysisPlugin = (): { visitor: { Program(path: NodePath<t.Program>): void } } => ({
     visitor: {
       Program(programPath) {
+        const authoredImports = importRefs(programPath.node);
         const ctx = createCtx({
           ...compilerOptions(options),
           moduleId: entry.id,
           linkedImports,
         });
+        installLinkedDynamicComponentImports(ctx, programPath);
         runAnalysis(ctx, programPath);
         const exports: Record<string, LinkedExport> = {};
         const functionTagCandidates = moduleFunctionStringCandidates(
@@ -291,6 +395,10 @@ function analyzeManifest(
               kind,
               key: ctx.stateKeys.get(local) ?? `${entry.id}#${local}`,
               tagCandidates: [...(ctx.stateTagCandidates.get(local) ?? [])],
+              componentCandidates: componentCandidateKeys(
+                ctx,
+                ctx.stateComponentCandidates.get(local) ?? [],
+              ),
             };
             continue;
           }
@@ -305,6 +413,10 @@ function analyzeManifest(
                   ctx.functionTagCandidates.get(local) ??
                   []),
               ],
+              componentCandidates: componentCandidateKeys(
+                ctx,
+                ctx.functionComponentCandidates.get(local) ?? [],
+              ),
               reads: [...summary.reads].map((key) => canonicalStateKey(ctx, key)).sort(),
               writes: [...summary.writes].map((key) => canonicalStateKey(ctx, key)).sort(),
               boundedWrites: [...summary.boundedWrites]
@@ -326,7 +438,7 @@ function analyzeManifest(
         }
         manifest = {
           exports,
-          imports: importRefs(programPath.node),
+          imports: authoredImports,
           components: analyzedComponentDeclarations(entry.id, ctx),
           componentUsages: analyzedComponentUsages(ctx),
         };
@@ -365,6 +477,7 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
           programPath.node,
         );
         const components = discoverComponentExports(programPath, entry.id);
+        const componentNames = new Set(components.keys());
         for (const [name, component] of components) {
           locals.set(name, { type: 'component', ...component });
         }
@@ -377,11 +490,16 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
                 t.isArrowFunctionExpression(decl.init) ||
                 t.isFunctionExpression(decl.init)
               ) {
+                const componentCandidates = directFunctionComponentNames(
+                  decl.init,
+                  componentNames,
+                ).map((name) => `${entry.id}#${name}`);
                 locals.set(decl.id.name, {
                   type: 'function',
                   tagCandidates: [
                     ...(functionTagCandidates.get(decl.id.name) ?? []),
                   ],
+                  componentCandidates,
                   reads: [],
                   writes: [],
                   boundedWrites: [],
@@ -395,11 +513,22 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
               else if (isStoreObject(decl.init)) kind = 'store';
               else if (isConstObjectState(decl.init)) kind = 'const';
               if (kind !== undefined) {
+                const names = new Set<string>();
+                if (t.isExpression(decl.init)) {
+                  directComponentNames(
+                    decl.init,
+                    componentNames,
+                    names,
+                  );
+                }
                 locals.set(decl.id.name, {
                   type: 'state',
                   kind,
                   key: `${entry.id}#${decl.id.name}`,
                   tagCandidates: [...(tagCandidates.get(decl.id.name) ?? [])],
+                  componentCandidates: [...names].map(
+                    (name) => `${entry.id}#${name}`,
+                  ),
                 });
               }
             }
@@ -408,11 +537,16 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
             inner.id != null &&
             !components.has(inner.id.name)
           ) {
+            const componentCandidates = directFunctionComponentNames(
+              inner,
+              componentNames,
+            ).map((name) => `${entry.id}#${name}`);
             locals.set(inner.id.name, {
               type: 'function',
               tagCandidates: [
                 ...(functionTagCandidates.get(inner.id.name) ?? []),
               ],
+              componentCandidates,
               reads: [],
               writes: [],
               boundedWrites: [],
@@ -500,6 +634,40 @@ function resolveModule(
   return undefined;
 }
 
+function relativeModuleSpecifier(importer: string, target: string): string {
+  if (!target.startsWith('.')) return target;
+  const relative = posix.relative(posix.dirname(importer), target);
+  return relative.startsWith('.') ? relative : `./${relative}`;
+}
+
+function linkedDynamicCandidates(
+  importer: ModuleEntry,
+  keys: readonly string[],
+  manifests: Map<string, ModuleManifest>,
+): LinkedDynamicComponentCandidate[] {
+  return keys.map((key) => {
+    for (const [moduleId, manifest] of manifests) {
+      for (const [exported, candidate] of Object.entries(manifest.exports)) {
+        if (candidate.type !== 'component' || candidate.key !== key) continue;
+        return {
+          key: candidate.key,
+          source: relativeModuleSpecifier(importer.id, moduleId),
+          imported: exported,
+          props: [...candidate.props],
+          objectProps: candidate.objectProps,
+          acceptsUnknownProps: candidate.acceptsUnknownProps,
+          hasWholeDefault: candidate.hasWholeDefault,
+          listLightweight: candidate.listLightweight,
+          renderProps: [...candidate.renderProps],
+        };
+      }
+    }
+    throw new Error(
+      `memo-dom: dynamic component candidate '${key}' is not exported; export the component so consuming modules can link it`,
+    );
+  });
+}
+
 function linkImports(
   entry: ModuleEntry,
   manifest: ModuleManifest,
@@ -517,6 +685,7 @@ function linkImports(
       linked[ref.local] = {
         type: 'function',
         tagCandidates: [],
+        componentCandidates: [],
         reads: [],
         writes: [],
         boundedWrites: [],
@@ -536,6 +705,7 @@ function linkImports(
       linked[ref.local] = {
         type: 'function',
         tagCandidates: [],
+        componentCandidates: [],
         reads: [],
         writes: [],
         boundedWrites: [],
@@ -550,6 +720,11 @@ function linkImports(
         kind: targetExport.kind,
         key: targetExport.key,
         tagCandidates: [...targetExport.tagCandidates],
+        componentCandidates: linkedDynamicCandidates(
+          entry,
+          targetExport.componentCandidates,
+          manifests,
+        ),
       };
     } else if (targetExport.type === 'component') {
       const usage = renderUsage?.get(targetExport.key);
@@ -571,6 +746,11 @@ function linkImports(
       linked[ref.local] = {
         type: 'function',
         tagCandidates: [...targetExport.tagCandidates],
+        componentCandidates: linkedDynamicCandidates(
+          entry,
+          targetExport.componentCandidates,
+          manifests,
+        ),
         reads: [...targetExport.reads],
         writes: [...targetExport.writes],
         boundedWrites: [...targetExport.boundedWrites],

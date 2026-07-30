@@ -58,7 +58,11 @@ import {
 } from './analysis/instance-control-flow';
 import { pathVariants } from './analysis/component-graph';
 import { normalizeComponentJsxValues } from './components/jsx-values';
-import { normalizeDynamicTags } from './jsx/dynamic-tags';
+import { normalizeRenderFunctions } from './components/render-functions';
+import {
+  normalizeDynamicTags,
+  scanLocalDynamicComponentCandidates,
+} from './jsx/dynamic-tags';
 import { moduleStateStringCandidates } from './analysis/type-candidates';
 
 export { analyzeComputed } from './analysis/computed';
@@ -172,21 +176,30 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
   programPath.traverse({
     FunctionDeclaration(p) {
       const name = p.node.id?.name;
-      if (name && !ctx.comps.has(name) && !ctx.helpers.has(name)) {
+      if (
+        name &&
+        !ctx.comps.has(name) &&
+        !ctx.helpers.has(name) &&
+        !ctx.jsxHelpers.has(name)
+      ) {
         if (containsJsx(p)) {
-          ctx.comps.set(name, { parents: new Set(), jsxCount: 0 });
-          ctx.compPaths.set(name, p);
-          try {
-            ctx.componentProps.set(
-              name,
-              analyzeComponentProps(p.node.params),
-            );
-          } catch (error) {
-            throw p.buildCodeFrameError(
-              `memo-dom: invalid props for component '${name}': ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            );
+          if (/^[A-Z]/.test(name)) {
+            ctx.comps.set(name, { parents: new Set(), jsxCount: 0 });
+            ctx.compPaths.set(name, p);
+            try {
+              ctx.componentProps.set(
+                name,
+                analyzeComponentProps(p.node.params),
+              );
+            } catch (error) {
+              throw p.buildCodeFrameError(
+                `memo-dom: invalid props for component '${name}': ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          } else {
+            ctx.jsxHelpers.set(name, p);
           }
         } else {
           ctx.helpers.set(name, p);
@@ -198,14 +211,52 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
       if (!p.scope.path.isProgram() || !t.isIdentifier(p.node.id)) return;
       const init = p.get('init');
       if (
-        (init.isArrowFunctionExpression() || init.isFunctionExpression()) &&
-        !containsJsx(init)
+        init.isArrowFunctionExpression() ||
+        init.isFunctionExpression()
       ) {
-        ctx.helpers.set(p.node.id.name, init);
+        if (nodeHasJsx(init.node.body)) {
+          if (!/^[A-Z]/.test(p.node.id.name)) {
+            ctx.jsxHelpers.set(p.node.id.name, init);
+          }
+        } else {
+          ctx.helpers.set(p.node.id.name, init);
+        }
         init.skip();
       }
     },
   });
+
+  // Concise JSX arrows have the JSX element as the function-body root, which
+  // path-relative traversal can miss. Reconcile top-level function variables
+  // directly from their raw initializer.
+  for (const statementPath of programPath.get('body')) {
+    const declarationPath = statementPath.isExportNamedDeclaration()
+      ? statementPath.get('declaration')
+      : statementPath;
+    if (
+      Array.isArray(declarationPath) ||
+      !declarationPath.isVariableDeclaration()
+    ) {
+      continue;
+    }
+    for (const declaratorPath of declarationPath.get('declarations')) {
+      if (!declaratorPath.isVariableDeclarator()) continue;
+      const id = declaratorPath.node.id;
+      const initPath = declaratorPath.get('init');
+      if (
+        !t.isIdentifier(id) ||
+        /^[A-Z]/.test(id.name) ||
+        Array.isArray(initPath) ||
+        (!initPath.isArrowFunctionExpression() &&
+          !initPath.isFunctionExpression()) ||
+        !nodeHasJsx(initPath.node.body)
+      ) {
+        continue;
+      }
+      ctx.helpers.delete(id.name);
+      ctx.jsxHelpers.set(id.name, initPath);
+    }
+  }
 }
 
 function scalarTsType(
@@ -1102,6 +1153,8 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  normalizeRenderFunctions(ctx);
+  scanLocalDynamicComponentCandidates(ctx, programPath);
   scanRenderProps(ctx);
   normalizeComponentJsxValues(ctx);
   normalizeDynamicTags(ctx);

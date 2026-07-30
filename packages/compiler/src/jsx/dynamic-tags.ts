@@ -8,10 +8,105 @@
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { memberKey, memberRootName, type Ctx } from '../context';
+import type { ComponentPropsPlan } from '../components/props';
 
 interface DynamicTagCandidate {
   compare: t.Expression;
   tag: t.JSXIdentifier;
+}
+
+function linkedComponentPlan(
+  component: Ctx['importedComponents'] extends Map<string, infer Value>
+    ? Value
+    : never,
+): ComponentPropsPlan {
+  return {
+    mode: component.objectProps ? 'object' : 'positional',
+    names: [...component.props],
+    acceptsUnknown: component.acceptsUnknownProps,
+    bindings: [],
+    params: [],
+    hasWholeDefault: component.hasWholeDefault,
+    renderProps: [...(component.renderProps ?? [])],
+  };
+}
+
+/**
+ * Install finite linked component candidates before ordinary import
+ * validation and generated-identifier allocation.
+ */
+export function installLinkedDynamicComponentImports(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
+  if (ctx.linkedDynamicComponentCandidates.size === 0) return;
+  programPath.scope.crawl();
+  const occupied = new Set(Object.keys(programPath.scope.bindings));
+  const existingByKey = new Map(
+    [...ctx.importedComponents].map(([local, component]) => [
+      component.key,
+      local,
+    ]),
+  );
+  const declarations: t.ImportDeclaration[] = [];
+
+  for (const [owner, candidates] of ctx.linkedDynamicComponentCandidates) {
+    const locals: string[] = [];
+    for (const candidate of candidates) {
+      let local = existingByKey.get(candidate.key);
+      if (local === undefined) {
+        const base = `MDDynamic_${candidate.imported.replace(
+          /[^A-Za-z0-9_$]/g,
+          '_',
+        )}`;
+        local = base;
+        let index = 1;
+        while (occupied.has(local)) local = `${base}${index++}`;
+        occupied.add(local);
+        existingByKey.set(candidate.key, local);
+
+        const component = {
+          type: 'component' as const,
+          key: candidate.key,
+          props: [...candidate.props],
+          objectProps: candidate.objectProps,
+          acceptsUnknownProps: candidate.acceptsUnknownProps,
+          hasWholeDefault: candidate.hasWholeDefault,
+          listLightweight: candidate.listLightweight,
+          renderProps: [...(candidate.renderProps ?? [])],
+        };
+        ctx.importedComponents.set(local, component);
+        ctx.componentProps.set(local, linkedComponentPlan(component));
+        declarations.push(
+          t.importDeclaration(
+            candidate.imported === 'default'
+              ? [t.importDefaultSpecifier(t.identifier(local))]
+              : [
+                  t.importSpecifier(
+                    t.identifier(local),
+                    t.isValidIdentifier(candidate.imported)
+                      ? t.identifier(candidate.imported)
+                      : t.stringLiteral(candidate.imported),
+                  ),
+                ],
+            t.stringLiteral(candidate.source),
+          ),
+        );
+      }
+      locals.push(local);
+    }
+    const unique = [...new Set(locals)];
+    if (ctx.state.has(owner)) {
+      ctx.stateComponentCandidates.set(owner, unique);
+    } else {
+      ctx.functionComponentCandidates.set(owner, unique);
+    }
+  }
+
+  for (const declaration of declarations.reverse()) {
+    programPath.unshiftContainer('body', declaration);
+  }
+  programPath.scope.crawl();
 }
 
 function unwrap(expression: t.Expression): t.Expression {
@@ -93,6 +188,15 @@ function localFunctionReturns(
     fn = binding.path.node.init;
   }
   if (fn === null) return [];
+  return functionReturnExpressions(fn);
+}
+
+function functionReturnExpressions(
+  fn:
+    | t.FunctionDeclaration
+    | t.FunctionExpression
+    | t.ArrowFunctionExpression,
+): t.Expression[] {
   if (t.isExpression(fn.body)) return [fn.body];
 
   const returns: t.Expression[] = [];
@@ -121,6 +225,122 @@ function localFunctionReturns(
   };
   for (const statement of fn.body.body) visit(statement);
   return returns;
+}
+
+function collectLocalComponentNames(
+  ctx: Ctx,
+  expression: t.Expression,
+  output: Set<string>,
+  visiting = new Set<t.Node>(),
+): void {
+  const current = unwrap(expression);
+  if (visiting.has(current)) return;
+  visiting.add(current);
+  if (
+    t.isIdentifier(current) &&
+    (ctx.comps.has(current.name) || ctx.importedComponents.has(current.name))
+  ) {
+    output.add(current.name);
+    return;
+  }
+  if (t.isIdentifier(current)) {
+    for (const candidate of ctx.stateComponentCandidates.get(current.name) ??
+      ctx.functionComponentCandidates.get(current.name) ??
+      []) {
+      output.add(candidate);
+    }
+    return;
+  }
+  if (t.isConditionalExpression(current)) {
+    collectLocalComponentNames(ctx, current.consequent, output, visiting);
+    collectLocalComponentNames(ctx, current.alternate, output, visiting);
+    return;
+  }
+  if (t.isLogicalExpression(current)) {
+    collectLocalComponentNames(ctx, current.right, output, visiting);
+    return;
+  }
+  if (t.isObjectExpression(current)) {
+    for (const property of current.properties) {
+      if (t.isObjectProperty(property) && t.isExpression(property.value)) {
+        collectLocalComponentNames(ctx, property.value, output, visiting);
+      }
+    }
+    return;
+  }
+  if (t.isArrayExpression(current)) {
+    for (const element of current.elements) {
+      if (element != null && !t.isSpreadElement(element)) {
+        collectLocalComponentNames(ctx, element, output, visiting);
+      }
+    }
+    return;
+  }
+  if (t.isCallExpression(current) && t.isIdentifier(current.callee)) {
+    for (const candidate of ctx.functionComponentCandidates.get(
+      current.callee.name,
+    ) ?? []) {
+      output.add(candidate);
+    }
+    return;
+  }
+  if (t.isMemberExpression(current)) {
+    const root = memberRootName(current);
+    if (root !== null) {
+      for (const candidate of ctx.stateComponentCandidates.get(root) ?? []) {
+        output.add(candidate);
+      }
+    }
+  }
+}
+
+/** Discover local component registries/helper returns before tag lowering. */
+export function scanLocalDynamicComponentCandidates(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
+  for (const statement of programPath.node.body) {
+    const declaration = t.isExportNamedDeclaration(statement)
+      ? statement.declaration
+      : statement;
+    if (!t.isVariableDeclaration(declaration)) continue;
+    for (const declarator of declaration.declarations) {
+      if (!t.isIdentifier(declarator.id) || declarator.init == null) continue;
+      const output = new Set<string>();
+      collectLocalComponentNames(ctx, declarator.init, output);
+      if (output.size > 0 && ctx.state.has(declarator.id.name)) {
+        ctx.stateComponentCandidates.set(declarator.id.name, [...output]);
+      }
+    }
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [name, helperPath] of ctx.helpers) {
+      const output = new Set(ctx.functionComponentCandidates.get(name) ?? []);
+      let returns: t.Expression[] = [];
+      const node = helperPath.node;
+      if (
+        t.isFunctionDeclaration(node) ||
+        t.isFunctionExpression(node) ||
+        t.isArrowFunctionExpression(node)
+      ) {
+        returns = functionReturnExpressions(node);
+      }
+      for (const expression of returns) {
+        collectLocalComponentNames(ctx, expression, output);
+      }
+      if (
+        output.size > 0 &&
+        output.size !==
+          (ctx.functionComponentCandidates.get(name)?.length ?? 0)
+      ) {
+        ctx.functionComponentCandidates.set(name, [...output]);
+        changed = true;
+      }
+    }
+  }
 }
 
 function collectCandidates(
@@ -191,6 +411,11 @@ function collectCandidates(
     for (const returned of localFunctionReturns(at, current.callee.name)) {
       collectCandidates(ctx, at, returned, output, visiting);
     }
+    for (const candidate of ctx.functionComponentCandidates.get(
+      current.callee.name,
+    ) ?? []) {
+      collectCandidates(ctx, at, t.identifier(candidate), output, visiting);
+    }
     return;
   }
   if (t.isMemberExpression(current)) {
@@ -201,6 +426,21 @@ function collectCandidates(
     }
     const root = memberRootName(current);
     if (root === null) return;
+    const binding = at.scope.getBinding(root);
+    if (
+      binding?.path.isVariableDeclarator() &&
+      binding.path.node.init != null
+    ) {
+      const localComponents = new Set<string>();
+      collectLocalComponentNames(
+        ctx,
+        binding.path.node.init,
+        localComponents,
+      );
+      for (const candidate of localComponents) {
+        collectCandidates(ctx, at, t.identifier(candidate), output, visiting);
+      }
+    }
     for (const candidate of ctx.stateTagCandidates.get(root) ?? []) {
       collectCandidates(
         ctx,
@@ -209,6 +449,9 @@ function collectCandidates(
         output,
         visiting,
       );
+    }
+    for (const candidate of ctx.stateComponentCandidates.get(root) ?? []) {
+      collectCandidates(ctx, at, t.identifier(candidate), output, visiting);
     }
   }
 }

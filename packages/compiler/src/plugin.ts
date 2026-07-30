@@ -44,6 +44,7 @@ import {
   rejectUnownedEffects,
   rewriteModuleEffects,
 } from './effects';
+import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -191,6 +192,7 @@ export default function memoDomPlugin(
   const visitor: Visitor = {
     Program: {
       enter(programPath) {
+        installLinkedDynamicComponentImports(ctx, programPath);
         initializeGeneratedIdentifiers(ctx, programPath);
         runAnalysis(ctx, programPath);
         transformProgramCallbacks(ctx, programPath);

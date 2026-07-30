@@ -50,12 +50,16 @@ export interface LinkedStateImport {
   key: string;
   /** Finite intrinsic-tag identities declared by a string-literal union. */
   tagCandidates?: string[];
+  /** Finite component identities reachable through this state/registry. */
+  componentCandidates?: LinkedDynamicComponentCandidate[];
 }
 
 export interface LinkedFunctionImport {
   type: 'function';
   /** Finite intrinsic-tag identities declared by the helper return type. */
   tagCandidates?: string[];
+  /** Finite component identities declared by helper returns. */
+  componentCandidates?: LinkedDynamicComponentCandidate[];
   reads: string[];
   /** Directly proven state writes. */
   writes: string[];
@@ -81,6 +85,14 @@ export interface LinkedComponentImport {
   listLightweight: boolean;
   /** Props consumed as compiler-owned mount slots. */
   renderProps?: string[];
+}
+
+export interface LinkedDynamicComponentCandidate
+  extends Omit<LinkedComponentImport, 'type'> {
+  /** Module specifier synthesized into the consuming module. */
+  source: string;
+  /** Named export imported from `source`. */
+  imported: string;
 }
 
 export interface LinkedComponentRowUse {
@@ -208,6 +220,12 @@ export interface Ctx {
   /** Finite intrinsic-tag identities proven by state type annotations. */
   stateTagCandidates: Map<string, string[]>;
   functionTagCandidates: Map<string, string[]>;
+  stateComponentCandidates: Map<string, string[]>;
+  functionComponentCandidates: Map<string, string[]>;
+  linkedDynamicComponentCandidates: Map<
+    string,
+    LinkedDynamicComponentCandidate[]
+  >;
   /** Imported ES bindings cannot be rebound, even when their export is a `let`. */
   importedState: Set<string>;
   /** Linked summaries for imported functions and conservative external calls. */
@@ -226,6 +244,8 @@ export interface Ctx {
   compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
   /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural effects. */
   helpers: Map<string, HelperPath>;
+  /** JSX-returning functions expanded at local render call sites. */
+  jsxHelpers: Map<string, HelperPath>;
   helperSummaries: Map<string, FnSummary>;
   compReads: Map<string, Set<string>>;
   /** parent comp → child comp → number of static JSX references. */
@@ -308,6 +328,12 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
   const stateKeys = new Map<string, string>();
   const stateTagCandidates = new Map<string, string[]>();
   const functionTagCandidates = new Map<string, string[]>();
+  const stateComponentCandidates = new Map<string, string[]>();
+  const functionComponentCandidates = new Map<string, string[]>();
+  const linkedDynamicComponentCandidates = new Map<
+    string,
+    LinkedDynamicComponentCandidate[]
+  >();
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
@@ -318,10 +344,22 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
       if (linked.tagCandidates !== undefined) {
         stateTagCandidates.set(local, [...linked.tagCandidates]);
       }
+      if (linked.componentCandidates !== undefined) {
+        linkedDynamicComponentCandidates.set(
+          local,
+          linked.componentCandidates.map((candidate) => ({ ...candidate })),
+        );
+      }
       importedState.add(local);
     } else if (linked.type === 'function') {
       if (linked.tagCandidates !== undefined) {
         functionTagCandidates.set(local, [...linked.tagCandidates]);
+      }
+      if (linked.componentCandidates !== undefined) {
+        linkedDynamicComponentCandidates.set(
+          local,
+          linked.componentCandidates.map((candidate) => ({ ...candidate })),
+        );
       }
       importedFunctions.set(local, {
         reads: new Set(linked.reads),
@@ -365,6 +403,9 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     stateKeys,
     stateTagCandidates,
     functionTagCandidates,
+    stateComponentCandidates,
+    functionComponentCandidates,
+    linkedDynamicComponentCandidates,
     importedState,
     importedFunctions,
     importedComponents,
@@ -403,6 +444,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     comps: new Map(),
     compPaths: new Map(),
     helpers: new Map(),
+    jsxHelpers: new Map(),
     helperSummaries: new Map(),
     compReads: new Map(),
     childRefCounts: new Map(),

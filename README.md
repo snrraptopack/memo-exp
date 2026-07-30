@@ -6,6 +6,7 @@ Start with:
 
 - `memoized-dom-paradigm.md` for the product and architecture constraints.
 - `emission-spec.md` for the normative compiler contract.
+- `ref-design.md` for the deferred DOM-ref lifecycle and forwarding design.
 - `architecture-review.md` for current implementation status and priorities.
 - `bench/README.md` for benchmark suites and their latest measurements.
 
@@ -170,6 +171,37 @@ return <Tag>{ready ? <View /> : fallback}</Tag>;
 
 Finite intrinsic candidates may come from local helper returns, an imported
 helper's string-literal return contract, or a typed intrinsic registry.
+Finite linked component candidates may also come from an imported helper or
+registry when every candidate component is exported:
+
+```tsx
+import { selectView } from './views';
+
+const View = selectView(mode);
+return <View value={value} />;
+```
+
+JSX-returning local functions are compile-time render helpers. They support
+pure return `if`/`switch` flow and may be used directly as a map callback:
+
+```tsx
+function renderStatus(status) {
+  if (status === 'ready') return <strong>Ready</strong>;
+  return <em>Waiting</em>;
+}
+
+const renderItem = item => <li key={item.id}>{item.label}</li>;
+
+return <main>
+  {renderStatus(status)}
+  <ul>{items.map(renderItem)}</ul>
+</main>;
+```
+
+Static JSX arrays render directly and flatten nested arrays/static spreads.
+Conditional entries still use stable conditional regions, while `.map()`
+entries use keyed list regions. Mutable runtime JSX arrays are not virtual-node
+values; use `.map()` over reactive data instead.
 
 Trusted raw markup can use reactive `innerHTML={markup}`. It is unsanitized and
 cannot be combined with compiler-managed children on the same element.

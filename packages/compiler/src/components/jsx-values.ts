@@ -77,6 +77,96 @@ interface StructuredCandidate {
   value: t.Expression;
 }
 
+type JsxChild =
+  | t.JSXText
+  | t.JSXExpressionContainer
+  | t.JSXSpreadChild
+  | t.JSXElement
+  | t.JSXFragment;
+
+function staticArray(
+  expression: t.Expression,
+  at: NodePath,
+): t.ArrayExpression | null {
+  if (t.isArrayExpression(expression)) return expression;
+  if (!t.isIdentifier(expression)) return null;
+  const binding = at.scope.getBinding(expression.name);
+  if (!binding?.path.isVariableDeclarator()) return null;
+  return t.isArrayExpression(binding.path.node.init)
+    ? binding.path.node.init
+    : null;
+}
+
+function arrayChildren(
+  initializer: t.ArrayExpression,
+  at: NodePath,
+  visiting = new Set<t.Node>(),
+): JsxChild[] {
+  if (visiting.has(initializer)) {
+    throw at.buildCodeFrameError('memo-dom: cyclic JSX array spread');
+  }
+  visiting.add(initializer);
+  const children: JsxChild[] = [];
+  try {
+    for (const element of initializer.elements) {
+      // Array holes and static non-rendering values have normal JSX
+      // collection semantics: they do not occupy a DOM position.
+      if (
+        element == null ||
+        t.isNullLiteral(element) ||
+        t.isBooleanLiteral(element)
+      ) {
+        continue;
+      }
+      if (t.isSpreadElement(element)) {
+        if (!t.isExpression(element.argument)) {
+          throw at.buildCodeFrameError(
+            'memo-dom: JSX array spreads must resolve to a static JSX array',
+          );
+        }
+        const spread = staticArray(element.argument, at);
+        if (spread === null) {
+          throw at.buildCodeFrameError(
+            'memo-dom: JSX array spreads must resolve to a static JSX array',
+          );
+        }
+        children.push(...arrayChildren(spread, at, visiting));
+        continue;
+      }
+      if (t.isArrayExpression(element)) {
+        children.push(...arrayChildren(element, at, visiting));
+        continue;
+      }
+      if (t.isJSXElement(element) || t.isJSXFragment(element)) {
+        children.push(t.cloneNode(element, true));
+        continue;
+      }
+      if (!t.isExpression(element)) {
+        throw at.buildCodeFrameError(
+          'memo-dom: JSX arrays require renderable expression entries',
+        );
+      }
+      children.push(
+        t.jsxExpressionContainer(t.cloneNode(element, true)),
+      );
+    }
+  } finally {
+    visiting.delete(initializer);
+  }
+  return children;
+}
+
+function arrayFragment(
+  initializer: t.ArrayExpression,
+  at: NodePath,
+): t.JSXFragment {
+  return t.jsxFragment(
+    t.jsxOpeningFragment(),
+    t.jsxClosingFragment(),
+    arrayChildren(initializer, at),
+  );
+}
+
 function structuredCandidates(
   initializer: t.ObjectExpression | t.ArrayExpression,
   at: NodePath,
@@ -178,6 +268,30 @@ function selectedStructuredValue(
 export function normalizeComponentJsxValues(ctx: Ctx): void {
   for (const [, componentPath] of ctx.compPaths) {
     let changed = false;
+
+    // Inline arrays in child positions are compile-time fragments, not
+    // runtime virtual-node arrays.
+    componentPath.traverse({
+      JSXExpressionContainer(containerPath) {
+        if (
+          !containerPath.parentPath?.isJSXElement() &&
+          !containerPath.parentPath?.isJSXFragment()
+        ) {
+          return;
+        }
+        const expressionPath = containerPath.get('expression');
+        if (
+          Array.isArray(expressionPath) ||
+          !expressionPath.isArrayExpression() ||
+          !nodeHasJsx(expressionPath.node)
+        ) {
+          return;
+        }
+        containerPath.replaceWith(arrayFragment(expressionPath.node, expressionPath));
+        changed = true;
+      },
+    });
+
     let discovered = true;
 
     while (discovered) {
@@ -205,43 +319,69 @@ export function normalizeComponentJsxValues(ctx: Ctx): void {
             t.isObjectExpression(initializer) ||
             t.isArrayExpression(initializer)
           ) {
-            const candidates = structuredCandidates(initializer, declarationPath);
             for (const reference of references) {
               if (
                 !reference.isIdentifier() ||
-                !belongsToComponent(reference, componentPath) ||
-                !reference.parentPath?.isMemberExpression() ||
-                reference.parentPath.node.object !== reference.node
+                !belongsToComponent(reference, componentPath)
               ) {
                 throw reference.buildCodeFrameError(
-                  `memo-dom: JSX collection '${declaration.id.name}' must be selected with a direct property or index access`,
+                  `memo-dom: JSX collection '${declaration.id.name}' is used outside its component`,
                 );
               }
-              const memberPath = reference.parentPath;
-              if (!isRenderPosition(memberPath, ctx)) {
-                throw memberPath.buildCodeFrameError(
-                  `memo-dom: JSX collection '${declaration.id.name}' is used outside a render position`,
+              if (
+                reference.parentPath?.isMemberExpression() &&
+                reference.parentPath.node.object === reference.node
+              ) {
+                const memberPath = reference.parentPath;
+                if (!isRenderPosition(memberPath, ctx)) {
+                  throw memberPath.buildCodeFrameError(
+                    `memo-dom: JSX collection '${declaration.id.name}' is used outside a render position`,
+                  );
+                }
+                memberPath.replaceWith(
+                  selectedStructuredValue(
+                    memberPath,
+                    structuredCandidates(initializer, declarationPath),
+                  ),
                 );
+                continue;
               }
-              memberPath.replaceWith(
-                selectedStructuredValue(memberPath, candidates),
+              if (
+                t.isArrayExpression(initializer) &&
+                reference.parentPath?.isSpreadElement() &&
+                reference.parentPath.parentPath?.isArrayExpression()
+              ) {
+                reference.replaceWith(t.cloneNode(initializer, true));
+                continue;
+              }
+              if (
+                t.isArrayExpression(initializer) &&
+                isRenderPosition(reference, ctx)
+              ) {
+                reference.replaceWith(arrayFragment(initializer, reference));
+                continue;
+              }
+              throw reference.buildCodeFrameError(
+                t.isArrayExpression(initializer)
+                  ? `memo-dom: JSX collection '${declaration.id.name}' must be rendered directly or selected with a direct index access`
+                  : `memo-dom: JSX collection '${declaration.id.name}' is used outside a render position`,
               );
             }
           } else {
-          for (const reference of references) {
-            if (
-              !reference.isIdentifier() ||
-              !belongsToComponent(reference, componentPath)
-            ) {
-              continue;
+            for (const reference of references) {
+              if (
+                !reference.isIdentifier() ||
+                !belongsToComponent(reference, componentPath)
+              ) {
+                continue;
+              }
+              if (!isRenderPosition(reference, ctx)) {
+                throw reference.buildCodeFrameError(
+                  `memo-dom: JSX value '${declaration.id.name}' is used outside a render position`,
+                );
+              }
+              reference.replaceWith(t.cloneNode(initializer, true));
             }
-            if (!isRenderPosition(reference, ctx)) {
-              throw reference.buildCodeFrameError(
-                `memo-dom: JSX value '${declaration.id.name}' is used outside a render position`,
-              );
-            }
-            reference.replaceWith(t.cloneNode(initializer, true));
-          }
           }
 
           if (statementPath.node.declarations.length === 1) {

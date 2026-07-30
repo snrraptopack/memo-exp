@@ -45,6 +45,7 @@ export function discoverComponentExports(
       const name = path.node.id?.name;
       if (
         name !== undefined &&
+        /^[A-Z]/.test(name) &&
         path.scope.parent?.path.isProgram() === true &&
         containsJsx(path)
       ) {
