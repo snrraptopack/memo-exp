@@ -7,12 +7,19 @@
  * synchronously drains its disposers.
  */
 
-import type { EntityId } from './kernel';
+import { onEntityDispose, type EntityId } from './kernel';
 
 export type CleanupDisposer = () => void;
 
 const ownerCleanups = new Map<EntityId, CleanupDisposer[]>();
 const disposingOwners = new Set<EntityId>();
+let disposalInstalled = false;
+
+function ensureDisposalInstalled(): void {
+  if (disposalInstalled) return;
+  disposalInstalled = true;
+  onEntityDispose(disposeOwnerCleanups);
+}
 
 /** Register one disposer for an entity and return it unchanged. */
 export function cleanup(
@@ -27,6 +34,7 @@ export function cleanup(
       `[memo-dom] cannot register cleanup while '${owner}' is being unregistered`,
     );
   }
+  ensureDisposalInstalled();
   let disposers = ownerCleanups.get(owner);
   if (disposers === undefined) {
     disposers = [];

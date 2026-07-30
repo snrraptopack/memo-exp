@@ -31,6 +31,12 @@ record count, JavaScript heap delta when Chromium exposes it, and production
 JavaScript bundle size. Every adapter runs in a fresh Chromium process, and
 the persisted timing includes median, 25th percentile, and 75th percentile.
 
+The recorded bundle size is the complete production application payload, not
+the size of a framework runtime. For memoized-dom it includes generated
+application code, authored model/validation code, and the tree-shaken runtime
+closure. The standalone full-surface runtime is measured separately by
+`bun run bench:size`; gzip figures from the two suites are not additive.
+
 Initial adapters are Vanilla DOM, memoized-dom, Solid, Svelte, Vue, Preact,
 and React. Adapters use their normal reactive update path; there is no
 synthetic forced-refresh mode.

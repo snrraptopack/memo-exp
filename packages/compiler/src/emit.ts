@@ -55,6 +55,12 @@ import {
   buildOrderedAttributes,
   jsxAttributeName,
 } from './jsx/attributes';
+import {
+  domAttributeWrite,
+  domPropertyName,
+  domPropertyWrite,
+  isMappedDomAttribute,
+} from './jsx/dom-attributes';
 import { createElementExpression, isSvgElement } from './jsx/svg';
 import {
   buildSpreadComponentPropUpdate,
@@ -107,35 +113,6 @@ function textValue(tmp: t.Identifier): t.Expression {
 // ---------------------------------------------------------------------
 // component transform
 // ---------------------------------------------------------------------
-
-/**
- * M5.8: attributes that are really DOM IDL properties — written via
- * setProp (el.x = v) instead of setAttribute. Conservative set: boolean
- * and value-bearing properties where the attribute form is only a
- * DEFAULT (checked, value, …), never reflective state we should stomp.
- */
-const DOM_PROP_ATTRS = new Set([
-  'innerHTML',
-  'checked',
-  'value',
-  'selected',
-  'disabled',
-  'hidden',
-  'multiple',
-  'required',
-  'readOnly',
-  'muted',
-  'open',
-  'controls',
-  'loop',
-  'autoFocus',
-  'autoPlay',
-  'tabIndex',
-]);
-const DOM_MAPPED_ATTRS = new Set([
-  'htmlFor',
-  'crossOrigin',
-]);
 
 /** M5.9: inline text write — if ($sK !== ($t = expr)) { $sK = $t; node.data = … } */
 function textSetter(
@@ -986,11 +963,23 @@ function emitElement(
             ]),
           ),
         );
-      } else if (
-        attrName === 'innerHTML' ||
-        DOM_MAPPED_ATTRS.has(attrName) ||
-        elementSvg
-      ) {
+      } else if (domPropertyName(attrName, elementSvg) !== null) {
+        scope.creation.push(
+          domPropertyWrite(
+            varName,
+            attrName,
+            t.stringLiteral(a.value.value),
+          ),
+        );
+      } else if (isMappedDomAttribute(attrName, elementSvg)) {
+        scope.creation.push(
+          domAttributeWrite(
+            varName,
+            attrName,
+            t.stringLiteral(a.value.value),
+          ),
+        );
+      } else if (elementSvg) {
         scope.creation.push(
           t.expressionStatement(
             t.callExpression(md(ctx, 'setDomValue'), [
@@ -1037,61 +1026,48 @@ function emitElement(
     // M5.8: IDL-property attributes (checked, value, disabled, …) write the
     // DOM property, not the attribute — faster (no attribute-tree walk) and
     // semantically correct for state that lives on the element object.
-    const propName =
-      !elementSvg && DOM_PROP_ATTRS.has(attrName) ? attrName : null;
+    const propName = domPropertyName(attrName, elementSvg);
     // M5.9: inline guarded writes (see slotGuard) — no MD.setX call overhead
-    const makeCall = (): t.Statement =>
-      attrName === 'class' || attrName === 'className'
-        ? slotGuard(
-            scope,
-            key,
-            t.callExpression(md(ctx, 'classValue'), [t.cloneNode(expr)]),
-            (tmp) =>
+    const makeCall = (): t.Statement => {
+      if (attrName === 'class' || attrName === 'className') {
+        return slotGuard(
+          scope,
+          key,
+          t.callExpression(md(ctx, 'classValue'), [t.cloneNode(expr)]),
+          (tmp) =>
             t.expressionStatement(
               t.callExpression(md(ctx, 'setClassValue'), [
                 t.identifier(varName),
                 tmp,
               ]),
             ),
-          )
-        : propName !== null ||
-            DOM_MAPPED_ATTRS.has(attrName) ||
-            elementSvg
-          ? slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
-              t.expressionStatement(
-                t.callExpression(md(ctx, 'setDomValue'), [
-                  t.identifier(varName),
-                  t.stringLiteral(attrName),
-                  tmp,
-                ]),
-              ),
-            )
-          : slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
-              t.expressionStatement(
-                t.conditionalExpression(
-                  t.logicalExpression(
-                    '||',
-                    t.binaryExpression('==', t.cloneNode(tmp), t.nullLiteral()),
-                    t.binaryExpression('===', t.cloneNode(tmp), t.booleanLiteral(false)),
-                  ),
-                  t.callExpression(
-                    t.memberExpression(t.identifier(varName), t.identifier('removeAttribute')),
-                    [t.stringLiteral(attrName)],
-                  ),
-                  t.callExpression(
-                    t.memberExpression(t.identifier(varName), t.identifier('setAttribute')),
-                    [
-                      t.stringLiteral(attrName),
-                      t.conditionalExpression(
-                        t.binaryExpression('===', t.cloneNode(tmp), t.booleanLiteral(true)),
-                        t.stringLiteral(''),
-                        t.callExpression(t.identifier('String'), [t.cloneNode(tmp)]),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
+        );
+      }
+      if (propName !== null) {
+        return slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+          domPropertyWrite(varName, propName, tmp),
+        );
+      }
+      if (isMappedDomAttribute(attrName, elementSvg)) {
+        return slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+          domAttributeWrite(varName, attrName, tmp),
+        );
+      }
+      if (elementSvg) {
+        return slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+          t.expressionStatement(
+            t.callExpression(md(ctx, 'setDomValue'), [
+              t.identifier(varName),
+              t.stringLiteral(attrName),
+              tmp,
+            ]),
+          ),
+        );
+      }
+      return slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+        domAttributeWrite(varName, attrName, tmp),
+      );
+    };
     scope.creation.push(makeCall());
     scope.updaters.push(makeCall);
   }

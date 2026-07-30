@@ -81,8 +81,8 @@ describe('R31 - reactive innerHTML', () => {
         return <div innerHTML="<b>safe-by-author-contract</b>" />;
       }
     `);
-    expect(code).toContain('.setDomValue(');
-    expect(code).toContain('"innerHTML"');
+    expect(code).toContain('.innerHTML =');
+    expect(code).not.toContain('.setDomValue(');
   });
 
   it('rejects mixed managed children and raw HTML', () => {

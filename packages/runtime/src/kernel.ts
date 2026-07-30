@@ -23,7 +23,6 @@
  * only orphan children from subtree teardown.
  */
 
-import { disposeOwnerCleanups } from './cleanup';
 import {
   clearDirtyReasons,
   mergeDirtyReasons,
@@ -116,6 +115,18 @@ export function registryGeneration(): number {
 type RegistryListener = (id: EntityId, kind: 'add' | 'remove') => void;
 const registryListeners: RegistryListener[] = [];
 
+/**
+ * Lifecycle features install their disposer lazily on first use. Keeping the
+ * kernel independent of cleanup/effect/ref modules lets applications that do
+ * not use those features tree-shake their storage and disposal machinery.
+ */
+export type EntityDisposeHook = (id: EntityId) => readonly unknown[] | void;
+const entityDisposeHooks: EntityDisposeHook[] = [];
+
+export function onEntityDispose(fn: EntityDisposeHook): void {
+  if (!entityDisposeHooks.includes(fn)) entityDisposeHooks.push(fn);
+}
+
 export function onRegistryChange(fn: RegistryListener): void {
   registryListeners.push(fn);
 }
@@ -178,7 +189,10 @@ export function unregisterSubtree(id: EntityId): void {
     notifyRegistry(cur, 'remove');
   }
   for (const cur of teardown) {
-    cleanupErrors.push(...disposeOwnerCleanups(cur));
+    for (const dispose of entityDisposeHooks) {
+      const errors = dispose(cur);
+      if (errors !== undefined) cleanupErrors.push(...errors);
+    }
   }
 
   idsCache = null;
