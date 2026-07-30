@@ -45,6 +45,7 @@ import {
 import { isRenderPropReference } from './components/children';
 import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
 import { normalizeComponentDeclarations } from './components/declarations';
+import { initializeGeneratedIdentifiers } from './identifiers';
 
 export interface CompileModulesOptions
   extends Omit<
@@ -377,6 +378,7 @@ function analyzeManifest(
           linkedImports,
         });
         installLinkedDynamicComponentImports(ctx, programPath);
+        initializeGeneratedIdentifiers(ctx, programPath);
         runAnalysis(ctx, programPath);
         const exports: Record<string, LinkedExport> = {};
         const functionTagCandidates = moduleFunctionStringCandidates(

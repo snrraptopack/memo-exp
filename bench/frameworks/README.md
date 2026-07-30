@@ -1,9 +1,13 @@
 <!-- Documents the isolated current-framework state-update benchmark. -->
-# Current Framework Updates
+# Reconciliation Updates
 
 This suite measures update-completion latency in isolated production bundles.
 It is not a pure DOM reconciler benchmark: the reactive track includes each
 framework's state mechanism and scheduler.
+
+This is intentionally a narrow reconciliation workload. See
+[`application/`](./application/) for structured state-to-DOM workflows with
+nested views, derived summaries, filtering, navigation, and detail content.
 
 The adapters use their normal authored formats (`.tsx`, `.vue`, `.svelte`, and
 Angular templates). Each sample runs deterministic no-change, rename, toggle,

@@ -17,6 +17,7 @@ latest measurements, limits, and interpretation.
 | [`jsx`](./jsx/) | `bun run bench:jsx` | Specialized versus ordered-spread authored JSX paths |
 | [`package-size`](./package-size/) | `bun run bench:size` | Built package and real todo browser bundle size |
 | [`frameworks`](./frameworks/) | `bun run bench:frameworks` | Current framework update-completion scenarios |
+| [`application`](./frameworks/application/) | `bun run bench:application` | Structured cross-framework application workflows |
 
 Numbers are machine-local and must be compared using repeated processes on the
 same machine. A mechanism-level benchmark is not evidence of end-to-end

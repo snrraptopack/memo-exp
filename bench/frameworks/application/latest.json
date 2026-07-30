@@ -1,0 +1,984 @@
+{
+  "browser": "Chrome/150.0.7871.187",
+  "config": {
+    "counts": [
+      100,
+      1000
+    ],
+    "samples": 7,
+    "scenarios": [
+      "load",
+      "inspect",
+      "triage",
+      "search",
+      "organize",
+      "navigate",
+      "bulk-update"
+    ],
+    "warmup": 2
+  },
+  "date": "2026-07-30T13:54:51.590Z",
+  "note": "Machine-local application workflow completion; each adapter uses normal reactive events in a fresh browser process.",
+  "platform": "win32 x64",
+  "results": [
+    {
+      "id": "vanilla",
+      "label": "Vanilla DOM",
+      "version": "browser",
+      "bundle": {
+        "gzipBytes": 2630,
+        "rawBytes": 7753
+      },
+      "measurements": [
+        {
+          "count": 100,
+          "heapDeltaBytes": 43873,
+          "mutationRecords": 6,
+          "nsPerOperation": 4600000.001490116,
+          "p25NsPerOperation": 3900000.002235174,
+          "p75NsPerOperation": 4600000.001490116,
+          "scenario": "load"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 2896,
+          "mutationRecords": 5,
+          "nsPerOperation": 699999.9992549419,
+          "p25NsPerOperation": 699999.9992549419,
+          "p75NsPerOperation": 1000000,
+          "scenario": "inspect"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 3792,
+          "mutationRecords": 5,
+          "nsPerOperation": 1000000,
+          "p25NsPerOperation": 800000.0007450581,
+          "p75NsPerOperation": 1000000,
+          "scenario": "triage"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 13072,
+          "mutationRecords": 7,
+          "nsPerOperation": 1300000.000745058,
+          "p25NsPerOperation": 1099999.9977648258,
+          "p75NsPerOperation": 1300000.000745058,
+          "scenario": "search"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 16492,
+          "mutationRecords": 7,
+          "nsPerOperation": 3000000,
+          "p25NsPerOperation": 2400000.002235174,
+          "p75NsPerOperation": 3300000.000745058,
+          "scenario": "organize"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 6816,
+          "mutationRecords": 6,
+          "nsPerOperation": 1200000.0029802322,
+          "p25NsPerOperation": 1000000,
+          "p75NsPerOperation": 1300000.000745058,
+          "scenario": "navigate"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 6684,
+          "mutationRecords": 13,
+          "nsPerOperation": 1300000.000745058,
+          "p25NsPerOperation": 1100000.0014901161,
+          "p75NsPerOperation": 1400000.0022351742,
+          "scenario": "bulk-update"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 401620,
+          "mutationRecords": 6,
+          "nsPerOperation": 47800000.00074506,
+          "p25NsPerOperation": 42899999.998509884,
+          "p75NsPerOperation": 49000000,
+          "scenario": "load"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 20944,
+          "mutationRecords": 5,
+          "nsPerOperation": 2000000,
+          "p25NsPerOperation": 1599999.9977648258,
+          "p75NsPerOperation": 2400000.002235174,
+          "scenario": "inspect"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 5380,
+          "mutationRecords": 5,
+          "nsPerOperation": 1500000,
+          "p25NsPerOperation": 1100000.0014901161,
+          "p75NsPerOperation": 1899999.9985098839,
+          "scenario": "triage"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 103588,
+          "mutationRecords": 7,
+          "nsPerOperation": 8399999.998509884,
+          "p25NsPerOperation": 7000000,
+          "p75NsPerOperation": 8600000.001490116,
+          "scenario": "search"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 139328,
+          "mutationRecords": 7,
+          "nsPerOperation": 25900000.002235174,
+          "p25NsPerOperation": 22699999.999254942,
+          "p75NsPerOperation": 29599999.997764826,
+          "scenario": "organize"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 15800,
+          "mutationRecords": 6,
+          "nsPerOperation": 3000000,
+          "p25NsPerOperation": 2300000.000745058,
+          "p75NsPerOperation": 3000000,
+          "scenario": "navigate"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 42476,
+          "mutationRecords": 103,
+          "nsPerOperation": 34699999.99925494,
+          "p25NsPerOperation": 30699999.999254942,
+          "p75NsPerOperation": 35500000,
+          "scenario": "bulk-update"
+        }
+      ]
+    },
+    {
+      "id": "memoized-dom",
+      "label": "memoized-dom TSX",
+      "version": "workspace",
+      "bundle": {
+        "gzipBytes": 8489,
+        "rawBytes": 27974
+      },
+      "measurements": [
+        {
+          "count": 100,
+          "heapDeltaBytes": 158504,
+          "mutationRecords": 4,
+          "nsPerOperation": 6400000.002235174,
+          "p25NsPerOperation": 5299999.997019768,
+          "p75NsPerOperation": 8000000,
+          "scenario": "load"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 11783,
+          "mutationRecords": 2,
+          "nsPerOperation": 1200000.0029802322,
+          "p25NsPerOperation": 900000.0022351742,
+          "p75NsPerOperation": 1899999.9985098839,
+          "scenario": "inspect"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 16340,
+          "mutationRecords": 7,
+          "nsPerOperation": 1000000,
+          "p25NsPerOperation": 800000.0007450581,
+          "p75NsPerOperation": 1000000,
+          "scenario": "triage"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 36984,
+          "mutationRecords": 96,
+          "nsPerOperation": 2000000,
+          "p25NsPerOperation": 1500000,
+          "p75NsPerOperation": 3099999.997764826,
+          "scenario": "search"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 24896,
+          "mutationRecords": 77,
+          "nsPerOperation": 2199999.999254942,
+          "p25NsPerOperation": 1500000,
+          "p75NsPerOperation": 2300000.000745058,
+          "scenario": "organize"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 19904,
+          "mutationRecords": 4,
+          "nsPerOperation": 1600000.0014901161,
+          "p25NsPerOperation": 1199999.999254942,
+          "p75NsPerOperation": 2199999.999254942,
+          "scenario": "navigate"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 16480,
+          "mutationRecords": 21,
+          "nsPerOperation": 1500000,
+          "p25NsPerOperation": 1000000,
+          "p75NsPerOperation": 1500000,
+          "scenario": "bulk-update"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1478380,
+          "mutationRecords": 4,
+          "nsPerOperation": 59500000,
+          "p25NsPerOperation": 59100000.001490116,
+          "p75NsPerOperation": 61800000.00074506,
+          "scenario": "load"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 93279,
+          "mutationRecords": 2,
+          "nsPerOperation": 2800000.000745058,
+          "p25NsPerOperation": 2599999.997764826,
+          "p75NsPerOperation": 2899999.998509884,
+          "scenario": "inspect"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 142804,
+          "mutationRecords": 7,
+          "nsPerOperation": 2699999.999254942,
+          "p25NsPerOperation": 2000000,
+          "p75NsPerOperation": 2799999.9970197678,
+          "scenario": "triage"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 330600,
+          "mutationRecords": 957,
+          "nsPerOperation": 10000000,
+          "p25NsPerOperation": 8100000.001490116,
+          "p75NsPerOperation": 11599999.997764826,
+          "scenario": "search"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 207252,
+          "mutationRecords": 752,
+          "nsPerOperation": 10199999.999254942,
+          "p25NsPerOperation": 8600000.001490116,
+          "p75NsPerOperation": 10799999.997019768,
+          "scenario": "organize"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 28812,
+          "mutationRecords": 4,
+          "nsPerOperation": 4199999.999254942,
+          "p25NsPerOperation": 3700000.0029802322,
+          "p75NsPerOperation": 4199999.999254942,
+          "scenario": "navigate"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 129756,
+          "mutationRecords": 201,
+          "nsPerOperation": 3800000.000745058,
+          "p25NsPerOperation": 3199999.999254942,
+          "p75NsPerOperation": 3900000.002235174,
+          "scenario": "bulk-update"
+        }
+      ]
+    },
+    {
+      "id": "solid",
+      "label": "Solid",
+      "version": "1.9.14",
+      "bundle": {
+        "gzipBytes": 8368,
+        "rawBytes": 21664
+      },
+      "measurements": [
+        {
+          "count": 100,
+          "heapDeltaBytes": 222026,
+          "mutationRecords": 103,
+          "nsPerOperation": 5900000.002235174,
+          "p25NsPerOperation": 4799999.997019768,
+          "p75NsPerOperation": 6199999.999254942,
+          "scenario": "load"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 23096,
+          "mutationRecords": 2,
+          "nsPerOperation": 1699999.999254942,
+          "p25NsPerOperation": 1300000.000745058,
+          "p75NsPerOperation": 1900000.0022351742,
+          "scenario": "inspect"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 25092,
+          "mutationRecords": 4,
+          "nsPerOperation": 1500000,
+          "p25NsPerOperation": 1300000.000745058,
+          "p75NsPerOperation": 2399999.998509884,
+          "scenario": "triage"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 26213,
+          "mutationRecords": 96,
+          "nsPerOperation": 1900000.0022351742,
+          "p25NsPerOperation": 1699999.999254942,
+          "p75NsPerOperation": 2000000,
+          "scenario": "search"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 25273,
+          "mutationRecords": 125,
+          "nsPerOperation": 2300000.000745058,
+          "p25NsPerOperation": 2000000,
+          "p75NsPerOperation": 3100000.001490116,
+          "scenario": "organize"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 23105,
+          "mutationRecords": 3,
+          "nsPerOperation": 1600000.0014901161,
+          "p25NsPerOperation": 1400000.0022351742,
+          "p75NsPerOperation": 1800000.000745058,
+          "scenario": "navigate"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 47058,
+          "mutationRecords": 21,
+          "nsPerOperation": 2000000,
+          "p25NsPerOperation": 1800000.000745058,
+          "p75NsPerOperation": 2300000.000745058,
+          "scenario": "bulk-update"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 2005709,
+          "mutationRecords": 1003,
+          "nsPerOperation": 53799999.99701977,
+          "p25NsPerOperation": 46600000.001490116,
+          "p75NsPerOperation": 55500000,
+          "scenario": "load"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 217500,
+          "mutationRecords": 2,
+          "nsPerOperation": 6500000,
+          "p25NsPerOperation": 6199999.999254942,
+          "p75NsPerOperation": 7000000,
+          "scenario": "inspect"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 186724,
+          "mutationRecords": 4,
+          "nsPerOperation": 5400000.002235174,
+          "p25NsPerOperation": 3899999.998509884,
+          "p75NsPerOperation": 5800000.000745058,
+          "scenario": "triage"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 232509,
+          "mutationRecords": 957,
+          "nsPerOperation": 11500000,
+          "p25NsPerOperation": 10099999.997764826,
+          "p75NsPerOperation": 11699999.999254942,
+          "scenario": "search"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 212149,
+          "mutationRecords": 1250,
+          "nsPerOperation": 18399999.998509884,
+          "p25NsPerOperation": 16100000.001490116,
+          "p75NsPerOperation": 18799999.997019768,
+          "scenario": "organize"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 109761,
+          "mutationRecords": 3,
+          "nsPerOperation": 8099999.997764826,
+          "p25NsPerOperation": 6299999.997019768,
+          "p75NsPerOperation": 8699999.999254942,
+          "scenario": "navigate"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 401814,
+          "mutationRecords": 201,
+          "nsPerOperation": 11300000.000745058,
+          "p25NsPerOperation": 8300000.000745058,
+          "p75NsPerOperation": 11399999.998509884,
+          "scenario": "bulk-update"
+        }
+      ]
+    },
+    {
+      "id": "svelte",
+      "label": "Svelte",
+      "version": "5.56.8",
+      "bundle": {
+        "gzipBytes": 23544,
+        "rawBytes": 61495
+      },
+      "measurements": [
+        {
+          "count": 100,
+          "heapDeltaBytes": 660538,
+          "mutationRecords": 103,
+          "nsPerOperation": 12899999.998509884,
+          "p25NsPerOperation": 11799999.997019768,
+          "p75NsPerOperation": 13300000.000745058,
+          "scenario": "load"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 141613,
+          "mutationRecords": 2,
+          "nsPerOperation": 3800000.000745058,
+          "p25NsPerOperation": 3500000,
+          "p75NsPerOperation": 4000000,
+          "scenario": "inspect"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 185145,
+          "mutationRecords": 7,
+          "nsPerOperation": 3900000.002235174,
+          "p25NsPerOperation": 3800000.000745058,
+          "p75NsPerOperation": 4199999.999254942,
+          "scenario": "triage"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 130502,
+          "mutationRecords": 96,
+          "nsPerOperation": 4500000,
+          "p25NsPerOperation": 3000000,
+          "p75NsPerOperation": 4699999.999254942,
+          "scenario": "search"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 157157,
+          "mutationRecords": 100,
+          "nsPerOperation": 5500000,
+          "p25NsPerOperation": 5099999.997764826,
+          "p75NsPerOperation": 5699999.999254942,
+          "scenario": "organize"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 130598,
+          "mutationRecords": 4,
+          "nsPerOperation": 4199999.999254942,
+          "p25NsPerOperation": 3399999.998509884,
+          "p75NsPerOperation": 4800000.000745058,
+          "scenario": "navigate"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 247601,
+          "mutationRecords": 21,
+          "nsPerOperation": 5400000.002235174,
+          "p25NsPerOperation": 4300000.000745058,
+          "p75NsPerOperation": 6000000,
+          "scenario": "bulk-update"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 15354980,
+          "mutationRecords": 1003,
+          "nsPerOperation": 149399999.99850988,
+          "p25NsPerOperation": 131300000.00074506,
+          "p75NsPerOperation": 189899999.99850988,
+          "scenario": "load"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1434449,
+          "mutationRecords": 2,
+          "nsPerOperation": 32300000.000745058,
+          "p25NsPerOperation": 27000000,
+          "p75NsPerOperation": 32700000.002980232,
+          "scenario": "inspect"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1821585,
+          "mutationRecords": 7,
+          "nsPerOperation": 25900000.002235174,
+          "p25NsPerOperation": 24500000,
+          "p75NsPerOperation": 29199999.999254942,
+          "scenario": "triage"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1447438,
+          "mutationRecords": 957,
+          "nsPerOperation": 28299999.997019768,
+          "p25NsPerOperation": 25600000.001490116,
+          "p75NsPerOperation": 28799999.997019768,
+          "scenario": "search"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1700353,
+          "mutationRecords": 1000,
+          "nsPerOperation": 39000000,
+          "p25NsPerOperation": 33500000,
+          "p75NsPerOperation": 45500000,
+          "scenario": "organize"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1125790,
+          "mutationRecords": 4,
+          "nsPerOperation": 21199999.999254942,
+          "p25NsPerOperation": 19899999.998509884,
+          "p75NsPerOperation": 21599999.997764826,
+          "scenario": "navigate"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 2339441,
+          "mutationRecords": 201,
+          "nsPerOperation": 39900000.002235174,
+          "p25NsPerOperation": 37899999.998509884,
+          "p75NsPerOperation": 45000000,
+          "scenario": "bulk-update"
+        }
+      ]
+    },
+    {
+      "id": "vue",
+      "label": "Vue",
+      "version": "3.5.40",
+      "bundle": {
+        "gzipBytes": 28161,
+        "rawBytes": 70353
+      },
+      "measurements": [
+        {
+          "count": 100,
+          "heapDeltaBytes": 288149,
+          "mutationRecords": 104,
+          "nsPerOperation": 10600000.001490116,
+          "p25NsPerOperation": 7900000.002235174,
+          "p75NsPerOperation": 11099999.997764826,
+          "scenario": "load"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 133721,
+          "mutationRecords": 4,
+          "nsPerOperation": 3699999.999254942,
+          "p25NsPerOperation": 3000000,
+          "p75NsPerOperation": 4000000,
+          "scenario": "inspect"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 136453,
+          "mutationRecords": 8,
+          "nsPerOperation": 3900000.002235174,
+          "p25NsPerOperation": 3300000.000745058,
+          "p75NsPerOperation": 4399999.998509884,
+          "scenario": "triage"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 67582,
+          "mutationRecords": 97,
+          "nsPerOperation": 3099999.997764826,
+          "p25NsPerOperation": 2899999.998509884,
+          "p75NsPerOperation": 3299999.9970197678,
+          "scenario": "search"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 110033,
+          "mutationRecords": 101,
+          "nsPerOperation": 3899999.998509884,
+          "p25NsPerOperation": 3699999.999254942,
+          "p75NsPerOperation": 4199999.999254942,
+          "scenario": "organize"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 50384,
+          "mutationRecords": 5,
+          "nsPerOperation": 3899999.998509884,
+          "p25NsPerOperation": 3399999.998509884,
+          "p75NsPerOperation": 4100000.001490116,
+          "scenario": "navigate"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 151009,
+          "mutationRecords": 22,
+          "nsPerOperation": 4000000,
+          "p25NsPerOperation": 3699999.999254942,
+          "p75NsPerOperation": 4899999.998509884,
+          "scenario": "bulk-update"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 2694009,
+          "mutationRecords": 1004,
+          "nsPerOperation": 93899999.99850988,
+          "p25NsPerOperation": 85800000.00074506,
+          "p75NsPerOperation": 94900000.00223517,
+          "scenario": "load"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1237933,
+          "mutationRecords": 4,
+          "nsPerOperation": 26200000.002980232,
+          "p25NsPerOperation": 24199999.999254942,
+          "p75NsPerOperation": 28100000.001490116,
+          "scenario": "inspect"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1244245,
+          "mutationRecords": 8,
+          "nsPerOperation": 22199999.999254942,
+          "p25NsPerOperation": 21100000.001490116,
+          "p75NsPerOperation": 22800000.000745058,
+          "scenario": "triage"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 584230,
+          "mutationRecords": 958,
+          "nsPerOperation": 24099999.997764826,
+          "p25NsPerOperation": 22500000,
+          "p75NsPerOperation": 24900000.002235174,
+          "scenario": "search"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1004285,
+          "mutationRecords": 1001,
+          "nsPerOperation": 46600000.001490116,
+          "p25NsPerOperation": 42500000,
+          "p75NsPerOperation": 47600000.001490116,
+          "scenario": "organize"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 355532,
+          "mutationRecords": 5,
+          "nsPerOperation": 20699999.999254942,
+          "p25NsPerOperation": 18799999.997019768,
+          "p75NsPerOperation": 23399999.998509884,
+          "scenario": "navigate"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1415309,
+          "mutationRecords": 202,
+          "nsPerOperation": 31699999.999254942,
+          "p25NsPerOperation": 28800000.000745058,
+          "p75NsPerOperation": 33800000.00074506,
+          "scenario": "bulk-update"
+        }
+      ]
+    },
+    {
+      "id": "preact",
+      "label": "Preact",
+      "version": "10.29.7",
+      "bundle": {
+        "gzipBytes": 10046,
+        "rawBytes": 25875
+      },
+      "measurements": [
+        {
+          "count": 100,
+          "heapDeltaBytes": 429057,
+          "mutationRecords": 103,
+          "nsPerOperation": 20699999.999254942,
+          "p25NsPerOperation": 14100000.001490116,
+          "p75NsPerOperation": 21899999.998509884,
+          "scenario": "load"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 54412,
+          "mutationRecords": 2,
+          "nsPerOperation": 3300000.000745058,
+          "p25NsPerOperation": 2799999.9970197678,
+          "p75NsPerOperation": 3300000.000745058,
+          "scenario": "inspect"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 54141,
+          "mutationRecords": 7,
+          "nsPerOperation": 3099999.997764826,
+          "p25NsPerOperation": 2600000.001490116,
+          "p75NsPerOperation": 3400000.002235174,
+          "scenario": "triage"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 59526,
+          "mutationRecords": 96,
+          "nsPerOperation": 2800000.000745058,
+          "p25NsPerOperation": 2400000.002235174,
+          "p75NsPerOperation": 3500000,
+          "scenario": "search"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 48753,
+          "mutationRecords": 100,
+          "nsPerOperation": 3100000.001490116,
+          "p25NsPerOperation": 2300000.000745058,
+          "p75NsPerOperation": 3399999.998509884,
+          "scenario": "organize"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 57081,
+          "mutationRecords": 4,
+          "nsPerOperation": 2400000.002235174,
+          "p25NsPerOperation": 1899999.9985098839,
+          "p75NsPerOperation": 2899999.998509884,
+          "scenario": "navigate"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 72373,
+          "mutationRecords": 21,
+          "nsPerOperation": 2199999.999254942,
+          "p25NsPerOperation": 2100000.001490116,
+          "p75NsPerOperation": 2399999.998509884,
+          "scenario": "bulk-update"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 3845693,
+          "mutationRecords": 1003,
+          "nsPerOperation": 135000000,
+          "p25NsPerOperation": 131400000.00223517,
+          "p75NsPerOperation": 142300000.00074506,
+          "scenario": "load"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 283040,
+          "mutationRecords": 2,
+          "nsPerOperation": 7799999.997019768,
+          "p25NsPerOperation": 6299999.997019768,
+          "p75NsPerOperation": 8500000,
+          "scenario": "inspect"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 265857,
+          "mutationRecords": 7,
+          "nsPerOperation": 8199999.999254942,
+          "p25NsPerOperation": 6800000.000745058,
+          "p75NsPerOperation": 8599999.997764826,
+          "scenario": "triage"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 417010,
+          "mutationRecords": 957,
+          "nsPerOperation": 15199999.999254942,
+          "p25NsPerOperation": 12599999.997764826,
+          "p75NsPerOperation": 15300000.000745058,
+          "scenario": "search"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 306557,
+          "mutationRecords": 1000,
+          "nsPerOperation": 19000000,
+          "p25NsPerOperation": 17099999.997764826,
+          "p75NsPerOperation": 20100000.001490116,
+          "scenario": "organize"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 328845,
+          "mutationRecords": 4,
+          "nsPerOperation": 5700000.002980232,
+          "p25NsPerOperation": 5699999.999254942,
+          "p75NsPerOperation": 5799999.997019768,
+          "scenario": "navigate"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 549405,
+          "mutationRecords": 201,
+          "nsPerOperation": 16200000.002980232,
+          "p25NsPerOperation": 11899999.998509884,
+          "p75NsPerOperation": 16400000.002235174,
+          "scenario": "bulk-update"
+        }
+      ]
+    },
+    {
+      "id": "react",
+      "label": "React",
+      "version": "19.2.8",
+      "bundle": {
+        "gzipBytes": 63222,
+        "rawBytes": 199362
+      },
+      "measurements": [
+        {
+          "count": 100,
+          "heapDeltaBytes": 233927,
+          "mutationRecords": 105,
+          "nsPerOperation": 11400000.002235174,
+          "p25NsPerOperation": 8800000.000745058,
+          "p75NsPerOperation": 13899999.998509884,
+          "scenario": "load"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 45162,
+          "mutationRecords": 4,
+          "nsPerOperation": 2900000.002235174,
+          "p25NsPerOperation": 2399999.998509884,
+          "p75NsPerOperation": 3600000.001490116,
+          "scenario": "inspect"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 43659,
+          "mutationRecords": 9,
+          "nsPerOperation": 1899999.9985098839,
+          "p25NsPerOperation": 1600000.0014901161,
+          "p75NsPerOperation": 2600000.001490116,
+          "scenario": "triage"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 114687,
+          "mutationRecords": 99,
+          "nsPerOperation": 2800000.000745058,
+          "p25NsPerOperation": 2600000.001490116,
+          "p75NsPerOperation": 3000000,
+          "scenario": "search"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 79107,
+          "mutationRecords": 102,
+          "nsPerOperation": 2500000,
+          "p25NsPerOperation": 2300000.000745058,
+          "p75NsPerOperation": 2500000,
+          "scenario": "organize"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 109507,
+          "mutationRecords": 6,
+          "nsPerOperation": 2500000,
+          "p25NsPerOperation": 2500000,
+          "p75NsPerOperation": 2500000,
+          "scenario": "navigate"
+        },
+        {
+          "count": 100,
+          "heapDeltaBytes": 54635,
+          "mutationRecords": 23,
+          "nsPerOperation": 1699999.999254942,
+          "p25NsPerOperation": 1500000,
+          "p75NsPerOperation": 1900000.0022351742,
+          "scenario": "bulk-update"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1927931,
+          "mutationRecords": 1005,
+          "nsPerOperation": 89300000.00074506,
+          "p25NsPerOperation": 80600000.00149012,
+          "p75NsPerOperation": 93599999.99776483,
+          "scenario": "load"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 308826,
+          "mutationRecords": 4,
+          "nsPerOperation": 5099999.997764826,
+          "p25NsPerOperation": 4399999.998509884,
+          "p75NsPerOperation": 5699999.999254942,
+          "scenario": "inspect"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 293967,
+          "mutationRecords": 9,
+          "nsPerOperation": 3399999.998509884,
+          "p25NsPerOperation": 3000000,
+          "p75NsPerOperation": 3400000.002235174,
+          "scenario": "triage"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 1010919,
+          "mutationRecords": 960,
+          "nsPerOperation": 16500000,
+          "p25NsPerOperation": 15100000.001490116,
+          "p75NsPerOperation": 16800000.000745058,
+          "scenario": "search"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 644755,
+          "mutationRecords": 1002,
+          "nsPerOperation": 14800000.000745058,
+          "p25NsPerOperation": 13300000.000745058,
+          "p75NsPerOperation": 19099999.997764826,
+          "scenario": "organize"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 903483,
+          "mutationRecords": 6,
+          "nsPerOperation": 13000000,
+          "p25NsPerOperation": 11699999.999254942,
+          "p75NsPerOperation": 15100000.001490116,
+          "scenario": "navigate"
+        },
+        {
+          "count": 1000,
+          "heapDeltaBytes": 426011,
+          "mutationRecords": 203,
+          "nsPerOperation": 6500000,
+          "p25NsPerOperation": 5599999.997764826,
+          "p75NsPerOperation": 6699999.999254942,
+          "scenario": "bulk-update"
+        }
+      ]
+    }
+  ]
+}

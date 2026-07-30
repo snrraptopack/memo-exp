@@ -4,9 +4,12 @@
   "type": "module",
   "scripts": {
     "build": "bun run build.ts",
-    "run": "bun run build.ts && bun run run.ts"
+    "run": "bun run build.ts && bun run run.ts",
+    "build:application": "bun run application/build.ts",
+    "run:application": "bun run application/build.ts && bun run application/run.ts"
   },
   "devDependencies": {
+    "@babel/core": "7.29.7",
     "@angular/common": "22.0.8",
     "@angular/compiler": "22.0.8",
     "@angular/compiler-cli": "22.0.8",
