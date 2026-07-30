@@ -198,13 +198,21 @@ export function collectComponentPropSources(
       for (const attributePath of opening.get('attributes')) {
         if (attributePath.isJSXSpreadAttribute()) {
           for (const prop of targetPlan?.names ?? []) {
+            if (prop === 'ref' || targetPlan?.refProps.includes(prop)) continue;
             addSource(byTag, name.name, prop, { type: 'root' });
           }
           continue;
         }
         if (!attributePath.isJSXAttribute()) continue;
         const prop = jsxPropName(attributePath.node);
-        if (prop === null || prop === 'key') continue;
+        if (
+          prop === null ||
+          prop === 'key' ||
+          prop === 'ref' ||
+          targetPlan?.refProps.includes(prop) === true
+        ) {
+          continue;
+        }
         const value = attributePath.node.value;
         if (
           !t.isJSXExpressionContainer(value) ||

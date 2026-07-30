@@ -122,7 +122,7 @@ export function buildBranchCreate(
   allowConditions = false,
   usedConditions?: { count: number },
 ): t.ArrowFunctionExpression {
-  const branchScope = newEmitScope(ctx);
+  const branchScope = newEmitScope(ctx, true);
   if (usedConditions !== undefined) {
     branchScope.usedConds = usedConditions;
   }
@@ -157,7 +157,7 @@ export function buildBranchCreate(
     branchScope.disposableCallbacks.length > 0
   ) {
     const disposeStatements: t.Statement[] = [
-      ...branchScope.disposableCallbacks.map((callback) =>
+      ...[...branchScope.disposableCallbacks].reverse().map((callback) =>
         t.ifStatement(
           t.binaryExpression(
             '!==',
@@ -205,6 +205,7 @@ export function buildBranchCreate(
       cacheDecl(branchScope),
       updateDecl(branchScope),
       ...branchScope.creation,
+      ...branchScope.mounts,
       t.returnStatement(t.objectExpression(properties)),
     ]),
   );

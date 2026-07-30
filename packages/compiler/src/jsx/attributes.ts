@@ -18,6 +18,7 @@ export interface OrderedAttributes {
 export interface OrderedAttributeOptions {
   skipKey?: boolean;
   eventValue?: (name: string, value: t.Expression) => t.Expression;
+  attributeValue?: (name: string, value: t.Expression) => t.Expression;
   fail(message: string): never;
 }
 
@@ -44,7 +45,9 @@ export function buildOrderedAttributes(
 
     const name = jsxAttributeName(attribute.name);
     if (name === 'key' && options.skipKey) continue;
-    const value = jsxAttributeValue(attribute, options.fail);
+    const sourceValue = jsxAttributeValue(attribute, options.fail);
+    const value =
+      options.attributeValue?.(name, sourceValue) ?? sourceValue;
     const event =
       /^on[A-Z]/.test(name) && options.eventValue !== undefined
         ? options.eventValue(name, value)
@@ -59,7 +62,7 @@ export function buildOrderedAttributes(
         t.isIdentifier(event) && event.name === name,
       ),
     );
-    sources.push(t.cloneNode(value));
+    sources.push(t.cloneNode(sourceValue));
     if (/^on[A-Z]/.test(name) && index > lastSpread) {
       safeEventKeys.push(name);
     }

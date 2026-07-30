@@ -663,6 +663,7 @@ function linkedDynamicCandidates(
           listLightweight: candidate.listLightweight,
           renderProps: [...candidate.renderProps],
           renderCallbacks: [...candidate.renderCallbacks],
+          refProps: [...candidate.refProps],
           subtreeReads: [...candidate.subtreeReads],
         };
       }
@@ -747,6 +748,7 @@ function linkImports(
         listLightweight: targetExport.listLightweight,
         renderProps,
         renderCallbacks: [...targetExport.renderCallbacks],
+        refProps: [...targetExport.refProps],
         subtreeReads: [...targetExport.subtreeReads],
       };
     } else {

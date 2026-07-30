@@ -133,7 +133,7 @@ function applyDomProp(
   eventRootId: string,
   safeEvents: Set<string>,
 ): void {
-  if (name === 'key' || name === 'children') return;
+  if (name === 'key' || name === 'children' || name === 'ref') return;
   if (/^on[A-Z]/.test(name)) {
     setEvent(
       element,

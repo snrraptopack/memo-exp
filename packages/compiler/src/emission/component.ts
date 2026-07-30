@@ -59,7 +59,7 @@ export function transformComponent(
     refs.some((ref) => ref.sourceLocal === true) ||
     linkedRefs.some((ref) => ref.sourceLocal);
   const lightweight = isLightweightListedComponent(ctx, name);
-  const scope = newEmitScope(ctx);
+  const scope = newEmitScope(ctx, lightweight);
   const localDerivations = ctx.instanceDerivations.get(name);
   const controlFlow = ctx.instanceControlFlow.get(name);
   const effects = ctx.effects.get(name);
@@ -234,7 +234,7 @@ export function transformComponent(
       ),
     );
   }
-  body.push(...scope.creation);
+  body.push(...scope.creation, ...scope.mounts);
   if (effects !== undefined) {
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));
   }
@@ -267,6 +267,32 @@ export function transformComponent(
                     nextProps,
                     t.blockStatement(
                       buildPropReplay(propPlan, nextProps),
+                    ),
+                  ),
+                ),
+              ]
+            : []),
+          ...(scope.disposableCallbacks.length > 0
+            ? [
+                t.objectProperty(
+                  t.identifier('dispose'),
+                  t.arrowFunctionExpression(
+                    [],
+                    t.blockStatement(
+                      [...scope.disposableCallbacks]
+                        .reverse()
+                        .map((callback) =>
+                          t.ifStatement(
+                            t.binaryExpression(
+                              '!==',
+                              t.cloneNode(callback),
+                              t.nullLiteral(),
+                            ),
+                            t.expressionStatement(
+                              t.callExpression(t.cloneNode(callback), []),
+                            ),
+                          ),
+                        ),
                     ),
                   ),
                 ),

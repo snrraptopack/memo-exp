@@ -52,6 +52,8 @@ export interface ListEntry {
    * so an unchanged item costs one comparison pass and nothing else).
    */
   updateProps?: (item: unknown, index: number) => void;
+  /** Allocation-free rows may own mount lifecycle without an entity record. */
+  dispose?: () => void;
 }
 
 export type KeyFn<T> = (item: T, index: number) => unknown;
@@ -267,6 +269,7 @@ export function createListRegion<T>(
 
     // ---- removals BEFORE placement (keeps placement math accurate) ----------
     for (const [k, rec] of old) {
+      rec.e.dispose?.();
       for (const n of rec.e.nodes) n.parentNode?.removeChild(n);
       for (const eid of rec.e.entities) unregisterSubtree(eid);
       syntheticIds.delete(k);
@@ -312,6 +315,7 @@ export function createListRegion<T>(
 
   function dispose(): void {
     for (const [key, rec] of cache) {
+      rec.e.dispose?.();
       for (const node of rec.e.nodes) node.parentNode?.removeChild(node);
       for (const entity of rec.e.entities) unregisterSubtree(entity);
       syntheticIds.delete(key);

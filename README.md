@@ -6,7 +6,7 @@ Start with:
 
 - `memoized-dom-paradigm.md` for the product and architecture constraints.
 - `emission-spec.md` for the normative compiler contract.
-- `ref-design.md` for the deferred DOM-ref lifecycle and forwarding design.
+- `ref-design.md` for compiler-native DOM refs, forwarding, and teardown.
 - `architecture-review.md` for current implementation status and priorities.
 - `bench/README.md` for benchmark suites and their latest measurements.
 
@@ -210,6 +210,18 @@ Pure exhaustive component `if`/`switch` calculations participate in the
 source-ordered render prelude. JSX early returns, JSX-returning terminal
 switches, and chained JSX ternaries lower to stable structural regions; the
 component factory is not rerun when a branch changes.
+
+DOM refs use the normal JSX attribute without a wrapper:
+
+```tsx
+let input: HTMLInputElement | undefined;
+return <input ref={input} />;
+```
+
+Mutable refs are assigned once and conditionally cleared on structural
+teardown. Callback refs may return cleanup, arrays install several refs in
+deterministic order, and components forward ref adapters explicitly. Ordinary
+`ref` properties also travel through spreads; no public ref-key API exists.
 
 Run the Chromium benchmark:
 

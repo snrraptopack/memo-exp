@@ -16,6 +16,8 @@ export interface EmitScope {
   /** Optional dependency reasons accepted by the owner updater. */
   reasonVar: string | null;
   creation: t.Statement[];
+  /** Lifecycle setup that runs only after this scope's full DOM is created. */
+  mounts: t.Statement[];
   updaters: Array<() => t.Statement>;
   tagCounters: Map<string, number>;
   childCounts: Map<string, number>;
@@ -31,15 +33,18 @@ export interface EmitScope {
   disposableCallbacks: t.Identifier[];
   /** Source-order identity for forwarded slot mounts in this scope. */
   forwardedSlotCounter: number;
+  /** Branch/slot scopes drain callbacks directly instead of by entity owner. */
+  manualDisposal: boolean;
 }
 
-export function newEmitScope(ctx: Ctx): EmitScope {
+export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
   return {
     slots: [],
     tempVar: generatedIdentifier(ctx, 'value').name,
     updateVar: generatedIdentifier(ctx, 'update').name,
     reasonVar: null,
     creation: [],
+    mounts: [],
     updaters: [],
     tagCounters: new Map(),
     childCounts: new Map(),
@@ -51,6 +56,7 @@ export function newEmitScope(ctx: Ctx): EmitScope {
     disposableEntities: [],
     disposableCallbacks: [],
     forwardedSlotCounter: 0,
+    manualDisposal,
   };
 }
 

@@ -31,6 +31,8 @@ export interface ComponentPropsPlan {
   renderProps: string[];
   /** Props invoked by structural list sites as caller-owned row factories. */
   renderCallbacks: string[];
+  /** Props consumed as DOM ref adapters and forwarded without reading a sink. */
+  refProps: string[];
 }
 
 export interface LocalDerivation {
@@ -78,6 +80,7 @@ export function analyzeComponentProps(
       hasWholeDefault: false,
       renderProps: [],
       renderCallbacks: [],
+      refProps: [],
     };
   }
 
@@ -102,6 +105,7 @@ export function analyzeComponentProps(
       hasWholeDefault: t.isAssignmentPattern(plain[0]),
       renderProps: [],
       renderCallbacks: [],
+      refProps: [],
     };
   }
 
@@ -124,6 +128,7 @@ export function analyzeComponentProps(
     hasWholeDefault: false,
     renderProps: [],
     renderCallbacks: [],
+    refProps: [],
   };
 }
 

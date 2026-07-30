@@ -17,11 +17,11 @@ Domain folders keep related implementation details discoverable:
 | Folder | Responsibility |
 |---|---|
 | `src/analysis/` | Computeds, component paths, instance preludes, and access tables |
-| `src/components/` | Prop contracts, content slots, and linker manifests |
+| `src/components/` | Prop contracts, content/ref slots, and linker manifests |
 | `src/context/` | Compiler data model/context construction and raw AST helpers |
 | `src/emission/` | Component factories, generated scopes, and list/conditional regions |
 | `src/handlers/` | Mutation traversal and commit-routing analysis |
-| `src/jsx/` | Ordered attributes, child classification, and namespaces |
+| `src/jsx/` | Ordered attributes, child classification, refs, and namespaces |
 
 The top-level analysis, context, emitter, and handler modules intentionally
 remain stable facades. Cross-domain callers use those facades; implementation

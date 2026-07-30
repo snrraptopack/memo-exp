@@ -1,7 +1,7 @@
 # @memoized-dom/runtime
 
 Dependency-free registry, scheduling, optional dirty-reason batching, access
-routing, keyed regions, props boxes, cleanup ownership, and DOM value helpers
+routing, keyed regions, props boxes, cleanup/ref ownership, and DOM value helpers
 for memoized-dom compiler output.
 
 Application source does not need to import reactive primitives. Generated

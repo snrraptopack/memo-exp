@@ -87,6 +87,8 @@ export interface LinkedComponentImport {
   renderProps?: string[];
   /** Props consumed as caller-owned structural row factories. */
   renderCallbacks?: string[];
+  /** Props consumed as DOM ref adapters. */
+  refProps?: string[];
   /** Canonical module dependencies read by this component and descendants. */
   subtreeReads?: string[];
 }
@@ -399,6 +401,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
       hasWholeDefault: component.hasWholeDefault,
       renderProps: [...(component.renderProps ?? [])],
       renderCallbacks: [...(component.renderCallbacks ?? [])],
+      refProps: [...(component.refProps ?? [])],
     });
   }
   const linkedComponentRenderProps = new Map(

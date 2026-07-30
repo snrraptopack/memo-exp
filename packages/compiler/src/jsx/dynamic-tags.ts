@@ -35,6 +35,7 @@ function linkedComponentPlan(
     hasWholeDefault: component.hasWholeDefault,
     renderProps: [...(component.renderProps ?? [])],
     renderCallbacks: [...(component.renderCallbacks ?? [])],
+    refProps: [...(component.refProps ?? [])],
   };
 }
 
@@ -82,6 +83,7 @@ export function installLinkedDynamicComponentImports(
           listLightweight: candidate.listLightweight,
           renderProps: [...(candidate.renderProps ?? [])],
           renderCallbacks: [...(candidate.renderCallbacks ?? [])],
+          refProps: [...(candidate.refProps ?? [])],
           subtreeReads: [...(candidate.subtreeReads ?? [])],
         };
         ctx.importedComponents.set(local, component);

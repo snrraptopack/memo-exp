@@ -35,6 +35,7 @@ import {
   type EmitScope,
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
+import { compileRefValue } from '../jsx/refs';
 
 export type AuthoredChildrenSlotBuilder = (
   ctx: Ctx,
@@ -267,6 +268,10 @@ function buildComponentRowCreate(
 
   if (hasSpread) {
     propObjectExpression = buildOrderedAttributes(attributes, {
+      attributeValue: (name, value) =>
+        name === 'ref' || targetPlan?.refProps.includes(name) === true
+          ? compileRefValue(ctx, componentPath, componentName, value)
+          : value,
       fail: (message) => {
         throw componentPath.buildCodeFrameError(message);
       },
@@ -328,6 +333,21 @@ function buildComponentRowCreate(
         propEntries.push({
           name: propName,
           value: renderValueSlot(value),
+        });
+        continue;
+      }
+      if (
+        propName === 'ref' ||
+        targetPlan?.refProps.includes(propName) === true
+      ) {
+        propEntries.push({
+          name: propName,
+          value: compileRefValue(
+            ctx,
+            componentPath,
+            componentName,
+            value,
+          ),
         });
         continue;
       }
@@ -481,6 +501,10 @@ function buildComponentRowCreate(
           t.identifier('update'),
           t.memberExpression(t.cloneNode(result), t.identifier('update')),
         ),
+        t.objectProperty(
+          t.identifier('dispose'),
+          t.memberExpression(t.cloneNode(result), t.identifier('dispose')),
+        ),
       ]
     : [
         t.objectProperty(
@@ -520,6 +544,7 @@ function buildComponentRowCreate(
         ? [cacheDecl(rowScope), updateDecl(rowScope)]
         : []),
       ...rowScope.creation,
+      ...rowScope.mounts,
       ...prefixStatements,
       t.variableDeclaration('const', [
         t.variableDeclarator(
@@ -664,6 +689,7 @@ function buildInlineRowCreate(
         t.identifier(rowScope.updateVar),
       ),
       ...rowScope.creation,
+      ...rowScope.mounts,
       t.returnStatement(
         t.objectExpression([
           t.objectProperty(

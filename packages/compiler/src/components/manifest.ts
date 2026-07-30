@@ -34,6 +34,7 @@ export interface ComponentExportInfo {
   listLightweight: boolean;
   renderProps: string[];
   renderCallbacks: string[];
+  refProps: string[];
   subtreeReads: string[];
 }
 
@@ -62,6 +63,7 @@ export function discoverComponentExports(
           listLightweight: false,
           renderProps: [],
           renderCallbacks: [],
+          refProps: [],
           subtreeReads: [],
         });
       }
@@ -87,6 +89,7 @@ export function analyzedComponentExport(
     listLightweight: isListLightweightCandidate(ctx, local),
     renderProps: [...props.renderProps],
     renderCallbacks: [...props.renderCallbacks],
+    refProps: [...props.refProps],
     subtreeReads: [...componentSubtreeReads(ctx, local)]
       .map((key) => canonicalStateKey(ctx, key))
       .sort(),

@@ -231,6 +231,7 @@ export function buildRenderCallbackAdapter(
         t.cloneNode(refreshRow),
       ),
       ...rowScope.creation,
+      ...rowScope.mounts,
       t.expressionStatement(
         t.callExpression(
           t.memberExpression(t.cloneNode(liveRows), t.identifier('add')),

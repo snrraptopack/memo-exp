@@ -316,6 +316,12 @@ export function nodeHasJsx(root: t.Node): boolean {
 export function collectStateIds(ctx: Ctx, root: t.Node): Set<string> {
   const output = new Set<string>();
   walkNodes(root, (node) => {
+    if (
+      t.isJSXAttribute(node) &&
+      t.isJSXIdentifier(node.name, { name: 'ref' })
+    ) {
+      return false;
+    }
     if (t.isIdentifier(node) && ctx.state.has(node.name)) {
       output.add(node.name);
     }

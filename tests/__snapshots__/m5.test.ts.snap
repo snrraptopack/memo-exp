@@ -147,6 +147,7 @@ export function CompList(_id2, _parent) {
       nodes: _entry.nodes,
       entities: [],
       update: _entry.update,
+      dispose: _entry.dispose,
       updateProps: _nextItem => {
         item = _nextItem;
         _entry.updateProps(item);

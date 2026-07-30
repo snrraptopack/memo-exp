@@ -1230,6 +1230,43 @@ idempotent disposer. The caller updater uses a scalar fast path for one mount
 and allocates a `Set` only when a second live mount exists. Structural owner
 cleanup removes update registrations and drains nested regions/entities.
 
+### R44 - DOM refs are compiler-native lifecycle slots
+
+`ref={target}` on a host element does not emit a DOM attribute or dynamic
+setter. An assignable identifier/member target becomes a caller-owned callback
+adapter:
+
+```tsx
+let input;
+return <input ref={input} />;
+```
+
+Conceptually the adapter assigns `input = node` on mount and clears it during
+teardown only if `input === node`. Member receivers and computed keys are
+evaluated once. Compiler-generated ref storage does not issue a reactive
+commit.
+
+Callback refs receive the real node and may return synchronous teardown.
+Factories are evaluated once during creation. Ref arrays mount left-to-right,
+tear down or roll back right-to-left, and may be nested but not spread.
+Callback replacement on a retained element is intentionally not reactive.
+
+The compiler emits mount work after the local DOM creation phase. Static refs
+register with their component owner; branch refs belong to the active branch,
+list refs to their row entity, and lazy-slot refs to that slot mount. Removing
+the smallest owner immediately drains its refs.
+
+Component refs are callback adapters passed through the ordinary props ABI.
+The callee must forward `ref` or a named ref prop explicitly to a host.
+Component manifests serialize named ref-prop contracts across modules. A
+generic component rest spread can forward `ref` without declaring a host.
+
+Spread-bearing hosts select an ordinary `ref` property using authored
+source-order overrides, mount it once, and omit it from DOM patching. No
+`createRefKey()` or user-facing ref object exists. Programmatic object refs use
+callbacks because `{ ref: local }` has already read `local` under ordinary
+JavaScript semantics.
+
 ## 4. Read/write analysis
 
 The compiler builds the access table by walking component bodies. Analysis is

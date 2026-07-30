@@ -144,7 +144,7 @@ export function buildChildrenSlot(
   identityOwner: t.Expression,
   emit: EmitChildSlot,
 ): t.Identifier {
-  const childScope = newEmitScope(ctx);
+  const childScope = newEmitScope(ctx, true);
   childScope.childCounts = ownerScope.childCounts;
   childScope.usedPrefixes = ownerScope.usedPrefixes;
   childScope.usedConds = ownerScope.usedConds;
@@ -216,6 +216,7 @@ export function buildChildrenSlot(
             cacheDecl(childScope),
             updateDecl(childScope),
             ...childScope.creation,
+            ...childScope.mounts,
             t.ifStatement(
               t.binaryExpression(
                 '===',
@@ -310,6 +311,18 @@ export function buildChildrenSlot(
                             t.identifier('dispose'),
                           ),
                           [],
+                        ),
+                      ),
+                    ),
+                    ...[...childScope.disposableCallbacks].reverse().map((callback) =>
+                      t.ifStatement(
+                        t.binaryExpression(
+                          '!==',
+                          t.cloneNode(callback),
+                          t.nullLiteral(),
+                        ),
+                        t.expressionStatement(
+                          t.callExpression(t.cloneNode(callback), []),
                         ),
                       ),
                     ),

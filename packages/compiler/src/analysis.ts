@@ -68,6 +68,7 @@ import {
 } from './jsx/dynamic-tags';
 import { moduleStateStringCandidates } from './analysis/type-candidates';
 import { foldRenderCallbackSubtreeReads } from './analysis/component-reads';
+import { scanRefProps } from './components/ref-props';
 
 export { analyzeComputed } from './analysis/computed';
 export {
@@ -1083,6 +1084,16 @@ function collectReads(ctx: Ctx): void {
     }
 
     p.traverse({
+      JSXAttribute(attribute) {
+        const name = attribute.node.name;
+        if (
+          t.isJSXIdentifier(name, { name: 'ref' }) ||
+          t.isJSXNamespacedName(name) &&
+            name.namespace.name === 'ref'
+        ) {
+          attribute.skip();
+        }
+      },
       ConditionalExpression(c) {
         handleCond(c);
       },
@@ -1112,7 +1123,18 @@ function collectReads(ctx: Ctx): void {
             for (const attr of site.jsx!.openingElement.attributes) {
               if (t.isJSXSpreadAttribute(attr)) continue;
               const a = attr as t.JSXAttribute;
-              if ((a.name as t.JSXIdentifier).name === 'key') continue;
+              const propName = t.isJSXIdentifier(a.name)
+                ? a.name.name
+                : `${a.name.namespace.name}:${a.name.name.name}`;
+              if (
+                propName === 'key' ||
+                propName === 'ref' ||
+                ctx.componentProps
+                  .get(site.rowComp!)
+                  ?.refProps.includes(propName) === true
+              ) {
+                continue;
+              }
               const v = attrExpr(a.value);
               if (!v) continue;
               walkNodes(v, (n) => {
@@ -1219,6 +1241,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  scanRefProps(ctx);
   scanRenderCallbacks(ctx);
   normalizeRenderFunctions(ctx);
   scanLocalDynamicComponentCandidates(ctx, programPath);

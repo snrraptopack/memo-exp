@@ -1,43 +1,33 @@
-# DOM refs - deferred design
+# DOM refs
 
-DOM refs are intentionally deferred until their ownership, cleanup, forwarding,
-and reconfiguration semantics are implemented together. This document records
-the current design direction; it is not a supported source-language contract
-yet.
+DOM refs are compiler-recognized lifecycle slots. They expose real DOM nodes
+without a `ref()` wrapper, runtime JSX value, hook, or subscription.
 
-## Proposed syntax
+## Mutable refs
 
-`ref` is a compiler-recognized JSX attribute. It does not require a `ref<T>()`
-runtime primitive.
+An identifier or member expression is an assignment target:
 
 ```tsx
-let div: HTMLDivElement | undefined;
-const state: { button?: HTMLButtonElement } = {};
+function App() {
+  let div: HTMLDivElement | undefined;
+  const state: { button?: HTMLButtonElement } = {};
 
-return <>
-  <div ref={div}>Hello</div>
-  <button ref={state.button}>Save</button>
-</>;
+  return <>
+    <div ref={div}>Hello</div>
+    <button ref={state.button}>Save</button>
+  </>;
+}
 ```
 
-An identifier or member expression in `ref={target}` is an assignment target,
-not an ordinary value read. Mount assigns the real DOM node. Teardown clears
-the target only if it still contains that node:
-
-```ts
-target = node;
-
-// Generated teardown
-if (target === node) target = undefined;
-```
-
-Ref assignment is lifecycle storage, not a reactive state write. Assigning or
-clearing a ref must not independently schedule rendering.
+Mount assigns the node. Teardown clears the target only while it still holds
+that same node. Member receivers and computed keys are evaluated once and
+retained for cleanup. These compiler-generated writes are lifecycle storage;
+they do not schedule reactive rendering.
 
 ## Callback refs
 
-A callback receives the real DOM node once it is created. Its optional return
-value is the teardown:
+A callback receives the node after its emission scope has created its DOM. Its
+optional return value is synchronous teardown:
 
 ```tsx
 function setup(node: HTMLDivElement) {
@@ -48,97 +38,112 @@ function setup(node: HTMLDivElement) {
 return <div ref={setup}>Hello</div>;
 ```
 
-Inline callbacks and callback factories should use the same contract:
+Inline callbacks and factories use the same contract:
 
 ```tsx
-let div: HTMLDivElement | undefined;
-
 return <div ref={(node) => {
-  div = node;
-  return () => {
-    if (div === node) div = undefined;
-  };
+  install(node);
+  return () => uninstall(node);
 }} />;
+
+return <div ref={fadeIn({ ms })} />;
 ```
 
-```tsx
-return <div ref={fadeIn({ ms })}>Hello</div>;
-```
+A factory is evaluated once when its element is created. Ref callback identity
+is not reactively replaced on a retained element; use an explicit `effect()`
+when setup itself must reactively reconfigure.
 
-The initial factory design evaluates `fadeIn({ ms })` when the element is
-created. Reactive factory reconfiguration is deferred because silently
-rerunning setup would make a ref a hidden effect.
+## Multiple refs and failures
 
-## Cleanup ownership
-
-Ref teardown belongs to the nearest structural owner:
-
-| Element location | Teardown owner |
-|---|---|
-| Static component content | Component entity |
-| Conditional branch | Active branch |
-| Keyed list | Row |
-| Conditional inside a row | Nested active branch |
-
-Removing a branch or row must therefore tear down its refs immediately, even
-while the parent component remains mounted. Callback teardown is synchronous
-and is not awaited.
-
-Multiple refs use an array:
+Arrays may contain mutable refs, callbacks, nested arrays, and empty values:
 
 ```tsx
 return <input ref={[input, state.input, setupAccessibility]} />;
 ```
 
-Mount proceeds left to right. If mounting succeeds, teardown proceeds in
-reverse order. The exception/rollback behavior when one callback throws still
-needs an explicit decision.
+Setup runs left-to-right and teardown runs right-to-left. The returned
+disposer is idempotent. If setup throws, previously installed refs roll back
+right-to-left. Cleanup continues after failures and reports one error or an
+`AggregateError`.
+
+The source shape of a ref array is static; array spreads are rejected.
+
+## Cleanup ownership
+
+Ref cleanup follows the smallest structural owner:
+
+| Element location | Teardown owner |
+|---|---|
+| Static component content | Component entity |
+| Conditional branch | Active branch |
+| Keyed list | Row entity |
+| Conditional inside a row | Nested active branch |
+| Lazy children/render slot | Individual slot mount |
+
+Consequently a branch swap or row removal runs ref cleanup immediately without
+waiting for the parent component to unmount.
 
 ## Component forwarding
 
-Components do not automatically expose a DOM node because they may return
-fragments or several roots. A component receives a ref adapter as a prop and
-must forward it explicitly:
+Components have no implicit host node. A component ref is an ordinary callback
+adapter prop and must be forwarded to the host that the component chooses:
 
 ```tsx
 function Input({ ref: inputRef, ...rest }) {
   return <input ref={inputRef} {...rest} />;
 }
 
-let input: HTMLInputElement | undefined;
-return <Input ref={input} />;
+function App() {
+  let input: HTMLInputElement | undefined;
+  return <Input id="email" ref={input} />;
+}
 ```
 
-Named props remain an ordinary alternative:
+Named ref props are also supported and their contract is linked across files:
 
 ```tsx
-function Field({ inputRef }) {
-  return <input ref={inputRef} />;
+function Field({ inputRef, ...rest }) {
+  return <input ref={inputRef} {...rest} />;
 }
 
 return <Field inputRef={input} />;
 ```
 
-The compiler must preserve an assignable sink across the component call; it
-cannot pass the target's current value. Programmatically assembled spread refs
-will likely require a unique runtime key similar to `createRefKey()`, and are
-deferred with the rest of the ref implementation.
+A generic rest/spread wrapper can forward the ordinary `ref` prop:
 
-## Required first implementation
+```tsx
+function Input({ id, ...rest }) {
+  return <input id={id} {...rest} />;
+}
+```
 
-- Mutable identifier and member-expression targets.
-- Named, inline, and factory callback refs.
-- Callback-returned teardown.
-- Multiple refs with deterministic teardown order.
-- Explicit component forwarding.
-- Correct component, conditional-branch, and keyed-row ownership.
-- Tests for retained nodes, replacement, unmount, forwarding, and exceptions.
+## Spread refs
 
-## Open questions
+No `createRefKey()` API is needed. A spread-bearing element or component
+recognizes the ordinary `ref` property selected by normal source-order
+override semantics:
 
-- Whether callback replacement on a retained node is ever reactive.
-- Rollback ordering when one of several ref callbacks throws.
-- The exact representation used to carry an assignable sink through props.
-- Programmatic refs inside spread objects and their runtime key.
-- Development diagnostics for an accepted component ref that is never
-  forwarded.
+```tsx
+const props = {
+  id: 'example',
+  ref: (node: HTMLInputElement) => {
+    install(node);
+    return () => uninstall(node);
+  },
+};
+
+return <input {...props} />;
+```
+
+Plain JavaScript still applies before compilation: `{ ref: input }` reads the
+current value of `input`; an arbitrary runtime object cannot preserve the
+ability to assign back to that lexical variable. Use a callback property in a
+programmatically assembled object. Direct `ref={input}` remains the concise
+compiler-native mutable form.
+
+## Attachment timing
+
+Refs receive real nodes after their local DOM scope is built, but a component
+factory may still return a detached root. A ref therefore means “created and
+owned,” not necessarily “already connected to `document`.” Integrations that
+need document attachment should use an explicit host lifecycle boundary.

@@ -30,6 +30,8 @@ export type {
 } from './kernel';
 export { cleanup } from './cleanup';
 export type { CleanupDisposer } from './cleanup';
+export { mountRef } from './refs';
+export type { RefCallback, RefValue } from './refs';
 export { registerConditionalEffect, registerEffect } from './effect';
 export type { EffectCallback, EffectCondition } from './effect';
 

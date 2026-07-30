@@ -67,6 +67,7 @@ import {
 } from './emission/conditional-region';
 import { emitListRegion } from './emission/list-region';
 import { buildRenderCallbackAdapter } from './emission/render-callback';
+import { compileRefValue, emitRefMount } from './jsx/refs';
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -519,6 +520,10 @@ function emitElement(
     let needsPush = false;
     if (componentHasSpread) {
       const ordered = buildOrderedAttributes(open.attributes, {
+        attributeValue: (name, value) =>
+          name === 'ref' || targetPlan?.refProps.includes(name) === true
+            ? compileRefValue(ctx, compPath, compName, value)
+            : value,
         fail: (message) => {
           throw compPath.buildCodeFrameError(message);
         },
@@ -604,6 +609,16 @@ function emitElement(
             inSvg,
             ownerId,
           ),
+        });
+        continue;
+      }
+      if (
+        propName === 'ref' ||
+        targetPlan?.refProps.includes(propName) === true
+      ) {
+        propEntries.push({
+          name: propName,
+          value: compileRefValue(ctx, compPath, compName, v),
         });
         continue;
       }
@@ -838,6 +853,10 @@ function emitElement(
   );
   if (hasSpread) {
     const ordered = buildOrderedAttributes(open.attributes, {
+      attributeValue: (name, value) =>
+        name === 'ref'
+          ? compileRefValue(ctx, compPath, compName, value)
+          : value,
       eventValue: (name, value) => {
         const handler = buildHandler(
           ctx,
@@ -860,23 +879,56 @@ function emitElement(
         throw compPath.buildCodeFrameError(message);
       },
     });
-    const patch = (): t.Statement =>
+    const propObject = generatedIdentifier(ctx, `${tag}Props`);
+    scope.creation.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.cloneNode(propObject),
+          t.cloneNode(ordered.expression),
+        ),
+      ]),
+    );
+    const patch = (value: t.Expression): t.Statement =>
       t.expressionStatement(
         t.callExpression(md(ctx, 'patchDomProps'), [
           t.identifier(varName),
-          t.cloneNode(ordered.expression),
+          t.cloneNode(value),
           t.stringLiteral(ctx.rootId),
           t.arrayExpression(
             ordered.safeEventKeys.map((name) => t.stringLiteral(name)),
           ),
         ]),
       );
-    scope.creation.push(patch());
-    scope.updaters.push(patch);
+    scope.creation.push(patch(propObject));
+    emitRefMount(
+      ctx,
+      scope,
+      t.identifier(varName),
+      ownerId,
+      t.memberExpression(t.cloneNode(propObject), t.identifier('ref')),
+    );
+    scope.updaters.push(() => patch(ordered.expression));
   } else {
     for (const attr of open.attributes) {
     const a = attr as t.JSXAttribute;
     const attrName = jsxAttributeName(a.name);
+
+    if (attrName === 'ref') {
+      const value = attrExpr(a.value);
+      if (value === null) {
+        throw compPath.buildCodeFrameError(
+          'memo-dom: ref needs an expression',
+        );
+      }
+      emitRefMount(
+        ctx,
+        scope,
+        t.identifier(varName),
+        ownerId,
+        compileRefValue(ctx, compPath, compName, value),
+      );
+      continue;
+    }
 
     // backstop: row-root keys are stripped before emission, so any key
     // reaching here is misuse (analysis catches static cases with a nicer
