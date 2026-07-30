@@ -24,6 +24,7 @@ import {
   collectComponentPropSources,
 } from './prop-origins';
 import { componentSubtreeReads } from '../analysis/component-reads';
+import { hasHostJsxEvent } from '../jsx/events';
 
 export interface ComponentExportInfo {
   key: string;
@@ -32,6 +33,7 @@ export interface ComponentExportInfo {
   acceptsUnknownProps: boolean;
   hasWholeDefault: boolean;
   listLightweight: boolean;
+  delegatedEvents: boolean;
   renderProps: string[];
   renderCallbacks: string[];
   refProps: string[];
@@ -61,6 +63,7 @@ export function discoverComponentExports(
           acceptsUnknownProps: props.acceptsUnknown,
           hasWholeDefault: props.hasWholeDefault,
           listLightweight: false,
+          delegatedEvents: hasHostJsxEvent(path.node.body),
           renderProps: [],
           renderCallbacks: [],
           refProps: [],
@@ -87,6 +90,7 @@ export function analyzedComponentExport(
     acceptsUnknownProps: props.acceptsUnknown,
     hasWholeDefault: props.hasWholeDefault,
     listLightweight: isListLightweightCandidate(ctx, local),
+    delegatedEvents: ctx.componentsWithHostEvents.has(local),
     renderProps: [...props.renderProps],
     renderCallbacks: [...props.renderCallbacks],
     refProps: [...props.refProps],

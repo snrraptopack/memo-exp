@@ -16,6 +16,7 @@ import {
   type EmitScope,
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
+import { applyRepeatedDomTemplate } from './dom-template';
 
 function callbackJsx(
   callback: t.ArrowFunctionExpression | t.FunctionExpression,
@@ -112,11 +113,13 @@ export function buildRenderCallbackAdapter(
   const liveRows = generatedIdentifier(ctx, 'renderRows');
   const nextUpdate = generatedIdentifier(ctx, 'renderNextUpdate');
   const rowId = generatedIdentifier(ctx, 'renderRowId');
+  const eventRoot = generatedIdentifier(ctx, 'renderEventRoot');
   const refreshRow = generatedIdentifier(ctx, 'refreshRenderRow');
   const nextItem = generatedIdentifier(ctx, 'renderNextItem');
   const nextIndex =
     indexParam === null ? null : generatedIdentifier(ctx, 'renderNextIndex');
   const rowScope = newEmitScope(ctx);
+  rowScope.delegatedEventRootVar = eventRoot.name;
   const rowContext: RowCtx = {
     itemParam,
     itemPath: [],
@@ -138,6 +141,7 @@ export function buildRenderCallbackAdapter(
     inSvg,
     rowId,
   );
+  applyRepeatedDomTemplate(ctx, rowScope, root);
 
   ownerScope.creation.push(
     t.variableDeclaration('const', [
@@ -185,6 +189,7 @@ export function buildRenderCallbackAdapter(
       t.cloneNode(itemPattern, true),
       t.cloneNode(rowId),
       ...(indexParam === null ? [] : [t.identifier(indexParam)]),
+      t.cloneNode(eventRoot),
     ],
     t.blockStatement([
       cacheDecl(rowScope),

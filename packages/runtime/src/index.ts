@@ -46,15 +46,29 @@ export {
 } from './setters';
 export type { SlotCache } from './setters';
 
-export { installAccessTable, resetAccessTable, resolveWrites, isOpaque, getRootId } from './access';
+export {
+  installAccessTable,
+  resetAccessTable,
+  resolveWrites,
+  resolveStaticWrites,
+  isOpaque,
+  getRootId,
+} from './access';
 export type { AccessTable } from './access';
 
-export { commitWrites, handle, getEventLog, clearEventLog } from './events';
+export {
+  commitWrites,
+  commitWritesWithPayload,
+  handle,
+  getEventLog,
+  clearEventLog,
+} from './events';
 export type { EventRecord } from './events';
 
 export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
 export { rootNodes } from './jsx-dom';
+export { setDelegatedEvent } from './delegated-events';
 export { patchDomProps, setDomValue } from './dom-props';
 export { classValue, setClassValue, setStyleValue } from './dom-values';
 

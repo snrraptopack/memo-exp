@@ -41,6 +41,7 @@ import {
   propNameForBinding,
 } from './components/props';
 import { analyzeHandler } from './handlers/analyze';
+import { callsOnlyCommittedLocalHelpers } from './handlers/local-calls';
 
 export type HandlerFn =
   | t.ArrowFunctionExpression
@@ -242,6 +243,16 @@ export function buildHandler(
     if (!forceTable) {
       instrumentReachableLocalHelpers(ctx, compPath, target, compName, rowCtx);
     }
+    const committedLocalDelegation =
+      !forceTable &&
+      !t.isIdentifier(value) &&
+      callsOnlyCommittedLocalHelpers(target, (name) => {
+        const helper = resolveLocalHelper(compPath, name);
+        return (
+          helper !== null &&
+          ctx.handlerHasRootCommit.get(helper) === true
+        );
+      });
     ctx.analyzedFunctions.add(target);
     // R11: a handler shared between a row and a non-row site is analyzed
     // with the FIRST site's row context — pass forceTable for non-row uses.
@@ -250,7 +261,9 @@ export function buildHandler(
       target,
       forceTable ? null : compName,
       forceTable ? undefined : rowCtx,
-      !forceTable && !t.isIdentifier(value),
+      !forceTable &&
+        !t.isIdentifier(value) &&
+        !committedLocalDelegation,
       eventOriginId,
     );
   }

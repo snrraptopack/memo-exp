@@ -68,6 +68,10 @@ import {
   orderCallProps,
 } from './components/calls';
 import {
+  isInlineScalarCallback,
+  stabilizeInlineCallbackProp,
+} from './components/callback-props';
+import {
   buildConditionalBranchCreate,
   emitConditionalRegion,
 } from './emission/conditional-region';
@@ -554,6 +558,24 @@ function emitElement(
           throw compPath.buildCodeFrameError(
             `memo-dom: JSX prop '${propName}' on <${tag}> is not rendered by the callee; interpolate that prop in <${tag}> to declare a render slot`,
           );
+        } else if (
+          propName !== 'ref' &&
+          targetPlan?.refProps.includes(propName) !== true &&
+          isInlineScalarCallback(property.value)
+        ) {
+          instrumentComponentCallback(
+            ctx,
+            compPath,
+            property.value,
+            compName,
+            rowCtx,
+          );
+          property.value = stabilizeInlineCallbackProp(
+            ctx,
+            scope,
+            property.value,
+            `${propName}Callback`,
+          );
         }
       }
       needsPush =
@@ -634,12 +656,14 @@ function emitElement(
           `memo-dom: JSX prop '${propName}' on <${tag}> is not rendered by the callee; interpolate that prop in <${tag}> to declare a render slot`,
         );
       }
+      const inlineCallback = isInlineScalarCallback(v);
       // R12: instance-state reads also need re-push (parent re-renders on
       // instance writes → this updater re-syncs the child's props box)
       if (
-        exprReadsState(ctx, v, compName) ||
-        (rowCtx !== undefined &&
-          expressionReadsBinding(v, rowCtx.itemParam))
+        !inlineCallback &&
+        (exprReadsState(ctx, v, compName) ||
+          (rowCtx !== undefined &&
+            expressionReadsBinding(v, rowCtx.itemParam)))
       ) {
         needsPush = true;
       }
@@ -652,10 +676,8 @@ function emitElement(
       // not callbacks. The analyzedFunctions WeakSet in instrumentComponentCallback
       // prevents double-instrumentation if the same function was already seen
       // through a native onClick attribute on the same component.
-      if (t.isArrowFunctionExpression(v) || t.isFunctionExpression(v)) {
-        if (!nodeHasJsx(v.body)) {
-          instrumentComponentCallback(ctx, compPath, v, compName, rowCtx);
-        }
+      if (inlineCallback) {
+        instrumentComponentCallback(ctx, compPath, v, compName, rowCtx);
       } else if (t.isIdentifier(v)) {
         const localFn = resolveLocalHelper(compPath, v.name);
         if (localFn !== null && !nodeHasJsx(localFn.body)) {
@@ -664,7 +686,14 @@ function emitElement(
       }
       propEntries.push({
         name: propName,
-        value: t.cloneNode(v),
+        value: inlineCallback
+          ? stabilizeInlineCallbackProp(
+              ctx,
+              scope,
+              v,
+              `${propName}Callback`,
+            )
+          : t.cloneNode(v),
       });
     }
     }
@@ -933,13 +962,25 @@ function emitElement(
         eventOriginId,
       );
       scope.creation.push(
-        t.expressionStatement(
-          t.assignmentExpression(
-            '=',
-            t.memberExpression(t.identifier(varName), t.identifier(attrName.toLowerCase())),
-            handler,
-          ),
-        ),
+        scope.delegatedEventRootVar === null
+          ? t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                t.memberExpression(
+                  t.identifier(varName),
+                  t.identifier(attrName.toLowerCase()),
+                ),
+                handler,
+              ),
+            )
+          : t.expressionStatement(
+              t.callExpression(md(ctx, 'setDelegatedEvent'), [
+                t.identifier(scope.delegatedEventRootVar),
+                t.identifier(varName),
+                t.stringLiteral(attrName),
+                handler,
+              ]),
+            ),
       );
       continue;
     }

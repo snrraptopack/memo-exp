@@ -68,6 +68,7 @@ export function AsyncCounter(_id, _parent) {
 exports[`M5 compiler — code generation > compiles eligible component list rows as lightweight factories (M5.10) 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#selected"];
+let _liTemplate;
 const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable({
   readers: {
@@ -87,7 +88,7 @@ const items = [{
   label: 'two'
 }];
 let selected = 0;
-function Row(item, _id) {
+function Row(item, _id, _eventRoot) {
   let _slot, _slot2, _value;
   const _update = () => {
     if (_slot !== (_value = item.label)) {
@@ -99,21 +100,25 @@ function Row(item, _id) {
       _MD.setClassValue(_li, _value);
     }
   };
-  const _text = document.createTextNode("");
+  const _li = (_liTemplate === void 0 ? _liTemplate = (() => {
+    const _text = document.createTextNode("");
+    const _li = document.createElement("li");
+    _li.appendChild(_text);
+    return _li;
+  })() : _liTemplate).cloneNode(true);
+  const _text = _li.firstChild;
   if (_slot !== (_value = item.label)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _li = document.createElement("li");
   if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
     _slot2 = _value;
     _MD.setClassValue(_li, _value);
   }
-  _li.onclick = () => {
+  _MD.setDelegatedEvent(_eventRoot, _li, "onClick", () => {
     selected = item.id;
     _MD.commitWrites(_WRITES_);
-  };
-  _li.appendChild(_text);
+  });
   return {
     nodes: _MD.rootNodes(_li),
     entities: [],
@@ -142,7 +147,7 @@ export function CompList(_id2, _parent) {
   });
   const _ul = document.createElement("ul");
   const _region = _MD.createListRegion(_ul, _id2 + "/items", (item, _rowId) => {
-    const _entry = Row(item, _rowId);
+    const _entry = Row(item, _rowId, _ul);
     return {
       nodes: _entry.nodes,
       entities: [],
@@ -169,6 +174,7 @@ export function CompList(_id2, _parent) {
 exports[`M5 compiler — code generation > compiles inline list rows to regions with row-scoped patterns (R7) 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#selected"];
+let _liTemplate;
 const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable({
   readers: {
@@ -223,21 +229,25 @@ export function InlineList(_id, _parent) {
       parent: _id,
       render: _update2
     });
-    const _text = document.createTextNode("");
+    const _li = (_liTemplate === void 0 ? _liTemplate = (() => {
+      const _text = document.createTextNode("");
+      const _li = document.createElement("li");
+      _li.appendChild(_text);
+      return _li;
+    })() : _liTemplate).cloneNode(true);
+    const _text = _li.firstChild;
     if (_slot !== (_value2 = item.label)) {
       _slot = _value2;
       _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    const _li = document.createElement("li");
     if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
       _slot2 = _value2;
       _MD.setClassValue(_li, _value2);
     }
-    _li.onclick = () => {
+    _MD.setDelegatedEvent(_ul, _li, "onClick", () => {
       selected = item.id;
       _MD.commitWrites(_WRITES_);
-    };
-    _li.appendChild(_text);
+    });
     return {
       nodes: [_li],
       entities: [_rowId],

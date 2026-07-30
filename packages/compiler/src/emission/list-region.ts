@@ -28,6 +28,10 @@ import {
   orderCallProps,
 } from '../components/calls';
 import {
+  isInlineScalarCallback,
+  stabilizeInlineCallbackStatement,
+} from '../components/callback-props';
+import {
   cacheDecl,
   newEmitScope,
   registerStmt,
@@ -36,6 +40,8 @@ import {
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { compileRefValue } from '../jsx/refs';
+import { applyRepeatedDomTemplate } from './dom-template';
+import { instrumentComponentCallback } from '../handlers';
 
 export type AuthoredChildrenSlotBuilder = (
   ctx: Ctx,
@@ -84,11 +90,12 @@ export function emitListRegion(
   ).name;
   const createFactory =
     site.form === 'callback'
-      ? buildCallbackRowCreate(ctx, site)
+      ? buildCallbackRowCreate(ctx, site, parentElementVariable)
       : site.form === 'component'
       ? buildComponentRowCreate(
           ctx,
           site,
+          parentElementVariable,
           componentName,
           componentPath,
           buildAuthoredChildrenSlot,
@@ -98,6 +105,7 @@ export function emitListRegion(
       : buildInlineRowCreate(
           ctx,
           site,
+          parentElementVariable,
           componentName,
           componentPath,
           emitNode,
@@ -179,6 +187,7 @@ export function emitListRegion(
 function buildCallbackRowCreate(
   ctx: Ctx,
   site: MapSite,
+  parentElementVariable: string,
 ): t.ArrowFunctionExpression {
   const rowId = generatedIdentifier(ctx, 'renderRowId');
   return t.arrowFunctionExpression(
@@ -200,6 +209,7 @@ function buildCallbackRowCreate(
         ...(site.indexParam === null
           ? []
           : [t.identifier(site.indexParam)]),
+        t.identifier(parentElementVariable),
       ],
     ),
   );
@@ -208,6 +218,7 @@ function buildCallbackRowCreate(
 function buildComponentRowCreate(
   ctx: Ctx,
   site: MapSite,
+  parentElementVariable: string,
   componentName: string,
   componentPath: NodePath<t.FunctionDeclaration>,
   buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder,
@@ -224,6 +235,9 @@ function buildComponentRowCreate(
   const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
   const rowScope = newEmitScope(ctx);
   const lightweight = isLightweightListedComponent(ctx, rowComponent);
+  const delegatesEvents =
+    ctx.importedComponents.get(rowComponent)?.delegatedEvents === true ||
+    ctx.componentsWithHostEvents.has(rowComponent);
   const rowContext: RowCtx = {
     itemParam: site.itemParam,
     itemPath: [],
@@ -245,6 +259,7 @@ function buildComponentRowCreate(
     t.isJSXSpreadAttribute(attribute),
   );
   const propEntries: Array<{ name: string; value: t.Expression }> = [];
+  const prefixStatements: t.Statement[] = [];
   let propObjectExpression: t.ObjectExpression | null = null;
   const targetPlan = ctx.componentProps.get(rowComponent);
   const renderValueSlot = (value: t.Expression): t.Identifier => {
@@ -302,6 +317,24 @@ function buildComponentRowCreate(
         throw componentPath.buildCodeFrameError(
           `memo-dom: JSX prop '${propName}' on <${rowComponent}> is not rendered by the callee; interpolate that prop in <${rowComponent}> to declare a render slot`,
         );
+      } else if (
+        propName !== 'ref' &&
+        targetPlan?.refProps.includes(propName) !== true &&
+        isInlineScalarCallback(property.value)
+      ) {
+        instrumentComponentCallback(
+          ctx,
+          componentPath,
+          property.value,
+          componentName,
+          rowContext,
+        );
+        property.value = stabilizeInlineCallbackStatement(
+          ctx,
+          prefixStatements,
+          property.value,
+          `${propName}Callback`,
+        );
       }
     }
   } else {
@@ -356,9 +389,26 @@ function buildComponentRowCreate(
           `memo-dom: JSX prop '${propName}' on <${rowComponent}> is not rendered by the callee; interpolate that prop in <${rowComponent}> to declare a render slot`,
         );
       }
+      const inlineCallback = isInlineScalarCallback(value);
+      if (inlineCallback) {
+        instrumentComponentCallback(
+          ctx,
+          componentPath,
+          value,
+          componentName,
+          rowContext,
+        );
+      }
       propEntries.push({
         name: propName,
-        value: t.cloneNode(value),
+        value: inlineCallback
+          ? stabilizeInlineCallbackStatement(
+              ctx,
+              prefixStatements,
+              value,
+              `${propName}Callback`,
+            )
+          : t.cloneNode(value),
       });
     }
   }
@@ -402,7 +452,6 @@ function buildComponentRowCreate(
     }
   }
 
-  const prefixStatements: t.Statement[] = [];
   let callProps: t.Expression[];
   if (propObjectExpression !== null) {
     const propObject = generatedIdentifier(ctx, `${rowComponent}Props`);
@@ -554,6 +603,9 @@ function buildComponentRowCreate(
                 ...callProps.map((prop) => t.cloneNode(prop)),
                 t.cloneNode(rowId),
                 ...(site.sourceLocal ? [t.cloneNode(ownerId)] : []),
+                ...(delegatesEvents
+                  ? [t.identifier(parentElementVariable)]
+                  : []),
               ])
             : t.callExpression(t.identifier(rowComponent), [
                 t.cloneNode(rowId),
@@ -605,6 +657,7 @@ function buildComponentRowCreate(
 function buildInlineRowCreate(
   ctx: Ctx,
   site: MapSite,
+  parentElementVariable: string,
   componentName: string,
   componentPath: NodePath<t.FunctionDeclaration>,
   emitNode: NodeEmitter,
@@ -618,6 +671,7 @@ function buildInlineRowCreate(
         (attribute.name as t.JSXIdentifier).name !== 'key',
     );
   const rowScope = newEmitScope(ctx);
+  rowScope.delegatedEventRootVar = parentElementVariable;
   const rowId = generatedIdentifier(ctx, 'rowId').name;
   const nextItem = generatedIdentifier(ctx, 'nextItem');
   const nextIndex =
@@ -649,6 +703,7 @@ function buildInlineRowCreate(
     inSvg,
     t.identifier(rowId),
   );
+  applyRepeatedDomTemplate(ctx, rowScope, rootVariable);
   const bindingUpdates: t.Statement[] =
     [
       t.expressionStatement(

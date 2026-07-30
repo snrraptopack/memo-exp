@@ -173,6 +173,18 @@ export function getRootId(): EntityId {
 }
 
 /**
+ * Fast path used by compiler-generated commits without an L2 payload.
+ * Kept separate so parameter interpolation can tree-shake out of ordinary
+ * applications.
+ */
+export function resolveStaticWrites(
+  writes: readonly string[],
+): EntityId[] | 'root-subtree' {
+  if (writes.some(isOpaque)) return 'root-subtree';
+  return resolveStaticKnownWrites(writes);
+}
+
+/**
  * Resolve written variables to the entity ids that must be dirtied.
  * Exact readers are returned as-is (markDirty no-ops dead letters).
  * Wildcards are expanded by the caller against live registry ids.
@@ -242,6 +254,10 @@ export function resolveWrites(
     if (precise && out.size > 0) return [...out];
   }
 
+  return resolveStaticKnownWrites(writes);
+}
+
+function resolveStaticKnownWrites(writes: readonly string[]): EntityId[] {
   // M5.6: full-resolution cache, valid until any expansion changes
   const cacheKey = writes.length === 1 ? (writes[0] as string) : writes.join(' ');
   const hit = resolutionCache.get(cacheKey);

@@ -81,6 +81,7 @@ export function installLinkedDynamicComponentImports(
           acceptsUnknownProps: candidate.acceptsUnknownProps,
           hasWholeDefault: candidate.hasWholeDefault,
           listLightweight: candidate.listLightweight,
+          delegatedEvents: candidate.delegatedEvents,
           renderProps: [...(candidate.renderProps ?? [])],
           renderCallbacks: [...(candidate.renderCallbacks ?? [])],
           refProps: [...(candidate.refProps ?? [])],

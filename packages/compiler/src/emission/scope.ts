@@ -15,6 +15,8 @@ export interface EmitScope {
   updateVar: string;
   /** Optional dependency reasons accepted by the owner updater. */
   reasonVar: string | null;
+  /** Caller-owned root used for repeated-row delegated host events. */
+  delegatedEventRootVar: string | null;
   creation: t.Statement[];
   /** Lifecycle setup that runs only after this scope's full DOM is created. */
   mounts: t.Statement[];
@@ -43,6 +45,7 @@ export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
     tempVar: generatedIdentifier(ctx, 'value').name,
     updateVar: generatedIdentifier(ctx, 'update').name,
     reasonVar: null,
+    delegatedEventRootVar: null,
     creation: [],
     mounts: [],
     updaters: [],

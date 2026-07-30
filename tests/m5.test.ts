@@ -166,7 +166,7 @@ describe('M5 compiler — code generation', () => {
   it('compiles eligible component list rows as lightweight factories (M5.10)', () => {
     const code = compile(readFixture('list-component'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
-    expect(code).toMatch(/Row\(item, _rowId\d*\)/);
+    expect(code).toMatch(/Row\(item, _rowId\d*, _ul\d*\)/);
     expect(code).toContain('entities: []');
     expect(code).toContain('"App", "App/*"');
   });

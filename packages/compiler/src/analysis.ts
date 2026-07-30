@@ -69,6 +69,7 @@ import {
 import { moduleStateStringCandidates } from './analysis/type-candidates';
 import { foldRenderCallbackSubtreeReads } from './analysis/component-reads';
 import { scanRefProps } from './components/ref-props';
+import { hasHostJsxEvent } from './jsx/events';
 
 export {
   isLightweightListedComponent,
@@ -188,6 +189,9 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
           if (/^[A-Z]/.test(name)) {
             ctx.comps.set(name, { parents: new Set(), jsxCount: 0 });
             ctx.compPaths.set(name, p);
+            if (hasHostJsxEvent(p.node.body)) {
+              ctx.componentsWithHostEvents.add(name);
+            }
             try {
               ctx.componentProps.set(
                 name,

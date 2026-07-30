@@ -15,8 +15,8 @@
  * the write-set are compiler-generated.
  */
 
-import { markDirty, markDirtySubtree, registeredIds, type EntityId } from './kernel';
-import { resolveWrites, getRootId } from './access';
+import { markDirty, markDirtySubtree, type EntityId } from './kernel';
+import { resolveStaticWrites, resolveWrites, getRootId } from './access';
 
 export interface EventRecord {
   origin: EntityId;
@@ -42,9 +42,21 @@ export function clearEventLog(): void {
  * This is THE invalidation entry point — handlers and programmatic sources
  * share it, so there is exactly one routing code path in the runtime.
  */
-export function commitWrites(writes: readonly string[], payload?: Record<string, any>): void {
-  // registeredIds() is a cached array (zero per-event allocation) — do not spread it
-  const resolved = resolveWrites(writes, registeredIds(), payload);
+export function commitWrites(writes: readonly string[]): void {
+  const resolved = resolveStaticWrites(writes);
+  if (resolved === 'root-subtree') {
+    markDirtySubtree(getRootId());
+    return;
+  }
+  for (const id of resolved) markDirty(id);
+}
+
+/** Route an L2 payload through parameterized access patterns. */
+export function commitWritesWithPayload(
+  writes: readonly string[],
+  payload: Record<string, any>,
+): void {
+  const resolved = resolveWrites(writes, [], payload);
   if (resolved === 'root-subtree') {
     markDirtySubtree(getRootId());
     return;

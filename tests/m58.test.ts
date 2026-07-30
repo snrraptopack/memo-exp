@@ -75,10 +75,16 @@ describe('M5.10 - lightweight listed component rows', () => {
 
   it('emits a stateless list-only component as a ListEntry factory', () => {
     const code = compile(LIGHT_SOURCE, { runtimePath: '@memoized-dom/runtime' });
-    expect(code).toMatch(/function Row\(item, sfx, _id\d*\)/);
+    expect(code).toMatch(
+      /function Row\(item, sfx, _id\d*, _eventRoot\d*\)/,
+    );
     expect(code).not.toContain('.registerProps');
     const rowFactory = code.slice(code.indexOf('function Row'), code.indexOf('export function C'));
     expect(rowFactory).not.toContain('.register({');
+    expect(rowFactory).toContain('.cloneNode(true)');
+    expect(rowFactory).toContain('.setDelegatedEvent(');
+    expect(rowFactory).not.toContain('.onclick =');
+    expect(code.match(/document\.createElement\("li"\)/g)).toHaveLength(1);
     expect(code).toContain('entities: []');
     expect(code).toContain('"./component.tsx#selected": ["App", "App/*"]');
   });
@@ -89,6 +95,7 @@ describe('M5.10 - lightweight listed component rows', () => {
 
     expect([..._internals().registry.keys()]).toEqual(['App']);
     const rows = () => document.querySelectorAll('li');
+    expect(rows()[0]).not.toBe(rows()[1]);
     expect(rows()[0]!.textContent).toBe('one');
 
     (rows()[0] as HTMLElement).click();
@@ -105,6 +112,7 @@ describe('M5.10 - lightweight listed component rows', () => {
     const code = compile(STATEFUL_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/\.registerProps\(_id\d*, _props\d*\)/);
     expect(code).toMatch(/Row\(_rowId\d*, _id\d*, \[item\]\)/);
+    expect(code).not.toContain('.cloneNode(true)');
   });
 
   it('matches row props by name when JSX attribute order differs from declaration order', () => {

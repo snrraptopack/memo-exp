@@ -43,6 +43,7 @@ import {
   registerStmt,
   updateDecl,
 } from './scope';
+import { applyRepeatedDomTemplate } from './dom-template';
 
 export function transformComponent(
   ctx: Ctx,
@@ -85,6 +86,11 @@ export function transformComponent(
     lightweight && sourceLocal
       ? generatedIdentifier(ctx, 'owner').name
       : null;
+  const factoryEventRoot =
+    lightweight && ctx.componentsWithHostEvents.has(name)
+      ? generatedIdentifier(ctx, 'eventRoot').name
+      : null;
+  scope.delegatedEventRootVar = factoryEventRoot;
   const propsBox =
     propSlotCount > 0 && !lightweight
       ? generatedIdentifier(ctx, 'props').name
@@ -137,6 +143,10 @@ export function transformComponent(
           path,
           factoryId,
         );
+
+  if (lightweight) {
+    applyRepeatedDomTemplate(ctx, scope, rootVar);
+  }
 
   if (localDerivations !== undefined) {
     for (const derivation of localDerivations) {
@@ -310,6 +320,9 @@ export function transformComponent(
         ...propPlan.params.map(runtimeParameter),
         t.identifier(factoryId),
         ...(factoryOwner === null ? [] : [t.identifier(factoryOwner)]),
+        ...(factoryEventRoot === null
+          ? []
+          : [t.identifier(factoryEventRoot)]),
       ]
     : propSlotCount > 0
       ? [
