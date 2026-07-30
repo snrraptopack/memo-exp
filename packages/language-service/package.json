@@ -1,0 +1,26 @@
+{
+  "name": "@memoized-dom/language-service",
+  "version": "0.0.1",
+  "description": "TypeScript language-service diagnostics and code fixes for memoized-dom",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.cjs --platform=node --format=cjs --target=node20 --packages=external --footer:js=\"module.exports = module.exports.default;\" && tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.7 <7"
+  }
+}
