@@ -173,6 +173,24 @@ export interface FnSummary {
   unbounded: boolean;
 }
 
+/** One owner-local list dependency addressable directly by its row key. */
+export interface TargetedListDependency {
+  /** Instance-owned collection root whose writes require reconciliation. */
+  source: string;
+  /** Instance-state value compared directly with the authored row key. */
+  value: string;
+}
+
+/** Conservative direct-item mutation plan for one instance-owned keyed list. */
+export interface KeyedListMutationPlan {
+  source: string;
+  keyPath: string[];
+  keysVariable: string;
+  targetedReason: string;
+  structuralReason: string;
+  call: t.CallExpression;
+}
+
 /** One compiler-owned reactive side effect declared in a component body. */
 export interface EffectSite {
   /** Stable source-order suffix within the owning component. */
@@ -284,6 +302,16 @@ export interface Ctx {
   rowReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Conditional-region reads (R8): '<owner>/when<n>' → site + vars read in condition+branches. */
   condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
+  /** Map call → owner-local values whose changes affect only old/new keyed rows. */
+  targetedListDependencies: WeakMap<t.CallExpression, TargetedListDependency[]>;
+  /** Components that need dirty reasons for targeted list refreshes. */
+  targetedListComponents: Set<string>;
+  /** Map call -> direct keyed-item mutation journal used by that one list. */
+  keyedListMutations: WeakMap<t.CallExpression, KeyedListMutationPlan>;
+  /** Component -> source root -> journal plan, for handler write analysis. */
+  keyedListMutationSources: Map<string, Map<string, KeyedListMutationPlan>>;
+  /** Sources used by multiple list sites deliberately keep full reconciliation. */
+  disabledKeyedListMutationSources: Set<string>;
   /**
    * R12: instance state — component name → top-level let/var names of its
    * body. Instance state lives in the factory closure of ONE instance: it
@@ -476,6 +504,11 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     lightweightCache: new Map(),
     rowReads: new Map(),
     condReads: new Map(),
+    targetedListDependencies: new WeakMap(),
+    targetedListComponents: new Set(),
+    keyedListMutations: new WeakMap(),
+    keyedListMutationSources: new Map(),
+    disabledKeyedListMutationSources: new Set(),
     instanceState: new Map(),
     instanceDerivations: new Map(),
     instanceControlFlow: new Map(),

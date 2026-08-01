@@ -74,6 +74,7 @@ export function transformComponent(
     ) === true;
   if (
     ctx.selectiveDerivationComponents.has(name) ||
+    ctx.targetedListComponents.has(name) ||
     hasLocalEffects
   ) {
     scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
@@ -143,6 +144,8 @@ export function transformComponent(
           path,
           factoryId,
         );
+  const lightweightSingleRoot =
+    lightweight && 'jsx' in returns && t.isJSXElement(returns.jsx);
 
   if (lightweight) {
     applyRepeatedDomTemplate(ctx, scope, rootVar);
@@ -257,9 +260,11 @@ export function transformComponent(
         t.objectExpression([
           t.objectProperty(
             t.identifier('nodes'),
-            t.callExpression(md(ctx, 'rootNodes'), [
-              t.identifier(rootVar),
-            ]),
+            lightweightSingleRoot
+              ? t.identifier(rootVar)
+              : t.callExpression(md(ctx, 'rootNodes'), [
+                  t.identifier(rootVar),
+                ]),
           ),
           t.objectProperty(
             t.identifier('entities'),

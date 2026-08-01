@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/runtime",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "description": "Dependency-free runtime for compiler-analyzed memoized DOM updates",
   "type": "module",
   "sideEffects": false,
@@ -21,5 +21,8 @@
   },
   "scripts": {
     "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts ./src/testing.ts --bundle --outdir=./dist --platform=browser --format=esm --target=es2022 --minify --splitting --entry-names=[name] --chunk-names=chunks/[name]-[hash] && tsc -p tsconfig.build.json"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

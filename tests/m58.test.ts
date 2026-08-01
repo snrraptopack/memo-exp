@@ -118,7 +118,7 @@ describe('M5.10 - lightweight listed component rows', () => {
   it('matches row props by name when JSX attribute order differs from declaration order', () => {
     const code = compile(PROP_ORDER_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/Row\(suffix, i, _rowId\d*\)/);
-    expect(code).toMatch(/_entry\d*\.updateProps\(suffix, i\)/);
+    expect(code).toMatch(/_pushRowProps\d*\(suffix, i\)/);
   });
 
   it('tracks member writes through TypeScript non-null assertions', () => {
@@ -129,7 +129,7 @@ describe('M5.10 - lightweight listed component rows', () => {
   it('preserves a typed object-prop row contract in lightweight emission', () => {
     const code = compile(OBJECT_PROP_ROW_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/Row\(\{\s*item\s*\}, _rowId\d*\)/);
-    expect(code).toMatch(/_entry\d*\.updateProps\(\{\s*item\s*\}\)/);
+    expect(code).toMatch(/_pushRowProps\d*\(\{\s*item\s*\}\)/);
   });
 
   it('accepts deferred parametrized patterns without changing current resolution', () => {

@@ -197,7 +197,7 @@ describe('M5 compiler — code generation', () => {
         `let s = 0; let items = [1];\nfunction Row(sel) { return <li>{sel}</li>; }\nfunction C() { return <ul>{items.map(i => <Row sel={s} />)}</ul>; }`,
       );
       expect(code).toContain('updateProps');
-      expect(code).toMatch(/_entry\d*\.updateProps\(s\)/);
+      expect(code).toMatch(/_pushRowProps\d*\(s\)/);
     }
 
     expect(compile(`function C() { return <><span /></>; }`)).toContain(

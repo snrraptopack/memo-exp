@@ -6,6 +6,7 @@ import {
   memberRootName,
   writeTouchesKey,
   type Ctx,
+  type KeyedListMutationPlan,
   type RowCtx,
 } from '../context';
 import {
@@ -31,9 +32,58 @@ import {
   componentPropProjectionOrigins,
 } from '../components/prop-projections';
 import { generatedIdentifier } from '../identifiers';
+import { transparentListExpression } from '../lists/source-shapes';
 
 const traverse: typeof _traverse =
   (_traverse as any).default ?? (_traverse as any);
+
+function directListItemMutationKey(
+  node: t.MemberExpression,
+  plan: KeyedListMutationPlan,
+): t.Expression | null {
+  const chain: t.MemberExpression[] = [];
+  let current: t.Expression = node;
+  for (;;) {
+    current = transparentListExpression(current);
+    if (!t.isMemberExpression(current)) break;
+    chain.unshift(current);
+    if (t.isSuper(current.object)) return null;
+    current = current.object;
+  }
+  if (!t.isIdentifier(current, { name: plan.source })) return null;
+  const itemAccess = chain[0];
+  if (
+    itemAccess === undefined ||
+    !itemAccess.computed ||
+    !t.isExpression(itemAccess.property) ||
+    !(
+      t.isIdentifier(itemAccess.property) ||
+      t.isNumericLiteral(itemAccess.property) ||
+      t.isStringLiteral(itemAccess.property)
+    ) ||
+    chain.length < 2
+  ) {
+    return null;
+  }
+
+  const writtenSegments: string[] = [];
+  for (const member of chain.slice(1)) {
+    if (!member.computed && t.isIdentifier(member.property)) {
+      writtenSegments.push(member.property.name);
+    } else if (member.computed && t.isStringLiteral(member.property)) {
+      writtenSegments.push(member.property.value);
+    } else {
+      return null;
+    }
+  }
+  if (writeTouchesKey(writtenSegments, plan.keyPath)) return null;
+
+  let key: t.Expression = t.cloneNode(itemAccess, true);
+  for (const segment of plan.keyPath) {
+    key = t.memberExpression(key, t.identifier(segment));
+  }
+  return key;
+}
 
 /** Vars a write-set routes to: components ∪ a pseudo-reader for list rows. */
 function readersOfVar(ctx: Ctx, v: string): Set<string> {
@@ -149,6 +199,46 @@ export function analyzeHandler(
   });
   const isComputedOrigin = (origin: ReactiveOrigin): boolean =>
     origin.stateKind === 'computed' || ctx.state.get(origin.root) === 'computed';
+  const listMutationPlans =
+    compName === null
+      ? undefined
+      : ctx.keyedListMutationSources.get(compName);
+  const recordInstanceMutation = (
+    scope: ScopeWrites,
+    source: string,
+    kind: 'targeted' | 'structural' = 'structural',
+  ): void => {
+    recordInstanceWrite(scope, source);
+    const plan = listMutationPlans?.get(source);
+    if (plan !== undefined) {
+      recordInstanceWrite(
+        scope,
+        kind === 'targeted'
+          ? plan.targetedReason
+          : plan.structuralReason,
+      );
+    }
+  };
+  const journalTargetedMutation = (
+    p: NodePath,
+    plan: KeyedListMutationPlan,
+    key: t.Expression,
+  ): void => {
+    if (!p.isExpression()) return;
+    p.replaceWith(
+      t.sequenceExpression([
+        t.callExpression(
+          t.memberExpression(
+            t.identifier(plan.keysVariable),
+            t.identifier('add'),
+          ),
+          [key],
+        ),
+        p.node,
+      ]),
+    );
+    p.skip();
+  };
 
   const locals = new Set<string>();
   for (const param of clonedFn.params) {
@@ -312,7 +402,7 @@ export function analyzeHandler(
   const noteOriginWrite = (p: NodePath, origin: ReactiveOrigin): void => {
     if (origin.locality === 'instance') {
       mutateScope(p, (scope) => {
-        recordInstanceWrite(scope, origin.root);
+        recordInstanceMutation(scope, origin.root);
       });
       return;
     }
@@ -382,7 +472,7 @@ export function analyzeHandler(
   ): void => {
     if (origin.locality === 'instance') {
       mutateScope(p, (scope) => {
-        recordInstanceWrite(scope, origin.root);
+        recordInstanceMutation(scope, origin.root);
       });
       return;
     }
@@ -468,10 +558,21 @@ export function analyzeHandler(
   const noteMemberWrite = (p: NodePath, node: t.MemberExpression): void => {
     const rootName = memberRootName(node);
     if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
-      // R12: mutating a field of an instance-state object — same local commit
+      const plan = listMutationPlans?.get(rootName!);
+      const key =
+        plan === undefined
+          ? null
+          : directListItemMutationKey(node, plan);
       mutateScope(p, (scope) => {
-        recordInstanceWrite(scope, rootName!);
+        recordInstanceMutation(
+          scope,
+          rootName!,
+          key === null ? 'structural' : 'targeted',
+        );
       });
+      if (plan !== undefined && key !== null) {
+        journalTargetedMutation(p, plan, key);
+      }
       return;
     }
     if (
@@ -557,7 +658,7 @@ export function analyzeHandler(
         }
         if (instVars?.has(left.name) === true) {
           mutateScope(p, (scope) => {
-            recordInstanceWrite(scope, left.name);
+            recordInstanceMutation(scope, left.name);
           });
           return;
         }
@@ -619,7 +720,7 @@ export function analyzeHandler(
         }
         if (instVars?.has(arg.name) === true) {
           mutateScope(p, (scope) => {
-            recordInstanceWrite(scope, arg.name);
+            recordInstanceMutation(scope, arg.name);
           });
           return;
         }

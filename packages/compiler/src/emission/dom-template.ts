@@ -7,7 +7,7 @@
  */
 
 import * as t from '@babel/types';
-import type { Ctx } from '../context';
+import { walkNodes, type Ctx } from '../context';
 import { generatedIdentifier } from '../identifiers';
 import type { EmitScope } from './scope';
 
@@ -120,24 +120,59 @@ export function applyRepeatedDomTemplate(
     [t.booleanLiteral(true)],
   );
 
-  const bindings = [...factories]
+  const referencedNodes = new Set<string>([rootVar]);
+  for (const statement of retained) {
+    walkNodes(statement, (node) => {
+      if (t.isIdentifier(node) && nodeNames.has(node.name)) {
+        referencedNodes.add(node.name);
+      }
+    });
+  }
+  const bound: Array<{ name: string; path: number[] }> = [];
+  const bindings = factories
+    .filter(({ name }) => referencedNodes.has(name))
     .sort(
       (left, right) =>
         paths.get(left.name)!.length - paths.get(right.name)!.length,
     )
-    .map(({ name }) =>
-      t.variableDeclaration('const', [
+    .map(({ name }) => {
+      const path = paths.get(name)!;
+      let value: t.Expression;
+      if (name === rootVar) {
+        value = t.cloneNode(rootClone, true);
+      } else {
+        let base = bound[0]!;
+        for (const candidate of bound) {
+          if (
+            candidate.path.length > base.path.length &&
+            isPathPrefix(candidate.path, path)
+          ) {
+            base = candidate;
+          }
+        }
+        value = nodeAtPath(base.name, path.slice(base.path.length));
+      }
+      bound.push({ name, path });
+      return t.variableDeclaration('const', [
         t.variableDeclarator(
           t.identifier(name),
-          name === rootVar
-            ? t.cloneNode(rootClone, true)
-            : nodeAtPath(rootVar, paths.get(name)!),
+          value,
         ),
-      ]),
-    );
+      ]);
+    });
 
   scope.creation = [...bindings, ...retained];
   return true;
+}
+
+function isPathPrefix(
+  prefix: readonly number[],
+  path: readonly number[],
+): boolean {
+  return (
+    prefix.length <= path.length &&
+    prefix.every((segment, index) => path[index] === segment)
+  );
 }
 
 function readNodeFactory(

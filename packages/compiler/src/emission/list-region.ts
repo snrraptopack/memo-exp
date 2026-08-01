@@ -41,7 +41,14 @@ import {
 import type { NodeEmitter } from './node-emitter';
 import { compileRefValue } from '../jsx/refs';
 import { applyRepeatedDomTemplate } from './dom-template';
-import { instrumentComponentCallback } from '../handlers';
+import {
+  instrumentComponentCallback,
+  resolveLocalHelper,
+} from '../handlers';
+import type {
+  KeyedListMutationPlan,
+  TargetedListDependency,
+} from '../context';
 
 export type AuthoredChildrenSlotBuilder = (
   ctx: Ctx,
@@ -170,6 +177,36 @@ export function emitListRegion(
   );
   scope.disposableRegions.push(regionVariable);
 
+  const targeted = ctx.targetedListDependencies.get(call) ?? [];
+  const mutation = ctx.keyedListMutations.get(call);
+  if (mutation !== undefined) {
+    scope.creation.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.identifier(mutation.keysVariable),
+          t.newExpression(t.identifier('Set'), []),
+        ),
+      ]),
+    );
+  }
+  const dependencyCaches = targeted.map((dependency) => ({
+    dependency,
+    cache: generatedIdentifier(ctx, `${dependency.value}ListKey`).name,
+  }));
+  if (dependencyCaches.length > 0) {
+    scope.creation.push(
+      t.variableDeclaration(
+        'let',
+        dependencyCaches.map(({ dependency, cache }) =>
+          t.variableDeclarator(
+            t.identifier(cache),
+            t.identifier(dependency.value),
+          ),
+        ),
+      ),
+    );
+  }
+
   const reconcile = (): t.Statement =>
     t.expressionStatement(
       t.callExpression(
@@ -181,7 +218,243 @@ export function emitListRegion(
       ),
     );
   scope.creation.push(reconcile());
-  scope.updaters.push(reconcile);
+  if (
+    dependencyCaches.length === 0 && mutation === undefined ||
+    scope.reasonVar === null
+  ) {
+    scope.updaters.push(reconcile);
+  } else {
+    scope.updaters.push(() =>
+      buildTargetedListUpdate(
+        ctx,
+        componentName,
+        scope.reasonVar!,
+        regionVariable,
+        site.sourceExpr,
+        dependencyCaches,
+        mutation,
+      ),
+    );
+  }
+}
+
+function hasReason(reasonVar: string, reason: number): t.Expression {
+  const current = (): t.Identifier => t.identifier(reasonVar);
+  return t.logicalExpression(
+    '||',
+    t.binaryExpression('===', current(), t.numericLiteral(reason)),
+    t.logicalExpression(
+      '&&',
+      t.binaryExpression('!==', current(), t.nullLiteral()),
+      t.logicalExpression(
+        '&&',
+        t.binaryExpression(
+          '!==',
+          t.unaryExpression('typeof', current()),
+          t.stringLiteral('number'),
+        ),
+        t.callExpression(
+          t.memberExpression(current(), t.identifier('has')),
+          [t.numericLiteral(reason)],
+        ),
+      ),
+    ),
+  );
+}
+
+function refreshKey(
+  regionVariable: string,
+  value: t.Expression,
+): t.Statement {
+  return t.expressionStatement(
+    t.callExpression(
+      t.memberExpression(
+        t.identifier(regionVariable),
+        t.identifier('refreshKey'),
+      ),
+      [value],
+    ),
+  );
+}
+
+function buildTargetedListUpdate(
+  ctx: Ctx,
+  componentName: string,
+  reasonVar: string,
+  regionVariable: string,
+  sourceExpr: t.Expression,
+  dependencies: Array<{
+    dependency: TargetedListDependency;
+    cache: string;
+  }>,
+  mutation: KeyedListMutationPlan | undefined,
+): t.Statement {
+  const ownerReasons = ctx.instanceReasonIds.get(componentName);
+  if (ownerReasons === undefined) {
+    return t.expressionStatement(
+      t.callExpression(
+        t.memberExpression(
+          t.identifier(regionVariable),
+          t.identifier('reconcile'),
+        ),
+        [t.cloneNode(sourceExpr)],
+      ),
+    );
+  }
+  const source = mutation?.source ?? dependencies[0]?.dependency.source;
+  const sourceReason =
+    source === undefined ? undefined : ownerReasons.get(source);
+  if (sourceReason === undefined) {
+    return t.expressionStatement(
+      t.callExpression(
+        t.memberExpression(
+          t.identifier(regionVariable),
+          t.identifier('reconcile'),
+        ),
+        [t.cloneNode(sourceExpr)],
+      ),
+    );
+  }
+
+  const fullBody: t.Statement[] = [
+    t.expressionStatement(
+      t.callExpression(
+        t.memberExpression(
+          t.identifier(regionVariable),
+          t.identifier('reconcile'),
+        ),
+        [t.cloneNode(sourceExpr)],
+      ),
+    ),
+    ...dependencies.map(({ dependency, cache }) =>
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.identifier(cache),
+          t.identifier(dependency.value),
+        ),
+      ),
+    ),
+    ...(mutation === undefined
+      ? []
+      : [
+          t.expressionStatement(
+            t.callExpression(
+              t.memberExpression(
+                t.identifier(mutation.keysVariable),
+                t.identifier('clear'),
+              ),
+              [],
+            ),
+          ),
+        ]),
+  ];
+  const targetedBody: t.Statement[] = [];
+  if (mutation !== undefined) {
+    const targetedReason = ownerReasons.get(mutation.targetedReason);
+    if (targetedReason !== undefined) {
+      const key = generatedIdentifier(ctx, 'changedListKey');
+      targetedBody.push(
+        t.ifStatement(
+          hasReason(reasonVar, targetedReason),
+          t.blockStatement([
+            t.forOfStatement(
+              t.variableDeclaration('const', [
+                t.variableDeclarator(t.cloneNode(key)),
+              ]),
+              t.identifier(mutation.keysVariable),
+              t.blockStatement([
+                refreshKey(regionVariable, t.cloneNode(key)),
+              ]),
+            ),
+            t.expressionStatement(
+              t.callExpression(
+                t.memberExpression(
+                  t.identifier(mutation.keysVariable),
+                  t.identifier('clear'),
+                ),
+                [],
+              ),
+            ),
+          ]),
+        ),
+      );
+    }
+  }
+  for (const { dependency, cache } of dependencies) {
+    const dependencyReason = ownerReasons.get(dependency.value);
+    if (dependencyReason === undefined) continue;
+    const previous = generatedIdentifier(ctx, 'previousListKey');
+    targetedBody.push(
+      t.ifStatement(
+        hasReason(reasonVar, dependencyReason),
+        t.blockStatement([
+          t.variableDeclaration('const', [
+            t.variableDeclarator(previous, t.identifier(cache)),
+          ]),
+          t.expressionStatement(
+            t.assignmentExpression(
+              '=',
+              t.identifier(cache),
+              t.identifier(dependency.value),
+            ),
+          ),
+          refreshKey(regionVariable, t.cloneNode(previous)),
+          t.ifStatement(
+            t.unaryExpression(
+              '!',
+              t.callExpression(
+                t.memberExpression(
+                  t.identifier('Object'),
+                  t.identifier('is'),
+                ),
+                [t.cloneNode(previous), t.identifier(cache)],
+              ),
+            ),
+            refreshKey(regionVariable, t.identifier(cache)),
+          ),
+        ]),
+      ),
+    );
+  }
+  let fullCondition: t.Expression = t.binaryExpression(
+    '===',
+    t.identifier(reasonVar),
+    t.nullLiteral(),
+  );
+  if (mutation !== undefined) {
+    const structuralReason = ownerReasons.get(mutation.structuralReason);
+    const targetedReason = ownerReasons.get(mutation.targetedReason);
+    if (structuralReason !== undefined) {
+      fullCondition = t.logicalExpression(
+        '||',
+        fullCondition,
+        hasReason(reasonVar, structuralReason),
+      );
+    }
+    fullCondition = t.logicalExpression(
+      '||',
+      fullCondition,
+      targetedReason === undefined
+        ? hasReason(reasonVar, sourceReason)
+        : t.logicalExpression(
+            '&&',
+            hasReason(reasonVar, sourceReason),
+            t.unaryExpression('!', hasReason(reasonVar, targetedReason)),
+          ),
+    );
+  } else {
+    fullCondition = t.logicalExpression(
+      '||',
+      fullCondition,
+      hasReason(reasonVar, sourceReason),
+    );
+  }
+  return t.ifStatement(
+    fullCondition,
+    t.blockStatement(fullBody),
+    targetedBody.length === 0 ? undefined : t.blockStatement(targetedBody),
+  );
 }
 
 function buildCallbackRowCreate(
@@ -328,6 +601,7 @@ function buildComponentRowCreate(
           property.value,
           componentName,
           rowContext,
+          true,
         );
         property.value = stabilizeInlineCallbackStatement(
           ctx,
@@ -397,7 +671,20 @@ function buildComponentRowCreate(
           value,
           componentName,
           rowContext,
+          true,
         );
+      } else if (t.isIdentifier(value)) {
+        const localFn = resolveLocalHelper(componentPath, value.name);
+        if (localFn !== null && !nodeHasJsx(localFn.body)) {
+          instrumentComponentCallback(
+            ctx,
+            componentPath,
+            localFn,
+            componentName,
+            rowContext,
+            true,
+          );
+        }
       }
       propEntries.push({
         name: propName,
@@ -506,14 +793,22 @@ function buildComponentRowCreate(
     ctx,
     lightweight ? 'entry' : 'rowElement',
   );
+  const needsUpdateProps =
+    callProps.length > 0 || rowScope.updaters.length > 0;
+  const reuseLightweightEntry = lightweight && needsUpdateProps;
+  const lightweightPushProps = reuseLightweightEntry
+    ? generatedIdentifier(ctx, 'pushRowProps')
+    : null;
   if (lightweight) {
     updateStatements.push(
       t.expressionStatement(
         t.callExpression(
-          t.memberExpression(
-            t.cloneNode(result),
-            t.identifier('updateProps'),
-          ),
+          lightweightPushProps === null
+            ? t.memberExpression(
+                t.cloneNode(result),
+                t.identifier('updateProps'),
+              )
+            : t.cloneNode(lightweightPushProps),
           nextCallProps,
         ),
       ),
@@ -565,7 +860,7 @@ function buildComponentRowCreate(
           t.arrayExpression([t.cloneNode(rowId)]),
         ),
       ];
-  if (callProps.length > 0 || rowScope.updaters.length > 0) {
+  if (needsUpdateProps && !reuseLightweightEntry) {
     entryProperties.push(
       t.objectProperty(
         t.identifier('updateProps'),
@@ -649,7 +944,42 @@ function buildComponentRowCreate(
             ]),
           ]
         : []),
-      t.returnStatement(t.objectExpression(entryProperties)),
+      ...(lightweightPushProps === null
+        ? []
+        : [
+            t.variableDeclaration('const', [
+              t.variableDeclarator(
+                t.cloneNode(lightweightPushProps),
+                t.memberExpression(
+                  t.cloneNode(result),
+                  t.identifier('updateProps'),
+                ),
+              ),
+            ]),
+            t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                t.memberExpression(
+                  t.cloneNode(result),
+                  t.identifier('updateProps'),
+                ),
+                t.arrowFunctionExpression(
+                  [
+                    t.cloneNode(nextItem),
+                    ...(nextIndex === null
+                      ? []
+                      : [t.cloneNode(nextIndex)]),
+                  ],
+                  t.blockStatement(updateStatements),
+                ),
+              ),
+            ),
+          ]),
+      t.returnStatement(
+        reuseLightweightEntry
+          ? t.cloneNode(result)
+          : t.objectExpression(entryProperties),
+      ),
     ]),
   );
 }

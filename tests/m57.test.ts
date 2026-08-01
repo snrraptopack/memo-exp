@@ -123,6 +123,68 @@ describe('M5.7 — no double render for dirtied + resynced rows', () => {
     ]);
   });
 
+  it('refreshKey syncs only the addressed retained row', () => {
+    const ul = document.createElement('ul');
+    const synced: number[] = [];
+    const region = createListRegion(
+      ul,
+      'App/items',
+      (item: { id: number }) => ({
+        nodes: [document.createElement('li')],
+        entities: [],
+        update: () => synced.push(item.id),
+      }),
+      (item) => item.id,
+    );
+    region.reconcile([{ id: 1 }, { id: 2 }, { id: 3 }]);
+
+    region.refreshKey(2);
+    region.refreshKey(99);
+
+    expect(synced).toEqual([2]);
+  });
+
+  it('releases removed row records when a list is reconciled to empty', () => {
+    const NativeMap = globalThis.Map;
+    const maps: Array<Map<unknown, unknown>> = [];
+    class TrackingMap<K, V> extends NativeMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | null) {
+        super(entries);
+        maps.push(this as Map<unknown, unknown>);
+      }
+    }
+
+    globalThis.Map = TrackingMap as MapConstructor;
+    try {
+      const ul = document.createElement('ul');
+      const region = createListRegion(
+        ul,
+        'App/items',
+        (item: { id: number }) => ({
+          nodes: [document.createElement('li')],
+          entities: [],
+        }),
+        (item) => item.id,
+      );
+      region.reconcile([{ id: 1 }, { id: 2 }, { id: 3 }]);
+      region.reconcile([]);
+
+      const retainedRows = maps.flatMap((map) =>
+        [...map.values()].filter(
+          (value) =>
+            value !== null &&
+            typeof value === 'object' &&
+            'e' in value &&
+            'id' in value &&
+            'pos' in value,
+        ),
+      );
+      expect(retainedRows).toEqual([]);
+    } finally {
+      globalThis.Map = NativeMap;
+    }
+  });
+
   it('commit cascade still reaches later passes (setProps push mid-commit)', () => {
     const order: string[] = [];
     register({

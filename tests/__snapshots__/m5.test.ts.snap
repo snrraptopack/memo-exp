@@ -120,7 +120,7 @@ function Row(item, _id, _eventRoot) {
     _MD.commitWrites(_WRITES_);
   });
   return {
-    nodes: _MD.rootNodes(_li),
+    nodes: _li,
     entities: [],
     update: _update,
     updateProps: _nextProp => {
@@ -148,16 +148,12 @@ export function CompList(_id2, _parent) {
   const _ul = document.createElement("ul");
   const _region = _MD.createListRegion(_ul, _id2 + "/items", (item, _rowId) => {
     const _entry = Row(item, _rowId, _ul);
-    return {
-      nodes: _entry.nodes,
-      entities: [],
-      update: _entry.update,
-      dispose: _entry.dispose,
-      updateProps: _nextItem => {
-        item = _nextItem;
-        _entry.updateProps(item);
-      }
+    const _pushRowProps = _entry.updateProps;
+    _entry.updateProps = _nextItem => {
+      item = _nextItem;
+      _pushRowProps(item);
     };
+    return _entry;
   }, item => item.id);
   _region.reconcile(items);
   const _text2 = document.createTextNode("add");

@@ -33,7 +33,7 @@ import { unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */
-  nodes: Node[];
+  nodes: Node | readonly Node[];
   /** Entity ids created for this item — unregistered on removal. */
   entities: EntityId[];
   /**
@@ -63,6 +63,8 @@ const identityKey = <T>(item: T): unknown => item;
 
 export interface ListRegion<T> {
   reconcile(items: readonly T[]): void;
+  /** Re-sync one retained row through the region's O(1) key cache. */
+  refreshKey(key: unknown): void;
   size(): number;
   /** Remove retained nodes and unregister every entity owned by the region. */
   dispose(): void;
@@ -215,6 +217,7 @@ export function createListRegion<T>(
     }
 
     const old = cache;
+    const oldWasEmpty = old.size === 0;
     // M5.8: build into the scratch buffers (swapped into `live` at the end)
     nextMap.clear();
     const next = nextMap;
@@ -223,7 +226,7 @@ export function createListRegion<T>(
     const n = items.length;
     rowIds.length = n;
     ordered.length = n;
-    seq.length = n;
+    seq.length = oldWasEmpty ? 0 : n;
 
     // ---- pass 1 (forward): reuse or create ----------------------------------
     // M5.6/M5.7: track the in-place fast path while fusing all per-row
@@ -237,7 +240,7 @@ export function createListRegion<T>(
       if (next.has(k)) {
         throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
       }
-      let rec = old.get(k);
+      let rec = oldWasEmpty ? undefined : old.get(k);
       if (rec !== undefined) {
         old.delete(k);
         seq[i] = rec.pos;
@@ -248,12 +251,35 @@ export function createListRegion<T>(
       } else {
         const rowId = rowIdFor(k);
         rec = { e: create(item, rowId, i), id: rowId, pos: i };
-        seq[i] = -1;
+        if (!oldWasEmpty) seq[i] = -1;
         hasNew = true;
       }
       next.set(k, rec);
       ordered[i] = rec.e;
       rowIds[i] = rec.id;
+    }
+
+    // Fresh mount after an empty frame: every row is new, so there is no old
+    // ordering to analyze and no stale row to remove. Append the complete
+    // batch in source order and skip LIS/pending-run bookkeeping entirely.
+    if (oldWasEmpty && hasNew) {
+      const fragment = document.createDocumentFragment();
+      for (let i = 0; i < ordered.length; i++) {
+        const nodes = ordered[i]!.nodes;
+        if (Array.isArray(nodes)) {
+          for (const node of nodes) fragment.appendChild(node);
+        } else {
+          fragment.appendChild(nodes as Node);
+        }
+      }
+      parent.insertBefore(fragment, endAnchor);
+      cache = next; nextMap = old;
+      const pe = prevEntries; prevEntries = ordered; nextEntries = pe;
+      const pr = prevRowIds; prevRowIds = rowIds; nextRowIds = pr;
+      nextEntries.length = 0;
+      nextRowIds.length = 0;
+      prevItems = items.slice();
+      return;
     }
 
     // ---- fast path: pure content sync, zero structural work -----------------
@@ -263,6 +289,11 @@ export function createListRegion<T>(
       cache = next; nextMap = old;
       const pe = prevEntries; prevEntries = ordered; nextEntries = pe;
       const pr = prevRowIds; prevRowIds = rowIds; nextRowIds = pr;
+      // The former live buffers are scratch now. Truncate immediately rather
+      // than retaining removed/replaced entries (and their detached DOM) until
+      // the next structural reconciliation.
+      nextEntries.length = 0;
+      nextRowIds.length = 0;
       prevItems = items.slice();
       return;
     }
@@ -270,10 +301,20 @@ export function createListRegion<T>(
     // ---- removals BEFORE placement (keeps placement math accurate) ----------
     for (const [k, rec] of old) {
       rec.e.dispose?.();
-      for (const n of rec.e.nodes) n.parentNode?.removeChild(n);
+      const nodes = rec.e.nodes;
+      if (Array.isArray(nodes)) {
+        for (const node of nodes) node.parentNode?.removeChild(node);
+      } else {
+        (nodes as Node).parentNode?.removeChild(nodes as Node);
+      }
       for (const eid of rec.e.entities) unregisterSubtree(eid);
       syntheticIds.delete(k);
     }
+    // `old` becomes the next reconciliation's scratch map below. Iterating a
+    // Map does not remove its entries, so without this clear a list that was
+    // reconciled to empty retained every detached row (including DOM nodes and
+    // handler closures) until another structural reconciliation or dispose.
+    old.clear();
 
     // ---- pass 2 (reverse): LIS-guided placement ------------------------------
     // Rows in the LIS are already in correct relative order: skip them.
@@ -288,7 +329,12 @@ export function createListRegion<T>(
       if (pending === null) return;
       const frag = document.createDocumentFragment();
       for (let i = pending.length - 1; i >= 0; i--) {
-        for (const n of pending[i]!.nodes) frag.appendChild(n);
+        const nodes = pending[i]!.nodes;
+        if (Array.isArray(nodes)) {
+          for (const node of nodes) frag.appendChild(node);
+        } else {
+          frag.appendChild(nodes as Node);
+        }
       }
       parent.insertBefore(frag, cursor);
       pending = null;
@@ -301,7 +347,9 @@ export function createListRegion<T>(
         (pending ??= []).push(entry);
       } else {
         flush();
-        cursor = entry.nodes[0]!;
+        cursor = Array.isArray(entry.nodes)
+          ? entry.nodes[0]!
+          : entry.nodes as Node;
       }
     }
     flush();
@@ -310,13 +358,26 @@ export function createListRegion<T>(
     cache = next; nextMap = old;
     const pe2 = prevEntries; prevEntries = ordered; nextEntries = pe2;
     const pr2 = prevRowIds; prevRowIds = rowIds; nextRowIds = pr2;
+    nextEntries.length = 0;
+    nextRowIds.length = 0;
     prevItems = items.slice();
+  }
+
+  function refreshKey(k: unknown): void {
+    const rec = cache.get(k);
+    if (rec === undefined) return;
+    syncRow(rec.e, prevItems[rec.pos] as T, rec.id, rec.pos);
   }
 
   function dispose(): void {
     for (const [key, rec] of cache) {
       rec.e.dispose?.();
-      for (const node of rec.e.nodes) node.parentNode?.removeChild(node);
+      const nodes = rec.e.nodes;
+      if (Array.isArray(nodes)) {
+        for (const node of nodes) node.parentNode?.removeChild(node);
+      } else {
+        (nodes as Node).parentNode?.removeChild(nodes as Node);
+      }
       for (const entity of rec.e.entities) unregisterSubtree(entity);
       syntheticIds.delete(key);
     }
@@ -332,6 +393,7 @@ export function createListRegion<T>(
 
   return {
     reconcile,
+    refreshKey,
     size: () => cache.size,
     dispose,
   };

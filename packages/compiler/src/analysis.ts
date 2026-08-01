@@ -28,13 +28,16 @@ import {
   collectStateIds,
   isConstObjectState,
   isStoreObject,
+  keyPathOf,
   memberKey,
   nodeHasJsx,
   registerState,
   walkNodes,
+  writeTouchesKey,
   type Ctx,
 } from './context';
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
+import { transparentListExpression } from './lists/source-shapes';
 import { analyzeCondSite } from './conds';
 import { summarizeHelper } from './helper-summaries';
 import { renderPropReferenceName } from './components/children';
@@ -62,6 +65,7 @@ import { pathVariants } from './analysis/component-graph';
 import { normalizeComponentJsxValues } from './components/jsx-values';
 import { normalizeRenderFunctions } from './components/render-functions';
 import { normalizeCalculatedListSources } from './lists/calculated-sources';
+import { findTargetedListDependencies } from './lists/targeted-refresh';
 import {
   normalizeDynamicTags,
   scanLocalDynamicComponentCandidates,
@@ -70,6 +74,7 @@ import { moduleStateStringCandidates } from './analysis/type-candidates';
 import { foldRenderCallbackSubtreeReads } from './analysis/component-reads';
 import { scanRefProps } from './components/ref-props';
 import { hasHostJsxEvent } from './jsx/events';
+import { generatedIdentifier } from './identifiers';
 
 export {
   isLightweightListedComponent,
@@ -785,6 +790,145 @@ function storeReadKey(ctx: Ctx, m: NodePath<t.MemberExpression>): string | null 
 // reads per component (with list + helper attribution)
 // ---------------------------------------------------------------------
 
+function addInstanceReasons(
+  ctx: Ctx,
+  component: string,
+  additions: Iterable<string>,
+): void {
+  const sources = new Set([
+    ...(ctx.instanceReasonIds.get(component)?.keys() ?? []),
+    ...additions,
+  ]);
+  ctx.instanceReasonIds.set(
+    component,
+    new Map(
+      [...sources]
+        .sort()
+        .map((source, index) => [source, index]),
+    ),
+  );
+}
+
+function directItemWrittenPath(
+  member: t.MemberExpression,
+  source: string,
+): string[] | null {
+  const chain: t.MemberExpression[] = [];
+  let current: t.Expression = member;
+  for (;;) {
+    current = transparentListExpression(current);
+    if (!t.isMemberExpression(current)) break;
+    chain.unshift(current);
+    if (t.isSuper(current.object)) return null;
+    current = current.object;
+  }
+  if (!t.isIdentifier(current, { name: source })) return null;
+  const itemAccess = chain[0];
+  if (
+    itemAccess === undefined ||
+    !itemAccess.computed ||
+    !t.isExpression(itemAccess.property) ||
+    !(
+      t.isIdentifier(itemAccess.property) ||
+      t.isNumericLiteral(itemAccess.property) ||
+      t.isStringLiteral(itemAccess.property)
+    ) ||
+    chain.length < 2
+  ) {
+    return null;
+  }
+  const path: string[] = [];
+  for (const segment of chain.slice(1)) {
+    if (!segment.computed && t.isIdentifier(segment.property)) {
+      path.push(segment.property.name);
+    } else if (segment.computed && t.isStringLiteral(segment.property)) {
+      path.push(segment.property.value);
+    } else {
+      return null;
+    }
+  }
+  return path;
+}
+
+function componentHasDirectItemMutation(
+  componentPath: NodePath<t.FunctionDeclaration>,
+  source: string,
+  keyPath: string[],
+): boolean {
+  let found = false;
+  walkNodes(componentPath.node.body, (node) => {
+    if (found) return;
+    const target =
+      t.isAssignmentExpression(node) && t.isMemberExpression(node.left)
+        ? node.left
+        : t.isUpdateExpression(node) && t.isMemberExpression(node.argument)
+          ? node.argument
+          : t.isUnaryExpression(node, { operator: 'delete' }) &&
+              t.isMemberExpression(node.argument)
+            ? node.argument
+            : null;
+    if (target === null) return;
+    const writtenPath = directItemWrittenPath(target, source);
+    if (writtenPath !== null && !writeTouchesKey(writtenPath, keyPath)) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+function registerKeyedListMutationPlan(
+  ctx: Ctx,
+  component: string,
+  call: t.CallExpression,
+  site: ReturnType<typeof analyzeMapSite>,
+): void {
+  if (!site.sourceLocal || !t.isIdentifier(site.sourceExpr)) return;
+  const source = site.sourceExpr.name;
+  if (ctx.instanceState.get(component)?.has(source) !== true) return;
+  const keyPath = keyPathOf(site.keyExpr, site.itemParam);
+  if (keyPath === null || keyPath.length === 0) return;
+  const componentPath = ctx.compPaths.get(component);
+  if (
+    componentPath === undefined ||
+    !componentHasDirectItemMutation(componentPath, source, keyPath)
+  ) {
+    return;
+  }
+
+  const address = `${component}\0${source}`;
+  if (ctx.disabledKeyedListMutationSources.has(address)) return;
+  let sources = ctx.keyedListMutationSources.get(component);
+  if (sources === undefined) {
+    sources = new Map();
+    ctx.keyedListMutationSources.set(component, sources);
+  }
+  const existing = sources.get(source);
+  if (existing !== undefined) {
+    // One journal cannot be consumed independently by two list regions.
+    ctx.keyedListMutations.delete(existing.call);
+    sources.delete(source);
+    ctx.disabledKeyedListMutationSources.add(address);
+    return;
+  }
+
+  const plan = {
+    source,
+    keyPath,
+    keysVariable: generatedIdentifier(ctx, `${source}ChangedKeys`).name,
+    targetedReason: `${address}\0content`,
+    structuralReason: `${address}\0structure`,
+    call,
+  };
+  sources.set(source, plan);
+  ctx.keyedListMutations.set(call, plan);
+  ctx.targetedListComponents.add(component);
+  addInstanceReasons(ctx, component, [
+    source,
+    plan.targetedReason,
+    plan.structuralReason,
+  ]);
+}
+
 /**
  * Reads per component, with list attribution:
  *  - `items.map(...)` records `items` as an owner read; the callback is
@@ -1117,6 +1261,23 @@ function collectReads(ctx: Ctx): void {
             matchRenderCallbackMap(ctx, name, mapCall) !== null)
         ) {
           const site = analyzeMapSite(ctx, mapCall, call, name, usedPrefixes);
+          registerKeyedListMutationPlan(ctx, name, mapCall, site);
+          const targeted = findTargetedListDependencies(
+            site,
+            ctx.instanceState.get(name) ?? new Set(),
+          );
+          if (targeted.length > 0 && t.isIdentifier(site.sourceExpr)) {
+            const source = site.sourceExpr.name;
+            ctx.targetedListDependencies.set(
+              mapCall,
+              targeted.map((value) => ({
+                source,
+                value,
+              })),
+            );
+            ctx.targetedListComponents.add(name);
+            addInstanceReasons(ctx, name, [source, ...targeted]);
+          }
           if (!site.sourceLocal) reads.add(site.sourceKey);
           if (site.form === 'component') {
             // R10: row-prop reads are OWNER reads — the owner re-pushes row

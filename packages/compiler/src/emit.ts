@@ -569,6 +569,7 @@ function emitElement(
             property.value,
             compName,
             rowCtx,
+            true,
           );
           property.value = stabilizeInlineCallbackProp(
             ctx,
@@ -677,11 +678,18 @@ function emitElement(
       // prevents double-instrumentation if the same function was already seen
       // through a native onClick attribute on the same component.
       if (inlineCallback) {
-        instrumentComponentCallback(ctx, compPath, v, compName, rowCtx);
+        instrumentComponentCallback(ctx, compPath, v, compName, rowCtx, true);
       } else if (t.isIdentifier(v)) {
         const localFn = resolveLocalHelper(compPath, v.name);
         if (localFn !== null && !nodeHasJsx(localFn.body)) {
-          instrumentComponentCallback(ctx, compPath, localFn, compName, rowCtx);
+          instrumentComponentCallback(
+            ctx,
+            compPath,
+            localFn,
+            compName,
+            rowCtx,
+            true,
+          );
         }
       }
       propEntries.push({
