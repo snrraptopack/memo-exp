@@ -62,7 +62,12 @@ export type KeyFn<T> = (item: T, index: number) => unknown;
 const identityKey = <T>(item: T): unknown => item;
 
 export interface ListRegion<T> {
-  reconcile(items: readonly T[]): void;
+  /**
+   * Reconcile collection identity and order. Compiler-proven topology-only
+   * writes may pass `false`: retained rows whose item reference is unchanged
+   * then skip content replay while inserted/replaced items still synchronize.
+   */
+  reconcile(items: readonly T[], syncRetained?: boolean): void;
   /** Re-sync one retained row through the region's O(1) key cache. */
   refreshKey(key: unknown): void;
   size(): number;
@@ -122,6 +127,7 @@ export function createListRegion<T>(
   idPrefix: EntityId,
   create: (item: T, rowId: EntityId, index: number) => ListEntry,
   key: KeyFn<T> = identityKey,
+  trackRowIds = true,
 ): ListRegion<T> {
   const endAnchor = document.createComment(`list:${idPrefix}`);
   parent.appendChild(endAnchor);
@@ -134,7 +140,7 @@ export function createListRegion<T>(
    */
   interface RowRec {
     e: ListEntry;
-    id: EntityId;
+    id: EntityId | null;
     pos: number;
   }
   let cache = new Map<unknown, RowRec>();
@@ -147,12 +153,12 @@ export function createListRegion<T>(
   // the structural path, which recomputes keys (and re-snapshots).
   let prevItems: readonly T[] = [];
   let prevEntries: ListEntry[] = [];
-  let prevRowIds: EntityId[] = [];
+  let prevRowIds: Array<EntityId | null> = [];
   // M5.8: scratch buffers for the structural path, swapped with the live
   // ones after each reconcile — zero allocation in steady state.
   let nextMap = new Map<unknown, RowRec>();
   let nextEntries: ListEntry[] = [];
-  let nextRowIds: EntityId[] = [];
+  let nextRowIds: Array<EntityId | null> = [];
   const seq: number[] = []; // temp LIS sequence, reused
 
   /**
@@ -167,14 +173,14 @@ export function createListRegion<T>(
   function syncRow(
     entry: ListEntry,
     item: T,
-    rowId: EntityId,
+    rowId: EntityId | null,
     index: number,
   ): void {
     entry.updateProps?.(item, index); // R7/R10: refresh callback bindings
     if (entry.update !== undefined) {
       entry.update(); // M5.5: sync retained row with (possibly mutated) item
-      undirty(rowId); // M5.7: no double render
-    } else {
+      if (rowId !== null) undirty(rowId); // M5.7: no double render
+    } else if (rowId !== null) {
       // Component row: the entity renders in-place with the box just pushed
       // above (single pass), then its pending dirty is cancelled like any row.
       const e = getEntity(rowId);
@@ -198,7 +204,7 @@ export function createListRegion<T>(
     return `${idPrefix}/Row[${s}]`;
   }
 
-  function reconcile(items: readonly T[]): void {
+  function reconcile(items: readonly T[], syncRetained = true): void {
     // ---- M5.7 shape fast path ---------------------------------------------
     // Same length AND every key identical at every position → no additions,
     // no removals, no reorder is possible: skip ALL map building and LIS.
@@ -209,8 +215,14 @@ export function createListRegion<T>(
         if (items[i] !== prevItems[i]) { same = false; break; }
       }
       if (same) {
+        if (!syncRetained) return;
         for (let i = 0; i < items.length; i++) {
-          syncRow(prevEntries[i]!, items[i] as T, prevRowIds[i]!, i);
+          syncRow(
+            prevEntries[i]!,
+            items[i] as T,
+            trackRowIds ? prevRowIds[i] ?? null : null,
+            i,
+          );
         }
         return;
       }
@@ -224,7 +236,7 @@ export function createListRegion<T>(
     const rowIds = nextRowIds;
     const ordered = nextEntries;
     const n = items.length;
-    rowIds.length = n;
+    rowIds.length = trackRowIds ? n : 0;
     ordered.length = n;
     seq.length = oldWasEmpty ? 0 : n;
 
@@ -232,6 +244,7 @@ export function createListRegion<T>(
     // M5.6/M5.7: track the in-place fast path while fusing all per-row
     // bookkeeping into this one pass (no separate key array + loop).
     let hasNew = false;
+    let reused = 0;
     let inOrder = true;
     let lastOld = -1;
     for (let i = 0; i < items.length; i++) {
@@ -242,21 +255,92 @@ export function createListRegion<T>(
       }
       let rec = oldWasEmpty ? undefined : old.get(k);
       if (rec !== undefined) {
+        reused++;
         old.delete(k);
-        seq[i] = rec.pos;
-        if (rec.pos <= lastOld) inOrder = false;
-        else lastOld = rec.pos;
+        const oldPos = rec.pos;
+        seq[i] = oldPos;
+        if (oldPos <= lastOld) inOrder = false;
+        else lastOld = oldPos;
         rec.pos = i;
-        syncRow(rec.e, item, rec.id, i);
+        if (syncRetained || item !== prevItems[oldPos]) {
+          syncRow(rec.e, item, rec.id, i);
+        }
       } else {
-        const rowId = rowIdFor(k);
-        rec = { e: create(item, rowId, i), id: rowId, pos: i };
+        const createId = trackRowIds ? rowIdFor(k) : idPrefix;
+        rec = {
+          e: create(item, createId, i),
+          id: trackRowIds ? createId : null,
+          pos: i,
+        };
         if (!oldWasEmpty) seq[i] = -1;
         hasNew = true;
       }
       next.set(k, rec);
       ordered[i] = rec.e;
-      rowIds[i] = rec.id;
+      if (trackRowIds) rowIds[i] = rec.id;
+    }
+
+    // Complete replacement and clear own one contiguous DOM range. Delete
+    // that range once instead of issuing one removeChild per retained row,
+    // then append a replacement batch with one fragment insertion. With no
+    // reused key there is also no old ordering to feed through LIS.
+    if (!oldWasEmpty && reused === 0 && (n === 0 || hasNew)) {
+      for (const [, rec] of old) rec.e.dispose?.();
+
+      let removedAsRange = false;
+      let firstOwned: Node | undefined;
+      for (const entry of prevEntries) {
+        const nodes = entry.nodes;
+        firstOwned = Array.isArray(nodes) ? nodes[0] : nodes as Node;
+        if (firstOwned !== undefined) break;
+      }
+      if (
+        firstOwned !== undefined &&
+        firstOwned.parentNode === parent &&
+        endAnchor.parentNode === parent &&
+        typeof document.createRange === 'function'
+      ) {
+        const range = document.createRange();
+        range.setStartBefore(firstOwned);
+        range.setEndBefore(endAnchor);
+        range.deleteContents();
+        removedAsRange = true;
+      }
+
+      for (const [k, rec] of old) {
+        if (!removedAsRange) {
+          const nodes = rec.e.nodes;
+          if (Array.isArray(nodes)) {
+            for (const node of nodes) node.parentNode?.removeChild(node);
+          } else {
+            (nodes as Node).parentNode?.removeChild(nodes as Node);
+          }
+        }
+        for (const eid of rec.e.entities) unregisterSubtree(eid);
+        syntheticIds.delete(k);
+      }
+      old.clear();
+
+      if (n !== 0) {
+        const fragment = document.createDocumentFragment();
+        for (let i = 0; i < ordered.length; i++) {
+          const nodes = ordered[i]!.nodes;
+          if (Array.isArray(nodes)) {
+            for (const node of nodes) fragment.appendChild(node);
+          } else {
+            fragment.appendChild(nodes as Node);
+          }
+        }
+        parent.insertBefore(fragment, endAnchor);
+      }
+
+      cache = next; nextMap = old;
+      const pe = prevEntries; prevEntries = ordered; nextEntries = pe;
+      const pr = prevRowIds; prevRowIds = rowIds; nextRowIds = pr;
+      nextEntries.length = 0;
+      nextRowIds.length = 0;
+      prevItems = items.slice();
+      return;
     }
 
     // Fresh mount after an empty frame: every row is new, so there is no old

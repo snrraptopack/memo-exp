@@ -27,6 +27,7 @@ import {
   localBindingForProp,
   objectBindingName,
   runtimeParameter,
+  simpleObjectPropBindings,
 } from '../components/props';
 import { buildRenderPreludeReplay } from '../components/render-prelude';
 import {
@@ -60,6 +61,12 @@ export function transformComponent(
     refs.some((ref) => ref.sourceLocal === true) ||
     linkedRefs.some((ref) => ref.sourceLocal);
   const lightweight = isLightweightListedComponent(ctx, name);
+  const positionalObjectProps =
+    lightweight && linkedRefs.length === 0
+      ? simpleObjectPropBindings(propPlan)
+      : null;
+  const lightweightPropCount =
+    positionalObjectProps?.length ?? propSlotCount;
   const scope = newEmitScope(ctx, lightweight);
   const localDerivations = ctx.instanceDerivations.get(name);
   const controlFlow = ctx.instanceControlFlow.get(name);
@@ -252,9 +259,21 @@ export function transformComponent(
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));
   }
   if (lightweight) {
-    const nextProps = propPlan.params.map((_, index) =>
+    const nextProps = Array.from({ length: lightweightPropCount }, (_, index) =>
       generatedIdentifier(ctx, `nextProp${index}`),
     );
+    const replay =
+      positionalObjectProps === null
+        ? buildPropReplay(propPlan, nextProps)
+        : positionalObjectProps.map(({ local }, index) =>
+            t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                t.identifier(local),
+                t.cloneNode(nextProps[index]!),
+              ),
+            ),
+          );
     body.push(
       t.returnStatement(
         t.objectExpression([
@@ -274,15 +293,13 @@ export function transformComponent(
             t.identifier('update'),
             t.identifier(scope.updateVar),
           ),
-          ...(propSlotCount > 0
+          ...(lightweightPropCount > 0
             ? [
                 t.objectProperty(
                   t.identifier('updateProps'),
                   t.arrowFunctionExpression(
                     nextProps,
-                    t.blockStatement(
-                      buildPropReplay(propPlan, nextProps),
-                    ),
+                    t.blockStatement(replay),
                   ),
                 ),
               ]
@@ -322,7 +339,9 @@ export function transformComponent(
 
   node.params = lightweight
     ? [
-        ...propPlan.params.map(runtimeParameter),
+        ...(positionalObjectProps === null
+          ? propPlan.params.map(runtimeParameter)
+          : positionalObjectProps.map(({ local }) => t.identifier(local))),
         t.identifier(factoryId),
         ...(factoryOwner === null ? [] : [t.identifier(factoryOwner)]),
         ...(factoryEventRoot === null

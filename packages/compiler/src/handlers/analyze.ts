@@ -37,6 +37,18 @@ import { transparentListExpression } from '../lists/source-shapes';
 const traverse: typeof _traverse =
   (_traverse as any).default ?? (_traverse as any);
 
+const ARRAY_TOPOLOGY_METHODS = new Set([
+  'copyWithin',
+  'fill',
+  'pop',
+  'push',
+  'reverse',
+  'shift',
+  'sort',
+  'splice',
+  'unshift',
+]);
+
 function directListItemMutationKey(
   node: t.MemberExpression,
   plan: KeyedListMutationPlan,
@@ -206,7 +218,7 @@ export function analyzeHandler(
   const recordInstanceMutation = (
     scope: ScopeWrites,
     source: string,
-    kind: 'targeted' | 'structural' = 'structural',
+    kind: 'targeted' | 'topology' | 'structural' = 'structural',
   ): void => {
     recordInstanceWrite(scope, source);
     const plan = listMutationPlans?.get(source);
@@ -215,7 +227,9 @@ export function analyzeHandler(
         scope,
         kind === 'targeted'
           ? plan.targetedReason
-          : plan.structuralReason,
+          : kind === 'topology'
+            ? plan.topologyReason
+            : plan.structuralReason,
       );
     }
   };
@@ -800,6 +814,20 @@ export function analyzeHandler(
               noteOriginWrite(p, target);
             }
           }
+          return;
+        }
+
+        if (
+          method !== null &&
+          ARRAY_TOPOLOGY_METHODS.has(method) &&
+          t.isIdentifier(callee.object) &&
+          instVars?.has(callee.object.name) === true &&
+          listMutationPlans?.has(callee.object.name) === true
+        ) {
+          const source = callee.object.name;
+          mutateScope(p, (scope) => {
+            recordInstanceMutation(scope, source, 'topology');
+          });
           return;
         }
 

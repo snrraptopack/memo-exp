@@ -27,6 +27,7 @@ import {
   callPropsFromObject,
   orderCallProps,
 } from '../components/calls';
+import { simpleObjectPropBindings } from '../components/props';
 import {
   isInlineScalarCallback,
   stabilizeInlineCallbackStatement,
@@ -167,6 +168,13 @@ export function emitListRegion(
       ),
     );
   }
+  if (
+    site.form === 'component' &&
+    isLightweightListedComponent(ctx, site.rowComp!)
+  ) {
+    if (args.length === 3) args.push(t.identifier('undefined'));
+    args.push(t.booleanLiteral(false));
+  }
   scope.creation.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(
@@ -233,6 +241,7 @@ export function emitListRegion(
         site.sourceExpr,
         dependencyCaches,
         mutation,
+        site.indexParam === null,
       ),
     );
   }
@@ -288,6 +297,7 @@ function buildTargetedListUpdate(
     cache: string;
   }>,
   mutation: KeyedListMutationPlan | undefined,
+  allowTopologyOnly: boolean,
 ): t.Statement {
   const ownerReasons = ctx.instanceReasonIds.get(componentName);
   if (ownerReasons === undefined) {
@@ -349,6 +359,41 @@ function buildTargetedListUpdate(
           ),
         ]),
   ];
+  let topologyOnly: t.Statement | null = null;
+  if (mutation !== undefined && allowTopologyOnly) {
+    const topologyReason = ownerReasons.get(mutation.topologyReason);
+    if (topologyReason !== undefined) {
+      let topologyCondition = hasReason(reasonVar, topologyReason);
+      for (const reason of [
+        ownerReasons.get(mutation.targetedReason),
+        ownerReasons.get(mutation.structuralReason),
+        ...dependencies.map(({ dependency }) =>
+          ownerReasons.get(dependency.value),
+        ),
+      ]) {
+        if (reason === undefined) continue;
+        topologyCondition = t.logicalExpression(
+          '&&',
+          topologyCondition,
+          t.unaryExpression('!', hasReason(reasonVar, reason)),
+        );
+      }
+      topologyOnly = t.ifStatement(
+        topologyCondition,
+        t.blockStatement([
+          t.expressionStatement(
+            t.callExpression(
+              t.memberExpression(
+                t.identifier(regionVariable),
+                t.identifier('reconcile'),
+              ),
+              [t.cloneNode(sourceExpr), t.booleanLiteral(false)],
+            ),
+          ),
+        ]),
+      );
+    }
+  }
   const targetedBody: t.Statement[] = [];
   if (mutation !== undefined) {
     const targetedReason = ownerReasons.get(mutation.targetedReason);
@@ -424,12 +469,20 @@ function buildTargetedListUpdate(
   );
   if (mutation !== undefined) {
     const structuralReason = ownerReasons.get(mutation.structuralReason);
+    const topologyReason = ownerReasons.get(mutation.topologyReason);
     const targetedReason = ownerReasons.get(mutation.targetedReason);
     if (structuralReason !== undefined) {
       fullCondition = t.logicalExpression(
         '||',
         fullCondition,
         hasReason(reasonVar, structuralReason),
+      );
+    }
+    if (topologyReason !== undefined) {
+      fullCondition = t.logicalExpression(
+        '||',
+        fullCondition,
+        hasReason(reasonVar, topologyReason),
       );
     }
     fullCondition = t.logicalExpression(
@@ -450,11 +503,14 @@ function buildTargetedListUpdate(
       hasReason(reasonVar, sourceReason),
     );
   }
-  return t.ifStatement(
+  const generalUpdate = t.ifStatement(
     fullCondition,
     t.blockStatement(fullBody),
     targetedBody.length === 0 ? undefined : t.blockStatement(targetedBody),
   );
+  if (topologyOnly === null) return generalUpdate;
+  topologyOnly.alternate = generalUpdate;
+  return topologyOnly;
 }
 
 function buildCallbackRowCreate(
@@ -535,6 +591,41 @@ function buildComponentRowCreate(
   const prefixStatements: t.Statement[] = [];
   let propObjectExpression: t.ObjectExpression | null = null;
   const targetPlan = ctx.componentProps.get(rowComponent);
+  const positionalObjectProps =
+    lightweight &&
+    (ctx.linkedComponentRows.get(rowComponent)?.length ?? 0) === 0 &&
+    targetPlan !== undefined
+      ? simpleObjectPropBindings(targetPlan)
+      : null;
+  const positionalPropsFromEntries = (): t.Expression[] => {
+    for (const { name } of propEntries) {
+      if (!positionalObjectProps!.some((binding) => binding.name === name)) {
+        throw componentPath.buildCodeFrameError(
+          `memo-dom: unknown prop '${name}' on <${rowComponent}> - declared props: ${positionalObjectProps!
+            .map((binding) => binding.name)
+            .join(', ')}`,
+        );
+      }
+    }
+    const byName = new Map(
+      propEntries.map(({ name, value }) => [name, value]),
+    );
+    return positionalObjectProps!.map(({ name }) =>
+      t.cloneNode(byName.get(name) ?? t.identifier('undefined')),
+    );
+  };
+  const positionalPropsFromObject = (
+    object: t.Expression,
+  ): t.Expression[] =>
+    positionalObjectProps!.map(({ name }) =>
+      t.memberExpression(
+        t.cloneNode(object),
+        t.isValidIdentifier(name)
+          ? t.identifier(name)
+          : t.stringLiteral(name),
+        !t.isValidIdentifier(name),
+      ),
+    );
   const renderValueSlot = (value: t.Expression): t.Identifier => {
     const children: JsxChild[] =
       t.isJSXElement(value) || t.isJSXFragment(value)
@@ -750,9 +841,15 @@ function buildComponentRowCreate(
         ),
       ]),
     );
-    callProps = callPropsFromObject(ctx, rowComponent, propObject);
+    callProps =
+      positionalObjectProps === null
+        ? callPropsFromObject(ctx, rowComponent, propObject)
+        : positionalPropsFromObject(propObject);
   } else {
-    callProps = orderCallProps(ctx, rowComponent, propEntries);
+    callProps =
+      positionalObjectProps === null
+        ? orderCallProps(ctx, rowComponent, propEntries)
+        : positionalPropsFromEntries();
   }
 
   const updateStatements: t.Statement[] = [
@@ -786,7 +883,10 @@ function buildComponentRowCreate(
         ),
       ]),
     );
-    nextCallProps = callPropsFromObject(ctx, rowComponent, nextProps);
+    nextCallProps =
+      positionalObjectProps === null
+        ? callPropsFromObject(ctx, rowComponent, nextProps)
+        : positionalPropsFromObject(nextProps);
   }
 
   const result = generatedIdentifier(

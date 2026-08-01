@@ -190,7 +190,7 @@ describe('R44 - DOM refs', () => {
     expect(code).toMatch(/direct = _refNode\d*/);
     expect(code).toMatch(/if \(direct === _refNode\d*\)/);
     expect(code).toMatch(
-      /function RefRow\(\{\s*row\s*\}, _id\d*(?:, _owner\d*)?\)/,
+      /function RefRow\(row, _id\d*(?:, _owner\d*)?\)/,
     );
     expect(code).toMatch(/dispose:\s*\(\) =>/);
     expect(code).not.toContain('createRefKey');

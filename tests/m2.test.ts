@@ -199,4 +199,102 @@ describe('M2 keyed list reconciliation', () => {
 
     expect(() => region.reconcile([1, 1, 2])).toThrow(/duplicate list key/);
   });
+
+  it('bulk-deletes the owned range when every key is replaced or cleared', () => {
+    const ul = document.createElement('ul');
+    document.body.appendChild(ul);
+    const originalCreateRange = document.createRange;
+    let rangeDeletes = 0;
+    document.createRange = () => {
+      const range = originalCreateRange.call(document);
+      const originalDelete = range.deleteContents.bind(range);
+      range.deleteContents = () => {
+        rangeDeletes++;
+        originalDelete();
+      };
+      return range;
+    };
+
+    try {
+      const region = createListRegion(
+        ul,
+        'App/Bulk',
+        (item: { id: number; label: string }): ListEntry => {
+          const li = document.createElement('li');
+          li.textContent = item.label;
+          return { nodes: li, entities: [] };
+        },
+        (item) => item.id,
+      );
+      region.reconcile([
+        { id: 1, label: 'one' },
+        { id: 2, label: 'two' },
+      ]);
+      region.reconcile([
+        { id: 3, label: 'three' },
+        { id: 4, label: 'four' },
+      ]);
+      expect(ul.textContent).toBe('threefour');
+      expect(rangeDeletes).toBe(1);
+
+      region.reconcile([]);
+      expect(ul.querySelectorAll('li')).toHaveLength(0);
+      expect(rangeDeletes).toBe(2);
+      region.dispose();
+    } finally {
+      document.createRange = originalCreateRange;
+    }
+  });
+
+  it('can omit unique row ids for registry-free repeated rows', () => {
+    const ul = document.createElement('ul');
+    const seenIds: string[] = [];
+    const region = createListRegion(
+      ul,
+      'App/Light',
+      (item: { id: number }, rowId): ListEntry => {
+        seenIds.push(rowId);
+        return {
+          nodes: document.createElement('li'),
+          entities: [],
+          update: () => {},
+        };
+      },
+      (item) => item.id,
+      false,
+    );
+
+    region.reconcile([{ id: 1 }, { id: 2 }]);
+    expect(seenIds).toEqual(['App/Light', 'App/Light']);
+    expect([..._internals().registry.keys()]).toEqual([]);
+    region.reconcile([{ id: 2 }, { id: 1 }]);
+    region.dispose();
+  });
+
+  it('skips unchanged retained row replay for topology-only reconciliation', () => {
+    const parent = document.createElement('ul');
+    const updates: Array<[number, number]> = [];
+    const a = { id: 1 };
+    const b = { id: 2 };
+    const region = createListRegion(
+      parent,
+      'App/list',
+      () => ({
+        nodes: document.createElement('li'),
+        entities: [],
+        updateProps: (next, index) =>
+          updates.push([(next as { id: number }).id, index]),
+      }),
+      (item) => item.id,
+      false,
+    );
+
+    region.reconcile([a, b]);
+    region.reconcile([b, a], false);
+    expect(updates).toEqual([]);
+
+    region.reconcile([{ id: 2 }, a], false);
+    expect(updates).toEqual([[2, 0]]);
+    region.dispose();
+  });
 });

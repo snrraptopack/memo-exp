@@ -54,6 +54,13 @@ function Row(props: { item: { id: number; label: string } }) { return <li>{props
 function C() { return <ul>{items.map(item => <Row key={item.id} item={item} />)}</ul>; }
 `;
 
+const DESTRUCTURED_OBJECT_PROP_ROW_SOURCE = `
+let items = [{ id: 1, label: 'one' }];
+let selected = 0;
+function Row({ item, isSelected }) { return <li class={isSelected ? 'selected' : ''}>{item.label}</li>; }
+function C() { return <ul>{items.map(item => <Row key={item.id} item={item} isSelected={selected === item.id} />)}</ul>; }
+`;
+
 function importCompiled(): Promise<any> {
   return import('./fixtures/out/m510-light.compiled.ts');
 }
@@ -85,6 +92,7 @@ describe('M5.10 - lightweight listed component rows', () => {
     expect(rowFactory).toContain('.setDelegatedEvent(');
     expect(rowFactory).not.toContain('.onclick =');
     expect(code.match(/document\.createElement\("li"\)/g)).toHaveLength(1);
+    expect(code).toMatch(/\.createListRegion\([\s\S]*?, false\)/);
     expect(code).toContain('entities: []');
     expect(code).toContain('"./component.tsx#selected": ["App", "App/*"]');
   });
@@ -130,6 +138,20 @@ describe('M5.10 - lightweight listed component rows', () => {
     const code = compile(OBJECT_PROP_ROW_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/Row\(\{\s*item\s*\}, _rowId\d*\)/);
     expect(code).toMatch(/_pushRowProps\d*\(\{\s*item\s*\}\)/);
+  });
+
+  it('lowers closed destructured lightweight row props to a positional ABI', () => {
+    const code = compile(DESTRUCTURED_OBJECT_PROP_ROW_SOURCE, {
+      runtimePath: '@memoized-dom/runtime',
+    });
+    expect(code).toMatch(/function Row\(item, isSelected, _id\d*\)/);
+    expect(code).toMatch(
+      /Row\(item, selected === item\.id, _rowId\d*\)/,
+    );
+    expect(code).toMatch(
+      /_pushRowProps\d*\(item, selected === item\.id\)/,
+    );
+    expect(code).not.toMatch(/Row\(\{\s*item/);
   });
 
   it('accepts deferred parametrized patterns without changing current resolution', () => {

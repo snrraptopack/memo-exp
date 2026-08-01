@@ -35,6 +35,50 @@ export interface ComponentPropsPlan {
   refProps: string[];
 }
 
+export interface SimpleObjectPropBinding {
+  name: string;
+  local: string;
+}
+
+/**
+ * Closed `{ item, selected }`-style contracts can use positional arguments in
+ * compiler-private lightweight row factories. Defaults, nested patterns,
+ * rest properties, and generic `props` bindings retain the object
+ * envelope so their authored JavaScript semantics stay exact.
+ */
+export function simpleObjectPropBindings(
+  plan: ComponentPropsPlan,
+): SimpleObjectPropBinding[] | null {
+  if (
+    plan.mode !== 'object' ||
+    plan.params.length !== 1 ||
+    plan.hasWholeDefault
+  ) {
+    return null;
+  }
+  const param = plan.params[0]!;
+  if (!t.isObjectPattern(param)) return null;
+
+  const bindings: SimpleObjectPropBinding[] = [];
+  for (const property of param.properties) {
+    if (
+      !t.isObjectProperty(property) ||
+      property.computed ||
+      !t.isIdentifier(property.value)
+    ) {
+      return null;
+    }
+    const name = t.isIdentifier(property.key)
+      ? property.key.name
+      : t.isStringLiteral(property.key)
+        ? property.key.value
+        : null;
+    if (name === null) return null;
+    bindings.push({ name, local: property.value.name });
+  }
+  return bindings;
+}
+
 export interface LocalDerivation {
   /** Declaration converted from const to let by component emission. */
   declaration: t.VariableDeclaration;

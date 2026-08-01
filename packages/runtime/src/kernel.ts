@@ -56,16 +56,16 @@ const dirtySet = new Set<EntityId>();
 
 // ---------------------------------------------------------------------------
 // Scheduler — injectable, because the commit timing policy is not universal:
-//   browser  → requestAnimationFrame (align with paint)
+//   browser  → queueMicrotask (batch one turn, settle DOM before paint)
 //   tests    → synchronous or manual pump
 //   SSR      → never schedules at all
 // ---------------------------------------------------------------------------
 type Scheduler = (fn: () => void) => void;
 
 const defaultScheduler: Scheduler =
-  typeof requestAnimationFrame === 'function'
-    ? (fn) => requestAnimationFrame(fn)
-    : (fn) => setTimeout(fn, 0);
+  typeof queueMicrotask === 'function'
+    ? queueMicrotask
+    : (fn) => Promise.resolve().then(fn);
 
 let scheduleFn: Scheduler = defaultScheduler;
 
@@ -74,7 +74,7 @@ export function setScheduler(fn: Scheduler): void {
   scheduleFn = fn;
 }
 
-/** Restore the environment default (rAF / setTimeout). */
+/** Restore the environment default (microtask). */
 export function resetScheduler(): void {
   scheduleFn = defaultScheduler;
 }
@@ -344,7 +344,7 @@ function scheduleCommit(): void {
  *
  * PUBLIC API (M5.6): this is the "flush now" entry point — the memo-dom
  * equivalent of React's flushSync / Svelte 5's flushSync. With the default
- * frame scheduler, `markDirty`/`commitWrites` only SCHEDULE a commit; call
+ * microtask scheduler, `markDirty`/`commitWrites` only SCHEDULE a commit; call
  * `commit()` to run it synchronously (tests, boundary integrations where a
  * host requires synchronous DOM, e.g. the dom-reconciler-bench contract).
  * Prefer `setScheduler(fn => fn())` when the WHOLE app should be sync.

@@ -154,7 +154,7 @@ export function CompList(_id2, _parent) {
       _pushRowProps(item);
     };
     return _entry;
-  }, item => item.id);
+  }, item => item.id, false);
   _region.reconcile(items);
   const _text2 = document.createTextNode("add");
   const _button = document.createElement("button");

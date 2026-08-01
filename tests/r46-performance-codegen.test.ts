@@ -199,4 +199,45 @@ describe('R46 performance code generation', () => {
     expect(code).toContain(`${journal![1]}.clear()`);
     expect(code).toContain('.reconcile(items)');
   });
+
+  it('uses topology-only reconciliation for known array mutations', () => {
+    const code = compile(`
+      function Row({ item }) {
+        return <li>{item.label}</li>;
+      }
+      function App() {
+        let items = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
+        const dispatch = action => {
+          if (action === 'SWAP') items.splice(0, 2, items[1], items[0]);
+          if (action === 'REPLACE') items = [{ id: 1, label: 'new' }];
+          if (action === 'UPDATE') items[0].label += '!';
+        };
+        return <ul>{items.map(item =>
+          <Row key={item.id} item={item} />
+        )}</ul>;
+      }
+    `);
+
+    expect(code).toContain('.reconcile(items, false)');
+    expect(code).toContain('.reconcile(items)');
+    expect(code).toContain('.refreshKey(');
+  });
+
+  it('retains full reconciliation when a row consumes the map index', () => {
+    const code = compile(`
+      function Row({ item, index }) {
+        return <li>{index}:{item.label}</li>;
+      }
+      function App() {
+        let items = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
+        const swap = () => items.reverse();
+        return <ul>{items.map((item, index) =>
+          <Row key={item.id} item={item} index={index} />
+        )}</ul>;
+      }
+    `);
+
+    expect(code).not.toContain('.reconcile(items, false)');
+    expect(code).toContain('.reconcile(items)');
+  });
 });

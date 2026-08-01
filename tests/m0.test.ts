@@ -64,6 +64,26 @@ describe('M0 kernel', () => {
     resetScheduler();
   });
 
+  it('batches the browser default in a microtask before paint', async () => {
+    resetScheduler();
+    let renders = 0;
+    register({
+      id: 'Microtask',
+      parent: null,
+      render: () => {
+        renders++;
+      },
+    });
+
+    markDirty('Microtask');
+    markDirty('Microtask');
+    expect(renders).toBe(0);
+
+    await Promise.resolve();
+    expect(renders).toBe(1);
+    unregister('Microtask');
+  });
+
   it('unions exact dirty reasons and lets a full mark override them', () => {
     let pump: (() => void) | null = null;
     setScheduler((fn) => {
