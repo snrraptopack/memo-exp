@@ -55,6 +55,22 @@ Select adapters with `BENCH_APPLICATION_FRAMEWORKS`, for example:
 BENCH_APPLICATION_FRAMEWORKS=memoized-dom,vanilla bun run run:application
 ```
 
+## Browser UI
+
+From the repository root, build the production adapters and open the
+interactive dashboard:
+
+```sh
+bun run bench:application:ui
+```
+
+The dashboard has a Run tab with one complete-run button for every framework
+and scenario, plus a Results tab for filtering comparisons by source, ticket
+count, metric, framework, and scenario. It shows the application currently
+being measured and validates every resulting DOM. A completed live run can be
+exported in the same JSON structure as `latest.json`. Interactive measurements
+are exploratory; use the automated runner for isolated persisted results.
+
 Timings are machine-local medians, not universal framework rankings. This
 suite does not claim to reproduce every production concern such as network
 latency, hydration, accessibility behavior, or user think time.

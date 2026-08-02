@@ -16,7 +16,7 @@ import {
   expect,
   it,
 } from 'vitest';
-import { compile } from '@memoized-dom/compiler';
+import { compile, compileModules } from '@memoized-dom/compiler';
 import { resetAccessTable } from '@memoized-dom/runtime/testing';
 import {
   _internals,
@@ -149,6 +149,19 @@ const SOURCES: Record<string, string> = {
       </main>;
     }
   `,
+  'r23-local-helper-derived': `
+    export function App() {
+      let count = 1;
+      function getCount() { return count; }
+      const double = getCount() * 2;
+      const getDouble = () => double;
+      const quadruple = getDouble() * 2;
+      const immediate = (() => getCount() * 10)();
+      return <button id="increment" onClick={() => count++}>
+        {count}:{double}:{quadruple}:{immediate}
+      </button>;
+    }
+  `,
 };
 
 function importFixture(specifier: string): Promise<any> {
@@ -247,5 +260,74 @@ describe('R23 - stable local state', () => {
     await Promise.resolve();
     expect(button.textContent).toBe('ready');
     expect(texts('span')).toEqual(['remote']);
+  });
+
+  it('propagates local helper return dependencies through derivation chains', async () => {
+    const { App } = await importFixture(
+      './fixtures/out/r23-local-helper-derived.compiled.ts',
+    );
+    document.body.appendChild(App('App', null));
+    const button = document.querySelector<HTMLButtonElement>('#increment')!;
+
+    expect(button.textContent?.replace(/\s/g, '')).toBe('1:2:4:10');
+    button.click();
+    expect(button.textContent?.replace(/\s/g, '')).toBe('2:4:8:20');
+  });
+
+  it('does not treat a returned closure body as an executed dependency', () => {
+    const code = compile(`
+      export function App() {
+        let count = 1;
+        function makeGetter() { return () => count; }
+        const getter = makeGetter();
+        return <button onClick={() => count++}>{getter()}</button>;
+      }
+    `);
+
+    expect(code).toContain('const getter = makeGetter()');
+    expect(code).not.toMatch(/\n\s+getter = makeGetter\(\)/);
+  });
+
+  it('rejects local derivation helpers that write state or recurse', () => {
+    expect(() =>
+      compile(`
+        export function App() {
+          let count = 1;
+          function bump() { count++; return count; }
+          const double = bump() * 2;
+          return <p>{double}</p>;
+        }
+      `),
+    ).toThrow(/calls local helper 'bump' which writes reactive state 'count'/);
+
+    expect(() =>
+      compile(`
+        export function App() {
+          let count = 1;
+          function read() { return count > 0 ? read() : count; }
+          const double = read() * 2;
+          return <p>{double}</p>;
+        }
+      `),
+    ).toThrow(/calls recursive local helper 'read'/);
+  });
+
+  it('links imported helper reads into a component-local derivation', () => {
+    const output = compileModules({
+      './state.ts': `
+        export let count = 1;
+        export function getCount() { return count; }
+      `,
+      './App.tsx': `
+        import { getCount } from './state';
+        export function App() {
+          const double = getCount() * 2;
+          return <p>{double}</p>;
+        }
+      `,
+    });
+
+    expect(output['./App.tsx']).toContain('let double = getCount() * 2');
+    expect(output['./App.tsx']).toContain('double = getCount() * 2');
   });
 });

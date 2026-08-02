@@ -249,5 +249,7 @@ fallow health --hotspots --targets
 fallow audit --base HEAD~1
 ```
 
+or simply fallow to get a general issues on all categories
+
 Treat findings as candidates: trace removals, avoid blind auto-fixes, and run
 the repository tests and typecheck after edits.

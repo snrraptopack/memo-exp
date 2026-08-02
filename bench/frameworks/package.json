@@ -6,7 +6,8 @@
     "build": "bun run build.ts",
     "run": "bun run build.ts && bun run run.ts",
     "build:application": "bun run application/build.ts",
-    "run:application": "bun run application/build.ts && bun run application/run.ts"
+    "run:application": "bun run application/build.ts && bun run application/run.ts",
+    "ui:application": "bun run application/build.ts && vite application/dist --host 127.0.0.1 --open"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",

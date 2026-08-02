@@ -10,6 +10,188 @@ import {
   bindingNames,
   type LocalDerivation,
 } from '../components/props';
+import { summarizeHelper } from '../helper-summaries';
+
+interface LocalDerivationHelperSummary {
+  reads: Set<string>;
+  reason: string | null;
+}
+
+function localFunctionPath(
+  componentPath: NodePath<t.FunctionDeclaration>,
+  at: NodePath,
+  name: string,
+): NodePath<t.Function> | null {
+  const binding = at.scope.getBinding(name);
+  if (binding === undefined) return null;
+  let candidate: NodePath | null = null;
+  if (binding.path.isFunctionDeclaration()) {
+    candidate = binding.path;
+  } else if (binding.path.isVariableDeclarator()) {
+    const init = binding.path.get('init');
+    if (
+      !Array.isArray(init) &&
+      (init.isFunctionExpression() || init.isArrowFunctionExpression())
+    ) {
+      candidate = init;
+    }
+  }
+  if (
+    candidate === null ||
+    candidate.findParent((parent) => parent.node === componentPath.node) ===
+      null
+  ) {
+    return null;
+  }
+  return candidate as NodePath<t.Function>;
+}
+
+function summarizeLocalDerivationHelper(
+  ctx: Ctx,
+  componentPath: NodePath<t.FunctionDeclaration>,
+  at: NodePath,
+  name: string,
+  reactiveBindings: Map<unknown, string>,
+  cache: Map<t.Function, LocalDerivationHelperSummary>,
+  visiting: Set<t.Function>,
+): LocalDerivationHelperSummary | null {
+  const functionPath = localFunctionPath(componentPath, at, name);
+  if (functionPath === null) return null;
+  const cached = cache.get(functionPath.node);
+  if (cached !== undefined) return cached;
+  if (visiting.has(functionPath.node)) {
+    return {
+      reads: new Set(),
+      reason: `calls recursive local helper '${name}'`,
+    };
+  }
+
+  const summary: LocalDerivationHelperSummary = {
+    reads: new Set(),
+    reason: null,
+  };
+  const fail = (message: string): void => {
+    summary.reason ??= message;
+  };
+  const noteReactiveIdentifier = (path: NodePath): void => {
+    if (!path.isIdentifier()) return;
+    const binding = path.scope.getBinding(path.node.name);
+    const source =
+      binding === undefined ? undefined : reactiveBindings.get(binding);
+    if (source !== undefined) summary.reads.add(source);
+  };
+  const noteReactiveMutation = (path: NodePath, node: t.Node): void => {
+    const root = t.isIdentifier(node)
+      ? node.name
+      : t.isMemberExpression(node)
+        ? memberRootName(node)
+        : null;
+    if (root === null) return;
+    const binding = path.scope.getBinding(root);
+    const source =
+      binding === undefined ? undefined : reactiveBindings.get(binding);
+    if (source !== undefined) {
+      fail(`calls local helper '${name}' which writes reactive state '${source}'`);
+    }
+  };
+  const noteCall = (callPath: NodePath<t.CallExpression>): void => {
+    const callee = callPath.node.callee;
+    if (!t.isIdentifier(callee)) return;
+    const local = summarizeLocalDerivationHelper(
+      ctx,
+      componentPath,
+      callPath,
+      callee.name,
+      reactiveBindings,
+      cache,
+      visiting,
+    );
+    if (local !== null) {
+      for (const read of local.reads) summary.reads.add(read);
+      if (local.reason !== null) fail(local.reason);
+      return;
+    }
+    if (!ctx.helpers.has(callee.name) && !ctx.importedFunctions.has(callee.name)) {
+      return;
+    }
+    const moduleSummary =
+      ctx.importedFunctions.get(callee.name) ??
+      summarizeHelper(ctx, callee.name);
+    for (const read of moduleSummary.reads) summary.reads.add(read);
+    if (
+      moduleSummary.writes.size !== 0 ||
+      moduleSummary.boundedWrites.size !== 0
+    ) {
+      fail(`calls helper '${callee.name}' which writes reactive state`);
+    } else if (moduleSummary.unbounded && ctx.helpers.has(callee.name)) {
+      fail(`calls recursive helper '${callee.name}' which cannot be analyzed`);
+    }
+  };
+
+  visiting.add(functionPath.node);
+  functionPath.traverse({
+    Function(path) {
+      const parent = path.parentPath;
+      const executesNow =
+        (parent.isCallExpression() || parent.isNewExpression()) &&
+        parent.node.callee === path.node;
+      if (!executesNow) {
+        path.skip();
+      }
+    },
+    ReferencedIdentifier(path) {
+      noteReactiveIdentifier(path);
+    },
+    AssignmentExpression(path) {
+      noteReactiveMutation(path, path.node.left);
+    },
+    UpdateExpression(path) {
+      noteReactiveMutation(path, path.node.argument);
+    },
+    AwaitExpression() {
+      fail(`calls async local helper '${name}'`);
+    },
+    YieldExpression() {
+      fail(`calls yielding local helper '${name}'`);
+    },
+    CallExpression(path) {
+      noteCall(path);
+    },
+  });
+  if (summary.reads.size !== 0) {
+    functionPath.traverse({
+      Function(path) {
+        const parent = path.parentPath;
+        const participatesInCall =
+          (parent.isCallExpression() || parent.isNewExpression()) &&
+          (parent.node.callee === path.node ||
+            parent.node.arguments.some((argument) => argument === path.node));
+        if (!participatesInCall) path.skip();
+      },
+      ReferencedIdentifier(path) {
+        noteReactiveIdentifier(path);
+      },
+      AssignmentExpression(path) {
+        noteReactiveMutation(path, path.node.left);
+      },
+      UpdateExpression(path) {
+        noteReactiveMutation(path, path.node.argument);
+      },
+      AwaitExpression() {
+        fail(`calls async local helper '${name}'`);
+      },
+      YieldExpression() {
+        fail(`calls yielding local helper '${name}'`);
+      },
+      CallExpression(path) {
+        noteCall(path);
+      },
+    });
+  }
+  visiting.delete(functionPath.node);
+  cache.set(functionPath.node, summary);
+  return summary;
+}
 
 /** Collect mutable or store-like bindings owned by each component instance. */
 export function scanInstanceState(ctx: Ctx): void {
@@ -112,6 +294,47 @@ export function scanInstanceDerivations(ctx: Ctx): void {
             : t.isMemberExpression(node)
               ? memberRootName(node)
               : null;
+        const helperCache = new Map<
+          t.Function,
+          LocalDerivationHelperSummary
+        >();
+        const helperVisiting = new Set<t.Function>();
+        const noteCall = (path: NodePath<t.CallExpression>): void => {
+          const callee = path.node.callee;
+          if (!t.isIdentifier(callee)) return;
+          const local = summarizeLocalDerivationHelper(
+            ctx,
+            componentPath,
+            path,
+            callee.name,
+            reactiveBindings,
+            helperCache,
+            helperVisiting,
+          );
+          if (local !== null) {
+            for (const read of local.reads) directReads.add(read);
+            reason ??= local.reason;
+            return;
+          }
+          if (
+            !ctx.helpers.has(callee.name) &&
+            !ctx.importedFunctions.has(callee.name)
+          ) {
+            return;
+          }
+          const summary =
+            ctx.importedFunctions.get(callee.name) ??
+            summarizeHelper(ctx, callee.name);
+          for (const read of summary.reads) directReads.add(read);
+          if (
+            summary.writes.size !== 0 ||
+            summary.boundedWrites.size !== 0
+          ) {
+            reason ??= `calls helper '${callee.name}' which writes reactive state`;
+          } else if (summary.unbounded && ctx.helpers.has(callee.name)) {
+            reason ??= `calls recursive helper '${callee.name}' which cannot be analyzed`;
+          }
+        };
 
         if (initPath.isReferencedIdentifier()) noteIdentifier(initPath);
         if (initPath.isAssignmentExpression()) {
@@ -129,9 +352,16 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         } else if (initPath.isYieldExpression()) {
           reason = 'uses yield; per-instance derivations must be synchronous';
         }
+        if (initPath.isCallExpression()) noteCall(initPath);
         initPath.traverse({
           Function(functionPath) {
-            functionPath.skip();
+            const parent = functionPath.parentPath;
+            const executesNow =
+              (parent.isCallExpression() || parent.isNewExpression()) &&
+              parent.node.callee === functionPath.node;
+            if (!executesNow) {
+              functionPath.skip();
+            }
           },
           ReferencedIdentifier(path) {
             noteIdentifier(path);
@@ -154,10 +384,23 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           YieldExpression() {
             reason = 'uses yield; per-instance derivations must be synchronous';
           },
+          CallExpression(path) {
+            noteCall(path);
+          },
         });
 
         if (directReads.size === 0) continue;
         initPath.traverse({
+          Function(functionPath) {
+            const parent = functionPath.parentPath;
+            const participatesInCall =
+              (parent.isCallExpression() || parent.isNewExpression()) &&
+              (parent.node.callee === functionPath.node ||
+                parent.node.arguments.some(
+                  (argument) => argument === functionPath.node,
+                ));
+            if (!participatesInCall) functionPath.skip();
+          },
           ReferencedIdentifier(path) {
             noteIdentifier(path);
           },
@@ -172,6 +415,15 @@ export function scanInstanceDerivations(ctx: Ctx): void {
             if (root !== null && bindingIsReactive(root, path)) {
               reason = 'contains an update (++/--) to reactive state';
             }
+          },
+          AwaitExpression() {
+            reason = 'uses await; per-instance derivations must be synchronous';
+          },
+          YieldExpression() {
+            reason = 'uses yield; per-instance derivations must be synchronous';
+          },
+          CallExpression(path) {
+            noteCall(path);
           },
         });
         if (reason !== null) {

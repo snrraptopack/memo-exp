@@ -3,6 +3,7 @@
  * component forwarding, ordinary spread refs, branches, and keyed rows.
  */
 import { ForwardedInput } from './ForwardedInput';
+import {state,derived,useState} from "./state"
 
 interface Probe {
   id: number;
@@ -53,6 +54,19 @@ export function RefsApp() {
     ref: highlightedRef('spread property'),
   };
 
+
+  let count = 0
+  function getCount() {
+    return count
+  }
+
+  let count1 = state(0)
+  const double1 = derived(count1 * 2)
+
+
+  const double = getCount() * 2 //this wont work
+
+  //const double = count * 2
   return (
     <main class="refs-app">
       <header>
@@ -62,6 +76,10 @@ export function RefsApp() {
           Every value below is a real DOM node. There is no ref wrapper,
           runtime JSX object, or public ref key.
         </p>
+
+        <button onClick={() => { count++; count1++;}}>
+          count is {double} original is {count} the double1 {double1}
+        </button>
       </header>
 
       <section

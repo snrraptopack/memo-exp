@@ -7,12 +7,14 @@ import { sveltePlugin } from '../build/svelte-plugin';
 import { vuePlugin } from '../build/vue-plugin';
 import { compileMemoizedApplication } from './build/memoized';
 import { writeApplicationHtml } from './build/html';
+import { writeApplicationUi } from './build/ui-html';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const output = resolve(root, 'dist');
 const dependencyRoot = resolve(root, '../node_modules');
 
 interface BundleSpec {
+  applicationPage?: boolean;
   entry: string;
   id: string;
   jsxImportSource?: string;
@@ -56,7 +58,9 @@ async function bundle(spec: BundleSpec): Promise<void> {
     options.jsxImportSource = spec.jsxImportSource;
   }
   await build(options);
-  writeApplicationHtml(root, spec.id);
+  if (spec.applicationPage !== false) {
+    writeApplicationHtml(root, spec.id);
+  }
 }
 
 rmSync(output, { force: true, recursive: true });
@@ -97,6 +101,12 @@ await Promise.all([
     plugins: [vuePlugin],
   }),
   bundle({ entry: memoizedEntry, id: 'memoized-dom' }),
+  bundle({
+    applicationPage: false,
+    entry: 'ui/main.ts',
+    id: 'dashboard',
+  }),
 ]);
 
+writeApplicationUi(root);
 console.log('Built isolated production application benchmark pages.');
