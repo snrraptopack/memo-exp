@@ -15,7 +15,4 @@ export class AdapterState {
     for (const [file, code] of graph.output) this.output.set(file, code);
   }
 
-  invalidate(): void {
-    this.output.clear();
-  }
 }

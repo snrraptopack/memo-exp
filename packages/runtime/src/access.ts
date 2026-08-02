@@ -34,6 +34,10 @@ let exactReaders = new Map<string, EntityId[]>();
 let wildReaders = new Map<string, RegExp[]>();
 let paramReaders = new Map<string, string[]>();
 let opaqueVars = new Set<string>();
+const fragments = new Map<
+  string,
+  { table: AccessTable; root: EntityId }
+>();
 
 /**
  * M5.6 — precompiled, push-maintained matcher state.
@@ -112,37 +116,39 @@ function compilePattern(raw: string): RegExp | null {
  * of them must stay live — a write in module A can target a component
  * declared in module B. Re-installing the same fragment is idempotent.
  */
-export function installAccessTable(table: AccessTable, root: EntityId): void {
-  rootId = root;
-  const seen = new Set<string>();
-
-  for (const [variable, patterns] of Object.entries(table.readers)) {
-    for (const p of patterns) {
-      const dedupeKey = `${variable}${p}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      const regex = compilePattern(p);
-      if (regex === null) {
-        const list = exactReaders.get(variable) ?? [];
-        if (!list.includes(p)) list.push(p);
-        exactReaders.set(variable, list);
-      } else {
-        const list = wildReaders.get(variable) ?? [];
-        if (!list.some((r) => r.source === regex.source)) list.push(regex);
-        wildReaders.set(variable, list);
+function rebuildTables(): void {
+  rootId = '';
+  exactReaders = new Map();
+  wildReaders = new Map();
+  paramReaders = new Map();
+  opaqueVars = new Set();
+  for (const { table, root } of fragments.values()) {
+    rootId = root;
+    for (const [variable, patterns] of Object.entries(table.readers)) {
+      for (const pattern of patterns) {
+        const regex = compilePattern(pattern);
+        if (regex === null) {
+          const list = exactReaders.get(variable) ?? [];
+          if (!list.includes(pattern)) list.push(pattern);
+          exactReaders.set(variable, list);
+        } else {
+          const list = wildReaders.get(variable) ?? [];
+          if (!list.some((entry) => entry.source === regex.source)) {
+            list.push(regex);
+          }
+          wildReaders.set(variable, list);
+        }
       }
     }
-  }
-  for (const [variable, list] of Object.entries(table.params ?? {})) {
-    const pList = paramReaders.get(variable) ?? [];
-    for (const entry of list) {
-      if (!pList.includes(entry.pattern)) pList.push(entry.pattern);
+    for (const [variable, entries] of Object.entries(table.params ?? {})) {
+      const patterns = paramReaders.get(variable) ?? [];
+      for (const entry of entries) {
+        if (!patterns.includes(entry.pattern)) patterns.push(entry.pattern);
+      }
+      paramReaders.set(variable, patterns);
     }
-    paramReaders.set(variable, pList);
+    for (const variable of table.opaque ?? []) opaqueVars.add(variable);
   }
-  for (const v of table.opaque ?? []) opaqueVars.add(v);
-
-  // M5.6: rebuild the precompiled matcher state
   allKeysCache = [...new Set([...exactReaders.keys(), ...wildReaders.keys()])];
   matchKeysCache.clear();
   resolutionCache.clear();
@@ -150,18 +156,25 @@ export function installAccessTable(table: AccessTable, root: EntityId): void {
   resVersion++;
 }
 
+export function installAccessTable(
+  table: AccessTable,
+  root: EntityId,
+  owner = `${root}\0${JSON.stringify(table)}`,
+): void {
+  fragments.set(owner, { table, root });
+  rebuildTables();
+}
+
+/** Remove one compiler module's analysis fragment during hot replacement. */
+export function uninstallAccessTable(owner: string): void {
+  if (!fragments.delete(owner)) return;
+  rebuildTables();
+}
+
 /** Clear every installed fragment — test isolation, not app code. */
 export function resetAccessTable(): void {
-  rootId = '';
-  exactReaders = new Map();
-  wildReaders = new Map();
-  paramReaders = new Map();
-  opaqueVars = new Set();
-  allKeysCache = [];
-  wildMatched = new Map();
-  matchKeysCache.clear();
-  resolutionCache.clear();
-  resVersion++;
+  fragments.clear();
+  rebuildTables();
 }
 
 export function isOpaque(variable: string): boolean {

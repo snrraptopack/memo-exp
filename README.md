@@ -30,7 +30,7 @@ The repository is a Bun workspace with independent packages:
 |---|---|
 | `@memoized-dom/runtime` | Dependency-free browser registry, routing, regions, lifecycle, and DOM updates |
 | `@memoized-dom/compiler` | Babel-based analysis, linking, and TypeScript/JSX emission |
-| `@memoized-dom/vite` | Vite 8 graph collection, linked transforms, and conservative full-reload HMR |
+| `@memoized-dom/vite` | Vite 8 graph collection, linked transforms, compiler feedback, and component HMR |
 
 Root dependencies are development tools only. Babel dependencies belong to the
 compiler package; Happy DOM, Vitest, Puppeteer, esbuild, TypeScript, and type

@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/runtime",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Dependency-free runtime for compiler-analyzed memoized DOM updates",
   "type": "module",
   "sideEffects": false,

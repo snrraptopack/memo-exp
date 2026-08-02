@@ -10,6 +10,26 @@ interface TestService {
 }
 
 describe('prefer const guidance', () => {
+  it('surfaces the compiler diagnostic verbatim in the owning file', () => {
+    const { service, fileName } = languageService(
+      `
+        export function App() {
+          let count = 0;
+          const double = count * 2;
+          return <button onClick={() => double++}>{double}</button>;
+        }
+      `,
+      { compilerDiagnostics: true },
+    );
+
+    const diagnostic = memoDiagnostics(service, fileName).find(
+      (candidate) => candidate.code === diagnosticCodes.compiler,
+    )!;
+    expect(String(diagnostic.messageText)).toContain(
+      "cannot update per-instance derivation 'double'",
+    );
+  });
+
   it('teaches that const collections can remain reactive mutation targets', () => {
     const { service, fileName } = languageService(`
       let items = [1, 2];
@@ -164,7 +184,7 @@ function languageService(
   const original = ts.createLanguageService(host);
   const service = createLanguageService(ts, {
     languageService: original,
-    config,
+    config: { compilerDiagnostics: false, ...config },
   } as ts.server.PluginCreateInfo);
   return { service, fileName };
 }

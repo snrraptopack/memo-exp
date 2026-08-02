@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/compiler",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Binding-aware TypeScript and JSX compiler for memoized-dom",
   "type": "module",
   "sideEffects": false,

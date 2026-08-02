@@ -4,7 +4,7 @@
 import type { CompileModulesOptions } from '@memoized-dom/compiler';
 
 export interface MemoizedDomViteOptions
-  extends Omit<CompileModulesOptions, 'aliases' | 'resolveImport'> {
+  extends Omit<CompileModulesOptions, 'aliases' | 'resolveImport' | 'hot'> {
   /**
    * Authored graph roots, relative to Vite's configured project root.
    *

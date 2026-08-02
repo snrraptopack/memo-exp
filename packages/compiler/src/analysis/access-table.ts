@@ -92,6 +92,7 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
         ),
       ]),
       t.stringLiteral(ctx.rootId),
+      t.stringLiteral(ctx.moduleId),
     ]),
   );
 }

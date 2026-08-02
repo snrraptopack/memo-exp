@@ -1,19 +1,17 @@
 /**
- * Invalidates every Vite module backed by one linked compiler graph.
+ * Invalidates only linked modules whose generated output changed.
  */
 import type {
   DevEnvironment,
   EnvironmentModuleNode,
 } from 'vite';
-import type { AdapterState } from './state';
-
-export function invalidateManagedGraph(
+export function invalidateManagedModules(
   environment: DevEnvironment,
-  state: AdapterState,
+  files: ReadonlySet<string>,
   timestamp: number,
 ): EnvironmentModuleNode[] {
   const invalidated = new Set<EnvironmentModuleNode>();
-  for (const file of state.files) {
+  for (const file of files) {
     const modules = environment.moduleGraph.getModulesByFile(file);
     if (modules === undefined) continue;
     for (const module of modules) {
@@ -25,6 +23,5 @@ export function invalidateManagedGraph(
       );
     }
   }
-  state.invalidate();
   return [...invalidated];
 }

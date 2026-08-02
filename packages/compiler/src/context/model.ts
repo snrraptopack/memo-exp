@@ -20,6 +20,8 @@ export interface MemoDomOptions {
   runtimePath?: string;
   /** Entity id of the root component. */
   rootId?: string;
+  /** Emit dev-only live-component ownership used by framework HMR adapters. */
+  hot?: boolean;
   /**
    * Stable identity for this source module. Defaults to `./component.tsx`.
    * Module-state keys are always `<moduleId>#<binding>[.<path>]`.
@@ -238,6 +240,7 @@ export type HelperPath = NodePath<
 export interface Ctx {
   runtimePath: string;
   rootId: string;
+  hot: boolean;
   moduleId: string;
 
   // ---- module analysis (filled by analysis.ts) ----
@@ -447,6 +450,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
   return {
     runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
     rootId: opts.rootId ?? 'App',
+    hot: opts.hot ?? false,
     moduleId,
     state,
     stateKeys,

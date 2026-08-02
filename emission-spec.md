@@ -1712,8 +1712,10 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 - Identity-keyed lists of duplicate primitives (`[1, 2, 2]`) throw on
   duplicate keys — document or add index fallback.
 - Compiler transforms do not emit source maps.
-- Vite changes conservatively reload the page; state-preserving component HMR
-  is not supported.
+- Vite dev compilation emits module-owned analysis plus self-accepting
+  component boundaries. Ordinary component instances are replaced in place;
+  root and lightweight keyed-row edits recreate the application root and
+  reset closure-local state without reloading the browser document.
 - No dev/prod compiler-mode split or documented userland testing harness.
 - Benchmarks pending: parametrized-pattern re-run in the compiler era;
   compile-time perf on large modules.

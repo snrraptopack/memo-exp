@@ -2,7 +2,12 @@
  * Collects one Vite-resolved local graph for compileModules().
  */
 import { readFile } from 'node:fs/promises';
-import { compileModules } from '@memoized-dom/compiler';
+import {
+  compileModulesDetailed,
+  toCompilerDiagnostic,
+  type CompiledModules,
+  type CompiledModuleMetadata,
+} from '@memoized-dom/compiler';
 import type { ResolvedAdapterOptions } from '../options';
 import {
   acceptsSource,
@@ -14,7 +19,7 @@ import { valueImports, type ParsedProgram } from './imports';
 
 export interface ResolvedImport {
   id: string;
-  external?: boolean | 'absolute';
+  external?: boolean | 'absolute' | 'relative';
 }
 
 export interface GraphPluginContext {
@@ -28,6 +33,11 @@ export interface GraphPluginContext {
     options: { skipSelf: true },
   ): Promise<ResolvedImport | null>;
   addWatchFile(file: string): void;
+  error(error: {
+    message: string;
+    id?: string;
+    loc?: { line: number; column: number };
+  }): never;
 }
 
 export interface CompiledGraph {
@@ -45,6 +55,7 @@ export async function compileGraph(
   entries: readonly string[],
   options: ResolvedAdapterOptions,
   overrides: ReadonlyMap<string, string>,
+  hot: boolean,
 ): Promise<CompiledGraph> {
   const sources = new Map<string, string>();
   const sourceIds = new Map<string, string>();
@@ -88,18 +99,80 @@ export async function compileGraph(
     await visit(entry);
   }
 
-  const compiled = compileModules(Object.fromEntries(sources), {
+  const compileOptions = {
     ...(options.rootId === undefined ? {} : { rootId: options.rootId }),
     ...(options.runtimePath === undefined
       ? {}
       : { runtimePath: options.runtimePath }),
-    resolveImport(specifier, importer) {
+    ...(hot ? { hot: true } : {}),
+    resolveImport(specifier: string, importer: string) {
       return resolutions.get(resolutionKey(importer, specifier));
     },
-  });
+  };
+  let compiled: CompiledModules;
+  try {
+    compiled = compileModulesDetailed(Object.fromEntries(sources), compileOptions);
+  } catch (error) {
+    const diagnostic = toCompilerDiagnostic(error, [...sources.keys()]);
+    const file =
+      diagnostic.moduleId === undefined
+        ? undefined
+        : [...sourceIds].find(([, id]) => id === diagnostic.moduleId)?.[0];
+    context.error({
+      message: diagnostic.message,
+      ...(file === undefined ? {} : { id: file }),
+      ...(diagnostic.line === undefined || diagnostic.column === undefined
+        ? {}
+        : {
+            loc: {
+              line: diagnostic.line,
+              column: diagnostic.column,
+            },
+          }),
+    });
+  }
   const output = new Map<string, string>();
   for (const [file, id] of sourceIds) {
-    output.set(file, compiled[id]!);
+    const code = compiled.output[id]!;
+    output.set(
+      file,
+      hot
+        ? appendHotBoundary(
+            code,
+            compiled.metadata[id]!,
+            id,
+            options.runtimePath ?? '@memoized-dom/runtime',
+            options.rootId ?? 'App',
+          )
+        : code,
+    );
   }
   return { files: new Set(sourceIds.keys()), output };
+}
+
+function appendHotBoundary(
+  code: string,
+  metadata: CompiledModuleMetadata,
+  moduleId: string,
+  runtimePath: string,
+  rootId: string,
+): string {
+  const components = new Map(
+    metadata.componentExports.map((component) => [component.local, component]),
+  );
+  const updates = [...components.values()]
+    .map(
+      (component) =>
+        `[${component.local}, updatedModule[${JSON.stringify(component.exported)}], ${
+          component.listLightweight
+        }]`,
+    )
+    .join(', ');
+  return `${code}\nimport { applyHotUpdate as __memoized_dom_apply_hot_update__, disposeHotModule as __memoized_dom_dispose_hot_module__ } from ${JSON.stringify(
+    runtimePath,
+  )};\nif (import.meta.hot) {\n  import.meta.hot.dispose(() => __memoized_dom_dispose_hot_module__(${JSON.stringify(
+    moduleId,
+  )}, ${JSON.stringify(rootId)}));\n  import.meta.hot.accept((updatedModule) => {\n    if (updatedModule) __memoized_dom_apply_hot_update__([${updates}], ${JSON.stringify(
+      rootId,
+    )});\n  });\n}`;
 }

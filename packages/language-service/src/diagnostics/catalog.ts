@@ -1,8 +1,13 @@
+import {
+  compilerDiagnosticCode,
+  compilerDiagnosticSource as diagnosticSource,
+} from '@memoized-dom/compiler';
+export { compilerDiagnosticCode, diagnosticSource };
+
 export const diagnosticCodes = {
+  compiler: compilerDiagnosticCode,
   preferConst: 98001,
 } as const;
-
-export const diagnosticSource = 'memoized-dom';
 
 export function preferConstMessage(names: readonly string[]): string {
   const binding =

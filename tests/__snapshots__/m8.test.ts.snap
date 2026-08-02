@@ -9,7 +9,7 @@ _MD.installAccessTable({
     "./component.tsx#count": ["App", "App/*", "App/when0", "App/when0/*"],
     "./component.tsx#loggedIn": ["App", "App/*", "App/when0", "App/when0/*"]
   }
-}, "App");
+}, "App", "./component.tsx");
 // Fixture: R8 conditional region — a login toggle written as plain TSX.
 // 'loggedIn' is read ONLY by the region (condition), 'count' only by the
 // then-branch — both must route to 'App/when0', never to the owner. Branch

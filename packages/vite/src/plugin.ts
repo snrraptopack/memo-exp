@@ -1,13 +1,16 @@
 /**
- * Vite 8 plugin backed by connected compiler graphs and full-reload HMR.
+ * Vite 8 plugin backed by connected compiler graphs and live module HMR.
  */
 import type {
+  DevEnvironment,
+  MinimalPluginContextWithoutEnvironment,
   Plugin,
   ResolvedConfig,
 } from 'vite';
+import { parseSync } from 'vite';
 import type { GraphPluginContext } from './graph/collector';
 import { compileGraph } from './graph/collector';
-import { invalidateManagedGraph } from './hmr';
+import { invalidateManagedModules } from './hmr';
 import {
   resolveAdapterOptions,
   type MemoizedDomViteOptions,
@@ -47,11 +50,33 @@ export function memoizedDom(
       resolve: (specifier, importer, resolveOptions) =>
         context.resolve(specifier, importer, resolveOptions),
       addWatchFile: (watched) => context.addWatchFile(watched),
+      error: (error) => context.error(error),
+    };
+  }
+
+  function hotGraphContext(
+    environment: DevEnvironment,
+    context: MinimalPluginContextWithoutEnvironment,
+  ): GraphPluginContext {
+    return {
+      parse: (source, parserOptions) =>
+        parseSync(`module.${parserOptions.lang}`, source, parserOptions)
+          .program,
+      async resolve(specifier, importer) {
+        const resolved =
+          await environment.pluginContainer.resolveId(specifier, importer);
+        return resolved === null
+          ? null
+          : { id: resolved.id, external: resolved.external };
+      },
+      addWatchFile: (watched) =>
+        environment.pluginContainer.watchFiles.add(watched),
+      error: (error) => context.error(error),
     };
   }
 
   async function refreshGraph(
-    context: AdapterTransformContext,
+    context: GraphPluginContext,
     state: AdapterState,
     overrides: ReadonlyMap<string, string> = new Map(),
   ): Promise<void> {
@@ -67,6 +92,7 @@ export function memoizedDom(
         entries,
         options,
         overrides,
+        config.command === 'serve',
       );
     }
     const compilation = state.compiling;
@@ -136,27 +162,34 @@ export function memoizedDom(
         return transformModule(this, code, id);
       },
     },
-    watchChange(id) {
-      const state = states.get(this.environment);
-      if (
-        state !== undefined &&
-        state.files.has(cleanViteId(id))
-      ) {
-        state.invalidate();
-      }
-    },
-    hotUpdate(update) {
+    async hotUpdate(update) {
       const state = states.get(this.environment);
       const file = normalizeFile(update.file);
       if (state === undefined || !state.files.has(file)) return;
-
-      invalidateManagedGraph(
-        this.environment,
+      const previous = new Map(state.output);
+      const overrides =
+        update.type === 'delete'
+          ? new Map<string, string>()
+          : new Map([[file, await update.read()]]);
+      await refreshGraph(
+        hotGraphContext(this.environment, this),
         state,
+        overrides,
+      );
+      const changed = new Set<string>();
+      for (const candidate of new Set([
+        ...previous.keys(),
+        ...state.output.keys(),
+      ])) {
+        if (previous.get(candidate) !== state.output.get(candidate)) {
+          changed.add(candidate);
+        }
+      }
+      return invalidateManagedModules(
+        this.environment,
+        changed,
         update.timestamp,
       );
-      this.environment.hot.send({ type: 'full-reload' });
-      return [];
     },
   };
 }

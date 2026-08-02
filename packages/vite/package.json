@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/vite",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Vite 8 adapter for connected memoized-dom module graphs",
   "type": "module",
   "sideEffects": false,
@@ -20,9 +20,10 @@
     "bench": "bun run ./bench/run.ts"
   },
   "dependencies": {
-    "@memoized-dom/compiler": "^0.0.4"
+    "@memoized-dom/compiler": "^0.0.5"
   },
   "peerDependencies": {
+    "@memoized-dom/runtime": "^0.0.6",
     "vite": "^8.0.0"
   },
   "publishConfig": {

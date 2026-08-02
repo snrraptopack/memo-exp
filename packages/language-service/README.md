@@ -1,6 +1,8 @@
 # @memoized-dom/language-service
 
-TypeScript editor diagnostics and code fixes for memoized-dom.
+TypeScript editor diagnostics and code fixes for memoized-dom. Compiler errors
+come from `@memoized-dom/compiler`'s structured graph diagnostic API, so the
+editor, Vite overlay, and direct compiler report the same restrictions.
 
 Add the plugin to the application `tsconfig.json`:
 
@@ -27,3 +29,5 @@ can still mutate their contents. The editor fix changes only the declaration
 keyword.
 
 Set `"preferConst": false` on the plugin entry to disable this diagnostic.
+Set `"compilerDiagnostics": false` only when compiler errors should be hidden
+from tsserver.

@@ -7,7 +7,7 @@ _MD.installAccessTable({
   readers: {
     "./component.tsx#count": ["App", "App/*"]
   }
-}, "App");
+}, "App", "./component.tsx");
 // Fixture: async commit attribution.
 let count = 0;
 export function AsyncCounter(_id, _parent) {
@@ -75,7 +75,7 @@ _MD.installAccessTable({
     "./component.tsx#items": ["App", "App/*"],
     "./component.tsx#selected": ["App", "App/*"]
   }
-}, "App");
+}, "App", "./component.tsx");
 // Fixture: R7 component list rows — a Row component used via .map().
 // Row reads 'selected' directly (the L1 rule: props are for item data,
 // shared state is read inside the row), so a click must dirty ALL rows
@@ -178,7 +178,7 @@ _MD.installAccessTable({
     "./component.tsx#items": ["App", "App/*"],
     "./component.tsx#selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
   }
-}, "App");
+}, "App", "./component.tsx");
 // Fixture: R7 inline list rows — the select-list shape written as plain TSX.
 // 'selected' is read inside row JSX (row pattern) and written by row
 // handlers (commitWrites — rows are multi-instance, never local).
@@ -274,7 +274,7 @@ _MD.installAccessTable({
   readers: {
     "./component.tsx#label": ["App/Tag", "App/Tag/*", "App/Tag[*]", "App/Tag[*]/*"]
   }
-}, "App");
+}, "App", "./component.tsx");
 // repeated.tsx — same child mounted twice; instances must get distinct
 // entity ids and the table must cover both.
 let label = 'hello';
@@ -335,7 +335,7 @@ _MD.installAccessTable({
     "./component.tsx#again": ["App", "App/*"],
     "./component.tsx#count": ["App", "App/*"]
   }
-}, "App");
+}, "App", "./component.tsx");
 let count = 0;
 let again = 0;
 export function Counter(_id, _parent) {
@@ -394,7 +394,7 @@ _MD.installAccessTable({
   readers: {
     "./component.tsx#name": ["App/Badge", "App/Badge/*"]
   }
-}, "App");
+}, "App", "./component.tsx");
 // shared.tsx — two siblings sharing module state; the write must route
 // to Badge only, never to App or Editor.
 let name = 'Ada';

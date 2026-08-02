@@ -3,7 +3,7 @@
  * component forwarding, ordinary spread refs, branches, and keyed rows.
  */
 import { ForwardedInput } from './ForwardedInput';
-import {state,derived,useState} from "./state"
+import { derived, state } from './state';
 
 interface Probe {
   id: number;
@@ -78,7 +78,7 @@ export function RefsApp() {
         </p>
 
         <button onClick={() => { count++; count1++;}}>
-          count is {double} original is {count} the double1 {double1}
+          double count is {double} original is {count} the double1 {double1}
         </button>
       </header>
 

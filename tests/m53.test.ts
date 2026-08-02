@@ -18,7 +18,12 @@ import {
   resetScheduler,
   _internals,
 } from '@memoized-dom/runtime/testing';
-import { installAccessTable, resetAccessTable, resolveWrites } from '@memoized-dom/runtime/testing';
+import {
+  installAccessTable,
+  resetAccessTable,
+  resolveWrites,
+  uninstallAccessTable,
+} from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -159,6 +164,23 @@ describe('M5.3 fixes — code generation', () => {
 
 describe('M5.3 fixes — resolver prefix matching', () => {
   beforeEach(() => resetAccessTable());
+
+  it('replaces and removes compiler-owned access fragments', () => {
+    installAccessTable(
+      { readers: { count: ['App/Old'] } },
+      'App',
+      './view.tsx',
+    );
+    installAccessTable(
+      { readers: { count: ['App/New'] } },
+      'App',
+      './view.tsx',
+    );
+    expect(resolveWrites(['count'], [], undefined)).toEqual(['App/New']);
+
+    uninstallAccessTable('./view.tsx');
+    expect(resolveWrites(['count'], [], undefined)).toEqual([]);
+  });
 
   it('a write matches readers at equal, descendant, and ancestor paths', () => {
     installAccessTable({ readers: { 'store.items.length': ['App'] } }, 'App');

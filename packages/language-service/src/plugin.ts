@@ -1,5 +1,12 @@
 import type * as ts from 'typescript';
-import { diagnosticCodes } from './diagnostics/catalog';
+import {
+  diagnoseModules,
+  type CompilerDiagnostic,
+} from '@memoized-dom/compiler';
+import {
+  diagnosticCodes,
+  diagnosticSource,
+} from './diagnostics/catalog';
 import {
   collectPreferConstDiagnostics,
   createPreferConstCodeFix,
@@ -9,6 +16,8 @@ type TypeScript = typeof ts;
 
 interface PluginConfig {
   preferConst?: boolean;
+  compilerDiagnostics?: boolean;
+  rootId?: string;
 }
 
 export function createLanguageService(
@@ -22,23 +31,42 @@ export function createLanguageService(
     ts.SourceFile,
     ts.DiagnosticWithLocation[]
   >();
+  const compilerCache = new WeakMap<
+    ts.Program,
+    Map<string, ts.DiagnosticWithLocation[]>
+  >();
 
   proxy.getSemanticDiagnostics = (fileName) => {
     const diagnostics = original.getSemanticDiagnostics(fileName);
-    if (config.preferConst === false) return diagnostics;
     const program = original.getProgram();
     const sourceFile = program?.getSourceFile(fileName);
     if (program === undefined || sourceFile === undefined) {
       return diagnostics;
     }
-    let customDiagnostics = preferConstCache.get(sourceFile);
-    if (customDiagnostics === undefined) {
-      customDiagnostics = collectPreferConstDiagnostics(
-        typescript,
-        program,
-        sourceFile,
-      );
-      preferConstCache.set(sourceFile, customDiagnostics);
+    const customDiagnostics: ts.DiagnosticWithLocation[] = [];
+    if (config.preferConst !== false) {
+      let preferConst = preferConstCache.get(sourceFile);
+      if (preferConst === undefined) {
+        preferConst = collectPreferConstDiagnostics(
+          typescript,
+          program,
+          sourceFile,
+        );
+        preferConstCache.set(sourceFile, preferConst);
+      }
+      customDiagnostics.push(...preferConst);
+    }
+    if (config.compilerDiagnostics !== false) {
+      let byFile = compilerCache.get(program);
+      if (byFile === undefined) {
+        byFile = collectCompilerDiagnostics(
+          typescript,
+          program,
+          config.rootId,
+        );
+        compilerCache.set(program, byFile);
+      }
+      customDiagnostics.push(...(byFile.get(normalizePath(fileName)) ?? []));
     }
     return [...diagnostics, ...customDiagnostics];
   };
@@ -76,6 +104,99 @@ export function createLanguageService(
   };
 
   return proxy;
+}
+
+function collectCompilerDiagnostics(
+  typescript: TypeScript,
+  program: ts.Program,
+  rootId: string | undefined,
+): Map<string, ts.DiagnosticWithLocation[]> {
+  const sourceFiles = program.getSourceFiles().filter(
+    (sourceFile) =>
+      !sourceFile.isDeclarationFile &&
+      !normalizePath(sourceFile.fileName).includes('/node_modules/') &&
+      /\.[jt]sx?$/.test(sourceFile.fileName),
+  );
+  const modules = Object.fromEntries(
+    sourceFiles.map((sourceFile) => [
+      normalizePath(sourceFile.fileName),
+      sourceFile.text,
+    ]),
+  );
+  const diagnostics = diagnoseModules(modules, {
+    ...(rootId === undefined ? {} : { rootId }),
+    resolveImport(specifier, importer) {
+      const resolution = typescript.resolveModuleName(
+        specifier,
+        importer,
+        program.getCompilerOptions(),
+        typescript.sys,
+      ).resolvedModule;
+      if (resolution === undefined) return undefined;
+      const resolved = normalizePath(resolution.resolvedFileName);
+      return Object.hasOwn(modules, resolved) ? resolved : undefined;
+    },
+  });
+  const byFile = new Map<string, ts.DiagnosticWithLocation[]>();
+  for (const diagnostic of diagnostics) {
+    const moduleId = diagnostic.moduleId;
+    const sourceFile =
+      moduleId === undefined
+        ? sourceFiles[0]
+        : sourceFiles.find(
+            (candidate) => normalizePath(candidate.fileName) === moduleId,
+          );
+    if (sourceFile === undefined) continue;
+    const converted = compilerDiagnostic(
+      typescript,
+      sourceFile,
+      diagnostic,
+    );
+    const key = normalizePath(sourceFile.fileName);
+    const list = byFile.get(key) ?? [];
+    list.push(converted);
+    byFile.set(key, list);
+  }
+  return byFile;
+}
+
+function compilerDiagnostic(
+  typescript: TypeScript,
+  sourceFile: ts.SourceFile,
+  diagnostic: CompilerDiagnostic,
+): ts.DiagnosticWithLocation {
+  const start = diagnosticStart(sourceFile, diagnostic);
+  return {
+    file: sourceFile,
+    start,
+    length: Math.min(1, Math.max(0, sourceFile.text.length - start)),
+    category: typescript.DiagnosticCategory.Error,
+    code: diagnosticCodes.compiler,
+    source: diagnosticSource,
+    messageText: diagnostic.message,
+  };
+}
+
+function diagnosticStart(
+  sourceFile: ts.SourceFile,
+  diagnostic: CompilerDiagnostic,
+): number {
+  if (diagnostic.line !== undefined && diagnostic.column !== undefined) {
+    const line = Math.max(0, diagnostic.line - 1);
+    if (line < sourceFile.getLineStarts().length) {
+      return sourceFile.getPositionOfLineAndCharacter(line, diagnostic.column);
+    }
+  }
+  const binding = diagnostic.message.match(/'([^']+)'/)?.[1];
+  if (binding !== undefined) {
+    const position = sourceFile.text.indexOf(binding);
+    if (position !== -1) return position;
+  }
+  return 0;
+}
+
+function normalizePath(fileName: string): string {
+  return fileName.replaceAll('\\', '/');
 }
 
 function bindLanguageService(

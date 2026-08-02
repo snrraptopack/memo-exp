@@ -22,7 +22,7 @@
     },
     "packages/compiler": {
       "name": "@memoized-dom/compiler",
-      "version": "0.0.1",
+      "version": "0.0.5",
       "dependencies": {
         "@babel/core": "^8.0.1",
         "@babel/plugin-syntax-jsx": "^8.0.1",
@@ -33,22 +33,26 @@
     },
     "packages/language-service": {
       "name": "@memoized-dom/language-service",
-      "version": "0.0.1",
+      "version": "0.0.2",
+      "dependencies": {
+        "@memoized-dom/compiler": "^0.0.5",
+      },
       "peerDependencies": {
         "typescript": ">=5.7 <7",
       },
     },
     "packages/runtime": {
       "name": "@memoized-dom/runtime",
-      "version": "0.0.1",
+      "version": "0.0.6",
     },
     "packages/vite": {
       "name": "@memoized-dom/vite",
-      "version": "0.0.1",
+      "version": "0.0.6",
       "dependencies": {
-        "@memoized-dom/compiler": "workspace:*",
+        "@memoized-dom/compiler": "^0.0.5",
       },
       "peerDependencies": {
+        "@memoized-dom/runtime": "^0.0.6",
         "vite": "^8.0.0",
       },
     },

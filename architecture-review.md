@@ -206,10 +206,14 @@ changes the bounded-write-effect contract.
 The runtime, compiler, and Vite 8 adapter are separate workspace packages.
 The Vite adapter collects static value imports through the host resolver,
 compiles one connected graph per Vite environment, and caches linked output.
-Managed-file changes invalidate that graph and request a full browser reload:
-the current factory closures and module state cannot be replaced safely by
-state-preserving HMR. Other bundlers should receive separate adapter packages
-over the same `compileModules()` host-resolver contract.
+Managed-file changes compile first, diff linked outputs, and use generated
+self-accepting boundaries to replace ordinary component factories at their
+existing DOM positions. Module-owned access fragments and singleton entities
+are disposed before reevaluation. Root edits and lightweight keyed-row edits
+still recreate the application root and reset its closure-local state, but do
+not reload the browser document. Other bundlers should receive separate
+adapter packages over the same `compileModulesDetailed()` host-resolver
+contract.
 5. Keep measuring full-hygiene changes independently; compiler-only
    improvements must not be credited as runtime gains. R20 teardown cost is
    isolated in `bench/lifecycle/README.md`.

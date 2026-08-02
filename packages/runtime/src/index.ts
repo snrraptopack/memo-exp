@@ -49,6 +49,7 @@ export type { SlotCache } from './setters';
 export {
   installAccessTable,
   resetAccessTable,
+  uninstallAccessTable,
   resolveWrites,
   resolveStaticWrites,
   isOpaque,
@@ -75,6 +76,12 @@ export {
 } from './delegated-events';
 export { patchDomProps, setDomValue } from './dom-props';
 export { classValue, setClassValue, setStyleValue } from './dom-values';
+export {
+  applyHotUpdate,
+  disposeHotModule,
+  registerHotComponent,
+} from './hot';
+export type { HotComponentFactory, HotComponentUpdate } from './hot';
 
 export { createCondRegion } from './cond';
 export { registerProps, setProps } from './props';

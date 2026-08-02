@@ -261,6 +261,19 @@ export function transformComponent(
   if (effects !== undefined) {
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));
   }
+  if (ctx.hot && !lightweight) {
+    body.push(
+      t.expressionStatement(
+        t.callExpression(md(ctx, 'registerHotComponent'), [
+          t.identifier(name),
+          t.identifier(factoryId),
+          t.identifier(factoryParent!),
+          t.callExpression(md(ctx, 'rootNodes'), [t.identifier(rootVar)]),
+          propsBox === null ? t.nullLiteral() : t.identifier(propsBox),
+        ]),
+      ),
+    );
+  }
   if (lightweight) {
     const nextProps = Array.from({ length: lightweightPropCount }, (_, index) =>
       generatedIdentifier(ctx, `nextProp${index}`),

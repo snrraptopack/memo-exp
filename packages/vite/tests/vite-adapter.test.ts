@@ -1,7 +1,9 @@
 /**
  * Exercises the Vite 8 adapter through Rolldown build and dev transforms.
  */
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   build,
@@ -12,7 +14,9 @@ import memoizedDom from '../src';
 
 const fixture = resolve(import.meta.dirname, 'fixtures/vite-app');
 const source = resolve(fixture, 'src');
+const runtime = resolve(import.meta.dirname, '../../runtime/src/index.ts');
 let server: ViteDevServer | undefined;
+let temporaryFixture: string | undefined;
 
 function plugins() {
   return [
@@ -26,7 +30,17 @@ function plugins() {
 afterEach(async () => {
   await server?.close();
   server = undefined;
+  if (temporaryFixture !== undefined) {
+    await rm(temporaryFixture, { recursive: true, force: true });
+    temporaryFixture = undefined;
+  }
 });
+
+async function copyFixture(): Promise<string> {
+  temporaryFixture = await mkdtemp(join(tmpdir(), 'memoized-dom-vite-'));
+  await cp(fixture, temporaryFixture, { recursive: true });
+  return temporaryFixture;
+}
 
 describe('Vite 8 adapter', () => {
   it('builds an aliased connected graph through Rolldown', async () => {
@@ -56,6 +70,8 @@ describe('Vite 8 adapter', () => {
     expect(code).toContain('./src/state.ts#count');
     expect(code).toContain('document.createElement("button")');
     expect(code).not.toMatch(/<[A-Za-z][^>]*>/);
+    expect(code).not.toContain('registerHotComponent');
+    expect(code).not.toContain('import.meta.hot.accept(');
   });
 
   it('serves generated modules from the on-demand dev pipeline', async () => {
@@ -90,14 +106,23 @@ describe('Vite 8 adapter', () => {
     expect(panel?.code).toContain('markDirty');
     expect(panel?.code).toContain('commitWrites');
     expect(panel?.code).not.toContain('markDirtySubtree');
+    expect(app?.code).toContain('registerHotComponent');
+    expect(app?.code).toContain('import.meta.hot.accept(');
   });
 
-  it('invalidates the managed graph and requests a full reload', async () => {
+  it('recompiles edits and emits an HMR update without a page reload', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
     server = await createServer({
-      root: fixture,
+      root,
       configFile: false,
       logLevel: 'silent',
-      resolve: { alias: { '@': source } },
+      resolve: {
+        alias: {
+          '@': temporarySource,
+          '@memoized-dom/runtime': runtime,
+        },
+      },
       plugins: plugins(),
       server: { middlewareMode: true },
     });
@@ -105,17 +130,66 @@ describe('Vite 8 adapter', () => {
 
     const hot = server.environments.client.hot;
     const send = vi.spyOn(hot, 'send').mockImplementation(() => {});
-    server.watcher.emit('change', resolve(source, 'state.ts'));
+    const appFile = resolve(temporarySource, 'App.tsx');
+    const app = await readFile(appFile, 'utf8');
+    await writeFile(appFile, app.replace('Increment</button>', 'Increase</button>'));
 
     await vi.waitFor(
       () => {
-        expect(send).toHaveBeenCalledWith({ type: 'full-reload' });
+        expect(send).toHaveBeenCalled();
       },
-      { timeout: 5_000 },
+      { timeout: 15_000 },
     );
+    expect(send.mock.calls.some(([payload]) => payload.type === 'full-reload'))
+      .toBe(false);
+    expect(send.mock.calls.some(([payload]) => payload.type === 'update'))
+      .toBe(true);
+  }, 30_000);
 
-    const state =
-      await server.environments.client.transformRequest('/src/state.ts');
-    expect(state?.code).toContain('commitWrites');
-  });
+  it('sends compiler failures from an edit to Vite error feedback', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    server = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@': temporarySource,
+          '@memoized-dom/runtime': runtime,
+        },
+      },
+      plugins: plugins(),
+      server: { middlewareMode: true },
+    });
+    await server.environments.client.transformRequest('/src/App.tsx');
+
+    const hot = server.environments.client.hot;
+    const send = vi.spyOn(hot, 'send').mockImplementation(() => {});
+    const appFile = resolve(temporarySource, 'App.tsx');
+    const app = await readFile(appFile, 'utf8');
+    const invalid = app
+      .replace(
+        "import { Row } from './Row';",
+        "import { Row } from './Row';\nlet local = 0;\nconst double = local * 2;",
+      )
+      .replace(
+        '<button onClick={increment}>',
+        '<button onClick={() => double++}>',
+      );
+    await writeFile(appFile, invalid);
+
+    await vi.waitFor(
+      () => {
+        expect(
+          send.mock.calls.some(
+            ([payload]) =>
+              payload.type === 'error' &&
+              payload.err.message.includes("cannot update computed 'double'"),
+          ),
+        ).toBe(true);
+      },
+      { timeout: 15_000 },
+    );
+  }, 30_000);
 });

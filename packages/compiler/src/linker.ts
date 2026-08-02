@@ -69,6 +69,21 @@ export interface CompileModulesOptions
   resolveImport?: (specifier: string, importer: string) => string | undefined;
 }
 
+export interface CompiledComponentExport {
+  exported: string;
+  local: string;
+  listLightweight: boolean;
+}
+
+export interface CompiledModuleMetadata {
+  componentExports: CompiledComponentExport[];
+}
+
+export interface CompiledModules {
+  output: Record<string, string>;
+  metadata: Record<string, CompiledModuleMetadata>;
+}
+
 interface StateExport {
   type: 'state';
   kind: StateKind;
@@ -140,6 +155,7 @@ function compilerOptions(options: CompileModulesOptions): MemoDomOptions {
   return {
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
     ...(options.rootId === undefined ? {} : { rootId: options.rootId }),
+    ...(options.hot === undefined ? {} : { hot: options.hot }),
   };
 }
 
@@ -783,10 +799,10 @@ function stableManifest(manifest: ModuleManifest): string {
  * Compile a connected set of TS/TSX modules with canonical cross-file state
  * keys. Record keys are source module ids; returned keys are preserved.
  */
-export function compileModules(
+export function compileModulesDetailed(
   modules: Readonly<Record<string, string>>,
   options: CompileModulesOptions = {},
-): Record<string, string> {
+): CompiledModules {
   const entries = new Map<string, ModuleEntry>();
   for (const [originalId, source] of Object.entries(modules)) {
     const id = canonicalModuleId(originalId);
@@ -844,8 +860,25 @@ export function compileModules(
     options.rootId ?? 'App',
   );
   const output: Record<string, string> = {};
+  const metadata: Record<string, CompiledModuleMetadata> = {};
   for (const entry of entries.values()) {
     const manifest = manifests.get(entry.id)!;
+    metadata[entry.originalId] = {
+      componentExports: Object.entries(manifest.exports)
+        .filter(
+          (entry): entry is [string, ComponentExport] =>
+            entry[1].type === 'component',
+        )
+        .map(([exported, component]) => ({
+          exported,
+          local:
+            manifest.components.find(
+              (declaration) => declaration.key === component.key,
+            )?.local ?? component.key.slice(component.key.lastIndexOf('#') + 1),
+          listLightweight: component.listLightweight,
+        }))
+        .sort((left, right) => left.local.localeCompare(right.local)),
+    };
     const linkedImports = linkImports(
       entry,
       manifest,
@@ -921,5 +954,12 @@ export function compileModules(
       linkedComponentRenderProps,
     });
   }
-  return output;
+  return { output, metadata };
+}
+
+export function compileModules(
+  modules: Readonly<Record<string, string>>,
+  options: CompileModulesOptions = {},
+): Record<string, string> {
+  return compileModulesDetailed(modules, options).output;
 }
