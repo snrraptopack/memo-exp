@@ -88,7 +88,7 @@ const items = [{
   label: 'two'
 }];
 let selected = 0;
-function Row(item, _id, _eventRoot) {
+function Row(item, _id, _onClickBinding) {
   let _slot, _slot2, _value;
   const _update = () => {
     if (_slot !== (_value = item.label)) {
@@ -115,7 +115,7 @@ function Row(item, _id, _eventRoot) {
     _slot2 = _value;
     _MD.setClassValue(_li, _value);
   }
-  _MD.setDelegatedEvent(_eventRoot, _li, "onClick", () => {
+  _MD.setDelegatedEvent(_onClickBinding, _li, () => {
     selected = item.id;
     _MD.commitWrites(_WRITES_);
   });
@@ -146,8 +146,9 @@ export function CompList(_id2, _parent) {
     render: _update2
   });
   const _ul = document.createElement("ul");
+  const _onClickBinding2 = _MD.createDelegatedEventBinding(_ul, "onClick");
   const _region = _MD.createListRegion(_ul, _id2 + "/items", (item, _rowId) => {
-    const _entry = Row(item, _rowId, _ul);
+    const _entry = Row(item, _rowId, _onClickBinding2);
     const _pushRowProps = _entry.updateProps;
     _entry.updateProps = _nextItem => {
       item = _nextItem;
@@ -208,6 +209,7 @@ export function InlineList(_id, _parent) {
     render: _update
   });
   const _ul = document.createElement("ul");
+  const _onClickBinding = _MD.createDelegatedEventBinding(_ul, "onClick");
   const _region = _MD.createListRegion(_ul, _id + "/items", (item, _rowId) => {
     let _slot, _slot2, _value2;
     const _update2 = () => {
@@ -240,7 +242,7 @@ export function InlineList(_id, _parent) {
       _slot2 = _value2;
       _MD.setClassValue(_li, _value2);
     }
-    _MD.setDelegatedEvent(_ul, _li, "onClick", () => {
+    _MD.setDelegatedEvent(_onClickBinding, _li, () => {
       selected = item.id;
       _MD.commitWrites(_WRITES_);
     });

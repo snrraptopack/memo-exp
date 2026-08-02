@@ -15,35 +15,54 @@ interface DelegatedType {
 
 type DelegatedHost = EventTarget & Record<symbol, unknown>;
 
+export interface DelegatedEventBinding {
+  root: EventTarget;
+  handler: symbol;
+  rootKey: symbol;
+}
+
 const delegatedTypes = new Map<string, DelegatedType>();
 const delegatedJsxNames = new Map<string, DelegatedType>();
 
 export function setDelegatedEvent(
-  root: EventTarget,
+  binding: DelegatedEventBinding,
   element: EventTarget,
-  jsxName: string,
   handler: EventListener,
 ): void {
-  let delegated = delegatedJsxNames.get(jsxName);
-  if (delegated === undefined) {
-    const type = eventType(jsxName);
-    delegated = delegatedTypes.get(type);
-    if (delegated === undefined) {
-      delegated = {
-        handler: Symbol(`memo-dom:${type}:handler`),
-        root: Symbol(`memo-dom:${type}:root`),
-        roots: new WeakSet(),
-        type,
-      };
-      delegatedTypes.set(type, delegated);
-    }
-    delegatedJsxNames.set(jsxName, delegated);
-  }
-
   const host = element as DelegatedHost;
-  host[delegated.handler] = handler;
-  host[delegated.root] = root;
+  host[binding.handler] = handler;
+  host[binding.rootKey] = binding.root;
+}
 
+/** Resolve one event type and install its root listeners once per list. */
+export function createDelegatedEventBinding(
+  root: EventTarget,
+  jsxName: string,
+): DelegatedEventBinding {
+  const delegated = delegatedType(jsxName);
+  installRoot(root, delegated);
+  return { root, handler: delegated.handler, rootKey: delegated.root };
+}
+
+function delegatedType(jsxName: string): DelegatedType {
+  let delegated = delegatedJsxNames.get(jsxName);
+  if (delegated !== undefined) return delegated;
+  const type = eventType(jsxName);
+  delegated = delegatedTypes.get(type);
+  if (delegated === undefined) {
+    delegated = {
+      handler: Symbol(`memo-dom:${type}:handler`),
+      root: Symbol(`memo-dom:${type}:root`),
+      roots: new WeakSet(),
+      type,
+    };
+    delegatedTypes.set(type, delegated);
+  }
+  delegatedJsxNames.set(jsxName, delegated);
+  return delegated;
+}
+
+function installRoot(root: EventTarget, delegated: DelegatedType): void {
   if (!delegated.roots.has(root)) {
     delegated.roots.add(root);
     root.addEventListener(delegated.type, (event) => {

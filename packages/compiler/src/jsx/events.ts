@@ -3,18 +3,25 @@
 import * as t from '@babel/types';
 import { walkNodes } from '../context';
 
-export function hasHostJsxEvent(body: t.BlockStatement): boolean {
-  let found = false;
+export function hostJsxEventNames(body: t.Node): string[] {
+  const found = new Set<string>();
   walkNodes(body, (node) => {
-    if (found || !t.isJSXOpeningElement(node)) return;
+    if (!t.isJSXOpeningElement(node)) return;
     const tag = node.name;
     if (!t.isJSXIdentifier(tag) || !/^[a-z]/.test(tag.name)) return;
-    found = node.attributes.some(
-      (attribute) =>
+    for (const attribute of node.attributes) {
+      if (
         t.isJSXAttribute(attribute) &&
         t.isJSXIdentifier(attribute.name) &&
-        /^on[A-Z]/.test(attribute.name.name),
-    );
+        /^on[A-Z]/.test(attribute.name.name)
+      ) {
+        found.add(attribute.name.name);
+      }
+    }
   });
-  return found;
+  return [...found].sort();
+}
+
+export function hasHostJsxEvent(body: t.Node): boolean {
+  return hostJsxEventNames(body).length !== 0;
 }

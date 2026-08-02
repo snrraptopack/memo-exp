@@ -969,8 +969,9 @@ function emitElement(
         rowCtx,
         eventOriginId,
       );
+      const delegatedBinding = scope.delegatedEventBindings.get(attrName);
       scope.creation.push(
-        scope.delegatedEventRootVar === null
+        delegatedBinding === undefined
           ? t.expressionStatement(
               t.assignmentExpression(
                 '=',
@@ -983,9 +984,8 @@ function emitElement(
             )
           : t.expressionStatement(
               t.callExpression(md(ctx, 'setDelegatedEvent'), [
-                t.identifier(scope.delegatedEventRootVar),
+                t.identifier(delegatedBinding),
                 t.identifier(varName),
-                t.stringLiteral(attrName),
                 handler,
               ]),
             ),

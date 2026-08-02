@@ -83,8 +83,8 @@ export interface LinkedComponentImport {
   hasWholeDefault: boolean;
   /** Whether keyed-row compilation can use the allocation-free row ABI. */
   listLightweight: boolean;
-  /** Host event attributes can use a caller-owned delegated list root. */
-  delegatedEvents?: boolean;
+  /** Host JSX event names prebound once by a keyed-list caller. */
+  delegatedEvents?: string[];
   /** Props consumed as compiler-owned mount slots. */
   renderProps?: string[];
   /** Props consumed as caller-owned structural row factories. */
@@ -291,6 +291,8 @@ export interface Ctx {
   listedSites: Map<string, SiteRef[]>;
   /** Local declarations containing one or more host JSX event attributes. */
   componentsWithHostEvents: Set<string>;
+  /** Immutable event names captured before component AST emission mutates JSX. */
+  componentHostEvents: Map<string, string[]>;
   /** Components mounted lexically inside conditional branch factories. */
   conditionalComponentSites: Map<string, SiteRef[]>;
   /** Components mounted beneath keyed inline host-row factories. */
@@ -498,6 +500,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     renderSlotOwners: new Set(),
     listedSites: new Map(),
     componentsWithHostEvents: new Set(),
+    componentHostEvents: new Map(),
     conditionalComponentSites: new Map(),
     rowComponentSites: new Map(),
     componentProps,

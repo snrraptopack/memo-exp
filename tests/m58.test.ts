@@ -83,13 +83,17 @@ describe('M5.10 - lightweight listed component rows', () => {
   it('emits a stateless list-only component as a ListEntry factory', () => {
     const code = compile(LIGHT_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(
-      /function Row\(item, sfx, _id\d*, _eventRoot\d*\)/,
+      /function Row\(item, sfx, _id\d*, _onClickBinding\d*\)/,
     );
     expect(code).not.toContain('.registerProps');
     const rowFactory = code.slice(code.indexOf('function Row'), code.indexOf('export function C'));
     expect(rowFactory).not.toContain('.register({');
     expect(rowFactory).toContain('.cloneNode(true)');
     expect(rowFactory).toContain('.setDelegatedEvent(');
+    expect(code.match(/\.createDelegatedEventBinding\(/g)).toHaveLength(1);
+    expect(code).toMatch(
+      /\.setDelegatedEvent\(_onClickBinding\d*, _li\d*, \(\) =>/,
+    );
     expect(rowFactory).not.toContain('.onclick =');
     expect(code.match(/document\.createElement\("li"\)/g)).toHaveLength(1);
     expect(code).toMatch(/\.createListRegion\([\s\S]*?, false\)/);

@@ -113,13 +113,11 @@ export function buildRenderCallbackAdapter(
   const liveRows = generatedIdentifier(ctx, 'renderRows');
   const nextUpdate = generatedIdentifier(ctx, 'renderNextUpdate');
   const rowId = generatedIdentifier(ctx, 'renderRowId');
-  const eventRoot = generatedIdentifier(ctx, 'renderEventRoot');
   const refreshRow = generatedIdentifier(ctx, 'refreshRenderRow');
   const nextItem = generatedIdentifier(ctx, 'renderNextItem');
   const nextIndex =
     indexParam === null ? null : generatedIdentifier(ctx, 'renderNextIndex');
   const rowScope = newEmitScope(ctx);
-  rowScope.delegatedEventRootVar = eventRoot.name;
   const rowContext: RowCtx = {
     itemParam,
     itemPath: [],
@@ -189,7 +187,6 @@ export function buildRenderCallbackAdapter(
       t.cloneNode(itemPattern, true),
       t.cloneNode(rowId),
       ...(indexParam === null ? [] : [t.identifier(indexParam)]),
-      t.cloneNode(eventRoot),
     ],
     t.blockStatement([
       cacheDecl(rowScope),

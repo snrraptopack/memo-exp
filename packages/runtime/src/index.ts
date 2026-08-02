@@ -68,7 +68,11 @@ export type { EventRecord } from './events';
 export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
 export { rootNodes } from './jsx-dom';
-export { setDelegatedEvent } from './delegated-events';
+export {
+  createDelegatedEventBinding,
+  setDelegatedEvent,
+  type DelegatedEventBinding,
+} from './delegated-events';
 export { patchDomProps, setDomValue } from './dom-props';
 export { classValue, setClassValue, setStyleValue } from './dom-values';
 

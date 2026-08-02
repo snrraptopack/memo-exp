@@ -1,7 +1,11 @@
 /** R45 - root-scoped delegated events for repeated compiler-owned DOM. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { setDelegatedEvent } from '@memoized-dom/runtime/testing';
+import {
+  createDelegatedEventBinding,
+  setDelegatedEvent,
+} from '@memoized-dom/runtime/testing';
+import { compileModules } from '@memoized-dom/compiler';
 
 describe('R45 - delegated event runtime', () => {
   beforeEach(() => {
@@ -17,10 +21,11 @@ describe('R45 - delegated event runtime', () => {
     const add = vi.spyOn(root, 'addEventListener');
     const calls: EventTarget[] = [];
 
-    setDelegatedEvent(root, first, 'onClick', function () {
+    const click = createDelegatedEventBinding(root, 'onClick');
+    setDelegatedEvent(click, first, function () {
       calls.push(this);
     });
-    setDelegatedEvent(root, second, 'onClick', function () {
+    setDelegatedEvent(click, second, function () {
       calls.push(this);
     });
 
@@ -41,8 +46,10 @@ describe('R45 - delegated event runtime', () => {
     document.body.appendChild(outer);
     const calls: string[] = [];
 
-    setDelegatedEvent(outer, outerRow, 'onClick', () => calls.push('outer'));
-    setDelegatedEvent(inner, button, 'onClick', () => calls.push('inner'));
+    const outerClick = createDelegatedEventBinding(outer, 'onClick');
+    const innerClick = createDelegatedEventBinding(inner, 'onClick');
+    setDelegatedEvent(outerClick, outerRow, () => calls.push('outer'));
+    setDelegatedEvent(innerClick, button, () => calls.push('inner'));
     button.click();
 
     expect(calls).toEqual(['inner', 'outer']);
@@ -57,13 +64,14 @@ describe('R45 - delegated event runtime', () => {
     document.body.appendChild(root);
     let focused = false;
 
-    setDelegatedEvent(root, input, 'onFocus', () => {
+    const focus = createDelegatedEventBinding(root, 'onFocus');
+    const click = createDelegatedEventBinding(root, 'onClick');
+    setDelegatedEvent(focus, input, () => {
       focused = true;
     });
     setDelegatedEvent(
-      root,
+      click,
       link,
-      'onClick',
       (() => false) as unknown as EventListener,
     );
 
@@ -73,5 +81,31 @@ describe('R45 - delegated event runtime', () => {
     );
     expect(focused).toBe(true);
     expect(allowed).toBe(false);
+  });
+
+  it('links exact prebound event names across component modules', () => {
+    const output = compileModules({
+      './Row.tsx': `
+        export function Row({ item }) {
+          return <li onClick={() => item.clicked++} onFocus={() => item.focused++}>{item.id}</li>;
+        }
+      `,
+      './App.tsx': `
+        import { Row } from './Row';
+        export function App() {
+          let items = [{ id: 1, clicked: 0, focused: 0 }];
+          return <ul>{items.map(item => <Row key={item.id} item={item} />)}</ul>;
+        }
+      `,
+    });
+
+    expect(
+      output['./App.tsx'].match(/\.createDelegatedEventBinding\(/g),
+    ).toHaveLength(2);
+    expect(output['./App.tsx']).toContain('"onClick"');
+    expect(output['./App.tsx']).toContain('"onFocus"');
+    expect(output['./Row.tsx'].match(/\.setDelegatedEvent\(/g)).toHaveLength(2);
+    expect(output['./Row.tsx']).not.toContain('"onClick"');
+    expect(output['./Row.tsx']).not.toContain('"onFocus"');
   });
 });

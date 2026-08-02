@@ -94,11 +94,14 @@ export function transformComponent(
     lightweight && sourceLocal
       ? generatedIdentifier(ctx, 'owner').name
       : null;
-  const factoryEventRoot =
-    lightweight && ctx.componentsWithHostEvents.has(name)
-      ? generatedIdentifier(ctx, 'eventRoot').name
-      : null;
-  scope.delegatedEventRootVar = factoryEventRoot;
+  const factoryEventBindings = new Map<string, string>();
+  if (lightweight) {
+    for (const eventName of ctx.componentHostEvents.get(name) ?? []) {
+      const binding = generatedIdentifier(ctx, `${eventName}Binding`).name;
+      factoryEventBindings.set(eventName, binding);
+      scope.delegatedEventBindings.set(eventName, binding);
+    }
+  }
   const propsBox =
     propSlotCount > 0 && !lightweight
       ? generatedIdentifier(ctx, 'props').name
@@ -344,9 +347,9 @@ export function transformComponent(
           : positionalObjectProps.map(({ local }) => t.identifier(local))),
         t.identifier(factoryId),
         ...(factoryOwner === null ? [] : [t.identifier(factoryOwner)]),
-        ...(factoryEventRoot === null
-          ? []
-          : [t.identifier(factoryEventRoot)]),
+        ...[...factoryEventBindings.values()].map((binding) =>
+          t.identifier(binding),
+        ),
       ]
     : propSlotCount > 0
       ? [

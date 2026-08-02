@@ -50,6 +50,7 @@ import type {
   KeyedListMutationPlan,
   TargetedListDependency,
 } from '../context';
+import { hostJsxEventNames } from '../jsx/events';
 
 export type AuthoredChildrenSlotBuilder = (
   ctx: Ctx,
@@ -96,29 +97,53 @@ export function emitListRegion(
     ctx,
     `region${scope.regionCounter++}`,
   ).name;
+  const eventBindings = new Map<string, t.Identifier>();
+  const eventNames =
+    site.form === 'inline'
+      ? hostJsxEventNames(site.jsx!)
+      : site.form === 'component' &&
+          isLightweightListedComponent(ctx, site.rowComp!)
+        ? (ctx.importedComponents.get(site.rowComp!)?.delegatedEvents ??
+          (ctx.componentHostEvents.get(site.rowComp!) ?? []))
+        : [];
+  for (const eventName of eventNames) {
+    const binding = generatedIdentifier(ctx, `${eventName}Binding`);
+    eventBindings.set(eventName, binding);
+    scope.creation.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.cloneNode(binding),
+          t.callExpression(md(ctx, 'createDelegatedEventBinding'), [
+            t.identifier(parentElementVariable),
+            t.stringLiteral(eventName),
+          ]),
+        ),
+      ]),
+    );
+  }
   const createFactory =
     site.form === 'callback'
-      ? buildCallbackRowCreate(ctx, site, parentElementVariable)
+      ? buildCallbackRowCreate(ctx, site)
       : site.form === 'component'
       ? buildComponentRowCreate(
           ctx,
           site,
-          parentElementVariable,
           componentName,
           componentPath,
           buildAuthoredChildrenSlot,
           inSvg,
           ownerId,
+          eventBindings,
         )
       : buildInlineRowCreate(
           ctx,
           site,
-          parentElementVariable,
           componentName,
           componentPath,
           emitNode,
           inSvg,
           ownerId,
+          eventBindings,
         );
 
   const args: t.Expression[] = [
@@ -516,7 +541,6 @@ function buildTargetedListUpdate(
 function buildCallbackRowCreate(
   ctx: Ctx,
   site: MapSite,
-  parentElementVariable: string,
 ): t.ArrowFunctionExpression {
   const rowId = generatedIdentifier(ctx, 'renderRowId');
   return t.arrowFunctionExpression(
@@ -538,7 +562,6 @@ function buildCallbackRowCreate(
         ...(site.indexParam === null
           ? []
           : [t.identifier(site.indexParam)]),
-        t.identifier(parentElementVariable),
       ],
     ),
   );
@@ -547,12 +570,12 @@ function buildCallbackRowCreate(
 function buildComponentRowCreate(
   ctx: Ctx,
   site: MapSite,
-  parentElementVariable: string,
   componentName: string,
   componentPath: NodePath<t.FunctionDeclaration>,
   buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
+  eventBindings: ReadonlyMap<string, t.Identifier> = new Map(),
 ): t.ArrowFunctionExpression {
   const rowComponent = site.rowComp!;
   const rowId = generatedIdentifier(ctx, 'rowId');
@@ -564,9 +587,6 @@ function buildComponentRowCreate(
   const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
   const rowScope = newEmitScope(ctx);
   const lightweight = isLightweightListedComponent(ctx, rowComponent);
-  const delegatesEvents =
-    ctx.importedComponents.get(rowComponent)?.delegatedEvents === true ||
-    ctx.componentsWithHostEvents.has(rowComponent);
   const rowContext: RowCtx = {
     itemParam: site.itemParam,
     itemPath: [],
@@ -998,9 +1018,9 @@ function buildComponentRowCreate(
                 ...callProps.map((prop) => t.cloneNode(prop)),
                 t.cloneNode(rowId),
                 ...(site.sourceLocal ? [t.cloneNode(ownerId)] : []),
-                ...(delegatesEvents
-                  ? [t.identifier(parentElementVariable)]
-                  : []),
+                ...[...eventBindings.values()].map((binding) =>
+                  t.cloneNode(binding),
+                ),
               ])
             : t.callExpression(t.identifier(rowComponent), [
                 t.cloneNode(rowId),
@@ -1087,12 +1107,12 @@ function buildComponentRowCreate(
 function buildInlineRowCreate(
   ctx: Ctx,
   site: MapSite,
-  parentElementVariable: string,
   componentName: string,
   componentPath: NodePath<t.FunctionDeclaration>,
   emitNode: NodeEmitter,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
+  eventBindings: ReadonlyMap<string, t.Identifier> = new Map(),
 ): t.ArrowFunctionExpression {
   site.jsx!.openingElement.attributes =
     site.jsx!.openingElement.attributes.filter(
@@ -1101,7 +1121,9 @@ function buildInlineRowCreate(
         (attribute.name as t.JSXIdentifier).name !== 'key',
     );
   const rowScope = newEmitScope(ctx);
-  rowScope.delegatedEventRootVar = parentElementVariable;
+  for (const [eventName, binding] of eventBindings) {
+    rowScope.delegatedEventBindings.set(eventName, binding.name);
+  }
   const rowId = generatedIdentifier(ctx, 'rowId').name;
   const nextItem = generatedIdentifier(ctx, 'nextItem');
   const nextIndex =
