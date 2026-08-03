@@ -18,7 +18,8 @@ export default defineConfig({
 
 Entries are authored graph roots, not necessarily the browser bootstrap module.
 The adapter follows local static value imports with Vite's resolver, compiles
-the graph through `compileModulesDetailed()`, and caches output per Vite
+the graph through `compileModulesDetailed()`, returns authored-module source
+maps from Vite transforms, and caches output per Vite
 environment.
 
 During an edit, the adapter recompiles before notifying the browser. Compiler

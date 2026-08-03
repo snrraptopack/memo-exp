@@ -7,6 +7,7 @@ import {
   toCompilerDiagnostic,
   type CompiledModules,
   type CompiledModuleMetadata,
+  type CompilerSourceMap,
 } from '@memoized-dom/compiler';
 import type { ResolvedAdapterOptions } from '../options';
 import {
@@ -43,6 +44,7 @@ export interface GraphPluginContext {
 export interface CompiledGraph {
   files: ReadonlySet<string>;
   output: ReadonlyMap<string, string>;
+  maps: ReadonlyMap<string, CompilerSourceMap>;
 }
 
 function resolutionKey(importer: string, specifier: string): string {
@@ -132,6 +134,7 @@ export async function compileGraph(
     });
   }
   const output = new Map<string, string>();
+  const maps = new Map<string, CompilerSourceMap>();
   for (const [file, id] of sourceIds) {
     const code = compiled.output[id]!;
     output.set(
@@ -146,8 +149,9 @@ export async function compileGraph(
           )
         : code,
     );
+    maps.set(file, compiled.maps[id]!);
   }
-  return { files: new Set(sourceIds.keys()), output };
+  return { files: new Set(sourceIds.keys()), output, maps };
 }
 
 function appendHotBoundary(

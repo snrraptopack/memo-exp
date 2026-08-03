@@ -96,6 +96,9 @@ describe('Vite 8 adapter', () => {
       await server.environments.client.transformRequest('/src/Panel.tsx');
 
     expect(app?.code).toContain('function App(_id');
+    expect(app?.map).not.toBeNull();
+    expect(app?.map?.sources.some((id) => id.endsWith('/src/App.tsx'))).toBe(true);
+    expect(app?.map?.sourcesContent?.some((content) => content?.includes('function App()'))).toBe(true);
     expect(app?.code).toContain('Label(_id');
     expect(label?.code).toContain('function Label(_id');
     expect(state?.code).toContain('commitWrites');

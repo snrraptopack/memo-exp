@@ -1,6 +1,12 @@
 /** Public compiler package entry. */
 
-export { compile, type MemoDomOptions } from './compile';
+export {
+  compile,
+  compileDetailed,
+  type CompiledSource,
+  type CompilerSourceMap,
+  type MemoDomOptions,
+} from './compile';
 export {
   compileModules,
   compileModulesDetailed,

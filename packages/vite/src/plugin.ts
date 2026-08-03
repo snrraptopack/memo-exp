@@ -1,6 +1,7 @@
 /**
  * Vite 8 plugin backed by connected compiler graphs and live module HMR.
  */
+import type { CompilerSourceMap } from '@memoized-dom/compiler';
 import type {
   DevEnvironment,
   MinimalPluginContextWithoutEnvironment,
@@ -109,7 +110,7 @@ export function memoizedDom(
     context: AdapterTransformContext,
     code: string,
     id: string,
-  ): Promise<{ code: string; map: null } | null> {
+  ): Promise<{ code: string; map: CompilerSourceMap } | null> {
     if (config === undefined || !sourceId.test(id)) return null;
     const file = cleanViteId(id);
     const state = stateFor(context.environment);
@@ -117,7 +118,9 @@ export function memoizedDom(
     if (!managed && state.compiling === undefined) return null;
 
     const cached = state.output.get(file);
-    if (cached !== undefined) return { code: cached, map: null };
+    if (cached !== undefined) {
+      return { code: cached, map: state.maps.get(file)! };
+    }
 
     if (state.compiling === undefined) {
       await refreshGraph(
@@ -135,7 +138,7 @@ export function memoizedDom(
         `memoized-dom: linked Vite graph omitted managed module ${file}`,
       );
     }
-    return { code: compiled, map: null };
+    return { code: compiled, map: state.maps.get(file)! };
   }
 
   return {

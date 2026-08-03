@@ -12,16 +12,44 @@
  * frontend #2 (oxc) can reuse the emission logic later.
  */
 
-import { transformSync } from '@babel/core';
+import {
+  transformFromAstSync,
+  transformSync,
+  type InputOptions,
+} from '@babel/core';
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
+import * as t from '@babel/types';
 import memoDomPlugin, { type MemoDomOptions } from './plugin';
 
 export type { MemoDomOptions };
 
-export function compile(source: string, opts: MemoDomOptions = {}): string {
-  const out = transformSync(source, {
-    filename: opts.moduleId ?? './component.tsx',
+export interface CompilerSourceMap {
+  version: 3;
+  file?: string;
+  sourceRoot?: string;
+  sources: string[];
+  sourcesContent?: Array<string | null>;
+  names: string[];
+  mappings: string;
+}
+
+export interface CompiledSource {
+  code: string;
+  map: CompilerSourceMap;
+}
+
+function transform(
+  source: string,
+  opts: MemoDomOptions,
+  sourceMaps: boolean,
+  ast?: t.File,
+): ReturnType<typeof transformSync> {
+  const moduleId = opts.moduleId ?? './component.tsx';
+  const transformOptions: InputOptions = {
+    filename: moduleId,
+    sourceFileName: moduleId,
+    sourceMaps,
     plugins: [
       [syntaxJsx as any, {}],
       [memoDomPlugin, opts],
@@ -29,9 +57,50 @@ export function compile(source: string, opts: MemoDomOptions = {}): string {
     ],
     configFile: false,
     babelrc: false,
-  });
+  };
+  return ast === undefined
+    ? transformSync(source, transformOptions)
+    : transformFromAstSync(t.cloneNode(ast, true), source, transformOptions);
+}
+
+/** Compile source while preserving the historical string-only API. */
+export function compile(source: string, opts: MemoDomOptions = {}): string {
+  return compileAst(source, opts);
+}
+
+/** Internal linked-graph path that reuses an AST without producing a map. */
+export function compileAst(
+  source: string,
+  opts: MemoDomOptions,
+  ast?: t.File,
+): string {
+  const out = transform(source, opts, false, ast);
   if (!out || out.code == null) {
     throw new Error('memo-dom: compilation produced no output');
   }
   return out.code;
+}
+
+/** Compile source and return a source map back to the authored TSX module. */
+export function compileDetailed(
+  source: string,
+  opts: MemoDomOptions = {},
+): CompiledSource {
+  return compileAstDetailed(source, opts);
+}
+
+/** Internal linked-graph path that reuses a cached parsed module AST. */
+export function compileAstDetailed(
+  source: string,
+  opts: MemoDomOptions,
+  ast?: t.File,
+): CompiledSource {
+  const out = transform(source, opts, true, ast);
+  if (!out || out.code == null || out.map == null) {
+    throw new Error('memo-dom: compilation produced no output or source map');
+  }
+  return {
+    code: out.code,
+    map: out.map as CompilerSourceMap,
+  };
 }

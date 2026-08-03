@@ -87,6 +87,7 @@ function dispatch(
     ? event.composedPath()
     : parentPath(event.target, root);
   for (const target of path) {
+    if (target === undefined) continue;
     const host = target as DelegatedHost;
     if (host[delegated.root] === root) {
       const handler = host[delegated.handler] as EventListener | undefined;

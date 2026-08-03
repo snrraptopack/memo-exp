@@ -139,6 +139,98 @@ function itemFieldVisibleBeyondList(
   return false;
 }
 
+interface HandlerExecutionSite {
+  path: NodePath;
+  writes: ScopeWrites;
+  flag?: t.Identifier;
+  temporaries?: t.Identifier[];
+}
+
+function finalizeHandlerInstrumentation(
+  ctx: Ctx,
+  rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
+  clonedFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
+  root: t.Node,
+  scopes: Map<t.Node, ScopeWrites>,
+  executionSites: ReadonlyMap<t.Node, HandlerExecutionSite>,
+  compName: string | null,
+  rowCtx: RowCtx | undefined,
+  eventBoundary: boolean,
+  eventOriginId: t.Expression | undefined,
+  executionAwareRoot: boolean,
+): void {
+  ctx.handlerHasRootCommit.set(rootFn, scopes.has(root));
+
+  if (eventBoundary && !scopes.has(root)) {
+    const eventScope = createScopeWrites();
+    eventScope.eventOrigin = buildEventOriginCommit(
+      ctx,
+      compName,
+      rowCtx,
+      eventOriginId,
+    );
+    scopes.set(root, eventScope);
+  }
+
+  const guardedRootSites: Array<HandlerExecutionSite & { commit: t.Statement }> = [];
+  if (executionAwareRoot) {
+    for (const site of executionSites.values()) {
+      const commit = buildScopeCommit(ctx, site.writes, compName, rowCtx);
+      if (commit !== null) guardedRootSites.push({ ...site, commit });
+    }
+  }
+  for (const site of guardedRootSites) {
+    site.flag = generatedIdentifier(ctx, 'didWrite');
+  }
+  guardedRootSites
+    .sort((left, right) => pathDepth(right.path) - pathDepth(left.path))
+    .forEach((site) => {
+      site.temporaries = markExecutionSite(ctx, site.path, site.flag!);
+    });
+
+  for (const [fn, writes] of scopes) {
+    const commit =
+      executionAwareRoot && fn === root
+        ? guardedRootSites.length === 0
+          ? null
+          : t.blockStatement(
+              guardedRootSites.map((site) =>
+                t.ifStatement(
+                  t.cloneNode(site.flag!),
+                  t.cloneNode(site.commit),
+                ),
+              ),
+            )
+        : buildScopeCommit(ctx, writes, compName, rowCtx);
+    if (commit === null) continue;
+    appendScopeCommit(
+      ctx,
+      fn as t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
+      commit,
+    );
+  }
+
+  if (guardedRootSites.length > 0) {
+    if (!t.isBlockStatement(clonedFn.body)) {
+      throw new Error(
+        'memo-dom: execution-aware callback commit did not produce a block body',
+      );
+    }
+    clonedFn.body.body.unshift(
+      t.variableDeclaration(
+        'let',
+        guardedRootSites.flatMap((site) => [
+          t.variableDeclarator(t.cloneNode(site.flag!), t.booleanLiteral(false)),
+          ...(site.temporaries ?? []).map((temporary) =>
+            t.variableDeclarator(t.cloneNode(temporary)),
+          ),
+        ]),
+      ),
+    );
+  }
+  rootFn.body = clonedFn.body;
+}
+
 export function analyzeHandler(
   ctx: Ctx,
   rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
@@ -278,15 +370,7 @@ export function analyzeHandler(
 
   // pass B: writes grouped by innermost enclosing function scope
   const scopes = new Map<t.Node, ScopeWrites>();
-  const executionSites = new Map<
-    t.Node,
-    {
-      path: NodePath;
-      writes: ScopeWrites;
-      flag?: t.Identifier;
-      temporaries?: t.Identifier[];
-    }
-  >();
+  const executionSites = new Map<t.Node, HandlerExecutionSite>();
   const scopeOf = (p: NodePath): ScopeWrites => {
     const fn = p.getFunctionParent()?.node ?? ROOT;
     let s = scopes.get(fn);
@@ -904,98 +988,19 @@ export function analyzeHandler(
     },
   });
 
-  const rootHasCommit = scopes.has(ROOT);
-  ctx.handlerHasRootCommit.set(rootFn, rootHasCommit);
-
-  // A DOM event remains an invalidation boundary even when static analysis
-  // finds no write in the handler itself. Start from its nearest entity.
-  if (eventBoundary && !scopes.has(ROOT)) {
-    const eventScope = createScopeWrites();
-    eventScope.eventOrigin = buildEventOriginCommit(
-      ctx,
-      compName,
-      rowCtx,
-      eventOriginId,
-    );
-    scopes.set(ROOT, eventScope);
-  }
-
-  const guardedRootSites: Array<{
-    path: NodePath;
-    writes: ScopeWrites;
-    flag?: t.Identifier;
-    temporaries?: t.Identifier[];
-    commit: t.Statement;
-  }> = [];
-  if (executionAwareRoot) {
-    for (const site of executionSites.values()) {
-      const commit = buildScopeCommit(
-        ctx,
-        site.writes,
-        compName,
-        rowCtx,
-      );
-      if (commit !== null) {
-        guardedRootSites.push({ ...site, commit });
-      }
-    }
-  }
-
-  for (const site of guardedRootSites) {
-    site.flag = generatedIdentifier(ctx, 'didWrite');
-  }
-
-  // Instrument deepest expressions first so wrapping an outer expression
-  // retains flags already inserted into its children.
-  guardedRootSites
-    .sort((a, b) => pathDepth(b.path) - pathDepth(a.path))
-    .forEach((site) => {
-      site.temporaries = markExecutionSite(ctx, site.path, site.flag!);
-    });
-
-  // pass C: one commit per scope, appended inside the clone…
-  for (const [fn, s] of scopes) {
-    const commit =
-      executionAwareRoot && fn === ROOT
-        ? guardedRootSites.length === 0
-          ? null
-          : t.blockStatement(
-              guardedRootSites.map((site) =>
-                t.ifStatement(
-                  t.cloneNode(site.flag!),
-                  t.cloneNode(site.commit),
-                ),
-              ),
-            )
-        : buildScopeCommit(ctx, s, compName, rowCtx);
-    if (!commit) continue;
-    appendScopeCommit(
-      ctx,
-      fn as t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
-      commit,
-    );
-  }
-
-  if (guardedRootSites.length > 0) {
-    if (!t.isBlockStatement(clonedFn.body)) {
-      throw new Error(
-        'memo-dom: execution-aware callback commit did not produce a block body',
-      );
-    }
-    clonedFn.body.body.unshift(
-      t.variableDeclaration('let', guardedRootSites.flatMap((site) => [
-        t.variableDeclarator(
-          t.cloneNode(site.flag!),
-          t.booleanLiteral(false),
-        ),
-        ...(site.temporaries ?? []).map((temporary) =>
-          t.variableDeclarator(t.cloneNode(temporary)),
-        ),
-      ])),
-    );
-  }
-  // …then adopt the mutated body (params are untouched)
-  rootFn.body = clonedFn.body;
+  finalizeHandlerInstrumentation(
+    ctx,
+    rootFn,
+    clonedFn,
+    ROOT,
+    scopes,
+    executionSites,
+    compName,
+    rowCtx,
+    eventBoundary,
+    eventOriginId,
+    executionAwareRoot,
+  );
 }
 
 function pathDepth(path: NodePath): number {

@@ -28,18 +28,18 @@ It isolates the graph discovery and summary-linking cost.
 
 ## Interpretation
 
-The linker currently pays roughly three transforms' worth of additional work:
+The linker has three conceptual phases:
 
-1. discover local exports and imports;
-2. rerun whole-module analysis until summaries converge;
-3. run the final linked transform.
+1. parse once and discover local exports/imports;
+2. converge summaries with a reverse-dependency worklist;
+3. reuse the cached parsed AST for final linked emission.
 
-The cost scales approximately linearly in this shallow graph, but reparsing
-unchanged modules on every fixed-point pass is unnecessary. The next compiler
-optimization should cache parsed AST/module facts and use a dependency
-worklist: reanalyze only importers whose exported summary can change. This
-benchmark is the baseline for that work; correctness must remain covered by
-`tests/r15.test.ts`.
+The worklist reanalyzes only importers of an export summary that actually
+changed; unrelated modules are no longer reparsed on whole-graph fixed-point
+passes. Timing remains sensitive to Babel traversal, AST cloning, source-map
+emission in the detailed API, process temperature, and machine variance, so
+performance claims require alternating A/B measurements. Correctness remains
+covered by `tests/r15.test.ts` and the linked component suites.
 
 The compiler-wide identifier-hygiene checkpoint added one source-tree
 reservation walk per final transform. Compared with the previous linked medians

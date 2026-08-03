@@ -1711,7 +1711,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   untested.
 - Identity-keyed lists of duplicate primitives (`[1, 2, 2]`) throw on
   duplicate keys — document or add index fallback.
-- Compiler transforms do not emit source maps.
+- Detailed compiler transforms emit source maps back to each authored TS/TSX
+  module; the Vite adapter returns them from its transform hook.
 - Vite dev compilation emits module-owned analysis plus self-accepting
   component boundaries. Ordinary component instances are replaced in place;
   root and lightweight keyed-row edits recreate the application root and

@@ -187,9 +187,11 @@ changes the bounded-write-effect contract.
 
 ### P2: measured performance
 
-1. Replace full-graph fixed-point reparsing with cached module facts and a
-   dependency worklist. The initial linker benchmark records the graph-link
-   overhead over prelinked transforms; see `bench/linker/README.md`.
+1. Continue profiling the cached-AST dependency-worklist linker. Linked
+   compilation now parses each module once, reanalyzes only importers of a
+   changed export summary, and reuses the parsed AST for final emission. The
+   linker benchmark records graph-link overhead over prelinked transforms; see
+   `bench/linker/README.md`.
 2. A/B the production scalar/Set dirty reasons against a 32-bit mask
    representation. Structural dual mode now skips unrelated local derivations;
    the isolated Chromium prototype suggests masks may lower dispatch overhead,

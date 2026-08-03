@@ -573,6 +573,190 @@ function buildCallbackRowCreate(
   );
 }
 
+interface ComponentRowFactoryPlan {
+  ctx: Ctx;
+  site: MapSite;
+  rowComponent: string;
+  rowId: t.Identifier;
+  nextItem: t.Identifier;
+  nextIndex: t.Identifier | null;
+  rowRefresh: t.Identifier;
+  rowScope: EmitScope;
+  result: t.Identifier;
+  lightweight: boolean;
+  needsUpdateProps: boolean;
+  reuseLightweightEntry: boolean;
+  lightweightPushProps: t.Identifier | null;
+  ownerId: t.Expression;
+  eventBindings: ReadonlyMap<string, t.Identifier>;
+  prefixStatements: t.Statement[];
+  callProps: t.Expression[];
+  updateStatements: t.Statement[];
+}
+
+function buildComponentRowFactory({
+  ctx,
+  site,
+  rowComponent,
+  rowId,
+  nextItem,
+  nextIndex,
+  rowRefresh,
+  rowScope,
+  result,
+  lightweight,
+  needsUpdateProps,
+  reuseLightweightEntry,
+  lightweightPushProps,
+  ownerId,
+  eventBindings,
+  prefixStatements,
+  callProps,
+  updateStatements,
+}: ComponentRowFactoryPlan): t.ArrowFunctionExpression {
+  const entryProperties: t.ObjectProperty[] = lightweight
+    ? [
+        t.objectProperty(
+          t.identifier('nodes'),
+          t.memberExpression(t.cloneNode(result), t.identifier('nodes')),
+        ),
+        t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
+        t.objectProperty(
+          t.identifier('update'),
+          t.memberExpression(t.cloneNode(result), t.identifier('update')),
+        ),
+        t.objectProperty(
+          t.identifier('dispose'),
+          t.memberExpression(t.cloneNode(result), t.identifier('dispose')),
+        ),
+      ]
+    : [
+        t.objectProperty(
+          t.identifier('nodes'),
+          t.callExpression(md(ctx, 'rootNodes'), [t.cloneNode(result)]),
+        ),
+        t.objectProperty(
+          t.identifier('entities'),
+          t.arrayExpression([t.cloneNode(rowId)]),
+        ),
+      ];
+  if (needsUpdateProps && !reuseLightweightEntry) {
+    entryProperties.push(
+      t.objectProperty(
+        t.identifier('updateProps'),
+        t.arrowFunctionExpression(
+          [
+            t.cloneNode(nextItem),
+            ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
+          ],
+          t.blockStatement(updateStatements),
+        ),
+      ),
+    );
+  }
+
+  return t.arrowFunctionExpression(
+    [
+      t.cloneNode(site.itemPattern, true),
+      t.cloneNode(rowId),
+      ...(site.indexParam === null ? [] : [t.identifier(site.indexParam)]),
+    ],
+    t.blockStatement([
+      ...(rowScope.updaters.length > 0
+        ? [cacheDecl(rowScope), updateDecl(rowScope)]
+        : []),
+      ...rowScope.creation,
+      ...rowScope.mounts,
+      ...prefixStatements,
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.cloneNode(result),
+          lightweight
+            ? t.callExpression(t.identifier(rowComponent), [
+                ...callProps.map((prop) => t.cloneNode(prop)),
+                t.cloneNode(rowId),
+                ...(site.sourceLocal ? [t.cloneNode(ownerId)] : []),
+                ...[...eventBindings.values()].map((binding) =>
+                  t.cloneNode(binding),
+                ),
+              ])
+            : t.callExpression(t.identifier(rowComponent), [
+                t.cloneNode(rowId),
+                t.cloneNode(ownerId),
+                ...(callProps.length > 0
+                  ? [t.arrayExpression(callProps)]
+                  : []),
+              ]),
+        ),
+      ]),
+      ...(rowScope.updaters.length > 0
+        ? [
+            t.variableDeclaration('const', [
+              t.variableDeclarator(
+                t.cloneNode(rowRefresh),
+                t.arrowFunctionExpression(
+                  [],
+                  t.blockStatement([
+                    t.expressionStatement(
+                      lightweight
+                        ? t.callExpression(
+                            t.memberExpression(
+                              t.cloneNode(result),
+                              t.identifier('update'),
+                            ),
+                            [],
+                          )
+                        : t.callExpression(md(ctx, 'markDirty'), [
+                            t.cloneNode(rowId),
+                          ]),
+                    ),
+                    t.expressionStatement(
+                      t.callExpression(t.identifier(rowScope.updateVar), []),
+                    ),
+                  ]),
+                ),
+              ),
+            ]),
+          ]
+        : []),
+      ...(lightweightPushProps === null
+        ? []
+        : [
+            t.variableDeclaration('const', [
+              t.variableDeclarator(
+                t.cloneNode(lightweightPushProps),
+                t.memberExpression(
+                  t.cloneNode(result),
+                  t.identifier('updateProps'),
+                ),
+              ),
+            ]),
+            t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                t.memberExpression(
+                  t.cloneNode(result),
+                  t.identifier('updateProps'),
+                ),
+                t.arrowFunctionExpression(
+                  [
+                    t.cloneNode(nextItem),
+                    ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
+                  ],
+                  t.blockStatement(updateStatements),
+                ),
+              ),
+            ),
+          ]),
+      t.returnStatement(
+        reuseLightweightEntry
+          ? t.cloneNode(result)
+          : t.objectExpression(entryProperties),
+      ),
+    ]),
+  );
+}
+
 function buildComponentRowCreate(
   ctx: Ctx,
   site: MapSite,
@@ -960,154 +1144,26 @@ function buildComponentRowCreate(
     );
   }
 
-  const entryProperties: t.ObjectProperty[] = lightweight
-    ? [
-        t.objectProperty(
-          t.identifier('nodes'),
-          t.memberExpression(t.cloneNode(result), t.identifier('nodes')),
-        ),
-        t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
-        t.objectProperty(
-          t.identifier('update'),
-          t.memberExpression(t.cloneNode(result), t.identifier('update')),
-        ),
-        t.objectProperty(
-          t.identifier('dispose'),
-          t.memberExpression(t.cloneNode(result), t.identifier('dispose')),
-        ),
-      ]
-    : [
-        t.objectProperty(
-          t.identifier('nodes'),
-          t.callExpression(md(ctx, 'rootNodes'), [t.cloneNode(result)]),
-        ),
-        t.objectProperty(
-          t.identifier('entities'),
-          t.arrayExpression([t.cloneNode(rowId)]),
-        ),
-      ];
-  if (needsUpdateProps && !reuseLightweightEntry) {
-    entryProperties.push(
-      t.objectProperty(
-        t.identifier('updateProps'),
-        t.arrowFunctionExpression(
-          [
-            t.cloneNode(nextItem),
-            ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
-          ],
-          t.blockStatement(updateStatements),
-        ),
-      ),
-    );
-  }
-
-  return t.arrowFunctionExpression(
-    [
-      t.cloneNode(site.itemPattern, true),
-      t.cloneNode(rowId),
-      ...(site.indexParam === null
-        ? []
-        : [t.identifier(site.indexParam)]),
-    ],
-    t.blockStatement([
-      ...(rowScope.updaters.length > 0
-        ? [cacheDecl(rowScope), updateDecl(rowScope)]
-        : []),
-      ...rowScope.creation,
-      ...rowScope.mounts,
-      ...prefixStatements,
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.cloneNode(result),
-          lightweight
-            ? t.callExpression(t.identifier(rowComponent), [
-                ...callProps.map((prop) => t.cloneNode(prop)),
-                t.cloneNode(rowId),
-                ...(site.sourceLocal ? [t.cloneNode(ownerId)] : []),
-                ...[...eventBindings.values()].map((binding) =>
-                  t.cloneNode(binding),
-                ),
-              ])
-            : t.callExpression(t.identifier(rowComponent), [
-                t.cloneNode(rowId),
-                t.cloneNode(ownerId),
-                ...(callProps.length > 0
-                  ? [t.arrayExpression(callProps)]
-                  : []),
-              ]),
-        ),
-      ]),
-      ...(rowScope.updaters.length > 0
-        ? [
-            t.variableDeclaration('const', [
-              t.variableDeclarator(
-                t.cloneNode(rowRefresh),
-                t.arrowFunctionExpression(
-                  [],
-                  t.blockStatement([
-                    t.expressionStatement(
-                      lightweight
-                        ? t.callExpression(
-                            t.memberExpression(
-                              t.cloneNode(result),
-                              t.identifier('update'),
-                            ),
-                            [],
-                          )
-                        : t.callExpression(md(ctx, 'markDirty'), [
-                            t.cloneNode(rowId),
-                          ]),
-                    ),
-                    t.expressionStatement(
-                      t.callExpression(
-                        t.identifier(rowScope.updateVar),
-                        [],
-                      ),
-                    ),
-                  ]),
-                ),
-              ),
-            ]),
-          ]
-        : []),
-      ...(lightweightPushProps === null
-        ? []
-        : [
-            t.variableDeclaration('const', [
-              t.variableDeclarator(
-                t.cloneNode(lightweightPushProps),
-                t.memberExpression(
-                  t.cloneNode(result),
-                  t.identifier('updateProps'),
-                ),
-              ),
-            ]),
-            t.expressionStatement(
-              t.assignmentExpression(
-                '=',
-                t.memberExpression(
-                  t.cloneNode(result),
-                  t.identifier('updateProps'),
-                ),
-                t.arrowFunctionExpression(
-                  [
-                    t.cloneNode(nextItem),
-                    ...(nextIndex === null
-                      ? []
-                      : [t.cloneNode(nextIndex)]),
-                  ],
-                  t.blockStatement(updateStatements),
-                ),
-              ),
-            ),
-          ]),
-      t.returnStatement(
-        reuseLightweightEntry
-          ? t.cloneNode(result)
-          : t.objectExpression(entryProperties),
-      ),
-    ]),
-  );
+  return buildComponentRowFactory({
+    ctx,
+    site,
+    rowComponent,
+    rowId,
+    nextItem,
+    nextIndex,
+    rowRefresh,
+    rowScope,
+    result,
+    lightweight,
+    needsUpdateProps,
+    reuseLightweightEntry,
+    lightweightPushProps,
+    ownerId,
+    eventBindings,
+    prefixStatements,
+    callProps,
+    updateStatements,
+  });
 }
 
 function buildInlineRowCreate(

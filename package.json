@@ -41,6 +41,7 @@
     "@types/babel__traverse": "^7.28.0",
     "@types/bun": "latest",
     "@types/node": "^26.0.0",
+    "@jridgewell/trace-mapping": "^0.3.31",
     "esbuild": "^0.28.1",
     "happy-dom": "^20.11.0",
     "puppeteer-core": "^25.3.0",

@@ -7,13 +7,20 @@
  * untouched for the host bundler.
  */
 import { posix } from 'node:path';
-import { transformSync } from '@babel/core';
+import {
+  parseSync,
+  transformFromAstSync,
+} from '@babel/core';
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { runAnalysis } from './analysis';
-import { compile } from './compile';
+import {
+  compileAst,
+  compileAstDetailed,
+  type CompilerSourceMap,
+} from './compile';
 import {
   linkComponentGraph,
   type ComponentGraphNode,
@@ -81,6 +88,7 @@ export interface CompiledModuleMetadata {
 
 export interface CompiledModules {
   output: Record<string, string>;
+  maps: Record<string, CompilerSourceMap>;
   metadata: Record<string, CompiledModuleMetadata>;
 }
 
@@ -137,6 +145,7 @@ interface ModuleEntry {
   originalId: string;
   id: string;
   source: string;
+  ast: t.File;
 }
 
 function canonicalModuleId(raw: string): string {
@@ -149,6 +158,22 @@ function canonicalModuleId(raw: string): string {
     return `./${normalized}`;
   }
   return normalized;
+}
+
+function parseModule(id: string, source: string): t.File {
+  const ast = parseSync(source, {
+    filename: id,
+    sourceType: 'module',
+    parserOpts: {
+      plugins: ['typescript', 'jsx'],
+    },
+    configFile: false,
+    babelrc: false,
+  });
+  if (ast === null) {
+    throw new Error(`memo-dom: failed to parse module '${id}'`);
+  }
+  return ast;
 }
 
 function compilerOptions(options: CompileModulesOptions): MemoDomOptions {
@@ -466,7 +491,7 @@ function analyzeManifest(
     },
   });
 
-  transformSync(entry.source, {
+  transformFromAstSync(t.cloneNode(entry.ast, true), entry.source, {
     filename: entry.id,
     plugins: [
       [syntaxJsx as any, {}],
@@ -590,7 +615,7 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
       },
     },
   });
-  transformSync(entry.source, {
+  transformFromAstSync(t.cloneNode(entry.ast, true), entry.source, {
     filename: entry.id,
     plugins: [
       [syntaxJsx as any, {}],
@@ -609,7 +634,7 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
 function resolveModule(
   importer: string,
   specifier: string,
-  entries: Map<string, ModuleEntry>,
+  entries: ReadonlyMap<string, ModuleEntry>,
   options: CompileModulesOptions,
 ): ModuleEntry | undefined {
   const hostResolved = options.resolveImport?.(specifier, importer);
@@ -697,7 +722,7 @@ function linkImports(
   entry: ModuleEntry,
   manifest: ModuleManifest,
   manifests: Map<string, ModuleManifest>,
-  entries: Map<string, ModuleEntry>,
+  entries: ReadonlyMap<string, ModuleEntry>,
   options: CompileModulesOptions,
   renderUsage?: ReadonlyMap<string, RenderUsage>,
 ): Record<string, LinkedImport> {
@@ -795,13 +820,66 @@ function stableManifest(manifest: ModuleManifest): string {
   return JSON.stringify(manifest);
 }
 
+function reverseModuleDependencies(
+  entries: ReadonlyMap<string, ModuleEntry>,
+  manifests: ReadonlyMap<string, ModuleManifest>,
+  options: CompileModulesOptions,
+): Map<string, Set<string>> {
+  const importers = new Map<string, Set<string>>();
+  for (const id of entries.keys()) importers.set(id, new Set());
+  for (const entry of entries.values()) {
+    const manifest = manifests.get(entry.id)!;
+    for (const ref of manifest.imports) {
+      const target = resolveModule(entry.id, ref.source, entries, options);
+      if (target !== undefined) importers.get(target.id)!.add(entry.id);
+    }
+  }
+  return importers;
+}
+
+function linkManifestWorklist(
+  entries: ReadonlyMap<string, ModuleEntry>,
+  initial: Map<string, ModuleManifest>,
+  options: CompileModulesOptions,
+): Map<string, ModuleManifest> {
+  const manifests = new Map(initial);
+  const importers = reverseModuleDependencies(entries, manifests, options);
+  const pending = [...entries.keys()];
+  const queued = new Set(pending);
+  const maximumAnalyses = Math.max(16, entries.size * entries.size * 4);
+  let analyses = 0;
+
+  while (pending.length > 0) {
+    const id = pending.shift()!;
+    queued.delete(id);
+    const entry = entries.get(id)!;
+    const previous = manifests.get(id)!;
+    const linked = linkImports(entry, previous, manifests, entries, options);
+    const current = analyzeManifest(entry, linked, options);
+    analyses++;
+    if (analyses > maximumAnalyses) {
+      throw new Error('memo-dom: cross-module export summaries did not converge');
+    }
+    if (stableManifest(current) === stableManifest(previous)) continue;
+
+    manifests.set(id, current);
+    for (const importer of importers.get(id) ?? []) {
+      if (queued.has(importer)) continue;
+      queued.add(importer);
+      pending.push(importer);
+    }
+  }
+  return manifests;
+}
+
 /**
  * Compile a connected set of TS/TSX modules with canonical cross-file state
  * keys. Record keys are source module ids; returned keys are preserved.
  */
-export function compileModulesDetailed(
+function compileLinkedModules(
   modules: Readonly<Record<string, string>>,
-  options: CompileModulesOptions = {},
+  options: CompileModulesOptions,
+  sourceMaps: boolean,
 ): CompiledModules {
   const entries = new Map<string, ModuleEntry>();
   for (const [originalId, source] of Object.entries(modules)) {
@@ -809,30 +887,19 @@ export function compileModulesDetailed(
     if (entries.has(id)) {
       throw new Error(`memo-dom: duplicate module id after normalization: '${id}'`);
     }
-    entries.set(id, { originalId, id, source });
+    entries.set(id, {
+      originalId,
+      id,
+      source,
+      ast: parseModule(id, source),
+    });
   }
 
-  let manifests = new Map<string, ModuleManifest>();
+  const discovered = new Map<string, ModuleManifest>();
   for (const entry of entries.values()) {
-    manifests.set(entry.id, discoverManifest(entry));
+    discovered.set(entry.id, discoverManifest(entry));
   }
-
-  for (let pass = 0; pass <= entries.size; pass++) {
-    let changed = false;
-    const next = new Map<string, ModuleManifest>();
-    for (const entry of entries.values()) {
-      const previous = manifests.get(entry.id)!;
-      const linked = linkImports(entry, previous, manifests, entries, options);
-      const current = analyzeManifest(entry, linked, options);
-      next.set(entry.id, current);
-      if (stableManifest(current) !== stableManifest(previous)) changed = true;
-    }
-    manifests = next;
-    if (!changed) break;
-    if (pass === entries.size) {
-      throw new Error('memo-dom: cross-module export summaries did not converge');
-    }
-  }
+  const manifests = linkManifestWorklist(entries, discovered, options);
 
   const renderUsage = new Map<string, RenderUsage>();
   for (const manifest of manifests.values()) {
@@ -860,6 +927,7 @@ export function compileModulesDetailed(
     options.rootId ?? 'App',
   );
   const output: Record<string, string> = {};
+  const maps: Record<string, CompilerSourceMap> = {};
   const metadata: Record<string, CompiledModuleMetadata> = {};
   for (const entry of entries.values()) {
     const manifest = manifests.get(entry.id)!;
@@ -944,7 +1012,7 @@ export function compileModulesDetailed(
           );
       }
     }
-    output[entry.originalId] = compile(entry.source, {
+    const compileOptions = {
       ...compilerOptions(options),
       moduleId: entry.id,
       linkedImports,
@@ -952,14 +1020,28 @@ export function compileModulesDetailed(
       linkedComponentRows,
       linkedComponentPropSources,
       linkedComponentRenderProps,
-    });
+    };
+    if (sourceMaps) {
+      const compiled = compileAstDetailed(entry.source, compileOptions, entry.ast);
+      output[entry.originalId] = compiled.code;
+      maps[entry.originalId] = compiled.map;
+    } else {
+      output[entry.originalId] = compileAst(entry.source, compileOptions, entry.ast);
+    }
   }
-  return { output, metadata };
+  return { output, maps, metadata };
+}
+
+export function compileModulesDetailed(
+  modules: Readonly<Record<string, string>>,
+  options: CompileModulesOptions = {},
+): CompiledModules {
+  return compileLinkedModules(modules, options, true);
 }
 
 export function compileModules(
   modules: Readonly<Record<string, string>>,
   options: CompileModulesOptions = {},
 ): Record<string, string> {
-  return compileModulesDetailed(modules, options).output;
+  return compileLinkedModules(modules, options, false).output;
 }

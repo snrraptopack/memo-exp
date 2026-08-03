@@ -3,6 +3,15 @@
 Requires Node.js 24.11 or newer. The compiler uses Babel 8, whose supported
 Node.js range does not include Node 20 or earlier Node 24 releases.
 
+Public compilation APIs:
+
+- `compile(source, options)` returns JavaScript and keeps the allocation-light
+  legacy path.
+- `compileDetailed(source, options)` returns `{ code, map }` with authored TSX
+  in `sourcesContent`.
+- `compileModulesDetailed(modules, options)` returns linked `output`, one map
+  per module in `maps`, and component `metadata`.
+
 The top-level files are orchestration and whole-program passes:
 
 | Path | Responsibility |
