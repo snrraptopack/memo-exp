@@ -338,6 +338,8 @@ export interface Ctx {
   instanceReasonIds: Map<string, Map<string, number>>;
   /** Components whose local dependency graph has skippable work. */
   selectiveDerivationComponents: Set<string>;
+  /** Components whose rendered output reads state controlled by opaque code. */
+  volatileComponents: Set<string>;
   /** Compiler-owned reactive effects, in source order per component. */
   effects: Map<string, EffectSite[]>;
   /** Module-owned singleton effects, in source order. */
@@ -523,6 +525,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
     instanceDerivedBindings: new Map(),
     instanceReasonIds: new Map(),
     selectiveDerivationComponents: new Set(),
+    volatileComponents: new Set(),
     effects: new Map(),
     moduleEffects: [],
     computeds: new Map(),

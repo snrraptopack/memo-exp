@@ -128,6 +128,11 @@ export function computedChanged(prev: unknown, next: unknown): boolean {
   return !Object.is(prev, next);
 }
 
+/** Equal plain assignments inside effects do not create feedback work. */
+export function effectAssignmentChanged(prev: unknown, next: unknown): boolean {
+  return !Object.is(prev, next);
+}
+
 function isMutableReference(value: unknown): boolean {
   return (
     (typeof value === 'object' && value !== null) ||

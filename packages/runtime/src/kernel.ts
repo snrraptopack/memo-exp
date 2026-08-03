@@ -45,6 +45,8 @@ export interface Entity {
   id: EntityId;
   parent: EntityId | null;
   render: (reasons?: DirtyReasons) => void;
+  /** Opaque pull state is conservatively reevaluated once per browser frame. */
+  volatile?: boolean;
   /** Effects drain only after all ordinary render work is complete. */
   phase?: 'render' | 'effect';
   depth?: number;
@@ -53,6 +55,31 @@ export interface Entity {
 
 const registry = new Map<EntityId, Entity>();
 const dirtySet = new Set<EntityId>();
+const volatileSet = new Set<EntityId>();
+let volatileFrameScheduled = false;
+/** Reserved negative reason: reevaluate pull output without signaling a write. */
+const VOLATILE_PULL_REASON = -1;
+
+function scheduleVolatileFrame(): void {
+  if (
+    volatileFrameScheduled ||
+    volatileSet.size === 0 ||
+    typeof globalThis.requestAnimationFrame !== 'function'
+  ) {
+    return;
+  }
+  volatileFrameScheduled = true;
+  globalThis.requestAnimationFrame(() => {
+    volatileFrameScheduled = false;
+    const hidden =
+      typeof globalThis.document !== 'undefined' &&
+      globalThis.document.hidden;
+    if (!hidden) {
+      for (const id of volatileSet) markDirty(id, VOLATILE_PULL_REASON);
+    }
+    scheduleVolatileFrame();
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Scheduler — injectable, because the commit timing policy is not universal:
@@ -143,6 +170,8 @@ export function register(entity: Entity): void {
     entity.depth ??
     (parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id));
   registry.set(entity.id, entity);
+  if (entity.volatile === true) volatileSet.add(entity.id);
+  else volatileSet.delete(entity.id);
 
   if (parent) {
     (parent.children ??= new Set()).add(entity.id);
@@ -151,6 +180,7 @@ export function register(entity: Entity): void {
   idsCache = null;
   generation++;
   notifyRegistry(entity.id, 'add');
+  scheduleVolatileFrame();
 }
 
 /**
@@ -185,6 +215,7 @@ export function unregisterSubtree(id: EntityId): void {
   for (const cur of teardown) {
     registry.delete(cur);
     dirtySet.delete(cur);
+    volatileSet.delete(cur);
     clearDirtyReasons(cur);
     notifyRegistry(cur, 'remove');
   }
@@ -403,6 +434,7 @@ export function commit(): void {
 export function _internals(): {
   registry: ReadonlyMap<EntityId, Entity>;
   dirtySet: ReadonlySet<EntityId>;
+  volatileSet: ReadonlySet<EntityId>;
 } {
-  return { registry, dirtySet };
+  return { registry, dirtySet, volatileSet };
 }

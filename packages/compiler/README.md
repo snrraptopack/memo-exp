@@ -1,5 +1,8 @@
 # Compiler
 
+Requires Node.js 24.11 or newer. The compiler uses Babel 8, whose supported
+Node.js range does not include Node 20 or earlier Node 24 releases.
+
 The top-level files are orchestration and whole-program passes:
 
 | Path | Responsibility |

@@ -2,12 +2,15 @@
   "name": "memoized-dom",
   "type": "module",
   "private": false,
+  "engines": {
+    "node": ">=24.11.0"
+  },
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "build": "bun run --cwd packages/runtime build && bun run --cwd packages/compiler build && bun run --cwd packages/vite build && bun run --cwd packages/language-service build",
-    "test": "bun run build && vitest run && bun run --cwd packages/vite test && bun run --cwd packages/language-service test",
+    "build": "bun run --cwd packages/data build && bun run --cwd packages/runtime build && bun run --cwd packages/router build && bun run --cwd packages/compiler build && bun run --cwd packages/vite build && bun run --cwd packages/language-service build",
+    "test": "bun run build && vitest run && bun run --cwd packages/data test && bun run --cwd packages/router test && bun run --cwd packages/vite test && bun run --cwd packages/language-service test",
     "typecheck": "bun run build && tsc --noEmit",
     "dev": "bun run build && vitest",
     "example:dev": "bun run build && vite --config examples/vite.config.ts",
@@ -31,6 +34,7 @@
   },
   "devDependencies": {
     "@memoized-dom/compiler": "workspace:*",
+    "@memoized-dom/router": "workspace:*",
     "@memoized-dom/runtime": "workspace:*",
     "@memoized-dom/vite": "workspace:*",
     "@types/babel__core": "^7.20.5",
@@ -43,5 +47,9 @@
     "typescript": "^5",
     "vite": "^8.0.0",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "animejs": "^4.5.0",
+    "gsap": "^3.15.0"
   }
 }

@@ -43,6 +43,7 @@ export {
   setProp,
   setStyle,
   computedChanged,
+  effectAssignmentChanged,
 } from './setters';
 export type { SlotCache } from './setters';
 

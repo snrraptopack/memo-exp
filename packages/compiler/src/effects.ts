@@ -673,6 +673,39 @@ function localEffectCondition(
   );
 }
 
+/** A pull-only frame is not evidence that any effect dependency was written. */
+function volatilePullOnly(reasonVar: string): t.Expression {
+  const current = (): t.Identifier => t.identifier(reasonVar);
+  return t.logicalExpression(
+    '||',
+    t.binaryExpression('===', current(), t.unaryExpression('-', t.numericLiteral(1))),
+    t.logicalExpression(
+      '&&',
+      t.logicalExpression(
+        '&&',
+        t.binaryExpression('!==', current(), t.nullLiteral()),
+        t.binaryExpression(
+          '!==',
+          t.unaryExpression('typeof', current()),
+          t.stringLiteral('number'),
+        ),
+      ),
+      t.logicalExpression(
+        '&&',
+        t.binaryExpression(
+          '===',
+          t.memberExpression(current(), t.identifier('size')),
+          t.numericLiteral(1),
+        ),
+        t.callExpression(
+          t.memberExpression(current(), t.identifier('has')),
+          [t.unaryExpression('-', t.numericLiteral(1))],
+        ),
+      ),
+    ),
+  );
+}
+
 /**
  * Dirty local/prop-dependent effect entities after the owner's DOM update.
  */
@@ -753,7 +786,11 @@ export function buildLocalEffectInvalidations(
         reasonVar,
         localReads,
       );
-      return condition === null ? mark : t.ifStatement(condition, mark);
+      const routed = condition === null ? mark : t.ifStatement(condition, mark);
+      return t.ifStatement(
+        t.unaryExpression('!', volatilePullOnly(reasonVar)),
+        routed,
+      );
   };
 
   const statements = sites.flatMap((site) => {

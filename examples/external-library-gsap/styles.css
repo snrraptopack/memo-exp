@@ -1,0 +1,109 @@
+:root {
+  color: #ecf4ff;
+  background: #07111f;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.external-library-app {
+  box-sizing: border-box;
+  width: min(760px, 100%);
+  min-height: 100vh;
+  margin: auto;
+  padding: 48px 24px;
+}
+
+.eyebrow,
+dt {
+  color: #8db8f5;
+}
+
+h1 {
+  font-size: clamp(2rem, 7vw, 3.4rem);
+}
+
+p {
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 28px;
+}
+
+button {
+  margin: 16px 0;
+  padding: 16px 22px;
+  border: 0;
+  border-radius: 14px;
+  background: #63e4c1;
+  color: #04130f;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.actions button {
+  margin: 0;
+}
+
+.actions button:not(:first-child) {
+  background: #173351;
+  color: #dcecff;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  min-height: 118px;
+  padding: 22px;
+  overflow: hidden;
+  border: 1px solid #203958;
+  border-radius: 18px;
+  background: #091729;
+}
+
+.gsap-card {
+  display: grid;
+  place-items: center;
+  min-height: 74px;
+  padding: 10px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #173c5e, #126b67);
+  text-align: center;
+  font-weight: 750;
+}
+
+dl div {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding: 22px;
+  border: 1px solid #203958;
+  border-radius: 16px;
+  background: #0d1b2d;
+}
+
+dd {
+  margin: 0;
+  color: #63e4c1;
+  font-family: ui-monospace, monospace;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+@media (max-width: 620px) {
+  .stage {
+    grid-template-columns: 1fr;
+  }
+
+  dl div {
+    gap: 20px;
+  }
+}

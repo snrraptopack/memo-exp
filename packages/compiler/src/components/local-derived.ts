@@ -14,6 +14,22 @@ export function reasonCondition(
   reasons: number[],
 ): t.Expression {
   const current = (): t.Identifier => t.identifier(reasonVar);
+  const volatileMatch = t.logicalExpression(
+    '||',
+    t.binaryExpression('===', current(), t.unaryExpression('-', t.numericLiteral(1))),
+    t.logicalExpression(
+      '&&',
+      t.binaryExpression(
+        '!==',
+        t.unaryExpression('typeof', current()),
+        t.stringLiteral('number'),
+      ),
+      t.callExpression(
+        t.memberExpression(current(), t.identifier('has')),
+        [t.unaryExpression('-', t.numericLiteral(1))],
+      ),
+    ),
+  );
   const numberMatch = or(
     reasons.map((reason) =>
       t.binaryExpression('===', current(), t.numericLiteral(reason)),
@@ -30,14 +46,18 @@ export function reasonCondition(
   return t.logicalExpression(
     '||',
     t.binaryExpression('===', current(), t.nullLiteral()),
-    t.conditionalExpression(
-      t.binaryExpression(
-        '===',
-        t.unaryExpression('typeof', current()),
-        t.stringLiteral('number'),
+    t.logicalExpression(
+      '||',
+      volatileMatch,
+      t.conditionalExpression(
+        t.binaryExpression(
+          '===',
+          t.unaryExpression('typeof', current()),
+          t.stringLiteral('number'),
+        ),
+        numberMatch,
+        setMatch,
       ),
-      numberMatch,
-      setMatch,
     ),
   );
 }

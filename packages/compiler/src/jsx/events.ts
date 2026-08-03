@@ -21,7 +21,3 @@ export function hostJsxEventNames(body: t.Node): string[] {
   });
   return [...found].sort();
 }
-
-export function hasHostJsxEvent(body: t.Node): boolean {
-  return hostJsxEventNames(body).length !== 0;
-}

@@ -274,9 +274,10 @@ export function emitListRegion(
 
 function hasReason(reasonVar: string, reason: number): t.Expression {
   const current = (): t.Identifier => t.identifier(reasonVar);
+  const reasonNode = (): t.Expression => t.valueToNode(reason) as t.Expression;
   return t.logicalExpression(
     '||',
-    t.binaryExpression('===', current(), t.numericLiteral(reason)),
+    t.binaryExpression('===', current(), reasonNode()),
     t.logicalExpression(
       '&&',
       t.binaryExpression('!==', current(), t.nullLiteral()),
@@ -289,7 +290,7 @@ function hasReason(reasonVar: string, reason: number): t.Expression {
         ),
         t.callExpression(
           t.memberExpression(current(), t.identifier('has')),
-          [t.numericLiteral(reason)],
+          [reasonNode()],
         ),
       ),
     ),
@@ -491,6 +492,11 @@ function buildTargetedListUpdate(
     '===',
     t.identifier(reasonVar),
     t.nullLiteral(),
+  );
+  fullCondition = t.logicalExpression(
+    '||',
+    fullCondition,
+    hasReason(reasonVar, -1),
   );
   if (mutation !== undefined) {
     const structuralReason = ownerReasons.get(mutation.structuralReason);

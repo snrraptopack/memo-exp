@@ -1,0 +1,30 @@
+{
+  "name": "@memoized-dom/router",
+  "version": "0.0.1",
+  "description": "Compiler-ready URL state, matching, and navigation for memoized-dom",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js",
+      "default": "./dist/internal.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts ./src/internal.ts --bundle --outdir=./dist --platform=browser --format=esm --target=es2022 --minify --splitting --entry-names=[name] --chunk-names=chunks/[name]-[hash] && tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts && tsc -p tsconfig.test.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

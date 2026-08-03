@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   setScheduler,
   resetScheduler,
@@ -62,6 +62,45 @@ describe('M0 kernel', () => {
     expect(document.body.textContent).toBe('count: 3'); // final state correct
 
     resetScheduler();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetScheduler();
+  });
+
+  it('polls volatile pull state for its mounted lifetime only', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      },
+    );
+    setScheduler((fn) => fn());
+
+    const renders: unknown[] = [];
+    register({
+      id: 'Volatile',
+      parent: null,
+      volatile: true,
+      render: (reasons) => {
+        renders.push(reasons);
+      },
+    });
+
+    expect(_internals().volatileSet.has('Volatile')).toBe(true);
+    expect(frames).toHaveLength(1);
+    frames.shift()!(0);
+    expect(renders).toEqual([-1]);
+    expect(frames).toHaveLength(1);
+
+    unregister('Volatile');
+    frames.shift()!(16);
+    expect(renders).toEqual([-1]);
+    expect(frames).toHaveLength(0);
+    expect(_internals().volatileSet.size).toBe(0);
   });
 
   it('batches the browser default in a microtask before paint', async () => {

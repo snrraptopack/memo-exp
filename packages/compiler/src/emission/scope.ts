@@ -131,6 +131,7 @@ export function registerStmt(
   id: t.Expression,
   parent: t.Expression,
   render: t.Expression,
+  volatile = false,
 ): t.Statement {
   return t.expressionStatement(
     t.callExpression(md(ctx, 'register'), [
@@ -138,6 +139,9 @@ export function registerStmt(
         t.objectProperty(t.identifier('id'), id),
         t.objectProperty(t.identifier('parent'), parent),
         t.objectProperty(t.identifier('render'), render),
+        ...(volatile
+          ? [t.objectProperty(t.identifier('volatile'), t.booleanLiteral(true))]
+          : []),
       ]),
     ]),
   );

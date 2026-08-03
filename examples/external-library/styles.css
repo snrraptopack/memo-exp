@@ -1,0 +1,57 @@
+:root {
+  color: #e5eefc;
+  background: #08111f;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 3rem 1rem;
+}
+
+.external-library-app {
+  width: min(680px, 100%);
+  margin: auto;
+}
+
+.eyebrow,
+dt {
+  color: #8ea4c4;
+}
+
+button {
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 0.6rem;
+  color: #06101e;
+  background: #67e8f9;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+dl {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+dl div {
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem;
+  border: 1px solid #20324d;
+  border-radius: 0.75rem;
+  background: #0f1c2e;
+}
+
+dd {
+  margin: 0;
+  color: #67e8f9;
+  font: 700 1.15rem ui-monospace, monospace;
+}

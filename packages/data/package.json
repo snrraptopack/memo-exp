@@ -1,0 +1,25 @@
+{
+  "name": "@memoized-dom/data",
+  "version": "0.0.1",
+  "description": "Browser-first fetch resources and callable actions for memoized-dom",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.js --platform=browser --format=esm --target=es2022 --minify && tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts && tsc -p tsconfig.test.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

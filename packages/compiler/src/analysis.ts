@@ -57,6 +57,7 @@ import {
   scanInstanceDerivations,
   scanInstanceState,
 } from './analysis/instance';
+import { scanOpaqueVolatility } from './analysis/opaque-volatility';
 import {
   finalizeInstancePreludes,
   scanInstanceControlFlow,
@@ -1422,6 +1423,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   scanInstanceControlFlow(ctx);
   finalizeInstancePreludes(ctx);
   scanEffects(ctx, programPath);
+  scanOpaqueVolatility(ctx);
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   collectReads(ctx);
   foldRenderCallbackSubtreeReads(ctx);

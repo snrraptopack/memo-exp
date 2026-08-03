@@ -3,6 +3,9 @@
   "version": "0.0.2",
   "description": "TypeScript language-service diagnostics and code fixes for memoized-dom",
   "type": "module",
+  "engines": {
+    "node": ">=24.11.0"
+  },
   "files": [
     "dist",
     "README.md"
@@ -17,7 +20,7 @@
     }
   },
   "scripts": {
-    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.cjs --platform=node --format=cjs --target=node20 --packages=external --footer:js=\"module.exports = module.exports.default;\" && tsc -p tsconfig.build.json",
+    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.cjs --platform=node --format=cjs --target=node24 --packages=external --footer:js=\"module.exports = module.exports.default;\" && tsc -p tsconfig.build.json",
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {

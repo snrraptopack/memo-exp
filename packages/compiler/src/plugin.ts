@@ -9,13 +9,10 @@
  *   emit.ts                 - DOM nodes and structural regions
  *   components/ and jsx/    - prop/slot contracts and authored JSX semantics
  *
- * L1 limitations (clear compile errors by design):
- *   - components must be top-level `function` declarations (no arrows)
- *   - direct JSX returns plus R27 structural tail-return control flow
- *   - spread attributes preserve overrides through general DOM patching
- *   - children slots mount once at a direct host insertion point
- *   - conditional JSX uses anchored R8/R27 regions
- *   - no nested lists or component calls inside inline rows
+ * Source-shape constraints use clear compile errors by design. Top-level
+ * function declarations and synchronous uppercase const function expressions
+ * are components; JSX return control flow, repeated render slots, and nested
+ * row composition are normalized before the core analysis/emission passes.
  */
 
 import type { Visitor } from '@babel/traverse';
@@ -209,12 +206,12 @@ export default function memoDomPlugin(
         programPath.traverse({
           JSXElement(p) {
             throw p.buildCodeFrameError(
-              'memo-dom: JSX outside a component function — components must be top-level function declarations (L1)',
+              'memo-dom: JSX outside a component or compile-time render helper; components must use a supported top-level declaration',
             );
           },
           JSXFragment(p) {
             throw p.buildCodeFrameError(
-              'memo-dom: JSX outside a component function - components must be top-level function declarations',
+              'memo-dom: JSX outside a component or compile-time render helper; components must use a supported top-level declaration',
             );
           },
         });

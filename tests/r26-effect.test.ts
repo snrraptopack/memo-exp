@@ -96,6 +96,24 @@ describe('R26 — effect code generation and validation', () => {
     );
   });
 
+  it('commits plain assignments only when their resulting value changed', () => {
+    const code = compile(`
+      const box = { value: 1 };
+
+      export function App() {
+        effect(() => {
+          console.log(box.value);
+          box.value = 0;
+        });
+        return <output>{box.value}</output>;
+      }
+    `);
+
+    const registration = code.slice(code.indexOf('.registerEffect('));
+    expect(registration).toContain('.effectAssignmentChanged(');
+    expect(registration).toContain('.commitWrites(');
+  });
+
   it('guards each effect write site by whether it executed', () => {
     const code = compile(`
       let count = 0;
@@ -260,6 +278,18 @@ const SOURCES: Record<string, string> = {
       return <output>{count}</output>;
     }
   `,
+  'r26-idempotent-assignment': `
+    const box = { value: 1 };
+
+    export function App() {
+      effect(() => {
+        console.log(box.value);
+        box.value = 0;
+      });
+
+      return <output id="idempotent-value">{box.value}</output>;
+    }
+  `,
   'r26-consume': `
     let count = 0;
 
@@ -419,6 +449,14 @@ describe('R26 — compiled effect execution', () => {
     expect(() => App('App', null)).toThrowError(
       /commit cascade exceeded 100 passes/,
     );
+  });
+
+  it('stabilizes an effect that repeats an equal plain assignment', async () => {
+    const { App } = await importCompiled('r26-idempotent-assignment');
+    document.body.appendChild(App('App', null));
+
+    expect(document.querySelector('#idempotent-value')!.textContent).toBe('0');
+    expect(vi.mocked(console.log).mock.calls).toEqual([[1], [0]]);
   });
 
   it('treats reactive arguments passed to unknown effect APIs as read-only consumption', async () => {

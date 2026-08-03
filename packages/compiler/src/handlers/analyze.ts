@@ -31,7 +31,7 @@ import { applyLinkedPropEffect } from '../components/prop-effects';
 import {
   componentPropProjectionOrigins,
 } from '../components/prop-projections';
-import { generatedIdentifier } from '../identifiers';
+import { generatedIdentifier, md } from '../identifiers';
 import { transparentListExpression } from '../lists/source-shapes';
 
 const traverse: typeof _traverse =
@@ -280,7 +280,12 @@ export function analyzeHandler(
   const scopes = new Map<t.Node, ScopeWrites>();
   const executionSites = new Map<
     t.Node,
-    { path: NodePath; writes: ScopeWrites; flag?: t.Identifier }
+    {
+      path: NodePath;
+      writes: ScopeWrites;
+      flag?: t.Identifier;
+      temporaries?: t.Identifier[];
+    }
   >();
   const scopeOf = (p: NodePath): ScopeWrites => {
     const fn = p.getFunctionParent()?.node ?? ROOT;
@@ -919,6 +924,7 @@ export function analyzeHandler(
     path: NodePath;
     writes: ScopeWrites;
     flag?: t.Identifier;
+    temporaries?: t.Identifier[];
     commit: t.Statement;
   }> = [];
   if (executionAwareRoot) {
@@ -943,7 +949,9 @@ export function analyzeHandler(
   // retains flags already inserted into its children.
   guardedRootSites
     .sort((a, b) => pathDepth(b.path) - pathDepth(a.path))
-    .forEach((site) => markExecutionSite(site.path, site.flag!));
+    .forEach((site) => {
+      site.temporaries = markExecutionSite(ctx, site.path, site.flag!);
+    });
 
   // pass C: one commit per scope, appended inside the clone…
   for (const [fn, s] of scopes) {
@@ -975,12 +983,15 @@ export function analyzeHandler(
       );
     }
     clonedFn.body.body.unshift(
-      t.variableDeclaration('let', guardedRootSites.map((site) =>
+      t.variableDeclaration('let', guardedRootSites.flatMap((site) => [
         t.variableDeclarator(
           t.cloneNode(site.flag!),
           t.booleanLiteral(false),
         ),
-      )),
+        ...(site.temporaries ?? []).map((temporary) =>
+          t.variableDeclarator(t.cloneNode(temporary)),
+        ),
+      ])),
     );
   }
   // …then adopt the mutated body (params are untouched)
@@ -997,7 +1008,80 @@ function pathDepth(path: NodePath): number {
   return depth;
 }
 
-function markExecutionSite(path: NodePath, flag: t.Identifier): void {
+function markExecutionSite(
+  ctx: Ctx,
+  path: NodePath,
+  flag: t.Identifier,
+): t.Identifier[] {
+  if (
+    path.isAssignmentExpression({ operator: '=' }) &&
+    (t.isIdentifier(path.node.left) ||
+      t.isMemberExpression(path.node.left) &&
+      !t.isSuper(path.node.left.object) &&
+      !t.isPrivateName(path.node.left.property))
+  ) {
+    const original = path.node;
+    const previous = generatedIdentifier(ctx, 'previousValue');
+    const result = generatedIdentifier(ctx, 'assignedValue');
+    const temporaries = [previous, result];
+    let before: t.Expression;
+    let assignment: t.AssignmentExpression;
+    let after: t.Expression;
+
+    if (t.isIdentifier(original.left)) {
+      before = t.identifier(original.left.name);
+      assignment = t.cloneNode(original, true);
+      after = t.identifier(original.left.name);
+    } else if (t.isMemberExpression(original.left)) {
+      const receiver = generatedIdentifier(ctx, 'assignmentReceiver');
+      const property = generatedIdentifier(ctx, 'assignmentProperty');
+      temporaries.push(receiver, property);
+      const access = (): t.MemberExpression =>
+        t.memberExpression(
+          t.cloneNode(receiver),
+          t.cloneNode(property),
+          true,
+        );
+      const propertyExpression = original.left.computed
+        ? t.cloneNode(original.left.property as t.Expression, true)
+        : t.stringLiteral((original.left.property as t.Identifier).name);
+      before = t.sequenceExpression([
+        t.assignmentExpression(
+          '=',
+          t.cloneNode(receiver),
+          t.cloneNode(original.left.object as t.Expression, true),
+        ),
+        t.assignmentExpression('=', t.cloneNode(property), propertyExpression),
+        access(),
+      ]);
+      assignment = t.assignmentExpression('=', access(), t.cloneNode(original.right, true));
+      after = access();
+    } else {
+      return [];
+    }
+
+    path.replaceWith(
+      t.sequenceExpression([
+        t.assignmentExpression('=', t.cloneNode(previous), before),
+        t.assignmentExpression('=', t.cloneNode(result), assignment),
+        t.assignmentExpression(
+          '=',
+          t.cloneNode(flag),
+          t.logicalExpression(
+            '||',
+            t.cloneNode(flag),
+            t.callExpression(md(ctx, 'effectAssignmentChanged'), [
+              t.cloneNode(previous),
+              after,
+            ]),
+          ),
+        ),
+        t.cloneNode(result),
+      ]),
+    );
+    return temporaries;
+  }
+
   const mark = t.assignmentExpression(
     '=',
     t.cloneNode(flag),
@@ -1011,7 +1095,7 @@ function markExecutionSite(path: NodePath, flag: t.Identifier): void {
       );
     }
     path.node.init = t.sequenceExpression([mark, init]);
-    return;
+    return [];
   }
   if (!path.isExpression()) {
     throw new Error(
@@ -1024,4 +1108,5 @@ function markExecutionSite(path: NodePath, flag: t.Identifier): void {
       path.node,
     ]),
   );
+  return [];
 }

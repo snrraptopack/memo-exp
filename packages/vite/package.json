@@ -3,6 +3,9 @@
   "version": "0.0.6",
   "description": "Vite 8 adapter for connected memoized-dom module graphs",
   "type": "module",
+  "engines": {
+    "node": ">=24.11.0"
+  },
   "sideEffects": false,
   "files": [
     "dist"
@@ -15,7 +18,7 @@
     }
   },
   "scripts": {
-    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.js --platform=node --format=esm --target=node20 --packages=external --minify && tsc -p tsconfig.build.json",
+    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.js --platform=node --format=esm --target=node24 --packages=external --minify && tsc -p tsconfig.build.json",
     "test": "vitest run --config vitest.config.ts",
     "bench": "bun run ./bench/run.ts"
   },

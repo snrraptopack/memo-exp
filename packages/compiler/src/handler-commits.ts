@@ -115,12 +115,13 @@ export function buildScopeCommit(
   };
 
   if (scope.rootFallback) {
-    return combine(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'markDirtySubtree'), [
-          t.stringLiteral(ctx.rootId),
-        ]),
-      ),
+    // The root subtree contains every more precise destination above. Emitting
+    // both forms only schedules the same entity twice and obscures why the
+    // conservative fallback was selected.
+    return t.expressionStatement(
+      t.callExpression(md(ctx, 'markDirtySubtree'), [
+        t.stringLiteral(ctx.rootId),
+      ]),
     );
   }
   if (scope.writes.size === 0) return combine(null);

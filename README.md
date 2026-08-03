@@ -7,8 +7,11 @@ Start with:
 - `memoized-dom-paradigm.md` for the product and architecture constraints.
 - `emission-spec.md` for the normative compiler contract.
 - `ref-design.md` for compiler-native DOM refs, forwarding, and teardown.
+- `data-loading-api.md` for the proposed type-safe `$fetch` and `$action` API.
 - `architecture-review.md` for current implementation status and priorities.
 - `bench/README.md` for benchmark suites and their latest measurements.
+
+Prerequisites: Node.js 24.11 or newer and Bun.
 
 Install dependencies:
 
@@ -28,6 +31,7 @@ The repository is a Bun workspace with independent packages:
 
 | Package | Ownership |
 |---|---|
+| `@memoized-dom/data` | Standalone browser-first fetch resources, active sharing, actions, validation, and optimistic transactions |
 | `@memoized-dom/runtime` | Dependency-free browser registry, routing, regions, lifecycle, and DOM updates |
 | `@memoized-dom/compiler` | Babel-based analysis, linking, and TypeScript/JSX emission |
 | `@memoized-dom/vite` | Vite 8 graph collection, linked transforms, compiler feedback, and component HMR |

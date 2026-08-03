@@ -3,6 +3,9 @@
   "version": "0.0.5",
   "description": "Binding-aware TypeScript and JSX compiler for memoized-dom",
   "type": "module",
+  "engines": {
+    "node": ">=24.11.0"
+  },
   "sideEffects": false,
   "files": [
     "dist"
@@ -15,7 +18,7 @@
     }
   },
   "scripts": {
-    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.js --platform=node --format=esm --target=node20 --packages=external --minify && tsc -p tsconfig.build.json"
+    "build": "bun run ./scripts/clean.ts && esbuild ./src/index.ts --bundle --outfile=./dist/index.js --platform=node --format=esm --target=node24 --packages=external --minify && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@babel/core": "^8.0.1",

@@ -244,6 +244,7 @@ export function transformComponent(
             t.identifier(factoryId),
             t.identifier(factoryParent!),
             t.identifier(scope.updateVar),
+            ctx.volatileComponents.has(name),
           ),
         ]),
   );
