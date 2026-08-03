@@ -12,17 +12,22 @@ export function compileMemoized(root: string): string {
   const source = readFileSync(resolve(root, 'adapters/memoized.tsx'), 'utf8');
   const model = readFileSync(resolve(root, 'model.ts'), 'utf8');
   const compiled = compileModules(
-    { [sourceId]: source, [modelId]: model },
     {
-      rootId: 'FrameworkBench',
-      runtimePath: '@memoized-dom/runtime',
+      [sourceId]: source,
+      [modelId]: model,
+      './bench/frameworks/dist/entry.ts': `
+        import { mount } from '@memoized-dom/runtime';
+        import { MemoizedApp } from './memoized.generated';
+        mount('app', MemoizedApp);
+      `,
     },
+    { runtimePath: '@memoized-dom/runtime' },
   )[sourceId]!;
 
   const bootstrap = `
 import { setScheduler } from '@memoized-dom/runtime';
 const target = document.querySelector('#app');
-target.appendChild(MemoizedApp('FrameworkBench', null));
+target.appendChild(MemoizedApp('MemoizedApp', null));
 let currentMode = 'reactive';
 function configureScheduler(mode) {
   currentMode = mode;

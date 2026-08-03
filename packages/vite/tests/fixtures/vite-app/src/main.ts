@@ -1,8 +1,8 @@
-/**
- * Browser bootstrap outside the authored compiler graph.
- */
+/** Ordinary TypeScript browser bootstrap and compiler graph entry. */
+import { mount } from '@memoized-dom/runtime';
 import { App } from './App';
 
-type AppFactory = (id: string, parent: null) => HTMLElement;
-
-document.body.append((App as unknown as AppFactory)('App', null));
+const host = document.createElement('div');
+host.id = 'root';
+document.body.append(host);
+mount('root', App);

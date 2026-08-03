@@ -22,6 +22,7 @@ import {
   createCtx,
   freshWriteConst,
   type Ctx,
+  type InternalMemoDomOptions,
   type MemoDomOptions,
 } from './context';
 import {
@@ -182,7 +183,7 @@ export type { MemoDomOptions };
 
 export default function memoDomPlugin(
   _api: unknown,
-  opts: MemoDomOptions = {},
+  opts: InternalMemoDomOptions = {},
 ): { name: string; visitor: Visitor } {
   const ctx = createCtx(opts);
   const transformed = new WeakSet<t.Node>();
@@ -238,6 +239,30 @@ export default function memoDomPlugin(
             t.stringLiteral(ctx.runtimePath),
           ),
         );
+        if (ctx.rootComponent !== null) {
+          programPath.pushContainer(
+            'body',
+            t.expressionStatement(
+              t.callExpression(md(ctx, 'registerRootFactory'), [
+                t.identifier(ctx.rootComponent),
+                t.objectExpression([
+                  t.objectProperty(t.identifier('id'), t.stringLiteral(ctx.rootId)),
+                  t.objectProperty(
+                    t.identifier('create'),
+                    t.arrowFunctionExpression(
+                      [],
+                      t.callExpression(t.identifier(ctx.rootComponent), [
+                        t.stringLiteral(ctx.rootId),
+                        t.nullLiteral(),
+                        t.arrayExpression([]),
+                      ]),
+                    ),
+                  ),
+                ]),
+              ]),
+            ),
+          );
+        }
       },
     },
 

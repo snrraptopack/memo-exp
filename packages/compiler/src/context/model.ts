@@ -18,8 +18,6 @@ import type { GeneratedIdentifiers } from '../identifiers';
 export interface MemoDomOptions {
   /** Module specifier compiled output imports the runtime from. */
   runtimePath?: string;
-  /** Entity id of the root component. */
-  rootId?: string;
   /** Emit dev-only live-component ownership used by framework HMR adapters. */
   hot?: boolean;
   /**
@@ -43,6 +41,12 @@ export interface MemoDomOptions {
   >;
   /** Linker-resolved render-slot props for declarations in this module. */
   linkedComponentRenderProps?: Record<string, string[]>;
+}
+
+/** Compiler/linker-only root facts derived from an authored mount() call. */
+export interface InternalMemoDomOptions extends MemoDomOptions {
+  rootId?: string;
+  rootComponent?: string;
 }
 
 export interface LinkedStateImport {
@@ -240,6 +244,7 @@ export type HelperPath = NodePath<
 export interface Ctx {
   runtimePath: string;
   rootId: string;
+  rootComponent: string | null;
   hot: boolean;
   moduleId: string;
 
@@ -374,7 +379,7 @@ export interface Ctx {
   identifiers: GeneratedIdentifiers | null;
 }
 
-export function createCtx(opts: MemoDomOptions = {}): Ctx {
+export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   const moduleId = opts.moduleId ?? './component.tsx';
   const state = new Map<string, StateKind>();
   const stateKeys = new Map<string, string>();
@@ -452,6 +457,7 @@ export function createCtx(opts: MemoDomOptions = {}): Ctx {
   return {
     runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
     rootId: opts.rootId ?? 'App',
+    rootComponent: opts.rootComponent ?? null,
     hot: opts.hot ?? false,
     moduleId,
     state,

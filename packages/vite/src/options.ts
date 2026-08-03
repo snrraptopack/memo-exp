@@ -6,10 +6,9 @@ import type { CompileModulesOptions } from '@memoized-dom/compiler';
 export interface MemoizedDomViteOptions
   extends Omit<CompileModulesOptions, 'aliases' | 'resolveImport' | 'hot'> {
   /**
-   * Authored graph roots, relative to Vite's configured project root.
-   *
-   * Every local TypeScript/JavaScript dependency reachable from these entries
-   * is compiled as one linked graph.
+   * Ordinary TypeScript browser entries, relative to Vite's project root.
+   * Each connected graph must contain one top-level mount(target, Component)
+   * call; local dependencies are compiled as one linked application graph.
    */
   entries: string | readonly string[];
   /**

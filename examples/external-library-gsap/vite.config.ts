@@ -5,8 +5,7 @@ export default defineConfig({
   root: import.meta.dirname,
   plugins: [
     memoizedDom({
-      entries: 'GsapExternalApp.tsx',
-      rootId: 'GsapExternalApp',
+      entries: 'entry.ts',
     }),
   ],
   server: {

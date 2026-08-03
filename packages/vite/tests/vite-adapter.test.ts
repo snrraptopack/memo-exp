@@ -21,8 +21,7 @@ let temporaryFixture: string | undefined;
 function plugins() {
   return [
     memoizedDom({
-      entries: 'src/App.tsx',
-      rootId: 'App',
+      entries: 'src/main.ts',
     }),
   ];
 }
@@ -84,6 +83,8 @@ describe('Vite 8 adapter', () => {
       server: { middlewareMode: true },
     });
 
+    const main =
+      await server.environments.client.transformRequest('/src/main.ts');
     const app =
       await server.environments.client.transformRequest('/src/App.tsx');
     const label =
@@ -95,6 +96,8 @@ describe('Vite 8 adapter', () => {
     const panel =
       await server.environments.client.transformRequest('/src/Panel.tsx');
 
+    expect(main?.code).toMatch(/mount\(["']root["'], App\)/);
+    expect(main?.code).not.toContain('import.meta.hot.accept(');
     expect(app?.code).toContain('function App(_id');
     expect(app?.map).not.toBeNull();
     expect(app?.map?.sources.some((id) => id.endsWith('/src/App.tsx'))).toBe(true);

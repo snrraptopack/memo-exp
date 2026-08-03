@@ -17,7 +17,6 @@ type TypeScript = typeof ts;
 interface PluginConfig {
   preferConst?: boolean;
   compilerDiagnostics?: boolean;
-  rootId?: string;
 }
 
 export function createLanguageService(
@@ -62,7 +61,6 @@ export function createLanguageService(
         byFile = collectCompilerDiagnostics(
           typescript,
           program,
-          config.rootId,
         );
         compilerCache.set(program, byFile);
       }
@@ -109,7 +107,6 @@ export function createLanguageService(
 function collectCompilerDiagnostics(
   typescript: TypeScript,
   program: ts.Program,
-  rootId: string | undefined,
 ): Map<string, ts.DiagnosticWithLocation[]> {
   const sourceFiles = program.getSourceFiles().filter(
     (sourceFile) =>
@@ -124,7 +121,6 @@ function collectCompilerDiagnostics(
     ]),
   );
   const diagnostics = diagnoseModules(modules, {
-    ...(rootId === undefined ? {} : { rootId }),
     resolveImport(specifier, importer) {
       const resolution = typescript.resolveModuleName(
         specifier,

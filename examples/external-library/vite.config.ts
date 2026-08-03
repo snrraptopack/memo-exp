@@ -5,8 +5,7 @@ export default defineConfig({
   root: import.meta.dirname,
   plugins: [
     memoizedDom({
-      entries: 'ExternalLibraryApp.tsx',
-      rootId: 'ExternalLibraryApp',
+      entries: 'entry.ts',
     }),
   ],
   build: {

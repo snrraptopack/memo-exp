@@ -14,6 +14,11 @@ describe('linker identifier lifecycle', () => {
             return items.filter(item => item.visible).length;
           }
         `,
+        './entry.ts': `
+          import { mount } from '@memoized-dom/runtime';
+          import { App } from './App';
+          mount('root', App);
+        `,
         './App.tsx': `
           import { select, summarize } from './model';
 
@@ -47,9 +52,9 @@ describe('linker identifier lifecycle', () => {
           }
         `,
       },
-      { rootId: 'LifecycleRoot' },
     );
 
-    expect(output['./App.tsx']).toContain('LifecycleRoot');
+    expect(output['./App.tsx']).toContain('registerRootFactory');
+    expect(output['./App.tsx']).toContain('"App"');
   });
 });

@@ -12,11 +12,16 @@ export function compileMemoizedApplication(root: string): string {
   );
   const model = readFileSync(resolve(root, 'model.ts'), 'utf8');
   const compiled = compileModules(
-    { [sourceId]: source, [modelId]: model },
     {
-      rootId: 'ApplicationBench',
-      runtimePath: '@memoized-dom/runtime',
+      [sourceId]: source,
+      [modelId]: model,
+      './bench/frameworks/application/dist/entry.ts': `
+        import { mount } from '@memoized-dom/runtime';
+        import { ApplicationApp } from './memoized.generated';
+        mount('app', ApplicationApp);
+      `,
     },
+    { runtimePath: '@memoized-dom/runtime' },
   )[sourceId]!;
 
   const bootstrap = `
@@ -25,7 +30,7 @@ import { readApplicationDom } from '../dom-validation';
 import { dispatchApplicationScenario } from '../events';
 const target = document.querySelector('#app');
 setScheduler((run) => queueMicrotask(run));
-target.appendChild(ApplicationApp('ApplicationBench', null));
+target.appendChild(ApplicationApp('ApplicationApp', null));
 window.__applicationBench = {
   id: 'memoized-dom',
   label: 'memoized-dom TSX',

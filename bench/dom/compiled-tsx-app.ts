@@ -1,19 +1,20 @@
 import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./bench/dom/App.tsx#selected"];
+let _liTemplate;
 const _WRITES_2 = ["./bench/dom/App.tsx#data", "./bench/dom/App.tsx#selected", "./bench/dom/data.ts#nextId"];
 const _WRITES_3 = ["./bench/dom/App.tsx#data", "./bench/dom/data.ts#nextId"];
 const _WRITES_4 = ["./bench/dom/App.tsx#data"];
 const _WRITES_5 = ["./bench/dom/App.tsx#data", "./bench/dom/App.tsx#selected"];
 _MD.installAccessTable({
   readers: {
-    "./bench/dom/App.tsx#data": ["AppTsx", "AppTsx/*"],
-    "./bench/dom/App.tsx#selected": ["AppTsx/data/Row[*]", "AppTsx/data/Row[*]/*"],
-    "./bench/dom/data.ts#adjectives": ["AppTsx", "AppTsx/*"],
-    "./bench/dom/data.ts#colours": ["AppTsx", "AppTsx/*"],
-    "./bench/dom/data.ts#nextId": ["AppTsx", "AppTsx/*"],
-    "./bench/dom/data.ts#nouns": ["AppTsx", "AppTsx/*"]
+    "./bench/dom/App.tsx#data": ["BenchApp", "BenchApp/*"],
+    "./bench/dom/App.tsx#selected": ["BenchApp/data/Row[*]", "BenchApp/data/Row[*]/*"],
+    "./bench/dom/data.ts#adjectives": ["BenchApp", "BenchApp/*"],
+    "./bench/dom/data.ts#colours": ["BenchApp", "BenchApp/*"],
+    "./bench/dom/data.ts#nextId": ["BenchApp", "BenchApp/*"],
+    "./bench/dom/data.ts#nouns": ["BenchApp", "BenchApp/*"]
   }
-}, "AppTsx");
+}, "BenchApp", "./bench/dom/App.tsx");
 /**
  * @file App.tsx
  * The TSX source code for the Component Row Benchmark App.
@@ -21,7 +22,7 @@ _MD.installAccessTable({
 import { buildData } from './data';
 let data = [];
 let selected = null;
-function Row(props, _id) {
+function Row(props, _id, _onClickBinding) {
   let _slot, _slot2, _slot3, _value;
   const _update = () => {
     if (_slot !== (_value = props.item.id)) {
@@ -37,31 +38,36 @@ function Row(props, _id) {
       _MD.setClassValue(_li, _value);
     }
   };
-  const _text = document.createTextNode("");
+  const _li = (_liTemplate === void 0 ? _liTemplate = (() => {
+    const _text = document.createTextNode("");
+    const _text2 = document.createTextNode(": ");
+    const _text3 = document.createTextNode("");
+    const _li = document.createElement("li");
+    _li.appendChild(_text);
+    _li.appendChild(_text2);
+    _li.appendChild(_text3);
+    return _li;
+  })() : _liTemplate).cloneNode(true);
+  const _text = _li.firstChild;
+  const _text3 = _li.firstChild.nextSibling.nextSibling;
   if (_slot !== (_value = props.item.id)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _text2 = document.createTextNode(": ");
-  const _text3 = document.createTextNode("");
   if (_slot2 !== (_value = props.item.label)) {
     _slot2 = _value;
     _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _li = document.createElement("li");
   if (_slot3 !== (_value = _MD.classValue(selected === props.item.id ? 'danger' : ''))) {
     _slot3 = _value;
     _MD.setClassValue(_li, _value);
   }
-  _li.onclick = () => {
+  _MD.setDelegatedEvent(_onClickBinding, _li, () => {
     selected = props.item.id;
     _MD.commitWrites(_WRITES_);
-  };
-  _li.appendChild(_text);
-  _li.appendChild(_text2);
-  _li.appendChild(_text3);
+  });
   return {
-    nodes: _MD.rootNodes(_li),
+    nodes: _li,
     entities: [],
     update: _update,
     updateProps: _nextProp => {
@@ -145,31 +151,33 @@ export function BenchApp(_id2, _parent) {
   _div.appendChild(_button6);
   _div.appendChild(_button7);
   const _ul = document.createElement("ul");
+  const _onClickBinding2 = _MD.createDelegatedEventBinding(_ul, "onClick");
   const _region = _MD.createListRegion(_ul, _id2 + "/data", (item, _rowId) => {
     const _entry = Row({
       item
-    }, _rowId);
-    return {
-      nodes: _entry.nodes,
-      entities: [],
-      update: _entry.update,
-      updateProps: _nextItem => {
-        item = _nextItem;
-        _entry.updateProps({
-          item
-        });
-      }
+    }, _rowId, _onClickBinding2);
+    const _pushRowProps = _entry.updateProps;
+    _entry.updateProps = _nextItem => {
+      item = _nextItem;
+      _pushRowProps({
+        item
+      });
     };
-  }, item => item.id);
+    return _entry;
+  }, item => item.id, false);
   _region.reconcile(data);
   const _div2 = document.createElement("div");
   _div2.appendChild(_div);
   _div2.appendChild(_ul);
   return _div2;
 }
+_MD.registerRootFactory(BenchApp, {
+  id: "BenchApp",
+  create: () => BenchApp("BenchApp", null, [])
+});
 
 export function createCompiledTsxApp() {
-  const root = BenchApp('AppTsx', null) as HTMLElement;
+  const root = BenchApp('BenchApp', null) as HTMLElement;
   const toolbar = root.querySelector('.toolbar') as HTMLElement;
   const ul = root.querySelector('ul') as HTMLElement;
 

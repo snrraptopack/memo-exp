@@ -171,8 +171,9 @@ changes the bounded-write-effect contract.
 ### P0: correctness boundaries
 
 1. Decide exception-path commit semantics with dedicated performance evidence.
-2. Validate root-id installation across independently mounted linked graphs.
-3. Decide whether a future host mount ABI should provide a distinct
+2. Design isolated registry/access scopes before allowing independently
+   mounted roots; one connected graph currently permits one mount boundary.
+3. Decide whether the mount/hydration context should provide a distinct
    post-attachment effect phase; R26 currently promises post-render only.
 
 ### P1: source-language coverage
@@ -206,8 +207,9 @@ changes the bounded-write-effect contract.
 ### Packaging and host integration
 
 The runtime, compiler, and Vite 8 adapter are separate workspace packages.
-The Vite adapter collects static value imports through the host resolver,
-compiles one connected graph per Vite environment, and caches linked output.
+The Vite adapter starts from an ordinary TypeScript bootstrap, resolves its
+`mount(target, Component)` boundary through the host resolver, compiles one
+connected graph per Vite environment, and caches linked output.
 Managed-file changes compile first, diff linked outputs, and use generated
 self-accepting boundaries to replace ordinary component factories at their
 existing DOM positions. Module-owned access fragments and singleton entities

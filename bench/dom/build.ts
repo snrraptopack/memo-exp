@@ -18,14 +18,19 @@ const compiledAppTsx = compileModules(
   {
     './bench/dom/App.tsx': appTsxSource,
     './bench/dom/data.ts': dataSource,
+    './bench/dom/entry.ts': `
+      import { mount } from '@memoized-dom/runtime';
+      import { BenchApp } from './App';
+      mount('root', BenchApp);
+    `,
   },
-  { rootId: 'AppTsx', runtimePath: '@memoized-dom/runtime' },
+  { runtimePath: '@memoized-dom/runtime' },
 )['./bench/dom/App.tsx']!;
 
 const compiledTsxAppContent = `${compiledAppTsx}
 
 export function createCompiledTsxApp() {
-  const root = BenchApp('AppTsx', null) as HTMLElement;
+  const root = BenchApp('BenchApp', null) as HTMLElement;
   const toolbar = root.querySelector('.toolbar') as HTMLElement;
   const ul = root.querySelector('ul') as HTMLElement;
 
@@ -56,14 +61,19 @@ const compiledAppInline = compileModules(
   {
     './bench/dom/AppInline.tsx': appInlineSource,
     './bench/dom/data.ts': dataSource,
+    './bench/dom/entry-inline.ts': `
+      import { mount } from '@memoized-dom/runtime';
+      import { BenchAppInline } from './AppInline';
+      mount('root', BenchAppInline);
+    `,
   },
-  { rootId: 'AppInline', runtimePath: '@memoized-dom/runtime' },
+  { runtimePath: '@memoized-dom/runtime' },
 )['./bench/dom/AppInline.tsx']!;
 
 const compiledInlineAppContent = `${compiledAppInline}
 
 export function createCompiledInlineApp() {
-  const root = BenchAppInline('AppInline', null) as HTMLElement;
+  const root = BenchAppInline('BenchAppInline', null) as HTMLElement;
   const toolbar = root.querySelector('.toolbar') as HTMLElement;
   const ul = root.querySelector('ul') as HTMLElement;
 

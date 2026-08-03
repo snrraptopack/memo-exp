@@ -9,17 +9,17 @@ import memoizedDom from '@memoized-dom/vite';
 export default defineConfig({
   plugins: [
     memoizedDom({
-      entries: 'src/App.tsx',
-      rootId: 'App',
+      entries: 'src/entry.ts',
     }),
   ],
 });
 ```
 
-Entries are authored graph roots, not necessarily the browser bootstrap module.
-The adapter follows local static value imports with Vite's resolver, compiles
-the graph through `compileModulesDetailed()`, returns authored-module source
-maps from Vite transforms, and caches output per Vite
+The entry is an ordinary TypeScript browser bootstrap containing one top-level
+`mount(target, Component)` call. The adapter resolves that imported component,
+derives its compiler entity identity, follows local static value imports with
+Vite's resolver, compiles the graph through `compileModulesDetailed()`, returns
+authored-module source maps from Vite transforms, and caches output per Vite
 environment.
 
 During an edit, the adapter recompiles before notifying the browser. Compiler

@@ -102,7 +102,6 @@ export async function compileGraph(
   }
 
   const compileOptions = {
-    ...(options.rootId === undefined ? {} : { rootId: options.rootId }),
     ...(options.runtimePath === undefined
       ? {}
       : { runtimePath: options.runtimePath }),
@@ -133,19 +132,26 @@ export async function compileGraph(
           }),
     });
   }
+  if (compiled.applicationRoot === undefined) {
+    context.error({
+      message:
+        'memoized-dom: Vite entry graph must contain one top-level mount(target, Component) call',
+    });
+  }
+  const rootId = compiled.applicationRoot.rootId;
   const output = new Map<string, string>();
   const maps = new Map<string, CompilerSourceMap>();
   for (const [file, id] of sourceIds) {
     const code = compiled.output[id]!;
     output.set(
       file,
-      hot
+      hot && id !== compiled.applicationRoot.mountModuleId
         ? appendHotBoundary(
             code,
             compiled.metadata[id]!,
             id,
             options.runtimePath ?? '@memoized-dom/runtime',
-            options.rootId ?? 'App',
+            rootId,
           )
         : code,
     );

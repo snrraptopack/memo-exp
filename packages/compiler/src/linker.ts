@@ -42,6 +42,7 @@ import {
   isConstObjectState,
   isStoreObject,
   nodeHasJsx,
+  type InternalMemoDomOptions,
   type LinkedImport,
   type LinkedDynamicComponentCandidate,
   type LinkedComponentRowUse,
@@ -86,10 +87,19 @@ export interface CompiledModuleMetadata {
   componentExports: CompiledComponentExport[];
 }
 
+export interface CompiledApplicationRoot {
+  key: string;
+  moduleId: string;
+  mountModuleId: string;
+  local: string;
+  rootId: string;
+}
+
 export interface CompiledModules {
   output: Record<string, string>;
   maps: Record<string, CompilerSourceMap>;
   metadata: Record<string, CompiledModuleMetadata>;
+  applicationRoot?: CompiledApplicationRoot;
 }
 
 interface StateExport {
@@ -126,6 +136,7 @@ interface ImportRef {
 interface ModuleManifest {
   exports: Record<string, LinkedExport>;
   imports: ImportRef[];
+  mounts: string[];
   components: ComponentGraphNode[];
   componentUsages: ComponentPropUsage[];
 }
@@ -176,11 +187,14 @@ function parseModule(id: string, source: string): t.File {
   return ast;
 }
 
-function compilerOptions(options: CompileModulesOptions): MemoDomOptions {
+function compilerOptions(
+  options: CompileModulesOptions,
+  rootId = 'App',
+): InternalMemoDomOptions {
   return {
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
-    ...(options.rootId === undefined ? {} : { rootId: options.rootId }),
     ...(options.hot === undefined ? {} : { hot: options.hot }),
+    rootId,
   };
 }
 
@@ -361,6 +375,51 @@ function importRefs(program: t.Program): ImportRef[] {
   return refs;
 }
 
+function applicationMounts(
+  program: t.Program,
+  runtimePath: string,
+): string[] {
+  const mountBindings = new Set<string>();
+  for (const statement of program.body) {
+    if (
+      !t.isImportDeclaration(statement) ||
+      statement.source.value !== runtimePath
+    ) {
+      continue;
+    }
+    for (const specifier of statement.specifiers) {
+      if (
+        t.isImportSpecifier(specifier) &&
+        (t.isIdentifier(specifier.imported, { name: 'mount' }) ||
+          t.isStringLiteral(specifier.imported, { value: 'mount' }))
+      ) {
+        mountBindings.add(specifier.local.name);
+      }
+    }
+  }
+
+  const mounted: string[] = [];
+  for (const statement of program.body) {
+    if (!t.isExpressionStatement(statement)) continue;
+    const expression = statement.expression;
+    if (
+      !t.isCallExpression(expression) ||
+      !t.isIdentifier(expression.callee) ||
+      !mountBindings.has(expression.callee.name)
+    ) {
+      continue;
+    }
+    const component = expression.arguments[1];
+    if (component === undefined || !t.isIdentifier(component)) {
+      throw new Error(
+        'memo-dom: mount() must receive a statically imported component identifier',
+      );
+    }
+    mounted.push(component.name);
+  }
+  return mounted;
+}
+
 function exportedLocals(program: t.Program): Map<string, string> {
   const out = new Map<string, string>();
   for (const stmt of program.body) {
@@ -406,6 +465,7 @@ function analyzeManifest(
   entry: ModuleEntry,
   linkedImports: Record<string, LinkedImport>,
   options: CompileModulesOptions,
+  rootId: string,
 ): ModuleManifest {
   let manifest: ModuleManifest | undefined;
   const analysisPlugin = (): { visitor: { Program(path: NodePath<t.Program>): void } } => ({
@@ -414,7 +474,7 @@ function analyzeManifest(
         normalizeComponentDeclarations(programPath);
         const authoredImports = importRefs(programPath.node);
         const ctx = createCtx({
-          ...compilerOptions(options),
+          ...compilerOptions(options, rootId),
           moduleId: entry.id,
           linkedImports,
         });
@@ -484,6 +544,10 @@ function analyzeManifest(
         manifest = {
           exports,
           imports: authoredImports,
+          mounts: applicationMounts(
+            programPath.node,
+            options.runtimePath ?? '@memoized-dom/runtime',
+          ),
           components: analyzedComponentDeclarations(entry.id, ctx),
           componentUsages: analyzedComponentUsages(ctx),
         };
@@ -511,7 +575,10 @@ function analyzeManifest(
  * Bootstrap export identities without analyzing component bodies. This lets
  * the first real analysis already understand imported list/store bindings.
  */
-function discoverManifest(entry: ModuleEntry): ModuleManifest {
+function discoverManifest(
+  entry: ModuleEntry,
+  options: CompileModulesOptions,
+): ModuleManifest {
   let manifest: ModuleManifest | undefined;
   const discoveryPlugin = (): { visitor: { Program(path: NodePath<t.Program>): void } } => ({
     visitor: {
@@ -609,6 +676,10 @@ function discoverManifest(entry: ModuleEntry): ModuleManifest {
         manifest = {
           exports,
           imports: importRefs(programPath.node),
+          mounts: applicationMounts(
+            programPath.node,
+            options.runtimePath ?? '@memoized-dom/runtime',
+          ),
           components: [],
           componentUsages: [],
         };
@@ -678,6 +749,49 @@ function resolveModule(
     if (found !== undefined) return found;
   }
   return undefined;
+}
+
+function resolveApplicationRoot(
+  entries: ReadonlyMap<string, ModuleEntry>,
+  manifests: ReadonlyMap<string, ModuleManifest>,
+  options: CompileModulesOptions,
+): CompiledApplicationRoot | undefined {
+  const roots: CompiledApplicationRoot[] = [];
+  for (const entry of entries.values()) {
+    const manifest = manifests.get(entry.id)!;
+    for (const mounted of manifest.mounts) {
+      const ref = manifest.imports.find((candidate) => candidate.local === mounted);
+      if (ref === undefined || ref.imported === '*') {
+        throw new Error(
+          `memo-dom: mount root '${mounted}' must be a statically imported component`,
+        );
+      }
+      const target = resolveModule(entry.id, ref.source, entries, options);
+      const component =
+        target === undefined
+          ? undefined
+          : manifests.get(target.id)?.exports[ref.imported];
+      if (target === undefined || component?.type !== 'component') {
+        throw new Error(
+          `memo-dom: mount root '${mounted}' does not resolve to a compiled component`,
+        );
+      }
+      const local = component.key.slice(component.key.lastIndexOf('#') + 1);
+      roots.push({
+        key: component.key,
+        moduleId: target.id,
+        mountModuleId: entry.id,
+        local,
+        rootId: local,
+      });
+    }
+  }
+  if (roots.length > 1) {
+    throw new Error(
+      'memo-dom: one connected application graph may contain only one top-level mount() call',
+    );
+  }
+  return roots[0];
 }
 
 function relativeModuleSpecifier(importer: string, target: string): string {
@@ -841,6 +955,7 @@ function linkManifestWorklist(
   entries: ReadonlyMap<string, ModuleEntry>,
   initial: Map<string, ModuleManifest>,
   options: CompileModulesOptions,
+  rootId: string,
 ): Map<string, ModuleManifest> {
   const manifests = new Map(initial);
   const importers = reverseModuleDependencies(entries, manifests, options);
@@ -855,7 +970,7 @@ function linkManifestWorklist(
     const entry = entries.get(id)!;
     const previous = manifests.get(id)!;
     const linked = linkImports(entry, previous, manifests, entries, options);
-    const current = analyzeManifest(entry, linked, options);
+    const current = analyzeManifest(entry, linked, options, rootId);
     analyses++;
     if (analyses > maximumAnalyses) {
       throw new Error('memo-dom: cross-module export summaries did not converge');
@@ -897,9 +1012,17 @@ function compileLinkedModules(
 
   const discovered = new Map<string, ModuleManifest>();
   for (const entry of entries.values()) {
-    discovered.set(entry.id, discoverManifest(entry));
+    discovered.set(entry.id, discoverManifest(entry, options));
   }
-  const manifests = linkManifestWorklist(entries, discovered, options);
+  const discoveredRoot = resolveApplicationRoot(entries, discovered, options);
+  const rootId = discoveredRoot?.rootId ?? 'App';
+  const manifests = linkManifestWorklist(
+    entries,
+    discovered,
+    options,
+    rootId,
+  );
+  const applicationRoot = resolveApplicationRoot(entries, manifests, options);
 
   const renderUsage = new Map<string, RenderUsage>();
   for (const manifest of manifests.values()) {
@@ -924,7 +1047,7 @@ function compileLinkedModules(
 
   const componentGraph = linkComponentGraph(
     [...manifests.values()].flatMap((manifest) => manifest.components),
-    options.rootId ?? 'App',
+    applicationRoot,
   );
   const output: Record<string, string> = {};
   const maps: Record<string, CompilerSourceMap> = {};
@@ -1012,14 +1135,17 @@ function compileLinkedModules(
           );
       }
     }
-    const compileOptions = {
-      ...compilerOptions(options),
+    const compileOptions: InternalMemoDomOptions = {
+      ...compilerOptions(options, rootId),
       moduleId: entry.id,
       linkedImports,
       linkedComponentPaths,
       linkedComponentRows,
       linkedComponentPropSources,
       linkedComponentRenderProps,
+      ...(applicationRoot?.moduleId === entry.id
+        ? { rootComponent: applicationRoot.local }
+        : {}),
     };
     if (sourceMaps) {
       const compiled = compileAstDetailed(entry.source, compileOptions, entry.ast);
@@ -1029,7 +1155,12 @@ function compileLinkedModules(
       output[entry.originalId] = compileAst(entry.source, compileOptions, entry.ast);
     }
   }
-  return { output, maps, metadata };
+  return {
+    output,
+    maps,
+    metadata,
+    ...(applicationRoot === undefined ? {} : { applicationRoot }),
+  };
 }
 
 export function compileModulesDetailed(

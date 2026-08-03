@@ -73,15 +73,25 @@ The owning module emits a singleton computed entity. Imported sources and
 exported results retain canonical cross-module routing, and readers update
 only when the selected value changes.
 
-For Vite applications, configure the graph entry once and let Vite provide
-the real alias and extension resolution:
+For Vite applications, use an ordinary TypeScript browser entry as the graph
+entry. The adapter resolves the component passed to `mount()` and derives the
+compiler root identity without duplicate configuration:
 
 ```ts
+// src/entry.ts
+import { mount } from '@memoized-dom/runtime';
+import { App } from './App';
+
+mount('root', App);
+```
+
+```ts
+// vite.config.ts
 import { defineConfig } from 'vite';
 import memoizedDom from '@memoized-dom/vite';
 
 export default defineConfig({
-  plugins: [memoizedDom({ entries: 'src/App.tsx', rootId: 'App' })],
+  plugins: [memoizedDom({ entries: 'src/entry.ts' })],
 });
 ```
 

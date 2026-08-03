@@ -10,7 +10,8 @@ Public compilation APIs:
 - `compileDetailed(source, options)` returns `{ code, map }` with authored TSX
   in `sourcesContent`.
 - `compileModulesDetailed(modules, options)` returns linked `output`, one map
-  per module in `maps`, and component `metadata`.
+  per module in `maps`, component `metadata`, and root metadata derived from an
+  ordinary entry module's top-level `mount(target, Component)` call.
 
 The top-level files are orchestration and whole-program passes:
 

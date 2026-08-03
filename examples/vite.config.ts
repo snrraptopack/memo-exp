@@ -8,8 +8,7 @@ export default defineConfig({
   root: import.meta.dirname,
   plugins: [
     memoizedDom({
-      entries: 'refs/RefsApp.tsx',
-      rootId: 'RefsApp',
+      entries: 'entry.ts',
     }),
   ],
 });

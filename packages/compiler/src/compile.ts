@@ -21,6 +21,7 @@ import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
 import * as t from '@babel/types';
 import memoDomPlugin, { type MemoDomOptions } from './plugin';
+import type { InternalMemoDomOptions } from './context';
 
 export type { MemoDomOptions };
 
@@ -41,7 +42,7 @@ export interface CompiledSource {
 
 function transform(
   source: string,
-  opts: MemoDomOptions,
+  opts: InternalMemoDomOptions,
   sourceMaps: boolean,
   ast?: t.File,
 ): ReturnType<typeof transformSync> {
@@ -71,7 +72,7 @@ export function compile(source: string, opts: MemoDomOptions = {}): string {
 /** Internal linked-graph path that reuses an AST without producing a map. */
 export function compileAst(
   source: string,
-  opts: MemoDomOptions,
+  opts: InternalMemoDomOptions,
   ast?: t.File,
 ): string {
   const out = transform(source, opts, false, ast);
@@ -92,7 +93,7 @@ export function compileDetailed(
 /** Internal linked-graph path that reuses a cached parsed module AST. */
 export function compileAstDetailed(
   source: string,
-  opts: MemoDomOptions,
+  opts: InternalMemoDomOptions,
   ast?: t.File,
 ): CompiledSource {
   const out = transform(source, opts, true, ast);

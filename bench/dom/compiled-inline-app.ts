@@ -4,16 +4,17 @@ const _WRITES_2 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/data.ts#nextId
 const _WRITES_3 = ["./bench/dom/AppInline.tsx#data"];
 const _WRITES_4 = ["./bench/dom/AppInline.tsx#data", "./bench/dom/AppInline.tsx#selected"];
 const _WRITES_5 = ["./bench/dom/AppInline.tsx#selected"];
+let _liTemplate;
 _MD.installAccessTable({
   readers: {
-    "./bench/dom/AppInline.tsx#data": ["AppInline", "AppInline/*"],
-    "./bench/dom/AppInline.tsx#selected": ["AppInline/data/Row[*]", "AppInline/data/Row[*]/*"],
-    "./bench/dom/data.ts#adjectives": ["AppInline", "AppInline/*"],
-    "./bench/dom/data.ts#colours": ["AppInline", "AppInline/*"],
-    "./bench/dom/data.ts#nextId": ["AppInline", "AppInline/*"],
-    "./bench/dom/data.ts#nouns": ["AppInline", "AppInline/*"]
+    "./bench/dom/AppInline.tsx#data": ["BenchAppInline", "BenchAppInline/*"],
+    "./bench/dom/AppInline.tsx#selected": ["BenchAppInline/data/Row[*]", "BenchAppInline/data/Row[*]/*"],
+    "./bench/dom/data.ts#adjectives": ["BenchAppInline", "BenchAppInline/*"],
+    "./bench/dom/data.ts#colours": ["BenchAppInline", "BenchAppInline/*"],
+    "./bench/dom/data.ts#nextId": ["BenchAppInline", "BenchAppInline/*"],
+    "./bench/dom/data.ts#nouns": ["BenchAppInline", "BenchAppInline/*"]
   }
-}, "AppInline");
+}, "BenchAppInline", "./bench/dom/AppInline.tsx");
 /**
  * @file AppInline.tsx
  * The TSX source code for the Inline Row Benchmark App.
@@ -97,6 +98,7 @@ export function BenchAppInline(_id, _parent) {
   _div.appendChild(_button6);
   _div.appendChild(_button7);
   const _ul = document.createElement("ul");
+  const _onClickBinding = _MD.createDelegatedEventBinding(_ul, "onClick");
   const _region = _MD.createListRegion(_ul, _id + "/data", (item, _rowId) => {
     let _slot, _slot2, _slot3, _value2;
     const _update2 = () => {
@@ -118,32 +120,40 @@ export function BenchAppInline(_id, _parent) {
       parent: _id,
       render: _update2
     });
-    const _text8 = document.createTextNode("");
+    const _li = (_liTemplate === void 0 ? _liTemplate = (() => {
+      const _text8 = document.createTextNode("");
+      const _text9 = document.createTextNode(": ");
+      const _text0 = document.createTextNode("");
+      const _li = document.createElement("li");
+      _li.appendChild(_text8);
+      _li.appendChild(_text9);
+      _li.appendChild(_text0);
+      return _li;
+    })() : _liTemplate).cloneNode(true);
+    const _text8 = _li.firstChild;
+    const _text0 = _li.firstChild.nextSibling.nextSibling;
     if (_slot !== (_value2 = item.id)) {
       _slot = _value2;
       _text8.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    const _text9 = document.createTextNode(": ");
-    const _text0 = document.createTextNode("");
     if (_slot2 !== (_value2 = item.label)) {
       _slot2 = _value2;
       _text0.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    const _li = document.createElement("li");
     if (_slot3 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
       _slot3 = _value2;
       _MD.setClassValue(_li, _value2);
     }
-    _li.onclick = () => {
+    _MD.setDelegatedEvent(_onClickBinding, _li, () => {
       selected = item.id;
       _MD.commitWrites(_WRITES_5);
-    };
-    _li.appendChild(_text8);
-    _li.appendChild(_text9);
-    _li.appendChild(_text0);
+    });
     return {
       nodes: [_li],
       entities: [_rowId],
+      updateProps: _nextItem => {
+        item = _nextItem;
+      },
       update: _update2
     };
   }, item => item.id);
@@ -153,9 +163,13 @@ export function BenchAppInline(_id, _parent) {
   _div2.appendChild(_ul);
   return _div2;
 }
+_MD.registerRootFactory(BenchAppInline, {
+  id: "BenchAppInline",
+  create: () => BenchAppInline("BenchAppInline", null, [])
+});
 
 export function createCompiledInlineApp() {
-  const root = BenchAppInline('AppInline', null) as HTMLElement;
+  const root = BenchAppInline('BenchAppInline', null) as HTMLElement;
   const toolbar = root.querySelector('.toolbar') as HTMLElement;
   const ul = root.querySelector('ul') as HTMLElement;
 

@@ -32,6 +32,11 @@ export interface ComponentGraphNode {
   edges: ComponentGraphEdge[];
 }
 
+export interface ApplicationRootPlacement {
+  key: string;
+  rootId: string;
+}
+
 export interface LinkedComponentGraph {
   paths: Map<string, string[]>;
   rows: Map<string, LinkedComponentRowUse[]>;
@@ -59,7 +64,7 @@ function assertAcyclic(nodes: Map<string, ComponentGraphNode>): void {
 /** Compute every declaration's caller-derived paths and keyed-row metadata. */
 export function linkComponentGraph(
   declarations: readonly ComponentGraphNode[],
-  rootId: string,
+  applicationRoot?: ApplicationRootPlacement,
 ): LinkedComponentGraph {
   const nodes = new Map(declarations.map((decl) => [decl.key, decl]));
   assertAcyclic(nodes);
@@ -99,8 +104,21 @@ export function linkComponentGraph(
   }
 
   const pathSets = new Map<string, Set<string>>();
-  const roots = [...nodes.keys()].filter((key) => !incoming.has(key));
-  for (const key of roots) pathSets.set(key, new Set([rootId]));
+  const inferredRoots = [...nodes.keys()].filter((key) => !incoming.has(key));
+  const roots = applicationRoot === undefined
+    ? inferredRoots
+    : [applicationRoot.key];
+  if (applicationRoot !== undefined && !nodes.has(applicationRoot.key)) {
+    throw new Error(
+      `memo-dom: mounted component '${applicationRoot.key}' is missing from the linked component graph`,
+    );
+  }
+  for (const key of roots) {
+    pathSets.set(
+      key,
+      new Set([applicationRoot?.rootId ?? 'App']),
+    );
+  }
 
   const pending = [...roots];
   while (pending.length > 0) {

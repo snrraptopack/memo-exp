@@ -1267,6 +1267,23 @@ source-order overrides, mount it once, and omit it from DOM patching. No
 callbacks because `{ ref: local }` has already read `local` under ordinary
 JavaScript semantics.
 
+### Application mounting boundary
+
+An application graph is rooted by one ordinary TypeScript bootstrap call:
+
+```ts
+import { mount } from '@memoized-dom/runtime';
+import { App } from './App';
+mount('root', App);
+```
+
+The linker resolves the imported component binding, derives the root entity id
+from its defining declaration, and emits private `registerRootFactory`
+metadata in that component's module. The bootstrap remains ordinary TypeScript;
+it never calls the generated `(id, parent, props)` factory ABI. Vite entries
+point at the bootstrap module, and no separately configured `rootId` exists.
+One connected application graph currently owns one top-level mount boundary.
+
 ### Planned R45-R48 - lifecycle and composition hardening
 
 These rules describe the next implementation batch, not current behavior.
@@ -1707,8 +1724,8 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 
 ### 11.5 Multi-module, scale & engineering
 
-- `rootId` collisions across modules; table-install ordering vs. mount order —
-  untested.
+- One connected application graph currently supports one top-level mount;
+  independently mounted roots will require isolated registry/access scopes.
 - Identity-keyed lists of duplicate primitives (`[1, 2, 2]`) throw on
   duplicate keys — document or add index fallback.
 - Detailed compiler transforms emit source maps back to each authored TS/TSX

@@ -3,8 +3,8 @@
  *
  * The compiler emits `import * as MD from '<runtimePath>'` and calls every
  * primitive through the `MD.` namespace, so this barrel must re-export the
- * full runtime surface. User code never imports from here directly; only
- * compiler-emitted modules do.
+ * full runtime surface. Ordinary browser entries additionally import mount;
+ * reactive and emission primitives remain compiler-owned.
  */
 
 export {
@@ -70,6 +70,13 @@ export type { EventRecord } from './events';
 export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
 export { rootNodes } from './jsx-dom';
+export { mount, registerRootFactory } from './mount';
+export type {
+  MountableComponent,
+  MountTarget,
+  MountedApplication,
+  RootMountContext,
+} from './mount';
 export {
   createDelegatedEventBinding,
   setDelegatedEvent,
