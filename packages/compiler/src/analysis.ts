@@ -190,7 +190,9 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
     while (
       current.isTSAsExpression() ||
       current.isTSTypeAssertion() ||
-      current.isTSNonNullExpression()
+      current.isTSNonNullExpression() ||
+      current.isTSSatisfiesExpression() ||
+      current.isTSInstantiationExpression()
     ) {
       const expression = current.get('expression');
       if (Array.isArray(expression)) return null;

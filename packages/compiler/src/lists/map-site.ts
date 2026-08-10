@@ -16,7 +16,10 @@ import {
   type Ctx,
   type MapCallExpression,
 } from '../context';
-import { isStaticPrimitiveList } from './source-shapes';
+import {
+  isStaticPrimitiveList,
+  transparentListExpression,
+} from './source-shapes';
 
 type Fail = (message: string) => never;
 type ParentRow = Pick<
@@ -158,21 +161,24 @@ function analyzeSource(
   parentRow: ParentRow | undefined,
   fail: Fail,
 ): SourcePlan {
-  if (t.isIdentifier(source)) {
-    return analyzeIdentifierSource(ctx, source, ownerName, fail);
+  const current = t.isExpression(source)
+    ? transparentListExpression(source)
+    : source;
+  if (t.isIdentifier(current)) {
+    return analyzeIdentifierSource(ctx, current, ownerName, fail);
   }
-  if (t.isMemberExpression(source)) {
+  if (t.isMemberExpression(current)) {
     return analyzeMemberSource(
       ctx,
-      source,
+      current,
       ownerName,
       parentRow,
       fail,
     );
   }
-  if (t.isExpression(source) && isStaticPrimitiveList(source)) {
+  if (t.isExpression(current) && isStaticPrimitiveList(current)) {
     return {
-      expression: source,
+      expression: current,
       key: '$static-list',
       local: true,
       suffixBase: '$static-list',
