@@ -1,10 +1,13 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   buildRoutePath,
+  compareRoutePatterns,
   createRouteQuery,
   joinRoutePaths,
   matchRoutePattern,
   rankRoutePattern,
+  validateRoutePattern,
+  validateRoutePatterns,
 } from '../src';
 import type { RouteParams } from '../src';
 
@@ -17,6 +20,7 @@ describe('route paths', () => {
 
     expect(joinRoutePaths('/docs', '/')).toBe('/docs');
     expect(joinRoutePaths('/', '/docs')).toBe('/docs');
+    expect(() => joinRoutePaths('/docs/*', '/edit')).toThrow('must be terminal');
   });
 
   it('infers parameter names from literal paths', () => {
@@ -26,6 +30,10 @@ describe('route paths', () => {
     expectTypeOf<Params>().toEqualTypeOf<{
       organizationId: string | number | boolean | bigint;
       projectId: string | number | boolean | bigint;
+    }>();
+
+    expectTypeOf<RouteParams<'/docs/*'>>().toEqualTypeOf<{
+      '*': string | number | boolean | bigint;
     }>();
   });
 
@@ -47,6 +55,15 @@ describe('route paths', () => {
       '/users/:userId',
       {} as RouteParams<'/users/:userId'>,
     )).toThrow("Missing route parameter 'userId'");
+  });
+
+  it('builds terminal wildcard destinations without losing path boundaries', () => {
+    expect(buildRoutePath('/docs/*', { '*': 'compiler/setup guide' }))
+      .toBe('/docs/compiler/setup%20guide');
+    expect(() => buildRoutePath('/docs/*', { '*': '../private' }))
+      .toThrow('contains an invalid path segment');
+    expect(() => buildRoutePath('/users/:userId', { userId: '..' }))
+      .toThrow('must not be a dot segment');
   });
 });
 
@@ -96,5 +113,50 @@ describe('route matching', () => {
       .toBeGreaterThan(rankRoutePattern('/docs/:section'));
     expect(rankRoutePattern('/docs/:section'))
       .toBeGreaterThan(rankRoutePattern('/docs/*'));
+  });
+
+  it('compares specificity at the first differing segment', () => {
+    expect(compareRoutePatterns('/foo/:id', '/:type/bar')).toBeLessThan(0);
+    expect([
+      '/docs/*',
+      '/:type/compiler',
+      '/docs/:section',
+      '/docs/compiler',
+    ].sort(compareRoutePatterns)).toEqual([
+      '/docs/compiler',
+      '/docs/:section',
+      '/docs/*',
+      '/:type/compiler',
+    ]);
+  });
+
+  it('rejects malformed patterns before matching or ranking', () => {
+    expect(() => validateRoutePattern('/files/*/edit')).toThrow('must be terminal');
+    expect(() => validateRoutePattern('/users/:bad-name')).toThrow(
+      'Invalid route parameter',
+    );
+    expect(() => validateRoutePattern('/users/:id/posts/:id')).toThrow(
+      "Duplicate route parameter 'id'",
+    );
+    expect(() => validateRoutePattern('/docs//compiler')).toThrow(
+      'empty path segment',
+    );
+    expect(() => matchRoutePattern('/files/*/edit', '/files/a/edit'))
+      .toThrow('must be terminal');
+  });
+
+  it('validates IDs and ambiguous equal-specificity route tables', () => {
+    expect(() => validateRoutePatterns([
+      { id: 'UserById', pattern: '/users/:id' },
+      { id: 'UserByName', pattern: '/users/:name' },
+    ])).toThrow('Ambiguous routes');
+    expect(() => validateRoutePatterns([
+      { id: 'Docs', pattern: '/docs' },
+      { id: 'Docs', pattern: '/documentation' },
+    ])).toThrow("Duplicate route ID 'Docs'");
+    expect(() => validateRoutePatterns([
+      { id: 'StaticFirst', pattern: '/foo/:id' },
+      { id: 'ParameterFirst', pattern: '/:type/bar' },
+    ])).not.toThrow();
   });
 });

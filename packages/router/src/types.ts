@@ -11,6 +11,8 @@ export type RouteQueryInput = Readonly<Record<string, RouteQueryValue>>;
 type SegmentParam<Segment extends string> =
   Segment extends `:${infer Name}`
     ? Name extends '' ? never : Name
+    : Segment extends '*'
+      ? '*'
     : never;
 
 type PathParamNames<Path extends string> =
@@ -32,13 +34,45 @@ export interface RouteMatch {
   readonly params: Readonly<Record<string, string>>;
 }
 
+export interface RoutePatternDefinition {
+  readonly id: string;
+  readonly pattern: string;
+}
+
 export type NavigationType = 'load' | 'push' | 'replace' | 'pop';
+
+/** The read-only portion of URLSearchParams exposed by route state. */
+export interface RouteQuery extends Iterable<[string, string]> {
+  readonly size: number;
+  get(name: string): string | null;
+  getAll(name: string): string[];
+  has(name: string, value?: string): boolean;
+  entries(): URLSearchParamsIterator<[string, string]>;
+  keys(): URLSearchParamsIterator<string>;
+  values(): URLSearchParamsIterator<string>;
+  forEach(
+    callback: (value: string, key: string, query: RouteQuery) => void,
+    thisArg?: unknown,
+  ): void;
+  toString(): string;
+}
+
+export interface RouteLocationSnapshot {
+  readonly href: string;
+  readonly pathname: string;
+  readonly search: string;
+  readonly query: RouteQuery;
+  readonly hash: string;
+  readonly state: unknown;
+  readonly navigationType: NavigationType;
+  readonly signal: AbortSignal;
+}
 
 export interface RouteSnapshot {
   readonly href: string;
   readonly pathname: string;
   readonly search: string;
-  readonly query: URLSearchParams;
+  readonly query: RouteQuery;
   readonly hash: string;
   readonly state: unknown;
   readonly navigationType: NavigationType;
@@ -52,7 +86,7 @@ export interface RouteState {
   readonly href: string;
   readonly pathname: string;
   readonly search: string;
-  readonly query: URLSearchParams;
+  readonly query: RouteQuery;
   readonly hash: string;
   readonly state: unknown;
   readonly navigationType: NavigationType;
@@ -78,6 +112,10 @@ export type NavigateArguments<Path extends string> =
       : [options: NavigateOptions<Path> & { readonly params: RouteParams<Path> }];
 
 export type RouteListener = (snapshot: RouteSnapshot) => void;
+
+export type RouteResolver = (
+  location: RouteLocationSnapshot,
+) => readonly RouteMatch[];
 
 export interface PatternMatch {
   readonly pattern: string;

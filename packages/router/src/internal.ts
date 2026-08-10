@@ -8,9 +8,9 @@ export type {
   RouteEnvironment,
   RouteRuntime,
 } from './runtime';
+export type { RouteLocationSnapshot, RouteResolver } from './types';
 
 /** Compiler-runtime boundary. Application code should not need these calls. */
 export const connectRouter = defaultRouteRuntime.connect;
+export const installRouteResolver = defaultRouteRuntime.installResolver;
 export const subscribeRoute = defaultRouteRuntime.subscribe;
-export const setRouteMatches = defaultRouteRuntime.setMatches;
-export const setRouteLocation = defaultRouteRuntime.setLocation;

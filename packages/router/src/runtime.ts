@@ -1,10 +1,13 @@
-import { buildRoutePath } from './path';
+import { buildRoutePath, validateRoutePattern } from './path';
 import type {
   NavigateOptions,
   NavigateArguments,
   NavigationType,
   RouteListener,
+  RouteLocationSnapshot,
   RouteMatch,
+  RouteQuery,
+  RouteResolver,
   RouteSnapshot,
   RouteState,
 } from './types';
@@ -16,11 +19,11 @@ export interface RouteEnvironment {
   readonly history?: History;
   readonly navigation?: NavigationController;
   addEventListener?(
-    type: 'popstate' | 'hashchange',
+    type: 'popstate' | 'hashchange' | 'click',
     listener: EventListener,
   ): void;
   removeEventListener?(
-    type: 'popstate' | 'hashchange',
+    type: 'popstate' | 'hashchange' | 'click',
     listener: EventListener,
   ): void;
 }
@@ -36,6 +39,7 @@ export interface NavigationEventLike extends Event {
   readonly downloadRequest?: string | null;
   readonly hashChange: boolean;
   readonly navigationType: 'push' | 'replace' | 'reload' | 'traverse';
+  scroll?(): void;
   intercept(options?: {
     readonly handler?: () => Promise<void> | void;
     readonly scroll?: 'after-transition' | 'manual';
@@ -61,6 +65,7 @@ export interface RouteRuntime {
   snapshot(): RouteSnapshot;
   subscribe(listener: RouteListener): () => void;
   connect(): () => void;
+  installResolver(resolver: RouteResolver): () => void;
   navigate<Path extends string>(
     pattern: Path,
     ...arguments_: NavigateArguments<Path>
@@ -90,6 +95,56 @@ function frozenMatch(match: RouteMatch): RouteMatch {
   });
 }
 
+function readonlyQuery(search: string): RouteQuery {
+  const params = new URLSearchParams(search);
+  let query: RouteQuery;
+  query = Object.freeze({
+    get size() { return params.size; },
+    get: params.get.bind(params),
+    getAll: params.getAll.bind(params),
+    has: params.has.bind(params),
+    entries: params.entries.bind(params),
+    keys: params.keys.bind(params),
+    values: params.values.bind(params),
+    forEach(
+      callback: (value: string, key: string, query: RouteQuery) => void,
+      thisArg?: unknown,
+    ) {
+      params.forEach((value, key) => callback.call(thisArg, value, key, query));
+    },
+    toString: params.toString.bind(params),
+    [Symbol.iterator]: params[Symbol.iterator].bind(params),
+  });
+  return query;
+}
+
+function prepareMatches(nextMatches: readonly RouteMatch[]): {
+  readonly matches: readonly RouteMatch[];
+  readonly params: Readonly<Record<string, string>>;
+} {
+  const identifiers = new Set<string>();
+  const merged: Record<string, string> = {};
+  const frozen = nextMatches.map(match => {
+    if (match.id.trim() === '') throw new TypeError('Route match IDs must not be empty');
+    if (identifiers.has(match.id)) {
+      throw new TypeError(`Duplicate active route ID '${match.id}'`);
+    }
+    identifiers.add(match.id);
+    validateRoutePattern(match.pattern);
+    for (const [key, value] of Object.entries(match.params)) {
+      if (Object.hasOwn(merged, key)) {
+        throw new TypeError(`Duplicate active route parameter '${key}'`);
+      }
+      merged[key] = value;
+    }
+    return frozenMatch(match);
+  });
+  return {
+    matches: Object.freeze(frozen),
+    params: Object.freeze(merged),
+  };
+}
+
 function sameMatches(
   first: readonly RouteMatch[],
   second: readonly RouteMatch[],
@@ -117,10 +172,17 @@ export function createRouteRuntime(
   let navigationType: NavigationType = 'load';
   let matches: readonly RouteMatch[] = Object.freeze([]);
   let params: Readonly<Record<string, string>> = Object.freeze({});
-  let query = new URLSearchParams(url.search);
+  let query = readonlyQuery(url.search);
   let controller = new AbortController();
   let connectionCount = 0;
   let disposed = false;
+  let resolver: RouteResolver | null = null;
+  let resolving = false;
+  let revision = 0;
+  let locationRevision = 0;
+  let navigationEventRevision = 0;
+  let emitting = false;
+  let emissionPending = false;
   const listeners = new Set<RouteListener>();
 
   const route: RouteState = Object.freeze({
@@ -142,7 +204,7 @@ export function createRouteRuntime(
       href: route.href,
       pathname: route.pathname,
       search: route.search,
-      query: new URLSearchParams(route.search),
+      query: route.query,
       hash: route.hash,
       state: route.state,
       navigationType: route.navigationType,
@@ -153,9 +215,61 @@ export function createRouteRuntime(
     });
   }
 
+  function locationSnapshot(): RouteLocationSnapshot {
+    return Object.freeze({
+      href: route.href,
+      pathname: route.pathname,
+      search: route.search,
+      query: route.query,
+      hash: route.hash,
+      state: route.state,
+      navigationType: route.navigationType,
+      signal: route.signal,
+    });
+  }
+
   function emit(): void {
-    const value = snapshot();
-    for (const listener of listeners) listener(value);
+    revision++;
+    if (emitting) {
+      emissionPending = true;
+      return;
+    }
+
+    emitting = true;
+    const errors: unknown[] = [];
+    try {
+      do {
+        emissionPending = false;
+        const emittedRevision = revision;
+        const value = snapshot();
+        for (const listener of [...listeners]) {
+          if (!listeners.has(listener)) continue;
+          try {
+            listener(value);
+          } catch (error) {
+            errors.push(error);
+          }
+          if (revision !== emittedRevision) {
+            emissionPending = true;
+            break;
+          }
+        }
+      } while (emissionPending);
+    } finally {
+      emitting = false;
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, 'Route listeners failed');
+  }
+
+  function runResolver(nextResolver: RouteResolver): ReturnType<typeof prepareMatches> {
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
+    resolving = true;
+    try {
+      return prepareMatches(nextResolver(locationSnapshot()));
+    } finally {
+      resolving = false;
+    }
   }
 
   function setLocation(
@@ -163,18 +277,39 @@ export function createRouteRuntime(
     type: NavigationType = 'replace',
     nextState: unknown = null,
   ): void {
+    if (disposed) throw new Error('Cannot set location on a disposed route runtime');
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
     const next = new URL(href, url);
     const changed = next.href !== url.href || !Object.is(nextState, state);
     if (!changed) return;
 
-    navigationType = type;
-    controller.abort();
-    controller = new AbortController();
+    const previousURL = url;
+    const previousState = state;
+    const previousNavigationType = navigationType;
+    const previousQuery = query;
+    const previousController = controller;
+    const nextController = new AbortController();
     url = next;
     state = nextState;
-    query = new URLSearchParams(url.search);
-    matches = Object.freeze([]);
-    params = Object.freeze({});
+    navigationType = type;
+    controller = nextController;
+    query = readonlyQuery(url.search);
+    let prepared: ReturnType<typeof prepareMatches>;
+    try {
+      prepared = resolver === null ? prepareMatches([]) : runResolver(resolver);
+    } catch (error) {
+      url = previousURL;
+      state = previousState;
+      navigationType = previousNavigationType;
+      query = previousQuery;
+      controller = previousController;
+      nextController.abort();
+      throw error;
+    }
+    matches = prepared.matches;
+    params = prepared.params;
+    previousController.abort();
+    locationRevision++;
     emit();
   }
 
@@ -192,11 +327,53 @@ export function createRouteRuntime(
     }
   };
 
+  const onClick: EventListener = event => {
+    const mouseEvent = event as MouseEvent;
+    if (
+      mouseEvent.defaultPrevented ||
+      mouseEvent.button !== 0 ||
+      mouseEvent.metaKey ||
+      mouseEvent.ctrlKey ||
+      mouseEvent.shiftKey ||
+      mouseEvent.altKey
+    ) return;
+
+    const pathAnchor = mouseEvent.composedPath().find(
+      target => target instanceof HTMLAnchorElement && target.hasAttribute('href'),
+    ) as HTMLAnchorElement | undefined;
+    const target = mouseEvent.target;
+    const anchor = pathAnchor ?? (target instanceof Element
+      ? target.closest<HTMLAnchorElement>('a[href]')
+      : null);
+    if (
+      anchor === null ||
+      anchor.hasAttribute('download') ||
+      (anchor.target !== '' && anchor.target.toLowerCase() !== '_self') ||
+      anchor.relList.contains('external')
+    ) return;
+
+    const destination = new URL(anchor.href, url);
+    if (
+      destination.origin !== url.origin ||
+      (destination.protocol !== 'http:' && destination.protocol !== 'https:')
+    ) return;
+    if (
+      destination.pathname === url.pathname &&
+      destination.search === url.search &&
+      destination.hash !== url.hash
+    ) return;
+
+    mouseEvent.preventDefault();
+    navigateToURL(destination, { state: null });
+  };
+
   const onNavigate: EventListener = event => {
+    navigationEventRevision++;
     const navigationEvent = event as NavigationEventLike;
     if (
       !navigationEvent.canIntercept ||
-      navigationEvent.downloadRequest
+      navigationEvent.downloadRequest !== null &&
+      navigationEvent.downloadRequest !== undefined
     ) return;
 
     const destination = new URL(navigationEvent.destination.url, url);
@@ -215,7 +392,7 @@ export function createRouteRuntime(
 
     setLocation(destination, type, destinationState);
     navigationEvent.intercept({
-      scroll: 'manual',
+      scroll: 'after-transition',
       async handler() {
         // Route subscribers render from the synchronous location update.
         // Yielding here lets their microtask commit settle before navigation
@@ -226,6 +403,7 @@ export function createRouteRuntime(
   };
 
   function disconnect(): void {
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
     if (connectionCount === 0) return;
     connectionCount--;
     if (connectionCount !== 0) return;
@@ -234,26 +412,34 @@ export function createRouteRuntime(
     } else {
       environment.removeEventListener?.('popstate', onPopState);
       environment.removeEventListener?.('hashchange', onHashChange);
+      environment.removeEventListener?.('click', onClick);
     }
   }
 
   function connect(): () => void {
     if (disposed) throw new Error('Cannot connect a disposed route runtime');
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
     connectionCount++;
-    if (connectionCount === 1) {
-      if (supportsNavigationAPI(environment)) {
-        environment.navigation!.addEventListener('navigate', onNavigate);
-      } else {
-        environment.addEventListener?.('popstate', onPopState);
-        environment.addEventListener?.('hashchange', onHashChange);
+    try {
+      if (connectionCount === 1) {
+        if (supportsNavigationAPI(environment)) {
+          environment.navigation!.addEventListener('navigate', onNavigate);
+        } else {
+          environment.addEventListener?.('popstate', onPopState);
+          environment.addEventListener?.('hashchange', onHashChange);
+          environment.addEventListener?.('click', onClick);
+        }
+        if (environment.location !== undefined) {
+          setLocation(
+            environment.location.href,
+            'replace',
+            environment.history?.state ?? null,
+          );
+        }
       }
-      if (environment.location !== undefined) {
-        setLocation(
-          environment.location.href,
-          'replace',
-          environment.history?.state ?? null,
-        );
-      }
+    } catch (error) {
+      disconnect();
+      throw error;
     }
     let connected = true;
     return () => {
@@ -265,18 +451,54 @@ export function createRouteRuntime(
 
   function subscribe(listener: RouteListener): () => void {
     if (disposed) throw new Error('Cannot subscribe to a disposed route runtime');
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
     listeners.add(listener);
-    listener(snapshot());
+    try {
+      listener(snapshot());
+    } catch (error) {
+      listeners.delete(listener);
+      throw error;
+    }
     return () => listeners.delete(listener);
   }
 
+  function installResolver(nextResolver: RouteResolver): () => void {
+    if (disposed) throw new Error('Cannot install a resolver on a disposed route runtime');
+    if (resolver !== null) {
+      throw new Error('A route runtime can only have one structural resolver');
+    }
+    const prepared = runResolver(nextResolver);
+    resolver = nextResolver;
+    if (!sameMatches(matches, prepared.matches)) {
+      matches = prepared.matches;
+      params = prepared.params;
+      emit();
+    }
+
+    let installed = true;
+    return () => {
+      if (!installed) return;
+      if (resolving) throw new Error('Route resolvers must not mutate router state');
+      installed = false;
+      if (resolver !== nextResolver) return;
+      resolver = null;
+      if (disposed || matches.length === 0) return;
+      matches = Object.freeze([]);
+      params = Object.freeze({});
+      emit();
+    };
+  }
+
   function setMatches(nextMatches: readonly RouteMatch[]): void {
-    if (sameMatches(matches, nextMatches)) return;
-    const frozen = nextMatches.map(frozenMatch);
-    const merged: Record<string, string> = {};
-    for (const match of frozen) Object.assign(merged, match.params);
-    matches = Object.freeze(frozen);
-    params = Object.freeze(merged);
+    if (disposed) throw new Error('Cannot set matches on a disposed route runtime');
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
+    if (resolver !== null) {
+      throw new Error('Cannot set matches while a structural resolver is installed');
+    }
+    const prepared = prepareMatches(nextMatches);
+    if (sameMatches(matches, prepared.matches)) return;
+    matches = prepared.matches;
+    params = prepared.params;
     emit();
   }
 
@@ -285,6 +507,7 @@ export function createRouteRuntime(
     ...arguments_: NavigateArguments<Path>
   ): void {
     if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
     const options = (arguments_[0] ?? {}) as NavigateOptions<Path>;
     const href = buildRoutePath(
       pattern,
@@ -293,15 +516,28 @@ export function createRouteRuntime(
       options.hash,
     );
     const next = new URL(href, url);
+    navigateToURL(next, options);
+  }
+
+  function navigateToURL(
+    next: URL,
+    options: Pick<NavigateOptions, 'replace' | 'state'>,
+  ): void {
+    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
     const navigation = environment.navigation;
     if (navigation !== undefined) {
+      const beforeNavigation = locationRevision;
+      const beforeEvent = navigationEventRevision;
       navigation.navigate(next.href, {
         history: options.replace ? 'replace' : 'push',
         state: options.state ?? null,
       });
       // A connected Navigation API dispatches `navigate` synchronously. This
       // fallback also keeps programmatic navigation useful before connection.
-      if (next.href !== url.href) {
+      if (
+        navigationEventRevision === beforeEvent &&
+        locationRevision === beforeNavigation
+      ) {
         setLocation(
           next,
           options.replace ? 'replace' : 'push',
@@ -324,21 +560,27 @@ export function createRouteRuntime(
   }
 
   function back(): void {
+    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
     if (environment.navigation !== undefined) environment.navigation.back();
     else environment.history?.back();
   }
 
   function forward(): void {
+    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
     if (environment.navigation !== undefined) environment.navigation.forward();
     else environment.history?.forward();
   }
 
   function dispose(): void {
     if (disposed) return;
+    if (resolving) throw new Error('Route resolvers must not mutate router state');
     while (connectionCount > 0) disconnect();
     disposed = true;
     controller.abort();
     listeners.clear();
+    resolver = null;
     matches = Object.freeze([]);
     params = Object.freeze({});
   }
@@ -348,6 +590,7 @@ export function createRouteRuntime(
     snapshot,
     subscribe,
     connect,
+    installResolver,
     navigate,
     back,
     forward,
