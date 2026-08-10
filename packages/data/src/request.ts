@@ -1,4 +1,4 @@
-import { RequestError } from './errors';
+import { isAbortError, RequestError } from './errors';
 import { validateValue } from './schema';
 import type {
   Query,
@@ -21,7 +21,6 @@ function schemaId(schema: StandardSchemaV1 | undefined): string {
 
 function appendQuery(url: string, query: Query | undefined): string {
   const hashIndex = url.indexOf('#');
-  const hash = hashIndex === -1 ? '' : url.slice(hashIndex);
   const withoutHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
   const queryIndex = withoutHash.indexOf('?');
   const path = queryIndex === -1 ? withoutHash : withoutHash.slice(0, queryIndex);
@@ -44,7 +43,7 @@ function appendQuery(url: string, query: Query | undefined): string {
 
   parameters.sort();
   const serialized = parameters.toString();
-  return `${path}${serialized === '' ? '' : `?${serialized}`}${hash}`;
+  return `${path}${serialized === '' ? '' : `?${serialized}`}`;
 }
 
 export function resolveRequestURL(
@@ -97,6 +96,18 @@ export async function decodeResponse(
         : await response.text();
     }
   } catch (cause) {
+    if (isAbortError(cause)) throw cause;
+    if (!response.ok) {
+      throw new RequestError(
+        `Request failed with status ${response.status}`,
+        {
+          kind: 'http',
+          status: response.status,
+          statusText: response.statusText,
+          cause,
+        },
+      );
+    }
     throw new RequestError('Failed to decode response', {
       kind: 'decode',
       status: response.status,
@@ -118,6 +129,25 @@ export async function decodeResponse(
   }
 
   return schema === undefined ? data : validateValue(schema, data);
+}
+
+export function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException('The operation was aborted', 'AbortError');
+}
+
+/** Reject client interest immediately even when a custom fetcher ignores signals. */
+export function abortable<T>(
+  operation: () => PromiseLike<T> | T,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(abortReason(signal));
+    signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve().then(operation).then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', abort);
+    });
+  });
 }
 
 export function encodeActionBody(

@@ -1,6 +1,9 @@
 import { isAbortError, toRequestError } from './errors';
+import { SnapshotNotifier } from './notifications';
 import { createOptimisticChange } from './optimistic';
 import {
+  abortable,
+  abortReason,
   decodeResponse,
   fetchIdentity,
   resolveRequestURL,
@@ -46,7 +49,7 @@ const idleSnapshot = <T>(): MutableSnapshot<T> => ({
 });
 
 function publicSnapshot<T>(snapshot: MutableSnapshot<T>): ResourceSnapshot<T> {
-  return { ...snapshot };
+  return Object.freeze({ ...snapshot });
 }
 
 function normalizedCache(cache: FetchCache | undefined): FetchCache {
@@ -74,14 +77,27 @@ class FetchEntry {
     controller.receive(this, this.snapshot);
   }
 
-  remove(controller: ResourceController<unknown>): void {
+  remove(controller: ResourceController<unknown>, reason?: unknown): void {
     this.consumers.delete(controller);
     if (this.consumers.size !== 0) return;
 
-    this.controller?.abort();
     if (this.cache === 'active') {
-      this.store.delete(this);
+      this.store.delete(this, reason);
+    } else {
+      this.cancelRequest(reason);
     }
+  }
+
+  private cancelRequest(reason?: unknown): void {
+    if (this.controller === null && this.request === null) return;
+    this.generation++;
+    this.controller?.abort(reason);
+    this.controller = null;
+    this.request = null;
+    this.snapshot.error = null;
+    this.snapshot.pending = false;
+    this.snapshot.refreshing = false;
+    this.snapshot.status = this.hasData ? 'success' : 'idle';
   }
 
   upgradeCache(cache: FetchCache): void {
@@ -128,15 +144,18 @@ class FetchEntry {
     this.snapshot.status = this.hasData ? 'success' : 'pending';
     this.emit();
 
-    const request = Promise.resolve()
-      .then(() =>
-        this.store.environment.fetch()(this.descriptor.url, {
+    const request = abortable(
+      () => this.store.environment.fetch()(this.descriptor.url, {
           method: 'GET',
           headers: this.descriptor.headers,
           signal: controller.signal,
         }),
-      )
-      .then(response => decodeResponse(response, this.descriptor.schema))
+      controller.signal,
+    )
+      .then(response => abortable(
+        () => decodeResponse(response, this.descriptor.schema),
+        controller.signal,
+      ))
       .then(
         data => {
           if (generation !== this.generation) return data;
@@ -153,7 +172,7 @@ class FetchEntry {
         },
         error => {
           if (generation !== this.generation) throw error;
-          if (isAbortError(error)) {
+          if (controller.signal.aborted || isAbortError(error)) {
             this.snapshot.pending = false;
             this.snapshot.refreshing = false;
             this.snapshot.status = this.hasData ? 'success' : 'idle';
@@ -180,12 +199,11 @@ class FetchEntry {
     return request;
   }
 
-  dispose(): void {
-    this.generation++;
-    this.controller?.abort();
-    this.controller = null;
-    this.request = null;
-    for (const consumer of [...this.consumers]) consumer.detachFrom(this);
+  dispose(resetConsumers = false, reason?: unknown): void {
+    this.cancelRequest(reason);
+    for (const consumer of [...this.consumers]) {
+      consumer.detachFrom(this, resetConsumers);
+    }
     this.consumers.clear();
   }
 }
@@ -226,44 +244,44 @@ export class FetchStore {
     return entry;
   }
 
-  delete(entry: FetchEntry): void {
+  delete(entry: FetchEntry, reason?: unknown): void {
     if (this.entries.get(entry.descriptor.identity) === entry) {
       this.entries.delete(entry.descriptor.identity);
     }
     this.allEntries.delete(entry);
-    entry.dispose();
+    entry.dispose(false, reason);
   }
 
   clear(): void {
-    for (const entry of [...this.allEntries]) entry.dispose();
+    for (const entry of [...this.allEntries]) entry.dispose(true);
     this.entries.clear();
     this.allEntries.clear();
   }
 }
 
 class ResourceController<T> {
-  readonly listeners = new Set<ResourceListener<T>>();
   snapshot: MutableSnapshot<T> = idleSnapshot();
   entry: FetchEntry | null = null;
   disposed = false;
   private removeSignalListener: (() => void) | null = null;
+  readonly notifier = new SnapshotNotifier(() => publicSnapshot(this.snapshot));
 
   constructor(
     readonly store: FetchStore,
     readonly descriptor: FetchDescriptor,
     readonly paused = false,
   ) {
-    if (!paused) this.attach(false);
     const signal = descriptor.signal;
     if (signal !== undefined) {
-      const abort = () => this.abort();
-      if (signal.aborted) abort();
+      const abort = () => this.abort(abortReason(signal));
+      if (signal.aborted) return;
       else {
         signal.addEventListener('abort', abort, { once: true });
         this.removeSignalListener = () =>
           signal.removeEventListener('abort', abort);
       }
     }
+    if (!paused) this.attach(false);
   }
 
   attach(force: boolean): void {
@@ -279,44 +297,62 @@ class ResourceController<T> {
 
   receive(entry: FetchEntry, snapshot: MutableSnapshot<unknown>): void {
     if (this.entry !== null && this.entry !== entry) return;
-    this.snapshot = publicSnapshot(snapshot) as MutableSnapshot<T>;
+    this.snapshot = { ...snapshot } as MutableSnapshot<T>;
     this.notify();
   }
 
-  detachFrom(entry: FetchEntry): void {
-    if (this.entry === entry) this.entry = null;
+  detachFrom(entry: FetchEntry, reset = false): void {
+    if (this.entry !== entry) return;
+    this.entry = null;
+    if (reset) {
+      this.snapshot = idleSnapshot();
+      this.notify();
+    }
   }
 
   notify(): void {
-    const snapshot = publicSnapshot(this.snapshot);
-    for (const listener of this.listeners) listener(snapshot);
+    this.notifier.notify();
   }
 
   refresh(): Promise<T> {
+    if (this.disposed) {
+      return Promise.reject(new Error('Cannot refresh a disposed fetch resource'));
+    }
     if (this.paused) {
       return Promise.reject(
         new TypeError('Cannot refresh a fetch resource with a null target'),
       );
     }
+    const signal = this.descriptor.signal;
+    if (signal?.aborted) return Promise.reject(abortReason(signal));
     if (this.entry === null) this.attach(true);
-    return this.entry!.start(true) as Promise<T>;
+    const request = this.entry!.start(true) as Promise<T>;
+    return signal === undefined
+      ? request
+      : abortable(() => request, signal);
   }
 
-  abort(): void {
+  abort(reason?: unknown): void {
+    if (this.disposed) throw new Error('Cannot abort a disposed fetch resource');
+    this.detach(true, reason);
+  }
+
+  private detach(notify: boolean, reason?: unknown): void {
     const entry = this.entry;
     if (entry !== null) {
       this.entry = null;
-      entry.remove(this as ResourceController<unknown>);
+      entry.remove(this as ResourceController<unknown>, reason);
     }
     this.snapshot.pending = false;
     this.snapshot.refreshing = false;
     this.snapshot.status =
       this.snapshot.status === 'success' ? 'success' : 'idle';
     this.snapshot.error = null;
-    this.notify();
+    if (notify) this.notify();
   }
 
   update(change: (current: T | undefined) => T): void {
+    if (this.disposed) throw new Error('Cannot update a disposed fetch resource');
     if (this.entry === null) {
       const current = this.snapshot.data;
       this.snapshot.data = change(current);
@@ -329,6 +365,7 @@ class ResourceController<T> {
   }
 
   mutate(change: (current: T | undefined) => void): void {
+    if (this.disposed) throw new Error('Cannot mutate a disposed fetch resource');
     if (this.entry === null) {
       change(this.snapshot.data);
       this.snapshot.status = 'success';
@@ -341,11 +378,11 @@ class ResourceController<T> {
 
   dispose(): void {
     if (this.disposed) return;
-    this.abort();
+    this.detach(false);
     this.disposed = true;
     this.removeSignalListener?.();
     this.removeSignalListener = null;
-    this.listeners.clear();
+    this.notifier.clear();
   }
 }
 
@@ -361,21 +398,26 @@ function appendChange<T>(
   controller: ResourceController<T[]>,
   temporary: T,
 ): OptimisticChange<T> {
+  const index = collection(controller).length;
   controller.update(current => [...(current ?? []), temporary]);
   return createOptimisticChange({
     rollback() {
       controller.update(current => {
         const next = [...(current ?? [])];
-        const index = next.indexOf(temporary);
-        if (index !== -1) next.splice(index, 1);
+        const target = next[index] === temporary
+          ? index
+          : next.lastIndexOf(temporary);
+        if (target !== -1) next.splice(target, 1);
         return next;
       });
     },
     commit(result) {
       controller.update(current => {
         const next = [...(current ?? [])];
-        const index = next.indexOf(temporary);
-        if (index !== -1) next[index] = result;
+        const target = next[index] === temporary
+          ? index
+          : next.lastIndexOf(temporary);
+        if (target !== -1) next[target] = result;
         return next;
       });
     },
@@ -387,23 +429,34 @@ function replaceChange<T>(
   current: T,
   temporary: T,
 ): OptimisticChange<T> {
+  const index = collection(controller).indexOf(current);
+  if (index === -1) {
+    return createOptimisticChange({ rollback() {}, commit() {} });
+  }
+  const temporaryAlreadyPresent = collection(controller).includes(temporary);
   controller.update(items =>
-    (items ?? []).map(item => item === current ? temporary : item),
+    (items ?? []).map((item, itemIndex) =>
+      itemIndex === index ? temporary : item
+    ),
   );
   return createOptimisticChange({
     rollback() {
       controller.update(items => {
         const next = [...(items ?? [])];
-        const index = next.indexOf(temporary);
-        if (index !== -1) next[index] = current;
+        const target = next[index] === temporary
+          ? index
+          : temporaryAlreadyPresent ? -1 : next.indexOf(temporary);
+        if (target !== -1) next[target] = current;
         return next;
       });
     },
     commit(result) {
       controller.update(items => {
         const next = [...(items ?? [])];
-        const index = next.indexOf(temporary);
-        if (index !== -1) next[index] = result;
+        const target = next[index] === temporary
+          ? index
+          : temporaryAlreadyPresent ? -1 : next.indexOf(temporary);
+        if (target !== -1) next[target] = result;
         return next;
       });
     },
@@ -415,14 +468,19 @@ function removeChange<T, TResult>(
   current: T,
 ): OptimisticChange<TResult> {
   const index = collection(controller).indexOf(current);
-  controller.update(items => (items ?? []).filter(item => item !== current));
+  if (index === -1) {
+    return createOptimisticChange<TResult>({ rollback() {}, commit() {} });
+  }
+  controller.update(items => {
+    const next = [...(items ?? [])];
+    if (next[index] === current) next.splice(index, 1);
+    return next;
+  });
   return createOptimisticChange<TResult>({
     rollback() {
       controller.update(items => {
         const next = [...(items ?? [])];
-        if (!next.includes(current)) {
-          next.splice(Math.min(Math.max(index, 0), next.length), 0, current);
-        }
+        next.splice(Math.min(index, next.length), 0, current);
         return next;
       });
     },
@@ -454,10 +512,11 @@ export function createFetchResource<T>(
   }
 
   const url = resolveRequestURL(target, options.query, environment.baseURL);
+  const headers = new Headers(options.headers);
   const descriptor: FetchDescriptor = {
     url,
-    headers: options.headers,
-    identity: fetchIdentity(url, options.headers, options.key, options.validate),
+    headers,
+    identity: fetchIdentity(url, headers, options.key, options.validate),
     cache: normalizedCache(options.cache),
     schema: options.validate,
     signal: options.signal,
@@ -515,9 +574,10 @@ export function subscribeFetchResource<T>(
   listener: ResourceListener<T>,
 ): () => void {
   const controller = resourceController(resource);
-  controller.listeners.add(listener);
-  listener(publicSnapshot(controller.snapshot));
-  return () => controller.listeners.delete(listener);
+  if (controller.disposed) {
+    throw new Error('Cannot subscribe to a disposed fetch resource');
+  }
+  return controller.notifier.subscribe(listener);
 }
 
 export function disposeFetchResource<T>(resource: FetchResource<T>): void {
@@ -534,8 +594,11 @@ export function createFetchEnvironment(
   fetcher: typeof globalThis.fetch | undefined,
   baseURL: string | URL | undefined,
 ): FetchEnvironment {
+  const resolvedBaseURL = baseURL ?? (
+    typeof location === 'undefined' ? undefined : location.href
+  );
   return {
-    baseURL,
+    baseURL: resolvedBaseURL,
     fetch() {
       const implementation = fetcher ?? globalThis.fetch;
       if (implementation === undefined) {

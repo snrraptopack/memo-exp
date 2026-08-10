@@ -1,6 +1,9 @@
 import { isAbortError, toRequestError } from './errors';
+import { SnapshotNotifier } from './notifications';
 import { optimisticHandlers } from './optimistic';
 import {
+  abortable,
+  abortReason,
   decodeResponse,
   encodeActionBody,
   resolveRequestURL,
@@ -21,128 +24,209 @@ interface MutableActionSnapshot<T> {
   pending: boolean;
 }
 
-interface ActionController<T> {
-  readonly listeners: Set<ActionListener<T>>;
-  readonly controllers: Set<AbortController>;
-  snapshot: MutableActionSnapshot<T>;
-  sequence: number;
-  active: number;
-  disposed: boolean;
-  notify(): void;
-  abort(): void;
-  reset(): void;
+interface ActionInvocation {
+  readonly abortController: AbortController;
+  readonly sequence: number;
+  cancelled: boolean;
+}
+
+function snapshot<T>(value: MutableActionSnapshot<T>): ActionSnapshot<T> {
+  return Object.freeze({ ...value });
+}
+
+class ActionController<T> {
+  readonly invocations = new Set<ActionInvocation>();
+  readonly notifier = new SnapshotNotifier(() => snapshot(this.snapshot));
+  snapshot: MutableActionSnapshot<T> = {
+    data: undefined,
+    error: null,
+    status: 'idle',
+    pending: false,
+  };
+  sequence = 0;
+  disposed = false;
+  hasData = false;
+
+  constructor(readonly store: ActionStore) {}
+
+  begin(invocation: ActionInvocation): void {
+    if (this.invocations.size === 0) {
+      this.store.track(this as unknown as ActionController<unknown>);
+    }
+    this.invocations.add(invocation);
+    this.snapshot.error = null;
+    this.snapshot.status = 'pending';
+    this.snapshot.pending = true;
+    this.notifier.notify();
+  }
+
+  isVisible(invocation: ActionInvocation): boolean {
+    return !invocation.cancelled && invocation.sequence === this.sequence;
+  }
+
+  succeed(invocation: ActionInvocation, result: T): void {
+    if (!this.isVisible(invocation)) return;
+    this.snapshot.data = result;
+    this.snapshot.error = null;
+    this.snapshot.status = 'success';
+    this.hasData = true;
+    this.notifier.notify();
+  }
+
+  fail(
+    invocation: ActionInvocation,
+    error: import('./errors').RequestError,
+  ): void {
+    if (!this.isVisible(invocation)) return;
+    this.snapshot.error = error;
+    this.snapshot.status = 'error';
+    this.notifier.notify();
+  }
+
+  cancelInvocation(invocation: ActionInvocation, reason?: unknown): void {
+    if (invocation.cancelled) return;
+    invocation.cancelled = true;
+    invocation.abortController.abort(reason);
+    if (invocation.sequence === this.sequence) this.sequence++;
+    this.snapshot.error = null;
+    this.snapshot.status = this.hasData ? 'success' : 'idle';
+    this.snapshot.pending = [...this.invocations].some(item => !item.cancelled);
+    this.notifier.notify();
+  }
+
+  finish(invocation: ActionInvocation): void {
+    this.invocations.delete(invocation);
+    if (this.invocations.size === 0) {
+      this.store.untrack(this as unknown as ActionController<unknown>);
+    }
+    const pending = [...this.invocations].some(item => !item.cancelled);
+    if (this.snapshot.pending !== pending) {
+      this.snapshot.pending = pending;
+      this.notifier.notify();
+    }
+  }
+
+  abort(reset: boolean): void {
+    this.sequence++;
+    for (const invocation of this.invocations) {
+      invocation.cancelled = true;
+      invocation.abortController.abort();
+    }
+    this.snapshot.error = null;
+    this.snapshot.pending = false;
+    if (reset) {
+      this.snapshot.data = undefined;
+      this.snapshot.status = 'idle';
+      this.hasData = false;
+    } else {
+      this.snapshot.status = this.hasData ? 'success' : 'idle';
+    }
+    this.notifier.notify();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.abort(true);
+    this.disposed = true;
+    this.notifier.clear();
+    this.store.untrack(this as unknown as ActionController<unknown>);
+  }
+}
+
+export class ActionStore {
+  private readonly active = new Set<ActionController<unknown>>();
+
+  track(controller: ActionController<unknown>): void {
+    this.active.add(controller);
+  }
+
+  untrack(controller: ActionController<unknown>): void {
+    this.active.delete(controller);
+  }
+
+  clear(): void {
+    for (const controller of [...this.active]) controller.abort(true);
+  }
 }
 
 const actionControllers = new WeakMap<object, ActionController<unknown>>();
 
-function snapshot<T>(
-  value: MutableActionSnapshot<T>,
-): ActionSnapshot<T> {
-  return { ...value };
-}
-
-function createController<T>(): ActionController<T> {
-  const controller: ActionController<T> = {
-    listeners: new Set(),
-    controllers: new Set(),
-    snapshot: {
-      data: undefined,
-      error: null,
-      status: 'idle',
-      pending: false,
-    },
-    sequence: 0,
-    active: 0,
-    disposed: false,
-    notify() {
-      const value = snapshot(this.snapshot);
-      for (const listener of this.listeners) listener(value);
-    },
-    abort() {
-      for (const active of [...this.controllers]) active.abort();
-      this.snapshot.error = null;
-      this.snapshot.status = 'idle';
-      this.notify();
-    },
-    reset() {
-      this.abort();
-      this.snapshot = {
-        data: undefined,
-        error: null,
-        status: 'idle',
-        pending: this.active !== 0,
-      };
-      this.notify();
-    },
-  };
-  return controller;
-}
-
 function linkSignal(
   source: AbortSignal | undefined,
-  controller: AbortController,
+  abort: () => void,
 ): () => void {
   if (source === undefined) return () => {};
-  const abort = () => controller.abort();
-  if (source.aborted) abort();
-  else source.addEventListener('abort', abort, { once: true });
+  source.addEventListener('abort', abort, { once: true });
   return () => source.removeEventListener('abort', abort);
 }
 
 export function createAction<TResult, TInput>(
   environment: FetchEnvironment,
+  store: ActionStore,
   target: string | URL,
   options: ActionOptions<TResult, TInput>,
 ): Action<TResult, TInput> {
-  const controller = createController<TResult>();
+  const controller = new ActionController<TResult>(store);
   const url = resolveRequestURL(target, options.query, environment.baseURL);
 
   const invoke = async (
     input: TInput,
     callOptions: ActionCallOptions<TResult> = {},
   ): Promise<TResult> => {
-    if (controller.disposed) {
-      throw new Error('Cannot invoke a disposed action');
-    }
-
     const change = callOptions.optimistic === undefined
       ? undefined
       : optimisticHandlers(callOptions.optimistic);
+    if (controller.disposed) {
+      change?.rollback();
+      throw new Error('Cannot invoke a disposed action');
+    }
+    if (callOptions.signal?.aborted) {
+      change?.rollback();
+      throw abortReason(callOptions.signal);
+    }
 
-    const sequence = ++controller.sequence;
-    const abortController = new AbortController();
-    const unlink = linkSignal(callOptions.signal, abortController);
-    controller.controllers.add(abortController);
-    controller.active++;
-    controller.snapshot.error = null;
-    controller.snapshot.status = 'pending';
-    controller.snapshot.pending = true;
-    controller.notify();
-
+    const invocation: ActionInvocation = {
+      sequence: ++controller.sequence,
+      abortController: new AbortController(),
+      cancelled: false,
+    };
+    controller.begin(invocation);
+    const unlink = linkSignal(
+      callOptions.signal,
+      () => controller.cancelInvocation(
+        invocation,
+        abortReason(callOptions.signal!),
+      ),
+    );
     let operationSucceeded = false;
 
     try {
       const headers = new Headers(options.headers);
       const body = encodeActionBody(input, headers);
-      const response = await environment.fetch()(url, {
-        method: options.method ?? 'POST',
-        headers,
-        body,
-        signal: abortController.signal,
-      });
-      const result = await decodeResponse(response, options.validate) as TResult;
-      operationSucceeded = true;
-      change?.commit(result);
-
-      if (sequence === controller.sequence) {
-        controller.snapshot.data = result;
-        controller.snapshot.error = null;
-        controller.snapshot.status = 'success';
-        controller.notify();
+      const response = await abortable(
+        () => environment.fetch()(url, {
+          method: options.method ?? 'POST',
+          headers,
+          body,
+          signal: invocation.abortController.signal,
+        }),
+        invocation.abortController.signal,
+      );
+      const result = await abortable(
+        () => decodeResponse(response, options.validate) as Promise<TResult>,
+        invocation.abortController.signal,
+      );
+      if (invocation.cancelled) {
+        throw abortReason(invocation.abortController.signal);
       }
+      change?.commit(result);
+      operationSucceeded = true;
+      controller.succeed(invocation, result);
 
       await options.onSuccess?.(result, input);
-
+      if (invocation.cancelled) {
+        throw abortReason(invocation.abortController.signal);
+      }
       for (const resource of callOptions.refresh ?? []) {
         resource.refresh().catch(() => {});
       }
@@ -150,22 +234,14 @@ export function createAction<TResult, TInput>(
     } catch (cause) {
       if (!operationSucceeded) change?.rollback();
 
-      if (isAbortError(cause)) {
-        if (sequence === controller.sequence) {
-          controller.snapshot.error = null;
-          controller.snapshot.status = 'idle';
-          controller.notify();
-        }
+      if (invocation.cancelled || isAbortError(cause)) {
+        controller.cancelInvocation(invocation);
         throw cause;
       }
 
       if (operationSucceeded) throw cause;
       const error = toRequestError(cause);
-      if (sequence === controller.sequence) {
-        controller.snapshot.error = error;
-        controller.snapshot.status = 'error';
-        controller.notify();
-      }
+      controller.fail(invocation, error);
       try {
         await options.onError?.(error, input);
       } catch {
@@ -175,10 +251,7 @@ export function createAction<TResult, TInput>(
       throw error;
     } finally {
       unlink();
-      controller.controllers.delete(abortController);
-      controller.active--;
-      controller.snapshot.pending = controller.active !== 0;
-      controller.notify();
+      controller.finish(invocation);
     }
   };
 
@@ -189,8 +262,14 @@ export function createAction<TResult, TInput>(
     status: { get: () => controller.snapshot.status },
     pending: { get: () => controller.snapshot.pending },
   });
-  action.abort = () => controller.abort();
-  action.reset = () => controller.reset();
+  action.abort = () => {
+    if (controller.disposed) throw new Error('Cannot abort a disposed action');
+    controller.abort(false);
+  };
+  action.reset = () => {
+    if (controller.disposed) throw new Error('Cannot reset a disposed action');
+    controller.abort(true);
+  };
 
   actionControllers.set(
     action,
@@ -212,9 +291,8 @@ export function subscribeAction<T, TInput>(
   listener: ActionListener<T>,
 ): () => void {
   const controller = getController(action as Action<T, unknown>);
-  controller.listeners.add(listener);
-  listener(snapshot(controller.snapshot));
-  return () => controller.listeners.delete(listener);
+  if (controller.disposed) throw new Error('Cannot subscribe to a disposed action');
+  return controller.notifier.subscribe(listener);
 }
 
 export function actionSnapshot<T, TInput>(
@@ -228,9 +306,5 @@ export function actionSnapshot<T, TInput>(
 export function disposeAction<T, TInput>(
   action: Action<T, TInput>,
 ): void {
-  const controller = getController(action as Action<T, unknown>);
-  if (controller.disposed) return;
-  controller.disposed = true;
-  controller.abort();
-  controller.listeners.clear();
+  getController(action as Action<T, unknown>).dispose();
 }

@@ -1,4 +1,4 @@
-import { createAction } from './action';
+import { ActionStore, createAction } from './action';
 import {
   createFetchEnvironment,
   createFetchResource,
@@ -7,28 +7,20 @@ import {
 import type {
   ActionFunction,
   ActionOptions,
+  DataRuntime,
+  DataRuntimeOptions,
   FetchFunction,
   FetchOptions,
   StandardSchemaV1,
 } from './types';
 
-interface DataRuntimeOptions {
-  readonly fetch?: typeof globalThis.fetch;
-  readonly baseURL?: string | URL;
-}
-
-interface DataRuntime {
-  readonly $fetch: FetchFunction;
-  readonly $action: ActionFunction;
-  clear(): void;
-}
-
-/** Private environment boundary. It is not part of the package exports. */
+/** Create an isolated request/cache/action ownership boundary. */
 export function createDataRuntime(
   options: DataRuntimeOptions = {},
 ): DataRuntime {
   const environment = createFetchEnvironment(options.fetch, options.baseURL);
   const store = new FetchStore(environment);
+  const actions = new ActionStore();
 
   const fetchResource = (<T>(
     target: string | URL | null,
@@ -47,6 +39,7 @@ export function createDataRuntime(
     actionOptions: ActionOptions<TResult, TInput> = {},
   ) => createAction(
     environment,
+    actions,
     target,
     actionOptions,
   )) as ActionFunction;
@@ -54,6 +47,9 @@ export function createDataRuntime(
   return {
     $fetch: fetchResource,
     $action: action,
-    clear: () => store.clear(),
+    clear() {
+      actions.clear();
+      store.clear();
+    },
   };
 }

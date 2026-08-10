@@ -8,7 +8,7 @@ import { compile } from '@memoized-dom/compiler';
 
 const root = resolve(import.meta.dirname, '..');
 
-function manifest(packageName: 'compiler' | 'router' | 'runtime'): {
+function manifest(packageName: 'compiler' | 'data' | 'router' | 'runtime'): {
   dependencies?: Record<string, string>;
   exports: Record<string, unknown>;
 } {
@@ -30,6 +30,7 @@ function typeScriptSources(directory: string): string[] {
 
 describe('workspace package boundaries', () => {
   it('keeps the production runtime dependency-free', () => {
+    expect(manifest('data').dependencies).toBeUndefined();
     expect(manifest('runtime').dependencies).toBeUndefined();
     expect(manifest('router').dependencies).toBeUndefined();
   });
@@ -66,8 +67,24 @@ describe('workspace package boundaries', () => {
     expect(manifest('runtime').exports).toHaveProperty('.');
     expect(manifest('runtime').exports).toHaveProperty('./testing');
     expect(manifest('compiler').exports).toHaveProperty('.');
+    expect(manifest('data').exports).toHaveProperty('.');
+    expect(manifest('data').exports).toHaveProperty('./internal');
     expect(manifest('router').exports).toHaveProperty('.');
     expect(manifest('router').exports).toHaveProperty('./internal');
+  });
+
+  it('publishes scoped data creation separately from generated-code hooks', async () => {
+    const publicData = await import('@memoized-dom/data');
+    const internalData = await import('@memoized-dom/data/internal');
+
+    expect(publicData).toHaveProperty('createDataRuntime');
+    expect(publicData).toHaveProperty('clearDataRuntime');
+    expect(publicData).not.toHaveProperty('subscribeFetchResource');
+    expect(publicData).not.toHaveProperty('subscribeAction');
+    expect(internalData).toHaveProperty('subscribeFetchResource');
+    expect(internalData).toHaveProperty('subscribeAction');
+    expect(internalData).toHaveProperty('disposeFetchResource');
+    expect(internalData).toHaveProperty('disposeAction');
   });
 
   it('publishes scoped router creation separately from generated-code hooks', async () => {
