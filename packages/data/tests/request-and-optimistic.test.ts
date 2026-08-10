@@ -183,6 +183,33 @@ describe('optimistic collection safety', () => {
     expect(items.data).toEqual([original]);
   });
 
+  it('skips ambiguous replacement settlement after duplicate references shift', async () => {
+    const finishes: Array<(response: Response) => void> = [];
+    const runtime = createDataRuntime({
+      fetch: (async (_input, init) => init?.method === 'GET'
+        ? json([])
+        : new Promise<Response>(resolve => finishes.push(resolve))) as typeof fetch,
+    });
+    const items = runtime.$fetch<Item[]>('/items');
+    await settled(items);
+    const original = { id: 'original' };
+    const duplicate = { id: 'duplicate' };
+    const prefix = { id: 'prefix' };
+    items.update(() => [original, duplicate]);
+    const update = runtime.$action<Item>('/items', { method: 'PATCH' });
+    const operation = update(undefined, {
+      optimistic: items.replace(original, duplicate),
+    });
+    const rejection = expect(operation).rejects.toMatchObject({ kind: 'http' });
+
+    items.update(current => [prefix, ...(current ?? [])]);
+    await vi.waitFor(() => expect(finishes).toHaveLength(1));
+    finishes[0]!(json({ error: true }, 500));
+    await rejection;
+
+    expect(items.data).toEqual([prefix, duplicate, duplicate]);
+  });
+
   it('rejects reuse of an already consumed optimistic change', async () => {
     const temporary: Item = { id: 'temporary' };
     const runtime = createDataRuntime({

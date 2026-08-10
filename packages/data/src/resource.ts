@@ -425,9 +425,14 @@ function replacementTarget<T>(
   chain: ReplacementChain<T>,
   visible: T,
 ): number {
-  return Object.is(items[chain.index], visible)
-    ? chain.index
-    : items.findIndex(item => Object.is(item, visible));
+  if (Object.is(items[chain.index], visible)) return chain.index;
+  let target = -1;
+  for (let index = 0; index < items.length; index++) {
+    if (!Object.is(items[index], visible)) continue;
+    if (target !== -1) return -1;
+    target = index;
+  }
+  return target;
 }
 
 function settleReplacement<T>(
