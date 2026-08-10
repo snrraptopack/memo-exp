@@ -1,0 +1,13 @@
+topology,kernel,keys,entities,fanout,wildcard_density,writes_per_commit,derived_depth,construction_ms,mount_ns_per_entity,unmount_ns_per_entity,route_median_ns,route_p95_ns,minimum_allocation_objects_per_route,result_entries_per_route,exact_edges,wildcard_patterns,materialized_wildcard_edges,subscription_edges,checksum
+exact-low-fanout,static-index,128,256,2,0,1,1,1.3075,1267.70,3140.00,11169.43,25563.38,9.00,3.00,257,0,0,0,55296
+exact-low-fanout,dynamic-subscription,128,256,2,0,1,1,0.2274,1422.18,4240.00,3718.85,10034.03,9.00,3.00,0,0,0,257,55296
+exact-high-fanout,static-index,128,256,64,0,1,1,5.3533,527.63,2192.00,87376.22,120874.76,9.00,65.00,8193,0,0,0,1198080
+exact-high-fanout,dynamic-subscription,128,256,64,0,1,1,0.0418,9712.45,18584.00,82786.52,127974.56,9.00,65.00,0,0,0,8193,1198080
+wildcard-heavy,static-index,128,256,32,0.75,1,1,2.3914,70478.99,24364.00,43950.15,61740.97,9.00,33.00,1025,96,3072,0,608256
+wildcard-heavy,dynamic-subscription,128,256,32,0.75,1,1,0.0719,3350.58,4440.00,26847.51,37985.64,9.00,33.00,0,0,0,4097,608256
+batched-writes,static-index,128,256,16,0.25,4,1,0.6350,18762.26,5460.00,55845.26,67979.00,9.00,61.09,1537,32,512,0,1125873
+batched-writes,dynamic-subscription,128,256,16,0.25,4,1,0.0701,1294.94,1272.00,41731.35,65291.36,9.00,61.09,0,0,0,2049,1125873
+derived-depth-4,static-index,128,256,16,0.25,1,4,0.7546,30416.92,9230.77,37537.06,48804.69,18.00,20.00,1540,32,512,0,368640
+derived-depth-4,dynamic-subscription,128,256,16,0.25,1,4,0.0731,2504.23,2738.46,24117.33,61402.93,18.00,20.00,0,0,0,2052,368640
+large-topology,static-index,512,1024,32,0.5,2,2,4.9672,217941.81,71382.35,111402.88,194735.84,12.00,65.06,8194,256,8192,0,1199448
+large-topology,dynamic-subscription,512,1024,32,0.5,2,2,0.2244,5976.41,6806.86,93192.19,152184.77,12.00,65.06,0,0,0,16386,1199448

@@ -1,0 +1,8 @@
+{
+  "name": "dashboard-derived",
+  "description": "Dashboard counters with two cross-module derived stages.",
+  "category": "derived chain",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

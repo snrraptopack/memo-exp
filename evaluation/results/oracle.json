@@ -1,0 +1,601 @@
+{
+  "summary": {
+    "generatedAt": "2026-08-08T16:10:55.953Z",
+    "cases": 7,
+    "scenarios": 25,
+    "truePositives": 36,
+    "falsePositives": 9,
+    "falseNegatives": 0,
+    "precision": 0.8,
+    "recall": 1,
+    "interpretation": "Dynamic observations are concrete-execution oracles, not whole-program semantic ground truth."
+  },
+  "rows": [
+    {
+      "case": "aliased-import",
+      "category": "aliasing",
+      "scenario": "increment through exported mutator",
+      "writes": [
+        "./state.ts#model.count"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "aliased-import",
+      "category": "aliasing",
+      "scenario": "decrement through the same alias",
+      "writes": [
+        "./state.ts#model.count"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "aliased-import",
+      "category": "aliasing",
+      "scenario": "exact reset through defining export",
+      "writes": [
+        "./state.ts#model.count"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#doubled"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "helper-depth-four",
+      "category": "helper depth",
+      "scenario": "four-level parameter-relative chain",
+      "writes": [
+        "./state.ts#model.value"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "helper-depth-four",
+      "category": "helper depth",
+      "scenario": "repeat four-level chain",
+      "writes": [
+        "./state.ts#model.value"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "helper-depth-four",
+      "category": "helper depth",
+      "scenario": "second parameter-relative leaf",
+      "writes": [
+        "./state.ts#model.value"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#display"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "conditional-branch",
+      "category": "branching",
+      "scenario": "inactive branch write",
+      "writes": [
+        "./state.ts#secondary"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "oracleObserved": [],
+      "changed": [],
+      "truePositives": 0,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0,
+      "recall": 1
+    },
+    {
+      "case": "conditional-branch",
+      "category": "branching",
+      "scenario": "active primary branch write",
+      "writes": [
+        "./state.ts#primary"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "conditional-branch",
+      "category": "branching",
+      "scenario": "switch active branch",
+      "writes": [
+        "./state.ts#primaryMode"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "conditional-branch",
+      "category": "branching",
+      "scenario": "now-inactive primary write",
+      "writes": [
+        "./state.ts#primary"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "oracleObserved": [],
+      "changed": [],
+      "truePositives": 0,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0,
+      "recall": 1
+    },
+    {
+      "case": "conditional-branch",
+      "category": "branching",
+      "scenario": "new active branch write",
+      "writes": [
+        "./state.ts#secondary"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "conditional-branch",
+      "category": "branching",
+      "scenario": "switch back to primary",
+      "writes": [
+        "./state.ts#primaryMode"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#selected"
+      ],
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "cross-module-derived-chain",
+      "category": "multi-file derivation",
+      "scenario": "propagate through two files",
+      "writes": [
+        "./state.ts#value"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "cross-module-derived-chain",
+      "category": "multi-file derivation",
+      "scenario": "repeat two-file propagation",
+      "writes": [
+        "./state.ts#value"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "cross-module-derived-chain",
+      "category": "multi-file derivation",
+      "scenario": "reverse two-file propagation",
+      "writes": [
+        "./state.ts#value"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#doubled",
+        "App/$computed/.%2Fderived2.ts#label"
+      ],
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "independent-object-fields",
+      "category": "path precision",
+      "scenario": "left path first write",
+      "writes": [
+        "./state.ts#model.left"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fleft.ts#leftLabel",
+        "App/$computed/.%2Fright.ts#rightLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fleft.ts#leftLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "changed": [
+        "App/$computed/.%2Fleft.ts#leftLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "truePositives": 2,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0.6666666666666666,
+      "recall": 1
+    },
+    {
+      "case": "independent-object-fields",
+      "category": "path precision",
+      "scenario": "right path first write",
+      "writes": [
+        "./state.ts#model.right"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fleft.ts#leftLabel",
+        "App/$computed/.%2Fright.ts#rightLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fright.ts#rightLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "changed": [
+        "App/$computed/.%2Fright.ts#rightLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "truePositives": 2,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0.6666666666666666,
+      "recall": 1
+    },
+    {
+      "case": "independent-object-fields",
+      "category": "path precision",
+      "scenario": "left path repeated write",
+      "writes": [
+        "./state.ts#model.left"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fleft.ts#leftLabel",
+        "App/$computed/.%2Fright.ts#rightLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fleft.ts#leftLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "changed": [
+        "App/$computed/.%2Fleft.ts#leftLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "truePositives": 2,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0.6666666666666666,
+      "recall": 1
+    },
+    {
+      "case": "independent-object-fields",
+      "category": "path precision",
+      "scenario": "right path repeated write",
+      "writes": [
+        "./state.ts#model.right"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fleft.ts#leftLabel",
+        "App/$computed/.%2Fright.ts#rightLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fright.ts#rightLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "changed": [
+        "App/$computed/.%2Fright.ts#rightLabel",
+        "App/$computed/.%2Fsum.ts#sum"
+      ],
+      "truePositives": 2,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0.6666666666666666,
+      "recall": 1
+    },
+    {
+      "case": "multiple-import-aliases",
+      "category": "aliasing",
+      "scenario": "first alias chain",
+      "writes": [
+        "./state.ts#pair.first"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Ffirst.ts#firstSquared",
+        "App/$computed/.%2Fsecond.ts#secondSquared"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Ffirst.ts#firstSquared"
+      ],
+      "changed": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Ffirst.ts#firstSquared"
+      ],
+      "truePositives": 2,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0.6666666666666666,
+      "recall": 1
+    },
+    {
+      "case": "multiple-import-aliases",
+      "category": "aliasing",
+      "scenario": "second alias chain",
+      "writes": [
+        "./state.ts#pair.second"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Ffirst.ts#firstSquared",
+        "App/$computed/.%2Fsecond.ts#secondSquared"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Fsecond.ts#secondSquared"
+      ],
+      "changed": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Fsecond.ts#secondSquared"
+      ],
+      "truePositives": 2,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0.6666666666666666,
+      "recall": 1
+    },
+    {
+      "case": "multiple-import-aliases",
+      "category": "aliasing",
+      "scenario": "first alias chain repeated",
+      "writes": [
+        "./state.ts#pair.first"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Ffirst.ts#firstSquared",
+        "App/$computed/.%2Fsecond.ts#secondSquared"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Ffirst.ts#firstSquared"
+      ],
+      "changed": [
+        "App/$computed/.%2Fcombined.ts#combined",
+        "App/$computed/.%2Ffirst.ts#firstSquared"
+      ],
+      "truePositives": 2,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0.6666666666666666,
+      "recall": 1
+    },
+    {
+      "case": "collection-receiver",
+      "category": "receiver mutation",
+      "scenario": "array push receiver",
+      "writes": [
+        "./state.ts#bag.items"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#first",
+        "App/$computed/.%2Fderived.ts#size"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#first",
+        "App/$computed/.%2Fderived.ts#size"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#size"
+      ],
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "collection-receiver",
+      "category": "receiver mutation",
+      "scenario": "array shift receiver",
+      "writes": [
+        "./state.ts#bag.items"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#first",
+        "App/$computed/.%2Fderived.ts#size"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#first",
+        "App/$computed/.%2Fderived.ts#size"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#first",
+        "App/$computed/.%2Fderived.ts#size"
+      ],
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "case": "collection-receiver",
+      "category": "receiver mutation",
+      "scenario": "array splice receiver",
+      "writes": [
+        "./state.ts#bag.items"
+      ],
+      "staticSelected": [
+        "App/$computed/.%2Fderived.ts#first",
+        "App/$computed/.%2Fderived.ts#size"
+      ],
+      "oracleObserved": [
+        "App/$computed/.%2Fderived.ts#first",
+        "App/$computed/.%2Fderived.ts#size"
+      ],
+      "changed": [
+        "App/$computed/.%2Fderived.ts#first"
+      ],
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    }
+  ]
+}

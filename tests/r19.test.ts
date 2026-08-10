@@ -167,7 +167,7 @@ describe('R19 - receiver-bounded code generation', () => {
     expect(code).not.toContain('markDirtySubtree');
   });
 
-  it('rejects receiver calls that could mutate a local derivation', () => {
+  it('invalidates after opaque receiver calls on a local derivation', () => {
     expect(() =>
       compile(`
         function App() {
@@ -176,7 +176,7 @@ describe('R19 - receiver-bounded code generation', () => {
           return <button onClick={() => visible.custom()}>{visible.length}</button>;
         }
       `),
-    ).toThrowError(/cannot mutate per-instance derivation 'visible'/);
+    ).not.toThrow();
   });
 
   it('summarizes module arrow helpers and links parameter effects', () => {

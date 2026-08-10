@@ -1,0 +1,13 @@
+topology,kernel,processes,route_median_ns,route_min_ns,route_max_ns,route_cv,construction_median_ms,construction_min_ms,construction_max_ms,mount_median_ns_per_entity,unmount_median_ns_per_entity,retained_units
+exact-low-fanout,static-index,3,7452.15,5919.87,10337.74,0.2838,0.4785,0.4655,0.4804,575.49,3400.00,257
+exact-low-fanout,dynamic-subscription,3,3971.39,3916.94,4508.50,0.0791,0.1339,0.0876,0.1730,1109.73,1784.00,257
+exact-high-fanout,static-index,3,73045.80,59451.12,73546.78,0.1164,5.6400,4.2888,6.2752,360.31,960.00,8193
+exact-high-fanout,dynamic-subscription,3,79609.08,63970.46,92187.55,0.1799,0.0480,0.0449,0.0524,9755.64,16392.00,8193
+wildcard-heavy,static-index,3,32848.63,32325.20,52210.06,0.2896,1.9053,1.6675,2.8117,127540.47,31348.00,4193
+wildcard-heavy,dynamic-subscription,3,26005.81,25483.06,27385.99,0.0374,0.0848,0.0713,0.1204,3721.79,6800.00,4097
+batched-writes,static-index,3,69240.67,68871.53,73891.21,0.0396,1.1953,0.7228,1.4402,22138.13,6156.00,2081
+batched-writes,dynamic-subscription,3,45324.32,42516.50,46360.74,0.0445,0.0856,0.0576,0.1168,1515.95,1632.00,2049
+derived-depth-4,static-index,3,42692.63,38199.12,68087.70,0.3245,0.9649,0.8206,1.9936,25144.62,9007.69,2084
+derived-depth-4,dynamic-subscription,3,31517.58,23914.31,32935.89,0.1647,0.0724,0.0668,0.0730,1291.92,1276.92,2052
+large-topology,static-index,3,94934.13,91105.27,99657.08,0.0450,4.9681,4.7446,7.0677,229717.15,134223.53,16642
+large-topology,dynamic-subscription,3,84657.62,83758.79,92088.82,0.0527,0.2397,0.2112,0.7259,5517.74,5158.82,16386

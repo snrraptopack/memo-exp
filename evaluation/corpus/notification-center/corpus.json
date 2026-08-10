@@ -1,0 +1,8 @@
+{
+  "name": "notification-center",
+  "description": "Notification queue mutations and a cross-module unread derivation.",
+  "category": "application case study",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

@@ -1,0 +1,8 @@
+{
+  "name": "dynamic-key",
+  "description": "Dynamic property writes stay bounded to a known store root.",
+  "category": "dynamic store key",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

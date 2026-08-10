@@ -1145,7 +1145,7 @@ function emitElement(
 function emitRegion(
   ctx: Ctx,
   scope: EmitScope,
-  call: t.CallExpression,
+  call: import('./context').MapCallExpression,
   parentElVar: string,
   compName: string,
   compPath: NodePath<t.FunctionDeclaration>,

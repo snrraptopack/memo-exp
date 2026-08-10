@@ -1,0 +1,8 @@
+{
+  "name": "branch-reads",
+  "description": "A branch reads disjoint state while actions update each source.",
+  "category": "branch over-approximation",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

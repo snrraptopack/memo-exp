@@ -8,3 +8,4 @@ export {
   matchMapCall,
 } from './lists/map-site';
 export type { MapSite } from './lists/map-site';
+export type { MapCallExpression } from './context';

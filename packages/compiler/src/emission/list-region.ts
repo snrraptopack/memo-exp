@@ -12,7 +12,7 @@ import {
   generatedIdentifier,
   md,
 } from '../identifiers';
-import { analyzeMapSite, type MapSite } from '../lists';
+import { analyzeMapSite, type MapCallExpression, type MapSite } from '../lists';
 import { isLightweightListedComponent } from '../analysis';
 import {
   hasComponentChildren,
@@ -65,11 +65,21 @@ export type AuthoredChildrenSlotBuilder = (
   ownerId: t.Expression,
 ) => t.Identifier;
 
+function runtimeListSource(
+  source: t.Expression,
+  optional: boolean,
+): t.Expression {
+  const value = t.cloneNode(source);
+  return optional
+    ? t.logicalExpression('??', value, t.arrayExpression([]))
+    : value;
+}
+
 /** Emit a keyed list region and its row factory. */
 export function emitListRegion(
   ctx: Ctx,
   scope: EmitScope,
-  call: t.CallExpression,
+  call: MapCallExpression,
   parentElementVariable: string,
   componentName: string,
   componentPath: NodePath<t.FunctionDeclaration>,
@@ -247,7 +257,7 @@ export function emitListRegion(
           t.identifier(regionVariable),
           t.identifier('reconcile'),
         ),
-        [t.cloneNode(site.sourceExpr)],
+        [runtimeListSource(site.sourceExpr, site.optional)],
       ),
     );
   scope.creation.push(reconcile());
@@ -264,6 +274,7 @@ export function emitListRegion(
         scope.reasonVar!,
         regionVariable,
         site.sourceExpr,
+        site.optional,
         dependencyCaches,
         mutation,
         site.indexParam === null,
@@ -318,6 +329,7 @@ function buildTargetedListUpdate(
   reasonVar: string,
   regionVariable: string,
   sourceExpr: t.Expression,
+  optional: boolean,
   dependencies: Array<{
     dependency: TargetedListDependency;
     cache: string;
@@ -333,7 +345,7 @@ function buildTargetedListUpdate(
           t.identifier(regionVariable),
           t.identifier('reconcile'),
         ),
-        [t.cloneNode(sourceExpr)],
+        [runtimeListSource(sourceExpr, optional)],
       ),
     );
   }
@@ -347,7 +359,7 @@ function buildTargetedListUpdate(
           t.identifier(regionVariable),
           t.identifier('reconcile'),
         ),
-        [t.cloneNode(sourceExpr)],
+        [runtimeListSource(sourceExpr, optional)],
       ),
     );
   }
@@ -359,7 +371,7 @@ function buildTargetedListUpdate(
           t.identifier(regionVariable),
           t.identifier('reconcile'),
         ),
-        [t.cloneNode(sourceExpr)],
+        [runtimeListSource(sourceExpr, optional)],
       ),
     ),
     ...dependencies.map(({ dependency, cache }) =>
@@ -413,7 +425,10 @@ function buildTargetedListUpdate(
                 t.identifier(regionVariable),
                 t.identifier('reconcile'),
               ),
-              [t.cloneNode(sourceExpr), t.booleanLiteral(false)],
+              [
+                runtimeListSource(sourceExpr, optional),
+                t.booleanLiteral(false),
+              ],
             ),
           ),
         ]),

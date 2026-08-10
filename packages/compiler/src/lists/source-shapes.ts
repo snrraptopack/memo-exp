@@ -1,18 +1,11 @@
 import * as t from '@babel/types';
+import { unwrapTypeExpression } from '../context';
 
 /** Remove transparent TypeScript wrappers around a collection expression. */
 export function transparentListExpression(
   expression: t.Expression,
 ): t.Expression {
-  while (
-    t.isTSAsExpression(expression) ||
-    t.isTSTypeAssertion(expression) ||
-    t.isTSNonNullExpression(expression) ||
-    t.isTSInstantiationExpression(expression)
-  ) {
-    expression = expression.expression;
-  }
-  return expression;
+  return unwrapTypeExpression(expression);
 }
 
 /** A literal primitive list has stable value identity and no mutable source. */

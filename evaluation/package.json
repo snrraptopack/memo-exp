@@ -1,0 +1,46 @@
+{
+  "name": "memoized-dom-evaluation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "README.md",
+    "FINDINGS.md",
+    "CITATION.cff",
+    "MANIFEST.sha256",
+    "bun.lock",
+    "corpus",
+    "results",
+    "src",
+    "tsconfig.json",
+    "vendor"
+  ],
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "scripts": {
+    "coverage": "bun run src/coverage/run.ts",
+    "oracle": "bun run src/oracle/run.ts",
+    "routing": "bun run src/routing/replicate.ts",
+    "routing:single": "bun run --expose-gc src/routing/run.ts",
+    "environment": "bun run src/environment.ts",
+    "all": "bun run environment && bun run coverage && bun run oracle && bun run routing && bun run findings && bun run manifest",
+    "findings": "bun run src/findings.ts",
+    "manifest": "bun run src/manifest.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@babel/parser": "^8.0.0",
+    "@babel/generator": "^8.0.0",
+    "@babel/traverse": "^8.0.4",
+    "@babel/types": "^8.0.4",
+    "@memoized-dom/compiler": "file:./vendor/memoized-dom-compiler-0.0.5.tgz",
+    "esbuild": "^0.28.1"
+  },
+  "devDependencies": {
+    "@types/babel__traverse": "^7.28.0",
+    "@types/bun": "latest",
+    "@types/node": "^26.0.0",
+    "typescript": "^5.9.2"
+  }
+}

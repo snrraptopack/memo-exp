@@ -14,8 +14,12 @@ import {
   memberKey,
   memberRootName,
   type Ctx,
+  type MapCallExpression,
 } from '../context';
-import { isStaticPrimitiveList } from './source-shapes';
+import {
+  isStaticPrimitiveList,
+  transparentListExpression,
+} from './source-shapes';
 
 type Fail = (message: string) => never;
 type ParentRow = Pick<
@@ -28,6 +32,8 @@ export interface MapSite {
   sourceKey: string;
   /** Ordered source expression, cloned into the reconcile calls. */
   sourceExpr: t.Expression;
+  /** Optional-chain maps render no rows while their source is nullish. */
+  optional: boolean;
   /** Instance roots invalidate their owner directly, not an access table. */
   sourceLocal: boolean;
   /** Runtime callback target, including supported destructuring patterns. */
@@ -75,11 +81,13 @@ interface RowPlan {
   renderCallback: t.Expression | null;
 }
 
-/** Is this expression a `.map(...)` call? */
-export function matchMapCall(expr: t.Node): t.CallExpression | null {
-  if (!t.isCallExpression(expr)) return null;
+/** Is this expression a `.map(...)` call, including optional chains? */
+export function matchMapCall(expr: t.Node): MapCallExpression | null {
+  if (!t.isCallExpression(expr) && !t.isOptionalCallExpression(expr)) {
+    return null;
+  }
   const callee = expr.callee;
-  return t.isMemberExpression(callee) &&
+  return (t.isMemberExpression(callee) || t.isOptionalMemberExpression(callee)) &&
     !callee.computed &&
     t.isIdentifier(callee.property, { name: 'map' })
     ? expr
@@ -106,7 +114,7 @@ export function containsJsx(path: NodePath): boolean {
  */
 export function analyzeMapSite(
   ctx: Ctx,
-  call: t.CallExpression,
+  call: MapCallExpression,
   errorAt: Pick<NodePath, 'buildCodeFrameError'>,
   ownerName: string,
   usedPrefixes: Map<string, number>,
@@ -115,7 +123,7 @@ export function analyzeMapSite(
   const fail: Fail = (message) => {
     throw errorAt.buildCodeFrameError(message);
   };
-  const callee = call.callee as t.MemberExpression;
+  const callee = call.callee as t.MemberExpression | t.OptionalMemberExpression;
   const source = analyzeSource(
     ctx,
     callee.object,
@@ -130,6 +138,7 @@ export function analyzeMapSite(
   return {
     sourceKey: source.key,
     sourceExpr: t.cloneNode(source.expression),
+    optional: t.isOptionalCallExpression(call),
     sourceLocal: source.local,
     itemPattern: callback.itemPattern,
     itemParam: callback.itemParam,
@@ -152,21 +161,24 @@ function analyzeSource(
   parentRow: ParentRow | undefined,
   fail: Fail,
 ): SourcePlan {
-  if (t.isIdentifier(source)) {
-    return analyzeIdentifierSource(ctx, source, ownerName, fail);
+  const current = t.isExpression(source)
+    ? transparentListExpression(source)
+    : source;
+  if (t.isIdentifier(current)) {
+    return analyzeIdentifierSource(ctx, current, ownerName, fail);
   }
-  if (t.isMemberExpression(source)) {
+  if (t.isMemberExpression(current)) {
     return analyzeMemberSource(
       ctx,
-      source,
+      current,
       ownerName,
       parentRow,
       fail,
     );
   }
-  if (t.isExpression(source) && isStaticPrimitiveList(source)) {
+  if (t.isExpression(current) && isStaticPrimitiveList(current)) {
     return {
-      expression: source,
+      expression: current,
       key: '$static-list',
       local: true,
       suffixBase: '$static-list',
@@ -220,6 +232,7 @@ function analyzeMemberSource(
   const localRoot =
     root !== null &&
     (ctx.instanceState.get(ownerName)?.has(root) === true ||
+      ctx.instanceDerivedBindings.get(ownerName)?.has(root) === true ||
       propBindings.includes(root));
   const rowRelative =
     root !== null &&
@@ -234,7 +247,7 @@ function analyzeMemberSource(
     (!rowRelative && !localRoot && ctx.state.get(root) !== 'store')
   ) {
     return fail(
-      'memo-dom: list member views must be a static path on reactive module state, component props, or component state',
+      'memo-dom: list member views must be a static path on reactive module state, component props, component state, or a local derivation',
     );
   }
   return {
@@ -247,7 +260,7 @@ function analyzeMemberSource(
 
 function analyzeCallback(
   ctx: Ctx,
-  call: t.CallExpression,
+  call: MapCallExpression,
   ownerName: string,
   fail: Fail,
 ): CallbackPlan {

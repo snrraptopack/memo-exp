@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-08-08T16:10:37.900Z",
+  "runtime": "Bun 1.3.14",
+  "nodeCompatibility": "v24.3.0",
+  "platform": "win32",
+  "architecture": "x64",
+  "cpu": "AMD PRO A12-9800B R7, 12 COMPUTE CORES 4C+8G   ",
+  "logicalCpus": 4,
+  "gitCommit": "c23297e8c7ef876b6ff48be75e250cc48480b272",
+  "gitDirty": true,
+  "benchmarkPolicy": {
+    "deterministicTopologies": true,
+    "warmupRoutes": 1024,
+    "timingSamples": 9,
+    "lifecycleSamples": 7
+  }
+}

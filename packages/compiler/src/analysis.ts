@@ -182,6 +182,27 @@ function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
  * previously treated every declaration as a component.
  */
 function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
+  const unwrapFunctionPath = (
+    raw: any,
+  ): NodePath<t.ArrowFunctionExpression | t.FunctionExpression> | null => {
+    if (raw === null || Array.isArray(raw)) return null;
+    let current = raw;
+    while (
+      current.isTSAsExpression() ||
+      current.isTSTypeAssertion() ||
+      current.isTSNonNullExpression() ||
+      current.isTSSatisfiesExpression() ||
+      current.isTSInstantiationExpression()
+    ) {
+      const expression = current.get('expression');
+      if (Array.isArray(expression)) return null;
+      current = expression;
+    }
+    return current.isArrowFunctionExpression() || current.isFunctionExpression()
+      ? current
+      : null;
+  };
+
   programPath.traverse({
     FunctionDeclaration(p) {
       const name = p.node.id?.name;
@@ -223,11 +244,8 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
     },
     VariableDeclarator(p) {
       if (!p.scope.path.isProgram() || !t.isIdentifier(p.node.id)) return;
-      const init = p.get('init');
-      if (
-        init.isArrowFunctionExpression() ||
-        init.isFunctionExpression()
-      ) {
+      const init = unwrapFunctionPath(p.get('init'));
+      if (init !== null) {
         if (nodeHasJsx(init.node.body)) {
           if (!/^[A-Z]/.test(p.node.id.name)) {
             ctx.jsxHelpers.set(p.node.id.name, init);
@@ -256,13 +274,11 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
     for (const declaratorPath of declarationPath.get('declarations')) {
       if (!declaratorPath.isVariableDeclarator()) continue;
       const id = declaratorPath.node.id;
-      const initPath = declaratorPath.get('init');
+      const initPath = unwrapFunctionPath(declaratorPath.get('init'));
       if (
         !t.isIdentifier(id) ||
         /^[A-Z]/.test(id.name) ||
-        Array.isArray(initPath) ||
-        (!initPath.isArrowFunctionExpression() &&
-          !initPath.isFunctionExpression()) ||
+        initPath === null ||
         !nodeHasJsx(initPath.node.body)
       ) {
         continue;
@@ -655,6 +671,32 @@ function scanRenderProps(ctx: Ctx): void {
 function analyzeComponent(ctx: Ctx, name: string): void {
   const p = ctx.compPaths.get(name)!;
   const info = ctx.comps.get(name)!;
+  const checkMapCall = (
+    call: NodePath<t.CallExpression | t.OptionalCallExpression>,
+  ): void => {
+    const mapCall = matchMapCall(call.node);
+    if (
+      mapCall &&
+      (containsJsx(call) ||
+        matchRenderCallbackMap(ctx, name, mapCall) !== null)
+    ) {
+      // allowed ONLY as a direct JSX child: <ul>{items.map(...)}</ul>
+      const parent = call.parentPath;
+      const grand = parent?.parentPath;
+      if (
+        !parent?.isJSXExpressionContainer() ||
+        (!grand?.isJSXElement() &&
+          !grand?.isJSXFragment() &&
+          !isRenderAttributePosition(ctx, parent))
+      ) {
+        throw call.buildCodeFrameError(
+          'memo-dom: list rendering must be a direct JSX child: <ul>{items.map(item => <Row />)}</ul>',
+        );
+      }
+      // full form validation happens in collectReads (needs composition)
+      call.skip();
+    }
+  };
   p.traverse({
     JSXElement(el) {
       const open = el.node.openingElement;
@@ -731,30 +773,8 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         validateCondPosition(ctx, l);
       }
     },
-    CallExpression(call) {
-      const mapCall = matchMapCall(call.node);
-      if (
-        mapCall &&
-        (containsJsx(call) ||
-          matchRenderCallbackMap(ctx, name, mapCall) !== null)
-      ) {
-        // allowed ONLY as a direct JSX child: <ul>{items.map(...)}</ul>
-        const parent = call.parentPath;
-        const grand = parent?.parentPath;
-        if (
-          !parent?.isJSXExpressionContainer() ||
-          (!grand?.isJSXElement() &&
-            !grand?.isJSXFragment() &&
-            !isRenderAttributePosition(ctx, parent))
-        ) {
-          throw call.buildCodeFrameError(
-            'memo-dom: list rendering must be a direct JSX child: <ul>{items.map(item => <Row />)}</ul>',
-          );
-        }
-        // full form validation happens in collectReads (needs composition)
-        call.skip();
-      }
-    },
+    CallExpression: checkMapCall,
+    OptionalCallExpression: checkMapCall,
   });
 }
 
@@ -882,7 +902,7 @@ function componentHasDirectItemMutation(
 function registerKeyedListMutationPlan(
   ctx: Ctx,
   component: string,
-  call: t.CallExpression,
+  call: t.CallExpression | t.OptionalCallExpression,
   site: ReturnType<typeof analyzeMapSite>,
 ): void {
   if (!site.sourceLocal || !t.isIdentifier(site.sourceExpr)) return;
@@ -956,7 +976,7 @@ function collectReads(ctx: Ctx): void {
      * routing matches the nested runtime ids.
      */
     function collectConditionalMap(
-      call: NodePath<t.CallExpression>,
+      call: NodePath<t.CallExpression | t.OptionalCallExpression>,
       condSuffix: string,
       branchPrefixes: Map<string, number>,
     ): void {
@@ -1075,7 +1095,7 @@ function collectReads(ctx: Ctx): void {
     }
 
     function collectInlineRowSite(
-      call: NodePath<t.CallExpression>,
+      call: NodePath<t.CallExpression | t.OptionalCallExpression>,
       site: ReturnType<typeof analyzeMapSite>,
       containerSuffix: string,
     ): void {
@@ -1084,6 +1104,42 @@ function collectReads(ctx: Ctx): void {
       const rowVars = new Set<string>();
       const childCounts = new Map<string, number>();
       const nestedPrefixes = new Map<string, number>();
+
+      const checkNestedCall = (
+        inner: NodePath<t.CallExpression | t.OptionalCallExpression>,
+      ): void => {
+        const nestedMap = matchMapCall(inner.node);
+        if (nestedMap !== null && containsJsx(inner)) {
+          const nestedSite = analyzeMapSite(
+            ctx,
+            nestedMap,
+            inner,
+            name,
+            nestedPrefixes,
+            site,
+          );
+          const nestedSuffix =
+            `${containerSuffix}/Row[*]/${nestedSite.suffix}`;
+          if (nestedSite.form === 'component') {
+            recordListedSite(nestedSite, nestedSuffix);
+          } else {
+            collectInlineRowSite(inner, nestedSite, nestedSuffix);
+          }
+          inner.skip();
+          return;
+        }
+        const callee = inner.node.callee;
+        if (
+          t.isIdentifier(callee) &&
+          (ctx.helpers.has(callee.name) ||
+            ctx.importedFunctions.has(callee.name))
+        ) {
+          const summary =
+            ctx.importedFunctions.get(callee.name) ??
+            summarizeHelper(ctx, callee.name);
+          for (const read of summary.reads) rowVars.add(read);
+        }
+      };
 
       callbackPath.traverse({
         Identifier(id) {
@@ -1098,39 +1154,8 @@ function collectReads(ctx: Ctx): void {
         JSXElement(element) {
           recordRowComponent(element, containerSuffix, childCounts);
         },
-        CallExpression(inner) {
-          const nestedMap = matchMapCall(inner.node);
-          if (nestedMap !== null && containsJsx(inner)) {
-            const nestedSite = analyzeMapSite(
-              ctx,
-              nestedMap,
-              inner,
-              name,
-              nestedPrefixes,
-              site,
-            );
-            const nestedSuffix =
-              `${containerSuffix}/Row[*]/${nestedSite.suffix}`;
-            if (nestedSite.form === 'component') {
-              recordListedSite(nestedSite, nestedSuffix);
-            } else {
-              collectInlineRowSite(inner, nestedSite, nestedSuffix);
-            }
-            inner.skip();
-            return;
-          }
-          const callee = inner.node.callee;
-          if (
-            t.isIdentifier(callee) &&
-            (ctx.helpers.has(callee.name) ||
-              ctx.importedFunctions.has(callee.name))
-          ) {
-            const summary =
-              ctx.importedFunctions.get(callee.name) ??
-              summarizeHelper(ctx, callee.name);
-            for (const read of summary.reads) rowVars.add(read);
-          }
-        },
+        CallExpression: checkNestedCall,
+        OptionalCallExpression: checkNestedCall,
       });
 
       if (rowVars.size > 0) {
@@ -1217,6 +1242,13 @@ function collectReads(ctx: Ctx): void {
               branchPrefixes,
             );
           },
+          OptionalCallExpression(call) {
+            collectConditionalMap(
+              call,
+              fullSuffix,
+              branchPrefixes,
+            );
+          },
         });
       }
       const vars = collectStateIds(ctx, node);
@@ -1231,6 +1263,115 @@ function collectReads(ctx: Ctx): void {
         });
       }
       c.skip(); // region reads are not owner reads
+    }
+
+    function checkCallExpression(
+      call: NodePath<t.CallExpression | t.OptionalCallExpression>,
+    ): void {
+      if (
+        t.isIdentifier(call.node.callee, { name: 'effect' }) &&
+        call.scope.getBinding('effect') === undefined
+      ) {
+        // Effect reads belong to the effect entity, not its owner.
+        call.skip();
+        return;
+      }
+      const mapCall = matchMapCall(call.node);
+      if (
+        mapCall &&
+        (containsJsx(call) ||
+          matchRenderCallbackMap(ctx, name, mapCall) !== null)
+      ) {
+        const site = analyzeMapSite(ctx, mapCall, call, name, usedPrefixes);
+        registerKeyedListMutationPlan(ctx, name, mapCall, site);
+        const targeted = findTargetedListDependencies(
+          site,
+          ctx.instanceState.get(name) ?? new Set(),
+        );
+        if (targeted.length > 0 && t.isIdentifier(site.sourceExpr)) {
+          const source = site.sourceExpr.name;
+          ctx.targetedListDependencies.set(
+            mapCall,
+            targeted.map((value) => ({
+              source,
+              value,
+            })),
+          );
+          ctx.targetedListComponents.add(name);
+          addInstanceReasons(ctx, name, [source, ...targeted]);
+        }
+        if (!site.sourceLocal) reads.add(site.sourceKey);
+        if (site.form === 'component') {
+          // R10: row-prop reads are OWNER reads — the owner re-pushes row
+          // props via updateProps during reconcile
+          for (const attr of site.jsx!.openingElement.attributes) {
+            if (t.isJSXSpreadAttribute(attr)) continue;
+            const a = attr as t.JSXAttribute;
+            const propName = t.isJSXIdentifier(a.name)
+              ? a.name.name
+              : `${a.name.namespace.name}:${a.name.name.name}`;
+            if (
+              propName === 'key' ||
+              propName === 'ref' ||
+              ctx.componentProps
+                .get(site.rowComp!)
+                ?.refProps.includes(propName) === true
+            ) {
+              continue;
+            }
+            const v = attrExpr(a.value);
+            if (!v) continue;
+            walkNodes(v, (n) => {
+              if (
+                t.isIdentifier(n) &&
+                ctx.state.has(n.name) &&
+                call.scope.getBinding(n.name)?.scope.path.isProgram() === true
+              ) {
+                reads.add(n.name);
+              }
+              if (t.isMemberExpression(n)) {
+                const key = memberKey(n);
+                if (key !== null && key.includes('.')) {
+                  const rootName = key.split('.')[0]!;
+                  if (
+                    ctx.state.get(rootName) === 'store' &&
+                    call.scope.getBinding(rootName)?.scope.path.isProgram() === true
+                  ) {
+                    reads.add(key);
+                  }
+                }
+              }
+            });
+          }
+          const sites = ctx.listedSites.get(site.rowComp!) ?? [];
+          if (!sites.some((s) => s.owner === name && s.suffix === site.suffix)) {
+            sites.push({
+              owner: name,
+              suffix: site.suffix,
+              itemParam: site.itemParam,
+              keyExpr: site.keyExpr,
+              sourceKey: site.sourceKey,
+              sourceLocal: site.sourceLocal,
+            });
+          }
+          ctx.listedSites.set(site.rowComp!, sites);
+        } else {
+          collectInlineRowSite(call, site, site.suffix);
+        }
+        call.skip(); // callback contents are not owner reads
+        return;
+      }
+      // helper calls: the callee's summarized reads belong to this component
+      const callee = call.node.callee;
+      if (
+        t.isIdentifier(callee) &&
+        (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name)) &&
+        call.scope.getBinding(callee.name)?.scope.path.isProgram() === true
+      ) {
+        const summary =
+          ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
+        for (const r of summary.reads) reads.add(r);
+      }
     }
 
     p.traverse({
@@ -1250,112 +1391,8 @@ function collectReads(ctx: Ctx): void {
       LogicalExpression(l) {
         handleCond(l);
       },
-      CallExpression(call) {
-        if (
-          t.isIdentifier(call.node.callee, { name: 'effect' }) &&
-          call.scope.getBinding('effect') === undefined
-        ) {
-          // Effect reads belong to the effect entity, not its owner.
-          call.skip();
-          return;
-        }
-        const mapCall = matchMapCall(call.node);
-        if (
-          mapCall &&
-          (containsJsx(call) ||
-            matchRenderCallbackMap(ctx, name, mapCall) !== null)
-        ) {
-          const site = analyzeMapSite(ctx, mapCall, call, name, usedPrefixes);
-          registerKeyedListMutationPlan(ctx, name, mapCall, site);
-          const targeted = findTargetedListDependencies(
-            site,
-            ctx.instanceState.get(name) ?? new Set(),
-          );
-          if (targeted.length > 0 && t.isIdentifier(site.sourceExpr)) {
-            const source = site.sourceExpr.name;
-            ctx.targetedListDependencies.set(
-              mapCall,
-              targeted.map((value) => ({
-                source,
-                value,
-              })),
-            );
-            ctx.targetedListComponents.add(name);
-            addInstanceReasons(ctx, name, [source, ...targeted]);
-          }
-          if (!site.sourceLocal) reads.add(site.sourceKey);
-          if (site.form === 'component') {
-            // R10: row-prop reads are OWNER reads — the owner re-pushes row
-            // props via updateProps during reconcile
-            for (const attr of site.jsx!.openingElement.attributes) {
-              if (t.isJSXSpreadAttribute(attr)) continue;
-              const a = attr as t.JSXAttribute;
-              const propName = t.isJSXIdentifier(a.name)
-                ? a.name.name
-                : `${a.name.namespace.name}:${a.name.name.name}`;
-              if (
-                propName === 'key' ||
-                propName === 'ref' ||
-                ctx.componentProps
-                  .get(site.rowComp!)
-                  ?.refProps.includes(propName) === true
-              ) {
-                continue;
-              }
-              const v = attrExpr(a.value);
-              if (!v) continue;
-              walkNodes(v, (n) => {
-                if (
-                  t.isIdentifier(n) &&
-                  ctx.state.has(n.name) &&
-                  call.scope.getBinding(n.name)?.scope.path.isProgram() === true
-                ) {
-                  reads.add(n.name);
-                }
-                if (t.isMemberExpression(n)) {
-                  const key = memberKey(n);
-                  if (key !== null && key.includes('.')) {
-                    const rootName = key.split('.')[0]!;
-                    if (
-                      ctx.state.get(rootName) === 'store' &&
-                      call.scope.getBinding(rootName)?.scope.path.isProgram() === true
-                    ) {
-                      reads.add(key);
-                    }
-                  }
-                }
-              });
-            }
-            const sites = ctx.listedSites.get(site.rowComp!) ?? [];
-            if (!sites.some((s) => s.owner === name && s.suffix === site.suffix)) {
-              sites.push({
-                owner: name,
-                suffix: site.suffix,
-                itemParam: site.itemParam,
-                keyExpr: site.keyExpr,
-                sourceKey: site.sourceKey,
-                sourceLocal: site.sourceLocal,
-              });
-            }
-            ctx.listedSites.set(site.rowComp!, sites);
-          } else {
-            collectInlineRowSite(call, site, site.suffix);
-          }
-          call.skip(); // callback contents are not owner reads
-          return;
-        }
-        // helper calls: the callee's summarized reads belong to this component
-        const callee = call.node.callee;
-        if (
-          t.isIdentifier(callee) &&
-          (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name)) &&
-          call.scope.getBinding(callee.name)?.scope.path.isProgram() === true
-        ) {
-          const summary =
-            ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
-          for (const r of summary.reads) reads.add(r);
-        }
-      },
+      CallExpression: checkCallExpression,
+      OptionalCallExpression: checkCallExpression,
 
       Identifier(id) {
         if (!ctx.state.has(id.node.name)) return;

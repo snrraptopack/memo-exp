@@ -11,8 +11,10 @@ export {
   compileModules,
   compileModulesDetailed,
   type CompiledComponentExport,
+  type CompiledFunctionExport,
   type CompiledModuleMetadata,
   type CompiledModules,
+  type CompiledStateExport,
   type CompileModulesOptions,
 } from './linker';
 export {

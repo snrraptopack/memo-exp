@@ -2,6 +2,20 @@ import * as t from '@babel/types';
 import { generatedIdentifier } from '../identifiers';
 import type { Ctx, StateKind } from './model';
 
+/** Remove TypeScript-only wrappers without changing runtime semantics. */
+export function unwrapTypeExpression(expression: t.Expression): t.Expression {
+  while (
+    t.isTSAsExpression(expression) ||
+    t.isTSTypeAssertion(expression) ||
+    t.isTSNonNullExpression(expression) ||
+    t.isTSSatisfiesExpression(expression) ||
+    t.isTSInstantiationExpression(expression)
+  ) {
+    expression = expression.expression;
+  }
+  return expression;
+}
+
 /** Register a state binding while preserving a linker-provided import entry. */
 export function registerState(ctx: Ctx, name: string, kind: StateKind): void {
   ctx.state.set(name, kind);
@@ -89,7 +103,10 @@ export function memberKey(node: t.MemberExpression): string | null {
   }
   while (
     t.isTSNonNullExpression(current) ||
-    t.isTSAsExpression(current)
+    t.isTSAsExpression(current) ||
+    t.isTSTypeAssertion(current) ||
+    t.isTSSatisfiesExpression(current) ||
+    t.isTSInstantiationExpression(current)
   ) {
     current = current.expression;
   }
@@ -163,7 +180,10 @@ export function memberRootName(node: t.MemberExpression): string | null {
     }
     if (
       t.isTSNonNullExpression(current) ||
-      t.isTSAsExpression(current)
+      t.isTSAsExpression(current) ||
+      t.isTSTypeAssertion(current) ||
+      t.isTSSatisfiesExpression(current) ||
+      t.isTSInstantiationExpression(current)
     ) {
       current = current.expression;
       continue;
@@ -177,8 +197,10 @@ export function memberRootName(node: t.MemberExpression): string | null {
 export function isStoreObject(
   init: t.Expression | null | undefined,
 ): boolean {
-  if (!init || !t.isObjectExpression(init)) return false;
-  return init.properties.every(
+  if (!init) return false;
+  const current = unwrapTypeExpression(init);
+  if (!t.isObjectExpression(current)) return false;
+  return current.properties.every(
     (property) =>
       t.isObjectProperty(property) &&
       !property.computed &&
@@ -191,7 +213,8 @@ export function isConstObjectState(
   init: t.Expression | null | undefined,
 ): boolean {
   if (!init) return false;
-  return t.isArrayExpression(init) || t.isNewExpression(init);
+  const current = unwrapTypeExpression(init);
+  return t.isArrayExpression(current) || t.isNewExpression(current);
 }
 
 /** Unwrap a string or expression-container JSX attribute value. */

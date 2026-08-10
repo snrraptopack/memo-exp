@@ -1,3 +1,4 @@
+import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import type { Ctx } from '../context';
 import { containsJsx, matchMapCall } from '../lists';
@@ -138,6 +139,21 @@ export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
   if ((ctx.instanceState.get(name)?.size ?? 0) > 0) return false;
   let eligible = true;
   const path = ctx.compPaths.get(name)!;
+  const checkCall = (
+    callPath: NodePath<t.CallExpression | t.OptionalCallExpression>,
+  ): void => {
+    if (
+      (t.isIdentifier(callPath.node.callee, { name: 'cleanup' }) &&
+        callPath.scope.getBinding('cleanup') === undefined) ||
+      (t.isIdentifier(callPath.node.callee, { name: 'effect' }) &&
+        callPath.scope.getBinding('effect') === undefined)
+    ) {
+      eligible = false;
+    }
+    if (matchMapCall(callPath.node) && containsJsx(callPath)) {
+      eligible = false;
+    }
+  };
   path.traverse({
     JSXElement(elementPath) {
       const tag = elementPath.node.openingElement.name;
@@ -145,19 +161,8 @@ export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
         eligible = false;
       }
     },
-    CallExpression(callPath) {
-      if (
-        (t.isIdentifier(callPath.node.callee, { name: 'cleanup' }) &&
-          callPath.scope.getBinding('cleanup') === undefined) ||
-        (t.isIdentifier(callPath.node.callee, { name: 'effect' }) &&
-          callPath.scope.getBinding('effect') === undefined)
-      ) {
-        eligible = false;
-      }
-      if (matchMapCall(callPath.node) && containsJsx(callPath)) {
-        eligible = false;
-      }
-    },
+    CallExpression: checkCall,
+    OptionalCallExpression: checkCall,
     ConditionalExpression(conditionalPath) {
       if (containsJsx(conditionalPath)) eligible = false;
     },

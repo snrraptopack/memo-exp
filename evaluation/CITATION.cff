@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this artifact, please cite the accompanying paper and this software artifact."
+title: "memoized-dom Static Reactive Linking Evaluation Artifact"
+type: software
+version: 0.1.0
+date-released: 2026-08-08
+authors:
+  - family-names: "Junior"
+    given-names: "Amihere Theophilus"
+repository-code: "https://github.com/snrraptopack/memo-exp"
+abstract: >-
+  Reproducible corpus coverage, cross-module function-summary ablation,
+  independent concrete-execution oracle, and isolated routing-kernel
+  evaluation for memoized-dom static reactive linking.
+keywords:
+  - reactive programming
+  - static analysis
+  - module linking
+  - TypeScript
+  - incremental user interfaces

@@ -1,0 +1,8 @@
+{
+  "name": "helper-depth-4",
+  "description": "Four helper calls propagate one parameter-relative write.",
+  "category": "helper depth 4",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

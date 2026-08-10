@@ -1,0 +1,1224 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{enumitem}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{definition}{Definition}
+\newtheorem{invariant}{Invariant}
+\newtheorem{proposition}{Proposition}
+
+\lstdefinelanguage{JavaScript}{
+  keywords={function,async,await,if,else,const,let,var,return,export,import,from},
+  keywordstyle=\color{blue}\bfseries,
+  comment=[l]{//},
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{red},
+  morestring=[b]',
+  morestring=[b]"
+}
+\lstset{
+  language=JavaScript,
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  numbers=none,
+  columns=flexible
+}
+
+\begin{document}
+
+\title{Static Reactive Linking for Plain TypeScript/JSX:\\
+Cross-Module Invalidation without Runtime Read Tracking}
+
+\author{
+\IEEEauthorblockN{Amihere Theophilus Junior}
+\IEEEauthorblockA{
+Department of Computer Science and Engineering\\
+University of Mines and Technology (UMaT)\\
+Tarkwa, Ghana\\
+Email: snrraptopack@gmail.com}
+}
+
+\maketitle
+
+\begin{abstract}
+Every fine-grained reactive framework must eventually answer the same
+question after a mutation: which computations are now stale, and in what
+order should they be brought up to date? Signal-based systems answer this
+dynamically, by recording a subscription every time a reactive value is read.
+Static approaches predate signals by decades: IceDust derives incremental
+maintenance strategies from static object paths, PixieDust carries that
+analysis into browser views, and Svelte's original compiler instruments plain
+assignments and orders reactive declarations before the program ever runs.
+What remains less explored is how far static analysis can be carried through
+\emph{ordinary}, mutable TypeScript/JSX code -- code whose state, mutator
+functions, derived values, components, and effects are not confined to one
+file but scattered across an ES-module graph the way real applications are
+actually written. This paper studies that question directly and presents
+\emph{static reactive linking}, implemented in the \texttt{memoized-dom}
+prototype. A binding-aware analysis extracts, for every computation, its read
+set, and for every function, a summary of its write effects. A fixed-point
+module linker gives every imported binding a canonical, alias-independent
+identity tied to its defining module, and propagates exact, receiver-bounded,
+and parameter-relative effect summaries through chains of imported helper
+functions. Each compiled module contributes a fragment to a shared dependency
+index mapping canonical state paths to structural UI-entity patterns; at
+runtime, a mutation consults this compiler-generated index and a live entity
+registry, while an ordinary reactive \emph{read} never allocates or updates a
+subscription. We give a module-aware formal model of this reactive identity
+and invalidation scheme, and prove dirty-set coverage conditional on five
+explicit soundness obligations -- read coverage, write coverage, summary
+soundness, commit instrumentation, and pattern--instance consistency --
+together with a closed-world linking assumption. We state these assumptions
+explicitly rather than treating them as implicit. We are equally explicit
+about the cost of this design: static
+linking trades read-time dependency discovery for conservative branch unions,
+structural wildcard expansion, and whole-subtree fallbacks wherever an effect
+cannot be bounded. In a purposive corpus of 88 write-effect sites, linking
+reduced the unbounded tier from 45.45\% to 0.00\%; across 25 concrete oracle
+executions, static selection achieved 100\% observed recall and 80.0\%
+precision. A rendering-free mechanism benchmark found no uniform routing
+advantage: the static median was lower in one of six topologies and higher in
+the other five, with lifecycle cost depending strongly on wildcard density.
+\end{abstract}
+
+\begin{IEEEkeywords}
+reactive programming, static analysis, module linking, incremental user
+interfaces, effect summaries, TypeScript, JSX
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Consider a small, entirely ordinary refactor. A developer pulls a piece of UI
+state -- a selected row ID, say -- out of the component that first needed it
+and into a shared module, so that three unrelated components can read it and
+one shared helper function can update it. In a signal-based framework this
+refactor is invisible to the reactivity system: wherever the value is read,
+a subscription is recorded at that moment, regardless of which file the read
+happens to live in, or how many function calls separate the read from the
+component that renders it. The dependency graph is discovered lazily, one
+execution at a time, and it does not care about module boundaries because it
+is built \emph{after} the module system has already resolved everything into
+running code.
+
+A compiler that wants to determine the same dependency relationship
+\emph{before} the program runs does not get this for free. It has to answer,
+statically, exactly the questions the module system answers dynamically:
+which exported binding does this import alias refer to, does this exported
+mutator function actually write the state it appears to write, and does a
+helper three calls deep eventually touch a property on an object handed to it
+by its caller? Static dataflow and incremental-computation research answered
+versions of this question long before signals existed. Lustre compiles
+synchronous equations into bounded-memory sequential code \cite{lustre};
+Incremental $\lambda$-Calculus statically differentiates pure programs into
+their own incremental updaters \cite{incremental-lambda}; IceDust inverts
+static object-graph paths into dependency-ordered maintenance strategies
+\cite{icedust}; PixieDust carries that same path analysis into an actual
+browser UI \cite{pixiedust}; and Svelte's compiler has, since version 3,
+instrumented ordinary variable assignments and statically ordered its
+reactive declarations \cite{svelte3,svelte-legacy}. These systems do not
+directly target the refactor above -- a reactive value moved
+across an ES-module boundary, read through an import alias, and written
+through an imported helper function -- in the setting of ordinary, mutable
+TypeScript and JSX rather than a purpose-built DSL or a single-file component
+model. That is the gap this paper works in, and it is deliberately narrower
+than ``static reactivity is possible'':
+
+\begin{quote}
+Can a compiler preserve statically inferred reactive identity and mutation
+effects through an ordinary ES-module graph, then route writes to live UI
+instances without discovering dependencies at read time?
+\end{quote}
+
+The question matters because application state rarely stays where it was
+first declared. It gets exported from dedicated state modules, mutated
+through layers of imported helper functions, transformed into module-owned
+derived values, and consumed by components and effects declared in files that
+may never import one another directly. ES modules complicate this further
+with aliasing: two files can export a binding under the same local name, and
+one exported object can be re-imported under several different names, so a
+naive syntactic match on identifier text is not enough to recover a single
+reactive identity.
+
+This paper makes five contributions:
+
+\begin{enumerate}
+  \item A module-aware model in which a reactive location is identified by
+  its defining module, binding, and static member path -- independent of
+  whatever alias a particular importer happens to use.
+  \item A fixed-point linker that propagates binding-aware read effects,
+  exact and bounded writes, and parameter-relative effects through named
+  ES-module imports and chains of helper functions.
+  \item A compiler/runtime design that maps those canonical locations onto
+  exact and structural live UI entities -- including module-owned derived
+  values and module-owned effects -- without tracking reads at runtime.
+  \item A conditional invalidation-coverage theorem that names the precise
+  soundness obligations the compiler must discharge, rather than treating
+  static-analysis completeness as an unexamined given.
+  \item An artifact-backed evaluation that separates coverage, selection
+  precision, runtime cost, and the specific value and cost contributed by
+  cross-module linking.
+\end{enumerate}
+
+We use \texttt{memoized-dom} as the reference implementation throughout. To
+be direct about what is \emph{not} claimed: we do not claim it accepts full
+ECMAScript, that it stores no runtime structures, or that it has already been
+shown faster than signal-based systems. Each of these is either false as
+stated or an open empirical question, and Sections~\ref{sec:runtime}
+through~\ref{sec:limits} say so explicitly.
+
+\section{Related Work}
+\label{sec:related}
+
+Positioning this work correctly means resisting a tempting but incorrect
+shortcut: treating ``static reactivity'' as a single, already-claimed idea
+and ``generated DOM updates'' as another. Neither is a sufficient novelty
+claim on its own -- both have a long and specific prior history, and the
+honest way to describe this paper's place in that history is to walk through
+each precedent and say exactly what it already establishes and exactly where
+it stops.
+
+\subsection{Static Dataflow and Incremental Transformation}
+
+Lustre is the oldest relevant precedent and the furthest from UI programming:
+a synchronous dataflow language for reactive control and monitoring systems,
+in which equations and explicit clocks admit compilation into bounded-memory
+sequential or automaton implementations \cite{lustre}. It establishes, as
+far back as 1991, that a statically structured reactive network can be
+compiled rather than interpreted at runtime -- but it says nothing about
+inferring such a network from mutable, imperative ES-module code, and nothing
+about DOM instance lifecycles, which did not yet exist as a problem.
+
+Incremental $\lambda$-Calculus (ILC) moves the idea into a higher-order
+functional setting: a pure program $f$ is statically differentiated into an
+incremental function mapping input changes to output changes, automatically,
+without any runtime dependency graph, and with a machine-checked correctness
+development for a family of typed calculi \cite{incremental-lambda}. This is
+a broad and rigorous precedent for the claim that static transformation can
+replace runtime tracing -- but ILC computes general output \emph{deltas} for
+pure terms, whereas the system studied here attributes imperative
+\emph{writes} to the computations they affect and typically re-evaluates a
+guarded expression rather than deriving a closed-form delta. ILC is a
+theoretical ancestor, not an implementation-equivalent system.
+
+Self-adjusting computation and its systems descendant Adapton sit at the
+opposite end of the runtime-cost spectrum from both of the above: they
+construct or maintain execution-derived dependency traces \emph{at run time},
+supporting far more general computation than the restricted static surface
+studied here, at the cost of the very runtime bookkeeping this paper tries to
+avoid \cite{acar-sac,adapton}.
+
+\subsection{Path-Based Static Dependency Analysis}
+
+IceDust is the closest formal-analysis ancestor to this work, and it is worth
+describing in some detail rather than summarizing in a single sentence. It
+extracts static paths from derived-attribute expressions in a declarative,
+persistent object-graph DSL, inverts those paths into a dataflow relation,
+computes strongly connected components and a topological order over the
+resulting graph, and generates one of three concrete maintenance strategies
+-- Calculate-on-Read, Calculate-on-Change, or Calculate-Eventually -- per
+derived attribute \cite{icedust}. Every one of path extraction, dependency
+inversion, generated incremental maintenance, and topological ordering is
+already established by IceDust. What IceDust does not do is address JSX DOM
+entities, ordinary imperative TypeScript mutation, ES-module alias
+resolution, or component placement across files, because its derived
+expressions are read-only by construction and its source language is a
+purpose-built DSL rather than a general-purpose imperative language.
+
+PixieDust takes the next step and is the nearest UI precedent of all: it
+extends IceDust's path analysis with functions and views, statically
+over-approximates model/view dependencies, inverts them, and uses the result
+to incrementally update a React-rendered browser UI, reporting performance
+comparable to MobX in its own evaluation \cite{pixiedust}. Because it is this
+close, it deserves to be discussed on its own terms rather than folded into a
+generic ``incremental computation'' paragraph. Two things distinguish this
+paper's approach from PixieDust. First, PixieDust's runtime is not empty --
+its own formal semantics describes per-field component subscriptions, a
+component metadata store, dirty flags, a re-render queue, and a cached
+virtual DOM -- which is an important reminder, discussed further in
+Section~\ref{sec:runtime}, that static dependency \emph{analysis} does not by
+itself imply the absence of runtime dependency \emph{structures}. Second,
+PixieDust's source language is an explicit model/view/action DSL with
+declared inverse relationships between entities, whereas this work analyzes
+ordinary TypeScript/JSX, infers imperative writes rather than requiring
+declared ones, and links reactive identity across ES-module boundaries that
+PixieDust's single-model setting does not need to cross.
+
+Reactive variables integrate signal-like values directly into an imperative
+language and use lexical restrictions to guarantee that the resulting
+dependency graph is acyclic and can be topologically ordered
+\cite{reactive-variables}. This is a close precedent at the language-design
+level, though it is not centered on DOM compilation or on routing writes to
+structural instances placed across separately compiled files.
+
+\subsection{Industrial UI Compilers}
+
+Of all the systems compared here, legacy Svelte (versions 3 and 4) is the
+one closest to production reality, and the one whose documented limitations
+are most instructive. Its compiler instruments ordinary assignments directly
+-- \texttt{count += 1} becomes an invalidation call -- and determines the
+dependencies of \texttt{\$:} reactive statements purely at compile time,
+ordering them topologically before the program runs \cite{svelte3,svelte-legacy}.
+Svelte's own documentation is candid about where this breaks down: a
+dependency hidden behind a function call is invisible to the analysis unless
+it appears lexically inside the reactive statement itself, which is precisely
+the class of case a linker across ES-module helper chains is built to
+recover. The other half of the comparison is just as telling -- shared state
+that lives outside a single component normally falls back to Svelte's
+\texttt{store} primitive and its own runtime subscription contract, which is
+a tacit admission that compile-time analysis, in that design, does not extend
+cleanly across module boundaries. This paper's linker is, in effect, an
+attempt to push exactly that boundary further out.
+
+Svelte 5, Solid, and Vue represent a different and more recent design choice:
+they deliberately determine dependencies \emph{dynamically}, at evaluation
+time, using signals, refs, or reactive proxies under the hood
+\cite{svelte-runes,solid-reactivity,vue-reactivity}. Solid registers the
+currently executing computation as an observer the instant a signal getter
+runs; Vue tracks proxy and ref reads in a nested target/key/effect structure
+and replays stored effects on write; Svelte 5's \texttt{\$derived} and
+\texttt{\$effect} resolve their dependencies when evaluated, using signals
+internally. The appeal of this design is real: dependency discovery is
+path-sensitive by construction, so a dependency hidden behind an arbitrary
+function call is simply observed if it is actually read on a given execution,
+with no special-casing required. The cost is a runtime dependency
+representation that must be built and kept consistent as the program runs.
+Static linking accepts the opposite trade: a conservative, closed-world
+over-approximation computed once at compile time, in exchange for removing
+dependency \emph{discovery} from the read path -- and, as
+Section~\ref{sec:limits} makes clear, an explicit fallback surface wherever
+that approximation cannot be computed precisely.
+
+\subsection{Ahead-of-Time Reactive Scheduling}
+
+Outside the browser, Oeyen et al. present Remus, a low-level reactive virtual
+machine influenced by Haai, in which reactor graphs can be topologically
+pre-scheduled ahead of time -- avoiding a dynamically maintained priority
+queue -- while dedicated deployment commands still permit controlled dynamic
+structural change \cite{remus}. Remus targets glitch freedom and bounded
+overhead on constrained embedded hardware, working from an explicit reactor
+description rather than inferring one from imperative source code; its
+comparison here is closer in spirit (ahead-of-time scheduling as a
+performance strategy) than in mechanism.
+
+\subsection{Where This Leaves the Contribution}
+
+Table~\ref{tab:positioning} lays the whole comparison out along the axis that
+matters most for this paper: not whether a system is ``static'' or
+``dynamic'' in the abstract, but specifically \emph{when} the
+state-to-computation dependency relationship is determined, and \emph{what},
+if anything, a running program must still keep in memory to route a write.
+Read this way, the contribution is not a new point on the static/dynamic
+axis -- IceDust and PixieDust already occupy the static end of it for their
+respective source languages -- but an attempt to carry that same static
+determination through an ordinary, multi-file, imperative TypeScript/JSX
+program, which is a source-language problem none of these systems needed to
+solve for their own settings.
+
+\begin{table*}[t]
+\centering
+\caption{Positioning by dependency determination and program model}
+\label{tab:positioning}
+\begin{tabular}{@{}p{2.4cm}p{3.0cm}p{3.0cm}p{3.5cm}p{3.5cm}@{}}
+\toprule
+\textbf{System} & \textbf{Source model} & \textbf{Dependency determination} & \textbf{Cross-unit abstraction} & \textbf{Run-time dependency state} \\
+\midrule
+Lustre & synchronous streams/equations & static & dataflow nodes/modules & compiled automaton/stream state \\
+ILC & pure typed $\lambda$ terms & static differentiation & higher-order composition & no dependency graph required \\
+IceDust & object-graph DSL & static paths and inversion & whole data model & strategy-specific cache/scheduler \\
+PixieDust & model/view/action UI DSL & static paths and inversion & functions and entity views & field subscriptions, component store, queue, VDOM cache \\
+Svelte 3/4 & component language & static assignments and \texttt{\$:} & stores for shared state & component dirty state; store subscriptions \\
+Solid/Svelte 5/Vue & signals/runes/refs/proxies & dynamic reads & reactive values cross functions/modules & source--observer graph/maps \\
+Remus/Haai & reactors & static pre-scheduling plus deployments & reactor composition & VM deployment state \\
+\texttt{memoized-dom} & TS/JSX subset & static reads/writes and linking & canonical ES-module locations and summaries & static index, wildcard expansions, entity registry, dirty queue \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\section{Source and Compilation Model}
+\label{sec:source}
+
+\subsection{Analyzed Source Subset}
+
+The prototype accepts TypeScript/JSX broadly, but it only assigns reactive
+meaning to a piece of code where its effects can be bounded statically --
+everything else falls through to the conservative handling described in
+Section~\ref{sec:limits} rather than being silently ignored. Recognized state
+includes module-owned \texttt{let}/\texttt{var} bindings, mutable
+object/array roots, component-local state, props, and expressions the
+compiler recognizes as derivations of that state. Critically, reactivity is
+attached to ordinary JavaScript mutation semantics rather than to a required
+API: a state root is reactive whether it is updated by direct assignment
+(\texttt{count++}, \texttt{store.selectedId = id}) or by one of the standard
+mutating array/object operations (\texttt{push}, \texttt{splice},
+\texttt{sort}, \texttt{delete}, \texttt{Object.assign}, and similarly for
+\texttt{Map}/\texttt{Set} mutators). The compiler recognizes a fixed table of
+such mutating built-ins and attributes their effect to the receiver's
+canonical root path exactly as it would an assignment -- so
+\texttt{store.todos.push(item)} is analyzed as a write to
+\texttt{state.ts\#store.todos}, with no wrapper, decorator, or explicit
+signal call required at the call site. This is what makes the source subset
+``ordinary'' in the sense claimed throughout this paper: a developer writes
+plain mutable state and plain mutating operations, and reactivity is a
+property the compiler discovers, not an API the developer opts into. The
+analysis follows lexical binding identity, static member paths, local
+aliases, and summaries computed for every function visible to it. Dynamic
+reflection, computed member mutation through a non-static key, and behavior
+hidden inside unresolved external code sit outside this precise subset by
+design, not by oversight.
+
+\subsection{Canonical Module State}
+
+Let $M$ be the finite set of modules in one connected compilation graph. The
+first problem the linker has to solve is the aliasing problem sketched in the
+introduction: the same underlying state must resolve to the same identity no
+matter which file reads it or what local name it was imported under. A
+canonical reactive location makes this precise:
+
+\begin{definition}[Canonical reactive location]
+\label{def:key}
+For defining module $m\in M$, declared root binding $b$, and possibly empty
+static member path $\pi$,
+\[
+  \operatorname{key}(m,b,\pi)
+  = \operatorname{moduleId}(m)\mathbin{\#}b[.\pi].
+\]
+\end{definition}
+
+Import resolution maps a local alias to the key of its defining export, which
+is what prevents both false separation of a value imported under two names,
+and accidental collision between two unrelated exports that happen to share a
+name.
+
+\begin{lstlisting}[caption={Cross-module state, derivation, and view}]
+// state.ts
+export let count = 0;
+export function increment() { count++; }
+
+// derived.ts
+import { count } from './state';
+export const parity = count % 2 ? 'odd' : 'even';
+
+// App.tsx
+import { increment } from './state';
+import { parity } from './derived';
+export function App() {
+  return <button onClick={increment}>{parity}</button>;
+}
+\end{lstlisting}
+
+This three-file example is the refactor from the introduction made concrete.
+\texttt{increment} writes \texttt{state.ts\#count}; a singleton computation in
+\texttt{derived.ts} reads that same canonical key and conditionally commits
+\texttt{derived.ts\#parity}; and the component declared in \texttt{App.tsx}
+reads that second key in turn. Three files, two hops of derivation, and one
+canonical identity threading all of it together -- which is exactly the chain
+a purely lexical, single-file analysis cannot see.
+
+The same canonical-identity machinery applies unchanged when the mutation is
+a built-in array or object operation rather than an assignment:
+
+\begin{lstlisting}[caption={Mutating-method write via an imported helper}]
+// state.ts
+export const store = { todos: [] as string[] };
+export function addTodo(text: string) {
+  store.todos.push(text); // mutating method, not '='
+}
+
+// TodoList.tsx
+import { store } from './state';
+export function TodoList() {
+  return <ul>{store.todos.map(t => <li>{t}</li>)}</ul>;
+}
+\end{lstlisting}
+
+Here \texttt{addTodo} is linked as a write to
+\texttt{state.ts\#store.todos} even though no assignment operator appears in
+its body -- the compiler's write-extraction pass recognizes
+\texttt{.push} as a mutating operation on a statically resolved receiver and
+attributes the effect to that receiver's canonical path, then propagates that
+summary through \texttt{addTodo} to any importer that calls it, precisely as
+it would for an exact assignment.
+
+\subsection{Function Effect Summaries}
+\label{sec:tiers-ref}
+
+For each analyzed function $f$, the compiler computes
+
+\[
+S(f)=\langle R_f,W_f,B_f,Q_f,U_f\rangle,
+\]
+
+where $R_f$ is the read set, $W_f$ exact writes, $B_f$ effects bounded to
+known receivers/state roots -- which includes both direct property
+assignment and calls to the compiler's recognized table of mutating
+built-ins (\texttt{push}, \texttt{pop}, \texttt{splice}, \texttt{sort},
+\texttt{reverse}, \texttt{delete}, \texttt{Object.assign}, and the
+corresponding \texttt{Map}/\texttt{Set} mutators) on a statically resolved
+receiver -- $Q_f$ paths relative to formal parameters, and $U_f$ an
+unbounded-effect flag. At a call site, parameter-relative paths are
+substituted with the statically known origins of the actual arguments, so
+that a helper written once and called from several places contributes a
+different concrete write-set at each call, without needing to be re-analyzed
+from scratch.
+
+The linker itself proceeds as a worklist algorithm: it first discovers
+exports and imports across the module graph, then repeatedly re-analyzes
+modules against the current summaries. If a module's exported summary
+changes as a result, every module that imports it is requeued for
+re-analysis. Because the abstract facts being propagated are finite sets over
+finite module syntax plus a single Boolean unbounded flag, this process is
+expected to converge, and the implementation additionally enforces a
+diagnostic iteration bound as a safety net. A full monotonicity proof for
+every individual analysis transfer function remains future work, and we say
+so plainly rather than asserting termination as already established.
+
+\subsection{Structural Computation Identity}
+
+Computations are DOM update closures, conditional/list regions, component
+updates, module computeds, or effects. Because a single component
+declaration can be instantiated from more than one call site, a computation
+declaration does not always correspond to a single runtime placement -- the
+compiler therefore emits a \emph{set} of patterns describing every place a
+given declaration might live:
+
+\[
+p ::= s_1/\dots/s_n
+  \mid s_1/\dots/\mathrm{Row}[*]
+  \mid s_1/\dots/s_n/*.
+\]
+
+Exact patterns name singleton placements; row wildcards denote keyed
+instances within a list; descendant patterns conservatively cover an entire
+structural subtree when nothing more precise can be established. Component
+placement itself is linked through the cross-file component call graph, so
+the pattern set emitted for a component declared in one module is often
+derived from callers declared in others -- placement, like state, does not
+respect file boundaries, and the analysis has to follow it across them.
+
+\section{Static Dependency Index and Runtime}
+\label{sec:runtime}
+
+\subsection{Index Synthesis}
+
+Let $C$ be the computations, $K$ canonical locations, and $R(c)\subseteq K$
+the statically inferred reads of $c$. Let $\operatorname{Pat}(c)$ be its set
+of possible placement patterns.
+
+\begin{definition}[Access index]
+\label{def:index}
+\[
+AT(k)=\bigcup_{c\in C:k\in R(c)}\operatorname{Pat}(c).
+\]
+\end{definition}
+
+Each compiled module installs its own fragment of $AT$, and the runtime
+merges fragments by canonical key as modules initialize. Exact readers are
+retained as concrete entity IDs; wildcard patterns are compiled once and then
+incrementally maintained as live entities register and unregister, rather
+than being re-matched from scratch on every write. Member paths use
+segment-aware prefix matching in both directions: a write to a root reaches
+readers of its known members, and a write to a member reaches readers of its
+root.
+
+It is worth being precise about what this design does and does not eliminate,
+because it is easy to overstate. The installed index, the wildcard match
+sets, a live entity registry/tree, dirty queues, and caches are all runtime
+state, and all of them persist for the life of the application. What is
+genuinely absent is dependency \emph{discovery} triggered by a reactive read
+-- an ordinary read never allocates, never registers a subscription, and
+never touches this runtime state at all. That distinction is why we describe
+this design as working ``without runtime read tracking'' rather than
+``without a runtime graph''; the latter phrase would not survive contact with
+Definition~\ref{def:index}.
+
+\subsection{Mutation Commit}
+
+The compiler instruments an analyzed mutation scope with a hoisted constant
+write set:
+
+\begin{lstlisting}[caption={Generated commit for an imperative mutation scope}]
+const WRITES_0 = ['./state.ts#count'];
+function increment() {
+  count++;
+  commitWrites(WRITES_0);
+}
+\end{lstlisting}
+
+\begin{algorithm}[h]
+\caption{Static write routing}
+\label{alg:commit}
+\begin{algorithmic}[1]
+\Procedure{CommitWrites}{$W$}
+  \If{some $k\in W$ is unbounded}
+    \State mark the application root subtree dirty
+  \Else
+    \State $P\gets\bigcup_{k\in W} AT(k)$, including path-prefix matches
+    \State $D\gets\{\ell\in L\mid\exists p\in P:p\sim id(\ell)\}$
+    \For{each $\ell\in D$}
+      \State mark $\ell$ dirty
+    \EndFor
+  \EndIf
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+The dirty set deduplicates marks as it is built. A commit pass processes
+ordinary render/computed work before effects, and orders a given batch by
+structural depth, so that a computation is not re-evaluated while one of its
+own statically known upstream dependents is still settling. Module computeds
+are assigned a distinguished early depth so they resolve before the
+components that read them; writes produced while a batch is already running
+are drained in subsequent passes rather than interleaved unpredictably with
+the current one. We want to flag directly that this is not yet a proof of
+general glitch freedom over arbitrary cyclic derivations -- cycles are
+currently caught by a bounded-pass diagnostic rather than ruled out
+structurally, and a genuine topological-ordering proof over the full
+computation graph is left as future work.
+
+\subsection{Guards and Conservative Selection}
+
+Because static reads are unions over every syntactically reachable branch of
+a computation, a selected computation can turn out to be a false positive
+relative to any one concrete execution -- the analysis may correctly note
+that a branch \emph{could} read a value without knowing that this particular
+run took the other branch. Generated update slots absorb this by comparing
+the next value against a cached value before applying any output operation:
+
+\begin{lstlisting}[caption={Guarded output slot}]
+if ($slot !== ($next = expression())) {
+  $slot = $next;
+  applyOutput($next);
+}
+\end{lstlisting}
+
+This suppresses the externally visible effect of an unchanged output, but it
+does not recover the computation cost already paid to evaluate
+\texttt{expression()} in the first place -- an important distinction for
+Section~\ref{sec:evaluation}, since ``selected but suppressed'' and ``never
+selected'' are different costs that a fair evaluation has to measure
+separately, not collapse into a single number.
+
+\section{Module-Aware Invalidation Model}
+\label{sec:formal}
+
+Having built up the machinery informally, we now state precisely what it
+guarantees -- and, just as importantly, exactly what it assumes in order to
+guarantee it. Let $L$ be the currently live computation instances. Each
+instance $\ell$ is an instantiation of declaration
+$\operatorname{decl}(\ell)\in C$ and has a run-time ID $id(\ell)$.
+
+\begin{invariant}[Pattern--instance consistency]
+\label{inv:pattern}
+For every $\ell\in L$, at least one
+$p\in\operatorname{Pat}(\operatorname{decl}(\ell))$ satisfies
+$p\sim id(\ell)$.
+\end{invariant}
+
+The existential here is not a weakening for convenience; it reflects a real
+fact about the system. A reusable component declaration can have several
+alternative caller-derived patterns emitted for it, since it may be mounted
+from more than one call site -- but any \emph{particular} live instance of
+that declaration occupies exactly one placement, and Invariant~\ref{inv:pattern}
+only needs one of its patterns to actually match.
+
+For executed scope $\sigma$, let $W_\sigma$ be the write-set used by its
+generated commit and define
+
+\[
+D_\sigma=\{\ell\in L\mid
+  \exists k\in W_\sigma, p\in AT(k):p\sim id(\ell)\}.
+\]
+
+\begin{theorem}[Conditional dirty-set coverage]
+\label{thm:coverage}
+Assume (i) read coverage: every reactive location that may influence $c$ is in
+$R(c)$; (ii) write coverage: every relevant mutation performed by $\sigma$ is
+in $W_\sigma$ or selects the root fallback; (iii) linked summaries
+over-approximate their implementations after argument substitution; (iv) the
+scope executes its generated commit at the required boundary; (v)
+Invariant~\ref{inv:pattern}; and (vi) the linked module graph is closed over
+imports used for precise analysis. Then for every $\ell\in L$,
+\[
+(R(\operatorname{decl}(\ell))\cap W_\sigma\neq\varnothing)
+\implies \ell\in D_\sigma.
+\]
+For an unbounded effect, marking the root subtree covers every live application
+entity.
+\end{theorem}
+
+\begin{proof}
+Choose $k\in R(\operatorname{decl}(\ell))\cap W_\sigma$. By
+Definition~\ref{def:index},
+$\operatorname{Pat}(\operatorname{decl}(\ell))\subseteq AT(k)$. By
+Invariant~\ref{inv:pattern}, some pattern $p$ in that set matches $id(\ell)$.
+Since $k\in W_\sigma$, the definition of $D_\sigma$ includes $\ell$. If the
+effect is unbounded, the root-subtree operation selects all live descendants by
+construction.
+\end{proof}
+
+It is worth dwelling on what this proof does and does not show, because the
+gap between the two is exactly where a real compiler can fail silently. The
+theorem proves that \emph{if} assumptions (i)--(vi) hold, the routing
+mechanics of Section~\ref{sec:runtime} correctly deliver every affected
+computation into the dirty set; it is a statement about the algorithm, not
+about any particular JavaScript program fed into it. Whether a given analysis
+run actually \emph{satisfies} those six assumptions is a separate, harder
+question, and one that does not have a uniform yes for arbitrary JavaScript.
+Exception exits, opaque callbacks retained by unanalyzed code, reflection,
+native mutation, and dynamically loaded modules are not edge cases erased by
+the set-theoretic argument above -- they are precisely the compiler soundness
+obligations that Section~\ref{sec:limits} is devoted to.
+
+\section{Implementation}
+\label{sec:implementation}
+
+The prototype consists of a Babel-based compiler, a graph/link pass, a small
+runtime, and a Vite adapter. The linked compiler parses each module,
+discovers state/function/component exports, resolves named imports with host
+or alias resolution, computes export manifests to a fixed point, links
+component placements and prop origins, and finally emits each module with its
+linked facts attached. Authored ES imports remain ordinary imports as far as
+the host bundler is concerned -- the linking happens entirely inside the
+compiler pass, not by rewriting the module graph the bundler sees.
+
+The implementation currently supports the following module-level reactive
+chains:
+
+\begin{itemize}
+  \item imported mutable object paths and exported mutator functions;
+  \item exact, receiver-bounded, and parameter-relative helper effects;
+  \item expression-derived module values and exhaustive \texttt{if}/\texttt{switch}
+  derivations as singleton computed entities;
+  \item module-level effects with canonical imported dependencies;
+  \item component definitions, prop origins, keyed-row placements, render
+  callbacks, children, and selected dynamic-component candidates across files.
+\end{itemize}
+
+Opaque imported calls are marked unbounded rather than guessed at. The
+current fallback commits after the known call returns normally, but it
+cannot observe a mutation performed later by a callback that unknown code
+retained and invokes on its own schedule -- a real limitation discussed
+further below, not one the implementation currently works around. Hot
+replacement removes and reinstalls module-owned index fragments and module
+resources on edit.
+
+\section{Complexity Accounting and Evaluation}
+\label{sec:evaluation}
+
+\subsection{Complexity Accounting}
+
+Let $K$ be the canonical keys, $P$ emitted key-to-pattern entries, $L$ live
+entities, $X$ materialized wildcard-pattern/entity matches, and $T_W$
+entities resolved for one committed write set. The current implementation
+uses $O(K+P+X)$ runtime dependency-index space, $O(L)$ entity-registry space,
+and worst-case $O(L)$ dirty-set space. Once caches are warm, static
+resolution costs approximately $O(|W_\sigma|+T_W)$ plus marking and
+rendering; a root fallback selects $O(L)$ entities in the worst case. Live
+registry changes also require maintaining the affected wildcard expansions.
+
+This complexity accounting is deliberately more conservative than the
+tempting shorthand of ``$O(0)$ static runtime memory'' set against ``$O(E)$
+signals,'' and that shorthand is worth naming and rejecting explicitly rather
+than letting it linger implicitly in a complexity table. Dynamic signal
+systems store concrete source--observer edges; this system instead stores
+static metadata and structural matches. Whether one is smaller or faster than
+the other is not something either accounting can settle on paper; the
+measurements below quantify it directly.
+
+\subsection{What We Do Not Evaluate}
+
+We do not evaluate whether \texttt{memoized-dom} outperforms complete UI
+frameworks. In particular, we deliberately avoid the
+\texttt{js-framework-benchmark} family of keyed-table benchmarks
+\cite{js-framework-benchmark} as a headline instrument. That suite primarily
+measures large-table construction, reconciliation, and framework-specific
+list strategies; it conflates dependency routing with DOM diffing,
+scheduling, and rendering cost in a way that does not cleanly isolate the
+contribution of this paper. The measurements below instead target three
+properties specific to this paper's claims: how much of a program's reactive
+surface is statically resolvable, how conservative that resolution is
+relative to what actually executes, and what the resulting routing mechanism
+costs in isolation from rendering.
+
+\subsection{Experimental Environment}
+\label{sec:env}
+
+All measurements were collected with Bun 1.3.14 (Node v24.3.0
+compatibility) on 64-bit Windows, on an AMD PRO A12-9800B with four logical
+CPUs. Routing measurements used deterministically generated topologies with
+1{,}024 warmup routing operations, nine in-process timing samples per fresh
+process, seven lifecycle (mount/unmount) samples per process, and three
+independent fresh processes for the replicated routing result reported in
+Section~\ref{sec:microbench-results}. Coverage and oracle results are
+correctness measurements over deterministic inputs and do not depend on
+timing. All raw results, the base commit and dirty-worktree status, and the
+sampling policy are
+recorded alongside the artifact; timing results in particular are reported
+here as evidence from a single machine, not as a cross-platform performance
+claim (Section~\ref{sec:limits}).
+
+\subsection{Instrument 1: Corpus Coverage and Linker Ablation (RQ1, RQ4)}
+\label{sec:corpus}
+
+\subsubsection{Method}
+For a corpus of programs written in the analyzed source subset of
+Section~\ref{sec:source}, the compiler classifies every mutation or effectful
+call site into one of the tiers of Section~\ref{sec:tiers-ref}:
+exact, receiver-bounded, parameter-relative, unbounded, or rejected as
+unsupported syntax. Because the compiler does not implement the hook and
+component runtime semantics of frameworks such as React, arbitrary
+third-party applications cannot simply be pointed at it; the corpus is a
+small, purposive sample of programs written for this source subset, and we
+report it as such rather than as a representative sample of real-world code
+in general. The linker's specific contribution is isolated by an ablation
+that disables cross-module function-summary propagation while holding the
+rest of the compiler fixed -- canonical imported \emph{state} identity
+remains enabled, but every imported \emph{function}'s effects are treated as
+unbounded rather than resolved -- and the same classification is re-run.
+This ablation reuses the same single-module analysis pass with imported
+function facts forced unbounded, not a differently configured compiler entry
+point, so that it isolates the linker's contribution rather than comparing
+two different analyses.
+
+\subsubsection{Results}
+The corpus contains 15 accepted programs (48 modules, 274 nonblank/
+noncomment lines, 88 write-effect sites) spanning seven stress categories --
+aliasing and re-exports, helper-depth chains at depths one, two, and four,
+branch/dynamic-key analysis stress, a multi-file derived chain, five
+application-shaped case studies (todo board, inventory, permissions,
+notifications, finance), a collection-mutation case, and one program that
+deliberately exercises a rejected construct (a namespace import that erases
+named reactive identity). Table~\ref{tab:ablation} gives the aggregate tier
+distribution with and without cross-module function-summary linking.
+
+\begin{table}[h]
+\centering
+\caption{Write-effect tier distribution, linked vs.\ ablated (88 sites, 15 programs)}
+\label{tab:ablation}
+\footnotesize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Mode} & Exact & Bounded & Param-rel. & Unbounded & \textbf{Rate} \\
+\midrule
+Linked & 35 & 24 & 29 & 0 & \textbf{0.00\%} \\
+Ablated & 19 & 8 & 21 & 40 & \textbf{45.45\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+With fixed-point cross-module function summaries enabled, \emph{zero} of the
+88 accepted write-effect sites in the corpus were classified unbounded.
+With cross-module function-summary propagation disabled, 40 of 88 sites
+(45.45\%) degraded to the unbounded tier -- these are calls to an imported
+mutator function whose effect can no longer be attributed to a canonical
+state path once the summary crossing the module boundary is discarded. No
+program's \emph{state}-identity resolution changed under the ablation, which
+is the intended scope of this specific ablation: it isolates the
+contribution of function-summary linking specifically, not of canonical
+state identity, which is a separate and already-enabled mechanism in both
+conditions.
+
+\subsubsection{Paper-ready statement}
+Across a purpose-built corpus of 15 accepted programs (48 modules, 274
+nonblank/noncomment lines, 88 write-effect sites), fixed-point imported
+function summaries reduced unbounded write-effect sites from 45.45\% to
+0.00\%. This result is specific to the supported, purpose-built corpus and
+is not an ecosystem-representativeness claim.
+
+\subsection{Instrument 2: Concrete-Execution Precision Oracle (RQ2, RQ5)}
+\label{sec:oracle}
+
+\subsubsection{Method}
+Static read sets are unions over syntactically reachable branches
+(Section~\ref{sec:runtime}), so a selected computation can be a false
+positive relative to any one concrete execution; conversely, an analysis
+defect could in principle produce a false negative, which is a correctness
+failure rather than a performance cost. A signal-style Proxy tracker cannot
+supply ground truth for this comparison, since a Proxy intercepts property
+access on an object but is structurally blind to a bare lexical read or
+write of a \texttt{let}/\texttt{var} binding -- exactly the state model this
+paper's source subset treats as first-class reactive state. We instead use a
+second, independently implemented Babel transform that does not import or
+call the compiler's own read/write analysis. It discovers module bindings,
+wraps concrete lexical and object-path reads, logs actual writes (including
+calls to the recognized mutating built-ins of Section~\ref{sec:source}), uses
+runtime object identity to recover parameter-relative writes, and evaluates
+every relevant conditional direction separately. For each executed mutation
+we record $S$ (statically selected computations), $O$ (computations whose
+concrete execution actually read a written key), and $C$ (computations whose
+externally visible output changed), and report
+
+\[
+\text{precision} = \frac{|S \cap O|}{|S|}, \qquad
+\text{recall} = \frac{|S \cap O|}{|O|}.
+\]
+
+The runner fails immediately if $O \not\subseteq S$ for any recorded case,
+so that a false negative -- a concrete counterexample to
+Theorem~\ref{thm:coverage}'s coverage guarantee as implemented -- cannot pass
+silently. Because the oracle observes one concrete execution per run, we
+report results as a \emph{dynamic-trace oracle} bounded to the executions
+performed, not as complete semantic ground truth over all possible
+executions; both analyses also operate over the same JavaScript syntax and
+can in principle share conceptual blind spots, which is a limitation of
+oracle independence discussed in Section~\ref{sec:limits}.
+
+\subsubsection{Results}
+Seven base cases were exercised across 25 concrete scenarios spanning
+aliasing, four-level helper-depth propagation, branching in both directions,
+independent object-path fields, cross-module derived chains, and collection
+receiver mutations. Table~\ref{tab:oracle-agg} gives the aggregate result;
+Table~\ref{tab:oracle-cat} breaks it down by stress category.
+
+\begin{table}[h]
+\centering
+\caption{Concrete-execution oracle: aggregate result}
+\label{tab:oracle-agg}
+\footnotesize
+\begin{tabular}{@{}lc@{}}
+\toprule
+Cases / scenarios & 7 / 25 \\
+True positives & 36 \\
+False positives & 9 \\
+\textbf{False negatives} & \textbf{0} \\
+\textbf{Precision} & \textbf{80.0\%} \\
+\textbf{Recall} & \textbf{100.0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Concrete-execution oracle: result by stress category}
+\label{tab:oracle-cat}
+\footnotesize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Category} & Scen. & TP & FP & Prec. & Recall \\
+\midrule
+Aliasing & 6 & 9 & 3 & 75.0\% & 100\% \\
+Helper depth & 3 & 3 & 0 & 100\% & 100\% \\
+Branching & 6 & 4 & 2 & 66.7\% & 100\% \\
+Multi-file deriv. & 3 & 6 & 0 & 100\% & 100\% \\
+Path precision & 4 & 8 & 4 & 66.7\% & 100\% \\
+Receiver mutation & 3 & 6 & 0 & 100\% & 100\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Recall was 100\% across all 25 scenarios: every computation whose concrete
+execution actually read a written key was contained in the compiler's
+static selection, with zero false negatives observed. Precision was 80.0\%
+overall (36 true positives, 9 false positives), and the false positives
+trace to exactly two sources. First, \emph{inactive branch unions}: a static
+branch union includes a location that the preceding concrete execution did
+not read, so the computation is selected but its output guard
+(Section~\ref{sec:runtime}) observes no change -- this accounts for the two
+false positives in the branching category. Second, \emph{cross-field/module-
+object over-approximation}: some aliased-object and independent-field cases
+select a sibling computation in addition to the two concretely affected
+computations, accounting for the remaining seven false positives, spread
+across the aliasing and path-precision categories. The simpler single-binding
+alias cases, four-level parameter-helper chain, derived chain, and collection
+receiver mutations produced no false positives; the multiple-import-alias
+cases did exhibit the cross-field over-approximation described above. No case
+in any category produced a false negative.
+
+\subsubsection{Paper-ready statement}
+Across 25 concrete executions covering aliases, four-level helper
+propagation, both directions of conditional dependencies, independent object
+paths, collection receiver mutations, and cross-module derived chains, the
+compiler achieved 100\% concrete-execution recall and 80.0\% precision (36
+TP, 9 FP, 0 FN). False positives arose from inactive branch unions and
+cross-field/module-object over-approximation. This is implementation
+evidence from a dynamic-trace oracle, not a proof of whole-program soundness
+over all executions, exceptions, opaque retained callbacks, reflection, or
+dynamically loaded code.
+
+\subsection{Instrument 3: Isolated Routing Microbenchmark (RQ3)}
+\label{sec:microbench}
+
+\subsubsection{Method}
+We compare two rendering-free kernels fed the same deterministic topology
+and the same synchronous propagation and path-matching rules: \emph{static
+index} routing as described in Section~\ref{sec:runtime}, with exact readers
+plus wildcard patterns whose live matches are materialized during lifecycle
+changes; and a minimal \emph{dynamic-subscription} kernel using a
+key-to-subscriber \texttt{Set} populated at mount time. The dynamic kernel is
+not Solid, Vue, or Svelte and is not presented as a benchmark of either
+project's actual implementation; it is a comparable reference mechanism.
+Unlike PixieDust's evaluation, which compared complete PixieDust applications
+against MobX/React implementations including rendering behavior
+\cite{pixiedust}, this microbenchmark removes rendering entirely so that it
+isolates dependency-routing cost on its own. The harness verifies identical
+selected entity sets between kernels before timing. Six topologies vary key
+count, entity count, fan-out, wildcard density, writes per commit, and
+derived-computation depth $d_c$ (Table~\ref{tab:topologies}).
+
+\begin{table}[h]
+\centering
+\caption{Generated routing topologies}
+\label{tab:topologies}
+\footnotesize
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\textbf{Topology} & Keys & Ent. & Fan & Wild.\% & W/commit & $d_c$ \\
+\midrule
+Exact, low fan-out & 128 & 256 & 2 & 0\% & 1 & 1 \\
+Exact, high fan-out & 128 & 256 & 64 & 0\% & 1 & 1 \\
+Wildcard-heavy & 128 & 256 & 32 & 75\% & 1 & 1 \\
+Four writes/commit & 128 & 256 & 16 & 25\% & 4 & 1 \\
+Derived depth four & 128 & 256 & 16 & 25\% & 1 & 4 \\
+Large topology & 512 & 1024 & 32 & 50\% & 2 & 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Results}
+\label{sec:microbench-results}
+Table~\ref{tab:routing} reports the median steady-state routing time across
+three fresh processes (nine timing samples each, after 1{,}024 warmup
+routes). The process minimum--maximum ranges are retained in the artifact.
+
+\begin{table}[h]
+\centering
+\caption{Steady-state routing: static index vs.\ dynamic subscription (median of 3 fresh processes)}
+\label{tab:routing}
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Topology} & Static (ns) & Dynamic (ns) & Ratio \\
+\midrule
+Exact, low fan-out & 7{,}452 & 3{,}971 & 1.88$\times$ \\
+Exact, high fan-out & 73{,}046 & 79{,}609 & 0.92$\times$ \\
+Wildcard-heavy & 32{,}849 & 26{,}006 & 1.26$\times$ \\
+Four writes/commit & 69{,}241 & 45{,}324 & 1.53$\times$ \\
+Derived depth four & 42{,}693 & 31{,}518 & 1.35$\times$ \\
+Large topology & 94{,}934 & 84{,}658 & 1.12$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Static-index routing showed no uniform steady-state speed advantage in these
+six topologies. Its median was lower for exact high fan-out (0.92$\times$)
+and higher in the other five topologies (1.12$\times$--1.88$\times$) than the
+minimal dynamic-subscription kernel. The picture is different at the lifecycle
+boundary. Table~\ref{tab:lifecycle} reports mount cost per entity.
+
+\begin{table}[h]
+\centering
+\caption{Mount cost per entity: static index vs.\ dynamic subscription}
+\label{tab:lifecycle}
+\footnotesize
+\begin{tabular}{@{}lccl@{}}
+\toprule
+\textbf{Topology} & Static (ns) & Dynamic (ns) & Interpretation \\
+\midrule
+Exact, low fan-out & 576 & 1{,}110 & static $\approx$1.9$\times$ cheaper \\
+Exact, high fan-out & 360 & 9{,}756 & static $\approx$27.1$\times$ cheaper \\
+Wildcard-heavy & 127{,}541 & 3{,}722 & static $\approx$34.3$\times$ slower \\
+Four writes/commit & 22{,}138 & 1{,}516 & static $\approx$14.6$\times$ slower \\
+Derived depth four & 25{,}145 & 1{,}292 & static $\approx$19.5$\times$ slower \\
+Large topology & 229{,}717 & 5{,}518 & static $\approx$41.6$\times$ slower \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Exact, high-fan-out topologies mount roughly 27$\times$ cheaper under static
+routing, because precomputed exact edges avoid installing many individual
+dynamic subscriber entries. Topologies containing structural wildcard
+patterns reverse this advantage, because the static kernel tests and
+materializes those matches at mount time -- a real
+cost that a bare asymptotic accounting of ``no runtime graph'' would hide,
+and exactly the cost Section~\ref{sec:runtime} names when it distinguishes
+``without runtime read tracking'' from ``without runtime state.'' Logical
+retained-edge counts were equal between kernels in exact topologies; in
+wildcard topologies the static representation retained both the wildcard
+patterns themselves and their materialized matches, adding roughly
+1.5--2.3\% additional logical representation units in these topologies.
+
+\subsubsection{Paper-ready statement}
+A rendering-free mechanism benchmark found no uniform steady-state routing
+advantage for the static index: across six deterministic topologies on one
+evaluation machine, its median was lower in one topology (0.92$\times$) and
+higher in the other five (1.12$\times$--1.88$\times$) than an equivalent
+minimal dynamic-subscription kernel. Lifecycle cost depended on
+representation: exact high-fan-out mounting was approximately 27$\times$
+cheaper statically, while wildcard-heavy static mounting was approximately
+34$\times$ slower, because live structural matches were
+materialized at mount time. These results should not be used to rank
+complete frameworks; they exclude DOM work, rendering, browser scheduling,
+and each framework's production optimizations, and they come from a single
+evaluation machine (Section~\ref{sec:env}).
+
+\subsection{Synthesis}
+
+Table~\ref{tab:eval-plan} maps each research question to its instrument and
+headline result. The strongest defensible summary of the full evaluation is:
+fixed-point ES-module linking materially improves the precision of static
+reactive effect routing within the supported TypeScript/JSX subset, while
+retaining every dependency observed across the tested concrete executions;
+it shifts where dependency-handling cost is paid across compile, mount, and
+update phases, and it is not a demonstrated inherent steady-state speedup
+over dynamic subscriptions.
+
+\begin{table}[h]
+\centering
+\caption{Evaluation instruments and headline results}
+\label{tab:eval-plan}
+\footnotesize
+\begin{tabular}{@{}p{1.6cm}p{3.0cm}p{3.0cm}@{}}
+\toprule
+\textbf{Question} & \textbf{Instrument} & \textbf{Headline result} \\
+\midrule
+RQ1: coverage & Corpus classification (\S\ref{sec:corpus}) & 0.00\% unbounded, linked \\
+RQ2: concrete coverage and precision & Independent oracle (\S\ref{sec:oracle}) & 100\% recall, 80.0\% precision \\
+RQ3: routing cost & Static vs.\ dynamic kernel (\S\ref{sec:microbench}) & 0.92$\times$ in one case; 1.12--1.88$\times$ in five; 27$\times$ cheaper / 34$\times$ costlier mount \\
+RQ4: linker value & Linker ablation (\S\ref{sec:corpus}) & 45.45\% $\rightarrow$ 0.00\% unbounded \\
+RQ5: precision limits & Category breakdown (\S\ref{sec:oracle}) & branches and cross-field aliasing dominate FPs \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Limitations and Threats to Validity}
+\label{sec:limits}
+
+\begin{itemize}
+  \item \textbf{Restricted language surface.} Full JavaScript effect inference
+  is undecidable in general. Dynamic keys, reflection, \texttt{eval}, native
+  code, and unresolved libraries reduce precision or defeat observation.
+  \item \textbf{Temporal escape.} A callback retained by opaque code can mutate
+  state after the analyzed call's commit. A post-call fallback does not make
+  that future write observable.
+  \item \textbf{Exception semantics.} The current design does not yet specify
+  and validate commit behavior for every exceptional exit.
+  \item \textbf{Closed-world linking.} Dynamic imports, independently deployed
+  chunks, and version skew can violate the summaries used at compilation.
+  \item \textbf{Conservative branches and rows.} Static branch unions and
+  wildcard row patterns can select more work than execution-sensitive signals;
+  value guards suppress outputs, not all recomputation.
+  \item \textbf{Scheduling.} Structural depth, early module-computed depth,
+  effect phases, and drain passes are not a general static topological ordering
+  proof. Cyclic behavior is detected by a pass bound.
+  \item \textbf{Runtime state.} The design still needs a dependency index,
+  wildcard matches, a live registry/tree, dirty state, and scheduling queues.
+  \item \textbf{Mount scope.} The current connected graph admits one top-level
+  mount boundary; independently scoped roots require isolated registries and
+  access indexes.
+  \item \textbf{Prototype and benchmark bias.} Synthetic routing topologies
+  can favor either representation and do not establish application-wide
+  performance or developer usability.
+\end{itemize}
+
+\section{Conclusion}
+
+Static dependency analysis, dependency inversion, incremental browser views,
+and compile-time assignment instrumentation are not new ideas -- IceDust,
+PixieDust, and Svelte's own compiler have each, in their own settings,
+already gotten there first. What is left to establish, and what this paper
+has tried to establish carefully rather than assert, is narrower and more
+specific: whether statically inferred reactive identity and imperative
+effects can be linked through an ordinary, multi-file ES-module graph, and
+then routed to direct DOM, component, and effect entities without paying for
+dependency discovery on every read. The module-qualified model in
+Section~\ref{sec:source} is built specifically to capture the cases a
+single-file analysis misses -- shared state pulled into its own module,
+mutation hidden behind an imported helper, derived values computed once and
+consumed from several files -- and the conditional coverage theorem in
+Section~\ref{sec:formal} is written the way it is so that the open questions
+are visible rather than buried: analysis coverage, summary soundness, commit
+boundaries, and pattern--instance consistency are named as assumptions
+precisely because they are the things a future proof, or a future compiler
+bug report, will have to reckon with. The artifact-backed evaluation found
+that cross-module summary linking eliminated unbounded effects in the tested
+corpus and retained every dependency observed by the concrete oracle, while
+also exposing conservative false positives and representation-dependent
+routing and lifecycle costs. Broader-corpus validation and independent
+replication remain necessary before making a broader generality or performance
+claim.
+
+\begin{thebibliography}{00}
+
+\bibitem{lustre}
+N. Halbwachs, P. Caspi, P. Raymond, and D. Pilaud,
+``The synchronous data flow programming language LUSTRE,''
+\emph{Proceedings of the IEEE}, vol. 79, no. 9, pp. 1305--1320, 1991,
+doi: 10.1109/5.97300.
+
+\bibitem{incremental-lambda}
+Y. Cai, P. G. Giarrusso, T. Rendel, and K. Ostermann,
+``A theory of changes for higher-order languages: Incrementalizing
+$\lambda$-calculi by static differentiation,'' in \emph{Proc. PLDI}, 2014,
+pp. 145--155, doi: 10.1145/2594291.2594304.
+
+\bibitem{icedust}
+D. C. Harkes, D. M. Groenewegen, and E. Visser,
+``IceDust: Incremental and eventual computation of derived values in persistent
+object graphs,'' in \emph{Proc. ECOOP}, LIPIcs, vol. 56, 2016, pp. 11:1--11:26,
+doi: 10.4230/LIPIcs.ECOOP.2016.11.
+
+\bibitem{pixiedust}
+N. ten Veen, D. C. Harkes, and E. Visser,
+``PixieDust: Declarative incremental user interface rendering through static
+dependency tracking,'' in \emph{Proc. WWW Companion}, 2018, pp. 721--729,
+doi: 10.1145/3184558.3185978.
+
+\bibitem{reactive-variables}
+C. Schuster and C. Flanagan, ``Reactive programming with reactive variables,''
+in \emph{Companion Proc. Modularity}, 2016, pp. 29--33,
+doi: 10.1145/2892664.2892666.
+
+\bibitem{remus}
+B. Oeyen, J. De Koster, and W. De Meuter,
+``Reactive programming on the bare metal: A formal model for a low-level
+reactive virtual machine,'' REBLS, VUB-SOFT-TR-22-15, 2022. [Online]. Available:
+\url{https://soft.vub.ac.be/Publications/2022/vub-tr-soft-22-15.pdf}
+
+\bibitem{svelte3}
+R. Harris, ``Svelte 3: Rethinking reactivity,'' 2019. [Online]. Available:
+\url{https://svelte.dev/blog/svelte-3-rethinking-reactivity}
+
+\bibitem{svelte-legacy}
+Svelte, ``Reactive \texttt{\$:} statements.'' [Online]. Available:
+\url{https://svelte.dev/docs/svelte/legacy-reactive-assignments}
+
+\bibitem{svelte-runes}
+The Svelte Team, ``Introducing runes,'' 2023. [Online]. Available:
+\url{https://svelte.dev/blog/runes}
+
+\bibitem{solid-reactivity}
+SolidJS, ``Fine-grained reactivity.'' [Online]. Available:
+\url{https://docs.solidjs.com/advanced-concepts/fine-grained-reactivity}
+
+\bibitem{vue-reactivity}
+Vue.js, ``Reactivity in depth.'' [Online]. Available:
+\url{https://vuejs.org/guide/extras/reactivity-in-depth.html}
+
+\bibitem{acar-sac}
+U. A. Acar, G. E. Blelloch, and R. Harper, ``Adaptive functional programming,''
+\emph{ACM TOPLAS}, vol. 28, no. 6, pp. 990--1034, 2006,
+doi: 10.1145/1186632.1186634.
+
+\bibitem{js-framework-benchmark}
+S. Krause et al., ``js-framework-benchmark,'' GitHub repository. [Online].
+Available: \url{https://github.com/krausest/js-framework-benchmark}
+
+\bibitem{adapton}
+M. A. Hammer, K. Y. Phang, M. Hicks, and J. S. Foster,
+``Adapton: Composable, demand-driven incremental computation,'' in
+\emph{Proc. PLDI}, 2014, pp. 156--166, doi: 10.1145/2594291.2594324.
+
+\end{thebibliography}
+
+\end{document}

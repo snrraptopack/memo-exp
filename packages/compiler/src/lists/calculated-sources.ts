@@ -9,7 +9,7 @@
  */
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import type { Ctx } from '../context';
+import type { Ctx, MapCallExpression } from '../context';
 import { generatedIdentifier } from '../identifiers';
 import { matchMapCall } from '../lists';
 import {
@@ -22,6 +22,7 @@ function directSourceShape(expression: t.Expression): boolean {
   return (
     t.isIdentifier(current) ||
     t.isMemberExpression(current) ||
+    t.isOptionalMemberExpression(current) ||
     isStaticPrimitiveList(current)
   );
 }
@@ -60,30 +61,34 @@ function belongsDirectlyToComponent(
 export function normalizeCalculatedListSources(ctx: Ctx): void {
   for (const [, componentPath] of ctx.compPaths) {
     const candidates: Array<{
-      path: NodePath<t.CallExpression>;
+      path: NodePath<MapCallExpression>;
       source: t.Expression;
       statement: NodePath<t.Statement>;
     }> = [];
 
+    const checkCall = (path: NodePath<MapCallExpression>): void => {
+      const callee = path.node.callee;
+      if (
+        matchMapCall(path.node) === null ||
+        (!t.isMemberExpression(callee) && !t.isOptionalMemberExpression(callee)) ||
+        !t.isExpression(callee.object) ||
+        directSourceShape(callee.object) ||
+        !belongsDirectlyToComponent(path, componentPath)
+      ) {
+        return;
+      }
+      const statement = containingTopLevelStatement(path, componentPath);
+      if (statement === null) return;
+      candidates.push({
+        path,
+        source: t.cloneNode(callee.object, true),
+        statement,
+      });
+    };
+
     componentPath.traverse({
-      CallExpression(path) {
-        if (
-          matchMapCall(path.node) === null ||
-          !t.isMemberExpression(path.node.callee) ||
-          !t.isExpression(path.node.callee.object) ||
-          directSourceShape(path.node.callee.object) ||
-          !belongsDirectlyToComponent(path, componentPath)
-        ) {
-          return;
-        }
-        const statement = containingTopLevelStatement(path, componentPath);
-        if (statement === null) return;
-        candidates.push({
-          path,
-          source: t.cloneNode(path.node.callee.object, true),
-          statement,
-        });
-      },
+      CallExpression: checkCall,
+      OptionalCallExpression: checkCall,
     });
 
     if (candidates.length === 0) continue;
@@ -104,7 +109,12 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
         t.variableDeclarator(t.cloneNode(binding), candidate.source),
       );
       const callee = candidate.path.get('callee');
-      if (Array.isArray(callee) || !callee.isMemberExpression()) continue;
+      if (
+        Array.isArray(callee) ||
+        (!callee.isMemberExpression() && !callee.isOptionalMemberExpression())
+      ) {
+        continue;
+      }
       const object = callee.get('object');
       if (Array.isArray(object)) continue;
       object.replaceWith(t.cloneNode(binding));
