@@ -29,6 +29,8 @@ export interface MapSite {
   sourceKey: string;
   /** Ordered source expression, cloned into the reconcile calls. */
   sourceExpr: t.Expression;
+  /** Optional-chain maps render no rows while their source is nullish. */
+  optional: boolean;
   /** Instance roots invalidate their owner directly, not an access table. */
   sourceLocal: boolean;
   /** Runtime callback target, including supported destructuring patterns. */
@@ -133,6 +135,7 @@ export function analyzeMapSite(
   return {
     sourceKey: source.key,
     sourceExpr: t.cloneNode(source.expression),
+    optional: t.isOptionalCallExpression(call),
     sourceLocal: source.local,
     itemPattern: callback.itemPattern,
     itemParam: callback.itemParam,

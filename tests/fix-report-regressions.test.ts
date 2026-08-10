@@ -7,15 +7,15 @@ import {
 
 describe('fix.md regressions', () => {
   it('recognizes keyed maps through optional chaining', () => {
-    expect(() =>
-      compile(`
+    const code = compile(`
         export function App() {
           let endpoint = '/rows';
           const resource = client.create<{ data?: Array<{ id: string }> }>(endpoint);
           return <ul>{resource.data?.map(row => <li key={row.id}>{row.id}</li>)}</ul>;
         }
-      `),
-    ).not.toThrow();
+      `);
+
+    expect(code).toContain('resource.data ?? []');
   });
 
   it('links exported functions wrapped in TypeScript assertions', () => {
