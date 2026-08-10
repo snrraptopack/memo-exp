@@ -2,10 +2,11 @@
 
 Browser-first fetch resources and callable actions for memoized-dom.
 
-> **Current scope:** this package implements data behavior only. It is not yet
-> connected to the memoized-dom compiler or DOM runtime. Resource getters
-> change correctly, but a component will not automatically render again until
-> compiler integration is implemented separately.
+> **Current scope:** the package is usable in ordinary JavaScript and in
+> compiled memoized-dom components. The compiler treats imported resource and
+> action values like other opaque third-party state: while their getters are
+> rendered, it rereads them through the existing volatile frame fallback. No
+> `$fetch`-specific compiler adapter or method allowlist is involved.
 
 ## Public API
 
@@ -53,6 +54,28 @@ detaches live read resources, and drops retained request data. Existing resource
 and action objects remain valid; a detached resource can be refreshed to start
 new work. `clearDataRuntime()` performs the same operation on the exported
 default `$fetch` and `$action` runtime.
+
+### Component ownership
+
+A runtime created inside a component should be cleared with the component:
+
+```tsx
+function Users() {
+  const data = createDataRuntime();
+  const users = data.$fetch<User[]>('/api/users');
+  cleanup(data.clear);
+
+  return <p>{users.pending ? 'Loading' : users.data?.length}</p>;
+}
+```
+
+Memoized-dom component factories run once, so this does not recreate the
+runtime on every update. `cleanup(data.clear)` aborts component-owned reads and
+actions when the component is removed. When using the default runtime, a
+component can instead own one resource with `cleanup(users.abort)`.
+
+Cleanup is explicit today because ordinary third-party libraries remain usable
+without implementing a memoized-dom lifecycle interface.
 
 ## `$fetch`
 
@@ -168,8 +191,26 @@ const user = $fetch<User>(
 ```
 
 A paused resource has `status: 'idle'` and performs no request. Automatic
-reevaluation when `userId` changes belongs to the future compiler integration;
-the standalone package receives only the value passed at creation.
+reevaluation when `userId` changes is a deferred request-argument optimization;
+the current call captures only the value passed at creation.
+
+When request arguments change today, replace the component-local resource
+explicitly and release the previous one:
+
+```tsx
+let users = loadUsers(search);
+
+function setSearch(next: string) {
+  search = next;
+  const previous = users;
+  users = loadUsers(search);
+  previous.abort();
+}
+```
+
+Because `users` is ordinary component `let` state, the existing compiler
+updates its consumers. This is explicit resource ownership, not `$fetch`
+recognition.
 
 ### Manual refresh
 
@@ -317,7 +358,9 @@ const { data, pending } = users;
 ```
 
 Those two variables do not change by themselves because this package does not
-rewrite JavaScript. Keep the resource object when values must be read later:
+rewrite JavaScript. The current compiler's opaque frame fallback also cannot
+replay a value that was copied out once. Keep the resource object when values
+must be read later:
 
 ```tsx
 const users = $fetch<User[]>('/api/users');
@@ -327,9 +370,9 @@ function render() {
 }
 ```
 
-Compiler integration may eventually provide live destructuring through a
-generic reactive-source capability. It must not depend on the package name or
-an allowlist of `$fetch` methods.
+Direct resource getters used by JSX are reread while the component is mounted.
+Live destructuring could be added later, but it is not required for `$fetch` to
+render correctly and must not depend on package or method names.
 
 Methods are bound functions and are safe to extract:
 
@@ -513,27 +556,31 @@ class RequestError<TData = unknown> extends Error {
 Automatic `$fetch` requests store failures in `resource.error` without causing
 an unhandled rejection. Awaited `refresh()` and action calls reject normally.
 
-## Future integration
+## Compiler behavior and optional future optimization
 
-Generated framework code can use `@memoized-dom/data/internal` to subscribe,
-read immutable snapshots, and dispose fetch resources and actions. These hooks
-are separated from the application API so their lifecycle contract can evolve
-with the compiler.
+The current compiler needs no data-specific integration. An imported resource
+whose getters participate in rendered output is an opaque value, so its owner
+is marked volatile and reevaluated once per visible animation frame. This also
+supports structural output such as loading branches and
+`resource.data?.map(...)` lists. Polling stops when the owner is unmounted.
 
-A future compiler integration will need to:
+This is the same compatibility path used for animation engines, external
+stores, and other third-party objects. Those libraries do not need to implement
+a framework interface.
 
-- schedule DOM consumers when resource/action state changes;
-- model data values through a generic runtime-source/lifecycle contract;
-- update requests when compiled arguments change;
-- dispose component, branch, and row-owned resources.
+The package also exposes subscribe, immutable-snapshot, and dispose hooks from
+`@memoized-dom/data/internal`. Generated code does not use them today. They are
+available if measurements later justify an optional push optimization:
 
-The compiler must discover behavior from that contract rather than recognizing
-`$fetch`, assuming particular third-party method names, or maintaining approved
-and unapproved method lists. That keeps direct writes to derived values illegal
-while allowing any library to expose intentional mutation capabilities through
-the same explicit protocol.
+- notify only when resource/action state changes instead of pulling per frame;
+- provide more precise invalidation;
+- automate resource ownership and cleanup;
+- recreate a resource when compiled request arguments change.
 
-None of those compiler changes are part of this package pass.
+That optimization must preserve the opaque fallback. It must not make a
+special interface mandatory for third-party libraries, recognize `$fetch` by
+name, or approve mutation methods from a list. Direct writes to derived values
+remain illegal; opaque receiver calls retain ordinary JavaScript semantics.
 
 The complete evolving design and deferred server behavior live in the root
 `data-loading-api.md` document.

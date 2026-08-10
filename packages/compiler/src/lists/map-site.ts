@@ -196,10 +196,12 @@ function analyzeIdentifierSource(
   fail: Fail,
 ): SourcePlan {
   const propBindings = ctx.componentProps.get(ownerName)?.bindings ?? [];
+  const opaqueBindings = ctx.opaqueBindings.get(ownerName);
   const local =
     ctx.instanceState.get(ownerName)?.has(source.name) === true ||
     ctx.instanceDerivedBindings.get(ownerName)?.has(source.name) === true ||
-    propBindings.includes(source.name);
+    propBindings.includes(source.name) ||
+    opaqueBindings?.has(source.name) === true;
   const kind = ctx.state.get(source.name);
   if (
     !local &&
@@ -229,11 +231,13 @@ function analyzeMemberSource(
   const root = memberRootName(source);
   const key = memberKey(source);
   const propBindings = ctx.componentProps.get(ownerName)?.bindings ?? [];
+  const opaqueBindings = ctx.opaqueBindings.get(ownerName);
   const localRoot =
     root !== null &&
     (ctx.instanceState.get(ownerName)?.has(root) === true ||
       ctx.instanceDerivedBindings.get(ownerName)?.has(root) === true ||
-      propBindings.includes(root));
+      propBindings.includes(root) ||
+      opaqueBindings?.has(root) === true);
   const rowRelative =
     root !== null &&
     key !== null &&

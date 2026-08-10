@@ -38,6 +38,29 @@ describe('opaque external mutation fallback', () => {
     expect(code).toContain('volatile: true');
   });
 
+  it('accepts structural views rooted in opaque results', () => {
+    const code = compileExternal(`
+      import { createQuery } from 'external-data';
+
+      export function App() {
+        function load() {
+          return createQuery('/items');
+        }
+        const query = load();
+        return <main>
+          {query.pending && <p>loading</p>}
+          <ul>{query.data?.map(item =>
+            <li key={item.id}>{item.label}</li>
+          )}</ul>
+        </main>;
+      }
+    `);
+
+    expect(code).toContain('volatile: true');
+    expect(code).toContain('.createListRegion(');
+    expect(code).toMatch(/const _update\d* = \(\) => \{[\s\S]*?\.update\(\)/);
+  });
+
   it('tracks opaque results nested in object initializers and member assignments', () => {
     const initialized = compileExternal(`
       import { createClock } from 'external-clock';

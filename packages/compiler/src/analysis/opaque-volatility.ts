@@ -22,13 +22,77 @@ function isOpaqueInvocation(
   ctx: Ctx,
   path: NodePath<t.CallExpression | t.NewExpression>,
   tainted: ReadonlySet<string>,
+  ownerPath?: NodePath,
+  visiting: Set<t.Function> = new Set(),
 ): boolean {
   const root = calleeRoot(path.node.callee);
   if (root === null) return false;
   if (tainted.has(root)) return true;
   const summary = ctx.importedFunctions.get(root);
   if (summary !== undefined) return summary.unbounded;
-  return bindingIsExternalImport(path.scope.getBinding(root));
+  if (bindingIsExternalImport(path.scope.getBinding(root))) return true;
+  if (ownerPath === undefined || !path.isCallExpression()) return false;
+
+  const binding = path.scope.getBinding(root);
+  let fn: NodePath<t.Function> | null = null;
+  if (binding?.path.isFunctionDeclaration() === true) {
+    fn = binding.path;
+  } else if (binding?.path.isVariableDeclarator() === true) {
+    const init = binding.path.get('init');
+    if (
+      !Array.isArray(init) &&
+      (init.isFunctionExpression() || init.isArrowFunctionExpression())
+    ) {
+      fn = init as NodePath<t.Function>;
+    }
+  }
+  if (fn === null || visiting.has(fn.node)) return false;
+
+  visiting.add(fn.node);
+  let opaque = false;
+  const inspectReturned = (expression: NodePath): void => {
+    if (opaque || !expression.isExpression()) return;
+    if (referencedOwnedRoots(expression, ownerPath, tainted).size > 0) {
+      opaque = true;
+      return;
+    }
+    const inspectCall = (
+      call: NodePath<t.CallExpression | t.NewExpression>,
+    ): void => {
+      if (isOpaqueInvocation(ctx, call, tainted, ownerPath, visiting)) {
+        opaque = true;
+      }
+    };
+    if (expression.isCallExpression() || expression.isNewExpression()) {
+      inspectCall(expression);
+    }
+    expression.traverse({
+      Function(inner) {
+        inner.skip();
+      },
+      CallExpression: inspectCall,
+      NewExpression: inspectCall,
+    });
+  };
+
+  const body = fn.get('body');
+  if (!Array.isArray(body) && body.isExpression()) {
+    inspectReturned(body);
+  } else if (!Array.isArray(body) && body.isBlockStatement()) {
+    body.traverse({
+      Function(inner) {
+        inner.skip();
+      },
+      ReturnStatement(returnPath) {
+        const argument = returnPath.get('argument');
+        if (!Array.isArray(argument) && argument.node !== null) {
+          inspectReturned(argument);
+        }
+      },
+    });
+  }
+  visiting.delete(fn.node);
+  return opaque;
 }
 
 function assignedRoot(node: t.LVal | t.OptionalMemberExpression): string | null {
@@ -90,10 +154,10 @@ function moduleOpaqueRoots(
       if (!opaque) {
         init.traverse({
           CallExpression(call) {
-            if (isOpaqueInvocation(ctx, call, tainted)) opaque = true;
+            if (isOpaqueInvocation(ctx, call, tainted, programPath)) opaque = true;
           },
           NewExpression(call) {
-            if (isOpaqueInvocation(ctx, call, tainted)) opaque = true;
+            if (isOpaqueInvocation(ctx, call, tainted, programPath)) opaque = true;
           },
         });
       }
@@ -183,7 +247,7 @@ export function scanOpaqueVolatility(ctx: Ctx): void {
       const visitOpaqueInvocation = (
         call: NodePath<t.CallExpression | t.NewExpression>,
       ): void => {
-        if (!isOpaqueInvocation(ctx, call, tainted)) return;
+        if (!isOpaqueInvocation(ctx, call, tainted, componentPath)) return;
 
         for (const argumentPath of call.get('arguments')) {
           if (argumentPath.isSpreadElement()) continue;
@@ -236,6 +300,7 @@ export function scanOpaqueVolatility(ctx: Ctx): void {
     }
 
     const rendered = renderedRoots(componentPath, owned);
+    ctx.opaqueBindings.set(component, tainted);
     if ([...tainted].some((root) => rendered.has(root))) {
       ctx.volatileComponents.add(component);
     }
