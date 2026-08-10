@@ -5,23 +5,19 @@ import { TaskCard } from './TaskCard';
 import { ControlPanel } from './ControlPanel';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 
-const dataRuntime = createDataRuntime({
-  fetch: mockFetch as typeof fetch,
-});
-
-const createTaskAction = dataRuntime.$action<Task, CreateTaskInput>('/api/tasks', {
-  method: 'POST',
-});
-
-const updateTaskAction = dataRuntime.$action<Task, { id: string; status: TaskStatus }>('/api/tasks/update', {
-  method: 'PATCH',
-});
-
-const deleteTaskAction = dataRuntime.$action<void, { id: string }>('/api/tasks/delete', {
-  method: 'DELETE',
-});
-
 export function DataReactivityApp() {
+  const dataRuntime = createDataRuntime({
+    fetch: mockFetch as typeof fetch,
+  });
+  const createTaskAction = dataRuntime.$action<Task, CreateTaskInput>('/api/tasks', {
+    method: 'POST',
+  });
+  const updateTaskAction = dataRuntime.$action<Task, { id: string; status: TaskStatus }>('/api/tasks/update', {
+    method: 'PATCH',
+  });
+  const deleteTaskAction = dataRuntime.$action<void, { id: string }>('/api/tasks/delete', {
+    method: 'DELETE',
+  });
   let statusFilter: TaskStatus | 'all' = 'all';
   let searchQuery = '';
   let newTitle = '';
@@ -30,13 +26,24 @@ export function DataReactivityApp() {
   let newCategory = 'Engineering';
   let actionNotification = '';
 
-  const tasksResource = dataRuntime.$fetch('/api/tasks', {
-    query: {
-      status: statusFilter,
-      search: searchQuery,
-    },
-    validate: TaskListSchema,
-  });
+  function loadTasks() {
+    return dataRuntime.$fetch('/api/tasks', {
+      query: {
+        status: statusFilter,
+        search: searchQuery,
+      },
+      validate: TaskListSchema,
+    });
+  }
+
+  let tasksResource = loadTasks();
+  cleanup(dataRuntime.clear);
+
+  function replaceTasksResource() {
+    const previous = tasksResource;
+    tasksResource = loadTasks();
+    previous.abort();
+  }
 
   async function handleCreateTask(e: Event) {
     e.preventDefault();
@@ -178,10 +185,14 @@ export function DataReactivityApp() {
                 value={searchQuery}
                 onInput={(e: Event) => {
                   searchQuery = (e.target as HTMLInputElement).value;
+                  replaceTasksResource();
                 }}
               />
               {searchQuery && (
-                <button class="clear-search" onClick={() => { searchQuery = ''; }}>
+                <button class="clear-search" onClick={() => {
+                  searchQuery = '';
+                  replaceTasksResource();
+                }}>
                   ✕
                 </button>
               )}
@@ -193,6 +204,7 @@ export function DataReactivityApp() {
                   class={`tab-item ${statusFilter === status ? 'active' : ''}`}
                   onClick={() => {
                     statusFilter = status;
+                    replaceTasksResource();
                   }}
                 >
                   {status === 'all' ? 'All Tasks' : status.replace('_', ' ').toUpperCase()}
@@ -282,7 +294,11 @@ export function DataReactivityApp() {
           {!tasksResource.pending && tasksResource.data?.length === 0 && (
             <div class="empty-state">
               <p>No tasks match the selected criteria.</p>
-              <button onClick={() => { statusFilter = 'all'; searchQuery = ''; }}>
+              <button onClick={() => {
+                statusFilter = 'all';
+                searchQuery = '';
+                replaceTasksResource();
+              }}>
                 Reset Filters
               </button>
             </div>

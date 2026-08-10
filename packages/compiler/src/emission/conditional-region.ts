@@ -91,6 +91,7 @@ export function emitConditionalRegion(
   );
   if (
     forwardFromOwner ||
+    ctx.volatileComponents.has(componentName) ||
     exprReadsInstanceState(ctx, expression, componentName)
   ) {
     scope.updaters.push(() =>

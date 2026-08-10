@@ -1,8 +1,10 @@
 # Data loading API: `$fetch` and `$action`
 
-> **Status:** The standalone `@memoized-dom/data` runtime is implemented. The
-> compiler/DOM integration and deferred server features remain a proposal.
-> `packages/data/README.md` is authoritative for the currently shipped API.
+> **Status:** The standalone `@memoized-dom/data` runtime is implemented and
+> works in compiled components through memoized-dom's existing opaque volatile
+> fallback. Push-based invalidation, reactive request arguments, automatic
+> ownership, and deferred server features remain proposals.
+> `packages/data/README.md` is authoritative for the current API.
 
 ## 1. Goal
 
@@ -30,8 +32,8 @@ import { $action, $fetch } from '@memoized-dom/data';
 
 The `$` prefix is an API naming convention, not a compiler allowlist. These are
 explicit imports: there are no hidden globals, and TypeScript can expose their
-complete types. Future compiler integration should consume a generic
-runtime-source/lifecycle contract that other libraries can implement too.
+complete types. Today they use the same opaque-value compatibility path as
+other imported libraries; a data-specific compiler rule is not required.
 
 This is intentionally not `useFetch`, `createResource`, a signal, or a hook.
 The compiler supplies component identity, reactive dependencies, and cleanup
@@ -226,9 +228,10 @@ const { data: users, pending, error } =
 ```
 
 This loses live reads and access to commands unless methods are also
-destructured. A future compiler may make aliases live, but only through the same
-generic source contract used for other reactive libraries. It must not special
-case `$fetch`, package names, or an approved set of methods.
+destructured. The current compiler can reread `resource.data` through its
+opaque volatile fallback, but it cannot recover a value copied out by ordinary
+destructuring. A future optimization may make aliases live, but it must not
+special-case `$fetch`, package names, or an approved set of methods.
 
 Resource methods must be implemented as bound functions rather than depending
 on JavaScript's dynamic `this`, so this remains safe:
@@ -239,12 +242,12 @@ await refresh();
 ```
 
 Direct assignment to compiler-derived values remains illegal. Intentional
-updates flow through capabilities exposed by the runtime source itself; the
-compiler does not infer permission from a method's spelling.
+updates use ordinary methods exposed by the value itself; the compiler does not
+infer permission from a method's spelling.
 
 ### 3.4 Reactive request arguments
 
-Request arguments are ordinary expressions:
+The runtime captures request arguments when `$fetch` is called:
 
 ```tsx
 function SearchUsers() {
@@ -263,18 +266,19 @@ function SearchUsers() {
 }
 ```
 
-The compiler records that this resource depends on `search` and `page`. When
-either value changes it:
+The example above does not currently replace the resource when `search` or
+`page` changes. The rendered getters stay live, but the original request
+description remains unchanged. Reactive request arguments are a separate,
+deferred optimization. If implemented, the compiler would:
 
-1. computes the new request description;
-2. determines whether its identity actually changed;
-3. stops observing the obsolete request;
-4. starts or joins the new request;
-5. marks only consumers of `users` when its state changes.
+1. compute the new request description;
+2. determine whether its identity actually changed;
+3. stop observing the obsolete request;
+4. start or join the new request;
+5. mark only consumers of `users` when its state changes.
 
-The user does not wrap the URL in a callback and does not maintain a dependency
-array. This direct static relationship is one of the API's memoized-dom-native
-features.
+This must be implemented without treating `$fetch` as an approved intrinsic or
+making a new interface mandatory for unrelated libraries.
 
 ### 3.5 Pausing a request
 
@@ -290,9 +294,10 @@ While the target is `null`:
 
 - no request is started;
 - `status` is `idle`;
-- `pending` is false;
-- an obsolete in-flight request is unsubscribed or aborted;
-- previous data is cleared unless a future option explicitly asks to retain it.
+- `pending` is false.
+
+Changing `userId` later does not currently recreate this resource. Automatic
+pause/resume behavior belongs to the deferred reactive-argument optimization.
 
 `false`, an empty string, and `undefined` should not be additional pause
 sentinels. One sentinel keeps both runtime behavior and TypeScript narrowing
@@ -999,9 +1004,10 @@ Awaited action calls and `resource.refresh()` reject with the error. Automatic
 unhandled promise rejection merely because the component renders the error
 state instead of awaiting anything.
 
-## 10. Compiler and runtime ownership
+## 10. Current compiler behavior and ownership
 
-Initially, data declarations should have clear component ownership:
+Imported data values already participate in rendering through opaque
+volatility:
 
 ```tsx
 function Page() {
@@ -1012,31 +1018,31 @@ function Page() {
 }
 ```
 
-The compiler should reject unclear ownership, such as creating a new source
-inside an event handler or arbitrary loop. The diagnostic must be shared by the
-compiler API, Vite, and the language service. Recognition must come from an
-explicit generic compiler/runtime protocol rather than imported function names
-or library-specific method lists.
+When `users.data`, `users.pending`, or action state reaches JSX, the compiler
+classifies the imported value as opaque and reevaluates the mounted owner once
+per visible animation frame. Loading branches and `users.data?.map(...)` use
+the same fallback. This is pull-based compatibility, not a `$fetch` adapter.
 
-For each subscribed runtime source, the compiler provides:
+Ownership is explicit today. A component-scoped runtime should register its
+existing clear operation:
 
-- a stable component-instance and call-site identity;
-- statically discovered request dependencies;
-- the compiled consumers of resource fields;
-- component, branch, or row cleanup ownership;
-- a generated request-description function used only when dependencies change.
+```tsx
+function Page() {
+  const data = createDataRuntime();
+  const users = data.$fetch<User[]>('/api/users');
+  cleanup(data.clear);
+  return <main>{users.data?.length}</main>;
+}
+```
 
-For each callable runtime source, it provides:
+The compiler stops volatile polling when the component, branch, or row is
+removed, and `cleanup` cancels its data work. Other libraries require no new
+shape: they may use the same pull fallback, callbacks into component state, or
+manage the DOM directly.
 
-- stable component ownership;
-- instrumentation for callback writes;
-- cleanup of active client requests;
-- exact consumers of action state.
-
-The runtime owns only changing facts: active requests, decoded results,
-generation tokens, shared-entry reference counts, and optional retained cache
-entries. It should not discover JavaScript dependencies by observing property
-reads.
+An optional push adapter could later replace per-frame pulling with exact
+notifications and automatic disposal. It is a performance/lifecycle
+enhancement, not a prerequisite for data rendering or third-party support.
 
 ## 11. Browser/server boundary
 
@@ -1070,9 +1076,9 @@ This keeps the component identical on both sides. It does not require separate
 Application-retained server caching, if added later, must be explicitly marked
 and must never accidentally store user-specific responses globally.
 
-## 12. Proposed first implementation
+## 12. Current implementation and deferred optimization
 
-The first implementation should remain deliberately smaller than the complete
+The current implementation remains deliberately smaller than the complete
 design.
 
 ### `$fetch` v1
@@ -1087,8 +1093,9 @@ design.
 - `mutate()` for explicit in-place data changes;
 - default active sharing;
 - generation tokens preventing stale responses from winning;
-- compiler-discovered reactive request dependencies;
-- owner cleanup and precise consumer invalidation.
+- opaque volatile rendering through direct resource getters;
+- explicit owner cleanup with `cleanup(runtime.clear)` or
+  `cleanup(resource.abort)`.
 
 ### `$action` v1
 
@@ -1106,6 +1113,9 @@ design.
 
 ### Deferred until demonstrated by applications
 
+- optional push-based invalidation and automatic ownership;
+- compiler-discovered reactive request dependencies;
+- live resource-state destructuring;
 - persistent application cache durations;
 - concurrency modes beyond parallel;
 - `<form action={action}>` transformation;
