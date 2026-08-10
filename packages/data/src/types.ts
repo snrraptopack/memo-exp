@@ -165,6 +165,19 @@ export interface ActionFunction {
   ): Action<TResult, TInput>;
 }
 
+export interface DataRuntimeOptions {
+  readonly fetch?: typeof globalThis.fetch;
+  readonly baseURL?: string | URL;
+}
+
+export interface DataRuntime {
+  readonly $fetch: FetchFunction;
+  readonly $action: ActionFunction;
+
+  /** Abort active work, detach live reads, and empty retained request data. */
+  clear(): void;
+}
+
 export interface ResourceSnapshot<T> {
   readonly data: T | undefined;
   readonly error: import('./errors').RequestError | null;

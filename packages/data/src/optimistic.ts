@@ -29,5 +29,6 @@ export function optimisticHandlers<TResult>(
       'Invalid optimistic change. Use append(), replace(), or remove() on a fetch resource.',
     );
   }
+  handlers.delete(change);
   return changeHandlers as OptimisticHandlers<TResult>;
 }

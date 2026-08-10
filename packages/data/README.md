@@ -9,22 +9,50 @@ Browser-first fetch resources and callable actions for memoized-dom.
 
 ## Public API
 
-The package currently exposes three runtime values:
+The package exposes a default runtime plus an isolated-runtime factory:
 
 ```ts
 import {
   $action,
   $fetch,
+  clearDataRuntime,
+  createDataRuntime,
   RequestError,
 } from '@memoized-dom/data';
 ```
 
 - `$fetch` automatically performs a read request and returns a stable resource.
 - `$action` creates a lazy callable operation for writes.
+- `createDataRuntime` creates an isolated request, cache, and action boundary.
+- `clearDataRuntime` clears active work and retained state in the default runtime.
 - `RequestError` describes network, HTTP, decoding, and validation failures.
 
-There is intentionally no public client factory, cache client, provider, hook,
-or global configuration API.
+There is no provider, hook, or mutable global configuration API.
+
+### Isolated runtimes
+
+Use a separate runtime for each server request, test, tenant, or other ownership
+boundary that must not share request state:
+
+```ts
+const data = createDataRuntime({
+  baseURL: 'https://api.example.test/',
+  fetch: customFetch,
+});
+
+const users = data.$fetch<User[]>('users');
+data.clear();
+```
+
+`baseURL` resolves relative targets and `fetch` injects a compatible fetch
+implementation. In a browser, the default base URL is `location.href`. A
+non-browser runtime must provide `baseURL` when it uses relative targets.
+
+`clear()` aborts active reads and actions, resets their visible pending state,
+detaches live read resources, and drops retained request data. Existing resource
+and action objects remain valid; a detached resource can be refreshed to start
+new work. `clearDataRuntime()` performs the same operation on the exported
+default `$fetch` and `$action` runtime.
 
 ## `$fetch`
 
@@ -111,7 +139,8 @@ const users = $fetch<User[]>('/api/users', {
 Query values may be strings, numbers, booleans, `null`, arrays of those values,
 or `undefined`. An `undefined` value is omitted. Arrays produce repeated query
 fields. Query keys are normalized so equivalent requests share the same
-identity regardless of object property order.
+identity regardless of object property order. URL fragments are removed because
+they are not sent in HTTP requests and must not split request identity.
 
 ### Request headers
 
@@ -124,7 +153,9 @@ const profile = $fetch<Profile>('/api/profile', {
 ```
 
 Headers participate in automatic request identity. Requests with different
-authorization values therefore do not share data by default.
+authorization values therefore do not share data by default. Headers are copied
+when the resource is created, so later mutation of a supplied `Headers` object
+cannot make request execution disagree with its identity.
 
 ### Paused resource
 
@@ -160,6 +191,10 @@ last consumer, the underlying request is aborted. If another resource still
 uses that request, the request continues for the other resource.
 
 Cancellation is not stored as `resource.error`.
+
+Cancellation is also a client-side settlement boundary. Even when an injected
+fetch implementation ignores `AbortSignal`, an aborted resource or action will
+not accept its late result.
 
 ### Replacing data
 
@@ -282,16 +317,19 @@ const { data, pending } = users;
 ```
 
 Those two variables do not change by themselves because this package does not
-rewrite JavaScript. The planned compiler integration will recognize resource
-destructuring and replay the aliases when resource state changes:
+rewrite JavaScript. Keep the resource object when values must be read later:
 
 ```tsx
-const { data: users, pending, error } =
-  $fetch<User[]>('/api/users');
+const users = $fetch<User[]>('/api/users');
+
+function render() {
+  return users.pending ? 'Loading' : users.data;
+}
 ```
 
-That live behavior is documented as part of the intended framework API, but it
-is not claimed by the standalone package today.
+Compiler integration may eventually provide live destructuring through a
+generic reactive-source capability. It must not depend on the package name or
+an allowlist of `$fetch` methods.
 
 Methods are bound functions and are safe to extract:
 
@@ -354,7 +392,9 @@ createTodo.reset();
 
 `abort()` stops active client requests. It cannot guarantee that a server did
 not already process a mutation. `reset()` aborts active work and returns visible
-state to `idle`.
+state to `idle`. Late results from fetch implementations that ignore abort are
+discarded. With parallel calls, aborting one invocation does not allow it to
+overwrite the state of a newer invocation.
 
 ### Success and error callbacks
 
@@ -384,7 +424,8 @@ todos.remove(current);
 ```
 
 They apply immediately and return an opaque optimistic change consumed by an
-action invocation.
+action invocation. Each change is single-use; passing the same change to a
+second invocation throws instead of committing or rolling it back twice.
 
 ### Create
 
@@ -424,6 +465,9 @@ await deleteTodo(existing.id, {
 - `existing` is removed immediately.
 - Failure reinserts it at its previous position.
 - Success keeps it removed.
+
+If `existing` is not present, `replace()` and `remove()` return safe no-op
+changes. Duplicate object references are handled one occurrence at a time.
 
 Rollback operations target their own temporary/current item instead of
 restoring a complete old array. A failed older action therefore does not erase
@@ -471,13 +515,23 @@ an unhandled rejection. Awaited `refresh()` and action calls reject normally.
 
 ## Future integration
 
-No compiler or DOM-runtime adapter is publicly exported in this pass. A future
-integration will need to:
+Generated framework code can use `@memoized-dom/data/internal` to subscribe,
+read immutable snapshots, and dispose fetch resources and actions. These hooks
+are separated from the application API so their lifecycle contract can evolve
+with the compiler.
+
+A future compiler integration will need to:
 
 - schedule DOM consumers when resource/action state changes;
-- preserve reactive resource destructuring;
+- model data values through a generic runtime-source/lifecycle contract;
 - update requests when compiled arguments change;
 - dispose component, branch, and row-owned resources.
+
+The compiler must discover behavior from that contract rather than recognizing
+`$fetch`, assuming particular third-party method names, or maintaining approved
+and unapproved method lists. That keeps direct writes to derived values illegal
+while allowing any library to expose intentional mutation capabilities through
+the same explicit protocol.
 
 None of those compiler changes are part of this package pass.
 

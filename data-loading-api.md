@@ -1,8 +1,8 @@
 # Data loading API: `$fetch` and `$action`
 
-> **Status:** Design proposal. Nothing in this document is implemented yet.
-> The examples describe the intended user-facing contract so the API can be
-> discussed before compiler or runtime code makes it difficult to change.
+> **Status:** The standalone `@memoized-dom/data` runtime is implemented. The
+> compiler/DOM integration and deferred server features remain a proposal.
+> `packages/data/README.md` is authoritative for the currently shipped API.
 
 ## 1. Goal
 
@@ -28,9 +28,10 @@ import { $action, $fetch } from '@memoized-dom/data';
 - **`$action` changes something.** It does nothing until the application calls
   it and returns a promise for that particular invocation.
 
-The `$` prefix means that the compiler understands the operation. These are
-still explicit imports: there are no hidden globals, and TypeScript can expose
-their complete types.
+The `$` prefix is an API naming convention, not a compiler allowlist. These are
+explicit imports: there are no hidden globals, and TypeScript can expose their
+complete types. Future compiler integration should consume a generic
+runtime-source/lifecycle contract that other libraries can implement too.
 
 This is intentionally not `useFetch`, `createResource`, a signal, or a hook.
 The compiler supplies component identity, reactive dependencies, and cleanup
@@ -203,35 +204,31 @@ without changing the component API.
 
 ### 3.3 Destructuring and reactivity
 
-Destructuring should remain reactive inside a compiled component:
+In ordinary JavaScript, destructuring is a one-time snapshot. Keeping the
+resource object therefore gives the standalone package's correct live reads:
 
 ```tsx
 function Users() {
   const resource = $fetch<User[]>('/api/users');
-  const { data: users, pending, error } = resource;
-
   return <>
-    {pending && <p>Loading...</p>}
-    {error && <p>{error.message}</p>}
-    {users?.map(user => <p key={user.id}>{user.name}</p>)}
+    {resource.pending && <p>Loading...</p>}
+    {resource.error && <p>{resource.error.message}</p>}
+    {resource.data?.map(user => <p key={user.id}>{user.name}</p>)}
   </>;
 }
 ```
 
-The compiler treats `users`, `pending`, and `error` as aliases of resource
-fields and replays those aliases when the resource changes. This is consistent
-with memoized-dom already replaying component-local `const` derivations.
-
-Direct destructuring is also valid:
+Direct destructuring remains valid when a snapshot is intended:
 
 ```ts
 const { data: users, pending, error } =
   $fetch<User[]>('/api/users');
 ```
 
-This loses access to `refresh()` and `update()` unless those methods are also
-destructured. Keeping the resource object is therefore preferable when the
-component performs commands against it.
+This loses live reads and access to commands unless methods are also
+destructured. A future compiler may make aliases live, but only through the same
+generic source contract used for other reactive libraries. It must not special
+case `$fetch`, package names, or an approved set of methods.
 
 Resource methods must be implemented as bound functions rather than depending
 on JavaScript's dynamic `this`, so this remains safe:
@@ -241,9 +238,9 @@ const { refresh } = resource;
 await refresh();
 ```
 
-This live destructuring is a compiler guarantee inside analyzed components. In
-ordinary uncompiled JavaScript, destructuring a changing object would produce a
-one-time snapshot.
+Direct assignment to compiler-derived values remains illegal. Intentional
+updates flow through capabilities exposed by the runtime source itself; the
+compiler does not infer permission from a method's spelling.
 
 ### 3.4 Reactive request arguments
 
@@ -1004,7 +1001,7 @@ state instead of awaiting anything.
 
 ## 10. Compiler and runtime ownership
 
-Initially, both declarations should be direct component declarations:
+Initially, data declarations should have clear component ownership:
 
 ```tsx
 function Page() {
@@ -1015,11 +1012,13 @@ function Page() {
 }
 ```
 
-The compiler should reject unclear placements, such as creating a new resource
+The compiler should reject unclear ownership, such as creating a new source
 inside an event handler or arbitrary loop. The diagnostic must be shared by the
-compiler API, Vite, and the language service.
+compiler API, Vite, and the language service. Recognition must come from an
+explicit generic compiler/runtime protocol rather than imported function names
+or library-specific method lists.
 
-For each `$fetch`, the compiler provides:
+For each subscribed runtime source, the compiler provides:
 
 - a stable component-instance and call-site identity;
 - statically discovered request dependencies;
@@ -1027,7 +1026,7 @@ For each `$fetch`, the compiler provides:
 - component, branch, or row cleanup ownership;
 - a generated request-description function used only when dependencies change.
 
-For each `$action`, it provides:
+For each callable runtime source, it provides:
 
 - stable component ownership;
 - instrumentation for callback writes;
@@ -1109,7 +1108,6 @@ design.
 
 - persistent application cache durations;
 - concurrency modes beyond parallel;
-- declarative `refresh: [resource]`;
 - `<form action={action}>` transformation;
 - typed server endpoint references;
 - server rendering and hydration transport.
@@ -1120,21 +1118,19 @@ them.
 
 ## 13. Open decisions for discussion
 
-1. **Imports:** use explicit imports as proposed, or make `$fetch` and `$action`
-   global compiler intrinsics like `effect` currently is?
-2. **Default cache:** should active sharing disappear with the final consumer,
+1. **Default cache:** should active sharing disappear with the final consumer,
    or remain for a short fixed duration to make immediate remounts free?
-3. **Action state:** should `data` and `error` represent the latest-started
+2. **Action state:** should `data` and `error` represent the latest-started
    invocation, or the latest invocation that actually settled?
-4. **Change names:** are `resource.mutate()` for in-place changes and
+3. **Change names:** are `resource.mutate()` for in-place changes and
    `resource.update()` for replacement clear enough, or should replacement use
    `set()` instead?
-5. **Response checking:** should URL calls encourage a required Standard Schema
+4. **Response checking:** should URL calls encourage a required Standard Schema
    in development, or allow generic assertions as the normal escape hatch?
-6. **Optimistic helper:** is explicit application code sufficient, or should
+5. **Optimistic helper:** is explicit application code sufficient, or should
    the concise `resource.optimistic(replacement, operation)` transaction become
    part of the first public design?
-7. **Forms:** should `<form action={action}>` be the only special integration,
+6. **Forms:** should `<form action={action}>` be the only special integration,
    or should actions also expose an explicit `onSubmit` helper?
 
 These decisions affect the front-facing mental model. They should be settled

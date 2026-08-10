@@ -5,6 +5,7 @@ const defaultRuntime = createDataRuntime();
 export { createDataRuntime } from './client';
 export const $fetch = defaultRuntime.$fetch;
 export const $action = defaultRuntime.$action;
+export const clearDataRuntime = defaultRuntime.clear;
 export { RequestError } from './errors';
 
 export type {
@@ -15,6 +16,8 @@ export type {
   ActionOptions,
   AppCacheOptions,
   AsyncStatus,
+  DataRuntime,
+  DataRuntimeOptions,
   FetchCache,
   FetchCollectionChanges,
   FetchFunction,
