@@ -1,6 +1,7 @@
 import type {
   MatchPatternOptions,
   PatternMatch,
+  RoutePatternDefinition,
   RouteParamValue,
   RouteParams,
   RouteQueryInput,
@@ -8,6 +9,7 @@ import type {
 } from './types';
 
 const PARAM_SEGMENT = /^:([A-Za-z_$][A-Za-z0-9_$]*)$/;
+const PATTERN_CACHE_LIMIT = 512;
 const compiledPatterns = new Map<string, CompiledPattern>();
 
 interface CompiledPattern {
@@ -25,6 +27,16 @@ function pathSegments(path: string): string[] {
   return path.split('/').filter(Boolean);
 }
 
+function patternSegments(pattern: string): string[] {
+  return pathSegments(validateRoutePattern(pattern));
+}
+
+function segmentKind(segment: string): 1 | 2 | 3 {
+  if (segment === '*') return 1;
+  if (PARAM_SEGMENT.test(segment)) return 2;
+  return 3;
+}
+
 export function normalizeRoutePath(path: string): string {
   const [pathname = ''] = path.split(/[?#]/, 1);
   const normalized = `/${pathname.replace(/^\/+|\/+$/g, '')}`;
@@ -32,17 +44,128 @@ export function normalizeRoutePath(path: string): string {
 }
 
 export function joinRoutePaths(parent: string, child: string): string {
-  const base = normalizeRoutePath(parent);
-  const nested = normalizeRoutePath(child);
+  const base = validateRoutePattern(parent);
+  const nested = validateRoutePattern(child);
   if (nested === '/') return base;
   if (base === '/') return nested;
-  return `${base}${nested}`;
+  return validateRoutePattern(`${base}${nested}`);
+}
+
+/** Validate and normalize a full route pattern. */
+export function validateRoutePattern(pattern: string): string {
+  if (pattern.includes('?') || pattern.includes('#')) {
+    throw new TypeError(`Route pattern '${pattern}' must not contain a query or hash`);
+  }
+  if (pattern.includes('//')) {
+    throw new TypeError(`Route pattern '${pattern}' contains an empty path segment`);
+  }
+
+  const normalized = normalizeRoutePath(pattern);
+  const names = new Set<string>();
+  const segments = pathSegments(normalized);
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]!;
+    if (segment === '*') {
+      if (index !== segments.length - 1) {
+        throw new TypeError(`Route wildcard must be terminal in '${pattern}'`);
+      }
+      continue;
+    }
+    if (!segment.startsWith(':')) continue;
+    const parameter = PARAM_SEGMENT.exec(segment);
+    if (parameter === null) {
+      throw new TypeError(`Invalid route parameter segment '${segment}' in '${pattern}'`);
+    }
+    const name = parameter[1]!;
+    if (names.has(name)) {
+      throw new TypeError(`Duplicate route parameter '${name}' in '${pattern}'`);
+    }
+    names.add(name);
+  }
+  return normalized;
+}
+
+/**
+ * Compare route specificity for Array#sort. More specific patterns sort first.
+ * Static segments beat parameters, which beat terminal wildcards, at the first
+ * segment where the patterns differ.
+ */
+export function compareRoutePatterns(first: string, second: string): number {
+  const left = patternSegments(first);
+  const right = patternSegments(second);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index++) {
+    const leftSegment = left[index];
+    const rightSegment = right[index];
+    if (leftSegment === undefined) {
+      return rightSegment === '*' ? -1 : 1;
+    }
+    if (rightSegment === undefined) {
+      return leftSegment === '*' ? 1 : -1;
+    }
+    const difference = segmentKind(rightSegment) - segmentKind(leftSegment);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+function routePatternsOverlap(first: string, second: string): boolean {
+  const left = patternSegments(first);
+  const right = patternSegments(second);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index++) {
+    const leftSegment = left[index];
+    const rightSegment = right[index];
+    if (leftSegment === '*' || rightSegment === '*') return true;
+    if (leftSegment === undefined || rightSegment === undefined) return false;
+    if (
+      segmentKind(leftSegment) === 3 &&
+      segmentKind(rightSegment) === 3 &&
+      leftSegment !== rightSegment
+    ) return false;
+  }
+  return true;
+}
+
+/** Validate a flattened route table before it is installed by generated code. */
+export function validateRoutePatterns(
+  definitions: readonly RoutePatternDefinition[],
+): void {
+  const identifiers = new Set<string>();
+  for (const definition of definitions) {
+    if (definition.id.trim() === '') throw new TypeError('Route IDs must not be empty');
+    if (identifiers.has(definition.id)) {
+      throw new TypeError(`Duplicate route ID '${definition.id}'`);
+    }
+    identifiers.add(definition.id);
+    validateRoutePattern(definition.pattern);
+  }
+
+  for (let left = 0; left < definitions.length; left++) {
+    for (let right = left + 1; right < definitions.length; right++) {
+      const first = definitions[left]!;
+      const second = definitions[right]!;
+      if (
+        compareRoutePatterns(first.pattern, second.pattern) === 0 &&
+        routePatternsOverlap(first.pattern, second.pattern)
+      ) {
+        throw new TypeError(
+          `Ambiguous routes '${first.id}' (${first.pattern}) and ` +
+          `'${second.id}' (${second.pattern}) have equal specificity`,
+        );
+      }
+    }
+  }
 }
 
 function compilePattern(pattern: string): CompiledPattern {
-  const normalized = normalizeRoutePath(pattern);
+  const normalized = validateRoutePattern(pattern);
   const cached = compiledPatterns.get(normalized);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    compiledPatterns.delete(normalized);
+    compiledPatterns.set(normalized, cached);
+    return cached;
+  }
 
   const keys: string[] = [];
   const segments = pathSegments(normalized);
@@ -71,6 +194,10 @@ function compilePattern(pattern: string): CompiledPattern {
     end: new RegExp(`^${source || '/'}/*$`),
     prefix: new RegExp(`^${source || ''}(?=/|$)`),
   };
+  if (compiledPatterns.size >= PATTERN_CACHE_LIMIT) {
+    const oldest = compiledPatterns.keys().next().value as string | undefined;
+    if (oldest !== undefined) compiledPatterns.delete(oldest);
+  }
   compiledPatterns.set(normalized, compiled);
   return compiled;
 }
@@ -143,16 +270,38 @@ export function buildRoutePath<Path extends string>(
   hash?: string,
 ): string {
   const supplied = params as Readonly<Record<string, RouteParamValue>> | undefined;
-  const pathname = normalizeRoutePath(pattern).replace(
+  const normalizedPattern = validateRoutePattern(pattern);
+  const encodeSegment = (value: RouteParamValue, key: string): string => {
+    const text = String(value);
+    if (text === '.' || text === '..') {
+      throw new TypeError(`Route parameter '${key}' must not be a dot segment`);
+    }
+    return encodeURIComponent(text);
+  };
+  let pathname = normalizedPattern.replace(
     /:([A-Za-z_$][A-Za-z0-9_$]*)/g,
     (_token, key: string) => {
       const value = supplied?.[key];
       if (value === undefined) {
         throw new TypeError(`Missing route parameter '${key}' for '${pattern}'`);
       }
-      return encodeURIComponent(String(value));
+      return encodeSegment(value, key);
     },
   );
+  if (pathname.endsWith('/*')) {
+    const value = supplied?.['*'];
+    if (value === undefined) {
+      throw new TypeError(`Missing route parameter '*' for '${pattern}'`);
+    }
+    const wildcard = String(value);
+    const segments = wildcard.split('/');
+    if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
+      throw new TypeError(`Route wildcard '*' contains an invalid path segment`);
+    }
+    pathname = `${pathname.slice(0, -1)}${segments.map(segment =>
+      encodeSegment(segment, '*')
+    ).join('/')}`;
+  }
   const normalizedHash = hash === undefined || hash === ''
     ? ''
     : hash.startsWith('#') ? hash : `#${hash}`;
@@ -160,11 +309,9 @@ export function buildRoutePath<Path extends string>(
 }
 
 export function rankRoutePattern(pattern: string): number {
-  let rank = 0;
-  for (const segment of pathSegments(normalizeRoutePath(pattern))) {
-    if (segment === '*') rank += 1;
-    else if (PARAM_SEGMENT.test(segment)) rank += 10;
-    else rank += 100;
+  let rank = 1;
+  for (const segment of patternSegments(pattern)) {
+    rank = rank * 4 + segmentKind(segment);
   }
   return rank;
 }

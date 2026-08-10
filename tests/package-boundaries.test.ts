@@ -8,7 +8,7 @@ import { compile } from '@memoized-dom/compiler';
 
 const root = resolve(import.meta.dirname, '..');
 
-function manifest(packageName: 'compiler' | 'runtime'): {
+function manifest(packageName: 'compiler' | 'router' | 'runtime'): {
   dependencies?: Record<string, string>;
   exports: Record<string, unknown>;
 } {
@@ -31,11 +31,13 @@ function typeScriptSources(directory: string): string[] {
 describe('workspace package boundaries', () => {
   it('keeps the production runtime dependency-free', () => {
     expect(manifest('runtime').dependencies).toBeUndefined();
+    expect(manifest('router').dependencies).toBeUndefined();
   });
 
   it('keeps compiler source independent from runtime source', () => {
     const compiler = manifest('compiler');
     expect(compiler.dependencies).not.toHaveProperty('@memoized-dom/runtime');
+    expect(compiler.dependencies).not.toHaveProperty('@memoized-dom/router');
 
     for (const file of typeScriptSources(
       resolve(root, 'packages/compiler/src'),
@@ -64,5 +66,16 @@ describe('workspace package boundaries', () => {
     expect(manifest('runtime').exports).toHaveProperty('.');
     expect(manifest('runtime').exports).toHaveProperty('./testing');
     expect(manifest('compiler').exports).toHaveProperty('.');
+    expect(manifest('router').exports).toHaveProperty('.');
+    expect(manifest('router').exports).toHaveProperty('./internal');
+  });
+
+  it('publishes scoped router creation separately from generated-code hooks', async () => {
+    const publicRouter = await import('@memoized-dom/router');
+    const internalRouter = await import('@memoized-dom/router/internal');
+
+    expect(publicRouter).toHaveProperty('createRouteRuntime');
+    expect(publicRouter).not.toHaveProperty('installRouteResolver');
+    expect(internalRouter).toHaveProperty('installRouteResolver');
   });
 });
