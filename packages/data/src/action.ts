@@ -85,13 +85,19 @@ class ActionController<T> {
 
   cancelInvocation(invocation: ActionInvocation, reason?: unknown): void {
     if (invocation.cancelled) return;
+    const visible = this.isVisible(invocation);
     invocation.cancelled = true;
     invocation.abortController.abort(reason);
-    if (invocation.sequence === this.sequence) this.sequence++;
-    this.snapshot.error = null;
-    this.snapshot.status = this.hasData ? 'success' : 'idle';
-    this.snapshot.pending = [...this.invocations].some(item => !item.cancelled);
-    this.notifier.notify();
+    if (visible) {
+      this.sequence++;
+      this.snapshot.error = null;
+      this.snapshot.status = this.hasData ? 'success' : 'idle';
+    }
+    const pending = [...this.invocations].some(item => !item.cancelled);
+    if (visible || this.snapshot.pending !== pending) {
+      this.snapshot.pending = pending;
+      this.notifier.notify();
+    }
   }
 
   finish(invocation: ActionInvocation): void {

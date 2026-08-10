@@ -117,6 +117,29 @@ describe('action concurrency', () => {
     expect(action.pending).toBe(false);
   });
 
+  it('keeps newer visible state when an older invocation is cancelled', async () => {
+    const fetcher = vi.fn(() => new Promise<Response>(() => {}));
+    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const action = runtime.$action<{ id: number }, number>('/save');
+    const olderOwner = new AbortController();
+
+    const older = action(1, { signal: olderOwner.signal });
+    const olderRejection = expect(older).rejects.toMatchObject({ name: 'AbortError' });
+    const newer = action(2);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+
+    olderOwner.abort();
+    await olderRejection;
+
+    expect(action.status).toBe('pending');
+    expect(action.pending).toBe(true);
+    expect(action.error).toBeNull();
+
+    action.abort();
+    await expect(newer).rejects.toMatchObject({ name: 'AbortError' });
+    runtime.clear();
+  });
+
   it('rolls back an optimistic change without fetching for a pre-aborted call', async () => {
     const fetcher = vi.fn(async (_input, init) =>
       init?.method === 'GET' ? json([]) : json({ id: 'saved' }));

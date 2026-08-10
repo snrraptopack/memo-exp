@@ -347,6 +347,32 @@ describe('route runtime', () => {
     runtime.dispose();
   });
 
+  it('normalizes active route patterns before comparison', () => {
+    const runtime = createRouteRuntime(browserEnvironment());
+    const listener = vi.fn();
+    runtime.subscribe(listener);
+
+    runtime.setMatches([{
+      id: 'Docs',
+      pattern: '/docs/',
+      pathname: '/docs',
+      params: {},
+    }]);
+
+    expect(runtime.route.matches[0]?.pattern).toBe('/docs');
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    runtime.setMatches([{
+      id: 'Docs',
+      pattern: '/docs',
+      pathname: '/docs',
+      params: {},
+    }]);
+
+    expect(listener).toHaveBeenCalledTimes(2);
+    runtime.dispose();
+  });
+
   it('resolves location and active matches in one subscriber notification', () => {
     const runtime = createRouteRuntime(browserEnvironment());
     const uninstall = runtime.installResolver(location => location.pathname === '/next'

@@ -50,11 +50,24 @@ function isOpaqueInvocation(
 
   visiting.add(fn.node);
   let opaque = false;
+  const visitingBindings = new Set<Binding>();
   const inspectReturned = (expression: NodePath): void => {
     if (opaque || !expression.isExpression()) return;
     if (referencedOwnedRoots(expression, ownerPath, tainted).size > 0) {
       opaque = true;
       return;
+    }
+    if (expression.isIdentifier()) {
+      const binding = expression.scope.getBinding(expression.node.name);
+      if (binding?.path.isVariableDeclarator() === true && !visitingBindings.has(binding)) {
+        const init = binding.path.get('init');
+        if (!Array.isArray(init) && init.node !== null) {
+          visitingBindings.add(binding);
+          inspectReturned(init);
+          visitingBindings.delete(binding);
+        }
+      }
+      if (opaque) return;
     }
     const inspectCall = (
       call: NodePath<t.CallExpression | t.NewExpression>,

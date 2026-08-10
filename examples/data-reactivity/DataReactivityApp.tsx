@@ -171,7 +171,10 @@ export function DataReactivityApp() {
           {actionNotification && (
             <div class="notification-toast">
               <span>{actionNotification}</span>
-              <button onClick={() => { actionNotification = ''; }}>✕</button>
+              <button
+                aria-label="Dismiss notification"
+                onClick={() => { actionNotification = ''; }}
+              >✕</button>
             </div>
           )}
 
@@ -189,10 +192,14 @@ export function DataReactivityApp() {
                 }}
               />
               {searchQuery && (
-                <button class="clear-search" onClick={() => {
-                  searchQuery = '';
-                  replaceTasksResource();
-                }}>
+                <button
+                  class="clear-search"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    searchQuery = '';
+                    replaceTasksResource();
+                  }}
+                >
                   ✕
                 </button>
               )}

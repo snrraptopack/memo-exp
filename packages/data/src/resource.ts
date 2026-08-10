@@ -394,6 +394,74 @@ function collection<T>(controller: ResourceController<T[]>): T[] {
     : [];
 }
 
+interface ReplacementStep<T> {
+  readonly temporary: T;
+  outcome: 'pending' | 'committed' | 'rolled-back';
+  result?: T;
+}
+
+interface ReplacementChain<T> {
+  readonly index: number;
+  readonly base: T;
+  readonly steps: ReplacementStep<T>[];
+  visible: T;
+}
+
+const replacementChains = new WeakMap<object, Set<ReplacementChain<unknown>>>();
+
+function chainsFor<T>(
+  controller: ResourceController<T[]>,
+): Set<ReplacementChain<T>> {
+  let chains = replacementChains.get(controller);
+  if (chains === undefined) {
+    chains = new Set();
+    replacementChains.set(controller, chains);
+  }
+  return chains as Set<ReplacementChain<T>>;
+}
+
+function replacementTarget<T>(
+  items: readonly T[],
+  chain: ReplacementChain<T>,
+  visible: T,
+): number {
+  return Object.is(items[chain.index], visible)
+    ? chain.index
+    : items.findIndex(item => Object.is(item, visible));
+}
+
+function settleReplacement<T>(
+  controller: ResourceController<T[]>,
+  chain: ReplacementChain<T>,
+  step: ReplacementStep<T>,
+  outcome: 'committed' | 'rolled-back',
+  result?: T,
+): void {
+  step.outcome = outcome;
+  step.result = result;
+
+  let visible = chain.base;
+  for (const current of chain.steps) {
+    if (current.outcome === 'pending') visible = current.temporary;
+    else if (current.outcome === 'committed') visible = current.result as T;
+  }
+
+  const previous = chain.visible;
+  chain.visible = visible;
+  if (!Object.is(previous, visible)) {
+    controller.update(items => {
+      const next = [...(items ?? [])];
+      const target = replacementTarget(next, chain, previous);
+      if (target !== -1) next[target] = visible;
+      return next;
+    });
+  }
+
+  if (chain.steps.every(current => current.outcome !== 'pending')) {
+    chainsFor(controller).delete(chain);
+  }
+}
+
 function appendChange<T>(
   controller: ResourceController<T[]>,
   temporary: T,
@@ -429,36 +497,37 @@ function replaceChange<T>(
   current: T,
   temporary: T,
 ): OptimisticChange<T> {
-  const index = collection(controller).indexOf(current);
+  const items = collection(controller);
+  const index = items.indexOf(current);
   if (index === -1) {
     return createOptimisticChange({ rollback() {}, commit() {} });
   }
-  const temporaryAlreadyPresent = collection(controller).includes(temporary);
-  controller.update(items =>
-    (items ?? []).map((item, itemIndex) =>
+  const chains = chainsFor(controller);
+  let chain = [...chains].find(candidate =>
+    Object.is(candidate.visible, current) &&
+    replacementTarget(items, candidate, current) === index
+  );
+  if (chain === undefined) {
+    chain = { index, base: current, visible: current, steps: [] };
+    chains.add(chain);
+  }
+  const step: ReplacementStep<T> = {
+    temporary,
+    outcome: 'pending',
+  };
+  chain.steps.push(step);
+  chain.visible = temporary;
+  controller.update(values =>
+    (values ?? []).map((item, itemIndex) =>
       itemIndex === index ? temporary : item
     ),
   );
   return createOptimisticChange({
     rollback() {
-      controller.update(items => {
-        const next = [...(items ?? [])];
-        const target = next[index] === temporary
-          ? index
-          : temporaryAlreadyPresent ? -1 : next.indexOf(temporary);
-        if (target !== -1) next[target] = current;
-        return next;
-      });
+      settleReplacement(controller, chain, step, 'rolled-back');
     },
     commit(result) {
-      controller.update(items => {
-        const next = [...(items ?? [])];
-        const target = next[index] === temporary
-          ? index
-          : temporaryAlreadyPresent ? -1 : next.indexOf(temporary);
-        if (target !== -1) next[target] = result;
-        return next;
-      });
+      settleReplacement(controller, chain, step, 'committed', result);
     },
   });
 }

@@ -130,14 +130,14 @@ function prepareMatches(nextMatches: readonly RouteMatch[]): {
       throw new TypeError(`Duplicate active route ID '${match.id}'`);
     }
     identifiers.add(match.id);
-    validateRoutePattern(match.pattern);
+    const pattern = validateRoutePattern(match.pattern);
     for (const [key, value] of Object.entries(match.params)) {
       if (Object.hasOwn(merged, key)) {
         throw new TypeError(`Duplicate active route parameter '${key}'`);
       }
       merged[key] = value;
     }
-    return frozenMatch(match);
+    return frozenMatch({ ...match, pattern });
   });
   return {
     matches: Object.freeze(frozen),

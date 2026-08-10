@@ -130,6 +130,59 @@ describe('optimistic collection safety', () => {
     expect(items.data).toHaveLength(2);
   });
 
+  it('rolls overlapping failed replacements back to the server value', async () => {
+    const finishes: Array<(response: Response) => void> = [];
+    const runtime = createDataRuntime({
+      fetch: (async (_input, init) => init?.method === 'GET'
+        ? json([{ id: 'task', status: 'todo' }])
+        : new Promise<Response>(resolve => finishes.push(resolve))) as typeof fetch,
+    });
+    const items = runtime.$fetch<Array<Item & { status: string; isOptimistic?: boolean }>>(
+      '/items',
+    );
+    await settled(items);
+    const update = runtime.$action<Item & { status: string }>('/items', {
+      method: 'PATCH',
+    });
+    const original = items.data![0]!;
+    const firstTemporary = { ...original, status: 'done', isOptimistic: true };
+    const first = update(undefined, {
+      optimistic: items.replace(original, firstTemporary),
+    });
+    const firstRejection = expect(first).rejects.toMatchObject({ kind: 'http' });
+    const secondTemporary = {
+      ...firstTemporary,
+      status: 'todo',
+      isOptimistic: true,
+    };
+    const second = update(undefined, {
+      optimistic: items.replace(firstTemporary, secondTemporary),
+    });
+    const secondRejection = expect(second).rejects.toMatchObject({ kind: 'http' });
+    const thirdTemporary = {
+      ...secondTemporary,
+      status: 'done',
+      isOptimistic: true,
+    };
+    const third = update(undefined, {
+      optimistic: items.replace(secondTemporary, thirdTemporary),
+    });
+    const thirdRejection = expect(third).rejects.toMatchObject({ kind: 'http' });
+
+    await vi.waitFor(() => expect(finishes).toHaveLength(3));
+    finishes[0]!(json({ error: true }, 500));
+    await firstRejection;
+    expect(items.data).toEqual([thirdTemporary]);
+
+    finishes[1]!(json({ error: true }, 500));
+    await secondRejection;
+    expect(items.data).toEqual([thirdTemporary]);
+
+    finishes[2]!(json({ error: true }, 500));
+    await thirdRejection;
+    expect(items.data).toEqual([original]);
+  });
+
   it('rejects reuse of an already consumed optimistic change', async () => {
     const temporary: Item = { id: 'temporary' };
     const runtime = createDataRuntime({

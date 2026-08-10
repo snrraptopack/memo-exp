@@ -61,6 +61,23 @@ describe('opaque external mutation fallback', () => {
     expect(code).toMatch(/const _update\d* = \(\) => \{[\s\S]*?\.update\(\)/);
   });
 
+  it('follows local aliases returned by opaque helper functions', () => {
+    const code = compileExternal(`
+      import { createQuery } from 'external-data';
+
+      export function App() {
+        function load() {
+          const query = createQuery('/items');
+          return query;
+        }
+        const query = load();
+        return <output>{query.data}</output>;
+      }
+    `);
+
+    expect(code).toContain('volatile: true');
+  });
+
   it('tracks opaque results nested in object initializers and member assignments', () => {
     const initialized = compileExternal(`
       import { createClock } from 'external-clock';

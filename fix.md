@@ -158,7 +158,7 @@ error when starting dev server:
     '\x1B[0m \x1B[90m 291 |\x1B[39m           \x1B[33m<\x1B[39m\x1B[33mdiv\x1B[39m \x1B[33mclass\x1B[39m\x1B[33m=\x1B[39m\x1B[32m"tasks-grid"\x1B[39m\x1B[33m>\x1B[39m\n' +
     ' \x1B[90m 292 |\x1B[39m             \x1B[33m{\x1B[39mtasksResource\x1B[33m.\x1B[39mdata\x1B[33m?.\x1B[39mmap((task\x1B[33m:\x1B[39m \x1B[33mTask\x1B[39m) \x1B[33m=>\x1B[39m (\n' +
     '\x1B[31m\x1B[1m>\x1B[22m\x1B[39m\x1B[90m 293 |\x1B[39m               \x1B[33m<\x1B[39m\x1B[33mTaskCard\x1B[39m\n',
-  id: 'C:/Users/babyface/Desktop/memoized-dom/examples/data-reactivity/DataReactivityApp.tsx',
+  id: '<repo>/examples/data-reactivity/DataReactivityApp.tsx',
   plugin: 'memoized-dom'
 }
 ```

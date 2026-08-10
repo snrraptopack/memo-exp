@@ -51,6 +51,7 @@ export function TaskCard({ task, onUpdateStatus, onDelete }: TaskCardProps) {
         <button
           class="btn-delete"
           onClick={() => onDelete(task)}
+          aria-label="Delete task"
           title="Delete task with optimistic list removal"
         >
           🗑️
