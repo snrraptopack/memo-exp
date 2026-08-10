@@ -2,6 +2,7 @@ import { createDataRuntime } from './client';
 
 const defaultRuntime = createDataRuntime();
 
+export { createDataRuntime } from './client';
 export const $fetch = defaultRuntime.$fetch;
 export const $action = defaultRuntime.$action;
 export { RequestError } from './errors';

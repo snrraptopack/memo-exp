@@ -1,0 +1,8 @@
+{
+  "name": "alias-imports",
+  "description": "One state binding and mutator imported under aliases by two views.",
+  "category": "cross-module aliasing",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

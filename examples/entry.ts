@@ -3,7 +3,7 @@
  * Browser entry point for the DOM Ref Laboratory example.
  */
 import { mount } from '@memoized-dom/runtime';
-import { RefsApp } from './refs/RefsApp';
-import './refs/styles.css';
+import { DataReactivityApp } from './data-reactivity/DataReactivityApp';
+import './data-reactivity/styles.css';
 
-mount('root', RefsApp);
+mount('root', DataReactivityApp);

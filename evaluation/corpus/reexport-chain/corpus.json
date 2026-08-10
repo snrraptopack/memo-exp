@@ -1,0 +1,8 @@
+{
+  "name": "reexport-chain",
+  "description": "State and mutator are re-exported before an aliased import.",
+  "category": "re-export linking",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

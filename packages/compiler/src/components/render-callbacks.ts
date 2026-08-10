@@ -1,6 +1,6 @@
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import type { Ctx } from '../context';
+import type { Ctx, MapCallExpression } from '../context';
 import {
   localBindingForProp,
   objectBindingName,
@@ -62,9 +62,10 @@ export function isRenderCallbackJsxRoot(
   );
 }
 
-function isMapCall(call: t.CallExpression): boolean {
+function isMapCall(call: MapCallExpression): boolean {
   return (
-    t.isMemberExpression(call.callee) &&
+    (t.isMemberExpression(call.callee) ||
+      t.isOptionalMemberExpression(call.callee)) &&
     !call.callee.computed &&
     t.isIdentifier(call.callee.property, { name: 'map' })
   );
@@ -116,7 +117,7 @@ function returnedExpression(
 export function matchRenderCallbackMap(
   ctx: Ctx,
   componentName: string,
-  call: t.CallExpression,
+  call: MapCallExpression,
 ): RenderCallbackInvocation | null {
   if (!isMapCall(call) || call.arguments.length !== 1) return null;
   const callback = call.arguments[0];
@@ -155,20 +156,24 @@ export function matchRenderCallbackMap(
 export function scanRenderCallbacks(ctx: Ctx): void {
   for (const [componentName, componentPath] of ctx.compPaths) {
     const plan = ctx.componentProps.get(componentName)!;
+    const checkCall = (
+      path: NodePath<t.CallExpression | t.OptionalCallExpression>,
+    ): void => {
+      const invocation = matchRenderCallbackMap(
+        ctx,
+        componentName,
+        path.node,
+      );
+      if (
+        invocation !== null &&
+        !plan.renderCallbacks.includes(invocation.propName)
+      ) {
+        plan.renderCallbacks.push(invocation.propName);
+      }
+    };
     componentPath.traverse({
-      CallExpression(path: NodePath<t.CallExpression>) {
-        const invocation = matchRenderCallbackMap(
-          ctx,
-          componentName,
-          path.node,
-        );
-        if (
-          invocation !== null &&
-          !plan.renderCallbacks.includes(invocation.propName)
-        ) {
-          plan.renderCallbacks.push(invocation.propName);
-        }
-      },
+      CallExpression: checkCall,
+      OptionalCallExpression: checkCall,
     });
   }
 }

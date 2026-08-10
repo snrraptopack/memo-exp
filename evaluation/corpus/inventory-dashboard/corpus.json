@@ -1,0 +1,8 @@
+{
+  "name": "inventory-dashboard",
+  "description": "Inventory state, parameter helpers, imported actions, and derived valuation.",
+  "category": "application case study",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

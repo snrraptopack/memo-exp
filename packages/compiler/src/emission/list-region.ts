@@ -12,7 +12,7 @@ import {
   generatedIdentifier,
   md,
 } from '../identifiers';
-import { analyzeMapSite, type MapSite } from '../lists';
+import { analyzeMapSite, type MapCallExpression, type MapSite } from '../lists';
 import { isLightweightListedComponent } from '../analysis';
 import {
   hasComponentChildren,
@@ -69,7 +69,7 @@ export type AuthoredChildrenSlotBuilder = (
 export function emitListRegion(
   ctx: Ctx,
   scope: EmitScope,
-  call: t.CallExpression,
+  call: MapCallExpression,
   parentElementVariable: string,
   componentName: string,
   componentPath: NodePath<t.FunctionDeclaration>,

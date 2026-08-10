@@ -616,10 +616,14 @@ export function analyzeHandler(
       notePropWrite(p, origin);
       return;
     }
+    // A receiver call is an opaque invocation, not a proven assignment to
+    // the derived binding. Conservatively invalidate its readers without
+    // guessing whether a user-defined or third-party method is mutating.
     if (origin.stateKind === 'computed') {
-      throw p.buildCodeFrameError(
-        `memo-dom: cannot mutate computed '${origin.root}' (R13) - write its SOURCE state instead`,
-      );
+      mutateScope(p, (scope) => {
+        scope.writes.add(origin.root);
+      });
+      return;
     }
     mutateScope(p, (scope) => {
       scope.writes.add(origin.key ?? origin.root);
@@ -930,9 +934,12 @@ export function analyzeHandler(
           instDerived?.has(receiverRoot) &&
           !projectedProps.has(receiverRoot)
         ) {
-          throw p.buildCodeFrameError(
-            `memo-dom: cannot mutate per-instance derivation '${receiverRoot}' (R14) - write its source instead`,
-          );
+          // Method bodies are opaque. The call may change observable state,
+          // so invalidate the owner without declaring the invocation illegal.
+          mutateScope(p, (scope) => {
+            recordInstanceMutation(scope, receiverRoot);
+          });
+          return;
         }
         const receiver =
           t.isExpression(callee.object)

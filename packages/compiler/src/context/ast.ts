@@ -2,6 +2,18 @@ import * as t from '@babel/types';
 import { generatedIdentifier } from '../identifiers';
 import type { Ctx, StateKind } from './model';
 
+/** Remove TypeScript-only wrappers without changing runtime semantics. */
+export function unwrapTypeExpression(expression: t.Expression): t.Expression {
+  while (
+    t.isTSAsExpression(expression) ||
+    t.isTSTypeAssertion(expression) ||
+    t.isTSNonNullExpression(expression)
+  ) {
+    expression = expression.expression;
+  }
+  return expression;
+}
+
 /** Register a state binding while preserving a linker-provided import entry. */
 export function registerState(ctx: Ctx, name: string, kind: StateKind): void {
   ctx.state.set(name, kind);

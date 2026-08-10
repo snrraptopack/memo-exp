@@ -15,7 +15,7 @@ import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { runAnalysis } from './analysis';
+import { buildAccessTable, runAnalysis } from './analysis';
 import {
   compileAst,
   compileAstDetailed,
@@ -42,6 +42,7 @@ import {
   isConstObjectState,
   isStoreObject,
   nodeHasJsx,
+  unwrapTypeExpression,
   type InternalMemoDomOptions,
   type LinkedImport,
   type LinkedDynamicComponentCandidate,
@@ -75,6 +76,13 @@ export interface CompileModulesOptions
    * undefined to continue with aliases and normal relative resolution.
    */
   resolveImport?: (specifier: string, importer: string) => string | undefined;
+  /**
+   * Preserve imported state/component identity but replace imported function
+   * summaries with an unbounded effect. This is an evaluation ablation for
+   * measuring the contribution of cross-module effect-summary propagation.
+   * Defaults to true.
+   */
+  linkFunctionSummaries?: boolean;
 }
 
 export interface CompiledComponentExport {
@@ -83,8 +91,29 @@ export interface CompiledComponentExport {
   listLightweight: boolean;
 }
 
+export interface CompiledStateExport {
+  exported: string;
+  kind: StateKind;
+  key: string;
+}
+
+export interface CompiledFunctionExport {
+  exported: string;
+  reads: string[];
+  writes: string[];
+  boundedWrites: string[];
+  parameterWrites: ParameterWrite[];
+  unbounded: boolean;
+}
+
 export interface CompiledModuleMetadata {
   componentExports: CompiledComponentExport[];
+  /** Canonical state identities exposed for evaluation and tooling. */
+  stateExports: CompiledStateExport[];
+  /** Fixed-point function summaries exposed for evaluation and tooling. */
+  functionExports: CompiledFunctionExport[];
+  /** Canonical read key -> statically selected runtime entity patterns. */
+  readers: Record<string, string[]>;
 }
 
 export interface CompiledApplicationRoot {
@@ -139,6 +168,7 @@ interface ModuleManifest {
   mounts: string[];
   components: ComponentGraphNode[];
   componentUsages: ComponentPropUsage[];
+  readers: Record<string, string[]>;
 }
 
 interface ComponentPropUsage {
@@ -481,6 +511,9 @@ function analyzeManifest(
         installLinkedDynamicComponentImports(ctx, programPath);
         initializeGeneratedIdentifiers(ctx, programPath);
         runAnalysis(ctx, programPath);
+        // buildAccessTable also materializes ctx.readers. The returned AST is
+        // intentionally discarded here; final emission builds its own table.
+        buildAccessTable(ctx);
         const exports: Record<string, LinkedExport> = {};
         const functionTagCandidates = moduleFunctionStringCandidates(
           programPath.node,
@@ -550,6 +583,11 @@ function analyzeManifest(
           ),
           components: analyzedComponentDeclarations(entry.id, ctx),
           componentUsages: analyzedComponentUsages(ctx),
+          readers: Object.fromEntries(
+            [...ctx.readers.entries()]
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([key, patterns]) => [key, [...patterns].sort()]),
+          ),
         };
       },
     },
@@ -599,12 +637,16 @@ function discoverManifest(
           if (t.isVariableDeclaration(inner)) {
             for (const decl of inner.declarations) {
               if (!t.isIdentifier(decl.id)) continue;
+              const init =
+                decl.init !== null && t.isExpression(decl.init)
+                  ? unwrapTypeExpression(decl.init)
+                  : decl.init;
               if (
-                t.isArrowFunctionExpression(decl.init) ||
-                t.isFunctionExpression(decl.init)
+                t.isArrowFunctionExpression(init) ||
+                t.isFunctionExpression(init)
               ) {
                 const componentCandidates = directFunctionComponentNames(
-                  decl.init,
+                  init,
                   componentNames,
                 ).map((name) => `${entry.id}#${name}`);
                 locals.set(decl.id.name, {
@@ -623,13 +665,13 @@ function discoverManifest(
               }
               let kind: StateKind | undefined;
               if (inner.kind === 'let' || inner.kind === 'var') kind = 'let';
-              else if (isStoreObject(decl.init)) kind = 'store';
-              else if (isConstObjectState(decl.init)) kind = 'const';
+              else if (isStoreObject(init)) kind = 'store';
+              else if (isConstObjectState(init)) kind = 'const';
               if (kind !== undefined) {
                 const names = new Set<string>();
-                if (t.isExpression(decl.init)) {
+                if (t.isExpression(init)) {
                   directComponentNames(
-                    decl.init,
+                    init,
                     componentNames,
                     names,
                   );
@@ -682,6 +724,7 @@ function discoverManifest(
           ),
           components: [],
           componentUsages: [],
+          readers: {},
         };
       },
     },
@@ -911,6 +954,23 @@ function linkImports(
         subtreeReads: [...targetExport.subtreeReads],
       };
     } else {
+      if (options.linkFunctionSummaries === false) {
+        linked[ref.local] = {
+          type: 'function',
+          tagCandidates: [...targetExport.tagCandidates],
+          componentCandidates: linkedDynamicCandidates(
+            entry,
+            targetExport.componentCandidates,
+            manifests,
+          ),
+          reads: [],
+          writes: [],
+          boundedWrites: [],
+          parameterWrites: [],
+          unbounded: true,
+        };
+        continue;
+      }
       linked[ref.local] = {
         type: 'function',
         tagCandidates: [...targetExport.tagCandidates],
@@ -1069,6 +1129,39 @@ function compileLinkedModules(
           listLightweight: component.listLightweight,
         }))
         .sort((left, right) => left.local.localeCompare(right.local)),
+      stateExports: Object.entries(manifest.exports)
+        .filter(
+          (entry): entry is [string, StateExport] => entry[1].type === 'state',
+        )
+        .map(([exported, state]) => ({
+          exported,
+          kind: state.kind,
+          key: state.key,
+        }))
+        .sort((left, right) => left.exported.localeCompare(right.exported)),
+      functionExports: Object.entries(manifest.exports)
+        .filter(
+          (entry): entry is [string, FunctionExport] =>
+            entry[1].type === 'function',
+        )
+        .map(([exported, summary]) => ({
+          exported,
+          reads: [...summary.reads],
+          writes: [...summary.writes],
+          boundedWrites: [...summary.boundedWrites],
+          parameterWrites: summary.parameterWrites.map((effect) => ({
+            index: effect.index,
+            path: [...effect.path],
+          })),
+          unbounded: summary.unbounded,
+        }))
+        .sort((left, right) => left.exported.localeCompare(right.exported)),
+      readers: Object.fromEntries(
+        Object.entries(manifest.readers).map(([key, patterns]) => [
+          key,
+          [...patterns],
+        ]),
+      ),
     };
     const linkedImports = linkImports(
       entry,

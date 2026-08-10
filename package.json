@@ -13,7 +13,7 @@
     "test": "bun run build && vitest run && bun run --cwd packages/data test && bun run --cwd packages/router test && bun run --cwd packages/vite test && bun run --cwd packages/language-service test",
     "typecheck": "bun run build && tsc --noEmit",
     "dev": "bun run build && vitest",
-    "example:dev": "bun run build && vite --config examples/vite.config.ts",
+    "example:dev": "vite --config examples/vite.config.ts",
     "example:build": "bun run build && vite build --config examples/vite.config.ts",
     "example:preview": "vite preview --config examples/vite.config.ts",
     "bench": "bun run bench/dom/build.ts && esbuild bench/dom/browser-entry.ts --bundle --outfile=bench/dom/dist/browser-bundle.js --format=iife && bun run bench/dom/run.ts",
@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@memoized-dom/compiler": "workspace:*",
+    "@memoized-dom/data": "workspace:*",
     "@memoized-dom/router": "workspace:*",
     "@memoized-dom/runtime": "workspace:*",
     "@memoized-dom/vite": "workspace:*",

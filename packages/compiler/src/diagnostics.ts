@@ -22,6 +22,12 @@ interface ErrorLike {
   loc?: { line?: unknown; column?: unknown };
 }
 
+const ansiEscape = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+
+function stripAnsi(value: string): string {
+  return value.replace(ansiEscape, '');
+}
+
 function normalizedId(id: string): string {
   return id.replaceAll('\\', '/').replace(/^\.\//, '');
 }
@@ -42,8 +48,9 @@ export function toCompilerDiagnostic(
   moduleIds: readonly string[] = [],
 ): CompilerDiagnostic {
   const error = value as ErrorLike;
-  const raw =
-    typeof error?.message === 'string' ? error.message : String(value);
+  const raw = stripAnsi(
+    typeof error?.message === 'string' ? error.message : String(value),
+  );
   const marker = raw.indexOf(': memo-dom:');
   const parseLocation = raw.match(/\((\d+):(\d+)\)/);
   const loc = error?.loc;

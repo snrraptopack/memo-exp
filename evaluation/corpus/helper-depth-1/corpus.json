@@ -1,0 +1,8 @@
+{
+  "name": "helper-depth-1",
+  "description": "One parameter-relative helper between action and store.",
+  "category": "helper depth 1",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

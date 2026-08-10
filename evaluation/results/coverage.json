@@ -1,0 +1,3392 @@
+{
+  "summary": {
+    "generatedAt": "2026-08-08T16:10:48.921Z",
+    "corpusPrograms": 16,
+    "acceptedPrograms": 15,
+    "acceptedLoc": 274,
+    "acceptedModules": 48,
+    "linkedTotals": {
+      "exact": 35,
+      "receiver-bounded": 24,
+      "parameter-relative": 29,
+      "unbounded": 0,
+      "rejected": 0
+    },
+    "ablatedTotals": {
+      "exact": 19,
+      "receiver-bounded": 8,
+      "parameter-relative": 21,
+      "unbounded": 40,
+      "rejected": 0
+    },
+    "linkedUnboundedPercent": 0,
+    "ablatedUnboundedPercent": 45.45,
+    "note": "The ablation preserves canonical imported state/component identity and disables only cross-module function-summary propagation."
+  },
+  "programs": [
+    {
+      "descriptor": {
+        "name": "alias-imports",
+        "description": "One state binding and mutator imported under aliases by two views.",
+        "category": "cross-module aliasing",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 15,
+      "modules": 3,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 4,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./header.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "recordVisit()",
+            "canonicalKeys": [
+              "./state.ts#profile.visits"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./sidebar.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "setName('Grace')",
+            "canonicalKeys": [
+              "./state.ts#profile.name"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "profile.visits++",
+            "canonicalKeys": [
+              "./state.ts#profile.visits"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./state.ts",
+            "line": 8,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "profile.name = next",
+            "canonicalKeys": [
+              "./state.ts#profile.name"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          }
+        ],
+        "readers": {
+          "./state.ts#profile": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#profile.name": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#profile.visits": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 3,
+        "readerEdges": 6
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 2,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 2,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./header.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "recordVisit()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./sidebar.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "setName('Grace')",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "profile.visits++",
+            "canonicalKeys": [
+              "./state.ts#profile.visits"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./state.ts",
+            "line": 8,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "profile.name = next",
+            "canonicalKeys": [
+              "./state.ts#profile.name"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          }
+        ],
+        "readers": {
+          "./state.ts#profile": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#profile.name": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#profile.visits": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 3,
+        "readerEdges": 6
+      }
+    },
+    {
+      "descriptor": {
+        "name": "branch-reads",
+        "description": "A branch reads disjoint state while actions update each source.",
+        "category": "branch over-approximation",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 10,
+      "modules": 2,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 6,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 5,
+            "column": 34,
+            "kind": "mutation",
+            "syntax": "showingPrimary = !showingPrimary",
+            "canonicalKeys": [
+              "./state.ts#showingPrimary"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./state.ts",
+            "line": 6,
+            "column": 39,
+            "kind": "mutation",
+            "syntax": "primary++",
+            "canonicalKeys": [
+              "./state.ts#primary"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./state.ts",
+            "line": 7,
+            "column": 41,
+            "kind": "mutation",
+            "syntax": "secondary++",
+            "canonicalKeys": [
+              "./state.ts#secondary"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "toggle()",
+            "canonicalKeys": [
+              "./state.ts#showingPrimary"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 90,
+            "kind": "effect-call",
+            "syntax": "bumpPrimary()",
+            "canonicalKeys": [
+              "./state.ts#primary"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 144,
+            "kind": "effect-call",
+            "syntax": "bumpSecondary()",
+            "canonicalKeys": [
+              "./state.ts#secondary"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#primary": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#secondary": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#showingPrimary": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 3,
+        "readerEdges": 6
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 3,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 3,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 5,
+            "column": 34,
+            "kind": "mutation",
+            "syntax": "showingPrimary = !showingPrimary",
+            "canonicalKeys": [
+              "./state.ts#showingPrimary"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./state.ts",
+            "line": 6,
+            "column": 39,
+            "kind": "mutation",
+            "syntax": "primary++",
+            "canonicalKeys": [
+              "./state.ts#primary"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./state.ts",
+            "line": 7,
+            "column": 41,
+            "kind": "mutation",
+            "syntax": "secondary++",
+            "canonicalKeys": [
+              "./state.ts#secondary"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "toggle()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 90,
+            "kind": "effect-call",
+            "syntax": "bumpPrimary()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 144,
+            "kind": "effect-call",
+            "syntax": "bumpSecondary()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#primary": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#secondary": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#showingPrimary": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 3,
+        "readerEdges": 6
+      }
+    },
+    {
+      "descriptor": {
+        "name": "dashboard-derived",
+        "description": "Dashboard counters with two cross-module derived stages.",
+        "category": "derived chain",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 18,
+      "modules": 4,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 4,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 5,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "sales++",
+            "canonicalKeys": [
+              "./state.ts#sales"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./state.ts",
+            "line": 9,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "refunds++",
+            "canonicalKeys": [
+              "./state.ts#refunds"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "recordSale()",
+            "canonicalKeys": [
+              "./state.ts#sales"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 92,
+            "kind": "effect-call",
+            "syntax": "recordRefund()",
+            "canonicalKeys": [
+              "./state.ts#refunds"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#refunds": [
+            "App",
+            "App/$computed/.%2Fderived.ts#loss",
+            "App/*"
+          ],
+          "./state.ts#sales": [
+            "App",
+            "App/$computed/.%2Fderived.ts#gross",
+            "App/*"
+          ],
+          "./derived.ts#gross": [
+            "App/$computed/.%2Fsummary.ts#net"
+          ],
+          "./derived.ts#loss": [
+            "App/$computed/.%2Fsummary.ts#net"
+          ],
+          "./summary.ts#net": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 5,
+        "readerEdges": 10
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 2,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 2,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 5,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "sales++",
+            "canonicalKeys": [
+              "./state.ts#sales"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./state.ts",
+            "line": 9,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "refunds++",
+            "canonicalKeys": [
+              "./state.ts#refunds"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "recordSale()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 92,
+            "kind": "effect-call",
+            "syntax": "recordRefund()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#refunds": [
+            "App/$computed/.%2Fderived.ts#loss"
+          ],
+          "./state.ts#sales": [
+            "App/$computed/.%2Fderived.ts#gross"
+          ],
+          "./derived.ts#gross": [
+            "App/$computed/.%2Fsummary.ts#net"
+          ],
+          "./derived.ts#loss": [
+            "App/$computed/.%2Fsummary.ts#net"
+          ],
+          "./summary.ts#net": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 5,
+        "readerEdges": 6
+      }
+    },
+    {
+      "descriptor": {
+        "name": "dynamic-key",
+        "description": "Dynamic property writes stay bounded to a known store root.",
+        "category": "dynamic store key",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 8,
+      "modules": 2,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 2,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "settings[key] = value",
+            "canonicalKeys": [
+              "./state.ts#settings"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "dynamic path bounded to a canonical receiver"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "updateSetting('theme', 'light')",
+            "canonicalKeys": [
+              "./state.ts#settings"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#settings": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#settings.locale": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#settings.theme": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 3,
+        "readerEdges": 6
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 1,
+          "parameter-relative": 0,
+          "unbounded": 1,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "settings[key] = value",
+            "canonicalKeys": [
+              "./state.ts#settings"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "dynamic path bounded to a canonical receiver"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "updateSetting('theme', 'light')",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#settings": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#settings.locale": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#settings.theme": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 3,
+        "readerEdges": 6
+      }
+    },
+    {
+      "descriptor": {
+        "name": "finance-summary",
+        "description": "Balances and rates flow through two cross-module derivation stages.",
+        "category": "application case study",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 25,
+      "modules": 5,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 9,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 3,
+            "column": 57,
+            "kind": "mutation",
+            "syntax": "accounts.checking += amount",
+            "canonicalKeys": [
+              "./state.ts#accounts.checking"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 4,
+            "column": 57,
+            "kind": "mutation",
+            "syntax": "accounts.savings -= amount",
+            "canonicalKeys": [
+              "./state.ts#accounts.savings"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 38,
+            "kind": "mutation",
+            "syntax": "accounts.currency = 'EUR'",
+            "canonicalKeys": [
+              "./state.ts#accounts.currency"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 6,
+            "column": 50,
+            "kind": "effect-call",
+            "syntax": "setRate(rate)",
+            "canonicalKeys": [
+              "./state.ts#usdToEur"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 10,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "usdToEur = rate",
+            "canonicalKeys": [
+              "./state.ts#usdToEur"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "depositChecking(100)",
+            "canonicalKeys": [
+              "./state.ts#accounts.checking"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 103,
+            "kind": "effect-call",
+            "syntax": "withdrawSavings(50)",
+            "canonicalKeys": [
+              "./state.ts#accounts.savings"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 164,
+            "kind": "effect-call",
+            "syntax": "chooseEuro()",
+            "canonicalKeys": [
+              "./state.ts#accounts.currency"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 218,
+            "kind": "effect-call",
+            "syntax": "updateRate(0.92)",
+            "canonicalKeys": [
+              "./state.ts#usdToEur"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#accounts": [
+            "App",
+            "App/$computed/.%2Fbalances.ts#totalUsd",
+            "App/$computed/.%2Fconverted.ts#displayedTotal",
+            "App/*"
+          ],
+          "./state.ts#accounts.checking": [
+            "App",
+            "App/$computed/.%2Fbalances.ts#totalUsd",
+            "App/*"
+          ],
+          "./state.ts#accounts.savings": [
+            "App",
+            "App/$computed/.%2Fbalances.ts#totalUsd",
+            "App/*"
+          ],
+          "./balances.ts#totalUsd": [
+            "App/$computed/.%2Fconverted.ts#displayedTotal"
+          ],
+          "./state.ts#accounts.currency": [
+            "App",
+            "App/$computed/.%2Fconverted.ts#displayedTotal",
+            "App/*"
+          ],
+          "./state.ts#usdToEur": [
+            "App/$computed/.%2Fconverted.ts#displayedTotal"
+          ],
+          "./converted.ts#displayedTotal": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 7,
+        "readerEdges": 17
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 4,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 5,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 3,
+            "column": 57,
+            "kind": "mutation",
+            "syntax": "accounts.checking += amount",
+            "canonicalKeys": [
+              "./state.ts#accounts.checking"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 4,
+            "column": 57,
+            "kind": "mutation",
+            "syntax": "accounts.savings -= amount",
+            "canonicalKeys": [
+              "./state.ts#accounts.savings"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 38,
+            "kind": "mutation",
+            "syntax": "accounts.currency = 'EUR'",
+            "canonicalKeys": [
+              "./state.ts#accounts.currency"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 6,
+            "column": 50,
+            "kind": "effect-call",
+            "syntax": "setRate(rate)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 10,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "usdToEur = rate",
+            "canonicalKeys": [
+              "./state.ts#usdToEur"
+            ],
+            "tier": "exact",
+            "detail": "static module-state binding"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "depositChecking(100)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 103,
+            "kind": "effect-call",
+            "syntax": "withdrawSavings(50)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 164,
+            "kind": "effect-call",
+            "syntax": "chooseEuro()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 218,
+            "kind": "effect-call",
+            "syntax": "updateRate(0.92)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#accounts": [
+            "App",
+            "App/$computed/.%2Fbalances.ts#totalUsd",
+            "App/$computed/.%2Fconverted.ts#displayedTotal",
+            "App/*"
+          ],
+          "./state.ts#accounts.checking": [
+            "App/$computed/.%2Fbalances.ts#totalUsd"
+          ],
+          "./state.ts#accounts.savings": [
+            "App/$computed/.%2Fbalances.ts#totalUsd"
+          ],
+          "./balances.ts#totalUsd": [
+            "App/$computed/.%2Fconverted.ts#displayedTotal"
+          ],
+          "./state.ts#accounts.currency": [
+            "App",
+            "App/$computed/.%2Fconverted.ts#displayedTotal",
+            "App/*"
+          ],
+          "./state.ts#usdToEur": [
+            "App/$computed/.%2Fconverted.ts#displayedTotal"
+          ],
+          "./converted.ts#displayedTotal": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 7,
+        "readerEdges": 13
+      }
+    },
+    {
+      "descriptor": {
+        "name": "form-validation",
+        "description": "Form fields passed through parameter-relative validation helpers.",
+        "category": "parameter effects",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 19,
+      "modules": 3,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 0,
+          "parameter-relative": 7,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./validation.ts",
+            "line": 2,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "field.touched = true",
+            "canonicalKeys": [
+              "argument[0].touched"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./validation.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "field.value = field.value.trim()",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./validation.ts",
+            "line": 6,
+            "column": 17,
+            "kind": "mutation",
+            "syntax": "field.value.trim()",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "method call relative to a function parameter"
+          },
+          {
+            "file": "./validation.ts",
+            "line": 10,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "normalize(field)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./validation.ts",
+            "line": 11,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "touch(field)",
+            "canonicalKeys": [
+              "argument[0].touched"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 39,
+            "kind": "effect-call",
+            "syntax": "prepare(form.email)",
+            "canonicalKeys": [
+              "argument[0].touched",
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 131,
+            "kind": "effect-call",
+            "syntax": "prepare(form.name)",
+            "canonicalKeys": [
+              "argument[0].touched",
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#form": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.email": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.email.touched": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.email.value": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.name": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.name.touched": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.name.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 7,
+        "readerEdges": 14
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 0,
+          "parameter-relative": 5,
+          "unbounded": 2,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./validation.ts",
+            "line": 2,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "field.touched = true",
+            "canonicalKeys": [
+              "argument[0].touched"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./validation.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "field.value = field.value.trim()",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./validation.ts",
+            "line": 6,
+            "column": 17,
+            "kind": "mutation",
+            "syntax": "field.value.trim()",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "method call relative to a function parameter"
+          },
+          {
+            "file": "./validation.ts",
+            "line": 10,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "normalize(field)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./validation.ts",
+            "line": 11,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "touch(field)",
+            "canonicalKeys": [
+              "argument[0].touched"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 39,
+            "kind": "effect-call",
+            "syntax": "prepare(form.email)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 131,
+            "kind": "effect-call",
+            "syntax": "prepare(form.name)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#form": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.email": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.email.touched": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.email.value": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.name": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.name.touched": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#form.name.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 7,
+        "readerEdges": 14
+      }
+    },
+    {
+      "descriptor": {
+        "name": "helper-depth-1",
+        "description": "One parameter-relative helper between action and store.",
+        "category": "helper depth 1",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 11,
+      "modules": 2,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 1,
+          "parameter-relative": 2,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "target.value++",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./state.ts",
+            "line": 8,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "write(counter)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "increment()",
+            "canonicalKeys": [
+              "./state.ts#counter.value"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#counter": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#counter.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 2,
+        "readerEdges": 4
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 0,
+          "parameter-relative": 2,
+          "unbounded": 1,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "target.value++",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./state.ts",
+            "line": 8,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "write(counter)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "increment()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#counter": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#counter.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 2,
+        "readerEdges": 4
+      }
+    },
+    {
+      "descriptor": {
+        "name": "helper-depth-2",
+        "description": "Two helper calls propagate a parameter-relative write.",
+        "category": "helper depth 2",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 14,
+      "modules": 2,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 1,
+          "parameter-relative": 3,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "target.value++",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./state.ts",
+            "line": 8,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "write(target)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 12,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "layer1(counter)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "increment()",
+            "canonicalKeys": [
+              "./state.ts#counter.value"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#counter": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#counter.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 2,
+        "readerEdges": 4
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 0,
+          "parameter-relative": 3,
+          "unbounded": 1,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "target.value++",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./state.ts",
+            "line": 8,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "write(target)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 12,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "layer1(counter)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "increment()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#counter": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#counter.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 2,
+        "readerEdges": 4
+      }
+    },
+    {
+      "descriptor": {
+        "name": "helper-depth-4",
+        "description": "Four helper calls propagate one parameter-relative write.",
+        "category": "helper depth 4",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 14,
+      "modules": 2,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 1,
+          "parameter-relative": 5,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "target.value++",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./state.ts",
+            "line": 7,
+            "column": 59,
+            "kind": "effect-call",
+            "syntax": "write(target)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 8,
+            "column": 59,
+            "kind": "effect-call",
+            "syntax": "layer1(target)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 9,
+            "column": 59,
+            "kind": "effect-call",
+            "syntax": "layer2(target)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 12,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "layer3(counter)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "increment()",
+            "canonicalKeys": [
+              "./state.ts#counter.value"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#counter": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#counter.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 2,
+        "readerEdges": 4
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 0,
+          "parameter-relative": 5,
+          "unbounded": 1,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "target.value++",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./state.ts",
+            "line": 7,
+            "column": 59,
+            "kind": "effect-call",
+            "syntax": "write(target)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 8,
+            "column": 59,
+            "kind": "effect-call",
+            "syntax": "layer1(target)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 9,
+            "column": 59,
+            "kind": "effect-call",
+            "syntax": "layer2(target)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./state.ts",
+            "line": 12,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "layer3(counter)",
+            "canonicalKeys": [
+              "argument[0].value"
+            ],
+            "tier": "parameter-relative",
+            "detail": "local function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "increment()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#counter": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#counter.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 2,
+        "readerEdges": 4
+      }
+    },
+    {
+      "descriptor": {
+        "name": "inventory-dashboard",
+        "description": "Inventory state, parameter helpers, imported actions, and derived valuation.",
+        "category": "application case study",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 26,
+      "modules": 5,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 2,
+          "receiver-bounded": 2,
+          "parameter-relative": 4,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 4,
+            "column": 39,
+            "kind": "effect-call",
+            "syntax": "restock(inventory.pens, 5)",
+            "canonicalKeys": [
+              "argument[0].quantity"
+            ],
+            "tier": "parameter-relative",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 40,
+            "kind": "effect-call",
+            "syntax": "reprice(inventory.books, 18)",
+            "canonicalKeys": [
+              "argument[0].price"
+            ],
+            "tier": "parameter-relative",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 6,
+            "column": 39,
+            "kind": "mutation",
+            "syntax": "inventory.selected = 'books'",
+            "canonicalKeys": [
+              "./state.ts#inventory.selected"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 2,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "item.quantity += amount",
+            "canonicalKeys": [
+              "argument[0].quantity"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "item.price = price",
+            "canonicalKeys": [
+              "argument[0].price"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "restockPens()",
+            "canonicalKeys": [
+              "./state.ts#inventory.pens.quantity"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 96,
+            "kind": "effect-call",
+            "syntax": "repriceBooks()",
+            "canonicalKeys": [
+              "./state.ts#inventory.books.price"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 151,
+            "kind": "effect-call",
+            "syntax": "selectBooks()",
+            "canonicalKeys": [
+              "./state.ts#inventory.selected"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./derived.ts#bookValue": [
+            "App/$computed/.%2Fderived.ts#totalValue"
+          ],
+          "./derived.ts#penValue": [
+            "App/$computed/.%2Fderived.ts#totalValue"
+          ],
+          "./state.ts#inventory": [
+            "App",
+            "App/$computed/.%2Fderived.ts#bookValue",
+            "App/$computed/.%2Fderived.ts#penValue",
+            "App/*"
+          ],
+          "./state.ts#inventory.books": [
+            "App",
+            "App/$computed/.%2Fderived.ts#bookValue",
+            "App/*"
+          ],
+          "./state.ts#inventory.books.price": [
+            "App/$computed/.%2Fderived.ts#bookValue"
+          ],
+          "./state.ts#inventory.books.quantity": [
+            "App/$computed/.%2Fderived.ts#bookValue"
+          ],
+          "./state.ts#inventory.pens": [
+            "App",
+            "App/$computed/.%2Fderived.ts#penValue",
+            "App/*"
+          ],
+          "./state.ts#inventory.pens.price": [
+            "App/$computed/.%2Fderived.ts#penValue"
+          ],
+          "./state.ts#inventory.pens.quantity": [
+            "App/$computed/.%2Fderived.ts#penValue"
+          ],
+          "./derived.ts#totalValue": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#inventory.selected": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 11,
+        "readerEdges": 20
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 1,
+          "receiver-bounded": 0,
+          "parameter-relative": 2,
+          "unbounded": 5,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 4,
+            "column": 39,
+            "kind": "effect-call",
+            "syntax": "restock(inventory.pens, 5)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 40,
+            "kind": "effect-call",
+            "syntax": "reprice(inventory.books, 18)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 6,
+            "column": 39,
+            "kind": "mutation",
+            "syntax": "inventory.selected = 'books'",
+            "canonicalKeys": [
+              "./state.ts#inventory.selected"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 2,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "item.quantity += amount",
+            "canonicalKeys": [
+              "argument[0].quantity"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "item.price = price",
+            "canonicalKeys": [
+              "argument[0].price"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "restockPens()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 96,
+            "kind": "effect-call",
+            "syntax": "repriceBooks()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 151,
+            "kind": "effect-call",
+            "syntax": "selectBooks()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./derived.ts#bookValue": [
+            "App/$computed/.%2Fderived.ts#totalValue"
+          ],
+          "./derived.ts#penValue": [
+            "App/$computed/.%2Fderived.ts#totalValue"
+          ],
+          "./state.ts#inventory": [
+            "App",
+            "App/$computed/.%2Fderived.ts#bookValue",
+            "App/$computed/.%2Fderived.ts#penValue",
+            "App/*"
+          ],
+          "./state.ts#inventory.books": [
+            "App/$computed/.%2Fderived.ts#bookValue"
+          ],
+          "./state.ts#inventory.books.price": [
+            "App/$computed/.%2Fderived.ts#bookValue"
+          ],
+          "./state.ts#inventory.books.quantity": [
+            "App/$computed/.%2Fderived.ts#bookValue"
+          ],
+          "./state.ts#inventory.pens": [
+            "App/$computed/.%2Fderived.ts#penValue"
+          ],
+          "./state.ts#inventory.pens.price": [
+            "App/$computed/.%2Fderived.ts#penValue"
+          ],
+          "./state.ts#inventory.pens.quantity": [
+            "App/$computed/.%2Fderived.ts#penValue"
+          ],
+          "./derived.ts#totalValue": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#inventory.selected": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 11,
+        "readerEdges": 16
+      }
+    },
+    {
+      "descriptor": {
+        "name": "notification-center",
+        "description": "Notification queue mutations and a cross-module unread derivation.",
+        "category": "application case study",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 24,
+      "modules": 4,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 1,
+          "receiver-bounded": 6,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "center.notices.push({ id: center.nextId++, message, read: false })",
+            "canonicalKeys": [
+              "./state.ts#center.notices"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 4,
+            "column": 29,
+            "kind": "mutation",
+            "syntax": "center.nextId++",
+            "canonicalKeys": [
+              "./state.ts#center.nextId"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 13,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "center.notices.shift()",
+            "canonicalKeys": [
+              "./state.ts#center.notices"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./derived.ts",
+            "line": 3,
+            "column": 23,
+            "kind": "mutation",
+            "syntax": "center.notices.filter((notice) => !notice.read)",
+            "canonicalKeys": [
+              "./state.ts#center.notices"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 40,
+            "kind": "effect-call",
+            "syntax": "notify('saved')",
+            "canonicalKeys": [
+              "./state.ts#center.notices"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 95,
+            "kind": "effect-call",
+            "syntax": "markFirstRead()",
+            "canonicalKeys": [
+              "./state.ts#center"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 148,
+            "kind": "effect-call",
+            "syntax": "dismissFirst()",
+            "canonicalKeys": [
+              "./state.ts#center.notices"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#center": [
+            "App",
+            "App/$computed/.%2Fderived.ts#totalNotices",
+            "App/$computed/.%2Fderived.ts#unread",
+            "App/*"
+          ],
+          "./state.ts#center.notices": [
+            "App",
+            "App/$computed/.%2Fderived.ts#totalNotices",
+            "App/$computed/.%2Fderived.ts#unread",
+            "App/*"
+          ],
+          "./state.ts#center.notices.filter": [
+            "App/$computed/.%2Fderived.ts#unread"
+          ],
+          "./state.ts#center.notices.length": [
+            "App/$computed/.%2Fderived.ts#totalNotices"
+          ],
+          "./derived.ts#totalNotices": [
+            "App",
+            "App/*"
+          ],
+          "./derived.ts#unread": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#center.nextId": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 7,
+        "readerEdges": 16
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 1,
+          "receiver-bounded": 3,
+          "parameter-relative": 0,
+          "unbounded": 3,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "center.notices.push({ id: center.nextId++, message, read: false })",
+            "canonicalKeys": [
+              "./state.ts#center.notices"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 4,
+            "column": 29,
+            "kind": "mutation",
+            "syntax": "center.nextId++",
+            "canonicalKeys": [
+              "./state.ts#center.nextId"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 13,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "center.notices.shift()",
+            "canonicalKeys": [
+              "./state.ts#center.notices"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./derived.ts",
+            "line": 3,
+            "column": 23,
+            "kind": "mutation",
+            "syntax": "center.notices.filter((notice) => !notice.read)",
+            "canonicalKeys": [
+              "./state.ts#center.notices"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 40,
+            "kind": "effect-call",
+            "syntax": "notify('saved')",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 95,
+            "kind": "effect-call",
+            "syntax": "markFirstRead()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 148,
+            "kind": "effect-call",
+            "syntax": "dismissFirst()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#center": [
+            "App/$computed/.%2Fderived.ts#totalNotices",
+            "App/$computed/.%2Fderived.ts#unread"
+          ],
+          "./state.ts#center.notices": [
+            "App/$computed/.%2Fderived.ts#totalNotices",
+            "App/$computed/.%2Fderived.ts#unread"
+          ],
+          "./state.ts#center.notices.filter": [
+            "App/$computed/.%2Fderived.ts#unread"
+          ],
+          "./state.ts#center.notices.length": [
+            "App/$computed/.%2Fderived.ts#totalNotices"
+          ],
+          "./derived.ts#totalNotices": [
+            "App",
+            "App/*"
+          ],
+          "./derived.ts#unread": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 6,
+        "readerEdges": 10
+      }
+    },
+    {
+      "descriptor": {
+        "name": "permissions-form",
+        "description": "Nested permission records updated through reusable parameter-relative helpers.",
+        "category": "application case study",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 26,
+      "modules": 4,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 2,
+          "receiver-bounded": 2,
+          "parameter-relative": 4,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "grantWrite(permissions.editor)",
+            "canonicalKeys": [
+              "argument[0].write"
+            ],
+            "tier": "parameter-relative",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "permissions.dirty = true",
+            "canonicalKeys": [
+              "./state.ts#permissions.dirty"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 10,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "revokeRead(permissions.reviewer)",
+            "canonicalKeys": [
+              "argument[0].read"
+            ],
+            "tier": "parameter-relative",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 11,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "permissions.dirty = true",
+            "canonicalKeys": [
+              "./state.ts#permissions.dirty"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 2,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "role.write = true",
+            "canonicalKeys": [
+              "argument[0].write"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "role.read = false",
+            "canonicalKeys": [
+              "argument[0].read"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 39,
+            "kind": "effect-call",
+            "syntax": "enableEditor()",
+            "canonicalKeys": [
+              "./state.ts#permissions.editor.write"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 93,
+            "kind": "effect-call",
+            "syntax": "disableReviewer()",
+            "canonicalKeys": [
+              "./state.ts#permissions.reviewer.read"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#permissions": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.dirty": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.editor": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.editor.write": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.reviewer": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.reviewer.read": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 6,
+        "readerEdges": 12
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 2,
+          "receiver-bounded": 0,
+          "parameter-relative": 2,
+          "unbounded": 4,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "grantWrite(permissions.editor)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "permissions.dirty = true",
+            "canonicalKeys": [
+              "./state.ts#permissions.dirty"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 10,
+            "column": 3,
+            "kind": "effect-call",
+            "syntax": "revokeRead(permissions.reviewer)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 11,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "permissions.dirty = true",
+            "canonicalKeys": [
+              "./state.ts#permissions.dirty"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 2,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "role.write = true",
+            "canonicalKeys": [
+              "argument[0].write"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "role.read = false",
+            "canonicalKeys": [
+              "argument[0].read"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 39,
+            "kind": "effect-call",
+            "syntax": "enableEditor()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 5,
+            "column": 93,
+            "kind": "effect-call",
+            "syntax": "disableReviewer()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#permissions": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.dirty": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.editor": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.editor.write": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.reviewer": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#permissions.reviewer.read": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 6,
+        "readerEdges": 12
+      }
+    },
+    {
+      "descriptor": {
+        "name": "reexport-chain",
+        "description": "State and mutator are re-exported before an aliased import.",
+        "category": "re-export linking",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 10,
+      "modules": 3,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 2,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "model.value++",
+            "canonicalKeys": [
+              "./state.ts#model.value"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "runChange()",
+            "canonicalKeys": [
+              "./state.ts#model.value"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#model": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#model.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 2,
+        "readerEdges": 4
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 1,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 1,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "model.value++",
+            "canonicalKeys": [
+              "./state.ts#model.value"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 33,
+            "kind": "effect-call",
+            "syntax": "runChange()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#model": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#model.value": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 2,
+        "readerEdges": 4
+      }
+    },
+    {
+      "descriptor": {
+        "name": "rejected-namespace",
+        "description": "Namespace imports deliberately erase named reactive identity.",
+        "category": "unsupported import shape",
+        "expect": "reject",
+        "manualAdaptations": [],
+        "unsupportedConstructs": [
+          "namespace import of reactive exports"
+        ]
+      },
+      "loc": 6,
+      "modules": 2,
+      "linked": {
+        "mode": "linked",
+        "accepted": false,
+        "error": "memo-dom: namespace import 'state' from './state' cannot identify a reactive export; use named imports",
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 1
+        },
+        "sites": [
+          {
+            "file": "<module graph>",
+            "line": 0,
+            "column": 0,
+            "kind": "rejection",
+            "syntax": "",
+            "canonicalKeys": [],
+            "tier": "rejected",
+            "detail": "memo-dom: namespace import 'state' from './state' cannot identify a reactive export; use named imports"
+          }
+        ],
+        "readers": {},
+        "readerKeys": 0,
+        "readerEdges": 0
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": false,
+        "error": "memo-dom: namespace import 'state' from './state' cannot identify a reactive export; use named imports",
+        "counts": {
+          "exact": 0,
+          "receiver-bounded": 0,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 1
+        },
+        "sites": [
+          {
+            "file": "<module graph>",
+            "line": 0,
+            "column": 0,
+            "kind": "rejection",
+            "syntax": "",
+            "canonicalKeys": [],
+            "tier": "rejected",
+            "detail": "memo-dom: namespace import 'state' from './state' cannot identify a reactive export; use named imports"
+          }
+        ],
+        "readers": {},
+        "readerKeys": 0,
+        "readerEdges": 0
+      }
+    },
+    {
+      "descriptor": {
+        "name": "shopping-cart",
+        "description": "Cart collection with receiver mutations and exact scalar fields.",
+        "category": "receiver-bounded collection",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 15,
+      "modules": 2,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 2,
+          "receiver-bounded": 4,
+          "parameter-relative": 0,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "cart.items.push(item)",
+            "canonicalKeys": [
+              "./state.ts#cart.items"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./state.ts",
+            "line": 10,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "cart.items.splice(index, 1)",
+            "canonicalKeys": [
+              "./state.ts#cart.items"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./state.ts",
+            "line": 14,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "cart.discount = value",
+            "canonicalKeys": [
+              "./state.ts#cart.discount"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "add({ id: 1, title: 'Book', price: 20 })",
+            "canonicalKeys": [
+              "./state.ts#cart.items"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 119,
+            "kind": "effect-call",
+            "syntax": "remove(0)",
+            "canonicalKeys": [
+              "./state.ts#cart.items"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 168,
+            "kind": "effect-call",
+            "syntax": "setDiscount(5)",
+            "canonicalKeys": [
+              "./state.ts#cart.discount"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#cart": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#cart.discount": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#cart.items": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#cart.items.length": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 4,
+        "readerEdges": 8
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 1,
+          "receiver-bounded": 2,
+          "parameter-relative": 0,
+          "unbounded": 3,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./state.ts",
+            "line": 6,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "cart.items.push(item)",
+            "canonicalKeys": [
+              "./state.ts#cart.items"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./state.ts",
+            "line": 10,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "cart.items.splice(index, 1)",
+            "canonicalKeys": [
+              "./state.ts#cart.items"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./state.ts",
+            "line": 14,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "cart.discount = value",
+            "canonicalKeys": [
+              "./state.ts#cart.discount"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "add({ id: 1, title: 'Book', price: 20 })",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 119,
+            "kind": "effect-call",
+            "syntax": "remove(0)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 4,
+            "column": 168,
+            "kind": "effect-call",
+            "syntax": "setDiscount(5)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./state.ts#cart": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#cart.discount": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#cart.items": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#cart.items.length": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 4,
+        "readerEdges": 8
+      }
+    },
+    {
+      "descriptor": {
+        "name": "todo-board",
+        "description": "A multi-module task board with collection mutations, filters, and derived counts.",
+        "category": "application case study",
+        "expect": "accept",
+        "manualAdaptations": [],
+        "unsupportedConstructs": []
+      },
+      "loc": 39,
+      "modules": 5,
+      "linked": {
+        "mode": "linked",
+        "accepted": true,
+        "counts": {
+          "exact": 3,
+          "receiver-bounded": 5,
+          "parameter-relative": 4,
+          "unbounded": 0,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "board.todos.push({ id: board.nextId++, title, done: false })",
+            "canonicalKeys": [
+              "./state.ts#board.todos"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 26,
+            "kind": "mutation",
+            "syntax": "board.nextId++",
+            "canonicalKeys": [
+              "./state.ts#board.nextId"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 10,
+            "column": 14,
+            "kind": "effect-call",
+            "syntax": "toggleItem(first)",
+            "canonicalKeys": [
+              "argument[0].done"
+            ],
+            "tier": "parameter-relative",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 15,
+            "column": 14,
+            "kind": "effect-call",
+            "syntax": "renameItem(first, title)",
+            "canonicalKeys": [
+              "argument[0].title"
+            ],
+            "tier": "parameter-relative",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 19,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "board.filter = filter",
+            "canonicalKeys": [
+              "./state.ts#board.filter"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./derived.ts",
+            "line": 4,
+            "column": 26,
+            "kind": "mutation",
+            "syntax": "board.todos.filter((todo) => todo.done)",
+            "canonicalKeys": [
+              "./state.ts#board.todos"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "todo.done = !todo.done",
+            "canonicalKeys": [
+              "argument[0].done"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 8,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "todo.title = title",
+            "canonicalKeys": [
+              "argument[0].title"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "addTodo('write paper')",
+            "canonicalKeys": [
+              "./state.ts#board.todos"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 101,
+            "kind": "effect-call",
+            "syntax": "toggleFirst()",
+            "canonicalKeys": [
+              "./state.ts#board"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 154,
+            "kind": "effect-call",
+            "syntax": "renameFirst('revise paper')",
+            "canonicalKeys": [
+              "./state.ts#board"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 221,
+            "kind": "effect-call",
+            "syntax": "setFilter('open')",
+            "canonicalKeys": [
+              "./state.ts#board.filter"
+            ],
+            "tier": "exact",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./derived.ts#completed": [
+            "App",
+            "App/$computed/.%2Fderived.ts#remaining",
+            "App/*"
+          ],
+          "./derived.ts#total": [
+            "App",
+            "App/$computed/.%2Fderived.ts#remaining",
+            "App/*"
+          ],
+          "./state.ts#board": [
+            "App",
+            "App/$computed/.%2Fderived.ts#completed",
+            "App/$computed/.%2Fderived.ts#total",
+            "App/*"
+          ],
+          "./state.ts#board.todos": [
+            "App",
+            "App/$computed/.%2Fderived.ts#completed",
+            "App/$computed/.%2Fderived.ts#total",
+            "App/*"
+          ],
+          "./state.ts#board.todos.filter": [
+            "App/$computed/.%2Fderived.ts#completed"
+          ],
+          "./state.ts#board.todos.length": [
+            "App/$computed/.%2Fderived.ts#total"
+          ],
+          "./derived.ts#remaining": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#board.filter": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#board.nextId": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 9,
+        "readerEdges": 22
+      },
+      "ablated": {
+        "mode": "function-summaries-ablated",
+        "accepted": true,
+        "counts": {
+          "exact": 2,
+          "receiver-bounded": 2,
+          "parameter-relative": 2,
+          "unbounded": 6,
+          "rejected": 0
+        },
+        "sites": [
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "board.todos.push({ id: board.nextId++, title, done: false })",
+            "canonicalKeys": [
+              "./state.ts#board.todos"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 5,
+            "column": 26,
+            "kind": "mutation",
+            "syntax": "board.nextId++",
+            "canonicalKeys": [
+              "./state.ts#board.nextId"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 10,
+            "column": 14,
+            "kind": "effect-call",
+            "syntax": "toggleItem(first)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 15,
+            "column": 14,
+            "kind": "effect-call",
+            "syntax": "renameItem(first, title)",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./actions.ts",
+            "line": 19,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "board.filter = filter",
+            "canonicalKeys": [
+              "./state.ts#board.filter"
+            ],
+            "tier": "exact",
+            "detail": "statically resolved property path"
+          },
+          {
+            "file": "./derived.ts",
+            "line": 4,
+            "column": 26,
+            "kind": "mutation",
+            "syntax": "board.todos.filter((todo) => todo.done)",
+            "canonicalKeys": [
+              "./state.ts#board.todos"
+            ],
+            "tier": "receiver-bounded",
+            "detail": "method call conservatively bounded to a reactive receiver"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 4,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "todo.done = !todo.done",
+            "canonicalKeys": [
+              "argument[0].done"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./helpers.ts",
+            "line": 8,
+            "column": 3,
+            "kind": "mutation",
+            "syntax": "todo.title = title",
+            "canonicalKeys": [
+              "argument[0].title"
+            ],
+            "tier": "parameter-relative",
+            "detail": "write relative to a function parameter"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 42,
+            "kind": "effect-call",
+            "syntax": "addTodo('write paper')",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 101,
+            "kind": "effect-call",
+            "syntax": "toggleFirst()",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 154,
+            "kind": "effect-call",
+            "syntax": "renameFirst('revise paper')",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          },
+          {
+            "file": "./view.tsx",
+            "line": 6,
+            "column": 221,
+            "kind": "effect-call",
+            "syntax": "setFilter('open')",
+            "canonicalKeys": [],
+            "tier": "unbounded",
+            "detail": "imported function summary"
+          }
+        ],
+        "readers": {
+          "./derived.ts#completed": [
+            "App",
+            "App/$computed/.%2Fderived.ts#remaining",
+            "App/*"
+          ],
+          "./derived.ts#total": [
+            "App",
+            "App/$computed/.%2Fderived.ts#remaining",
+            "App/*"
+          ],
+          "./state.ts#board": [
+            "App",
+            "App/$computed/.%2Fderived.ts#completed",
+            "App/$computed/.%2Fderived.ts#total",
+            "App/*"
+          ],
+          "./state.ts#board.todos": [
+            "App/$computed/.%2Fderived.ts#completed",
+            "App/$computed/.%2Fderived.ts#total"
+          ],
+          "./state.ts#board.todos.filter": [
+            "App/$computed/.%2Fderived.ts#completed"
+          ],
+          "./state.ts#board.todos.length": [
+            "App/$computed/.%2Fderived.ts#total"
+          ],
+          "./derived.ts#remaining": [
+            "App",
+            "App/*"
+          ],
+          "./state.ts#board.filter": [
+            "App",
+            "App/*"
+          ]
+        },
+        "readerKeys": 8,
+        "readerEdges": 18
+      }
+    }
+  ]
+}

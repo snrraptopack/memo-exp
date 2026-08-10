@@ -14,6 +14,7 @@ import {
   memberKey,
   memberRootName,
   type Ctx,
+  type MapCallExpression,
 } from '../context';
 import { isStaticPrimitiveList } from './source-shapes';
 
@@ -75,11 +76,13 @@ interface RowPlan {
   renderCallback: t.Expression | null;
 }
 
-/** Is this expression a `.map(...)` call? */
-export function matchMapCall(expr: t.Node): t.CallExpression | null {
-  if (!t.isCallExpression(expr)) return null;
+/** Is this expression a `.map(...)` call, including optional chains? */
+export function matchMapCall(expr: t.Node): MapCallExpression | null {
+  if (!t.isCallExpression(expr) && !t.isOptionalCallExpression(expr)) {
+    return null;
+  }
   const callee = expr.callee;
-  return t.isMemberExpression(callee) &&
+  return (t.isMemberExpression(callee) || t.isOptionalMemberExpression(callee)) &&
     !callee.computed &&
     t.isIdentifier(callee.property, { name: 'map' })
     ? expr
@@ -106,7 +109,7 @@ export function containsJsx(path: NodePath): boolean {
  */
 export function analyzeMapSite(
   ctx: Ctx,
-  call: t.CallExpression,
+  call: MapCallExpression,
   errorAt: Pick<NodePath, 'buildCodeFrameError'>,
   ownerName: string,
   usedPrefixes: Map<string, number>,
@@ -115,7 +118,7 @@ export function analyzeMapSite(
   const fail: Fail = (message) => {
     throw errorAt.buildCodeFrameError(message);
   };
-  const callee = call.callee as t.MemberExpression;
+  const callee = call.callee as t.MemberExpression | t.OptionalMemberExpression;
   const source = analyzeSource(
     ctx,
     callee.object,
@@ -220,6 +223,7 @@ function analyzeMemberSource(
   const localRoot =
     root !== null &&
     (ctx.instanceState.get(ownerName)?.has(root) === true ||
+      ctx.instanceDerivedBindings.get(ownerName)?.has(root) === true ||
       propBindings.includes(root));
   const rowRelative =
     root !== null &&
@@ -234,7 +238,7 @@ function analyzeMemberSource(
     (!rowRelative && !localRoot && ctx.state.get(root) !== 'store')
   ) {
     return fail(
-      'memo-dom: list member views must be a static path on reactive module state, component props, or component state',
+      'memo-dom: list member views must be a static path on reactive module state, component props, component state, or a local derivation',
     );
   }
   return {
@@ -247,7 +251,7 @@ function analyzeMemberSource(
 
 function analyzeCallback(
   ctx: Ctx,
-  call: t.CallExpression,
+  call: MapCallExpression,
   ownerName: string,
   fail: Fail,
 ): CallbackPlan {

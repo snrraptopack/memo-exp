@@ -1,0 +1,8 @@
+{
+  "name": "shopping-cart",
+  "description": "Cart collection with receiver mutations and exact scalar fields.",
+  "category": "receiver-bounded collection",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

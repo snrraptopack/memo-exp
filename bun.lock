@@ -11,6 +11,7 @@
       "devDependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
         "@memoized-dom/compiler": "workspace:*",
+        "@memoized-dom/data": "workspace:*",
         "@memoized-dom/router": "workspace:*",
         "@memoized-dom/runtime": "workspace:*",
         "@memoized-dom/vite": "workspace:*",

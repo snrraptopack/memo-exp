@@ -1,0 +1,8 @@
+{
+  "name": "rejected-namespace",
+  "description": "Namespace imports deliberately erase named reactive identity.",
+  "category": "unsupported import shape",
+  "expect": "reject",
+  "manualAdaptations": [],
+  "unsupportedConstructs": ["namespace import of reactive exports"]
+}

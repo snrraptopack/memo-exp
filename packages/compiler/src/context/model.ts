@@ -179,6 +179,12 @@ export interface FnSummary {
   unbounded: boolean;
 }
 
+/**
+ * A `.map(...)` call, including optional-chained forms such as
+ * `items?.map(...)` or `resource.data?.map(...)`.
+ */
+export type MapCallExpression = t.CallExpression | t.OptionalCallExpression;
+
 /** One owner-local list dependency addressable directly by its row key. */
 export interface TargetedListDependency {
   /** Instance-owned collection root whose writes require reconciliation. */
@@ -195,7 +201,7 @@ export interface KeyedListMutationPlan {
   targetedReason: string;
   topologyReason: string;
   structuralReason: string;
-  call: t.CallExpression;
+  call: MapCallExpression;
 }
 
 /** One compiler-owned reactive side effect declared in a component body. */
@@ -314,11 +320,11 @@ export interface Ctx {
   /** Conditional-region reads (R8): '<owner>/when<n>' → site + vars read in condition+branches. */
   condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Map call → owner-local values whose changes affect only old/new keyed rows. */
-  targetedListDependencies: WeakMap<t.CallExpression, TargetedListDependency[]>;
+  targetedListDependencies: WeakMap<MapCallExpression, TargetedListDependency[]>;
   /** Components that need dirty reasons for targeted list refreshes. */
   targetedListComponents: Set<string>;
   /** Map call -> direct keyed-item mutation journal used by that one list. */
-  keyedListMutations: WeakMap<t.CallExpression, KeyedListMutationPlan>;
+  keyedListMutations: WeakMap<MapCallExpression, KeyedListMutationPlan>;
   /** Component -> source root -> journal plan, for handler write analysis. */
   keyedListMutationSources: Map<string, Map<string, KeyedListMutationPlan>>;
   /** Sources used by multiple list sites deliberately keep full reconciliation. */

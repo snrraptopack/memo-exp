@@ -1,0 +1,8 @@
+{
+  "name": "finance-summary",
+  "description": "Balances and rates flow through two cross-module derivation stages.",
+  "category": "application case study",
+  "expect": "accept",
+  "manualAdaptations": [],
+  "unsupportedConstructs": []
+}

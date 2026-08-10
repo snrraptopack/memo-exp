@@ -137,12 +137,12 @@ describe('R13 — computeds, code generation', () => {
     ).toThrowError(/cannot assign computed 'active'/);
   });
 
-  it('mutating a computed is a compile error', () => {
+  it('treats computed receiver calls as opaque effects', () => {
     expect(() =>
       compile(
         `let todos = [1];\nconst active = todos.filter((t) => t);\nfunction C() { return <button onClick={() => { active.push(2); }}>{active.length}</button>; }`,
       ),
-    ).toThrowError(/cannot mutate computed 'active'/);
+    ).not.toThrow();
   });
 
   it('allows computed values to be passed through read-only utilities', () => {

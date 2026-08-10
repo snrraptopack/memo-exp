@@ -15,7 +15,7 @@ import {
   type EmitScope,
 } from '../emission/scope';
 import { generatedIdentifier, md } from '../identifiers';
-import { matchMapCall } from '../lists';
+import { matchMapCall, type MapCallExpression } from '../lists';
 import { matchCond } from '../conds';
 import {
   objectBindingName,
@@ -32,7 +32,7 @@ export type JsxChild = t.JSXElement['children'][number];
 export interface ChildContentEmitters {
   emitText(expression: t.Expression): string;
   emitNode(node: t.JSXElement | t.JSXFragment): string;
-  emitList(call: t.CallExpression, parentVar: string): void;
+  emitList(call: MapCallExpression, parentVar: string): void;
   emitCondition(
     expression: t.ConditionalExpression | t.LogicalExpression,
     parentVar: string,

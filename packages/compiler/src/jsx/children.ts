@@ -13,13 +13,13 @@ import {
   normalizeJsxText,
   type JsxChild,
 } from '../components/children';
-import { matchMapCall } from '../lists';
+import { matchMapCall, type MapCallExpression } from '../lists';
 
 export type JsxNode = t.JSXElement | t.JSXFragment;
 
 export type DirectChildOperation =
   | { type: 'node'; variable: string }
-  | { type: 'list'; expression: t.CallExpression }
+  | { type: 'list'; expression: MapCallExpression }
   | {
       type: 'condition';
       expression: t.ConditionalExpression | t.LogicalExpression;
