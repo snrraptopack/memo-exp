@@ -9,6 +9,12 @@
     "allowJs": true,
     "types": ["bun","node"],
 
+    "plugins": [
+      {
+       "name": "@memoized-dom/language-service"
+      }
+    ],
+
     // Bundler mode
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
