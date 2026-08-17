@@ -1,4 +1,5 @@
 import { buildRoutePath, validateRoutePattern } from './path';
+import { createRouteMatcher } from './matcher';
 import type {
   NavigateOptions,
   NavigateArguments,
@@ -6,6 +7,7 @@ import type {
   RouteListener,
   RouteLocationSnapshot,
   RouteMatch,
+  RoutePatternDefinition,
   RouteQuery,
   RouteResolver,
   RouteSnapshot,
@@ -78,7 +80,7 @@ export interface RouteRuntime {
 }
 
 export function supportsNavigationAPI(
-  environment: RouteEnvironment = typeof window === 'undefined' ? {} : window,
+  environment: RouteEnvironment = typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment),
 ): boolean {
   return environment.navigation !== undefined;
 }
@@ -95,27 +97,77 @@ function frozenMatch(match: RouteMatch): RouteMatch {
   });
 }
 
+const queryParamsCache = new WeakMap<FastRouteQuery, URLSearchParams>();
+
+class FastRouteQuery implements RouteQuery {
+  private readonly _search: string;
+
+  constructor(search: string) {
+    this._search = search;
+  }
+
+  private _ensure(): URLSearchParams {
+    let params = queryParamsCache.get(this);
+    if (params === undefined) {
+      params = new URLSearchParams(this._search);
+      queryParamsCache.set(this, params);
+    }
+    return params;
+  }
+
+  get size(): number {
+    return this._ensure().size;
+  }
+
+  get(name: string): string | null {
+    return this._ensure().get(name);
+  }
+
+  getAll(name: string): string[] {
+    return this._ensure().getAll(name);
+  }
+
+  has(name: string, value?: string): boolean {
+    return this._ensure().has(name, value);
+  }
+
+  entries(): URLSearchParamsIterator<[string, string]> {
+    return this._ensure().entries();
+  }
+
+  keys(): URLSearchParamsIterator<string> {
+    return this._ensure().keys();
+  }
+
+  values(): URLSearchParamsIterator<string> {
+    return this._ensure().values();
+  }
+
+  forEach(
+    callback: (value: string, key: string, query: RouteQuery) => void,
+    thisArg?: unknown,
+  ): void {
+    const params = this._ensure();
+    params.forEach((value, key) => callback.call(thisArg, value, key, this as RouteQuery));
+  }
+
+  toString(): string {
+    return this._search.startsWith('?') ? this._search.slice(1) : this._search;
+  }
+
+  [Symbol.iterator](): URLSearchParamsIterator<[string, string]> {
+    return this._ensure()[Symbol.iterator]();
+  }
+}
+
 function readonlyQuery(search: string): RouteQuery {
-  const params = new URLSearchParams(search);
-  let query: RouteQuery;
-  query = Object.freeze({
-    get size() { return params.size; },
-    get: params.get.bind(params),
-    getAll: params.getAll.bind(params),
-    has: params.has.bind(params),
-    entries: params.entries.bind(params),
-    keys: params.keys.bind(params),
-    values: params.values.bind(params),
-    forEach(
-      callback: (value: string, key: string, query: RouteQuery) => void,
-      thisArg?: unknown,
-    ) {
-      params.forEach((value, key) => callback.call(thisArg, value, key, query));
-    },
-    toString: params.toString.bind(params),
-    [Symbol.iterator]: params[Symbol.iterator].bind(params),
-  });
-  return query;
+  return Object.freeze(new FastRouteQuery(search));
+}
+
+export interface RouteRuntimeOptions {
+  readonly environment?: RouteEnvironment;
+  readonly resolver?: RouteResolver;
+  readonly routes?: readonly (RoutePatternDefinition | string)[];
 }
 
 function prepareMatches(nextMatches: readonly RouteMatch[]): {
@@ -165,8 +217,16 @@ function sameMatches(
 }
 
 export function createRouteRuntime(
-  environment: RouteEnvironment = typeof window === 'undefined' ? {} : window,
+  optionsOrEnvironment: RouteEnvironment | RouteRuntimeOptions = typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment),
 ): RouteRuntime {
+  const isOptions = typeof optionsOrEnvironment === 'object' && optionsOrEnvironment !== null &&
+    ('routes' in optionsOrEnvironment || 'resolver' in optionsOrEnvironment || 'environment' in optionsOrEnvironment);
+
+  const options: RouteRuntimeOptions = isOptions
+    ? (optionsOrEnvironment as RouteRuntimeOptions)
+    : { environment: optionsOrEnvironment as RouteEnvironment };
+
+  const environment: RouteEnvironment = options.environment ?? (typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment));
   let url = initialURL(environment);
   let state: unknown = environment.history?.state ?? null;
   let navigationType: NavigationType = 'load';
@@ -176,7 +236,11 @@ export function createRouteRuntime(
   let controller = new AbortController();
   let connectionCount = 0;
   let disposed = false;
-  let resolver: RouteResolver | null = null;
+  let resolver: RouteResolver | null = options.resolver ?? null;
+  if (resolver === null && options.routes !== undefined) {
+    const matcher = createRouteMatcher(options.routes);
+    resolver = matcher.resolve.bind(matcher);
+  }
   let resolving = false;
   let revision = 0;
   let locationRevision = 0;
@@ -270,6 +334,12 @@ export function createRouteRuntime(
     } finally {
       resolving = false;
     }
+  }
+
+  if (resolver !== null) {
+    const initialPrepared = runResolver(resolver);
+    matches = initialPrepared.matches;
+    params = initialPrepared.params;
   }
 
   function setLocation(

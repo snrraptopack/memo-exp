@@ -1,29 +1,54 @@
+/**
+ * @fileoverview Path manipulation, pattern validation, and template interpolation for @memoized-dom/router.
+ *
+ * Implements high-throughput URL pattern matching and path interpolation:
+ * - Pre-compiled regex and chunked template caches.
+ * - Single-parameter and multi-parameter extraction.
+ * - Terminal wildcard capture (/docs/*).
+ * - Specificity ranking and comparison for deterministic route tables.
+ */
+
+import { createRouteQuery } from './query';
 import type {
   MatchPatternOptions,
   PatternMatch,
-  RoutePatternDefinition,
   RouteParamValue,
   RouteParams,
   RouteQueryInput,
-  RouteQueryValue,
 } from './types';
 
+export { createRouteQuery, parseRouteQuery } from './query';
+export { createRouteMatcher } from './matcher';
+
 const PARAM_SEGMENT = /^:([A-Za-z_$][A-Za-z0-9_$]*)$/;
-const PATTERN_CACHE_LIMIT = 512;
+const PATTERN_CACHE_LIMIT = 4096;
+const EMPTY_PARAMS: Readonly<Record<string, string>> = Object.freeze(Object.create(null));
 const compiledPatterns = new Map<string, CompiledPattern>();
+const validatedPatternCache = new Map<string, string>();
+
+type PatternChunk =
+  | { readonly kind: 'static'; readonly text: string }
+  | { readonly kind: 'param'; readonly name: string }
+  | { readonly kind: 'wildcard' };
 
 interface CompiledPattern {
   readonly pattern: string;
   readonly keys: readonly string[];
+  readonly chunks: readonly PatternChunk[];
+  readonly isStatic: boolean;
   readonly end: RegExp;
   readonly prefix: RegExp;
+  readonly exactMatch: PatternMatch;
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function pathSegments(path: string): string[] {
+/**
+ * Splits a normalized path into non-empty segment strings.
+ */
+export function pathSegments(path: string): string[] {
   return path.split('/').filter(Boolean);
 }
 
@@ -37,12 +62,45 @@ function segmentKind(segment: string): 1 | 2 | 3 {
   return 3;
 }
 
+const cleanPathCache = new Map<string, string>();
+
+/**
+ * Normalizes a pathname string to ensure a single leading slash and no trailing slash.
+ * Fast-paths already normalized paths without string allocation.
+ */
 export function normalizeRoutePath(path: string): string {
-  const [pathname = ''] = path.split(/[?#]/, 1);
-  const normalized = `/${pathname.replace(/^\/+|\/+$/g, '')}`;
-  return normalized === '' ? '/' : normalized;
+  if (path === '/' || path === '') return '/';
+  const cached = cleanPathCache.get(path);
+  if (cached !== undefined) return cached;
+
+  const len = path.length;
+  let normalized: string;
+  // Fast path for already-normalized paths (starts with '/', does not end with '/', no query/hash/double-slash)
+  if (
+    path.charCodeAt(0) === 47 /* '/' */ &&
+    path.charCodeAt(len - 1) !== 47 /* '/' */ &&
+    !path.includes('?') &&
+    !path.includes('#') &&
+    !path.includes('//')
+  ) {
+    normalized = path;
+  } else {
+    const [pathname = ''] = path.split(/[?#]/, 1);
+    const trimmed = pathname.replace(/^\/+|\/+$/g, '');
+    normalized = trimmed === '' ? '/' : `/${trimmed}`;
+  }
+
+  if (cleanPathCache.size >= PATTERN_CACHE_LIMIT) {
+    const oldest = cleanPathCache.keys().next().value as string | undefined;
+    if (oldest !== undefined) cleanPathCache.delete(oldest);
+  }
+  cleanPathCache.set(path, normalized);
+  return normalized;
 }
 
+/**
+ * Combines parent and child route paths safely.
+ */
 export function joinRoutePaths(parent: string, child: string): string {
   const base = validateRoutePattern(parent);
   const nested = validateRoutePattern(child);
@@ -51,8 +109,14 @@ export function joinRoutePaths(parent: string, child: string): string {
   return validateRoutePattern(`${base}${nested}`);
 }
 
-/** Validate and normalize a full route pattern. */
+/**
+ * Validates and normalizes a route pattern declaration.
+ * Results are cached to avoid repeated Set allocations and segment parsing.
+ */
 export function validateRoutePattern(pattern: string): string {
+  const cached = validatedPatternCache.get(pattern);
+  if (cached !== undefined) return cached;
+
   if (pattern.includes('?') || pattern.includes('#')) {
     throw new TypeError(`Route pattern '${pattern}' must not contain a query or hash`);
   }
@@ -82,117 +146,99 @@ export function validateRoutePattern(pattern: string): string {
     }
     names.add(name);
   }
+  if (validatedPatternCache.size >= PATTERN_CACHE_LIMIT) {
+    const oldest = validatedPatternCache.keys().next().value as string | undefined;
+    if (oldest !== undefined) validatedPatternCache.delete(oldest);
+  }
+  validatedPatternCache.set(pattern, normalized);
   return normalized;
 }
 
 /**
- * Compare route specificity for Array#sort. More specific patterns sort first.
- * Static segments beat parameters, which beat terminal wildcards, at the first
- * segment where the patterns differ.
+ * Validates an array of route pattern declarations, detecting duplicate IDs and ambiguous definitions.
  */
-export function compareRoutePatterns(first: string, second: string): number {
-  const left = patternSegments(first);
-  const right = patternSegments(second);
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index++) {
-    const leftSegment = left[index];
-    const rightSegment = right[index];
-    if (leftSegment === undefined) {
-      return rightSegment === '*' ? -1 : 1;
-    }
-    if (rightSegment === undefined) {
-      return leftSegment === '*' ? 1 : -1;
-    }
-    const difference = segmentKind(rightSegment) - segmentKind(leftSegment);
-    if (difference !== 0) return difference;
-  }
-  return 0;
-}
-
-function routePatternsOverlap(first: string, second: string): boolean {
-  const left = patternSegments(first);
-  const right = patternSegments(second);
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index++) {
-    const leftSegment = left[index];
-    const rightSegment = right[index];
-    if (leftSegment === '*' || rightSegment === '*') return true;
-    if (leftSegment === undefined || rightSegment === undefined) return false;
-    if (
-      segmentKind(leftSegment) === 3 &&
-      segmentKind(rightSegment) === 3 &&
-      leftSegment !== rightSegment
-    ) return false;
-  }
-  return true;
-}
-
-/** Validate a flattened route table before it is installed by generated code. */
 export function validateRoutePatterns(
-  definitions: readonly RoutePatternDefinition[],
+  definitions: readonly { readonly id: string; readonly pattern: string }[],
 ): void {
-  const identifiers = new Set<string>();
-  for (const definition of definitions) {
-    if (definition.id.trim() === '') throw new TypeError('Route IDs must not be empty');
-    if (identifiers.has(definition.id)) {
-      throw new TypeError(`Duplicate route ID '${definition.id}'`);
-    }
-    identifiers.add(definition.id);
-    validateRoutePattern(definition.pattern);
-  }
+  const seenIds = new Set<string>();
+  const seenSignatures = new Map<string, string>();
 
-  for (let left = 0; left < definitions.length; left++) {
-    for (let right = left + 1; right < definitions.length; right++) {
-      const first = definitions[left]!;
-      const second = definitions[right]!;
-      if (
-        compareRoutePatterns(first.pattern, second.pattern) === 0 &&
-        routePatternsOverlap(first.pattern, second.pattern)
-      ) {
-        throw new TypeError(
-          `Ambiguous routes '${first.id}' (${first.pattern}) and ` +
-          `'${second.id}' (${second.pattern}) have equal specificity`,
-        );
-      }
+  for (const def of definitions) {
+    if (seenIds.has(def.id)) {
+      throw new TypeError(`Duplicate route ID '${def.id}'`);
     }
+    seenIds.add(def.id);
+
+    const normalized = validateRoutePattern(def.pattern);
+    const signature = normalized
+      .split('/')
+      .map(segment => {
+        if (segment === '*') return '*';
+        if (segment.startsWith(':')) return ':param';
+        return segment;
+      })
+      .join('/');
+
+    const existing = seenSignatures.get(signature);
+    if (existing !== undefined && existing !== def.id) {
+      throw new TypeError(
+        `Ambiguous routes '${existing}' and '${def.id}' share pattern signature '${signature}'`,
+      );
+    }
+    seenSignatures.set(signature, def.id);
   }
 }
 
+/**
+ * Compiles a route pattern into cached regular expressions, parameter keys, and template chunks.
+ */
 function compilePattern(pattern: string): CompiledPattern {
   const normalized = validateRoutePattern(pattern);
   const cached = compiledPatterns.get(normalized);
-  if (cached !== undefined) {
-    compiledPatterns.delete(normalized);
-    compiledPatterns.set(normalized, cached);
-    return cached;
-  }
+  if (cached !== undefined) return cached;
 
   const keys: string[] = [];
+  const chunks: PatternChunk[] = [];
   const segments = pathSegments(normalized);
   let body = '';
 
   for (const segment of segments) {
     if (segment === '*') {
       keys.push('*');
+      chunks.push({ kind: 'wildcard' });
       body += '(?:/(.*))?';
       continue;
     }
     const param = PARAM_SEGMENT.exec(segment);
     if (param !== null) {
-      keys.push(param[1]!);
+      const name = param[1]!;
+      keys.push(name);
+      chunks.push({ kind: 'param', name });
       body += '/([^/]+)';
       continue;
     }
+    chunks.push({ kind: 'static', text: `/${segment}` });
     body += `/${escapeRegExp(segment)}`;
   }
 
   if (segments.length === 0) body = '/';
   const source = body === '/' ? '' : body;
+  const isStatic = keys.length === 0 && !normalized.includes('*') && !normalized.includes(':');
+  const exactMatch: PatternMatch = Object.freeze({
+    pattern: normalized,
+    pathname: normalized,
+    params: EMPTY_PARAMS,
+    consumed: normalized,
+    remaining: '/',
+  });
   const compiled: CompiledPattern = {
     pattern: normalized,
     keys,
+    chunks,
+    isStatic,
     end: new RegExp(`^${source || '/'}/*$`),
     prefix: new RegExp(`^${source || ''}(?=/|$)`),
+    exactMatch,
   };
   if (compiledPatterns.size >= PATTERN_CACHE_LIMIT) {
     const oldest = compiledPatterns.keys().next().value as string | undefined;
@@ -202,7 +248,10 @@ function compilePattern(pattern: string): CompiledPattern {
   return compiled;
 }
 
-function decodePathValue(value: string): string {
+/**
+ * Decodes a URI component safely, falling back to the raw value on malformed URI sequences.
+ */
+export function decodePathValue(value: string): string {
   try {
     return decodeURIComponent(value);
   } catch {
@@ -210,6 +259,11 @@ function decodePathValue(value: string): string {
   }
 }
 
+/**
+ * Matches a route pattern against an incoming pathname string.
+ *
+ * Fast-paths exact static routes without RegExp evaluation.
+ */
 export function matchRoutePattern(
   pattern: string,
   pathname: string,
@@ -217,16 +271,50 @@ export function matchRoutePattern(
 ): PatternMatch | null {
   const compiled = compilePattern(pattern);
   const normalizedPathname = normalizeRoutePath(pathname);
-  const match = (options.end ?? true ? compiled.end : compiled.prefix)
-    .exec(normalizedPathname);
+  const matchEnd = options.end ?? true;
+
+  // Fast-path 1: Static exact match
+  if (compiled.isStatic) {
+    if (matchEnd) {
+      if (normalizedPathname === compiled.pattern) {
+        return compiled.exactMatch;
+      }
+      return null;
+    }
+    // Static prefix match
+    if (
+      normalizedPathname === compiled.pattern ||
+      normalizedPathname.startsWith(`${compiled.pattern}/`)
+    ) {
+      const rest = normalizedPathname.slice(compiled.pattern.length);
+      return {
+        pattern: compiled.pattern,
+        pathname: normalizedPathname,
+        params: EMPTY_PARAMS,
+        consumed: compiled.pattern,
+        remaining: rest === '' ? '/' : normalizeRoutePath(rest),
+      };
+    }
+    return null;
+  }
+
+  // Dynamic parameterized or wildcard match via compiled regex
+  const matcher = matchEnd ? compiled.end : compiled.prefix;
+  const match = matcher.exec(normalizedPathname);
   if (match === null) return null;
 
-  const params: Record<string, string> = {};
-  for (let index = 0; index < compiled.keys.length; index++) {
-    const value = match[index + 1];
-    if (value !== undefined) {
-      params[compiled.keys[index]!] = decodePathValue(value);
+  let params: Readonly<Record<string, string>>;
+  if (compiled.keys.length === 0) {
+    params = EMPTY_PARAMS;
+  } else {
+    const extracted: Record<string, string> = {};
+    for (let index = 0; index < compiled.keys.length; index++) {
+      const value = match[index + 1];
+      if (value !== undefined) {
+        extracted[compiled.keys[index]!] = decodePathValue(value);
+      }
     }
+    params = Object.freeze(extracted);
   }
 
   const consumed = match[0] === '' ? '/' : match[0]!;
@@ -234,84 +322,126 @@ export function matchRoutePattern(
   return {
     pattern: compiled.pattern,
     pathname: normalizedPathname,
-    params: Object.freeze(params),
+    params,
     consumed,
     remaining: rest === '' ? '/' : normalizeRoutePath(rest),
   };
 }
 
-function appendQueryValue(
-  search: URLSearchParams,
-  key: string,
-  value: RouteQueryValue,
-): void {
-  if (Array.isArray(value)) {
-    for (const item of value) appendQueryValue(search, key, item);
-    return;
+function encodePathSegment(text: string, name: string): string {
+  if (text === '.' || text === '..') {
+    throw new TypeError(`Route parameter '${name}' must not be a dot segment`);
   }
-  if (value === null || value === undefined) return;
-  search.append(key, String(value));
+  const len = text.length;
+  for (let i = 0; i < len; i++) {
+    const c = text.charCodeAt(i);
+    if (
+      (c >= 97 && c <= 122) ||
+      (c >= 65 && c <= 90) ||
+      (c >= 48 && c <= 57) ||
+      c === 45 ||
+      c === 95 ||
+      c === 46
+    ) {
+      continue;
+    }
+    return encodeURIComponent(text);
+  }
+  return text;
 }
 
-export function createRouteQuery(query: RouteQueryInput | undefined): string {
-  if (query === undefined) return '';
-  const search = new URLSearchParams();
-  for (const key of Object.keys(query).sort()) {
-    appendQueryValue(search, key, query[key]);
-  }
-  const value = search.toString();
-  return value === '' ? '' : `?${value}`;
-}
-
+/**
+ * Interpolates parameters, query inputs, and hash fragments into a concrete URL path.
+ *
+ * Fast-paths static patterns and chunked templates without regex evaluation.
+ */
 export function buildRoutePath<Path extends string>(
   pattern: Path,
   params?: RouteParams<Path>,
   query?: RouteQueryInput,
   hash?: string,
 ): string {
-  const supplied = params as Readonly<Record<string, RouteParamValue>> | undefined;
-  const normalizedPattern = validateRoutePattern(pattern);
-  const encodeSegment = (value: RouteParamValue, key: string): string => {
-    const text = String(value);
-    if (text === '.' || text === '..') {
-      throw new TypeError(`Route parameter '${key}' must not be a dot segment`);
-    }
-    return encodeURIComponent(text);
-  };
-  let pathname = normalizedPattern.replace(
-    /:([A-Za-z_$][A-Za-z0-9_$]*)/g,
-    (_token, key: string) => {
-      const value = supplied?.[key];
-      if (value === undefined) {
-        throw new TypeError(`Missing route parameter '${key}' for '${pattern}'`);
-      }
-      return encodeSegment(value, key);
-    },
-  );
-  if (pathname.endsWith('/*')) {
-    const value = supplied?.['*'];
-    if (value === undefined) {
-      throw new TypeError(`Missing route parameter '*' for '${pattern}'`);
-    }
-    const wildcard = String(value);
-    const segments = wildcard.split('/');
-    if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
-      throw new TypeError(`Route wildcard '*' contains an invalid path segment`);
-    }
-    pathname = `${pathname.slice(0, -1)}${segments.map(segment =>
-      encodeSegment(segment, '*')
-    ).join('/')}`;
+  // Fast path for static path without query/hash
+  if (
+    params === undefined &&
+    query === undefined &&
+    hash === undefined &&
+    !pattern.includes(':') &&
+    !pattern.includes('*')
+  ) {
+    return normalizeRoutePath(pattern);
   }
+
+  const compiled = compilePattern(pattern);
+  if (compiled.isStatic) {
+    const queryStr = createRouteQuery(query);
+    const hashStr = hash === undefined || hash === ''
+      ? ''
+      : hash.startsWith('#') ? hash : `#${hash}`;
+    return `${compiled.pattern}${queryStr}${hashStr}`;
+  }
+
+  const supplied = params as Readonly<Record<string, RouteParamValue>> | undefined;
+  let pathname = '';
+  for (let i = 0; i < compiled.chunks.length; i++) {
+    const chunk = compiled.chunks[i]!;
+    if (chunk.kind === 'static') {
+      pathname += chunk.text;
+    } else if (chunk.kind === 'param') {
+      const value = supplied?.[chunk.name];
+      if (value === undefined) {
+        throw new TypeError(`Missing route parameter '${chunk.name}' for '${pattern}'`);
+      }
+      pathname += `/${encodePathSegment(String(value), chunk.name)}`;
+    } else {
+      const value = supplied?.['*'];
+      if (value === undefined) {
+        throw new TypeError(`Missing route parameter '*' for '${pattern}'`);
+      }
+      const wildcard = String(value);
+      const segments = wildcard.split('/');
+      if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
+        throw new TypeError(`Route wildcard '*' contains an invalid path segment`);
+      }
+      for (let s = 0; s < segments.length; s++) {
+        pathname += `/${encodePathSegment(segments[s]!, '*')}`;
+      }
+    }
+  }
+
+  if (pathname === '') pathname = '/';
+  const queryStr = createRouteQuery(query);
   const normalizedHash = hash === undefined || hash === ''
     ? ''
     : hash.startsWith('#') ? hash : `#${hash}`;
-  return `${pathname}${createRouteQuery(query)}${normalizedHash}`;
+  return `${pathname}${queryStr}${normalizedHash}`;
 }
 
+/**
+ * Calculates the specificity ranking integer for a route pattern.
+ */
 export function rankRoutePattern(pattern: string): number {
   let rank = 1;
   for (const segment of patternSegments(pattern)) {
     rank = rank * 4 + segmentKind(segment);
   }
   return rank;
+}
+
+/**
+ * Compares two route patterns for sorting. More specific routes sort first.
+ */
+export function compareRoutePatterns(first: string, second: string): number {
+  const left = patternSegments(first);
+  const right = patternSegments(second);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index++) {
+    const leftSegment = left[index];
+    const rightSegment = right[index];
+    if (leftSegment === undefined) return 1;
+    if (rightSegment === undefined) return -1;
+    if (leftSegment === rightSegment) continue;
+    return segmentKind(rightSegment) - segmentKind(leftSegment);
+  }
+  return 0;
 }

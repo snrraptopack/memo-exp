@@ -2,9 +2,11 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   buildRoutePath,
   compareRoutePatterns,
+  createRouteMatcher,
   createRouteQuery,
   joinRoutePaths,
   matchRoutePattern,
+  parseRouteQuery,
   rankRoutePattern,
   validateRoutePattern,
   validateRoutePatterns,
@@ -48,6 +50,11 @@ describe('route paths', () => {
     );
 
     expect(createRouteQuery({ z: 1, a: 2 })).toBe('?a=2&z=1');
+    expect(parseRouteQuery('?a=2&z=1')).toEqual({ a: '2', z: '1' });
+    expect(parseRouteQuery('?tag=compiler&tag=typed+routes')).toEqual({
+      tag: ['compiler', 'typed routes'],
+    });
+    expect(parseRouteQuery('')).toEqual({});
   });
 
   it('fails before navigation when a runtime pattern is missing a parameter', () => {
@@ -158,5 +165,91 @@ describe('route matching', () => {
       { id: 'StaticFirst', pattern: '/foo/:id' },
       { id: 'ParameterFirst', pattern: '/:type/bar' },
     ])).not.toThrow();
+  });
+});
+
+describe('createRouteMatcher (Trie Route Table)', () => {
+  const matcher = createRouteMatcher([
+    { id: 'home', pattern: '/' },
+    { id: 'services', pattern: '/services' },
+    { id: 'service-new', pattern: '/services/new' },
+    { id: 'service-detail', pattern: '/services/:serviceId' },
+    { id: 'service-logs', pattern: '/services/:serviceId/logs' },
+    { id: 'org-project', pattern: '/orgs/:orgId/projects/:projectId' },
+    { id: 'docs-wildcard', pattern: '/docs/*' },
+  ]);
+
+  it('matches exact root and static routes', () => {
+    expect(matcher.match('/')).toEqual({
+      id: 'home',
+      pattern: '/',
+      pathname: '/',
+      params: {},
+    });
+
+    expect(matcher.match('/services')).toEqual({
+      id: 'services',
+      pattern: '/services',
+      pathname: '/services',
+      params: {},
+    });
+  });
+
+  it('prioritizes static segments over dynamic parameters on same branch', () => {
+    expect(matcher.match('/services/new')).toEqual({
+      id: 'service-new',
+      pattern: '/services/new',
+      pathname: '/services/new',
+      params: {},
+    });
+
+    expect(matcher.match('/services/auth-vault')).toEqual({
+      id: 'service-detail',
+      pattern: '/services/:serviceId',
+      pathname: '/services/auth-vault',
+      params: { serviceId: 'auth-vault' },
+    });
+  });
+
+  it('resolves multi-parameter nested routes and decodes values', () => {
+    expect(matcher.match('/services/edge-gw/logs')).toEqual({
+      id: 'service-logs',
+      pattern: '/services/:serviceId/logs',
+      pathname: '/services/edge-gw/logs',
+      params: { serviceId: 'edge-gw' },
+    });
+
+    expect(matcher.match('/orgs/apex%20cloud/projects/core-api')).toEqual({
+      id: 'org-project',
+      pattern: '/orgs/:orgId/projects/:projectId',
+      pathname: '/orgs/apex%20cloud/projects/core-api',
+      params: { orgId: 'apex cloud', projectId: 'core-api' },
+    });
+  });
+
+  it('resolves wildcard catch-alls', () => {
+    expect(matcher.match('/docs/compiler/optimistic/state')).toEqual({
+      id: 'docs-wildcard',
+      pattern: '/docs/*',
+      pathname: '/docs/compiler/optimistic/state',
+      params: { '*': 'compiler/optimistic/state' },
+    });
+  });
+
+  it('returns null for unmatched paths', () => {
+    expect(matcher.match('/unregistered/route')).toBeNull();
+  });
+
+  it('implements RouteResolver resolve() method', () => {
+    const matches = matcher.resolve({
+      pathname: '/services/auth-vault',
+    } as any);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.id).toBe('service-detail');
+
+    const empty = matcher.resolve({
+      pathname: '/non-existent',
+    } as any);
+    expect(empty).toHaveLength(0);
   });
 });

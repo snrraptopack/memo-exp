@@ -128,3 +128,8 @@ export interface PatternMatch {
 export interface MatchPatternOptions {
   readonly end?: boolean;
 }
+
+export interface RouteTableMatcher {
+  match(pathname: string): RouteMatch | null;
+  resolve(location: RouteLocationSnapshot): readonly RouteMatch[];
+}

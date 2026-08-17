@@ -6,15 +6,17 @@ export const back = defaultRouteRuntime.back;
 export const forward = defaultRouteRuntime.forward;
 
 export { createRouteRuntime, supportsNavigationAPI } from './runtime';
-export type { RouteEnvironment, RouteRuntime } from './runtime';
+export type { RouteEnvironment, RouteRuntime, RouteRuntimeOptions } from './runtime';
 
 export {
   buildRoutePath,
   compareRoutePatterns,
+  createRouteMatcher,
   createRouteQuery,
   joinRoutePaths,
   matchRoutePattern,
   normalizeRoutePath,
+  parseRouteQuery,
   rankRoutePattern,
   validateRoutePattern,
   validateRoutePatterns,
@@ -38,4 +40,5 @@ export type {
   RouteSnapshot,
   RouteState,
   RouteResolver,
+  RouteTableMatcher,
 } from './types';
