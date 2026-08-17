@@ -174,23 +174,48 @@ function prepareMatches(nextMatches: readonly RouteMatch[]): {
   readonly matches: readonly RouteMatch[];
   readonly params: Readonly<Record<string, string>>;
 } {
+  const len = nextMatches.length;
+  if (len === 0) {
+    return {
+      matches: Object.freeze([]),
+      params: Object.freeze({}),
+    };
+  }
+
+  // Fast single-match path (no Set allocation, for..in iteration)
+  if (len === 1) {
+    const match = nextMatches[0]!;
+    if (match.id.trim() === '') throw new TypeError('Route match IDs must not be empty');
+    const pattern = validateRoutePattern(match.pattern);
+    const merged: Record<string, string> = {};
+    for (const key in match.params) {
+      merged[key] = match.params[key]!;
+    }
+    return {
+      matches: Object.freeze([frozenMatch({ ...match, pattern })]),
+      params: Object.freeze(merged),
+    };
+  }
+
   const identifiers = new Set<string>();
   const merged: Record<string, string> = {};
-  const frozen = nextMatches.map(match => {
+  const frozen: RouteMatch[] = new Array(len);
+  for (let i = 0; i < len; i++) {
+    const match = nextMatches[i]!;
     if (match.id.trim() === '') throw new TypeError('Route match IDs must not be empty');
     if (identifiers.has(match.id)) {
       throw new TypeError(`Duplicate active route ID '${match.id}'`);
     }
     identifiers.add(match.id);
     const pattern = validateRoutePattern(match.pattern);
-    for (const [key, value] of Object.entries(match.params)) {
+    for (const key in match.params) {
       if (Object.hasOwn(merged, key)) {
         throw new TypeError(`Duplicate active route parameter '${key}'`);
       }
-      merged[key] = value;
+      merged[key] = match.params[key]!;
     }
-    return frozenMatch({ ...match, pattern });
-  });
+    frozen[i] = frozenMatch({ ...match, pattern });
+  }
   return {
     matches: Object.freeze(frozen),
     params: Object.freeze(merged),
@@ -234,6 +259,7 @@ export function createRouteRuntime(
   let params: Readonly<Record<string, string>> = Object.freeze({});
   let query = readonlyQuery(url.search);
   let controller = new AbortController();
+  let controllerAccessed = false;
   let connectionCount = 0;
   let disposed = false;
   let resolver: RouteResolver | null = options.resolver ?? null;
@@ -260,7 +286,10 @@ export function createRouteRuntime(
     get params() { return params; },
     get matches() { return matches; },
     get matched() { return matches.at(-1) ?? null; },
-    get signal() { return controller.signal; },
+    get signal() {
+      controllerAccessed = true;
+      return controller.signal;
+    },
   });
 
   function snapshot(): RouteSnapshot {
@@ -281,19 +310,23 @@ export function createRouteRuntime(
 
   function locationSnapshot(): RouteLocationSnapshot {
     return Object.freeze({
-      href: route.href,
-      pathname: route.pathname,
-      search: route.search,
-      query: route.query,
-      hash: route.hash,
-      state: route.state,
-      navigationType: route.navigationType,
-      signal: route.signal,
+      href: url.href,
+      pathname: url.pathname,
+      search: url.search,
+      query,
+      hash: url.hash,
+      state,
+      navigationType,
+      get signal() {
+        controllerAccessed = true;
+        return controller.signal;
+      },
     });
   }
 
   function emit(): void {
     revision++;
+    if (listeners.size === 0) return;
     if (emitting) {
       emissionPending = true;
       return;
@@ -349,7 +382,7 @@ export function createRouteRuntime(
   ): void {
     if (disposed) throw new Error('Cannot set location on a disposed route runtime');
     if (resolving) throw new Error('Route resolvers must not mutate router state');
-    const next = new URL(href, url);
+    const next = typeof href === 'string' ? new URL(href, url) : href;
     const changed = next.href !== url.href || !Object.is(nextState, state);
     if (!changed) return;
 
@@ -358,11 +391,14 @@ export function createRouteRuntime(
     const previousNavigationType = navigationType;
     const previousQuery = query;
     const previousController = controller;
-    const nextController = new AbortController();
+    const hadAccessedController = controllerAccessed;
+    if (hadAccessedController) {
+      controller = new AbortController();
+      controllerAccessed = false;
+    }
     url = next;
     state = nextState;
     navigationType = type;
-    controller = nextController;
     query = readonlyQuery(url.search);
     let prepared: ReturnType<typeof prepareMatches>;
     try {
@@ -372,13 +408,18 @@ export function createRouteRuntime(
       state = previousState;
       navigationType = previousNavigationType;
       query = previousQuery;
-      controller = previousController;
-      nextController.abort();
+      if (hadAccessedController) {
+        controller.abort();
+        controller = previousController;
+        controllerAccessed = hadAccessedController;
+      }
       throw error;
     }
     matches = prepared.matches;
     params = prepared.params;
-    previousController.abort();
+    if (hadAccessedController) {
+      previousController.abort();
+    }
     locationRevision++;
     emit();
   }

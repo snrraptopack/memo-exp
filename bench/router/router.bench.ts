@@ -80,6 +80,8 @@ const navPaths = ['/', '/posts', '/posts/42', '/about'];
 let navHrefCursor = 0;
 const navParams = Array.from({ length: 50 }, (_, i) => ({ id: `svc_${i}` }));
 let navParamCursor = 0;
+const navUserParams = Array.from({ length: 50 }, (_, i) => ({ userId: `usr_${i}` }));
+let navUserCursor = 0;
 
 // -----------------------------------------------------------------------------
 // Vitest Benchmark Suites
@@ -166,8 +168,9 @@ describe('navigation', () => {
   });
 
   bench('navigate ({ to, params })', () => {
+    const p = navUserParams[navUserCursor++ % navUserParams.length]!;
     navRuntime.navigate('/users/:userId', {
-      params: { userId: 'usr_42' },
+      params: p,
     });
   });
 

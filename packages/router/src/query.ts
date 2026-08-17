@@ -4,6 +4,7 @@
  * Designed for extreme hotpath throughput:
  * - Bypasses Web IDL URLSearchParams host object allocation.
  * - Single-pass key-value string concatenation and zero-alloc scanning.
+ * - Small-array sorting networks (3-key and 4-key) avoiding Array.prototype.sort() engine overhead.
  * - Reference memoization and unreserved character fast paths.
  * - Conforms to standard application/x-www-form-urlencoded specifications.
  */
@@ -70,13 +71,17 @@ function decodeQueryComponent(value: string): string {
   }
 }
 
+let lastDecodeInput = '';
+let lastDecodeResult: Record<string, string | string[]> = {};
+
 /**
  * Parses a query string into a key-value dictionary without instantiating URLSearchParams.
  *
- * Supports scalar values and repeated keys into arrays.
+ * Supports scalar values, repeated keys into arrays, and reference memoization.
  */
 export function parseRouteQuery(search: string): Record<string, string | string[]> {
   if (!search || search === '?' || search === '') return {};
+  if (search === lastDecodeInput) return lastDecodeResult;
 
   const query: Record<string, string | string[]> = {};
   const start = search.charCodeAt(0) === 63 /* '?' */ ? 1 : 0;
@@ -84,6 +89,8 @@ export function parseRouteQuery(search: string): Record<string, string | string[
 
   let keyStart = start;
   let valStart = -1;
+  let hasKeySpecial = false;
+  let hasValSpecial = false;
 
   for (let i = start; i <= len; i++) {
     const isEnd = i === len;
@@ -97,11 +104,14 @@ export function parseRouteQuery(search: string): Record<string, string | string[
         let val: string;
 
         if (valStart === -1) {
-          key = decodeQueryComponent(search.slice(keyStart, i));
+          const rawKey = search.slice(keyStart, i);
+          key = hasKeySpecial ? decodeQueryComponent(rawKey) : rawKey;
           val = '';
         } else {
-          key = decodeQueryComponent(search.slice(keyStart, valStart - 1));
-          val = decodeQueryComponent(search.slice(valStart, i));
+          const rawKey = search.slice(keyStart, valStart - 1);
+          const rawVal = search.slice(valStart, i);
+          key = hasKeySpecial ? decodeQueryComponent(rawKey) : rawKey;
+          val = hasValSpecial ? decodeQueryComponent(rawVal) : rawVal;
         }
 
         const existing = query[key];
@@ -115,10 +125,56 @@ export function parseRouteQuery(search: string): Record<string, string | string[
       }
       keyStart = i + 1;
       valStart = -1;
+      hasKeySpecial = false;
+      hasValSpecial = false;
+    } else if (c === 37 /* '%' */ || c === 43 /* '+' */) {
+      if (valStart === -1) {
+        hasKeySpecial = true;
+      } else {
+        hasValSpecial = true;
+      }
     }
   }
 
+  lastDecodeInput = search;
+  lastDecodeResult = query;
   return query;
+}
+
+/**
+ * 3-element in-place sorting network (at most 3 comparisons).
+ */
+function sort3(arr: string[]): void {
+  if (arr[0]! > arr[1]!) { const t = arr[0]!; arr[0] = arr[1]!; arr[1] = t; }
+  if (arr[1]! > arr[2]!) { const t = arr[1]!; arr[1] = arr[2]!; arr[2] = t; }
+  if (arr[0]! > arr[1]!) { const t = arr[0]!; arr[0] = arr[1]!; arr[1] = t; }
+}
+
+/**
+ * 4-element in-place sorting network (at most 5 comparisons).
+ */
+function sort4(arr: string[]): void {
+  if (arr[0]! > arr[1]!) { const t = arr[0]!; arr[0] = arr[1]!; arr[1] = t; }
+  if (arr[2]! > arr[3]!) { const t = arr[2]!; arr[2] = arr[3]!; arr[3] = t; }
+  if (arr[0]! > arr[2]!) { const t = arr[0]!; arr[0] = arr[2]!; arr[2] = t; }
+  if (arr[1]! > arr[3]!) { const t = arr[1]!; arr[1] = arr[3]!; arr[3] = t; }
+  if (arr[1]! > arr[2]!) { const t = arr[1]!; arr[1] = arr[2]!; arr[2] = t; }
+}
+
+/**
+ * In-place insertion sort for small arrays (5-8 elements).
+ */
+function insertionSort(arr: string[]): void {
+  const len = arr.length;
+  for (let i = 1; i < len; i++) {
+    const key = arr[i]!;
+    let j = i - 1;
+    while (j >= 0 && arr[j]! > key) {
+      arr[j + 1] = arr[j]!;
+      j--;
+    }
+    arr[j + 1] = key;
+  }
 }
 
 let lastEncodeQuery: RouteQueryInput | undefined;
@@ -130,6 +186,7 @@ let lastEncodeResult = '';
  * Features:
  * - Reference memoization for identical query dictionaries.
  * - Single-pass key-value string concatenation without URLSearchParams.
+ * - In-place small-array sorting networks for deterministic URL keys.
  * - Array values produce repeated keys: `?tag=alpha&tag=beta`.
  * - Null and undefined values are omitted.
  */
@@ -194,8 +251,17 @@ export function createRouteQuery(query: RouteQueryInput | undefined): string {
     return out;
   }
 
-  // Multi-key sorted path for deterministic URL snapshots
-  keys.sort();
+  // Small-array sorting networks for deterministic 3-8 key dictionaries
+  if (len === 3) {
+    sort3(keys);
+  } else if (len === 4) {
+    sort4(keys);
+  } else if (len <= 8) {
+    insertionSort(keys);
+  } else {
+    keys.sort();
+  }
+
   for (let i = 0; i < len; i++) {
     const key = keys[i]!;
     const val = record[key];
