@@ -228,8 +228,21 @@ export function createRouteQuery(query: RouteQueryInput | undefined): string {
     const k1 = keys[1]!;
     const firstKey = k0 < k1 ? k0 : k1;
     const secondKey = k0 < k1 ? k1 : k0;
-    const orderedKeys = [firstKey, secondKey];
+    const v0 = record[firstKey];
+    const v1 = record[secondKey];
 
+    if (!Array.isArray(v0) && !Array.isArray(v1)) {
+      if (v0 != null && v1 != null) {
+        const ek0 = isCleanQueryString(firstKey) ? firstKey : encodeQueryKey(firstKey);
+        const ek1 = isCleanQueryString(secondKey) ? secondKey : encodeQueryKey(secondKey);
+        out = `?${ek0}=${encodeQueryValue(v0 as RouteParamValue)}&${ek1}=${encodeQueryValue(v1 as RouteParamValue)}`;
+        lastEncodeQuery = query;
+        lastEncodeResult = out;
+        return out;
+      }
+    }
+
+    const orderedKeys = [firstKey, secondKey];
     for (let i = 0; i < 2; i++) {
       const key = orderedKeys[i]!;
       const val = record[key];

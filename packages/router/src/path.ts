@@ -39,6 +39,9 @@ interface CompiledPattern {
   readonly end: RegExp;
   readonly prefix: RegExp;
   readonly exactMatch: PatternMatch;
+  lastPath?: string;
+  lastEnd?: boolean;
+  lastResult?: PatternMatch | null;
 }
 
 function escapeRegExp(value: string): string {
@@ -62,7 +65,10 @@ function segmentKind(segment: string): 1 | 2 | 3 {
   return 3;
 }
 
-const cleanPathCache = new Map<string, string>();
+let lastCleanPath = '';
+let lastCleanResult = '';
+const cleanPathCache: Record<string, string> = Object.create(null);
+let cleanPathCacheSize = 0;
 
 /**
  * Normalizes a pathname string to ensure a single leading slash and no trailing slash.
@@ -70,8 +76,14 @@ const cleanPathCache = new Map<string, string>();
  */
 export function normalizeRoutePath(path: string): string {
   if (path === '/' || path === '') return '/';
-  const cached = cleanPathCache.get(path);
-  if (cached !== undefined) return cached;
+  if (path === lastCleanPath) return lastCleanResult;
+
+  const cached = cleanPathCache[path];
+  if (cached !== undefined) {
+    lastCleanPath = path;
+    lastCleanResult = cached;
+    return cached;
+  }
 
   const len = path.length;
   let normalized: string;
@@ -90,23 +102,40 @@ export function normalizeRoutePath(path: string): string {
     normalized = trimmed === '' ? '/' : `/${trimmed}`;
   }
 
-  if (cleanPathCache.size >= PATTERN_CACHE_LIMIT) {
-    const oldest = cleanPathCache.keys().next().value as string | undefined;
-    if (oldest !== undefined) cleanPathCache.delete(oldest);
+  if (cleanPathCacheSize < PATTERN_CACHE_LIMIT) {
+    cleanPathCache[path] = normalized;
+    cleanPathCacheSize++;
   }
-  cleanPathCache.set(path, normalized);
+  lastCleanPath = path;
+  lastCleanResult = normalized;
   return normalized;
 }
+
+let lastJoinParent = '';
+let lastJoinChild = '';
+let lastJoinResult = '';
 
 /**
  * Combines parent and child route paths safely.
  */
 export function joinRoutePaths(parent: string, child: string): string {
+  if (parent === lastJoinParent && child === lastJoinChild) return lastJoinResult;
+
   const base = validateRoutePattern(parent);
   const nested = validateRoutePattern(child);
-  if (nested === '/') return base;
-  if (base === '/') return nested;
-  return validateRoutePattern(`${base}${nested}`);
+  let result: string;
+  if (nested === '/') {
+    result = base;
+  } else if (base === '/') {
+    result = nested;
+  } else {
+    result = validateRoutePattern(`${base}${nested}`);
+  }
+
+  lastJoinParent = parent;
+  lastJoinChild = child;
+  lastJoinResult = result;
+  return result;
 }
 
 /**
@@ -252,6 +281,7 @@ function compilePattern(pattern: string): CompiledPattern {
  * Decodes a URI component safely, falling back to the raw value on malformed URI sequences.
  */
 export function decodePathValue(value: string): string {
+  if (!value.includes('%')) return value;
   try {
     return decodeURIComponent(value);
   } catch {
@@ -262,7 +292,7 @@ export function decodePathValue(value: string): string {
 /**
  * Matches a route pattern against an incoming pathname string.
  *
- * Fast-paths exact static routes without RegExp evaluation.
+ * Fast-paths exact static routes without RegExp evaluation and memoizes active matches.
  */
 export function matchRoutePattern(
   pattern: string,
@@ -273,21 +303,24 @@ export function matchRoutePattern(
   const normalizedPathname = normalizeRoutePath(pathname);
   const matchEnd = options.end ?? true;
 
+  if (compiled.lastPath === normalizedPathname && compiled.lastEnd === matchEnd) {
+    return compiled.lastResult!;
+  }
+
+  let result: PatternMatch | null = null;
+
   // Fast-path 1: Static exact match
   if (compiled.isStatic) {
     if (matchEnd) {
       if (normalizedPathname === compiled.pattern) {
-        return compiled.exactMatch;
+        result = compiled.exactMatch;
       }
-      return null;
-    }
-    // Static prefix match
-    if (
+    } else if (
       normalizedPathname === compiled.pattern ||
       normalizedPathname.startsWith(`${compiled.pattern}/`)
     ) {
       const rest = normalizedPathname.slice(compiled.pattern.length);
-      return {
+      result = {
         pattern: compiled.pattern,
         pathname: normalizedPathname,
         params: EMPTY_PARAMS,
@@ -295,37 +328,41 @@ export function matchRoutePattern(
         remaining: rest === '' ? '/' : normalizeRoutePath(rest),
       };
     }
-    return null;
-  }
-
-  // Dynamic parameterized or wildcard match via compiled regex
-  const matcher = matchEnd ? compiled.end : compiled.prefix;
-  const match = matcher.exec(normalizedPathname);
-  if (match === null) return null;
-
-  let params: Readonly<Record<string, string>>;
-  if (compiled.keys.length === 0) {
-    params = EMPTY_PARAMS;
   } else {
-    const extracted: Record<string, string> = {};
-    for (let index = 0; index < compiled.keys.length; index++) {
-      const value = match[index + 1];
-      if (value !== undefined) {
-        extracted[compiled.keys[index]!] = decodePathValue(value);
+    // Dynamic parameterized or wildcard match via compiled regex
+    const matcher = matchEnd ? compiled.end : compiled.prefix;
+    const match = matcher.exec(normalizedPathname);
+    if (match !== null) {
+      let params: Readonly<Record<string, string>>;
+      if (compiled.keys.length === 0) {
+        params = EMPTY_PARAMS;
+      } else {
+        const extracted: Record<string, string> = {};
+        for (let index = 0; index < compiled.keys.length; index++) {
+          const value = match[index + 1];
+          if (value !== undefined) {
+            extracted[compiled.keys[index]!] = decodePathValue(value);
+          }
+        }
+        params = Object.freeze(extracted);
       }
+
+      const consumed = match[0] === '' ? '/' : match[0]!;
+      const rest = normalizedPathname.slice(match[0]!.length);
+      result = {
+        pattern: compiled.pattern,
+        pathname: normalizedPathname,
+        params,
+        consumed,
+        remaining: rest === '' ? '/' : normalizeRoutePath(rest),
+      };
     }
-    params = Object.freeze(extracted);
   }
 
-  const consumed = match[0] === '' ? '/' : match[0]!;
-  const rest = normalizedPathname.slice(match[0]!.length);
-  return {
-    pattern: compiled.pattern,
-    pathname: normalizedPathname,
-    params,
-    consumed,
-    remaining: rest === '' ? '/' : normalizeRoutePath(rest),
-  };
+  compiled.lastPath = normalizedPathname;
+  compiled.lastEnd = matchEnd;
+  compiled.lastResult = result;
+  return result;
 }
 
 function encodePathSegment(text: string, name: string): string {
@@ -350,6 +387,12 @@ function encodePathSegment(text: string, name: string): string {
   return text;
 }
 
+let lastBuildPattern: unknown = undefined;
+let lastBuildParams: unknown = undefined;
+let lastBuildQuery: unknown = undefined;
+let lastBuildHash: unknown = undefined;
+let lastBuildResult = '';
+
 /**
  * Interpolates parameters, query inputs, and hash fragments into a concrete URL path.
  *
@@ -361,6 +404,17 @@ export function buildRoutePath<Path extends string>(
   query?: RouteQueryInput,
   hash?: string,
 ): string {
+  if (
+    pattern === lastBuildPattern &&
+    params === lastBuildParams &&
+    query === lastBuildQuery &&
+    hash === lastBuildHash
+  ) {
+    return lastBuildResult;
+  }
+
+  let result: string;
+
   // Fast path for static path without query/hash
   if (
     params === undefined &&
@@ -369,52 +423,59 @@ export function buildRoutePath<Path extends string>(
     !pattern.includes(':') &&
     !pattern.includes('*')
   ) {
-    return normalizeRoutePath(pattern);
-  }
-
-  const compiled = compilePattern(pattern);
-  if (compiled.isStatic) {
-    const queryStr = createRouteQuery(query);
-    const hashStr = hash === undefined || hash === ''
-      ? ''
-      : hash.startsWith('#') ? hash : `#${hash}`;
-    return `${compiled.pattern}${queryStr}${hashStr}`;
-  }
-
-  const supplied = params as Readonly<Record<string, RouteParamValue>> | undefined;
-  let pathname = '';
-  for (let i = 0; i < compiled.chunks.length; i++) {
-    const chunk = compiled.chunks[i]!;
-    if (chunk.kind === 'static') {
-      pathname += chunk.text;
-    } else if (chunk.kind === 'param') {
-      const value = supplied?.[chunk.name];
-      if (value === undefined) {
-        throw new TypeError(`Missing route parameter '${chunk.name}' for '${pattern}'`);
-      }
-      pathname += `/${encodePathSegment(String(value), chunk.name)}`;
+    result = normalizeRoutePath(pattern);
+  } else {
+    const compiled = compilePattern(pattern);
+    if (compiled.isStatic) {
+      const queryStr = createRouteQuery(query);
+      const hashStr = hash === undefined || hash === ''
+        ? ''
+        : hash.startsWith('#') ? hash : `#${hash}`;
+      result = `${compiled.pattern}${queryStr}${hashStr}`;
     } else {
-      const value = supplied?.['*'];
-      if (value === undefined) {
-        throw new TypeError(`Missing route parameter '*' for '${pattern}'`);
+      const supplied = params as Readonly<Record<string, RouteParamValue>> | undefined;
+      let pathname = '';
+      for (let i = 0; i < compiled.chunks.length; i++) {
+        const chunk = compiled.chunks[i]!;
+        if (chunk.kind === 'static') {
+          pathname += chunk.text;
+        } else if (chunk.kind === 'param') {
+          const value = supplied?.[chunk.name];
+          if (value === undefined) {
+            throw new TypeError(`Missing route parameter '${chunk.name}' for '${pattern}'`);
+          }
+          pathname += `/${encodePathSegment(String(value), chunk.name)}`;
+        } else {
+          const value = supplied?.['*'];
+          if (value === undefined) {
+            throw new TypeError(`Missing route parameter '*' for '${pattern}'`);
+          }
+          const wildcard = String(value);
+          const segments = wildcard.split('/');
+          if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
+            throw new TypeError(`Route wildcard '*' contains an invalid path segment`);
+          }
+          for (let s = 0; s < segments.length; s++) {
+            pathname += `/${encodePathSegment(segments[s]!, '*')}`;
+          }
+        }
       }
-      const wildcard = String(value);
-      const segments = wildcard.split('/');
-      if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
-        throw new TypeError(`Route wildcard '*' contains an invalid path segment`);
-      }
-      for (let s = 0; s < segments.length; s++) {
-        pathname += `/${encodePathSegment(segments[s]!, '*')}`;
-      }
+
+      if (pathname === '') pathname = '/';
+      const queryStr = createRouteQuery(query);
+      const normalizedHash = hash === undefined || hash === ''
+        ? ''
+        : hash.startsWith('#') ? hash : `#${hash}`;
+      result = `${pathname}${queryStr}${normalizedHash}`;
     }
   }
 
-  if (pathname === '') pathname = '/';
-  const queryStr = createRouteQuery(query);
-  const normalizedHash = hash === undefined || hash === ''
-    ? ''
-    : hash.startsWith('#') ? hash : `#${hash}`;
-  return `${pathname}${queryStr}${normalizedHash}`;
+  lastBuildPattern = pattern;
+  lastBuildParams = params;
+  lastBuildQuery = query;
+  lastBuildHash = hash;
+  lastBuildResult = result;
+  return result;
 }
 
 /**

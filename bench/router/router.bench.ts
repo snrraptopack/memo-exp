@@ -1,7 +1,13 @@
 /**
  * @fileoverview Vitest Benchmark Suite for @memoized-dom/router hotpaths.
  *
- * Can be run via: vitest bench bench/router/router.bench.ts
+ * Full client-side suite mirroring all @anonrig/router and TanStack benchmarks:
+ * - History (memory push, replace, back, forward)
+ * - Navigation (href, typed, dynamic params, buildLocation)
+ * - Hotpath (query encode/decode, path clean/resolve/interpolate, Trie & regex matching)
+ * - Search Params (ordinary strings, JSON-compatible, arrays, mixed)
+ *
+ * Run via: vitest bench bench/router/router.bench.ts
  */
 
 import { bench, describe } from 'vitest';
@@ -10,6 +16,7 @@ import {
   createRouteMatcher,
   createRouteQuery,
   createRouteRuntime,
+  joinRoutePaths,
   matchRoutePattern,
   normalizeRoutePath,
   parseRouteQuery,
@@ -87,6 +94,21 @@ let navUserCursor = 0;
 // Vitest Benchmark Suites
 // -----------------------------------------------------------------------------
 
+describe('history', () => {
+  bench('memory push', () => {
+    navRuntime.navigate('/posts/1', { replace: false });
+  });
+
+  bench('memory replace', () => {
+    navRuntime.navigate('/posts/2', { replace: true });
+  });
+
+  bench('memory back + forward', () => {
+    navRuntime.back();
+    navRuntime.forward();
+  });
+});
+
 describe('query string', () => {
   bench('createRouteQuery single sample', () => {
     createRouteQuery(querySample);
@@ -115,6 +137,10 @@ describe('path', () => {
 
   bench('normalizeRoutePath (messy)', () => {
     normalizeRoutePath('/a//b///c/d//e/');
+  });
+
+  bench('joinRoutePaths (resolve path)', () => {
+    joinRoutePaths('/a/b/c', 'd/e');
   });
 
   bench('buildRoutePath (params only)', () => {
@@ -160,6 +186,10 @@ describe('match', () => {
   bench('createRouteMatcher Trie (500 routes)', () => {
     routeMatcher500.match(needlePath);
   });
+
+  bench('createRouteMatcher Trie 1000 lookups', () => {
+    for (let i = 0; i < 1000; i++) routeMatcher500.match(needlePath);
+  });
 });
 
 describe('navigation', () => {
@@ -177,5 +207,23 @@ describe('navigation', () => {
   bench('navigate changing params loop', () => {
     const p = navParams[navParamCursor++ % navParams.length]!;
     navRuntime.navigate('/services/:id', { params: p });
+  });
+
+  bench('buildLocation absolute', () => {
+    buildRoutePath('/posts/:id', { id: '42' });
+  });
+});
+
+describe('search-params', () => {
+  bench('ordinary string values', () => {
+    createRouteQuery({ token: 'foo', filter: 'active', sort: 'desc' });
+  });
+
+  bench('JSON-compatible string values', () => {
+    createRouteQuery({ config: '{"theme":"dark","version":2}', enabled: true });
+  });
+
+  bench('mixed application values', () => {
+    createRouteQuery({ page: 42, tab: 'specs', tags: ['v1', 'prod'], debug: false });
   });
 });
