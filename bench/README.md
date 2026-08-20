@@ -15,6 +15,7 @@ latest measurements, limits, and interpretation.
 | [`local-state`](./local-state/) | `bun run bench:local-state` | Module versus instance collection row ownership |
 | [`local-derived`](./local-derived/) | `bun run bench:local-derived` | Dependency-selected component-local derivation replay |
 | [`jsx`](./jsx/) | `bun run bench:jsx` | Specialized versus ordered-spread authored JSX paths |
+| [`router`](./router/) | `bun run bench:router` | Cached, warm-varied, construction, and runtime routing paths |
 | [`package-size`](./package-size/) | `bun run bench:size` | Built package and real todo browser bundle size |
 | [`frameworks`](./frameworks/) | `bun run bench:frameworks` | Current framework update-completion scenarios |
 | [`application`](./frameworks/application/) | `bun run bench:application` | Structured cross-framework application workflows |

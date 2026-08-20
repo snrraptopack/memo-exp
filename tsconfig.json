@@ -34,7 +34,7 @@
     "noPropertyAccessFromIndexSignature": false
   },
 
-  "include": ["packages/*/src", "examples"],
+  "include": ["packages/*/src", "examples", "bench/router"],
   "exclude": [
     "**/dist",
     "**/generated",
