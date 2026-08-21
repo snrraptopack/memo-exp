@@ -26,7 +26,7 @@ const escapedEncodeSamples = [
   { q: 'a+b=c', tag: ['alpha beta', 'gamma/delta'], empty: '', debug: false },
 ] as const;
 
-const cachedEncodeInput = cleanEncodeSamples[0];
+const cachedEncodeInput = Object.freeze({ ...cleanEncodeSamples[0] });
 const cachedEncoded = createRouteQuery(cachedEncodeInput);
 const cleanEncodedSamples = cleanEncodeSamples.map(createRouteQuery);
 const escapedEncodedSamples = escapedEncodeSamples.map(createRouteQuery);

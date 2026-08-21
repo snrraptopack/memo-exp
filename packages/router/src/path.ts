@@ -8,7 +8,7 @@
  * - Specificity ranking and comparison for deterministic route tables.
  */
 
-import { createRouteQuery } from './query';
+import { createRouteQuery, isMemoizableRouteQuery } from './query';
 import type {
   MatchPatternOptions,
   PatternMatch,
@@ -109,6 +109,38 @@ export function normalizeRoutePath(path: string): string {
   lastCleanPath = path;
   lastCleanResult = normalized;
   return normalized;
+}
+
+const RELATIVE_ROUTE_ORIGIN = 'http://memoized-dom.relative';
+
+/**
+ * Resolves a destination relative to a route pathname. Route paths are treated
+ * as directories, so `details` from `/projects/one` becomes
+ * `/projects/one/details`, while `../two` becomes `/projects/two`.
+ */
+export function resolveRoutePath(base: string, destination: string): string {
+  const baseURL = new URL(base, RELATIVE_ROUTE_ORIGIN);
+  if (baseURL.origin !== RELATIVE_ROUTE_ORIGIN) {
+    throw new TypeError(`Relative route base '${base}' must be same-origin`);
+  }
+
+  let next: URL;
+  if (destination === '') {
+    next = baseURL;
+  } else if (destination.startsWith('?') || destination.startsWith('#')) {
+    next = new URL(destination, baseURL);
+  } else {
+    const directory = new URL(baseURL.href);
+    directory.search = '';
+    directory.hash = '';
+    if (!directory.pathname.endsWith('/')) directory.pathname += '/';
+    next = new URL(destination, directory);
+  }
+
+  if (next.origin !== RELATIVE_ROUTE_ORIGIN) {
+    throw new TypeError(`Relative route destination '${destination}' must be same-origin`);
+  }
+  return `${normalizeRoutePath(next.pathname)}${next.search}${next.hash}`;
 }
 
 let lastJoinParent = '';
@@ -316,16 +348,19 @@ export function matchRoutePattern(
         result = compiled.exactMatch;
       }
     } else if (
+      compiled.pattern === '/' ||
       normalizedPathname === compiled.pattern ||
       normalizedPathname.startsWith(`${compiled.pattern}/`)
     ) {
-      const rest = normalizedPathname.slice(compiled.pattern.length);
+      const rest = compiled.pattern === '/'
+        ? normalizedPathname
+        : normalizedPathname.slice(compiled.pattern.length);
       result = {
         pattern: compiled.pattern,
         pathname: normalizedPathname,
         params: EMPTY_PARAMS,
         consumed: compiled.pattern,
-        remaining: rest === '' ? '/' : normalizeRoutePath(rest),
+        remaining: rest === '' || rest === '/' ? '/' : normalizeRoutePath(rest),
       };
     }
   } else {
@@ -404,7 +439,10 @@ export function buildRoutePath<Path extends string>(
   query?: RouteQueryInput,
   hash?: string,
 ): string {
+  const memoizable = (params === undefined || Object.isFrozen(params)) &&
+    isMemoizableRouteQuery(query);
   if (
+    memoizable &&
     pattern === lastBuildPattern &&
     params === lastBuildParams &&
     query === lastBuildQuery &&
@@ -470,11 +508,13 @@ export function buildRoutePath<Path extends string>(
     }
   }
 
-  lastBuildPattern = pattern;
-  lastBuildParams = params;
-  lastBuildQuery = query;
-  lastBuildHash = hash;
-  lastBuildResult = result;
+  if (memoizable) {
+    lastBuildPattern = pattern;
+    lastBuildParams = params;
+    lastBuildQuery = query;
+    lastBuildHash = hash;
+    lastBuildResult = result;
+  }
   return result;
 }
 

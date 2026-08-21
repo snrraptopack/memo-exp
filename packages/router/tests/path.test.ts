@@ -8,12 +8,22 @@ import {
   matchRoutePattern,
   parseRouteQuery,
   rankRoutePattern,
+  resolveRoutePath,
   validateRoutePattern,
   validateRoutePatterns,
 } from '../src';
 import type { RouteParams } from '../src';
 
 describe('route paths', () => {
+  it('resolves route-relative destinations with directory semantics', () => {
+    expect(resolveRoutePath('/projects/one', 'details')).toBe('/projects/one/details');
+    expect(resolveRoutePath('/projects/one', '../two')).toBe('/projects/two');
+    expect(resolveRoutePath('/projects/one?tab=old', '?tab=new')).toBe('/projects/one?tab=new');
+    expect(resolveRoutePath('/projects/one?tab=old', '#activity')).toBe('/projects/one?tab=old#activity');
+    expect(resolveRoutePath('/projects/one', '/settings')).toBe('/settings');
+    expect(() => resolveRoutePath('/projects/one', '//example.com/stolen')).toThrow('same-origin');
+  });
+
   it('composes nested route declarations without duplicating separators', () => {
     expect(joinRoutePaths(
       '/organizations/:organizationId/',
@@ -55,6 +65,35 @@ describe('route paths', () => {
       tag: ['compiler', 'typed routes'],
     });
     expect(parseRouteQuery('')).toEqual({});
+  });
+
+  it('does not return stale cached URLs for mutable public inputs', () => {
+    const params = { userId: 'first' };
+    const query = { page: 1, tags: ['one'] };
+
+    expect(buildRoutePath('/users/:userId', params, query)).toBe(
+      '/users/first?page=1&tags=one',
+    );
+    params.userId = 'second';
+    query.page = 2;
+    query.tags.push('two');
+    expect(buildRoutePath('/users/:userId', params, query)).toBe(
+      '/users/second?page=2&tags=one&tags=two',
+    );
+    expect(createRouteQuery(query)).toBe('?page=2&tags=one&tags=two');
+  });
+
+  it('returns immutable, prototype-safe parsed query dictionaries', () => {
+    const parsed = parseRouteQuery('?__proto__=safe&tag=one&tag=two');
+
+    expect(parsed['__proto__']).toBe('safe');
+    expect(parsed.tag).toEqual(['one', 'two']);
+    expect(Object.getPrototypeOf(parsed)).toBeNull();
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.tag)).toBe(true);
+    expect(() => {
+      (parsed as Record<string, unknown>).tag = 'changed';
+    }).toThrow();
   });
 
   it('fails before navigation when a runtime pattern is missing a parameter', () => {

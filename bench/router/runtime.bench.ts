@@ -65,6 +65,8 @@ const noSubscriberRuntime = createPureRuntime();
 const typedRuntime = createPureRuntime();
 const oneSubscriberRuntime = createPureRuntime();
 const fiveSubscriberRuntime = createPureRuntime();
+const selectedSubscriberRuntime = createPureRuntime();
+const guardedRuntime = createPureRuntime();
 const signalRuntime = createPureRuntime();
 const queryRuntime = createPureRuntime();
 const sameLocationRuntime = createPureRuntime();
@@ -80,6 +82,12 @@ for (let index = 0; index < 5; index++) {
     fiveSubscriberReads += snapshot.pathname.length + index;
   });
 }
+let selectedSubscriberReads = 0;
+selectedSubscriberRuntime.subscribeSelected(
+  current => current.params.id,
+  id => { selectedSubscriberReads += id?.length ?? 0; },
+);
+guardedRuntime.blockNavigation(navigation => navigation.to.pathname !== '/blocked');
 
 sameLocationRuntime.navigate('/posts');
 invariant(sameLocationRuntime.route.pathname === '/posts', 'same-location runtime setup');
@@ -92,6 +100,8 @@ let hrefCursor = 0;
 let typedCursor = 0;
 let oneSubscriberCursor = 0;
 let fiveSubscriberCursor = 0;
+let selectedSubscriberCursor = 0;
+let guardedCursor = 0;
 let signalCursor = 0;
 let queryCursor = 0;
 let nestedCursor = 0;
@@ -130,6 +140,18 @@ describe('route runtime transactions', () => {
     const params = postParams[fiveSubscriberCursor++ % postParams.length]!;
     fiveSubscriberRuntime.navigate('/posts/:id', { params });
     consume(fiveSubscriberReads);
+  }, ROUTER_BENCH_OPTIONS);
+
+  bench('navigate warm varied: one selected parameter subscriber', () => {
+    const params = postParams[selectedSubscriberCursor++ % postParams.length]!;
+    selectedSubscriberRuntime.navigate('/posts/:id', { params });
+    consume(selectedSubscriberReads);
+  }, ROUTER_BENCH_OPTIONS);
+
+  bench('navigate warm varied: one allowing synchronous guard', () => {
+    const params = postParams[guardedCursor++ % postParams.length]!;
+    guardedRuntime.navigate('/posts/:id', { params });
+    consume(guardedRuntime.route.params.id);
   }, ROUTER_BENCH_OPTIONS);
 
   bench('navigate warm varied: accessed cancellation signal', () => {

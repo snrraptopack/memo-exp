@@ -3,6 +3,7 @@ import {
   buildRoutePath,
   joinRoutePaths,
   normalizeRoutePath,
+  resolveRoutePath,
 } from '@memoized-dom/router';
 import {
   consume,
@@ -42,6 +43,10 @@ const joinSamples = Array.from({ length: 32 }, (_, index) => ({
   parent: `/organizations/:organizationId/area-${index}`,
   child: `/projects/:projectId/view-${index}`,
 }));
+const relativeSamples = Array.from(
+  { length: 64 },
+  (_, index) => `../project-${index}/details?tab=${index}`,
+);
 invariant(
   joinRoutePaths('/organizations/:organizationId', '/projects/:projectId') ===
     '/organizations/:organizationId/projects/:projectId',
@@ -62,14 +67,18 @@ const escapedParams = Array.from({ length: 32 }, (_, index) => ({
 const wildcardParams = Array.from({ length: 32 }, (_, index) => ({
   '*': `compiler/section ${index}/page-${index}`,
 }));
-const cachedParams = variedParams[0]!;
-const cachedQuery = { tab: 'telemetry', tag: ['router', 'aot'] } as const;
+const cachedParams = Object.freeze({ ...variedParams[0]! });
+const cachedQuery = Object.freeze({
+  tab: 'telemetry',
+  tag: Object.freeze(['router', 'aot']),
+});
 const cachedBuiltPath = buildRoutePath(deepPattern, cachedParams, cachedQuery, 'metrics');
 invariant(cachedBuiltPath.endsWith('?tab=telemetry&tag=router&tag=aot#metrics'), 'full path build');
 
 let normalizedCursor = 0;
 let trimmedCursor = 0;
 let joinCursor = 0;
+let relativeCursor = 0;
 let paramsCursor = 0;
 let escapedCursor = 0;
 let wildcardCursor = 0;
@@ -92,6 +101,11 @@ describe('path normalization and composition', () => {
   bench('join warm: rotating validated parent and child patterns', () => {
     const sample = joinSamples[joinCursor++ % joinSamples.length]!;
     consume(joinRoutePaths(sample.parent, sample.child));
+  }, ROUTER_BENCH_OPTIONS);
+
+  bench('resolve relative warm varied: parent segment and query', () => {
+    const destination = relativeSamples[relativeCursor++ % relativeSamples.length]!;
+    consume(resolveRoutePath('/organizations/acme/projects/compiler', destination));
   }, ROUTER_BENCH_OPTIONS);
 });
 

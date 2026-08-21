@@ -9,7 +9,7 @@
  * - Conforms to standard application/x-www-form-urlencoded specifications.
  */
 
-import type { RouteParamValue, RouteQueryInput } from './types';
+import type { ParsedRouteQuery, RouteParamValue, RouteQueryInput } from './types';
 
 /**
  * Fast check if a string contains only unreserved URL query characters:
@@ -71,19 +71,20 @@ function decodeQueryComponent(value: string): string {
   }
 }
 
+const EMPTY_PARSED_QUERY: ParsedRouteQuery = Object.freeze(Object.create(null));
 let lastDecodeInput = '';
-let lastDecodeResult: Record<string, string | string[]> = {};
+let lastDecodeResult: ParsedRouteQuery = EMPTY_PARSED_QUERY;
 
 /**
  * Parses a query string into a key-value dictionary without instantiating URLSearchParams.
  *
  * Supports scalar values, repeated keys into arrays, and reference memoization.
  */
-export function parseRouteQuery(search: string): Record<string, string | string[]> {
-  if (!search || search === '?' || search === '') return {};
+export function parseRouteQuery(search: string): ParsedRouteQuery {
+  if (!search || search === '?' || search === '') return EMPTY_PARSED_QUERY;
   if (search === lastDecodeInput) return lastDecodeResult;
 
-  const query: Record<string, string | string[]> = {};
+  const query: Record<string, string | string[]> = Object.create(null);
   const start = search.charCodeAt(0) === 63 /* '?' */ ? 1 : 0;
   const len = search.length;
 
@@ -136,9 +137,14 @@ export function parseRouteQuery(search: string): Record<string, string | string[
     }
   }
 
+  for (const key of Object.keys(query)) {
+    const value = query[key];
+    if (Array.isArray(value)) Object.freeze(value);
+  }
+  const frozen: ParsedRouteQuery = Object.freeze(query);
   lastDecodeInput = search;
-  lastDecodeResult = query;
-  return query;
+  lastDecodeResult = frozen;
+  return frozen;
 }
 
 /**
@@ -180,6 +186,18 @@ function insertionSort(arr: string[]): void {
 let lastEncodeQuery: RouteQueryInput | undefined;
 let lastEncodeResult = '';
 
+/** Reference memoization is safe only for runtime-immutable input graphs. */
+export function isMemoizableRouteQuery(
+  query: RouteQueryInput | undefined,
+): boolean {
+  if (query === undefined) return true;
+  if (!Object.isFrozen(query)) return false;
+  for (const value of Object.values(query)) {
+    if (Array.isArray(value) && !Object.isFrozen(value)) return false;
+  }
+  return true;
+}
+
 /**
  * Serializes a key-value dictionary into a deterministic URL query string.
  *
@@ -192,7 +210,8 @@ let lastEncodeResult = '';
  */
 export function createRouteQuery(query: RouteQueryInput | undefined): string {
   if (query === undefined) return '';
-  if (query === lastEncodeQuery) return lastEncodeResult;
+  const memoizable = isMemoizableRouteQuery(query);
+  if (memoizable && query === lastEncodeQuery) return lastEncodeResult;
 
   const record = query as Record<string, unknown>;
   const keys = Object.keys(record);
@@ -217,8 +236,10 @@ export function createRouteQuery(query: RouteQueryInput | undefined): string {
         out += (out === '' ? '?' : '&') + encKey + '=' + encodeQueryValue(item as RouteParamValue);
       }
     }
-    lastEncodeQuery = query;
-    lastEncodeResult = out;
+    if (memoizable) {
+      lastEncodeQuery = query;
+      lastEncodeResult = out;
+    }
     return out;
   }
 
@@ -236,8 +257,10 @@ export function createRouteQuery(query: RouteQueryInput | undefined): string {
         const ek0 = isCleanQueryString(firstKey) ? firstKey : encodeQueryKey(firstKey);
         const ek1 = isCleanQueryString(secondKey) ? secondKey : encodeQueryKey(secondKey);
         out = `?${ek0}=${encodeQueryValue(v0 as RouteParamValue)}&${ek1}=${encodeQueryValue(v1 as RouteParamValue)}`;
-        lastEncodeQuery = query;
-        lastEncodeResult = out;
+        if (memoizable) {
+          lastEncodeQuery = query;
+          lastEncodeResult = out;
+        }
         return out;
       }
     }
@@ -259,8 +282,10 @@ export function createRouteQuery(query: RouteQueryInput | undefined): string {
         out += (out === '' ? '?' : '&') + encKey + '=' + encodeQueryValue(val as RouteParamValue);
       }
     }
-    lastEncodeQuery = query;
-    lastEncodeResult = out;
+    if (memoizable) {
+      lastEncodeQuery = query;
+      lastEncodeResult = out;
+    }
     return out;
   }
 
@@ -292,7 +317,9 @@ export function createRouteQuery(query: RouteQueryInput | undefined): string {
     }
   }
 
-  lastEncodeQuery = query;
-  lastEncodeResult = out;
+  if (memoizable) {
+    lastEncodeQuery = query;
+    lastEncodeResult = out;
+  }
   return out;
 }

@@ -8,6 +8,10 @@ export type RouteQueryValue =
 
 export type RouteQueryInput = Readonly<Record<string, RouteQueryValue>>;
 
+export type ParsedRouteQuery = Readonly<
+  Record<string, string | readonly string[]>
+>;
+
 type SegmentParam<Segment extends string> =
   Segment extends `:${infer Name}`
     ? Name extends '' ? never : Name
@@ -32,11 +36,14 @@ export interface RouteMatch {
   readonly pattern: string;
   readonly pathname: string;
   readonly params: Readonly<Record<string, string>>;
+  readonly metadata?: unknown;
 }
 
 export interface RoutePatternDefinition {
   readonly id: string;
   readonly pattern: string;
+  readonly parentId?: string;
+  readonly metadata?: unknown;
 }
 
 export type NavigationType = 'load' | 'push' | 'replace' | 'pop';
@@ -104,6 +111,12 @@ export interface NavigateOptions<Path extends string = string> {
   readonly replace?: boolean;
 }
 
+export interface RelativeNavigateOptions<Path extends string = string>
+  extends NavigateOptions<Path> {
+  /** Path used as the relative base. Defaults to the active pathname. */
+  readonly from?: string;
+}
+
 export type NavigateArguments<Path extends string> =
   string extends Path
     ? [options?: NavigateOptions<Path>]
@@ -111,7 +124,87 @@ export type NavigateArguments<Path extends string> =
       ? [options?: NavigateOptions<Path>]
       : [options: NavigateOptions<Path> & { readonly params: RouteParams<Path> }];
 
+export type RelativeNavigateArguments<Path extends string> =
+  string extends Path
+    ? [options?: RelativeNavigateOptions<Path>]
+    : keyof RouteParams<Path> extends never
+      ? [options?: RelativeNavigateOptions<Path>]
+      : [options: RelativeNavigateOptions<Path> & { readonly params: RouteParams<Path> }];
+
 export type RouteListener = (snapshot: RouteSnapshot) => void;
+
+export type RouteSelector<Value> = (route: RouteState) => Value;
+
+export type RouteSelectionListener<Value> = (
+  value: Value,
+  route: RouteState,
+) => void;
+
+export type RouteSelectionEquality<Value> = (
+  previous: Value,
+  next: Value,
+) => boolean;
+
+export interface RouteNavigationLocation {
+  readonly href: string;
+  readonly pathname: string;
+  readonly search: string;
+  readonly hash: string;
+  readonly state: unknown;
+}
+
+export interface RouteNavigation {
+  readonly id: number;
+  readonly from: RouteNavigationLocation;
+  readonly to: RouteNavigationLocation;
+  readonly type: Exclude<NavigationType, 'load'>;
+}
+
+export interface RouteRedirect {
+  readonly to: string | URL;
+  readonly replace?: boolean;
+  readonly state?: unknown;
+}
+
+export type RouteNavigationDecision = boolean | void | RouteRedirect;
+
+/** A synchronous navigation guard. Async work belongs to the data boundary. */
+export type RouteNavigationBlocker = (
+  navigation: RouteNavigation,
+) => RouteNavigationDecision;
+
+export type RouteNavigationPhase =
+  | 'start'
+  | 'redirect'
+  | 'blocked'
+  | 'complete';
+
+export interface RouteNavigationEvent {
+  readonly phase: RouteNavigationPhase;
+  readonly navigation: RouteNavigation;
+  readonly redirect?: RouteRedirect;
+}
+
+export type RouteNavigationListener = (event: RouteNavigationEvent) => void;
+
+export type RouteNavigationResult =
+  | {
+      readonly status: 'completed';
+      readonly navigation: RouteNavigation;
+      readonly redirects: number;
+    }
+  | {
+      readonly status: 'blocked';
+      readonly navigation: RouteNavigation;
+      readonly redirects: number;
+    };
+
+export function redirectRoute(
+  to: string | URL,
+  options: Omit<RouteRedirect, 'to'> = {},
+): RouteRedirect {
+  return Object.freeze({ to, ...options });
+}
 
 export type RouteResolver = (
   location: RouteLocationSnapshot,
@@ -132,4 +225,19 @@ export interface MatchPatternOptions {
 export interface RouteTableMatcher {
   match(pathname: string): RouteMatch | null;
   resolve(location: RouteLocationSnapshot): readonly RouteMatch[];
+}
+
+export interface RouteManifestEntry extends RoutePatternDefinition {
+  readonly fullPattern: string;
+  readonly depth: number;
+}
+
+export interface RouteManifest extends RouteTableMatcher {
+  readonly entries: readonly RouteManifestEntry[];
+  get(id: string): RouteManifestEntry | undefined;
+  matchAll(pathname: string): readonly RouteMatch[];
+  build(
+    id: string,
+    options?: NavigateOptions<string>,
+  ): string;
 }

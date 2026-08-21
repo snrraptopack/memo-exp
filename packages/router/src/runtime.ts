@@ -1,5 +1,14 @@
-import { buildRoutePath, validateRoutePattern } from './path';
-import { createRouteMatcher } from './matcher';
+import {
+  buildRoutePath,
+  normalizeRoutePath,
+  resolveRoutePath,
+  validateRoutePattern,
+} from './path';
+import { createRouteManifest } from './manifest';
+import {
+  RouteHistoryCommittedUpdateError,
+  type RouteHistory,
+} from './history';
 import type {
   NavigateOptions,
   NavigateArguments,
@@ -7,11 +16,22 @@ import type {
   RouteListener,
   RouteLocationSnapshot,
   RouteMatch,
+  RouteNavigation,
+  RouteNavigationBlocker,
+  RouteNavigationEvent,
+  RouteNavigationListener,
+  RouteNavigationLocation,
+  RouteNavigationResult,
   RoutePatternDefinition,
   RouteQuery,
   RouteResolver,
+  RouteSelectionEquality,
+  RouteSelectionListener,
+  RouteSelector,
   RouteSnapshot,
   RouteState,
+  RelativeNavigateArguments,
+  RelativeNavigateOptions,
 } from './types';
 
 const FALLBACK_ORIGIN = 'http://memoized-dom.local';
@@ -66,14 +86,26 @@ export interface RouteRuntime {
   readonly route: RouteState;
   snapshot(): RouteSnapshot;
   subscribe(listener: RouteListener): () => void;
+  subscribeSelected<Value>(
+    selector: RouteSelector<Value>,
+    listener: RouteSelectionListener<Value>,
+    equals?: RouteSelectionEquality<Value>,
+  ): () => void;
   connect(): () => void;
   installResolver(resolver: RouteResolver): () => void;
+  replaceResolver(resolver: RouteResolver): () => void;
   navigate<Path extends string>(
     pattern: Path,
     ...arguments_: NavigateArguments<Path>
-  ): void;
-  back(): void;
-  forward(): void;
+  ): RouteNavigationResult;
+  navigateRelative<Path extends string>(
+    pattern: Path,
+    ...arguments_: RelativeNavigateArguments<Path>
+  ): RouteNavigationResult;
+  blockNavigation(blocker: RouteNavigationBlocker): () => void;
+  subscribeNavigation(listener: RouteNavigationListener): () => void;
+  back(): RouteNavigationResult | null;
+  forward(): RouteNavigationResult | null;
   setLocation(href: string | URL, type?: NavigationType, state?: unknown): void;
   setMatches(matches: readonly RouteMatch[]): void;
   dispose(): void;
@@ -166,8 +198,11 @@ function readonlyQuery(search: string): RouteQuery {
 
 export interface RouteRuntimeOptions {
   readonly environment?: RouteEnvironment;
+  readonly routeHistory?: RouteHistory;
   readonly resolver?: RouteResolver;
   readonly routes?: readonly (RoutePatternDefinition | string)[];
+  /** Static URL prefix where the application is mounted, such as `/app`. */
+  readonly basePath?: string;
 }
 
 function prepareMatches(nextMatches: readonly RouteMatch[]): {
@@ -245,15 +280,56 @@ export function createRouteRuntime(
   optionsOrEnvironment: RouteEnvironment | RouteRuntimeOptions = typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment),
 ): RouteRuntime {
   const isOptions = typeof optionsOrEnvironment === 'object' && optionsOrEnvironment !== null &&
-    ('routes' in optionsOrEnvironment || 'resolver' in optionsOrEnvironment || 'environment' in optionsOrEnvironment);
+    ('routes' in optionsOrEnvironment ||
+      'resolver' in optionsOrEnvironment ||
+      'environment' in optionsOrEnvironment ||
+      'routeHistory' in optionsOrEnvironment ||
+      'basePath' in optionsOrEnvironment);
 
   const options: RouteRuntimeOptions = isOptions
     ? (optionsOrEnvironment as RouteRuntimeOptions)
     : { environment: optionsOrEnvironment as RouteEnvironment };
 
   const environment: RouteEnvironment = options.environment ?? (typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment));
-  let url = initialURL(environment);
-  let state: unknown = environment.history?.state ?? null;
+  const routeHistory = options.routeHistory;
+  const basePath = validateRoutePattern(options.basePath ?? '/');
+  if (basePath.includes(':') || basePath.includes('*')) {
+    throw new TypeError('Route runtime basePath must be static');
+  }
+
+  function applicationPathname(pathname: string): string | null {
+    const normalized = normalizeRoutePath(pathname);
+    if (basePath === '/') return normalized;
+    if (normalized === basePath) return '/';
+    if (normalized.startsWith(`${basePath}/`)) {
+      return normalized.slice(basePath.length);
+    }
+    return null;
+  }
+
+  function applicationURL(href: string): URL {
+    const destination = new URL(href, FALLBACK_ORIGIN);
+    if (destination.origin !== FALLBACK_ORIGIN) {
+      throw new TypeError(`Route destination '${href}' must be application-relative`);
+    }
+    const routePath = normalizeRoutePath(destination.pathname);
+    const mountedPath = basePath === '/'
+      ? routePath
+      : routePath === '/' ? basePath : `${basePath}${routePath}`;
+    return new URL(`${mountedPath}${destination.search}${destination.hash}`, url);
+  }
+
+  let url = routeHistory === undefined
+    ? initialURL(environment)
+    : new URL(routeHistory.location.href, FALLBACK_ORIGIN);
+  const initialPathname = applicationPathname(url.pathname);
+  if (initialPathname === null) {
+    throw new TypeError(
+      `Initial URL pathname '${url.pathname}' is outside router basePath '${basePath}'`,
+    );
+  }
+  let pathname: string = initialPathname;
+  let state: unknown = routeHistory?.location.state ?? environment.history?.state ?? null;
   let navigationType: NavigationType = 'load';
   let matches: readonly RouteMatch[] = Object.freeze([]);
   let params: Readonly<Record<string, string>> = Object.freeze({});
@@ -264,20 +340,32 @@ export function createRouteRuntime(
   let disposed = false;
   let resolver: RouteResolver | null = options.resolver ?? null;
   if (resolver === null && options.routes !== undefined) {
-    const matcher = createRouteMatcher(options.routes);
-    resolver = matcher.resolve.bind(matcher);
+    const manifest = createRouteManifest(options.routes);
+    resolver = manifest.resolve.bind(manifest);
   }
   let resolving = false;
+  let blocking = false;
   let revision = 0;
   let locationRevision = 0;
   let navigationEventRevision = 0;
+  let navigationId = 0;
+  let committingNavigation = 0;
   let emitting = false;
   let emissionPending = false;
   const listeners = new Set<RouteListener>();
+  const selectedListeners = new Set<{
+    selector: RouteSelector<unknown>;
+    listener: RouteSelectionListener<unknown>;
+    equals: RouteSelectionEquality<unknown>;
+    value: unknown;
+  }>();
+  const navigationBlockers = new Set<RouteNavigationBlocker>();
+  const navigationListeners = new Set<RouteNavigationListener>();
+  let unsubscribeRouteHistory: (() => void) | null = null;
 
   const route: RouteState = Object.freeze({
     get href() { return url.href; },
-    get pathname() { return url.pathname; },
+    get pathname() { return pathname; },
     get search() { return url.search; },
     get query() { return query; },
     get hash() { return url.hash; },
@@ -311,7 +399,7 @@ export function createRouteRuntime(
   function locationSnapshot(): RouteLocationSnapshot {
     return Object.freeze({
       href: url.href,
-      pathname: url.pathname,
+      pathname,
       search: url.search,
       query,
       hash: url.hash,
@@ -326,7 +414,7 @@ export function createRouteRuntime(
 
   function emit(): void {
     revision++;
-    if (listeners.size === 0) return;
+    if (listeners.size === 0 && selectedListeners.size === 0) return;
     if (emitting) {
       emissionPending = true;
       return;
@@ -338,11 +426,30 @@ export function createRouteRuntime(
       do {
         emissionPending = false;
         const emittedRevision = revision;
-        const value = snapshot();
-        for (const listener of [...listeners]) {
-          if (!listeners.has(listener)) continue;
+        if (listeners.size !== 0) {
+          const value = snapshot();
+          for (const listener of [...listeners]) {
+            if (!listeners.has(listener)) continue;
+            try {
+              listener(value);
+            } catch (error) {
+              errors.push(error);
+            }
+            if (revision !== emittedRevision) {
+              emissionPending = true;
+              break;
+            }
+          }
+        }
+        if (revision !== emittedRevision) continue;
+        for (const subscription of [...selectedListeners]) {
+          if (!selectedListeners.has(subscription)) continue;
           try {
-            listener(value);
+            const nextValue = subscription.selector(route);
+            if (!subscription.equals(subscription.value, nextValue)) {
+              subscription.value = nextValue;
+              subscription.listener(nextValue, route);
+            }
           } catch (error) {
             errors.push(error);
           }
@@ -379,14 +486,24 @@ export function createRouteRuntime(
     href: string | URL,
     type: NavigationType = 'replace',
     nextState: unknown = null,
+    fromRouteHistory = false,
   ): void {
     if (disposed) throw new Error('Cannot set location on a disposed route runtime');
-    if (resolving) throw new Error('Route resolvers must not mutate router state');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
     const next = typeof href === 'string' ? new URL(href, url) : href;
+    const nextPathname = applicationPathname(next.pathname);
+    if (nextPathname === null) {
+      throw new TypeError(
+        `URL pathname '${next.pathname}' is outside router basePath '${basePath}'`,
+      );
+    }
     const changed = next.href !== url.href || !Object.is(nextState, state);
     if (!changed) return;
 
     const previousURL = url;
+    const previousPathname = pathname;
     const previousState = state;
     const previousNavigationType = navigationType;
     const previousQuery = query;
@@ -397,6 +514,7 @@ export function createRouteRuntime(
       controllerAccessed = false;
     }
     url = next;
+    pathname = nextPathname;
     state = nextState;
     navigationType = type;
     query = readonlyQuery(url.search);
@@ -405,6 +523,7 @@ export function createRouteRuntime(
       prepared = resolver === null ? prepareMatches([]) : runResolver(resolver);
     } catch (error) {
       url = previousURL;
+      pathname = previousPathname;
       state = previousState;
       navigationType = previousNavigationType;
       query = previousQuery;
@@ -421,19 +540,180 @@ export function createRouteRuntime(
       previousController.abort();
     }
     locationRevision++;
-    emit();
+    try {
+      emit();
+    } catch (error) {
+      if (fromRouteHistory) throw new RouteHistoryCommittedUpdateError(error);
+      throw error;
+    }
+  }
+
+  if (routeHistory !== undefined) {
+    unsubscribeRouteHistory = routeHistory.subscribe(update => {
+      setLocation(update.location.href, update.action, update.location.state, true);
+    });
+  }
+
+  function navigationLocation(
+    locationURL: URL,
+    locationState: unknown,
+  ): RouteNavigationLocation {
+    if (locationURL.origin !== url.origin) {
+      throw new TypeError(`Route destination '${locationURL.href}' must be same-origin`);
+    }
+    const routePathname = applicationPathname(locationURL.pathname);
+    if (routePathname === null) {
+      throw new TypeError(
+        `URL pathname '${locationURL.pathname}' is outside router basePath '${basePath}'`,
+      );
+    }
+    return Object.freeze({
+      href: locationURL.href,
+      pathname: routePathname,
+      search: locationURL.search,
+      hash: locationURL.hash,
+      state: locationState,
+    });
+  }
+
+  function navigationRecord(
+    id: number,
+    from: RouteNavigationLocation,
+    next: URL,
+    options: Pick<NavigateOptions, 'replace' | 'state'>,
+    type: Exclude<NavigationType, 'load'> = options.replace ? 'replace' : 'push',
+  ): RouteNavigation {
+    return Object.freeze({
+      id,
+      from,
+      to: navigationLocation(next, options.state ?? null),
+      type,
+    });
+  }
+
+  function emitNavigation(event: RouteNavigationEvent): void {
+    const errors: unknown[] = [];
+    for (const listener of [...navigationListeners]) {
+      if (!navigationListeners.has(listener)) continue;
+      try {
+        listener(event);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, 'Route navigation listeners failed');
+    }
+  }
+
+  function prepareNavigation(
+    initial: URL,
+    initialOptions: Pick<NavigateOptions, 'replace' | 'state'>,
+    initialType: Exclude<NavigationType, 'load'> = initialOptions.replace
+      ? 'replace'
+      : 'push',
+  ):
+    | {
+        readonly status: 'ready';
+        readonly next: URL;
+        readonly options: Pick<NavigateOptions, 'replace' | 'state'>;
+        readonly navigation: RouteNavigation;
+        readonly redirects: number;
+      }
+    | Extract<RouteNavigationResult, { readonly status: 'blocked' }> {
+    const id = ++navigationId;
+    const from = navigationLocation(url, state);
+    let next = initial;
+    let nextOptions = initialOptions;
+    let nextType = initialType;
+    let redirects = 0;
+
+    while (true) {
+      const navigation = navigationRecord(id, from, next, nextOptions, nextType);
+      if (redirects === 0) {
+        emitNavigation(Object.freeze({ phase: 'start', navigation }));
+      }
+
+      let redirected = false;
+      blocking = true;
+      try {
+        for (const blocker of [...navigationBlockers]) {
+          if (!navigationBlockers.has(blocker)) continue;
+          const decision = blocker(navigation);
+          if (
+            typeof decision === 'object' &&
+            decision !== null &&
+            'then' in decision
+          ) {
+            throw new TypeError(
+              'Route navigation blockers must be synchronous; async work belongs to the data boundary',
+            );
+          }
+          if (decision === false) {
+            emitNavigation(Object.freeze({ phase: 'blocked', navigation }));
+            return Object.freeze({ status: 'blocked', navigation, redirects });
+          }
+          if (typeof decision === 'object' && decision !== null && 'to' in decision) {
+            redirects++;
+            if (redirects > 16) {
+              throw new Error('Route navigation exceeded 16 redirects');
+            }
+            emitNavigation(Object.freeze({
+              phase: 'redirect',
+              navigation,
+              redirect: decision,
+            }));
+            if (decision.to instanceof URL) {
+              next = new URL(decision.to.href);
+            } else {
+              const redirectedPath = resolveRoutePath(
+                navigation.to.pathname,
+                decision.to,
+              );
+              next = applicationURL(redirectedPath);
+            }
+            nextOptions = {
+              replace: decision.replace ?? nextOptions.replace,
+              state: decision.state ?? null,
+            };
+            nextType = nextOptions.replace ? 'replace' : 'push';
+            redirected = true;
+            break;
+          }
+        }
+      } finally {
+        blocking = false;
+      }
+      if (!redirected) {
+        return {
+          status: 'ready',
+          next,
+          options: nextOptions,
+          navigation,
+          redirects,
+        };
+      }
+    }
   }
 
   const onPopState: EventListener = () => {
     const location = environment.location;
-    if (location !== undefined) {
+    if (
+      location !== undefined &&
+      applicationPathname(new URL(location.href).pathname) !== null
+    ) {
       setLocation(location.href, 'pop', environment.history?.state ?? null);
     }
   };
 
   const onHashChange: EventListener = () => {
     const location = environment.location;
-    if (location !== undefined && location.href !== url.href) {
+    if (
+      location !== undefined &&
+      location.href !== url.href &&
+      applicationPathname(new URL(location.href).pathname) !== null
+    ) {
       setLocation(location.href, 'pop', environment.history?.state ?? null);
     }
   };
@@ -466,6 +746,7 @@ export function createRouteRuntime(
     const destination = new URL(anchor.href, url);
     if (
       destination.origin !== url.origin ||
+      applicationPathname(destination.pathname) === null ||
       (destination.protocol !== 'http:' && destination.protocol !== 'https:')
     ) return;
     if (
@@ -488,13 +769,50 @@ export function createRouteRuntime(
     ) return;
 
     const destination = new URL(navigationEvent.destination.url, url);
-    if (destination.origin !== url.origin) return;
+    if (
+      destination.origin !== url.origin ||
+      applicationPathname(destination.pathname) === null
+    ) return;
     const type: NavigationType = navigationEvent.navigationType === 'traverse'
       ? 'pop'
       : navigationEvent.navigationType === 'push'
         ? 'push'
         : 'replace';
     const destinationState = navigationEvent.destination.getState?.() ?? null;
+
+    if (committingNavigation === 0) {
+      const prepared = prepareNavigation(destination, {
+        replace: type !== 'push',
+        state: destinationState,
+      }, type);
+      if (prepared.status === 'blocked') {
+        navigationEvent.preventDefault();
+        return;
+      }
+      if (prepared.next.href !== destination.href) {
+        navigationEvent.preventDefault();
+        commitNavigation(prepared.next, prepared.options);
+        emitNavigation(Object.freeze({
+          phase: 'complete',
+          navigation: prepared.navigation,
+        }));
+        return;
+      }
+      setLocation(destination, type, destinationState);
+      emitNavigation(Object.freeze({
+        phase: 'complete',
+        navigation: prepared.navigation,
+      }));
+      if (!navigationEvent.hashChange) {
+        navigationEvent.intercept({
+          scroll: 'after-transition',
+          async handler() {
+            await Promise.resolve();
+          },
+        });
+      }
+      return;
+    }
 
     if (navigationEvent.hashChange) {
       setLocation(destination, type, destinationState);
@@ -518,7 +836,9 @@ export function createRouteRuntime(
     if (connectionCount === 0) return;
     connectionCount--;
     if (connectionCount !== 0) return;
-    if (supportsNavigationAPI(environment)) {
+    if (routeHistory !== undefined) {
+      return;
+    } else if (supportsNavigationAPI(environment)) {
       environment.navigation!.removeEventListener('navigate', onNavigate);
     } else {
       environment.removeEventListener?.('popstate', onPopState);
@@ -533,14 +853,20 @@ export function createRouteRuntime(
     connectionCount++;
     try {
       if (connectionCount === 1) {
-        if (supportsNavigationAPI(environment)) {
+        if (routeHistory !== undefined) {
+          // RouteHistory subscriptions are owned for the entire runtime lifetime.
+        } else if (supportsNavigationAPI(environment)) {
           environment.navigation!.addEventListener('navigate', onNavigate);
         } else {
           environment.addEventListener?.('popstate', onPopState);
           environment.addEventListener?.('hashchange', onHashChange);
           environment.addEventListener?.('click', onClick);
         }
-        if (environment.location !== undefined) {
+        if (
+          routeHistory === undefined &&
+          environment.location !== undefined &&
+          applicationPathname(new URL(environment.location.href).pathname) !== null
+        ) {
           setLocation(
             environment.location.href,
             'replace',
@@ -573,10 +899,81 @@ export function createRouteRuntime(
     return () => listeners.delete(listener);
   }
 
+  function subscribeSelected<Value>(
+    selector: RouteSelector<Value>,
+    listener: RouteSelectionListener<Value>,
+    equals: RouteSelectionEquality<Value> = Object.is,
+  ): () => void {
+    if (disposed) throw new Error('Cannot subscribe to a disposed route runtime');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
+    const subscription = {
+      selector: selector as RouteSelector<unknown>,
+      listener: listener as RouteSelectionListener<unknown>,
+      equals: equals as RouteSelectionEquality<unknown>,
+      value: selector(route),
+    };
+    selectedListeners.add(subscription);
+    try {
+      listener(subscription.value as Value, route);
+    } catch (error) {
+      selectedListeners.delete(subscription);
+      throw error;
+    }
+    return () => selectedListeners.delete(subscription);
+  }
+
+  function blockNavigation(blocker: RouteNavigationBlocker): () => void {
+    if (disposed) throw new Error('Cannot install a blocker on a disposed route runtime');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
+    navigationBlockers.add(blocker);
+    return () => navigationBlockers.delete(blocker);
+  }
+
+  function subscribeNavigation(listener: RouteNavigationListener): () => void {
+    if (disposed) throw new Error('Cannot subscribe to a disposed route runtime');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
+    navigationListeners.add(listener);
+    return () => navigationListeners.delete(listener);
+  }
+
   function installResolver(nextResolver: RouteResolver): () => void {
     if (disposed) throw new Error('Cannot install a resolver on a disposed route runtime');
+    if (blocking) throw new Error('Route blockers must not mutate router state');
     if (resolver !== null) {
       throw new Error('A route runtime can only have one structural resolver');
+    }
+    const prepared = runResolver(nextResolver);
+    resolver = nextResolver;
+    if (!sameMatches(matches, prepared.matches)) {
+      matches = prepared.matches;
+      params = prepared.params;
+      emit();
+    }
+
+    let installed = true;
+    return () => {
+      if (!installed) return;
+      if (resolving) throw new Error('Route resolvers must not mutate router state');
+      installed = false;
+      if (resolver !== nextResolver) return;
+      resolver = null;
+      if (disposed || matches.length === 0) return;
+      matches = Object.freeze([]);
+      params = Object.freeze({});
+      emit();
+    };
+  }
+
+  function replaceResolver(nextResolver: RouteResolver): () => void {
+    if (disposed) throw new Error('Cannot replace a resolver on a disposed route runtime');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
     }
     const prepared = runResolver(nextResolver);
     resolver = nextResolver;
@@ -616,7 +1013,7 @@ export function createRouteRuntime(
   function navigate<Path extends string>(
     pattern: Path,
     ...arguments_: NavigateArguments<Path>
-  ): void {
+  ): RouteNavigationResult {
     if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
     if (resolving) throw new Error('Route resolvers must not mutate router state');
     const options = (arguments_[0] ?? {}) as NavigateOptions<Path>;
@@ -626,23 +1023,73 @@ export function createRouteRuntime(
       options.query,
       options.hash,
     );
-    const next = new URL(href, url);
-    navigateToURL(next, options);
+    const next = applicationURL(href);
+    return navigateToURL(next, options);
   }
 
-  function navigateToURL(
+  function navigateRelative<Path extends string>(
+    pattern: Path,
+    ...arguments_: RelativeNavigateArguments<Path>
+  ): RouteNavigationResult {
+    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
+    const options = (arguments_[0] ?? {}) as RelativeNavigateOptions<Path>;
+    let destination: string;
+    if (
+      (pattern.startsWith('?') || pattern.startsWith('#') || pattern === '') &&
+      options.params === undefined &&
+      options.query === undefined &&
+      options.hash === undefined
+    ) {
+      destination = pattern;
+    } else {
+      destination = buildRoutePath(
+        pattern,
+        options.params,
+        options.query,
+        options.hash,
+      );
+      if (!pattern.startsWith('/')) destination = destination.slice(1);
+    }
+    const href = resolveRoutePath(options.from ?? route.pathname, destination);
+    return navigateToURL(applicationURL(href), options);
+  }
+
+  function commitNavigation(
     next: URL,
     options: Pick<NavigateOptions, 'replace' | 'state'>,
   ): void {
-    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
+    if (routeHistory !== undefined) {
+      const beforeNavigation = locationRevision;
+      if (options.replace) routeHistory.replace(next, options.state ?? null);
+      else routeHistory.push(next, options.state ?? null);
+      // Custom stores are required to publish synchronously. Keep navigation
+      // useful if an adapter violates that contract, without double-emitting.
+      if (locationRevision === beforeNavigation) {
+        setLocation(
+          next,
+          options.replace ? 'replace' : 'push',
+          options.state ?? null,
+        );
+      }
+      return;
+    }
+
     const navigation = environment.navigation;
     if (navigation !== undefined) {
       const beforeNavigation = locationRevision;
       const beforeEvent = navigationEventRevision;
-      navigation.navigate(next.href, {
-        history: options.replace ? 'replace' : 'push',
-        state: options.state ?? null,
-      });
+      committingNavigation++;
+      try {
+        navigation.navigate(next.href, {
+          history: options.replace ? 'replace' : 'push',
+          state: options.state ?? null,
+        });
+      } finally {
+        committingNavigation--;
+      }
       // A connected Navigation API dispatches `navigate` synchronously. This
       // fallback also keeps programmatic navigation useful before connection.
       if (
@@ -657,7 +1104,6 @@ export function createRouteRuntime(
       }
       return;
     }
-
     const history = environment.history;
     if (history !== undefined) {
       if (options.replace) history.replaceState(options.state ?? null, '', next);
@@ -670,27 +1116,97 @@ export function createRouteRuntime(
     );
   }
 
-  function back(): void {
+  function navigateToURL(
+    requested: URL,
+    requestedOptions: Pick<NavigateOptions, 'replace' | 'state'>,
+  ): RouteNavigationResult {
     if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
-    if (resolving) throw new Error('Route resolvers must not mutate router state');
-    if (environment.navigation !== undefined) environment.navigation.back();
-    else environment.history?.back();
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
+    const prepared = prepareNavigation(requested, requestedOptions);
+    if (prepared.status === 'blocked') return prepared;
+    const {
+      next,
+      options,
+      navigation: routeNavigation,
+      redirects,
+    } = prepared;
+    commitNavigation(next, options);
+    emitNavigation(Object.freeze({ phase: 'complete', navigation: routeNavigation }));
+    return Object.freeze({
+      status: 'completed',
+      navigation: routeNavigation,
+      redirects,
+    });
   }
 
-  function forward(): void {
+  function traverseRouteHistory(delta: -1 | 1): RouteNavigationResult | null {
+    if (routeHistory === undefined) return null;
+    const target = routeHistory.peek(delta);
+    if (target === undefined) return null;
+    const destination = new URL(target.href, url);
+    const prepared = prepareNavigation(destination, {
+      replace: true,
+      state: target.state,
+    }, 'pop');
+    if (prepared.status === 'blocked') return prepared;
+
+    if (
+      prepared.navigation.type === 'pop' &&
+      prepared.next.href === destination.href
+    ) {
+      routeHistory.go(delta);
+    } else {
+      commitNavigation(prepared.next, prepared.options);
+    }
+    emitNavigation(Object.freeze({
+      phase: 'complete',
+      navigation: prepared.navigation,
+    }));
+    return Object.freeze({
+      status: 'completed',
+      navigation: prepared.navigation,
+      redirects: prepared.redirects,
+    });
+  }
+
+  function back(): RouteNavigationResult | null {
     if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
-    if (resolving) throw new Error('Route resolvers must not mutate router state');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
+    if (routeHistory !== undefined) return traverseRouteHistory(-1);
+    if (environment.navigation !== undefined) environment.navigation.back();
+    else environment.history?.back();
+    return null;
+  }
+
+  function forward(): RouteNavigationResult | null {
+    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
+    if (routeHistory !== undefined) return traverseRouteHistory(1);
     if (environment.navigation !== undefined) environment.navigation.forward();
     else environment.history?.forward();
+    return null;
   }
 
   function dispose(): void {
     if (disposed) return;
-    if (resolving) throw new Error('Route resolvers must not mutate router state');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
     while (connectionCount > 0) disconnect();
+    unsubscribeRouteHistory?.();
+    unsubscribeRouteHistory = null;
     disposed = true;
     controller.abort();
     listeners.clear();
+    selectedListeners.clear();
+    navigationBlockers.clear();
+    navigationListeners.clear();
     resolver = null;
     matches = Object.freeze([]);
     params = Object.freeze({});
@@ -700,9 +1216,14 @@ export function createRouteRuntime(
     route,
     snapshot,
     subscribe,
+    subscribeSelected,
+    subscribeNavigation,
+    blockNavigation,
     connect,
     installResolver,
+    replaceResolver,
     navigate,
+    navigateRelative,
     back,
     forward,
     setLocation,

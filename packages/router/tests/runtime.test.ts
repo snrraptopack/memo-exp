@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRouteRuntime, supportsNavigationAPI } from '../src/internal';
+import {
+  createRouteRuntime,
+  createMemoryRouteHistory,
+  redirectRoute,
+  supportsNavigationAPI,
+} from '../src/internal';
 import type {
   NavigationController,
   NavigationEventLike,
@@ -576,5 +581,182 @@ describe('route runtime', () => {
     expect(() => runtime.setMatches([])).toThrow('disposed');
     expect(() => runtime.back()).toThrow('disposed');
     expect(() => runtime.forward()).toThrow('disposed');
+  });
+
+  it('publishes selector subscriptions only when their selected value changes', () => {
+    const runtime = createRouteRuntime({
+      environment: {},
+      routes: [
+        { id: 'home', pattern: '/' },
+        { id: 'search', pattern: '/search' },
+      ],
+    });
+    const pathnames: string[] = [];
+    const tabs: Array<string | null> = [];
+    const stopPath = runtime.subscribeSelected(
+      current => current.pathname,
+      pathname => pathnames.push(pathname),
+    );
+    const stopTab = runtime.subscribeSelected(
+      current => current.query.get('tab'),
+      tab => tabs.push(tab),
+    );
+
+    runtime.navigate('/search', { query: { tab: 'one', page: 1 } });
+    runtime.navigate('/search', { query: { tab: 'one', page: 2 } });
+    runtime.navigate('/search', { query: { tab: 'two', page: 2 } });
+
+    expect(pathnames).toEqual(['/', '/search']);
+    expect(tabs).toEqual([null, 'one', 'two']);
+    stopPath();
+    stopTab();
+    runtime.dispose();
+  });
+
+  it('navigates relative to the active route or an explicit route base', () => {
+    const runtime = createRouteRuntime({ environment: {} });
+    runtime.setLocation('/projects/one?tab=overview');
+
+    runtime.navigateRelative('details/:detailId', {
+      params: { detailId: 'activity log' },
+      query: { page: 2 },
+    });
+    expect(runtime.route.pathname).toBe('/projects/one/details/activity%20log');
+    expect(runtime.route.search).toBe('?page=2');
+
+    runtime.navigateRelative('../two', { from: '/projects/one' });
+    expect(runtime.route.pathname).toBe('/projects/two');
+    runtime.navigateRelative('?tab=members');
+    expect(runtime.route.pathname).toBe('/projects/two');
+    expect(runtime.route.search).toBe('?tab=members');
+    runtime.dispose();
+  });
+
+  it('keeps application paths independent from a deployment base path', () => {
+    const history = createMemoryRouteHistory({
+      initialEntries: ['/app/projects/one'],
+    });
+    const runtime = createRouteRuntime({
+      routeHistory: history,
+      basePath: '/app',
+      routes: [
+        { id: 'project', pattern: '/projects/:projectId' },
+        { id: 'settings', pattern: '/settings' },
+      ],
+    });
+
+    expect(runtime.route.pathname).toBe('/projects/one');
+    expect(runtime.route.params).toEqual({ projectId: 'one' });
+    runtime.navigate('/settings', { query: { tab: 'account' } });
+    expect(runtime.route.pathname).toBe('/settings');
+    expect(new URL(history.location.href).pathname).toBe('/app/settings');
+    expect(new URL(history.location.href).search).toBe('?tab=account');
+    expect(() => runtime.setLocation('/outside')).toThrow('outside router basePath');
+    runtime.dispose();
+    history.destroy();
+  });
+
+  it('blocks navigation before mutating location and publishes its lifecycle', () => {
+    const runtime = createRouteRuntime({ environment: {} });
+    const phases: string[] = [];
+    runtime.subscribeNavigation(event => phases.push(event.phase));
+    const unblock = runtime.blockNavigation(navigation =>
+      navigation.to.pathname === '/protected' ? false : true);
+
+    const blocked = runtime.navigate('/protected');
+    expect(blocked.status).toBe('blocked');
+    expect(runtime.route.pathname).toBe('/');
+    expect(phases).toEqual(['start', 'blocked']);
+
+    unblock();
+    const completed = runtime.navigate('/protected');
+    expect(completed.status).toBe('completed');
+    expect(runtime.route.pathname).toBe('/protected');
+    expect(phases).toEqual(['start', 'blocked', 'start', 'complete']);
+    runtime.dispose();
+  });
+
+  it('redirects synchronously before committing a single history destination', () => {
+    const runtime = createRouteRuntime({ environment: {} });
+    const phases: string[] = [];
+    runtime.subscribeNavigation(event => phases.push(event.phase));
+    runtime.blockNavigation(navigation => {
+      if (navigation.to.pathname === '/private') {
+        return redirectRoute('/login', {
+          replace: true,
+          state: { returnTo: '/private' },
+        });
+      }
+    });
+
+    const result = runtime.navigate('/private');
+    expect(result).toMatchObject({ status: 'completed', redirects: 1 });
+    expect(runtime.route.pathname).toBe('/login');
+    expect(runtime.route.navigationType).toBe('replace');
+    expect(runtime.route.state).toEqual({ returnTo: '/private' });
+    expect(phases).toEqual(['start', 'redirect', 'complete']);
+    runtime.dispose();
+  });
+
+  it('guards memory-history traversal before changing the active entry', () => {
+    const history = createMemoryRouteHistory({
+      initialEntries: ['/first', '/second'],
+    });
+    const runtime = createRouteRuntime({ routeHistory: history });
+    const unblock = runtime.blockNavigation(navigation =>
+      navigation.type === 'pop' ? false : true);
+
+    expect(runtime.back()?.status).toBe('blocked');
+    expect(runtime.route.pathname).toBe('/second');
+    expect(history.location.index).toBe(1);
+
+    unblock();
+    expect(runtime.back()?.status).toBe('completed');
+    expect(runtime.route.pathname).toBe('/first');
+    expect(history.location.index).toBe(0);
+    runtime.dispose();
+    history.destroy();
+  });
+
+  it('rejects async blockers and router mutation from inside blockers', () => {
+    const asyncRuntime = createRouteRuntime({ environment: {} });
+    asyncRuntime.blockNavigation((() => Promise.resolve(true)) as any);
+    expect(() => asyncRuntime.navigate('/next')).toThrow('must be synchronous');
+    expect(asyncRuntime.route.pathname).toBe('/');
+    asyncRuntime.dispose();
+
+    const mutatingRuntime = createRouteRuntime({ environment: {} });
+    mutatingRuntime.blockNavigation(() => {
+      mutatingRuntime.navigate('/nested');
+      return true;
+    });
+    expect(() => mutatingRuntime.navigate('/next')).toThrow('must not mutate');
+    expect(mutatingRuntime.route.pathname).toBe('/');
+    mutatingRuntime.dispose();
+  });
+
+  it('replaces a structural resolver atomically for compiler HMR', () => {
+    const runtime = createRouteRuntime({ environment: {} });
+    const uninstallFirst = runtime.replaceResolver(location => [{
+      id: 'first',
+      pattern: '/first',
+      pathname: location.pathname,
+      params: {},
+    }]);
+    expect(runtime.route.matched?.id).toBe('first');
+
+    const uninstallSecond = runtime.replaceResolver(location => [{
+      id: 'second',
+      pattern: '/second',
+      pathname: location.pathname,
+      params: {},
+    }]);
+    expect(runtime.route.matched?.id).toBe('second');
+
+    uninstallFirst();
+    expect(runtime.route.matched?.id).toBe('second');
+    uninstallSecond();
+    expect(runtime.route.matches).toEqual([]);
+    runtime.dispose();
   });
 });
