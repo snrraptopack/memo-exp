@@ -3,6 +3,7 @@
   "version": "0.0.2",
   "description": "TypeScript language-service diagnostics and code fixes for memoized-dom",
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=24.11.0"
   },
@@ -24,9 +25,12 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@memoized-dom/compiler": "^0.0.5"
+    "@memoized-dom/compiler": "^0.0.6"
   },
   "peerDependencies": {
     "typescript": ">=5.7 <7"
-  }
+  },
+  "publishConfig": {
+    "access": "public"
+}
 }

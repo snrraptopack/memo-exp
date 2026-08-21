@@ -14,6 +14,60 @@ async function settled<T>(resource: FetchResource<T>): Promise<void> {
 }
 
 describe('resource concurrency', () => {
+  it('does not let an older read overwrite a newer local replacement', async () => {
+    let finish!: (response: Response) => void;
+    let requestSignal!: AbortSignal;
+    const runtime = createDataRuntime({
+      fetch: ((_input, init) => {
+        requestSignal = init?.signal as AbortSignal;
+        return new Promise<Response>(resolve => { finish = resolve; });
+      }) as typeof fetch,
+    });
+    const resource = runtime.$fetch<string[]>('/items');
+    await vi.waitFor(() => expect(requestSignal).toBeInstanceOf(AbortSignal));
+
+    resource.update(() => ['local']);
+
+    expect(requestSignal.aborted).toBe(true);
+    expect(resource.data).toEqual(['local']);
+    expect(resource.status).toBe('success');
+    expect(resource.pending).toBe(false);
+
+    // The injected fetcher deliberately ignores AbortSignal. Its stale answer
+    // must still be rejected at the resource generation boundary.
+    finish(json(['stale server value']));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(resource.data).toEqual(['local']);
+  });
+
+  it('does not let an older read overwrite a newer direct mutation', async () => {
+    let finish!: (response: Response) => void;
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(json(['server']))
+      .mockImplementationOnce(() =>
+        new Promise<Response>(resolve => { finish = resolve; }),
+      );
+    const runtime = createDataRuntime({
+      fetch: fetcher as typeof fetch,
+    });
+    const resource = runtime.$fetch<string[]>('/items');
+    await settled(resource);
+    const refresh = resource.refresh();
+    const refreshRejection = expect(refresh).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+
+    resource.mutate(current => current?.push('local'));
+    await refreshRejection;
+    expect(resource.data).toEqual(['server', 'local']);
+    expect(resource.pending).toBe(false);
+
+    finish(json(['stale server value']));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(resource.data).toEqual(['server', 'local']);
+  });
+
   it('keeps successful data visible when a refresh fails', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(json(['current']))

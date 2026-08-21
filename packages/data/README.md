@@ -266,6 +266,11 @@ that number instead of the array.
 Use `mutate()` for direct in-place changes and `update()` when a replacement is
 required.
 
+Both operations supersede a read that was already in flight. The older request
+is aborted, and its result is ignored even when an injected fetch implementation
+does not cooperate with `AbortSignal`. This prevents a stale server snapshot
+from overwriting a newer local or optimistic write.
+
 ## Resource sharing
 
 The default sharing mode is active sharing:

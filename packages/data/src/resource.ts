@@ -112,7 +112,12 @@ class FetchEntry {
 
   update<T>(change: (current: T | undefined) => T): void {
     const current = this.snapshot.data as T | undefined;
-    this.snapshot.data = change(current);
+    const next = change(current);
+    // A caller-authored write is newer than any read already in flight. Abort
+    // that flight before publishing the replacement so a non-cooperative
+    // fetcher cannot later commit an older server snapshot over local state.
+    this.cancelRequest();
+    this.snapshot.data = next;
     this.snapshot.error = null;
     this.snapshot.status = 'success';
     this.hasData = true;
@@ -122,6 +127,9 @@ class FetchEntry {
   mutate<T>(change: (current: T | undefined) => void): void {
     const current = this.snapshot.data as T | undefined;
     change(current);
+    // Direct mutations have the same ordering contract as replacements: the
+    // local write wins over a read that started before it.
+    this.cancelRequest();
     this.snapshot.data = current;
     this.snapshot.error = null;
     this.snapshot.status = 'success';

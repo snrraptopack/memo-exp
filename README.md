@@ -8,6 +8,10 @@ Start with:
 - `emission-spec.md` for the normative compiler contract.
 - `ref-design.md` for compiler-native DOM refs, forwarding, and teardown.
 - `data-loading-api.md` for the proposed type-safe `$fetch` and `$action` API.
+- `solid-2-async-reactivity-research.md` for the Solid 2 RC async-model research
+  that informs, but does not prescribe, Memoized DOM's data-layer design.
+- `data-layer-improvement-plan.md` for the researched implementation priorities
+  connecting async reactivity, cache policy, ownership, and server transport.
 - `architecture-review.md` for current implementation status and priorities.
 - `bench/README.md` for benchmark suites and their latest measurements.
 
