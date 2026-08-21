@@ -138,7 +138,9 @@ export function analyzeMapSite(
   return {
     sourceKey: source.key,
     sourceExpr: t.cloneNode(source.expression),
-    optional: t.isOptionalCallExpression(call),
+    optional:
+      t.isOptionalCallExpression(call) ||
+      containsOptionalMember(callee.object),
     sourceLocal: source.local,
     itemPattern: callback.itemPattern,
     itemParam: callback.itemParam,
@@ -167,7 +169,7 @@ function analyzeSource(
   if (t.isIdentifier(current)) {
     return analyzeIdentifierSource(ctx, current, ownerName, fail);
   }
-  if (t.isMemberExpression(current)) {
+  if (t.isMemberExpression(current) || t.isOptionalMemberExpression(current)) {
     return analyzeMemberSource(
       ctx,
       current,
@@ -223,7 +225,7 @@ function analyzeIdentifierSource(
 
 function analyzeMemberSource(
   ctx: Ctx,
-  source: t.MemberExpression,
+  source: t.MemberExpression | t.OptionalMemberExpression,
   ownerName: string,
   parentRow: ParentRow | undefined,
   fail: Fail,
@@ -260,6 +262,16 @@ function analyzeMemberSource(
     local: rowRelative ? parentRow.sourceLocal : localRoot,
     suffixBase: key.slice(key.lastIndexOf('.') + 1),
   };
+}
+
+function containsOptionalMember(source: t.Expression | t.Super): boolean {
+  let current: t.Expression | t.Super = source;
+  while (!t.isSuper(current)) {
+    if (t.isOptionalMemberExpression(current)) return true;
+    if (!t.isMemberExpression(current)) return false;
+    current = current.object;
+  }
+  return false;
 }
 
 function analyzeCallback(

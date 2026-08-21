@@ -86,11 +86,17 @@ export function freshReasonConst(
   return id;
 }
 
-/** Static property-path key for `a.b.c`, or null for a dynamic path. */
-export function memberKey(node: t.MemberExpression): string | null {
+type MemberLike = t.MemberExpression | t.OptionalMemberExpression;
+
+function isMemberLike(node: t.Node): node is MemberLike {
+  return t.isMemberExpression(node) || t.isOptionalMemberExpression(node);
+}
+
+/** Static property-path key for `a.b.c`, including optional member chains. */
+export function memberKey(node: MemberLike): string | null {
   const parts: string[] = [];
   let current: t.Expression | t.PrivateName = node;
-  while (t.isMemberExpression(current)) {
+  while (isMemberLike(current)) {
     if (current.computed) {
       if (!t.isStringLiteral(current.property)) return null;
       parts.unshift(current.property.value);
@@ -169,11 +175,11 @@ export interface ComputedAnalysis {
   reason?: string;
 }
 
-/** Root identifier of a member chain, including dynamic member segments. */
-export function memberRootName(node: t.MemberExpression): string | null {
+/** Root identifier of a member chain, including optional member segments. */
+export function memberRootName(node: MemberLike): string | null {
   let current: t.Expression = node;
   while (true) {
-    if (t.isMemberExpression(current)) {
+    if (isMemberLike(current)) {
       if (t.isSuper(current.object)) return null;
       current = current.object;
       continue;

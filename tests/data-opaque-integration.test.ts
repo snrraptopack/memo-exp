@@ -73,6 +73,16 @@ const source = `
     </main>;
   }
 
+  export function NestedCollectionApp() {
+    const data = createDataRuntime({ fetch: mockFetch });
+    const feed = data.$fetch('/feed');
+    cleanup(data.clear);
+
+    return <ol id="nested-feed">{feed.data?.hits.map(hit =>
+      <li key={hit.id}>{hit.title}</li>
+    )}</ol>;
+  }
+
   export function SearchApp() {
     const data = createDataRuntime({ fetch: mockFetch });
     let page = 1;
@@ -188,6 +198,25 @@ describe('data resources through opaque volatility', () => {
 
     expect(document.querySelector('#snapshot-status')?.textContent).toBe('pending');
     expect(document.querySelector('#snapshot-count')?.textContent).toBe('0');
+  });
+
+  it('maps an optional nested collection view directly from an opaque resource', async () => {
+    const mod = await importFixture();
+    document.body.appendChild(mod.NestedCollectionApp('NestedCollectionApp', null));
+    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    mod.resolveRequest(0, {
+      hits: [
+        { id: 'one', title: 'Compiler-owned routes' },
+        { id: 'two', title: 'Opaque data views' },
+      ],
+    });
+
+    await vi.waitFor(async () => {
+      await pullFrame();
+      expect(
+        [...document.querySelectorAll('#nested-feed li')].map(node => node.textContent),
+      ).toEqual(['Compiler-owned routes', 'Opaque data views']);
+    });
   });
 
   it('clears component-owned data work on removal and starts cleanly on remount', async () => {
