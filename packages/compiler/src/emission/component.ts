@@ -475,17 +475,19 @@ function emitComponentReturnRegion(
           t.cloneNode(plan.pick),
           t.arrayExpression(
             plan.branches.map((jsx) =>
-              buildBranchCreate(
-                ctx,
-                jsx,
-                name,
-                path,
-                regionId,
-                false,
-                owner,
-                true,
-                scope.usedConds,
-              ),
+              jsx !== null
+                ? buildBranchCreate(
+                    ctx,
+                    jsx,
+                    name,
+                    path,
+                    regionId,
+                    false,
+                    owner,
+                    true,
+                    scope.usedConds,
+                  )
+                : t.nullLiteral(),
             ),
           ),
         ]),

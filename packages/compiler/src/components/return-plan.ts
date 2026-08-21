@@ -8,7 +8,8 @@ import type { JsxNode } from '../jsx/children';
 export interface ComponentReturnPlan {
   /** Branch picker passed directly to createCondRegion(). */
   pick: t.ArrowFunctionExpression;
-  branches: JsxNode[];
+  /** null marks an empty branch (`return null/false/undefined`). */
+  branches: (JsxNode | null)[];
   /** Top-level source statements replaced by the structural region. */
   statements: Set<t.Statement>;
 }
@@ -34,11 +35,44 @@ function jsxReturn(statement: t.Statement): DirectComponentReturn | null {
   };
 }
 
-function soleJsxReturn(statement: t.Statement): DirectComponentReturn | null {
-  if (t.isBlockStatement(statement)) {
-    return statement.body.length === 1 ? jsxReturn(statement.body[0]!) : null;
+function isEmptyReturnArgument(
+  argument: t.Expression | null | undefined,
+): boolean {
+  return (
+    argument == null ||
+    t.isNullLiteral(argument) ||
+    t.isBooleanLiteral(argument, { value: false }) ||
+    t.isIdentifier(argument, { name: 'undefined' })
+  );
+}
+
+interface BranchReturn {
+  /** null marks an empty branch (`return null/false/undefined`). */
+  jsx: JsxNode | null;
+  statement: t.ReturnStatement;
+}
+
+function branchReturn(statement: t.Statement): BranchReturn | null {
+  if (!t.isReturnStatement(statement)) return null;
+  if (isEmptyReturnArgument(statement.argument)) {
+    return { jsx: null, statement };
   }
-  return jsxReturn(statement);
+  if (
+    !t.isJSXElement(statement.argument) &&
+    !t.isJSXFragment(statement.argument)
+  ) {
+    return null;
+  }
+  return { jsx: statement.argument, statement };
+}
+
+function soleBranchReturn(statement: t.Statement): BranchReturn | null {
+  if (t.isBlockStatement(statement)) {
+    return statement.body.length === 1
+      ? branchReturn(statement.body[0]!)
+      : null;
+  }
+  return branchReturn(statement);
 }
 
 function componentReturns(
@@ -108,11 +142,11 @@ function expressionCanHoist(expression: t.Expression): boolean {
 
 function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
   if (!statement.cases.some((item) => item.test == null)) return null;
-  const branches: JsxNode[] = [];
+  const branches: (JsxNode | null)[] = [];
   const cases: t.SwitchCase[] = [];
   for (const item of statement.cases) {
     if (item.consequent.length !== 1) return null;
-    const returned = jsxReturn(item.consequent[0]!);
+    const returned = branchReturn(item.consequent[0]!);
     if (returned === null) return null;
     const index = branches.length;
     branches.push(returned.jsx);
@@ -138,9 +172,10 @@ function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
 /**
  * Supported structural forms:
  * - one direct JSX return
- * - a contiguous tail chain of `if (test) return <JSX>` plus final return
- * - a terminal if/else whose two arms return JSX
- * - a terminal exhaustive switch whose cases return JSX
+ * - a contiguous tail chain of `if (test) return <JSX|null>` plus final return
+ *   (empty returns become null branches)
+ * - a terminal if/else whose two arms return JSX or an empty value
+ * - a terminal exhaustive switch whose cases return JSX or an empty value
  */
 export function analyzeComponentReturns(
   path: NodePath<t.FunctionDeclaration>,
@@ -157,11 +192,12 @@ export function analyzeComponentReturns(
 
   if (final && t.isIfStatement(final) && final.alternate != null) {
     const alternateStatement = final.alternate;
-    const consequent = soleJsxReturn(final.consequent);
-    const alternate = soleJsxReturn(alternateStatement);
+    const consequent = soleBranchReturn(final.consequent);
+    const alternate = soleBranchReturn(alternateStatement);
     if (
       consequent !== null &&
       alternate !== null &&
+      (consequent.jsx !== null || alternate.jsx !== null) &&
       returns.length === 2
     ) {
       return {
@@ -184,17 +220,17 @@ export function analyzeComponentReturns(
     if (plan !== null && plan.branches.length === returns.length) return plan;
   }
 
-  const fallback = final === undefined ? null : jsxReturn(final);
+  const fallback = final === undefined ? null : branchReturn(final);
   if (fallback !== null) {
     const tests: t.Expression[] = [];
-    const branches: JsxNode[] = [];
+    const branches: (JsxNode | null)[] = [];
     const statements = new Set<t.Statement>([final!]);
     let firstEarlyReturn = -1;
     let hoistable = true;
     for (let index = 0; index < body.length - 1; index++) {
       const statement = body[index]!;
       if (t.isIfStatement(statement) && statement.alternate == null) {
-        const returned = soleJsxReturn(statement.consequent);
+        const returned = soleBranchReturn(statement.consequent);
         if (returned !== null) {
           if (firstEarlyReturn === -1) firstEarlyReturn = index;
           tests.push(t.cloneNode(statement.test));
@@ -215,7 +251,8 @@ export function analyzeComponentReturns(
     if (
       hoistable &&
       branches.length === returns.length &&
-      branches.length > 1
+      branches.length > 1 &&
+      branches.some((branch) => branch !== null)
     ) {
       let pick: t.Expression = t.numericLiteral(branches.length - 1);
       for (let index = tests.length - 1; index >= 0; index--) {

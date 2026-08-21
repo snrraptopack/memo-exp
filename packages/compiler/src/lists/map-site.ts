@@ -315,21 +315,11 @@ function analyzeCallback(
     ? itemPattern.name
     : itemBindings[0]!;
   const indexParam = t.isIdentifier(second) ? second.name : null;
-  const returned =
-    t.isBlockStatement(callback.body) &&
-    callback.body.body.length === 1 &&
-    t.isReturnStatement(callback.body.body[0])
-      ? callback.body.body[0].argument
-      : null;
-  const jsx = t.isJSXElement(callback.body)
-    ? callback.body
-    : t.isJSXElement(returned)
-      ? returned
-      : null;
+  const jsx = resolveCallbackJsx(callback, itemPattern, indexParam, fail);
   const renderInvocation = matchRenderCallbackMap(ctx, ownerName, call);
   if (jsx === null && renderInvocation === null) {
     return fail(
-      'memo-dom: list callback body must be one JSX element or a block containing only return <JSX /> — R7 L1',
+      'memo-dom: list callback body must be one JSX element, a block containing only return <JSX />, or const derivations followed by return <JSX /> — R7 L1',
     );
   }
   return {
@@ -339,6 +329,220 @@ function analyzeCallback(
     jsx,
     renderInvocation,
   };
+}
+
+/**
+ * Normalize supported callback body shapes to a bare JSX element.
+ *
+ * A block body of `const` derivations followed by `return <JSX />` is
+ * beta-reduced: each derivation initializer is substituted for every
+ * reference in the returned JSX (and in later initializers). Reads stay
+ * visible to read collection and guarded slots re-evaluate per update, so
+ * invalidation and freshness are unchanged; initializers must therefore be
+ * pure.
+ */
+function resolveCallbackJsx(
+  callback: t.ArrowFunctionExpression,
+  itemPattern: RuntimeBindingPattern,
+  indexParam: string | null,
+  fail: Fail,
+): t.JSXElement | null {
+  if (t.isJSXElement(callback.body)) return callback.body;
+  if (!t.isBlockStatement(callback.body)) return null;
+  const statements = callback.body.body;
+  const tail = statements.at(-1);
+  if (
+    tail === undefined ||
+    !t.isReturnStatement(tail) ||
+    !t.isJSXElement(tail.argument)
+  ) {
+    return null;
+  }
+  const jsx = tail.argument;
+  if (statements.length > 1) {
+    const reserved = new Set([
+      ...Object.keys(t.getBindingIdentifiers(itemPattern)),
+      ...(indexParam === null ? [] : [indexParam]),
+    ]);
+    const derivations = collectRowDerivations(
+      statements.slice(0, -1),
+      reserved,
+      fail,
+    );
+    assertNoShadowing(jsx, new Set(derivations.map(({ name }) => name)), fail);
+    const resolved = new Map<string, t.Expression>();
+    for (const derivation of derivations) {
+      resolved.set(
+        derivation.name,
+        substituteRowDerivations(derivation.init, resolved),
+      );
+    }
+    const substituted = substituteRowDerivations(jsx, resolved);
+    callback.body = substituted;
+    return substituted;
+  }
+  return jsx;
+}
+
+interface RowDerivation {
+  name: string;
+  init: t.Expression;
+}
+
+function collectRowDerivations(
+  statements: t.Statement[],
+  reserved: ReadonlySet<string>,
+  fail: Fail,
+): RowDerivation[] {
+  const derivations: RowDerivation[] = [];
+  for (const statement of statements) {
+    const declaration =
+      t.isVariableDeclaration(statement) &&
+      statement.kind === 'const' &&
+      statement.declarations.length === 1
+        ? statement.declarations[0]
+        : null;
+    if (
+      declaration === undefined ||
+      declaration === null ||
+      !t.isIdentifier(declaration.id) ||
+      declaration.init == null ||
+      !t.isExpression(declaration.init)
+    ) {
+      return fail(
+        'memo-dom: list callback statements before return must be single-name const declarations — R7 L1',
+      );
+    }
+    if (reserved.has(declaration.id.name)) {
+      return fail(
+        `memo-dom: list callback derivation '${declaration.id.name}' shadows an item or index binding — R7 L1`,
+      );
+    }
+    t.traverseFast(declaration.init, (node) => {
+      if (
+        t.isAssignmentExpression(node) ||
+        t.isUpdateExpression(node) ||
+        t.isAwaitExpression(node) ||
+        t.isYieldExpression(node)
+      ) {
+        fail(
+          'memo-dom: list callback derivations must be pure const expressions — R7 L1',
+        );
+      }
+    });
+    derivations.push({ name: declaration.id.name, init: declaration.init });
+  }
+  return derivations;
+}
+
+function assertNoShadowing(
+  root: t.Node,
+  names: ReadonlySet<string>,
+  fail: Fail,
+): void {
+  if (names.size === 0) return;
+  const checkParams = (params: readonly t.Node[]): void => {
+    for (const parameter of params) {
+      for (const name of Object.keys(t.getBindingIdentifiers(parameter))) {
+        if (names.has(name)) {
+          fail(
+            `memo-dom: list callback derivation '${name}' is shadowed inside the row JSX — R7 L1`,
+          );
+        }
+      }
+    }
+  };
+  t.traverseFast(root, (node) => {
+    if (t.isFunction(node)) {
+      checkParams(node.params);
+    }
+    if (
+      t.isVariableDeclarator(node) &&
+      t.isIdentifier(node.id) &&
+      names.has(node.id.name)
+    ) {
+      fail(
+        `memo-dom: list callback derivation '${node.id.name}' is shadowed inside the row JSX — R7 L1`,
+      );
+    }
+  });
+}
+
+/**
+ * Replace references to resolved derivations throughout an expression.
+ * Reference positions are tracked so member property names, object keys,
+ * and function parameters keep their identifiers. Every inserted
+ * initializer is a fresh deep clone.
+ */
+function substituteRowDerivations<T extends t.Node>(
+  node: T,
+  resolved: ReadonlyMap<string, t.Expression>,
+): T {
+  if (resolved.size === 0) return node;
+  return substituteNode(node, resolved, true);
+}
+
+function substituteNode<T extends t.Node>(
+  node: T,
+  resolved: ReadonlyMap<string, t.Expression>,
+  reference: boolean,
+): T {
+  if (t.isIdentifier(node)) {
+    if (reference && resolved.has(node.name)) {
+      return t.cloneNode(resolved.get(node.name)!, true) as unknown as T;
+    }
+    return node;
+  }
+  if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
+    const next = t.cloneNode(node, false);
+    next.object = substituteNode(node.object, resolved, true) as typeof next.object;
+    if (node.computed) {
+      next.property = substituteNode(
+        node.property as t.Expression,
+        resolved,
+        true,
+      ) as typeof next.property;
+    }
+    return next;
+  }
+  if (t.isObjectProperty(node) && node.shorthand && t.isIdentifier(node.key)) {
+    const next = t.cloneNode(node, false);
+    next.value = substituteNode(
+      node.value as t.Expression,
+      resolved,
+      true,
+    ) as typeof next.value;
+    next.shorthand = false;
+    return next;
+  }
+  if (t.isFunction(node)) {
+    const next = t.cloneNode(node, false);
+    next.params = node.params.map((parameter) =>
+      t.cloneNode(parameter, true),
+    );
+    next.body = substituteNode(node.body, resolved, true);
+    return next;
+  }
+  const next = t.cloneNode(node, false);
+  const source = node as unknown as Record<string, unknown>;
+  const target = next as unknown as Record<string, unknown>;
+  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+    const child = source[key];
+    if (Array.isArray(child)) {
+      target[key] = child.map((entry) =>
+        entry === null || typeof entry !== 'object' || !('type' in entry)
+          ? entry
+          : substituteNode(entry as t.Node, resolved, true),
+      );
+    } else if (
+      child !== null &&
+      typeof child === 'object' &&
+      'type' in child
+    ) {
+      target[key] = substituteNode(child as t.Node, resolved, true);
+    }
+  }
+  return next;
 }
 
 function analyzeRow(
