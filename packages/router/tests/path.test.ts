@@ -273,6 +273,21 @@ describe('createRouteMatcher (Trie Route Table)', () => {
       pathname: '/docs/compiler/optimistic/state',
       params: { '*': 'compiler/optimistic/state' },
     });
+
+    expect(matcher.match('/docs')).toEqual({
+      id: 'docs-wildcard',
+      pattern: '/docs/*',
+      pathname: '/docs',
+      params: { '*': '' },
+    });
+
+    expect(createRouteMatcher([{ id: 'root-wildcard', pattern: '/*' }]).match('/'))
+      .toEqual({
+        id: 'root-wildcard',
+        pattern: '/*',
+        pathname: '/',
+        params: { '*': '' },
+      });
   });
 
   it('returns null for unmatched paths', () => {

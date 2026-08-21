@@ -44,6 +44,10 @@ import {
 } from './effects';
 import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
 import { normalizeComponentDeclarations } from './components/declarations';
+import {
+  analyzeRouterJsx,
+  routeManifestStatements,
+} from './router';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -194,6 +198,7 @@ export default function memoDomPlugin(
         normalizeComponentDeclarations(programPath);
         installLinkedDynamicComponentImports(ctx, programPath);
         initializeGeneratedIdentifiers(ctx, programPath);
+        analyzeRouterJsx(ctx, programPath);
         runAnalysis(ctx, programPath);
         transformProgramCallbacks(ctx, programPath);
         transformSharedAsyncHelpers(ctx);
@@ -202,6 +207,7 @@ export default function memoDomPlugin(
         rewriteModuleEffects(ctx, programPath);
         rejectUnownedCleanup(programPath);
         rejectUnownedEffects(programPath);
+        ctx.header.unshift(...routeManifestStatements(ctx));
 
         // safety net: any JSX left over lived outside a component function
         programPath.traverse({
@@ -228,8 +234,7 @@ export default function memoDomPlugin(
         for (let i = ctx.header.length - 1; i >= 0; i--) {
           programPath.unshiftContainer('body', ctx.header[i]!);
         }
-        programPath.unshiftContainer(
-          'body',
+        const imports = [
           t.importDeclaration(
             [
               t.importNamespaceSpecifier(
@@ -238,7 +243,20 @@ export default function memoDomPlugin(
             ],
             t.stringLiteral(ctx.runtimePath),
           ),
-        );
+        ];
+        if (ctx.usesRouter) {
+          imports.push(
+            t.importDeclaration(
+              [
+                t.importNamespaceSpecifier(
+                  t.identifier(requireIdentifiers(ctx).routerId),
+                ),
+              ],
+              t.stringLiteral(ctx.routerPath),
+            ),
+          );
+        }
+        programPath.unshiftContainer('body', imports);
         if (ctx.rootComponent !== null) {
           programPath.pushContainer(
             'body',

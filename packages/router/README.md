@@ -101,7 +101,47 @@ Navigation API events can be guarded before commit. Router-initiated memory-hist
 
 `@memoized-dom/router/internal` exposes the small bridge intended for generated code: connection lifetime, structural resolver installation/replacement, atomic location-and-match publication, full or selected subscriptions, relative navigation, and navigation lifecycle access. `replaceRouteResolver()` resolves the current location before swapping and makes stale HMR disposers harmless.
 
-The router runtime is ready for compiler-emitted manifests, but JSX route directives and chunk loading belong in the compiler/build integration rather than this package's public runtime API.
+The compiler owns `route` and `route-to` as universal JSX properties. They are
+erased before normal host/component prop handling, so neither appears in the
+DOM or a component's public props. Every route fragment is canonical and starts
+with `/`; nested fragments compose with their nearest route-bearing JSX
+ancestor:
+
+```tsx
+<main route="/">
+  <section route="/projects">
+    <article route="/:projectId">Project</article>
+  </section>
+  <aside route="/*">Not found</aside>
+</main>
+```
+
+This declares `/`, `/projects`, `/projects/:projectId`, and the terminal
+catch-all. The compiler emits one structural manifest plus focused DOM regions;
+it does not perform a runtime JSX-tree discovery pass.
+
+Navigation targets are checked against that linked route graph. Parameterized
+and catch-all paths require exact parameter keys:
+
+```tsx
+<button route-to={{
+  path: '/projects/:projectId',
+  params: { projectId },
+  query: { tab: 'activity' },
+}}>
+  Open project
+</button>
+```
+
+`route-to` accepts `path`, `params`, `query`, `hash`, and `replace`. History
+`state` is intentionally not authored here; any internal navigation metadata is
+compiler/runtime-owned. Anchors receive a real `href`, while other intrinsic
+elements receive compiled navigation behavior that composes with `onClick` and
+respects `preventDefault()`. The generated singleton browser connection is
+idempotent across HMR module evaluation.
+
+Chunk-loading syntax remains a build-integration concern and is not part of the
+current directive lowering.
 
 ## Deliberate boundaries
 

@@ -55,6 +55,10 @@ import { isRenderPropReference } from './components/children';
 import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
 import { normalizeComponentDeclarations } from './components/declarations';
 import { initializeGeneratedIdentifiers } from './identifiers';
+import {
+  collectCompilerRoutes,
+  validateCompilerRouteGraph,
+} from './router';
 
 export interface CompileModulesOptions
   extends Omit<
@@ -1083,6 +1087,20 @@ function compileLinkedModules(
     rootId,
   );
   const applicationRoot = resolveApplicationRoot(entries, manifests, options);
+  const linkedRoutes = [...entries.values()].flatMap((entry) => {
+    try {
+      return collectCompilerRoutes(entry.ast, entry.id);
+    } catch (error) {
+      throw new Error(`${entry.id}: memo-dom: ${(error as Error).message}`);
+    }
+  });
+  try {
+    validateCompilerRouteGraph(linkedRoutes);
+  } catch (error) {
+    throw new Error(`memo-dom: ${(error as Error).message}`);
+  }
+  const routeManifestModule =
+    applicationRoot?.moduleId ?? entries.values().next().value?.id;
 
   const renderUsage = new Map<string, RenderUsage>();
   for (const manifest of manifests.values()) {
@@ -1236,6 +1254,8 @@ function compileLinkedModules(
       linkedComponentRows,
       linkedComponentPropSources,
       linkedComponentRenderProps,
+      linkedRoutes,
+      emitRouteManifest: entry.id === routeManifestModule,
       ...(applicationRoot?.moduleId === entry.id
         ? { rootComponent: applicationRoot.local }
         : {}),

@@ -14,10 +14,16 @@ import type {
   LocalDerivation,
 } from '../components/props';
 import type { GeneratedIdentifiers } from '../identifiers';
+import type {
+  CompilerRouteDefinition,
+  CompilerRouteElement,
+} from '../router';
 
 export interface MemoDomOptions {
   /** Module specifier compiled output imports the runtime from. */
   runtimePath?: string;
+  /** Module specifier used by compiler-generated router integration. */
+  routerPath?: string;
   /** Emit dev-only live-component ownership used by framework HMR adapters. */
   hot?: boolean;
   /**
@@ -47,6 +53,10 @@ export interface MemoDomOptions {
 export interface InternalMemoDomOptions extends MemoDomOptions {
   rootId?: string;
   rootComponent?: string;
+  /** Application-wide route graph supplied by compileModules(). */
+  linkedRoutes?: readonly CompilerRouteDefinition[];
+  /** Emit and install the application manifest from this module. */
+  emitRouteManifest?: boolean;
 }
 
 export interface LinkedStateImport {
@@ -249,10 +259,16 @@ export type HelperPath = NodePath<
 
 export interface Ctx {
   runtimePath: string;
+  routerPath: string;
   rootId: string;
   rootComponent: string | null;
   hot: boolean;
   moduleId: string;
+  linkedRoutes: readonly CompilerRouteDefinition[] | null;
+  emitRouteManifest: boolean;
+  routeElements: WeakMap<t.JSXElement, CompilerRouteElement>;
+  localRoutes: CompilerRouteDefinition[];
+  usesRouter: boolean;
 
   // ---- module analysis (filled by analysis.ts) ----
   state: Map<string, StateKind>;
@@ -464,10 +480,17 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   );
   return {
     runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
+    routerPath: opts.routerPath ?? '@memoized-dom/router/internal',
     rootId: opts.rootId ?? 'App',
     rootComponent: opts.rootComponent ?? null,
     hot: opts.hot ?? false,
     moduleId,
+    linkedRoutes: opts.linkedRoutes ?? null,
+    emitRouteManifest:
+      opts.emitRouteManifest ?? opts.linkedRoutes === undefined,
+    routeElements: new WeakMap(),
+    localRoutes: [],
+    usesRouter: false,
     state,
     stateKeys,
     stateTagCandidates,

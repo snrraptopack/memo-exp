@@ -10,6 +10,29 @@ interface TestService {
 }
 
 describe('prefer const guidance', () => {
+  it('surfaces graph-aware router diagnostics from the compiler', () => {
+    const { service, fileName } = languageService(
+      `
+        export function App() {
+          return (
+            <main route="/">
+              <section route="/projects" />
+              <a route-to="/missing">Missing</a>
+            </main>
+          );
+        }
+      `,
+      { compilerDiagnostics: true },
+    );
+
+    const diagnostic = memoDiagnostics(service, fileName).find(
+      (candidate) => candidate.code === diagnosticCodes.compiler,
+    )!;
+    expect(String(diagnostic.messageText)).toContain(
+      "route-to references undeclared route '/missing'",
+    );
+  });
+
   it('surfaces the compiler diagnostic verbatim in the owning file', () => {
     const { service, fileName } = languageService(
       `

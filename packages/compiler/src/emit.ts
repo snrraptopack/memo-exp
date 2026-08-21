@@ -78,6 +78,7 @@ import {
 import { emitListRegion } from './emission/list-region';
 import { buildRenderCallbackAdapter } from './emission/render-callback';
 import { compileRefValue, emitRefMount } from './jsx/refs';
+import { emitRouteRegion } from './emission/route-region';
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -464,6 +465,20 @@ function emitElement(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): string {
+  const route = ctx.routeElements.get(el);
+  if (route !== undefined) {
+    return emitRouteRegion(
+      ctx,
+      scope,
+      el,
+      route,
+      compName,
+      compPath,
+      emitNode,
+      inSvg,
+      ownerId,
+    );
+  }
   const open = el.openingElement;
   const tag = (open.name as t.JSXIdentifier).name;
 
@@ -1053,7 +1068,7 @@ function emitElement(
 
     const v =
       a.value == null ? t.booleanLiteral(true) : attrExpr(a.value);
-    if (v == null || t.isStringLiteral(v)) {
+    if (v == null) {
       throw compPath.buildCodeFrameError(
         `memo-dom: attribute '${attrName}' needs a string or an expression (L1)`,
       );

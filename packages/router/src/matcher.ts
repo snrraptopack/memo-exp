@@ -16,6 +16,7 @@ import type {
 } from './types';
 
 const EMPTY_PARAMS: Readonly<Record<string, string>> = Object.freeze(Object.create(null));
+const EMPTY_WILDCARD_PARAMS: Readonly<Record<string, string>> = Object.freeze({ '*': '' });
 const EMPTY_MATCHES: readonly RouteMatch[] = Object.freeze([]);
 
 interface RouteTrieNode {
@@ -144,7 +145,7 @@ export function createRouteMatcher(
           id: node.wildcardChild.id,
           pattern: node.wildcardChild.pattern,
           pathname: normalizedPath,
-          params: EMPTY_PARAMS,
+          params: EMPTY_WILDCARD_PARAMS,
         };
       }
       return null;
@@ -207,6 +208,13 @@ export function createRouteMatcher(
             pattern: root.match.pattern,
             pathname: '/',
             params: EMPTY_PARAMS,
+          };
+        } else if (root.wildcardChild !== undefined) {
+          result = {
+            id: root.wildcardChild.id,
+            pattern: root.wildcardChild.pattern,
+            pathname: '/',
+            params: EMPTY_WILDCARD_PARAMS,
           };
         }
         lastPath = pathname;

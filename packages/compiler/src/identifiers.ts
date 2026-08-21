@@ -11,12 +11,14 @@ import * as t from '@babel/types';
 
 export class GeneratedIdentifiers {
   readonly runtimeId: string;
+  readonly routerId: string;
   private readonly reserved = new Set<string>();
   private readonly componentIds = new Map<string, string>();
 
   constructor(private readonly scope: Scope, programPath: NodePath<t.Program>) {
     walkIdentifiers(programPath.node, (name) => this.reserved.add(name));
     this.runtimeId = this.generate('MD').name;
+    this.routerId = this.generate('MR').name;
   }
 
   generate(hint: string): t.Identifier {
@@ -77,6 +79,14 @@ export function componentId(
 
 export function md(owner: IdentifierOwner, name: string): t.MemberExpression {
   return requireIdentifiers(owner).runtimeMember(name);
+}
+
+export function mr(owner: IdentifierOwner, name: string): t.MemberExpression {
+  const identifiers = requireIdentifiers(owner);
+  return t.memberExpression(
+    t.identifier(identifiers.routerId),
+    t.identifier(name),
+  );
 }
 
 export function requireIdentifiers(owner: IdentifierOwner): GeneratedIdentifiers {
