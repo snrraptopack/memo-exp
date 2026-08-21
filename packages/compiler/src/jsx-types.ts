@@ -40,6 +40,9 @@ declare global {
 
     interface IntrinsicAttributes {
       key?: unknown;
+      if?: boolean;
+      'else-if'?: boolean;
+      else?: true;
       route?: RouteValue;
       'route-to'?: RouteValue | RouteToDestination;
     }

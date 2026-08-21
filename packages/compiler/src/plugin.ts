@@ -48,6 +48,7 @@ import {
   analyzeRouterJsx,
   routeManifestStatements,
 } from './router';
+import { normalizeConditionalJsxDirectives } from './jsx/conditional-directives';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -197,6 +198,7 @@ export default function memoDomPlugin(
       enter(programPath) {
         normalizeComponentDeclarations(programPath);
         installLinkedDynamicComponentImports(ctx, programPath);
+        normalizeConditionalJsxDirectives(programPath);
         initializeGeneratedIdentifiers(ctx, programPath);
         analyzeRouterJsx(ctx, programPath);
         runAnalysis(ctx, programPath);

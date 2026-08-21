@@ -225,6 +225,22 @@ source-ordered render prelude. JSX early returns, JSX-returning terminal
 switches, and chained JSX ternaries lower to stable structural regions; the
 component factory is not rerun when a branch changes.
 
+For sibling UI branches, compiler-owned conditional properties avoid nested
+ternaries:
+
+```tsx
+<LoadingPanel if={request.pending} />
+<ErrorPanel else-if={!!request.error} error={request.error} />
+<Results else items={request.data} />
+```
+
+Any number of `else-if` branches may follow `if`; `else` is optional. Only
+formatting whitespace and JSX comments may appear between branches. The
+compiler removes these properties and emits the same stable conditional region
+used by ternaries, so the component factory still does not rerun on a switch.
+Orphaned branches, malformed conditions, and duplicate directives are compiler
+errors. Standalone `if={condition}` also works without an `else` branch.
+
 DOM refs use the normal JSX attribute without a wrapper:
 
 ```tsx

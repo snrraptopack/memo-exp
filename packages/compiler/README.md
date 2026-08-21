@@ -59,3 +59,20 @@ Projects that do not already include the compiler's global JSX declarations can
 load the published directive types with `"types": ["@memoized-dom/compiler/jsx"]`
 in `tsconfig.json`. TypeScript then checks the slash-prefixed surface shape;
 the compiler/language service performs the stronger application-graph checks.
+
+## Compiler-owned conditional branches
+
+`if`, `else-if`, and `else` are compiler properties for readable sibling
+branches. Formatting whitespace and JSX comments do not break a chain, more
+than one `else-if` is allowed, and `else` is optional:
+
+```tsx
+<p if={status === 'pending'}>Loading...</p>
+<p else-if={status === 'error'}>Could not load.</p>
+<StoryList else />
+```
+
+The compiler removes the properties and lowers the chain to one stable
+conditional region. An `else-if` or `else` without a preceding branch is a
+compile error. The conditions stay reactive; switching branches updates only
+the owned region rather than rerunning the component factory.

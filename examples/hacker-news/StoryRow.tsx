@@ -19,19 +19,17 @@ export function StoryRow({ story, rank }: { story: HackerNewsHit; rank: number }
       </button>
       <div class="story-copy">
         <div class="story-title-line">
-          {destination ? (
-            <a class="story-title" href={destination} target="_blank" rel="noreferrer">
-              {title}
-            </a>
-          ) : (
-            <a
-              class="story-title"
-              route-to={{ path: '/item/:storyId', params: { storyId: story.objectID } }}
-            >
-              {title}
-            </a>
-          )}
-          {domain ? <span class="story-domain">({domain})</span> : null}
+          <a if={!!destination} class="story-title" href={destination} target="_blank" rel="noreferrer">
+            {title}
+          </a>
+          <a
+            else
+            class="story-title"
+            route-to={{ path: '/item/:storyId', params: { storyId: story.objectID } }}
+          >
+            {title}
+          </a>
+          <span if={!!domain} class="story-domain">({domain})</span>
         </div>
         <div class="story-meta">
           {points} points by <span class="story-user">{story.author}</span>{' '}
