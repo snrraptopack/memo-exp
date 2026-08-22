@@ -313,6 +313,9 @@ export function markDirty(
   reason?: DirtyReasonInput,
 ): void {
   if (!registry.has(id)) return;
+  if (inCommit && markedBy !== null && renderingEntity !== null) {
+    markedBy.set(id, renderingEntity);
+  }
   const wasDirty = dirtySet.has(id);
   if (reason !== undefined || wasDirty) {
     mergeDirtyReasons(id, wasDirty, reason);
@@ -358,6 +361,19 @@ export function markDirtySubtree(id: EntityId): void {
 let scheduled = false;
 let inCommit = false;
 
+/**
+ * Cycle diagnostics: while the drain loop runs, `renderingEntity` is the
+ * entity whose render callback is executing, so markDirty can attribute each
+ * mark made during a commit to the entity that caused it. If one entity
+ * renders far more often than even a deep prop-flow cascade requires, the
+ * commit is a cycle — fail immediately with the participating entities
+ * instead of burning the full pass bound on identical work every frame.
+ */
+let renderingEntity: EntityId | null = null;
+let renderCounts: Map<EntityId, number> | null = null;
+let markedBy: Map<EntityId, EntityId> | null = null;
+const MAX_ENTITY_RENDERS_PER_COMMIT = 12;
+
 function scheduleCommit(): void {
   if (scheduled || inCommit) return; // dedupe: 1000 marks → 1 frame
   scheduled = true;
@@ -384,6 +400,8 @@ export function commit(): void {
   scheduled = false;
   if (inCommit) return; // reentrancy: the running drain picks up new marks
   inCommit = true;
+  renderCounts ??= new Map();
+  markedBy ??= new Map();
   try {
     // R10: drain loop — renders may mark further ids (setProps pushing props
     // to children, update-driven invalidation). Depth-sorted batches keep
@@ -413,7 +431,33 @@ export function commit(): void {
 
       for (const e of batch) {
         if (dirtySet.delete(e.id)) {
-          e.render(takeDirtyReasons(e.id));
+          const renders = (renderCounts.get(e.id) ?? 0) + 1;
+          renderCounts.set(e.id, renders);
+          if (renders > MAX_ENTITY_RENDERS_PER_COMMIT) {
+            const culprits = new Map<EntityId, number>();
+            for (const [marked, marker] of markedBy) {
+              const markedRenders = renderCounts.get(marked) ?? 0;
+              if (marked === e.id || markedRenders > 1) {
+                culprits.set(marker, (culprits.get(marker) ?? 0) + 1);
+              }
+            }
+            const trail = [...culprits]
+              .sort((x, y) => y[1] - x[1])
+              .slice(0, 5)
+              .map(([marker, count]) => `${marker} (${count} marks)`)
+              .join(', ');
+            throw new Error(
+              `[memo-dom] entity '${e.id}' rendered ${renders} times within a single commit — a render cycle involves it. ` +
+                `Entities that marked it or its participants during this commit: ${trail || 'unknown'}. ` +
+                `An effect likely writes state its own owner's update re-reads.`,
+            );
+          }
+          renderingEntity = e.id;
+          try {
+            e.render(takeDirtyReasons(e.id));
+          } finally {
+            renderingEntity = null;
+          }
         }
       }
       // ids dirtied DURING renders (cascade) stay in the set → next pass
@@ -425,6 +469,9 @@ export function commit(): void {
     }
   } finally {
     inCommit = false;
+    renderingEntity = null;
+    renderCounts = null;
+    markedBy = null;
   }
 }
 

@@ -446,8 +446,10 @@ describe('R26 — compiled effect execution', () => {
   it('retains the cascade guard for a genuine effect cycle', async () => {
     const { App } = await importCompiled('r26-cycle');
 
+    // The per-entity render bound fails fast with a precise diagnosis; the
+    // pass bound remains as the outer backstop.
     expect(() => App('App', null)).toThrowError(
-      /commit cascade exceeded 100 passes/,
+      /render cycle|commit cascade exceeded 100 passes/,
     );
   });
 
