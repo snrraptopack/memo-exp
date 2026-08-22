@@ -134,7 +134,12 @@ function instrumentReachableLocalHelpers(
     if (helper === null || ctx.analyzedFunctions.has(helper)) continue;
     ctx.analyzedFunctions.add(helper); // cycle guard
     instrumentReachableLocalHelpers(ctx, compPath, helper, compName, rowCtx);
-    analyzeHandler(ctx, helper, compName, rowCtx, false);
+    // Helpers resolve from component scope, so their bodies are emitted at
+    // component scope — the caller's row context (rowId/refresh identifiers)
+    // does not exist there. Row-relative item writes from helpers therefore
+    // cannot be row-routed; analyzing without the row context keeps the
+    // emitted commits sound (instance/module writes are unaffected).
+    analyzeHandler(ctx, helper, compName, undefined, false);
   }
 }
 
@@ -256,11 +261,15 @@ export function buildHandler(
     ctx.analyzedFunctions.add(target);
     // R11: a handler shared between a row and a non-row site is analyzed
     // with the FIRST site's row context — pass forceTable for non-row uses.
+    // A handler RESOLVED BY NAME lives at component scope, so row-scoped
+    // commit identifiers are never valid inside it — analyze it without the
+    // row context even when the reference site is a row.
+    const nameResolved = t.isIdentifier(value) && !forceTable;
     analyzeHandler(
       ctx,
       target,
       forceTable ? null : compName,
-      forceTable ? undefined : rowCtx,
+      nameResolved ? undefined : rowCtx,
       !forceTable &&
         !t.isIdentifier(value) &&
         !committedLocalDelegation,

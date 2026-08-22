@@ -56,6 +56,7 @@ import {
 import {
   scanInstanceDerivations,
   scanInstanceState,
+  excludeRefBindings,
 } from './analysis/instance';
 import { scanOpaqueVolatility } from './analysis/opaque-volatility';
 import {
@@ -1454,13 +1455,18 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   normalizeDynamicTags(ctx);
   normalizeCalculatedListSources(ctx);
   scanInstanceState(ctx);
+  excludeRefBindings(ctx);
+  // Volatility must precede derivation scanning: consts rooted at opaque
+  // values ($fetch handles, external clients) qualify as per-instance
+  // derivations exactly because their sources change outside the access
+  // table, so their chains must replay on every pull-based update.
+  scanOpaqueVolatility(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
   scanModuleControlFlow(ctx, programPath, analyzeComputed);
   scanInstanceDerivations(ctx); // R14/R24: ordered local projections/computeds
   scanInstanceControlFlow(ctx);
   finalizeInstancePreludes(ctx);
   scanEffects(ctx, programPath);
-  scanOpaqueVolatility(ctx);
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   collectReads(ctx);
   foldRenderCallbackSubtreeReads(ctx);

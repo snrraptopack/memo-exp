@@ -10,6 +10,7 @@ import {
   bindingNames,
   type LocalDerivation,
 } from '../components/props';
+import { jsxAttributeName } from '../jsx/attributes';
 import { summarizeHelper } from '../helper-summaries';
 
 interface LocalDerivationHelperSummary {
@@ -223,12 +224,64 @@ export function scanInstanceState(ctx: Ctx): void {
 }
 
 /**
+ * Local bindings used as a JSX `ref={name}` sink hold external DOM nodes.
+ * They are mutable references, not reactive state: assigning the binding is
+ * the ref adapter's job, and field writes / receiver calls through the node
+ * (`input.value = x`, `canvas.getContext('2d')`) mutate the outside world.
+ * Treating those as reactive writes made every ref-using effect invalidate
+ * its own owner, which re-marks the effect — a render cycle (see the
+ * TelemetryCanvas cascade). Exclude them from instance state so neither the
+ * write analyzers nor the reason-id system ever route through them.
+ */
+export function excludeRefBindings(ctx: Ctx): void {
+  for (const [name, componentPath] of ctx.compPaths) {
+    const state = ctx.instanceState.get(name);
+    if (state === undefined || state.size === 0) continue;
+    const refs = new Set<string>();
+    componentPath.traverse({
+      JSXAttribute(path) {
+        if (jsxAttributeName(path.node.name) !== 'ref') return;
+        const value = path.node.value;
+        if (!t.isJSXExpressionContainer(value)) return;
+        const expression = value.expression;
+        if (t.isIdentifier(expression)) {
+          refs.add(expression.name);
+          return;
+        }
+        // ref={[a, b]} installs several refs in deterministic order
+        if (t.isArrayExpression(expression)) {
+          for (const element of expression.elements) {
+            if (element !== null && t.isIdentifier(element)) {
+              refs.add(element.name);
+            }
+          }
+        }
+      },
+    });
+    for (const ref of refs) state.delete(ref);
+  }
+}
+
+/**
  * Discover ordered component-local const derivations. These replay in the
  * owning component update before guarded DOM setters.
  */
 export function scanInstanceDerivations(ctx: Ctx): void {
   for (const [componentName, componentPath] of ctx.compPaths) {
     const reactiveBindings = new Map<unknown, string>();
+    // Opaque roots ($fetch handles, external clients) change outside the
+    // access table; consts derived from them must replay on every update or
+    // their values freeze at factory time. Reading one qualifies a const as
+    // a derivation exactly like a reactive read does.
+    const opaqueRoots = ctx.opaqueBindings.get(componentName);
+    const isOpaqueLocal = (name: string, at: NodePath): boolean => {
+      if (opaqueRoots?.has(name) !== true) return false;
+      const binding = at.scope.getBinding(name);
+      return (
+        binding !== undefined &&
+        binding === componentPath.scope.getBinding(name)
+      );
+    };
 
     for (const name of ctx.componentProps.get(componentName)?.bindings ?? []) {
       const binding = componentPath.scope.getBinding(name);
@@ -248,6 +301,94 @@ export function scanInstanceDerivations(ctx: Ctx): void {
     const derivations: LocalDerivation[] = [];
     const derivedBindings = new Set<string>();
     const derivedSources = new Map<string, Set<string>>();
+
+    /**
+     * Classify how an opaque local is used inside a candidate initializer.
+     * Only PROPERTY READS through the value (`tasksResource.data?.todos`)
+     * are pure, replayable live queries. Using the opaque value ITSELF as a
+     * value — destructuring (`const { status } = users`), copying, invoking
+     * it (`taskApi.$fetch(...)`), or passing it as an argument — takes a
+     * snapshot or hands control outside: such initializers must run once in
+     * the factory.
+     */
+    const opaqueUseIsLiveRead = (
+      start: NodePath<t.Identifier>,
+    ): boolean => {
+      let current: NodePath = start;
+      let climbed = false;
+      for (;;) {
+        const parent: NodePath | undefined = current.parentPath;
+        if (parent === undefined) break;
+        if (
+          (parent.isMemberExpression() &&
+            parent.node.object === current.node) ||
+          (parent.isOptionalMemberExpression() &&
+            parent.node.object === current.node)
+        ) {
+          current = parent;
+          climbed = true;
+          continue;
+        }
+        break;
+      }
+      // A bare reference to the opaque value itself is snapshot semantics.
+      if (!climbed) return false;
+      const user = current.parentPath;
+      if (user !== undefined) {
+        if (
+          (user.isCallExpression() || user.isNewExpression()) &&
+          user.node.callee === current.node
+        ) {
+          return false;
+        }
+        if (
+          (user.isCallExpression() || user.isNewExpression()) ||
+          user.isSpreadElement()
+        ) {
+          return false; // passed as an argument — escapes our control
+        }
+        if (
+          user.isAssignmentExpression() &&
+          user.node.left === current.node
+        ) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    /**
+     * How opaque locals appear in a candidate initializer:
+     * - 'none': no opaque use — the reactive-read path decides alone.
+     * - 'ok':   every opaque use is a pure member read (live derivation).
+     * - 'bad':  some opaque use snapshots or escapes — keep factory-time.
+     * Reads of already-accepted derivation bindings are reactive reads, not
+     * opaque uses, even when the derivation itself is opaque-rooted.
+     */
+    const classifyOpaqueReads = (initPath: NodePath): 'none' | 'ok' | 'bad' => {
+      let verdict: 'none' | 'ok' | 'bad' = 'none';
+      initPath.traverse({
+        Function(functionPath) {
+          const parent = functionPath.parentPath;
+          const participatesInCall =
+            (parent.isCallExpression() || parent.isNewExpression()) &&
+            (parent.node.callee === functionPath.node ||
+              parent.node.arguments.some(
+                (argument) => argument === functionPath.node,
+              ));
+          if (!participatesInCall) functionPath.skip();
+        },
+        ReferencedIdentifier(path) {
+          if (verdict === 'bad' || !path.isIdentifier()) return;
+          const binding = path.scope.getBinding(path.node.name);
+          if (binding !== undefined && reactiveBindings.has(binding)) return;
+          if (!isOpaqueLocal(path.node.name, path)) return;
+          verdict = opaqueUseIsLiveRead(path) ? 'ok' : 'bad';
+        },
+      });
+      return verdict;
+    };
+
     const statements = componentPath.get('body').get('body');
     for (const statementPath of statements) {
       if (!statementPath.isVariableDeclaration({ kind: 'const' })) continue;
@@ -274,6 +415,9 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         }
         const initPath = declarationPath.get('init');
         if (!initPath.isExpression()) continue;
+        // An initializer that invokes or hands off an opaque value performs
+        // side effects (fetches, client construction): keep it factory-time.
+        if (classifyOpaqueReads(initPath) === 'bad') continue;
 
         const directReads = new Set<string>();
         let reason: string | null = null;
@@ -287,6 +431,9 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           const source =
             binding === undefined ? undefined : reactiveBindings.get(binding);
           if (source !== undefined) directReads.add(source);
+          else if (isOpaqueLocal(path.node.name, path)) {
+            directReads.add(path.node.name);
+          }
         };
         const mutationRoot = (node: t.Node): string | null =>
           t.isIdentifier(node)
@@ -336,7 +483,15 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           }
         };
 
-        if (initPath.isReferencedIdentifier()) noteIdentifier(initPath);
+        // A bare opaque identifier as the whole initializer is a snapshot
+        // (`const { status } = users`) — never a live read — so only note it
+        // when it resolves to reactive state.
+        if (
+          initPath.isReferencedIdentifier() &&
+          !isOpaqueLocal(initPath.node.name, initPath)
+        ) {
+          noteIdentifier(initPath);
+        }
         if (initPath.isAssignmentExpression()) {
           const root = mutationRoot(initPath.node.left);
           if (root !== null && bindingIsReactive(root, initPath)) {
