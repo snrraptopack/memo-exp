@@ -399,6 +399,13 @@ export interface Ctx {
   analyzedFunctions: WeakSet<t.Node>;
   /** Whether a shared handler already emits a commit in its event scope. */
   handlerHasRootCommit: WeakMap<t.Node, boolean>;
+  /**
+   * Effects a component-local helper performs on its own parameters, keyed by
+   * the helper's function node. Callers fold these through their arguments so
+   * row-relative writes route from the call site (whose scope owns the row
+   * identifiers) instead of the helper body (which does not).
+   */
+  localParamEffects: WeakMap<t.Node, ParameterWrite[]>;
   /** Compiler-wide allocator initialized from the original Program scope. */
   identifiers: GeneratedIdentifiers | null;
 }
@@ -576,6 +583,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     reasonConsts: new Map(),
     analyzedFunctions: new WeakSet(),
     handlerHasRootCommit: new WeakMap(),
+    localParamEffects: new WeakMap(),
     identifiers: null,
   };
 }

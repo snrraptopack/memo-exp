@@ -133,6 +133,36 @@ const source = `
       </li>
     )}</ul>;
   }
+
+  // Non-volatile list over instance state. The mutation fires outside any
+  // event handler, so no event-origin commit exists — the ONLY invalidation
+  // is the parameter effect folded from the helper into the call site.
+  // Before the fix the row stayed stale forever.
+  export function LocalBoard() {
+    let items = [
+      { id: 1, done: false },
+      { id: 2, done: false },
+    ];
+
+    function toggleItem(item) {
+      item.done = !item.done;
+    }
+
+    let scheduled = false;
+    function scheduleToggle(item) {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(() => toggleItem(item), 30);
+    }
+
+    return <ul id="local-list">{items.map((item) =>
+      <li key={item.id}>
+        <button onClick={() => scheduleToggle(item)}>
+          {item.done ? 'done' : 'open'}
+        </button>
+      </li>
+    )}</ul>;
+  }
 `;
 
 function importFixture(): Promise<any> {
@@ -282,5 +312,16 @@ describe('opaque-derived reactivity regressions', () => {
       await pullFrame();
       expect(buttons()).toEqual(['done', 'open']);
     });
+  });
+
+  it("folds helper parameter effects into the call site's row scope", async () => {
+    // Emission-level assertion: the row's onClick arrow must carry the row
+    // commit folded from toggleItem (via scheduleToggle's transitive
+    // parameter effects). Before the fix the helper emitted a row-scoped
+    // identifier in component scope (ReferenceError) and the call site
+    // emitted nothing.
+    const { readFileSync } = await import('node:fs');
+    const emitted = readFileSync(fixture, 'utf8');
+    expect(emitted).toContain('_MD.markDirty(_rowId2)');
   });
 });

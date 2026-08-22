@@ -350,6 +350,14 @@ export function analyzeHandler(
   for (const param of clonedFn.params) {
     if (t.isIdentifier(param)) locals.add(param.name);
   }
+  // Direct parameters of THIS function. Member writes rooted at them are
+  // effects the function performs on its arguments — recorded so call sites
+  // can route them through their own (possibly row-scoped) context.
+  const rootParamIndex = new Map<string, number>(
+    clonedFn.params.flatMap((param, index) =>
+      t.isIdentifier(param) ? [[param.name, index] as const] : [],
+    ),
+  );
 
   // pass A: locals declared anywhere inside the handler
   traverse(wrapper, {
@@ -692,6 +700,35 @@ export function analyzeHandler(
       );
     }
     if (noteItemWrite(p, node)) return;
+    // Without a row context, a member write rooted at one of this function's
+    // own parameters cannot be committed here (row identifiers do not exist
+    // in this scope). Record it as a parameter effect for call sites to fold.
+    if (
+      rowCtx === undefined &&
+      rootName !== null &&
+      rootParamIndex.has(rootName)
+    ) {
+      const key = memberKey(node);
+      if (key !== null) {
+        const relative = key.split('.').slice(1);
+        const recorded = ctx.localParamEffects.get(rootFn) ?? [];
+        const entry = {
+          index: rootParamIndex.get(rootName)!,
+          path: relative,
+        };
+        if (
+          !recorded.some(
+            (existing) =>
+              existing.index === entry.index &&
+              existing.path.join('.') === entry.path.join('.'),
+          )
+        ) {
+          recorded.push(entry);
+          ctx.localParamEffects.set(rootFn, recorded);
+        }
+      }
+      return;
+    }
     const origin = aliases.resolveExpression(p.scope, node);
     if (origin !== null) {
       noteOriginWrite(p, origin);
@@ -951,6 +988,83 @@ export function analyzeHandler(
           noteBoundedArguments(p, p.node.arguments);
         }
         return;
+      }
+
+      // calls to component-local helpers: fold parameter effects recorded
+      // during the helper's own analysis through the call arguments. This is
+      // what routes item-field mutations from hoisted helpers into the
+      // caller's row scope — the helper body itself cannot reference row
+      // identifiers, so without this fold the write would be invisible.
+      if (
+        t.isIdentifier(callee) &&
+        compName !== null &&
+        componentLocals.has(callee.name)
+      ) {
+        // Resolve the helper through the component body, not the current
+        // scope: analysis runs on a detached clone whose scope cannot see
+        // component-level bindings.
+        let helperFn: t.Node | null = null;
+        for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
+          if (
+            t.isFunctionDeclaration(stmt) &&
+            stmt.id?.name === callee.name
+          ) {
+            helperFn = stmt;
+            break;
+          }
+          if (t.isVariableDeclaration(stmt)) {
+            for (const d of stmt.declarations) {
+              if (
+                t.isIdentifier(d.id) &&
+                d.id.name === callee.name &&
+                d.init !== null &&
+                t.isFunction(d.init)
+              ) {
+                helperFn = d.init;
+                break;
+              }
+            }
+            if (helperFn !== null) break;
+          }
+        }
+        const parameterEffects = helperFn !== null ? ctx.localParamEffects.get(helperFn) : undefined;
+        if (parameterEffects !== undefined) {
+          for (const effect of parameterEffects) {
+            const argument = p.node.arguments[effect.index];
+            if (argument === undefined || !t.isExpression(argument)) continue;
+            const origin = aliases.resolveExpression(p.scope, argument);
+            if (origin !== null) {
+              if (isComputedOrigin(origin)) continue;
+              noteReceiverEffect(p, extendOrigin(origin, effect.path));
+              continue;
+            }
+            // Transitively propagate: an argument that is this function's own
+            // parameter means the callee's effect composes with ours. Record
+            // it under OUR node so an outer caller can keep folding up to
+            // the scope that actually owns row identifiers.
+            if (
+              t.isIdentifier(argument) &&
+              rootParamIndex.has(argument.name)
+            ) {
+              const recorded = ctx.localParamEffects.get(rootFn) ?? [];
+              const entry = {
+                index: rootParamIndex.get(argument.name)!,
+                path: effect.path,
+              };
+              const signature = `${entry.index}:${entry.path.join('.')}`;
+              if (
+                !recorded.some(
+                  (existing) =>
+                    `${existing.index}:${existing.path.join('.')}` ===
+                    signature,
+                )
+              ) {
+                recorded.push(entry);
+                ctx.localParamEffects.set(rootFn, recorded);
+              }
+            }
+          }
+        }
       }
 
       // calls to module-level helpers: fold the callee's summary into this
