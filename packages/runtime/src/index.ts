@@ -40,6 +40,13 @@ export type {
   RenderEnvironment,
   RenderMode,
 } from './environment';
+export {
+  defineStateCell,
+  readCell,
+  setCell,
+  updateCell,
+} from './state-cells';
+export type { StateCell } from './state-cells';
 export { cleanup } from './cleanup';
 export type { CleanupDisposer } from './cleanup';
 export { mountRef } from './refs';

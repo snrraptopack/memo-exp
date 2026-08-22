@@ -162,23 +162,55 @@ without a frame scheduler; per-runtime environment independence.
 
 ---
 
-## Current status against the proposal phases
+## Slice 1.3 — module-state isolation probe (complete)
+
+**Commit:** this slice.
+
+New primitive `packages/runtime/src/state-cells.ts` + probe suite
+`tests/ssr-isolation-probe.test.ts`. Results against the proposal's two
+candidate architectures:
+
+### Option A (per-request graph evaluation) — proven correct, oracle tier
+
+The same compiled fixture instantiated as separate module records isolates
+perfectly: interleaved mutations of primitives and arrays never cross
+requests. Cost confirmed: N requests = N module evaluations.
+
+### Option B (state cells on the runtime) — prototype proven, production direction
+
+`defineStateCell(key, initial)` / `readCell` / `setCell` / `updateCell`:
+storage lives on the active ApplicationRuntime keyed by canonical linker
+identity; values initialize lazily per runtime from authored defaults; a
+shared compiled module (static descriptors) serves every request; writes
+route invalidation through the access table under the canonical key, so
+computeds/effects/components need no changes; `dispose()` resets cells to
+authored defaults.
+
+Probe evidence: divergent concurrent state across two runtimes over ONE
+shared compiled module; zero cross-request reads; reader entity re-rendered
+with its own request's value via existing commitWrites routing.
+
+Decision log impact: Option B's "pending isolation-probe" condition is now
+satisfied at the storage-primitive level. Remaining before it is the
+production lowering: the compiler pass that rewrites authored module-state
+bindings into cell reads/writes (exported live-binding semantics, cycles,
+initialization order, HMR).
 
 | Phase | Status |
 |---|---|
 | 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
 | 1.1 — request/application runtime context | **complete**: kernel, cleanup, props, mount, access routed; isolation tested |
 | 1.2 — environment capabilities | **complete**: RenderEnvironment on every runtime (mode/document/schedule/effects/refs); effects gated server-side; volatile pulls disabled without a frame scheduler; structural anchors route through the injected document |
-| 1.3 — module-state isolation | not started (proposal Option B direction; isolation probe pending) |
+| 1.3 — module-state isolation | **probe complete**: cells proven isolated + reactive (Option B); compiler lowering pass not yet written |
 | 1.4 — LinkeDOM reference renderer | not started; consumes the runtime context from 1.1 and the injected document from 1.2 |
 | 1.5 — CSR-equivalence matrix | not started |
 | 2–6 | gated behind phase 1 exit criteria |
 
 ## Next slices
 
-1. **Phase 1.3 probe:** per-request graph evaluation prototype proving
-   module-binding isolation between two concurrent renders (proposal Option
-   B direction; the hardest open question in Phase 1).
+1. **Phase 1.3 lowering:** compiler pass rewriting authored module-state
+   bindings into cell operations for server builds (client builds keep
+   plain bindings until parity is proven).
 2. **Phase 1.4:** `renderWithDom(App, { url, document })` over LinkeDOM,
    creating a fresh application runtime per call, refs/effects deferred,
    and routing compiled element creation through the injected document.

@@ -95,6 +95,11 @@ interface KernelState {
   readonly volatile: Set<EntityId>;
   /** Exact numeric causes per dirty entity until their next render. */
   readonly dirtyReasons: DirtyReasonStore;
+  /**
+   * Request-owned storage cells for lifted module state (SSR Phase 1.3,
+   * proposal Option B). Keyed by canonical linker identity.
+   */
+  readonly cells: Map<string, unknown>;
   /** Cached id array for the access resolver — null when stale. */
   idsCache: EntityId[] | null;
   /** Monotonic registry generation for resolver caches. */
@@ -125,6 +130,7 @@ function createKernelState(
     dirty: new Set(),
     volatile: new Set(),
     dirtyReasons: createDirtyReasonStore(),
+    cells: new Map(),
     idsCache: null,
     generation: 0,
     scheduler: defaultScheduler,
@@ -170,6 +176,7 @@ export function createApplicationRuntime(
       for (const id of ids) unregisterSubtreeInState(state, id);
       state.dirty.clear();
       state.dirtyReasons.clear();
+      state.cells.clear();
       state.volatile.clear();
       state.idsCache = null;
       state.scheduled = false;
