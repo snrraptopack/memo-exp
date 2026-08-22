@@ -16,7 +16,7 @@
  *     survives, so re-mounting a branch reflects current state.
  */
 
-import type { EntityId } from './kernel';
+import { getActiveEnvironment, type EntityId } from './kernel';
 
 export interface CondEntry {
   /** Root nodes of the mounted branch (elements or fragment children). */
@@ -45,7 +45,7 @@ export function createCondRegion(
   branches: readonly (CondBranchFactory | null)[],
 ): CondRegion {
   // the anchor keeps the region's place when the mounted branch is empty
-  const anchor = document.createComment(`when:${id}`);
+  const anchor = getActiveEnvironment().document.createComment(`when:${id}`);
   parent.appendChild(anchor);
 
   let current = -1;

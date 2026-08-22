@@ -25,6 +25,7 @@ export {
   getActiveApplicationRuntime,
   setActiveApplicationRuntime,
   runWithApplicationRuntime,
+  getActiveEnvironment,
 } from './kernel';
 export type {
   ApplicationRuntime,
@@ -33,6 +34,12 @@ export type {
   Entity,
   EntityId,
 } from './kernel';
+export type {
+  Capability,
+  DocumentLike,
+  RenderEnvironment,
+  RenderMode,
+} from './environment';
 export { cleanup } from './cleanup';
 export type { CleanupDisposer } from './cleanup';
 export { mountRef } from './refs';

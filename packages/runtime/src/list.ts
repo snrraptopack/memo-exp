@@ -29,7 +29,7 @@
  * Object identity keys get stable synthetic id segments (#1, #2, ...).
  */
 
-import { unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
+import { getActiveEnvironment, unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */
@@ -129,7 +129,7 @@ export function createListRegion<T>(
   key: KeyFn<T> = identityKey,
   trackRowIds = true,
 ): ListRegion<T> {
-  const endAnchor = document.createComment(`list:${idPrefix}`);
+  const endAnchor = getActiveEnvironment().document.createComment(`list:${idPrefix}`);
   parent.appendChild(endAnchor);
 
   /**
@@ -298,9 +298,9 @@ export function createListRegion<T>(
         firstOwned !== undefined &&
         firstOwned.parentNode === parent &&
         endAnchor.parentNode === parent &&
-        typeof document.createRange === 'function'
+        getActiveEnvironment().document.createRange !== undefined
       ) {
-        const range = document.createRange();
+        const range = getActiveEnvironment().document.createRange!();
         range.setStartBefore(firstOwned);
         range.setEndBefore(endAnchor);
         range.deleteContents();
@@ -322,7 +322,7 @@ export function createListRegion<T>(
       old.clear();
 
       if (n !== 0) {
-        const fragment = document.createDocumentFragment();
+        const fragment = getActiveEnvironment().document.createDocumentFragment();
         for (let i = 0; i < ordered.length; i++) {
           const nodes = ordered[i]!.nodes;
           if (Array.isArray(nodes)) {
@@ -347,7 +347,7 @@ export function createListRegion<T>(
     // ordering to analyze and no stale row to remove. Append the complete
     // batch in source order and skip LIS/pending-run bookkeeping entirely.
     if (oldWasEmpty && hasNew) {
-      const fragment = document.createDocumentFragment();
+      const fragment = getActiveEnvironment().document.createDocumentFragment();
       for (let i = 0; i < ordered.length; i++) {
         const nodes = ordered[i]!.nodes;
         if (Array.isArray(nodes)) {
@@ -411,7 +411,7 @@ export function createListRegion<T>(
 
     const flush = (): void => {
       if (pending === null) return;
-      const frag = document.createDocumentFragment();
+      const frag = getActiveEnvironment().document.createDocumentFragment();
       for (let i = pending.length - 1; i >= 0; i--) {
         const nodes = pending[i]!.nodes;
         if (Array.isArray(nodes)) {

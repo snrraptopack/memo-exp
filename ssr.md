@@ -121,23 +121,64 @@ Committed on `agent/address-copilot-review-fixes`, merged fast-forward into
 
 ---
 
+## Slice 1.2 — RenderEnvironment capability descriptor
+
+**Commit:** this slice.
+
+New module `packages/runtime/src/environment.ts` defines the capability
+descriptor from proposal §1.2:
+
+```ts
+interface RenderEnvironment {
+  mode: 'client-create' | 'server-dom' | 'server-string' | 'hydrate';
+  document: DocumentLike;   // node ops for runtime-owned structure
+  schedule: ((fn) => void) | null;  // null disables volatile pull frames
+  effects: 'run' | 'defer' | 'disabled';
+  refs: 'run' | 'defer' | 'disabled';
+}
+```
+
+- Every ApplicationRuntime carries one (`createApplicationRuntime(id,
+  environment?)` merges partial overrides over the client default).
+- The kernel's volatile-pull loop uses `environment.schedule` instead of
+  probing `globalThis.requestAnimationFrame`; a null schedule (servers)
+  means nothing keeps ticking.
+- `registerEffect`/`registerConditionalEffect` consult `effects`: in
+  'disabled'/'defer' the entity still registers (structural ownership stays
+  complete) but the callback never executes.
+- Conditional-region anchors, list anchors/fragments/range removal, and
+  mount's host lookup route through `environment.document` instead of the
+  ambient global.
+
+Known scope note: compiled element creation still references the global
+`document` directly — routing emitted code through the environment document
+lands with the Phase 1.4 reference renderer, which is exactly where it is
+needed.
+
+**Tests:** `tests/ssr-environment.test.ts` — client default capabilities;
+structural anchors created through an injected document; effects recorded
+but never executed under a server-shaped runtime; volatile pulls disabled
+without a frame scheduler; per-runtime environment independence.
+
+---
+
 ## Current status against the proposal phases
 
 | Phase | Status |
 |---|---|
 | 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
-| 1.1 — request/application runtime context | **kernel + cleanup + props + mount + access routed** (this document) |
-| 1.2 — environment capabilities | not started |
+| 1.1 — request/application runtime context | **complete**: kernel, cleanup, props, mount, access routed; isolation tested |
+| 1.2 — environment capabilities | **complete**: RenderEnvironment on every runtime (mode/document/schedule/effects/refs); effects gated server-side; volatile pulls disabled without a frame scheduler; structural anchors route through the injected document |
 | 1.3 — module-state isolation | not started (proposal Option B direction; isolation probe pending) |
-| 1.4 — LinkeDOM reference renderer | not started; consumes the runtime context from 1.1 |
+| 1.4 — LinkeDOM reference renderer | not started; consumes the runtime context from 1.1 and the injected document from 1.2 |
 | 1.5 — CSR-equivalence matrix | not started |
 | 2–6 | gated behind phase 1 exit criteria |
 
 ## Next slices
 
-1. **Phase 1.2:** `RenderEnvironment` capability descriptor (mode, document,
-   effects/refs policy) replacing scattered `typeof window` checks.
-2. **Phase 1.3 probe:** per-request graph evaluation prototype proving
-   module-binding isolation between two concurrent renders.
-3. **Phase 1.4:** `renderWithDom(App, { url, document })` over LinkeDOM,
-   creating a fresh application runtime per call, refs/effects deferred.
+1. **Phase 1.3 probe:** per-request graph evaluation prototype proving
+   module-binding isolation between two concurrent renders (proposal Option
+   B direction; the hardest open question in Phase 1).
+2. **Phase 1.4:** `renderWithDom(App, { url, document })` over LinkeDOM,
+   creating a fresh application runtime per call, refs/effects deferred,
+   and routing compiled element creation through the injected document.

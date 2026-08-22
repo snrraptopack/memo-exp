@@ -8,6 +8,7 @@
 
 import { cleanup, type CleanupDisposer } from './cleanup';
 import {
+  getActiveEnvironment,
   has,
   markDirty,
   register,
@@ -28,11 +29,18 @@ export function registerEffect(
   // Stable singleton ids make module reevaluation/HMR teardown-safe.
   if (has(id)) unregisterSubtree(id);
 
+  // Server rendering records the entity so structural ownership stays
+  // complete, but never executes the callback. 'defer' will replay it after
+  // hydration adoption (Phase 3); until then it behaves as disabled.
+  const effects = getActiveEnvironment().effects;
+  const execute = effects === 'run';
+
   register({
     id,
     parent,
     phase: 'effect',
     render() {
+      if (!execute) return;
       const previous = disposer;
       disposer = undefined;
       previous?.();
@@ -46,6 +54,8 @@ export function registerEffect(
       disposer = typeof next === 'function' ? next : undefined;
     },
   });
+
+  if (!execute) return;
 
   cleanup(id, () => {
     const current = disposer;
@@ -75,11 +85,15 @@ export function registerConditionalEffect(
 
   if (has(id)) unregisterSubtree(id);
 
+  const effects = getActiveEnvironment().effects;
+  const execute = effects === 'run';
+
   register({
     id,
     parent,
     phase: 'effect',
     render() {
+      if (!execute) return;
       const next = Boolean(condition());
       if (next === active) return;
       active = next;
@@ -87,6 +101,8 @@ export function registerConditionalEffect(
       else unregisterSubtree(activeId);
     },
   });
+
+  if (!execute) return;
 
   cleanup(id, () => {
     active = false;

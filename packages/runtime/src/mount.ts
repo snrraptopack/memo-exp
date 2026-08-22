@@ -1,4 +1,4 @@
-import { getExtensionStore, unregisterSubtree } from './kernel';
+import { getActiveEnvironment, getExtensionStore, unregisterSubtree } from './kernel';
 import { rootNodes } from './jsx-dom';
 
 /** Authored zero-argument component reference accepted by the browser entry. */
@@ -53,7 +53,7 @@ function removeNodes(nodes: readonly Node[]): void {
 
 function resolveHost(target: MountTarget): Element {
   if (typeof target !== 'string') return target;
-  const host = document.getElementById(target);
+  const host = getActiveEnvironment().document.getElementById(target);
   if (host === null) {
     throw new Error(`memoized-dom: mount target '#${target}' was not found`);
   }

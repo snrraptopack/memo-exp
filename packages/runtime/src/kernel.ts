@@ -34,6 +34,7 @@ import {
   type DirtyReasons,
   type DirtyReasonStore,
 } from './dirty-reasons';
+import { resolveEnvironment, type RenderEnvironment } from './environment';
 
 export type EntityId = string;
 export type { DirtyReasonInput, DirtyReasons } from './dirty-reasons';
@@ -112,9 +113,13 @@ interface KernelState {
    * shapes; the kernel only provides request-scoped storage and lifetime.
    */
   readonly extensions: Map<string, unknown>;
+  /** Capability descriptor selecting browser/server behavior. */
+  readonly environment: RenderEnvironment;
 }
 
-function createKernelState(scheduler?: Scheduler): KernelState {
+function createKernelState(
+  environment?: Partial<RenderEnvironment>,
+): KernelState {
   return {
     registry: new Map(),
     dirty: new Set(),
@@ -122,7 +127,7 @@ function createKernelState(scheduler?: Scheduler): KernelState {
     dirtyReasons: createDirtyReasonStore(),
     idsCache: null,
     generation: 0,
-    scheduler: scheduler ?? defaultScheduler,
+    scheduler: defaultScheduler,
     volatileFrameScheduled: false,
     scheduled: false,
     inCommit: false,
@@ -130,6 +135,7 @@ function createKernelState(scheduler?: Scheduler): KernelState {
     renderCounts: null,
     markedBy: null,
     extensions: new Map(),
+    environment: resolveEnvironment(environment),
   };
 }
 
@@ -153,8 +159,9 @@ let runtimeSequence = 0;
 /** Create an isolated runtime. Server entry points call this per request. */
 export function createApplicationRuntime(
   id = `runtime-${++runtimeSequence}`,
+  environment?: Partial<RenderEnvironment>,
 ): ApplicationRuntime {
-  const state = createKernelState();
+  const state = createKernelState(environment);
   const runtime: ApplicationRuntime = {
     id,
     state,
@@ -227,6 +234,11 @@ export function setScheduler(fn: Scheduler): void {
   activeRuntime.state.scheduler = fn;
 }
 
+/** The capability descriptor of the ACTIVE runtime. */
+export function getActiveEnvironment(): RenderEnvironment {
+  return activeRuntime.state.environment;
+}
+
 /**
  * Per-runtime named storage for kernel-adjacent subsystems. The first call
  * creates the store; every later call inside the same runtime returns the
@@ -295,20 +307,15 @@ export function registryGeneration(): number {
 }
 
 function scheduleVolatileFrame(k: KernelState): void {
-  if (
-    k.volatileFrameScheduled ||
-    k.volatile.size === 0 ||
-    typeof globalThis.requestAnimationFrame !== 'function'
-  ) {
-    return;
-  }
+  if (k.volatileFrameScheduled || k.volatile.size === 0) return;
+  // Volatile pulling is a client concern: server environments inject a null
+  // schedule and render synchronously instead.
+  const schedule = k.environment.schedule;
+  if (schedule === null) return;
   k.volatileFrameScheduled = true;
-  globalThis.requestAnimationFrame(() => {
+  schedule(() => {
     k.volatileFrameScheduled = false;
-    const hidden =
-      typeof globalThis.document !== 'undefined' &&
-      globalThis.document.hidden;
-    if (!hidden) {
+    if (k.environment.document.hidden !== true) {
       for (const id of k.volatile) markDirty(id, VOLATILE_PULL_REASON);
     }
     scheduleVolatileFrame(k);
