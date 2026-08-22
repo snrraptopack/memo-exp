@@ -1,0 +1,23 @@
+{
+  "name": "@memoized-dom/example-octopulse",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@memoized-dom/data": "workspace:*",
+    "@memoized-dom/router": "workspace:*",
+    "@memoized-dom/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@memoized-dom/compiler": "workspace:*",
+    "@memoized-dom/vite": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}
