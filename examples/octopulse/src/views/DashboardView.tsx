@@ -48,18 +48,18 @@ export function DashboardView() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       
       {/* Top Banner / Welcome */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-3xl bg-gradient-to-r from-stone-900 via-stone-900/90 to-emerald-950/30 border border-stone-800 shadow-2xl relative overflow-hidden">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-3xl bg-gradient-to-r from-stone-900 via-stone-900/90 to-emerald-950/30 border border-line shadow-2xl relative overflow-hidden">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-semibold">
               LIVE SYSTEM READY
             </span>
-            <span className="text-xs text-stone-400 font-mono">Region: us-east-1</span>
+            <span className="text-xs text-ink-soft font-mono">Region: us-east-1</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-100 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-ink tracking-tight">
             Engineering Telemetry & Hub
           </h1>
-          <p className="text-sm text-stone-400 mt-1 max-w-2xl">
+          <p className="text-sm text-ink-soft mt-1 max-w-2xl">
             Real-world compiler-driven reactive dashboard powered by Memoized DOM, connected live to GitHub APIs and background workers.
           </p>
         </div>
@@ -74,13 +74,13 @@ export function DashboardView() {
           </button>
           <button
             onClick={recordErrorEvent}
-            className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-rose-300 border border-rose-900/40 font-semibold text-xs transition-all"
+            className="px-3 py-2 rounded-xl bg-elevated hover:bg-stone-700 text-rose-300 border border-rose-900/40 font-semibold text-xs transition-all"
           >
             Simulate Alert
           </button>
           <button
             onClick={resolveErrors}
-            className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-emerald-300 border border-emerald-900/40 font-semibold text-xs transition-all"
+            className="px-3 py-2 rounded-xl bg-elevated hover:bg-stone-700 text-emerald-300 border border-emerald-900/40 font-semibold text-xs transition-all"
           >
             Reset Incidents
           </button>
@@ -136,20 +136,20 @@ export function DashboardView() {
         </div>
 
         {/* Worker Pool Controls (1 col) */}
-        <div className="p-5 rounded-2xl bg-stone-900/90 border border-stone-800 shadow-xl flex flex-col justify-between">
+        <div className="p-5 rounded-2xl bg-surface border border-line shadow-xl flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-bold text-stone-200 mb-1 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-ink mb-1 flex items-center gap-2">
               <span>🎛️</span> Worker Capacity Manager
             </h3>
-            <p className="text-xs text-stone-400 mb-4">
+            <p className="text-xs text-ink-soft mb-4">
               Dynamically scale active concurrent worker threads.
             </p>
 
-            <div className="p-4 rounded-xl bg-stone-950 border border-stone-800/80 mb-4 text-center">
+            <div className="p-4 rounded-xl bg-base border border-line mb-4 text-center">
               <span className="text-3xl font-extrabold text-amber-400 font-mono">
                 {activeWorkers}
               </span>
-              <span className="text-xs text-stone-500 block mt-1">Dedicated Worker Units</span>
+              <span className="text-xs text-ink-faint block mt-1">Dedicated Worker Units</span>
             </div>
           </div>
 
@@ -157,7 +157,7 @@ export function DashboardView() {
             <button
               onClick={() => adjustWorkers(-1)}
               disabled={activeWorkers <= 1}
-              className="flex-1 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-stone-200 font-bold text-sm border border-stone-700 transition-all"
+              className="flex-1 py-2.5 rounded-xl bg-elevated hover:bg-stone-700 disabled:opacity-40 text-ink font-bold text-sm border border-line-strong transition-all"
             >
               - Scale Down
             </button>
@@ -173,18 +173,18 @@ export function DashboardView() {
       </div>
 
       {/* Live Featured Open-Source Projects (Real GitHub REST API) */}
-      <div className="p-6 rounded-3xl bg-stone-900/80 border border-stone-800 shadow-2xl">
+      <div className="p-6 rounded-3xl bg-surface border border-line shadow-2xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-stone-100">
+              <h2 className="text-lg font-bold text-ink">
                 Live GitHub Ecosystem Radar
               </h2>
               <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-mono">
                 Real API
               </span>
             </div>
-            <p className="text-xs text-stone-400 mt-0.5">
+            <p className="text-xs text-ink-soft mt-0.5">
               Fetched live from GitHub Public API via isolated <code className="font-mono text-emerald-400">createDataRuntime</code>.
             </p>
           </div>
@@ -193,7 +193,7 @@ export function DashboardView() {
             <button
               onClick={() => featuredRepos.refresh()}
               disabled={featuredRepos.pending}
-              className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs border border-stone-700 transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg bg-elevated hover:bg-stone-700 text-ink-soft font-semibold text-xs border border-line-strong transition-all flex items-center gap-1.5"
             >
               <span>🔄</span> {featuredRepos.refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
@@ -208,20 +208,20 @@ export function DashboardView() {
 
         {/* Sibling Conditions: Loading / Error / Success */}
         <div if={featuredRepos.pending && !featuredRepos.data} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="h-36 rounded-2xl bg-stone-950/60 border border-stone-800 animate-pulse p-4 flex flex-col justify-between">
-            <div className="h-4 bg-stone-800 rounded w-2/3"></div>
-            <div className="h-3 bg-stone-800/60 rounded w-full"></div>
-            <div className="h-3 bg-stone-800/40 rounded w-1/2"></div>
+          <div className="h-36 rounded-2xl bg-base border border-line animate-pulse p-4 flex flex-col justify-between">
+            <div className="h-4 bg-elevated rounded w-2/3"></div>
+            <div className="h-3 bg-elevated rounded w-full"></div>
+            <div className="h-3 bg-elevated rounded w-1/2"></div>
           </div>
-          <div className="h-36 rounded-2xl bg-stone-950/60 border border-stone-800 animate-pulse p-4 flex flex-col justify-between">
-            <div className="h-4 bg-stone-800 rounded w-2/3"></div>
-            <div className="h-3 bg-stone-800/60 rounded w-full"></div>
-            <div className="h-3 bg-stone-800/40 rounded w-1/2"></div>
+          <div className="h-36 rounded-2xl bg-base border border-line animate-pulse p-4 flex flex-col justify-between">
+            <div className="h-4 bg-elevated rounded w-2/3"></div>
+            <div className="h-3 bg-elevated rounded w-full"></div>
+            <div className="h-3 bg-elevated rounded w-1/2"></div>
           </div>
-          <div className="h-36 rounded-2xl bg-stone-950/60 border border-stone-800 animate-pulse p-4 flex flex-col justify-between">
-            <div className="h-4 bg-stone-800 rounded w-2/3"></div>
-            <div className="h-3 bg-stone-800/60 rounded w-full"></div>
-            <div className="h-3 bg-stone-800/40 rounded w-1/2"></div>
+          <div className="h-36 rounded-2xl bg-base border border-line animate-pulse p-4 flex flex-col justify-between">
+            <div className="h-4 bg-elevated rounded w-2/3"></div>
+            <div className="h-3 bg-elevated rounded w-full"></div>
+            <div className="h-3 bg-elevated rounded w-1/2"></div>
           </div>
         </div>
 
@@ -240,16 +240,16 @@ export function DashboardView() {
           {featuredRepos.data?.items.map((repo) => (
             <div
               key={repo.id}
-              className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800/80 hover:border-emerald-700/50 hover:bg-stone-900/60 transition-all flex flex-col justify-between group"
+              className="p-5 rounded-2xl bg-base border border-line hover:border-emerald-700/50 hover:bg-surface transition-all flex flex-col justify-between group"
             >
               <div>
                 <div className="flex items-center gap-2.5 mb-2">
                   <img
                     src={repo.owner.avatar_url}
                     alt={repo.owner.login}
-                    className="w-5 h-5 rounded-full border border-stone-700"
+                    className="w-5 h-5 rounded-full border border-line-strong"
                   />
-                  <span className="text-xs font-mono text-stone-400 truncate">
+                  <span className="text-xs font-mono text-ink-soft truncate">
                     {repo.owner.login}
                   </span>
                 </div>
@@ -259,24 +259,24 @@ export function DashboardView() {
                     path: '/repo/:owner/:name',
                     params: { owner: repo.owner.login, name: repo.name },
                   }}
-                  className="text-base font-bold text-stone-100 group-hover:text-emerald-400 transition-colors block truncate"
+                  className="text-base font-bold text-ink group-hover:text-emerald-400 transition-colors block truncate"
                 >
                   {repo.name}
                 </a>
 
-                <p className="text-xs text-stone-400 mt-1.5 line-clamp-2 leading-relaxed">
+                <p className="text-xs text-ink-soft mt-1.5 line-clamp-2 leading-relaxed">
                   {repo.description ?? 'No description provided.'}
                 </p>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-stone-800/60 flex items-center justify-between text-xs font-mono text-stone-400">
+              <div className="mt-4 pt-3 border-t border-line flex items-center justify-between text-xs font-mono text-ink-soft">
                 <span className="flex items-center gap-1 text-amber-400 font-semibold">
                   ★ {(repo.stargazers_count / 1000).toFixed(1)}k
                 </span>
-                <span if={!!repo.language} className="px-2 py-0.5 rounded bg-stone-900 text-stone-300 border border-stone-800">
+                <span if={!!repo.language} className="px-2 py-0.5 rounded bg-surface text-ink-soft border border-line">
                   {repo.language}
                 </span>
-                <span className="text-stone-500">
+                <span className="text-ink-faint">
                   🍴 {repo.forks_count}
                 </span>
               </div>
@@ -286,13 +286,13 @@ export function DashboardView() {
       </div>
 
       {/* Active Deployments Managed via Plain Class State */}
-      <div className="p-6 rounded-3xl bg-stone-900/80 border border-stone-800 shadow-2xl">
+      <div className="p-6 rounded-3xl bg-surface border border-line shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-bold text-stone-100 flex items-center gap-2">
+            <h2 className="text-lg font-bold text-ink flex items-center gap-2">
               <span>🚀</span> Active Service Deployments
             </h2>
-            <p className="text-xs text-stone-400 mt-0.5">
+            <p className="text-xs text-ink-soft mt-0.5">
               Managed via Plain TypeScript Class <code className="font-mono text-emerald-400">ProjectStore</code> (no proxies, zero-cost updates).
             </p>
           </div>
@@ -302,7 +302,7 @@ export function DashboardView() {
           {projectStore.deployments.map((dep) => (
             <div
               key={dep.id}
-              className="p-4 rounded-2xl bg-stone-950/90 border border-stone-800 flex flex-col justify-between"
+              className="p-4 rounded-2xl bg-base border border-line flex flex-col justify-between"
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -311,24 +311,24 @@ export function DashboardView() {
                       ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
                       : dep.status === 'deploying'
                       ? 'bg-amber-950 text-amber-400 border border-amber-800/60 animate-pulse'
-                      : 'bg-stone-900 text-stone-400 border border-stone-800'
+                      : 'bg-surface text-ink-soft border border-line'
                   }`}>
                     {dep.status}
                   </span>
-                  <span className="text-[10px] font-mono text-stone-500">{dep.environment}</span>
+                  <span className="text-[10px] font-mono text-ink-faint">{dep.environment}</span>
                 </div>
 
-                <h4 className="text-sm font-bold text-stone-200 truncate">{dep.name}</h4>
-                <p className="text-xs font-mono text-stone-400 mt-1">🌿 {dep.branch}</p>
-                <p className="text-[11px] font-mono text-stone-500 mt-0.5">commit #{dep.commitHash}</p>
+                <h4 className="text-sm font-bold text-ink truncate">{dep.name}</h4>
+                <p className="text-xs font-mono text-ink-soft mt-1">🌿 {dep.branch}</p>
+                <p className="text-[11px] font-mono text-ink-faint mt-0.5">commit #{dep.commitHash}</p>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-stone-800/80 flex items-center justify-between">
-                <span className="text-[10px] text-stone-500 font-mono">{dep.updatedAt}</span>
+              <div className="mt-4 pt-3 border-t border-line flex items-center justify-between">
+                <span className="text-[10px] text-ink-faint font-mono">{dep.updatedAt}</span>
                 <button
                   onClick={() => projectStore.triggerRedeploy(dep.id)}
                   disabled={dep.status === 'deploying'}
-                  className="px-2.5 py-1 rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-40 text-stone-300 text-xs font-mono border border-stone-700 transition-all"
+                  className="px-2.5 py-1 rounded-lg bg-surface hover:bg-elevated disabled:opacity-40 text-ink-soft text-xs font-mono border border-line-strong transition-all"
                 >
                   Redeploy
                 </button>

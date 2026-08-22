@@ -36,31 +36,31 @@ export function StatCard({
       ? 'border-amber-700/40 hover:border-amber-500/60'
       : accent === 'emerald'
       ? 'border-emerald-800/40 hover:border-emerald-500/60'
-      : 'border-stone-800 hover:border-stone-700';
+      : 'border-line hover:border-line-strong';
 
   const trendColor =
     trend === 'up'
       ? 'text-emerald-400 bg-emerald-950/80 border-emerald-800/60'
       : trend === 'down'
       ? 'text-rose-400 bg-rose-950/80 border-rose-800/60'
-      : 'text-stone-400 bg-stone-900 border-stone-800';
+      : 'text-ink-soft bg-surface border-line';
 
   return (
     <div
       ref={[forwardedRef, cardRef]}
-      className={`p-5 rounded-2xl bg-stone-900/90 border ${accentBorder} shadow-lg shadow-black/20 transition-all group`}
+      className={`p-5 rounded-2xl bg-surface border ${accentBorder} shadow-lg shadow-black/20 transition-all group`}
     >
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-stone-400 font-mono">
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-soft font-mono">
           {title}
         </span>
-        <div className="w-8 h-8 rounded-lg bg-stone-800/80 flex items-center justify-center text-sm border border-stone-700/50 group-hover:scale-110 transition-transform">
+        <div className="w-8 h-8 rounded-lg bg-elevated flex items-center justify-center text-sm border border-stone-700/50 group-hover:scale-110 transition-transform">
           {icon}
         </div>
       </div>
 
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-2xl sm:text-3xl font-extrabold text-stone-100 font-mono tracking-tight">
+        <span className="text-2xl sm:text-3xl font-extrabold text-ink font-mono tracking-tight">
           {value}
         </span>
         
@@ -70,7 +70,7 @@ export function StatCard({
         </span>
       </div>
 
-      <p if={!!subtitle} className="mt-2 text-xs text-stone-400 line-clamp-1">
+      <p if={!!subtitle} className="mt-2 text-xs text-ink-soft line-clamp-1">
         {subtitle}
       </p>
     </div>

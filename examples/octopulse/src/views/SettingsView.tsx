@@ -63,14 +63,14 @@ export function SettingsView() {
       {/* Header */}
       <div>
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-100 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-ink tracking-tight">
             Cluster & System Settings
           </h1>
-          <span className="px-2 py-0.5 rounded bg-stone-900 text-stone-300 border border-stone-800 text-xs font-mono">
+          <span className="px-2 py-0.5 rounded bg-surface text-ink-soft border border-line text-xs font-mono">
             Navigation Guard
           </span>
         </div>
-        <p className="text-xs text-stone-400 mt-1">
+        <p className="text-xs text-ink-soft mt-1">
           Configure telemetry rates, cluster identities, and theme preferences.
         </p>
       </div>
@@ -90,19 +90,19 @@ export function SettingsView() {
       </div>
 
       {/* Settings Form */}
-      <form onSubmit={handleSave} className="p-6 sm:p-8 rounded-3xl bg-stone-900/90 border border-stone-800 shadow-2xl space-y-6">
+      <form onSubmit={handleSave} className="p-6 sm:p-8 rounded-3xl bg-surface border border-line shadow-2xl space-y-6">
         
         {/* Cluster Name */}
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-stone-300 font-mono mb-2">
+          <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft font-mono mb-2">
             Cluster Identifier
           </label>
           <input
             value={clusterName}
             onInput={(e: Event) => clusterName = (e.currentTarget as HTMLInputElement).value}
-            className="w-full px-4 py-2.5 rounded-xl bg-stone-950 border border-stone-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-stone-100 text-sm outline-none transition-all font-mono"
+            className="w-full px-4 py-2.5 rounded-xl bg-base border border-line focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-ink text-sm outline-none transition-all font-mono"
           />
-          <p className="text-[11px] text-stone-500 mt-1">
+          <p className="text-[11px] text-ink-faint mt-1">
             Global unique DNS identity across service mesh.
           </p>
         </div>
@@ -110,33 +110,33 @@ export function SettingsView() {
         {/* Rate Limiting */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-stone-300 font-mono mb-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft font-mono mb-2">
               Max Rate Limit (req/min)
             </label>
             <input
               type="number"
               value={rateLimit}
               onInput={(e: Event) => rateLimit = (e.currentTarget as HTMLInputElement).value}
-              className="w-full px-4 py-2.5 rounded-xl bg-stone-950 border border-stone-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-stone-100 text-sm outline-none transition-all font-mono"
+              className="w-full px-4 py-2.5 rounded-xl bg-base border border-line focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-ink text-sm outline-none transition-all font-mono"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-stone-300 font-mono mb-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft font-mono mb-2">
               Telemetry Sample Rate (ms)
             </label>
             <input
               type="number"
               value={sampleRate}
               onInput={(e: Event) => sampleRate = (e.currentTarget as HTMLInputElement).value}
-              className="w-full px-4 py-2.5 rounded-xl bg-stone-950 border border-stone-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-stone-100 text-sm outline-none transition-all font-mono"
+              className="w-full px-4 py-2.5 rounded-xl bg-base border border-line focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-ink text-sm outline-none transition-all font-mono"
             />
           </div>
         </div>
 
         {/* Theme Preference Selection */}
-        <div className="pt-4 border-t border-stone-800/80">
-          <label className="block text-xs font-bold uppercase tracking-wider text-stone-300 font-mono mb-3">
+        <div className="pt-4 border-t border-line">
+          <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft font-mono mb-3">
             Interface Theme Palette
           </label>
           <div className="grid grid-cols-2 gap-3">
@@ -145,15 +145,15 @@ export function SettingsView() {
               onClick={() => setTheme('dark')}
               className={`p-4 rounded-2xl border text-left transition-all ${
                 theme === 'dark'
-                  ? 'bg-stone-950 border-emerald-500/60 ring-1 ring-emerald-500'
-                  : 'bg-stone-950/40 border-stone-800 hover:border-stone-700'
+                  ? 'bg-base border-emerald-500/60 ring-1 ring-emerald-500'
+                  : 'bg-base border-line hover:border-line-strong'
               }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-stone-100">🌙 Warm Obsidian (Dark)</span>
+                <span className="text-sm font-bold text-ink">🌙 Warm Obsidian (Dark)</span>
                 <span if={theme === 'dark'} className="text-xs text-emerald-400 font-bold">Active</span>
               </div>
-              <p className="text-xs text-stone-500">
+              <p className="text-xs text-ink-faint">
                 Charcoal forest, emerald, and warm amber accents. Zero blue/violet glare.
               </p>
             </button>
@@ -163,15 +163,15 @@ export function SettingsView() {
               onClick={() => setTheme('light')}
               className={`p-4 rounded-2xl border text-left transition-all ${
                 theme === 'light'
-                  ? 'bg-stone-950 border-emerald-500/60 ring-1 ring-emerald-500'
-                  : 'bg-stone-950/40 border-stone-800 hover:border-stone-700'
+                  ? 'bg-base border-emerald-500/60 ring-1 ring-emerald-500'
+                  : 'bg-base border-line hover:border-line-strong'
               }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-stone-100">☀️ Crisp Sage (Light)</span>
+                <span className="text-sm font-bold text-ink">☀️ Crisp Sage (Light)</span>
                 <span if={theme === 'light'} className="text-xs text-emerald-400 font-bold">Active</span>
               </div>
-              <p className="text-xs text-stone-500">
+              <p className="text-xs text-ink-faint">
                 Clean organic paper tone with deep moss contrast.
               </p>
             </button>
@@ -179,12 +179,12 @@ export function SettingsView() {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-800/80">
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-line">
           <button
             type="button"
             onClick={handleReset}
             disabled={!hasUnsavedChanges}
-            className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 text-stone-300 text-xs font-bold transition-all"
+            className="px-4 py-2.5 rounded-xl bg-elevated hover:bg-stone-700 disabled:opacity-30 text-ink-soft text-xs font-bold transition-all"
           >
             Reset
           </button>

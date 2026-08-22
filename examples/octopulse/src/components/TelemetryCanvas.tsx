@@ -91,22 +91,22 @@ export function TelemetryCanvas() {
   });
 
   return (
-    <div className="p-5 rounded-2xl bg-stone-900/90 border border-stone-800 shadow-xl relative overflow-hidden">
+    <div className="p-5 rounded-2xl bg-surface border border-line shadow-xl relative overflow-hidden">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h3 className="text-sm font-bold text-stone-200 flex items-center gap-2">
+          <h3 className="text-sm font-bold text-ink flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
             Real-Time Latency Waveform
           </h3>
-          <p className="text-xs text-stone-400">Live request latency telemetry (ms)</p>
+          <p className="text-xs text-ink-soft">Live request latency telemetry (ms)</p>
         </div>
         <div className="text-right font-mono">
           <span className="text-xs text-emerald-400 font-semibold">{requestsPerSecond} req/s</span>
-          <span className="text-xs text-stone-500 block">Avg: {avgLatencyMs}ms</span>
+          <span className="text-xs text-ink-faint block">Avg: {avgLatencyMs}ms</span>
         </div>
       </div>
 
-      <div className="w-full h-36 rounded-xl bg-stone-950 border border-stone-800/80 overflow-hidden relative">
+      <div className="w-full h-36 rounded-xl bg-base border border-line overflow-hidden relative">
         <canvas ref={canvasElement} className="w-full h-full block" />
       </div>
     </div>

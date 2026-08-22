@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+/* Dark variant follows the application-managed attribute instead of
+   prefers-color-scheme, so the reactive theme toggle drives all utilities. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Semantic tokens bound to the theme variables: utilities such as bg-base,
+   text-ink, and border-line resolve through var() at the use site and flip
+   automatically when data-theme changes. */
+@theme inline {
+  --color-base: var(--bg-primary);
+  --color-surface: var(--bg-surface);
+  --color-elevated: var(--bg-elevated);
+  --color-line: var(--border-subtle);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text-primary);
+  --color-ink-soft: var(--text-secondary);
+  --color-ink-faint: var(--text-muted);
+}
+
 @layer base {
   :root {
     --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

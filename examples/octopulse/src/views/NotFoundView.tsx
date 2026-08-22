@@ -14,10 +14,10 @@ export function NotFoundView() {
       </div>
       
       <div className="space-y-2">
-        <h1 className="text-3xl font-extrabold text-stone-100 tracking-tight">
+        <h1 className="text-3xl font-extrabold text-ink tracking-tight">
           Route Not Found
         </h1>
-        <p className="text-sm text-stone-400 max-w-md mx-auto">
+        <p className="text-sm text-ink-soft max-w-md mx-auto">
           The requested system pathway does not exist or has been relocated within the service grid.
         </p>
       </div>
