@@ -106,6 +106,12 @@ interface KernelState {
   renderingEntity: EntityId | null;
   renderCounts: Map<EntityId, number> | null;
   markedBy: Map<EntityId, EntityId> | null;
+  /**
+   * Named per-runtime stores for kernel-adjacent subsystems (cleanup, prop
+   * boxes, access resolver, mount bookkeeping). Modules own their store
+   * shapes; the kernel only provides request-scoped storage and lifetime.
+   */
+  readonly extensions: Map<string, unknown>;
 }
 
 function createKernelState(scheduler?: Scheduler): KernelState {
@@ -123,6 +129,7 @@ function createKernelState(scheduler?: Scheduler): KernelState {
     renderingEntity: null,
     renderCounts: null,
     markedBy: null,
+    extensions: new Map(),
   };
 }
 
@@ -163,6 +170,7 @@ export function createApplicationRuntime(
       state.renderingEntity = null;
       state.renderCounts = null;
       state.markedBy = null;
+      state.extensions.clear();
       if (activeRuntime === runtime) {
         // Re-activating the default keeps ambient semantics predictable
         // after a server request disposes its runtime mid-flight.
@@ -217,6 +225,20 @@ export function runWithApplicationRuntime<T>(
 /** Swap the scheduling policy of the ACTIVE runtime (tests, SSR, hosts). */
 export function setScheduler(fn: Scheduler): void {
   activeRuntime.state.scheduler = fn;
+}
+
+/**
+ * Per-runtime named storage for kernel-adjacent subsystems. The first call
+ * creates the store; every later call inside the same runtime returns the
+ * same instance, so concurrent runtimes never share module state.
+ */
+export function getExtensionStore<T>(key: string, create: () => T): T {
+  const extensions = activeRuntime.state.extensions;
+  const existing = extensions.get(key);
+  if (existing !== undefined) return existing as T;
+  const created = create();
+  extensions.set(key, created);
+  return created;
 }
 
 /** Restore the environment default (microtask) on the ACTIVE runtime. */

@@ -8,8 +8,25 @@
  * runtimes cannot observe each other's state.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { commit, createApplicationRuntime, getActiveApplicationRuntime, markDirty, register, resetScheduler, runWithApplicationRuntime, setActiveApplicationRuntime, setScheduler, unregister, type Entity } from '@memoized-dom/runtime';
-import { _internals } from '@memoized-dom/runtime/testing';
+import {
+  cleanup,
+  commit,
+  createApplicationRuntime,
+  getActiveApplicationRuntime,
+  installAccessTable,
+  markDirty,
+  register,
+  registerProps,
+  resetScheduler,
+  resolveWrites,
+  runWithApplicationRuntime,
+  setActiveApplicationRuntime,
+  setProps,
+  setScheduler,
+  unregister,
+  type Entity,
+} from '@memoized-dom/runtime';
+import { _internals, _propsBox } from '@memoized-dom/runtime/testing';
 
 function makeEntity(id: string, renders: string[] = []): Entity {
   return {
@@ -133,6 +150,84 @@ describe('application runtime isolation', () => {
     markDirty('dead-letter'); // no-op: nothing registered, but exercises path
     expect(aRuns.length).toBe(0);
     expect(ambientRan).toBe(false);
+    a.dispose();
+  });
+
+  it('cleanup disposers registered in one runtime never drain in another', () => {
+    const a = createApplicationRuntime('request-a');
+    const drained: string[] = [];
+
+    runWithApplicationRuntime(a, () => {
+      register(makeEntity('App/A'));
+      cleanup('App/A', () => drained.push('a'));
+    });
+
+    // Unregistering a same-named entity inside another runtime must not
+    // drain runtime a's disposer — the stores are fully separate.
+    const b = createApplicationRuntime('request-b');
+    runWithApplicationRuntime(b, () => {
+      register(makeEntity('App/A'));
+      unregister('App/A');
+    });
+    b.dispose();
+    expect(drained).toEqual([]);
+
+    runWithApplicationRuntime(a, () => {
+      unregister('App/A');
+    });
+    expect(drained).toEqual(['a']);
+    a.dispose();
+  });
+
+  it('access tables are request-scoped: installs in one runtime are invisible to another', () => {
+    const a = createApplicationRuntime('request-a');
+
+    runWithApplicationRuntime(a, () => {
+      installAccessTable(
+        { readers: { './state.ts#count': ['App/Counter'] } },
+        'App',
+      );
+      expect(resolveWrites(['./state.ts#count'], [])).toEqual(['App/Counter']);
+    });
+
+    // A different runtime with no installed fragments resolves nothing.
+    const b = createApplicationRuntime('request-b');
+    runWithApplicationRuntime(b, () => {
+      expect(resolveWrites(['./state.ts#count'], [])).toEqual([]);
+    });
+    b.dispose();
+
+    // Runtime a's table survives the other request's existence.
+    runWithApplicationRuntime(a, () => {
+      expect(resolveWrites(['./state.ts#count'], [])).toEqual(['App/Counter']);
+    });
+    a.dispose();
+  });
+
+  it('prop boxes are per runtime', () => {
+    const a = createApplicationRuntime('request-a');
+    runWithApplicationRuntime(a, () => {
+      register(makeEntity('App/Child'));
+      registerProps('App/Child', ['alpha']);
+      expect(_propsBox('App/Child')).toEqual(['alpha']);
+    });
+
+    // Another runtime sees no box for the same entity id...
+    const b = createApplicationRuntime('request-b');
+    runWithApplicationRuntime(b, () => {
+      expect(_propsBox('App/Child')).toBeUndefined();
+    });
+    b.dispose();
+
+    // ...and setProps inside b is a dead letter, not a cross-runtime write.
+    const c = createApplicationRuntime('request-c');
+    runWithApplicationRuntime(c, () => {
+      setProps('App/Child', ['beta']);
+    });
+    c.dispose();
+    runWithApplicationRuntime(a, () => {
+      expect(_propsBox('App/Child')).toEqual(['alpha']);
+    });
     a.dispose();
   });
 });

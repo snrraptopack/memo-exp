@@ -1,6 +1,5 @@
 /**
- * @file access.ts
- * M3 — The static access table: compile-time read/write knowledge.
+ * access.ts — M3 — The static access table: compile-time read/write knowledge.
  *
  * In the real pipeline (M5) the COMPILER emits this table per app by analyzing
  * component bodies. In the bootstrap we hand-write it — we are the compiler.
@@ -18,9 +17,14 @@
  * HONEST LIMITATION: ordinary 'Row[*]' readers over-approximate and dirty all
  * matching live rows. Parametrized payload patterns can narrow this when the
  * compiler has a precise target; otherwise guarded writes absorb the slack.
+ *
+ * SSR Slice 1.1b — all resolver state lives on the active application
+ * runtime. Installed fragments and their derived matcher caches are
+ * request-scoped: two concurrent server renders maintain completely separate
+ * tables, and a runtime's registry listener mutates only its own expansions.
  */
 
-import { onRegistryChange, registeredIds, type EntityId } from './kernel';
+import { getExtensionStore, onRegistryChange, registeredIds, type EntityId } from './kernel';
 
 export interface AccessTable {
   readers: Record<string, string[]>;
@@ -29,60 +33,83 @@ export interface AccessTable {
   params?: Record<string, readonly { pattern: string }[]>;
 }
 
-let rootId: EntityId = '';
-let exactReaders = new Map<string, EntityId[]>();
-let wildReaders = new Map<string, RegExp[]>();
-let paramReaders = new Map<string, string[]>();
-let opaqueVars = new Set<string>();
-const fragments = new Map<
-  string,
-  { table: AccessTable; root: EntityId }
->();
-
 /**
- * M5.6 — precompiled, push-maintained matcher state.
- *
- * resolveWrites used to pay, PER COMMIT: rebuild the table-key union, then
- * scan every live id through every matched wildcard regex (O(patterns × ids)
- * — ~400 regex tests per commit at 100 rows; a generation-keyed cache didn't
- * help because row add/remove bumps the generation on exactly those steps).
- * Now:
- *   - `matchKeys` per write key is cached permanently (registry-independent);
- *   - wildcard expansions (`wildMatched`) are maintained INCREMENTALLY: a
- *     kernel registry listener tests only the added/removed id against the
- *     patterns — O(patterns) per registry change, O(1) per commit;
- *   - full resolutions are cached against `resVersion`, bumped by installs
- *     and by any incremental expansion change.
- * Cached arrays are shared; callers must not mutate them.
+ * Resolver state for one application runtime.
  */
-let allKeysCache: string[] = [];
-let wildMatched = new Map<string, Set<EntityId>>();
-let resVersion = 0;
-const matchKeysCache = new Map<string, string[]>();
-const resolutionCache = new Map<string, { v: number; result: EntityId[] }>();
+interface AccessResolverState {
+  rootId: EntityId;
+  exactReaders: Map<string, EntityId[]>;
+  wildReaders: Map<string, RegExp[]>;
+  paramReaders: Map<string, string[]>;
+  opaqueVars: Set<string>;
+  readonly fragments: Map<string, { table: AccessTable; root: EntityId }>;
+  /**
+   * M5.6 — precompiled, push-maintained matcher state.
+   *
+   * resolveWrites used to pay, PER COMMIT: rebuild the table-key union, then
+   * scan every live id through every matched wildcard regex (O(patterns × ids)
+   * — ~400 regex tests per commit at 100 rows; a generation-keyed cache didn't
+   * help because row add/remove bumps the generation on exactly those steps).
+   * Now:
+   *   - `matchKeys` per write key is cached permanently (registry-independent);
+   *   - wildcard expansions (`wildMatched`) are maintained INCREMENTALLY: a
+   *     kernel registry listener tests only the added/removed id against the
+   *     patterns — O(patterns) per registry change, O(1) per commit;
+   *   - full resolutions are cached against `resVersion`, bumped by installs
+   *     and by any incremental expansion change.
+   */
+  allKeysCache: string[];
+  wildMatched: Map<string, Set<EntityId>>;
+  resVersion: number;
+  readonly matchKeysCache: Map<string, string[]>;
+  readonly resolutionCache: Map<string, { v: number; result: EntityId[] }>;
+}
+
+function createAccessResolverState(): AccessResolverState {
+  return {
+    rootId: '',
+    exactReaders: new Map(),
+    wildReaders: new Map(),
+    paramReaders: new Map(),
+    opaqueVars: new Set(),
+    fragments: new Map(),
+    allKeysCache: [],
+    wildMatched: new Map(),
+    resVersion: 0,
+    matchKeysCache: new Map(),
+    resolutionCache: new Map(),
+  };
+}
+
+function resolver(): AccessResolverState {
+  return getExtensionStore('access', createAccessResolverState);
+}
 
 /** Full (re)build of wildcard expansions against the live registry. */
-function rebuildMatched(): void {
-  wildMatched = new Map();
+function rebuildMatched(s: AccessResolverState): void {
+  s.wildMatched = new Map();
   const live = registeredIds();
-  for (const [k, patterns] of wildReaders) {
+  for (const [k, patterns] of s.wildReaders) {
     const set = new Set<EntityId>();
     for (const regex of patterns) {
       for (const id of live) {
         if (regex.test(id)) set.add(id);
       }
     }
-    wildMatched.set(k, set);
+    s.wildMatched.set(k, set);
   }
 }
 
-// Incremental expansion maintenance: test only the changed id.
+// Incremental expansion maintenance: test only the changed id. Registry
+// events fire while the emitting runtime is active, so this touches only the
+// active runtime's own expansions.
 onRegistryChange((id, kind) => {
-  if (wildReaders.size === 0) return;
+  const s = resolver();
+  if (s.wildReaders.size === 0) return;
   let touched = false;
   if (kind === 'add') {
-    for (const [k, patterns] of wildReaders) {
-      const set = wildMatched.get(k);
+    for (const [k, patterns] of s.wildReaders) {
+      const set = s.wildMatched.get(k);
       if (!set) continue;
       for (const regex of patterns) {
         if (regex.test(id)) {
@@ -93,11 +120,11 @@ onRegistryChange((id, kind) => {
       }
     }
   } else {
-    for (const set of wildMatched.values()) {
+    for (const set of s.wildMatched.values()) {
       if (set.delete(id)) touched = true;
     }
   }
-  if (touched) resVersion++;
+  if (touched) s.resVersion++;
 });
 
 /** '*' matches any run of non-separator characters within one id segment. */
@@ -117,43 +144,46 @@ function compilePattern(raw: string): RegExp | null {
  * declared in module B. Re-installing the same fragment is idempotent.
  */
 function rebuildTables(): void {
-  rootId = '';
-  exactReaders = new Map();
-  wildReaders = new Map();
-  paramReaders = new Map();
-  opaqueVars = new Set();
-  for (const { table, root } of fragments.values()) {
-    rootId = root;
+  const s = resolver();
+  s.rootId = '';
+  s.exactReaders = new Map();
+  s.wildReaders = new Map();
+  s.paramReaders = new Map();
+  s.opaqueVars = new Set();
+  for (const { table, root } of s.fragments.values()) {
+    s.rootId = root;
     for (const [variable, patterns] of Object.entries(table.readers)) {
       for (const pattern of patterns) {
         const regex = compilePattern(pattern);
         if (regex === null) {
-          const list = exactReaders.get(variable) ?? [];
+          const list = s.exactReaders.get(variable) ?? [];
           if (!list.includes(pattern)) list.push(pattern);
-          exactReaders.set(variable, list);
+          s.exactReaders.set(variable, list);
         } else {
-          const list = wildReaders.get(variable) ?? [];
+          const list = s.wildReaders.get(variable) ?? [];
           if (!list.some((entry) => entry.source === regex.source)) {
             list.push(regex);
           }
-          wildReaders.set(variable, list);
+          s.wildReaders.set(variable, list);
         }
       }
     }
     for (const [variable, entries] of Object.entries(table.params ?? {})) {
-      const patterns = paramReaders.get(variable) ?? [];
+      const patterns = s.paramReaders.get(variable) ?? [];
       for (const entry of entries) {
         if (!patterns.includes(entry.pattern)) patterns.push(entry.pattern);
       }
-      paramReaders.set(variable, patterns);
+      s.paramReaders.set(variable, patterns);
     }
-    for (const variable of table.opaque ?? []) opaqueVars.add(variable);
+    for (const variable of table.opaque ?? []) s.opaqueVars.add(variable);
   }
-  allKeysCache = [...new Set([...exactReaders.keys(), ...wildReaders.keys()])];
-  matchKeysCache.clear();
-  resolutionCache.clear();
-  rebuildMatched();
-  resVersion++;
+  s.allKeysCache = [
+    ...new Set([...s.exactReaders.keys(), ...s.wildReaders.keys()]),
+  ];
+  s.matchKeysCache.clear();
+  s.resolutionCache.clear();
+  rebuildMatched(s);
+  s.resVersion++;
 }
 
 export function installAccessTable(
@@ -161,28 +191,31 @@ export function installAccessTable(
   root: EntityId,
   owner = `${root}\0${JSON.stringify(table)}`,
 ): void {
-  fragments.set(owner, { table, root });
+  const s = resolver();
+  s.fragments.set(owner, { table, root });
   rebuildTables();
 }
 
 /** Remove one compiler module's analysis fragment during hot replacement. */
 export function uninstallAccessTable(owner: string): void {
-  if (!fragments.delete(owner)) return;
+  const s = resolver();
+  if (!s.fragments.delete(owner)) return;
   rebuildTables();
 }
 
 /** Clear every installed fragment — test isolation, not app code. */
 export function resetAccessTable(): void {
-  fragments.clear();
+  const s = resolver();
+  s.fragments.clear();
   rebuildTables();
 }
 
 export function isOpaque(variable: string): boolean {
-  return opaqueVars.has(variable);
+  return resolver().opaqueVars.has(variable);
 }
 
 export function getRootId(): EntityId {
-  return rootId;
+  return resolver().rootId;
 }
 
 /**
@@ -225,7 +258,7 @@ export function resolveWrites(
     const out = new Set<EntityId>();
     let precise = true;
     for (const w of writes) {
-      const patterns = paramReaders.get(w);
+      const patterns = resolver().paramReaders.get(w);
       if (patterns === undefined || patterns.length === 0) {
         precise = false;
         break;
@@ -262,7 +295,7 @@ export function resolveWrites(
       if (!precise) break;
       // §5.2: params REPLACE the wildcard superset, but the variable's exact
       // (non-wildcard) readers are still dirtied alongside the precise ids.
-      for (const id of exactReaders.get(w) ?? []) out.add(id);
+      for (const id of resolver().exactReaders.get(w) ?? []) out.add(id);
     }
     if (precise && out.size > 0) return [...out];
   }
@@ -271,35 +304,36 @@ export function resolveWrites(
 }
 
 function resolveStaticKnownWrites(writes: readonly string[]): EntityId[] {
+  const s = resolver();
   // M5.6: full-resolution cache, valid until any expansion changes
   const cacheKey = writes.length === 1 ? (writes[0] as string) : writes.join(' ');
-  const hit = resolutionCache.get(cacheKey);
-  if (hit !== undefined && hit.v === resVersion) return hit.result;
+  const hit = s.resolutionCache.get(cacheKey);
+  if (hit !== undefined && hit.v === s.resVersion) return hit.result;
 
   const out = new Set<EntityId>();
 
   // matchKeys per write key: registry-independent, cached permanently
   const matchKeys = new Set<string>();
   for (const w of writes) {
-    let keys = matchKeysCache.get(w);
+    let keys = s.matchKeysCache.get(w);
     if (keys === undefined) {
       keys = [];
-      for (const k of allKeysCache) {
+      for (const k of s.allKeysCache) {
         if (k === w || k.startsWith(`${w}.`) || w.startsWith(`${k}.`)) {
           keys.push(k);
         }
       }
-      matchKeysCache.set(w, keys);
+      s.matchKeysCache.set(w, keys);
     }
     for (const k of keys) matchKeys.add(k);
   }
 
   for (const k of matchKeys) {
-    for (const id of exactReaders.get(k) ?? []) out.add(id);
-    for (const id of wildMatched.get(k) ?? []) out.add(id);
+    for (const id of s.exactReaders.get(k) ?? []) out.add(id);
+    for (const id of s.wildMatched.get(k) ?? []) out.add(id);
   }
 
   const result = [...out];
-  resolutionCache.set(cacheKey, { v: resVersion, result });
+  s.resolutionCache.set(cacheKey, { v: s.resVersion, result });
   return result;
 }

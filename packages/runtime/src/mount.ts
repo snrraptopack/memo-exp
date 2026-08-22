@@ -1,4 +1,4 @@
-import { unregisterSubtree } from './kernel';
+import { getExtensionStore, unregisterSubtree } from './kernel';
 import { rootNodes } from './jsx-dom';
 
 /** Authored zero-argument component reference accepted by the browser entry. */
@@ -23,9 +23,21 @@ export interface MountedApplication {
   unmount(): void;
 }
 
+// Factory definitions are build artifacts — process-wide by nature.
 const rootFactories = new WeakMap<Function, RootFactoryDefinition>();
-const mountedHosts = new WeakMap<Element, MountedApplication>();
-const mountedRoots = new Map<string, MountedApplication>();
+
+// Mount bookkeeping is per application runtime: two concurrent server
+// requests may each mount the same compiled root into their own documents.
+interface MountStore {
+  readonly mountedHosts: WeakMap<Element, MountedApplication>;
+  readonly mountedRoots: Map<string, MountedApplication>;
+}
+function mountStore(): MountStore {
+  return getExtensionStore('mount', () => ({
+    mountedHosts: new WeakMap<Element, MountedApplication>(),
+    mountedRoots: new Map<string, MountedApplication>(),
+  }));
+}
 
 /** Compiler-emitted root metadata. Application code should call mount(). */
 export function registerRootFactory(
@@ -54,7 +66,7 @@ export function mount(
   component: MountableComponent,
 ): MountedApplication {
   const host = resolveHost(target);
-  if (mountedHosts.has(host)) {
+  if (mountStore().mountedHosts.has(host)) {
     throw new Error('memoized-dom: mount target already owns an application');
   }
   const definition = rootFactories.get(component);
@@ -63,12 +75,12 @@ export function mount(
       'memoized-dom: mount received a component that is not a compiled application root',
     );
   }
-  if (mountedRoots.has(definition.id)) {
+  if (mountStore().mountedRoots.has(definition.id)) {
     throw new Error(
       `memoized-dom: root entity '${definition.id}' is already mounted`,
     );
   }
-  if (mountedRoots.size > 0) {
+  if (mountStore().mountedRoots.size > 0) {
     throw new Error(
       'memoized-dom: the runtime currently supports one mounted application',
     );
@@ -101,8 +113,8 @@ export function mount(
     unmount() {
       if (!live) return;
       live = false;
-      mountedHosts.delete(host);
-      mountedRoots.delete(definition.id);
+      mountStore().mountedHosts.delete(host);
+      mountStore().mountedRoots.delete(definition.id);
       try {
         unregisterSubtree(definition.id);
       } finally {
@@ -110,7 +122,7 @@ export function mount(
       }
     },
   };
-  mountedHosts.set(host, application);
-  mountedRoots.set(definition.id, application);
+  mountStore().mountedHosts.set(host, application);
+  mountStore().mountedRoots.set(definition.id, application);
   return application;
 }

@@ -13,13 +13,15 @@
  * `__p` binding stays valid for the entity's whole lifetime).
  */
 
-import { markDirty, onRegistryChange, type EntityId } from './kernel';
+import { getExtensionStore, markDirty, onRegistryChange, type EntityId } from './kernel';
 
-const boxes = new Map<EntityId, unknown[]>();
+function boxes(): Map<EntityId, unknown[]> {
+  return getExtensionStore('prop-boxes', () => new Map<EntityId, unknown[]>());
+}
 
 /** Called by compiled child factories right after register(). */
 export function registerProps(id: EntityId, box: unknown[]): void {
-  boxes.set(id, box);
+  boxes().set(id, box);
 }
 
 /**
@@ -29,7 +31,7 @@ export function registerProps(id: EntityId, box: unknown[]): void {
  * Dead letters (unmounted child) are silent no-ops, like markDirty.
  */
 export function setProps(id: EntityId, next: readonly unknown[]): void {
-  const box = boxes.get(id);
+  const box = boxes().get(id);
   if (box === undefined) return;
   let changed = box.length !== next.length;
   if (!changed) {
@@ -48,10 +50,10 @@ export function setProps(id: EntityId, next: readonly unknown[]): void {
 
 /** Test/devtool introspection only. */
 export function _propsBox(id: EntityId): readonly unknown[] | undefined {
-  return boxes.get(id);
+  return boxes().get(id);
 }
 
 // Boxes die with their entities (M5.6 listener).
 onRegistryChange((id, kind) => {
-  if (kind === 'remove') boxes.delete(id);
+  if (kind === 'remove') boxes().delete(id);
 });
