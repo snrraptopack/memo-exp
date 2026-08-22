@@ -11,12 +11,14 @@
  * It knows NOTHING about components, state, or events. Those are compiler
  * concerns layered on top. Keep this file focused on entity lifetime.
  *
- * M4 hardening (benchmark-driven):
- *   - Entity carries `children` + precomputed `depth`: subtree teardown is
- *     O(subtree) — was O(registry) per entity, i.e. O(n^2) on mass removal
- *     (clear-10k took 1510ms before this fix)
- *   - commit sorts NUMERIC depths, not string paths
- *   - registeredIds() returns a cached array, rebuilt only on register/unregister
+ * SSR Slice 1.1 — application runtimes:
+ * Every piece of mutable kernel state lives inside an ApplicationRuntime.
+ * The browser operates on one ambient default runtime, so existing imports
+ * behave exactly as before. Server entry points create a fresh runtime per
+ * request with createApplicationRuntime(), render inside it via
+ * setActiveApplicationRuntime()/runWithApplicationRuntime(), and release it
+ * with dispose(). Two active renders can never observe each other's entity,
+ * scheduler, invalidation, or diagnostic state.
  *
  * INVARIANT (the M5 compiler guarantees this): parents register BEFORE their
  * children, so child links exist. Violations don't corrupt rendering — they
@@ -25,10 +27,12 @@
 
 import {
   clearDirtyReasons,
+  createDirtyReasonStore,
   mergeDirtyReasons,
   takeDirtyReasons,
   type DirtyReasonInput,
   type DirtyReasons,
+  type DirtyReasonStore,
 } from './dirty-reasons';
 
 export type EntityId = string;
@@ -53,92 +57,180 @@ export interface Entity {
   children?: Set<EntityId>;
 }
 
-const registry = new Map<EntityId, Entity>();
-const dirtySet = new Set<EntityId>();
-const volatileSet = new Set<EntityId>();
-let volatileFrameScheduled = false;
-/** Reserved negative reason: reevaluate pull output without signaling a write. */
-const VOLATILE_PULL_REASON = -1;
-
-function scheduleVolatileFrame(): void {
-  if (
-    volatileFrameScheduled ||
-    volatileSet.size === 0 ||
-    typeof globalThis.requestAnimationFrame !== 'function'
-  ) {
-    return;
-  }
-  volatileFrameScheduled = true;
-  globalThis.requestAnimationFrame(() => {
-    volatileFrameScheduled = false;
-    const hidden =
-      typeof globalThis.document !== 'undefined' &&
-      globalThis.document.hidden;
-    if (!hidden) {
-      for (const id of volatileSet) markDirty(id, VOLATILE_PULL_REASON);
-    }
-    scheduleVolatileFrame();
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Scheduler — injectable, because the commit timing policy is not universal:
 //   browser  → queueMicrotask (batch one turn, settle DOM before paint)
 //   tests    → synchronous or manual pump
 //   SSR      → never schedules at all
 // ---------------------------------------------------------------------------
-type Scheduler = (fn: () => void) => void;
+export type Scheduler = (fn: () => void) => void;
 
 const defaultScheduler: Scheduler =
   typeof queueMicrotask === 'function'
     ? queueMicrotask
     : (fn) => Promise.resolve().then(fn);
 
-let scheduleFn: Scheduler = defaultScheduler;
+/**
+ * Reserved negative reason: reevaluate pull output without signaling a write.
+ */
+const VOLATILE_PULL_REASON = -1;
 
-/** Swap the scheduling policy (tests, SSR, custom frame loops). */
-export function setScheduler(fn: Scheduler): void {
-  scheduleFn = fn;
+/** Upper bound on commits' drain passes before a cycle is declared. */
+const MAX_COMMIT_PASSES = 100;
+
+/**
+ * Cycle diagnostics bound: an entity rendering more often than this within
+ * ONE commit indicates an update dirtying its own readers.
+ */
+const MAX_ENTITY_RENDERS_PER_COMMIT = 12;
+
+/**
+ * All mutable kernel bookkeeping for one application/request. Nothing else
+ * in the kernel may hold render-affecting state at module scope.
+ */
+interface KernelState {
+  readonly registry: Map<EntityId, Entity>;
+  readonly dirty: Set<EntityId>;
+  readonly volatile: Set<EntityId>;
+  /** Exact numeric causes per dirty entity until their next render. */
+  readonly dirtyReasons: DirtyReasonStore;
+  /** Cached id array for the access resolver — null when stale. */
+  idsCache: EntityId[] | null;
+  /** Monotonic registry generation for resolver caches. */
+  generation: number;
+  scheduler: Scheduler;
+  volatileFrameScheduled: boolean;
+  scheduled: boolean;
+  inCommit: boolean;
+  /** Cycle diagnostics — non-null only while a commit drain runs. */
+  renderingEntity: EntityId | null;
+  renderCounts: Map<EntityId, number> | null;
+  markedBy: Map<EntityId, EntityId> | null;
 }
 
-/** Restore the environment default (microtask). */
-export function resetScheduler(): void {
-  scheduleFn = defaultScheduler;
+function createKernelState(scheduler?: Scheduler): KernelState {
+  return {
+    registry: new Map(),
+    dirty: new Set(),
+    volatile: new Set(),
+    dirtyReasons: createDirtyReasonStore(),
+    idsCache: null,
+    generation: 0,
+    scheduler: scheduler ?? defaultScheduler,
+    volatileFrameScheduled: false,
+    scheduled: false,
+    inCommit: false,
+    renderingEntity: null,
+    renderCounts: null,
+    markedBy: null,
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Registry
-// ---------------------------------------------------------------------------
-/** Depth from the id path itself — order-independent, no parent lookup. */
-function depthOf(id: EntityId): number {
-  let d = 0;
-  for (let i = 0; i < id.length; i++) {
-    if (id.charCodeAt(i) === 47 /* '/' */) d++;
+/**
+ * One isolated application/request runtime. Browser code uses the ambient
+ * default; server entry points create, activate, and dispose one per request.
+ */
+export interface ApplicationRuntime {
+  readonly id: string;
+  /**
+   * Unregister every entity (draining cleanup hooks) and drop all pending
+   * bookkeeping. The handle must not be activated afterwards.
+   */
+  dispose(): void;
+  /** @internal Test/introspection surface. Not part of the paradigm API. */
+  readonly state: KernelState;
+}
+
+let runtimeSequence = 0;
+
+/** Create an isolated runtime. Server entry points call this per request. */
+export function createApplicationRuntime(
+  id = `runtime-${++runtimeSequence}`,
+): ApplicationRuntime {
+  const state = createKernelState();
+  const runtime: ApplicationRuntime = {
+    id,
+    state,
+    dispose() {
+      const ids = [...state.registry.keys()];
+      for (const id of ids) unregisterSubtreeInState(state, id);
+      state.dirty.clear();
+      state.dirtyReasons.clear();
+      state.volatile.clear();
+      state.idsCache = null;
+      state.scheduled = false;
+      state.inCommit = false;
+      state.renderingEntity = null;
+      state.renderCounts = null;
+      state.markedBy = null;
+      if (activeRuntime === runtime) {
+        // Re-activating the default keeps ambient semantics predictable
+        // after a server request disposes its runtime mid-flight.
+        activeRuntime = defaultRuntime;
+      }
+    },
+  };
+  return runtime;
+}
+
+// The ambient runtime: browsers get one process-wide default so existing
+// imports keep their exact behavior. Servers switch per request.
+const defaultRuntime: ApplicationRuntime = {
+  id: 'browser-default',
+  state: createKernelState(),
+  dispose() {
+    throw new Error(
+      '[memo-dom] the default browser runtime cannot be disposed',
+    );
+  },
+};
+
+let activeRuntime: ApplicationRuntime = defaultRuntime;
+
+/** The runtime all kernel operations currently route through. */
+export function getActiveApplicationRuntime(): ApplicationRuntime {
+  return activeRuntime;
+}
+
+/** Route subsequent kernel operations through `runtime`. */
+export function setActiveApplicationRuntime(
+  runtime: ApplicationRuntime,
+): ApplicationRuntime {
+  const previous = activeRuntime;
+  activeRuntime = runtime;
+  return previous;
+}
+
+/** Scope `fn` to `runtime`, restoring the previous runtime afterwards. */
+export function runWithApplicationRuntime<T>(
+  runtime: ApplicationRuntime,
+  fn: () => T,
+): T {
+  const previous = setActiveApplicationRuntime(runtime);
+  try {
+    return fn();
+  } finally {
+    activeRuntime = previous;
   }
-  return d;
 }
 
-/** Cached id array for the access resolver — rebuilt on registry mutation. */
-let idsCache: EntityId[] | null = null;
-
-/**
- * M5.6: monotonic registry generation, bumped on every register/unregister.
- * The access resolver caches write-set resolutions against it — a hit is
- * only valid while the entity set is unchanged.
- */
-let generation = 0;
-
-/** Current registry generation (see above). Introspection/resolver only. */
-export function registryGeneration(): number {
-  return generation;
+/** Swap the scheduling policy of the ACTIVE runtime (tests, SSR, hosts). */
+export function setScheduler(fn: Scheduler): void {
+  activeRuntime.state.scheduler = fn;
 }
 
-/**
- * M5.6: registry-change listeners — push-based notification so the access
- * resolver can keep wildcard expansions incrementally updated instead of
- * re-matching every pattern against every id on every commit. Listeners
- * run synchronously; they must be cheap (a few regex tests).
- */
+/** Restore the environment default (microtask) on the ACTIVE runtime. */
+export function resetScheduler(): void {
+  activeRuntime.state.scheduler = defaultScheduler;
+}
+
+// ---------------------------------------------------------------------------
+// Registry-change listeners and disposal hooks are STATIC infrastructure —
+// they are installed once per process (access resolver, cleanup module) and
+// carry no per-request state themselves. Per-request stores live on the
+// ApplicationRuntime instead.
+// ---------------------------------------------------------------------------
+
 type RegistryListener = (id: EntityId, kind: 'add' | 'remove') => void;
 const registryListeners: RegistryListener[] = [];
 
@@ -162,25 +254,66 @@ function notifyRegistry(id: EntityId, kind: 'add' | 'remove'): void {
   for (const fn of registryListeners) fn(id, kind);
 }
 
+// ---------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------
+
+/** Depth from the id path itself — order-independent, no parent lookup. */
+function depthOf(id: EntityId): number {
+  let d = 0;
+  for (let i = 0; i < id.length; i++) {
+    if (id.charCodeAt(i) === 47 /* '/' */) d++;
+  }
+  return d;
+}
+
+/** Current registry generation (introspection/resolver only). */
+export function registryGeneration(): number {
+  return activeRuntime.state.generation;
+}
+
+function scheduleVolatileFrame(k: KernelState): void {
+  if (
+    k.volatileFrameScheduled ||
+    k.volatile.size === 0 ||
+    typeof globalThis.requestAnimationFrame !== 'function'
+  ) {
+    return;
+  }
+  k.volatileFrameScheduled = true;
+  globalThis.requestAnimationFrame(() => {
+    k.volatileFrameScheduled = false;
+    const hidden =
+      typeof globalThis.document !== 'undefined' &&
+      globalThis.document.hidden;
+    if (!hidden) {
+      for (const id of k.volatile) markDirty(id, VOLATILE_PULL_REASON);
+    }
+    scheduleVolatileFrame(k);
+  });
+}
+
 export function register(entity: Entity): void {
-  const parent = entity.parent !== null ? registry.get(entity.parent) : undefined;
+  const k = activeRuntime.state;
+  const parent =
+    entity.parent !== null ? k.registry.get(entity.parent) : undefined;
   // an explicit depth wins (R13 computeds register at -1: recompute BEFORE
   // any reader renders); else derive from the parent — string scan fallback
   entity.depth =
     entity.depth ??
     (parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id));
-  registry.set(entity.id, entity);
-  if (entity.volatile === true) volatileSet.add(entity.id);
-  else volatileSet.delete(entity.id);
+  k.registry.set(entity.id, entity);
+  if (entity.volatile === true) k.volatile.add(entity.id);
+  else k.volatile.delete(entity.id);
 
   if (parent) {
     (parent.children ??= new Set()).add(entity.id);
   }
 
-  idsCache = null;
-  generation++;
+  k.idsCache = null;
+  k.generation++;
   notifyRegistry(entity.id, 'add');
-  scheduleVolatileFrame();
+  scheduleVolatileFrame(k);
 }
 
 /**
@@ -188,11 +321,15 @@ export function register(entity: Entity): void {
  * Walks the children links; also detaches from the parent's children set.
  */
 export function unregisterSubtree(id: EntityId): void {
-  const root = registry.get(id);
+  unregisterSubtreeInState(activeRuntime.state, id);
+}
+
+function unregisterSubtreeInState(k: KernelState, id: EntityId): void {
+  const root = k.registry.get(id);
   if (!root) return;
 
   if (root.parent !== null) {
-    registry.get(root.parent)?.children?.delete(id);
+    k.registry.get(root.parent)?.children?.delete(id);
   }
 
   const stack: EntityId[] = [id];
@@ -200,7 +337,7 @@ export function unregisterSubtree(id: EntityId): void {
   const cleanupErrors: unknown[] = [];
   while (stack.length > 0) {
     const cur = stack.pop()!;
-    const e = registry.get(cur);
+    const e = k.registry.get(cur);
     if (!e) continue;
     teardown.push(cur);
     if (e.children) {
@@ -213,10 +350,10 @@ export function unregisterSubtree(id: EntityId): void {
   // unregister calls become dead letters.
   teardown.reverse();
   for (const cur of teardown) {
-    registry.delete(cur);
-    dirtySet.delete(cur);
-    volatileSet.delete(cur);
-    clearDirtyReasons(cur);
+    k.registry.delete(cur);
+    k.dirty.delete(cur);
+    k.volatile.delete(cur);
+    clearDirtyReasons(k.dirtyReasons, cur);
     notifyRegistry(cur, 'remove');
   }
   for (const cur of teardown) {
@@ -226,8 +363,8 @@ export function unregisterSubtree(id: EntityId): void {
     }
   }
 
-  idsCache = null;
-  generation++;
+  k.idsCache = null;
+  k.generation++;
 
   if (cleanupErrors.length === 1) throw cleanupErrors[0];
   if (cleanupErrors.length > 1) {
@@ -244,11 +381,11 @@ export function unregister(id: EntityId): void {
 }
 
 export function has(id: EntityId): boolean {
-  return registry.has(id);
+  return activeRuntime.state.registry.has(id);
 }
 
 export function getEntity(id: EntityId): Entity | undefined {
-  return registry.get(id);
+  return activeRuntime.state.registry.get(id);
 }
 
 /**
@@ -258,10 +395,11 @@ export function getEntity(id: EntityId): Entity | undefined {
  * whose lexical dependencies belong to the callback caller.
  */
 export function renderDescendants(id: EntityId): void {
+  const k = activeRuntime.state;
   const visitRenderPhase = (parent: Entity): void => {
     if (parent.children === undefined) return;
     for (const childId of parent.children) {
-      const child = registry.get(childId);
+      const child = k.registry.get(childId);
       if (child === undefined) continue;
       if (child.phase !== 'effect') {
         child.render();
@@ -273,7 +411,7 @@ export function renderDescendants(id: EntityId): void {
   const visitEffectPhase = (parent: Entity): void => {
     if (parent.children === undefined) return;
     for (const childId of parent.children) {
-      const child = registry.get(childId);
+      const child = k.registry.get(childId);
       if (child === undefined) continue;
       if (child.phase === 'effect') {
         child.render();
@@ -282,7 +420,7 @@ export function renderDescendants(id: EntityId): void {
       visitEffectPhase(child);
     }
   };
-  const owner = registry.get(id);
+  const owner = k.registry.get(id);
   if (owner !== undefined) {
     visitRenderPhase(owner);
     visitEffectPhase(owner);
@@ -295,8 +433,9 @@ export function renderDescendants(id: EntityId): void {
  * Callers MUST NOT mutate the returned array.
  */
 export function registeredIds(): readonly EntityId[] {
-  idsCache ??= [...registry.keys()];
-  return idsCache;
+  const k = activeRuntime.state;
+  k.idsCache ??= [...k.registry.keys()];
+  return k.idsCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -312,16 +451,17 @@ export function markDirty(
   id: EntityId,
   reason?: DirtyReasonInput,
 ): void {
-  if (!registry.has(id)) return;
-  if (inCommit && markedBy !== null && renderingEntity !== null) {
-    markedBy.set(id, renderingEntity);
+  const k = activeRuntime.state;
+  if (!k.registry.has(id)) return;
+  if (k.inCommit && k.markedBy !== null && k.renderingEntity !== null) {
+    k.markedBy.set(id, k.renderingEntity);
   }
-  const wasDirty = dirtySet.has(id);
+  const wasDirty = k.dirty.has(id);
   if (reason !== undefined || wasDirty) {
-    mergeDirtyReasons(id, wasDirty, reason);
+    mergeDirtyReasons(k.dirtyReasons, id, wasDirty, reason);
   }
-  dirtySet.add(id);
-  scheduleCommit();
+  k.dirty.add(id);
+  scheduleCommit(k);
 }
 
 /**
@@ -331,10 +471,11 @@ export function markDirty(
  * if the row is re-dirtied later (cascade), it renders again as usual.
  */
 export function undirty(id: EntityId): void {
+  const k = activeRuntime.state;
   // size gate first: rows are undirtied on EVERY reconcile resync (M5.7)
   // while almost never actually pending — skip the string hash lookup then
-  if (dirtySet.size !== 0 && dirtySet.delete(id)) {
-    clearDirtyReasons(id);
+  if (k.dirty.size !== 0 && k.dirty.delete(id)) {
+    clearDirtyReasons(k.dirtyReasons, id);
   }
 }
 
@@ -346,38 +487,23 @@ export function undirty(id: EntityId): void {
  * NOTE: prefix scan (rare fallback path); teardown uses the children links.
  */
 export function markDirtySubtree(id: EntityId): void {
+  const k = activeRuntime.state;
   const prefix = id + '/';
   let marked = false;
-  for (const key of registry.keys()) {
+  for (const key of k.registry.keys()) {
     if (key === id || key.startsWith(prefix)) {
-      dirtySet.add(key);
-      clearDirtyReasons(key);
+      k.dirty.add(key);
+      clearDirtyReasons(k.dirtyReasons, key);
       marked = true;
     }
   }
-  if (marked) scheduleCommit();
+  if (marked) scheduleCommit(k);
 }
 
-let scheduled = false;
-let inCommit = false;
-
-/**
- * Cycle diagnostics: while the drain loop runs, `renderingEntity` is the
- * entity whose render callback is executing, so markDirty can attribute each
- * mark made during a commit to the entity that caused it. If one entity
- * renders far more often than even a deep prop-flow cascade requires, the
- * commit is a cycle — fail immediately with the participating entities
- * instead of burning the full pass bound on identical work every frame.
- */
-let renderingEntity: EntityId | null = null;
-let renderCounts: Map<EntityId, number> | null = null;
-let markedBy: Map<EntityId, EntityId> | null = null;
-const MAX_ENTITY_RENDERS_PER_COMMIT = 12;
-
-function scheduleCommit(): void {
-  if (scheduled || inCommit) return; // dedupe: 1000 marks → 1 frame
-  scheduled = true;
-  scheduleFn(commit);
+function scheduleCommit(k: KernelState): void {
+  if (k.scheduled || k.inCommit) return; // dedupe: 1000 marks → 1 frame
+  k.scheduled = true;
+  k.scheduler(commit);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,26 +523,27 @@ function scheduleCommit(): void {
  * Prefer `setScheduler(fn => fn())` when the WHOLE app should be sync.
  */
 export function commit(): void {
-  scheduled = false;
-  if (inCommit) return; // reentrancy: the running drain picks up new marks
-  inCommit = true;
-  renderCounts ??= new Map();
-  markedBy ??= new Map();
+  const k = activeRuntime.state;
+  k.scheduled = false;
+  if (k.inCommit) return; // reentrancy: the running drain picks up new marks
+  k.inCommit = true;
+  k.renderCounts ??= new Map();
+  k.markedBy ??= new Map();
   try {
     // R10: drain loop — renders may mark further ids (setProps pushing props
     // to children, update-driven invalidation). Depth-sorted batches keep
     // parent-before-child within and across passes. A bound guards cycles.
-    for (let pass = 0; pass < 100 && dirtySet.size > 0; pass++) {
+    for (let pass = 0; pass < MAX_COMMIT_PASSES && k.dirty.size > 0; pass++) {
       // M5.7: keep ids IN the dirty set until the moment they render —
       // a render that runs earlier in this batch (parent list reconcile →
       // M5.5 row resync) may cancel a row's pending render via undirty().
       const pending: Entity[] = [];
-      for (const id of dirtySet) {
-        const e = registry.get(id);
+      for (const id of k.dirty) {
+        const e = k.registry.get(id);
         if (e) pending.push(e);
         else {
-          dirtySet.delete(id); // dead letter: dirtied, then unregistered
-          clearDirtyReasons(id);
+          k.dirty.delete(id); // dead letter: dirtied, then unregistered
+          clearDirtyReasons(k.dirtyReasons, id);
         }
       }
 
@@ -430,13 +557,13 @@ export function commit(): void {
       batch.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
 
       for (const e of batch) {
-        if (dirtySet.delete(e.id)) {
-          const renders = (renderCounts.get(e.id) ?? 0) + 1;
-          renderCounts.set(e.id, renders);
+        if (k.dirty.delete(e.id)) {
+          const renders = (k.renderCounts!.get(e.id) ?? 0) + 1;
+          k.renderCounts!.set(e.id, renders);
           if (renders > MAX_ENTITY_RENDERS_PER_COMMIT) {
             const culprits = new Map<EntityId, number>();
-            for (const [marked, marker] of markedBy) {
-              const markedRenders = renderCounts.get(marked) ?? 0;
+            for (const [marked, marker] of k.markedBy!) {
+              const markedRenders = k.renderCounts!.get(marked) ?? 0;
               if (marked === e.id || markedRenders > 1) {
                 culprits.set(marker, (culprits.get(marker) ?? 0) + 1);
               }
@@ -452,26 +579,26 @@ export function commit(): void {
                 `An effect likely writes state its own owner's update re-reads.`,
             );
           }
-          renderingEntity = e.id;
+          k.renderingEntity = e.id;
           try {
-            e.render(takeDirtyReasons(e.id));
+            e.render(takeDirtyReasons(k.dirtyReasons, e.id));
           } finally {
-            renderingEntity = null;
+            k.renderingEntity = null;
           }
         }
       }
       // ids dirtied DURING renders (cascade) stay in the set → next pass
     }
-    if (dirtySet.size > 0) {
+    if (k.dirty.size > 0) {
       throw new Error(
         '[memo-dom] commit cascade exceeded 100 passes — an update is dirtying its own readers (cycle)',
       );
     }
   } finally {
-    inCommit = false;
-    renderingEntity = null;
-    renderCounts = null;
-    markedBy = null;
+    k.inCommit = false;
+    k.renderingEntity = null;
+    k.renderCounts = null;
+    k.markedBy = null;
   }
 }
 
@@ -483,5 +610,6 @@ export function _internals(): {
   dirtySet: ReadonlySet<EntityId>;
   volatileSet: ReadonlySet<EntityId>;
 } {
-  return { registry, dirtySet, volatileSet };
+  const k = activeRuntime.state;
+  return { registry: k.registry, dirtySet: k.dirty, volatileSet: k.volatile };
 }

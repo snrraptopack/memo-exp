@@ -21,8 +21,13 @@ export {
   resetScheduler,
   getEntity,
   renderDescendants,
+  createApplicationRuntime,
+  getActiveApplicationRuntime,
+  setActiveApplicationRuntime,
+  runWithApplicationRuntime,
 } from './kernel';
 export type {
+  ApplicationRuntime,
   DirtyReasonInput,
   DirtyReasons,
   Entity,
