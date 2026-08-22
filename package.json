@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "build": "bun run --cwd packages/data build && bun run --cwd packages/runtime build && bun run --cwd packages/router build && bun run --cwd packages/compiler build && bun run --cwd packages/vite build && bun run --cwd packages/language-service build",
-    "test": "bun run build && vitest run && bun run --cwd packages/data test && bun run --cwd packages/router test && bun run --cwd packages/vite test && bun run --cwd packages/language-service test",
+    "test": "vitest run && bun run --cwd packages/data test && bun run --cwd packages/router test && bun run --cwd packages/vite test && bun run --cwd packages/language-service test",
     "typecheck": "bun run build && tsc --noEmit",
     "dev": "bun run build && vitest",
     "example:dev": "vite --config examples/vite.config.ts",
@@ -35,6 +35,7 @@
     "bench:application:ui": "cd bench/frameworks && bun run ui:application"
   },
   "devDependencies": {
+    "@jridgewell/trace-mapping": "^0.3.31",
     "@memoized-dom/compiler": "workspace:*",
     "@memoized-dom/data": "workspace:*",
     "@memoized-dom/router": "workspace:*",
@@ -44,10 +45,10 @@
     "@types/babel__traverse": "^7.28.0",
     "@types/bun": "latest",
     "@types/node": "^26.0.0",
-    "@jridgewell/trace-mapping": "^0.3.31",
     "esbuild": "^0.28.1",
     "happy-dom": "^20.11.0",
     "puppeteer-core": "^25.3.0",
+    "rolldown": "^1.2.5",
     "typescript": "^5",
     "vite": "^8.2.2",
     "vitest": "^4.1.10"
