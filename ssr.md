@@ -339,6 +339,11 @@ module record, TWO concurrent application runtimes, divergent mutations
 through exported mutators, zero cross-request state, correct per-request
 reactive updates.
 
+**Vite wiring:** `moduleStateCells` flows through the adapter's existing
+`CompileModulesOptions` surface into graph compilation (collector passthrough
+tested by an opt-in build assertion in the adapter suite); the suite also
+gained a 30s test timeout matching real Vite+Rolldown build durations.
+
 | Phase | Status |
 |---|---|
 | 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
@@ -353,7 +358,3 @@ reactive updates.
 
 1. **Phase 1 exit review:** confirm all four exit criteria, then close the
    explicit Phase 1→2 gate (data/async RFC agreement) before marker work.
-2. **Vite wiring:** expose `moduleStateCells` through the adapter for
-   environment-specific builds.
-3. **Router/data wiring:** request-local router + data runtime injection
-   into renderToString.

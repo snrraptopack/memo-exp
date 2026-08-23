@@ -106,6 +106,9 @@ export async function compileGraph(
       ? {}
       : { runtimePath: options.runtimePath }),
     ...(hot ? { hot: true } : {}),
+    ...(options.moduleStateCells === undefined
+      ? {}
+      : { moduleStateCells: options.moduleStateCells }),
     resolveImport(specifier: string, importer: string) {
       return resolutions.get(resolutionKey(importer, specifier));
     },

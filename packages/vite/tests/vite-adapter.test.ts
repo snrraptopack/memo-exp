@@ -73,6 +73,39 @@ describe('Vite 8 adapter', () => {
     expect(code).not.toContain('import.meta.hot.accept(');
   });
 
+  it('lowers module state into request-owned cells when opted in', async () => {
+    const result = await build({
+      root: fixture,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: { '@': source } },
+      plugins: [
+        memoizedDom({ entries: 'src/main.ts', moduleStateCells: true }),
+      ],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: {
+          input: resolve(source, 'main.ts'),
+        },
+      },
+    });
+    const builds = Array.isArray(result) ? result : [result];
+    const code = builds
+      .flatMap((item) => item.output)
+      .flatMap((output) => (output.type === 'chunk' ? [output.code] : []))
+      .join('\n');
+
+    // Owner records its authored default; importer references the same
+    // identity without one; compound writes lower to functional updates.
+    // (Rolldown renames bundled runtime identifiers, so anchor on the
+    // canonical keys and value shapes, not _MD member names.)
+    expect(code).toContain('./src/state.ts#count", 0)');
+    expect(code).toContain('./src/state.ts#count")');
+    expect(code).toContain('(c) => c + 1');
+    expect(code).not.toMatch(/_value = count\b/);
+  });
+
   it('serves generated modules from the on-demand dev pipeline', async () => {
     server = await createServer({
       root: fixture,
