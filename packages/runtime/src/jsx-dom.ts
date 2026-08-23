@@ -7,7 +7,9 @@
  */
 
 export function rootNodes(root: Node): Node[] {
-  return root.nodeType === Node.DOCUMENT_FRAGMENT_NODE
+  // Literal node-type constant: compiled code runs in bare Node (SSR) where
+  // the ambient `Node` class does not exist.
+  return root.nodeType === 11 /* DOCUMENT_FRAGMENT */
     ? Array.from(root.childNodes)
     : [root];
 }

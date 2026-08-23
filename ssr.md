@@ -344,6 +344,38 @@ reactive updates.
 tested by an opt-in build assertion in the adapter suite); the suite also
 gained a 30s test timeout matching real Vite+Rolldown build durations.
 
+## Slice 1.8 — Phase 1 exit review (gate to Phase 2)
+
+**Commit:** this slice.
+
+Formal review of the four proposal §Phase 1 exit criteria:
+
+1. **No window/document required by the server renderer — PASS (one fix).**
+   New bare-node probe (`exit-review.test.ts`, `@vitest-environment node`)
+   caught `_MD.rootNodes` referencing the ambient `Node` class; fixed to a
+   literal node-type constant. Import + render now work with no DOM globals.
+2. **Two simultaneous renders cannot observe each other's state — PASS with
+   one documented contract.** Kernel, cleanup, props, access tables, router,
+   data, module-state cells, and effects are request-owned and replayed per
+   runtime (slices 1.1–1.7). The remaining shared seam is the ambient
+   `document` global during rendering plus module-scope template caches that
+   pin the first-creating document; synchronous-only rendering makes this
+   safe today, and routing emitted element creation through the environment
+   document remains a prerequisite for any async/streaming render.
+3. **CSR-equivalence matrix — PASS** (slices 1.5/1.6).
+4. **Dispose on throw — PASS.** New probe: a throwing component fails its
+   request, restores all globals, and later requests render normally through
+   fresh contexts.
+
+New probes live in `packages/server/tests/exit-review.test.ts`; the isolation
+probe also exercises leaked-mutation checks over ONE shared compiled record
+with cell-lowered module state.
+
+Environment note: full-suite runs on this machine intermittently time out
+arbitrary single tests under parallel load (r42 previously, r26 now); every
+victim passes in isolation. Not treated as regressions without isolated
+corroboration.
+
 | Phase | Status |
 |---|---|
 | 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
@@ -352,9 +384,15 @@ gained a 30s test timeout matching real Vite+Rolldown build durations.
 | 1.3 — module-state isolation | **complete**: cells proven (slice 1.3 probe) AND compiler lowering shipped (slice 1.7); literal-initializer restriction documented |
 | 1.4 — LinkeDOM reference renderer | **first tier working**: renderToString/renderWithDom over LinkeDOM; server/client structural parity tested; effects/refs verified off |
 | 1.5 — CSR-equivalence matrix | **complete**: full §1.5 corpus incl. route regions (params/query/catch-all) and deterministic data states via request-local router/data wiring |
+| Phase 1 exit review | **complete (slice 1.8)**: criteria verified; Phase 1→2 gate now awaits the data/async RFC agreement recorded in the decision log |
 | 2–6 | gated behind phase 1 exit criteria |
 
 ## Next slices
 
-1. **Phase 1 exit review:** confirm all four exit criteria, then close the
-   explicit Phase 1→2 gate (data/async RFC agreement) before marker work.
+1. **Hydration-safe keyed-list identity encoding (Phase 0 leftover):**
+   type-tagged primitive keys, escaping/opaque encoding for string keys,
+   collision tests, declared object/symbol-key limitation — required before
+   marker freezing.
+2. **Data/async semantics gate:** agree "unresolved resource at flush",
+   region fallback emission, and resource serialization shapes in the
+   data-loading RFC — the explicit blocker for Phase 2 protocol work.

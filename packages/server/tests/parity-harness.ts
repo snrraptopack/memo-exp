@@ -41,12 +41,16 @@ export interface CompiledTiers {
 export async function compileFixture(
   name: string,
   source: string,
+  compilerOptions: Record<string, unknown> = {},
 ): Promise<CompiledTiers> {
   mkdirSync(outDir, { recursive: true });
   const outputPath = join(outDir, `${name}.compiled.ts`);
   const output = compileModules(
     { [`./${name}.tsx`]: source },
-    { runtimePath: '@memoized-dom/runtime' },
+    {
+      runtimePath: '@memoized-dom/runtime',
+      ...compilerOptions,
+    },
   );
   const compiled = output[`./${name}.tsx`]!;
   writeFileSync(outputPath, compiled);
