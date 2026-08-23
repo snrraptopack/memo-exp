@@ -69,8 +69,13 @@ function parseServerDocument(
 function serialize(nodes: readonly Node[]): string {
   let html = '';
   for (const node of nodes) {
+    // Runtime region anchors (when:/list: comments) are declared-irrelevant
+    // serializer details; a bare comment node has no outerHTML and must not
+    // fall through to raw textContent serialization.
+    if (node.nodeType === 8 /* COMMENT */) continue;
     if (node.nodeType === 11 /* FRAGMENT */) {
       for (const child of node.childNodes) {
+        if (child.nodeType === 8 /* COMMENT */) continue;
         html += (child as Element).outerHTML ?? child.textContent ?? '';
       }
       continue;
@@ -78,6 +83,41 @@ function serialize(nodes: readonly Node[]): string {
     html += (node as Element).outerHTML ?? node.textContent ?? '';
   }
   return html;
+}
+
+/**
+ * Property-backed attributes set during creation (compiled `checked`,
+ * `disabled`, ... lower to property writes) do not serialize in every DOM
+ * implementation. Sync the known boolean set back to attributes before
+ * serialization so server HTML is semantically complete.
+ */
+const BOOLEAN_PROPS: ReadonlyArray<readonly [string, string]> = [
+  ['checked', 'checked'],
+  ['disabled', 'disabled'],
+  ['selected', 'selected'],
+  ['readOnly', 'readonly'],
+  ['multiple', 'multiple'],
+  ['required', 'required'],
+  ['open', 'open'],
+  ['hidden', 'hidden'],
+  ['muted', 'muted'],
+];
+
+export function syncBooleanAttributes(root: Node): void {
+  const walker = document.createTreeWalker(root, 1 /* ELEMENT */);
+  for (
+    let element = walker.nextNode() as Element | null;
+    element !== null;
+    element = walker.nextNode() as Element | null
+  ) {
+    for (const [prop, attribute] of BOOLEAN_PROPS) {
+      const value = (element as unknown as Record<string, unknown>)[prop];
+      if (value === true && !element.hasAttribute(attribute)) {
+        element.setAttribute(attribute, '');
+      }
+      // A false property with an absent attribute already encodes false.
+    }
+  }
 }
 
 /**
@@ -119,6 +159,7 @@ export function renderWithDom(
       root?.nodeType === 11 /* FRAGMENT */
         ? Array.from(root.childNodes)
         : [root as Node];
+    for (const node of nodes) syncBooleanAttributes(node);
     return {
       document: serverDocument as unknown as Document,
       html: serialize(nodes),

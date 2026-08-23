@@ -231,6 +231,47 @@ operational findings encoded in the tests:
 2. Successive renders get fresh runtimes and byte-identical output;
    failure paths unregister and restore globals.
 
+## Slice 1.5 — CSR-equivalence corpus (Phase 1.5)
+
+**Commit:** this slice.
+
+Grew the single-fixture parity check from slice 1.4 into the proposal §1.5
+corpus. New harness `packages/server/tests/parity-harness.ts` compiles one
+authored source into TWO module records (server tier + client tier — compiled
+template caches capture the first-creation document), renders each through its
+tier, and compares under declared-irrelevant normalizations. Corpus in
+`packages/server/tests/parity.test.ts` covers: text/attribute/boolean/class/
+style, escaping, trusted innerHTML, SVG namespaces, multi-root fragments,
+conditional branches (element/text/empty), keyed/nested/empty lists, dynamic
+intrinsic tags, component props + children slots, and the server-side
+guarantees that effects, refs, and cleanup never execute during rendering.
+Route regions and async data states stay deferred until request-local
+router/data wiring lands.
+
+Findings encoded along the way:
+
+1. **Runtime:** `mountRef` is now capability-gated (`environment.refs !==
+   'run'` records ownership but never invokes callbacks). 'defer' behaves as
+   disabled until Phase 3 replays refs after adoption.
+2. **Server renderer:** property-backed boolean attributes (`checked`,
+   `disabled`, ...) are synced back to attributes before serialization
+   (`syncBooleanAttributes`, exported) — some DOM serializers emit only
+   attributes. `readOnly` maps to the lowercase `readonly` attribute.
+3. **Server renderer fix:** top-level runtime comment anchors no longer leak
+   into serialized HTML as raw text (comments were falling through to
+   `textContent` when they had no `outerHTML`).
+4. **Harness canonicalization rules** (declared serializer details):
+   comment anchors dropped, attribute order sorted (quote-aware tokenizer,
+   values may contain spaces), empty attributes equal bare attributes
+   (`checked=""` ≡ `checked`), style trailing semicolon stripped,
+   ambiguous ampersands canonicalized to `&amp;` (LinkeDOM leaves bare `&`
+   in attribute values; parsers treat them literally), self-closing foreign
+   elements expanded to empty pairs, whitespace collapsed.
+
+Verified environment flake, not a regression: `r42-calculated-list-sources`
+times out only under full-suite parallel load on this machine and passes in
+isolation.
+
 | Phase | Status |
 |---|---|
 | 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
@@ -238,13 +279,14 @@ operational findings encoded in the tests:
 | 1.2 — environment capabilities | **complete**: RenderEnvironment on every runtime (mode/document/schedule/effects/refs); effects gated server-side; volatile pulls disabled without a frame scheduler; structural anchors route through the injected document |
 | 1.3 — module-state isolation | **probe complete**: cells proven isolated + reactive (Option B); compiler lowering pass not yet written |
 | 1.4 — LinkeDOM reference renderer | **first tier working**: renderToString/renderWithDom over LinkeDOM; server/client structural parity tested; effects/refs verified off |
-| 1.5 — CSR-equivalence matrix | not started |
+| 1.5 — CSR-equivalence matrix | **complete**: corpus over text/attrs/escaping/innerHTML/SVG/fragments/conditionals/lists/dynamic tags/slots + server effect/ref/cleanup guarantees; route and data states deferred to their wiring slice |
 | 2–6 | gated behind phase 1 exit criteria |
 
 ## Next slices
 
-1. **Phase 1.5:** grow the CSR-equivalence matrix from one fixture to the
-   proposal corpus (namespaces, innerHTML, fragments, routes, data states).
+1. **Router/data wiring:** request-local router + data runtime injection
+   into renderToString; extends the parity corpus with route regions and
+   deterministic data-loading states (finishes proposal §1.5).
 2. **Phase 1.3 lowering:** compiler pass rewriting authored module-state
    bindings into cell operations for server builds.
 3. **Router/data wiring:** request-local router + data runtime injection

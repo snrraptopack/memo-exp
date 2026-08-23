@@ -3,7 +3,12 @@
  *
  * Assignable refs are compiled into this callback contract, so the runtime
  * never needs to understand source l-values or allocate JSX/ref objects.
+ *
+ * Ref invocation is capability-gated (SSR slice 1.2): server environments
+ * record ownership without handing over nodes.
  */
+
+import { getActiveEnvironment } from './kernel';
 
 export type RefCallback<T extends Node = Node> = (
   node: T,
@@ -20,6 +25,14 @@ export function mountRef<T extends Node>(
   node: T,
   value: RefValue<T>,
 ): () => void {
+  // Server rendering records ownership but never invokes ref callbacks:
+  // there is no attached browser node to hand over. 'defer' will replay
+  // refs after hydration adoption (Phase 3); until then it behaves as
+  // disabled.
+  if (getActiveEnvironment().refs !== 'run') {
+    return () => {};
+  }
+
   const disposers: Array<() => void> = [];
   let active = true;
 
