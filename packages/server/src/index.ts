@@ -25,17 +25,32 @@ import {
   type ApplicationRuntime,
   type DocumentLike,
 } from '@memoized-dom/runtime';
+import {
+  createMemoryRouteHistory,
+  createRouteRuntime,
+  setActiveRouteRuntime,
+} from '@memoized-dom/router';
+import {
+  createDataRuntime,
+  setActiveDataRuntime,
+} from '@memoized-dom/data';
 
 /** A compiled application root factory: `function App(_id, _parent)`. */
 export type ServerComponent = (id: string, parent: null) => Node;
 
 export interface RenderOptions {
   /**
-   * Request URL. Reserved for request-local router installation once the
-   * router gains a server wiring seam; accepted now so call sites are
-   * forward-compatible.
+   * Request URL. Installed as a request-local memory-history route runtime,
+   * so compiled route regions and `route.*` reads resolve against this URL
+   * during the synchronous render.
    */
   url?: string;
+  /**
+   * Fetch implementation backing the request-local data runtime (`$fetch`/
+   * `$action`). Defaults to globalThis.fetch; inject a deterministic
+   * implementation for tests.
+   */
+  fetch?: typeof globalThis.fetch;
   /**
    * Inject a document instead of LinkeDOM (tests, alternative DOM tiers).
    */
@@ -123,7 +138,8 @@ export function syncBooleanAttributes(root: Node): void {
 /**
  * Render a compiled application into a server document and return the live
  * handles. The caller owns `runtime.dispose()` and global restoration is
- * always performed before return.
+ * always performed before return. The per-request router/data runtimes are
+ * restored and disposed here regardless of outcome.
  */
 export function renderWithDom(
   component: ServerComponent,
@@ -141,6 +157,20 @@ export function renderWithDom(
     refs: 'disabled',
   });
   const previousRuntime = setActiveApplicationRuntime(runtime);
+
+  // Request-local router and data runtimes: compiled modules read `route`
+  // and `$fetch` through ambient-active facades, so activating these makes
+  // the render resolve against this request's URL and fetch without authors
+  // changing their imports. Restored and disposed in finally.
+  const routeHistory = createMemoryRouteHistory({
+    initialEntries: [options.url ?? '/'],
+  });
+  const routeRuntime = createRouteRuntime({ routeHistory });
+  const dataRuntime = createDataRuntime(
+    options.fetch === undefined ? {} : { fetch: options.fetch },
+  );
+  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
+  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
 
   // Compiled element creation references the ambient global; structural
   // runtime code routes through environment.document. Both must agree.
@@ -174,6 +204,10 @@ export function renderWithDom(
   } finally {
     restoreGlobals(previousDocument, previousFrameScheduler);
     setActiveApplicationRuntime(previousRuntime);
+    setActiveRouteRuntime(previousRouteRuntime);
+    setActiveDataRuntime(previousDataRuntime);
+    routeRuntime.dispose();
+    dataRuntime.clear();
   }
 }
 

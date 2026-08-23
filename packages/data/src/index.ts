@@ -1,11 +1,33 @@
-import { createDataRuntime } from './client';
-
-const defaultRuntime = createDataRuntime();
+import {
+  getActiveDataRuntime,
+} from './active-runtime';
+import type {
+  ActionFunction,
+  ActionOptions,
+  FetchFunction,
+  FetchOptions,
+} from './types';
 
 export { createDataRuntime } from './client';
-export const $fetch = defaultRuntime.$fetch;
-export const $action = defaultRuntime.$action;
-export const clearDataRuntime = defaultRuntime.clear;
+export {
+  getActiveDataRuntime,
+  setActiveDataRuntime,
+} from './active-runtime';
+
+// Delegating facades: server rendering swaps the active runtime per request,
+// so the public bindings must never capture the singleton implementation.
+export const $fetch = ((
+  target: string | URL | null,
+  options?: FetchOptions,
+) => getActiveDataRuntime().$fetch(target, options)) as FetchFunction;
+export const $action = ((
+  target: string | URL,
+  options?: ActionOptions<never, never>,
+) =>
+  getActiveDataRuntime().$action(target, options)) as unknown as ActionFunction;
+export function clearDataRuntime(): void {
+  getActiveDataRuntime().clear();
+}
 export { RequestError } from './errors';
 
 export type {

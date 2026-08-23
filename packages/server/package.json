@@ -20,6 +20,8 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@memoized-dom/data": "workspace:*",
+    "@memoized-dom/router": "workspace:*",
     "@memoized-dom/runtime": "workspace:*",
     "linkedom": "^0.18.0"
   },

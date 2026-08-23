@@ -1,7 +1,22 @@
-import { defaultRouteRuntime } from './default-runtime';
+import type { RouteRuntime } from './runtime';
+import type {
+  RouteNavigationBlocker as Blocker,
+  RouteResolver,
+} from './types';
+import {
+  activeRoute,
+  connect as activeConnect,
+  getActiveRouteRuntime,
+  navigate as activeNavigate,
+  navigateRelative as activeNavigateRelative,
+  noteManifestResolver,
+  subscribe as activeSubscribe,
+  subscribeNavigation as activeSubscribeNavigation,
+  subscribeSelected as activeSubscribeSelected,
+} from './active-runtime';
 
-export const route = defaultRouteRuntime.route;
-export const navigateRoute = defaultRouteRuntime.navigate;
+export const route = activeRoute;
+export const navigateRoute = activeNavigate;
 
 export { createRouteRuntime, supportsNavigationAPI } from './runtime';
 export { redirectRoute } from './types';
@@ -27,15 +42,22 @@ export type { RouteHistory } from './history';
 export { buildRoutePath } from './path';
 
 /** Compiler-runtime boundary. Application code should not need these calls. */
-export const connectRouter = defaultRouteRuntime.connect;
-let defaultConnection: (() => void) | null = null;
+export const connectRouter = (): (() => void) => activeConnect();
+const connections = new WeakMap<RouteRuntime, () => void>();
 export function ensureRouterConnected(): void {
-  defaultConnection ??= defaultRouteRuntime.connect();
+  const runtime = getActiveRouteRuntime();
+  if (!connections.has(runtime)) connections.set(runtime, runtime.connect());
 }
-export const installRouteResolver = defaultRouteRuntime.installResolver;
-export const replaceRouteResolver = defaultRouteRuntime.replaceResolver;
-export const navigateRouteRelative = defaultRouteRuntime.navigateRelative;
-export const blockRouteNavigation = defaultRouteRuntime.blockNavigation;
-export const subscribeRouteNavigation = defaultRouteRuntime.subscribeNavigation;
-export const subscribeRoute = defaultRouteRuntime.subscribe;
-export const subscribeRouteSelected = defaultRouteRuntime.subscribeSelected;
+export function installRouteResolver(resolver: RouteResolver): () => void {
+  return getActiveRouteRuntime().installResolver(resolver);
+}
+export function replaceRouteResolver(resolver: RouteResolver): () => void {
+  return noteManifestResolver(resolver);
+}
+export const navigateRouteRelative = activeNavigateRelative;
+export function blockRouteNavigation(blocker: Blocker): () => void {
+  return getActiveRouteRuntime().blockNavigation(blocker);
+}
+export const subscribeRouteNavigation = activeSubscribeNavigation;
+export const subscribeRoute = activeSubscribe;
+export const subscribeRouteSelected = activeSubscribeSelected;

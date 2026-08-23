@@ -15,7 +15,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 import type { ApplicationRuntime } from '@memoized-dom/runtime';
-import { renderWithDom, syncBooleanAttributes } from '../src/index';
+import {
+  createDataRuntime,
+  setActiveDataRuntime,
+} from '@memoized-dom/data';
+import {
+  createMemoryRouteHistory,
+  createRouteRuntime,
+  setActiveRouteRuntime,
+} from '@memoized-dom/router';
+import {
+  renderWithDom,
+  syncBooleanAttributes,
+  type RenderOptions,
+} from '../src/index';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, '..', 'tests', 'fixtures', 'out');
@@ -121,12 +134,30 @@ export interface ParityResult {
 export function renderBothTiers(
   tiers: CompiledTiers,
   entry = 'App',
+  options: RenderOptions = {},
 ): ParityResult {
-  const rendered = renderWithDom(tiers.serverModule[entry]);
-  const clientRoot = tiers.clientModule[entry](
-    `${entry}Client`,
-    null,
-  ) as Element;
+  const rendered = renderWithDom(tiers.serverModule[entry], options);
+
+  // The client tier must see the same request-local router/data state as the
+  // server tier: activate an equivalent memory-history runtime for the
+  // duration of client creation, then restore the ambient default.
+  const url = options.url ?? '/';
+  const routeHistory = createMemoryRouteHistory({ initialEntries: [url] });
+  const routeRuntime = createRouteRuntime({ routeHistory });
+  const dataRuntime = createDataRuntime(
+    options.fetch === undefined ? {} : { fetch: options.fetch },
+  );
+  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
+  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
+  let clientRoot: Element;
+  try {
+    clientRoot = tiers.clientModule[entry](`${entry}Client`, null) as Element;
+  } finally {
+    setActiveRouteRuntime(previousRouteRuntime);
+    setActiveDataRuntime(previousDataRuntime);
+    routeRuntime.dispose();
+    dataRuntime.clear();
+  }
 
   // Both tiers set compiled boolean attributes as properties; some DOM
   // implementations serialize only attributes. Apply the same property →

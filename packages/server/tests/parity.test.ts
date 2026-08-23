@@ -18,6 +18,7 @@ import {
   unregister,
 } from '@memoized-dom/runtime';
 import { _internals } from '@memoized-dom/runtime/testing';
+import { renderToString } from '../src/index';
 import {
   compileFixture,
   expectParity,
@@ -272,6 +273,120 @@ describe('CSR-equivalence corpus', () => {
     } finally {
       result.serverRuntime.dispose();
     }
+  });
+
+  it('renders route regions and params identically for the request URL', async () => {
+    const tiers = await compileFixture(
+      'parity-routes',
+      `
+      import { route } from '@memoized-dom/router';
+
+      function Home() {
+        return <main><h1>Home</h1></main>;
+      }
+
+      function Project() {
+        const projectId = route.params['projectId'] ?? '';
+        const tab = route.query.get('tab') ?? 'overview';
+        return (
+          <main>
+            <h1>Project {projectId}</h1>
+            <p>{tab}</p>
+          </main>
+        );
+      }
+
+      function NotFound() {
+        return <main><h1>Not found</h1></main>;
+      }
+
+      export function App() {
+        return (
+          <div>
+            <Home route="/" />
+            <Project route="/projects/:projectId" />
+            <NotFound route="/*" />
+          </div>
+        );
+      }
+    `,
+    );
+
+    const result = renderBothTiers(tiers, 'App', {
+      url: '/projects/42?tab=activity',
+    });
+    try {
+      expect(result.serverHtml).toContain('Project 42');
+      expect(result.serverHtml).toContain('activity');
+      expect(result.serverHtml).not.toContain('Not found');
+      expectParity(result);
+    } finally {
+      result.serverRuntime.dispose();
+    }
+  });
+
+  it('renders unresolved data states identically under an injected fetch', async () => {
+    const tiers = await compileFixture(
+      'parity-data',
+      `
+      import { $fetch } from '@memoized-dom/data';
+
+      interface Todo {
+        id: number;
+        title: string;
+      }
+
+      export function App() {
+        const todos = $fetch<Todo[]>('/api/todos');
+        return (
+          <section>
+            <p if={todos.pending && !todos.data}>Loading</p>
+            <ul else>
+              {(todos.data ?? []).map((todo) => (
+                <li key={todo.id}>{todo.title}</li>
+              ))}
+            </ul>
+          </section>
+        );
+      }
+    `,
+    );
+
+    // A fetch that never settles keeps the resource pending on both tiers,
+    // so the flushed HTML is deterministic.
+    const never = () => new Promise<Response>(() => {});
+    const result = renderBothTiers(tiers, 'App', { fetch: never });
+    try {
+      expect(result.serverHtml).toContain('<p>Loading</p>');
+      expect(result.serverHtml).not.toContain('<li');
+      expectParity(result);
+    } finally {
+      result.serverRuntime.dispose();
+    }
+  });
+
+  it('isolates successive requests: each URL renders against its own router', async () => {
+    const tiers = await compileFixture(
+      'parity-request-isolation',
+      `
+      import { route } from '@memoized-dom/router';
+
+      export function App() {
+        const projectId = route.params['projectId'] ?? 'none';
+        return <main><h1>Project {projectId}</h1></main>;
+      }
+    `,
+    );
+
+    // renderToString creates and disposes a full request context per call,
+    // including the request-local router runtime.
+    const parameterized = renderToString(tiers.serverModule.App, {
+      url: '/projects/alpha',
+    });
+    const root = renderToString(tiers.serverModule.App, { url: '/' });
+    expect(parameterized).toContain('alpha');
+    expect(root).toContain('none');
+    expect(root).not.toContain('alpha');
   });
 
   it('does not execute effects, refs, or cleanup during server rendering', async () => {

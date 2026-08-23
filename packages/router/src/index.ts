@@ -1,12 +1,44 @@
-import { defaultRouteRuntime } from './default-runtime';
+import type {
+  NavigateArguments,
+  RelativeNavigateArguments,
+  RouteNavigationBlocker,
+  RouteNavigationListener,
+} from './types';
+import {
+  activeRoute,
+  back as activeBack,
+  forward as activeForward,
+  getActiveRouteRuntime,
+} from './active-runtime';
 
-export const route = defaultRouteRuntime.route;
-export const navigate = defaultRouteRuntime.navigate;
-export const navigateRelative = defaultRouteRuntime.navigateRelative;
-export const blockNavigation = defaultRouteRuntime.blockNavigation;
-export const subscribeNavigation = defaultRouteRuntime.subscribeNavigation;
-export const back = defaultRouteRuntime.back;
-export const forward = defaultRouteRuntime.forward;
+export const route = activeRoute;
+export function navigate<Path extends string>(
+  pattern: Path,
+  ...arguments_: NavigateArguments<Path>
+) {
+  return getActiveRouteRuntime().navigate(pattern, ...arguments_);
+}
+export function navigateRelative<Path extends string>(
+  pattern: Path,
+  ...arguments_: RelativeNavigateArguments<Path>
+) {
+  return getActiveRouteRuntime().navigateRelative(pattern, ...arguments_);
+}
+export function blockNavigation(blocker: RouteNavigationBlocker): () => void {
+  return getActiveRouteRuntime().blockNavigation(blocker);
+}
+export function subscribeNavigation(
+  listener: RouteNavigationListener,
+): () => void {
+  return getActiveRouteRuntime().subscribeNavigation(listener);
+}
+export function back() {
+  return activeBack();
+}
+export function forward() {
+  return activeForward();
+}
+export { getActiveRouteRuntime, setActiveRouteRuntime } from './active-runtime';
 
 export { createRouteRuntime, supportsNavigationAPI } from './runtime';
 export { redirectRoute } from './types';

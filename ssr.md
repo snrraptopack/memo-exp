@@ -272,6 +272,37 @@ Verified environment flake, not a regression: `r42-calculated-list-sources`
 times out only under full-suite parallel load on this machine and passes in
 isolation.
 
+## Slice 1.6 — request-local router and data wiring
+
+**Commit:** this slice.
+
+Finished proposal §1.5: `renderToString`/`renderWithDom` now install a
+request-local router and data runtime per call. Compiled modules keep their
+convenient singleton imports (`route`, `$fetch`, `$action`) — delegation is
+ambient:
+
+- **Router** (`active-runtime.ts`): public exports and the compiler bridge
+  (`@memoized-dom/router/internal`) delegate through an ambient pointer that
+  defaults to the browser singleton. Compiled route manifests install once at
+  module evaluation; `noteManifestResolver` records that resolver and replays
+  it onto every newly activated runtime, so each request resolves its own URL
+  against the application graph (solves the module-evaluates-once ordering
+  problem). `ensureRouterConnected` memoizes per runtime.
+- **Data** (`active-runtime.ts`): `$fetch`/`$action`/`clearDataRuntime` are
+  delegating facades over the active data runtime.
+- **Server** (`RenderOptions`): `url` installs a memory-history route
+  runtime; `fetch` backs a request-local data runtime. Both are activated
+  before the component call and restored/disposed in `finally`, including on
+  thrown errors.
+- **Build:** server `tsconfig.build.json` needed an explicit `rootDir` —
+  importing workspace packages changed TS7's common-source-directory
+  inference.
+
+Corpus additions in `parity.test.ts`: route regions with params + query for
+the request URL (both tiers under identical activation), unresolved data
+states under an injected never-settling fetch, and successive-request URL
+isolation through `renderToString`.
+
 | Phase | Status |
 |---|---|
 | 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
@@ -279,14 +310,14 @@ isolation.
 | 1.2 — environment capabilities | **complete**: RenderEnvironment on every runtime (mode/document/schedule/effects/refs); effects gated server-side; volatile pulls disabled without a frame scheduler; structural anchors route through the injected document |
 | 1.3 — module-state isolation | **probe complete**: cells proven isolated + reactive (Option B); compiler lowering pass not yet written |
 | 1.4 — LinkeDOM reference renderer | **first tier working**: renderToString/renderWithDom over LinkeDOM; server/client structural parity tested; effects/refs verified off |
-| 1.5 — CSR-equivalence matrix | **complete**: corpus over text/attrs/escaping/innerHTML/SVG/fragments/conditionals/lists/dynamic tags/slots + server effect/ref/cleanup guarantees; route and data states deferred to their wiring slice |
+| 1.5 — CSR-equivalence matrix | **complete**: full §1.5 corpus incl. route regions (params/query/catch-all) and deterministic data states via request-local router/data wiring |
 | 2–6 | gated behind phase 1 exit criteria |
 
 ## Next slices
 
-1. **Router/data wiring:** request-local router + data runtime injection
-   into renderToString; extends the parity corpus with route regions and
-   deterministic data-loading states (finishes proposal §1.5).
+1. **Phase 1 exit review:** confirm the two-simultaneous-renders criterion
+   end-to-end (kernel + router + data + effects + cleanup), then close the
+   explicit Phase 1→2 gate from the proposal before any marker work.
 2. **Phase 1.3 lowering:** compiler pass rewriting authored module-state
    bindings into cell operations for server builds.
 3. **Router/data wiring:** request-local router + data runtime injection
