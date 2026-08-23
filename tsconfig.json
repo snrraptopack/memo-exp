@@ -31,10 +31,14 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+
+    // TS7 native compiler: cache cross-run type information.
+    "incremental": true,
+    "tsBuildInfoFile": "./.cache/tsconfig.tsbuildinfo"
   },
 
-  "include": ["packages/*/src", "examples", "bench/router"],
+  "include": ["packages/*/src", "examples", "bench/router", "globals.d.ts"],
   "exclude": [
     "**/dist",
     "**/generated",

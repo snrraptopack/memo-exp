@@ -16,7 +16,9 @@ import {
   type Ctx,
   type MapCallExpression,
 } from '../context';
+import { findConstInitializer, isStaticDerivedListConst } from './static-derived';
 import {
+  isStaticListExpression,
   isStaticPrimitiveList,
   transparentListExpression,
 } from './source-shapes';
@@ -178,7 +180,10 @@ function analyzeSource(
       fail,
     );
   }
-  if (t.isExpression(current) && isStaticPrimitiveList(current)) {
+  if (
+    t.isExpression(current) &&
+    (isStaticPrimitiveList(current) || isStaticListExpression(current))
+  ) {
     return {
       expression: current,
       key: '$static-list',
@@ -197,6 +202,21 @@ function analyzeIdentifierSource(
   ownerName: string,
   fail: Fail,
 ): SourcePlan {
+  // A static-derived const (method chain rooted at a primitive array
+  // literal) is a frozen value: reconcile the initializer chain directly,
+  // no reactive routing. The declaration keyword is irrelevant - the
+  // initializer decides. No method enumeration: the chain shape decides.
+  if (isStaticDerivedListConst(ctx, source.name, ownerName)) {
+    const init = findConstInitializer(ctx, source.name, ownerName);
+    if (init !== null) {
+      return {
+        expression: t.cloneNode(init),
+        key: '$static-list',
+        local: true,
+        suffixBase: '$static-list',
+      };
+    }
+  }
   const propBindings = ctx.componentProps.get(ownerName)?.bindings ?? [];
   const opaqueBindings = ctx.opaqueBindings.get(ownerName);
   const local =

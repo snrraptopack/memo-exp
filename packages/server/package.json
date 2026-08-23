@@ -1,0 +1,33 @@
+{
+  "name": "@memoized-dom/server",
+  "version": "0.0.1",
+  "description": "Server rendering reference for memoized-dom (LinkeDOM tier)",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run ./scripts/clean.ts && rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@memoized-dom/runtime": "workspace:*",
+    "linkedom": "^0.18.0"
+  },
+  "devDependencies": {
+    "@memoized-dom/compiler": "workspace:*",
+    "@types/bun": "latest"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

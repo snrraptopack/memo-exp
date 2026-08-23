@@ -27,6 +27,7 @@ import {
   type ReactiveOrigin,
 } from '../mutation-analysis';
 import { summarizeHelper } from '../helper-summaries';
+import { isStaticDerivedListConst } from '../lists/static-derived';
 import { applyLinkedPropEffect } from '../components/prop-effects';
 import {
   componentPropProjectionOrigins,
@@ -672,6 +673,14 @@ export function analyzeHandler(
 
   const noteMemberWrite = (p: NodePath, node: t.MemberExpression): void => {
     const rootName = memberRootName(node);
+    if (
+      rootName !== null &&
+      isStaticDerivedListConst(ctx, rootName, compName)
+    ) {
+      throw p.buildCodeFrameError(
+        `memo-dom: cannot mutate '${rootName}' - it is derived from a static source and will never change`,
+      );
+    }
     if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
       const plan = listMutationPlans?.get(rootName!);
       const key =
@@ -795,6 +804,13 @@ export function analyzeHandler(
           }
           return;
         }
+        if (
+          isStaticDerivedListConst(ctx, left.name, compName)
+        ) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot reassign '${left.name}' - it is derived from a static source and will never change`,
+          );
+        }
         if (instDerived?.has(left.name)) {
           throw p.buildCodeFrameError(
             `memo-dom: cannot assign per-instance derivation '${left.name}' (R14) — write its source instead`,
@@ -857,6 +873,13 @@ export function analyzeHandler(
       const arg = p.node.argument;
       if (t.isIdentifier(arg)) {
         if (locals.has(arg.name)) return;
+        if (
+          isStaticDerivedListConst(ctx, arg.name, compName)
+        ) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot update '${arg.name}' - it is derived from a static source and will never change`,
+          );
+        }
         if (instDerived?.has(arg.name)) {
           throw p.buildCodeFrameError(
             `memo-dom: cannot update per-instance derivation '${arg.name}' (R14) — write its source instead`,
@@ -913,6 +936,20 @@ export function analyzeHandler(
     },
     CallExpression(p) {
       const callee = p.node.callee;
+
+      // A method call on a static-derived const is a mutation attempt on a
+      // frozen value (push/splice/shift/...) - always an error.
+      if (t.isMemberExpression(callee)) {
+        const receiverRoot = memberRootName(callee);
+        if (
+          receiverRoot !== null &&
+          isStaticDerivedListConst(ctx, receiverRoot, compName)
+        ) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot mutate '${receiverRoot}' - it is derived from a static source and will never change`,
+          );
+        }
+      }
 
       // Every method call on a reactive receiver has a bounded receiver
       // effect. No method-name purity/mutation table is consulted.

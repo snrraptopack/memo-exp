@@ -196,21 +196,56 @@ production lowering: the compiler pass that rewrites authored module-state
 bindings into cell reads/writes (exported live-binding semantics, cycles,
 initialization order, HMR).
 
+---
+
+## Slice 1.4 — LinkeDOM reference renderer (first tier complete)
+
+**Commit:** this slice.
+
+New package `@memoized-dom/server` (`packages/server`) with two entry
+points:
+
+```ts
+renderToString(App, { url?, document? })   // html string, always disposes
+renderWithDom(App, { url?, document? })    // live handles, caller disposes
+```
+
+Per call it creates a fresh ApplicationRuntime (slice 1.1) configured as
+`mode: 'server-dom'`, injected LinkeDOM document, `schedule: null`, effects
+and refs disabled - then swaps the ambient document global for the
+duration of the synchronous render (compiled element creation still reads
+the global; routing emitted code lands when emission gains an environment
+seam). Effects are recorded as entities but never execute; refs never
+invoke.
+
+**Parity proven:** a compiled fixture rendered through the server tier and
+through client-side creation (happy-dom) produces structurally identical
+HTML after normalizing serializer details (attribute order, runtime comment
+anchors) - exactly the normalization rule the proposal permits. Two
+operational findings encoded in the tests:
+
+1. Server and client tiers must use separate module records: compiled
+   template caches capture nodes from the document active at first
+   creation. This mirrors production (server and client are separate
+   builds).
+2. Successive renders get fresh runtimes and byte-identical output;
+   failure paths unregister and restore globals.
+
 | Phase | Status |
 |---|---|
 | 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
 | 1.1 — request/application runtime context | **complete**: kernel, cleanup, props, mount, access routed; isolation tested |
 | 1.2 — environment capabilities | **complete**: RenderEnvironment on every runtime (mode/document/schedule/effects/refs); effects gated server-side; volatile pulls disabled without a frame scheduler; structural anchors route through the injected document |
 | 1.3 — module-state isolation | **probe complete**: cells proven isolated + reactive (Option B); compiler lowering pass not yet written |
-| 1.4 — LinkeDOM reference renderer | not started; consumes the runtime context from 1.1 and the injected document from 1.2 |
+| 1.4 — LinkeDOM reference renderer | **first tier working**: renderToString/renderWithDom over LinkeDOM; server/client structural parity tested; effects/refs verified off |
 | 1.5 — CSR-equivalence matrix | not started |
 | 2–6 | gated behind phase 1 exit criteria |
 
 ## Next slices
 
-1. **Phase 1.3 lowering:** compiler pass rewriting authored module-state
-   bindings into cell operations for server builds (client builds keep
-   plain bindings until parity is proven).
-2. **Phase 1.4:** `renderWithDom(App, { url, document })` over LinkeDOM,
-   creating a fresh application runtime per call, refs/effects deferred,
-   and routing compiled element creation through the injected document.
+1. **Phase 1.5:** grow the CSR-equivalence matrix from one fixture to the
+   proposal corpus (namespaces, innerHTML, fragments, routes, data states).
+2. **Phase 1.3 lowering:** compiler pass rewriting authored module-state
+   bindings into cell operations for server builds.
+3. **Router/data wiring:** request-local router + data runtime injection
+   into renderToString.

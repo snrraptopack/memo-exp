@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error"
+  },
+  "plugins": ["typescript", "unicorn", "react"],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "rules": {
+    "react/immutability": "off",
+    "react/purity": "off",
+    "react/static-components": "off",
+    "react/refs": "off",
+    "react/globals": "off",
+    "unicorn/no-useless-spread": "warn",
+    "unicorn/no-new-array": "warn",
+    "eslint/no-control-regex": "off"
+  },
+  "overrides": [
+    {
+      "files": ["tests/**/*.test.ts", "packages/**/tests/**/*.ts"],
+      "rules": {
+        "no-console": "off",
+        "no-unused-vars": "off",
+        "no-useless-escape": "off",
+        "no-unsafe-optional-chaining": "off"
+      }
+    },
+    {
+      "files": ["evaluation/**", "bench/**", "examples/**", "scratch/**"],
+      "rules": {
+        "no-unused-vars": "warn",
+        "no-unassigned-vars": "off",
+        "react/jsx-key": "warn"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/fixtures/out/**",
+    "**/.vite/**",
+    "bun.lock"
+  ]
+}
