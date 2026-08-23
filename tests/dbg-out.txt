@@ -1,7 +1,0 @@
-{
- "seen": [
-  "num -> App/Mixed/Row[n:7]",
-  "str -> App/Mixed/Row[s:str]"
- ],
- "html": "<li data-row=\"num\"></li><li data-row=\"str\"></li><!--list:App/Mixed-->"
-}
