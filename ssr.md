@@ -303,22 +303,57 @@ the request URL (both tiers under identical activation), unresolved data
 states under an injected never-settling fetch, and successive-request URL
 isolation through `renderToString`.
 
+## Slice 1.7 — Phase 1.3 production lowering: module-state cells
+
+**Commit:** this slice.
+
+Compiler pass implementing proposal Option B for server builds (opt-in via
+`compileModules({ moduleStateCells: true })`):
+
+- Every reactive module root (`let` bindings, mutated `const` stores) lowers
+  to `_MD.defineStateCell('<canonical-key>', default)` — the owner records
+  its authored default (a FACTORY for object stores, so every request
+  instantiates fresh objects); importers reference the same identity with no
+  default. ESM postorder evaluation guarantees owner-first registration;
+  emptied authored imports collapse to side-effect imports to preserve it.
+- Reads lower to `_MD.readCell(<cell>)`, direct rebinding writes to
+  `_MD.setCell`/`_MD.updateCell`. Member mutations (`store.items.push`) keep
+  mutating through a lowered base read — they hit this request's own object;
+  invalidation stays caller-side `commitWrites` under unchanged canonical
+  keys, so access tables, computed entities, effects, and component updates
+  need no changes.
+- Non-literal initializers are rejected with code-frame errors rather than
+  silently shared across requests.
+- Emission handles shared AST nodes (creation/update closures referencing one
+  identifier node) by rewriting to a fixpoint.
+
+Runtime support: state cells gained an authored-defaults registry with
+factory initials; the kernel gained `onRuntimeCreated`, and access fragments
+are recorded in a process-wide static catalog replayed into every newly
+created application runtime — SSR request contexts now receive the same
+cross-module write→reader routing as the browser default.
+
+Proven by `tests/ssr-cell-lowering.test.ts`: emitted shape, rejection
+diagnostics, and the Phase 1 exit criterion end-to-end — ONE shared compiled
+module record, TWO concurrent application runtimes, divergent mutations
+through exported mutators, zero cross-request state, correct per-request
+reactive updates.
+
 | Phase | Status |
 |---|---|
 | 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
 | 1.1 — request/application runtime context | **complete**: kernel, cleanup, props, mount, access routed; isolation tested |
 | 1.2 — environment capabilities | **complete**: RenderEnvironment on every runtime (mode/document/schedule/effects/refs); effects gated server-side; volatile pulls disabled without a frame scheduler; structural anchors route through the injected document |
-| 1.3 — module-state isolation | **probe complete**: cells proven isolated + reactive (Option B); compiler lowering pass not yet written |
+| 1.3 — module-state isolation | **complete**: cells proven (slice 1.3 probe) AND compiler lowering shipped (slice 1.7); literal-initializer restriction documented |
 | 1.4 — LinkeDOM reference renderer | **first tier working**: renderToString/renderWithDom over LinkeDOM; server/client structural parity tested; effects/refs verified off |
 | 1.5 — CSR-equivalence matrix | **complete**: full §1.5 corpus incl. route regions (params/query/catch-all) and deterministic data states via request-local router/data wiring |
 | 2–6 | gated behind phase 1 exit criteria |
 
 ## Next slices
 
-1. **Phase 1 exit review:** confirm the two-simultaneous-renders criterion
-   end-to-end (kernel + router + data + effects + cleanup), then close the
-   explicit Phase 1→2 gate from the proposal before any marker work.
-2. **Phase 1.3 lowering:** compiler pass rewriting authored module-state
-   bindings into cell operations for server builds.
+1. **Phase 1 exit review:** confirm all four exit criteria, then close the
+   explicit Phase 1→2 gate (data/async RFC agreement) before marker work.
+2. **Vite wiring:** expose `moduleStateCells` through the adapter for
+   environment-specific builds.
 3. **Router/data wiring:** request-local router + data runtime injection
    into renderToString.

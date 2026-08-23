@@ -17,6 +17,7 @@ import {
   markDirty,
   register,
   registerProps,
+  resetAccessTable,
   resetScheduler,
   resolveWrites,
   runWithApplicationRuntime,
@@ -179,7 +180,7 @@ describe('application runtime isolation', () => {
     a.dispose();
   });
 
-  it('access tables are request-scoped: installs in one runtime are invisible to another', () => {
+  it('access tables: static fragments replay into later runtimes, mutable state stays per runtime', () => {
     const a = createApplicationRuntime('request-a');
 
     runWithApplicationRuntime(a, () => {
@@ -190,17 +191,35 @@ describe('application runtime isolation', () => {
       expect(resolveWrites(['./state.ts#count'], [])).toEqual(['App/Counter']);
     });
 
-    // A different runtime with no installed fragments resolves nothing.
+    // Fragments are static build artifacts (installed by compiled modules at
+    // evaluation time), so runtimes created afterwards replay them - that is
+    // how SSR request contexts receive cross-module write routing.
     const b = createApplicationRuntime('request-b');
     runWithApplicationRuntime(b, () => {
-      expect(resolveWrites(['./state.ts#count'], [])).toEqual([]);
+      expect(resolveWrites(['./state.ts#count'], [])).toEqual([
+        'App/Counter',
+      ]);
     });
-    b.dispose();
 
-    // Runtime a's table survives the other request's existence.
+    // Mutable resolver state is still per runtime: an install scoped to b
+    // never reaches a, and b's tables survive a's existence.
+    runWithApplicationRuntime(b, () => {
+      installAccessTable(
+        { readers: { './state.ts#onlyB': ['App/OnlyB'] } },
+        'App',
+      );
+      expect(resolveWrites(['./state.ts#onlyB'], [])).toEqual(['App/OnlyB']);
+    });
+
+    // Runtime a's own table state survives the other request's existence,
+    // but b's post-creation install is invisible to it.
     runWithApplicationRuntime(a, () => {
       expect(resolveWrites(['./state.ts#count'], [])).toEqual(['App/Counter']);
+      expect(resolveWrites(['./state.ts#onlyB'], [])).toEqual([]);
     });
+
+    resetAccessTable();
+    b.dispose();
     a.dispose();
   });
 

@@ -228,6 +228,7 @@ function compilerOptions(
   return {
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
     ...(options.hot === undefined ? {} : { hot: options.hot }),
+    ...(options.moduleStateCells === undefined ? {} : { moduleStateCells: options.moduleStateCells }),
     rootId,
   };
 }

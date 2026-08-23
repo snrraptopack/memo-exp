@@ -192,6 +192,7 @@ export function createApplicationRuntime(
       }
     },
   };
+  for (const listener of runtimeCreatedListeners) listener(runtime);
   return runtime;
 }
 
@@ -212,6 +213,25 @@ let activeRuntime: ApplicationRuntime = defaultRuntime;
 /** The runtime all kernel operations currently route through. */
 export function getActiveApplicationRuntime(): ApplicationRuntime {
   return activeRuntime;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime-lifetime hooks — subsystems with static build artifacts (access
+// tables, cell defaults) replay them into every newly created runtime so SSR
+// request contexts see the same infrastructure as the browser default.
+// ---------------------------------------------------------------------------
+type RuntimeCreatedListener = (runtime: ApplicationRuntime) => void;
+const runtimeCreatedListeners: RuntimeCreatedListener[] = [];
+
+/** Invoke `listener` for every application runtime created from now on. */
+export function onRuntimeCreated(
+  listener: RuntimeCreatedListener,
+): () => void {
+  runtimeCreatedListeners.push(listener);
+  return () => {
+    const index = runtimeCreatedListeners.indexOf(listener);
+    if (index >= 0) runtimeCreatedListeners.splice(index, 1);
+  };
 }
 
 /** Route subsequent kernel operations through `runtime`. */

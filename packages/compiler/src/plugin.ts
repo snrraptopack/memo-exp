@@ -32,6 +32,7 @@ import {
   requireIdentifiers,
 } from './identifiers';
 import { buildAccessTable, runAnalysis } from './analysis';
+import { liftModuleStateCells } from './cells';
 import { transformComponent } from './emission/component';
 import {
   rejectUnownedCleanup,
@@ -206,6 +207,7 @@ export default function memoDomPlugin(
         transformSharedAsyncHelpers(ctx);
       },
       exit(programPath) {
+        liftModuleStateCells(ctx, programPath);
         rewriteModuleEffects(ctx, programPath);
         rejectUnownedCleanup(programPath);
         rejectUnownedEffects(programPath);

@@ -24,7 +24,14 @@
  * tables, and a runtime's registry listener mutates only its own expansions.
  */
 
-import { getExtensionStore, onRegistryChange, registeredIds, type EntityId } from './kernel';
+import {
+  getExtensionStore,
+  onRegistryChange,
+  onRuntimeCreated,
+  registeredIds,
+  runWithApplicationRuntime,
+  type EntityId,
+} from './kernel';
 
 export interface AccessTable {
   readers: Record<string, string[]>;
@@ -193,13 +200,37 @@ export function installAccessTable(
 ): void {
   const s = resolver();
   s.fragments.set(owner, { table, root });
+  // Fragments are static build artifacts: record them so application runtimes
+  // created LATER (SSR request contexts) replay the same infrastructure.
+  staticFragments.set(owner, { table, root });
   rebuildTables();
 }
+
+/**
+ * Process-wide catalog of every fragment installed by compiled modules in
+ * this process. Replayed into each newly created application runtime.
+ */
+const staticFragments = new Map<
+  string,
+  { table: AccessTable; root: EntityId }
+>();
+
+onRuntimeCreated((runtime) => {
+  runWithApplicationRuntime(runtime, () => {
+    if (staticFragments.size === 0) return;
+    const s = resolver();
+    for (const [owner, fragment] of staticFragments) {
+      s.fragments.set(owner, { table: fragment.table, root: fragment.root });
+    }
+    rebuildTables();
+  });
+});
 
 /** Remove one compiler module's analysis fragment during hot replacement. */
 export function uninstallAccessTable(owner: string): void {
   const s = resolver();
   if (!s.fragments.delete(owner)) return;
+  staticFragments.delete(owner);
   rebuildTables();
 }
 
@@ -207,6 +238,7 @@ export function uninstallAccessTable(owner: string): void {
 export function resetAccessTable(): void {
   const s = resolver();
   s.fragments.clear();
+  staticFragments.clear();
   rebuildTables();
 }
 

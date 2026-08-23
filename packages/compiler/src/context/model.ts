@@ -47,6 +47,11 @@ export interface MemoDomOptions {
   >;
   /** Linker-resolved render-slot props for declarations in this module. */
   linkedComponentRenderProps?: Record<string, string[]>;
+  /**
+   * SSR Phase 1.3 lowering: rewrite reactive module-state bindings into
+   * request-owned state-cell operations (server builds only).
+   */
+  moduleStateCells?: boolean;
 }
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */
@@ -263,6 +268,8 @@ export interface Ctx {
   rootId: string;
   rootComponent: string | null;
   hot: boolean;
+  /** SSR Phase 1.3 lowering: lower reactive module state into request cells. */
+  moduleStateCells: boolean;
   moduleId: string;
   linkedRoutes: readonly CompilerRouteDefinition[] | null;
   emitRouteManifest: boolean;
@@ -491,6 +498,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     rootId: opts.rootId ?? 'App',
     rootComponent: opts.rootComponent ?? null,
     hot: opts.hot ?? false,
+    moduleStateCells: opts.moduleStateCells ?? false,
     moduleId,
     linkedRoutes: opts.linkedRoutes ?? null,
     emitRouteManifest:
