@@ -337,12 +337,12 @@ describe('M5 compiler — compiled output runs', () => {
     // row entities registered at the bracket ids; 'selected' routes to both
     expect(registeredIds()).toEqual([
       'App',
-      'App/items/Row[1]',
-      'App/items/Row[2]',
+      'App/items/Row[n:1]',
+      'App/items/Row[n:2]',
     ]);
     expect(resolveWrites(['./component.tsx#selected'], registeredIds())).toEqual([
-      'App/items/Row[1]',
-      'App/items/Row[2]',
+      'App/items/Row[n:1]',
+      'App/items/Row[n:2]',
     ]);
 
     lis[0]!.click();

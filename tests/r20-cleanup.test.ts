@@ -293,11 +293,11 @@ describe('R20 - compiled lifecycle execution', () => {
   it('runs row cleanup when list reconciliation removes an entity', async () => {
     const mod = await importCompiled('r20-rows');
     document.body.appendChild(mod.App('App', null));
-    expect(has('App/rows/Row[2]')).toBe(true);
+    expect(has('App/rows/Row[n:2]')).toBe(true);
 
     document.querySelector('button')!.click();
 
-    expect(has('App/rows/Row[2]')).toBe(false);
+    expect(has('App/rows/Row[n:2]')).toBe(false);
     expect(mod.disposed).toBe(1);
   });
 });

@@ -59,9 +59,9 @@ describe('M3 origin-scoped commit via static access table', () => {
 
     // readers of selectedId ran: all rows (over-approximation) + the badge
     expect(counts.get('App/Header/Badge')).toBe(1);
-    expect(counts.get('App/SelectList/Row[1]')).toBe(1);
-    expect(counts.get('App/SelectList/Row[2]')).toBe(1);
-    expect(counts.get('App/SelectList/Row[3]')).toBe(1);
+    expect(counts.get('App/SelectList/Row[n:1]')).toBe(1);
+    expect(counts.get('App/SelectList/Row[n:2]')).toBe(1);
+    expect(counts.get('App/SelectList/Row[n:3]')).toBe(1);
 
     // everything else: NOT EVEN AWAKENED
     expect(counts.get('App/Footer')).toBe(0);
@@ -82,9 +82,9 @@ describe('M3 origin-scoped commit via static access table', () => {
     expect(counts.get('App/Footer')).toBe(1);
 
     expect(counts.get('App/Header/Badge')).toBe(0);
-    expect(counts.get('App/SelectList/Row[1]')).toBe(0);
-    expect(counts.get('App/SelectList/Row[2]')).toBe(0);
-    expect(counts.get('App/SelectList/Row[3]')).toBe(0);
+    expect(counts.get('App/SelectList/Row[n:1]')).toBe(0);
+    expect(counts.get('App/SelectList/Row[n:2]')).toBe(0);
+    expect(counts.get('App/SelectList/Row[n:3]')).toBe(0);
     expect(counts.get('App')).toBe(0);
   });
 
@@ -113,7 +113,7 @@ describe('M3 origin-scoped commit via static access table', () => {
     const log = getEventLog();
     expect(log.length).toBe(1);
     expect(log[0]).toMatchObject({
-      origin: 'App/SelectList/Row[1]',
+      origin: 'App/SelectList/Row[n:1]',
       writes: ['selectedId'],
     });
   });

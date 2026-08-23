@@ -378,7 +378,7 @@ corroboration.
 
 | Phase | Status |
 |---|---|
-| 0 — freeze list identity / push invalidation | keying behavior covered by existing keyed-list tests; hydration-safe key encoding contract not yet written |
+| 0 — freeze list identity / push invalidation | **complete (slice 1.9)**: hydration-safe keyed identity shipped — type-tagged, escaped, collision-tested; push invalidation untouched |
 | 1.1 — request/application runtime context | **complete**: kernel, cleanup, props, mount, access routed; isolation tested |
 | 1.2 — environment capabilities | **complete**: RenderEnvironment on every runtime (mode/document/schedule/effects/refs); effects gated server-side; volatile pulls disabled without a frame scheduler; structural anchors route through the injected document |
 | 1.3 — module-state isolation | **complete**: cells proven (slice 1.3 probe) AND compiler lowering shipped (slice 1.7); literal-initializer restriction documented |
@@ -387,12 +387,46 @@ corroboration.
 | Phase 1 exit review | **complete (slice 1.8)**: criteria verified; Phase 1→2 gate now awaits the data/async RFC agreement recorded in the decision log |
 | 2–6 | gated behind phase 1 exit criteria |
 
+## Slice 1.9 — Phase 0: hydration-safe keyed-list identity encoding
+
+**Commit:** this slice.
+
+The Phase 0 leftover closed: list row identity no longer stringifies keys
+raw. New contract in `packages/runtime/src/list-keys.ts`, one encoding for
+CSR and SSR alike:
+
+- **Type-tagged primitives** — numbers `n:…`, strings `s:…`, bigints `g:…`,
+  booleans `t`/`f` — so `1`, `"1"`, `1n`, and `true`/`"true"` can never
+  collapse into one row id again.
+- **Escaped string segments** — every code point outside
+  `A–Z a–z 0–9 _ . ~ -` becomes uppercase percent-escape UTF-8, so `/`,
+  `[`, `]`, `%`, whitespace, and unicode cannot break the
+  `<prefix>/Row[...]` id/marker structure.
+- **Round-trip decode** (`decodeListKey`) for the future adoption cursor;
+  malformed input decodes to `undefined`, never throws. NaN has no canonical
+  form and encodes to null (synthetic fallback); ±Infinity round-trips.
+- **Declared limitation**: object/symbol/null/undefined keys keep
+  process-local synthetic ids and cannot survive server→client transfer.
+
+Integration:
+
+- `rowIdFor` routes through the encoder; reconciliation maps still key on raw
+  values, so keyed-reorder behavior is unchanged (proven by retained-row
+  reorder test with mixed key types).
+- Parameterized L2 commit patterns now interpolate payload values through the
+  SAME encoder — precise ids match the ids rows actually carry; non-primitive
+  payloads degrade to the readers superset per correctness invariant 4
+  (`access.ts`).
+- The hand-compiled todo-list fixture mirrors the new emitted shape; tests
+  pinning historical `Row[1]`-style ids updated to `Row[n:1]` across m2, m3,
+  m5, m10, m57, m58, r8, r20, r22, r23, recent-fixes.
+
+Covered by `tests/list-key-encoding.test.ts`: tag distinctness, escape safety,
+round-trips (edge numbers, bigints), rejection of malformed input, distinct
+rows for formerly colliding keys, and reorder identity retention.
+
 ## Next slices
 
-1. **Hydration-safe keyed-list identity encoding (Phase 0 leftover):**
-   type-tagged primitive keys, escaping/opaque encoding for string keys,
-   collision tests, declared object/symbol-key limitation — required before
-   marker freezing.
-2. **Data/async semantics gate:** agree "unresolved resource at flush",
+1. **Data/async semantics gate:** agree "unresolved resource at flush",
    region fallback emission, and resource serialization shapes in the
    data-loading RFC — the explicit blocker for Phase 2 protocol work.

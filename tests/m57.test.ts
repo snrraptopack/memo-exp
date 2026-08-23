@@ -81,13 +81,13 @@ describe('M5.7 — no double render for dirtied + resynced rows', () => {
     });
     items = [{ id: 1 }, { id: 2 }]; // same keys, same order
     markDirty('App');
-    markDirty('App/items/Row[1]');
-    markDirty('App/items/Row[2]');
+    markDirty('App/items/Row[n:1]');
+    markDirty('App/items/Row[n:2]');
     flush!();
     setScheduler((fn) => fn());
     expect(renders.get('App')).toBe(1);
-    expect(renders.get('App/items/Row[1]') ?? 0).toBe(1); // not 2
-    expect(renders.get('App/items/Row[2]') ?? 0).toBe(1); // not 2
+    expect(renders.get('App/items/Row[n:1]') ?? 0).toBe(1); // not 2
+    expect(renders.get('App/items/Row[n:2]') ?? 0).toBe(1); // not 2
   });
 
   it('shape fast path: zero structural DOM ops, rows still synced', () => {
@@ -117,9 +117,9 @@ describe('M5.7 — no double render for dirtied + resynced rows', () => {
     region.reconcile([{ id: 1 }, { id: 2 }, { id: 3 }]); // same keys/order
     expect(ops).toEqual([]);
     expect(synced.sort()).toEqual([
-      'App/items/Row[1]',
-      'App/items/Row[2]',
-      'App/items/Row[3]',
+      'App/items/Row[n:1]',
+      'App/items/Row[n:2]',
+      'App/items/Row[n:3]',
     ]);
   });
 

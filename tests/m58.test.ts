@@ -178,7 +178,7 @@ describe('M5.10 - lightweight listed component rows', () => {
       'App',
     );
     expect(resolveWrites(['selected'], [], { item: { id: 42 } })).toEqual([
-      'App/items/Row[42]',
+      'App/items/Row[n:42]',
       'App/Badge',
     ]);
   });

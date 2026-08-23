@@ -136,8 +136,8 @@ describe('R11 — compiled output runs', () => {
     expect(document.querySelectorAll('li')).toHaveLength(2);
 
     const appR = spyRenders('App');
-    const row1R = spyRenders('App/todos/Row[1]');
-    const row2R = spyRenders('App/todos/Row[2]');
+    const row1R = spyRenders('App/todos/Row[n:1]');
+    const row2R = spyRenders('App/todos/Row[n:2]');
 
     const first = document.querySelectorAll('li')[0]!;
     first.click();

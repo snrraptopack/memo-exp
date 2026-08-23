@@ -108,7 +108,7 @@ describe('R8 - nested conditionals', () => {
     expect(document.querySelectorAll('.row-hidden')).toHaveLength(1);
     expect(_internals().registry.has('App/when0/when1')).toBe(true);
     expect(_internals().registry.has('App/when0/when1/Child')).toBe(true);
-    expect(_internals().registry.has('App/items/Row[1]/when0')).toBe(
+    expect(_internals().registry.has('App/items/Row[n:1]/when0')).toBe(
       true,
     );
 

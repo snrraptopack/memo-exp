@@ -30,6 +30,7 @@
  */
 
 import { getActiveEnvironment, unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
+import { encodeListKey } from './list-keys';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */
@@ -192,10 +193,12 @@ export function createListRegion<T>(
   }
 
   function rowIdFor(k: unknown): EntityId {
-    const t = typeof k;
-    if (t === 'string' || t === 'number' || t === 'boolean' || t === 'bigint') {
-      return `${idPrefix}/Row[${String(k)}]`;
-    }
+    // Phase 0: type-tagged, escaped encoding — collision-free across
+    // primitive types and safe inside the `Row[...]` id/marker structure.
+    const encoded = encodeListKey(k);
+    if (encoded !== null) return `${idPrefix}/Row[${encoded}]`;
+    // Non-primitive keys: process-local synthetic ids (declared SSR
+    // limitation — see list-keys.ts).
     let s = syntheticIds.get(k);
     if (s === undefined) {
       s = `#${++syntheticCounter}`;

@@ -37,9 +37,9 @@ describe('M2 keyed list reconciliation', () => {
 
     const reg = _internals().registry;
     expect(reg.has('App/TodoList')).toBe(true);
-    expect(reg.has('App/TodoList/Row[1]')).toBe(true);
-    expect(reg.has('App/TodoList/Row[2]')).toBe(true);
-    expect(reg.has('App/TodoList/Row[3]')).toBe(true);
+    expect(reg.has('App/TodoList/Row[n:1]')).toBe(true);
+    expect(reg.has('App/TodoList/Row[n:2]')).toBe(true);
+    expect(reg.has('App/TodoList/Row[n:3]')).toBe(true);
   });
 
   it('row interaction dirties the ROW only — list render never runs', () => {
@@ -52,7 +52,7 @@ describe('M2 keyed list reconciliation', () => {
     const listEntity = reg.get('App/TodoList')!;
     const origList = listEntity.render;
     listEntity.render = () => { listRenders++; origList(); };
-    const rowEntity = reg.get('App/TodoList/Row[2]')!;
+    const rowEntity = reg.get('App/TodoList/Row[n:2]')!;
     const origRow = rowEntity.render;
     rowEntity.render = () => { rowRenders++; origRow(); };
 
@@ -80,7 +80,7 @@ describe('M2 keyed list reconciliation', () => {
     expect(after[1]).toBe(before[0]);
     expect(after[2]).toBe(before[1]);
 
-    expect(_internals().registry.has('App/TodoList/Row[1]')).toBe(true);
+    expect(_internals().registry.has('App/TodoList/Row[n:1]')).toBe(true);
   });
 
   it('removal deletes nodes AND unregisters the row entity subtree', () => {
@@ -93,7 +93,7 @@ describe('M2 keyed list reconciliation', () => {
     const ul = root.querySelector('ul')!;
     expect(ul.querySelectorAll('li').length).toBe(2);
     expect(ul.textContent).toBe('onethree');
-    expect(_internals().registry.has('App/TodoList/Row[2]')).toBe(false);
+    expect(_internals().registry.has('App/TodoList/Row[n:2]')).toBe(false);
     expect(_internals().dirtySet.size).toBe(0);
   });
 

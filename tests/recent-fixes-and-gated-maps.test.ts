@@ -356,11 +356,11 @@ describe('conditional gated maps', () => {
     expect(registeredIds()).toEqual([
       'App',
       'App/when0',
-      'App/when0/items/Row[1]',
-      'App/when0/items/Row[2]',
+      'App/when0/items/Row[n:1]',
+      'App/when0/items/Row[n:2]',
       'App/when1',
-      'App/when1/items/Row[1]',
-      'App/when1/items/Row[2]',
+      'App/when1/items/Row[n:1]',
+      'App/when1/items/Row[n:2]',
     ]);
 
     document.querySelector<HTMLButtonElement>('#add')!.click();

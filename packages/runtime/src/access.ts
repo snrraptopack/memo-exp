@@ -32,6 +32,7 @@ import {
   runWithApplicationRuntime,
   type EntityId,
 } from './kernel';
+import { encodeListKey } from './list-keys';
 
 export interface AccessTable {
   readers: Record<string, string[]>;
@@ -316,7 +317,16 @@ export function resolveWrites(
             failed = true;
             return '';
           }
-          return String(cur);
+          // Phase 0: interpolate through the hydration-safe key encoding so
+          // precise ids match the row ids rowIdFor actually created.
+          // Non-primitive values cannot be encoded (declared SSR limitation)
+          // and degrade to the readers superset like any other failure.
+          const encoded = encodeListKey(cur);
+          if (encoded === null) {
+            failed = true;
+            return '';
+          }
+          return encoded;
         });
         if (failed) {
           precise = false;

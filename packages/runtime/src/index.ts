@@ -89,6 +89,7 @@ export type { EventRecord } from './events';
 export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
 export { rootNodes } from './jsx-dom';
+export { decodeListKey, encodeListKey } from './list-keys';
 export { mount, registerRootFactory } from './mount';
 export type {
   MountableComponent,
