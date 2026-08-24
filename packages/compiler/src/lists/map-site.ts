@@ -83,6 +83,51 @@ interface RowPlan {
   renderCallback: t.Expression | null;
 }
 
+function compilerResolvedRoots(ctx: Ctx, expression: t.Expression): string[] {
+  const current = transparentListExpression(expression);
+  if (
+    t.isCallExpression(current) &&
+    t.isMemberExpression(current.callee) &&
+    !current.callee.computed &&
+    t.isIdentifier(current.callee.object, {
+      name: ctx.identifiers?.dataRuntimeId,
+    }) &&
+    t.isIdentifier(current.callee.property)
+  ) {
+    if (
+      current.callee.property.name === 'readResolvedValue' &&
+      t.isIdentifier(current.arguments[0])
+    ) {
+      return [current.arguments[0].name];
+    }
+    if (
+      (current.callee.property.name === 'readResolvedValuesForRender' ||
+        current.callee.property.name === 'deriveResolvedValues') &&
+      t.isArrayExpression(current.arguments[0])
+    ) {
+      return current.arguments[0].elements
+        .filter((element): element is t.Identifier => t.isIdentifier(element))
+        .map((element) => element.name);
+    }
+  }
+  if (
+    t.isCallExpression(current) &&
+    (t.isMemberExpression(current.callee) ||
+      t.isOptionalMemberExpression(current.callee)) &&
+    t.isExpression(current.callee.object)
+  ) {
+    return compilerResolvedRoots(ctx, current.callee.object);
+  }
+  if (
+    (t.isMemberExpression(current) ||
+      t.isOptionalMemberExpression(current)) &&
+    t.isExpression(current.object)
+  ) {
+    return compilerResolvedRoots(ctx, current.object);
+  }
+  return [];
+}
+
 /** Is this expression a `.map(...)` call, including optional chains? */
 export function matchMapCall(expr: t.Node): MapCallExpression | null {
   if (!t.isCallExpression(expr) && !t.isOptionalCallExpression(expr)) {
@@ -187,6 +232,18 @@ function analyzeSource(
       key: source.name,
       local: true,
       suffixBase: source.name,
+    };
+  }
+  const resolvedRoots = t.isExpression(current)
+    ? compilerResolvedRoots(ctx, current)
+    : [];
+  if (t.isExpression(current) && resolvedRoots.length > 0) {
+    const key = resolvedRoots.join('$');
+    return {
+      expression: current,
+      key,
+      local: true,
+      suffixBase: key,
     };
   }
   if (t.isMemberExpression(current) || t.isOptionalMemberExpression(current)) {

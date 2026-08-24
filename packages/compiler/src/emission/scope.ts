@@ -27,6 +27,10 @@ export interface EmitScope {
   usedConds: { count: number };
   textCounter: number;
   regionCounter: number;
+  /** Stable source-order identities for exact transparent-data sinks. */
+  dataSiteCounter: { count: number };
+  /** Source routes already owned by an enclosing transparent region. */
+  coveredTransparentSources: Set<string>;
   /** Structural regions whose retained entries drain with this scope. */
   disposableRegions: string[];
   /** Component entity ids created lexically inside this scope. */
@@ -55,6 +59,8 @@ export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
     usedConds: { count: 0 },
     textCounter: 0,
     regionCounter: 0,
+    dataSiteCounter: { count: 0 },
+    coveredTransparentSources: new Set(),
     disposableRegions: [],
     disposableEntities: [],
     disposableCallbacks: [],

@@ -226,6 +226,26 @@ export function connectResolvedValue<T>(
   };
 }
 
+/** Subscribe one exact compiler-emitted entity to all of its prerequisites. */
+export function connectResolvedValues(
+  values: readonly ResolvedValue<unknown>[],
+  invalidate: () => void,
+): () => void {
+  const unsubscribes = values.map(value =>
+    observeResolvedValue(value, invalidate)
+  );
+  return () => {
+    for (const unsubscribe of unsubscribes) unsubscribe();
+  };
+}
+
+/** Give one creating component sole disposal authority over a local source. */
+export function ownResolvedValue<T>(
+  value: ResolvedValue<T>,
+): () => void {
+  return () => disposeFetchResource(source(value));
+}
+
 export function isInitialDataFailure(error: unknown): error is RequestError {
   return error instanceof RequestError;
 }

@@ -119,6 +119,10 @@ export function buildChildrenSlot(
   childScope.childCounts = ownerScope.childCounts;
   childScope.usedPrefixes = ownerScope.usedPrefixes;
   childScope.usedConds = ownerScope.usedConds;
+  childScope.dataSiteCounter = ownerScope.dataSiteCounter;
+  childScope.coveredTransparentSources = new Set(
+    ownerScope.coveredTransparentSources,
+  );
 
   const updateHolder = generatedIdentifier(ctx, 'childrenUpdate');
   const additionalUpdates = generatedIdentifier(ctx, 'childrenUpdates');

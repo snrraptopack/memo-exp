@@ -80,7 +80,9 @@ import { buildRenderCallbackAdapter } from './emission/render-callback';
 import { compileRefValue, emitRefMount } from './jsx/refs';
 import { emitRouteRegion } from './emission/route-region';
 import {
+  registerTransparentDataSite,
   transparentCallPolicyArgument,
+  transparentExpressionSources,
   transparentPolicyRenderer,
 } from './data-sources';
 
@@ -142,7 +144,12 @@ function textSetter(
     );
 }
 
-function emitText(ctx: Ctx, scope: EmitScope, expr: t.Expression): string {
+function emitText(
+  ctx: Ctx,
+  scope: EmitScope,
+  expr: t.Expression,
+  ownerId: t.Expression,
+): string {
   const varName = generatedIdentifier(ctx, `text${scope.textCounter++}`).name;
   if (t.isStringLiteral(expr)) {
     // static text: no slot, content baked into the node
@@ -173,6 +180,13 @@ function emitText(ctx: Ctx, scope: EmitScope, expr: t.Expression): string {
   );
   const setter = textSetter(scope, key, varName, expr);
   scope.creation.push(setter()); // R4: creation seeds through the same guarded setter
+  registerTransparentDataSite(
+    ctx,
+    scope,
+    transparentExpressionSources(ctx, expr),
+    ownerId,
+    setter(),
+  );
   scope.updaters.push(setter);
   return varName;
 }
@@ -237,7 +251,7 @@ function emitFragment(
   ownerId: t.Expression = componentId(ctx, compName),
 ): string {
   const operations = collectDirectChildren(fragment.children, {
-    emitText: (expression) => emitText(ctx, scope, expression),
+    emitText: (expression) => emitText(ctx, scope, expression, ownerId),
     emitNode: (node) =>
       emitNode(
         ctx,
@@ -370,7 +384,8 @@ function buildAuthoredChildrenSlot(
       children,
       parentNode.name,
       {
-        emitText: (expression) => emitText(ctx, childScope, expression),
+        emitText: (expression) =>
+          emitText(ctx, childScope, expression, slotOwner),
         emitNode: (node) =>
           emitNode(
             ctx,
@@ -546,6 +561,7 @@ function emitElement(
     );
     let orderedPropObject: t.ObjectExpression | null = null;
     let needsPush = false;
+    const dataPropSources = new Set<string>();
     if (componentHasSpread) {
       const ordered = buildOrderedAttributes(open.attributes, {
         attributeValue: (name, value) =>
@@ -705,6 +721,12 @@ function emitElement(
         );
       }
       const inlineCallback = isInlineScalarCallback(v);
+      if (!inlineCallback) {
+        for (const source of transparentExpressionSources(ctx, v)) {
+          dataPropSources.add(source);
+        }
+        if (dataPropSources.size > 0) needsPush = true;
+      }
       // R12: instance-state reads also need re-push (parent re-renders on
       // instance writes → this updater re-syncs the child's props box)
       if (
@@ -834,28 +856,33 @@ function emitElement(
     scope.disposableEntities.push(t.cloneNode(childId));
     // R10: re-push state-reading props inside the parent's update — the box
     // flows down through setProps (shallow-compare → no-op when unchanged)
-    if (needsPush) {
-      scope.updaters.push(() =>
-        orderedPropObject === null
-          ? t.expressionStatement(
-              t.callExpression(md(ctx, 'setProps'), [
-                t.binaryExpression(
-                  '+',
-                  t.cloneNode(ownerId),
-                  t.stringLiteral(idSuffix),
-                ),
-                t.arrayExpression(props.map((p) => t.cloneNode(p))),
-              ]),
-            )
-          : buildSpreadComponentPropUpdate(
-              ctx,
-              tag,
-              ownerId,
-              idSuffix,
-              orderedPropObject,
-            ),
-      );
-    }
+    const pushProps = (): t.Statement =>
+      orderedPropObject === null
+        ? t.expressionStatement(
+            t.callExpression(md(ctx, 'setProps'), [
+              t.binaryExpression(
+                '+',
+                t.cloneNode(ownerId),
+                t.stringLiteral(idSuffix),
+              ),
+              t.arrayExpression(props.map((p) => t.cloneNode(p))),
+            ]),
+          )
+        : buildSpreadComponentPropUpdate(
+            ctx,
+            tag,
+            ownerId,
+            idSuffix,
+            orderedPropObject,
+          );
+    registerTransparentDataSite(
+      ctx,
+      scope,
+      [...dataPropSources].sort(),
+      ownerId,
+      pushProps(),
+    );
+    if (needsPush) scope.updaters.push(pushProps);
     return varName;
   }
 
@@ -884,7 +911,7 @@ function emitElement(
 
   // Children emit post-order; insertion operations retain authored order.
   const childOperations = collectDirectChildren(el.children, {
-    emitText: (expression) => emitText(ctx, scope, expression),
+    emitText: (expression) => emitText(ctx, scope, expression, ownerId),
     emitNode: (node) =>
       emitNode(
         ctx,
@@ -1111,6 +1138,7 @@ function emitElement(
         `memo-dom: attribute '${attrName}' needs a string or an expression (L1)`,
       );
     }
+    const dataSources = transparentExpressionSources(ctx, v);
     const expr = t.cloneNode(v);
     if (attrName === 'style') {
       const setStyle = (): t.Statement =>
@@ -1121,6 +1149,13 @@ function emitElement(
           ]),
         );
       scope.creation.push(setStyle());
+      registerTransparentDataSite(
+        ctx,
+        scope,
+        dataSources,
+        ownerId,
+        setStyle(),
+      );
       scope.updaters.push(setStyle);
       continue;
     }
@@ -1171,6 +1206,13 @@ function emitElement(
       );
     };
     scope.creation.push(makeCall());
+    registerTransparentDataSite(
+      ctx,
+      scope,
+      dataSources,
+      ownerId,
+      makeCall(),
+    );
     scope.updaters.push(makeCall);
   }
   }

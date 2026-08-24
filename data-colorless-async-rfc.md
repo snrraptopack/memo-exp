@@ -1180,12 +1180,17 @@ existing `register({ id, parent, render })` contract. Structural sites reuse
 the conditional/list entities they already own instead of registering a
 second wrapper.
 
-For each mounted owner and base source, the compiler emits one subscription
-whose callback marks the statically known local site IDs. A small runtime
-`markDirtyMany(ids, reason)` helper may batch those marks into one scheduled
-commit, but it has no dependency-collection behavior. Dynamic rows install the
-same fixed subscription relative to their row owner; dead IDs remain harmless
-dead letters under the existing kernel rule.
+The initial implementation installs a fixed, site-owned subscription for each
+exact entity. A later code-size pass may coalesce subscriptions by mounted
+owner and base source and call a small `markDirtyMany(ids, reason)` helper.
+That is an identity-neutral batching optimization: both forms mark the same
+compiler-known site IDs and neither performs runtime dependency collection.
+Dynamic rows install the same fixed routes relative to their row owner.
+
+Transparent structural entities cover their active branch. Sinks beneath that
+branch remain in its ordinary branch updater and do not install duplicate
+source subscriptions or redundant `$data` entities. A separately mounted
+child still owns its own transported-source subscriptions.
 
 Important ordering rules:
 

@@ -12,6 +12,10 @@ import type { Ctx } from './context';
 import { orderCallProps } from './components/calls';
 import { localBindingForProp } from './components/props';
 import { generatedIdentifier, md, mdd } from './identifiers';
+import {
+  registerStmt,
+  type EmitScope,
+} from './emission/scope';
 
 function importedName(specifier: t.ImportSpecifier): string {
   return t.isIdentifier(specifier.imported)
@@ -49,6 +53,9 @@ export function scanTransparentSourceImports(
       }
       if (name === definition.track || name === definition.operations) {
         ctx.transparentSourcePassthroughs.add(specifier.local.name);
+        if (name === definition.track) {
+          ctx.transparentTrackFactories.add(specifier.local.name);
+        }
         ctx.importedFunctions.set(specifier.local.name, {
           reads: new Set(),
           writes: new Set(),
@@ -183,6 +190,152 @@ function policyElement(name: string, attributes: t.JSXAttribute[]): t.JSXElement
 
 function sourceArray(names: readonly string[]): t.ArrayExpression {
   return t.arrayExpression(names.map((name) => t.identifier(name)));
+}
+
+type TransparentDataExpression = t.Expression & {
+  __memoDomTransparentSources?: readonly string[];
+};
+
+function annotateTransparentSources(
+  expression: t.Expression,
+  sources: readonly string[],
+): void {
+  const current = (expression as TransparentDataExpression)
+    .__memoDomTransparentSources ?? [];
+  (expression as TransparentDataExpression).__memoDomTransparentSources = [
+    ...new Set([...current, ...sources]),
+  ].sort();
+}
+
+/** Base source bindings whose transition must update this emitted expression. */
+export function transparentExpressionSources(
+  ctx: Ctx,
+  expression: t.Expression,
+): readonly string[] {
+  const found = new Set(
+    (expression as TransparentDataExpression).__memoDomTransparentSources ?? [],
+  );
+  const visit = (node: t.Node): void => {
+    if (
+      t.isCallExpression(node) &&
+      t.isMemberExpression(node.callee) &&
+      !node.callee.computed &&
+      t.isIdentifier(node.callee.object, {
+        name: ctx.identifiers?.dataRuntimeId,
+      }) &&
+      t.isIdentifier(node.callee.property)
+    ) {
+      const helper = node.callee.property.name;
+      if (
+        (helper === 'readResolvedValue' ||
+          helper === 'readResolvedValueForRender') &&
+        t.isIdentifier(node.arguments[0])
+      ) {
+        found.add(node.arguments[0].name);
+      }
+      if (
+        (helper === 'readResolvedValuesForRender' ||
+          helper === 'deriveResolvedValues') &&
+        t.isArrayExpression(node.arguments[0])
+      ) {
+        for (const element of node.arguments[0].elements) {
+          if (t.isIdentifier(element)) found.add(element.name);
+        }
+      }
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(child)) {
+        for (const entry of child) {
+          if (entry !== null && typeof entry === 'object' && 'type' in entry) {
+            visit(entry as t.Node);
+          }
+        }
+      } else if (
+        child !== null &&
+        typeof child === 'object' &&
+        'type' in child
+      ) {
+        visit(child as t.Node);
+      }
+    }
+  };
+  visit(expression);
+  return [...found].sort();
+}
+
+function subscribeTransparentEntity(
+  ctx: Ctx,
+  scope: EmitScope,
+  sources: readonly string[],
+  entityId: t.Expression,
+): void {
+  const routed = sources.filter(
+    source => !scope.coveredTransparentSources.has(source),
+  );
+  if (routed.length === 0) return;
+  scope.mounts.push(
+    t.expressionStatement(
+      t.callExpression(md(ctx, 'cleanup'), [
+        t.cloneNode(entityId, true),
+        t.callExpression(mdd(ctx, 'connectResolvedValues'), [
+          sourceArray(routed),
+          t.arrowFunctionExpression(
+            [],
+            t.callExpression(md(ctx, 'markDirty'), [
+              t.cloneNode(entityId, true),
+            ]),
+          ),
+        ]),
+      ]),
+    ),
+  );
+}
+
+/** Register one exact scalar/prop sink under its smallest structural owner. */
+export function registerTransparentDataSite(
+  ctx: Ctx,
+  scope: EmitScope,
+  sources: readonly string[],
+  ownerId: t.Expression,
+  render: t.Statement,
+): boolean {
+  const routed = sources.filter(
+    source => !scope.coveredTransparentSources.has(source),
+  );
+  if (routed.length === 0) return false;
+  const suffix = `/$data/${scope.dataSiteCounter.count++}`;
+  const siteId = t.binaryExpression(
+    '+',
+    t.cloneNode(ownerId, true),
+    t.stringLiteral(suffix),
+  );
+  scope.creation.push(
+    registerStmt(
+      ctx,
+      t.cloneNode(siteId, true),
+      t.cloneNode(ownerId, true),
+      t.arrowFunctionExpression([], t.blockStatement([render])),
+    ),
+  );
+  subscribeTransparentEntity(ctx, scope, routed, siteId);
+  scope.disposableEntities.push(t.cloneNode(siteId, true));
+  return true;
+}
+
+/** Route a transparent expression to an already-registered structural entity. */
+export function subscribeTransparentStructuralSite(
+  ctx: Ctx,
+  scope: EmitScope,
+  expression: t.Expression,
+  entityId: t.Expression,
+): void {
+  subscribeTransparentEntity(
+    ctx,
+    scope,
+    transparentExpressionSources(ctx, expression),
+    entityId,
+  );
 }
 
 type GroupOrigins = Map<Binding, Set<string>>;
@@ -342,6 +495,7 @@ function wrapGroupSite(
   (conditional as t.ConditionalExpression & {
     __memoDomTransparentGroup?: boolean;
   }).__memoDomTransparentGroup = true;
+  annotateTransparentSources(conditional, dependencies);
   expression.replaceWith(conditional);
 }
 
@@ -492,6 +646,7 @@ function wrapAutomaticSite(
   (conditional as t.ConditionalExpression & {
     __memoDomTransparentGroup?: boolean;
   }).__memoDomTransparentGroup = true;
+  annotateTransparentSources(conditional, dependencies);
   expression.replaceWith(conditional);
 }
 
@@ -586,7 +741,7 @@ function isCallToImported(
   componentPath: NodePath<t.FunctionDeclaration>,
   call: t.Expression | null | undefined,
   names: ReadonlySet<string>,
-): call is t.CallExpression {
+): boolean {
   if (!t.isCallExpression(call) || !t.isIdentifier(call.callee)) return false;
   if (!names.has(call.callee.name)) return false;
   return importedProgramBinding(componentPath, call.callee.name) !== undefined;
@@ -596,16 +751,21 @@ function isCallToImported(
 export function scanTransparentSourceBindings(ctx: Ctx): void {
   for (const [component, componentPath] of ctx.compPaths) {
     const sources = new Set<string>();
-    const tracks = new Set<string>();
+    const trackCandidates: Array<{
+      name: string;
+      argument: t.CallExpression['arguments'][number] | undefined;
+    }> = [];
     for (const statement of componentPath.get('body').get('body')) {
       if (!statement.isVariableDeclaration()) continue;
       for (const declaration of statement.get('declarations')) {
         if (!declaration.isVariableDeclarator()) continue;
         if (!t.isIdentifier(declaration.node.id)) continue;
+        const init = declaration.node.init;
+        if (!t.isCallExpression(init)) continue;
         if (
           isCallToImported(
             componentPath,
-            declaration.node.init,
+            init,
             ctx.transparentSourceFactories,
           )
         ) {
@@ -615,11 +775,14 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
         if (
           isCallToImported(
             componentPath,
-            declaration.node.init,
-            ctx.transparentSourcePassthroughs,
+            init,
+            ctx.transparentTrackFactories,
           )
         ) {
-          tracks.add(declaration.node.id.name);
+          trackCandidates.push({
+            name: declaration.node.id.name,
+            argument: init.arguments[0],
+          });
         }
       }
     }
@@ -643,6 +806,20 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
     if (sources.size === 0) continue;
     ctx.usesTransparentData = true;
     ctx.transparentSources.set(component, sources);
+    const tracks = new Map<string, readonly string[]>();
+    for (const candidate of trackCandidates) {
+      const found = new Set<string>();
+      if (t.isIdentifier(candidate.argument) && sources.has(candidate.argument.name)) {
+        found.add(candidate.argument.name);
+      } else if (t.isObjectExpression(candidate.argument)) {
+        for (const property of candidate.argument.properties) {
+          if (t.isObjectProperty(property) && t.isIdentifier(property.value)) {
+            if (sources.has(property.value.name)) found.add(property.value.name);
+          }
+        }
+      }
+      if (found.size > 0) tracks.set(candidate.name, [...found].sort());
+    }
     if (tracks.size > 0) ctx.transparentTrackBindings.set(component, tracks);
   }
 }
@@ -781,7 +958,7 @@ function sourceDependencies(
   bindings: ReadonlyMap<string, Binding>,
   derived: ReadonlyMap<
     string,
-    { binding: Binding; sources: readonly string[] }
+    { binding: Binding; sources: readonly string[]; expression: t.Expression }
   >,
 ): string[] {
   const found = new Set<string>();
@@ -806,6 +983,52 @@ function sourceDependencies(
     ReferencedIdentifier(identifier) {
       if (!identifier.isIdentifier()) return;
       note(identifier as NodePath<t.Identifier>);
+    },
+  });
+  return [...found].sort();
+}
+
+function replaceDerivedReads(
+  path: NodePath,
+  derived: ReadonlyMap<
+    string,
+    { binding: Binding; sources: readonly string[]; expression: t.Expression }
+  >,
+): void {
+  const replace = (identifier: NodePath<t.Identifier>): void => {
+    const projection = derived.get(identifier.node.name);
+    if (
+      projection === undefined ||
+      !isBoundTo(identifier, projection.binding)
+    ) return;
+    identifier.replaceWith(t.cloneNode(projection.expression, true));
+    identifier.skip();
+  };
+  if (path.isReferencedIdentifier()) replace(path as NodePath<t.Identifier>);
+  path.traverse({
+    ReferencedIdentifier(identifier) {
+      if (identifier.isIdentifier()) replace(identifier as NodePath<t.Identifier>);
+    },
+  });
+}
+
+function trackDependencies(
+  path: NodePath,
+  componentPath: NodePath<t.FunctionDeclaration>,
+  tracks: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  const found = new Set<string>();
+  const note = (identifier: NodePath<t.Identifier>): void => {
+    const sources = tracks.get(identifier.node.name);
+    if (sources === undefined) return;
+    const binding = componentPath.scope.getBinding(identifier.node.name);
+    if (binding === undefined || !isBoundTo(identifier, binding)) return;
+    for (const source of sources) found.add(source);
+  };
+  if (path.isReferencedIdentifier()) note(path as NodePath<t.Identifier>);
+  path.traverse({
+    ReferencedIdentifier(identifier) {
+      if (identifier.isIdentifier()) note(identifier as NodePath<t.Identifier>);
     },
   });
   return [...found].sort();
@@ -885,17 +1108,18 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
     const componentPath = ctx.compPaths.get(component);
     if (componentPath === undefined) continue;
     const bindings = sourceBindings(componentPath, names);
+    const tracks = ctx.transparentTrackBindings.get(component) ?? new Map();
     const derived = new Map<
       string,
-      { binding: Binding; sources: readonly string[] }
+      {
+        binding: Binding;
+        sources: readonly string[];
+        expression: t.Expression;
+      }
     >();
     for (const derivation of ctx.instanceDerivations.get(component) ?? []) {
       const sources = derivation.sources.filter((source) => names.has(source));
       if (sources.length === 0) continue;
-      for (const name of derivation.bindings) {
-        const binding = componentPath.scope.getBinding(name);
-        if (binding !== undefined) derived.set(name, { binding, sources });
-      }
       const declaration = componentPath
         .get('body')
         .get('body')
@@ -911,6 +1135,8 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
       if (init === undefined || Array.isArray(init) || !init.isExpression()) {
         continue;
       }
+      replaceDerivedReads(init, derived);
+      const projection = t.cloneNode(init.node, true);
       const wrapped = resolvedRenderExpression(
         ctx,
         init,
@@ -920,6 +1146,16 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
       );
       init.replaceWith(wrapped);
       derivation.source = t.cloneNode(wrapped, true);
+      for (const name of derivation.bindings) {
+        const binding = componentPath.scope.getBinding(name);
+        if (binding !== undefined) {
+          derived.set(name, {
+            binding,
+            sources,
+            expression: t.cloneNode(projection, true),
+          });
+        }
+      }
     }
 
     componentPath.traverse({
@@ -939,7 +1175,9 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           }).__memoDomTransparentGroup === true
         ) {
           // Group already owns render policy for this whole generated subtree.
-          // The later identifier pass still unwraps the committed value read.
+          // Flatten local derivations so the structural entity can update
+          // without replaying the whole component owner.
+          replaceDerivedReads(expression, derived);
           container.skip();
           return;
         }
@@ -949,7 +1187,21 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           bindings,
           derived,
         );
-        if (dependencies.length === 0) return;
+        const stateDependencies = trackDependencies(
+          expression,
+          componentPath,
+          tracks,
+        );
+        if (dependencies.length === 0) {
+          if (stateDependencies.length > 0) {
+            annotateTransparentSources(expression.node, stateDependencies);
+          }
+          return;
+        }
+        const allDependencies = [
+          ...new Set([...dependencies, ...stateDependencies]),
+        ].sort();
+        replaceDerivedReads(expression, derived);
         if (
           containsJsx(expression) ||
           dependencies.some((source) =>
@@ -957,12 +1209,20 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           )
         ) {
           wrapAutomaticSite(ctx, component, expression, dependencies);
+          if (stateDependencies.length > 0 && expression.isExpression()) {
+            annotateTransparentSources(expression.node, allDependencies);
+          }
           container.skip();
           return;
         }
-        expression.replaceWith(
-          resolvedRenderExpression(ctx, expression, dependencies, bindings),
+        const resolved = resolvedRenderExpression(
+          ctx,
+          expression,
+          dependencies,
+          bindings,
         );
+        annotateTransparentSources(resolved, allDependencies);
+        expression.replaceWith(resolved);
       },
     });
 
@@ -1094,30 +1354,23 @@ export function transparentCallPolicyArgument(
   );
 }
 
-/** Component-mount statements for push invalidation and structural cleanup. */
+/** Component-mount statements granting disposal only to locally-created sources. */
 export function transparentSourceMounts(
   ctx: Ctx,
   component: string,
   owner: t.Identifier,
 ): t.Statement[] {
-  return [...(ctx.transparentSources.get(component) ?? [])].map((source) =>
-    t.expressionStatement(
-      t.callExpression(md(ctx, 'cleanup'), [
-        t.cloneNode(owner),
-        t.callExpression(mdd(ctx, 'connectResolvedValue'), [
-          t.identifier(source),
-          t.arrowFunctionExpression(
-            [],
-            // The first slice invalidates the structural owner subtree. The
-            // site-specialization pass will replace this with exact linked
-            // consumption entities without changing the source contract.
-            t.callExpression(md(ctx, 'markDirtySubtree'), [t.cloneNode(owner)]),
-          ),
-          t.booleanLiteral(
-            ctx.transparentSourceProps.get(component)?.has(source) !== true,
-          ),
+  const transported = ctx.transparentSourceProps.get(component);
+  return [...(ctx.transparentSources.get(component) ?? [])]
+    .filter((source) => transported?.has(source) !== true)
+    .map((source) =>
+      t.expressionStatement(
+        t.callExpression(md(ctx, 'cleanup'), [
+          t.cloneNode(owner),
+          t.callExpression(mdd(ctx, 'ownResolvedValue'), [
+            t.identifier(source),
+          ]),
         ]),
-      ]),
-    ),
-  );
+      ),
+    );
 }

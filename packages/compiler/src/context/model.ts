@@ -311,13 +311,14 @@ export interface Ctx {
   usesTransparentData: boolean;
   /** Local import bindings classified by provider metadata. */
   transparentSourceFactories: Set<string>;
+  transparentTrackFactories: Set<string>;
   transparentSourcePassthroughs: Set<string>;
   transparentGroups: Set<string>;
   transparentPendingPolicies: Set<string>;
   transparentErrorPolicies: Set<string>;
   /** Component-local source holders and track-state aliases. */
   transparentSources: Map<string, Set<string>>;
-  transparentTrackBindings: Map<string, Set<string>>;
+  transparentTrackBindings: Map<string, Map<string, readonly string[]>>;
   /** Direct prop binding -> authored prop name for transported source holders. */
   transparentSourceProps: Map<string, Map<string, string>>;
   /** Private factory parameter carrying inherited presentation renderers. */
@@ -571,6 +572,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     usesRouter: false,
     usesTransparentData: false,
     transparentSourceFactories: new Set(),
+    transparentTrackFactories: new Set(),
     transparentSourcePassthroughs: new Set(),
     transparentGroups: new Set(),
     transparentPendingPolicies: new Set(),

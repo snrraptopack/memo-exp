@@ -15,6 +15,10 @@ import {
   type EmitScope,
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
+import {
+  subscribeTransparentStructuralSite,
+  transparentExpressionSources,
+} from '../data-sources';
 
 /** Emit an anchored conditional region owned by a component or row. */
 export function emitConditionalRegion(
@@ -40,6 +44,7 @@ export function emitConditionalRegion(
     t.cloneNode(ownerId),
     t.stringLiteral(`/${site.suffix}`),
   );
+  const transparentSources = transparentExpressionSources(ctx, expression);
 
   const pick = t.arrowFunctionExpression([], t.cloneNode(site.pickExpr));
   const branchFactories: t.Expression[] = site.branches.map((jsx) =>
@@ -55,6 +60,7 @@ export function emitConditionalRegion(
           regionId,
           false,
           scope.usedConds,
+          transparentSources,
         )
       : t.nullLiteral(),
   );
@@ -75,6 +81,12 @@ export function emitConditionalRegion(
         ),
       ),
     ),
+  );
+  subscribeTransparentStructuralSite(
+    ctx,
+    scope,
+    expression,
+    regionId,
   );
   scope.creation.push(
     t.variableDeclaration('const', [
@@ -122,8 +134,12 @@ export function buildConditionalBranchCreate(
   ownerId: t.Expression = regionId,
   allowConditions = false,
   usedConditions?: { count: number },
+  coveredTransparentSources: readonly string[] = [],
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx, true);
+  for (const source of coveredTransparentSources) {
+    branchScope.coveredTransparentSources.add(source);
+  }
   if (usedConditions !== undefined) {
     branchScope.usedConds = usedConditions;
   }

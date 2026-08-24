@@ -178,6 +178,18 @@ function importFixture(): Promise<any> {
   return import(/* @vite-ignore */ pathToFileURL(fixture).href);
 }
 
+function countEntityRenders(id: string): () => number {
+  const entity = _internals().registry.get(id);
+  if (entity === undefined) throw new Error(`missing runtime entity: ${id}`);
+  const render = entity.render;
+  let count = 0;
+  entity.render = reasons => {
+    count++;
+    render(reasons);
+  };
+  return () => count;
+}
+
 describe('compiler-transparent data values', () => {
   let runtime: DataRuntime | null = null;
   let previous: DataRuntime | null = null;
@@ -190,7 +202,10 @@ describe('compiler-transparent data values', () => {
     );
     const compiled = output['./transparent-data.tsx']!;
     expect(compiled).toContain('readResolvedValuesForRender');
-    expect(compiled).toContain('connectResolvedValue');
+    expect(compiled).toContain('connectResolvedValues');
+    expect(compiled).toContain('ownResolvedValue');
+    expect(compiled).toContain('/$data/0');
+    expect(compiled).not.toContain('markDirtySubtree');
     expect(compiled).toContain('readResolvedValue(user, "user"');
     expect(compiled).not.toContain('volatile: true');
     writeFileSync(fixture, compiled);
@@ -219,6 +234,9 @@ describe('compiler-transparent data values', () => {
 
     const mod = await importFixture();
     document.body.appendChild(mod.App('App', null));
+    const ownerRenders = countEntityRenders('App');
+    const greetingRenders = countEntityRenders('App/$data/0');
+    const pendingRenders = countEntityRenders('App/when0');
 
     expect(document.querySelector('p')?.textContent).toBe('Loading');
     expect(document.querySelector('#greeting')?.textContent).toBe('');
@@ -232,6 +250,9 @@ describe('compiler-transparent data values', () => {
       () => document.querySelector('#greeting')?.textContent,
     ).toBe('Hello Ada');
     expect(document.querySelector('p')).toBeNull();
+    expect(ownerRenders()).toBe(0);
+    expect(greetingRenders()).toBeGreaterThan(0);
+    expect(pendingRenders()).toBeGreaterThan(0);
 
     document.querySelector<HTMLButtonElement>('#rename')!.click();
     expect(document.querySelector('#greeting')?.textContent)
@@ -255,6 +276,9 @@ describe('compiler-transparent data values', () => {
     const mod = await importFixture();
     document.body.appendChild(mod.GroupApp('GroupApp', null));
     await vi.waitFor(() => expect(requests).toHaveLength(2));
+    const ownerRenders = countEntityRenders('GroupApp');
+    const userRenders = countEntityRenders('GroupApp/when0');
+    const statisticsRenders = countEntityRenders('GroupApp/when1');
 
     expect(document.querySelector('h1')?.textContent).toBe('Dashboard');
     expect(document.querySelector('#group-user .pending')).not.toBeNull();
@@ -269,6 +293,10 @@ describe('compiler-transparent data values', () => {
       () => document.querySelector('#group-user')?.textContent,
     ).toBe('Ada');
     expect(document.querySelector('#group-statistics .pending')).not.toBeNull();
+    expect(ownerRenders()).toBe(0);
+    expect(userRenders()).toBeGreaterThan(0);
+    expect(statisticsRenders()).toBe(0);
+    const userRendersAfterUser = userRenders();
 
     requests.find(request => request.url.endsWith('/statistics'))!.resolve(
       new Response(JSON.stringify({ message: 'offline' }), {
@@ -280,6 +308,9 @@ describe('compiler-transparent data values', () => {
       () => document.querySelector('#group-statistics .data-error')?.textContent,
     ).toBe('http');
     expect(document.querySelector('#group-user')?.textContent).toBe('Ada');
+    expect(ownerRenders()).toBe(0);
+    expect(userRenders()).toBe(userRendersAfterUser);
+    expect(statisticsRenders()).toBeGreaterThan(0);
 
     document.querySelector<HTMLButtonElement>(
       '#group-statistics .data-error',
@@ -308,6 +339,7 @@ describe('compiler-transparent data values', () => {
 
     const mod = await importFixture();
     document.body.appendChild(mod.DerivedGroupApp('DerivedGroupApp', null));
+    const ownerRenders = countEntityRenders('DerivedGroupApp');
 
     expect(document.querySelector('h1')?.textContent).toBe('Todos');
     expect(document.querySelector('#open-count .pending')).not.toBeNull();
@@ -325,11 +357,13 @@ describe('compiler-transparent data values', () => {
     ).toBe('1');
     expect(document.querySelector('#open-state')?.textContent).toBe('Open work');
     expect(document.querySelector('#todo-rows')?.textContent).toBe('Ship compiler');
+    expect(ownerRenders()).toBe(0);
 
     document.querySelector<HTMLButtonElement>('#clear-todos')!.click();
     expect(document.querySelector('#open-count')?.textContent).toBe('0');
     expect(document.querySelector('#open-state')?.textContent).toBe('All done');
     expect(document.querySelector('#todo-rows')?.textContent).toBe('');
+    expect(ownerRenders()).toBe(0);
   });
 
   it('routes a derived-source failure to each nearest Group policy before replay', async () => {
@@ -378,6 +412,10 @@ describe('compiler-transparent data values', () => {
 
     const mod = await importFixture();
     document.body.appendChild(mod.CrossComponentApp('CrossComponentApp', null));
+    const rootRenders = countEntityRenders('CrossComponentApp');
+    const profileRenders = countEntityRenders(
+      'CrossComponentApp/CrossProfile',
+    );
     expect(document.querySelector('h1')?.textContent).toBe('Cross component');
     expect(document.querySelector('#cross-greeting .pending')).not.toBeNull();
     expect(document.querySelector('#cross-leaf .deep-pending')).not.toBeNull();
@@ -390,6 +428,8 @@ describe('compiler-transparent data values', () => {
       () => document.querySelector('#cross-greeting')?.textContent,
     ).toBe('Welcome Ada');
     expect(document.querySelector('#cross-leaf')?.textContent).toBe('Ada');
+    expect(rootRenders()).toBe(0);
+    expect(profileRenders()).toBe(0);
   });
 
   it('renders and retries inherited and nested cross-component Error policies', async () => {

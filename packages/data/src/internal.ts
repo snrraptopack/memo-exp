@@ -11,8 +11,10 @@ export {
 } from './resource';
 export {
   connectResolvedValue,
+  connectResolvedValues,
   deriveResolvedValues,
   observeResolvedValue,
+  ownResolvedValue,
   readResolvedValue,
   readResolvedValueForRender,
   readResolvedValuesForRender,

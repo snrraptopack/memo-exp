@@ -202,10 +202,14 @@ manifest identity design. This includes the async/data contract gate below.
 The data/async layer redesign is a blocking dependency for marker freezing.
 `data-colorless-async-rfc.md` section 16 now specifies the proposed answer for
 "unresolved resource at flush", exact region fallback entities, runtime-owned
-module sources, and source-state serialization/restoration. The design half of
-the gate is therefore concrete; implementation evidence and stable emitted
-data-site identities are still required before Phase 2's marker protocol work
-begins.
+module sources, and source-state serialization/restoration. The exact-site
+compiler slice now provides stable `owner/$data/<n>` scalar/attribute/prop
+identities, reuses structural region identities for pending/error/list
+expressions, emits fixed source-to-site subscriptions, and separates local
+source disposal from transported-source subscription ownership. Phase 2 marker
+work may therefore target these identities. Runtime-owned module descriptions
+and snapshot restore remain later async-SSR/hydration gates; they no longer
+require marker identity churn.
 
 ## Phase 1: server-safe runtime and LinkeDOM reference renderer
 
@@ -1029,11 +1033,11 @@ Performance/size impact: N/A.
 Compatibility impact: Phase 0 guard protects marker/manifest identity from concurrent compiler changes.
 
 Decision: The data/async layer redesign (transparent async reads, region-provided fallbacks, push invalidation, resource serialization rules) is a blocking dependency for Phase 2 marker freeze.
-Status: accepted sequencing constraint; design specified, implementation evidence pending
+Status: accepted sequencing constraint; exact-site identity prerequisite implemented
 Problem: Marker identities cannot stabilize until async output and exact data-site ownership are defined.
 Options considered: Freeze markers now; gate marker freeze on agreed async semantics.
 Chosen option: Gate. Push invalidation stays in the data/compiler work; source-state serialization and restore-before-create are specified in `data-colorless-async-rfc.md` section 16.
-Evidence or prototype: Local Group/derived/list/cross-component behavior exists; projection transport, exact data-site entities, runtime-owned module descriptions, and snapshot restoration still need their listed implementation slices.
+Evidence or prototype: Compiler/runtime tests cover stable `$data` identities, structural-region reuse, derived/list replay, independent source routing, cross-component provenance, and zero owner renders on source settlement. Runtime-owned module descriptions and snapshot restoration remain separate later slices.
 Performance/size impact: N/A.
 Compatibility impact: Prevents premature protocol churn.
 ```

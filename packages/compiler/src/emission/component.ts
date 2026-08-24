@@ -230,7 +230,9 @@ export function transformComponent(
     linkedRefs.some((ref) => ref.sourceLocal);
   const dataPolicies = ctx.transparentPolicyParams.get(name) ?? null;
   const lightweight =
-    dataPolicies === null && isLightweightListedComponent(ctx, name);
+    dataPolicies === null &&
+    !ctx.transparentSources.has(name) &&
+    isLightweightListedComponent(ctx, name);
   const positionalObjectProps =
     lightweight && linkedRefs.length === 0
       ? simpleObjectPropBindings(propPlan)
