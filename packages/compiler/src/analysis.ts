@@ -77,6 +77,10 @@ import { foldRenderCallbackSubtreeReads } from './analysis/component-reads';
 import { scanRefProps } from './components/ref-props';
 import { hostJsxEventNames } from './jsx/events';
 import { generatedIdentifier } from './identifiers';
+import {
+  registerTransparentSourceRoots,
+  scanTransparentSourceBindings,
+} from './data-sources';
 
 export {
   isLightweightListedComponent,
@@ -1446,6 +1450,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  scanTransparentSourceBindings(ctx);
   scanRefProps(ctx);
   scanRenderCallbacks(ctx);
   normalizeRenderFunctions(ctx);
@@ -1461,6 +1466,7 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   // derivations exactly because their sources change outside the access
   // table, so their chains must replay on every pull-based update.
   scanOpaqueVolatility(ctx);
+  registerTransparentSourceRoots(ctx);
   scanComputeds(ctx, programPath); // R13: after helpers are known
   scanModuleControlFlow(ctx, programPath, analyzeComputed);
   scanInstanceDerivations(ctx); // R14/R24: ordered local projections/computeds

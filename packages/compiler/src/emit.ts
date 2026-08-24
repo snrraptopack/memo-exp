@@ -79,6 +79,10 @@ import { emitListRegion } from './emission/list-region';
 import { buildRenderCallbackAdapter } from './emission/render-callback';
 import { compileRefValue, emitRefMount } from './jsx/refs';
 import { emitRouteRegion } from './emission/route-region';
+import {
+  transparentCallPolicyArgument,
+  transparentPolicyRenderer,
+} from './data-sources';
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -465,6 +469,34 @@ function emitElement(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): string {
+  const policyRenderer = transparentPolicyRenderer(el);
+  if (policyRenderer !== null) {
+    const seen = scope.childCounts.get('$dataPolicy') ?? 0;
+    scope.childCounts.set('$dataPolicy', seen + 1);
+    const suffix = seen === 0
+      ? '/$dataPolicy'
+      : `/$dataPolicy[${seen}]`;
+    const childId = t.binaryExpression(
+      '+',
+      t.cloneNode(ownerId),
+      t.stringLiteral(suffix),
+    );
+    const variable = freshNodeName(ctx, scope, 'dataPolicy');
+    scope.creation.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.identifier(variable),
+          t.callExpression(t.cloneNode(policyRenderer.renderer), [
+            t.cloneNode(childId),
+            t.cloneNode(ownerId),
+            ...policyRenderer.args.map((argument) => t.cloneNode(argument, true)),
+          ]),
+        ),
+      ]),
+    );
+    scope.disposableEntities.push(t.cloneNode(childId));
+    return variable;
+  }
   const route = ctx.routeElements.get(el);
   if (route !== undefined) {
     return emitRouteRegion(
@@ -781,6 +813,11 @@ function emitElement(
       t.cloneNode(ownerId),
       t.stringLiteral(idSuffix),
     );
+    const dataPolicies = transparentCallPolicyArgument(
+      ctx,
+      compName,
+      el,
+    );
     scope.creation.push(
       t.variableDeclaration('const', [
         t.variableDeclarator(
@@ -789,6 +826,7 @@ function emitElement(
             childId,
             t.cloneNode(ownerId),
             ...(props.length > 0 ? [t.arrayExpression(props)] : []),
+            ...(dataPolicies === null ? [] : [dataPolicies]),
           ]),
         ),
       ]),

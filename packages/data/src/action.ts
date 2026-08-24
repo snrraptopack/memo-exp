@@ -15,6 +15,7 @@ import type {
   ActionListener,
   ActionOptions,
   ActionSnapshot,
+  RefreshableResource,
 } from './types';
 
 interface MutableActionSnapshot<T> {
@@ -234,7 +235,9 @@ export function createAction<TResult, TInput>(
         throw abortReason(invocation.abortController.signal);
       }
       for (const resource of callOptions.refresh ?? []) {
-        resource.refresh().catch(() => {});
+        // Transparent authored values are FetchResource holders in generated
+        // code; the public type intentionally hides those methods.
+        (resource as RefreshableResource).refresh().catch(() => {});
       }
       return result;
     } catch (cause) {

@@ -50,6 +50,7 @@ import {
   updateDecl,
 } from './scope';
 import { applyRepeatedDomTemplate } from './dom-template';
+import { transparentSourceMounts } from '../data-sources';
 
 type ComponentEmitScope = ReturnType<typeof newEmitScope>;
 
@@ -187,6 +188,7 @@ function buildFactoryParameters(
   factoryOwner: string | null,
   eventBindings: ReadonlyMap<string, string>,
   propsBox: string | null,
+  dataPolicies: t.Identifier | null,
 ): t.FunctionDeclaration['params'] {
   if (lightweight) {
     return [
@@ -203,8 +205,13 @@ function buildFactoryParameters(
         t.identifier(factoryId),
         t.identifier(factoryParent!),
         t.identifier(propsBox!),
+        ...(dataPolicies === null ? [] : [t.cloneNode(dataPolicies)]),
       ]
-    : [t.identifier(factoryId), t.identifier(factoryParent!)];
+    : [
+        t.identifier(factoryId),
+        t.identifier(factoryParent!),
+        ...(dataPolicies === null ? [] : [t.cloneNode(dataPolicies)]),
+      ];
 }
 
 export function transformComponent(
@@ -221,7 +228,9 @@ export function transformComponent(
   const sourceLocal =
     refs.some((ref) => ref.sourceLocal === true) ||
     linkedRefs.some((ref) => ref.sourceLocal);
-  const lightweight = isLightweightListedComponent(ctx, name);
+  const dataPolicies = ctx.transparentPolicyParams.get(name) ?? null;
+  const lightweight =
+    dataPolicies === null && isLightweightListedComponent(ctx, name);
   const positionalObjectProps =
     lightweight && linkedRefs.length === 0
       ? simpleObjectPropBindings(propPlan)
@@ -391,6 +400,9 @@ export function transformComponent(
     );
   }
   body.push(...scope.creation, ...scope.mounts);
+  body.push(
+    ...transparentSourceMounts(ctx, name, t.identifier(factoryId)),
+  );
   if (effects !== undefined) {
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));
   }
@@ -431,6 +443,7 @@ export function transformComponent(
     factoryOwner,
     factoryEventBindings,
     propsBox,
+    dataPolicies,
   );
   node.body = t.blockStatement(body);
 }

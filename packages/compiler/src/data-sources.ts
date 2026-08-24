@@ -1,0 +1,1123 @@
+/**
+ * Compiler-transparent async data sources.
+ *
+ * The public binding is typed as ResolvedValue<T>, while generated code keeps
+ * the library's source holder. Reads are lowered either to a render gate or an
+ * imperative resolution guard; source transitions push the owning component
+ * through the ordinary runtime dirty queue.
+ */
+import type { Binding, NodePath } from '@babel/traverse';
+import * as t from '@babel/types';
+import type { Ctx } from './context';
+import { orderCallProps } from './components/calls';
+import { localBindingForProp } from './components/props';
+import { generatedIdentifier, md, mdd } from './identifiers';
+
+function importedName(specifier: t.ImportSpecifier): string {
+  return t.isIdentifier(specifier.imported)
+    ? specifier.imported.name
+    : specifier.imported.value;
+}
+
+/** Resolve provider metadata to local import aliases before module analysis. */
+export function scanTransparentSourceImports(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
+  const definitions = new Map(
+    ctx.transparentAsyncSources.map((definition) => [
+      definition.module,
+      definition,
+    ]),
+  );
+  for (const statement of programPath.get('body')) {
+    if (!statement.isImportDeclaration()) continue;
+    const definition = definitions.get(statement.node.source.value);
+    if (definition === undefined) continue;
+    for (const specifier of statement.node.specifiers) {
+      if (!t.isImportSpecifier(specifier)) continue;
+      const name = importedName(specifier);
+      if (name === definition.source) {
+        ctx.transparentSourceFactories.add(specifier.local.name);
+        ctx.importedFunctions.set(specifier.local.name, {
+          reads: new Set(),
+          writes: new Set(),
+          boundedWrites: new Set(),
+          parameterWrites: [],
+          unbounded: false,
+        });
+      }
+      if (name === definition.track || name === definition.operations) {
+        ctx.transparentSourcePassthroughs.add(specifier.local.name);
+        ctx.importedFunctions.set(specifier.local.name, {
+          reads: new Set(),
+          writes: new Set(),
+          boundedWrites: new Set(),
+          parameterWrites: [],
+          unbounded: false,
+        });
+      }
+      if (name === definition.group) {
+        ctx.transparentGroups.add(specifier.local.name);
+      }
+      if (name === definition.pending) {
+        ctx.transparentPendingPolicies.add(specifier.local.name);
+      }
+      if (name === definition.error) {
+        ctx.transparentErrorPolicies.add(specifier.local.name);
+      }
+    }
+  }
+}
+
+function jsxTagName(element: t.JSXElement): string | null {
+  return t.isJSXIdentifier(element.openingElement.name)
+    ? element.openingElement.name.name
+    : null;
+}
+
+function meaningfulGroupChildren(
+  path: NodePath<t.JSXElement>,
+): NodePath<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer>[] {
+  return path.get('children').filter((child): child is NodePath<
+    t.JSXElement | t.JSXFragment | t.JSXExpressionContainer
+  > => {
+    if (child.isJSXText()) {
+      if (child.node.value.trim() !== '') {
+        throw child.buildCodeFrameError(
+          'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
+        );
+      }
+      return false;
+    }
+    if (
+      child.isJSXExpressionContainer() &&
+      child.get('expression').isJSXEmptyExpression()
+    ) {
+      return false;
+    }
+    return child.isJSXElement() ||
+      child.isJSXFragment() ||
+      child.isJSXExpressionContainer();
+  });
+}
+
+function componentPolicy(
+  path: NodePath<t.JSXElement>,
+  expected: ReadonlySet<string>,
+  label: string,
+): string {
+  const tag = jsxTagName(path.node);
+  if (tag === null || !expected.has(tag)) {
+    throw path.buildCodeFrameError(
+      `memo-dom: Group child must be <${label} component={...} />`,
+    );
+  }
+  const attributes = path.node.openingElement.attributes;
+  if (attributes.length !== 1 || !t.isJSXAttribute(attributes[0])) {
+    throw path.buildCodeFrameError(
+      `memo-dom: <${label}> requires exactly one component prop`,
+    );
+  }
+  const attribute = attributes[0];
+  const name = t.isJSXIdentifier(attribute.name)
+    ? attribute.name.name
+    : null;
+  const value = attribute.value;
+  if (
+    name !== 'component' ||
+    !t.isJSXExpressionContainer(value) ||
+    !t.isIdentifier(value.expression)
+  ) {
+    throw path.buildCodeFrameError(
+      `memo-dom: <${label}> component must reference a component identifier`,
+    );
+  }
+  return value.expression.name;
+}
+
+function groupDataNames(path: NodePath<t.JSXElement>): string[] {
+  const attributes = path.node.openingElement.attributes;
+  const data = attributes.find((attribute) =>
+    t.isJSXAttribute(attribute) &&
+    t.isJSXIdentifier(attribute.name, { name: 'data' }),
+  );
+  if (
+    !t.isJSXAttribute(data) ||
+    !t.isJSXExpressionContainer(data.value)
+  ) {
+    throw path.buildCodeFrameError(
+      'memo-dom: <Group> requires data={source} or data={{ source, ... }}',
+    );
+  }
+  const expression = data.value.expression;
+  if (t.isIdentifier(expression)) return [expression.name];
+  if (!t.isObjectExpression(expression)) {
+    throw path.buildCodeFrameError(
+      'memo-dom: Group.data currently accepts a source identifier or an object of source identifiers',
+    );
+  }
+  const names: string[] = [];
+  for (const property of expression.properties) {
+    if (
+      !t.isObjectProperty(property) ||
+      property.computed ||
+      !t.isIdentifier(property.value)
+    ) {
+      throw path.buildCodeFrameError(
+        'memo-dom: every Group.data object value must be a source identifier',
+      );
+    }
+    names.push(property.value.name);
+  }
+  return [...new Set(names)];
+}
+
+function policyElement(name: string, attributes: t.JSXAttribute[]): t.JSXElement {
+  return t.jsxElement(
+    t.jsxOpeningElement(t.jsxIdentifier(name), attributes, true),
+    null,
+    [],
+  );
+}
+
+function sourceArray(names: readonly string[]): t.ArrayExpression {
+  return t.arrayExpression(names.map((name) => t.identifier(name)));
+}
+
+type GroupOrigins = Map<Binding, Set<string>>;
+
+function expressionOrigins(
+  path: NodePath,
+  origins: ReadonlyMap<Binding, ReadonlySet<string>>,
+): Set<string> {
+  const found = new Set<string>();
+  const note = (identifier: NodePath<t.Identifier>): void => {
+    const binding = identifier.scope.getBinding(identifier.node.name);
+    if (binding === undefined) return;
+    for (const source of origins.get(binding) ?? []) found.add(source);
+  };
+  if (path.isReferencedIdentifier()) note(path as NodePath<t.Identifier>);
+  path.traverse({
+    ReferencedIdentifier(identifier) {
+      if (identifier.isIdentifier()) note(identifier as NodePath<t.Identifier>);
+    },
+  });
+  return found;
+}
+
+function groupOrigins(
+  path: NodePath<t.JSXElement>,
+  sources: readonly string[],
+): GroupOrigins {
+  const origins: GroupOrigins = new Map();
+  for (const source of sources) {
+    const binding = path.scope.getBinding(source);
+    if (binding !== undefined) origins.set(binding, new Set([source]));
+  }
+  const component = path.findParent((parent): parent is NodePath<t.FunctionDeclaration> =>
+    parent.isFunctionDeclaration(),
+  );
+  if (component === null || !component.isFunctionDeclaration()) return origins;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    component.traverse({
+      VariableDeclarator(declaration) {
+        const init = declaration.get('init');
+        if (Array.isArray(init) || !init.isExpression()) return;
+        const dependencies = expressionOrigins(init, origins);
+        if (dependencies.size === 0) return;
+        for (const name of Object.keys(t.getBindingIdentifiers(declaration.node.id))) {
+          const binding = declaration.scope.getBinding(name);
+          if (binding === undefined) continue;
+          const current = origins.get(binding) ?? new Set<string>();
+          const before = current.size;
+          for (const source of dependencies) current.add(source);
+          origins.set(binding, current);
+          changed ||= current.size !== before;
+        }
+      },
+      Function(inner) {
+        if (inner.node !== component.node) inner.skip();
+      },
+    });
+  }
+  return origins;
+}
+
+function isLoweredGroupExpression(path: NodePath<t.Expression>): boolean {
+  return (path.node as t.Expression & {
+    __memoDomTransparentGroup?: boolean;
+  }).__memoDomTransparentGroup === true;
+}
+
+function componentPropName(attribute: NodePath<t.JSXAttribute>): string | null {
+  return t.isJSXIdentifier(attribute.node.name)
+    ? attribute.node.name.name
+    : null;
+}
+
+function annotateGroupComponentCalls(
+  ctx: Ctx,
+  content: NodePath,
+  origins: ReadonlyMap<Binding, ReadonlySet<string>>,
+  pending: string,
+  error: string,
+): void {
+  const note = (element: NodePath<t.JSXElement>): void => {
+    const tag = jsxTagName(element.node);
+    if (tag === null || !/^[A-Z]/.test(tag)) return;
+    let policies = ctx.transparentGroupCallPolicies.get(element.node);
+    for (const attribute of element.get('openingElement').get('attributes')) {
+      if (!attribute.isJSXAttribute()) continue;
+      const prop = componentPropName(attribute);
+      const value = attribute.get('value');
+      if (
+        prop === null ||
+        Array.isArray(value) ||
+        !value.isJSXExpressionContainer()
+      ) continue;
+      const expression = value.get('expression');
+      if (
+        Array.isArray(expression) ||
+        !expression.isReferencedIdentifier() ||
+        expressionOrigins(expression, origins).size === 0
+      ) continue;
+      policies ??= new Map();
+      // Inner groups run first (exit traversal) and own the nearest match.
+      if (!policies.has(prop)) policies.set(prop, { pending, error });
+    }
+    if (policies !== undefined) {
+      ctx.transparentGroupCallPolicies.set(element.node, policies);
+    }
+  };
+  if (content.isJSXElement()) note(content);
+  content.traverse({ JSXElement: note });
+}
+
+function wrapGroupSite(
+  ctx: Ctx,
+  expression: NodePath<t.Expression>,
+  dependencies: readonly string[],
+  pending: string,
+  error: string,
+): void {
+  const sources = sourceArray(dependencies);
+  const errorRead = (): t.CallExpression =>
+    t.callExpression(mdd(ctx, 'resolvedValuesError'), [
+      t.cloneNode(sources, true),
+    ]);
+  const retry = t.arrowFunctionExpression(
+    [],
+    t.callExpression(mdd(ctx, 'retryResolvedValues'), [
+      t.cloneNode(sources, true),
+    ]),
+  );
+  const committed = t.jsxFragment(
+    t.jsxOpeningFragment(),
+    t.jsxClosingFragment(),
+    [t.jsxExpressionContainer(t.cloneNode(expression.node, true))],
+  );
+  const conditional = t.conditionalExpression(
+    errorRead(),
+    policyElement(error, [
+      t.jsxAttribute(
+        t.jsxIdentifier('error'),
+        t.jsxExpressionContainer(errorRead()),
+      ),
+      t.jsxAttribute(
+        t.jsxIdentifier('retry'),
+        t.jsxExpressionContainer(retry),
+      ),
+    ]),
+    t.conditionalExpression(
+      t.callExpression(mdd(ctx, 'resolvedValuesPending'), [
+        t.cloneNode(sources, true),
+      ]),
+      policyElement(pending, []),
+      committed,
+    ),
+  );
+  (conditional as t.ConditionalExpression & {
+    __memoDomTransparentGroup?: boolean;
+  }).__memoDomTransparentGroup = true;
+  expression.replaceWith(conditional);
+}
+
+interface TransparentPolicyRenderer {
+  renderer: t.Expression;
+  args: t.Expression[];
+}
+
+type TransparentPolicyElement = t.JSXElement & {
+  __memoDomTransparentPolicyRenderer?: TransparentPolicyRenderer;
+};
+
+function policyRendererElement(
+  renderer: t.Expression,
+  args: t.Expression[],
+): t.JSXElement {
+  const element = t.jsxElement(
+    t.jsxOpeningElement(
+      t.jsxIdentifier('mmd-data-policy-render'),
+      [],
+      true,
+    ),
+    null,
+    [],
+  ) as TransparentPolicyElement;
+  element.__memoDomTransparentPolicyRenderer = { renderer, args };
+  return element;
+}
+
+export function transparentPolicyRenderer(
+  element: t.JSXElement,
+): TransparentPolicyRenderer | null {
+  return (element as TransparentPolicyElement)
+    .__memoDomTransparentPolicyRenderer ?? null;
+}
+
+function sourcePolicy(
+  ctx: Ctx,
+  component: string,
+  source: string,
+): t.Expression {
+  const parameter = ctx.transparentPolicyParams.get(component);
+  const prop = ctx.transparentSourceProps.get(component)?.get(source);
+  if (parameter === undefined || prop === undefined) return t.nullLiteral();
+  return t.optionalMemberExpression(
+    t.cloneNode(parameter),
+    t.isValidIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
+    !t.isValidIdentifier(prop),
+    true,
+  );
+}
+
+function policyForStatus(
+  ctx: Ctx,
+  component: string,
+  dependencies: readonly string[],
+  indexHelper: string,
+): t.Expression {
+  const policies = dependencies.map((source) =>
+    sourcePolicy(ctx, component, source)
+  );
+  const selected = dependencies.length === 1
+    ? policies[0]!
+    : t.memberExpression(
+        t.arrayExpression(policies),
+        t.callExpression(mdd(ctx, indexHelper), [sourceArray(dependencies)]),
+        true,
+      );
+  return selected;
+}
+
+function policyMember(
+  policy: t.Expression,
+  name: 'pending' | 'error',
+): t.Expression {
+  return t.optionalMemberExpression(
+    t.cloneNode(policy),
+    t.identifier(name),
+    false,
+    true,
+  );
+}
+
+function fragmentExpression(expression: t.Expression): t.JSXFragment {
+  return t.jsxFragment(
+    t.jsxOpeningFragment(),
+    t.jsxClosingFragment(),
+    [t.jsxExpressionContainer(expression)],
+  );
+}
+
+function wrapAutomaticSite(
+  ctx: Ctx,
+  component: string,
+  expression: NodePath<t.Expression>,
+  dependencies: readonly string[],
+): void {
+  const sources = sourceArray(dependencies);
+  const errorRead = (): t.CallExpression =>
+    t.callExpression(mdd(ctx, 'resolvedValuesError'), [
+      t.cloneNode(sources, true),
+    ]);
+  const pendingRead = (): t.CallExpression =>
+    t.callExpression(mdd(ctx, 'resolvedValuesPending'), [
+      t.cloneNode(sources, true),
+    ]);
+  const errorPolicy = policyForStatus(
+    ctx,
+    component,
+    dependencies,
+    'resolvedValuesErrorIndex',
+  );
+  const pendingPolicy = policyForStatus(
+    ctx,
+    component,
+    dependencies,
+    'resolvedValuesPendingIndex',
+  );
+  const errorRenderer = policyMember(errorPolicy, 'error');
+  const pendingRenderer = policyMember(pendingPolicy, 'pending');
+  const retry = t.arrowFunctionExpression(
+    [],
+    t.callExpression(mdd(ctx, 'retryResolvedValues'), [
+      t.cloneNode(sources, true),
+    ]),
+  );
+  const conditional = t.conditionalExpression(
+    t.logicalExpression('&&', errorRead(), t.cloneNode(errorRenderer)),
+    policyRendererElement(t.cloneNode(errorRenderer), [errorRead(), retry]),
+    t.conditionalExpression(
+      errorRead(),
+      fragmentExpression(
+        t.callExpression(mdd(ctx, 'throwResolvedValuesError'), [
+          t.cloneNode(sources, true),
+        ]),
+      ),
+      t.conditionalExpression(
+        t.logicalExpression('&&', pendingRead(), t.cloneNode(pendingRenderer)),
+        policyRendererElement(t.cloneNode(pendingRenderer), []),
+        t.conditionalExpression(
+          pendingRead(),
+          t.jsxFragment(t.jsxOpeningFragment(), t.jsxClosingFragment(), []),
+          fragmentExpression(t.cloneNode(expression.node, true)),
+        ),
+      ),
+    ),
+  );
+  (conditional as t.ConditionalExpression & {
+    __memoDomTransparentGroup?: boolean;
+  }).__memoDomTransparentGroup = true;
+  expression.replaceWith(conditional);
+}
+
+/** Normalize the exact three-child Group form into independent local sites. */
+export function lowerTransparentGroups(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
+  programPath.traverse({
+    JSXElement: {
+      exit(path) {
+        const tag = jsxTagName(path.node);
+        if (tag === null || !ctx.transparentGroups.has(tag)) return;
+        const children = meaningfulGroupChildren(path);
+        if (children.length !== 3) {
+          throw path.buildCodeFrameError(
+            'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
+          );
+        }
+        const [pendingPath, errorPath, content] = children as [
+          NodePath<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer>,
+          NodePath<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer>,
+          NodePath<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer>,
+        ];
+        if (!pendingPath.isJSXElement() || !errorPath.isJSXElement()) {
+          throw path.buildCodeFrameError(
+            'memo-dom: Group children one and two must be Pending and Error declarations',
+          );
+        }
+        const pending = componentPolicy(
+          pendingPath,
+          ctx.transparentPendingPolicies,
+          'Pending',
+        );
+        const error = componentPolicy(
+          errorPath,
+          ctx.transparentErrorPolicies,
+          'Error',
+        );
+        const data = groupDataNames(path);
+        const origins = groupOrigins(path, data);
+        annotateGroupComponentCalls(ctx, content, origins, pending, error);
+        const visit = (container: NodePath<t.JSXExpressionContainer>): void => {
+          if (container.parentPath.isJSXAttribute()) return;
+          const expression = container.get('expression');
+          if (Array.isArray(expression) || !expression.isExpression()) return;
+          if (isLoweredGroupExpression(expression)) {
+            container.skip();
+            return;
+          }
+          const used = expressionOrigins(expression, origins);
+          if (used.size === 0) return;
+          wrapGroupSite(ctx, expression, [...used], pending, error);
+          container.skip();
+        };
+        if (content.isJSXExpressionContainer()) visit(content);
+        content.traverse({ JSXExpressionContainer: visit });
+        ctx.usesTransparentData = true;
+        // Move the authored content node so Group's internal lowering markers
+        // survive into the later transparent-read pass.
+        path.replaceWith(content.node);
+      },
+    },
+  });
+}
+
+/**
+ * Source holders are externally changing roots for derivation analysis, but
+ * unlike arbitrary opaque values they are push-owned and require no volatile
+ * frame polling.
+ */
+export function registerTransparentSourceRoots(ctx: Ctx): void {
+  for (const [component, sources] of ctx.transparentSources) {
+    let roots = ctx.opaqueBindings.get(component);
+    if (roots === undefined) {
+      roots = new Set();
+      ctx.opaqueBindings.set(component, roots);
+    }
+    for (const source of sources) roots.add(source);
+  }
+}
+
+function importedProgramBinding(
+  componentPath: NodePath<t.FunctionDeclaration>,
+  name: string,
+): Binding | undefined {
+  const binding = componentPath.scope.getBinding(name);
+  return binding?.path.isImportSpecifier() === true ? binding : undefined;
+}
+
+function isCallToImported(
+  componentPath: NodePath<t.FunctionDeclaration>,
+  call: t.Expression | null | undefined,
+  names: ReadonlySet<string>,
+): call is t.CallExpression {
+  if (!t.isCallExpression(call) || !t.isIdentifier(call.callee)) return false;
+  if (!names.has(call.callee.name)) return false;
+  return importedProgramBinding(componentPath, call.callee.name) !== undefined;
+}
+
+/** Find direct component-local source declarations and track aliases. */
+export function scanTransparentSourceBindings(ctx: Ctx): void {
+  for (const [component, componentPath] of ctx.compPaths) {
+    const sources = new Set<string>();
+    const tracks = new Set<string>();
+    for (const statement of componentPath.get('body').get('body')) {
+      if (!statement.isVariableDeclaration()) continue;
+      for (const declaration of statement.get('declarations')) {
+        if (!declaration.isVariableDeclarator()) continue;
+        if (!t.isIdentifier(declaration.node.id)) continue;
+        if (
+          isCallToImported(
+            componentPath,
+            declaration.node.init,
+            ctx.transparentSourceFactories,
+          )
+        ) {
+          sources.add(declaration.node.id.name);
+          continue;
+        }
+        if (
+          isCallToImported(
+            componentPath,
+            declaration.node.init,
+            ctx.transparentSourcePassthroughs,
+          )
+        ) {
+          tracks.add(declaration.node.id.name);
+        }
+      }
+    }
+    const plan = ctx.componentProps.get(component);
+    const sourceProps = new Map<string, string>();
+    for (const [prop, origin] of ctx.linkedComponentPropSources.get(component) ?? []) {
+      if (origin.transparent !== true || plan === undefined) continue;
+      const binding = localBindingForProp(plan, prop);
+      if (binding !== null) {
+        sources.add(binding);
+        sourceProps.set(binding, prop);
+      }
+    }
+    if (sourceProps.size > 0) {
+      ctx.transparentSourceProps.set(component, sourceProps);
+      ctx.transparentPolicyParams.set(
+        component,
+        generatedIdentifier(ctx, 'dataPolicies'),
+      );
+    }
+    if (sources.size === 0) continue;
+    ctx.usesTransparentData = true;
+    ctx.transparentSources.set(component, sources);
+    if (tracks.size > 0) ctx.transparentTrackBindings.set(component, tracks);
+  }
+}
+
+function isBoundTo(
+  path: NodePath<t.Identifier>,
+  binding: Binding,
+): boolean {
+  return path.scope.getBinding(path.node.name) === binding;
+}
+
+function jsxAttributeName(attribute: NodePath<t.JSXAttribute>): string {
+  const name = attribute.node.name;
+  return t.isJSXIdentifier(name)
+    ? name.name
+    : `${name.namespace.name}:${name.name.name}`;
+}
+
+function isEventOrRefContainer(path: NodePath<t.JSXExpressionContainer>): boolean {
+  const parent = path.parentPath;
+  if (!parent.isJSXAttribute()) return false;
+  const name = jsxAttributeName(parent);
+  return name === 'ref' || /^on[A-Z]/.test(name);
+}
+
+function isComponentPropContainer(path: NodePath<t.JSXExpressionContainer>): boolean {
+  const attribute = path.parentPath;
+  if (!attribute.isJSXAttribute()) return false;
+  const opening = attribute.parentPath;
+  return opening.isJSXOpeningElement() &&
+    t.isJSXIdentifier(opening.node.name) &&
+    /^[A-Z]/.test(opening.node.name.name);
+}
+
+function isDirectSourceComponentProp(
+  path: NodePath<t.JSXExpressionContainer>,
+  bindings: ReadonlyMap<string, Binding>,
+): boolean {
+  if (!isComponentPropContainer(path)) return false;
+  const expression = path.get('expression');
+  if (Array.isArray(expression) || !expression.isReferencedIdentifier()) {
+    return false;
+  }
+  const identifier = expression as NodePath<t.Identifier>;
+  const binding = bindings.get(identifier.node.name);
+  return binding !== undefined && isBoundTo(identifier, binding);
+}
+
+function isWithinDirectSourceComponentProp(
+  path: NodePath<t.Identifier>,
+  bindings: ReadonlyMap<string, Binding>,
+): boolean {
+  const container = path.parentPath;
+  if (!container.isJSXExpressionContainer() || container.node.expression !== path.node) {
+    return false;
+  }
+  return isDirectSourceComponentProp(container, bindings);
+}
+
+function isGroupDataContainer(path: NodePath<t.JSXExpressionContainer>): boolean {
+  const attribute = path.parentPath;
+  if (!attribute.isJSXAttribute() || jsxAttributeName(attribute) !== 'data') {
+    return false;
+  }
+  const opening = attribute.parentPath;
+  return (
+    opening.isJSXOpeningElement() &&
+    t.isJSXIdentifier(opening.node.name, { name: 'Group' })
+  );
+}
+
+function isWithinGroupData(path: NodePath): boolean {
+  const container = path.findParent((parent) =>
+    parent.isJSXExpressionContainer(),
+  );
+  return container?.isJSXExpressionContainer() === true &&
+    isGroupDataContainer(container);
+}
+
+function callRootName(call: NodePath<t.CallExpression>): string | null {
+  return t.isIdentifier(call.node.callee) ? call.node.callee.name : null;
+}
+
+function isPassthroughArgument(
+  ctx: Ctx,
+  path: NodePath<t.Identifier>,
+): boolean {
+  const parent = path.parentPath;
+  if (!parent.isCallExpression()) return false;
+  if (!parent.node.arguments.includes(path.node)) return false;
+  const root = callRootName(parent);
+  return root !== null && ctx.transparentSourcePassthroughs.has(root);
+}
+
+function isActionRefreshTarget(path: NodePath<t.Identifier>): boolean {
+  const array = path.findParent((parent) => parent.isArrayExpression());
+  if (array === null || !array.isArrayExpression()) return false;
+  const property = array.parentPath;
+  if (!property.isObjectProperty() || property.node.value !== array.node) {
+    return false;
+  }
+  const key = property.node.key;
+  return (
+    (!property.node.computed && t.isIdentifier(key, { name: 'refresh' })) ||
+    t.isStringLiteral(key, { value: 'refresh' })
+  );
+}
+
+function isGeneratedDataCall(ctx: Ctx, path: NodePath): boolean {
+  const call = path.findParent((parent) => parent.isCallExpression());
+  if (call === null || !call.isCallExpression()) return false;
+  const callee = call.node.callee;
+  return (
+    t.isMemberExpression(callee) &&
+    t.isIdentifier(callee.object, {
+      name: ctx.identifiers?.dataRuntimeId,
+    })
+  );
+}
+
+function sourceBindings(
+  componentPath: NodePath<t.FunctionDeclaration>,
+  names: ReadonlySet<string>,
+): Map<string, Binding> {
+  const bindings = new Map<string, Binding>();
+  for (const name of names) {
+    const binding = componentPath.scope.getBinding(name);
+    if (binding !== undefined) bindings.set(name, binding);
+  }
+  return bindings;
+}
+
+function sourceDependencies(
+  ctx: Ctx,
+  path: NodePath,
+  bindings: ReadonlyMap<string, Binding>,
+  derived: ReadonlyMap<
+    string,
+    { binding: Binding; sources: readonly string[] }
+  >,
+): string[] {
+  const found = new Set<string>();
+  const note = (identifier: NodePath<t.Identifier>): void => {
+    const binding = bindings.get(identifier.node.name);
+    if (binding !== undefined && isBoundTo(identifier, binding)) {
+      if (!isPassthroughArgument(ctx, identifier)) {
+        found.add(identifier.node.name);
+      }
+      return;
+    }
+    const derivation = derived.get(identifier.node.name);
+    if (
+      derivation !== undefined &&
+      isBoundTo(identifier, derivation.binding)
+    ) {
+      for (const source of derivation.sources) found.add(source);
+    }
+  };
+  if (path.isReferencedIdentifier()) note(path as NodePath<t.Identifier>);
+  path.traverse({
+    ReferencedIdentifier(identifier) {
+      if (!identifier.isIdentifier()) return;
+      note(identifier as NodePath<t.Identifier>);
+    },
+  });
+  return [...found].sort();
+}
+
+function replaceSourceReads(
+  ctx: Ctx,
+  path: NodePath,
+  bindings: ReadonlyMap<string, Binding>,
+  replacements: ReadonlyMap<string, t.Identifier>,
+): void {
+  const replace = (identifier: NodePath<t.Identifier>): void => {
+    const binding = bindings.get(identifier.node.name);
+    const replacement = replacements.get(identifier.node.name);
+    if (
+      binding === undefined ||
+      replacement === undefined ||
+      !isBoundTo(identifier, binding) ||
+      isPassthroughArgument(ctx, identifier)
+    ) {
+      return;
+    }
+    identifier.replaceWith(t.cloneNode(replacement));
+  };
+  if (path.isReferencedIdentifier()) replace(path as NodePath<t.Identifier>);
+  path.traverse({
+    ReferencedIdentifier(identifier) {
+      if (!identifier.isIdentifier()) return;
+      replace(identifier as NodePath<t.Identifier>);
+    },
+  });
+}
+
+function resolvedRenderExpression(
+  ctx: Ctx,
+  path: NodePath<t.Expression>,
+  dependencies: readonly string[],
+  bindings: ReadonlyMap<string, Binding>,
+  helper = 'readResolvedValuesForRender',
+): t.Expression {
+  const replacements = new Map<string, t.Identifier>();
+  const parameters = dependencies.map((source) => {
+    const parameter = generatedIdentifier(ctx, `${source}Value`);
+    replacements.set(source, parameter);
+    return t.cloneNode(parameter);
+  });
+  replaceSourceReads(ctx, path, bindings, replacements);
+  return t.callExpression(mdd(ctx, helper), [
+    t.arrayExpression(
+      dependencies.map((source) => t.identifier(source)),
+    ),
+    t.arrowFunctionExpression(parameters, t.cloneNode(path.node, true)),
+  ]);
+}
+
+function containsJsx(path: NodePath): boolean {
+  let found = false;
+  path.traverse({
+    JSXElement(inner) {
+      found = true;
+      inner.skip();
+    },
+    JSXFragment(inner) {
+      found = true;
+      inner.skip();
+    },
+  });
+  return found;
+}
+
+/**
+ * Lower direct scalar/attribute reads, structural sites, transported props,
+ * and pure local derivations without evaluating an unavailable source.
+ */
+export function rewriteTransparentDataReads(ctx: Ctx): void {
+  for (const [component, names] of ctx.transparentSources) {
+    const componentPath = ctx.compPaths.get(component);
+    if (componentPath === undefined) continue;
+    const bindings = sourceBindings(componentPath, names);
+    const derived = new Map<
+      string,
+      { binding: Binding; sources: readonly string[] }
+    >();
+    for (const derivation of ctx.instanceDerivations.get(component) ?? []) {
+      const sources = derivation.sources.filter((source) => names.has(source));
+      if (sources.length === 0) continue;
+      for (const name of derivation.bindings) {
+        const binding = componentPath.scope.getBinding(name);
+        if (binding !== undefined) derived.set(name, { binding, sources });
+      }
+      const declaration = componentPath
+        .get('body')
+        .get('body')
+        .find((statement) => statement.node === derivation.declaration);
+      if (declaration?.isVariableDeclaration() !== true) continue;
+      const target = declaration.get('declarations').find(
+        (candidate) => candidate.node.init !== null &&
+          Object.keys(t.getBindingIdentifiers(candidate.node.id)).some(
+            (name) => derivation.bindings.includes(name),
+          ),
+      );
+      const init = target?.get('init');
+      if (init === undefined || Array.isArray(init) || !init.isExpression()) {
+        continue;
+      }
+      const wrapped = resolvedRenderExpression(
+        ctx,
+        init,
+        sources,
+        bindings,
+        'deriveResolvedValues',
+      );
+      init.replaceWith(wrapped);
+      derivation.source = t.cloneNode(wrapped, true);
+    }
+
+    componentPath.traverse({
+      JSXExpressionContainer(container) {
+        if (
+          isEventOrRefContainer(container) ||
+          isGroupDataContainer(container) ||
+          isDirectSourceComponentProp(container, bindings)
+        ) {
+          return;
+        }
+        const expression = container.get('expression');
+        if (Array.isArray(expression) || !expression.isExpression()) return;
+        if (
+          (expression.node as t.Expression & {
+            __memoDomTransparentGroup?: boolean;
+          }).__memoDomTransparentGroup === true
+        ) {
+          // Group already owns render policy for this whole generated subtree.
+          // The later identifier pass still unwraps the committed value read.
+          container.skip();
+          return;
+        }
+        const dependencies = sourceDependencies(
+          ctx,
+          expression,
+          bindings,
+          derived,
+        );
+        if (dependencies.length === 0) return;
+        if (
+          containsJsx(expression) ||
+          dependencies.some((source) =>
+            ctx.transparentSourceProps.get(component)?.has(source) === true
+          )
+        ) {
+          wrapAutomaticSite(ctx, component, expression, dependencies);
+          container.skip();
+          return;
+        }
+        expression.replaceWith(
+          resolvedRenderExpression(ctx, expression, dependencies, bindings),
+        );
+      },
+    });
+
+    componentPath.traverse({
+      ReferencedIdentifier(identifier) {
+        if (!identifier.isIdentifier()) return;
+        const sourceIdentifier = identifier as NodePath<t.Identifier>;
+        const binding = bindings.get(sourceIdentifier.node.name);
+        if (
+          binding === undefined ||
+          !isBoundTo(sourceIdentifier, binding)
+        ) return;
+        if (
+          isPassthroughArgument(ctx, sourceIdentifier) ||
+          isActionRefreshTarget(sourceIdentifier) ||
+          isWithinGroupData(sourceIdentifier) ||
+          isWithinDirectSourceComponentProp(sourceIdentifier, bindings) ||
+          isGeneratedDataCall(ctx, sourceIdentifier)
+        ) {
+          return;
+        }
+        const site = sourceIdentifier.node.loc === null || sourceIdentifier.node.loc === undefined
+          ? ctx.moduleId
+          : `${ctx.moduleId}:${sourceIdentifier.node.loc.start.line}:${sourceIdentifier.node.loc.start.column + 1}`;
+        sourceIdentifier.replaceWith(
+          t.callExpression(mdd(ctx, 'readResolvedValue'), [
+            t.identifier(sourceIdentifier.node.name),
+            t.stringLiteral(sourceIdentifier.node.name),
+            t.stringLiteral(site),
+          ]),
+        );
+        sourceIdentifier.skip();
+      },
+    });
+  }
+}
+
+function policyComponentRenderer(
+  ctx: Ctx,
+  component: string,
+  kind: 'pending' | 'error',
+): t.ArrowFunctionExpression {
+  const id = generatedIdentifier(ctx, 'dataPolicyId');
+  const parent = generatedIdentifier(ctx, 'dataPolicyParent');
+  const error = generatedIdentifier(ctx, 'dataPolicyError');
+  const retry = generatedIdentifier(ctx, 'dataPolicyRetry');
+  const entries = kind === 'error'
+    ? [
+        { name: 'error', value: t.cloneNode(error) as t.Expression },
+        { name: 'retry', value: t.cloneNode(retry) as t.Expression },
+      ]
+    : [];
+  const props = orderCallProps(ctx, component, entries);
+  return t.arrowFunctionExpression(
+    [
+      t.cloneNode(id),
+      t.cloneNode(parent),
+      ...(kind === 'error' ? [t.cloneNode(error), t.cloneNode(retry)] : []),
+    ],
+    t.callExpression(t.identifier(component), [
+      t.cloneNode(id),
+      t.cloneNode(parent),
+      ...(props.length > 0 ? [t.arrayExpression(props)] : []),
+    ]),
+  );
+}
+
+function fixedPolicyExpression(
+  ctx: Ctx,
+  policy: { pending: string; error: string },
+): t.ObjectExpression {
+  return t.objectExpression([
+    t.objectProperty(
+      t.identifier('pending'),
+      policyComponentRenderer(ctx, policy.pending, 'pending'),
+    ),
+    t.objectProperty(
+      t.identifier('error'),
+      policyComponentRenderer(ctx, policy.error, 'error'),
+    ),
+  ]);
+}
+
+/** Private presentation argument supplied to one compiled component call. */
+export function transparentCallPolicyArgument(
+  ctx: Ctx,
+  owner: string,
+  element: t.JSXElement,
+): t.ObjectExpression | null {
+  const entries = new Map<string, t.Expression>();
+  for (const [prop, policy] of ctx.transparentGroupCallPolicies.get(element) ?? []) {
+    entries.set(prop, fixedPolicyExpression(ctx, policy));
+  }
+  const inherited = ctx.transparentPolicyParams.get(owner);
+  const sourceProps = ctx.transparentSourceProps.get(owner);
+  if (inherited !== undefined && sourceProps !== undefined) {
+    for (const attribute of element.openingElement.attributes) {
+      if (
+        !t.isJSXAttribute(attribute) ||
+        !t.isJSXIdentifier(attribute.name) ||
+        !t.isJSXExpressionContainer(attribute.value) ||
+        !t.isIdentifier(attribute.value.expression) ||
+        entries.has(attribute.name.name)
+      ) continue;
+      const ownerProp = sourceProps.get(attribute.value.expression.name);
+      if (ownerProp === undefined) continue;
+      entries.set(
+        attribute.name.name,
+        t.optionalMemberExpression(
+          t.cloneNode(inherited),
+          t.isValidIdentifier(ownerProp)
+            ? t.identifier(ownerProp)
+            : t.stringLiteral(ownerProp),
+          !t.isValidIdentifier(ownerProp),
+          true,
+        ),
+      );
+    }
+  }
+  if (entries.size === 0) return null;
+  return t.objectExpression(
+    [...entries].map(([prop, value]) =>
+      t.objectProperty(
+        t.isValidIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
+        value,
+        !t.isValidIdentifier(prop),
+      )
+    ),
+  );
+}
+
+/** Component-mount statements for push invalidation and structural cleanup. */
+export function transparentSourceMounts(
+  ctx: Ctx,
+  component: string,
+  owner: t.Identifier,
+): t.Statement[] {
+  return [...(ctx.transparentSources.get(component) ?? [])].map((source) =>
+    t.expressionStatement(
+      t.callExpression(md(ctx, 'cleanup'), [
+        t.cloneNode(owner),
+        t.callExpression(mdd(ctx, 'connectResolvedValue'), [
+          t.identifier(source),
+          t.arrowFunctionExpression(
+            [],
+            // The first slice invalidates the structural owner subtree. The
+            // site-specialization pass will replace this with exact linked
+            // consumption entities without changing the source contract.
+            t.callExpression(md(ctx, 'markDirtySubtree'), [t.cloneNode(owner)]),
+          ),
+          t.booleanLiteral(
+            ctx.transparentSourceProps.get(component)?.has(source) !== true,
+          ),
+        ]),
+      ]),
+    ),
+  );
+}

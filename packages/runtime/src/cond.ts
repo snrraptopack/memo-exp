@@ -65,7 +65,10 @@ export function createCondRegion(
     const factory = branches[idx] ?? null;
     if (factory !== null) {
       entry = factory();
-      for (let i = entry.nodes.length - 1; i >= 0; i--) {
+      // Every insertion is before the stable trailing anchor, so walking the
+      // authored root-node order preserves that order. Reverse iteration
+      // inverted multi-node fragments and list branches.
+      for (let i = 0; i < entry.nodes.length; i++) {
         anchor.parentNode!.insertBefore(entry.nodes[i]!, anchor);
       }
     }

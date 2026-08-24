@@ -19,6 +19,7 @@ import {
 
 export type ComponentPropSourceRef =
   | { type: 'state'; key: string }
+  | { type: 'transparent' }
   | { type: 'prop'; name: string; path: string[] }
   | { type: 'root' }
   | { type: 'local' };
@@ -138,6 +139,18 @@ function sourceOf(
   const plan = ctx.componentProps.get(owner)!;
   const parentProp = parentPropSource(plan, expression);
   if (parentProp !== null) return parentProp;
+
+  if (t.isIdentifier(expression)) {
+    const binding = scope.getBinding(expression.name);
+    const ownerBinding = ctx.compPaths.get(owner)?.scope.getBinding(expression.name);
+    if (
+      binding !== undefined &&
+      binding === ownerBinding &&
+      ctx.transparentSources.get(owner)?.has(expression.name) === true
+    ) {
+      return { type: 'transparent' };
+    }
+  }
 
   const root =
     t.isIdentifier(expression)

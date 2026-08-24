@@ -14,6 +14,7 @@ import type {
 interface MutablePropSource {
   keys: Set<string>;
   rootFallback: boolean;
+  transparent: boolean;
 }
 
 function sourceFor(
@@ -28,7 +29,7 @@ function sourceFor(
   }
   let source = props.get(prop);
   if (source === undefined) {
-    source = { keys: new Set(), rootFallback: false };
+    source = { keys: new Set(), rootFallback: false, transparent: false };
     props.set(prop, source);
   }
   return source;
@@ -44,6 +45,10 @@ function resolveRef(
     target.keys.add(ref.key);
     return;
   }
+  if (ref.type === 'transparent') {
+    target.transparent = true;
+    return;
+  }
   if (ref.type === 'root') {
     target.rootFallback = true;
     return;
@@ -56,6 +61,7 @@ function resolveRef(
     return;
   }
   target.rootFallback ||= callerSource.rootFallback;
+  target.transparent ||= callerSource.transparent;
   const suffix = ref.path.length === 0 ? '' : `.${ref.path.join('.')}`;
   for (const key of callerSource.keys) target.keys.add(`${key}${suffix}`);
 }
@@ -100,6 +106,7 @@ export function linkComponentPropSources(
           {
             keys: [...source.keys].sort(),
             rootFallback: source.rootFallback,
+            transparent: source.transparent,
           },
         ]),
       ),

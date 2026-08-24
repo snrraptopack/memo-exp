@@ -56,6 +56,10 @@ import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
 import { normalizeComponentDeclarations } from './components/declarations';
 import { initializeGeneratedIdentifiers } from './identifiers';
 import {
+  lowerTransparentGroups,
+  scanTransparentSourceImports,
+} from './data-sources';
+import {
   collectCompilerRoutes,
   validateCompilerRouteGraph,
 } from './router';
@@ -227,6 +231,10 @@ function compilerOptions(
 ): InternalMemoDomOptions {
   return {
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
+    ...(options.dataRuntimePath === undefined ? {} : { dataRuntimePath: options.dataRuntimePath }),
+    ...(options.transparentAsyncSources === undefined
+      ? {}
+      : { transparentAsyncSources: options.transparentAsyncSources }),
     ...(options.hot === undefined ? {} : { hot: options.hot }),
     ...(options.moduleStateCells === undefined ? {} : { moduleStateCells: options.moduleStateCells }),
     rootId,
@@ -515,6 +523,8 @@ function analyzeManifest(
         });
         installLinkedDynamicComponentImports(ctx, programPath);
         initializeGeneratedIdentifiers(ctx, programPath);
+        scanTransparentSourceImports(ctx, programPath);
+        lowerTransparentGroups(ctx, programPath);
         runAnalysis(ctx, programPath);
         // buildAccessTable also materializes ctx.readers. The returned AST is
         // intentionally discarded here; final emission builds its own table.
@@ -1229,6 +1239,7 @@ function compileLinkedModules(
             {
               keys: [...source.keys],
               rootFallback: source.rootFallback,
+              transparent: source.transparent,
             },
           ]),
         );

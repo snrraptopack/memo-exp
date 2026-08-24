@@ -282,6 +282,14 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         binding === componentPath.scope.getBinding(name)
       );
     };
+    const isTransparentLocal = (name: string, at: NodePath): boolean => {
+      if (ctx.transparentSources.get(componentName)?.has(name) !== true) {
+        return false;
+      }
+      const binding = at.scope.getBinding(name);
+      return binding !== undefined &&
+        binding === componentPath.scope.getBinding(name);
+    };
 
     for (const name of ctx.componentProps.get(componentName)?.bindings ?? []) {
       const binding = componentPath.scope.getBinding(name);
@@ -339,7 +347,11 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           (user.isCallExpression() || user.isNewExpression()) &&
           user.node.callee === current.node
         ) {
-          return false;
+          // Transparent values are rewritten to an honest payload before
+          // execution, so payload method derivations such as
+          // `todos.filter(...)` are safe to replay. Other opaque handles keep
+          // their historical escape restriction.
+          return isTransparentLocal(start.node.name, start);
         }
         if (
           (user.isCallExpression() || user.isNewExpression()) ||

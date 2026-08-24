@@ -4,9 +4,17 @@ import {
 import type {
   ActionFunction,
   ActionOptions,
-  FetchFunction,
   FetchOptions,
+  ResolvedValue,
+  TransparentFetchFunction,
 } from './types';
+import {
+  Error,
+  Group,
+  Pending,
+  resolvedValueOperations,
+  trackResolvedValue,
+} from './transparent';
 
 export { createDataRuntime } from './client';
 export {
@@ -19,7 +27,12 @@ export {
 export const $fetch = ((
   target: string | URL | null,
   options?: FetchOptions,
-) => getActiveDataRuntime().$fetch(target, options)) as FetchFunction;
+) => getActiveDataRuntime().$fetch(target, options)) as unknown as TransparentFetchFunction;
+export const $track = (<T>(value: ResolvedValue<T>) =>
+  trackResolvedValue(value)) as typeof trackResolvedValue;
+export const $ops = (<T>(value: ResolvedValue<T>) =>
+  resolvedValueOperations(value)) as typeof resolvedValueOperations;
+export { Group, Pending, Error };
 export const $action = ((
   target: string | URL,
   options?: ActionOptions<never, never>,
@@ -29,6 +42,7 @@ export function clearDataRuntime(): void {
   getActiveDataRuntime().clear();
 }
 export { RequestError } from './errors';
+export { UnresolvedDataReadError } from './transparent';
 
 export type {
   Action,
@@ -46,16 +60,26 @@ export type {
   FetchOptions,
   FetchResource,
   FetchResourceCore,
+  GroupProps,
   InferSchemaOutput,
   OptimisticChange,
+  OperationsFor,
+  PendingProps,
+  ErrorProps,
+  ErrorPolicyComponentProps,
   Query,
   QueryPrimitive,
   QueryValue,
   RequestKey,
   RequestKeyPart,
+  ResolvedCollectionOperations,
+  ResolvedOperations,
+  ResolvedValue,
   StandardSchemaIssue,
   StandardSchemaResult,
   StandardSchemaV1,
+  TrackedValue,
+  TransparentFetchFunction,
   ValidatedFetchOptions,
 } from './types';
 export type { RequestErrorKind, RequestErrorOptions } from './errors';

@@ -24,6 +24,14 @@ export interface MemoDomOptions {
   runtimePath?: string;
   /** Module specifier used by compiler-generated router integration. */
   routerPath?: string;
+  /** Runtime helpers used by compiler-transparent async data sources. */
+  dataRuntimePath?: string;
+  /**
+   * Library declarations that participate in transparent async lowering.
+   * The default describes @memoized-dom/data without baking its local import
+   * aliases into the analysis.
+   */
+  transparentAsyncSources?: readonly TransparentAsyncSourceDefinition[];
   /** Emit dev-only live-component ownership used by framework HMR adapters. */
   hot?: boolean;
   /**
@@ -52,6 +60,26 @@ export interface MemoDomOptions {
    * request-owned state-cell operations (server builds only).
    */
   moduleStateCells?: boolean;
+}
+
+export interface TransparentAsyncSourceDefinition {
+  /** Public module from which the authored intrinsics are imported. */
+  module: string;
+  /** Export that creates a transparent source value. */
+  source: string;
+  /** Export that exposes reactive request state without resolving the value. */
+  track?: string;
+  /** Export that exposes imperative operations without resolving the value. */
+  operations?: string;
+  /** Compile-time local presentation boundary and its policy declarations. */
+  group?: string;
+  pending?: string;
+  error?: string;
+}
+
+export interface TransparentPresentationPolicy {
+  pending: string;
+  error: string;
 }
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */
@@ -138,6 +166,8 @@ export interface LinkedComponentPropSource {
   keys: string[];
   /** At least one call site cannot be bounded to canonical module state. */
   rootFallback: boolean;
+  /** The prop carries a compiler-transparent async source holder. */
+  transparent?: boolean;
 }
 
 export type LinkedImport =
@@ -265,6 +295,8 @@ export type HelperPath = NodePath<
 export interface Ctx {
   runtimePath: string;
   routerPath: string;
+  dataRuntimePath: string;
+  transparentAsyncSources: readonly TransparentAsyncSourceDefinition[];
   rootId: string;
   rootComponent: string | null;
   hot: boolean;
@@ -276,6 +308,25 @@ export interface Ctx {
   routeElements: WeakMap<t.JSXElement, CompilerRouteElement>;
   localRoutes: CompilerRouteDefinition[];
   usesRouter: boolean;
+  usesTransparentData: boolean;
+  /** Local import bindings classified by provider metadata. */
+  transparentSourceFactories: Set<string>;
+  transparentSourcePassthroughs: Set<string>;
+  transparentGroups: Set<string>;
+  transparentPendingPolicies: Set<string>;
+  transparentErrorPolicies: Set<string>;
+  /** Component-local source holders and track-state aliases. */
+  transparentSources: Map<string, Set<string>>;
+  transparentTrackBindings: Map<string, Set<string>>;
+  /** Direct prop binding -> authored prop name for transported source holders. */
+  transparentSourceProps: Map<string, Map<string, string>>;
+  /** Private factory parameter carrying inherited presentation renderers. */
+  transparentPolicyParams: Map<string, t.Identifier>;
+  /** Nearest lexical Group policies attached to component prop call sites. */
+  transparentGroupCallPolicies: WeakMap<
+    t.JSXElement,
+    Map<string, TransparentPresentationPolicy>
+  >;
 
   // ---- module analysis (filled by analysis.ts) ----
   state: Map<string, StateKind>;
@@ -495,6 +546,18 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   return {
     runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',
+    dataRuntimePath: opts.dataRuntimePath ?? '@memoized-dom/data/internal',
+    transparentAsyncSources: opts.transparentAsyncSources ?? [
+      {
+        module: '@memoized-dom/data',
+        source: '$fetch',
+        track: '$track',
+        operations: '$ops',
+        group: 'Group',
+        pending: 'Pending',
+        error: 'Error',
+      },
+    ],
     rootId: opts.rootId ?? 'App',
     rootComponent: opts.rootComponent ?? null,
     hot: opts.hot ?? false,
@@ -506,6 +569,17 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     routeElements: new WeakMap(),
     localRoutes: [],
     usesRouter: false,
+    usesTransparentData: false,
+    transparentSourceFactories: new Set(),
+    transparentSourcePassthroughs: new Set(),
+    transparentGroups: new Set(),
+    transparentPendingPolicies: new Set(),
+    transparentErrorPolicies: new Set(),
+    transparentSources: new Map(),
+    transparentTrackBindings: new Map(),
+    transparentSourceProps: new Map(),
+    transparentPolicyParams: new Map(),
+    transparentGroupCallPolicies: new WeakMap(),
     state,
     stateKeys,
     stateTagCandidates,
@@ -542,6 +616,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
               {
                 keys: [...source.keys],
                 rootFallback: source.rootFallback,
+                transparent: source.transparent === true,
               },
             ]),
           ),

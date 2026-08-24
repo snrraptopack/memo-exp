@@ -199,12 +199,13 @@ manifest identity design. This includes the async/data contract gate below.
 
 ### Gate before Phase 2 (async/data semantics)
 
-The data/async layer redesign is a blocking dependency for marker freezing:
-"unresolved resource at flush", region fallback emission, and resource
-serialization shapes must be agreed in the data-loading RFC before Phase 2's
-protocol work begins. If Phase 1 completes first, an explicit review gate
-closes between Phases 1 and 2; Phase 2 does not start on undefined async
-output.
+The data/async layer redesign is a blocking dependency for marker freezing.
+`data-colorless-async-rfc.md` section 16 now specifies the proposed answer for
+"unresolved resource at flush", exact region fallback entities, runtime-owned
+module sources, and source-state serialization/restoration. The design half of
+the gate is therefore concrete; implementation evidence and stable emitted
+data-site identities are still required before Phase 2's marker protocol work
+begins.
 
 ## Phase 1: server-safe runtime and LinkeDOM reference renderer
 
@@ -736,8 +737,11 @@ server concurrency, failures, deployment skew, and hostile payloads.
 
 ### Data transfer
 
-The server should be able to serialize successful `$fetch` resource snapshots
-and restore them into the client data runtime before component hydration.
+The normative data-layer design lives in `data-colorless-async-rfc.md`
+sections 16.5-16.7. The server transfers source state, not promises, resource
+objects, or component closures. Successful, handled-error, and server-pending
+sites all need an explicit restored state so the first hydration branch agrees
+with the server branch.
 
 Requirements:
 
@@ -748,7 +752,19 @@ Requirements:
 - serialized values are escaped safely against script termination and HTML
   injection;
 - hydration does not issue a duplicate request for a restored resource;
+- pending work is restored paused and starts only after its hydration owner is
+  adopted;
+- handled errors restore through a sanitized error record so the same local
+  Group Error site is adopted;
+- omitted/non-transferable committed state triggers bounded recovery at the
+  affected data site instead of trusting mismatched DOM;
 - cache scope and retention remain consistent with the data API.
+
+Non-streaming rendering has two explicit modes. `resolve` performs bounded
+request-discovery/commit rounds until quiescence and is the production default;
+`shell` performs one creation pass and emits Pending/empty sites without
+starting server work that will immediately be abandoned. Neither mode keeps an
+ambient runtime or document installed across an `await`.
 
 ### Router transfer
 
@@ -1013,11 +1029,11 @@ Performance/size impact: N/A.
 Compatibility impact: Phase 0 guard protects marker/manifest identity from concurrent compiler changes.
 
 Decision: The data/async layer redesign (transparent async reads, region-provided fallbacks, push invalidation, resource serialization rules) is a blocking dependency for Phase 2 marker freeze.
-Status: accepted (sequencing constraint)
-Problem: "Unresolved resource at flush" and fallback emission are undefined until the async model's semantics are agreed; markers cannot stabilize over undefined output.
+Status: accepted sequencing constraint; design specified, implementation evidence pending
+Problem: Marker identities cannot stabilize until async output and exact data-site ownership are defined.
 Options considered: Freeze markers now; gate marker freeze on agreed async semantics.
-Chosen option: Gate. Push invalidation stays Phase 0; $fetch snapshot serialization rules belong to the data-loading RFC and are referenced here but specified there.
-Evidence or prototype: Data RFC status block lists these as open proposals.
+Chosen option: Gate. Push invalidation stays in the data/compiler work; source-state serialization and restore-before-create are specified in `data-colorless-async-rfc.md` section 16.
+Evidence or prototype: Local Group/derived/list/cross-component behavior exists; projection transport, exact data-site entities, runtime-owned module descriptions, and snapshot restoration still need their listed implementation slices.
 Performance/size impact: N/A.
 Compatibility impact: Prevents premature protocol churn.
 ```

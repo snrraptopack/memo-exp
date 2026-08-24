@@ -9,6 +9,24 @@ export {
   fetchResourceSnapshot,
   subscribeFetchResource,
 } from './resource';
+export {
+  connectResolvedValue,
+  deriveResolvedValues,
+  observeResolvedValue,
+  readResolvedValue,
+  readResolvedValueForRender,
+  readResolvedValuesForRender,
+  resolvedValuesError,
+  resolvedValuesErrorIndex,
+  resolvedValuesPending,
+  resolvedValuesPendingIndex,
+  retryResolvedValues,
+  resolvedValueOperations,
+  resolvedValueSnapshot,
+  trackResolvedValue,
+  throwResolvedValuesError,
+  UnresolvedDataReadError,
+} from './transparent';
 export type {
   ActionListener,
   ActionSnapshot,

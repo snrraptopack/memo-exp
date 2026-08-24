@@ -171,6 +171,24 @@ function analyzeSource(
   if (t.isIdentifier(current)) {
     return analyzeIdentifierSource(ctx, current, ownerName, fail);
   }
+  if (
+    t.isCallExpression(current) &&
+    t.isMemberExpression(current.callee) &&
+    !current.callee.computed &&
+    t.isIdentifier(current.callee.object, {
+      name: ctx.identifiers?.dataRuntimeId,
+    }) &&
+    t.isIdentifier(current.callee.property, { name: 'readResolvedValue' }) &&
+    t.isIdentifier(current.arguments[0])
+  ) {
+    const source = current.arguments[0];
+    return {
+      expression: current,
+      key: source.name,
+      local: true,
+      suffixBase: source.name,
+    };
+  }
   if (t.isMemberExpression(current) || t.isOptionalMemberExpression(current)) {
     return analyzeMemberSource(
       ctx,

@@ -50,6 +50,11 @@ import {
   routeManifestStatements,
 } from './router';
 import { normalizeConditionalJsxDirectives } from './jsx/conditional-directives';
+import {
+  lowerTransparentGroups,
+  rewriteTransparentDataReads,
+  scanTransparentSourceImports,
+} from './data-sources';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -201,8 +206,11 @@ export default function memoDomPlugin(
         installLinkedDynamicComponentImports(ctx, programPath);
         normalizeConditionalJsxDirectives(programPath);
         initializeGeneratedIdentifiers(ctx, programPath);
+        scanTransparentSourceImports(ctx, programPath);
+        lowerTransparentGroups(ctx, programPath);
         analyzeRouterJsx(ctx, programPath);
         runAnalysis(ctx, programPath);
+        rewriteTransparentDataReads(ctx);
         transformProgramCallbacks(ctx, programPath);
         transformSharedAsyncHelpers(ctx);
       },
@@ -257,6 +265,18 @@ export default function memoDomPlugin(
                 ),
               ],
               t.stringLiteral(ctx.routerPath),
+            ),
+          );
+        }
+        if (ctx.usesTransparentData) {
+          imports.push(
+            t.importDeclaration(
+              [
+                t.importNamespaceSpecifier(
+                  t.identifier(requireIdentifiers(ctx).dataRuntimeId),
+                ),
+              ],
+              t.stringLiteral(ctx.dataRuntimePath),
             ),
           );
         }

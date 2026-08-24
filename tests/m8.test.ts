@@ -188,4 +188,23 @@ describe('R8 — compiled output runs', () => {
     // anchor survives swaps
     expect(document.body.innerHTML).toContain('<!--when:App/when0-->');
   });
+
+  it('preserves sibling order when a conditional branch returns multiple nodes', async () => {
+    const src = `let show = true;\nexport function C() { const toggle = () => { show = !show; }; return <div><button onClick={toggle}>t</button>{show ? <><b>a</b><i>b</i></> : <><em>c</em><u>d</u></>}</div>; }`;
+    writeFileSync(
+      join(outDir, 'cond-multi-order.compiled.ts'),
+      compile(src, { runtimePath: '@memoized-dom/runtime' }),
+    );
+    const { C } = await importCompiled('cond-multi-order');
+    document.body.appendChild(C('App', null));
+
+    const tags = () => [...document.querySelectorAll('div > *')].map((node) => node.tagName);
+    expect(tags()).toEqual(['BUTTON', 'B', 'I']);
+
+    document.querySelector('button')!.click();
+    expect(tags()).toEqual(['BUTTON', 'EM', 'U']);
+
+    document.querySelector('button')!.click();
+    expect(tags()).toEqual(['BUTTON', 'B', 'I']);
+  });
 });

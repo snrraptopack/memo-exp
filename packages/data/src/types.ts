@@ -92,9 +92,74 @@ export interface RefreshableResource {
   refresh(): Promise<unknown>;
 }
 
+/**
+ * Compiler-preserved provenance for a transparently authored fetch value.
+ *
+ * This member is type-only: the data runtime still carries a FetchResource
+ * internally and the compiler prevents that holder from escaping into
+ * application reads. ResolvedValue<T> remains assignable to T.
+ */
+declare const resolvedValue: unique symbol;
+export type ResolvedValue<T> = T & {
+  readonly [resolvedValue]: T;
+};
+
+export interface ResolvedOperations<T> {
+  refresh(): Promise<T>;
+  abort(): void;
+  update(change: (current: T | undefined) => T): void;
+  mutate(change: (current: T | undefined) => void): void;
+}
+
+export interface ResolvedCollectionOperations<TItem> {
+  append(temporary: TItem): OptimisticChange<TItem>;
+  replace(current: TItem, temporary: TItem): OptimisticChange<TItem>;
+  remove<TResult = unknown>(current: TItem): OptimisticChange<TResult>;
+}
+
+export type OperationsFor<T> = ResolvedOperations<T> &
+  (T extends Array<infer TItem>
+    ? ResolvedCollectionOperations<TItem>
+    : object);
+
+/** Reactive request state exposed for authored conditional rendering. */
+export interface TrackedValue<T> {
+  readonly status: AsyncStatus;
+  readonly pending: boolean;
+  readonly refreshing: boolean;
+  readonly error: import('./errors').RequestError | null;
+  /** Type-only connection to the value whose request state is observed. */
+  readonly valueType?: (value: T) => T;
+}
+
+export type DataPolicyComponent<TProps = object> = (
+  props: TProps,
+) => unknown;
+
+export interface GroupProps {
+  readonly data: ResolvedValue<unknown> | Readonly<Record<string, ResolvedValue<unknown>>>;
+  readonly children?: unknown;
+}
+
+export interface PendingProps {
+  readonly component: DataPolicyComponent;
+}
+
+export interface ErrorPolicyComponentProps {
+  readonly error: import('./errors').RequestError;
+  readonly retry: () => Promise<unknown>;
+}
+
+export interface ErrorProps {
+  readonly component: DataPolicyComponent<ErrorPolicyComponentProps>;
+}
+
 export interface ActionCallOptions<TResult> {
   readonly optimistic?: OptimisticChange<TResult>;
-  readonly refresh?: readonly RefreshableResource[];
+  readonly refresh?: readonly (
+    | RefreshableResource
+    | ResolvedValue<unknown>
+  )[];
   readonly signal?: AbortSignal;
 }
 
@@ -134,6 +199,19 @@ export interface FetchFunction {
     target: string | URL | null,
     options: ValidatedFetchOptions<TSchema>,
   ): FetchResource<InferSchemaOutput<TSchema>>;
+}
+
+/** Public colorless fetch surface used by compiler-authored application code. */
+export interface TransparentFetchFunction {
+  <T = unknown>(
+    target: string | URL | null,
+    options?: FetchOptions,
+  ): ResolvedValue<T>;
+
+  <TSchema extends StandardSchemaV1>(
+    target: string | URL | null,
+    options: ValidatedFetchOptions<TSchema>,
+  ): ResolvedValue<InferSchemaOutput<TSchema>>;
 }
 
 interface ActionState<TResult> {
