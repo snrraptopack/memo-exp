@@ -1,4 +1,9 @@
-import { isAbortError, toRequestError } from './errors';
+import {
+  isAbortError,
+  RequestError,
+  toRequestError,
+  type RequestErrorKind,
+} from './errors';
 import { SnapshotNotifier } from './notifications';
 import { createOptimisticChange } from './optimistic';
 import {
@@ -15,6 +20,9 @@ import type {
   OptimisticChange,
   ResourceListener,
   ResourceSnapshot,
+  SerializedDataState,
+  SerializedSourceRecord,
+  SerializedSourceSnapshot,
   StandardSchemaV1,
 } from './types';
 
@@ -216,11 +224,126 @@ class FetchEntry {
   }
 }
 
+/**
+ * Map one live entry to its transfer record, or undefined when the entry
+ * carries no transferable state (idle) or a non-JSON payload (RFC §16.6.4).
+ */
+function serializeEntry(entry: FetchEntry): SerializedSourceRecord | undefined {
+  const { snapshot } = entry;
+  let serialized: SerializedSourceSnapshot;
+  if (snapshot.status === 'success') {
+    if (JSON.stringify(snapshot.data) === undefined) return undefined;
+    serialized = {
+      status: 'success',
+      data: snapshot.data,
+      revalidate: snapshot.refreshing,
+    };
+  } else if (snapshot.status === 'error') {
+    const error = snapshot.error;
+    serialized = {
+      status: 'error',
+      error: {
+        kind: error?.kind ?? 'network',
+        status: error?.status ?? null,
+        statusText: error?.statusText ?? null,
+        message: error?.message ?? 'Request failed',
+      },
+    };
+  } else if (snapshot.pending) {
+    serialized = { status: 'pending' };
+  } else {
+    return undefined;
+  }
+  return {
+    sourceId: entry.descriptor.identity,
+    contractId: `mmd-fetch/v1:${entry.descriptor.schema ? 'validated' : 'raw'}`,
+    requestFingerprint: entry.descriptor.url,
+    snapshot: serialized,
+  };
+}
+
+
+/**
+ * Apply a restored record to a freshly acquired entry. Success restores as
+ * committed (no duplicate request), error restores its local Error branch,
+ * pending restores paused until an explicit refresh (RFC §16.6.6–16.6.8).
+ */
+function seedEntryFromRecord(
+  entry: FetchEntry,
+  record: SerializedSourceRecord,
+): void {
+  const { snapshot } = record;
+  if (snapshot.status === 'success') {
+    entry.snapshot = {
+      data: snapshot.data,
+      error: null,
+      status: 'success',
+      pending: false,
+      refreshing: snapshot.revalidate,
+    };
+    entry.hasData = true;
+    return;
+  }
+  if (snapshot.status === 'error') {
+    entry.snapshot = {
+      data: undefined,
+      error: new RequestError(snapshot.error.message, {
+        kind: snapshot.error.kind as RequestErrorKind,
+        status: snapshot.error.status ?? undefined,
+        statusText: snapshot.error.statusText ?? undefined,
+      }),
+      status: 'error',
+      pending: false,
+      refreshing: false,
+    };
+    return;
+  }
+  entry.snapshot = {
+    data: undefined,
+    error: null,
+    status: 'pending',
+    pending: true,
+    refreshing: false,
+  };
+}
+
 export class FetchStore {
   readonly entries = new Map<string, FetchEntry>();
   readonly allEntries = new Set<FetchEntry>();
+  /**
+   * Dormant restore records installed by `restoreState` (RFC §16.7). The
+   * next acquire with a matching identity claims its record instead of
+   * issuing a duplicate network request.
+   */
+  private restoreRecords = new Map<string, SerializedSourceRecord>();
 
   constructor(readonly environment: FetchEnvironment) {}
+
+  installRestoreRecords(state: SerializedDataState): void {
+    const version: unknown = state.formatVersion;
+    if (version !== 1) {
+      throw new TypeError(
+        `Unsupported serialized data state format: ${String(version)}`,
+      );
+    }
+    for (const record of state.sources) {
+      this.restoreRecords.set(record.sourceId, record);
+    }
+  }
+
+  delete(entry: FetchEntry, reason?: unknown): void {
+    if (this.entries.get(entry.descriptor.identity) === entry) {
+      this.entries.delete(entry.descriptor.identity);
+    }
+    this.allEntries.delete(entry);
+    entry.dispose(false, reason);
+  }
+
+  private takeRestoreRecord(identity: string): SerializedSourceRecord | undefined {
+    const record = this.restoreRecords.get(identity);
+    if (record !== undefined) this.restoreRecords.delete(identity);
+    return record;
+  }
 
   acquire(
     descriptor: FetchDescriptor,
@@ -244,20 +367,31 @@ export class FetchStore {
     }
 
     entry.add(consumer);
+    const restored = this.takeRestoreRecord(descriptor.identity);
+    if (restored !== undefined) {
+      seedEntryFromRecord(entry, restored);
+      entry.emit();
+    }
+    // A seeded entry resumes only through an explicit refresh — a restored
+    // success must not re-issue its request (RFC §16.6.6) and a restored
+    // error retries only through its restored source handle (§16.6.8).
     const shouldStart =
       force ||
-      entry.snapshot.status === 'idle' ||
-      entry.snapshot.status === 'error';
+      (restored === undefined &&
+        (entry.snapshot.status === 'idle' ||
+          entry.snapshot.status === 'error'));
     if (shouldStart) entry.start(force).catch(() => {});
     return entry;
   }
 
-  delete(entry: FetchEntry, reason?: unknown): void {
-    if (this.entries.get(entry.descriptor.identity) === entry) {
-      this.entries.delete(entry.descriptor.identity);
+  serialize(): SerializedDataState {
+    const sources: SerializedSourceRecord[] = [];
+    for (const entry of this.allEntries) {
+      if (entry.consumers.size === 0) continue;
+      const record = serializeEntry(entry);
+      if (record !== undefined) sources.push(record);
     }
-    this.allEntries.delete(entry);
-    entry.dispose(false, reason);
+    return { formatVersion: 1, sources };
   }
 
   clear(): void {

@@ -16,6 +16,7 @@ import type {
   FetchFunction,
   FetchOptions,
   StandardSchemaV1,
+  SerializedDataState,
 } from './types';
 
 /** Create an isolated request/cache/action ownership boundary. */
@@ -54,6 +55,12 @@ export function createDataRuntime(
       actions.clear();
       store.clear();
       runModuleInstanceDisposers(runtime);
+    },
+    serializeState() {
+      return store.serialize();
+    },
+    restoreState(state) {
+      store.installRestoreRecords(state);
     },
   };
   return runtime;

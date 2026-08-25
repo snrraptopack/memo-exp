@@ -254,7 +254,55 @@ export interface DataRuntime {
 
   /** Abort active work, detach live reads, and empty retained request data. */
   clear(): void;
+
+  /**
+   * Serialize materialized source snapshots for server→client transfer
+   * (RFC §16.6). Only JSON-safe payloads transfer; non-serializable
+   * sources are omitted.
+   */
+  serializeState(): SerializedDataState;
+
+  /**
+   * Install serialized source records as dormant restore entries. The next
+   * matching request identity claims its record instead of issuing a
+   * duplicate network request (RFC §16.7).
+   */
+  restoreState(state: SerializedDataState): void;
 }
+
+/** Sanitized error shape — cause/data/issues never transfer (RFC §16.6.5). */
+export interface SerializedSourceError {
+  readonly kind: string;
+  readonly status: number | null;
+  readonly statusText: string | null;
+  readonly message: string;
+}
+
+export type SerializedSourceSnapshot =
+  | {
+      readonly status: 'success';
+      readonly data: unknown;
+      /** Committed payload plus a revalidate intent, never an in-flight promise. */
+      readonly revalidate: boolean;
+    }
+  | { readonly status: 'error'; readonly error: SerializedSourceError }
+  | { readonly status: 'pending' };
+
+export interface SerializedSourceRecord {
+  /** Deterministic request identity (method|url|headers|schema contract). */
+  readonly sourceId: string;
+  /** Provider + decoder contract, independent from the payload value. */
+  readonly contractId: string;
+  readonly requestFingerprint: string;
+  readonly snapshot: SerializedSourceSnapshot;
+}
+
+export interface SerializedDataStateV1 {
+  readonly formatVersion: 1;
+  readonly sources: readonly SerializedSourceRecord[];
+}
+
+export type SerializedDataState = SerializedDataStateV1;
 
 export interface ResourceSnapshot<T> {
   readonly data: T | undefined;
