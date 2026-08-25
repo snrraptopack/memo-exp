@@ -196,6 +196,14 @@ type TransparentDataExpression = t.Expression & {
   __memoDomTransparentSources?: readonly string[];
 };
 
+/**
+ * Marks authored control flow whose state-driven branches must evaluate
+ * immediately while payload sinks self-gate per site (RFC §5 vs §10).
+ */
+type RenderGatedExpression = t.Expression & {
+  __memoDomRenderGated?: true;
+};
+
 function annotateTransparentSources(
   expression: t.Expression,
   sources: readonly string[],
@@ -1062,6 +1070,60 @@ function replaceSourceReads(
   });
 }
 
+/**
+ * Render-site semantics for authored control flow: source reads become
+ * render-gated (unavailable renders empty, initial failure stays loud) so
+ * state-driven branches evaluate immediately while payload sinks self-gate.
+ */
+function replaceSourceReadsWithRenderGates(
+  ctx: Ctx,
+  path: NodePath,
+  bindings: ReadonlyMap<string, Binding>,
+): void {
+  // Collect first, replace after — the replacement call embeds the same
+  // identifier, so replacing during traversal would recurse forever.
+  const found: NodePath<t.Identifier>[] = [];
+  const note = (identifier: NodePath<t.Identifier>): void => {
+    const binding = bindings.get(identifier.node.name);
+    if (binding === undefined || !isBoundTo(identifier, binding)) return;
+    if (isPassthroughArgument(ctx, identifier)) return;
+    found.push(identifier);
+  };
+  if (path.isReferencedIdentifier()) note(path as NodePath<t.Identifier>);
+  path.traverse({
+    ReferencedIdentifier(identifier) {
+      if (!identifier.isIdentifier()) return;
+      note(identifier as NodePath<t.Identifier>);
+    },
+  });
+  for (const identifier of found) {
+    identifier.replaceWith(
+      t.callExpression(mdd(ctx, 'readResolvedValueForRender'), [
+        t.identifier(identifier.node.name),
+      ]),
+    );
+  }
+}
+
+/**
+ * A read inside a render-gated subtree is already availability-safe — unless
+ * it sits inside a nested function (handler/effect), where the imperative R2
+ * guard still applies.
+ */
+function isInsideRenderGate(path: NodePath<t.Identifier>): boolean {
+  let current: NodePath | null = path.parentPath;
+  while (current !== null) {
+    if (
+      (current.node as RenderGatedExpression).__memoDomRenderGated === true
+    ) {
+      return true;
+    }
+    if (current.isFunction()) return false;
+    current = current.parentPath;
+  }
+  return false;
+}
+
 function resolvedRenderExpression(
   ctx: Ctx,
   path: NodePath<t.Expression>,
@@ -1208,10 +1270,19 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
             ctx.transparentSourceProps.get(component)?.has(source) === true
           )
         ) {
-          wrapAutomaticSite(ctx, component, expression, dependencies);
-          if (stateDependencies.length > 0 && expression.isExpression()) {
+          if (stateDependencies.length > 0) {
+            // Authored control flow driven by request state (RFC §5):
+            // the selector and state arms evaluate immediately; payload
+            // sinks self-gate per site instead of hiding behind an
+            // availability ladder.
+            replaceSourceReadsWithRenderGates(ctx, expression, bindings);
+            (expression.node as RenderGatedExpression).__memoDomRenderGated =
+              true;
             annotateTransparentSources(expression.node, allDependencies);
+            container.skip();
+            return;
           }
+          wrapAutomaticSite(ctx, component, expression, dependencies);
           container.skip();
           return;
         }
@@ -1240,6 +1311,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           isActionRefreshTarget(sourceIdentifier) ||
           isWithinGroupData(sourceIdentifier) ||
           isWithinDirectSourceComponentProp(sourceIdentifier, bindings) ||
+          isInsideRenderGate(sourceIdentifier) ||
           isGeneratedDataCall(ctx, sourceIdentifier)
         ) {
           return;

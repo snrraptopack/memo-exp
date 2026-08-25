@@ -329,7 +329,7 @@ describe('CSR-equivalence corpus', () => {
     const tiers = await compileFixture(
       'parity-data',
       `
-      import { $fetch } from '@memoized-dom/data';
+      import { $fetch, $track } from '@memoized-dom/data';
 
       interface Todo {
         id: number;
@@ -338,11 +338,12 @@ describe('CSR-equivalence corpus', () => {
 
       export function App() {
         const todos = $fetch<Todo[]>('/api/todos');
+        const state = $track(todos);
         return (
           <section>
-            <p if={todos.pending && !todos.data}>Loading</p>
+            <p if={state.pending}>Loading</p>
             <ul else>
-              {(todos.data ?? []).map((todo) => (
+              {todos.map((todo) => (
                 <li key={todo.id}>{todo.title}</li>
               ))}
             </ul>
@@ -359,6 +360,7 @@ describe('CSR-equivalence corpus', () => {
     try {
       expect(result.serverHtml).toContain('<p>Loading</p>');
       expect(result.serverHtml).not.toContain('<li');
+
       expectParity(result);
     } finally {
       result.serverRuntime.dispose();

@@ -425,8 +425,39 @@ Covered by `tests/list-key-encoding.test.ts`: tag distinctness, escape safety,
 round-trips (edge numbers, bigints), rejection of malformed input, distinct
 rows for formerly colliding keys, and reorder identity retention.
 
+## Slice 2.0a — Phase 2 groundwork: marker serialization + $track conditional fix
+
+**Commit:** this slice.
+
+Phase 2 opening moves alongside the data layer's exact-site entities:
+
+1. **Server serializer comment policy** (`RenderOptions.markers`): `true`
+   preserves every structural anchor — conditional `when:`/list `list:`
+   boundaries and future hydration markers — including bare top-level
+   comments that element `outerHTML` cannot cover (with comment-termination
+   validation); `false` (current default until client adoption ships) strips
+   all comments for clean host-consumable HTML.
+2. **Harness fix (root cause of a real parity failure):** the client tier was
+   serialized *after* its data runtime was cleared in the activation
+   `finally` — clearing source state flipped availability-driven regions to
+   their else arms mid-capture. Client HTML is now captured inside the
+   activation window.
+3. **Compiler fix (`$track` conditionals):** mixed state+payload expressions
+   were wrapped whole in the availability ladder, hiding state-driven loading
+   UI whenever payload sinks existed in sibling arms. State-driven branches
+   now evaluate immediately (RFC §5); payload sinks self-gate per site via
+   render-gated reads; imperative R2 guards still apply inside nested
+   functions. `map-site` recognizes render-gated list sources with an
+   unresolved→empty-rows fallback.
+
+Tests: new `markers.test.ts` (5 cases) + restored `$track` conditional
+fixture in the parity corpus.
+
 ## Next slices
 
-1. **Data/async semantics gate:** agree "unresolved resource at flush",
-   region fallback emission, and resource serialization shapes in the
-   data-loading RFC — the explicit blocker for Phase 2 protocol work.
+1. **Marker emission (Phase 2 proper)** — grammar per `hydration-markers.md`
+   draft, emitted against stable `owner/$data/<n>` + region identities;
+   snapshot tests per category; overhead measurement fixtures.
+2. **Data-layer remainder** (data lane) — runtime-owned module source
+   descriptions and snapshot restore (RFC §16.4–16.7); does not churn marker
+   identity.

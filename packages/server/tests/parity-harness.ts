@@ -154,8 +154,19 @@ export function renderBothTiers(
   const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
   const previousDataRuntime = setActiveDataRuntime(dataRuntime);
   let clientRoot: Element;
+  let clientHtml: string;
   try {
     clientRoot = tiers.clientModule[entry](`${entry}Client`, null) as Element;
+    // Serialize INSIDE the activation window: clearing the data runtime
+    // resets source state and would flip availability-driven regions before
+    // the output is captured.
+    syncBooleanAttributes(clientRoot);
+    clientHtml =
+      clientRoot.nodeType === 11
+        ? Array.from(clientRoot.childNodes)
+            .map((node) => (node as Element).outerHTML ?? '')
+            .join('')
+        : (clientRoot as Element).outerHTML;
   } finally {
     setActiveRouteRuntime(previousRouteRuntime);
     setActiveDataRuntime(previousDataRuntime);
@@ -167,13 +178,6 @@ export function renderBothTiers(
   // implementations serialize only attributes. Apply the same property →
   // attribute sync the server renderer applies so both sides expose the
   // same semantic state before serialization.
-  syncBooleanAttributes(clientRoot);
-  const clientHtml =
-    clientRoot.nodeType === 11
-      ? Array.from(clientRoot.childNodes)
-          .map((node) => (node as Element).outerHTML ?? '')
-          .join('')
-      : (clientRoot as Element).outerHTML;
 
   return {
     serverHtml: rendered.html,

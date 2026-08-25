@@ -52,6 +52,16 @@ export interface RenderOptions {
    */
   fetch?: typeof globalThis.fetch;
   /**
+   * Serialize runtime structural anchors (conditional `when:`, list `list:`,
+   * and future hydration markers) into the output HTML. These comment
+   * boundaries are what the client adoption cursor matches against, so SSR
+   * for hydration requires `true`.
+   *
+   * When `false` (default until client adoption ships), all comments are
+   * stripped and the output is clean host-consumable HTML.
+   */
+  markers?: boolean;
+  /**
    * Inject a document instead of LinkeDOM (tests, alternative DOM tiers).
    */
   document?: DocumentLike;
@@ -81,23 +91,52 @@ function parseServerDocument(
   return { document: parsed.document };
 }
 
-function serialize(nodes: readonly Node[]): string {
-  let html = '';
-  for (const node of nodes) {
-    // Runtime region anchors (when:/list: comments) are declared-irrelevant
-    // serializer details; a bare comment node has no outerHTML and must not
-    // fall through to raw textContent serialization.
-    if (node.nodeType === 8 /* COMMENT */) continue;
-    if (node.nodeType === 11 /* FRAGMENT */) {
-      for (const child of node.childNodes) {
-        if (child.nodeType === 8 /* COMMENT */) continue;
-        html += (child as Element).outerHTML ?? child.textContent ?? '';
+/**
+ * Serialize adopted render output.
+ *
+ * `markers: true` preserves every comment — runtime region anchors now and
+ * hydration markers once Phase 2 emission lands — including bare top-level
+ * comments, which element `outerHTML` cannot cover. Comment bodies are
+ * compiler-generated identities and validated so they can never terminate
+ * the comment early.
+ *
+ * `markers: false` strips all comments — including nested ones that
+ * element `outerHTML` would otherwise carry — for clean host-consumable
+ * HTML.
+ */
+function serialize(nodes: readonly Node[], markers: boolean): string {
+  const serializeNode = (node: Node): string => {
+    if (node.nodeType === 8 /* COMMENT */) {
+      if (!markers) return '';
+      const body = (node as Comment).data;
+      if (body.includes('-->') || body.endsWith('-')) {
+        // Defensive: compiler identities cannot produce these today. Strip
+        // rather than emit a corruptable comment.
+        return '';
       }
-      continue;
+      return `<!--${body}-->`;
     }
-    html += (node as Element).outerHTML ?? node.textContent ?? '';
-  }
+    if (node.nodeType === 11 /* FRAGMENT */) {
+      let fragment = '';
+      for (const child of node.childNodes) fragment += serializeNode(child);
+      return fragment;
+    }
+    const html = (node as Element).outerHTML;
+    if (html !== undefined) {
+      return markers ? html : stripComments(html);
+    }
+    return node.textContent ?? '';
+  };
+
+  let html = '';
+  for (const node of nodes) html += serializeNode(node);
   return html;
+}
+
+/** Remove top-level and nested comments from serialized element HTML. */
+function stripComments(html: string): string {
+  if (!html.includes('<!--')) return html;
+  return html.replace(/<!--[\s\S]*?-->/g, '');
 }
 
 /**
@@ -192,7 +231,7 @@ export function renderWithDom(
     for (const node of nodes) syncBooleanAttributes(node);
     return {
       document: serverDocument as unknown as Document,
-      html: serialize(nodes),
+      html: serialize(nodes, options.markers === true),
       nodes,
       runtime,
     };

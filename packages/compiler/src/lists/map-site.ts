@@ -223,12 +223,20 @@ function analyzeSource(
     t.isIdentifier(current.callee.object, {
       name: ctx.identifiers?.dataRuntimeId,
     }) &&
-    t.isIdentifier(current.callee.property, { name: 'readResolvedValue' }) &&
+    t.isIdentifier(current.callee.property) &&
+    (current.callee.property.name === 'readResolvedValue' ||
+      current.callee.property.name === 'readResolvedValueForRender') &&
     t.isIdentifier(current.arguments[0])
   ) {
     const source = current.arguments[0];
+    const renderGated =
+      current.callee.property.name === 'readResolvedValueForRender';
     return {
-      expression: current,
+      // Render-gated sources yield no rows while unavailable (§10: no
+      // Group → empty local region); the imperative form stays loud.
+      expression: renderGated
+        ? t.logicalExpression('||', current, t.arrayExpression([]))
+        : current,
       key: source.name,
       local: true,
       suffixBase: source.name,
