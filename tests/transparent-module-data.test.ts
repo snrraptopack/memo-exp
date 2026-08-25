@@ -38,7 +38,7 @@ const sessionSource = `
 `;
 
 const headerSource = `
-  import { currentUser } from './session';
+  import { currentUser } from './mod-session';
 
   export function Header() {
     return <header>{currentUser.name}</header>;
@@ -59,18 +59,18 @@ describe('module-scope transparent sources', () => {
       { runtimePath: '@memoized-dom/runtime' },
     );
     writeFileSync(
-      join(outDir, 'mod-session.compiled.ts'),
+      join(outDir, 'mod-session.ts'),
       output['./mod-session.ts']!,
     );
     writeFileSync(
-      join(outDir, 'mod-header.compiled.ts'),
+      join(outDir, 'mod-header.ts'),
       output['./mod-header.tsx']!,
     );
     sessionMod = await import(
-      pathToFileURL(join(outDir, 'mod-session.compiled.ts')).href
+      pathToFileURL(join(outDir, 'mod-session.ts')).href
     );
     headerMod = await import(
-      pathToFileURL(join(outDir, 'mod-header.compiled.ts')).href
+      pathToFileURL(join(outDir, 'mod-header.ts')).href
     );
   });
 
@@ -99,19 +99,18 @@ describe('module-scope transparent sources', () => {
     let htmlB = '';
     runWithApplicationRuntime(requestA.application, () => {
       setActiveDataRuntime(requestA.data);
-      htmlA = renderToString(headerMod.Header);
+      htmlA = renderToString(headerMod.Header, { fetch: never });
     });
     runWithApplicationRuntime(requestB.application, () => {
       setActiveDataRuntime(requestB.data);
-      htmlB = renderToString(headerMod.Header);
+      htmlB = renderToString(headerMod.Header, { fetch: never });
     });
-
     // Both requests flush the pending site independently...
     expect(htmlA).toBe('<header></header>');
     expect(htmlB).toBe('<header></header>');
+    await Promise.resolve();
     // ...and each runtime started its OWN request.
     expect(calls).toBe(2);
-
     requestA.application.dispose();
     requestB.application.dispose();
     void requestA;

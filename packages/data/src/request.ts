@@ -144,9 +144,16 @@ export function abortable<T>(
   return new Promise<T>((resolve, reject) => {
     const abort = () => reject(abortReason(signal));
     signal.addEventListener('abort', abort, { once: true });
-    Promise.resolve().then(operation).then(resolve, reject).finally(() => {
+    try {
+      Promise.resolve(operation())
+        .then(resolve, reject)
+        .finally(() => {
+          signal.removeEventListener('abort', abort);
+        });
+    } catch (error) {
       signal.removeEventListener('abort', abort);
-    });
+      reject(error);
+    }
   });
 }
 

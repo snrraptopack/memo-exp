@@ -225,16 +225,28 @@ function analyzeSource(
     }) &&
     t.isIdentifier(current.callee.property, {
       name: 'readModuleSourceList',
-    }) &&
-    t.isStringLiteral(current.arguments[0])
+    })
   ) {
-    const key = current.arguments[0].value;
-    return {
-      expression: current,
-      key,
-      local: true,
-      suffixBase: key,
-    };
+    // Emitted forms: readModuleSourceList("key") (legacy) and
+    // readModuleSourceList(_MDD.sourceRef("key")) (current RFC §16.4
+    // lowering — identity is the key itself, matching data-sources.ts).
+    const argument = current.arguments[0];
+    const key = t.isStringLiteral(argument)
+      ? argument.value
+      : t.isCallExpression(argument) &&
+          t.isMemberExpression(argument.callee) &&
+          t.isIdentifier(argument.callee.property, { name: 'sourceRef' }) &&
+          t.isStringLiteral(argument.arguments[0])
+        ? argument.arguments[0].value
+        : null;
+    if (key !== null) {
+      return {
+        expression: current,
+        key,
+        local: true,
+        suffixBase: key,
+      };
+    }
   }
   if (
     t.isCallExpression(current) &&

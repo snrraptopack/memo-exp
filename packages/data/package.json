@@ -27,7 +27,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@memoized-dom/runtime": "workspace:*"
   }
 }

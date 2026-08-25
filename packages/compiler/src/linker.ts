@@ -58,6 +58,7 @@ import { normalizeComponentDeclarations } from './components/declarations';
 import { initializeGeneratedIdentifiers } from './identifiers';
 import {
   lowerTransparentGroups,
+  scanAndLowerModuleSourceDeclarations,
   scanTransparentSourceImports,
 } from './data-sources';
 import {
@@ -527,6 +528,7 @@ function analyzeManifest(
         initializeGeneratedIdentifiers(ctx, programPath);
         scanTransparentSourceImports(ctx, programPath);
         lowerTransparentGroups(ctx, programPath);
+        scanAndLowerModuleSourceDeclarations(ctx, programPath);
         runAnalysis(ctx, programPath);
         // buildAccessTable also materializes ctx.readers. The returned AST is
         // intentionally discarded here; final emission builds its own table.
@@ -549,11 +551,26 @@ function analyzeManifest(
               type: 'state',
               kind,
               key: ctx.stateKeys.get(local) ?? `${entry.id}#${local}`,
+              transparentSource:
+                linkedImports[local]?.type === 'state'
+                  ? linkedImports[local]?.transparentSource === true
+                  : ctx.transparentModuleSources.has(local),
               tagCandidates: [...(ctx.stateTagCandidates.get(local) ?? [])],
               componentCandidates: componentCandidateKeys(
                 ctx,
                 ctx.stateComponentCandidates.get(local) ?? [],
               ),
+            };
+            continue;
+          }
+          if (ctx.transparentModuleSources.has(local)) {
+            exports[exported] = {
+              type: 'state',
+              kind: 'let',
+              key: ctx.transparentModuleSources.get(local) ?? `${entry.id}#${local}`,
+              transparentSource: true,
+              tagCandidates: [],
+              componentCandidates: [],
             };
             continue;
           }
@@ -646,7 +663,6 @@ function discoverManifest(
         );
         const components = discoverComponentExports(programPath, entry.id);
         const componentNames = new Set(components.keys());
-        console.error('[dbg-src-input]', JSON.stringify(options.transparentAsyncSources ?? DEFAULT_TRANSPARENT_ASYNC_SOURCES));
         const providerSources = new Map(
           (options.transparentAsyncSources ??
             DEFAULT_TRANSPARENT_ASYNC_SOURCES).map(

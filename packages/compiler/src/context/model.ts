@@ -497,6 +497,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     string,
     LinkedDynamicComponentCandidate[]
   >();
+  const transparentModuleSources = new Map<string, string>();
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
@@ -512,6 +513,9 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
           local,
           linked.componentCandidates.map((candidate) => ({ ...candidate })),
         );
+      }
+      if (linked.transparentSource === true) {
+        transparentModuleSources.set(local, linked.key);
       }
       importedState.add(local);
     } else if (linked.type === 'function') {
@@ -586,7 +590,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     transparentErrorPolicies: new Set(),
     transparentSources: new Map(),
     transparentTrackBindings: new Map(),
-    transparentModuleSources: new Map(),
+    transparentModuleSources,
     transparentSourceProps: new Map(),
     transparentPolicyParams: new Map(),
     transparentGroupCallPolicies: new WeakMap(),

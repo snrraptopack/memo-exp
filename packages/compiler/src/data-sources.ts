@@ -1259,6 +1259,12 @@ function containsJsx(path: NodePath): boolean {
  * Each emitted read materializes the source into the ACTIVE runtime on first
  * touch (request-local on the server).
  */
+/** One module-scope source reference found inside a component body. */
+interface ModuleSourceRead {
+  entry: { name: string; key: string; binding: Binding };
+  path: NodePath<t.Identifier>;
+}
+
 function lowerModuleRefReads(
   ctx: Ctx,
   componentPath: NodePath<t.FunctionDeclaration>,
@@ -1273,7 +1279,7 @@ function lowerModuleRefReads(
     if (binding !== undefined) entries.push({ name, key, binding });
   }
   if (entries.length === 0) return;
-
+  ctx.usesTransparentData = true;
   const matches = (path: NodePath<t.Identifier>): boolean => {
     const entry = entries.find((candidate) => candidate.name === path.node.name);
     return (
@@ -1287,39 +1293,142 @@ function lowerModuleRefReads(
   const refCall = (key: string): t.Expression =>
     t.callExpression(mdd(ctx, 'sourceRef'), [t.stringLiteral(key)]);
 
+  const isGroupMarked = (expression: NodePath<t.Expression>): boolean =>
+    (expression.node as t.Expression & {
+      __memoDomTransparentGroup?: boolean;
+    }).__memoDomTransparentGroup === true;
+
   // Render sites.
   componentPath.traverse({
     JSXExpressionContainer(container) {
       if (isEventOrRefContainer(container)) return;
       const expression = container.get('expression');
       if (Array.isArray(expression) || !expression.isExpression()) return;
+
+      const collectReferenced = (): ModuleSourceRead[] => {
+        const found: ModuleSourceRead[] = [];
+        expression.traverse({
+          Identifier(path) {
+            if (!path.isReferencedIdentifier() || !matches(path)) return;
+            found.push({ entry: entryOf(path), path });
+          },
+        });
+        return found;
+      };
+
+      if (isGroupMarked(expression)) {
+        // Group owns render policy for this generated subtree: pending/error
+        // arms and the structural marker must survive untouched. Rewrite
+        // module-source identifiers IN PLACE so the committed branch reads
+        // through materializing refs while the conditional stays intact
+        // (wrapping here would orphan the policy JSX from emission).
+        const replaceInPlace = (
+          refs: readonly ModuleSourceRead[],
+          pick: 'list' | 'scalar',
+        ): void => {
+          for (const { entry, path } of refs) {
+            const parent = path.parent;
+            const isListReceiver =
+              pick === 'list' &&
+              t.isMemberExpression(parent) &&
+              parent.object === path.node &&
+              !parent.computed &&
+              t.isIdentifier(parent.property, { name: 'map' }) &&
+              path.parentPath.parentPath?.isCallExpression() === true;
+            if (pick === 'list' && !isListReceiver) continue;
+            if (pick === 'scalar' && isListReceiver) continue;
+            path.replaceWith(
+              t.callExpression(
+                mdd(ctx, isListReceiver ? 'readModuleSourceList' : 'readResolvedValueForRender'),
+                [refCall(entry.key)],
+              ),
+            );
+            path.skip();
+          }
+        };
+        replaceInPlace(collectReferenced(), 'list');
+        replaceInPlace(collectReferenced(), 'scalar');
+        container.skip();
+        return;
+      }
+
+      const referenced = collectReferenced();
+      if (referenced.length === 0) return;
+
+      // Handle direct .map list receivers first
+      for (const { entry, path } of referenced) {
+        const parent = path.parent;
+        const isListReceiver =
+          t.isMemberExpression(parent) &&
+          parent.object === path.node &&
+          !parent.computed &&
+          t.isIdentifier(parent.property, { name: 'map' }) &&
+          path.parentPath.parentPath?.isCallExpression() === true;
+        if (!isListReceiver) continue;
+        path.replaceWith(
+          t.callExpression(mdd(ctx, 'readModuleSourceList'), [
+            refCall(entry.key),
+          ]),
+        );
+        path.skip();
+      }
+
+      // If the expression reads module sources in member/compound expressions,
+      // wrap with readResolvedValuesForRender so pending data does not crash on property reads.
+      const remaining: Array<{
+        entry: (typeof entries)[0];
+        path: NodePath<t.Identifier>;
+      }> = [];
       expression.traverse({
         Identifier(path) {
           if (!path.isReferencedIdentifier() || !matches(path)) return;
           const entry = entryOf(path);
-          const parent = path.parent;
-          const isListReceiver =
-            t.isMemberExpression(parent) &&
-            parent.object === path.node &&
-            !parent.computed &&
-            t.isIdentifier(parent.property, { name: 'map' }) &&
-            path.parentPath.parentPath?.isCallExpression() === true;
-          path.replaceWith(
-            isListReceiver
-              ? t.callExpression(mdd(ctx, 'readModuleSourceList'), [
-                  refCall(entry.key),
-                ])
-              : t.callExpression(mdd(ctx, 'readResolvedValueForRender'), [
-                  refCall(entry.key),
-                ]),
-          );
-          path.skip();
+          remaining.push({ entry, path });
         },
       });
+
+      if (remaining.length > 0) {
+        if (
+          expression.isIdentifier() &&
+          matches(expression as NodePath<t.Identifier>)
+        ) {
+          const entry = entryOf(expression as NodePath<t.Identifier>);
+          expression.replaceWith(
+            t.callExpression(mdd(ctx, 'readResolvedValueForRender'), [
+              refCall(entry.key),
+            ]),
+          );
+        } else {
+          const uniqueEntries = [
+            ...new Map(remaining.map((r) => [r.entry.name, r.entry])).values(),
+          ];
+          const replacements = new Map<string, t.Identifier>();
+          const params = uniqueEntries.map((e) => {
+            const param = generatedIdentifier(ctx, `${e.name}Value`);
+            replacements.set(e.name, param);
+            return t.cloneNode(param);
+          });
+          for (const { entry, path } of remaining) {
+            const repl = replacements.get(entry.name);
+            if (repl !== undefined) path.replaceWith(t.cloneNode(repl));
+          }
+          expression.replaceWith(
+            t.callExpression(mdd(ctx, 'readResolvedValuesForRender'), [
+              t.arrayExpression(uniqueEntries.map((e) => refCall(e.key))),
+              t.arrowFunctionExpression(
+                params,
+                t.cloneNode(expression.node, true),
+              ),
+            ]),
+          );
+        }
+      }
+
       // Region subscriptions route through the canonical key.
       annotateTransparentSources(expression.node, [
         ...transparentExpressionSources(ctx, expression.node as t.Expression),
       ]);
+      container.skip();
     },
   });
 

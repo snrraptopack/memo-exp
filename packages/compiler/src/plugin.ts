@@ -223,16 +223,51 @@ export default function memoDomPlugin(
         rejectUnownedEffects(programPath);
         ctx.header.unshift(...routeManifestStatements(ctx));
 
-        // safety net: any JSX left over lived outside a component function
+        // safety net: any JSX left over lived outside a component function.
+        // Synthetic nodes created by transforms carry no loc, so walk up to
+        // the nearest ancestor that does; without this Babel degrades to the
+        // useless "internal node" message and users cannot locate the site.
+        const describeJsxOwner = (p: NodePath): string => {
+          const component = p.findParent((parent) =>
+            parent.isFunctionDeclaration() &&
+            parent.node.id !== null &&
+            parent.node.id !== undefined,
+          );
+          const owner =
+            component !== null && component.isFunctionDeclaration()
+              ? ` in component '${component.node.id!.name}'`
+              : ' at module scope';
+          return owner;
+        };
+        const located = (p: NodePath): string | null => {
+          if (p.node.loc !== null && p.node.loc !== undefined) {
+            return `${p.node.loc.start.line}:${p.node.loc.start.column + 1}`;
+          }
+          const ancestor = p.findParent(
+            (parent) => parent.node.loc !== null && parent.node.loc !== undefined,
+          );
+          if (ancestor === null) return null;
+          const loc = ancestor.node.loc!;
+          return `${loc.start.line}:${loc.start.column + 1}`;
+        };
         programPath.traverse({
           JSXElement(p) {
+            const tag = t.isJSXIdentifier(p.node.openingElement.name)
+              ? `<${p.node.openingElement.name.name}>`
+              : '<element>';
+            const at = located(p);
             throw p.buildCodeFrameError(
-              'memo-dom: JSX outside a component or compile-time render helper; components must use a supported top-level declaration',
+              `memo-dom: leftover JSX ${tag}${describeJsxOwner(p)}${
+                at === null ? '' : ` near ${at}`
+              } outside a component or compile-time render helper; components must use a supported top-level declaration`,
             );
           },
           JSXFragment(p) {
+            const at = located(p);
             throw p.buildCodeFrameError(
-              'memo-dom: JSX outside a component or compile-time render helper; components must use a supported top-level declaration',
+              `memo-dom: leftover JSX fragment${describeJsxOwner(p)}${
+                at === null ? '' : ` near ${at}`
+              } outside a component or compile-time render helper; components must use a supported top-level declaration`,
             );
           },
         });
