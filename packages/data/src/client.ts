@@ -14,9 +14,7 @@ import type {
   DataRuntime,
   DataRuntimeOptions,
   FetchFunction,
-  FetchOptions,
   StandardSchemaV1,
-  SerializedDataState,
 } from './types';
 
 /** Create an isolated request/cache/action ownership boundary. */

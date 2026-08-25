@@ -17,6 +17,25 @@
     "react/globals": "off",
     "unicorn/no-useless-spread": "warn",
     "unicorn/no-new-array": "warn",
+    "unicorn/prefer-node-protocol": "warn",
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-unsafe-function-type": "warn",
+    "typescript/no-require-imports": "warn",
+    "eslint/no-control-regex": "off"
+  },
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "rules": {
+    "react/immutability": "off",
+    "react/purity": "off",
+    "react/static-components": "off",
+    "react/refs": "off",
+    "react/globals": "off",
+    "unicorn/no-useless-spread": "warn",
+    "unicorn/no-new-array": "warn",
     "eslint/no-control-regex": "off"
   },
   "overrides": [
