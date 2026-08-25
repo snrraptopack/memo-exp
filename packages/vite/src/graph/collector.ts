@@ -58,6 +58,7 @@ export async function compileGraph(
   options: ResolvedAdapterOptions,
   overrides: ReadonlyMap<string, string>,
   hot: boolean,
+  requireMount = true,
 ): Promise<CompiledGraph> {
   const sources = new Map<string, string>();
   const sourceIds = new Map<string, string>();
@@ -135,20 +136,21 @@ export async function compileGraph(
           }),
     });
   }
-  if (compiled.applicationRoot === undefined) {
+  if (requireMount && compiled.applicationRoot === undefined) {
     context.error({
       message:
         'memoized-dom: Vite entry graph must contain one top-level mount(target, Component) call',
     });
   }
-  const rootId = compiled.applicationRoot.rootId;
+  const rootId = compiled.applicationRoot?.rootId ?? 'App';
+  const mountModuleId = compiled.applicationRoot?.mountModuleId;
   const output = new Map<string, string>();
   const maps = new Map<string, CompilerSourceMap>();
   for (const [file, id] of sourceIds) {
     const code = compiled.output[id]!;
     output.set(
       file,
-      hot && id !== compiled.applicationRoot.mountModuleId
+      hot && mountModuleId !== undefined && id !== mountModuleId
         ? appendHotBoundary(
             code,
             compiled.metadata[id]!,

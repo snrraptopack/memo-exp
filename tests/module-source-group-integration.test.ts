@@ -194,6 +194,63 @@ describe('module-scope sources through Group/$track/derivations', () => {
     void fetchJson;
   });
 
+  it('workspace example: badge and rows commit client-side', async () => {
+    const fixtures = join(
+      import.meta.dirname,
+      'fixtures',
+      'out',
+      'ws-e2e',
+    );
+    await import(pathToFileURL(join(fixtures, 'api.ts')).href);
+    await import(pathToFileURL(join(fixtures, 'session.ts')).href);
+    const { WorkspaceApp } = await import(
+      pathToFileURL(join(fixtures, 'WorkspaceApp.ts')).href
+    );
+
+    document.body.innerHTML = '';
+    const { promise: itemsRequest, resolve: resolveItems } =
+      Promise.withResolvers<Response>();
+    const fetchJson = (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.includes('/api/items')) return itemsRequest;
+      if (url.includes('/api/session')) {
+        return Promise.resolve(
+          Response.json({ id: 1, name: 'Ada Lovelace', email: 'ada@ws' }),
+        );
+      }
+      return Promise.resolve(Response.json({}));
+    };
+    setActiveDataRuntime(createDataRuntime({ fetch: fetchJson }));
+
+    const host = document.createElement('div');
+    host.id = 'root';
+    document.body.appendChild(host);
+    host.appendChild(WorkspaceApp('App', null) as unknown as Node);
+    expect(document.querySelector('.avatar')?.textContent).toBe('');
+
+    resolveItems(
+      Response.json([{ id: 'n1', text: 'Deploy done', read: false }]),
+    );
+    for (let i = 0; i < 50; i++) {
+      await Promise.resolve();
+      if (document.querySelector('.unread') !== null) break;
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+    }
+    // Badge gates on the session source; it commits independently.
+    for (let i = 0; i < 50; i++) {
+      await Promise.resolve();
+      if (document.querySelector('.avatar')?.textContent === 'A') break;
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+    }
+    expect(document.querySelector('.avatar')?.textContent).toBe('A');
+    expect(document.querySelector('.who strong')?.textContent).toBe(
+      'Ada Lovelace',
+    );
+    expect(document.querySelector('.unread')?.textContent).toContain(
+      'Deploy done',
+    );
+  });
+
   function writeCompiled(name: string, code: string): void {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, `${name}.js`), code);

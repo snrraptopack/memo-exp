@@ -16,7 +16,12 @@ import {
   resolveAdapterOptions,
   type MemoizedDomViteOptions,
 } from './options';
-import { cleanViteId, entryFiles, normalizeFile } from './paths';
+import {
+  acceptsSource,
+  cleanViteId,
+  entryFiles,
+  normalizeFile,
+} from './paths';
 import { AdapterState } from './state';
 
 const sourceId = /\.[jt]sx?(?:$|[?#])/;
@@ -30,6 +35,10 @@ export function memoizedDom(
 ): Plugin {
   const options = resolveAdapterOptions(input);
   const states = new Map<object, AdapterState>();
+  // Secondary graphs compiled on demand for files outside the primary entry
+  // graph (e.g. visiting /hacker-news/ while the primary graph is the
+  // workspace example). Keyed by the requested source file.
+  const lazyStates = new Map<object, Map<string, AdapterState>>();
   let config: ResolvedConfig | undefined;
   let entries: readonly string[] = [];
 
@@ -106,6 +115,57 @@ export function memoizedDom(
     }
   }
 
+  async function refreshLazyGraph(
+    context: GraphPluginContext,
+    state: AdapterState,
+    file: string,
+    overrides: ReadonlyMap<string, string> = new Map(),
+  ): Promise<void> {
+    if (config === undefined) {
+      throw new Error(
+        'memoized-dom: Vite graph compilation started before config resolution',
+      );
+    }
+    if (state.compiling === undefined) {
+      state.compiling = compileGraph(
+        graphContext(context),
+        config.root,
+        [file],
+        options,
+        overrides,
+        config.command === 'serve',
+        false,
+      );
+    }
+    const compilation = state.compiling;
+    try {
+      state.replace(await compilation);
+    } finally {
+      if (state.compiling === compilation) {
+        state.compiling = undefined;
+      }
+    }
+  }
+
+  function hotStateFor(
+    environment: object,
+    file: string,
+  ): AdapterState | undefined {
+    const primary = states.get(environment);
+    if (primary !== undefined && primary.files.has(file)) return primary;
+    const lazy = lazyStates.get(environment)?.get(file);
+    return lazy !== undefined && lazy.files.has(file) ? lazy : undefined;
+  }
+
+  function lazyStatesFor(environment: object): Map<string, AdapterState> {
+    let perFile = lazyStates.get(environment);
+    if (perFile === undefined) {
+      perFile = new Map<string, AdapterState>();
+      lazyStates.set(environment, perFile);
+    }
+    return perFile;
+  }
+
   async function transformModule(
     context: AdapterTransformContext,
     code: string,
@@ -115,30 +175,64 @@ export function memoizedDom(
     const file = cleanViteId(id);
     const state = stateFor(context.environment);
     const managed = entries.includes(file) || state.files.has(file);
-    if (!managed && state.compiling === undefined) return null;
 
-    const cached = state.output.get(file);
+    const cached = managed ? state.output.get(file) : undefined;
     if (cached !== undefined) {
       return { code: cached, map: state.maps.get(file)! };
     }
 
-    if (state.compiling === undefined) {
-      await refreshGraph(
-        context,
-        state,
+    if (managed) {
+      if (state.compiling === undefined) {
+        await refreshGraph(context, state, new Map([[file, code]]));
+      } else {
+        await refreshGraph(context, state);
+      }
+      const compiled = state.output.get(file);
+      if (compiled === undefined) {
+        if (!entries.includes(file)) return null;
+        throw new Error(
+          `memoized-dom: linked Vite graph omitted managed module ${file}`,
+        );
+      }
+      return { code: compiled, map: state.maps.get(file)! };
+    }
+
+    // Outside the primary graph: compile a mount-less graph rooted at the
+    // requested file so directly visited example pages work regardless of
+    // which graph MMD_EXAMPLE selected.
+    if (!acceptsSource(config.root, file, options)) return null;
+    const perFile = lazyStatesFor(context.environment);
+    let lazy = perFile.get(file);
+    if (lazy === undefined) {
+      lazy = new AdapterState();
+      perFile.set(file, lazy);
+    }
+    const lazyCached = lazy.output.get(file);
+    if (lazyCached !== undefined) {
+      return { code: lazyCached, map: lazy.maps.get(file)! };
+    }
+    if (lazy.compiling === undefined) {
+      lazy.compiling = compileGraph(
+        graphContext(context),
+        config.root,
+        [file],
+        options,
         new Map([[file, code]]),
-      );
-    } else {
-      await refreshGraph(context, state);
-    }
-    const compiled = state.output.get(file);
-    if (compiled === undefined) {
-      if (!entries.includes(file)) return null;
-      throw new Error(
-        `memoized-dom: linked Vite graph omitted managed module ${file}`,
+        config.command === 'serve',
+        false,
       );
     }
-    return { code: compiled, map: state.maps.get(file)! };
+    const compilation = lazy.compiling;
+    try {
+      lazy.replace(await compilation);
+    } finally {
+      if (lazy.compiling === compilation) {
+        lazy.compiling = undefined;
+      }
+    }
+    const lazyCompiled = lazy.output.get(file);
+    if (lazyCompiled === undefined) return null;
+    return { code: lazyCompiled, map: lazy.maps.get(file)! };
   }
 
   return {
@@ -166,19 +260,22 @@ export function memoizedDom(
       },
     },
     async hotUpdate(update) {
-      const state = states.get(this.environment);
       const file = normalizeFile(update.file);
-      if (state === undefined || !state.files.has(file)) return;
+      const primary = states.get(this.environment);
+      const isPrimary = primary?.files.has(file) === true;
+      const state = hotStateFor(this.environment, file);
+      if (state === undefined) return;
       const previous = new Map(state.output);
       const overrides =
         update.type === 'delete'
           ? new Map<string, string>()
           : new Map([[file, await update.read()]]);
-      await refreshGraph(
-        hotGraphContext(this.environment, this),
-        state,
-        overrides,
-      );
+      const context = hotGraphContext(this.environment, this);
+      if (isPrimary) {
+        await refreshGraph(context, state, overrides);
+      } else {
+        await refreshLazyGraph(context, state, file, overrides);
+      }
       const changed = new Set<string>();
       for (const candidate of new Set([
         ...previous.keys(),

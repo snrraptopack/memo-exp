@@ -261,7 +261,20 @@ export function transparentExpressionSources(
         t.isArrayExpression(node.arguments[0])
       ) {
         for (const element of node.arguments[0].elements) {
-          if (t.isIdentifier(element)) found.add(element.name);
+          if (t.isIdentifier(element)) {
+            found.add(element.name);
+            continue;
+          }
+          // Module lowering emits sourceRef("key") elements; identity is
+          // the canonical key itself.
+          if (
+            t.isCallExpression(element) &&
+            t.isMemberExpression(element.callee) &&
+            t.isIdentifier(element.callee.property, { name: 'sourceRef' }) &&
+            t.isStringLiteral(element.arguments[0])
+          ) {
+            found.add(element.arguments[0].value);
+          }
         }
       }
     }
@@ -879,6 +892,26 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
           });
         }
       }
+    }
+    // Imported module-scope sources (RFC §16.4) referenced anywhere in the
+    // component join the holder set: runtime helpers accept ModuleSourceRef
+    // uniformly, and registering them here is what makes emission attach
+    // subscription/ownership mounts so commits push-invalidate the entity
+    // (without this, plain gated reads never re-render after commit).
+    if (ctx.transparentModuleSources.size > 0) {
+      componentPath.traverse({
+        ReferencedIdentifier(identifier) {
+          const name = identifier.node.name;
+          if (!ctx.transparentModuleSources.has(name)) return;
+          if (
+            importedProgramBinding(componentPath, name) === undefined &&
+            identifier.scope.getBinding(name)?.kind !== 'module'
+          ) {
+            return;
+          }
+          sources.add(name);
+        },
+      });
     }
     const plan = ctx.componentProps.get(component);
     const sourceProps = new Map<string, string>();

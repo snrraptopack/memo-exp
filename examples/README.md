@@ -13,9 +13,11 @@ Restart the Vite dev process after changing compiler or Vite-plugin source.
 Vite keeps build plugins in memory, so HMR can update authored TSX while an
 already-running process still uses the previous compiler implementation.
 
-`vite.config.ts` compiles `entry.ts` and its connected module graph directly.
-The active application is a Hacker News client backed by the live Algolia
-Hacker News API.
+`vite.config.ts` compiles the selected example's connected module graph.
+Every example directory carries its own `index.html` + `main.ts` and serves
+at its own URL (e.g. `/hacker-news/`); the root `/` is a link list. Pick the
+graph for tooling with `MMD_EXAMPLE=<file>` (default `workspace/main.ts`).
+The Hacker News client is backed by the live Algolia Hacker News API.
 
 It demonstrates:
 
