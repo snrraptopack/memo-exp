@@ -1,4 +1,8 @@
-import { ActionStore, createAction } from './action';
+import {
+  ActionStore,
+  createAction,
+} from './action';
+import { runModuleInstanceDisposers } from './transparent-module';
 import {
   createFetchEnvironment,
   createFetchResource,
@@ -43,13 +47,14 @@ export function createDataRuntime(
     target,
     actionOptions,
   )) as ActionFunction;
-
-  return {
+  const runtime: DataRuntime = {
     $fetch: fetchResource,
     $action: action,
     clear() {
       actions.clear();
       store.clear();
+      runModuleInstanceDisposers(runtime);
     },
   };
+  return runtime;
 }

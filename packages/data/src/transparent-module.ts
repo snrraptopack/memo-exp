@@ -33,42 +33,83 @@ export interface ModuleSourceRef {
 
 type SourceFactory = () => ResolvedValue<unknown>;
 
-const describedFactories = new Map<string, SourceFactory>();
+interface DescribedSource {
+  readonly factory: SourceFactory;
+  /** Bumped on every describeModuleSource replacement (HMR re-evaluation). */
+  version: number;
+}
+
+interface CachedInstance {
+  readonly instance: ResolvedValue<unknown>;
+  /** Description version this instance was materialized from. */
+  version: number;
+}
+
+const describedSources = new Map<string, DescribedSource>();
 
 /**
  * Register (or replace) the factory for a module-scope source. Called by the
- * compiled declaration; replacing an existing factory is how HMR updates a
- * module without leaking its previous request instances.
+ * compiled declaration; replacing an existing factory bumps the description
+ * version so HMR re-evaluation RETIRES stale materialized instances in every
+ * runtime instead of silently reusing them (RFC §16.4 lifecycle contract).
  */
 export function describeModuleSource<T>(
   key: string,
   create: () => ResolvedValue<T>,
 ): void {
-  describedFactories.set(key, create as SourceFactory);
+  const existing = describedSources.get(key);
+  describedSources.set(key, {
+    factory: create as SourceFactory,
+    version: (existing?.version ?? 0) + 1,
+  });
 }
 
-function runtimeCache(): Map<string, unknown> {
+function runtimeCache(): Map<string, CachedInstance> {
   return getExtensionStore('mmd:module-source-instances', () => new Map());
 }
 
 /**
- * Materialize — once per ApplicationRuntime — the source a ref points at.
- * The factory runs under whatever runtime is active, so `$fetch` binds to
- * that request's data runtime.
+ * Disposers registered per data runtime: `DataRuntime.clear()` retires every
+ * module-source instance that runtime materialized (RFC §16.4 — instances
+ * live until DataRuntime.clear() or application-runtime disposal).
+ */
+const disposersByRuntime = new WeakMap<object, Set<() => void>>();
+
+export function runModuleInstanceDisposers(runtime: object): void {
+  const disposers = disposersByRuntime.get(runtime);
+  if (disposers === undefined) return;
+  for (const disposer of [...disposers]) disposer();
+  disposers.clear();
+}
+
+/**
+ * Materialize — once per ApplicationRuntime and per description version —
+ * active, so `$fetch` binds to that request's data runtime. A version
+ * mismatch (HMR replaced the description) drops the stale instance.
  */
 export function resolveModuleSource<T>(ref: ModuleSourceRef): ResolvedValue<T> {
   const cache = runtimeCache();
-  let instance = cache.get(ref.key) as ResolvedValue<T> | undefined;
-  if (instance === undefined) {
-    const factory = describedFactories.get(ref.key);
-    if (factory === undefined) {
-      throw new Error(
-        `[memo-dom] module source '${ref.key}' has no registered description`,
-      );
-    }
-    instance = factory() as ResolvedValue<T>;
-    cache.set(ref.key, instance);
+  const described = describedSources.get(ref.key);
+  if (described === undefined) {
+    throw new Error(
+      `[memo-dom] module source '${ref.key}' has no registered description`,
+    );
   }
+  const cached = cache.get(ref.key);
+  if (cached !== undefined && cached.version === described.version) {
+    return cached.instance as ResolvedValue<T>;
+  }
+  const instance = described.factory() as ResolvedValue<T>;
+  cache.set(ref.key, { instance, version: described.version });
+  const active = getActiveDataRuntime();
+  let disposers = disposersByRuntime.get(active);
+  if (disposers === undefined) {
+    disposers = new Set();
+    disposersByRuntime.set(active, disposers);
+  }
+  disposers.add(() => {
+    cache.delete(ref.key);
+  });
   return instance;
 }
 
