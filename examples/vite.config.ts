@@ -11,7 +11,9 @@ export default defineConfig({
   },
   plugins: [
     memoizedDom({
-      entries: 'entry.ts',
+      // Select an example graph without editing this file:
+      //   MMD_EXAMPLE=workspace/main.ts bun run example:dev
+      entries: process.env.MMD_EXAMPLE ?? 'entry.ts',
     }),
   ],
 });

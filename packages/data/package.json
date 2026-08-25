@@ -26,5 +26,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "@memoized-dom/runtime": "workspace:*"
   }
 }

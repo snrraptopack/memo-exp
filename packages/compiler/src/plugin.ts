@@ -53,6 +53,7 @@ import { normalizeConditionalJsxDirectives } from './jsx/conditional-directives'
 import {
   lowerTransparentGroups,
   rewriteTransparentDataReads,
+  scanAndLowerModuleSourceDeclarations,
   scanTransparentSourceImports,
 } from './data-sources';
 
@@ -208,6 +209,7 @@ export default function memoDomPlugin(
         initializeGeneratedIdentifiers(ctx, programPath);
         scanTransparentSourceImports(ctx, programPath);
         lowerTransparentGroups(ctx, programPath);
+        scanAndLowerModuleSourceDeclarations(ctx, programPath);
         analyzeRouterJsx(ctx, programPath);
         runAnalysis(ctx, programPath);
         rewriteTransparentDataReads(ctx);

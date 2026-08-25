@@ -241,6 +241,20 @@ export function transparentExpressionSources(
       ) {
         found.add(node.arguments[0].name);
       }
+      // Module sources: readResolvedValueForRender(sourceRef("key")) /
+      // readModuleSourceList(sourceRef("key")) — identity is the key itself.
+      if (
+        (helper === 'readModuleSourceList' ||
+          helper === 'readResolvedValueForRender') &&
+        t.isCallExpression(node.arguments[0]) &&
+        t.isMemberExpression(node.arguments[0].callee) &&
+        t.isIdentifier(node.arguments[0].callee.property, {
+          name: 'sourceRef',
+        }) &&
+        t.isStringLiteral(node.arguments[0].arguments[0])
+      ) {
+        found.add(node.arguments[0].arguments[0].value);
+      }
       if (
         (helper === 'readResolvedValuesForRender' ||
           helper === 'deriveResolvedValues') &&
@@ -272,6 +286,18 @@ export function transparentExpressionSources(
   return [...found].sort();
 }
 
+/**
+ * Module-source identities are canonical keys, not valid identifier
+ * characters — translate them back to the authored (in-scope) ref binding
+ * name so emitted subscriptions reference real bindings.
+ */
+function routedSourceName(ctx: Ctx, source: string): string {
+  for (const [name, key] of ctx.transparentModuleSources) {
+    if (key === source) return name;
+  }
+  return source;
+}
+
 function subscribeTransparentEntity(
   ctx: Ctx,
   scope: EmitScope,
@@ -282,12 +308,13 @@ function subscribeTransparentEntity(
     source => !scope.coveredTransparentSources.has(source),
   );
   if (routed.length === 0) return;
+  const bindingNames = routed.map((source) => routedSourceName(ctx, source));
   scope.mounts.push(
     t.expressionStatement(
       t.callExpression(md(ctx, 'cleanup'), [
         t.cloneNode(entityId, true),
         t.callExpression(mdd(ctx, 'connectResolvedValues'), [
-          sourceArray(routed),
+          sourceArray(bindingNames),
           t.arrowFunctionExpression(
             [],
             t.callExpression(md(ctx, 'markDirty'), [
@@ -737,6 +764,65 @@ export function registerTransparentSourceRoots(ctx: Ctx): void {
   }
 }
 
+/**
+ * RFC §16.4: lower module-scope transparent declarations into lazy
+ * descriptions + stable refs. The description never executes at module
+ * evaluation; the first read inside an ApplicationRuntime materializes a
+ * request-local instance.
+ */
+export function scanAndLowerModuleSourceDeclarations(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
+  for (const statement of programPath.get('body')) {
+    const inner = statement.isExportNamedDeclaration()
+      ? statement.node.declaration
+      : statement.node;
+    if (!t.isVariableDeclaration(inner)) continue;
+    for (const declarator of inner.declarations) {
+      if (!t.isIdentifier(declarator.id)) continue;
+      if (!t.isCallExpression(declarator.init)) continue;
+      if (!t.isIdentifier(declarator.init.callee)) continue;
+      if (!ctx.transparentSourceFactories.has(declarator.init.callee.name)) {
+        continue;
+      }
+      const binding = programPath.scope.getBinding(declarator.init.callee.name);
+      if (binding === undefined || binding.kind !== 'module') continue;
+
+      const name = declarator.id.name;
+      const key = `${ctx.moduleId}#${name}`;
+      ctx.transparentModuleSources.set(name, key);
+      ctx.usesTransparentData = true;
+
+      const target = declarator.init.arguments[0];
+      const options = declarator.init.arguments[1];
+      declarator.init = t.callExpression(mdd(ctx, 'sourceRef'), [
+        t.stringLiteral(key),
+      ]);
+      ctx.header.push(
+        t.expressionStatement(
+          t.callExpression(mdd(ctx, 'describeModuleSource'), [
+            t.stringLiteral(key),
+            t.arrowFunctionExpression(
+              [],
+              t.blockStatement([
+                t.returnStatement(
+                  t.callExpression(mdd(ctx, 'createSource'), [
+                    target === undefined
+                      ? t.nullLiteral()
+                      : t.cloneNode(target),
+                    ...(options === undefined ? [] : [t.cloneNode(options)]),
+                  ]),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      );
+    }
+  }
+}
+
 function importedProgramBinding(
   componentPath: NodePath<t.FunctionDeclaration>,
   name: string,
@@ -1165,7 +1251,107 @@ function containsJsx(path: NodePath): boolean {
  * Lower direct scalar/attribute reads, structural sites, transported props,
  * and pure local derivations without evaluating an unavailable source.
  */
+/**
+ * Lower reads of module-scope source refs inside a component:
+ *   - list receivers (.map)  → _MDD.readModuleSourceList(_ref)
+ *   - other render sites     → _MDD.readResolvedValueForRender(_ref)
+ *   - imperative statements  → _MDD.readResolvedValue(_ref, name, site)
+ * Each emitted read materializes the source into the ACTIVE runtime on first
+ * touch (request-local on the server).
+ */
+function lowerModuleRefReads(
+  ctx: Ctx,
+  componentPath: NodePath<t.FunctionDeclaration>,
+): void {
+  const entries: Array<{
+    name: string;
+    key: string;
+    binding: Binding;
+  }> = [];
+  for (const [name, key] of ctx.transparentModuleSources) {
+    const binding = componentPath.scope.getBinding(name);
+    if (binding !== undefined) entries.push({ name, key, binding });
+  }
+  if (entries.length === 0) return;
+
+  const matches = (path: NodePath<t.Identifier>): boolean => {
+    const entry = entries.find((candidate) => candidate.name === path.node.name);
+    return (
+      entry !== undefined &&
+      path.scope.getBinding(path.node.name) === entry.binding
+    );
+  };
+  const entryOf = (path: NodePath<t.Identifier>) =>
+    entries.find((candidate) => candidate.name === path.node.name)!;
+
+  const refCall = (key: string): t.Expression =>
+    t.callExpression(mdd(ctx, 'sourceRef'), [t.stringLiteral(key)]);
+
+  // Render sites.
+  componentPath.traverse({
+    JSXExpressionContainer(container) {
+      if (isEventOrRefContainer(container)) return;
+      const expression = container.get('expression');
+      if (Array.isArray(expression) || !expression.isExpression()) return;
+      expression.traverse({
+        Identifier(path) {
+          if (!path.isReferencedIdentifier() || !matches(path)) return;
+          const entry = entryOf(path);
+          const parent = path.parent;
+          const isListReceiver =
+            t.isMemberExpression(parent) &&
+            parent.object === path.node &&
+            !parent.computed &&
+            t.isIdentifier(parent.property, { name: 'map' }) &&
+            path.parentPath.parentPath?.isCallExpression() === true;
+          path.replaceWith(
+            isListReceiver
+              ? t.callExpression(mdd(ctx, 'readModuleSourceList'), [
+                  refCall(entry.key),
+                ])
+              : t.callExpression(mdd(ctx, 'readResolvedValueForRender'), [
+                  refCall(entry.key),
+                ]),
+          );
+          path.skip();
+        },
+      });
+      // Region subscriptions route through the canonical key.
+      annotateTransparentSources(expression.node, [
+        ...transparentExpressionSources(ctx, expression.node as t.Expression),
+      ]);
+    },
+  });
+
+  // Imperative sites keep the throwing R2 guard.
+  componentPath.traverse({
+    Identifier(path) {
+      if (!path.isReferencedIdentifier() || !matches(path)) return;
+      const entry = entryOf(path);
+      const site =
+        path.node.loc === null || path.node.loc === undefined
+          ? ctx.moduleId
+          : `${ctx.moduleId}:${path.node.loc.start.line}:${
+              path.node.loc.start.column + 1
+            }`;
+      path.replaceWith(
+        t.callExpression(mdd(ctx, 'readResolvedValue'), [
+          t.callExpression(mdd(ctx, 'sourceRef'), [t.stringLiteral(entry.key)]),
+          t.stringLiteral(entry.name),
+          t.stringLiteral(site),
+        ]),
+      );
+      path.skip();
+    },
+  });
+}
+
 export function rewriteTransparentDataReads(ctx: Ctx): void {
+  // Module-scope sources (RFC §16.4): lower refs to materializing reads
+  // before the component-local passes run.
+  for (const componentPath of ctx.compPaths.values()) {
+    lowerModuleRefReads(ctx, componentPath);
+  }
   for (const [component, names] of ctx.transparentSources) {
     const componentPath = ctx.compPaths.get(component);
     if (componentPath === undefined) continue;

@@ -29,6 +29,15 @@ export {
   throwResolvedValuesError,
   UnresolvedDataReadError,
 } from './transparent';
+export {
+  createSource,
+  describeModuleSource,
+  isModuleSourceRef,
+  readModuleSourceList,
+  resolveModuleSource,
+  sourceRef,
+} from './transparent-module';
+export type { ModuleSourceRef } from './transparent-module';
 export type {
   ActionListener,
   ActionSnapshot,

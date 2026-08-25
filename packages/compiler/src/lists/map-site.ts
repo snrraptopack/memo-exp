@@ -223,6 +223,26 @@ function analyzeSource(
     t.isIdentifier(current.callee.object, {
       name: ctx.identifiers?.dataRuntimeId,
     }) &&
+    t.isIdentifier(current.callee.property, {
+      name: 'readModuleSourceList',
+    }) &&
+    t.isStringLiteral(current.arguments[0])
+  ) {
+    const key = current.arguments[0].value;
+    return {
+      expression: current,
+      key,
+      local: true,
+      suffixBase: key,
+    };
+  }
+  if (
+    t.isCallExpression(current) &&
+    t.isMemberExpression(current.callee) &&
+    !current.callee.computed &&
+    t.isIdentifier(current.callee.object, {
+      name: ctx.identifiers?.dataRuntimeId,
+    }) &&
     t.isIdentifier(current.callee.property) &&
     (current.callee.property.name === 'readResolvedValue' ||
       current.callee.property.name === 'readResolvedValueForRender') &&

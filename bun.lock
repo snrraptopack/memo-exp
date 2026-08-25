@@ -58,6 +58,9 @@
     "packages/data": {
       "name": "@memoized-dom/data",
       "version": "0.0.1",
+      "dependencies": {
+        "@memoized-dom/runtime": "workspace:*",
+      },
     },
     "packages/language-service": {
       "name": "@memoized-dom/language-service",
@@ -81,6 +84,8 @@
       "name": "@memoized-dom/server",
       "version": "0.0.1",
       "dependencies": {
+        "@memoized-dom/data": "workspace:*",
+        "@memoized-dom/router": "workspace:*",
         "@memoized-dom/runtime": "workspace:*",
         "linkedom": "^0.18.0",
       },

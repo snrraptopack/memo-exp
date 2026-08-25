@@ -23,6 +23,7 @@ export {
   renderDescendants,
   createApplicationRuntime,
   getActiveApplicationRuntime,
+  getExtensionStore,
   setActiveApplicationRuntime,
   runWithApplicationRuntime,
   getActiveEnvironment,

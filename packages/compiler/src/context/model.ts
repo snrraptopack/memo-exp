@@ -19,6 +19,18 @@ import type {
   CompilerRouteElement,
 } from '../router';
 
+export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceDefinition[] = [
+  {
+    module: '@memoized-dom/data',
+    source: '$fetch',
+    track: '$track',
+    operations: '$ops',
+    group: 'Group',
+    pending: 'Pending',
+    error: 'Error',
+  },
+];
+
 export interface MemoDomOptions {
   /** Module specifier compiled output imports the runtime from. */
   runtimePath?: string;
@@ -97,6 +109,8 @@ export interface LinkedStateImport {
   kind: StateKind;
   /** Canonical root key of the defining export (`./state.ts#store`). */
   key: string;
+  /** RFC §16.4: import carries a module transparent-source ref. */
+  transparentSource?: boolean;
   /** Finite intrinsic-tag identities declared by a string-literal union. */
   tagCandidates?: string[];
   /** Finite component identities reachable through this state/registry. */
@@ -319,6 +333,8 @@ export interface Ctx {
   /** Component-local source holders and track-state aliases. */
   transparentSources: Map<string, Set<string>>;
   transparentTrackBindings: Map<string, Map<string, readonly string[]>>;
+  /** Module-scope transparent sources: local binding name → canonical key. */
+  transparentModuleSources: Map<string, string>;
   /** Direct prop binding -> authored prop name for transported source holders. */
   transparentSourceProps: Map<string, Map<string, string>>;
   /** Private factory parameter carrying inherited presentation renderers. */
@@ -548,17 +564,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',
     dataRuntimePath: opts.dataRuntimePath ?? '@memoized-dom/data/internal',
-    transparentAsyncSources: opts.transparentAsyncSources ?? [
-      {
-        module: '@memoized-dom/data',
-        source: '$fetch',
-        track: '$track',
-        operations: '$ops',
-        group: 'Group',
-        pending: 'Pending',
-        error: 'Error',
-      },
-    ],
+    transparentAsyncSources: opts.transparentAsyncSources ??
+      DEFAULT_TRANSPARENT_ASYNC_SOURCES,
     rootId: opts.rootId ?? 'App',
     rootComponent: opts.rootComponent ?? null,
     hot: opts.hot ?? false,
@@ -579,6 +586,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     transparentErrorPolicies: new Set(),
     transparentSources: new Map(),
     transparentTrackBindings: new Map(),
+    transparentModuleSources: new Map(),
     transparentSourceProps: new Map(),
     transparentPolicyParams: new Map(),
     transparentGroupCallPolicies: new WeakMap(),

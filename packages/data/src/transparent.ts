@@ -15,6 +15,11 @@ import type {
   ResourceSnapshot,
   TrackedValue,
 } from './types';
+import {
+  isModuleSourceRef,
+  resolveModuleSource,
+  type ModuleSourceRef,
+} from './transparent-module';
 
 /** Raised when imperative code reads a transparent value before first commit. */
 export class UnresolvedDataReadError extends globalThis.Error {
@@ -53,22 +58,32 @@ export function Error(_props: ErrorProps): never {
 }
 
 /**
- * The compiler keeps a FetchResource in the generated binding while exposing
- * ResolvedValue<T> to authored TypeScript. These casts are centralized here so
- * no payload object is decorated and no payload identity lookup is required.
+ * The compiler keeps a FetchResource (or, for module sources, materializes a
+ * per-runtime instance from the source's lazy description) behind authored
+ * ResolvedValue<T> bindings. These casts are centralized here so no payload
+ * object is decorated and no payload identity lookup is required.
  */
-function source<T>(value: ResolvedValue<T>): FetchResource<T> {
+function resolveTarget<T>(
+  value: ResolvedValue<T> | ModuleSourceRef,
+): FetchResource<T> {
+  if (isModuleSourceRef(value)) {
+    return resolveModuleSource(value) as unknown as FetchResource<T>;
+  }
   return value as unknown as FetchResource<T>;
 }
 
+function source<T>(value: ResolvedValue<T> | ModuleSourceRef): FetchResource<T> {
+  return resolveTarget(value);
+}
+
 export function trackResolvedValue<T>(
-  value: ResolvedValue<T>,
+  value: ResolvedValue<T> | ModuleSourceRef,
 ): TrackedValue<T> {
   return source(value) as unknown as TrackedValue<T>;
 }
 
 export function resolvedValueOperations<T>(
-  value: ResolvedValue<T>,
+  value: ResolvedValue<T> | ModuleSourceRef,
 ): OperationsFor<T> {
   return source(value) as unknown as OperationsFor<T>;
 }
@@ -200,7 +215,7 @@ export function resolvedValueSnapshot<T>(
 
 /** Subscribe to transitions without delivering the notifier's initial value. */
 export function observeResolvedValue<T>(
-  value: ResolvedValue<T>,
+  value: ResolvedValue<T> | ModuleSourceRef,
   listener: ResourceListener<T>,
 ): () => void {
   let initial = true;
@@ -215,14 +230,18 @@ export function observeResolvedValue<T>(
 
 /** Attach one compiled structural owner to a component-local source. */
 export function connectResolvedValue<T>(
-  value: ResolvedValue<T>,
+  value: ResolvedValue<T> | ModuleSourceRef,
   invalidate: () => void,
   owned = true,
 ): () => void {
   const unsubscribe = observeResolvedValue(value, () => invalidate());
   return () => {
     unsubscribe();
-    if (owned) disposeFetchResource(source(value));
+    // Module sources live with their ApplicationRuntime — consumers only
+    // detach; disposal authority stays with the runtime.
+    if (owned && !isModuleSourceRef(value)) {
+      disposeFetchResource(source(value));
+    }
   };
 }
 
@@ -241,8 +260,10 @@ export function connectResolvedValues(
 
 /** Give one creating component sole disposal authority over a local source. */
 export function ownResolvedValue<T>(
-  value: ResolvedValue<T>,
+  value: ResolvedValue<T> | ModuleSourceRef,
 ): () => void {
+  // Module sources are disposed with their ApplicationRuntime.
+  if (isModuleSourceRef(value)) return () => {};
   return () => disposeFetchResource(source(value));
 }
 

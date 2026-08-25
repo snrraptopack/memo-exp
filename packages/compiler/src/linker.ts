@@ -51,6 +51,7 @@ import {
   type ParameterWrite,
   type StateKind,
 } from './context';
+import { DEFAULT_TRANSPARENT_ASYNC_SOURCES } from './context/model';
 import { isRenderPropReference } from './components/children';
 import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
 import { normalizeComponentDeclarations } from './components/declarations';
@@ -143,6 +144,7 @@ interface StateExport {
   type: 'state';
   kind: StateKind;
   key: string;
+  transparentSource?: boolean;
   tagCandidates: string[];
   componentCandidates: string[];
 }
@@ -644,6 +646,28 @@ function discoverManifest(
         );
         const components = discoverComponentExports(programPath, entry.id);
         const componentNames = new Set(components.keys());
+        console.error('[dbg-src-input]', JSON.stringify(options.transparentAsyncSources ?? DEFAULT_TRANSPARENT_ASYNC_SOURCES));
+        const providerSources = new Map(
+          (options.transparentAsyncSources ??
+            DEFAULT_TRANSPARENT_ASYNC_SOURCES).map(
+            (d) => [d.module, d.source] as const,
+          ),
+        );
+        const providerFactories = new Set<string>();
+        for (const stmt of programPath.node.body) {
+          if (!t.isImportDeclaration(stmt)) continue;
+          const def = providerSources.get(stmt.source.value);
+          if (def === undefined) continue;
+          for (const spec of stmt.specifiers) {
+            if (
+              t.isImportSpecifier(spec) &&
+              t.isIdentifier(spec.imported) &&
+              spec.imported.name === def[1]
+            ) {
+              providerFactories.add(spec.local.name);
+            }
+          }
+        }
         for (const [name, component] of components) {
           locals.set(name, { type: 'component', ...component });
         }
@@ -679,6 +703,19 @@ function discoverManifest(
                 continue;
               }
               let kind: StateKind | undefined;
+              if (
+                t.isCallExpression(init) &&
+                t.isIdentifier(init.callee) &&
+                providerFactories.has(init.callee.name)
+              ) {
+                locals.set(decl.id.name, {
+                  type: 'state',
+                  kind: 'let',
+                  key: `${entry.id}#${decl.id.name}`,
+                  transparentSource: true,
+                } as never);
+                continue;
+              }
               if (inner.kind === 'let' || inner.kind === 'var') kind = 'let';
               else if (isStoreObject(init)) kind = 'store';
               else if (isConstObjectState(init)) kind = 'const';
@@ -941,6 +978,8 @@ function linkImports(
         type: 'state',
         kind: targetExport.kind,
         key: targetExport.key,
+        transparentSource: (targetExport as { transparentSource?: boolean })
+          .transparentSource,
         tagCandidates: [...targetExport.tagCandidates],
         componentCandidates: linkedDynamicCandidates(
           entry,
