@@ -14,14 +14,20 @@ deliberately:
    creation, so every reconcile path (fragment batch, LIS insertion,
    reorder) carries it — pairs would desync under per-node relocation.
 2. **Component-owner pairs (`mmd:c`) and data-site singles (`mmd:d`) are
-   deferred to the adoption phase**: RFC §16.7 records that data sites need
-   no marker category (deterministic entity metadata plus the existing
-   structural markers suffice), and component boundaries are only needed
-   once an adoption cursor exists to consume them.
+   deferred to mount adoption**: RFC §16.7 records that data sites need no
+   marker category (deterministic entity metadata plus the existing
+   structural markers suffice), and component boundaries are only required
+   when compiled factories begin consuming the cursor.
 3. The runtime emits the same anchors on client and server — CSR and SSR
    DOM stay structurally identical, which the parity corpus requires. The
    parity harness canonicalizes comments away, so corpus tests are
    unaffected.
+4. **Phase 3 cursor primitive implemented:** `createHydrationCursor` parses
+   and claims the `r/g/l/w` stream in compiler order, validates node kind,
+   host tag, and namespace without mutating the DOM, bounds v0.2 rows at the
+   next row/list close, and reports owner-scoped mismatches. `mount()` does
+   not consume the cursor yet; factory adoption and recovery remain the next
+   integration slice.
 
 Owner: SSR layer
 Inputs: `ssr-proposal.md` §Phase 2/3, `octane-comparison.md` §1 (compaction,

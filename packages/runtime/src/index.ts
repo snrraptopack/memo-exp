@@ -99,6 +99,21 @@ export type {
   RootMountContext,
 } from './mount';
 export {
+  createHydrationCursor,
+  HydrationMismatchError,
+  LocalHydrationCursor,
+  parseHydrationMarker,
+} from './hydration';
+export type {
+  ClaimedHydrationRange,
+  HydrationCloseMarker,
+  HydrationMarker,
+  HydrationMarkerKind,
+  HydrationNodeExpectation,
+  HydrationOpenMarker,
+  PairedHydrationMarkerKind,
+} from './hydration';
+export {
   createDelegatedEventBinding,
   setDelegatedEvent,
   type DelegatedEventBinding,
