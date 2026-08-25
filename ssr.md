@@ -589,6 +589,35 @@ attributes, root identity preservation (`===`), nested and empty ranges,
 v0.2 rows containing nested ranges, and marker/tag/missing-close failures.
 Runtime build green.
 
+## Slice 2.3 — emitted DOM creation routes through the environment document
+
+**Commit:** `724fcac`.
+
+Closes the slice-1.8 seam that blocked the settle coordinator and any
+hydration document tier. Every DOM-producing factory now resolves the active
+`RenderEnvironment.document` once (`const _document =
+_MD.getActiveEnvironment().document`) and creates elements, text, fragments,
+and SVG nodes through it. The binding is emitted per factory scope,
+including nested scopes: conditional branches, list rows (lightweight and
+stateful), render callbacks, children slots, and route regions. The
+repeated-row DOM template cache keys on document identity and rebuilds per
+document instead of leaking one request's template nodes into another.
+
+Consequences:
+
+- `@memoized-dom/server` no longer swaps `globalThis.document` or deletes
+  `requestAnimationFrame` during render — concurrent request documents can
+  no longer contaminate each other through process globals (the concurrency
+  hardening prerequisite for Phase 5);
+- `syncBooleanAttributes` walks via the node's `ownerDocument`;
+- hydration/streaming can now supply their own document tier without
+  touching compiled output.
+
+**Tests:** root suite 85 files / 528 passed + 1 skipped (golden snapshots
+deliberately updated for the one-line factory binding; stale ambient-form
+assertions modernized across 9 suites), server suite 24/24, browser corpus
+17/17, typecheck green.
+
 ## Next slices
 
 1. **Mount/factory adoption (Phase 3 integration)** — pass the root cursor
@@ -596,8 +625,8 @@ Runtime build green.
    them; seed setter caches; install events, then replay deferred refs/effects.
 2. **Mismatch recovery ladder** — value correction, smallest structural-owner
    remount, and root fallback with partial-ownership teardown.
-3. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; BLOCKED on
-   routing emitted element creation through `RenderEnvironment.document`
-   (slice 1.8's recorded seam).
+3. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
+   environment-document seam is now closed, so the remaining work is the
+   settle/flush contract itself.
 4. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
