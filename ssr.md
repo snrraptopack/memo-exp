@@ -569,13 +569,35 @@ OctoPulse, and Todo examples.
 **Proof:** Vite adapter 6/6 (including a missing-seed/request-order
 regression), TypeScript `--noEmit`, and Chrome corpus 17/17.
 
+## Slice 2.2 — deterministic hydration cursor (Phase 3 opening)
+
+**Commit:** `20ec21b`.
+
+`@memoized-dom/runtime` now exports a read-only cursor over the emitted v0.2
+marker stream. `createHydrationCursor(host, rootId)` locates exactly one
+`mmd:r` pair; local cursors claim ordinary nodes and nested `mmd:c/g/l`
+ranges in compiler order; `claimRow` bounds single-opening `mmd:w` rows at
+the next depth-zero row marker or enclosing list close. Claims validate node
+type, host tag, and namespace without creating, moving, or replacing nodes.
+`HydrationMismatchError` reports the nearest structural owner plus exact
+expected/actual shapes. The primitive is deliberately mutation-free:
+factory adoption, lifecycle replay, and bounded recovery remain integration
+work rather than being hidden inside marker parsing.
+
+**Tests:** `tests/hydration-cursor.test.ts` (5 cases) covers grammar/dev
+attributes, root identity preservation (`===`), nested and empty ranges,
+v0.2 rows containing nested ranges, and marker/tag/missing-close failures.
+Runtime build green.
+
 ## Next slices
 
-1. **Adoption cursor (Phase 3 opening)** — consume the emitted `mmd:r/g/l/w`
-   stream with deterministic local cursors; sparse adoption probe per the
-   proposal's recommended prototypes.
-2. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; BLOCKED on
+1. **Mount/factory adoption (Phase 3 integration)** — pass the root cursor
+   through compiled factories; claim host/text nodes instead of creating
+   them; seed setter caches; install events, then replay deferred refs/effects.
+2. **Mismatch recovery ladder** — value correction, smallest structural-owner
+   remount, and root fallback with partial-ownership teardown.
+3. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; BLOCKED on
    routing emitted element creation through `RenderEnvironment.document`
    (slice 1.8's recorded seam).
-3. **Overhead measurement fixtures** — marker bytes vs element bytes per
+4. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
