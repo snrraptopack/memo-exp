@@ -453,11 +453,109 @@ Phase 2 opening moves alongside the data layer's exact-site entities:
 Tests: new `markers.test.ts` (5 cases) + restored `$track` conditional
 fixture in the parity corpus.
 
+## Slice 2.0b — runtime-owned module source descriptions (RFC §16.4, §16.8.3)
+
+**Commit:** `8efa47b` (plus holder-registration groundwork in `5fe49b5`).
+
+Closes the data-lane prerequisite for marker freeze. Module-scope sources
+(`export const x = $fetch(...)`) now survive cross-module compilation and
+materialize per application runtime with explicit lifecycle retirement:
+
+1. **Linker:** `analyzeManifest` lowers module-source declarations before
+   analysis, so `$fetch` exports survive manifest convergence (fixed the
+   `'currentUser' is not a linkable export` dev-server failure).
+2. **Holder registration:** imported module refs referenced inside a
+   component join its source-holder set (`scanTransparentSourceBindings`),
+   so emission attaches ownership mounts (`ownResolvedValue`) and per-sink
+   `connectResolvedValues` subscriptions — commits push-invalidate gated
+   reads that have no component-local source.
+3. **Description versioning:** `describeModuleSource` bumps a per-key
+   version; HMR re-evaluation RETIRES stale materialized instances in every
+   application runtime instead of silently reusing them.
+4. **`DataRuntime.clear()` retirement:** instances register a disposer under
+   the data runtime that materialized them; `clear()` runs them (§16.4
+   lifetime contract: instances live until clear() or runtime disposal).
+5. **Build fix:** `@memoized-dom/data`'s rolldown config externalizes
+   `@memoized-dom/runtime` — bundling it duplicated kernel module state and
+   silently broke per-runtime isolation.
+6. **Runtime fix:** the default scheduler binds `queueMicrotask` (WebIDL
+   this-sensitivity) — a detached call threw `Illegal invocation` in Chrome
+   and killed the commit flush after async data committed.
+
+**Tests:** `tests/module-source-descriptions.test.ts` proves the §16.8.3
+gate over ONE shared compiled record: two roots materialize independent
+instances with independent requests; `clear()` and HMR both retire;
+descriptions never fire requests at module evaluation.
+`tests/module-source-group-integration.test.ts` covers Group/$track/
+derivation lowering over module refs. Browser-verified end-to-end
+(workspace example: badge, rows, unread pill, late session commit).
+
+## Slice 2.0c — source-state snapshot envelope (RFC §16.6, §16.8.5)
+
+**Commit:** `8b70169`.
+
+`DataRuntime.serializeState()` / `restoreState(envelope)` implement the
+§16.6 v1 envelope: per-source `{sourceId = deterministic request identity,
+contractId, requestFingerprint = url, snapshot}`. Success transfers the
+committed payload plus a revalidate intent (never an in-flight promise);
+errors transfer a sanitized `{kind, status, statusText, message}` — cause,
+data, and issues never transfer; pending transfers paused. `restoreState`
+installs dormant records on the store; the next acquire with a matching
+identity claims its record: success restores committed with ZERO duplicate
+request, error restores its local branch retryable only through refresh,
+pending restores paused until explicit refresh. Idle entries and
+non-JSON-safe payloads are omitted. Unknown format versions are rejected.
+
+**Tests:** `tests/snapshot-envelope.test.ts` — all four states, request
+suppression, retry targeting, omission rules.
+
+## Slice 2.1 — hydration marker emission (Phase 2 proper, first increment)
+
+**Commit:** `d843ff5`.
+
+Runtime anchors switch to the `hydration-markers.md` §2/§3 grammar
+(bumped to draft v0.2), identical on client and server so CSR/SSR DOM stay
+structurally identical (the parity corpus canonicalizes comments away):
+
+- conditional/route regions: `mmd:g:<id>` open before branch content +
+  uniform `/mmd` close (the trailing close anchor keeps its role as the
+  stable branch-swap insertion point; empty regions emit an adjacent valid
+  pair);
+- keyed lists: `mmd:l:<idPrefix>` open + `/mmd` close around the row set;
+- keyed rows: single-opening `mmd:w:<listId>:<encodedKey>` prepended into
+  the row's node list at creation, so every reconcile path (fragment batch,
+  LIS insertion, reorder) carries it — v0.2 deviation recorded in the
+  protocol draft: single-open form, extent runs to the next sibling marker
+  or the list close;
+- server serializer wraps marker output in the `mmd:r:<rootId>` application
+  root pair;
+- `mmd:c` component pairs and `mmd:d` data-site singles are deferred to the
+  adoption phase per RFC §16.7 (data sites need no marker category).
+
+**Tests:** `packages/server/tests/markers.test.ts` asserts the full
+grammar (g/l/w/r opens + `/mmd` closes, no text leakage); `tests/m8.test.ts`
+updated to the g-pair shape; parity corpus unaffected (comment
+canonicalization).
+
+## Stabilization note — pre-slice fixes on this branch
+
+**Commits:** `141a167`, `5fe49b5` (baseline snapshot `e7ecd6e`).
+
+- Default scheduler binds `queueMicrotask` (see 2.0b #6).
+- `@memoized-dom/vite` compiles lazy per-file graphs for files outside the
+  primary entry graph, so every example serves at its own URL regardless of
+  `MMD_EXAMPLE`; the shared gallery `entry.ts` collision is gone (gallery is
+  a link list; per-example `index.html` + `main.ts`).
+- Leftover-JSX diagnostics name the tag, owner component, and nearest
+  located ancestor instead of Babel's "internal node" message.
+
 ## Next slices
 
-1. **Marker emission (Phase 2 proper)** — grammar per `hydration-markers.md`
-   draft, emitted against stable `owner/$data/<n>` + region identities;
-   snapshot tests per category; overhead measurement fixtures.
-2. **Data-layer remainder** (data lane) — runtime-owned module source
-   descriptions and snapshot restore (RFC §16.4–16.7); does not churn marker
-   identity.
+1. **Adoption cursor (Phase 3 opening)** — consume the emitted `mmd:r/g/l/w`
+   stream with deterministic local cursors; sparse adoption probe per the
+   proposal's recommended prototypes.
+2. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; BLOCKED on
+   routing emitted element creation through `RenderEnvironment.document`
+   (slice 1.8's recorded seam).
+3. **Overhead measurement fixtures** — marker bytes vs element bytes per
+   the Phase 2 overhead budget.
