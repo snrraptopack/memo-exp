@@ -14,17 +14,21 @@
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   createApplicationRuntime,
   runWithApplicationRuntime,
 } from '@memoized-dom/runtime';
+import { renderToString } from '@memoized-dom/server';
+import {
+  resetScheduler,
+  setScheduler,
+} from '@memoized-dom/runtime/testing';
 import {
   createDataRuntime,
   setActiveDataRuntime,
 } from '@memoized-dom/data';
-import { renderToString } from '@memoized-dom/server';
 
 const outDir = join(import.meta.dirname, 'fixtures', 'out', 'mmd-module-group');
 
@@ -206,18 +210,23 @@ describe('module-scope sources through Group/$track/derivations', () => {
     const { WorkspaceApp } = await import(
       pathToFileURL(join(fixtures, 'WorkspaceApp.ts')).href
     );
+    // Synchronous commits make the cross-source invalidation deterministic:
+    // any remaining failure is a logic bug, not a timing artifact.
+    setScheduler((fn) => fn());
 
     document.body.innerHTML = '';
     const { promise: itemsRequest, resolve: resolveItems } =
       Promise.withResolvers<Response>();
+    // Session commits on a real 400ms timer, mirroring the workspace mock:
+    // this exercises commit-arrives-later invalidation, which an
+    // already-resolved promise cannot catch.
+    const { promise: sessionRequest, resolve: resolveSession } =
+      Promise.withResolvers<Response>();
+    setTimeout(() => resolveSession(Response.json({ id: 1, name: 'Ada Lovelace', email: 'ada@ws' })), 400);
     const fetchJson = (input: RequestInfo | URL): Promise<Response> => {
       const url = String(input instanceof Request ? input.url : input);
       if (url.includes('/api/items')) return itemsRequest;
-      if (url.includes('/api/session')) {
-        return Promise.resolve(
-          Response.json({ id: 1, name: 'Ada Lovelace', email: 'ada@ws' }),
-        );
-      }
+      if (url.includes('/api/session')) return sessionRequest;
       return Promise.resolve(Response.json({}));
     };
     setActiveDataRuntime(createDataRuntime({ fetch: fetchJson }));
@@ -228,27 +237,30 @@ describe('module-scope sources through Group/$track/derivations', () => {
     host.appendChild(WorkspaceApp('App', null) as unknown as Node);
     expect(document.querySelector('.avatar')?.textContent).toBe('');
 
+    const errors: string[] = [];
+    const onErr = (event: ErrorEvent): void => {
+      errors.push(String(event.message));
+    };
+    window.addEventListener('error', onErr);
     resolveItems(
       Response.json([{ id: 'n1', text: 'Deploy done', read: false }]),
     );
-    for (let i = 0; i < 50; i++) {
-      await Promise.resolve();
-      if (document.querySelector('.unread') !== null) break;
-      await new Promise<void>((resolve) => queueMicrotask(resolve));
-    }
-    // Badge gates on the session source; it commits independently.
-    for (let i = 0; i < 50; i++) {
-      await Promise.resolve();
-      if (document.querySelector('.avatar')?.textContent === 'A') break;
-      await new Promise<void>((resolve) => queueMicrotask(resolve));
-    }
-    expect(document.querySelector('.avatar')?.textContent).toBe('A');
-    expect(document.querySelector('.who strong')?.textContent).toBe(
-      'Ada Lovelace',
-    );
-    expect(document.querySelector('.unread')?.textContent).toContain(
-      'Deploy done',
-    );
+    // Both sources commit through real async boundaries (the session on a
+    // 400ms timer); poll the live DOM instead of draining a fixed number of
+    // microtasks, which cannot observe timer-scheduled commits.
+    await vi.waitFor(() => {
+      expect(document.querySelector('.unread')?.textContent).toContain(
+        'Deploy done',
+      );
+    }, { timeout: 3000, interval: 20 });
+    await vi.waitFor(() => {
+      expect(document.querySelector('.avatar')?.textContent).toBe('A');
+      expect(document.querySelector('.who strong')?.textContent).toBe(
+        'Ada Lovelace',
+      );
+    }, { timeout: 3000, interval: 20 });
+    window.removeEventListener('error', onErr);
+    resetScheduler();
   });
 
   function writeCompiled(name: string, code: string): void {
