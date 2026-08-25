@@ -549,6 +549,26 @@ canonicalization).
 - Leftover-JSX diagnostics name the tag, owner component, and nearest
   located ancestor instead of Babel's "internal node" message.
 
+## Stabilization note — real-browser corpus + coherent lazy graphs
+
+**Commit:** `9b57aed`.
+
+`bun run test:corpus` now boots the real Vite 8 server and drives every
+served example in headless Chrome. It asserts a non-empty mount, zero
+actionable console/page/HTTP errors, and example-specific async commit
+outcomes (workspace session data).
+
+The first corpus run exposed a gallery regression: after deleting the shared
+`examples/entry.ts`, each imported component was being compiled as a separate
+lazy graph, so `mount()` received a component that was not registered as the
+mount module's application root. Missing entry seeds are now valid in gallery
+mode, and every dependency reuses the coherent lazy graph that already
+contains it. The same run fixed stale entry references in the GSAP,
+OctoPulse, and Todo examples.
+
+**Proof:** Vite adapter 6/6 (including a missing-seed/request-order
+regression), TypeScript `--noEmit`, and Chrome corpus 17/17.
+
 ## Next slices
 
 1. **Adoption cursor (Phase 3 opening)** — consume the emitted `mmd:r/g/l/w`
