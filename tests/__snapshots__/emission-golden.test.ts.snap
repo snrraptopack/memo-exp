@@ -1,0 +1,475 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`emission golden snapshots (emission-spec.md) > Cleanup — ownership-scoped teardown 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Timer(_id, _parent) {
+  let _value;
+  _MD.cleanup(_id, () => {
+    disposeTimer();
+  });
+  const _update = () => {};
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = document.createTextNode("tick");
+  const _span = document.createElement("span");
+  _span.appendChild(_text);
+  return _span;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > Cross-module — imported state keeps canonical identity > ./app.tsx 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+const _WRITES_ = ["./state.ts#count"];
+_MD.installAccessTable({
+  readers: {
+    "./state.ts#count": ["App", "App/*"]
+  }
+}, "App", "./app.tsx");
+import { count, bump } from './state';
+export function App(_id, _parent) {
+  let _slot, _value;
+  const _update = () => {
+    if (_slot !== (_value = count)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = count)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+  }
+  const _button = document.createElement("button");
+  _button.onclick = _event => {
+    const _returnValue = bump(_event);
+    _MD.commitWrites(_WRITES_);
+    return _returnValue;
+  };
+  _button.appendChild(_text);
+  return _button;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > Cross-module — imported state keeps canonical identity > ./state.ts 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export let count = 0;
+export function bump() {
+  count++;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > Effects — compiler-owned lifecycle registers deferred entities 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Ticker(_id, _parent) {
+  let _slot, _value;
+  let ticks = 0;
+  const _update = (_reasons = null) => {
+    if (_slot !== (_value = ticks)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+    }
+    {
+      if (!(_reasons === -1 || _reasons !== null && typeof _reasons !== "number" && _reasons.size === 1 && _reasons.has(-1))) if (_reasons === null || (typeof _reasons === "number" ? _reasons === 0 : _reasons.has(0))) _MD.markDirty(_id + "/$effects/0");
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = ticks)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+  }
+  const _span = document.createElement("span");
+  _span.appendChild(_text);
+  _MD.registerEffect(_id + "/$effects/0", _id, () => {
+    let _didWrite = false;
+    _didWrite = true, ticks++;
+    {
+      if (_didWrite) _MD.markDirty(_id, 0);
+    }
+  });
+  return _span;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > Module state — module-level let shares across instances 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+const _WRITES_ = ["./component.tsx#selected"];
+_MD.installAccessTable({
+  readers: {
+    "./component.tsx#selected": ["App", "App/*"]
+  }
+}, "App", "./component.tsx");
+export let selected = null;
+export function Picker(_id, _parent) {
+  let _slot, _value;
+  const _update = () => {
+    if (_slot !== (_value = selected)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = selected)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+  }
+  const _button = document.createElement("button");
+  _button.onclick = () => {
+    selected = 'a';
+    _MD.commitWrites(_WRITES_);
+  };
+  _button.appendChild(_text);
+  return _button;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R1 — components become (id, parent) factories registering an entity 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Counter(_id, _parent) {
+  let _slot, _value;
+  let count = 0;
+  const _update = () => {
+    if (_slot !== (_value = count)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = count)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+  }
+  const _button = document.createElement("button");
+  _button.onclick = () => {
+    count++;
+    _MD.markDirty(_id);
+  };
+  _button.appendChild(_text);
+  return _button;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R2 — JSX becomes a creation branch with cached nodes 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Card(_id, _parent) {
+  let _slot, _value;
+  const ready = true;
+  const _update = () => {
+    if (_slot !== (_value = ready)) {
+      _slot = _value;
+      _value == null || _value === false ? _section.removeAttribute("data-ready") : _section.setAttribute("data-ready", _value === true ? "" : String(_value));
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = document.createTextNode("Title");
+  const _h = document.createElement("h1");
+  _h.appendChild(_text);
+  const _section = document.createElement("section");
+  _MD.setClassValue(_section, "card");
+  if (_slot !== (_value = ready)) {
+    _slot = _value;
+    _value == null || _value === false ? _section.removeAttribute("data-ready") : _section.setAttribute("data-ready", _value === true ? "" : String(_value));
+  }
+  _section.appendChild(_h);
+  return _section;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R4 — update branch writes only dynamic slots, value-cached 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Label(_id, _parent) {
+  let _slot, _slot2, _value;
+  let name = 'a';
+  const _update = () => {
+    if (_slot !== (_value = name)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+    }
+    if (_slot2 !== (_value = _MD.classValue({
+      big: name.length > 2
+    }))) {
+      _slot2 = _value;
+      _MD.setClassValue(_span, _value);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = name)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+  }
+  const _span = document.createElement("span");
+  if (_slot2 !== (_value = _MD.classValue({
+    big: name.length > 2
+  }))) {
+    _slot2 = _value;
+    _MD.setClassValue(_span, _value);
+  }
+  _span.appendChild(_text);
+  return _span;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R5 — component props become a props box with positional binding 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Row(_id, _parent, _props) {
+  let _value;
+  let {
+    item,
+    index
+  } = _props[0];
+  const _update = () => {
+    {
+      ({
+        item,
+        index
+      } = _props[0]);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  _MD.registerProps(_id, _props);
+  const _text = document.createTextNode(" at ");
+  const _li = document.createElement("li");
+  const _slotDispose = item == null ? null : item(_li, _id, "0");
+  _li.appendChild(_text);
+  const _slotDispose2 = index == null ? null : index(_li, _id, "1");
+  return _li;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R6 — children slots forward rendered content 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Shell(_id, _parent, _props) {
+  let _value;
+  let {
+    header,
+    children
+  } = _props[0];
+  const _update = () => {
+    {
+      ({
+        header,
+        children
+      } = _props[0]);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  _MD.registerProps(_id, _props);
+  const _header = document.createElement("header");
+  const _slotDispose = header == null ? null : header(_header, _id, "0");
+  const _div = document.createElement("div");
+  _div.appendChild(_header);
+  const _slotDispose2 = children == null ? null : children(_div, _id, "1");
+  return _div;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R7 — keyed lists cache rows per key with stable identity 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+let _liTemplate;
+export function Feed(_id, _parent, _props) {
+  let _value;
+  let items = _props[0];
+  const _update = () => {
+    {
+      items = _props[0];
+    }
+    _region.reconcile(items);
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  _MD.registerProps(_id, _props);
+  const _ul = document.createElement("ul");
+  const _region = _MD.createListRegion(_ul, _id + "/items", (item, _rowId) => {
+    let _slot, _value2;
+    const _update2 = () => {
+      if (_slot !== (_value2 = item.label)) {
+        _slot = _value2;
+        _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+      }
+    };
+    _MD.register({
+      id: _rowId,
+      parent: _id,
+      render: _update2
+    });
+    const _li = (_liTemplate === void 0 ? _liTemplate = (() => {
+      const _text = document.createTextNode("");
+      const _li = document.createElement("li");
+      _li.appendChild(_text);
+      return _li;
+    })() : _liTemplate).cloneNode(true);
+    const _text = _li.firstChild;
+    if (_slot !== (_value2 = item.label)) {
+      _slot = _value2;
+      _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+    }
+    return {
+      nodes: [_li],
+      entities: [_rowId],
+      updateProps: _nextItem => {
+        item = _nextItem;
+      },
+      update: _update2
+    };
+  }, item => item.id);
+  _region.reconcile(items);
+  return _ul;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R8 — conditional regions anchor branch swaps 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Badge(_id, _parent, _props) {
+  let _slot, _value;
+  let loaded = _props[0];
+  const _update = () => {
+    {
+      loaded = _props[0];
+    }
+    if (_slot !== (_value = loaded)) {
+      _slot = _value;
+      _value == null || _value === false ? _if.removeAttribute("condition") : _if.setAttribute("condition", _value === true ? "" : String(_value));
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  _MD.registerProps(_id, _props);
+  const _text = document.createTextNode("ready");
+  const _if = document.createElement("if");
+  if (_slot !== (_value = loaded)) {
+    _slot = _value;
+    _value == null || _value === false ? _if.removeAttribute("condition") : _if.setAttribute("condition", _value === true ? "" : String(_value));
+  }
+  _if.appendChild(_text);
+  const _text2 = document.createTextNode("waiting");
+  const _else = document.createElement("else");
+  _else.appendChild(_text2);
+  const _fragment = document.createDocumentFragment();
+  _fragment.appendChild(_if);
+  _fragment.appendChild(_else);
+  return _fragment;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R12/R13 — computeds compile to replaying derivation entities 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Totals(_id, _parent, _props) {
+  let _slot, _value;
+  let items = _props[0];
+  let total = items.length * 2;
+  const _update = () => {
+    {
+      items = _props[0];
+    }
+    {
+      {
+        total = items.length * 2;
+      }
+    }
+    if (_slot !== (_value = total)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  _MD.registerProps(_id, _props);
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = total)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+  }
+  const _output = document.createElement("output");
+  _output.appendChild(_text);
+  return _output;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > Transparent data — $fetch lowers to availability-gated reads 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+import * as _MDD from "@memoized-dom/data/internal";
+import { $fetch } from '@memoized-dom/data';
+export function Profile(_id, _parent) {
+  let _slot, _value;
+  const user = $fetch('/api/user');
+  const _update = () => {
+    if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], _userValue => _userValue.name))) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = document.createTextNode("");
+  if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], _userValue => _userValue.name))) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+  }
+  _MD.register({
+    id: _id + "/$data/0",
+    parent: _id,
+    render: () => {
+      if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], _userValue => _userValue.name))) {
+        _slot = _value;
+        _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+      }
+    }
+  });
+  const _h = document.createElement("h1");
+  _h.appendChild(_text);
+  _MD.cleanup(_id + "/$data/0", _MDD.connectResolvedValues([user], () => _MD.markDirty(_id + "/$data/0")));
+  _MD.cleanup(_id, _MDD.ownResolvedValue(user));
+  return _h;
+}"
+`;
