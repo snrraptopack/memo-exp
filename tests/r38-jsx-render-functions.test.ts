@@ -81,7 +81,7 @@ describe('R38 - JSX render functions', () => {
     const code = compile(SOURCE);
     expect(code).not.toContain('function renderStatus');
     expect(code).not.toContain('const renderItem');
-    expect(code).toContain('document.createElement("strong")');
+    expect(code).toContain('createElement("strong")');
     expect(code).toContain('.createCondRegion(');
     expect(code).toContain('.createListRegion(');
   });
@@ -137,12 +137,12 @@ describe('R38 - JSX render functions', () => {
         </main>;
       }
     `);
-    expect(code).toContain('document.createElement("b")');
-    expect(code).toContain('document.createElement("strong")');
-    expect(code).toContain('document.createElement("i")');
-    expect(code).toContain('document.createElement("em")');
-    expect(code).toContain('document.createElement("u")');
-    expect(code).toContain('document.createElement("s")');
+    expect(code).toContain('createElement("b")');
+    expect(code).toContain('createElement("strong")');
+    expect(code).toContain('createElement("i")');
+    expect(code).toContain('createElement("em")');
+    expect(code).toContain('createElement("u")');
+    expect(code).toContain('createElement("s")');
   });
 
   it('rejects side-effect statements in a render function body', () => {

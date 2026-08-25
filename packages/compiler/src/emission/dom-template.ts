@@ -40,12 +40,13 @@ export function applyRepeatedDomTemplate(
   ) {
     return false;
   }
+  if (scope.documentVar === null) return false;
 
   const factories: NodeFactory[] = [];
   const nodeNames = new Set<string>();
   for (const statement of scope.creation) {
     if (!t.isVariableDeclaration(statement)) continue;
-    const factory = readNodeFactory(statement);
+    const factory = readNodeFactory(statement, scope.documentVar);
     if (factory === null) return false;
     factories.push(factory);
     nodeNames.add(factory.name);
@@ -86,9 +87,14 @@ export function applyRepeatedDomTemplate(
   }
 
   const template = generatedIdentifier(ctx, `${rootVar}Template`);
+  const templateDocument = generatedIdentifier(
+    ctx,
+    `${rootVar}TemplateDocument`,
+  );
   ctx.header.push(
     t.variableDeclaration('let', [
       t.variableDeclarator(t.cloneNode(template)),
+      t.variableDeclarator(t.cloneNode(templateDocument)),
     ]),
   );
 
@@ -103,16 +109,31 @@ export function applyRepeatedDomTemplate(
     [],
   );
   const getTemplate = t.conditionalExpression(
-    t.binaryExpression(
-      '===',
-      t.cloneNode(template),
-      t.unaryExpression('void', t.numericLiteral(0)),
+    t.logicalExpression(
+      '||',
+      t.binaryExpression(
+        '===',
+        t.cloneNode(template),
+        t.unaryExpression('void', t.numericLiteral(0)),
+      ),
+      t.binaryExpression(
+        '!==',
+        t.cloneNode(templateDocument),
+        t.identifier(scope.documentVar),
+      ),
     ),
-    t.assignmentExpression(
-      '=',
-      t.cloneNode(template),
-      initializeTemplate,
-    ),
+    t.sequenceExpression([
+      t.assignmentExpression(
+        '=',
+        t.cloneNode(templateDocument),
+        t.identifier(scope.documentVar),
+      ),
+      t.assignmentExpression(
+        '=',
+        t.cloneNode(template),
+        initializeTemplate,
+      ),
+    ]),
     t.cloneNode(template),
   );
   const rootClone = t.callExpression(
@@ -177,6 +198,7 @@ function isPathPrefix(
 
 function readNodeFactory(
   statement: t.VariableDeclaration,
+  documentVar: string,
 ): NodeFactory | null {
   if (statement.declarations.length !== 1) return null;
   const declaration = statement.declarations[0]!;
@@ -184,7 +206,7 @@ function readNodeFactory(
     !t.isIdentifier(declaration.id) ||
     !t.isCallExpression(declaration.init) ||
     !t.isMemberExpression(declaration.init.callee) ||
-    !t.isIdentifier(declaration.init.callee.object, { name: 'document' }) ||
+    !t.isIdentifier(declaration.init.callee.object, { name: documentVar }) ||
     !t.isIdentifier(declaration.init.callee.property)
   ) {
     return null;

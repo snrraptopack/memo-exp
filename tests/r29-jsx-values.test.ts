@@ -82,7 +82,7 @@ describe('R29 - JSX values', () => {
         return view;
       }
     `);
-    expect(code).toContain('document.createElement("main")');
+    expect(code).toContain('createElement("main")');
     expect(code).not.toContain('const view');
   });
 

@@ -101,9 +101,9 @@ describe('R39 - direct JSX collections', () => {
     expect(code).not.toContain('const leading');
     expect(code).not.toContain('const views');
     expect(code).not.toContain('function renderPair');
-    expect(code).toContain('document.createElement("h1")');
-    expect(code).toContain('document.createElement("mark")');
-    expect(code).toContain('document.createElement("footer")');
+    expect(code).toContain('createElement("h1")');
+    expect(code).toContain('createElement("mark")');
+    expect(code).toContain('createElement("footer")');
     expect(code).toContain('.createCondRegion(');
     expect(code).toContain('.createListRegion(');
   });

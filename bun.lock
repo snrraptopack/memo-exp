@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "memoized-dom",
@@ -58,7 +59,7 @@
     "packages/data": {
       "name": "@memoized-dom/data",
       "version": "0.0.1",
-      "dependencies": {
+      "peerDependencies": {
         "@memoized-dom/runtime": "workspace:*",
       },
     },

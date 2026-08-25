@@ -209,6 +209,7 @@ export function buildRenderCallbackAdapter(
           ),
         ),
       ]),
+      ...rowScope.prelude,
       registerStmt(
         ctx,
         t.cloneNode(rowId),

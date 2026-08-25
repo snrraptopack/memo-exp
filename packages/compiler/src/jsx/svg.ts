@@ -75,20 +75,21 @@ export function isSvgElement(tag: string, parentIsSvg: boolean): boolean {
 }
 
 export function createElementExpression(
+  document: t.Expression,
   tag: string,
   svg: boolean,
 ): t.CallExpression {
   return svg
     ? t.callExpression(
         t.memberExpression(
-          t.identifier('document'),
+          t.cloneNode(document),
           t.identifier('createElementNS'),
         ),
         [t.stringLiteral(SVG_NAMESPACE), t.stringLiteral(tag)],
       )
     : t.callExpression(
         t.memberExpression(
-          t.identifier('document'),
+          t.cloneNode(document),
           t.identifier('createElement'),
         ),
         [t.stringLiteral(tag)],

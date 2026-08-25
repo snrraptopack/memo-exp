@@ -90,7 +90,7 @@ describe('R30 - dynamic tags', () => {
         return <Tag id="static-alias">content</Tag>;
       }
     `);
-    expect(code).toContain('document.createElement("section")');
+    expect(code).toContain('createElement("section")');
     expect(code).not.toContain('.createCondRegion(');
   });
 
@@ -152,9 +152,9 @@ describe('R30 - dynamic tags', () => {
       `,
     });
     const code = output['./app.tsx'];
-    expect(code).toContain('document.createElement("section")');
-    expect(code).toContain('document.createElement("article")');
-    expect(code).toContain('document.createElement("aside")');
+    expect(code).toContain('createElement("section")');
+    expect(code).toContain('createElement("article")');
+    expect(code).toContain('createElement("aside")');
     expect(code).toContain('.createCondRegion(');
   });
 
@@ -170,8 +170,8 @@ describe('R30 - dynamic tags', () => {
         return <Host><View /></Host>;
       }
     `);
-    expect(code).toContain('document.createElement("section")');
-    expect(code).toContain('document.createElement("article")');
+    expect(code).toContain('createElement("section")');
+    expect(code).toContain('createElement("article")');
     expect(code).toContain('Preview');
     expect(code).toContain('Code');
     // The nested region is present in each finite host branch, but only the

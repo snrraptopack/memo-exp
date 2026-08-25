@@ -6,7 +6,7 @@ import type { Ctx } from '../context';
 import { generatedIdentifier, md, mr } from '../identifiers';
 import type { CompilerRouteElement } from '../router';
 import type { EmitScope } from './scope';
-import { registerStmt } from './scope';
+import { registerStmt, renderDocument } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { buildConditionalBranchCreate } from './conditional-region';
 
@@ -91,7 +91,7 @@ export function emitRouteRegion(
         t.cloneNode(fragment),
         t.callExpression(
           t.memberExpression(
-            t.identifier('document'),
+            renderDocument(ctx, scope),
             t.identifier('createDocumentFragment'),
           ),
           [],

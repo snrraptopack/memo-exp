@@ -4,6 +4,7 @@ exports[`emission golden snapshots (emission-spec.md) > Cleanup — ownership-sc
 "import * as _MD from "@memoized-dom/runtime";
 export function Timer(_id, _parent) {
   let _value;
+  const _document = _MD.getActiveEnvironment().document;
   _MD.cleanup(_id, () => {
     disposeTimer();
   });
@@ -13,8 +14,8 @@ export function Timer(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("tick");
-  const _span = document.createElement("span");
+  const _text = _document.createTextNode("tick");
+  const _span = _document.createElement("span");
   _span.appendChild(_text);
   return _span;
 }"
@@ -31,6 +32,7 @@ _MD.installAccessTable({
 import { count, bump } from './state';
 export function App(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const _update = () => {
     if (_slot !== (_value = count)) {
       _slot = _value;
@@ -42,12 +44,12 @@ export function App(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = count)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _button = document.createElement("button");
+  const _button = _document.createElement("button");
   _button.onclick = _event => {
     const _returnValue = bump(_event);
     _MD.commitWrites(_WRITES_);
@@ -70,6 +72,7 @@ exports[`emission golden snapshots (emission-spec.md) > Effects — compiler-own
 "import * as _MD from "@memoized-dom/runtime";
 export function Ticker(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   let ticks = 0;
   const _update = (_reasons = null) => {
     if (_slot !== (_value = ticks)) {
@@ -85,12 +88,12 @@ export function Ticker(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = ticks)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _span = document.createElement("span");
+  const _span = _document.createElement("span");
   _span.appendChild(_text);
   _MD.registerEffect(_id + "/$effects/0", _id, () => {
     let _didWrite = false;
@@ -114,6 +117,7 @@ _MD.installAccessTable({
 export let selected = null;
 export function Picker(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const _update = () => {
     if (_slot !== (_value = selected)) {
       _slot = _value;
@@ -125,12 +129,12 @@ export function Picker(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = selected)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _button = document.createElement("button");
+  const _button = _document.createElement("button");
   _button.onclick = () => {
     selected = 'a';
     _MD.commitWrites(_WRITES_);
@@ -144,6 +148,7 @@ exports[`emission golden snapshots (emission-spec.md) > R1 — components become
 "import * as _MD from "@memoized-dom/runtime";
 export function Counter(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   let count = 0;
   const _update = () => {
     if (_slot !== (_value = count)) {
@@ -156,12 +161,12 @@ export function Counter(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = count)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _button = document.createElement("button");
+  const _button = _document.createElement("button");
   _button.onclick = () => {
     count++;
     _MD.markDirty(_id);
@@ -175,6 +180,7 @@ exports[`emission golden snapshots (emission-spec.md) > R2 — JSX becomes a cre
 "import * as _MD from "@memoized-dom/runtime";
 export function Card(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const ready = true;
   const _update = () => {
     if (_slot !== (_value = ready)) {
@@ -187,10 +193,10 @@ export function Card(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("Title");
-  const _h = document.createElement("h1");
+  const _text = _document.createTextNode("Title");
+  const _h = _document.createElement("h1");
   _h.appendChild(_text);
-  const _section = document.createElement("section");
+  const _section = _document.createElement("section");
   _MD.setClassValue(_section, "card");
   if (_slot !== (_value = ready)) {
     _slot = _value;
@@ -205,6 +211,7 @@ exports[`emission golden snapshots (emission-spec.md) > R4 — update branch wri
 "import * as _MD from "@memoized-dom/runtime";
 export function Label(_id, _parent) {
   let _slot, _slot2, _value;
+  const _document = _MD.getActiveEnvironment().document;
   let name = 'a';
   const _update = () => {
     if (_slot !== (_value = name)) {
@@ -223,12 +230,12 @@ export function Label(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = name)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _span = document.createElement("span");
+  const _span = _document.createElement("span");
   if (_slot2 !== (_value = _MD.classValue({
     big: name.length > 2
   }))) {
@@ -244,6 +251,7 @@ exports[`emission golden snapshots (emission-spec.md) > R5 — component props b
 "import * as _MD from "@memoized-dom/runtime";
 export function Row(_id, _parent, _props) {
   let _value;
+  const _document = _MD.getActiveEnvironment().document;
   let {
     item,
     index
@@ -262,8 +270,8 @@ export function Row(_id, _parent, _props) {
     render: _update
   });
   _MD.registerProps(_id, _props);
-  const _text = document.createTextNode(" at ");
-  const _li = document.createElement("li");
+  const _text = _document.createTextNode(" at ");
+  const _li = _document.createElement("li");
   const _slotDispose = item == null ? null : item(_li, _id, "0");
   _li.appendChild(_text);
   const _slotDispose2 = index == null ? null : index(_li, _id, "1");
@@ -275,6 +283,7 @@ exports[`emission golden snapshots (emission-spec.md) > R6 — children slots fo
 "import * as _MD from "@memoized-dom/runtime";
 export function Shell(_id, _parent, _props) {
   let _value;
+  const _document = _MD.getActiveEnvironment().document;
   let {
     header,
     children
@@ -293,9 +302,9 @@ export function Shell(_id, _parent, _props) {
     render: _update
   });
   _MD.registerProps(_id, _props);
-  const _header = document.createElement("header");
+  const _header = _document.createElement("header");
   const _slotDispose = header == null ? null : header(_header, _id, "0");
-  const _div = document.createElement("div");
+  const _div = _document.createElement("div");
   _div.appendChild(_header);
   const _slotDispose2 = children == null ? null : children(_div, _id, "1");
   return _div;
@@ -304,9 +313,10 @@ export function Shell(_id, _parent, _props) {
 
 exports[`emission golden snapshots (emission-spec.md) > R7 — keyed lists cache rows per key with stable identity 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
-let _liTemplate;
+let _liTemplate, _liTemplateDocument;
 export function Feed(_id, _parent, _props) {
   let _value;
+  const _document = _MD.getActiveEnvironment().document;
   let items = _props[0];
   const _update = () => {
     {
@@ -320,7 +330,7 @@ export function Feed(_id, _parent, _props) {
     render: _update
   });
   _MD.registerProps(_id, _props);
-  const _ul = document.createElement("ul");
+  const _ul = _document.createElement("ul");
   const _region = _MD.createListRegion(_ul, _id + "/items", (item, _rowId) => {
     let _slot, _value2;
     const _update2 = () => {
@@ -329,17 +339,18 @@ export function Feed(_id, _parent, _props) {
         _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
       }
     };
+    const _document2 = _MD.getActiveEnvironment().document;
     _MD.register({
       id: _rowId,
       parent: _id,
       render: _update2
     });
-    const _li = (_liTemplate === void 0 ? _liTemplate = (() => {
-      const _text = document.createTextNode("");
-      const _li = document.createElement("li");
+    const _li = (_liTemplate === void 0 || _liTemplateDocument !== _document2 ? (_liTemplateDocument = _document2, _liTemplate = (() => {
+      const _text = _document2.createTextNode("");
+      const _li = _document2.createElement("li");
       _li.appendChild(_text);
       return _li;
-    })() : _liTemplate).cloneNode(true);
+    })()) : _liTemplate).cloneNode(true);
     const _text = _li.firstChild;
     if (_slot !== (_value2 = item.label)) {
       _slot = _value2;
@@ -363,6 +374,7 @@ exports[`emission golden snapshots (emission-spec.md) > R8 — conditional regio
 "import * as _MD from "@memoized-dom/runtime";
 export function Badge(_id, _parent, _props) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   let loaded = _props[0];
   const _update = () => {
     {
@@ -379,17 +391,17 @@ export function Badge(_id, _parent, _props) {
     render: _update
   });
   _MD.registerProps(_id, _props);
-  const _text = document.createTextNode("ready");
-  const _if = document.createElement("if");
+  const _text = _document.createTextNode("ready");
+  const _if = _document.createElement("if");
   if (_slot !== (_value = loaded)) {
     _slot = _value;
     _value == null || _value === false ? _if.removeAttribute("condition") : _if.setAttribute("condition", _value === true ? "" : String(_value));
   }
   _if.appendChild(_text);
-  const _text2 = document.createTextNode("waiting");
-  const _else = document.createElement("else");
+  const _text2 = _document.createTextNode("waiting");
+  const _else = _document.createElement("else");
   _else.appendChild(_text2);
-  const _fragment = document.createDocumentFragment();
+  const _fragment = _document.createDocumentFragment();
   _fragment.appendChild(_if);
   _fragment.appendChild(_else);
   return _fragment;
@@ -400,6 +412,7 @@ exports[`emission golden snapshots (emission-spec.md) > R12/R13 — computeds co
 "import * as _MD from "@memoized-dom/runtime";
 export function Totals(_id, _parent, _props) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   let items = _props[0];
   let total = items.length * 2;
   const _update = () => {
@@ -422,12 +435,12 @@ export function Totals(_id, _parent, _props) {
     render: _update
   });
   _MD.registerProps(_id, _props);
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = total)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _output = document.createElement("output");
+  const _output = _document.createElement("output");
   _output.appendChild(_text);
   return _output;
 }"
@@ -439,6 +452,7 @@ import * as _MDD from "@memoized-dom/data/internal";
 import { $fetch } from '@memoized-dom/data';
 export function Profile(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const user = $fetch('/api/user');
   const _update = () => {
     if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], _userValue => _userValue.name))) {
@@ -451,7 +465,7 @@ export function Profile(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], _userValue => _userValue.name))) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
@@ -466,7 +480,7 @@ export function Profile(_id, _parent) {
       }
     }
   });
-  const _h = document.createElement("h1");
+  const _h = _document.createElement("h1");
   _h.appendChild(_text);
   _MD.cleanup(_id + "/$data/0", _MDD.connectResolvedValues([user], () => _MD.markDirty(_id + "/$data/0")));
   _MD.cleanup(_id, _MDD.ownResolvedValue(user));

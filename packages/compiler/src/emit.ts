@@ -30,6 +30,7 @@ import {
 import {
   freshNodeName,
   freshSlot,
+  renderDocument,
   slotGuard,
   type EmitScope,
 } from './emission/scope';
@@ -158,7 +159,10 @@ function emitText(
         t.variableDeclarator(
           t.identifier(varName),
           t.callExpression(
-            t.memberExpression(t.identifier('document'), t.identifier('createTextNode')),
+            t.memberExpression(
+              renderDocument(ctx, scope),
+              t.identifier('createTextNode'),
+            ),
             [t.stringLiteral(expr.value)],
           ),
         ),
@@ -172,7 +176,10 @@ function emitText(
       t.variableDeclarator(
         t.identifier(varName),
         t.callExpression(
-          t.memberExpression(t.identifier('document'), t.identifier('createTextNode')),
+          t.memberExpression(
+            renderDocument(ctx, scope),
+            t.identifier('createTextNode'),
+          ),
           [t.stringLiteral('')],
         ),
       ),
@@ -278,7 +285,7 @@ function emitFragment(
         t.identifier(variable),
         t.callExpression(
           t.memberExpression(
-            t.identifier('document'),
+            renderDocument(ctx, scope),
             t.identifier('createDocumentFragment'),
           ),
           [],
@@ -936,7 +943,7 @@ function emitElement(
     t.variableDeclaration('const', [
       t.variableDeclarator(
         t.identifier(varName),
-        createElementExpression(tag, elementSvg),
+        createElementExpression(renderDocument(ctx, scope), tag, elementSvg),
       ),
     ]),
   );

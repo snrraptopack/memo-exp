@@ -54,7 +54,7 @@ describe('JSX paradigm matrix', () => {
     ],
   ])('supports %s without virtual-node lowering', (_name, source) => {
     const code = compile(source);
-    expect(code).toContain('document.createElement("strong")');
+    expect(code).toContain('createElement("strong")');
     expect(code).not.toContain('createElement(content)');
   });
 
@@ -81,7 +81,7 @@ describe('JSX paradigm matrix', () => {
     `);
     expect(code.match(/\.createCondRegion\(/g)?.length).toBeGreaterThanOrEqual(2);
     expect(code).toContain('.createListRegion(');
-    expect(code).toContain('document.createDocumentFragment()');
+    expect(code).toContain('createDocumentFragment()');
   });
 
   it('supports a JSX render prop on an authored component list row', () => {
@@ -99,7 +99,7 @@ describe('JSX paradigm matrix', () => {
       }
     `);
     expect(code).toContain('.createListRegion(');
-    expect(code).toContain('document.createElement("strong")');
+    expect(code).toContain('createElement("strong")');
   });
 
   it('preserves ordered component spreads while converting an explicit JSX prop', () => {
@@ -117,7 +117,7 @@ describe('JSX paradigm matrix', () => {
         />;
       }
     `);
-    expect(code).toContain('document.createElement("strong")');
+    expect(code).toContain('createElement("strong")');
     expect(code).toContain('...defaults');
   });
 
@@ -139,7 +139,7 @@ describe('JSX paradigm matrix', () => {
     `);
     expect(code).toContain('CodeView');
     expect(code).toContain('RawView');
-    expect(code).toContain('document.createTextNode("")');
+    expect(code).toContain('createTextNode("")');
   });
 
   it('distinguishes JSX aliases and finite collection selections from ordinary data', () => {
@@ -156,8 +156,8 @@ describe('JSX paradigm matrix', () => {
         return <Frame content={chosen} />;
       }
     `);
-    expect(code).toContain('document.createElement("strong")');
-    expect(code).toContain('document.createElement("em")');
+    expect(code).toContain('createElement("strong")');
+    expect(code).toContain('createElement("em")');
     expect(code).toContain('.createCondRegion(');
   });
 
@@ -175,7 +175,7 @@ describe('JSX paradigm matrix', () => {
         }
       `,
     });
-    expect(scalar['./Value.tsx']).toContain('document.createTextNode("")');
+    expect(scalar['./Value.tsx']).toContain('createTextNode("")');
     expect(scalar['./Value.tsx']).not.toContain('childrenParent');
 
     const jsx = compileModules({
@@ -192,7 +192,7 @@ describe('JSX paradigm matrix', () => {
       `,
     });
     expect(jsx['./Value.tsx']).toContain('content(_output, _id, "0")');
-    expect(jsx['./App.tsx']).toContain('document.createElement("strong")');
+    expect(jsx['./App.tsx']).toContain('createElement("strong")');
   });
 
   it('rejects ambiguous and non-rendered JSX contracts while allowing repeated slots', () => {
@@ -224,7 +224,7 @@ describe('JSX paradigm matrix', () => {
           return <Duplicate content={<strong>twice</strong>} />;
         }
       `),
-    ).toContain('document.createElement("strong")');
+    ).toContain('createElement("strong")');
 
     expect(() =>
       compile(`

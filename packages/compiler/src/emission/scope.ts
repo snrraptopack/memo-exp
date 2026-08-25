@@ -17,6 +17,10 @@ export interface EmitScope {
   reasonVar: string | null;
   /** Event name to compiler-private prebound list/event binding. */
   delegatedEventBindings: Map<string, string>;
+  /** Active renderer document, resolved once when this factory creates DOM. */
+  documentVar: string | null;
+  /** Factory-local setup emitted before authored and creation statements. */
+  prelude: t.Statement[];
   creation: t.Statement[];
   /** Lifecycle setup that runs only after this scope's full DOM is created. */
   mounts: t.Statement[];
@@ -50,6 +54,8 @@ export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
     updateVar: generatedIdentifier(ctx, 'update').name,
     reasonVar: null,
     delegatedEventBindings: new Map(),
+    documentVar: null,
+    prelude: [],
     creation: [],
     mounts: [],
     updaters: [],
@@ -67,6 +73,25 @@ export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
     forwardedSlotCounter: 0,
     manualDisposal,
   };
+}
+
+/** Resolve the active renderer document once per DOM-producing factory. */
+export function renderDocument(ctx: Ctx, scope: EmitScope): t.Identifier {
+  if (scope.documentVar === null) {
+    scope.documentVar = generatedIdentifier(ctx, 'document').name;
+    scope.prelude.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.identifier(scope.documentVar),
+          t.memberExpression(
+            t.callExpression(md(ctx, 'getActiveEnvironment'), []),
+            t.identifier('document'),
+          ),
+        ),
+      ]),
+    );
+  }
+  return t.identifier(scope.documentVar);
 }
 
 export function cacheDecl(scope: EmitScope): t.Statement {

@@ -220,6 +220,7 @@ export function buildConditionalBranchCreate(
     [],
     t.blockStatement([
       cacheDecl(branchScope),
+      ...branchScope.prelude,
       updateDecl(branchScope),
       ...branchScope.creation,
       ...branchScope.mounts,

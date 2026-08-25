@@ -18,6 +18,7 @@ let loggedIn = false;
 let count = 0;
 export function CondApp(_id, _parent) {
   let _value;
+  const _document = _MD.getActiveEnvironment().document;
   const toggle = () => {
     loggedIn = !loggedIn;
     _MD.commitWrites(_WRITES_);
@@ -32,11 +33,11 @@ export function CondApp(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("toggle");
-  const _button = document.createElement("button");
+  const _text = _document.createTextNode("toggle");
+  const _button = _document.createElement("button");
   _button.onclick = toggle;
   _button.appendChild(_text);
-  const _div = document.createElement("div");
+  const _div = _document.createElement("div");
   _div.appendChild(_button);
   _MD.register({
     id: _id + "/when0",
@@ -45,24 +46,25 @@ export function CondApp(_id, _parent) {
   });
   const _when = _MD.createCondRegion(_div, _id + "/when0", () => loggedIn ? 0 : 1, [() => {
     let _slot, _value2;
+    const _document2 = _MD.getActiveEnvironment().document;
     const _update2 = () => {
       if (_slot !== (_value2 = count)) {
         _slot = _value2;
         _text3.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
       }
     };
-    const _text2 = document.createTextNode("in ");
-    const _text3 = document.createTextNode("");
+    const _text2 = _document2.createTextNode("in ");
+    const _text3 = _document2.createTextNode("");
     if (_slot !== (_value2 = count)) {
       _slot = _value2;
       _text3.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
     }
-    const _text4 = document.createTextNode(" ");
-    const _text5 = document.createTextNode("+");
-    const _button2 = document.createElement("button");
+    const _text4 = _document2.createTextNode(" ");
+    const _text5 = _document2.createTextNode("+");
+    const _button2 = _document2.createElement("button");
     _button2.onclick = inc;
     _button2.appendChild(_text5);
-    const _span = document.createElement("span");
+    const _span = _document2.createElement("span");
     _MD.setClassValue(_span, "in");
     _span.appendChild(_text2);
     _span.appendChild(_text3);
@@ -74,9 +76,10 @@ export function CondApp(_id, _parent) {
     };
   }, () => {
     let _value3;
+    const _document3 = _MD.getActiveEnvironment().document;
     const _update3 = () => {};
-    const _text6 = document.createTextNode("out");
-    const _span2 = document.createElement("span");
+    const _text6 = _document3.createTextNode("out");
+    const _span2 = _document3.createElement("span");
     _MD.setClassValue(_span2, "out");
     _span2.appendChild(_text6);
     return {

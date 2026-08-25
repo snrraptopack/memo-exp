@@ -680,6 +680,7 @@ function buildComponentRowFactory({
       ...(rowScope.updaters.length > 0
         ? [cacheDecl(rowScope), updateDecl(rowScope)]
         : []),
+      ...rowScope.prelude,
       ...rowScope.creation,
       ...rowScope.mounts,
       ...prefixStatements,
@@ -1266,6 +1267,7 @@ function buildInlineRowCreate(
     t.blockStatement([
       cacheDecl(rowScope),
       updateDecl(rowScope),
+      ...rowScope.prelude,
       registerStmt(
         ctx,
         t.identifier(rowId),

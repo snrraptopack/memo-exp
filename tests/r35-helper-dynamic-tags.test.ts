@@ -91,8 +91,8 @@ describe('R35 - helper and registry dynamic tags', () => {
       `,
     });
     const code = output['./app.tsx'];
-    expect(code).toContain('document.createElement("main")');
-    expect(code).toContain('document.createElement("aside")');
+    expect(code).toContain('createElement("main")');
+    expect(code).toContain('createElement("aside")');
     expect(code).toContain('.createCondRegion(');
   });
 
@@ -115,8 +115,8 @@ describe('R35 - helper and registry dynamic tags', () => {
       `,
     });
     const code = output['./app.tsx'];
-    expect(code).toContain('document.createElement("main")');
-    expect(code).toContain('document.createElement("aside")');
+    expect(code).toContain('createElement("main")');
+    expect(code).toContain('createElement("aside")');
   });
 
   it('still rejects helpers without a finite tag contract or finite returns', () => {

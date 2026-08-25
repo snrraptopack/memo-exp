@@ -95,7 +95,11 @@ describe('M5.10 - lightweight listed component rows', () => {
       /\.setDelegatedEvent\(_onClickBinding\d*, _li\d*, \(\) =>/,
     );
     expect(rowFactory).not.toContain('.onclick =');
-    expect(code.match(/document\.createElement\("li"\)/g)).toHaveLength(1);
+    expect(code.match(/_document\d*\.createElement\("li"\)/g)).toHaveLength(1);
+    expect(code).not.toMatch(/\bdocument\.create/);
+    expect(code).toMatch(
+      /_liTemplateDocument\d* !== _document\d*/,
+    );
     expect(code).toMatch(/\.createListRegion\([\s\S]*?, false\)/);
     expect(code).toContain('entities: []');
     expect(code).toContain('"./component.tsx#selected": ["App", "App/*"]');

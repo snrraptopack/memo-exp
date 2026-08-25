@@ -4,14 +4,14 @@
  * Renders compiled applications to HTML through a real DOM implementation,
  * serving as the correctness oracle for the future string-writer tier.
  *
- * Request isolation model (current tier):
+ * Request isolation model:
  * - kernel state, cleanup, access tables, and prop boxes are isolated per
  *   call through a fresh ApplicationRuntime;
- * - the ambient `document` global is swapped to the server document for the
- *   duration of the synchronous render, because compiled element creation
- *   references the global directly. Rendering is synchronous, so this is
- *   safe until deferred/streaming work exists; module-level authored state
- *   becomes request-safe with the Phase 1.3 cell lowering.
+ * - compiled and runtime-owned DOM creation both route through that runtime's
+ *   `RenderEnvironment.document`; rendering never swaps process globals, so
+ *   concurrent request documents cannot contaminate one another;
+ * - module-level authored state becomes request-safe with the Phase 1.3 cell
+ *   lowering.
  *
  * Effects and refs do not run during server rendering.
  */
@@ -167,7 +167,9 @@ const BOOLEAN_PROPS: ReadonlyArray<readonly [string, string]> = [
 ];
 
 export function syncBooleanAttributes(root: Node): void {
-  const walker = document.createTreeWalker(root, 1 /* ELEMENT */);
+  const ownerDocument = root.ownerDocument;
+  if (ownerDocument === null) return;
+  const walker = ownerDocument.createTreeWalker(root, 1 /* ELEMENT */);
   for (
     let element = walker.nextNode() as Element | null;
     element !== null;
@@ -185,16 +187,13 @@ export function syncBooleanAttributes(root: Node): void {
 
 /**
  * Render a compiled application into a server document and return the live
- * handles. The caller owns `runtime.dispose()` and global restoration is
- * always performed before return. The per-request router/data runtimes are
- * restored and disposed here regardless of outcome.
+ * handles. The caller owns `runtime.dispose()`. Per-request router/data
+ * runtimes are restored and disposed here regardless of outcome.
  */
 export function renderWithDom(
   component: ServerComponent,
   options: RenderOptions = {},
 ): RenderedDom {
-  const previousDocument = globalThis.document;
-  const previousFrameScheduler = globalThis.requestAnimationFrame;
   const { document: serverDocument } = parseServerDocument(options.document);
 
   const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
@@ -220,13 +219,6 @@ export function renderWithDom(
   const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
   const previousDataRuntime = setActiveDataRuntime(dataRuntime);
 
-  // Compiled element creation references the ambient global; structural
-  // runtime code routes through environment.document. Both must agree.
-  globalThis.document = parsed_document(serverDocument);
-
-  // Server rendering never schedules volatile pulls.
-  delete (globalThis as { requestAnimationFrame?: unknown })
-    .requestAnimationFrame;
 
   const rootId = 'App';
   try {
@@ -250,7 +242,6 @@ export function renderWithDom(
     });
     throw error;
   } finally {
-    restoreGlobals(previousDocument, previousFrameScheduler);
     setActiveApplicationRuntime(previousRuntime);
     setActiveRouteRuntime(previousRouteRuntime);
     setActiveDataRuntime(previousDataRuntime);
@@ -259,26 +250,6 @@ export function renderWithDom(
   }
 }
 
-function parsed_document(document: DocumentLike): Document {
-  return document as unknown as Document;
-}
-
-function restoreGlobals(
-  previousDocument: typeof globalThis.document,
-  previousFrameScheduler: typeof globalThis.requestAnimationFrame,
-): void {
-  if (previousDocument === undefined) {
-    delete (globalThis as { document?: unknown }).document;
-  } else {
-    globalThis.document = previousDocument;
-  }
-  if (previousFrameScheduler === undefined) {
-    delete (globalThis as { requestAnimationFrame?: unknown })
-      .requestAnimationFrame;
-  } else {
-    globalThis.requestAnimationFrame = previousFrameScheduler;
-  }
-}
 
 /**
  * Render a compiled application to an HTML string. The request runtime and

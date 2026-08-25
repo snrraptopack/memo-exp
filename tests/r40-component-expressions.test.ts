@@ -70,7 +70,7 @@ describe('R40 - component expressions', () => {
     expect(code).toContain('export function App(');
     expect(code).not.toContain('const Child =');
     expect(code).not.toContain('const App =');
-    expect(code).toContain('document.createElement("button")');
+    expect(code).toContain('createElement("button")');
   });
 
   it('retains child state while arrow-parent props update', async () => {

@@ -47,6 +47,7 @@ import {
   cacheDecl,
   newEmitScope,
   registerStmt,
+  renderDocument,
   updateDecl,
 } from './scope';
 import { applyRepeatedDomTemplate } from './dom-template';
@@ -362,7 +363,7 @@ export function transformComponent(
     );
   }
 
-  const body: t.Statement[] = [cacheDecl(scope)];
+  const body: t.Statement[] = [cacheDecl(scope), ...scope.prelude];
   if (propSlotCount > 0 && !lightweight) {
     const declaration = buildPropDeclaration(
       propPlan,
@@ -472,7 +473,7 @@ function emitComponentReturnRegion(
         t.identifier(fragment),
         t.callExpression(
           t.memberExpression(
-            t.identifier('document'),
+            renderDocument(ctx, scope),
             t.identifier('createDocumentFragment'),
           ),
           [],

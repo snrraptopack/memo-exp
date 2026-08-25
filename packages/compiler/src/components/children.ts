@@ -189,6 +189,7 @@ export function buildChildrenSlot(
               ),
             ]),
             cacheDecl(childScope),
+            ...childScope.prelude,
             updateDecl(childScope),
             ...childScope.creation,
             ...childScope.mounts,

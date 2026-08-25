@@ -12,6 +12,7 @@ _MD.installAccessTable({
 let count = 0;
 export function AsyncCounter(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const incLater = async () => {
     await Promise.resolve();
     count++;
@@ -34,30 +35,30 @@ export function AsyncCounter(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("async");
-  const _button = document.createElement("button");
+  const _text = _document.createTextNode("async");
+  const _button = _document.createElement("button");
   _button.onclick = _event => {
     const _returnValue = incLater(_event);
     _MD.markDirty(_id);
     return _returnValue;
   };
   _button.appendChild(_text);
-  const _text2 = document.createTextNode("timer");
-  const _button2 = document.createElement("button");
+  const _text2 = _document.createTextNode("timer");
+  const _button2 = _document.createElement("button");
   _button2.onclick = _event2 => {
     const _returnValue2 = incTimer(_event2);
     _MD.markDirty(_id);
     return _returnValue2;
   };
   _button2.appendChild(_text2);
-  const _text3 = document.createTextNode("");
+  const _text3 = _document.createTextNode("");
   if (_slot !== (_value = count)) {
     _slot = _value;
     _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _span = document.createElement("span");
+  const _span = _document.createElement("span");
   _span.appendChild(_text3);
-  const _div = document.createElement("div");
+  const _div = _document.createElement("div");
   _div.appendChild(_button);
   _div.appendChild(_button2);
   _div.appendChild(_span);
@@ -68,7 +69,7 @@ export function AsyncCounter(_id, _parent) {
 exports[`M5 compiler — code generation > compiles eligible component list rows as lightweight factories (M5.10) 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#selected"];
-let _liTemplate;
+let _liTemplate, _liTemplateDocument;
 const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable({
   readers: {
@@ -90,6 +91,7 @@ const items = [{
 let selected = 0;
 function Row(item, _id, _onClickBinding) {
   let _slot, _slot2, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const _update = () => {
     if (_slot !== (_value = item.label)) {
       _slot = _value;
@@ -100,12 +102,12 @@ function Row(item, _id, _onClickBinding) {
       _MD.setClassValue(_li, _value);
     }
   };
-  const _li = (_liTemplate === void 0 ? _liTemplate = (() => {
-    const _text = document.createTextNode("");
-    const _li = document.createElement("li");
+  const _li = (_liTemplate === void 0 || _liTemplateDocument !== _document ? (_liTemplateDocument = _document, _liTemplate = (() => {
+    const _text = _document.createTextNode("");
+    const _li = _document.createElement("li");
     _li.appendChild(_text);
     return _li;
-  })() : _liTemplate).cloneNode(true);
+  })()) : _liTemplate).cloneNode(true);
   const _text = _li.firstChild;
   if (_slot !== (_value = item.label)) {
     _slot = _value;
@@ -130,6 +132,7 @@ function Row(item, _id, _onClickBinding) {
 }
 export function CompList(_id2, _parent) {
   let _value2;
+  const _document2 = _MD.getActiveEnvironment().document;
   const add = () => {
     items.push({
       id: items.length + 1,
@@ -145,7 +148,7 @@ export function CompList(_id2, _parent) {
     parent: _parent,
     render: _update2
   });
-  const _ul = document.createElement("ul");
+  const _ul = _document2.createElement("ul");
   const _onClickBinding2 = _MD.createDelegatedEventBinding(_ul, "onClick");
   const _region = _MD.createListRegion(_ul, _id2 + "/items", (item, _rowId) => {
     const _entry = Row(item, _rowId, _onClickBinding2);
@@ -157,11 +160,11 @@ export function CompList(_id2, _parent) {
     return _entry;
   }, item => item.id, false);
   _region.reconcile(items);
-  const _text2 = document.createTextNode("add");
-  const _button = document.createElement("button");
+  const _text2 = _document2.createTextNode("add");
+  const _button = _document2.createElement("button");
   _button.onclick = add;
   _button.appendChild(_text2);
-  const _div = document.createElement("div");
+  const _div = _document2.createElement("div");
   _div.appendChild(_ul);
   _div.appendChild(_button);
   return _div;
@@ -171,7 +174,7 @@ export function CompList(_id2, _parent) {
 exports[`M5 compiler — code generation > compiles inline list rows to regions with row-scoped patterns (R7) 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#selected"];
-let _liTemplate;
+let _liTemplate, _liTemplateDocument;
 const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable({
   readers: {
@@ -193,6 +196,7 @@ let items = [{
 let selected = 0;
 export function InlineList(_id, _parent) {
   let _value;
+  const _document = _MD.getActiveEnvironment().document;
   const add = () => {
     items.push({
       id: items.length + 1,
@@ -208,7 +212,7 @@ export function InlineList(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _ul = document.createElement("ul");
+  const _ul = _document.createElement("ul");
   const _onClickBinding = _MD.createDelegatedEventBinding(_ul, "onClick");
   const _region = _MD.createListRegion(_ul, _id + "/items", (item, _rowId) => {
     let _slot, _slot2, _value2;
@@ -222,17 +226,18 @@ export function InlineList(_id, _parent) {
         _MD.setClassValue(_li, _value2);
       }
     };
+    const _document2 = _MD.getActiveEnvironment().document;
     _MD.register({
       id: _rowId,
       parent: _id,
       render: _update2
     });
-    const _li = (_liTemplate === void 0 ? _liTemplate = (() => {
-      const _text = document.createTextNode("");
-      const _li = document.createElement("li");
+    const _li = (_liTemplate === void 0 || _liTemplateDocument !== _document2 ? (_liTemplateDocument = _document2, _liTemplate = (() => {
+      const _text = _document2.createTextNode("");
+      const _li = _document2.createElement("li");
       _li.appendChild(_text);
       return _li;
-    })() : _liTemplate).cloneNode(true);
+    })()) : _liTemplate).cloneNode(true);
     const _text = _li.firstChild;
     if (_slot !== (_value2 = item.label)) {
       _slot = _value2;
@@ -256,11 +261,11 @@ export function InlineList(_id, _parent) {
     };
   }, item => item.id);
   _region.reconcile(items);
-  const _text2 = document.createTextNode("add");
-  const _button = document.createElement("button");
+  const _text2 = _document.createTextNode("add");
+  const _button = _document.createElement("button");
   _button.onclick = add;
   _button.appendChild(_text2);
-  const _div = document.createElement("div");
+  const _div = _document.createElement("div");
   _div.appendChild(_ul);
   _div.appendChild(_button);
   return _div;
@@ -280,6 +285,7 @@ _MD.installAccessTable({
 let label = 'hello';
 function Tag(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const _update = () => {
     if (_slot !== (_value = label)) {
       _slot = _value;
@@ -291,18 +297,19 @@ function Tag(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = label)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _span = document.createElement("span");
+  const _span = _document.createElement("span");
   _MD.setClassValue(_span, "tag");
   _span.appendChild(_text);
   return _span;
 }
 export function App(_id2, _parent2) {
   let _value2;
+  const _document2 = _MD.getActiveEnvironment().document;
   const swap = () => {
     label = 'world';
     _MD.commitWrites(_WRITES_);
@@ -315,11 +322,11 @@ export function App(_id2, _parent2) {
   });
   const _tag = Tag(_id2 + "/Tag", _id2);
   const _tag2 = Tag(_id2 + "/Tag[1]", _id2);
-  const _text2 = document.createTextNode("swap");
-  const _button = document.createElement("button");
+  const _text2 = _document2.createTextNode("swap");
+  const _button = _document2.createElement("button");
   _button.onclick = swap;
   _button.appendChild(_text2);
-  const _div = document.createElement("div");
+  const _div = _document2.createElement("div");
   _div.appendChild(_tag);
   _div.appendChild(_tag2);
   _div.appendChild(_button);
@@ -340,6 +347,7 @@ let count = 0;
 let again = 0;
 export function Counter(_id, _parent) {
   let _slot, _slot2, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const inc = () => {
     count++;
     again++;
@@ -360,25 +368,25 @@ export function Counter(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("increment");
-  const _button = document.createElement("button");
+  const _text = _document.createTextNode("increment");
+  const _button = _document.createElement("button");
   _button.onclick = inc;
   _button.appendChild(_text);
-  const _text2 = document.createTextNode("");
+  const _text2 = _document.createTextNode("");
   if (_slot !== (_value = count)) {
     _slot = _value;
     _text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _span = document.createElement("span");
+  const _span = _document.createElement("span");
   _span.appendChild(_text2);
-  const _text3 = document.createTextNode("");
+  const _text3 = _document.createTextNode("");
   if (_slot2 !== (_value = again)) {
     _slot2 = _value;
     _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _span2 = document.createElement("span");
+  const _span2 = _document.createElement("span");
   _span2.appendChild(_text3);
-  const _div = document.createElement("div");
+  const _div = _document.createElement("div");
   _MD.setClassValue(_div, "counter");
   _div.appendChild(_button);
   _div.appendChild(_span);
@@ -400,6 +408,7 @@ _MD.installAccessTable({
 let name = 'Ada';
 function Badge(_id, _parent) {
   let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
   const _update = () => {
     if (_slot !== (_value = name)) {
       _slot = _value;
@@ -411,18 +420,19 @@ function Badge(_id, _parent) {
     parent: _parent,
     render: _update
   });
-  const _text = document.createTextNode("");
+  const _text = _document.createTextNode("");
   if (_slot !== (_value = name)) {
     _slot = _value;
     _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
   }
-  const _span = document.createElement("span");
+  const _span = _document.createElement("span");
   _MD.setClassValue(_span, "badge");
   _span.appendChild(_text);
   return _span;
 }
 function Editor(_id2, _parent2) {
   let _value2;
+  const _document2 = _MD.getActiveEnvironment().document;
   const rename = () => {
     name = 'Grace';
     _MD.commitWrites(_WRITES_);
@@ -433,14 +443,15 @@ function Editor(_id2, _parent2) {
     parent: _parent2,
     render: _update2
   });
-  const _text2 = document.createTextNode("rename");
-  const _button = document.createElement("button");
+  const _text2 = _document2.createTextNode("rename");
+  const _button = _document2.createElement("button");
   _button.onclick = rename;
   _button.appendChild(_text2);
   return _button;
 }
 export function App(_id3, _parent3) {
   let _value3;
+  const _document3 = _MD.getActiveEnvironment().document;
   const _update3 = () => {};
   _MD.register({
     id: _id3,
@@ -449,7 +460,7 @@ export function App(_id3, _parent3) {
   });
   const _badge = Badge(_id3 + "/Badge", _id3);
   const _editor = Editor(_id3 + "/Editor", _id3);
-  const _div = document.createElement("div");
+  const _div = _document3.createElement("div");
   _div.appendChild(_badge);
   _div.appendChild(_editor);
   return _div;

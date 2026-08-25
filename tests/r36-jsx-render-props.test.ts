@@ -129,7 +129,7 @@ describe('R36 - JSX render props', () => {
       `,
     });
     expect(output['./App.tsx']).toContain('childrenParent');
-    expect(output['./App.tsx']).toContain('document.createElement("strong")');
+    expect(output['./App.tsx']).toContain('createElement("strong")');
   });
 
   it('keeps an untyped cross-module sole interpolation scalar when callers supply text', () => {
