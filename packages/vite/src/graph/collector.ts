@@ -1,6 +1,7 @@
 /**
  * Collects one Vite-resolved local graph for compileModules().
  */
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import {
   compileModulesDetailed,
@@ -92,13 +93,25 @@ export async function compileGraph(
       await visit(target);
     }
   }
-
+  // Entries are graph seeds, not requirements: a deleted or not-yet-created
+  // entry must not take the dev server down. The lazy per-file graph layer
+  // compiles managed files on demand regardless of seeds. With no existing
+  // seed there is no entry graph — return an empty one and skip the mount
+  // requirement entirely.
+  const seeds: string[] = [];
   for (const entry of entries) {
     if (!acceptsSource(root, entry, options)) {
       throw new Error(
         `memoized-dom: Vite entry is not an accepted source file: ${entry}`,
       );
     }
+    if (!existsSync(entry)) continue;
+    seeds.push(entry);
+  }
+  if (seeds.length === 0) {
+    return { files: new Set(), output: new Map(), maps: new Map() };
+  }
+  for (const entry of seeds) {
     await visit(entry);
   }
 

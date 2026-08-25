@@ -149,6 +149,31 @@ describe('Vite 8 adapter', () => {
     expect(app?.code).toContain('import.meta.hot.accept(');
   });
 
+  it('serves one coherent lazy graph when the configured seed is missing', async () => {
+    server = await createServer({
+      root: fixture,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: { '@': source } },
+      plugins: [memoizedDom({ entries: 'src/missing.ts' })],
+      server: { middlewareMode: true },
+    });
+
+    // Request order matches a browser: the mount module is transformed
+    // first, then its imported component modules. Imported modules must
+    // reuse the mount module's linked graph rather than compiling as
+    // independent application roots.
+    const main =
+      await server.environments.client.transformRequest('/src/main.ts');
+    const app =
+      await server.environments.client.transformRequest('/src/App.tsx');
+
+    expect(main?.code).toMatch(/mount\(["']root["'], App\)/);
+    expect(app?.code).toContain('function App(_id');
+    expect(app?.code).toContain('registerHotComponent');
+    expect(app?.code).toContain('import.meta.hot.accept(');
+  });
+
   it('recompiles edits and emits an HMR update without a page reload', async () => {
     const root = await copyFixture();
     const temporarySource = resolve(root, 'src');

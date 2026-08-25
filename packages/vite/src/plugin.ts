@@ -147,14 +147,27 @@ export function memoizedDom(
     }
   }
 
+  function lazyStateContaining(
+    environment: object,
+    file: string,
+  ): AdapterState | undefined {
+    const perFile = lazyStates.get(environment);
+    const direct = perFile?.get(file);
+    if (direct !== undefined && direct.files.has(file)) return direct;
+    if (perFile === undefined) return undefined;
+    for (const state of perFile.values()) {
+      if (state.files.has(file)) return state;
+    }
+    return undefined;
+  }
+
   function hotStateFor(
     environment: object,
     file: string,
   ): AdapterState | undefined {
     const primary = states.get(environment);
     if (primary !== undefined && primary.files.has(file)) return primary;
-    const lazy = lazyStates.get(environment)?.get(file);
-    return lazy !== undefined && lazy.files.has(file) ? lazy : undefined;
+    return lazyStateContaining(environment, file);
   }
 
   function lazyStatesFor(environment: object): Map<string, AdapterState> {
@@ -202,7 +215,7 @@ export function memoizedDom(
     // which graph MMD_EXAMPLE selected.
     if (!acceptsSource(config.root, file, options)) return null;
     const perFile = lazyStatesFor(context.environment);
-    let lazy = perFile.get(file);
+    let lazy = lazyStateContaining(context.environment, file);
     if (lazy === undefined) {
       lazy = new AdapterState();
       perFile.set(file, lazy);

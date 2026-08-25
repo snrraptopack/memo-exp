@@ -17,6 +17,7 @@
     "test:vite": "bun run --cwd packages/vite test",
     "test:server": "bun run --cwd packages/server test",
     "test:language-service": "bun run --cwd packages/language-service test",
+    "test:corpus": "bun run scripts/corpus-e2e.ts",
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit",
     "dev": "bun run build && vitest",

@@ -14,6 +14,7 @@ import type {
   DataRuntime,
   DataRuntimeOptions,
   FetchFunction,
+  FetchOptions,
   StandardSchemaV1,
 } from './types';
 
