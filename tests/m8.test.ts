@@ -186,7 +186,8 @@ describe('R8 — compiled output runs', () => {
     document.querySelector('button')!.click();
     expect(document.querySelector('b')).toBeNull();
     // anchor survives swaps
-    expect(document.body.innerHTML).toContain('<!--when:App/when0-->');
+    expect(document.body.innerHTML).toContain('<!--mmd:g:App/when0-->');
+    expect(document.body.innerHTML).toContain('<!--/mmd-->');
   });
 
   it('preserves sibling order when a conditional branch returns multiple nodes', async () => {

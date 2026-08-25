@@ -44,8 +44,15 @@ export function createCondRegion(
   pick: () => number,
   branches: readonly (CondBranchFactory | null)[],
 ): CondRegion {
-  // the anchor keeps the region's place when the mounted branch is empty
-  const anchor = getActiveEnvironment().document.createComment(`when:${id}`);
+  // Hydration protocol (hydration-markers.md §2/§3): an opening `mmd:g`
+  // marker before the branch content and a uniform `/mmd` close after it.
+  // The trailing close anchor keeps its role as the stable insertion point
+  // for branch swaps; empty regions emit an adjacent valid pair.
+  const openAnchor = getActiveEnvironment().document.createComment(
+    `mmd:g:${id}`,
+  );
+  parent.appendChild(openAnchor);
+  const anchor = getActiveEnvironment().document.createComment('/mmd');
   parent.appendChild(anchor);
 
   let current = -1;
@@ -81,6 +88,7 @@ export function createCondRegion(
       for (const node of entry.nodes) node.parentNode?.removeChild(node);
       entry = null;
     }
+    openAnchor.parentNode?.removeChild(openAnchor);
     anchor.parentNode?.removeChild(anchor);
     current = -1;
   }

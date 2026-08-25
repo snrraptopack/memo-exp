@@ -104,7 +104,11 @@ function parseServerDocument(
  * element `outerHTML` would otherwise carry — for clean host-consumable
  * HTML.
  */
-function serialize(nodes: readonly Node[], markers: boolean): string {
+function serialize(
+  nodes: readonly Node[],
+  markers: boolean,
+  rootId: string,
+): string {
   const serializeNode = (node: Node): string => {
     if (node.nodeType === 8 /* COMMENT */) {
       if (!markers) return '';
@@ -130,6 +134,11 @@ function serialize(nodes: readonly Node[], markers: boolean): string {
 
   let html = '';
   for (const node of nodes) html += serializeNode(node);
+  // Hydration protocol (hydration-markers.md §2): the application-root pair
+  // wraps every root node so adoption locates the application boundary.
+  if (markers) {
+    html = `<!--mmd:r:${rootId}-->${html}<!--/mmd-->`;
+  }
   return html;
 }
 
@@ -231,7 +240,7 @@ export function renderWithDom(
     for (const node of nodes) syncBooleanAttributes(node);
     return {
       document: serverDocument as unknown as Document,
-      html: serialize(nodes, options.markers === true),
+      html: serialize(nodes, options.markers === true, rootId),
       nodes,
       runtime,
     };

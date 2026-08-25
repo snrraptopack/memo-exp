@@ -130,7 +130,14 @@ export function createListRegion<T>(
   key: KeyFn<T> = identityKey,
   trackRowIds = true,
 ): ListRegion<T> {
-  const endAnchor = getActiveEnvironment().document.createComment(`list:${idPrefix}`);
+  // Hydration protocol (hydration-markers.md §2/§3): `mmd:l` open before
+  // the row set and a uniform `/mmd` close after it. The trailing close
+  // anchor remains the stable insertion point for all reconcile paths.
+  const openAnchor = getActiveEnvironment().document.createComment(
+    `mmd:l:${idPrefix}`,
+  );
+  parent.appendChild(openAnchor);
+  const endAnchor = getActiveEnvironment().document.createComment('/mmd');
   parent.appendChild(endAnchor);
 
   /**
@@ -270,8 +277,24 @@ export function createListRegion<T>(
         }
       } else {
         const createId = trackRowIds ? rowIdFor(k) : idPrefix;
+        const entry = create(item, createId, i);
+        if (trackRowIds) {
+          // Row identity marker (single opening form — extent runs to the
+          // next sibling marker or the list close; see hydration-markers.md
+          // §2 v0.2 note). Prepending it into nodes makes every reconcile
+          // path (fragment batch, LIS insertion, reorder) carry it.
+          const encoded = encodeListKey(k);
+          if (encoded !== null) {
+            const marker = getActiveEnvironment().document.createComment(
+              `mmd:w:${idPrefix}:${encoded}`,
+            );
+            entry.nodes = Array.isArray(entry.nodes)
+              ? [marker, ...entry.nodes]
+              : [marker, entry.nodes];
+          }
+        }
         rec = {
-          e: create(item, createId, i),
+          e: entry,
           id: trackRowIds ? createId : null,
           pos: i,
         };
@@ -476,6 +499,7 @@ export function createListRegion<T>(
     nextEntries.length = 0;
     nextRowIds.length = 0;
     endAnchor.parentNode?.removeChild(endAnchor);
+    openAnchor.parentNode?.removeChild(openAnchor);
   }
 
   return {

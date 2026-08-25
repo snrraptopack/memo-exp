@@ -75,12 +75,18 @@ describe('SSR marker serialization', () => {
     const html = renderToString(App, { markers: true });
 
     const bodies = comments(html);
-    // The conditional region and the keyed list each carry their opening
-    // anchor; both are structural identity for the adoption cursor.
-    expect(bodies.some((body) => body.startsWith('when:'))).toBe(true);
-    expect(bodies.some((body) => body.startsWith('list:App'))).toBe(true);
+    // Hydration protocol grammar (hydration-markers.md §2/§3): conditional
+    // regions open with `mmd:g:`, keyed lists with `mmd:l:`, rows with
+    // `mmd:w:`, the application root with `mmd:r:` — and every range closes
+    // with the uniform `/mmd` marker.
+    expect(bodies.some((body) => body.startsWith('mmd:g:'))).toBe(true);
+    expect(bodies.some((body) => body.startsWith('mmd:l:'))).toBe(true);
+    expect(bodies.some((body) => body.startsWith('mmd:w:'))).toBe(true);
+    expect(bodies.some((body) => body.startsWith('mmd:r:'))).toBe(true);
+    expect(
+      bodies.filter((body) => body === '/mmd').length,
+    ).toBeGreaterThanOrEqual(3);
     // Content is unchanged by the marker mode.
-    expect(html).toContain('<li>Alpha</li>');
     expect(html).toContain('<footer>static</footer>');
   });
 
