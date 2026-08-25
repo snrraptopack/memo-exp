@@ -1293,6 +1293,27 @@ function lowerModuleRefReads(
   const refCall = (key: string): t.Expression =>
     t.callExpression(mdd(ctx, 'sourceRef'), [t.stringLiteral(key)]);
 
+  // Derivation roots are owned by the deriveResolvedValues wrapping in
+  // rewriteTransparentDataReads; rewriting them here would nest a throwing
+  // read inside the derive closure.
+  const derivationDeclarations = new Set(
+    [...ctx.compPaths]
+      .filter(([, p]) => p === componentPath)
+      .flatMap(([name]) => ctx.instanceDerivations.get(name) ?? [])
+      .map((derivation) => derivation.declaration),
+  );
+  const insideDerivationInit = (path: NodePath<t.Identifier>): boolean => {
+    let current: NodePath | null = path.parentPath;
+    while (current !== null && !current.isStatement()) {
+      if (current.isVariableDeclarator()) {
+        const statement = current.parentPath;
+        return statement !== null && derivationDeclarations.has(statement.node);
+      }
+      current = current.parentPath;
+    }
+    return false;
+  };
+
   const isGroupMarked = (expression: NodePath<t.Expression>): boolean =>
     (expression.node as t.Expression & {
       __memoDomTransparentGroup?: boolean;
@@ -1310,6 +1331,7 @@ function lowerModuleRefReads(
         expression.traverse({
           Identifier(path) {
             if (!path.isReferencedIdentifier() || !matches(path)) return;
+            if (isPassthroughArgument(ctx, path)) return;
             found.push({ entry: entryOf(path), path });
           },
         });
@@ -1318,25 +1340,30 @@ function lowerModuleRefReads(
 
       if (isGroupMarked(expression)) {
         // Group owns render policy for this generated subtree: pending/error
-        // arms and the structural marker must survive untouched. Rewrite
-        // module-source identifiers IN PLACE so the committed branch reads
-        // through materializing refs while the conditional stays intact
-        // (wrapping here would orphan the policy JSX from emission).
-        const replaceInPlace = (
-          refs: readonly ModuleSourceRead[],
-          pick: 'list' | 'scalar',
-        ): void => {
+        // arms and the status-test arrays must survive untouched — they are
+        // emitted verbatim and their elements stay source holders (refs),
+        // which runtime helpers resolve. Only the committed fragment's user
+        // expression is rewritten in place to read through materializing
+        // refs (wrapping the whole site would orphan policy JSX).
+        const rewriteContainer = (container: NodePath<t.JSXExpressionContainer>): void => {
+          const inner = container.get('expression');
+          if (Array.isArray(inner) || !inner.isExpression()) return;
+          const refs: ModuleSourceRead[] = [];
+          inner.traverse({
+            Identifier(path) {
+              if (!path.isReferencedIdentifier() || !matches(path)) return;
+              if (isPassthroughArgument(ctx, path)) return;
+              refs.push({ entry: entryOf(path), path });
+            },
+          });
           for (const { entry, path } of refs) {
             const parent = path.parent;
             const isListReceiver =
-              pick === 'list' &&
               t.isMemberExpression(parent) &&
               parent.object === path.node &&
               !parent.computed &&
               t.isIdentifier(parent.property, { name: 'map' }) &&
               path.parentPath.parentPath?.isCallExpression() === true;
-            if (pick === 'list' && !isListReceiver) continue;
-            if (pick === 'scalar' && isListReceiver) continue;
             path.replaceWith(
               t.callExpression(
                 mdd(ctx, isListReceiver ? 'readModuleSourceList' : 'readResolvedValueForRender'),
@@ -1346,8 +1373,17 @@ function lowerModuleRefReads(
             path.skip();
           }
         };
-        replaceInPlace(collectReferenced(), 'list');
-        replaceInPlace(collectReferenced(), 'scalar');
+        expression.traverse({
+          JSXFragment(fragment) {
+            fragment.traverse({
+              JSXExpressionContainer(container) {
+                if (isEventOrRefContainer(container)) return;
+                rewriteContainer(container);
+              },
+            });
+            fragment.skip();
+          },
+        });
         container.skip();
         return;
       }
@@ -1436,6 +1472,16 @@ function lowerModuleRefReads(
   componentPath.traverse({
     Identifier(path) {
       if (!path.isReferencedIdentifier() || !matches(path)) return;
+      if (insideDerivationInit(path)) return;
+      // $track/$ops and friends receive the ref itself; wrapping their
+      // arguments in a resolved read would throw before first commit.
+      if (
+        isPassthroughArgument(ctx, path) ||
+        isActionRefreshTarget(path) ||
+        isGeneratedDataCall(ctx, path)
+      ) {
+        return;
+      }
       const entry = entryOf(path);
       const site =
         path.node.loc === null || path.node.loc === undefined
@@ -1457,14 +1503,37 @@ function lowerModuleRefReads(
 
 export function rewriteTransparentDataReads(ctx: Ctx): void {
   // Module-scope sources (RFC §16.4): lower refs to materializing reads
-  // before the component-local passes run.
+  // first so plain sites are safe immediately; derivation roots themselves
+  // are skipped by that pass and owned by the derive pass below.
   for (const componentPath of ctx.compPaths.values()) {
     lowerModuleRefReads(ctx, componentPath);
   }
-  for (const [component, names] of ctx.transparentSources) {
-    const componentPath = ctx.compPaths.get(component);
-    if (componentPath === undefined) continue;
-    const bindings = sourceBindings(componentPath, names);
+  // Module-scope refs join the same derivation machinery as component-local
+  const moduleBinding = (
+    componentPath: NodePath<t.FunctionDeclaration>,
+    name: string,
+  ): Binding | undefined => {
+    if (!ctx.transparentModuleSources.has(name)) return undefined;
+    const binding = componentPath.scope.getBinding(name);
+    return binding?.path.isImportSpecifier() === true ? binding : undefined;
+  };
+
+  for (const [component, componentPath] of ctx.compPaths) {
+    const localNames =
+      ctx.transparentSources.get(component) ?? new Set<string>();
+    const bindings = sourceBindings(componentPath, localNames);
+    // Seed module-scope source bindings so derivation and container passes
+    // treat imported refs like component-local holders (runtime helpers
+    // accept ModuleSourceRef uniformly).
+    let hasModuleRefs = false;
+    for (const name of ctx.transparentModuleSources.keys()) {
+      const binding = moduleBinding(componentPath, name);
+      if (binding === undefined) continue;
+      bindings.set(name, binding);
+      hasModuleRefs = true;
+    }
+    if (localNames.size === 0 && !hasModuleRefs) continue;
+    const names = localNames;
     const tracks = ctx.transparentTrackBindings.get(component) ?? new Map();
     const derived = new Map<
       string,
@@ -1475,7 +1544,16 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
       }
     >();
     for (const derivation of ctx.instanceDerivations.get(component) ?? []) {
-      const sources = derivation.sources.filter((source) => names.has(source));
+      let sources = derivation.sources.filter((source) => names.has(source));
+      // Roots that resolve to imported module-scope sources extend the
+      // dependency set even though they are not component-local holders.
+      const moduleRoots: string[] = [];
+      for (const name of ctx.transparentModuleSources.keys()) {
+        if (bindings.has(name) && derivation.sources.includes(name)) {
+          moduleRoots.push(name);
+        }
+      }
+      sources = [...new Set([...sources, ...moduleRoots])];
       if (sources.length === 0) continue;
       const declaration = componentPath
         .get('body')

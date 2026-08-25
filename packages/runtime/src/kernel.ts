@@ -66,9 +66,11 @@ export interface Entity {
 // ---------------------------------------------------------------------------
 export type Scheduler = (fn: () => void) => void;
 
+// WebIDL functions are this-sensitive: a detached `queueMicrotask` throws
+// "Illegal invocation" in browsers, so the default scheduler must be bound.
 const defaultScheduler: Scheduler =
   typeof queueMicrotask === 'function'
-    ? queueMicrotask
+    ? queueMicrotask.bind(globalThis)
     : (fn) => Promise.resolve().then(fn);
 
 /**

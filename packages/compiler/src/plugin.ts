@@ -257,17 +257,17 @@ export default function memoDomPlugin(
               : '<element>';
             const at = located(p);
             throw p.buildCodeFrameError(
-              `memo-dom: leftover JSX ${tag}${describeJsxOwner(p)}${
+              `memo-dom: JSX outside a component or compile-time render helper — leftover ${tag}${describeJsxOwner(p)}${
                 at === null ? '' : ` near ${at}`
-              } outside a component or compile-time render helper; components must use a supported top-level declaration`,
+              }; components must use a supported top-level declaration`,
             );
           },
           JSXFragment(p) {
             const at = located(p);
             throw p.buildCodeFrameError(
-              `memo-dom: leftover JSX fragment${describeJsxOwner(p)}${
+              `memo-dom: JSX outside a component or compile-time render helper — leftover fragment${describeJsxOwner(p)}${
                 at === null ? '' : ` near ${at}`
-              } outside a component or compile-time render helper; components must use a supported top-level declaration`,
+              }; components must use a supported top-level declaration`,
             );
           },
         });
