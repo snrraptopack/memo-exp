@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createHydrationCursor,
   HydrationMismatchError,
+  HydrationMarkerIndex,
   HydrationNodePlan,
   parseHydrationMarker,
 } from '@memoized-dom/runtime';
@@ -147,6 +148,79 @@ describe('Phase 3 hydration cursor', () => {
     ).toThrow('expected element <button>, found a text node');
     expect(plan.remaining).toBe(3);
     expect(plan.claimNode({ nodeType: 3 }).textContent).toBe('go');
+  });
+
+  it('indexes nested ranges by canonical identity independent of DOM depth', () => {
+    const host = hostWith(
+      '<!--mmd:r:App--><section>' +
+        '<!--mmd:g:App/when0--><p>branch</p><!--/mmd-->' +
+        '<ul><!--mmd:l:App/items-->' +
+        '<!--mmd:w:App/items:n:1--><li>one</li>' +
+        '<!--mmd:w:App/items:n:2--><li>two</li>' +
+        '<!--/mmd--></ul>' +
+        '</section><!--/mmd-->',
+    );
+    const index = new HydrationMarkerIndex(
+      createHydrationCursor(host, 'App'),
+    );
+
+    expect(index.size).toBe(4);
+    const branch = index.claimRange('g', 'App/when0');
+    const paragraph = branch.cursor.claimNode({
+      nodeType: 1,
+      tagName: 'p',
+    });
+    expect((paragraph as Element).textContent).toBe('branch');
+    branch.cursor.expectDone();
+
+    const list = index.claimRange('l', 'App/items');
+    expect(list.open.data).toBe('mmd:l:App/items');
+    const first = index.claimRow('App/items', 'n:1');
+    const second = index.claimRow('App/items', 'n:2');
+    expect(
+      (first.cursor.claimNode({ nodeType: 1, tagName: 'li' }) as Element)
+        .textContent,
+    ).toBe('one');
+    expect(
+      (second.cursor.claimNode({ nodeType: 1, tagName: 'li' }) as Element)
+        .textContent,
+    ).toBe('two');
+  });
+
+  it('rejects missing, mistyped, duplicate, and repeated marker claims', () => {
+    const host = hostWith(
+      '<!--mmd:r:App-->' +
+        '<!--mmd:g:App/when0--><!--/mmd-->' +
+        '<!--mmd:l:App/items--><!--/mmd-->' +
+        '<!--/mmd-->',
+    );
+    const index = new HydrationMarkerIndex(
+      createHydrationCursor(host, 'App'),
+    );
+
+    index.claimRange('g', 'App/when0');
+    expect(() => index.claimRange('g', 'App/when0')).toThrow(
+      'the range was already claimed',
+    );
+    expect(() => index.claimRange('g', 'App/items')).toThrow(
+      'expected <!--mmd:g:App/items-->, found <!--mmd:l:App/items-->',
+    );
+    expect(() => index.claimRow('App/items', 'n:404')).toThrow(
+      'no matching marker in the server stream',
+    );
+
+    const duplicate = hostWith(
+      '<!--mmd:r:App-->' +
+        '<!--mmd:g:App/when0--><!--/mmd-->' +
+        '<!--mmd:g:App/when0--><!--/mmd-->' +
+        '<!--/mmd-->',
+    );
+    expect(
+      () =>
+        new HydrationMarkerIndex(
+          createHydrationCursor(duplicate, 'App'),
+        ),
+    ).toThrow('a duplicate identity in the server stream');
   });
 
   it('reports bounded marker, tag, and close mismatches', () => {

@@ -440,3 +440,130 @@ function rowExtentBoundary(open: Comment, end: Node | null): Node | null {
   }
   return end;
 }
+
+interface IndexedHydrationRange {
+  readonly kind: Exclude<HydrationMarkerKind, 'd'>;
+  readonly open: Comment;
+  readonly end: Node;
+  claimed: boolean;
+}
+
+/**
+ * One-time identity index for nested structural marker ranges.
+ *
+ * Compiler creation order and DOM marker order are independent. The node
+ * plan serves ordinary nodes in post-order; this index locates `c/g/l/w`
+ * owners by their compiler-canonical identity regardless of when a factory
+ * reaches them. It validates pair nesting while building and permits exactly
+ * one claim per identity.
+ */
+export class HydrationMarkerIndex {
+  readonly #ranges = new Map<string, IndexedHydrationRange>();
+
+  constructor(root: ClaimedHydrationRange) {
+    this.#walk(root.open.nextSibling, root.end);
+  }
+
+  get size(): number {
+    return this.#ranges.size;
+  }
+
+  claimRange(
+    kind: Exclude<PairedHydrationMarkerKind, 'r'>,
+    identity: string,
+  ): ClaimedHydrationRange {
+    return this.#claim(kind, identity);
+  }
+
+  claimRow(listId: string, encodedKey: string): ClaimedHydrationRange {
+    return this.#claim('w', `${listId}:${encodedKey}`);
+  }
+
+  #claim(
+    kind: Exclude<HydrationMarkerKind, 'd' | 'r'>,
+    identity: string,
+  ): ClaimedHydrationRange {
+    const range = this.#ranges.get(identity);
+    if (range === undefined) {
+      throw new HydrationMismatchError(
+        identity,
+        `<!--mmd:${kind}:${identity}-->`,
+        'no matching marker in the server stream',
+      );
+    }
+    if (range.kind !== kind) {
+      throw new HydrationMismatchError(
+        identity,
+        `<!--mmd:${kind}:${identity}-->`,
+        `<!--mmd:${range.kind}:${identity}-->`,
+      );
+    }
+    if (range.claimed) {
+      throw new HydrationMismatchError(
+        identity,
+        'one structural claim',
+        'the range was already claimed',
+      );
+    }
+    range.claimed = true;
+    return {
+      kind,
+      identity,
+      open: range.open,
+      end: range.end,
+      cursor: new LocalHydrationCursor(
+        identity,
+        range.open.nextSibling,
+        range.end,
+      ),
+    };
+  }
+
+  #walk(start: Node | null, end: Node | null): void {
+    let node = start;
+    while (node !== null && node !== end) {
+      const marker = markerFor(node);
+      if (marker?.type !== 'open') {
+        if (node.nodeType === 1) this.#walk(node.firstChild, null);
+        node = node.nextSibling;
+        continue;
+      }
+      if (marker.kind === 'd') {
+        node = node.nextSibling;
+        continue;
+      }
+
+      let rangeEnd: Node;
+      if (marker.kind === 'w') {
+        rangeEnd = rowExtentBoundary(node as Comment, end) ?? end ?? node;
+      } else {
+        rangeEnd = findPairClose(node as Comment, end, marker.identity);
+      }
+      if (this.#ranges.has(marker.identity)) {
+        throw new HydrationMismatchError(
+          marker.identity,
+          'one marker identity',
+          'a duplicate identity in the server stream',
+        );
+      }
+      this.#ranges.set(marker.identity, {
+        kind: marker.kind,
+        open: node as Comment,
+        end: rangeEnd,
+        claimed: false,
+      });
+      this.#walk(node.nextSibling, rangeEnd);
+      if (rangeEnd === end) {
+        node = end;
+      } else if (
+        marker.kind === 'w' &&
+        rangeEnd.nodeType === 8 &&
+        markerFor(rangeEnd)?.type === 'open'
+      ) {
+        node = rangeEnd;
+      } else {
+        node = rangeEnd.nextSibling;
+      }
+    }
+  }
+}
