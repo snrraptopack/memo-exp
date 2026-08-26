@@ -807,10 +807,25 @@ correction with strict element identity, Level 3 root recovery to client mount
 with working event handlers and diagnostic notification, and strict mode throwing.
 Hydration battery 6 files / 24 tests; typecheck green.
 
+## Slice 2.12 — SSR settle coordinator (RFC §16.5)
+
+**Commit:** `149f0ca`.
+
+Implements the two server rendering modes defined in RFC §16.5:
+1. **`mode: 'shell'` (synchronous default):** Renders synchronously, emitting
+   pending fallback skeletons immediately for in-flight resources alongside the
+   initial state envelope.
+2. **`mode: 'resolve'` (`renderToStringAsync` / `renderWithDomAsync`):**
+   `DataRuntime.settle(timeoutMs)` tracks in-flight fetch entries across active
+   request boundaries, running a synchronous scheduler pass and microtask
+   drains until all data sources reach quiescence or timeout, serializing the
+   fully resolved DOM with committed content.
+
+**Tests:** `tests/ssr-settle.test.ts` 2/2 covers shell mode synchronous skeleton
+rendering and resolve mode async resource settling with full payload serialization.
+Server package test suite 4 files / 24 tests; typecheck green.
+
 ## Next slices
 
-1. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
-   environment-document seam is now closed, so the remaining work is the
-   settle/flush contract itself.
-2. **Overhead measurement fixtures** — marker bytes vs element bytes per
+1. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
