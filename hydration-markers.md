@@ -22,12 +22,17 @@ deliberately:
    DOM stay structurally identical, which the parity corpus requires. The
    parity harness canonicalizes comments away, so corpus tests are
    unaffected.
-4. **Phase 3 cursor primitive implemented:** `createHydrationCursor` parses
-   and claims the `r/g/l/w` stream in compiler order, validates node kind,
-   host tag, and namespace without mutating the DOM, bounds v0.2 rows at the
-   next row/list close, and reports owner-scoped mismatches. `mount()` does
-   not consume the cursor yet; factory adoption and recovery remain the next
-   integration slice.
+4. **Phase 3 adoption primitives implemented:** `createHydrationCursor`
+   validates local DOM order; `HydrationNodePlan` serves ordinary nodes in
+   compiler post-order; `HydrationMarkerIndex` locates nested `c/g/l/w`
+   owners by canonical identity and validates pair/row boundaries. All are
+   read-only and report owner-scoped mismatches.
+5. **Static-root adoption implemented:** `hydrate(target, root)` consumes
+   `mmd:r`, returns the existing host/text nodes (`===`), installs events and
+   updates on the active browser runtime, and restores `client-create` mode
+   after the synchronous factory pass. Fragments and nested structural
+   ranges reject explicitly until their dedicated adoption slices; no
+   silent marker skipping or root remount occurs.
 
 Owner: SSR layer
 Inputs: `ssr-proposal.md` §Phase 2/3, `octane-comparison.md` §1 (compaction,

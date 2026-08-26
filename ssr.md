@@ -654,16 +654,42 @@ the DOM or changes mount/cond/list behavior.
 (nested element depth, paired ranges, rows, missing/mistyped/duplicate and
 repeated claims).
 
+## Slice 2.6 — static-root mount adoption
+
+**Commit:** `d3d8bff`.
+
+First bounded `mount()` integration. `hydrate(target, root)` validates the
+`mmd:r` pair and runs the existing compiled root factory with a temporary
+hydrate-mode `RenderEnvironment` on the ACTIVE browser runtime. The
+environment is restored synchronously, while entity, scheduler, event, prop,
+and extension ownership remain in that same runtime for later interactions.
+`HydrationDocument` serves existing host/text nodes from
+`HydrationNodePlan`; no element/text allocation occurs. The resulting
+`MountedApplication` uses ordinary mount/unmount bookkeeping and removes the
+root markers on unmount.
+
+This increment intentionally accepts exactly one static host root. Fragment
+roots and any indexed `c/g/l/w` range reject at the root boundary instead of
+being ignored or remounted. Structural adoption and the remount ladder stay
+separate per the proposal.
+
+**Tests:** `tests/hydration-static-root.test.ts` proves node identity (`===`),
+zero `createElement`/`createTextNode`, click-driven local updates after
+environment restoration, bounded tag mismatch, and explicit structural
+deferral. Root suite 86 files / 535 passed + 1 skipped; server 24/24;
+typecheck green.
+
 ## Next slices
 
-1. **Hydration document (static root)** — serve one root plan through the
-   existing environment-document seam; no cond/list/template changes.
-2. **Structural adoption** — cond/list/rows plus hydrate-safe template bypass,
-   each as its own tested increment.
-3. **Mismatch recovery ladder** — value correction, smallest structural-owner
+1. **Conditional adoption** — `createCondRegion` claims `mmd:g`, serves the
+   active branch plan once, then creates later swaps normally.
+2. **List/row adoption** — claim `mmd:l/w`, preserve row identity and make
+   repeated-row templates bypass cloning only during adoption.
+3. **Fragment/component-owner adoption** — multi-root results and `mmd:c`.
+4. **Mismatch recovery ladder** — value correction, smallest structural-owner
    remount, and root fallback with partial-ownership teardown.
-4. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
+5. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
    environment-document seam is now closed, so the remaining work is the
    settle/flush contract itself.
-5. **Overhead measurement fixtures** — marker bytes vs element bytes per
+6. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
