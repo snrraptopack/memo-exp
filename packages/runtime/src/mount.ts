@@ -136,6 +136,11 @@ export function mount(
   mountStore().mountedRoots.set(definition.id, application);
   return application;
 }
+export interface HydrationPayloadDelivery {
+  readonly version: 1;
+  readonly state?: unknown;
+}
+
 export interface HydrateOptions {
   /**
    * Mismatch recovery policy:
@@ -146,8 +151,14 @@ export interface HydrateOptions {
   recover?: boolean;
   /** Callback notified whenever a hydration mismatch is recovered. */
   onRecover?: (error: HydrationMismatchError) => void;
+  /**
+   * Transport configuration for the DOM-embedded JSON state payload:
+   * - 'auto' (default): queries `<script type="application/mmd+json" data-mmd-root="...">`
+   * - explicit payload object
+   * - 'none': ignores embedded payload
+   */
+  payload?: 'auto' | 'none' | HydrationPayloadDelivery;
 }
-
 /**
  * Adopt server-rendered DOM nodes within the application root boundary.
  * In strict mode (default) any structural skew throws HydrationMismatchError.
@@ -178,18 +189,44 @@ export function hydrate(
     );
   }
 
+
+  // Locate and restore DOM-embedded state payload channel (RFC §16.6)
+  if (options.payload !== 'none') {
+    let rawPayload: unknown = typeof options.payload === 'object' ? options.payload : undefined;
+    if (rawPayload === undefined && typeof globalThis.document !== 'undefined') {
+      const channelScript = globalThis.document.querySelector(
+        `script[type="application/mmd+json"][data-mmd-root="${definition.id}"]`,
+      );
+      if (channelScript?.textContent) {
+        try {
+          rawPayload = JSON.parse(channelScript.textContent);
+        } catch {
+          // Corrupt JSON payload ignored; client falls back to fresh acquire
+        }
+      }
+    }
+    if (
+      rawPayload &&
+      typeof rawPayload === 'object' &&
+      'state' in rawPayload &&
+      rawPayload.state !== undefined
+    ) {
+      const activeData = getExtensionStore<{ restoreState?(s: unknown): void }>('mmd:data-runtime-active', () => ({}));
+      activeData.restoreState?.(rawPayload.state);
+    }
+  }
   const range = createHydrationCursor(host, definition.id);
-  const document = new HydrationDocument(
+  const hydrationDoc = new HydrationDocument(
     getActiveEnvironment().document,
     range,
   );
   let root: Node;
   try {
     root = runWithRenderEnvironment(
-      { mode: 'hydrate', document, hydration: document },
+      { mode: 'hydrate', document: hydrationDoc, hydration: hydrationDoc },
       () => definition.create({ mode: 'hydrate', host }),
     );
-    document.expectDone();
+    hydrationDoc.expectDone();
   } catch (error) {
     unregisterSubtree(definition.id);
     if (options.recover && error instanceof HydrationMismatchError) {

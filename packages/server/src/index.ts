@@ -35,6 +35,18 @@ import {
   createDataRuntime,
   setActiveDataRuntime,
 } from '@memoized-dom/data';
+import type { SerializedDataState } from '@memoized-dom/data';
+
+export interface RenderPayload {
+  version: 1;
+  state?: SerializedDataState;
+}
+
+export interface RenderResult {
+  html: string;
+  payload: RenderPayload;
+  scriptTag: string;
+}
 
 /** A compiled application root factory: `function App(_id, _parent)`. */
 export type ServerComponent = (id: string, parent: null) => Node;
@@ -115,6 +127,10 @@ function parseServerDocument(
  * element `outerHTML` would otherwise carry — for clean host-consumable
  * HTML.
  */
+export function createPayloadScriptTag(rootId: string, payload: RenderPayload): string {
+  return `<script type="application/mmd+json" data-mmd-root="${rootId}">${JSON.stringify(payload)}</script>`;
+}
+
 function serialize(
   nodes: readonly Node[],
   markers: boolean,
@@ -142,6 +158,7 @@ function serialize(
     }
     return node.textContent ?? '';
   };
+
 
   let html = '';
   for (const node of nodes) html += serializeNode(node);
@@ -345,7 +362,6 @@ export function renderToString(
     const root = runWithApplicationRuntime(runtime, () =>
       component(rootId, null),
     ) as unknown as StringRenderableNode;
-
     let body = root.toString(options.markers === true);
     if (options.markers === true) {
       body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
@@ -401,14 +417,130 @@ export async function renderToStringAsync(
     const root = runWithApplicationRuntime(runtime, () =>
       component(rootId, null),
     ) as unknown as StringRenderableNode;
-
     await dataRuntime.settle(options.timeout ?? 5000);
-
     let body = root.toString(options.markers === true);
     if (options.markers === true) {
       body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
     }
     return body;
+  } catch (error) {
+    runWithApplicationRuntime(runtime, () => {
+      unregisterSubtree(rootId);
+    });
+    throw error;
+  } finally {
+    setActiveApplicationRuntime(previousRuntime);
+    setActiveRouteRuntime(previousRouteRuntime);
+    setActiveDataRuntime(previousDataRuntime);
+    routeRuntime.dispose();
+    dataRuntime.clear();
+    runtime.dispose();
+  }
+}
+
+/**
+ * Render a compiled application to an HTML string and its companion DOM-embedded
+ * JSON state payload channel (`<script type="application/mmd+json">`).
+ */
+export function renderToResult(
+  component: ServerComponent,
+  options: RenderOptions = {},
+): RenderResult {
+  const stringDoc = new StringDocument();
+  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
+    mode: 'server-string',
+    document: stringDoc,
+    schedule: null,
+    effects: 'disabled',
+    refs: 'disabled',
+  });
+  const previousRuntime = setActiveApplicationRuntime(runtime);
+  const routeHistory = createMemoryRouteHistory({
+    initialEntries: [options.url ?? '/'],
+  });
+  const routeRuntime = createRouteRuntime({ routeHistory });
+  const dataRuntime = createDataRuntime(
+    options.fetch === undefined ? {} : { fetch: options.fetch },
+  );
+  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
+  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
+
+  const rootId = 'App';
+  try {
+    const root = runWithApplicationRuntime(runtime, () =>
+      component(rootId, null),
+    ) as unknown as StringRenderableNode;
+
+    let body = root.toString(options.markers === true);
+    const state = dataRuntime.serializeState();
+    const payload: RenderPayload = { version: 1, ...(state.sources.length > 0 ? { state } : {}) };
+    if (options.markers === true) {
+      body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
+    }
+    return {
+      html: body,
+      payload,
+      scriptTag: createPayloadScriptTag(rootId, payload),
+    };
+  } catch (error) {
+    runWithApplicationRuntime(runtime, () => {
+      unregisterSubtree(rootId);
+    });
+    throw error;
+  } finally {
+    setActiveApplicationRuntime(previousRuntime);
+    setActiveRouteRuntime(previousRouteRuntime);
+    setActiveDataRuntime(previousDataRuntime);
+    routeRuntime.dispose();
+    dataRuntime.clear();
+    runtime.dispose();
+  }
+}
+
+export async function renderToResultAsync(
+  component: ServerComponent,
+  options: RenderOptions = {},
+): Promise<RenderResult> {
+  const stringDoc = new StringDocument();
+  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
+    mode: 'server-string',
+    document: stringDoc,
+    schedule: (fn) => fn(),
+    effects: 'disabled',
+    refs: 'disabled',
+  });
+  const previousRuntime = setActiveApplicationRuntime(runtime);
+  const routeHistory = createMemoryRouteHistory({
+    initialEntries: [options.url ?? '/'],
+  });
+  const routeRuntime = createRouteRuntime({ routeHistory });
+  const dataRuntime = createDataRuntime(
+    options.fetch === undefined ? {} : { fetch: options.fetch },
+  );
+  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
+  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
+
+  const rootId = 'App';
+  try {
+    const root = runWithApplicationRuntime(runtime, () =>
+      component(rootId, null),
+    ) as unknown as StringRenderableNode;
+
+    if (options.mode === 'resolve') {
+      await dataRuntime.settle(options.timeout ?? 5000);
+    }
+
+    let body = root.toString(options.markers === true);
+    const state = dataRuntime.serializeState();
+    const payload: RenderPayload = { version: 1, ...(state.sources.length > 0 ? { state } : {}) };
+    if (options.markers === true) {
+      body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
+    }
+    return {
+      html: body,
+      payload,
+      scriptTag: createPayloadScriptTag(rootId, payload),
+    };
   } catch (error) {
     runWithApplicationRuntime(runtime, () => {
       unregisterSubtree(rootId);

@@ -7,10 +7,21 @@
  * before.
  */
 
+import { getExtensionStore } from '@memoized-dom/runtime';
 import { createDataRuntime } from './client';
 import type { DataRuntime } from './types';
 
 const defaultDataRuntime = createDataRuntime();
+
+function syncActiveStore(runtime: DataRuntime): void {
+  const store = getExtensionStore<{ restoreState?(s: unknown): void }>(
+    'mmd:data-runtime-active',
+    () => ({}),
+  );
+  store.restoreState = (s) => runtime.restoreState(s as import('./types').SerializedDataState);
+}
+
+syncActiveStore(defaultDataRuntime);
 
 let activeOverride: DataRuntime | null = null;
 
@@ -24,5 +35,6 @@ export function setActiveDataRuntime(
 ): DataRuntime {
   const previous = getActiveDataRuntime();
   activeOverride = runtime;
+  syncActiveStore(getActiveDataRuntime());
   return previous;
 }
