@@ -700,10 +700,35 @@ already threw, so the reported boundary is always the real skew site.
 arm, and tag skew reported at the conditional owner. Root suite 87 files /
 537 passed + 1 skipped; server 24/24; typecheck green.
 
+## Slice 2.8 — hydration-safe repeated DOM templates
+
+**Commit:** `49b1bee`.
+
+Repeated-row template emission now consults the active render environment
+before reusing or cloning a detached template. Client-create mode retains the
+existing document-keyed cache and deep-clone fast path. Hydrate mode instead
+runs one shared module-level template constructor for every row, allowing the
+hydration document to claim that row's own server nodes; it neither caches the
+first claimed row nor clones it into later rows.
+
+The constructor is emitted once. This preserves the one-static-constructor
+invariant and avoids duplicating `createElement`/`createTextNode` bodies across
+the cache-miss, cache-hit, and hydration branches. `canReuseTemplate()` is the
+small runtime capability seam; it is false only while a hydration controller
+is active.
+
+This is deliberately the template half of list adoption. `createListRegion`
+does not claim `mmd:l/w` yet, so no list hydration behavior is claimed by this
+slice.
+
+**Tests:** `tests/m58.test.ts` 14/14; hydration cursor/static/conditional
+battery 28/28; R7/M5 golden snapshots updated; root suite 87 files / 538
+tests; typecheck green.
+
 ## Next slices
 
-1. **List/row adoption** — claim `mmd:l/w`, preserve row identity and make
-   repeated-row templates bypass cloning only during adoption.
+1. **List/row adoption** — claim `mmd:l/w` and preserve row identity; the
+   repeated-template cloning guard is now in place.
 2. **Fragment/component-owner adoption** — multi-root results and `mmd:c`.
 3. **Mismatch recovery ladder** — value correction, smallest structural-owner
    remount, and root fallback with partial-ownership teardown.
