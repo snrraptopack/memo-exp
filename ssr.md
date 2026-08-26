@@ -825,7 +825,21 @@ Implements the two server rendering modes defined in RFC §16.5:
 rendering and resolve mode async resource settling with full payload serialization.
 Server package test suite 4 files / 24 tests; typecheck green.
 
-## Next slices
+## Slice 2.13 — marker overhead measurement fixtures
 
-1. **Overhead measurement fixtures** — marker bytes vs element bytes per
-   the Phase 2 overhead budget.
+**Commit:** `7cd8b23`.
+
+Completes the Phase 2 & Phase 3 exit criteria for marker overhead benchmarking
+(`ssr-proposal.md` §Phase 2 exit criteria). Benchmarks byte ratios between plain
+host HTML and marker-annotated HTML across lists and dynamic conditionals.
+
+**Tests:** `tests/ssr-overhead.test.ts` asserts complete marker inclusion in
+`markers: true` streams, complete stripping in `markers: false` streams, and bounds
+overhead ratio on lists. All Phase 2 & Phase 3 hydration slices green.
+
+## Phase 2 & Phase 3 Status: Complete
+
+All Phase 2 marker emission, Phase 3 hydration/adoption primitives, list and
+fragment adoption, three-level mismatch recovery ladder, settle coordinator, and
+overhead benchmarks are fully implemented, verified, and passing across the root
+and package test suites.
