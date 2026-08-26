@@ -23,7 +23,8 @@
 
 import { getExtensionStore } from '@memoized-dom/runtime';
 import { getActiveDataRuntime } from './active-runtime';
-import type { FetchOptions, ResolvedValue } from './types';
+import { disposeFetchResource } from './resource';
+import type { FetchOptions, FetchResource, ResolvedValue } from './types';
 
 /** Stable lazy handle placed in the authored binding. */
 export interface ModuleSourceRef {
@@ -96,11 +97,23 @@ export function resolveModuleSource<T>(ref: ModuleSourceRef): ResolvedValue<T> {
     );
   }
   const cached = cache.get(ref.key);
-  if (cached !== undefined && cached.version === described.version) {
-    return cached.instance as ResolvedValue<T>;
+  if (cached !== undefined) {
+    if (cached.version === described.version) {
+      return cached.instance as ResolvedValue<T>;
+    }
+    // HMR replaced the immutable description. Retire the old request before
+    // replacing it so subscriptions and in-flight work cannot outlive the
+    // stale module version.
+    disposeFetchResource(
+      cached.instance as unknown as FetchResource<unknown>,
+    );
   }
   const instance = described.factory() as ResolvedValue<T>;
-  cache.set(ref.key, { instance, version: described.version });
+  const entry: CachedInstance = {
+    instance,
+    version: described.version,
+  };
+  cache.set(ref.key, entry);
   const active = getActiveDataRuntime();
   let disposers = disposersByRuntime.get(active);
   if (disposers === undefined) {
@@ -108,7 +121,9 @@ export function resolveModuleSource<T>(ref: ModuleSourceRef): ResolvedValue<T> {
     disposersByRuntime.set(active, disposers);
   }
   disposers.add(() => {
-    cache.delete(ref.key);
+    // Clearing an older DataRuntime after HMR must not evict the replacement
+    // installed in the same ApplicationRuntime cache.
+    if (cache.get(ref.key) === entry) cache.delete(ref.key);
   });
   return instance;
 }

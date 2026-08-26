@@ -11,7 +11,7 @@
  * 3. Derived values over module refs (unread = list.filter().length) must
  *    gate through deriveResolvedValues instead of imperative reads.
  */
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
@@ -19,12 +19,9 @@ import { compileModules } from '@memoized-dom/compiler';
 import {
   createApplicationRuntime,
   runWithApplicationRuntime,
+  unregister,
 } from '@memoized-dom/runtime';
 import { renderToString } from '@memoized-dom/server';
-import {
-  resetScheduler,
-  setScheduler,
-} from '@memoized-dom/runtime/testing';
 import {
   createDataRuntime,
   setActiveDataRuntime,
@@ -105,7 +102,6 @@ function compile(): Record<string, string> {
 }
 
 describe('module-scope sources through Group/$track/derivations', () => {
-  const written: string[] = [];
 
   it('keeps group status tests on holder refs, not resolved payloads', () => {
     const out = compile();
@@ -194,44 +190,41 @@ describe('module-scope sources through Group/$track/derivations', () => {
       if (url.includes('/api/items')) return itemsRequest;
       return Promise.resolve(Response.json({ id: 1, name: 'A' }));
     };
-    setActiveDataRuntime(createDataRuntime({ fetch: fetchJson }));
+    const data = createDataRuntime({ fetch: fetchJson });
+    const previousData = setActiveDataRuntime(data);
 
-    const host = document.createElement('div');
-    host.id = 'root';
-    document.body.appendChild(host);
-    host.appendChild(Panel('App', null) as unknown as Node);
-    expect(document.querySelector('.skeleton')).not.toBeNull();
+    try {
+      const host = document.createElement('div');
+      host.id = 'root';
+      document.body.appendChild(host);
+      host.appendChild(Panel('App', null) as unknown as Node);
+      expect(document.querySelector('.skeleton')).not.toBeNull();
 
-    resolveItems(
-      Response.json([{ id: 'n1', text: 'Deploy done', read: false }]),
-    );
-    // Commit flush runs on the runtime scheduler; drain microtasks until the
-    // row appears instead of guessing a wall-clock delay.
-    for (let i = 0; i < 50; i++) {
-      await Promise.resolve();
-      if (document.querySelector('.unread') !== null) break;
-      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      resolveItems(
+        Response.json([{ id: 'n1', text: 'Deploy done', read: false }]),
+      );
+      // Commit flush runs on the runtime scheduler; drain microtasks until the
+      // row appears instead of guessing a wall-clock delay.
+      for (let i = 0; i < 50; i++) {
+        await Promise.resolve();
+        if (document.querySelector('.unread') !== null) break;
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
+      }
+      expect(document.querySelector('.unread')?.textContent).toContain(
+        'Deploy done',
+      );
+      expect(document.querySelector('.skeleton')).toBeNull();
+      expect(document.querySelector('section span')?.textContent).toContain(
+        '1 unread',
+      );
+    } finally {
+      unregister('App');
+      data.clear();
+      setActiveDataRuntime(previousData);
     }
-    expect(document.querySelector('.unread')?.textContent).toContain(
-      'Deploy done',
-    );
-    expect(document.querySelector('.skeleton')).toBeNull();
-    expect(document.querySelector('section span')?.textContent).toContain(
-      '1 unread',
-    );
-    void fetchJson;
   });
 
-  // KNOWN ENVIRONMENT GAP (happy-dom only — verified working in Chrome and
-  // bare bun): with TWO module sources where one commits late (session on a
-  // 400ms timer), the early-committing notifications resource updates the
-  // badge but its own Group region never re-picks. Root cause not isolated
-  // despite decode/commit/invalidation tracing: decodeResponse receives and
-  // commits the correct payload, so the loss is between commit and the
-  // when0 re-pick inside happy-dom's task queue. Revisit after a
-  // happy-dom upgrade or with a runtime-side probe. The real browser covers
-  // this scenario today.
-  it.skip('workspace example: badge and rows commit client-side', async () => {
+  it('workspace example: independent sources commit client-side', async () => {
     const fixtures = join(
       import.meta.dirname,
       'fixtures',
@@ -243,55 +236,66 @@ describe('module-scope sources through Group/$track/derivations', () => {
     const { WorkspaceApp } = await import(
       pathToFileURL(join(fixtures, 'WorkspaceApp.ts')).href
     );
-    // NOTE: a synchronous scheduler re-enters the commit chain (flush during
-    // emit) and corrupts the in-flight decode — kept on the default
-    // microtask scheduler; vi.waitFor handles the async timing.
-    // setScheduler((fn) => fn());
 
     document.body.innerHTML = '';
-    const { promise: itemsRequest, resolve: resolveItems } =
+    const { promise: notificationsRequest, resolve: resolveNotifications } =
       Promise.withResolvers<DeferredResponse>();
-    // Session commits on a real 400ms timer, mirroring the workspace mock:
-    // this exercises commit-arrives-later invalidation, which an
-    // already-resolved promise cannot catch.
-    const sessionRequest = Promise.resolve(jsonResponse({ id: 1, name: 'Ada Lovelace', email: 'ada@ws' }));
+    const { promise: sessionRequest, resolve: resolveSession } =
+      Promise.withResolvers<DeferredResponse>();
     const fetchJson = (input: RequestInfo | URL): Promise<DeferredResponse> => {
       const url = String(input instanceof Request ? input.url : input);
-      if (url.includes('/api/items')) return itemsRequest;
+      if (url.includes('/api/notifications')) return notificationsRequest;
       if (url.includes('/api/session')) return sessionRequest;
       return Promise.resolve(jsonResponse({}));
     };
-    setActiveDataRuntime(createDataRuntime({ fetch: fetchJson as typeof fetch }));
+    const data = createDataRuntime({ fetch: fetchJson as typeof fetch });
+    const previousData = setActiveDataRuntime(data);
 
-    const host = document.createElement('div');
-    host.id = 'root';
-    document.body.appendChild(host);
-    host.appendChild(WorkspaceApp('App', null) as unknown as Node);
-    expect(document.querySelector('.avatar')?.textContent).toBe('');
+    try {
+      const host = document.createElement('div');
+      host.id = 'root';
+      document.body.appendChild(host);
+      host.appendChild(WorkspaceApp('App', null) as unknown as Node);
+      expect(document.querySelector('.avatar')?.textContent).toBe('');
+      expect(document.querySelector('.skeleton')).not.toBeNull();
 
-    resolveItems(jsonResponse([{ id: 'n1', text: 'Deploy done', read: false }]));
-    // Both sources commit through real async boundaries (the session on a
-    // 400ms timer); poll the live DOM instead of draining a fixed number of
-    // microtasks, which cannot observe timer-scheduled commits.
-    await vi.waitFor(() => {
-      expect(document.querySelector('.unread')?.textContent).toContain(
-        'Deploy done',
+      resolveNotifications(
+        jsonResponse([{ id: 'n1', text: 'Deploy done', read: false }]),
       );
-    }, { timeout: 3000, interval: 20 });
-    await vi.waitFor(() => {
-      expect(document.querySelector('.avatar')?.textContent).toBe('A');
-      expect(document.querySelector('.who strong')?.textContent).toBe(
-        'Ada Lovelace',
+      await vi.waitFor(() => {
+        expect(document.querySelector('.unread')?.textContent).toContain(
+          'Deploy done',
+        );
+        expect(document.querySelector('.pill')?.textContent).toContain(
+          '1 unread',
+        );
+      }, { timeout: 3000, interval: 20 });
+
+      // The session commits independently after notifications; its exact
+      // scalar sites must still update without owner replay.
+      resolveSession(
+        jsonResponse({
+          id: 1,
+          name: 'Ada Lovelace',
+          email: 'ada@ws',
+        }),
       );
-    }, { timeout: 3000, interval: 20 });
-    window.removeEventListener('error', onErr);
-    resetScheduler();
+      await vi.waitFor(() => {
+        expect(document.querySelector('.avatar')?.textContent).toBe('A');
+        expect(document.querySelector('.who strong')?.textContent).toBe(
+          'Ada Lovelace',
+        );
+      }, { timeout: 3000, interval: 20 });
+    } finally {
+      unregister('App');
+      data.clear();
+      setActiveDataRuntime(previousData);
+    }
   });
 
   function writeCompiled(name: string, code: string): void {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, `${name}.js`), code);
-    written.push(name);
   }
 
   function writeAll(out: Record<string, string>): void {

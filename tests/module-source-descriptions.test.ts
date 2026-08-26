@@ -28,8 +28,8 @@ import {
   sourceRef,
 } from '@memoized-dom/data/internal';
 
-function fetchCalls(): { calls: number[]; fetch: typeof fetch } {
-  const calls: number[] = [];
+function fetchCalls(): { calls: string[]; fetch: typeof fetch } {
+  const calls: string[] = [];
   // Explicit Response construction (mirroring examples/workspace/api.ts):
   // happy-dom's Response.json() static does not settle through the decode
   // chain reliably in this environment.
@@ -137,31 +137,50 @@ describe('runtime-owned module source descriptions (RFC §16.4)', () => {
     const firstFetch = fetchCalls();
     const secondFetch = fetchCalls();
     describeModuleSource('hmr#list', () => createSource('/api/list/first'));
+    const applicationA = createApplicationRuntime('hmr-a');
+    const applicationB = createApplicationRuntime('hmr-b');
+    const firstDataA = createDataRuntime({ fetch: firstFetch.fetch });
+    const firstDataB = createDataRuntime({ fetch: firstFetch.fetch });
 
-    const materialize = (id: string, fetch: typeof fetch): unknown => {
-      let instance: unknown;
-      withRequest(id, fetch, () => {
-        instance = resolveModuleSource(sourceRef('hmr#list'));
-      });
-      return instance;
-    };
-
-    const runtimeA = materialize('hmr-a', firstFetch.fetch);
-    const runtimeB = materialize('hmr-b', firstFetch.fetch);
+    let runtimeA: unknown;
+    runWithApplicationRuntime(applicationA, () => {
+      setActiveDataRuntime(firstDataA);
+      runtimeA = resolveModuleSource(sourceRef('hmr#list'));
+    });
+    let runtimeB: unknown;
+    runWithApplicationRuntime(applicationB, () => {
+      setActiveDataRuntime(firstDataB);
+      runtimeB = resolveModuleSource(sourceRef('hmr#list'));
+    });
     expect(firstFetch.calls).toHaveLength(2);
 
-    // HMR re-evaluates the module: the description is replaced.
     describeModuleSource('hmr#list', () => createSource('/api/list/second'));
+    const secondDataA = createDataRuntime({ fetch: secondFetch.fetch });
+    const secondDataB = createDataRuntime({ fetch: secondFetch.fetch });
 
-    // Both runtimes retire their stale instance on next resolve and
-    // materialize from the NEW factory bound to their own data runtime.
-    const runtimeA2 = materialize('hmr-a', secondFetch.fetch);
-    const runtimeB2 = materialize('hmr-b', secondFetch.fetch);
+    let runtimeA2: unknown;
+    runWithApplicationRuntime(applicationA, () => {
+      setActiveDataRuntime(secondDataA);
+      runtimeA2 = resolveModuleSource(sourceRef('hmr#list'));
+    });
+    let runtimeB2: unknown;
+    runWithApplicationRuntime(applicationB, () => {
+      setActiveDataRuntime(secondDataB);
+      runtimeB2 = resolveModuleSource(sourceRef('hmr#list'));
+    });
     expect(runtimeA2).not.toBe(runtimeA);
     expect(runtimeB2).not.toBe(runtimeB);
     expect(runtimeA2).not.toBe(runtimeB2);
     expect(secondFetch.calls).toHaveLength(2);
-    expect(firstFetch.calls).toHaveLength(2);
+
+    // The old request can finish disposal after replacement without deleting
+    // the replacement entry from its application-runtime cache.
+    firstDataA.clear();
+    runWithApplicationRuntime(applicationA, () => {
+      setActiveDataRuntime(secondDataA);
+      expect(resolveModuleSource(sourceRef('hmr#list'))).toBe(runtimeA2);
+    });
+    expect(secondFetch.calls).toHaveLength(2);
   });
 
   it('descriptions never fire requests at module evaluation', () => {
