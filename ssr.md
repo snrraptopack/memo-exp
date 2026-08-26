@@ -679,17 +679,36 @@ environment restoration, bounded tag mismatch, and explicit structural
 deferral. Root suite 86 files / 535 passed + 1 skipped; server 24/24;
 typecheck green.
 
+## Slice 2.7 — conditional branch adoption
+
+**Commit:** `5ad2081`.
+
+`createCondRegion` now participates in adoption. In hydrate mode it claims
+its `mmd:g` range through the environment's `HydrationController` capability
+(new optional field on `RenderEnvironment`, restored by
+`runWithRenderEnvironment`), pushes a compiler-order plan for the claimed
+range, and the active branch factory adopts the server nodes. Later branch
+swaps create fresh nodes normally — the server rendered only one branch —
+and the trailing close anchor keeps its role as the stable swap point.
+
+Error precedence rule: a branch-factory mismatch is the primary diagnostic;
+plan-completeness errors from `popRange` are suppressed when the factory
+already threw, so the reported boundary is always the real skew site.
+
+**Tests:** `tests/hydration-conditional.test.ts` — adopted branch identity
+(`===`), post-adoption swap creating fresh nodes and detaching the adopted
+arm, and tag skew reported at the conditional owner. Root suite 87 files /
+537 passed + 1 skipped; server 24/24; typecheck green.
+
 ## Next slices
 
-1. **Conditional adoption** — `createCondRegion` claims `mmd:g`, serves the
-   active branch plan once, then creates later swaps normally.
-2. **List/row adoption** — claim `mmd:l/w`, preserve row identity and make
+1. **List/row adoption** — claim `mmd:l/w`, preserve row identity and make
    repeated-row templates bypass cloning only during adoption.
-3. **Fragment/component-owner adoption** — multi-root results and `mmd:c`.
-4. **Mismatch recovery ladder** — value correction, smallest structural-owner
+2. **Fragment/component-owner adoption** — multi-root results and `mmd:c`.
+3. **Mismatch recovery ladder** — value correction, smallest structural-owner
    remount, and root fallback with partial-ownership teardown.
-5. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
+4. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
    environment-document seam is now closed, so the remaining work is the
    settle/flush contract itself.
-6. **Overhead measurement fixtures** — marker bytes vs element bytes per
+5. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
