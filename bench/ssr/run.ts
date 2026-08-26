@@ -90,7 +90,7 @@ function benchmarkSync(
 }
 
 console.log('========================================================================================');
-console.log('                 MEMOIZED-DOM SSR & HYDRATION BENCHMARK (Phase 3 Baseline)              ');
+console.log('                 MEMOIZED-DOM SSR & HYDRATION BENCHMARK (Phase 4 String-Writer)         ');
 console.log('========================================================================================\n');
 
 setScheduler((fn) => fn());
@@ -127,6 +127,6 @@ for (const r of results) {
 
 console.log('\n========================================================================================');
 console.log('Notes:');
-console.log('- Server render currently uses LinkeDOM (server-dom mode: Phase 1.4 correctness oracle).');
-console.log('- Phase 4 (direct string writer) will bypass in-memory DOM creation to scale throughput.');
+console.log('- Server render uses Phase 4 fast StringDocument tier (server-string mode).');
+console.log('- LinkeDOM (server-dom mode) is preserved as the correctness oracle for tests.');
 console.log('========================================================================================\n');

@@ -25,6 +25,7 @@ import {
   type ApplicationRuntime,
   type DocumentLike,
 } from '@memoized-dom/runtime';
+import { StringDocument, type StringRenderableNode } from './string-document';
 import {
   createMemoryRouteHistory,
   createRouteRuntime,
@@ -314,18 +315,54 @@ export function renderWithDom(
 }
 
 /**
- * Render a compiled application to an HTML string.
+ * Render a compiled application to an HTML string using the fast StringDocument tier.
  */
 export function renderToString(
   component: ServerComponent,
   options: RenderOptions = {},
 ): string {
-  let rendered: RenderedDom | undefined;
+  const stringDoc = new StringDocument();
+  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
+    mode: 'server-string',
+    document: stringDoc,
+    schedule: null,
+    effects: 'disabled',
+    refs: 'disabled',
+  });
+  const previousRuntime = setActiveApplicationRuntime(runtime);
+  const routeHistory = createMemoryRouteHistory({
+    initialEntries: [options.url ?? '/'],
+  });
+  const routeRuntime = createRouteRuntime({ routeHistory });
+  const dataRuntime = createDataRuntime(
+    options.fetch === undefined ? {} : { fetch: options.fetch },
+  );
+  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
+  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
+
+  const rootId = 'App';
   try {
-    rendered = renderWithDom(component, options);
-    return rendered.html;
+    const root = runWithApplicationRuntime(runtime, () =>
+      component(rootId, null),
+    ) as unknown as StringRenderableNode;
+
+    let body = root.toString(options.markers === true);
+    if (options.markers === true) {
+      body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
+    }
+    return body;
+  } catch (error) {
+    runWithApplicationRuntime(runtime, () => {
+      unregisterSubtree(rootId);
+    });
+    throw error;
   } finally {
-    rendered?.runtime.dispose();
+    setActiveApplicationRuntime(previousRuntime);
+    setActiveRouteRuntime(previousRouteRuntime);
+    setActiveDataRuntime(previousDataRuntime);
+    routeRuntime.dispose();
+    dataRuntime.clear();
+    runtime.dispose();
   }
 }
 
@@ -337,11 +374,52 @@ export async function renderToStringAsync(
   component: ServerComponent,
   options: RenderOptions = {},
 ): Promise<string> {
-  let rendered: RenderedDom | undefined;
+  if (options.mode !== 'resolve') {
+    return renderToString(component, options);
+  }
+  const stringDoc = new StringDocument();
+  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
+    mode: 'server-string',
+    document: stringDoc,
+    schedule: (fn) => fn(),
+    effects: 'disabled',
+    refs: 'disabled',
+  });
+  const previousRuntime = setActiveApplicationRuntime(runtime);
+  const routeHistory = createMemoryRouteHistory({
+    initialEntries: [options.url ?? '/'],
+  });
+  const routeRuntime = createRouteRuntime({ routeHistory });
+  const dataRuntime = createDataRuntime(
+    options.fetch === undefined ? {} : { fetch: options.fetch },
+  );
+  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
+  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
+
+  const rootId = 'App';
   try {
-    rendered = await renderWithDomAsync(component, options);
-    return rendered.html;
+    const root = runWithApplicationRuntime(runtime, () =>
+      component(rootId, null),
+    ) as unknown as StringRenderableNode;
+
+    await dataRuntime.settle(options.timeout ?? 5000);
+
+    let body = root.toString(options.markers === true);
+    if (options.markers === true) {
+      body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
+    }
+    return body;
+  } catch (error) {
+    runWithApplicationRuntime(runtime, () => {
+      unregisterSubtree(rootId);
+    });
+    throw error;
   } finally {
-    rendered?.runtime.dispose();
+    setActiveApplicationRuntime(previousRuntime);
+    setActiveRouteRuntime(previousRouteRuntime);
+    setActiveDataRuntime(previousDataRuntime);
+    routeRuntime.dispose();
+    dataRuntime.clear();
+    runtime.dispose();
   }
 }
