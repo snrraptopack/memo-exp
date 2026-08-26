@@ -638,18 +638,32 @@ correctness mechanism, and mismatch recovery remains our proposal's ladder.
 **Tests:** runtime build plus `tests/hydration-cursor.test.ts` 7/7
 (post-order identity, nested-range exclusion, and bounded failure added).
 
+## Slice 2.5 — nested hydration marker identity index
+
+**Commit:** `c332b8c`.
+
+`HydrationMarkerIndex` performs one depth-first validation/index pass under
+the root pair. It resolves nested `mmd:c/g/l/w` ranges by compiler-canonical
+identity independently from DOM depth and post-order factory creation,
+computes v0.2 row extents, rejects duplicate identities and kind mismatches,
+and enforces one ownership claim per range. This separates marker location
+from `HydrationNodePlan`'s ordinary-node serving; neither primitive mutates
+the DOM or changes mount/cond/list behavior.
+
+**Tests:** runtime build plus `tests/hydration-cursor.test.ts` 9/9
+(nested element depth, paired ranges, rows, missing/mistyped/duplicate and
+repeated claims).
+
 ## Next slices
 
-1. **Marker identity index** — locate nested `g/l/w` ranges independently
-   from post-order node serving; prove pair/row boundaries in isolation.
-2. **Hydration document (static root)** — serve one root plan through the
+1. **Hydration document (static root)** — serve one root plan through the
    existing environment-document seam; no cond/list/template changes.
-3. **Structural adoption** — cond/list/rows plus hydrate-safe template bypass,
+2. **Structural adoption** — cond/list/rows plus hydrate-safe template bypass,
    each as its own tested increment.
-4. **Mismatch recovery ladder** — value correction, smallest structural-owner
+3. **Mismatch recovery ladder** — value correction, smallest structural-owner
    remount, and root fallback with partial-ownership teardown.
-5. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
+4. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
    environment-document seam is now closed, so the remaining work is the
    settle/flush contract itself.
-6. **Overhead measurement fixtures** — marker bytes vs element bytes per
+5. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
