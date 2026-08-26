@@ -63,7 +63,7 @@ function deferredRuntime(): {
 }
 
 describe('module transparent sources', () => {
-  it('materializes lazily and independently per ApplicationRuntime', () => {
+  it('materializes lazily and independently per ApplicationRuntime', async () => {
     const a = neverRuntime();
     const b = neverRuntime();
 
