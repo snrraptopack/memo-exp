@@ -766,13 +766,32 @@ empty→populated transition, missing markers, and marker-order skew. List and
 hydration regression battery 16 files / 101 tests before the empty-list case;
 server 24/24; root suite 88 files / 542 tests; typecheck green.
 
+## Slice 2.10 — fragment and multi-root adoption
+
+**Commit:** `23ecd7c`.
+
+`hydrate()` now accepts top-level fragment returns (e.g. `<><h1>A</h1><p>B</p></>`).
+In client-create mode, compiled components return a `DocumentFragment` that
+relocates child nodes into their parent during insertion. In hydrate mode, those
+child nodes are already attached to the server host in their final position.
+
+`HydrationDocument.createDocumentFragment()` intercepts `appendChild` to record
+top-level root ownership (`__mmdAdoptedChildren`) without reparenting or
+relocating live server elements. `rootNodes(fragment)` resolves the recorded
+nodes, preserving the same multi-node array for `MountedApplication.nodes` and
+unmount cleanup.
+
+**Tests:** `tests/hydration-fragment.test.ts` 3/3 covers multi-root adoption,
+zero element/text/comment allocation, event handler reactivity on fragment
+children, multi-node unmount cleanup, and tag skew detection. Hydration battery
+5 files / 21 tests; typecheck green.
+
 ## Next slices
 
-1. **Fragment/component-owner adoption** — multi-root results and `mmd:c`.
-2. **Mismatch recovery ladder** — value correction, smallest structural-owner
+1. **Mismatch recovery ladder** — value correction, smallest structural-owner
    remount, and root fallback with partial-ownership teardown.
-3. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
+2. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
    environment-document seam is now closed, so the remaining work is the
    settle/flush contract itself.
-4. **Overhead measurement fixtures** — marker bytes vs element bytes per
+3. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
