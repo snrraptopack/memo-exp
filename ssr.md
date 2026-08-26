@@ -618,15 +618,38 @@ deliberately updated for the one-line factory binding; stale ambient-form
 assertions modernized across 9 suites), server suite 24/24, browser corpus
 17/17, typecheck green.
 
+## Slice 2.4 — compiler-order hydration node plan
+
+**Commit:** `0ada33b`.
+
+Adds the first mount-adoption primitive without changing the mount ABI or
+structural runtimes. `HydrationNodePlan` performs one marker-aware post-order
+walk over a claimed range, matching compiler creation order (`text → button →
+section`) rather than DOM order (`section → button → text`). It excludes
+nested `g/l/w` regions so their owning primitives receive separate plans,
+validates node kind/tag/namespace on every claim, preserves node identity, and
+keeps failed claims at the bounded position.
+
+This follows the proposal's Phase 3 requirement to walk the client-compiled
+shape and validate every step. Octane's elision model is inspiration only:
+the validation property is adopted; byte-stability is not treated as the
+correctness mechanism, and mismatch recovery remains our proposal's ladder.
+
+**Tests:** runtime build plus `tests/hydration-cursor.test.ts` 7/7
+(post-order identity, nested-range exclusion, and bounded failure added).
+
 ## Next slices
 
-1. **Mount/factory adoption (Phase 3 integration)** — pass the root cursor
-   through compiled factories; claim host/text nodes instead of creating
-   them; seed setter caches; install events, then replay deferred refs/effects.
-2. **Mismatch recovery ladder** — value correction, smallest structural-owner
+1. **Marker identity index** — locate nested `g/l/w` ranges independently
+   from post-order node serving; prove pair/row boundaries in isolation.
+2. **Hydration document (static root)** — serve one root plan through the
+   existing environment-document seam; no cond/list/template changes.
+3. **Structural adoption** — cond/list/rows plus hydrate-safe template bypass,
+   each as its own tested increment.
+4. **Mismatch recovery ladder** — value correction, smallest structural-owner
    remount, and root fallback with partial-ownership teardown.
-3. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
+5. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
    environment-document seam is now closed, so the remaining work is the
    settle/flush contract itself.
-4. **Overhead measurement fixtures** — marker bytes vs element bytes per
+6. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
