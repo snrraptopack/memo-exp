@@ -35,7 +35,6 @@ export type {
   DirtyReasonInput,
   DirtyReasons,
   Entity,
-  EntityId,
 } from './kernel';
 export type {
   Capability,
@@ -95,6 +94,7 @@ export { rootNodes } from './jsx-dom';
 export { decodeListKey, encodeListKey } from './list-keys';
 export { hydrate, mount, registerRootFactory } from './mount';
 export type {
+  HydrateOptions,
   MountableComponent,
   MountTarget,
   MountedApplication,

@@ -7,6 +7,7 @@ import {
 import {
   createHydrationCursor,
   HydrationDocument,
+  HydrationMismatchError,
 } from './hydration';
 import { rootNodes } from './jsx-dom';
 
@@ -135,15 +136,28 @@ export function mount(
   mountStore().mountedRoots.set(definition.id, application);
   return application;
 }
+export interface HydrateOptions {
+  /**
+   * Mismatch recovery policy:
+   * - 'strict' (default): throw HydrationMismatchError on structural or tag skew.
+   * - 'recover': on regional/root mismatch, cleanly unregister and fall back to
+   *   client creation for the mismatched scope (or the root if unbounded).
+   */
+  recover?: boolean;
+  /** Callback notified whenever a hydration mismatch is recovered. */
+  onRecover?: (error: HydrationMismatchError) => void;
+}
 
 /**
- * Adopt one marker-wrapped static host root without recreating its element or
- * text nodes. This first integration increment deliberately rejects
- * structural ranges/fragments; cond/list/row adoption follows separately.
+ * Adopt server-rendered DOM nodes within the application root boundary.
+ * In strict mode (default) any structural skew throws HydrationMismatchError.
+ * In recover mode (recover: true), a root-level structural mismatch clears
+ * the host container and seamlessly falls back to clean client mounting.
  */
 export function hydrate(
   target: MountTarget,
   component: MountableComponent,
+  options: HydrateOptions = {},
 ): MountedApplication {
   const host = resolveHost(target);
   if (mountStore().mountedHosts.has(host)) {
@@ -178,6 +192,12 @@ export function hydrate(
     document.expectDone();
   } catch (error) {
     unregisterSubtree(definition.id);
+    if (options.recover && error instanceof HydrationMismatchError) {
+      options.onRecover?.(error);
+      // Clean up server markup from the host
+      host.innerHTML = '';
+      return mount(target, component);
+    }
     throw error;
   }
 
