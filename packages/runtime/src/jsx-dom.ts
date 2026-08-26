@@ -6,10 +6,21 @@
  * retain the same multi-node ownership semantics as a single element root.
  */
 
+interface AdoptedFragmentHolder {
+  __mmdAdoptedChildren?: readonly Node[];
+}
+
 export function rootNodes(root: Node): Node[] {
-  // Literal node-type constant: compiled code runs in bare Node (SSR) where
-  // the ambient `Node` class does not exist.
-  return root.nodeType === 11 /* DOCUMENT_FRAGMENT */
-    ? Array.from(root.childNodes)
-    : [root];
+  if (root.nodeType !== 11 /* DOCUMENT_FRAGMENT */) return [root];
+  if (
+    typeof root === 'object' &&
+    root !== null &&
+    '__mmdAdoptedChildren' in root
+  ) {
+    const holder = root as AdoptedFragmentHolder;
+    if (holder.__mmdAdoptedChildren !== undefined) {
+      return [...holder.__mmdAdoptedChildren];
+    }
+  }
+  return Array.from(root.childNodes);
 }

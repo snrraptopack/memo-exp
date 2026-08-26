@@ -7,7 +7,6 @@ import {
 import {
   createHydrationCursor,
   HydrationDocument,
-  HydrationMismatchError,
 } from './hydration';
 import { rootNodes } from './jsx-dom';
 
@@ -177,13 +176,6 @@ export function hydrate(
       () => definition.create({ mode: 'hydrate', host }),
     );
     document.expectDone();
-    if (root.nodeType === 11) {
-      throw new HydrationMismatchError(
-        definition.id,
-        'one static host root',
-        'a document fragment root',
-      );
-    }
   } catch (error) {
     unregisterSubtree(definition.id);
     throw error;

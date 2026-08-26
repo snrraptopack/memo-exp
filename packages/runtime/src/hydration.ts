@@ -654,7 +654,17 @@ export class HydrationDocument
   }
 
   createDocumentFragment(): DocumentFragment {
-    return this.#fallback.createDocumentFragment();
+    const fragment = this.#fallback.createDocumentFragment();
+    const adoptedChildren: Node[] = [];
+    Object.defineProperty(fragment, '__mmdAdoptedChildren', {
+      value: adoptedChildren,
+      configurable: true,
+    });
+    fragment.appendChild = <T extends Node>(node: T): T => {
+      adoptedChildren.push(node);
+      return node;
+    };
+    return fragment;
   }
 
   createRange(): Range {
