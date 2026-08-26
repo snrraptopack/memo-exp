@@ -286,6 +286,7 @@ export function runWithRenderEnvironment<T>(
       overrides.schedule === undefined ? previous.schedule : overrides.schedule,
     effects: overrides.effects ?? previous.effects,
     refs: overrides.refs ?? previous.refs,
+    hydration: overrides.hydration ?? previous.hydration,
   };
   try {
     return run();

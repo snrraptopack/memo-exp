@@ -14,6 +14,8 @@
  *   hydrate        Phase 3 adoption
  */
 
+import type { HydrationController } from './hydration';
+
 export type RenderMode =
   | 'client-create'
   | 'server-dom'
@@ -58,6 +60,7 @@ export interface RenderEnvironment {
   schedule: ((fn: () => void) => void) | null;
   effects: Capability;
   refs: Capability;
+  hydration?: HydrationController;
 }
 
 function ambientDocument(): DocumentLike & Document {
@@ -104,5 +107,6 @@ export function resolveEnvironment(
       overrides.schedule === undefined ? base.schedule : overrides.schedule,
     effects: overrides.effects ?? base.effects,
     refs: overrides.refs ?? base.refs,
+    hydration: overrides.hydration,
   };
 }

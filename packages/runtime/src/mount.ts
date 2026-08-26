@@ -7,7 +7,6 @@ import {
 import {
   createHydrationCursor,
   HydrationDocument,
-  HydrationMarkerIndex,
   HydrationMismatchError,
 } from './hydration';
 import { rootNodes } from './jsx-dom';
@@ -167,14 +166,6 @@ export function hydrate(
   }
 
   const range = createHydrationCursor(host, definition.id);
-  const structural = new HydrationMarkerIndex(range);
-  if (structural.size > 0) {
-    throw new HydrationMismatchError(
-      definition.id,
-      'a static root with no structural ranges',
-      `${structural.size} structural range(s)`,
-    );
-  }
   const document = new HydrationDocument(
     getActiveEnvironment().document,
     range,
@@ -182,7 +173,7 @@ export function hydrate(
   let root: Node;
   try {
     root = runWithRenderEnvironment(
-      { mode: 'hydrate', document },
+      { mode: 'hydrate', document, hydration: document },
       () => definition.create({ mode: 'hydrate', host }),
     );
     document.expectDone();

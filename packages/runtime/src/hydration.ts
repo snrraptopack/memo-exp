@@ -25,6 +25,15 @@ export interface HydrationCloseMarker {
 
 export type HydrationMarker = HydrationOpenMarker | HydrationCloseMarker;
 
+
+export interface HydrationController {
+  claimRange(
+    kind: Exclude<PairedHydrationMarkerKind, 'r'>,
+    identity: string,
+  ): ClaimedHydrationRange;
+  pushRange(range: ClaimedHydrationRange): void;
+  popRange(): void;
+}
 export interface HydrationNodeExpectation {
   readonly nodeType: number;
   readonly tagName?: string;
@@ -481,6 +490,14 @@ export class HydrationMarkerIndex {
     return this.#claim('w', `${listId}:${encodedKey}`);
   }
 
+  get unclaimed(): number {
+    let count = 0;
+    for (const range of this.#ranges.values()) {
+      if (!range.claimed) count++;
+    }
+    return count;
+  }
+
   #claim(
     kind: Exclude<HydrationMarkerKind, 'd' | 'r'>,
     identity: string,
@@ -571,32 +588,52 @@ export class HydrationMarkerIndex {
 }
 
 /**
- * Static-range adoption document.
- *
- * Compiled factories keep calling the ordinary DocumentLike API. During one
- * synchronous hydrate pass this implementation returns the next server node
- * from HydrationNodePlan instead of allocating. Runtime-owned comments and
- * fragments delegate to the browser document; structural-range adoption is
- * intentionally a later slice.
+ * Adoption document backed by one compiler-order node plan per structural
+ * range. Runtime primitives claim their marker range through the controller
+ * surface, push it for the initial factory, then pop after all ordinary
+ * nodes were served.
  */
-export class HydrationDocument implements DocumentLike {
+export class HydrationDocument
+  implements DocumentLike, HydrationController
+{
   readonly #fallback: DocumentLike;
-  readonly #plan: HydrationNodePlan;
+  readonly #index: HydrationMarkerIndex;
+  readonly #plans: HydrationNodePlan[];
 
   constructor(fallback: DocumentLike, range: ClaimedHydrationRange) {
     this.#fallback = fallback;
-    this.#plan = new HydrationNodePlan(range);
+    this.#index = new HydrationMarkerIndex(range);
+    this.#plans = [new HydrationNodePlan(range)];
+  }
+
+  claimRange(
+    kind: Exclude<PairedHydrationMarkerKind, 'r'>,
+    identity: string,
+  ): ClaimedHydrationRange {
+    return this.#index.claimRange(kind, identity);
+  }
+
+  pushRange(range: ClaimedHydrationRange): void {
+    this.#plans.push(new HydrationNodePlan(range));
+  }
+
+  popRange(): void {
+    if (this.#plans.length === 1) {
+      throw new Error('memoized-dom: cannot pop the hydration root plan');
+    }
+    this.#plans.at(-1)!.expectDone();
+    this.#plans.pop();
   }
 
   createElement(tagName: string): Element {
-    return this.#plan.claimNode({
+    return this.#activePlan().claimNode({
       nodeType: 1,
       tagName,
     }) as Element;
   }
 
   createElementNS(namespaceURI: string, qualifiedName: string): Element {
-    return this.#plan.claimNode({
+    return this.#activePlan().claimNode({
       nodeType: 1,
       tagName: qualifiedName,
       namespaceURI,
@@ -604,7 +641,7 @@ export class HydrationDocument implements DocumentLike {
   }
 
   createTextNode(_data: string): Text {
-    return this.#plan.claimNode({ nodeType: 3 }) as Text;
+    return this.#activePlan().claimNode({ nodeType: 3 }) as Text;
   }
 
   createComment(data: string): Comment {
@@ -629,6 +666,24 @@ export class HydrationDocument implements DocumentLike {
   }
 
   expectDone(): void {
-    this.#plan.expectDone();
+    if (this.#plans.length !== 1) {
+      throw new HydrationMismatchError(
+        this.#plans[0]!.boundary,
+        'the root plan only',
+        `${this.#plans.length - 1} open structural plan(s)`,
+      );
+    }
+    this.#activePlan().expectDone();
+    if (this.#index.unclaimed > 0) {
+      throw new HydrationMismatchError(
+        this.#activePlan().boundary,
+        'every structural range claimed',
+        `${this.#index.unclaimed} unclaimed structural range(s)`,
+      );
+    }
+  }
+
+  #activePlan(): HydrationNodePlan {
+    return this.#plans.at(-1)!;
   }
 }

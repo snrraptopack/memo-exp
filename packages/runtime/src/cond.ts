@@ -48,12 +48,20 @@ export function createCondRegion(
   // marker before the branch content and a uniform `/mmd` close after it.
   // The trailing close anchor keeps its role as the stable insertion point
   // for branch swaps; empty regions emit an adjacent valid pair.
-  const openAnchor = getActiveEnvironment().document.createComment(
-    `mmd:g:${id}`,
-  );
-  parent.appendChild(openAnchor);
-  const anchor = getActiveEnvironment().document.createComment('/mmd');
-  parent.appendChild(anchor);
+  const environment = getActiveEnvironment();
+  const controller = environment.hydration;
+  const adoptedRange = controller?.claimRange('g', id);
+  const openAnchor =
+    adoptedRange?.open ??
+    environment.document.createComment(`mmd:g:${id}`);
+  const anchor =
+    (adoptedRange?.end as Comment | undefined) ??
+    environment.document.createComment('/mmd');
+  if (adoptedRange === undefined) {
+    parent.appendChild(openAnchor);
+    parent.appendChild(anchor);
+  }
+  let adopting = adoptedRange !== undefined;
 
   let current = -1;
   let entry: CondEntry | null = null;
@@ -70,8 +78,28 @@ export function createCondRegion(
       entry = null;
     }
     const factory = branches[idx] ?? null;
-    if (factory !== null) {
-      entry = factory();
+    if (adopting) controller!.pushRange(adoptedRange!);
+    let factoryError: unknown;
+    try {
+      if (factory !== null) entry = factory();
+    } catch (error) {
+      factoryError = error;
+    }
+    if (adopting) {
+      if (factoryError === undefined) {
+        controller!.popRange();
+      } else {
+        // The primary mismatch error must win over cleanup diagnostics.
+        try {
+          controller!.popRange();
+        } catch {
+          // masked by factoryError
+        }
+      }
+      adopting = false;
+    }
+    if (factoryError !== undefined) throw factoryError;
+    if (entry !== null) {
       // Every insertion is before the stable trailing anchor, so walking the
       // authored root-node order preserves that order. Reverse iteration
       // inverted multi-node fragments and list branches.

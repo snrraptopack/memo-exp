@@ -135,7 +135,7 @@ describe('Phase 3 static-root hydrate integration', () => {
     );
 
     expect(() => hydrate('root', app.App)).toThrow(
-      'expected a static root with no structural ranges, found 1 structural range(s)',
+      'expected every structural range claimed, found 1 unclaimed structural range(s)',
     );
   });
 });
