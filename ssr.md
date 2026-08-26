@@ -490,6 +490,17 @@ descriptions never fire requests at module evaluation.
 derivation lowering over module refs. Browser-verified end-to-end
 (workspace example: badge, rows, unread pill, late session commit).
 
+**Lifecycle hardening:** `a81092a`. The HMR proof now resolves both versions
+through the same application-runtime handles (the earlier helper accidentally
+created fresh runtimes and could pass without exercising version retirement).
+Replacement explicitly disposes the stale fetch resource, and each
+`DataRuntime.clear()` disposer deletes only the exact cache entry it
+materialized, so a late clear from the old version cannot evict the
+replacement. The client committed-path test now restores/unregisters its
+ambient runtime state and exercises notifications and session as independently
+settling sources. Targeted module-source battery 10/10; root suite 87 files /
+538 tests.
+
 ## Slice 2.0c — source-state snapshot envelope (RFC §16.6, §16.8.5)
 
 **Commit:** `8b70169`.
