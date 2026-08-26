@@ -736,15 +736,43 @@ slice.
 battery 28/28; R7/M5 golden snapshots updated; root suite 87 files / 538
 tests; typecheck green.
 
+## Slice 2.9 — keyed-list and row adoption
+
+**Commit:** `ebf28c9`.
+
+`createListRegion` now claims its existing `mmd:l` pair in hydrate mode.
+During the initial reconcile it resolves every primitive key through
+`HydrationController.claimRow`, validates that the server markers occur in
+the client's key order, pushes the row's bounded node plan, and runs the
+ordinary compiled row factory against those server nodes. Adopted row markers
+join each `ListEntry.nodes` collection, so later LIS moves, removals, and
+disposal preserve the same marker+row ownership used by client creation.
+
+The initial adoption performs no element, text, comment, fragment, or
+`insertBefore` operation. Empty lists explicitly finish adoption before a
+later client insertion. Lightweight rows now emit `mmd:w` markers for every
+hydration-stable primitive key even when they do not need registry row ids;
+non-primitive keys remain the declared SSR limitation and fail at the list
+boundary.
+
+Missing keys, out-of-order server rows, extra server row content, and row
+factory skew remain owner-scoped hydration mismatches. A row factory's direct
+mismatch takes precedence over plan-completeness cleanup errors.
+
+**Tests:** `tests/hydration-list.test.ts` 4/4 covers real
+`renderToString(..., { markers: true })` → `hydrate()` adoption, strict node
+identity, zero creation/relocation, post-adoption keyed reorder, row events,
+empty→populated transition, missing markers, and marker-order skew. List and
+hydration regression battery 16 files / 101 tests before the empty-list case;
+server 24/24; root suite 88 files / 542 tests; typecheck green.
+
 ## Next slices
 
-1. **List/row adoption** — claim `mmd:l/w` and preserve row identity; the
-   repeated-template cloning guard is now in place.
-2. **Fragment/component-owner adoption** — multi-root results and `mmd:c`.
-3. **Mismatch recovery ladder** — value correction, smallest structural-owner
+1. **Fragment/component-owner adoption** — multi-root results and `mmd:c`.
+2. **Mismatch recovery ladder** — value correction, smallest structural-owner
    remount, and root fallback with partial-ownership teardown.
-4. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
+3. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
    environment-document seam is now closed, so the remaining work is the
    settle/flush contract itself.
-5. **Overhead measurement fixtures** — marker bytes vs element bytes per
+4. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
