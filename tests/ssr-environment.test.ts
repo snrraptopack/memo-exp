@@ -36,6 +36,14 @@ function makeStubDocument() {
       created.push(`element:${tagName}`);
       return document.createElement(tagName);
     },
+    createElementNS(namespaceURI: string, qualifiedName: string) {
+      created.push(`element-ns:${namespaceURI}:${qualifiedName}`);
+      return document.createElementNS(namespaceURI, qualifiedName);
+    },
+    createTextNode(data: string) {
+      created.push(`text:${data}`);
+      return document.createTextNode(data);
+    },
     createDocumentFragment() {
       created.push('fragment');
       return document.createDocumentFragment();

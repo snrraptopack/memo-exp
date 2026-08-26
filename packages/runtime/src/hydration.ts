@@ -7,6 +7,8 @@
  * adoption safe and independently testable.
  */
 
+import type { DocumentLike } from './environment';
+
 export type HydrationMarkerKind = 'r' | 'c' | 'g' | 'l' | 'w' | 'd';
 export type PairedHydrationMarkerKind = 'r' | 'c' | 'g' | 'l';
 
@@ -565,5 +567,68 @@ export class HydrationMarkerIndex {
         node = rangeEnd.nextSibling;
       }
     }
+  }
+}
+
+/**
+ * Static-range adoption document.
+ *
+ * Compiled factories keep calling the ordinary DocumentLike API. During one
+ * synchronous hydrate pass this implementation returns the next server node
+ * from HydrationNodePlan instead of allocating. Runtime-owned comments and
+ * fragments delegate to the browser document; structural-range adoption is
+ * intentionally a later slice.
+ */
+export class HydrationDocument implements DocumentLike {
+  readonly #fallback: DocumentLike;
+  readonly #plan: HydrationNodePlan;
+
+  constructor(fallback: DocumentLike, range: ClaimedHydrationRange) {
+    this.#fallback = fallback;
+    this.#plan = new HydrationNodePlan(range);
+  }
+
+  createElement(tagName: string): Element {
+    return this.#plan.claimNode({
+      nodeType: 1,
+      tagName,
+    }) as Element;
+  }
+
+  createElementNS(namespaceURI: string, qualifiedName: string): Element {
+    return this.#plan.claimNode({
+      nodeType: 1,
+      tagName: qualifiedName,
+      namespaceURI,
+    }) as Element;
+  }
+
+  createTextNode(_data: string): Text {
+    return this.#plan.claimNode({ nodeType: 3 }) as Text;
+  }
+
+  createComment(data: string): Comment {
+    return this.#fallback.createComment(data);
+  }
+
+  createDocumentFragment(): DocumentFragment {
+    return this.#fallback.createDocumentFragment();
+  }
+
+  createRange(): Range {
+    if (this.#fallback.createRange === undefined) {
+      throw new Error(
+        'memoized-dom: active hydration document does not support Range',
+      );
+    }
+    return this.#fallback.createRange();
+  }
+
+  getElementById(id: string): Element | null {
+    return this.#fallback.getElementById(id);
+  }
+
+  expectDone(): void {
+    this.#plan.expectDone();
   }
 }

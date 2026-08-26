@@ -37,6 +37,8 @@ export interface DocumentLike {
   readonly hidden?: boolean;
   createComment(data: string): Comment;
   createElement(tagName: string): Element;
+  createElementNS(namespaceURI: string, qualifiedName: string): Element;
+  createTextNode(data: string): Text;
   createDocumentFragment(): DocumentFragment;
   createRange?(): Range;
   getElementById(id: string): Element | null;

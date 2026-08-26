@@ -121,7 +121,7 @@ interface KernelState {
    */
   readonly extensions: Map<string, unknown>;
   /** Capability descriptor selecting browser/server behavior. */
-  readonly environment: RenderEnvironment;
+  environment: RenderEnvironment;
 }
 
 function createKernelState(
@@ -266,6 +266,32 @@ export function setScheduler(fn: Scheduler): void {
 /** The capability descriptor of the ACTIVE runtime. */
 export function getActiveEnvironment(): RenderEnvironment {
   return activeRuntime.state.environment;
+}
+
+/**
+ * Run synchronous factory work with temporary render capabilities on the
+ * ACTIVE runtime, then restore them. Registry/scheduler/extension ownership
+ * stays in that runtime — critical for hydrated event handlers and updates.
+ */
+export function runWithRenderEnvironment<T>(
+  overrides: Partial<RenderEnvironment>,
+  run: () => T,
+): T {
+  const state = activeRuntime.state;
+  const previous = state.environment;
+  state.environment = {
+    mode: overrides.mode ?? previous.mode,
+    document: overrides.document ?? previous.document,
+    schedule:
+      overrides.schedule === undefined ? previous.schedule : overrides.schedule,
+    effects: overrides.effects ?? previous.effects,
+    refs: overrides.refs ?? previous.refs,
+  };
+  try {
+    return run();
+  } finally {
+    state.environment = previous;
+  }
 }
 
 /**
