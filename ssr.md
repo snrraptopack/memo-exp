@@ -786,12 +786,31 @@ zero element/text/comment allocation, event handler reactivity on fragment
 children, multi-node unmount cleanup, and tag skew detection. Hydration battery
 5 files / 21 tests; typecheck green.
 
+## Slice 2.11 — mismatch recovery ladder
+
+**Commit:** `e429eff`.
+
+Implements the Phase 3 three-level recovery policy (`ssr-proposal.md` §Mismatch policy):
+1. **Level 1 (Scalar value correction):** Mismatched text or dynamic attribute
+   evaluations on adopted nodes update inline via existing slot guards during
+   initial component execution without node replacement or throwing.
+2. **Level 2 (Regional boundary recovery):** Conditionals and list regions
+   isolate structural adoption within their bounded range plans.
+3. **Level 3 (Root fallback):** `hydrate(target, component, { recover?: boolean, onRecover?: (error) => void })`
+   allows configurable graceful recovery. In default strict mode, structural
+   mismatches throw `HydrationMismatchError`. In recover mode (`recover: true`),
+   unrecoverable root skew triggers unregistration of the partial entity tree,
+   host clearing, and seamless client `mount()` fallback.
+
+**Tests:** `tests/hydration-recovery.test.ts` 3/3 covers Level 1 inline text
+correction with strict element identity, Level 3 root recovery to client mount
+with working event handlers and diagnostic notification, and strict mode throwing.
+Hydration battery 6 files / 24 tests; typecheck green.
+
 ## Next slices
 
-1. **Mismatch recovery ladder** — value correction, smallest structural-owner
-   remount, and root fallback with partial-ownership teardown.
-2. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
+1. **SSR settle coordinator (§16.5)** — `resolve`/`shell` modes; the
    environment-document seam is now closed, so the remaining work is the
    settle/flush contract itself.
-3. **Overhead measurement fixtures** — marker bytes vs element bytes per
+2. **Overhead measurement fixtures** — marker bytes vs element bytes per
    the Phase 2 overhead budget.
