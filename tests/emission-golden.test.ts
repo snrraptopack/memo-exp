@@ -161,6 +161,81 @@ const cases: GoldenCase[] = [
       `,
     },
   },
+  {
+    rule: 'R20 — factory callbacks and explicit cleanup are entity-owned',
+    source: `
+      export function LiveFeed() {
+        let status = 'idle';
+        const sub = subscribe((val) => {
+          status = val;
+        });
+        cleanup(() => sub.unsubscribe());
+        return <span>{status}</span>;
+      }
+    `,
+  },
+  {
+    rule: 'R24 — component props with default values and destructuring',
+    source: `
+      export function Avatar({ user = { name: 'anon' }, size = 32 }) {
+        return <img alt={user.name} width={size} />;
+      }
+    `,
+  },
+  {
+    rule: 'R31 — explicit innerHTML is a guarded raw-HTML property',
+    source: `
+      export function RawViewer(htmlContent) {
+        return <div innerHTML={htmlContent} />;
+      }
+    `,
+  },
+  {
+    rule: 'R32 — module effects are linked singleton entities',
+    source: `
+      let route = '/';
+      effect(() => {
+        document.title = route;
+      });
+      export function Nav() {
+        return <button onClick={() => { route = '/about'; }}>go</button>;
+      }
+    `,
+  },
+  {
+    rule: 'R40 — arrow and function-expression components normalize to factories',
+    source: `
+      export const ArrowBadge = ({ label }) => <span>{label}</span>;
+      export const ExprCard = function({ title }) {
+        return <div>{title}</div>;
+      };
+    `,
+  },
+  {
+    rule: 'R42 — calculated list sources use the normal derivation contract',
+    source: `
+      let filter = 'all';
+      let items = [{ id: 1, text: 'a', done: false }];
+      export function FilteredList() {
+        return (
+          <ul>
+            {items.filter(i => filter === 'all' || i.done).map(item => (
+              <li key={item.id}>{item.text}</li>
+            ))}
+          </ul>
+        );
+      }
+    `,
+  },
+  {
+    rule: 'R44 — DOM refs are compiler-native lifecycle slots',
+    source: `
+      export function CanvasView() {
+        let canvasEl = null;
+        return <canvas ref={canvasEl} />;
+      }
+    `,
+  },
 ];
 
 describe('emission golden snapshots (emission-spec.md)', () => {

@@ -447,6 +447,297 @@ export function Totals(_id, _parent, _props) {
 }"
 `;
 
+exports[`emission golden snapshots (emission-spec.md) > R20 — factory callbacks and explicit cleanup are entity-owned 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function LiveFeed(_id, _parent) {
+  let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
+  let status = 'idle';
+  const sub = subscribe(val => {
+    status = val;
+    _MD.markDirty(_id);
+  });
+  _MD.cleanup(_id, () => sub.unsubscribe());
+  const _update = () => {
+    if (_slot !== (_value = status)) {
+      _slot = _value;
+      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = _document.createTextNode("");
+  if (_slot !== (_value = status)) {
+    _slot = _value;
+    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+  }
+  const _span = _document.createElement("span");
+  _span.appendChild(_text);
+  return _span;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R24 — component props with default values and destructuring 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function Avatar(_id, _parent, _props) {
+  let _slot, _slot2, _value;
+  const _document = _MD.getActiveEnvironment().document;
+  let {
+    user = {
+      name: 'anon'
+    },
+    size = 32
+  } = _props[0];
+  const _update = () => {
+    {
+      ({
+        user = {
+          name: 'anon'
+        },
+        size = 32
+      } = _props[0]);
+    }
+    if (_slot !== (_value = user.name)) {
+      _slot = _value;
+      _value == null || _value === false ? _img.removeAttribute("alt") : _img.setAttribute("alt", _value === true ? "" : String(_value));
+    }
+    if (_slot2 !== (_value = size)) {
+      _slot2 = _value;
+      _value == null || _value === false ? _img.removeAttribute("width") : _img.setAttribute("width", _value === true ? "" : String(_value));
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  _MD.registerProps(_id, _props);
+  const _img = _document.createElement("img");
+  if (_slot !== (_value = user.name)) {
+    _slot = _value;
+    _value == null || _value === false ? _img.removeAttribute("alt") : _img.setAttribute("alt", _value === true ? "" : String(_value));
+  }
+  if (_slot2 !== (_value = size)) {
+    _slot2 = _value;
+    _value == null || _value === false ? _img.removeAttribute("width") : _img.setAttribute("width", _value === true ? "" : String(_value));
+  }
+  return _img;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R31 — explicit innerHTML is a guarded raw-HTML property 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function RawViewer(_id, _parent, _props) {
+  let _slot, _value;
+  const _document = _MD.getActiveEnvironment().document;
+  let htmlContent = _props[0];
+  const _update = () => {
+    {
+      htmlContent = _props[0];
+    }
+    if (_slot !== (_value = htmlContent)) {
+      _slot = _value;
+      _div.innerHTML = _value == null ? "" : _value;
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  _MD.registerProps(_id, _props);
+  const _div = _document.createElement("div");
+  if (_slot !== (_value = htmlContent)) {
+    _slot = _value;
+    _div.innerHTML = _value == null ? "" : _value;
+  }
+  return _div;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R32 — module effects are linked singleton entities 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+const _WRITES_ = ["./component.tsx#route"];
+_MD.installAccessTable({
+  readers: {
+    "./component.tsx#route": ["App/$module-effects/.%2Fcomponent.tsx/0"]
+  }
+}, "App", "./component.tsx");
+let route = '/';
+_MD.registerEffect("App/$module-effects/.%2Fcomponent.tsx/0", null, () => {
+  document.title = route;
+});
+if (import.meta.hot) import.meta.hot.dispose(() => _MD.unregisterSubtree("App/$module-effects/.%2Fcomponent.tsx/0"));
+export function Nav(_id, _parent) {
+  let _value;
+  const _document = _MD.getActiveEnvironment().document;
+  const _update = () => {};
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _text = _document.createTextNode("go");
+  const _button = _document.createElement("button");
+  _button.onclick = () => {
+    route = '/about';
+    _MD.commitWrites(_WRITES_);
+  };
+  _button.appendChild(_text);
+  return _button;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R40 — arrow and function-expression components normalize to factories 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function ArrowBadge(_id, _parent, _props) {
+  let _value;
+  const _document = _MD.getActiveEnvironment().document;
+  let {
+    label
+  } = _props[0];
+  const _update = () => {
+    {
+      ({
+        label
+      } = _props[0]);
+    }
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  _MD.registerProps(_id, _props);
+  const _span = _document.createElement("span");
+  const _slotDispose = label == null ? null : label(_span, _id, "0");
+  return _span;
+}
+export function ExprCard(_id2, _parent2, _props2) {
+  let _value2;
+  const _document2 = _MD.getActiveEnvironment().document;
+  let {
+    title
+  } = _props2[0];
+  const _update2 = () => {
+    {
+      ({
+        title
+      } = _props2[0]);
+    }
+  };
+  _MD.register({
+    id: _id2,
+    parent: _parent2,
+    render: _update2
+  });
+  _MD.registerProps(_id2, _props2);
+  const _div = _document2.createElement("div");
+  const _slotDispose2 = title == null ? null : title(_div, _id2, "0");
+  return _div;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R42 — calculated list sources use the normal derivation contract 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+let _liTemplate, _liTemplateDocument;
+function _liCreateTemplate(_document2) {
+  const _text = _document2.createTextNode("");
+  const _li = _document2.createElement("li");
+  _li.appendChild(_text);
+  return _li;
+}
+_MD.installAccessTable({
+  readers: {
+    "./component.tsx#filter": ["App", "App/*"],
+    "./component.tsx#items": ["App", "App/*"]
+  }
+}, "App", "./component.tsx");
+let filter = 'all';
+let items = [{
+  id: 1,
+  text: 'a',
+  done: false
+}];
+export function FilteredList(_id, _parent) {
+  let _value;
+  const _document = _MD.getActiveEnvironment().document;
+  let _listView = items.filter(i => filter === 'all' || i.done);
+  const _update = () => {
+    {
+      {
+        _listView = items.filter(i => filter === 'all' || i.done);
+      }
+    }
+    _region.reconcile(_listView);
+  };
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _ul = _document.createElement("ul");
+  const _region = _MD.createListRegion(_ul, _id + "/_listView", (item, _rowId) => {
+    let _slot, _value2;
+    const _update2 = () => {
+      if (_slot !== (_value2 = item.text)) {
+        _slot = _value2;
+        _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+      }
+    };
+    const _document2 = _MD.getActiveEnvironment().document;
+    _MD.register({
+      id: _rowId,
+      parent: _id,
+      render: _update2
+    });
+    const _li = _MD.canReuseTemplate() ? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true) : _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
+    const _text = _li.firstChild;
+    if (_slot !== (_value2 = item.text)) {
+      _slot = _value2;
+      _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+    }
+    return {
+      nodes: [_li],
+      entities: [_rowId],
+      updateProps: _nextItem => {
+        item = _nextItem;
+      },
+      update: _update2
+    };
+  }, item => item.id);
+  _region.reconcile(_listView);
+  return _ul;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) > R44 — DOM refs are compiler-native lifecycle slots 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+export function CanvasView(_id, _parent) {
+  let _value;
+  const _document = _MD.getActiveEnvironment().document;
+  let canvasEl = null;
+  const _update = () => {};
+  _MD.register({
+    id: _id,
+    parent: _parent,
+    render: _update
+  });
+  const _canvas = _document.createElement("canvas");
+  const _refDispose = _MD.mountRef(_canvas, _refNode => {
+    canvasEl = _refNode;
+    return () => {
+      if (canvasEl === _refNode) canvasEl = undefined;
+    };
+  });
+  _MD.cleanup(_id, _refDispose);
+  return _canvas;
+}"
+`;
+
 exports[`emission golden snapshots (emission-spec.md) > Transparent data — $fetch lowers to availability-gated reads 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 import * as _MDD from "@memoized-dom/data/internal";
