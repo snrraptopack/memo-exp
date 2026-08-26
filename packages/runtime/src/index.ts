@@ -27,6 +27,7 @@ export {
   setActiveApplicationRuntime,
   runWithApplicationRuntime,
   getActiveEnvironment,
+  canReuseTemplate,
   runWithRenderEnvironment,
 } from './kernel';
 export type {

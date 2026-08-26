@@ -70,6 +70,12 @@ exports[`M5 compiler — code generation > compiles eligible component list rows
 "import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#selected"];
 let _liTemplate, _liTemplateDocument;
+function _liCreateTemplate(_document) {
+  const _text = _document.createTextNode("");
+  const _li = _document.createElement("li");
+  _li.appendChild(_text);
+  return _li;
+}
 const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable({
   readers: {
@@ -102,12 +108,7 @@ function Row(item, _id, _onClickBinding) {
       _MD.setClassValue(_li, _value);
     }
   };
-  const _li = (_liTemplate === void 0 || _liTemplateDocument !== _document ? (_liTemplateDocument = _document, _liTemplate = (() => {
-    const _text = _document.createTextNode("");
-    const _li = _document.createElement("li");
-    _li.appendChild(_text);
-    return _li;
-  })()) : _liTemplate).cloneNode(true);
+  const _li = _MD.canReuseTemplate() ? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document) ? (_liTemplateDocument = _document, _liTemplate = _liCreateTemplate(_document)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document)).cloneNode(true) : _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document) ? (_liTemplateDocument = _document, _liTemplate = _liCreateTemplate(_document)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document);
   const _text = _li.firstChild;
   if (_slot !== (_value = item.label)) {
     _slot = _value;
@@ -175,6 +176,12 @@ exports[`M5 compiler — code generation > compiles inline list rows to regions 
 "import * as _MD from "@memoized-dom/runtime";
 const _WRITES_ = ["./component.tsx#selected"];
 let _liTemplate, _liTemplateDocument;
+function _liCreateTemplate(_document2) {
+  const _text = _document2.createTextNode("");
+  const _li = _document2.createElement("li");
+  _li.appendChild(_text);
+  return _li;
+}
 const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable({
   readers: {
@@ -232,12 +239,7 @@ export function InlineList(_id, _parent) {
       parent: _id,
       render: _update2
     });
-    const _li = (_liTemplate === void 0 || _liTemplateDocument !== _document2 ? (_liTemplateDocument = _document2, _liTemplate = (() => {
-      const _text = _document2.createTextNode("");
-      const _li = _document2.createElement("li");
-      _li.appendChild(_text);
-      return _li;
-    })()) : _liTemplate).cloneNode(true);
+    const _li = _MD.canReuseTemplate() ? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true) : _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
     const _text = _li.firstChild;
     if (_slot !== (_value2 = item.label)) {
       _slot = _value2;

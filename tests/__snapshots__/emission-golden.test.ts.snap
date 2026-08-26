@@ -314,6 +314,12 @@ export function Shell(_id, _parent, _props) {
 exports[`emission golden snapshots (emission-spec.md) > R7 — keyed lists cache rows per key with stable identity 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 let _liTemplate, _liTemplateDocument;
+function _liCreateTemplate(_document2) {
+  const _text = _document2.createTextNode("");
+  const _li = _document2.createElement("li");
+  _li.appendChild(_text);
+  return _li;
+}
 export function Feed(_id, _parent, _props) {
   let _value;
   const _document = _MD.getActiveEnvironment().document;
@@ -345,12 +351,7 @@ export function Feed(_id, _parent, _props) {
       parent: _id,
       render: _update2
     });
-    const _li = (_liTemplate === void 0 || _liTemplateDocument !== _document2 ? (_liTemplateDocument = _document2, _liTemplate = (() => {
-      const _text = _document2.createTextNode("");
-      const _li = _document2.createElement("li");
-      _li.appendChild(_text);
-      return _li;
-    })()) : _liTemplate).cloneNode(true);
+    const _li = _MD.canReuseTemplate() ? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true) : _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
     const _text = _li.firstChild;
     if (_slot !== (_value2 = item.label)) {
       _slot = _value2;

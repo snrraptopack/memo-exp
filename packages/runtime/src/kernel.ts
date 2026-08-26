@@ -268,6 +268,16 @@ export function getActiveEnvironment(): RenderEnvironment {
   return activeRuntime.state.environment;
 }
 
+
+/**
+ * Whether detached DOM templates may be cloned for new instances. False in
+ * hydrate mode: row factories must claim their server nodes through the
+ * document instead of cloning a template built from the first claim.
+ */
+export function canReuseTemplate(): boolean {
+  return activeRuntime.state.environment.hydration === undefined;
+}
+
 /**
  * Run synchronous factory work with temporary render capabilities on the
  * ACTIVE runtime, then restore them. Registry/scheduler/extension ownership

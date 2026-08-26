@@ -8,7 +8,7 @@
 
 import * as t from '@babel/types';
 import { walkNodes, type Ctx } from '../context';
-import { generatedIdentifier } from '../identifiers';
+import { generatedIdentifier, md } from '../identifiers';
 import type { EmitScope } from './scope';
 
 interface NodeFactory {
@@ -91,35 +91,55 @@ export function applyRepeatedDomTemplate(
     ctx,
     `${rootVar}TemplateDocument`,
   );
+  const createTemplate = generatedIdentifier(
+    ctx,
+    `${rootVar}CreateTemplate`,
+  );
   ctx.header.push(
     t.variableDeclaration('let', [
       t.variableDeclarator(t.cloneNode(template)),
       t.variableDeclarator(t.cloneNode(templateDocument)),
     ]),
-  );
-
-  const initializeTemplate = t.callExpression(
-    t.arrowFunctionExpression(
-      [],
+    // Keep the DOM constructor in one module-level function. Hydration needs
+    // a fresh claim per row, while client-create caches its first result; an
+    // inline constructor in both branches duplicates emitted code and static
+    // creation work.
+    t.functionDeclaration(
+      t.cloneNode(createTemplate),
+      [t.identifier(scope.documentVar)],
       t.blockStatement([
         ...templateStatements,
         t.returnStatement(t.identifier(rootVar)),
       ]),
     ),
-    [],
   );
+
+  const initializeTemplate = t.callExpression(
+    t.cloneNode(createTemplate),
+    [t.identifier(scope.documentVar)],
+  );
+  // Hydrate mode must not clone: row factories claim their server nodes
+  // through the document, and cloning a template built from the first claim
+  // would recreate every subsequent row. Three-way emission: rebuild+cache
+  // when allowed and stale; reuse when allowed and fresh; build fresh
+  // WITHOUT caching in hydrate mode. The clone applies only when allowed.
+  const canReuse = t.callExpression(md(ctx, 'canReuseTemplate'), []);
   const getTemplate = t.conditionalExpression(
     t.logicalExpression(
-      '||',
-      t.binaryExpression(
-        '===',
-        t.cloneNode(template),
-        t.unaryExpression('void', t.numericLiteral(0)),
-      ),
-      t.binaryExpression(
-        '!==',
-        t.cloneNode(templateDocument),
-        t.identifier(scope.documentVar),
+      '&&',
+      t.cloneNode(canReuse),
+      t.logicalExpression(
+        '||',
+        t.binaryExpression(
+          '===',
+          t.cloneNode(template),
+          t.unaryExpression('void', t.numericLiteral(0)),
+        ),
+        t.binaryExpression(
+          '!==',
+          t.cloneNode(templateDocument),
+          t.identifier(scope.documentVar),
+        ),
       ),
     ),
     t.sequenceExpression([
@@ -134,11 +154,19 @@ export function applyRepeatedDomTemplate(
         initializeTemplate,
       ),
     ]),
-    t.cloneNode(template),
+    t.conditionalExpression(
+      t.cloneNode(canReuse),
+      t.cloneNode(template),
+      initializeTemplate,
+    ),
   );
-  const rootClone = t.callExpression(
-    t.memberExpression(getTemplate, t.identifier('cloneNode')),
-    [t.booleanLiteral(true)],
+  const rootClone = t.conditionalExpression(
+    t.cloneNode(canReuse),
+    t.callExpression(
+      t.memberExpression(getTemplate, t.identifier('cloneNode')),
+      [t.booleanLiteral(true)],
+    ),
+    getTemplate,
   );
 
   const referencedNodes = new Set<string>([rootVar]);
