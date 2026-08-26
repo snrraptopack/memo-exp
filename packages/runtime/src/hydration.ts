@@ -31,6 +31,7 @@ export interface HydrationController {
     kind: Exclude<PairedHydrationMarkerKind, 'r'>,
     identity: string,
   ): ClaimedHydrationRange;
+  claimRow(listId: string, encodedKey: string): ClaimedHydrationRange;
   pushRange(range: ClaimedHydrationRange): void;
   popRange(): void;
 }
@@ -611,6 +612,10 @@ export class HydrationDocument
     identity: string,
   ): ClaimedHydrationRange {
     return this.#index.claimRange(kind, identity);
+  }
+
+  claimRow(listId: string, encodedKey: string): ClaimedHydrationRange {
+    return this.#index.claimRow(listId, encodedKey);
   }
 
   pushRange(range: ClaimedHydrationRange): void {

@@ -31,6 +31,7 @@
 
 import { getActiveEnvironment, unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 import { encodeListKey } from './list-keys';
+import { HydrationMismatchError } from './hydration';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */
@@ -130,15 +131,25 @@ export function createListRegion<T>(
   key: KeyFn<T> = identityKey,
   trackRowIds = true,
 ): ListRegion<T> {
-  // Hydration protocol (hydration-markers.md §2/§3): `mmd:l` open before
-  // the row set and a uniform `/mmd` close after it. The trailing close
-  // anchor remains the stable insertion point for all reconcile paths.
-  const openAnchor = getActiveEnvironment().document.createComment(
-    `mmd:l:${idPrefix}`,
-  );
-  parent.appendChild(openAnchor);
-  const endAnchor = getActiveEnvironment().document.createComment('/mmd');
-  parent.appendChild(endAnchor);
+  // Hydration protocol (hydration-markers.md §2/§3): `mmd:l` owns the
+  // complete row set. During adoption the existing pair remains the stable
+  // insertion boundary; client creation emits an equivalent pair.
+  const environment = getActiveEnvironment();
+  const controller = environment.hydration;
+  const adoptedRange = controller?.claimRange('l', idPrefix);
+  const openAnchor =
+    adoptedRange?.open ??
+    environment.document.createComment(`mmd:l:${idPrefix}`);
+  const endAnchor =
+    (adoptedRange?.end as Comment | undefined) ??
+    environment.document.createComment('/mmd');
+  if (adoptedRange === undefined) {
+    parent.appendChild(openAnchor);
+    parent.appendChild(endAnchor);
+  }
+  let adopting = adoptedRange !== undefined;
+  let nextAdoptedRow: Node | null =
+    adoptedRange?.open.nextSibling ?? null;
 
   /**
    * M5.8: ONE map per region. The record carries everything the structural
@@ -214,12 +225,85 @@ export function createListRegion<T>(
     return `${idPrefix}/Row[${s}]`;
   }
 
+  /**
+   * Create one keyed row. The first hydration reconcile claims the row's
+   * single-opening `mmd:w` extent and scopes DOM construction to its node
+   * plan. Later reconciles use the ordinary document and fresh marker.
+   */
+  function createRow(
+    item: T,
+    keyValue: unknown,
+    rowId: EntityId,
+    index: number,
+    encodedKey: string | null,
+  ): ListEntry {
+    if (adopting && encodedKey === null) {
+      throw new HydrationMismatchError(
+        idPrefix,
+        'a hydration-stable primitive row key',
+        `${typeof keyValue} key`,
+      );
+    }
+    const adoptedRow = adopting
+      ? controller!.claimRow(idPrefix, encodedKey!)
+      : undefined;
+    if (
+      adoptedRow !== undefined &&
+      adoptedRow.open !== nextAdoptedRow
+    ) {
+      const actual =
+        nextAdoptedRow?.nodeType === 8
+          ? `<!--${(nextAdoptedRow as Comment).data}-->`
+          : 'a row at a different server position';
+      throw new HydrationMismatchError(
+        `${idPrefix}:${encodedKey}`,
+        `<!--mmd:w:${idPrefix}:${encodedKey}--> in client key order`,
+        actual,
+      );
+    }
+    if (adoptedRow !== undefined) nextAdoptedRow = adoptedRow.end;
+    if (adoptedRow !== undefined) controller!.pushRange(adoptedRow);
+
+    let entry: ListEntry | undefined;
+    let factoryFailed = false;
+    let factoryError: unknown;
+    try {
+      entry = create(item, rowId, index);
+    } catch (error) {
+      factoryFailed = true;
+      factoryError = error;
+    }
+    if (adoptedRow !== undefined) {
+      try {
+        controller!.popRange();
+      } catch (error) {
+        // A row-factory mismatch is more local and must remain primary.
+        if (!factoryFailed) throw error;
+      }
+    }
+    if (factoryFailed) throw factoryError;
+
+    if (encodedKey !== null) {
+      const marker =
+        adoptedRow?.open ??
+        getActiveEnvironment().document.createComment(
+          `mmd:w:${idPrefix}:${encodedKey}`,
+        );
+      const nodes = entry!.nodes;
+      entry!.nodes = Array.isArray(nodes)
+        ? [marker, ...nodes]
+        : [marker, nodes as Node];
+    }
+    return entry!;
+  }
+
   function reconcile(items: readonly T[], syncRetained = true): void {
+    const adoptingFrame = adopting;
     // ---- M5.7 shape fast path ---------------------------------------------
     // Same length AND every key identical at every position → no additions,
     // no removals, no reorder is possible: skip ALL map building and LIS.
     // This is the steady state of every list that only sees content edits.
-    if (items.length === prevItems.length) {
+    if (!adoptingFrame && items.length === prevItems.length) {
       let same = true;
       for (let i = 0; i < items.length; i++) {
         if (items[i] !== prevItems[i]) { same = false; break; }
@@ -277,22 +361,8 @@ export function createListRegion<T>(
         }
       } else {
         const createId = trackRowIds ? rowIdFor(k) : idPrefix;
-        const entry = create(item, createId, i);
-        if (trackRowIds) {
-          // Row identity marker (single opening form — extent runs to the
-          // next sibling marker or the list close; see hydration-markers.md
-          // §2 v0.2 note). Prepending it into nodes makes every reconcile
-          // path (fragment batch, LIS insertion, reorder) carry it.
-          const encoded = encodeListKey(k);
-          if (encoded !== null) {
-            const marker = getActiveEnvironment().document.createComment(
-              `mmd:w:${idPrefix}:${encoded}`,
-            );
-            entry.nodes = Array.isArray(entry.nodes)
-              ? [marker, ...entry.nodes]
-              : [marker, entry.nodes];
-          }
-        }
+        const encoded = encodeListKey(k);
+        const entry = createRow(item, k, createId, i, encoded);
         rec = {
           e: entry,
           id: trackRowIds ? createId : null,
@@ -304,6 +374,16 @@ export function createListRegion<T>(
       next.set(k, rec);
       ordered[i] = rec.e;
       if (trackRowIds) rowIds[i] = rec.id;
+    }
+    if (adoptingFrame) {
+      if (nextAdoptedRow !== adoptedRange!.end) {
+        throw new HydrationMismatchError(
+          idPrefix,
+          'the list close after the final client row',
+          'additional server row content',
+        );
+      }
+      adopting = false;
     }
 
     // Complete replacement and clear own one contiguous DOM range. Delete
@@ -373,16 +453,22 @@ export function createListRegion<T>(
     // ordering to analyze and no stale row to remove. Append the complete
     // batch in source order and skip LIS/pending-run bookkeeping entirely.
     if (oldWasEmpty && hasNew) {
-      const fragment = getActiveEnvironment().document.createDocumentFragment();
-      for (let i = 0; i < ordered.length; i++) {
-        const nodes = ordered[i]!.nodes;
-        if (Array.isArray(nodes)) {
-          for (const node of nodes) fragment.appendChild(node);
-        } else {
-          fragment.appendChild(nodes as Node);
+      // Adopted nodes and row markers are already in server order. Moving
+      // them through a fragment would preserve identity but violate the
+      // read-only adoption contract.
+      if (!adoptingFrame) {
+        const fragment =
+          getActiveEnvironment().document.createDocumentFragment();
+        for (let i = 0; i < ordered.length; i++) {
+          const nodes = ordered[i]!.nodes;
+          if (Array.isArray(nodes)) {
+            for (const node of nodes) fragment.appendChild(node);
+          } else {
+            fragment.appendChild(nodes as Node);
+          }
         }
+        parent.insertBefore(fragment, endAnchor);
       }
-      parent.insertBefore(fragment, endAnchor);
       cache = next; nextMap = old;
       const pe = prevEntries; prevEntries = ordered; nextEntries = pe;
       const pr = prevRowIds; prevRowIds = rowIds; nextRowIds = pr;
