@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createHydrationCursor,
   HydrationMismatchError,
+  HydrationNodePlan,
   parseHydrationMarker,
 } from '@memoized-dom/runtime';
 
@@ -104,6 +105,48 @@ describe('Phase 3 hydration cursor', () => {
     second.cursor.expectDone();
     list.cursor.expectDone();
     root.cursor.expectDone();
+  });
+
+  it('serves ordinary nodes in compiler post-order and skips nested ranges', () => {
+    const host = hostWith(
+      '<!--mmd:r:App-->' +
+        '<section>' +
+        '<button><span>Count</span></button>' +
+        '<!--mmd:g:App/when0--><p>branch</p><!--/mmd-->' +
+        '<ul><!--mmd:l:App/items-->' +
+        '<!--mmd:w:App/items:n:1--><li>one</li>' +
+        '<!--/mmd--></ul>' +
+        '</section>' +
+        '<!--/mmd-->',
+    );
+    const text = host.querySelector('span')!.firstChild!;
+    const span = host.querySelector('span')!;
+    const button = host.querySelector('button')!;
+    const list = host.querySelector('ul')!;
+    const section = host.querySelector('section')!;
+    const plan = new HydrationNodePlan(createHydrationCursor(host, 'App'));
+
+    expect(plan.claimNode({ nodeType: 3 })).toBe(text);
+    expect(plan.claimNode({ nodeType: 1, tagName: 'span' })).toBe(span);
+    expect(plan.claimNode({ nodeType: 1, tagName: 'button' })).toBe(button);
+    // Conditional and row content are excluded; their primitives own plans.
+    expect(plan.claimNode({ nodeType: 1, tagName: 'ul' })).toBe(list);
+    expect(plan.claimNode({ nodeType: 1, tagName: 'section' })).toBe(section);
+    expect(plan.remaining).toBe(0);
+    plan.expectDone();
+  });
+
+  it('keeps a failed post-order claim at its bounded position', () => {
+    const host = hostWith(
+      '<!--mmd:r:App--><section><button>go</button></section><!--/mmd-->',
+    );
+    const plan = new HydrationNodePlan(createHydrationCursor(host, 'App'));
+
+    expect(() =>
+      plan.claimNode({ nodeType: 1, tagName: 'button' }),
+    ).toThrow('expected element <button>, found a text node');
+    expect(plan.remaining).toBe(3);
+    expect(plan.claimNode({ nodeType: 3 }).textContent).toBe('go');
   });
 
   it('reports bounded marker, tag, and close mismatches', () => {

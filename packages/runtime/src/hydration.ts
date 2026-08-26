@@ -326,3 +326,117 @@ export function createHydrationCursor(
     cursor: new LocalHydrationCursor(rootId, open.nextSibling, close),
   };
 }
+
+/**
+ * Compiler creation order for one claimed range.
+ *
+ * JSX emission creates descendants before their host (`text → button →
+ * section`), while DOM order stores hosts before descendants. This plan
+ * performs one marker-aware post-order walk and then validates each factory
+ * claim without creating or moving nodes. Nested structural ranges are
+ * skipped: their cond/list/row primitive owns a separate plan.
+ */
+export class HydrationNodePlan {
+  readonly boundary: string;
+  readonly #nodes: Node[];
+  #position = 0;
+
+  constructor(range: ClaimedHydrationRange) {
+    this.boundary = range.identity;
+    this.#nodes = [];
+    collectCreationOrder(range.open.nextSibling, range.end, this.#nodes);
+  }
+
+  get remaining(): number {
+    return this.#nodes.length - this.#position;
+  }
+
+  get done(): boolean {
+    return this.#position === this.#nodes.length;
+  }
+
+  /** Claim the next node in compiler creation order and validate its shape. */
+  claimNode(expectation: HydrationNodeExpectation): Node {
+    const node = this.#nodes[this.#position] ?? null;
+    if (node === null || node.nodeType !== expectation.nodeType) {
+      throw new HydrationMismatchError(
+        this.boundary,
+        nodeExpectation(expectation),
+        describeNode(node),
+      );
+    }
+    if (node.nodeType === 1) {
+      const element = node as Element;
+      if (
+        (expectation.tagName !== undefined &&
+          element.localName !== expectation.tagName.toLowerCase()) ||
+        (expectation.namespaceURI !== undefined &&
+          element.namespaceURI !== expectation.namespaceURI)
+      ) {
+        throw new HydrationMismatchError(
+          this.boundary,
+          nodeExpectation(expectation),
+          describeNode(node),
+        );
+      }
+    }
+    this.#position++;
+    return node;
+  }
+
+  expectDone(): void {
+    if (!this.done) {
+      throw new HydrationMismatchError(
+        this.boundary,
+        'the end of the creation plan',
+        `${this.remaining} unclaimed server node(s)`,
+      );
+    }
+  }
+}
+
+/** Marker-aware post-order DFS over [start, end). */
+function collectCreationOrder(
+  start: Node | null,
+  end: Node | null,
+  output: Node[],
+): void {
+  let node = start;
+  while (node !== null && node !== end) {
+    const marker = markerFor(node);
+    if (marker?.type === 'open') {
+      node =
+        marker.kind === 'w'
+          ? rowExtentBoundary(node as Comment, end)
+          : findPairClose(node as Comment, end, marker.identity).nextSibling;
+      continue;
+    }
+    if (marker?.type === 'close') {
+      node = node.nextSibling;
+      continue;
+    }
+    collectCreationOrder(node.firstChild, null, output);
+    output.push(node);
+    node = node.nextSibling;
+  }
+}
+
+/** Exclusive extent boundary for a v0.2 single-opening row. */
+function rowExtentBoundary(open: Comment, end: Node | null): Node | null {
+  let depth = 0;
+  for (
+    let node = open.nextSibling;
+    node !== null && node !== end;
+    node = node.nextSibling
+  ) {
+    const marker = markerFor(node);
+    if (marker?.type === 'open') {
+      if (depth === 0 && marker.kind === 'w') return node;
+      if (PAIRED_KINDS.has(marker.kind)) depth++;
+    } else if (marker?.type === 'close') {
+      if (depth === 0) return node;
+      depth--;
+    }
+  }
+  return end;
+}

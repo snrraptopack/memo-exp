@@ -101,6 +101,7 @@ export type {
 export {
   createHydrationCursor,
   HydrationMismatchError,
+  HydrationNodePlan,
   LocalHydrationCursor,
   parseHydrationMarker,
 } from './hydration';
