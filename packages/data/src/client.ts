@@ -55,6 +55,9 @@ export function createDataRuntime(
       store.clear();
       runModuleInstanceDisposers(runtime);
     },
+    settle(timeoutMs) {
+      return store.settle(timeoutMs);
+    },
     serializeState() {
       return store.serialize();
     },

@@ -260,13 +260,14 @@ export interface DataRuntime {
    * (RFC §16.6). Only JSON-safe payloads transfer; non-serializable
    * sources are omitted.
    */
+  /**
+   * Await all currently active in-flight requests until quiescence.
+   * Returns true if all settled, or false if timeout elapsed.
+   */
+  settle(timeoutMs?: number): Promise<boolean>;
+
   serializeState(): SerializedDataState;
 
-  /**
-   * Install serialized source records as dormant restore entries. The next
-   * matching request identity claims its record instead of issuing a
-   * duplicate network request (RFC §16.7).
-   */
   restoreState(state: SerializedDataState): void;
 }
 

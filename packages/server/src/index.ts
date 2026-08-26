@@ -40,9 +40,19 @@ export type ServerComponent = (id: string, parent: null) => Node;
 
 export interface RenderOptions {
   /**
+   * Settle mode (RFC §16.5):
+   * - 'shell' (default synchronous): render immediately emitting pending arms
+   *   and bundling the state envelope.
+   * - 'resolve': await in-flight data resources, flush entity updates, and
+   *   serialize the fully resolved UI.
+   */
+  mode?: 'shell' | 'resolve';
+  /** Maximum settle time in ms for 'resolve' mode (default 5000ms). */
+  timeout?: number;
+  /**
    * Request URL. Installed as a request-local memory-history route runtime,
    * so compiled route regions and `route.*` reads resolve against this URL
-   * during the synchronous render.
+   * during the render.
    */
   url?: string;
   /**
@@ -190,6 +200,64 @@ export function syncBooleanAttributes(root: Node): void {
  * handles. The caller owns `runtime.dispose()`. Per-request router/data
  * runtimes are restored and disposed here regardless of outcome.
  */
+export async function renderWithDomAsync(
+  component: ServerComponent,
+  options: RenderOptions = {},
+): Promise<RenderedDom> {
+  const { document: serverDocument } = parseServerDocument(options.document);
+
+  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
+    mode: 'server-dom',
+    document: serverDocument,
+    schedule: (fn) => fn(), // Synchronous execution during server settle iterations
+    effects: 'disabled',
+    refs: 'disabled',
+  });
+  const previousRuntime = setActiveApplicationRuntime(runtime);
+
+  const routeHistory = createMemoryRouteHistory({
+    initialEntries: [options.url ?? '/'],
+  });
+  const routeRuntime = createRouteRuntime({ routeHistory });
+  const dataRuntime = createDataRuntime(
+    options.fetch === undefined ? {} : { fetch: options.fetch },
+  );
+  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
+  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
+
+  const rootId = 'App';
+  try {
+    const root = runWithApplicationRuntime(runtime, () =>
+      component(rootId, null),
+    );
+    if (options.mode === 'resolve') {
+      await dataRuntime.settle(options.timeout ?? 5000);
+    }
+    const nodes =
+      root?.nodeType === 11 /* FRAGMENT */
+        ? Array.from(root.childNodes)
+        : [root as Node];
+    for (const node of nodes) syncBooleanAttributes(node);
+    return {
+      document: serverDocument as unknown as Document,
+      html: serialize(nodes, options.markers === true, rootId),
+      nodes,
+      runtime,
+    };
+  } catch (error) {
+    runWithApplicationRuntime(runtime, () => {
+      unregisterSubtree(rootId);
+    });
+    throw error;
+  } finally {
+    setActiveApplicationRuntime(previousRuntime);
+    setActiveRouteRuntime(previousRouteRuntime);
+    setActiveDataRuntime(previousDataRuntime);
+    routeRuntime.dispose();
+    dataRuntime.clear();
+  }
+}
+
 export function renderWithDom(
   component: ServerComponent,
   options: RenderOptions = {},
@@ -205,10 +273,6 @@ export function renderWithDom(
   });
   const previousRuntime = setActiveApplicationRuntime(runtime);
 
-  // Request-local router and data runtimes: compiled modules read `route`
-  // and `$fetch` through ambient-active facades, so activating these makes
-  // the render resolve against this request's URL and fetch without authors
-  // changing their imports. Restored and disposed in finally.
   const routeHistory = createMemoryRouteHistory({
     initialEntries: [options.url ?? '/'],
   });
@@ -218,7 +282,6 @@ export function renderWithDom(
   );
   const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
   const previousDataRuntime = setActiveDataRuntime(dataRuntime);
-
 
   const rootId = 'App';
   try {
@@ -250,10 +313,8 @@ export function renderWithDom(
   }
 }
 
-
 /**
- * Render a compiled application to an HTML string. The request runtime and
- * server document are always disposed, including on failure.
+ * Render a compiled application to an HTML string.
  */
 export function renderToString(
   component: ServerComponent,
@@ -262,6 +323,23 @@ export function renderToString(
   let rendered: RenderedDom | undefined;
   try {
     rendered = renderWithDom(component, options);
+    return rendered.html;
+  } finally {
+    rendered?.runtime.dispose();
+  }
+}
+
+/**
+ * Render a compiled application to an HTML string asynchronously, settling
+ * in-flight data resources before serialization when mode is 'resolve' (RFC §16.5).
+ */
+export async function renderToStringAsync(
+  component: ServerComponent,
+  options: RenderOptions = {},
+): Promise<string> {
+  let rendered: RenderedDom | undefined;
+  try {
+    rendered = await renderWithDomAsync(component, options);
     return rendered.html;
   } finally {
     rendered?.runtime.dispose();

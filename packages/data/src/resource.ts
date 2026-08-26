@@ -384,6 +384,31 @@ export class FetchStore {
     return entry;
   }
 
+  async settle(timeoutMs = 5000): Promise<boolean> {
+    const start = Date.now();
+    while (true) {
+      const pendingRequests: Promise<unknown>[] = [];
+      for (const entry of this.allEntries) {
+        if (entry.request !== null) {
+          pendingRequests.push(entry.request);
+        }
+      }
+      if (pendingRequests.length === 0) return true;
+      const remaining = timeoutMs - (Date.now() - start);
+      if (remaining <= 0) return false;
+
+      const settleAll = Promise.allSettled(pendingRequests);
+      let timer: number | undefined;
+      const timeoutPromise = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, remaining) as unknown as number;
+      });
+      await Promise.race([settleAll, timeoutPromise]);
+      clearTimeout(timer);
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+  }
+
   serialize(): SerializedDataState {
     const sources: SerializedSourceRecord[] = [];
     for (const entry of this.allEntries) {
