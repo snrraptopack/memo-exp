@@ -28,6 +28,7 @@
     "bench": "bun run bench/dom/build.ts && esbuild bench/dom/browser-entry.ts --bundle --outfile=bench/dom/dist/browser-bundle.js --format=iife && bun run bench/dom/run.ts",
     "bench:effects": "bun run bench/effects/run.ts",
     "bench:invalidation": "bun run bench/invalidation/run.ts",
+    "bench:ssr": "bun run bench/ssr/run.ts",
     "bench:linker": "bun run bench/linker/run.ts",
     "bench:router": "bun run --cwd packages/router build && vitest bench --run --no-file-parallelism bench/router",
     "bench:lifecycle": "bun run bench/lifecycle/run.ts",
