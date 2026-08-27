@@ -20,8 +20,8 @@ export { createDataRuntime } from './client';
 export {
   getActiveDataRuntime,
   setActiveDataRuntime,
+  runWithDataRuntime,
 } from './active-runtime';
-
 // Delegating facades: server rendering swaps the active runtime per request,
 // so the public bindings must never capture the singleton implementation.
 export const $fetch = ((

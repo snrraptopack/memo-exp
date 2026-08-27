@@ -24,7 +24,7 @@
  * children, so child links exist. Violations don't corrupt rendering — they
  * only orphan children from subtree teardown.
  */
-
+import { createStorage } from './async-storage';
 import {
   clearDirtyReasons,
   createDirtyReasonStore,
@@ -35,7 +35,6 @@ import {
   type DirtyReasonStore,
 } from './dirty-reasons';
 import { resolveEnvironment, type RenderEnvironment } from './environment';
-
 export type EntityId = string;
 export type { DirtyReasonInput, DirtyReasons } from './dirty-reasons';
 
@@ -210,14 +209,13 @@ const defaultRuntime: ApplicationRuntime = {
   },
 };
 
+const asyncLocalStorage = createStorage<ApplicationRuntime>();
 let activeRuntime: ApplicationRuntime = defaultRuntime;
 
 /** The runtime all kernel operations currently route through. */
 export function getActiveApplicationRuntime(): ApplicationRuntime {
-  return activeRuntime;
+  return asyncLocalStorage.getStore() ?? activeRuntime;
 }
-
-// ---------------------------------------------------------------------------
 // Runtime-lifetime hooks — subsystems with static build artifacts (access
 // tables, cell defaults) replay them into every newly created runtime so SSR
 // request contexts see the same infrastructure as the browser default.
@@ -240,7 +238,7 @@ export function onRuntimeCreated(
 export function setActiveApplicationRuntime(
   runtime: ApplicationRuntime,
 ): ApplicationRuntime {
-  const previous = activeRuntime;
+  const previous = getActiveApplicationRuntime();
   activeRuntime = runtime;
   return previous;
 }
@@ -250,24 +248,26 @@ export function runWithApplicationRuntime<T>(
   runtime: ApplicationRuntime,
   fn: () => T,
 ): T {
-  const previous = setActiveApplicationRuntime(runtime);
-  try {
-    return fn();
-  } finally {
-    activeRuntime = previous;
-  }
+  const previous = activeRuntime;
+  return asyncLocalStorage.run(runtime, () => {
+    activeRuntime = runtime;
+    try {
+      return fn();
+    } finally {
+      activeRuntime = previous;
+    }
+  });
 }
 
 /** Swap the scheduling policy of the ACTIVE runtime (tests, SSR, hosts). */
 export function setScheduler(fn: Scheduler): void {
-  activeRuntime.state.scheduler = fn;
+  getActiveApplicationRuntime().state.scheduler = fn;
 }
 
 /** The capability descriptor of the ACTIVE runtime. */
 export function getActiveEnvironment(): RenderEnvironment {
-  return activeRuntime.state.environment;
+  return getActiveApplicationRuntime().state.environment;
 }
-
 
 /**
  * Whether detached DOM templates may be cloned for new instances. False in
@@ -275,25 +275,23 @@ export function getActiveEnvironment(): RenderEnvironment {
  * document instead of cloning a template built from the first claim.
  */
 export function canReuseTemplate(): boolean {
-  return activeRuntime.state.environment.hydration === undefined;
+  return getActiveApplicationRuntime().state.environment.hydration === undefined;
 }
 
 /**
- * Run synchronous factory work with temporary render capabilities on the
- * ACTIVE runtime, then restore them. Registry/scheduler/extension ownership
- * stays in that runtime — critical for hydrated event handlers and updates.
+ * Run `run` in an overridden render environment (mode, document, hydration).
+ * Restores the previous environment afterwards.
  */
 export function runWithRenderEnvironment<T>(
   overrides: Partial<RenderEnvironment>,
   run: () => T,
 ): T {
-  const state = activeRuntime.state;
+  const state = getActiveApplicationRuntime().state;
   const previous = state.environment;
   state.environment = {
     mode: overrides.mode ?? previous.mode,
     document: overrides.document ?? previous.document,
-    schedule:
-      overrides.schedule === undefined ? previous.schedule : overrides.schedule,
+    schedule: overrides.schedule !== undefined ? overrides.schedule : previous.schedule,
     effects: overrides.effects ?? previous.effects,
     refs: overrides.refs ?? previous.refs,
     hydration: overrides.hydration ?? previous.hydration,
@@ -311,7 +309,7 @@ export function runWithRenderEnvironment<T>(
  * same instance, so concurrent runtimes never share module state.
  */
 export function getExtensionStore<T>(key: string, create: () => T): T {
-  const extensions = activeRuntime.state.extensions;
+  const extensions = getActiveApplicationRuntime().state.extensions;
   const existing = extensions.get(key);
   if (existing !== undefined) return existing as T;
   const created = create();
@@ -319,9 +317,8 @@ export function getExtensionStore<T>(key: string, create: () => T): T {
   return created;
 }
 
-/** Restore the environment default (microtask) on the ACTIVE runtime. */
 export function resetScheduler(): void {
-  activeRuntime.state.scheduler = defaultScheduler;
+  getActiveApplicationRuntime().state.scheduler = defaultScheduler;
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +366,7 @@ function depthOf(id: EntityId): number {
 
 /** Current registry generation (introspection/resolver only). */
 export function registryGeneration(): number {
-  return activeRuntime.state.generation;
+  return getActiveApplicationRuntime().state.generation;
 }
 
 function scheduleVolatileFrame(k: KernelState): void {
@@ -389,10 +386,9 @@ function scheduleVolatileFrame(k: KernelState): void {
 }
 
 export function register(entity: Entity): void {
-  const k = activeRuntime.state;
+  const k = getActiveApplicationRuntime().state;
   const parent =
     entity.parent !== null ? k.registry.get(entity.parent) : undefined;
-  // an explicit depth wins (R13 computeds register at -1: recompute BEFORE
   // any reader renders); else derive from the parent — string scan fallback
   entity.depth =
     entity.depth ??
@@ -416,7 +412,7 @@ export function register(entity: Entity): void {
  * Walks the children links; also detaches from the parent's children set.
  */
 export function unregisterSubtree(id: EntityId): void {
-  unregisterSubtreeInState(activeRuntime.state, id);
+  unregisterSubtreeInState(getActiveApplicationRuntime().state, id);
 }
 
 function unregisterSubtreeInState(k: KernelState, id: EntityId): void {
@@ -476,13 +472,12 @@ export function unregister(id: EntityId): void {
 }
 
 export function has(id: EntityId): boolean {
-  return activeRuntime.state.registry.has(id);
+  return getActiveApplicationRuntime().state.registry.has(id);
 }
 
 export function getEntity(id: EntityId): Entity | undefined {
-  return activeRuntime.state.registry.get(id);
+  return getActiveApplicationRuntime().state.registry.get(id);
 }
-
 /**
  * Render the already-mounted descendants of one compiler-owned structural
  * entity, parent before child, and cancel duplicate scheduled renders.
@@ -490,7 +485,7 @@ export function getEntity(id: EntityId): Entity | undefined {
  * whose lexical dependencies belong to the callback caller.
  */
 export function renderDescendants(id: EntityId): void {
-  const k = activeRuntime.state;
+  const k = getActiveApplicationRuntime().state;
   const visitRenderPhase = (parent: Entity): void => {
     if (parent.children === undefined) return;
     for (const childId of parent.children) {
@@ -522,13 +517,8 @@ export function renderDescendants(id: EntityId): void {
   }
 }
 
-/**
- * Live entity ids for the access-table resolver. Cached — the array is
- * rebuilt only when the registry mutates, so per-event cost is zero.
- * Callers MUST NOT mutate the returned array.
- */
 export function registeredIds(): readonly EntityId[] {
-  const k = activeRuntime.state;
+  const k = getActiveApplicationRuntime().state;
   k.idsCache ??= [...k.registry.keys()];
   return k.idsCache;
 }
@@ -546,7 +536,7 @@ export function markDirty(
   id: EntityId,
   reason?: DirtyReasonInput,
 ): void {
-  const k = activeRuntime.state;
+  const k = getActiveApplicationRuntime().state;
   if (!k.registry.has(id)) return;
   if (k.inCommit && k.markedBy !== null && k.renderingEntity !== null) {
     k.markedBy.set(id, k.renderingEntity);
@@ -566,7 +556,7 @@ export function markDirty(
  * if the row is re-dirtied later (cascade), it renders again as usual.
  */
 export function undirty(id: EntityId): void {
-  const k = activeRuntime.state;
+  const k = getActiveApplicationRuntime().state;
   // size gate first: rows are undirtied on EVERY reconcile resync (M5.7)
   // while almost never actually pending — skip the string hash lookup then
   if (k.dirty.size !== 0 && k.dirty.delete(id)) {
@@ -582,7 +572,7 @@ export function undirty(id: EntityId): void {
  * NOTE: prefix scan (rare fallback path); teardown uses the children links.
  */
 export function markDirtySubtree(id: EntityId): void {
-  const k = activeRuntime.state;
+  const k = getActiveApplicationRuntime().state;
   const prefix = id + '/';
   let marked = false;
   for (const key of k.registry.keys()) {
@@ -618,10 +608,9 @@ function scheduleCommit(k: KernelState): void {
  * Prefer `setScheduler(fn => fn())` when the WHOLE app should be sync.
  */
 export function commit(): void {
-  const k = activeRuntime.state;
+  const k = getActiveApplicationRuntime().state;
   k.scheduled = false;
   if (k.inCommit) return; // reentrancy: the running drain picks up new marks
-  k.inCommit = true;
   k.renderCounts ??= new Map();
   k.markedBy ??= new Map();
   try {
@@ -705,6 +694,6 @@ export function _internals(): {
   dirtySet: ReadonlySet<EntityId>;
   volatileSet: ReadonlySet<EntityId>;
 } {
-  const k = activeRuntime.state;
+  const k = getActiveApplicationRuntime().state;
   return { registry: k.registry, dirtySet: k.dirty, volatileSet: k.volatile };
 }

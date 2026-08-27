@@ -7,6 +7,7 @@
  * before.
  */
 
+import { createStorage } from '@memoized-dom/runtime';
 import { getExtensionStore } from '@memoized-dom/runtime';
 import { createDataRuntime } from './client';
 import type { DataRuntime } from './types';
@@ -23,10 +24,15 @@ function syncActiveStore(runtime: DataRuntime): void {
 
 syncActiveStore(defaultDataRuntime);
 
+const asyncLocalStorage = createStorage<DataRuntime>();
 let activeOverride: DataRuntime | null = null;
 
 export function getActiveDataRuntime(): DataRuntime {
-  return activeOverride ?? defaultDataRuntime;
+  return asyncLocalStorage.getStore() ?? activeOverride ?? defaultDataRuntime;
+}
+
+export function runWithDataRuntime<T>(runtime: DataRuntime, fn: () => T): T {
+  return asyncLocalStorage.run(runtime, fn);
 }
 
 /** Activate a runtime; returns the previous active runtime for restoration. */

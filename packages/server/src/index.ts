@@ -30,10 +30,12 @@ import {
   createMemoryRouteHistory,
   createRouteRuntime,
   setActiveRouteRuntime,
+  runWithRouteRuntime,
 } from '@memoized-dom/router';
 import {
   createDataRuntime,
   setActiveDataRuntime,
+  runWithDataRuntime,
 } from '@memoized-dom/data';
 import type { SerializedDataState } from '@memoized-dom/data';
 
@@ -127,8 +129,21 @@ function parseServerDocument(
  * element `outerHTML` would otherwise carry — for clean host-consumable
  * HTML.
  */
+/**
+ * Safely serializes a JSON state payload for HTML script-tag embedding.
+ * Escapes `<`, `>`, and `&` using Unicode escapes (`\u003c`, `\u003e`, `\u0026`)
+ * to prevent premature script block closure or XSS injection (RFC §16.6).
+ */
+export function escapeJsonForScriptTag(json: string): string {
+  return json
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
+}
+
 export function createPayloadScriptTag(rootId: string, payload: RenderPayload): string {
-  return `<script type="application/mmd+json" data-mmd-root="${rootId}">${JSON.stringify(payload)}</script>`;
+  const safeJson = escapeJsonForScriptTag(JSON.stringify(payload));
+  return `<script type="application/mmd+json" data-mmd-root="${rootId}">${safeJson}</script>`;
 }
 
 function serialize(
@@ -411,31 +426,32 @@ export async function renderToStringAsync(
   );
   const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
   const previousDataRuntime = setActiveDataRuntime(dataRuntime);
-
-  const rootId = 'App';
-  try {
-    const root = runWithApplicationRuntime(runtime, () =>
-      component(rootId, null),
-    ) as unknown as StringRenderableNode;
-    await dataRuntime.settle(options.timeout ?? 5000);
-    let body = root.toString(options.markers === true);
-    if (options.markers === true) {
-      body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
-    }
-    return body;
-  } catch (error) {
-    runWithApplicationRuntime(runtime, () => {
-      unregisterSubtree(rootId);
-    });
-    throw error;
-  } finally {
-    setActiveApplicationRuntime(previousRuntime);
-    setActiveRouteRuntime(previousRouteRuntime);
-    setActiveDataRuntime(previousDataRuntime);
-    routeRuntime.dispose();
-    dataRuntime.clear();
-    runtime.dispose();
-  }
+  return runWithRouteRuntime(routeRuntime, () =>
+    runWithDataRuntime(dataRuntime, () =>
+      runWithApplicationRuntime(runtime, async () => {
+        const rootId = 'App';
+        try {
+          const root = component(rootId, null) as unknown as StringRenderableNode;
+          await dataRuntime.settle(options.timeout ?? 5000);
+          let body = root.toString(options.markers === true);
+          if (options.markers === true) {
+            body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
+          }
+          return body;
+        } catch (error) {
+          unregisterSubtree(rootId);
+          throw error;
+        } finally {
+          setActiveApplicationRuntime(previousRuntime);
+          setActiveRouteRuntime(previousRouteRuntime);
+          setActiveDataRuntime(previousDataRuntime);
+          routeRuntime.dispose();
+          dataRuntime.clear();
+          runtime.dispose();
+        }
+      }),
+    ),
+  );
 }
 
 /**
@@ -520,38 +536,40 @@ export async function renderToResultAsync(
   const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
   const previousDataRuntime = setActiveDataRuntime(dataRuntime);
 
-  const rootId = 'App';
-  try {
-    const root = runWithApplicationRuntime(runtime, () =>
-      component(rootId, null),
-    ) as unknown as StringRenderableNode;
+  return runWithRouteRuntime(routeRuntime, () =>
+    runWithDataRuntime(dataRuntime, () =>
+      runWithApplicationRuntime(runtime, async () => {
+        const rootId = 'App';
+        try {
+          const root = component(rootId, null) as unknown as StringRenderableNode;
 
-    if (options.mode === 'resolve') {
-      await dataRuntime.settle(options.timeout ?? 5000);
-    }
+          if (options.mode === 'resolve') {
+            await dataRuntime.settle(options.timeout ?? 5000);
+          }
 
-    let body = root.toString(options.markers === true);
-    const state = dataRuntime.serializeState();
-    const payload: RenderPayload = { version: 1, ...(state.sources.length > 0 ? { state } : {}) };
-    if (options.markers === true) {
-      body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
-    }
-    return {
-      html: body,
-      payload,
-      scriptTag: createPayloadScriptTag(rootId, payload),
-    };
-  } catch (error) {
-    runWithApplicationRuntime(runtime, () => {
-      unregisterSubtree(rootId);
-    });
-    throw error;
-  } finally {
-    setActiveApplicationRuntime(previousRuntime);
-    setActiveRouteRuntime(previousRouteRuntime);
-    setActiveDataRuntime(previousDataRuntime);
-    routeRuntime.dispose();
-    dataRuntime.clear();
-    runtime.dispose();
-  }
+          let body = root.toString(options.markers === true);
+          const state = dataRuntime.serializeState();
+          const payload: RenderPayload = { version: 1, ...(state.sources.length > 0 ? { state } : {}) };
+          if (options.markers === true) {
+            body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
+          }
+          return {
+            html: body,
+            payload,
+            scriptTag: createPayloadScriptTag(rootId, payload),
+          };
+        } catch (error) {
+          unregisterSubtree(rootId);
+          throw error;
+        } finally {
+          setActiveApplicationRuntime(previousRuntime);
+          setActiveRouteRuntime(previousRouteRuntime);
+          setActiveDataRuntime(previousDataRuntime);
+          routeRuntime.dispose();
+          dataRuntime.clear();
+          runtime.dispose();
+        }
+      }),
+    ),
+  );
 }

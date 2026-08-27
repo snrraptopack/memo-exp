@@ -17,8 +17,6 @@ export {
   undirty,
   markDirtySubtree,
   commit,
-  setScheduler,
-  resetScheduler,
   getEntity,
   renderDescendants,
   createApplicationRuntime,
@@ -30,6 +28,7 @@ export {
   canReuseTemplate,
   runWithRenderEnvironment,
 } from './kernel';
+export { createStorage, type StorageShim } from './async-storage';
 export type {
   ApplicationRuntime,
   DirtyReasonInput,

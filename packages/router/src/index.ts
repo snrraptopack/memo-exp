@@ -38,7 +38,7 @@ export function back() {
 export function forward() {
   return activeForward();
 }
-export { getActiveRouteRuntime, setActiveRouteRuntime } from './active-runtime';
+export { getActiveRouteRuntime, setActiveRouteRuntime, runWithRouteRuntime } from './active-runtime';
 
 export { createRouteRuntime, supportsNavigationAPI } from './runtime';
 export { redirectRoute } from './types';

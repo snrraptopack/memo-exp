@@ -16,6 +16,7 @@
  * own URL against the application graph.
  */
 
+import { createStorage } from '@memoized-dom/runtime';
 import { defaultRouteRuntime } from './default-runtime';
 import type { RouteRuntime } from './runtime';
 import type {
@@ -31,12 +32,21 @@ import type {
   RouteState,
 } from './types';
 
+const asyncLocalStorage = createStorage<RouteRuntime>();
 let activeOverride: RouteRuntime | null = null;
 let manifestResolver: RouteResolver | null = null;
 const manifestApplied = new WeakSet<RouteRuntime>();
 
 export function getActiveRouteRuntime(): RouteRuntime {
-  return activeOverride ?? defaultRouteRuntime;
+  return asyncLocalStorage.getStore() ?? activeOverride ?? defaultRouteRuntime;
+}
+
+export function runWithRouteRuntime<T>(runtime: RouteRuntime, fn: () => T): T {
+  if (manifestResolver !== null && !manifestApplied.has(runtime)) {
+    manifestApplied.add(runtime);
+    runtime.replaceResolver(manifestResolver);
+  }
+  return asyncLocalStorage.run(runtime, fn);
 }
 
 /**

@@ -70,11 +70,24 @@ function resolveHost(target: MountTarget): Element {
   return host;
 }
 
+export interface MountOptions {
+  /**
+   * Optional hydration options. If provided (or true), `mount` operates in
+   * hydration mode and adopts existing server DOM nodes.
+   */
+  hydration?: boolean | HydrateOptions;
+}
+
 /** Mount one compiled application root into an ordinary DOM host. */
 export function mount(
   target: MountTarget,
   component: MountableComponent,
+  options?: MountOptions,
 ): MountedApplication {
+  if (options?.hydration) {
+    const hydrateOpts = typeof options.hydration === 'object' ? options.hydration : {};
+    return hydrate(target, component, hydrateOpts);
+  }
   const host = resolveHost(target);
   if (mountStore().mountedHosts.has(host)) {
     throw new Error('memoized-dom: mount target already owns an application');
