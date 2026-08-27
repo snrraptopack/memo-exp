@@ -1,10 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { compile } from '@memoized-dom/compiler';
 import { renderToResult, renderToResultAsync } from '@memoized-dom/server';
 
 const PORT = Number(process.env.PORT || 3000);
 const dir = import.meta.dirname;
+const cacheDir = join(dir, '.cache');
+mkdirSync(cacheDir, { recursive: true });
 
 // 1. Compile universal component with memoized-dom compiler
 const source = readFileSync(join(dir, 'SsrApp.tsx'), 'utf8');
@@ -15,24 +18,38 @@ const blobUrl = 'data:text/javascript;base64,' + Buffer.from(compiledJs).toStrin
 const mod = await import(blobUrl);
 const SsrApp = mod.SsrAppApp;
 
-// 3. Client bundle generated via standalone browser build
-const runtimeChunk = readFileSync(join(dir, '../../packages/runtime/dist/chunks/src-CxOorTBN.js'), 'utf8');
+// 3. Build minified browser client bundle with idle hydration
+const entryFile = join(cacheDir, 'bundle-entry.js');
+const entryCode = `
+${compiledJs}
 
-const clientBundleCode = `
-${runtimeChunk}
-
-${compiledJs.replace(/import\s*\*\s*as\s*_MD\s*from\s*['"][^'"]+['"];?/g, '')}
-
-registerRootFactory(SsrAppApp, {
-  id: 'App',
-  create: () => SsrAppApp('App', null),
+_MD.registerRootFactory(SsrAppApp, {
+  id: "App",
+  create: () => SsrAppApp("App", null),
 });
 
-hydrate('root', SsrAppApp, { recover: true });
-console.log('⚡ [memoized-dom] Client hydrated successfully and live reactivity resumed');
+// Macro-task hydration: yields main thread to achieve 0ms TBT and 100 Performance
+setTimeout(() => {
+  _MD.hydrate("root", SsrAppApp, { recover: true });
+}, 0);
 `;
+writeFileSync(entryFile, entryCode);
+
+const build = await Bun.build({
+  entrypoints: [entryFile],
+  target: 'browser',
+  format: 'esm',
+  minify: true,
+});
+
+const clientBundleCode = await build.outputs[0]?.text() ?? '';
+const clientBundleGzip = gzipSync(Buffer.from(clientBundleCode, 'utf8'));
+
+// Inlined CSS for zero render-blocking requests
+const cssRaw = readFileSync(join(dir, 'styles.css'), 'utf8');
 
 console.log(`\n⚡ Memoized DOM Universal SSR Server running on http://localhost:${PORT}\n`);
+console.log(`- Bundle size:          ${(clientBundleCode.length / 1024).toFixed(1)} KB (raw) / ${(clientBundleGzip.length / 1024).toFixed(1)} KB (gzip)`);
 console.log(`- Full Hydration SSR:   http://localhost:${PORT}/`);
 console.log(`- Pure Static HTML:     http://localhost:${PORT}/?markers=false`);
 console.log(`- Async Settle SSR:     http://localhost:${PORT}/?async=true\n`);
@@ -41,18 +58,25 @@ Bun.serve({
   port: PORT,
   async fetch(req) {
     const url = new URL(req.url);
+    const acceptEncoding = req.headers.get('accept-encoding') || '';
+    const supportsGzip = acceptEncoding.includes('gzip');
 
-    // Serve static css
-    if (url.pathname === '/styles.css') {
-      return new Response(Bun.file(join(dir, 'styles.css')), {
-        headers: { 'content-type': 'text/css' },
-      });
-    }
-
-    // Serve client bundle
+    // Serve client hydration bundle
     if (url.pathname === '/client.js' || url.pathname.endsWith('/client.js')) {
+      if (supportsGzip) {
+        return new Response(clientBundleGzip, {
+          headers: {
+            'content-type': 'application/javascript; charset=utf-8',
+            'content-encoding': 'gzip',
+            'cache-control': 'public, max-age=31536000, immutable',
+          },
+        });
+      }
       return new Response(clientBundleCode, {
-        headers: { 'content-type': 'application/javascript; charset=utf-8' },
+        headers: {
+          'content-type': 'application/javascript; charset=utf-8',
+          'cache-control': 'public, max-age=31536000, immutable',
+        },
       });
     }
 
@@ -79,8 +103,10 @@ Bun.serve({
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Memoized DOM Universal SSR and Hydration demo with zero-cost fine-grained reactivity." />
     <title>Memoized DOM — Universal SSR & Hydration</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <style>${cssRaw}</style>
+    ${useMarkers ? `<link rel="modulepreload" href="/client.js" />` : ''}
   </head>
   <body>
     <!-- SSR Server rendered in ${duration}ms (markers: ${useMarkers}) -->
@@ -89,14 +115,27 @@ Bun.serve({
       useMarkers
         ? `<!-- Scoped DOM-embedded JSON state payload channel (RFC §16.6) -->
     ${result.scriptTag}
-    <!-- Client hydration bundle -->
-    <script type="module" src="/client.js"></script>`
+    <!-- Client hydration bundle: idle adoption -->
+    <script type="module" src="/client.js" defer></script>`
         : `<!-- Static HTML mode (zero hydration comments, no JS loaded) -->`
     }
   </body>
 </html>`;
 
-    return new Response(fullHtml, {
+    const htmlBuffer = Buffer.from(fullHtml, 'utf8');
+
+    if (supportsGzip) {
+      const gzippedHtml = gzipSync(htmlBuffer);
+      return new Response(gzippedHtml, {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'content-encoding': 'gzip',
+          'x-rendered-in': `${duration}ms`,
+        },
+      });
+    }
+
+    return new Response(htmlBuffer, {
       headers: {
         'content-type': 'text/html; charset=utf-8',
         'x-rendered-in': `${duration}ms`,

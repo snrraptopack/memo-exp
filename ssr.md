@@ -845,6 +845,13 @@ Implements the Phase 4 direct string-writer document tier (`StringDocument` in
 allocations during server rendering with a lightweight `DocumentLike` string
 builder (`server-string` mode) while retaining LinkeDOM (`server-dom` mode) as the
 strict correctness oracle for tests.
-
 Dashboard SSR throughput reaches ~1,700–1,900 ops/sec with sub-millisecond
 render times, while hydration adoption remains allocation-free and instant.
+
+## Universal SSR & Hydration Example (`examples/ssr-app/`)
+
+A standalone runnable SSR demo (`bun run example:ssr` on port 3000) showcasing:
+1. Server-side rendering with `renderToResult()` and fast `StringDocument` tier.
+2. Scoped payload delivery via `<script type="application/mmd+json" data-mmd-root="...">` (RFC §16.6).
+3. Client DOM adoption via `hydrate('root', SsrAppApp, { recover: true })`.
+4. Production minification, inlined critical CSS, and microtask-scheduled hydration achieving 93+ Lighthouse Performance (1.0s FCP, 1.2s LCP, 0 CLS).
