@@ -48,72 +48,85 @@ async function importCompiled(): Promise<CompiledApp> {
   return import(/* @vite-ignore */ pathToFileURL(output).href);
 }
 
-function mockDelayedFetch(data: unknown, delayMs = 15): typeof fetch {
-  return (() => {
-    const { promise, resolve } = Promise.withResolvers<void>();
-    setTimeout(resolve, delayMs);
-    return promise.then(() =>
+function controlledFetch(data: unknown): {
+  fetch: typeof fetch;
+  resolve: () => void;
+} {
+  const gate = Promise.withResolvers<void>();
+  const fetch = (() =>
+    gate.promise.then(() =>
       new Response(JSON.stringify(data), {
         headers: { 'content-type': 'application/json' },
         status: 200,
       }),
-    );
-  }) as unknown as typeof fetch;
+    )) as unknown as typeof globalThis.fetch;
+  return { fetch, resolve: gate.resolve };
 }
 
-describe('SSR Phase 6: HTTP Chunked Streaming (renderToReadableStream)', () => {
-  it('emits initial shell chunk immediately and state envelope upon completion', async () => {
+async function readChunks(
+  stream: ReadableStream<Uint8Array>,
+): Promise<string[]> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return chunks;
+    chunks.push(decoder.decode(value));
+  }
+}
+
+describe('SSR ordered streaming', () => {
+  it('emits pending HTML immediately in explicit shell mode', async () => {
     const app = await importCompiled();
-    const fetch = mockDelayedFetch({ name: 'Ada Lovelace' }, 10);
+    const request = controlledFetch({ name: 'Ada Lovelace' });
 
-    const stream = renderToReadableStream(app.App, {
-      fetch,
+    const chunks = await readChunks(renderToReadableStream(app.App, {
+      fetch: request.fetch,
       markers: true,
-    });
+      mode: 'shell',
+    }));
 
-    expect(stream).toBeInstanceOf(ReadableStream);
-
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    const chunks: string[] = [];
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(decoder.decode(value));
-    }
-
-    // Chunk 1: Initial shell HTML
-    expect(chunks.length).toBeGreaterThanOrEqual(2);
-    const initialShell = chunks[0]!;
-    expect(initialShell).toContain('<!--mmd:r:App-->');
-    expect(initialShell).toContain('class="streaming-root"');
-
-    // Chunk 2: Companion state envelope
-    const finalChunk = chunks[chunks.length - 1]!;
-    expect(finalChunk).toContain('<script type="application/mmd+json" data-mmd-root="App">');
-    expect(finalChunk).toContain('Ada Lovelace');
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).toContain('class="skeleton"');
+    expect(chunks[0]).not.toContain('Ada Lovelace');
+    expect(chunks[1]).toContain('"status":"pending"');
   });
 
-  it('supports abort signal to cancel in-flight streaming', async () => {
+  it('waits for data and emits resolved HTML before the state envelope', async () => {
     const app = await importCompiled();
-    const controller = new AbortController();
-    const fetch = mockDelayedFetch({ name: 'Ada' }, 500);
-
+    const request = controlledFetch({ name: 'Ada Lovelace' });
     const stream = renderToReadableStream(app.App, {
-      fetch,
-      signal: controller.signal,
+      fetch: request.fetch,
+      markers: true,
+      mode: 'resolve',
     });
 
-    const reader = stream.getReader();
-    // Read the initial shell chunk
-    const first = await reader.read();
-    expect(first.done).toBe(false);
+    request.resolve();
+    const chunks = await readChunks(stream);
 
-    // Abort while waiting for async resolution
-    controller.abort(new Error('client connection closed'));
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).toContain('<!--mmd:r:App-->');
+    expect(chunks[0]).toContain('Ada Lovelace');
+    expect(chunks[0]).not.toContain('class="skeleton"');
+    expect(chunks[1]).toContain(
+      '<script type="application/mmd+json" data-mmd-root="App">',
+    );
+    expect(chunks[1]).toContain('Ada Lovelace');
+  });
 
-    // Subsequent read rejects with the abort reason
+  it('rejects the stream and aborts request-owned work', async () => {
+    const app = await importCompiled();
+    const request = controlledFetch({ name: 'Ada' });
+    const abort = new AbortController();
+    const reader = renderToReadableStream(app.App, {
+      fetch: request.fetch,
+      signal: abort.signal,
+      mode: 'resolve',
+    }).getReader();
+
+    abort.abort(new Error('client connection closed'));
+
     await expect(reader.read()).rejects.toThrow('client connection closed');
   });
 });

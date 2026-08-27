@@ -10,7 +10,7 @@ import {
   createServer,
   type ViteDevServer,
 } from 'vite';
-import memoizedDom from '../src';
+import memoizedDom, { memoizedDomFullstack } from '../src';
 
 const fixture = resolve(import.meta.dirname, 'fixtures/vite-app');
 const source = resolve(fixture, 'src');
@@ -256,4 +256,36 @@ describe('Vite 8 adapter', () => {
       { timeout: 15_000 },
     );
   }, 30_000);
+  it('serves Web handlers through first-class fullstack dev middleware', async () => {
+    server = await createServer({
+      root: fixture,
+      configFile: false,
+      appType: 'custom',
+      logLevel: 'silent',
+      plugins: [
+        ...plugins(),
+        memoizedDomFullstack({ entry: 'src/server.ts' }),
+      ],
+      server: {
+        host: '127.0.0.1',
+        port: 0,
+      },
+    });
+    await server.listen();
+    const address = server.httpServer?.address();
+    if (address === null || address === undefined || typeof address === 'string') {
+      throw new Error('Expected Vite TCP server address');
+    }
+
+    const health = await fetch(`http://127.0.0.1:${address.port}/health`);
+    expect(health.status).toBe(200);
+    await expect(health.json()).resolves.toEqual({ ok: true });
+
+    const document = await fetch(`http://127.0.0.1:${address.port}/`);
+    expect(document.headers.get('content-type')).toContain('text/html');
+    await expect(document.text()).resolves.toBe(
+      '<!doctype html><h1>Fullstack</h1>',
+    );
+  });
+
 });

@@ -298,8 +298,8 @@ export function createListRegion<T>(
   }
 
   function reconcile(items: readonly T[], syncRetained = true): void {
+    const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
-    // ---- M5.7 shape fast path ---------------------------------------------
     // Same length AND every key identical at every position → no additions,
     // no removals, no reorder is possible: skip ALL map building and LIS.
     // This is the steady state of every list that only sees content edits.
@@ -402,8 +402,8 @@ export function createListRegion<T>(
       }
       if (
         firstOwned !== undefined &&
-        firstOwned.parentNode === parent &&
-        endAnchor.parentNode === parent &&
+        firstOwned.parentNode === container &&
+        endAnchor.parentNode === container &&
         getActiveEnvironment().document.createRange !== undefined
       ) {
         const range = getActiveEnvironment().document.createRange!();
@@ -437,7 +437,7 @@ export function createListRegion<T>(
             fragment.appendChild(nodes as Node);
           }
         }
-        parent.insertBefore(fragment, endAnchor);
+        container.insertBefore(fragment, endAnchor);
       }
 
       cache = next; nextMap = old;
@@ -467,7 +467,7 @@ export function createListRegion<T>(
             fragment.appendChild(nodes as Node);
           }
         }
-        parent.insertBefore(fragment, endAnchor);
+        container.insertBefore(fragment, endAnchor);
       }
       cache = next; nextMap = old;
       const pe = prevEntries; prevEntries = ordered; nextEntries = pe;
@@ -532,7 +532,7 @@ export function createListRegion<T>(
           frag.appendChild(nodes as Node);
         }
       }
-      parent.insertBefore(frag, cursor);
+      container.insertBefore(frag, cursor);
       pending = null;
     };
 

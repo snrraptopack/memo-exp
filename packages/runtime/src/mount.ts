@@ -206,8 +206,9 @@ export function hydrate(
   // Locate and restore DOM-embedded state payload channel (RFC §16.6)
   if (options.payload !== 'none') {
     let rawPayload: unknown = typeof options.payload === 'object' ? options.payload : undefined;
+    let channelScript: Element | null = null;
     if (rawPayload === undefined && typeof globalThis.document !== 'undefined') {
-      const channelScript = globalThis.document.querySelector(
+      channelScript = globalThis.document.querySelector(
         `script[type="application/mmd+json"][data-mmd-root="${definition.id}"]`,
       );
       if (channelScript?.textContent) {

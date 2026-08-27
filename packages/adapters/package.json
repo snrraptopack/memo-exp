@@ -1,0 +1,37 @@
+{
+  "name": "@memoized-dom/adapters",
+  "version": "0.0.1",
+  "description": "Web-standard and Node runtime adapters for memoized-dom fullstack handlers",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
+    },
+    "./bun": {
+      "types": "./dist/bun.d.ts",
+      "import": "./dist/bun.js",
+      "default": "./dist/bun.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run ./scripts/clean.ts && rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

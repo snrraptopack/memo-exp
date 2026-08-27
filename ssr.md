@@ -848,14 +848,3 @@ strict correctness oracle for tests.
 Dashboard SSR throughput reaches ~1,700–1,900 ops/sec with sub-millisecond
 render times, while hydration adoption remains allocation-free and instant.
 
-## Production-Grade Multi-Route Fullstack Application (`examples/ssr-app/`)
-
-A complete fullstack reference application demonstrating real-world Memoized DOM architecture:
-
-1. **Fullstack Vite Integration**: Built with `vite.config.ts`, `@memoized-dom/vite`, and Vite SSR middleware (`vite.ssrLoadModule()`) with live HMR.
-2. **Multi-Page Routing**: Complete declarative routing (`/`, `/feed`, `/analytics`, `/settings`) with client-side pushState transitions and URL synchronization.
-3. **Colorless Async Streaming & State Transfer (RFC §16)**:
-   - Fast initial shell flush (<1ms TTFB).
-   - Asynchronous settlement across parallel `$fetch` resources.
-   - Companion state payload envelope (`<script type="application/mmd+json">`) claiming data without duplicate client requests.
-4. **Verified Live End-to-End**: Zero page console errors, instant navigation, and verified in real Chromium instances.

@@ -3,7 +3,7 @@
  * per ApplicationRuntime. Two concurrent runtimes over one described key
  * must get independent instances and independent request state.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   createApplicationRuntime,
   runWithApplicationRuntime,
@@ -14,6 +14,8 @@ import {
   setActiveDataRuntime,
   $ops,
   $track,
+  type DataRuntime,
+  type ResolvedValue,
 } from '../src';
 import {
   readResolvedValue,
@@ -43,24 +45,6 @@ function neverRuntime(): { runtime: DataRuntime; calls: () => number } {
   return { runtime, calls: () => state.count };
 }
 
-function deferredRuntime(): {
-  runtime: DataRuntime;
-  resolve: (payload: unknown) => void;
-} {
-  let resolve!: (response: Response) => void;
-  const runtime = createDataRuntime({
-    fetch: (() => new Promise<Response>((accept) => { resolve = accept; })) as typeof fetch,
-  });
-  return {
-    runtime,
-    resolve: (payload: unknown) =>
-      resolve(
-        new Response(JSON.stringify(payload), {
-          headers: { 'content-type': 'application/json' },
-        }),
-      ),
-  };
-}
 
 describe('module transparent sources', () => {
   it('materializes lazily and independently per ApplicationRuntime', async () => {
@@ -68,7 +52,7 @@ describe('module transparent sources', () => {
     const b = neverRuntime();
 
     describeModuleSource<User>(KEY, () =>
-      getActiveDataRuntime().$fetch<User>('/api/session') as ResolvedValue<User>,
+      getActiveDataRuntime().$fetch<User>('/api/session') as unknown as ResolvedValue<User>,
     );
     const ref = sourceRef(KEY);
 
@@ -81,11 +65,11 @@ describe('module transparent sources', () => {
     const tick = () => new Promise<void>((done) => setTimeout(done, 0));
     runWithApplicationRuntime(runtimeA, () => {
       setActiveDataRuntime(a.runtime);
-      expect(readResolvedValueForRender(ref)).toBeUndefined();
+      expect(readResolvedValueForRender<User>(ref as unknown as ResolvedValue<User>)).toBeUndefined();
     });
     runWithApplicationRuntime(runtimeB, () => {
       setActiveDataRuntime(b.runtime);
-      expect(readResolvedValueForRender(ref)).toBeUndefined();
+      expect(readResolvedValueForRender<User>(ref as unknown as ResolvedValue<User>)).toBeUndefined();
     });
     await tick();
 
@@ -111,7 +95,7 @@ describe('module transparent sources', () => {
     const pending = neverRuntime();
 
     describeModuleSource<User>(KEY, () =>
-      getActiveDataRuntime().$fetch<User>('/api/session') as ResolvedValue<User>,
+      getActiveDataRuntime().$fetch<User>('/api/session') as unknown as ResolvedValue<User>,
     );
     const ref = sourceRef(KEY);
 
@@ -129,8 +113,8 @@ describe('module transparent sources', () => {
 
     runWithApplicationRuntime(runtimeA, () => {
       setActiveDataRuntime(settled.runtime);
-      expect($track(readResolvedValue(ref)).pending).toBe(false);
-      expect(readResolvedValue(ref).name).toBe('From-A');
+      expect($track(resolveModuleSource(ref)).pending).toBe(false);
+      expect(readResolvedValue<User>(ref as unknown as ResolvedValue<User>).name).toBe('From-A');
     });
 
     // Runtime B materializes its OWN pending instance.
@@ -138,13 +122,13 @@ describe('module transparent sources', () => {
       setActiveDataRuntime(pending.runtime);
       const user = resolveModuleSource(ref);
       expect($track(user as ResolvedValue<User>).pending).toBe(true);
-      expect(readResolvedValueForRender(ref)).toBeUndefined();
+      expect(readResolvedValueForRender<User>(ref as unknown as ResolvedValue<User>)).toBeUndefined();
     });
 
     // A's committed value does not leak into B.
     runWithApplicationRuntime(runtimeB, () => {
       setActiveDataRuntime(pending.runtime);
-      expect(readResolvedValueForRender(ref)).toBeUndefined();
+      expect(readResolvedValueForRender<User>(ref as unknown as ResolvedValue<User>)).toBeUndefined();
     });
 
     runtimeA.dispose();
@@ -156,7 +140,7 @@ describe('module transparent sources', () => {
     const previous = setActiveDataRuntime(runtime);
 
     describeModuleSource<User>(KEY, () =>
-      getActiveDataRuntime().$fetch<User>('/api/session') as ResolvedValue<User>,
+      getActiveDataRuntime().$fetch<User>('/api/session') as unknown as ResolvedValue<User>,
     );
     const ref = sourceRef(KEY);
 
@@ -164,7 +148,7 @@ describe('module transparent sources', () => {
     expect(state.pending).toBe(true);
     expect(state.status).toBe('pending');
 
-    $ops(ref).update((current) => ({
+    $ops<User>(ref).update((current) => ({
       ...(current ?? { id: 0 }),
       name: 'Local',
     }));

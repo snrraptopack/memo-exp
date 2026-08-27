@@ -85,6 +85,7 @@ import {
 export {
   isLightweightListedComponent,
   isListLightweightCandidate,
+  isLightweightRowComponent,
 } from './analysis/component-graph';
 export { buildAccessTable } from './analysis/access-table';
 

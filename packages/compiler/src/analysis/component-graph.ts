@@ -78,7 +78,7 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
   const sites = ctx.listedSites.get(name);
   const patterns: string[] = [];
   if (sites && sites.length > 0) {
-    if (isLightweightListedComponent(ctx, name)) {
+    if (isLightweightRowComponent(ctx, name)) {
       for (const site of sites) {
         const containerEnd = site.suffix.lastIndexOf('/');
         const container =
@@ -132,6 +132,27 @@ export function isLightweightListedComponent(
   }
   ctx.lightweightCache.set(name, eligible);
   return eligible;
+}
+
+/**
+ * Whether a component row should be called with the lightweight (props-first)
+ * ABI in the list create factory. This mirrors the `lightweight` decision in
+ * `transformComponent` exactly: a component is lightweight only when it passes
+ * *all* of the following gates:
+ *   1. `isLightweightListedComponent` (row ABI eligible)
+ *   2. no transparent async-source bindings (`transparentSources`)
+ *   3. no inherited data-policy parameter (`transparentPolicyParams`)
+ *
+ * Missing gates 2–3 was the bug: a component that closes over `$ops(src).mutate()`
+ * gets emitted as an entity-factory `function Comp(_id, _parent, _propsBox)`,
+ * but the list create factory was calling it as `Comp({ item }, _rowId, ...)`,
+ * mapping `{ item }` → `_id` and leaving `_propsBox` as the parent string.
+ */
+export function isLightweightRowComponent(ctx: Ctx, name: string): boolean {
+  if (!isLightweightListedComponent(ctx, name)) return false;
+  if (ctx.transparentSources.has(name)) return false;
+  if (ctx.transparentPolicyParams.has(name)) return false;
+  return true;
 }
 
 /** Intrinsic row shape used before graph linking marks a component listed. */

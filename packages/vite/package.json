@@ -23,6 +23,7 @@
     "bench": "bun run ./bench/run.ts"
   },
   "dependencies": {
+    "@memoized-dom/adapters": "workspace:*",
     "@memoized-dom/compiler": "^0.0.5"
   },
   "peerDependencies": {

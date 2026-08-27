@@ -93,9 +93,11 @@ function resolver(): AccessResolverState {
 }
 
 /** Full (re)build of wildcard expansions against the live registry. */
-function rebuildMatched(s: AccessResolverState): void {
+function rebuildMatched(
+  s: AccessResolverState,
+  live: Iterable<EntityId> = registeredIds(),
+): void {
   s.wildMatched = new Map();
-  const live = registeredIds();
   for (const [k, patterns] of s.wildReaders) {
     const set = new Set<EntityId>();
     for (const regex of patterns) {
@@ -106,7 +108,6 @@ function rebuildMatched(s: AccessResolverState): void {
     s.wildMatched.set(k, set);
   }
 }
-
 // Incremental expansion maintenance: test only the changed id. Registry
 // events fire while the emitting runtime is active, so this touches only the
 // active runtime's own expansions.
@@ -150,8 +151,10 @@ function compilePattern(raw: string): RegExp | null {
  * of them must stay live — a write in module A can target a component
  * declared in module B. Re-installing the same fragment is idempotent.
  */
-function rebuildTables(): void {
-  const s = resolver();
+function rebuildTables(
+  s: AccessResolverState = resolver(),
+  live: Iterable<EntityId> = registeredIds(),
+): void {
   s.rootId = '';
   s.exactReaders = new Map();
   s.wildReaders = new Map();
@@ -189,7 +192,7 @@ function rebuildTables(): void {
   ];
   s.matchKeysCache.clear();
   s.resolutionCache.clear();
-  rebuildMatched(s);
+  rebuildMatched(s, live);
   s.resVersion++;
 }
 
@@ -226,6 +229,7 @@ onRuntimeCreated((runtime) => {
   for (const [owner, fragment] of staticFragments) {
     s.fragments.set(owner, { table: fragment.table, root: fragment.root });
   }
+  rebuildTables(s, runtime.state.registry.keys());
 });
 
 /** Remove one compiler module's analysis fragment during hot replacement. */

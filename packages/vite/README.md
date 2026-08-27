@@ -35,6 +35,39 @@ schedulable entity boundary.
 Restart the Vite dev server after changing or rebuilding this server-side
 plugin. An active Vite process does not hot-replace plugin hooks.
 
+## Fullstack development
+
+`memoizedDomFullstack()` installs a post-Vite server boundary. Vite continues
+to own client modules, CSS, dependency optimization, and HMR. All remaining
+requests are dispatched to a Web-standard server entry loaded through
+`ssrLoadModule()`:
+
+```ts
+import { defineConfig } from 'vite';
+import memoizedDom, { memoizedDomFullstack } from '@memoized-dom/vite';
+
+export default defineConfig({
+  appType: 'custom',
+  plugins: [
+    memoizedDom({ entries: 'src/entry.client.ts' }),
+    memoizedDomFullstack({ entry: 'src/entry.server.ts' }),
+  ],
+});
+```
+
+The server entry exports `fetch(request)` or a default Web handler:
+
+```ts
+export function fetch(request: Request): Response {
+  return new Response(`Request URL: ${request.url}`);
+}
+```
+
+The dev adapter uses the published `@memoized-dom/adapters/node` bridge. It
+does not emulate Node request/response objects or intercept Vite asset routes.
+Production hosts can use the same Web handler directly on Bun/Workers, or the
+Node adapter with an ordinary `node:http` server.
+
 Run the package-owned integration tests and adapter benchmark with:
 
 ```bash

@@ -75,4 +75,57 @@ describe('fix.md regressions', () => {
     expect(diagnostic.message).toContain('> 1 | bad');
     expect(diagnostic.message).not.toMatch(/\x1B\[/);
   });
+
+  it('uses entity-factory ABI for a listed component that closes over $ops writes', () => {
+    // A component row with a transparent async source (e.g. $ops) must be emitted
+    // with the entity-factory calling convention: Comp(_id, _parent, _propsBox).
+    // Before the fix, buildComponentRowCreate used only isLightweightListedComponent
+    // (which returned true) and emitted Comp({ item }, _rowId, ...) — the wrong
+    // props-first ABI — causing _propsBox to receive the parent string and
+    // `item` to destructure from the entity id, yielding undefined at runtime.
+    //
+    // The bug requires StoryRow to directly reference a module-scope transparent
+    // source (stories) within its body — that adds 'stories' to its transparentSources
+    // set, forcing the entity-factory ABI. Calling $ops(stories) inside the row
+    // component body satisfies this requirement.
+    const code = compileModules({
+      './session.ts': `
+        import { $fetch } from '@memoized-dom/data';
+        export const stories = $fetch<Array<{ id: number; title: string }>>('/stories');
+      `,
+      './app.tsx': `
+        import { stories } from './session';
+        import { $ops } from '@memoized-dom/data';
+
+        function StoryRow({ item }) {
+          return (
+            <li>
+              <span>{item.title}</span>
+              <button onClick={() => $ops(stories).update(prev => prev!.filter(s => s.id !== item.id))}>
+                delete
+              </button>
+            </li>
+          );
+        }
+
+        export function App() {
+          return (
+            <ul>
+              {stories.map(s => <StoryRow key={s.id} item={s} />)}
+            </ul>
+          );
+        }
+      `,
+    });
+    // Join all compiled module outputs so assertions work across the bundle.
+    const combined = Object.values(code).join('\n');
+    // StoryRow must be emitted as entity-factory (has _parent param, uses registerProps)
+    // NOT as lightweight (which would be `function StoryRow(item, _id, ...)`)
+    expect(combined).toMatch(/function StoryRow\(_id\d*, _parent\d*/);
+    expect(combined).toContain('.registerProps(');
+    // The create factory must call StoryRow with the entity ABI:
+    // StoryRow(_rowId, ownerId, [props]) — NOT StoryRow({ item }, _rowId, ...)
+    // Presence of `.registerProps` and absence of props-first call pattern confirms it.
+    expect(combined).not.toMatch(/StoryRow\(\s*\{/);
+  });
 });

@@ -45,6 +45,10 @@
         "vite": "^8.2.2",
       },
     },
+    "packages/adapters": {
+      "name": "@memoized-dom/adapters",
+      "version": "0.0.1",
+    },
     "packages/compiler": {
       "name": "@memoized-dom/compiler",
       "version": "0.0.5",
@@ -99,6 +103,7 @@
       "name": "@memoized-dom/vite",
       "version": "0.0.6",
       "dependencies": {
+        "@memoized-dom/adapters": "workspace:*",
         "@memoized-dom/compiler": "^0.0.5",
       },
       "peerDependencies": {
@@ -223,6 +228,8 @@
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
+
+    "@memoized-dom/adapters": ["@memoized-dom/adapters@workspace:packages/adapters"],
 
     "@memoized-dom/compiler": ["@memoized-dom/compiler@workspace:packages/compiler"],
 

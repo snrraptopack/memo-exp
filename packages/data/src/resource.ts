@@ -342,8 +342,38 @@ export class FetchStore {
 
   private takeRestoreRecord(identity: string): SerializedSourceRecord | undefined {
     const record = this.restoreRecords.get(identity);
-    if (record !== undefined) this.restoreRecords.delete(identity);
-    return record;
+    if (record !== undefined) {
+      this.restoreRecords.delete(identity);
+      return record;
+    }
+    // Cross-environment / SSR relative-path normalization (RFC §16.6):
+    // A server render serializes relative target "/api/session" as "GET|/api/session||schema:none",
+    // while a browser client resolves it against location.origin as "GET|http://host:port/api/session||schema:none".
+    for (const [key, candidate] of this.restoreRecords) {
+      if (key === identity) continue;
+      const keyParts = key.split('|');
+      const identityParts = identity.split('|');
+      if (
+        keyParts[0] === identityParts[0] &&
+        keyParts.slice(2).join('|') === identityParts.slice(2).join('|')
+      ) {
+        const keyUrl = keyParts[1] ?? '';
+        const identityUrl = identityParts[1] ?? '';
+        const normKey =
+          keyUrl.startsWith('http://') || keyUrl.startsWith('https://')
+            ? new URL(keyUrl).pathname
+            : keyUrl;
+        const normId =
+          identityUrl.startsWith('http://') || identityUrl.startsWith('https://')
+            ? new URL(identityUrl).pathname
+            : identityUrl;
+        if (normKey === normId) {
+          this.restoreRecords.delete(key);
+          return candidate;
+        }
+      }
+    }
+    return undefined;
   }
 
   acquire(

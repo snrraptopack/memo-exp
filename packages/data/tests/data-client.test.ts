@@ -45,7 +45,7 @@ describe('$fetch', () => {
 
     const first = client.$fetch<string[]>('/api/users');
     const second = client.$fetch<string[]>('/api/users');
-    expect(fetcher).toHaveBeenCalledTimes(0);
+    expect(fetcher).toHaveBeenCalledTimes(1);
 
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     resolve(json(['Ada']));

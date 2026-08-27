@@ -17,6 +17,8 @@ export {
   undirty,
   markDirtySubtree,
   commit,
+  setScheduler,
+  resetScheduler,
   getEntity,
   renderDescendants,
   createApplicationRuntime,

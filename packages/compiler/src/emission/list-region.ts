@@ -13,7 +13,7 @@ import {
   md,
 } from '../identifiers';
 import { analyzeMapSite, type MapCallExpression, type MapSite } from '../lists';
-import { isLightweightListedComponent } from '../analysis';
+import { isLightweightRowComponent } from '../analysis';
 import {
   hasComponentChildren,
   isRenderPropReference,
@@ -112,7 +112,7 @@ export function emitListRegion(
     site.form === 'inline'
       ? hostJsxEventNames(site.jsx!)
       : site.form === 'component' &&
-          isLightweightListedComponent(ctx, site.rowComp!)
+          isLightweightRowComponent(ctx, site.rowComp!)
         ? (ctx.importedComponents.get(site.rowComp!)?.delegatedEvents ??
           (ctx.componentHostEvents.get(site.rowComp!) ?? []))
         : [];
@@ -205,7 +205,7 @@ export function emitListRegion(
   }
   if (
     site.form === 'component' &&
-    isLightweightListedComponent(ctx, site.rowComp!)
+    isLightweightRowComponent(ctx, site.rowComp!)
   ) {
     if (args.length === 3) args.push(t.identifier('undefined'));
     args.push(t.booleanLiteral(false));
@@ -792,7 +792,7 @@ function buildComponentRowCreate(
       : generatedIdentifier(ctx, 'nextIndex');
   const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
   const rowScope = newEmitScope(ctx);
-  const lightweight = isLightweightListedComponent(ctx, rowComponent);
+  const lightweight = isLightweightRowComponent(ctx, rowComponent);
   const rowContext: RowCtx = {
     itemParam: site.itemParam,
     itemPath: [],

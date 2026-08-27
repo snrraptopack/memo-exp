@@ -608,6 +608,7 @@ export function commit(): void {
   const k = getActiveApplicationRuntime().state;
   k.scheduled = false;
   if (k.inCommit) return; // reentrancy: the running drain picks up new marks
+  k.inCommit = true;
   k.renderCounts ??= new Map();
   k.markedBy ??= new Map();
   try {

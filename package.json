@@ -10,8 +10,9 @@
     "examples/octopulse"
   ],
   "scripts": {
-    "build": "bun run --cwd packages/data build && bun run --cwd packages/runtime build && bun run --cwd packages/router build && bun run --cwd packages/compiler build && bun run --cwd packages/vite build && bun run --cwd packages/language-service build",
+    "build": "bun run --cwd packages/adapters build && bun run --cwd packages/data build && bun run --cwd packages/runtime build && bun run --cwd packages/router build && bun run --cwd packages/server build && bun run --cwd packages/compiler build && bun run --cwd packages/vite build && bun run --cwd packages/language-service build",
     "test:root": "vitest run",
+    "test:adapters": "bun run --cwd packages/adapters test",
     "test:data": "bun run --cwd packages/data test",
     "test:router": "bun run --cwd packages/router test",
     "test:vite": "bun run --cwd packages/vite test",
@@ -23,7 +24,7 @@
     "dev": "bun run build && vitest",
     "example:dev": "vite --config examples/vite.config.ts",
     "example:workspace": "MMD_EXAMPLE=workspace/main.ts vite --config examples/vite.config.ts",
-    "example:ssr": "bun run examples/ssr-app/server.ts",
+    "example:ssr": "vite --config examples/ssr-showcase/vite.config.ts",
     "example:build": "bun run build && vite build --config examples/vite.config.ts",
     "example:preview": "vite preview --config examples/vite.config.ts",
     "bench": "bun run bench/dom/build.ts && esbuild bench/dom/browser-entry.ts --bundle --outfile=bench/dom/dist/browser-bundle.js --format=iife && bun run bench/dom/run.ts",
