@@ -573,3 +573,5 @@ export async function renderToResultAsync(
     ),
   );
 }
+
+export { renderToReadableStream, type StreamOptions } from './stream';

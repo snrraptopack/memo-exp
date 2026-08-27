@@ -855,3 +855,10 @@ A standalone runnable SSR demo (`bun run example:ssr` on port 3000) showcasing:
 2. Scoped payload delivery via `<script type="application/mmd+json" data-mmd-root="...">` (RFC §16.6).
 3. Client DOM adoption via `hydrate('root', SsrAppApp, { recover: true })`.
 4. Production minification, inlined critical CSS, and microtask-scheduled hydration achieving 93+ Lighthouse Performance (1.0s FCP, 1.2s LCP, 0 CLS).
+
+## Phase 6 — HTTP Chunked Streaming (`renderToReadableStream`)
+
+Implements the Phase 6 Web Standard `ReadableStream<Uint8Array>` emitter:
+1. **Immediate Initial Shell Flush**: Synchronously emits the `<head>`, CSS, and initial HTML skeleton with `<Pending>` placeholders for near-zero TTFB (<1ms).
+2. **Async Settle & Companion State Envelope**: Resolves in-flight `$fetch` resources asynchronously under `AbortSignal` control and closes the stream with the companion `<script type="application/mmd+json">` state envelope.
+3. Verified with comprehensive unit test suite in `tests/ssr-streaming.test.ts`.
