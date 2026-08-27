@@ -412,7 +412,7 @@ export async function renderToStringAsync(
   const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
     mode: 'server-string',
     document: stringDoc,
-    schedule: (fn) => fn(),
+    schedule: null,
     effects: 'disabled',
     refs: 'disabled',
   });
@@ -521,7 +521,7 @@ export async function renderToResultAsync(
   const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
     mode: 'server-string',
     document: stringDoc,
-    schedule: (fn) => fn(),
+    schedule: null,
     effects: 'disabled',
     refs: 'disabled',
   });

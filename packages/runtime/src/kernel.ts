@@ -209,17 +209,14 @@ const defaultRuntime: ApplicationRuntime = {
   },
 };
 
-const asyncLocalStorage = createStorage<ApplicationRuntime>();
+const asyncLocalStorage = createStorage<ApplicationRuntime>('runtime');
 let activeRuntime: ApplicationRuntime = defaultRuntime;
 
 /** The runtime all kernel operations currently route through. */
 export function getActiveApplicationRuntime(): ApplicationRuntime {
   return asyncLocalStorage.getStore() ?? activeRuntime;
 }
-// Runtime-lifetime hooks — subsystems with static build artifacts (access
-// tables, cell defaults) replay them into every newly created runtime so SSR
-// request contexts see the same infrastructure as the browser default.
-// ---------------------------------------------------------------------------
+
 type RuntimeCreatedListener = (runtime: ApplicationRuntime) => void;
 const runtimeCreatedListeners: RuntimeCreatedListener[] = [];
 
@@ -238,7 +235,7 @@ export function onRuntimeCreated(
 export function setActiveApplicationRuntime(
   runtime: ApplicationRuntime,
 ): ApplicationRuntime {
-  const previous = getActiveApplicationRuntime();
+  const previous = activeRuntime;
   activeRuntime = runtime;
   return previous;
 }

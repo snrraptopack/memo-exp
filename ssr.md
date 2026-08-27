@@ -848,17 +848,14 @@ strict correctness oracle for tests.
 Dashboard SSR throughput reaches ~1,700–1,900 ops/sec with sub-millisecond
 render times, while hydration adoption remains allocation-free and instant.
 
-## Universal SSR & Hydration Example (`examples/ssr-app/`)
+## Production-Grade Multi-Route Fullstack Application (`examples/ssr-app/`)
 
-A standalone runnable SSR demo (`bun run example:ssr` on port 3000) showcasing:
-1. Server-side rendering with `renderToResult()` and fast `StringDocument` tier.
-2. Scoped payload delivery via `<script type="application/mmd+json" data-mmd-root="...">` (RFC §16.6).
-3. Client DOM adoption via `hydrate('root', SsrAppApp, { recover: true })`.
-4. Production minification, inlined critical CSS, and microtask-scheduled hydration achieving 93+ Lighthouse Performance (1.0s FCP, 1.2s LCP, 0 CLS).
+A complete fullstack reference application demonstrating real-world Memoized DOM architecture:
 
-## Phase 6 — HTTP Chunked Streaming (`renderToReadableStream`)
-
-Implements the Phase 6 Web Standard `ReadableStream<Uint8Array>` emitter:
-1. **Immediate Initial Shell Flush**: Synchronously emits the `<head>`, CSS, and initial HTML skeleton with `<Pending>` placeholders for near-zero TTFB (<1ms).
-2. **Async Settle & Companion State Envelope**: Resolves in-flight `$fetch` resources asynchronously under `AbortSignal` control and closes the stream with the companion `<script type="application/mmd+json">` state envelope.
-3. Verified with comprehensive unit test suite in `tests/ssr-streaming.test.ts`.
+1. **Fullstack Vite Integration**: Built with `vite.config.ts`, `@memoized-dom/vite`, and Vite SSR middleware (`vite.ssrLoadModule()`) with live HMR.
+2. **Multi-Page Routing**: Complete declarative routing (`/`, `/feed`, `/analytics`, `/settings`) with client-side pushState transitions and URL synchronization.
+3. **Colorless Async Streaming & State Transfer (RFC §16)**:
+   - Fast initial shell flush (<1ms TTFB).
+   - Asynchronous settlement across parallel `$fetch` resources.
+   - Companion state payload envelope (`<script type="application/mmd+json">`) claiming data without duplicate client requests.
+4. **Verified Live End-to-End**: Zero page console errors, instant navigation, and verified in real Chromium instances.

@@ -68,7 +68,7 @@ export function renderToReadableStream(
       const runtime = createApplicationRuntime(`ssr-stream-${++streamSequence}`, {
         mode: 'server-string',
         document: stringDoc,
-        schedule: (fn) => fn(), // Synchronous execution during stream settle iterations
+        schedule: null,
         effects: 'disabled',
         refs: 'disabled',
       });

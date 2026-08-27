@@ -32,7 +32,7 @@ import type {
   RouteState,
 } from './types';
 
-const asyncLocalStorage = createStorage<RouteRuntime>();
+const asyncLocalStorage = createStorage<RouteRuntime>('router');
 let activeOverride: RouteRuntime | null = null;
 let manifestResolver: RouteResolver | null = null;
 const manifestApplied = new WeakSet<RouteRuntime>();

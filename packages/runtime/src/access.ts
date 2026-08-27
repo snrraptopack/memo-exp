@@ -29,7 +29,6 @@ import {
   onRegistryChange,
   onRuntimeCreated,
   registeredIds,
-  runWithApplicationRuntime,
   type EntityId,
 } from './kernel';
 import { encodeListKey } from './list-keys';
@@ -217,14 +216,16 @@ const staticFragments = new Map<
 >();
 
 onRuntimeCreated((runtime) => {
-  runWithApplicationRuntime(runtime, () => {
-    if (staticFragments.size === 0) return;
-    const s = resolver();
-    for (const [owner, fragment] of staticFragments) {
-      s.fragments.set(owner, { table: fragment.table, root: fragment.root });
-    }
-    rebuildTables();
-  });
+  if (staticFragments.size === 0) return;
+  const extensions = runtime.state.extensions;
+  let s = extensions.get('access') as AccessResolverState | undefined;
+  if (s === undefined) {
+    s = createAccessResolverState();
+    extensions.set('access', s);
+  }
+  for (const [owner, fragment] of staticFragments) {
+    s.fragments.set(owner, { table: fragment.table, root: fragment.root });
+  }
 });
 
 /** Remove one compiler module's analysis fragment during hot replacement. */

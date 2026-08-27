@@ -63,6 +63,7 @@ function delegatedType(jsxName: string): DelegatedType {
 }
 
 function installRoot(root: EventTarget, delegated: DelegatedType): void {
+  if (typeof root.addEventListener !== 'function') return;
   if (!delegated.roots.has(root)) {
     delegated.roots.add(root);
     root.addEventListener(delegated.type, (event) => {

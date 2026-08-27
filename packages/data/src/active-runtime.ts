@@ -24,7 +24,7 @@ function syncActiveStore(runtime: DataRuntime): void {
 
 syncActiveStore(defaultDataRuntime);
 
-const asyncLocalStorage = createStorage<DataRuntime>();
+const asyncLocalStorage = createStorage<DataRuntime>('data');
 let activeOverride: DataRuntime | null = null;
 
 export function getActiveDataRuntime(): DataRuntime {

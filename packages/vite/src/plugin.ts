@@ -254,7 +254,7 @@ export function memoizedDom(
     perEnvironmentWatchChangeDuringDev: true,
     perEnvironmentStartEndDuringDev: true,
     applyToEnvironment(environment) {
-      return environment.name === 'client';
+      return environment.name === 'client' || environment.name === 'ssr';
     },
     configResolved(resolved) {
       config = resolved;

@@ -1,3 +1,4 @@
+import { getGlobalControllers } from './global-controllers';
 import {
   isAbortError,
   RequestError,
@@ -552,8 +553,7 @@ class ResourceController<T> {
     this.notifier.clear();
   }
 }
-
-const controllers = new WeakMap<object, ResourceController<unknown>>();
+const controllers = getGlobalControllers() as WeakMap<object, ResourceController<unknown>>;
 
 function collection<T>(controller: ResourceController<T[]>): T[] {
   return Array.isArray(controller.snapshot.data)
