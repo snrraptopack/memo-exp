@@ -184,11 +184,15 @@ export interface LinkedComponentPropSource {
   transparent?: boolean;
 }
 
+export interface LinkedValueImport {
+  type: 'value';
+}
+
 export type LinkedImport =
   | LinkedStateImport
   | LinkedFunctionImport
-  | LinkedComponentImport;
-
+  | LinkedComponentImport
+  | LinkedValueImport;
 export interface ParameterWrite {
   index: number;
   path: string[];
@@ -363,7 +367,7 @@ export interface Ctx {
   /** Linked summaries for imported functions and conservative external calls. */
   importedFunctions: Map<string, FnSummary>;
   importedComponents: Map<string, LinkedComponentImport>;
-  /** Graph-linked placements for declarations in this module. */
+  importedValues: Set<string>;
   linkedComponentPaths: Map<string, string[]>;
   /** Graph-linked keyed-row modes for declarations in this module. */
   linkedComponentRows: Map<string, LinkedComponentRowUse[]>;
@@ -501,6 +505,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
+  const importedValues = new Set<string>();
   for (const [local, linked] of Object.entries(opts.linkedImports ?? {})) {
     if (linked.type === 'state') {
       state.set(local, linked.kind);
@@ -538,11 +543,10 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
         })),
         unbounded: linked.unbounded,
       });
+    } else if (linked.type === 'value') {
+      importedValues.add(local);
     } else {
-      importedComponents.set(local, {
-        ...linked,
-        props: [...linked.props],
-      });
+      importedComponents.set(local, linked);
     }
   }
   const componentProps = new Map<string, ComponentPropsPlan>();
@@ -590,6 +594,10 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     transparentErrorPolicies: new Set(),
     transparentSources: new Map(),
     transparentTrackBindings: new Map(),
+    importedState,
+    importedFunctions,
+    importedComponents,
+    importedValues,
     transparentModuleSources,
     transparentSourceProps: new Map(),
     transparentPolicyParams: new Map(),
@@ -601,9 +609,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     stateComponentCandidates,
     functionComponentCandidates,
     linkedDynamicComponentCandidates,
-    importedState,
-    importedFunctions,
-    importedComponents,
     linkedComponentPaths: new Map(
       Object.entries(opts.linkedComponentPaths ?? {}).map(([name, paths]) => [
         name,

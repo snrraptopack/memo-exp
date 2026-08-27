@@ -143,7 +143,8 @@ function validateLinkedImports(ctx: Ctx, programPath: NodePath<t.Program>): void
       if (
         ctx.importedState.has(local) ||
         ctx.importedFunctions.has(local) ||
-        ctx.importedComponents.has(local)
+        ctx.importedComponents.has(local) ||
+        ctx.importedValues.has(local)
       ) {
         continue;
       }
@@ -170,8 +171,6 @@ function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
         } else if (isConstObjectState(decl.init)) {
           registerState(ctx, decl.id.name, 'const');
         }
-      }
-      if (ctx.state.has(decl.id.name)) {
         const candidates = tagCandidates.get(decl.id.name);
         if (candidates !== undefined) {
           ctx.stateTagCandidates.set(decl.id.name, [...candidates]);

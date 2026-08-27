@@ -165,7 +165,11 @@ interface ComponentExport extends ComponentExportInfo {
   type: 'component';
 }
 
-type LinkedExport = StateExport | FunctionExport | ComponentExport;
+interface ValueExport {
+  type: 'value';
+}
+
+type LinkedExport = StateExport | FunctionExport | ComponentExport | ValueExport;
 
 interface ImportRef {
   local: string;
@@ -606,7 +610,9 @@ function analyzeManifest(
                 ),
               unbounded: summary.unbounded,
             };
+            continue;
           }
+          exports[exported] = { type: 'value' };
         }
         manifest = {
           exports,
@@ -1023,6 +1029,11 @@ function linkImports(
         refProps: [...targetExport.refProps],
         subtreeReads: [...targetExport.subtreeReads],
       };
+    } else if (targetExport.type === 'value') {
+      linked[ref.local] = {
+        type: 'value',
+      };
+      continue;
     } else {
       if (options.linkFunctionSummaries === false) {
         linked[ref.local] = {
