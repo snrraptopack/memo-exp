@@ -1,150 +1,203 @@
 # `@memoized-dom/router`
 
-`@memoized-dom/router` is Memoized DOM's renderer-independent routing runtime. It owns immutable URL state, deterministic matching, nested route manifests, navigation history, cancellation, redirects, and synchronous navigation guards. It does not render components, load route data, or define an SSR wire format.
+`@memoized-dom/router` is Memoized DOM's compiler-first, renderer-independent routing engine. It owns immutable URL state, deterministic route matching, compiler-extracted nested manifests, history management, scroll restoration, cancellation, and synchronous navigation guards.
 
-## Route state and focused subscriptions
+There are no router context providers, component wrappers, or hooks. Routing declarations compile to stable, mutually exclusive real-DOM regions.
 
-```ts
-import { route, subscribeNavigation } from '@memoized-dom/router';
+---
 
-route.pathname;
-route.query.get('tab');
-route.params;
-route.matches;
-route.matched?.metadata;
-route.signal;
+## 1. Reactive Route State (`route`)
 
-subscribeNavigation(event => {
-  console.log(event.phase, event.navigation.to.pathname);
-});
-```
-
-`route` is one stable, getter-backed object. Its query view is read-only, match arrays and parameters are frozen, and every location change aborts the previous `route.signal`. Generated consumers can use `subscribeRouteSelected()` from the internal entry to update only when a selected pathname, query value, parameter, or match changes.
-
-## Manifests and matching
+Import the getter-backed `route` object in any component, helper, or derived state. Reads are compiler-tracked and re-render only the subtrees that consume changed fields:
 
 ```ts
-import { createRouteManifest } from '@memoized-dom/router';
+import { route } from '@memoized-dom/router';
 
-const manifest = createRouteManifest([
-  { id: 'root', pattern: '/', metadata: { layout: true } },
-  { id: 'projects', parentId: 'root', pattern: '/projects' },
-  { id: 'project', parentId: 'projects', pattern: '/:projectId' },
-  { id: 'missing', parentId: 'root', pattern: '/*' },
-]);
+// Reactive URL properties:
+route.pathname;             // e.g. "/projects/compiler"
+route.query.get('tab');     // e.g. "activity"
+route.query.getAll('tag');  // string[] for multi-value keys (?tag=a&tag=b)
+route.search;               // e.g. "?tab=activity"
+route.hash;                 // e.g. "#heading-2"
+route.state;                // Unwrapped history state (objects, primitives, arrays)
+route.navigationType;       // 'load' | 'push' | 'replace' | 'pop'
 
-manifest.matchAll('/projects/compiler'); // root -> projects -> project
-manifest.build('project', { params: { projectId: 'compiler' } });
+// Matched route metadata:
+route.params;               // Frozen parameter dictionary: { projectId: "compiler" }
+route.matches;              // Full hierarchy of matched manifest entries
+route.matched;              // Nearest active route match
+
+// Request cancellation:
+route.signal;               // AbortSignal: aborted on every subsequent navigation
 ```
 
-Definitions may be out of order. Construction validates duplicate and missing IDs, parent cycles, parameter shadowing, wildcard placement, and ambiguous unrelated routes. Static segments outrank parameters, which outrank wildcards. A terminal wildcard is the not-found/catch-all mechanism.
+---
 
-For lower-level use, `matchRoutePattern()`, `createRouteMatcher()`, `joinRoutePaths()`, and `buildRoutePath()` expose the same validated path primitives.
+## 2. Programmatic Navigation
 
-## Navigation
+Use imperative navigation when transitions are triggered by code, forms, or timers:
 
 ```ts
 import {
   navigate,
   navigateRelative,
-  redirectRoute,
+  back,
+  forward,
   blockNavigation,
+  redirectRoute,
+  subscribeNavigation,
 } from '@memoized-dom/router';
 
-navigate('/organizations/:organizationId', {
-  params: { organizationId: 'acme' },
-  query: { tab: 'members', tag: ['compiler', 'runtime'] },
+// Parameterized path navigation with query and history state:
+navigate('/organizations/:orgId/projects/:projectId', {
+  params: { orgId: 'acme', projectId: 'compiler' },
+  query: { tab: 'members', sort: 'desc' },
+  hash: 'team-lead',
+  state: { fromCheckout: true },
 });
 
+// Relative directory navigation:
 navigateRelative('../settings');
 
+// Browser traversal:
+back();
+forward();
+
+// Synchronous navigation blockers / guards:
 const unblock = blockNavigation(navigation => {
-  if (navigation.to.pathname === '/private') {
+  if (navigation.to.pathname === '/admin' && !currentUser.isAdmin) {
     return redirectRoute('/login', { replace: true });
   }
-  if (hasUnsavedChanges) return false;
+  if (hasUnsavedChanges()) {
+    return window.confirm('Discard unsaved changes?');
+  }
+});
+
+// Navigation lifecycle observer:
+subscribeNavigation(event => {
+  console.log(event.phase, event.navigation.to.pathname);
 });
 ```
 
-`navigate()` and `navigateRelative()` return a `completed` or `blocked` result. Guards run before router-owned history changes and may allow, block, or redirect. They are intentionally synchronous: waiting for data belongs to the future router/data coordination layer. Redirect chains are capped at 16 and guards cannot recursively mutate router state.
+---
 
-Relative paths use directory semantics: `details` from `/projects/one` resolves to `/projects/one/details`, while `../two` resolves to `/projects/two`. A runtime `basePath` keeps application paths independent from deployment paths:
+## 3. Compiler JSX Directives (`route` & `route-to`)
 
-```ts
-const runtime = createRouteRuntime({
-  basePath: '/app',
-  routeHistory: createMemoryRouteHistory({ initialEntries: ['/app'] }),
-  routes: manifest.entries,
-});
+The compiler owns `route` and `route-to` as universal JSX attributes. They are erased from DOM attributes and component props during build time.
 
-runtime.navigate('/projects'); // address: /app/projects, route.pathname: /projects
+### Declaring Route Regions (`route`)
+```tsx
+export function App() {
+  return (
+    // Root element registers the application route graph root:
+    <div class="shell" route="/">
+      <Header />
+      <main class="outlet">
+        {/* Sibling routes are resolved exclusively by the compiler: */}
+        <Dashboard  route="/" />
+        <Stories    route="/stories" />
+        <StoryPage  route="/item/:storyId" />
+        <Settings   route="/settings/*" />
+        <NotFound   route="/*" />
+      </main>
+    </div>
+  );
+}
 ```
 
-## Router-owned history
-
-```ts
-const history = createMemoryRouteHistory({
-  initialEntries: ['/', '/projects'],
-});
-const runtime = createRouteRuntime({ routeHistory: history });
-```
-
-The `RouteHistory` interface separates navigation storage from browser event plumbing. The built-in memory implementation has stable keys and indices, forward-stack truncation, non-mutating `peek()`, synchronous publication, and rollback when a subscriber rejects an update. It is useful for tests, embedded/non-browser roots, deterministic replay, and guardable traversal. An explicitly supplied history remains owned by the caller; disposing the runtime unsubscribes but does not destroy it.
-
-## Browser behavior
-
-The Navigation API is the primary browser boundary. Same-origin application navigations are intercepted and use after-transition scrolling. The fallback uses history plus reference-counted `popstate`, `hashchange`, and delegated click listeners. Downloads, external links, non-self targets, modified clicks, hash-only anchors, and URLs outside `basePath` remain native.
-
-Navigation API events can be guarded before commit. Router-initiated memory-history traversal is also guardable because the destination can be peeked first. Legacy browser `popstate` is observational—the browser has already traversed when it fires—so it cannot provide the same pre-commit guarantee.
-
-## Compiler boundary and HMR
-
-`@memoized-dom/router/internal` exposes the small bridge intended for generated code: connection lifetime, structural resolver installation/replacement, atomic location-and-match publication, full or selected subscriptions, relative navigation, and navigation lifecycle access. `replaceRouteResolver()` resolves the current location before swapping and makes stale HMR disposers harmless.
-
-The compiler owns `route` and `route-to` as universal JSX properties. They are
-erased before normal host/component prop handling, so neither appears in the
-DOM or a component's public props. Every route fragment is canonical and starts
-with `/`; nested fragments compose with their nearest route-bearing JSX
-ancestor:
+### Declarative Links (`route-to`)
+`route-to` on an `<a>` tag compiles to a real `href` with client-side pushState navigation:
 
 ```tsx
-<main route="/">
-  <section route="/projects">
-    <article route="/:projectId">Project</article>
-  </section>
-  <aside route="/*">Not found</aside>
-</main>
-```
+{/* Static route link */}
+<a route-to="/stories">Stories</a>
 
-This declares `/`, `/projects`, `/projects/:projectId`, and the terminal
-catch-all. The compiler emits one structural manifest plus focused DOM regions;
-it does not perform a runtime JSX-tree discovery pass.
-
-Navigation targets are checked against that linked route graph. Parameterized
-and catch-all paths require exact parameter keys:
-
-```tsx
-<button route-to={{
-  path: '/projects/:projectId',
-  params: { projectId },
-  query: { tab: 'activity' },
+{/* Object destination with params, query, hash, and replace */}
+<a route-to={{
+  path: '/item/:storyId',
+  params: { storyId: story.id },
+  query: { comments: 'all' },
+  hash: 'reply-form',
+  replace: false,
 }}>
-  Open project
-</button>
+  {story.title}
+</a>
 ```
 
-`route-to` accepts `path`, `params`, `query`, `hash`, and `replace`. History
-`state` is intentionally not authored here; any internal navigation metadata is
-compiler/runtime-owned. Anchors receive a real `href`, while other intrinsic
-elements receive compiled navigation behavior that composes with `onClick` and
-respects `preventDefault()`. The generated singleton browser connection is
-idempotent across HMR module evaluation.
+---
 
-Chunk-loading syntax remains a build-integration concern and is not part of the
-current directive lowering.
+## 4. History State (`route.state`)
 
-## Deliberate boundaries
+`route.state` gives access to ephemeral client-side metadata attached directly to the browser's history entry (`history.state`):
 
-- Router/data coordination is not implemented yet. Its caching, pending-state, error, and invalidation contract needs a separate design discussion.
-- Router SSR is not implemented yet. Memoized DOM first needs renderer-level SSR, streaming, and hydration ownership. The package therefore does not depend on Seroval or commit to another router's serialization format.
-- Each server request or independently routed root must eventually receive its own runtime. The default singleton is browser-document state and must never be shared between concurrent requests.
+- **Invisible in URL**: Never exposed in the address bar or sent to the server in HTTP requests.
+- **Any Data Type**: Accepts plain objects, arrays, numbers, strings, and booleans.
+- **Isolated**: Internal router bookkeeping (such as scroll keys) is automatically stripped; `route.state` returns pure user data.
+- **Survives Reloads**: Preserved by the browser across page reloads and browser Back/Forward traversals.
+
+```ts
+// Passing state during navigation:
+navigate('/checkout', {
+  state: { draftOrderId: 1042, step: 2 }
+});
+
+// Reading state reactively in any component:
+const state = route.state as { draftOrderId?: number; step?: number } | null;
+```
+
+---
+
+## 5. Deterministic Scroll Restoration Engine
+
+`@memoized-dom/router` includes an automatic, zero-configuration scroll coordinator:
+
+1. **Manual Restoration Enforcement**: Disables native browser scroll snapping (`history.scrollRestoration = 'manual'`) so asynchronous component rendering never gets clamped to `(0, 0)`.
+2. **History-Keyed Tracking**: Automatically captures viewport `(x, y)` scroll positions per history entry, persisting them to memory with `sessionStorage` fallback.
+3. **Pop Navigation (Back/Forward)**: Automatically restores exact previous scroll coordinates after the target route's microtask and render phase settle.
+4. **Push Navigation (New Link)**: Resets viewport scroll to top `(0, 0)`.
+5. **Hash Navigation (`#target`)**: Queries `#target` elements by `id` or `name` and scrolls them into view, retrying on the next animation frame if asynchronous data is loading.
+
+---
+
+## 6. Server-Side Rendering (SSR) & Request Isolation
+
+During server renders or unit tests, routing runs through an isolated memory history without touching global browser singletons:
+
+```ts
+import {
+  createRouteRuntime,
+  createMemoryRouteHistory,
+  runWithRouteRuntime,
+} from '@memoized-dom/router';
+
+const routeHistory = createMemoryRouteHistory({
+  initialEntries: ['/stories?sort=desc'],
+});
+const runtime = createRouteRuntime({ routeHistory });
+
+// Every read, match, and navigation inside the callback is isolated to this request:
+runWithRouteRuntime(runtime, () => {
+  console.log(route.pathname); // "/stories"
+  console.log(route.query.get('sort')); // "desc"
+});
+```
+
+---
+
+## 7. Manifests & Lower-Level Matching Primitives
+
+For tools, static analyzers, and headless routing:
+
+```ts
+import { createRouteManifest, matchRoutePattern } from '@memoized-dom/router';
+
+const manifest = createRouteManifest([
+  { id: 'root', pattern: '/', metadata: { layout: true } },
+  { id: 'projects', parentId: 'root', pattern: '/projects' },
+  { id: 'project', parentId: 'projects', pattern: '/:projectId' },
+  { id: 'catchall', parentId: 'root', pattern: '/*' },
+]);
+
+manifest.matchAll('/projects/compiler'); // [root, projects, project]
+manifest.build('project', { params: { projectId: 'compiler' } }); // "/projects/compiler"
+```

@@ -1,591 +1,257 @@
 # `@memoized-dom/data`
 
-Browser-first fetch resources and callable actions for memoized-dom.
+`@memoized-dom/data` is Memoized DOM's data-fetching and state synchronization package. It provides **Colorless Async** transparent values, request deduplication, optimistic mutations, schema validation, declarative pending/error JSX directives, and zero-roundtrip SSR payload transport.
 
-> **Current scope:** the package is usable in ordinary JavaScript and in
-> compiled memoized-dom components. The compiler treats imported resource and
-> action values like other opaque third-party state: while their getters are
-> rendered, it rereads them through the existing volatile frame fallback. No
-> `$fetch`-specific compiler adapter or method allowlist is involved.
+There are no hooks, provider trees, signals, or store wrappers. Fetched data behaves as plain TypeScript values and arrays in your components.
 
-## Public API
+---
 
-The package exposes a default runtime plus an isolated-runtime factory:
+## 1. The Colorless Async Paradigm
 
-```ts
-import {
-  $action,
-  $fetch,
-  clearDataRuntime,
-  createDataRuntime,
-  RequestError,
-} from '@memoized-dom/data';
-```
-
-- `$fetch` automatically performs a read request and returns a stable resource.
-- `$action` creates a lazy callable operation for writes.
-- `createDataRuntime` creates an isolated request, cache, and action boundary.
-- `clearDataRuntime` clears active work and retained state in the default runtime.
-- `RequestError` describes network, HTTP, decoding, and validation failures.
-
-There is no provider, hook, or mutable global configuration API.
-
-### Isolated runtimes
-
-Use a separate runtime for each server request, test, tenant, or other ownership
-boundary that must not share request state:
-
-```ts
-const data = createDataRuntime({
-  baseURL: 'https://api.example.test/',
-  fetch: customFetch,
-});
-
-const users = data.$fetch<User[]>('users');
-data.clear();
-```
-
-`baseURL` resolves relative targets and `fetch` injects a compatible fetch
-implementation. In a browser, the default base URL is `location.href`. A
-non-browser runtime must provide `baseURL` when it uses relative targets.
-
-`clear()` aborts active reads and actions, resets their visible pending state,
-detaches live read resources, and drops retained request data. Existing resource
-and action objects remain valid; a detached resource can be refreshed to start
-new work. `clearDataRuntime()` performs the same operation on the exported
-default `$fetch` and `$action` runtime.
-
-### Component ownership
-
-A runtime created inside a component should be cleared with the component:
+`$fetch<T>` returns a compiler-aware `ResolvedValue<T>`. In your templates and derived state, you consume it as the plain type `T`:
 
 ```tsx
-function Users() {
-  const data = createDataRuntime();
-  const users = data.$fetch<User[]>('/api/users');
-  cleanup(data.clear);
+import { $fetch } from '@memoized-dom/data';
 
-  return <p>{users.pending ? 'Loading' : users.data?.length}</p>;
-}
-```
-
-Memoized-dom component factories run once, so this does not recreate the
-runtime on every update. `cleanup(data.clear)` aborts component-owned reads and
-actions when the component is removed. When using the default runtime, a
-component can instead own one resource with `cleanup(users.abort)`.
-
-Cleanup is explicit today because ordinary third-party libraries remain usable
-without implementing a memoized-dom lifecycle interface.
-
-## `$fetch`
-
-### Basic request
-
-```ts
-interface User {
-  id: string;
+export interface User {
+  id: number;
   name: string;
+  avatar: string;
 }
 
-const users = $fetch<User[]>('/api/users');
+// 1. Module-scope source: lazy declaration, request-isolated during SSR
+export const currentUser = $fetch<User>('/api/session');
+
+// 2. Direct transparent reads in any component:
+export function UserProfile() {
+  return (
+    <div class="user-card">
+      <span class="avatar">{currentUser.avatar}</span>
+      <h2>{currentUser.name}</h2>
+    </div>
+  );
+}
 ```
 
-The request starts automatically. `$fetch<User[]>()` tells TypeScript that a
-successful decoded response is expected to be `User[]`.
+- **Zero Boilerplate**: No `useQuery`, no `.data` access required, and no `async/await` component wrappers.
+- **Push Invalidation**: The compiler links data reads to their render regions. When a fetch resolves, updates push directly to the target DOM nodes without frame polling.
 
-The generic is a developer assertion. It does not validate the server response
-at runtime. Optional runtime validation is explained later.
+---
 
-### Resource state
+## 2. Declarative State Arms (`Group`, `Pending`, `Error`)
 
-```ts
-users.data;       // User[] | undefined
-users.error;      // RequestError | null
-users.status;     // 'idle' | 'pending' | 'success' | 'error'
-users.pending;    // boolean
-users.refreshing; // boolean
-```
-
-The initial cold request has this state:
-
-```ts
-users.status === 'pending';
-users.pending === true;
-users.refreshing === false;
-users.data === undefined;
-users.error === null;
-```
-
-After success:
-
-```ts
-users.status === 'success';
-users.pending === false;
-users.data !== undefined;
-```
-
-After an initial failure:
-
-```ts
-users.status === 'error';
-users.pending === false;
-users.data === undefined;
-users.error instanceof RequestError;
-```
-
-During a refresh, previous data remains available:
-
-```ts
-users.status === 'success';
-users.pending === true;
-users.refreshing === true;
-users.data; // previous successful data
-```
-
-A failed refresh preserves previous data. `status` remains `success`, and
-`error` contains the refresh failure so the application may display a
-non-blocking warning.
-
-### Query parameters
-
-```ts
-const users = $fetch<User[]>('/api/users', {
-  query: {
-    search: 'Ada',
-    page: 2,
-    active: true,
-    tag: ['compiler', 'typescript'],
-  },
-});
-```
-
-Query values may be strings, numbers, booleans, `null`, arrays of those values,
-or `undefined`. An `undefined` value is omitted. Arrays produce repeated query
-fields. Query keys are normalized so equivalent requests share the same
-identity regardless of object property order. URL fragments are removed because
-they are not sent in HTTP requests and must not split request identity.
-
-### Request headers
-
-```ts
-const profile = $fetch<Profile>('/api/profile', {
-  headers: {
-    Authorization: `Bearer ${token}`,
-  },
-});
-```
-
-Headers participate in automatic request identity. Requests with different
-authorization values therefore do not share data by default. Headers are copied
-when the resource is created, so later mutation of a supplied `Headers` object
-cannot make request execution disagree with its identity.
-
-### Paused resource
-
-`null` is the only paused target:
-
-```ts
-const user = $fetch<User>(
-  userId ? `/api/users/${userId}` : null,
-);
-```
-
-A paused resource has `status: 'idle'` and performs no request. Automatic
-reevaluation when `userId` changes is a deferred request-argument optimization;
-the current call captures only the value passed at creation.
-
-When request arguments change today, replace the component-local resource
-explicitly and release the previous one:
+Handle loading skeletons and error states declaratively without ternary clutter:
 
 ```tsx
-let users = loadUsers(search);
+import { Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+import { stories, type Story } from './session';
 
-function setSearch(next: string) {
-  search = next;
-  const previous = users;
-  users = loadUsers(search);
-  previous.abort();
+function LoadingSkeleton() {
+  return <ul class="skeleton-list"><li>Loading stories…</li></ul>;
+}
+
+function ErrorBanner({ error, retry }: { error: { message: string }; retry: () => void }) {
+  return (
+    <div class="error-box">
+      <p>{error.message}</p>
+      <button onClick={retry}>Try Again</button>
+    </div>
+  );
+}
+
+export function StoriesPanel() {
+  return (
+    <section class="panel">
+      <h2>Top Stories</h2>
+
+      <Group data={stories}>
+        <Pending component={LoadingSkeleton} />
+        <ErrorArm component={ErrorBanner} />
+        {/* Resolved arm: renders automatically once data settles */}
+        <ul class="story-list">
+          {stories.map(item => (
+            <li key={item.id}>
+              <span>{item.title}</span>
+              <span class="votes">{item.votes}</span>
+            </li>
+          ))}
+        </ul>
+      </Group>
+    </section>
+  );
 }
 ```
 
-Because `users` is ordinary component `let` state, the existing compiler
-updates its consumers. This is explicit resource ownership, not `$fetch`
-recognition.
+- **`Pending`**: Shown while initial network requests are in flight.
+- **`Error`**: Injects `{ error, retry }` into the error component when a request fails.
+- **Resolved**: The default child arm rendered when all prerequisites in `Group` are satisfied.
 
-### Manual refresh
+---
 
-```ts
-const latestUsers = await users.refresh();
-```
+## 3. Imperative Operations (`$ops`)
 
-`refresh()` always performs a new request and resolves with its decoded result.
-Existing data remains visible while it runs.
-
-### Abort
-
-```ts
-users.abort();
-```
-
-Aborting detaches this resource from its active shared request. If it was the
-last consumer, the underlying request is aborted. If another resource still
-uses that request, the request continues for the other resource.
-
-Cancellation is not stored as `resource.error`.
-
-Cancellation is also a client-side settlement boundary. Even when an injected
-fetch implementation ignores `AbortSignal`, an aborted resource or action will
-not accept its late result.
-
-### Replacing data
-
-`update()` requires the callback to return the new top-level value:
-
-```ts
-users.update(current => [
-  ...(current ?? []),
-  newUser,
-]);
-```
-
-### Direct mutation
-
-`mutate()` ignores the callback's result and preserves the existing top-level
-value:
-
-```ts
-users.mutate(current => {
-  current?.push(newUser);
-});
-```
-
-These are deliberately separate. `Array.push()` returns a number, so an API
-that treats callback returns as optional replacements could accidentally store
-that number instead of the array.
-
-Use `mutate()` for direct in-place changes and `update()` when a replacement is
-required.
-
-Both operations supersede a read that was already in flight. The older request
-is aborted, and its result is ignored even when an injected fetch implementation
-does not cooperate with `AbortSignal`. This prevents a stale server snapshot
-from overwriting a newer local or optimistic write.
-
-## Resource sharing
-
-The default sharing mode is active sharing:
-
-```ts
-const first = $fetch<User[]>('/api/users');
-const second = $fetch<User[]>('/api/users');
-```
-
-When both declarations describe the same normalized request:
-
-1. The first resource starts the request.
-2. The second resource joins that request instead of sending another one.
-3. Both resources observe the same decoded value.
-4. A third resource created while either remains active receives that value
-   immediately without another request.
-5. After the final resource is disposed by the future integration layer, the
-   entry is removed.
-6. A later resource performs a new request.
-
-The identity includes the normalized URL, query, headers, and validator. An
-explicit key can replace automatic identity when necessary:
-
-```ts
-const profile = $fetch<Profile>('/api/profile', {
-  key: ['profile', accountId],
-});
-```
-
-### Sharing options
-
-The current package implements only three clear modes:
-
-```ts
-// Default: share while at least one resource is active.
-$fetch<User[]>('/api/users');
-
-// Private: never share this resource's request or result.
-$fetch<User[]>('/api/users', {
-  cache: false,
-});
-
-// Retain for this package instance until its internal store is cleared.
-$fetch<User[]>('/api/users', {
-  cache: { scope: 'app' },
-});
-```
-
-No freshness or retention duration is implemented in version `0.0.1`. Timing
-options remain a design discussion and are not part of the package API.
-
-This sharing store is separate from the browser HTTP cache, service workers,
-and server `Cache-Control` headers.
-
-## Optional response validation
-
-This short form trusts the developer's generic assertion:
-
-```ts
-const users = $fetch<User[]>('/api/users');
-```
-
-For an external or untrusted API, a Standard Schema validator can infer and
-check the decoded response:
-
-```ts
-const UserSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-});
-
-const users = $fetch('/external/users', {
-  validate: z.array(UserSchema),
-});
-```
-
-Here `users.data` is inferred as `User[] | undefined`. If the response does not
-match the schema, invalid data is not stored and `users.error.kind` is
-`'validation'`.
-
-`validate` is optional. It does not replace the generic form and is not required
-for application-owned endpoints.
-
-## Destructuring
-
-In the standalone package, normal JavaScript destructuring is a snapshot:
-
-```ts
-const { data, pending } = users;
-```
-
-Those two variables do not change by themselves because this package does not
-rewrite JavaScript. The current compiler's opaque frame fallback also cannot
-replay a value that was copied out once. Keep the resource object when values
-must be read later:
+Use `$ops(value)` to trigger mutations, refreshes, or manual aborts without polluting your payload types:
 
 ```tsx
-const users = $fetch<User[]>('/api/users');
+import { $ops } from '@memoized-dom/data';
+import { stories } from './session';
 
-function render() {
-  return users.pending ? 'Loading' : users.data;
+// 1. In-place optimistic mutation (propagates to all readers immediately):
+function upvote(id: number) {
+  $ops(stories).mutate(items => {
+    for (const item of items ?? []) {
+      if (item.id === id) item.votes++;
+    }
+  });
+}
+
+// 2. Functional replacement:
+function removeStory(id: number) {
+  $ops(stories).update(items => (items ?? []).filter(item => item.id !== id));
+}
+
+// 3. Manual revalidation / refresh:
+async function refreshFeed() {
+  await $ops(stories).refresh();
+}
+
+// 4. Aborting in-flight requests:
+function cancel() {
+  $ops(stories).abort();
 }
 ```
 
-Direct resource getters used by JSX are reread while the component is mounted.
-Live destructuring could be added later, but it is not required for `$fetch` to
-render correctly and must not depend on package or method names.
+---
 
-Methods are bound functions and are safe to extract:
+## 4. Fine-Grained Reactive Tracking (`$track`)
 
-```ts
-const { refresh } = users;
-await refresh();
+When you need to inspect request status (e.g. showing a spinning sync icon during background refresh):
+
+```tsx
+import { $track, $ops } from '@memoized-dom/data';
+import { notifications } from './session';
+
+export function SyncButton() {
+  // `$track` reactively observes background refresh & pending state:
+  const state = $track(notifications);
+
+  return (
+    <button
+      class={state.refreshing ? 'spinning' : ''}
+      onClick={() => void $ops(notifications).refresh()}
+    >
+      {state.refreshing ? 'Syncing…' : 'Refresh'}
+    </button>
+  );
+}
 ```
 
-## `$action`
+### Tracked State Properties:
+- `state.status`: `'idle' | 'pending' | 'success' | 'error'`
+- `state.pending`: `true` during cold initial load
+- `state.refreshing`: `true` during background revalidation (previous data remains visible)
+- `state.error`: `RequestError | null`
 
-### Creating and invoking an action
+---
+
+## 5. Callable Actions (`$action`) & Optimistic Changes
+
+`$action` creates lazy, callable endpoints for server mutations (POST / PUT / PATCH / DELETE):
 
 ```ts
-interface Todo {
-  id: string;
-  title: string;
-}
+import { $action } from '@memoized-dom/data';
 
-interface CreateTodo {
-  title: string;
-}
+interface Todo { id: number; title: string; done: boolean; }
+interface NewTodoInput { title: string; }
 
-const createTodo = $action<Todo, CreateTodo>('/api/todos', {
+export const createTodo = $action<Todo, NewTodoInput>('/api/todos', {
   method: 'POST',
-});
-
-const created = await createTodo({
-  title: 'Write documentation',
-});
-```
-
-Creating the action sends no request. Calling it performs one invocation and
-returns that invocation's promise.
-
-Plain object and array inputs are encoded as JSON. Strings, `FormData`, blobs,
-URL search parameters, array buffers, and other supported native request bodies
-are passed through without JSON conversion.
-
-The default method is `POST`. Supported methods are `POST`, `PUT`, `PATCH`, and
-`DELETE`.
-
-### Action state
-
-```ts
-createTodo.data;    // Todo | undefined
-createTodo.error;   // RequestError | null
-createTodo.status;  // 'idle' | 'pending' | 'success' | 'error'
-createTodo.pending; // boolean
-```
-
-Every invocation receives its own promise. The initial implementation permits
-parallel calls. Visible `data`, `error`, and `status` belong to the most recently
-started invocation; an older request settling late cannot overwrite newer
-visible state.
-
-```ts
-createTodo.abort();
-createTodo.reset();
-```
-
-`abort()` stops active client requests. It cannot guarantee that a server did
-not already process a mutation. `reset()` aborts active work and returns visible
-state to `idle`. Late results from fetch implementations that ignore abort are
-discarded. With parallel calls, aborting one invocation does not allow it to
-overwrite the state of a newer invocation.
-
-### Success and error callbacks
-
-```ts
-const createTodo = $action<Todo, CreateTodo>('/api/todos', {
   onSuccess(created, input) {
-    console.log('Created', created.id, 'from', input.title);
+    console.log('Created todo:', created.id);
   },
-
   onError(error, input) {
-    console.error('Could not create', input.title, error);
+    console.error('Failed to create:', error.message);
   },
 });
 ```
 
-Normal `try`/`catch` around the returned invocation promise remains valid and
-does not require callbacks.
-
-## Optimistic collection changes
-
-An array resource exposes three typed change constructors:
-
+### Calling with Optimistic List Changes:
 ```ts
-todos.append(temporary);
-todos.replace(current, temporary);
-todos.remove(current);
-```
-
-They apply immediately and return an opaque optimistic change consumed by an
-action invocation. Each change is single-use; passing the same change to a
-second invocation throws instead of committing or rolling it back twice.
-
-### Create
-
-```ts
-const created = await createTodo(input, {
-  optimistic: todos.append(temporary),
+// Applies immediately, rolls back if the network fails, or commits from server result
+const result = await createTodo({ title: 'New task' }, {
+  optimistic: todos.append({ id: -1, title: 'New task', done: false }),
 });
 ```
 
-- `temporary` appears immediately.
-- Failure removes only that temporary item.
-- Success replaces that exact item with `created`, the action result.
-- The list is not fetched again.
+---
 
-### Update
+## 6. Runtime Response Validation (Standard Schema v1)
+
+Validate server responses at runtime using Zod, Valibot, or ArkType via the Standard Schema specification:
 
 ```ts
-const saved = await updateTodo(input, {
-  optimistic: todos.replace(existing, optimisticVersion),
+import { z } from 'zod';
+import { $fetch } from '@memoized-dom/data';
+
+const UserSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  email: z.string().email(),
+});
+
+export const user = $fetch('/api/user', {
+  validate: UserSchema, // TypeScript infers User type automatically
 });
 ```
 
-- `existing` is replaced immediately.
-- Failure restores `existing`.
-- Success installs `saved` in place of `optimisticVersion`.
+If the response fails validation, `user` enters error state with `error.kind === 'validation'` and `error.issues` containing the schema breakdown.
 
-`existing` should be the actual object reference obtained from `todos.data`.
+---
 
-### Delete
+## 7. Universal SSR & Zero-Roundtrip Payload Transport
+
+During SSR, `@memoized-dom/data` coordinates request settling and serializes the state envelope into the streamed HTML:
+
+```text
+Server Stream:
+  HTML Markup:   <!--mmd:r:App--><div class="user">Ada</div><!--/mmd-->
+  State Envelope: <script type="application/mmd+json" data-mmd-root="App">
+                    {"version":1,"state":{"sources":[{"sourceId":"GET|/api/session","snapshot":{...}}]}}
+                  </script>
+```
+
+### Client Hydration:
+1. `hydrate()` extracts the state envelope from the embedded script tag before rendering.
+2. It restores the dormant records into the client's `DataRuntime`.
+3. Client components adopt the server DOM with **zero duplicate network fetches and zero loading flash**.
 
 ```ts
-await deleteTodo(existing.id, {
-  optimistic: todos.remove<void>(existing),
+// main.ts (Client Bootstrap)
+import { mount } from '@memoized-dom/runtime';
+import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
+import { App } from './App';
+
+setActiveDataRuntime(createDataRuntime());
+mount('root', App, { hydration: { recover: true } });
+```
+
+---
+
+## 8. Isolated Request Runtimes
+
+For server request isolation or testing:
+
+```ts
+import { createDataRuntime, runWithDataRuntime } from '@memoized-dom/data';
+
+const requestRuntime = createDataRuntime({
+  fetch: customFetch,
+  baseURL: 'https://api.internal.service',
+});
+
+// Run request within isolated cache boundary:
+const result = await runWithDataRuntime(requestRuntime, async () => {
+  await requestRuntime.settle();
+  return requestRuntime.serializeState();
 });
 ```
-
-- `existing` is removed immediately.
-- Failure reinserts it at its previous position.
-- Success keeps it removed.
-
-If `existing` is not present, `replace()` and `remove()` return safe no-op
-changes. Duplicate object references are handled one occurrence at a time.
-
-Rollback operations target their own temporary/current item instead of
-restoring a complete old array. A failed older action therefore does not erase
-unrelated later additions.
-
-## Optional related-resource refresh
-
-Creating an item normally returns that item, so the optimistic list should
-commit from the result rather than refetch itself:
-
-```ts
-await createTodo(input, {
-  optimistic: todos.append(temporary),
-});
-```
-
-Refresh is only for another resource whose authoritative value cannot be
-derived from the returned item:
-
-```ts
-await createTodo(input, {
-  optimistic: todos.append(temporary),
-  refresh: [todoStatistics],
-});
-```
-
-The action result reconciles `todos`. Only `todoStatistics` is requested again.
-Refresh requests start after the action succeeds and do not delay the action's
-returned result.
-
-## Errors
-
-```ts
-class RequestError<TData = unknown> extends Error {
-  readonly kind: 'network' | 'http' | 'decode' | 'validation';
-  readonly status: number | null;
-  readonly statusText: string | null;
-  readonly data: TData | undefined;
-  readonly issues: readonly StandardSchemaIssue[] | undefined;
-}
-```
-
-Automatic `$fetch` requests store failures in `resource.error` without causing
-an unhandled rejection. Awaited `refresh()` and action calls reject normally.
-
-## Compiler behavior and optional future optimization
-
-The current compiler needs no data-specific integration. An imported resource
-whose getters participate in rendered output is an opaque value, so its owner
-is marked volatile and reevaluated once per visible animation frame. This also
-supports structural output such as loading branches and
-`resource.data?.map(...)` lists. Polling stops when the owner is unmounted.
-
-This is the same compatibility path used for animation engines, external
-stores, and other third-party objects. Those libraries do not need to implement
-a framework interface.
-
-The package also exposes subscribe, immutable-snapshot, and dispose hooks from
-`@memoized-dom/data/internal`. Generated code does not use them today. They are
-available if measurements later justify an optional push optimization:
-
-- notify only when resource/action state changes instead of pulling per frame;
-- provide more precise invalidation;
-- automate resource ownership and cleanup;
-- recreate a resource when compiled request arguments change.
-
-That optimization must preserve the opaque fallback. It must not make a
-special interface mandatory for third-party libraries, recognize `$fetch` by
-name, or approve mutation methods from a list. Direct writes to derived values
-remain illegal; opaque receiver calls retain ordinary JavaScript semantics.
-
-The complete evolving design and deferred server behavior live in the root
-`data-loading-api.md` document.
