@@ -5,6 +5,7 @@ import {
   validateRoutePattern,
 } from './path';
 import { createRouteManifest } from './manifest';
+import { createScrollCoordinator } from './scroll';
 import {
   RouteHistoryCommittedUpdateError,
   type RouteHistory,
@@ -275,6 +276,31 @@ function sameMatches(
       keys.every(key => match.params[key] === other.params[key]);
   });
 }
+function wrapHistoryState(userState: unknown, key: string): unknown {
+  if (userState !== null && typeof userState === 'object' && !Array.isArray(userState)) {
+    return { ...userState, __mmd_key: key };
+  }
+  return { __mmd_val: userState, __mmd_key: key };
+}
+
+function unwrapHistoryState(storedState: unknown): { userState: unknown; key: string | null } {
+  if (storedState !== null && typeof storedState === 'object') {
+    const obj = storedState as Record<string, unknown>;
+    const key = typeof obj.__mmd_key === 'string' ? obj.__mmd_key : null;
+    if ('__mmd_val' in obj) {
+      return { userState: obj.__mmd_val, key };
+    }
+    if (key !== null) {
+      const { __mmd_key, ...rest } = obj;
+      return { userState: rest, key };
+    }
+  }
+  return { userState: storedState, key: null };
+}
+
+function generateHistoryKey(): string {
+  return `k_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export function createRouteRuntime(
   optionsOrEnvironment: RouteEnvironment | RouteRuntimeOptions = typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment),
@@ -329,7 +355,17 @@ export function createRouteRuntime(
     );
   }
   let pathname: string = initialPathname;
-  let state: unknown = routeHistory?.location.state ?? environment.history?.state ?? null;
+  const initialUnwrapped = unwrapHistoryState(
+    routeHistory?.location.state ?? environment.history?.state ?? null,
+  );
+  let state: unknown = initialUnwrapped.userState;
+  let currentHistoryKey: string = initialUnwrapped.key ?? generateHistoryKey();
+  const scrollCoordinator = createScrollCoordinator({
+    window: typeof window === 'undefined' ? undefined : window,
+    document: typeof document === 'undefined' ? undefined : document,
+    history: environment.history,
+  });
+  let disconnectScroll: (() => void) | null = null;
   let navigationType: NavigationType = 'load';
   let matches: readonly RouteMatch[] = Object.freeze([]);
   let params: Readonly<Record<string, string>> = Object.freeze({});
@@ -546,6 +582,7 @@ export function createRouteRuntime(
       if (fromRouteHistory) throw new RouteHistoryCommittedUpdateError(error);
       throw error;
     }
+    scrollCoordinator.restore(url, navigationType, currentHistoryKey);
   }
 
   if (routeHistory !== undefined) {
@@ -703,7 +740,9 @@ export function createRouteRuntime(
       location !== undefined &&
       applicationPathname(new URL(location.href).pathname) !== null
     ) {
-      setLocation(location.href, 'pop', environment.history?.state ?? null);
+      const { userState, key } = unwrapHistoryState(environment.history?.state ?? null);
+      if (key !== null) currentHistoryKey = key;
+      setLocation(location.href, 'pop', userState);
     }
   };
 
@@ -836,6 +875,8 @@ export function createRouteRuntime(
     if (connectionCount === 0) return;
     connectionCount--;
     if (connectionCount !== 0) return;
+    disconnectScroll?.();
+    disconnectScroll = null;
     if (routeHistory !== undefined) {
       return;
     } else if (supportsNavigationAPI(environment)) {
@@ -853,6 +894,7 @@ export function createRouteRuntime(
     connectionCount++;
     try {
       if (connectionCount === 1) {
+        disconnectScroll = scrollCoordinator.connect();
         if (routeHistory !== undefined) {
           // RouteHistory subscriptions are owned for the entire runtime lifetime.
         } else if (supportsNavigationAPI(environment)) {
@@ -867,10 +909,12 @@ export function createRouteRuntime(
           environment.location !== undefined &&
           applicationPathname(new URL(environment.location.href).pathname) !== null
         ) {
+          const { userState, key } = unwrapHistoryState(environment.history?.state ?? null);
+          if (key !== null) currentHistoryKey = key;
           setLocation(
             environment.location.href,
             'replace',
-            environment.history?.state ?? null,
+            userState,
           );
         }
       }
@@ -1061,6 +1105,10 @@ export function createRouteRuntime(
     next: URL,
     options: Pick<NavigateOptions, 'replace' | 'state'>,
   ): void {
+    scrollCoordinator.capture(currentHistoryKey);
+    if (!options.replace) {
+      currentHistoryKey = generateHistoryKey();
+    }
     if (routeHistory !== undefined) {
       const beforeNavigation = locationRevision;
       if (options.replace) routeHistory.replace(next, options.state ?? null);
@@ -1106,8 +1154,9 @@ export function createRouteRuntime(
     }
     const history = environment.history;
     if (history !== undefined) {
-      if (options.replace) history.replaceState(options.state ?? null, '', next);
-      else history.pushState(options.state ?? null, '', next);
+      const wrapped = wrapHistoryState(options.state ?? null, currentHistoryKey);
+      if (options.replace) history.replaceState(wrapped, '', next);
+      else history.pushState(wrapped, '', next);
     }
     setLocation(
       next,
@@ -1199,6 +1248,9 @@ export function createRouteRuntime(
       throw new Error('Route resolvers and blockers must not mutate router state');
     }
     while (connectionCount > 0) disconnect();
+    disconnectScroll?.();
+    disconnectScroll = null;
+    scrollCoordinator.dispose();
     unsubscribeRouteHistory?.();
     unsubscribeRouteHistory = null;
     disposed = true;
