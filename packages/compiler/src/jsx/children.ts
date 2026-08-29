@@ -33,24 +33,59 @@ export interface DirectChildEmitters {
   fail(message: string): never;
 }
 
+function combineTextExpressions(expressions: t.Expression[]): t.Expression {
+  if (expressions.length === 1) return expressions[0]!;
+
+  const merged: t.Expression[] = [];
+  for (const expr of expressions) {
+    const last = merged[merged.length - 1];
+    if (last && t.isStringLiteral(last) && t.isStringLiteral(expr)) {
+      merged[merged.length - 1] = t.stringLiteral(last.value + expr.value);
+    } else {
+      merged.push(expr);
+    }
+  }
+  if (merged.length === 1) return merged[0]!;
+
+  const hasString = merged.some((e) => t.isStringLiteral(e));
+  let result: t.Expression = hasString
+    ? merged[0]!
+    : t.binaryExpression('+', t.stringLiteral(''), merged[0]!);
+
+  for (let i = 1; i < merged.length; i++) {
+    result = t.binaryExpression('+', result, merged[i]!);
+  }
+  return result;
+}
+
 /** Classify and emit immediate child nodes in authored source order. */
 export function collectDirectChildren(
   children: readonly JsxChild[],
   emitters: DirectChildEmitters,
 ): DirectChildOperation[] {
   const result: DirectChildOperation[] = [];
+  let pendingText: t.Expression[] = [];
+
+  const flushText = (): void => {
+    if (pendingText.length === 0) return;
+    const combined = combineTextExpressions(pendingText);
+    pendingText = [];
+    result.push({
+      type: 'node',
+      variable: emitters.emitText(combined),
+    });
+  };
+
   for (const child of children) {
     if (t.isJSXText(child)) {
       const value = normalizeJsxText(child.value);
       if (value !== '') {
-        result.push({
-          type: 'node',
-          variable: emitters.emitText(t.stringLiteral(value)),
-        });
+        pendingText.push(t.stringLiteral(value));
       }
       continue;
     }
     if (t.isJSXElement(child) || t.isJSXFragment(child)) {
+      flushText();
       result.push({ type: 'node', variable: emitters.emitNode(child) });
       continue;
     }
@@ -64,6 +99,7 @@ export function collectDirectChildren(
 
     const expression = child.expression;
     if (emitters.isForwarded(expression)) {
+      flushText();
       result.push({ type: 'slot', expression: t.cloneNode(expression) });
       continue;
     }
@@ -76,18 +112,21 @@ export function collectDirectChildren(
     }
     const mapCall = matchMapCall(expression);
     if (mapCall !== null) {
+      flushText();
       result.push({ type: 'list', expression: mapCall });
       continue;
     }
     const condition = matchCond(expression);
     if (condition !== null && nodeHasJsx(condition)) {
+      flushText();
       result.push({ type: 'condition', expression: condition });
       continue;
     }
-    result.push({
-      type: 'node',
-      variable: emitters.emitText(t.cloneNode(expression)),
-    });
+
+    pendingText.push(t.cloneNode(expression));
   }
+
+  flushText();
   return result;
 }
+

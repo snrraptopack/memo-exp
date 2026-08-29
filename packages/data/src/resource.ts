@@ -406,11 +406,14 @@ export class FetchStore {
     // A seeded entry resumes only through an explicit refresh — a restored
     // success must not re-issue its request (RFC §16.6.6) and a restored
     // error retries only through its restored source handle (§16.6.8).
+    // Restored pending entries (e.g. from SSR shell streaming) start their
+    // client-side fetch immediately so the in-flight server request resolves.
     const shouldStart =
       force ||
       (restored === undefined &&
         (entry.snapshot.status === 'idle' ||
-          entry.snapshot.status === 'error'));
+          entry.snapshot.status === 'error')) ||
+      (restored !== undefined && restored.snapshot.status === 'pending');
     if (shouldStart) entry.start(force).catch(() => {});
     return entry;
   }
