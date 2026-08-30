@@ -48,7 +48,9 @@ declare global {
     }
 
     interface IntrinsicElements {
-      [name: string]: any;
+      [name: string]: {
+        [attribute: string]: unknown;
+      };
     }
   }
 }

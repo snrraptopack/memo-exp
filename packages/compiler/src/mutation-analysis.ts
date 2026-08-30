@@ -8,6 +8,7 @@
 
 import type { Binding, Scope } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst } from './ast';
 import { memberKey, type StateKind } from './context';
 
 export type ReactiveLocality = 'module' | 'instance' | 'row' | 'prop';
@@ -54,8 +55,11 @@ export class AliasTracker {
    */
   referencedOrigins(scope: Scope, node: t.Node): ReactiveOrigin[] {
     const origins = new Map<string, ReactiveOrigin>();
-    const visit = (current: t.Node): void => {
-      if (t.isIdentifier(current) || t.isMemberExpression(current)) {
+    walkAst(node, {
+      enter: (current) => {
+        if (!t.isIdentifier(current) && !t.isMemberExpression(current)) {
+          return undefined;
+        }
         const origin = this.resolveExpression(scope, current);
         if (origin !== null) {
           const identity = [
@@ -64,21 +68,11 @@ export class AliasTracker {
             origin.key ?? '*',
           ].join(':');
           origins.set(identity, origin);
-          return;
+          return false;
         }
-      }
-      for (const key of t.VISITOR_KEYS[current.type] ?? []) {
-        const child = (current as any)[key];
-        if (Array.isArray(child)) {
-          for (const item of child) {
-            if (item && typeof item === 'object' && 'type' in item) visit(item);
-          }
-        } else if (child && typeof child === 'object' && 'type' in child) {
-          visit(child);
-        }
-      }
-    };
-    visit(node);
+        return undefined;
+      },
+    });
     return [...origins.values()];
   }
 

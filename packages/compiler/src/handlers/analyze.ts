@@ -36,7 +36,7 @@ import { generatedIdentifier, md } from '../identifiers';
 import { transparentListExpression } from '../lists/source-shapes';
 
 const traverse: typeof _traverse =
-  (_traverse as any).default ?? (_traverse as any);
+  (_traverse as unknown as { default?: typeof _traverse }).default ?? _traverse;
 
 const ARRAY_TOPOLOGY_METHODS = new Set([
   'copyWithin',

@@ -16,6 +16,7 @@ import {
   transformFromAstSync,
   transformSync,
   type InputOptions,
+  type PluginTarget,
 } from '@babel/core';
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
@@ -52,9 +53,9 @@ function transform(
     sourceFileName: moduleId,
     sourceMaps,
     plugins: [
-      [syntaxJsx as any, {}],
+      [syntaxJsx as PluginTarget, {}],
       [memoDomPlugin, opts],
-      [transformTypescript as any, { isTSX: true }],
+      [transformTypescript as PluginTarget, { isTSX: true }],
     ],
     configFile: false,
     babelrc: false,

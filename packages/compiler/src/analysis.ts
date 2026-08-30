@@ -190,7 +190,10 @@ function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
  */
 function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
   const unwrapFunctionPath = (
-    raw: any,
+    raw:
+      | NodePath<t.Expression | null>
+      | NodePath<t.Expression | null>[]
+      | null,
   ): NodePath<t.ArrowFunctionExpression | t.FunctionExpression> | null => {
     if (raw === null || Array.isArray(raw)) return null;
     let current = raw;
@@ -206,7 +209,7 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
       current = expression;
     }
     return current.isArrowFunctionExpression() || current.isFunctionExpression()
-      ? current
+      ? current as NodePath<t.ArrowFunctionExpression | t.FunctionExpression>
       : null;
   };
 

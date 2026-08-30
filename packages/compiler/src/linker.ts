@@ -10,6 +10,7 @@ import { posix } from 'node:path';
 import {
   parseSync,
   transformFromAstSync,
+  type PluginTarget,
 } from '@babel/core';
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
@@ -638,9 +639,9 @@ function analyzeManifest(
   transformFromAstSync(t.cloneNode(entry.ast, true), entry.source, {
     filename: entry.id,
     plugins: [
-      [syntaxJsx as any, {}],
+      [syntaxJsx as PluginTarget, {}],
       analysisPlugin,
-      [transformTypescript as any, { isTSX: true }],
+      [transformTypescript as PluginTarget, { isTSX: true }],
     ],
     configFile: false,
     babelrc: false,
@@ -808,9 +809,9 @@ function discoverManifest(
   transformFromAstSync(t.cloneNode(entry.ast, true), entry.source, {
     filename: entry.id,
     plugins: [
-      [syntaxJsx as any, {}],
+      [syntaxJsx as PluginTarget, {}],
       discoveryPlugin,
-      [transformTypescript as any, { isTSX: true }],
+      [transformTypescript as PluginTarget, { isTSX: true }],
     ],
     configFile: false,
     babelrc: false,

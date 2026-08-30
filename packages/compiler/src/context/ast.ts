@@ -1,4 +1,5 @@
 import * as t from '@babel/types';
+import { walkAst } from '../ast';
 import { generatedIdentifier } from '../identifiers';
 import type { Ctx, StateKind } from './model';
 
@@ -256,8 +257,8 @@ export function exprReadsState(
       ? ctx.componentProps.get(componentName)?.bindings
       : undefined;
   let reads = false;
-  const probe = (node: t.Node): void => {
-    if (reads) return;
+  walkNodes(expression, (node) => {
+    if (reads) return false;
     if (
       t.isIdentifier(node) &&
       (ctx.state.has(node.name) ||
@@ -266,22 +267,10 @@ export function exprReadsState(
         props?.includes(node.name) === true)
     ) {
       reads = true;
-      return;
+      return false;
     }
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-      const child = (node as any)[key];
-      if (Array.isArray(child)) {
-        for (const item of child) {
-          if (item && typeof item === 'object' && 'type' in item) {
-            probe(item as t.Node);
-          }
-        }
-      } else if (child && typeof child === 'object' && 'type' in child) {
-        probe(child as t.Node);
-      }
-    }
-  };
-  probe(expression);
+    return undefined;
+  });
   return reads;
 }
 
@@ -314,22 +303,11 @@ export function walkNodes(
   root: t.Node,
   visit: (node: t.Node, parent: t.Node | null) => void | boolean,
 ): void {
-  const walk = (node: t.Node, parent: t.Node | null): void => {
-    if (visit(node, parent) === false) return;
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-      const child = (node as any)[key];
-      if (Array.isArray(child)) {
-        for (const item of child) {
-          if (item && typeof item === 'object' && 'type' in item) {
-            walk(item as t.Node, node);
-          }
-        }
-      } else if (child && typeof child === 'object' && 'type' in child) {
-        walk(child as t.Node, node);
-      }
-    }
-  };
-  walk(root, null);
+  walkAst(root, {
+    enter(node, parent) {
+      return visit(node, parent);
+    },
+  });
 }
 
 /** Whether a raw AST subtree contains JSX. */

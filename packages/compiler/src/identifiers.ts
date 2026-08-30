@@ -8,6 +8,7 @@
 
 import type { NodePath, Scope } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst } from './ast';
 
 export class GeneratedIdentifiers {
   readonly runtimeId: string;
@@ -107,20 +108,9 @@ export function requireIdentifiers(owner: IdentifierOwner): GeneratedIdentifiers
 }
 
 function walkIdentifiers(root: t.Node, visit: (name: string) => void): void {
-  const walk = (node: t.Node): void => {
-    if (t.isIdentifier(node)) visit(node.name);
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-      const child = (node as any)[key];
-      if (Array.isArray(child)) {
-        for (const item of child) {
-          if (item && typeof item === 'object' && 'type' in item) {
-            walk(item as t.Node);
-          }
-        }
-      } else if (child && typeof child === 'object' && 'type' in child) {
-        walk(child as t.Node);
-      }
-    }
-  };
-  walk(root);
+  walkAst(root, {
+    enter(node) {
+      if (t.isIdentifier(node)) visit(node.name);
+    },
+  });
 }

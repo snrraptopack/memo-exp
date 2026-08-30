@@ -160,28 +160,32 @@ export function appendScopeCommit(
 function insertBeforeReturns(node: t.Node, commit: t.Statement): void {
   if (t.isFunction(node)) return;
   for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-    const child = (node as any)[key];
+    const fields = node as unknown as Record<string, unknown>;
+    const child = fields[key];
     if (Array.isArray(child)) {
-      for (let index = 0; index < child.length; index++) {
-        const item = child[index];
+      const children: unknown[] = child;
+      for (let index = 0; index < children.length; index++) {
+        const item = children[index];
         if (!item || typeof item !== 'object' || !('type' in item)) continue;
-        if (t.isFunction(item)) continue;
-        if (t.isReturnStatement(item)) {
-          child.splice(index, 0, t.cloneNode(commit));
+        const childNode = item as t.Node;
+        if (t.isFunction(childNode)) continue;
+        if (t.isReturnStatement(childNode)) {
+          children.splice(index, 0, t.cloneNode(commit));
           index++;
         } else {
-          insertBeforeReturns(item as t.Node, commit);
+          insertBeforeReturns(childNode, commit);
         }
       }
     } else if (child && typeof child === 'object' && 'type' in child) {
-      if (t.isFunction(child)) continue;
-      if (t.isReturnStatement(child)) {
-        (node as any)[key] = t.blockStatement([
+      const childNode = child as t.Node;
+      if (t.isFunction(childNode)) continue;
+      if (t.isReturnStatement(childNode)) {
+        fields[key] = t.blockStatement([
           t.cloneNode(commit),
-          child as t.ReturnStatement,
+          childNode,
         ]);
       } else {
-        insertBeforeReturns(child as t.Node, commit);
+        insertBeforeReturns(childNode, commit);
       }
     }
   }

@@ -8,6 +8,7 @@
  */
 
 import * as t from '@babel/types';
+import { walkAst } from '../ast';
 
 export type ComponentParam = Exclude<
   t.FunctionDeclaration['params'][number],
@@ -363,22 +364,14 @@ function assignmentTarget(target: PropTarget): PropTarget {
 }
 
 function stripTypeSyntax(node: t.Node): void {
-  const typed = node as t.Node & {
-    typeAnnotation?: t.TypeAnnotation | t.TSTypeAnnotation | null;
-    optional?: boolean | null;
-  };
-  if ('typeAnnotation' in typed) typed.typeAnnotation = null;
-  if ('optional' in typed) typed.optional = null;
-  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-    const child = (node as any)[key];
-    if (Array.isArray(child)) {
-      for (const item of child) {
-        if (item && typeof item === 'object' && 'type' in item) {
-          stripTypeSyntax(item as t.Node);
-        }
-      }
-    } else if (child && typeof child === 'object' && 'type' in child) {
-      stripTypeSyntax(child as t.Node);
-    }
-  }
+  walkAst(node, {
+    enter(current) {
+      const typed = current as t.Node & {
+        typeAnnotation?: t.TypeAnnotation | t.TSTypeAnnotation | null;
+        optional?: boolean | null;
+      };
+      if ('typeAnnotation' in typed) typed.typeAnnotation = null;
+      if ('optional' in typed) typed.optional = null;
+    },
+  });
 }
