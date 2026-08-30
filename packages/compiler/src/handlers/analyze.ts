@@ -286,12 +286,12 @@ export function analyzeHandler(
   }
 
   const aliases = new AliasTracker((name, binding) => {
-    if (binding !== undefined) return null;
-    const projected = projectedProps.get(name);
-    if (projected !== undefined) return projected;
     if (rowCtx !== undefined && name === rowCtx.itemParam) {
       return { locality: 'row', root: name, key: name };
     }
+    if (binding !== undefined && !binding.scope.path.isProgram()) return null;
+    const projected = projectedProps.get(name);
+    if (projected !== undefined) return projected;
     if (instVars?.has(name) === true) {
       return { locality: 'instance', root: name, key: name };
     }
@@ -299,6 +299,10 @@ export function analyzeHandler(
       return { locality: 'prop', root: name, key: name };
     }
     if (componentLocals.has(name)) return null;
+    const transparentKey = ctx.transparentModuleSources.get(name);
+    if (transparentKey !== undefined) {
+      return moduleOrigin(name, 'store');
+    }
     const kind = ctx.state.get(name);
     return kind === undefined ? null : moduleOrigin(name, kind);
   });

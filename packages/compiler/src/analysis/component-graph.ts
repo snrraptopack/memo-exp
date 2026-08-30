@@ -60,6 +60,9 @@ export function pathVariants(
       } else {
         output.push(`${parentPath}/${name}`);
       }
+      if (ctx.usesRouter) {
+        output.push(`${parentPath}/**/${name}`);
+      }
     }
   }
   visiting.delete(name);

@@ -139,7 +139,7 @@ function instrumentReachableLocalHelpers(
     // does not exist there. Row-relative item writes from helpers therefore
     // cannot be row-routed; analyzing without the row context keeps the
     // emitted commits sound (instance/module writes are unaffected).
-    analyzeHandler(ctx, helper, compName, undefined, false);
+    analyzeHandler(ctx, helper, compName, rowCtx?.refreshVar !== undefined ? rowCtx : undefined, false);
   }
 }
 
@@ -264,7 +264,7 @@ export function buildHandler(
     // A handler RESOLVED BY NAME lives at component scope, so row-scoped
     // commit identifiers are never valid inside it — analyze it without the
     // row context even when the reference site is a row.
-    const nameResolved = t.isIdentifier(value) && !forceTable;
+    const nameResolved = t.isIdentifier(value) && !forceTable && rowCtx?.refreshVar === undefined;
     analyzeHandler(
       ctx,
       target,

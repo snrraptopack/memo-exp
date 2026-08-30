@@ -130,6 +130,14 @@ export function analyzedComponentDeclarations(
           ...(sources === undefined ? {} : { propSources: sources }),
         });
       }
+      if (ctx.usesRouter) {
+        edges.push({
+          target,
+          suffix: `/**/${tag}`,
+          mode: 'static',
+          ...(sources === undefined ? {} : { propSources: sources }),
+        });
+      }
     }
     for (const [tag, sites] of ctx.conditionalComponentSites) {
       for (const site of sites) {

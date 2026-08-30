@@ -135,13 +135,18 @@ onRegistryChange((id, kind) => {
   if (touched) s.resVersion++;
 });
 
-/** '*' matches any run of non-separator characters within one id segment. */
+/** '*' matches within one id segment; '**' matches across multiple segments. */
 function compilePattern(raw: string): RegExp | null {
   if (!raw.includes('*')) return null;
   const escaped = raw
-    .split('*')
-    .map((seg) => seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('[^/]*');
+    .split('**')
+    .map((part) =>
+      part
+        .split('*')
+        .map((seg) => seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('[^/]*'),
+    )
+    .join('.*');
   return new RegExp(`^${escaped}$`);
 }
 

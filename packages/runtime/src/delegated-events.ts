@@ -63,15 +63,18 @@ function delegatedType(jsxName: string): DelegatedType {
 }
 
 function installRoot(root: EventTarget, delegated: DelegatedType): void {
-  if (typeof root.addEventListener !== 'function') return;
+  const listenTarget = (root as any).nodeType === 11 && (root as any).ownerDocument
+    ? (root as any).ownerDocument
+    : root;
+  if (typeof listenTarget.addEventListener !== 'function') return;
   if (!delegated.roots.has(root)) {
     delegated.roots.add(root);
-    root.addEventListener(delegated.type, (event) => {
+    listenTarget.addEventListener(delegated.type, (event: Event) => {
       if (event.bubbles) dispatch(root, delegated!, event);
     });
-    root.addEventListener(
+    listenTarget.addEventListener(
       delegated.type,
-      (event) => {
+      (event: Event) => {
         if (!event.bubbles) dispatch(root, delegated!, event);
       },
       true,

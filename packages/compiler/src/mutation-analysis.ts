@@ -93,6 +93,23 @@ export class AliasTracker {
 
   resolveExpression(scope: Scope, raw: t.Node): ReactiveOrigin | null {
     const expression = unwrapExpression(raw);
+    if (
+      t.isCallExpression(expression) &&
+      t.isMemberExpression(expression.callee) &&
+      t.isIdentifier(expression.callee.property) &&
+      (expression.callee.property.name === 'readResolvedValue' ||
+       expression.callee.property.name === 'readResolvedValueForRender' ||
+       expression.callee.property.name === 'readModuleSourceList')
+    ) {
+      const secondArg = expression.arguments[1];
+      if (t.isStringLiteral(secondArg)) {
+        return this.resolveName(scope, secondArg.value);
+      }
+      const firstArg = expression.arguments[0];
+      if (t.isIdentifier(firstArg)) {
+        return this.resolveName(scope, firstArg.name);
+      }
+    }
     if (t.isIdentifier(expression)) {
       return this.resolveName(scope, expression.name);
     }

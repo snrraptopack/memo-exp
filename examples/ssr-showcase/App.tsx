@@ -19,7 +19,11 @@
  */
 import { route } from '@memoized-dom/router';
 import { Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
-import { currentUser, stories, type Story,storiesAction } from './session';
+import {
+  currentUser,
+  stories,
+  type Story,
+} from './session';
 
 
 // ── Session badge ─────────────────────────────────────────────────────────────
@@ -121,14 +125,16 @@ function StoriesError({ error, retry }: { error: { message: string }; retry: () 
 }
 
 function StoryRow({ item }: { item: Story }) {
+  function handleUpvote() {
+    item.votes++;
+  }
+
   return (
     <li class="story">
       <button
         class="vote"
         aria-label={`Upvote ${item.title}`}
-        onClick={() => {
-          item.votes++;
-        }}
+        onClick={handleUpvote}
       >
         ▲
       </button>
@@ -144,33 +150,29 @@ function StoryRow({ item }: { item: Story }) {
 }
 
 function Stories() {
-
-  function handleUpdate() {
-    const nextId = stories.length + 1;
+  function handlePublish() {
+    const tempId = Date.now();
+    const nextNumber = stories.length + 1;
     const tempStory: Story = {
-      id: nextId,
-      title: `Fresh signal #${nextId} — published client-side`,
+      id: tempId,
+      title: `Fresh signal #${nextNumber} — published live`,
       category: 'Live',
-      author: 'you',
+      author: currentUser.name || 'you',
       votes: 1,
       posted: 'just now',
     };
 
-    const result = storiesAction(tempStory);
-
     stories.unshift(tempStory);
-    void result
   }
 
   return (
     <section class="panel">
       <div class="panel-head">
         <h2>Top stories</h2>
-        <button class="action" onClick={handleUpdate}>
+        <button class="action" onClick={handlePublish}>
           + Publish
         </button>
       </div>
-
       <Group data={stories}>
         <Pending component={StoriesPending} />
         <ErrorArm component={StoriesError} />

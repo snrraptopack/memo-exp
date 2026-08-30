@@ -63,7 +63,9 @@ export function applyLinkedPropEffect(
   const source =
     ctx.linkedComponentPropSources.get(component)?.get(access.name);
   if (source === undefined) {
-    scope.rootFallback = true;
+    if (rowCtx?.refreshVar === undefined) {
+      scope.rootFallback = true;
+    }
     return true;
   }
   scope.rootFallback ||= source.rootFallback;

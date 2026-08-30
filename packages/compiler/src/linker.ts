@@ -36,6 +36,7 @@ import {
   moduleFunctionStringCandidates,
   moduleStateStringCandidates,
 } from './analysis/type-candidates';
+import { analyzeRouterJsx } from './router';
 import {
   canonicalStateKey,
   createCtx,
@@ -533,6 +534,7 @@ function analyzeManifest(
         scanTransparentSourceImports(ctx, programPath);
         lowerTransparentGroups(ctx, programPath);
         scanAndLowerModuleSourceDeclarations(ctx, programPath);
+        analyzeRouterJsx(ctx, programPath);
         runAnalysis(ctx, programPath);
         // buildAccessTable also materializes ctx.readers. The returned AST is
         // intentionally discarded here; final emission builds its own table.
