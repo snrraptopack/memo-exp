@@ -1,9 +1,10 @@
 /**
  * Collects caller-side provenance for values passed through component props.
  */
-import type { Scope } from '@babel/traverse';
 import * as t from '@babel/types';
+import type { BaseNode } from '../ast';
 import {
+  astBindingAt,
   canonicalStateKey,
   collectStateIds,
   memberKey,
@@ -44,14 +45,14 @@ function unwrapExpression(node: t.Expression): t.Expression {
 
 function moduleStateSource(
   ctx: Ctx,
-  scope: Scope,
   raw: t.Expression,
 ): string | null {
   const expression = unwrapExpression(raw);
   if (t.isIdentifier(expression)) {
     if (
       !ctx.state.has(expression.name) ||
-      scope.getBinding(expression.name)?.scope.path.isProgram() !== true
+      astBindingAt(ctx, expression as unknown as BaseNode, expression.name)
+        ?.scope.isProgramScope !== true
     ) {
       return null;
     }
@@ -62,7 +63,8 @@ function moduleStateSource(
   if (
     root === null ||
     !ctx.state.has(root) ||
-    scope.getBinding(root)?.scope.path.isProgram() !== true
+    astBindingAt(ctx, expression as unknown as BaseNode, root)?.scope
+      .isProgramScope !== true
   ) {
     return null;
   }
@@ -123,17 +125,17 @@ function isIdentityFree(expression: t.Expression): boolean {
     t.isBooleanLiteral(expression) ||
     t.isNullLiteral(expression) ||
     t.isBigIntLiteral(expression) ||
-    t.isTemplateLiteral(expression)
+    t.isTemplateLiteral(expression) ||
+    (expression as unknown as BaseNode).type === 'Literal'
   );
 }
 
 function sourceOf(
   ctx: Ctx,
   owner: string,
-  scope: Scope,
   expression: t.Expression,
 ): ComponentPropSourceRef {
-  const state = moduleStateSource(ctx, scope, expression);
+  const state = moduleStateSource(ctx, expression);
   if (state !== null) return { type: 'state', key: state };
 
   const plan = ctx.componentProps.get(owner)!;
@@ -141,8 +143,20 @@ function sourceOf(
   if (parentProp !== null) return parentProp;
 
   if (t.isIdentifier(expression)) {
-    const binding = scope.getBinding(expression.name);
-    const ownerBinding = ctx.compPaths.get(owner)?.scope.getBinding(expression.name);
+    const binding = astBindingAt(
+      ctx,
+      expression as unknown as BaseNode,
+      expression.name,
+    );
+    const ownerNode = ctx.compPaths.get(owner)?.node;
+    const ownerBinding =
+      ownerNode === undefined
+        ? undefined
+        : astBindingAt(
+            ctx,
+            ownerNode as unknown as BaseNode,
+            expression.name,
+          );
     if (
       binding !== undefined &&
       binding === ownerBinding &&
@@ -202,46 +216,47 @@ export function collectComponentPropSources(
   owner: string,
 ): Map<string, ComponentPropSourceRefs> {
   const byTag = new Map<string, ComponentPropSourceRefs>();
-  ctx.compPaths.get(owner)!.traverse({
-    JSXOpeningElement(opening) {
-      const name = opening.node.name;
-      if (!t.isJSXIdentifier(name) || !/^[A-Z]/.test(name.name)) return;
-      const targetPlan = ctx.componentProps.get(name.name);
+  const component = ctx.compPaths.get(owner)!;
+  walkNodes(component.node, (node) => {
+    if (node.type !== 'JSXOpeningElement') return;
+    const opening = node as t.JSXOpeningElement;
+    const name = opening.name;
+    if (!t.isJSXIdentifier(name) || !/^[A-Z]/.test(name.name)) return;
+    const targetPlan = ctx.componentProps.get(name.name);
 
-      for (const attributePath of opening.get('attributes')) {
-        if (attributePath.isJSXSpreadAttribute()) {
-          for (const prop of targetPlan?.names ?? []) {
-            if (prop === 'ref' || targetPlan?.refProps.includes(prop)) continue;
-            addSource(byTag, name.name, prop, { type: 'root' });
-          }
-          continue;
+    for (const attribute of opening.attributes) {
+      if (t.isJSXSpreadAttribute(attribute)) {
+        for (const prop of targetPlan?.names ?? []) {
+          if (prop === 'ref' || targetPlan?.refProps.includes(prop)) continue;
+          addSource(byTag, name.name, prop, { type: 'root' });
         }
-        if (!attributePath.isJSXAttribute()) continue;
-        const prop = jsxPropName(attributePath.node);
-        if (
-          prop === null ||
-          prop === 'key' ||
-          prop === 'ref' ||
-          targetPlan?.refProps.includes(prop) === true
-        ) {
-          continue;
-        }
-        const value = attributePath.node.value;
-        if (
-          !t.isJSXExpressionContainer(value) ||
-          !t.isExpression(value.expression)
-        ) {
-          addSource(byTag, name.name, prop, { type: 'local' });
-          continue;
-        }
-        addSource(
-          byTag,
-          name.name,
-          prop,
-          sourceOf(ctx, owner, attributePath.scope, value.expression),
-        );
+        continue;
       }
-    },
+      if (!t.isJSXAttribute(attribute)) continue;
+      const prop = jsxPropName(attribute);
+      if (
+        prop === null ||
+        prop === 'key' ||
+        prop === 'ref' ||
+        targetPlan?.refProps.includes(prop) === true
+      ) {
+        continue;
+      }
+      const value = attribute.value;
+      if (
+        !t.isJSXExpressionContainer(value) ||
+        value.expression.type === 'JSXEmptyExpression'
+      ) {
+        addSource(byTag, name.name, prop, { type: 'local' });
+        continue;
+      }
+      addSource(
+        byTag,
+        name.name,
+        prop,
+        sourceOf(ctx, owner, value.expression as t.Expression),
+      );
+    }
   });
   return byTag;
 }

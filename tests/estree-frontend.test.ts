@@ -34,6 +34,7 @@ import { GeneratedIdentifiers } from '../packages/compiler/src/identifiers';
 import { isRenderCallbackJsxRoot } from '../packages/compiler/src/components/render-callbacks';
 import { scanModuleControlFlow } from '../packages/compiler/src/module-control-flow';
 import { analyzeComponentReturns } from '../packages/compiler/src/components/return-plan';
+import { collectComponentPropSources } from '../packages/compiler/src/components/prop-origins';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -443,5 +444,63 @@ describe('ESTree parser and printer boundary', () => {
         null,
       ]);
     }
+  });
+
+  it('resolves component prop origins from OXC lexical bindings', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        let shared = 1;
+        function Parent() {
+          return <Child value={shared} label={42} />;
+        }
+      `,
+      { filename: 'prop-origins.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode =>
+        node.type === 'FunctionDeclaration' &&
+        (node as unknown as { id?: { name?: string } }).id?.name === 'Parent',
+    );
+    const propPlan = {
+      mode: 'positional' as const,
+      names: [],
+      acceptsUnknown: false,
+      bindings: [],
+      params: [],
+      hasWholeDefault: false,
+      renderProps: [],
+      renderCallbacks: [],
+      refProps: [],
+    };
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      compPaths: new Map([['Parent', { node: component! }]]),
+      componentProps: new Map([
+        ['Parent', propPlan],
+        ['Child', { ...propPlan, names: ['value', 'label'] }],
+      ]),
+      state: new Map([['shared', 'let']]),
+      stateKeys: new Map([['shared', './prop-origins.tsx#shared']]),
+      transparentSources: new Map(),
+      instanceState: new Map(),
+      instanceDerivedBindings: new Map(),
+      moduleId: './prop-origins.tsx',
+    } as unknown as Ctx;
+
+    expect(component).not.toBeNull();
+    expect(collectComponentPropSources(context, 'Parent')).toEqual(
+      new Map([
+        [
+          'Child',
+          {
+            value: [
+              { type: 'state', key: './prop-origins.tsx#shared' },
+            ],
+            label: [{ type: 'local' }],
+          },
+        ],
+      ]),
+    );
   });
 });

@@ -158,7 +158,7 @@ The compiler package still declares these five dependencies:
 At this checkpoint, 57 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
-Of those files, 21 still import or declare `@babel/traverse`. Component/ref,
+Of those files, 20 still import or declare `@babel/traverse`. Component/ref,
 conditional-region, render-callback, and list-region emission now share the
 central component-path boundary instead of importing the traversal package.
 The shared identifier allocator no longer needs a Babel program scope, and
@@ -167,6 +167,8 @@ Lifecycle callback discovery and cleanup lowering now use the ESTree walker
 and scope index instead of NodePath traversal.
 Component return planning now collects returns and checks hoist barriers with
 the ESTree walker, including direct OXC `Literal` empty-branch coverage.
+Component prop-origin collection now traverses raw JSX and resolves module and
+owner bindings through the ESTree lexical index.
 Its final `scope.crawl()` is a temporary synchronization bridge for downstream
 passes.
 
@@ -204,7 +206,7 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 24 tests.
+- Focused AST/frontend suites passed: 2 files, 25 tests.
 - Handler, render-prop, render-function, render-callback, indexed-map, and
   delegated-event regressions passed: 6 files, 29 tests.
 - Calculated, nested, opaque-derived, gated, and targeted-list regressions
@@ -240,6 +242,8 @@ Verified on 2026-08-30:
   regressions passed: 5 files, 21 tests.
 - AST/frontend, return-control-flow, diagnostics, golden-emission, and
   component-expression regressions passed: 6 files, 59 tests.
+- AST/frontend, prop-origin, linker, render-prop, and transparent-data
+  regressions passed: 7 files, 63 tests.
 - Full root suite passed: 99 files, 594 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
