@@ -9,23 +9,19 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import { nodeHasJsx, type Ctx, type RowCtx } from './context';
+import type { BaseNode } from './ast';
+import {
+  astBindingAt,
+  nodeHasJsx,
+  type Ctx,
+  type RowCtx,
+} from './context';
 import {
   instrumentComponentCallback,
   instrumentSharedCallback,
   resolveLocalHelper,
-  type HandlerFn,
 } from './handlers';
 import { md } from './identifiers';
-
-function functionFromBinding(bindingPath: NodePath): HandlerFn | null {
-  if (bindingPath.isFunctionDeclaration()) return bindingPath.node;
-  if (!bindingPath.isVariableDeclarator()) return null;
-  const init = bindingPath.node.init;
-  return init && (t.isArrowFunctionExpression(init) || t.isFunctionExpression(init))
-    ? init
-    : null;
-}
 
 function instrumentIdentifier(
   ctx: Ctx,
@@ -48,18 +44,20 @@ function instrumentIdentifier(
     return;
   }
 
-  const binding = compPath.scope.getBinding(name);
+  const binding = astBindingAt(
+    ctx,
+    compPath.node as unknown as BaseNode,
+    name,
+  );
   if (
     binding === undefined ||
-    binding.scope.path.isProgram() !== true ||
+    !binding.scope.isProgramScope ||
     !ctx.helpers.has(name)
   ) {
     return;
   }
-  const shared = functionFromBinding(binding.path);
-  if (shared !== null) {
-    instrumentSharedCallback(ctx, shared, executionAwareRoot);
-  }
+  const shared = ctx.helpers.get(name)?.node;
+  if (shared !== undefined) instrumentSharedCallback(ctx, shared, executionAwareRoot);
 }
 
 function instrumentArgument(
@@ -98,18 +96,20 @@ function instrumentSharedIdentifier(
   name: string,
   executionAwareRoot = false,
 ): void {
-  const binding = programPath.scope.getBinding(name);
+  const binding = astBindingAt(
+    ctx,
+    programPath.node as unknown as BaseNode,
+    name,
+  );
   if (
     binding === undefined ||
-    binding.scope.path.isProgram() !== true ||
+    !binding.scope.isProgramScope ||
     !ctx.helpers.has(name)
   ) {
     return;
   }
-  const shared = functionFromBinding(binding.path);
-  if (shared !== null) {
-    instrumentSharedCallback(ctx, shared, executionAwareRoot);
-  }
+  const shared = ctx.helpers.get(name)?.node;
+  if (shared !== undefined) instrumentSharedCallback(ctx, shared, executionAwareRoot);
 }
 
 function instrumentSharedArgument(
@@ -148,11 +148,11 @@ export function transformComponentLifecycle(
       const originalCallee = call.node.callee;
       const intrinsicEffect =
         t.isIdentifier(originalCallee, { name: 'effect' }) &&
-        call.scope.getBinding('effect') === undefined;
+        astBindingAt(ctx, call.node, 'effect') === undefined;
 
       if (
         t.isIdentifier(originalCallee, { name: 'cleanup' }) &&
-        call.scope.getBinding('cleanup') === undefined
+        astBindingAt(ctx, call.node, 'cleanup') === undefined
       ) {
         if (!directFactoryCall) {
           throw call.buildCodeFrameError(
@@ -216,7 +216,7 @@ export function transformProgramCallbacks(
       if (call.getFunctionParent() !== null) return;
       const intrinsicEffect =
         t.isIdentifier(call.node.callee, { name: 'effect' }) &&
-        call.scope.getBinding('effect') === undefined;
+        astBindingAt(ctx, call.node, 'effect') === undefined;
       if (t.isIdentifier(call.node.callee)) {
         instrumentSharedIdentifier(
           ctx,
@@ -255,12 +255,15 @@ export function transformSharedAsyncHelpers(ctx: Ctx): void {
 }
 
 /** Reject cleanup syntax outside a component instead of leaving a runtime trap. */
-export function rejectUnownedCleanup(programPath: NodePath<t.Program>): void {
+export function rejectUnownedCleanup(
+  ctx: Ctx,
+  programPath: NodePath<t.Program>,
+): void {
   programPath.traverse({
     CallExpression(call) {
       if (
         t.isIdentifier(call.node.callee, { name: 'cleanup' }) &&
-        call.scope.getBinding('cleanup') === undefined
+        astBindingAt(ctx, call.node, 'cleanup') === undefined
       ) {
         throw call.buildCodeFrameError(
           'memo-dom: cleanup(disposer) is only valid directly inside a component factory',

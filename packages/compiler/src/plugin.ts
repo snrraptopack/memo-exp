@@ -219,7 +219,7 @@ export default function memoDomPlugin(
       exit(programPath) {
         liftModuleStateCells(ctx, programPath);
         rewriteModuleEffects(ctx, programPath);
-        rejectUnownedCleanup(programPath);
+        rejectUnownedCleanup(ctx, programPath);
         rejectUnownedEffects(programPath);
         ctx.header.unshift(...routeManifestStatements(ctx));
 

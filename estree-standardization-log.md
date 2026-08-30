@@ -77,7 +77,9 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - module computed-state analysis in `analysis/computed.ts`; and
 - first-pass component export discovery in `components/manifest.ts` and
   parser-neutral parameter shaping in `components/prop-shape.ts`; and
-- mutable DOM-ref binding classification in `jsx/refs.ts`.
+- mutable DOM-ref binding classification in `jsx/refs.ts`; and
+- intrinsic lifecycle call and shared-helper binding resolution in
+  `lifecycle.ts`.
 
 The real analysis pipeline now builds and refreshes the parser-neutral scope
 index on `Ctx`. Binding-aware passes can migrate incrementally through
@@ -184,6 +186,8 @@ Verified on 2026-08-30:
 - Linker discovery, linked dynamic-component, delegated-event, render-prop,
   and render-function regressions passed: 6 files, 30 tests.
 - AST/frontend, DOM-ref, and emission regressions passed: 4 files, 44 tests.
+- Cleanup, callback-boundary, effect, and linker-lifecycle regressions passed:
+  6 files, 41 tests.
 - Full root suite passed: 99 files, 590 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
