@@ -36,6 +36,7 @@ import { scanModuleControlFlow } from '../packages/compiler/src/module-control-f
 import { analyzeComponentReturns } from '../packages/compiler/src/components/return-plan';
 import { collectComponentPropSources } from '../packages/compiler/src/components/prop-origins';
 import { scanInstanceControlFlow } from '../packages/compiler/src/analysis/instance-control-flow';
+import { scanOpaqueVolatility } from '../packages/compiler/src/analysis/opaque-volatility';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -553,5 +554,43 @@ describe('ESTree parser and printer boundary', () => {
       new Set(['label']),
     );
     expect(context.instanceState.get('View')).toEqual(new Set());
+  });
+
+  it('propagates opaque import volatility through an OXC component', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        import { createClient } from 'external-client';
+        function View() {
+          const client = createClient();
+          return <p>{client.value}</p>;
+        }
+      `,
+      { filename: 'opaque.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      compPaths: new Map([['View', { node: component! }]]),
+      importedState: new Map(),
+      importedComponents: new Map(),
+      importedFunctions: new Map(),
+      state: new Map(),
+      instanceState: new Map(),
+      instanceDerivedBindings: new Map(),
+      componentProps: new Map([['View', { bindings: [] }]]),
+      opaqueBindings: new Map(),
+      volatileComponents: new Set(),
+    } as unknown as Ctx;
+
+    expect(component).not.toBeNull();
+    scanOpaqueVolatility(context);
+
+    expect(context.opaqueBindings.get('View')).toEqual(
+      new Set(['createClient', 'client']),
+    );
+    expect(context.volatileComponents).toEqual(new Set(['View']));
   });
 });

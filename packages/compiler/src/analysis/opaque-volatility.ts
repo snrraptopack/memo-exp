@@ -1,176 +1,270 @@
-import type { Binding, NodePath } from '@babel/traverse';
-import * as t from '@babel/types';
-import type { Ctx } from '../context';
+import {
+  extractPatternIdentifiers,
+  walkAst,
+  type BaseNode,
+  type Binding,
+  type Identifier,
+} from '../ast';
+import { astBindingAt, astScopeAt, type Ctx } from '../context';
 
-function bindingIsExternalImport(binding: Binding | undefined): boolean {
-  return (
-    binding?.path.isImportSpecifier() === true ||
-    binding?.path.isImportDefaultSpecifier() === true ||
-    binding?.path.isImportNamespaceSpecifier() === true
-  );
+const FUNCTION_NODES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
 }
 
-function calleeRoot(callee: t.Node): string | null {
-  if (t.isIdentifier(callee)) return callee.name;
-  if (!t.isMemberExpression(callee)) return null;
-  let current: t.Expression | t.Super = callee.object;
-  while (t.isMemberExpression(current)) current = current.object;
-  return t.isIdentifier(current) ? current.name : null;
+function node(value: unknown): BaseNode | null {
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? (value as BaseNode)
+    : null;
+}
+
+function childNode(parent: BaseNode, key: string): BaseNode | null {
+  return node(fields(parent)[key]);
+}
+
+function childNodes(parent: BaseNode, key: string): BaseNode[] {
+  const value = fields(parent)[key];
+  return Array.isArray(value)
+    ? value.map(node).filter((item) => item !== null)
+    : [];
+}
+
+function identifierName(value: BaseNode | null): string | null {
+  if (value?.type !== 'Identifier') return null;
+  const name = fields(value).name;
+  return typeof name === 'string' ? name : null;
+}
+
+function bindingIsExternalImport(binding: Binding | undefined): boolean {
+  return binding?.kind === 'import';
+}
+
+function calleeRoot(callee: BaseNode): string | null {
+  let current = callee;
+  while (
+    current.type === 'MemberExpression' ||
+    current.type === 'OptionalMemberExpression'
+  ) {
+    const object = childNode(current, 'object');
+    if (object === null) return null;
+    current = object;
+  }
+  return identifierName(current);
+}
+
+function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') return current;
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return null;
+}
+
+function bindingInitializer(ctx: Ctx, binding: Binding): BaseNode | null {
+  const declaration = variableDeclaratorFor(ctx, binding);
+  return declaration === null ? null : childNode(declaration, 'init');
+}
+
+function bindingFunction(ctx: Ctx, binding: Binding): BaseNode | null {
+  if (binding.declarationNode.type === 'FunctionDeclaration') {
+    return binding.declarationNode;
+  }
+  const initializer = bindingInitializer(ctx, binding);
+  return initializer !== null && FUNCTION_NODES.has(initializer.type)
+    ? initializer
+    : null;
+}
+
+function referencedOwnedRoots(
+  ctx: Ctx,
+  root: BaseNode,
+  owner: BaseNode,
+  owned: ReadonlySet<string>,
+): Set<string> {
+  const roots = new Set<string>();
+  walkAst<BaseNode>(root, {
+    enter(current) {
+      const name = identifierName(current);
+      if (name === null || !owned.has(name)) return;
+      const binding = astBindingAt(ctx, current, name);
+      if (
+        binding !== undefined &&
+        binding.references.includes(current as unknown as Identifier) &&
+        binding === astBindingAt(ctx, owner, name)
+      ) {
+        roots.add(name);
+      }
+    },
+  });
+  return roots;
 }
 
 function isOpaqueInvocation(
   ctx: Ctx,
-  path: NodePath<t.CallExpression | t.NewExpression>,
+  invocation: BaseNode,
   tainted: ReadonlySet<string>,
-  ownerPath?: NodePath,
-  visiting: Set<t.Function> = new Set(),
+  owner?: BaseNode,
+  visiting: Set<BaseNode> = new Set(),
 ): boolean {
-  const root = calleeRoot(path.node.callee);
+  const callee = childNode(invocation, 'callee');
+  if (callee === null) return false;
+  const root = calleeRoot(callee);
   if (root === null) return false;
   if (tainted.has(root)) return true;
   const summary = ctx.importedFunctions.get(root);
   if (summary !== undefined) return summary.unbounded;
-  if (bindingIsExternalImport(path.scope.getBinding(root))) return true;
-  if (ownerPath === undefined || !path.isCallExpression()) return false;
+  const binding = astBindingAt(ctx, invocation, root);
+  if (bindingIsExternalImport(binding)) return true;
+  if (owner === undefined || invocation.type !== 'CallExpression') return false;
 
-  const binding = path.scope.getBinding(root);
-  let fn: NodePath<t.Function> | null = null;
-  if (binding?.path.isFunctionDeclaration() === true) {
-    fn = binding.path;
-  } else if (binding?.path.isVariableDeclarator() === true) {
-    const init = binding.path.get('init');
-    if (
-      !Array.isArray(init) &&
-      (init.isFunctionExpression() || init.isArrowFunctionExpression())
-    ) {
-      fn = init as NodePath<t.Function>;
-    }
-  }
-  if (fn === null || visiting.has(fn.node)) return false;
+  const fn = binding === undefined ? null : bindingFunction(ctx, binding);
+  if (fn === null || visiting.has(fn)) return false;
 
-  visiting.add(fn.node);
-  let opaque = false;
-  const visitingBindings = new Set<Binding>();
-  const inspectReturned = (expression: NodePath): void => {
-    if (opaque || !expression.isExpression()) return;
-    if (referencedOwnedRoots(expression, ownerPath, tainted).size > 0) {
-      opaque = true;
-      return;
-    }
-    if (expression.isIdentifier()) {
-      const binding = expression.scope.getBinding(expression.node.name);
-      if (binding?.path.isVariableDeclarator() === true && !visitingBindings.has(binding)) {
-        const init = binding.path.get('init');
-        if (!Array.isArray(init) && init.node !== null) {
-          visitingBindings.add(binding);
-          inspectReturned(init);
-          visitingBindings.delete(binding);
-        }
-      }
+  visiting.add(fn);
+  try {
+    let opaque = false;
+    const visitingBindings = new Set<Binding>();
+    const inspectReturned = (expression: BaseNode): void => {
       if (opaque) return;
-    }
-    const inspectCall = (
-      call: NodePath<t.CallExpression | t.NewExpression>,
-    ): void => {
-      if (isOpaqueInvocation(ctx, call, tainted, ownerPath, visiting)) {
+      if (referencedOwnedRoots(ctx, expression, owner, tainted).size > 0) {
         opaque = true;
+        return;
       }
-    };
-    if (expression.isCallExpression() || expression.isNewExpression()) {
-      inspectCall(expression);
-    }
-    expression.traverse({
-      Function(inner) {
-        inner.skip();
-      },
-      CallExpression: inspectCall,
-      NewExpression: inspectCall,
-    });
-  };
-
-  const body = fn.get('body');
-  if (!Array.isArray(body) && body.isExpression()) {
-    inspectReturned(body);
-  } else if (!Array.isArray(body) && body.isBlockStatement()) {
-    body.traverse({
-      Function(inner) {
-        inner.skip();
-      },
-      ReturnStatement(returnPath) {
-        const argument = returnPath.get('argument');
-        if (!Array.isArray(argument) && argument.node !== null) {
-          inspectReturned(argument);
+      const name = identifierName(expression);
+      if (name !== null) {
+        const returnedBinding = astBindingAt(ctx, expression, name);
+        if (
+          returnedBinding !== undefined &&
+          !visitingBindings.has(returnedBinding)
+        ) {
+          const initializer = bindingInitializer(ctx, returnedBinding);
+          if (initializer !== null) {
+            visitingBindings.add(returnedBinding);
+            inspectReturned(initializer);
+            visitingBindings.delete(returnedBinding);
+          }
         }
-      },
-    });
-  }
-  visiting.delete(fn.node);
-  return opaque;
-}
+        if (opaque) return;
+      }
+      walkAst<BaseNode>(expression, {
+        enter(current) {
+          if (opaque) return false;
+          if (current !== expression && FUNCTION_NODES.has(current.type)) {
+            return false;
+          }
+          if (
+            current.type !== 'CallExpression' &&
+            current.type !== 'NewExpression'
+          ) {
+            return;
+          }
+          if (isOpaqueInvocation(ctx, current, tainted, owner, visiting)) {
+            opaque = true;
+            return false;
+          }
+        },
+      });
+    };
 
-function assignedRoot(node: t.LVal | t.OptionalMemberExpression): string | null {
-  let current: t.Node = node;
-  while (t.isMemberExpression(current) || t.isOptionalMemberExpression(current)) {
-    current = current.object;
-  }
-  return t.isIdentifier(current) ? current.name : null;
-}
-
-function referencedOwnedRoots(
-  path: NodePath,
-  ownerPath: NodePath,
-  owned: ReadonlySet<string>,
-): Set<string> {
-  const roots = new Set<string>();
-  const record = (identifier: NodePath<t.Identifier>): void => {
-    const name = identifier.node.name;
-    if (!owned.has(name)) return;
-    const binding = identifier.scope.getBinding(name);
-    if (binding !== undefined && binding === ownerPath.scope.getBinding(name)) {
-      roots.add(name);
+    const body = childNode(fn, 'body');
+    if (body === null) return false;
+    if (body.type !== 'BlockStatement') {
+      inspectReturned(body);
+    } else {
+      walkAst<BaseNode>(body, {
+        enter(current) {
+          if (opaque) return false;
+          if (current !== body && FUNCTION_NODES.has(current.type)) return false;
+          if (current.type !== 'ReturnStatement') return;
+          const argument = childNode(current, 'argument');
+          if (argument !== null) inspectReturned(argument);
+          return false;
+        },
+      });
     }
-  };
-  path.traverse({
-    ReferencedIdentifier(identifier) {
-      if (identifier.isIdentifier()) record(identifier);
-    },
-  });
-  if (path.isReferencedIdentifier()) record(path as NodePath<t.Identifier>);
-  return roots;
+    return opaque;
+  } finally {
+    visiting.delete(fn);
+  }
+}
+
+function assignedRoot(target: BaseNode): string | null {
+  let current = target;
+  while (
+    current.type === 'MemberExpression' ||
+    current.type === 'OptionalMemberExpression'
+  ) {
+    const object = childNode(current, 'object');
+    if (object === null) return null;
+    current = object;
+  }
+  return identifierName(current);
+}
+
+function findAncestor(
+  ctx: Ctx,
+  start: BaseNode,
+  predicate: (candidate: BaseNode) => boolean,
+): BaseNode | null {
+  let current = ctx.astAnalysis?.parentByNode.get(start) ?? null;
+  while (current !== null) {
+    if (predicate(current)) return current;
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return null;
 }
 
 function moduleOpaqueRoots(
   ctx: Ctx,
-  componentPath: NodePath<t.FunctionDeclaration>,
   opaqueImports: readonly string[],
 ): Set<string> {
-  const programPath = componentPath.findParent((path) => path.isProgram());
-  if (programPath === null || !programPath.isProgram()) {
-    return new Set(opaqueImports);
-  }
-  const owned = new Set(Object.keys(programPath.scope.bindings));
+  const programScope = ctx.astAnalysis?.rootScope;
+  if (programScope === undefined) return new Set(opaqueImports);
+  const owned = new Set(programScope.bindings.keys());
   const tainted = new Set(opaqueImports);
   let changed = true;
   while (changed) {
     changed = false;
-    for (const [name, binding] of Object.entries(programPath.scope.bindings)) {
+    for (const [name, binding] of programScope.bindings) {
       if (tainted.has(name)) continue;
-      const declaration = binding.path.isVariableDeclarator()
-        ? binding.path
-        : binding.path.findParent((path) => path.isVariableDeclarator());
-      if (declaration === null || !declaration.isVariableDeclarator() || declaration.node.init === null) {
-        continue;
-      }
-      const init = declaration.get('init') as NodePath;
-      const reads = referencedOwnedRoots(init, programPath, owned);
+      const initializer = bindingInitializer(ctx, binding);
+      if (initializer === null) continue;
+      const reads = referencedOwnedRoots(
+        ctx,
+        initializer,
+        programScope.block,
+        owned,
+      );
       let opaque = [...reads].some((read) => tainted.has(read));
       if (!opaque) {
-        init.traverse({
-          CallExpression(call) {
-            if (isOpaqueInvocation(ctx, call, tainted, programPath)) opaque = true;
-          },
-          NewExpression(call) {
-            if (isOpaqueInvocation(ctx, call, tainted, programPath)) opaque = true;
+        walkAst<BaseNode>(initializer, {
+          enter(current) {
+            if (
+              current.type !== 'CallExpression' &&
+              current.type !== 'NewExpression'
+            ) {
+              return;
+            }
+            if (
+              isOpaqueInvocation(
+                ctx,
+                current,
+                tainted,
+                programScope.block,
+              )
+            ) {
+              opaque = true;
+              return false;
+            }
           },
         });
       }
@@ -183,37 +277,48 @@ function moduleOpaqueRoots(
   return tainted;
 }
 
+function jsxAttributeName(attribute: BaseNode): string | null {
+  const name = childNode(attribute, 'name');
+  if (name?.type === 'JSXIdentifier') {
+    const value = fields(name).name;
+    return typeof value === 'string' ? value : null;
+  }
+  if (name?.type !== 'JSXNamespacedName') return null;
+  const namespace = childNode(name, 'namespace');
+  const local = childNode(name, 'name');
+  const namespaceName =
+    namespace?.type === 'JSXIdentifier' ? fields(namespace).name : null;
+  const localName = local?.type === 'JSXIdentifier' ? fields(local).name : null;
+  return typeof namespaceName === 'string' && typeof localName === 'string'
+    ? `${namespaceName}:${localName}`
+    : null;
+}
+
 function renderedRoots(
-  componentPath: NodePath<t.FunctionDeclaration>,
+  ctx: Ctx,
+  component: BaseNode,
   owned: ReadonlySet<string>,
 ): Set<string> {
   const roots = new Set<string>();
-  componentPath.traverse({
-    JSXExpressionContainer(container) {
-      const attribute = container.parentPath;
-      if (attribute.isJSXAttribute()) {
-        const name = attribute.node.name;
-        const value = t.isJSXIdentifier(name)
-          ? name.name
-          : `${name.namespace.name}:${name.name.name}`;
-        if (value === 'ref' || /^on[A-Z]/.test(value)) return;
+  walkAst<BaseNode>(component, {
+    enter(current, parent) {
+      let expression: BaseNode | null = null;
+      if (current.type === 'JSXExpressionContainer') {
+        if (parent?.type === 'JSXAttribute') {
+          const name = jsxAttributeName(parent);
+          if (name === 'ref' || (name !== null && /^on[A-Z]/.test(name))) {
+            return false;
+          }
+        }
+        expression = childNode(current, 'expression');
+      } else if (current.type === 'JSXSpreadAttribute') {
+        expression = childNode(current, 'argument');
       }
-      for (const root of referencedOwnedRoots(
-        container.get('expression') as NodePath,
-        componentPath,
-        owned,
-      )) {
+      if (expression === null || expression.type === 'JSXEmptyExpression') return;
+      for (const root of referencedOwnedRoots(ctx, expression, component, owned)) {
         roots.add(root);
       }
-    },
-    JSXSpreadAttribute(spread) {
-      for (const root of referencedOwnedRoots(
-        spread.get('argument') as NodePath,
-        componentPath,
-        owned,
-      )) {
-        roots.add(root);
-      }
+      return false;
     },
   });
   return roots;
@@ -224,22 +329,26 @@ function renderedRoots(
  * after control escaped into compiler-invisible code.
  */
 export function scanOpaqueVolatility(ctx: Ctx): void {
+  const programBindings = ctx.astAnalysis?.rootScope.bindings;
+  if (programBindings === undefined) return;
+
+  const opaqueImports = [...programBindings]
+    .filter(([name, binding]) => {
+      if (!bindingIsExternalImport(binding)) return false;
+      if (ctx.importedState.has(name) || ctx.importedComponents.has(name)) {
+        return false;
+      }
+      const summary = ctx.importedFunctions.get(name);
+      return summary === undefined || summary.unbounded;
+    })
+    .map(([name]) => name);
+  const moduleTainted = moduleOpaqueRoots(ctx, opaqueImports);
+
   for (const [component, componentPath] of ctx.compPaths) {
-    const opaqueImports = Object.entries(
-      componentPath.scope.getProgramParent().bindings,
-    )
-      .filter(([name, binding]) => {
-        if (!bindingIsExternalImport(binding)) return false;
-        if (ctx.importedState.has(name) || ctx.importedComponents.has(name)) {
-          return false;
-        }
-        const summary = ctx.importedFunctions.get(name);
-        return summary === undefined || summary.unbounded;
-      })
-      .map(([name]) => name);
-    const moduleTainted = moduleOpaqueRoots(ctx, componentPath, opaqueImports);
+    const componentNode = componentPath.node as unknown as BaseNode;
+    const componentScope = astScopeAt(ctx, componentNode);
     const owned = new Set([
-      ...Object.keys(componentPath.scope.bindings),
+      ...(componentScope?.bindings.keys() ?? []),
       ...ctx.state.keys(),
       ...moduleTainted,
       ...(ctx.instanceState.get(component) ?? []),
@@ -257,62 +366,83 @@ export function scanOpaqueVolatility(ctx: Ctx): void {
         tainted.add(name);
         changed = true;
       };
-      const visitOpaqueInvocation = (
-        call: NodePath<t.CallExpression | t.NewExpression>,
-      ): void => {
-        if (!isOpaqueInvocation(ctx, call, tainted, componentPath)) return;
 
-        for (const argumentPath of call.get('arguments')) {
-          if (argumentPath.isSpreadElement()) continue;
-          for (const root of referencedOwnedRoots(
-            argumentPath as NodePath,
-            componentPath,
-            owned,
-          )) {
-            taint(root);
+      walkAst<BaseNode>(componentNode, {
+        enter(current) {
+          if (
+            current.type === 'CallExpression' ||
+            current.type === 'NewExpression'
+          ) {
+            if (
+              !isOpaqueInvocation(
+                ctx,
+                current,
+                tainted,
+                componentNode,
+              )
+            ) {
+              return;
+            }
+            for (const argument of childNodes(current, 'arguments')) {
+              if (argument.type === 'SpreadElement') continue;
+              for (const root of referencedOwnedRoots(
+                ctx,
+                argument,
+                componentNode,
+                owned,
+              )) {
+                taint(root);
+              }
+            }
+
+            const declaration = findAncestor(
+              ctx,
+              current,
+              (candidate) => candidate.type === 'VariableDeclarator',
+            );
+            const pattern =
+              declaration === null ? null : childNode(declaration, 'id');
+            if (pattern !== null) {
+              for (const identifier of extractPatternIdentifiers(pattern)) {
+                taint(identifier.name);
+              }
+            }
+
+            const assignment = findAncestor(
+              ctx,
+              current,
+              (candidate) =>
+                candidate.type === 'AssignmentExpression' &&
+                fields(candidate).operator === '=',
+            );
+            const target =
+              assignment === null ? null : childNode(assignment, 'left');
+            if (target !== null) {
+              const root = assignedRoot(target);
+              if (root !== null) taint(root);
+            }
+            return;
           }
-        }
 
-        const declaration = call.findParent((parent) =>
-          parent.isVariableDeclarator(),
-        );
-        if (declaration?.isVariableDeclarator() === true) {
-          for (const name of Object.keys(t.getBindingIdentifiers(declaration.node.id))) {
-            taint(name);
-          }
-        }
-
-        const assignment = call.findParent((parent) =>
-          parent.isAssignmentExpression({ operator: '=' }),
-        );
-        if (assignment?.isAssignmentExpression({ operator: '=' }) === true) {
-          const root = assignedRoot(assignment.node.left);
-          if (root !== null) taint(root);
-        }
-      };
-      componentPath.traverse({
-        CallExpression(call) {
-          visitOpaqueInvocation(call);
-        },
-        NewExpression(call) {
-          visitOpaqueInvocation(call);
-        },
-        VariableDeclarator(declaration) {
-          if (declaration.node.init === null) return;
+          if (current.type !== 'VariableDeclarator') return;
+          const initializer = childNode(current, 'init');
+          const pattern = childNode(current, 'id');
+          if (initializer === null || pattern === null) return;
           const reads = referencedOwnedRoots(
-            declaration.get('init') as NodePath,
-            componentPath,
+            ctx,
+            initializer,
+            componentNode,
             owned,
           );
           if (![...reads].some((read) => tainted.has(read))) return;
-          for (const name of Object.keys(t.getBindingIdentifiers(declaration.node.id))) {
-            taint(name);
+          for (const identifier of extractPatternIdentifiers(pattern)) {
+            taint(identifier.name);
           }
         },
       });
     }
 
-    const rendered = renderedRoots(componentPath, owned);
+    const rendered = renderedRoots(ctx, componentNode, owned);
     ctx.opaqueBindings.set(component, tainted);
     if ([...tainted].some((root) => rendered.has(root))) {
       ctx.volatileComponents.add(component);

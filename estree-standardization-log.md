@@ -155,10 +155,10 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 57 compiler source files still directly import or declare a
+At this checkpoint, 56 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
-Of those files, 19 still import or declare `@babel/traverse`. Component/ref,
+Of those files, 18 still import or declare `@babel/traverse`. Component/ref,
 conditional-region, render-callback, and list-region emission now share the
 central component-path boundary instead of importing the traversal package.
 The shared identifier allocator no longer needs a Babel program scope, and
@@ -173,6 +173,9 @@ Instance control-flow replay now uses ESTree binding identity, violation
 ownership, parent metadata, and raw referenced-read traversal. The scope index
 is refreshed immediately after normalization so later analysis sees replaced
 nodes.
+Opaque-volatility propagation is now fully Babel-free: imports, local helper
+returns, assignments, arguments, declarations, and rendered roots all use the
+ESTree scope and parent indexes.
 Its final `scope.crawl()` is a temporary synchronization bridge for downstream
 passes.
 
@@ -210,7 +213,7 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 26 tests.
+- Focused AST/frontend suites passed: 2 files, 27 tests.
 - Handler, render-prop, render-function, render-callback, indexed-map, and
   delegated-event regressions passed: 6 files, 29 tests.
 - Calculated, nested, opaque-derived, gated, and targeted-list regressions
@@ -250,6 +253,8 @@ Verified on 2026-08-30:
   regressions passed: 7 files, 63 tests.
 - AST/frontend, instance/module control-flow, diagnostics, and golden-emission
   regressions passed: 6 files, 63 tests.
+- AST/frontend, opaque-volatility, derived-reactivity, data integration, and
+  semantic regressions passed: 7 files, 75 tests.
 - Full root suite passed: 99 files, 594 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
