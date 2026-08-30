@@ -1,4 +1,3 @@
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   exprReadsInstanceState,
@@ -20,6 +19,10 @@ import {
   transparentExpressionSources,
 } from '../data-sources';
 
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
 /** Emit an anchored conditional region owned by a component or row. */
 export function emitConditionalRegion(
   ctx: Ctx,
@@ -27,7 +30,7 @@ export function emitConditionalRegion(
   expression: t.ConditionalExpression | t.LogicalExpression,
   parentElementVariable: string,
   componentName: string,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   emitNode: NodeEmitter,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
@@ -127,7 +130,7 @@ export function buildConditionalBranchCreate(
   ctx: Ctx,
   jsx: JsxNode,
   componentName: string,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   regionId: t.Expression,
   emitNode: NodeEmitter,
   inSvg = false,

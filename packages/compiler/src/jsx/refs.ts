@@ -5,7 +5,6 @@
  * callback adapters so forwarding needs no public ref wrapper or special key.
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { type BaseNode } from '../ast';
 import { astBindingAt, type Ctx } from '../context';
@@ -13,10 +12,14 @@ import { renderPropReferenceName } from '../components/children';
 import { generatedIdentifier, md } from '../identifiers';
 import type { EmitScope } from '../emission/scope';
 
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
 /** Compile one source ref into callback/array values understood by mountRef. */
 export function compileRefValue(
   ctx: Ctx,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   componentName: string,
   expression: t.Expression,
 ): t.Expression {
@@ -99,7 +102,7 @@ function isForwardedRef(
 
 function isMutableIdentifier(
   ctx: Ctx,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   expression: t.Expression,
 ): expression is t.Identifier {
   if (!t.isIdentifier(expression) || expression.name === 'undefined') {

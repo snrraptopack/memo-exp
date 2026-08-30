@@ -158,10 +158,13 @@ The compiler package still declares these five dependencies:
 At this checkpoint, 57 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
-Of those files, 27 still import or declare `@babel/traverse`. The shared
-identifier allocator no longer needs a Babel program scope, and calculated
-list normalization no longer uses NodePath traversal or replacement. Its final
-`scope.crawl()` is a temporary synchronization bridge for downstream passes.
+Of those files, 23 still import or declare `@babel/traverse`. Component/ref,
+conditional-region, render-callback, and list-region emission now share the
+central component-path boundary instead of importing the traversal package.
+The shared identifier allocator no longer needs a Babel program scope, and
+calculated list normalization no longer uses NodePath traversal or replacement.
+Its final `scope.crawl()` is a temporary synchronization bridge for downstream
+passes.
 
 ## Migration order
 
@@ -229,6 +232,8 @@ Verified on 2026-08-30:
   4 files, 39 tests.
 - Conditional-directive, nested/mixed conditional, hydration, effect, and
   golden regressions passed: 6 files, 34 tests.
+- Indexed-list, nested-conditional, render-callback, DOM-ref, and router
+  regressions passed: 5 files, 21 tests.
 - Full root suite passed: 99 files, 594 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.

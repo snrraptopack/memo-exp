@@ -1,4 +1,3 @@
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import {
@@ -17,6 +16,10 @@ import {
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { applyRepeatedDomTemplate } from './dom-template';
+
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
 
 function callbackJsx(
   callback: t.ArrowFunctionExpression | t.FunctionExpression,
@@ -45,7 +48,7 @@ export function buildRenderCallbackAdapter(
   ownerScope: EmitScope,
   source: t.Expression,
   componentName: string,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   emitNode: NodeEmitter,
   inSvg: boolean,
   ownerId: t.Expression,

@@ -1,4 +1,3 @@
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   attrExpr,
@@ -52,12 +51,16 @@ import type {
 } from '../context';
 import { hostJsxEventNames } from '../jsx/events';
 
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
 export type AuthoredChildrenSlotBuilder = (
   ctx: Ctx,
   ownerScope: EmitScope,
   children: readonly JsxChild[],
   componentName: string,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   nestedIn: 'row' | 'cond' | null,
   rowContext: RowCtx | undefined,
   eventOriginId: t.Expression | undefined,
@@ -82,7 +85,7 @@ export function emitListRegion(
   call: MapCallExpression,
   parentElementVariable: string,
   componentName: string,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   emitNode: NodeEmitter,
   buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder,
   inSvg = false,
@@ -777,7 +780,7 @@ function buildComponentRowCreate(
   ctx: Ctx,
   site: MapSite,
   componentName: string,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
@@ -1186,7 +1189,7 @@ function buildInlineRowCreate(
   ctx: Ctx,
   site: MapSite,
   componentName: string,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   emitNode: NodeEmitter,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
