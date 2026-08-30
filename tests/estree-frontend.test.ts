@@ -14,6 +14,7 @@ import {
   moduleFunctionStringCandidates,
   moduleStateStringCandidates,
 } from '../packages/compiler/src/analysis/type-candidates';
+import { hostJsxEventNames } from '../packages/compiler/src/jsx/events';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -94,6 +95,22 @@ describe('ESTree parser and printer boundary', () => {
     expect(moduleFunctionStringCandidates(parsed.program).get('choose')).toEqual([
       'section',
       'article',
+    ]);
+  });
+
+  it('discovers host events directly from parsed ESTree JSX', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        export function View() {
+          return <main onMouseEnter={() => {}}><button onClick={() => {}} /></main>;
+        }
+      `,
+      { filename: 'events.tsx' },
+    );
+
+    expect(hostJsxEventNames(parsed.program)).toEqual([
+      'onClick',
+      'onMouseEnter',
     ]);
   });
 });

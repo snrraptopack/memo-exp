@@ -10,7 +10,7 @@ completed work.
 
 | Area | State | Verified result |
 |---|---|---|
-| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 12 passing tests; root TypeScript typecheck passes |
+| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 13 passing tests; root TypeScript typecheck passes |
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
 | Compiler analysis migration | Started | Shared traversal paths and finite type-candidate analysis accept ESTree |
@@ -63,16 +63,18 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - compiler-generated identifier reservation in `identifiers.ts`;
 - alias-origin discovery in `mutation-analysis.ts`;
 - component parameter type-syntax traversal in `components/props.ts`;
-- targeted list dependency analysis in `lists/targeted-refresh.ts`.
-- finite TypeScript string-candidate analysis in `analysis/type-candidates.ts`.
+- targeted list dependency analysis in `lists/targeted-refresh.ts`;
+- finite TypeScript string-candidate analysis in `analysis/type-candidates.ts`;
 - component-subtree and render-callback read folding in
-  `analysis/component-reads.ts`.
+  `analysis/component-reads.ts`; and
+- JSX host-event discovery in `jsx/events.ts`.
 
 `lists/targeted-refresh.ts`, `analysis/type-candidates.ts`, and
-`analysis/component-reads.ts` have no direct Babel import. Type-candidate tests
-now feed OXC TS-ESTree directly into real compiler analysis while the existing
-Babel pipeline parity tests remain green. The other migrated paths still accept
-Babel node types at their current boundary and therefore remain transitional.
+`analysis/component-reads.ts`, plus `jsx/events.ts`, have no direct Babel import.
+Frontend tests now feed OXC TS-ESTree directly into real compiler type and JSX
+analysis while the existing Babel pipeline parity tests remain green. The other
+migrated paths still accept Babel node types at their current boundary and
+therefore remain transitional.
 
 ## Standalone frontend checkpoint
 
@@ -100,7 +102,7 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 65 compiler source files still directly import or declare a
+At this checkpoint, 64 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
 
@@ -138,7 +140,7 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 12 tests.
+- Focused AST/frontend suites passed: 2 files, 13 tests.
 - Full root suite passed: 98 files, 581 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
