@@ -48,7 +48,7 @@ function instrumentIdentifier(
   rowCtx?: RowCtx,
   executionAwareRoot = false,
 ): void {
-  const local = resolveLocalHelper(compPath, name);
+  const local = resolveLocalHelper(ctx, compPath, name);
   if (local !== null) {
     instrumentComponentCallback(
       ctx,

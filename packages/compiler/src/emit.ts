@@ -768,7 +768,7 @@ function emitElement(
       if (inlineCallback) {
         instrumentComponentCallback(ctx, compPath, v, compName, rowCtx, true);
       } else if (t.isIdentifier(v)) {
-        const localFn = resolveLocalHelper(compPath, v.name);
+        const localFn = resolveLocalHelper(ctx, compPath, v.name);
         if (localFn !== null && !nodeHasJsx(localFn.body)) {
           instrumentComponentCallback(
             ctx,

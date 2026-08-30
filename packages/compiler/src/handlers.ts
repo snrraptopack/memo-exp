@@ -19,9 +19,10 @@
  * memoized update guards absorb unchanged values.
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { type BaseNode, type Binding } from './ast';
 import {
+  astBindingAt,
   memberRootName,
   walkNodes,
   type Ctx,
@@ -48,17 +49,44 @@ export type HandlerFn =
   | t.FunctionExpression
   | t.FunctionDeclaration;
 
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
+function variableDeclaratorFor(ctx: Ctx, binding: Binding): t.VariableDeclarator | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') {
+      return current as unknown as t.VariableDeclarator;
+    }
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return null;
+}
+
 /** Resolve a component-local helper declared directly in the factory body. */
 export function resolveLocalHelper(
-  compPath: NodePath<t.FunctionDeclaration>,
+  ctx: Ctx,
+  compPath: ComponentPath,
   name: string,
 ): HandlerFn | null {
-  const binding = compPath.scope.getBinding(name);
-  const decl = binding?.path;
-  if (!decl || decl.getFunctionParent() !== compPath) return null;
-  if (decl.isFunctionDeclaration()) return decl.node;
-  if (!decl.isVariableDeclarator()) return null;
-  const init = decl.node.init;
+  const binding = astBindingAt(
+    ctx,
+    compPath.node as unknown as BaseNode,
+    name,
+  );
+  if (
+    binding === undefined ||
+    binding.scope.getFunctionScope()?.block !== compPath.node
+  ) {
+    return null;
+  }
+  if (binding.declarationNode.type === 'FunctionDeclaration') {
+    return binding.declarationNode as unknown as t.FunctionDeclaration;
+  }
+  const declaration = variableDeclaratorFor(ctx, binding);
+  if (declaration === null) return null;
+  const init = declaration.init;
   return init && (t.isArrowFunctionExpression(init) || t.isFunctionExpression(init))
     ? init
     : null;
@@ -71,7 +99,7 @@ export function resolveLocalHelper(
  */
 export function instrumentComponentCallback(
   ctx: Ctx,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   target: HandlerFn,
   compName: string,
   rowCtx?: RowCtx,
@@ -118,7 +146,7 @@ export function instrumentSharedCallback(
  */
 function instrumentReachableLocalHelpers(
   ctx: Ctx,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   root: HandlerFn,
   compName: string,
   rowCtx?: RowCtx,
@@ -130,7 +158,7 @@ function instrumentReachableLocalHelpers(
     }
   });
   for (const name of names) {
-    const helper = resolveLocalHelper(compPath, name);
+    const helper = resolveLocalHelper(ctx, compPath, name);
     if (helper === null || ctx.analyzedFunctions.has(helper)) continue;
     ctx.analyzedFunctions.add(helper); // cycle guard
     instrumentReachableLocalHelpers(ctx, compPath, helper, compName, rowCtx);
@@ -149,7 +177,7 @@ function instrumentReachableLocalHelpers(
  */
 export function buildHandler(
   ctx: Ctx,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   value: t.Expression,
   attrName: string,
   compName: string,
@@ -207,22 +235,27 @@ export function buildHandler(
       );
     }
 
-    const binding = compPath.scope.getBinding(value.name);
-    const decl = binding?.path;
-    if (decl && decl.isVariableDeclarator()) {
-      const init = decl.node.init;
+    const binding = astBindingAt(
+      ctx,
+      compPath.node as unknown as BaseNode,
+      value.name,
+    );
+    const declaration =
+      binding === undefined ? null : variableDeclaratorFor(ctx, binding);
+    if (declaration !== null) {
+      const init = declaration.init;
       if (init && (t.isArrowFunctionExpression(init) || t.isFunctionExpression(init))) {
         target = init;
         forceTable =
-          binding?.scope.path.isProgram() === true &&
+          binding?.scope.isProgramScope === true &&
           ctx.helpers.has(value.name);
       }
-    } else if (decl && decl.isFunctionDeclaration()) {
+    } else if (binding?.declarationNode.type === 'FunctionDeclaration') {
       if (ctx.helpers.has(value.name)) {
-        target = decl.node;
+        target = binding.declarationNode as unknown as t.FunctionDeclaration;
         forceTable = true;
       } else {
-        target = resolveLocalHelper(compPath, value.name);
+        target = resolveLocalHelper(ctx, compPath, value.name);
       }
     }
     if (!target) {
@@ -252,7 +285,7 @@ export function buildHandler(
       !forceTable &&
       !t.isIdentifier(value) &&
       callsOnlyCommittedLocalHelpers(target, (name) => {
-        const helper = resolveLocalHelper(compPath, name);
+        const helper = resolveLocalHelper(ctx, compPath, name);
         return (
           helper !== null &&
           ctx.handlerHasRootCommit.get(helper) === true

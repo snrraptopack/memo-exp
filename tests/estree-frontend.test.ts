@@ -37,6 +37,7 @@ import { analyzeComponentReturns } from '../packages/compiler/src/components/ret
 import { collectComponentPropSources } from '../packages/compiler/src/components/prop-origins';
 import { scanInstanceControlFlow } from '../packages/compiler/src/analysis/instance-control-flow';
 import { scanOpaqueVolatility } from '../packages/compiler/src/analysis/opaque-volatility';
+import { resolveLocalHelper } from '../packages/compiler/src/handlers';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -592,5 +593,33 @@ describe('ESTree parser and printer boundary', () => {
       new Set(['createClient', 'client']),
     );
     expect(context.volatileComponents).toEqual(new Set(['View']));
+  });
+
+  it('resolves component-local helpers from the OXC scope index', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        function View() {
+          const save = () => commit();
+          return <button onClick={save} />;
+        }
+      `,
+      { filename: 'helper.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+    } as unknown as Ctx;
+    const componentPath = {
+      node: component!,
+    } as unknown as Parameters<typeof resolveLocalHelper>[1];
+
+    expect(component).not.toBeNull();
+    expect(resolveLocalHelper(context, componentPath, 'save')?.type).toBe(
+      'ArrowFunctionExpression',
+    );
+    expect(resolveLocalHelper(context, componentPath, 'missing')).toBeNull();
   });
 });

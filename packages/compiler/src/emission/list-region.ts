@@ -994,7 +994,7 @@ function buildComponentRowCreate(
           true,
         );
       } else if (t.isIdentifier(value)) {
-        const localFn = resolveLocalHelper(componentPath, value.name);
+        const localFn = resolveLocalHelper(ctx, componentPath, value.name);
         if (localFn !== null && !nodeHasJsx(localFn.body)) {
           instrumentComponentCallback(
             ctx,
