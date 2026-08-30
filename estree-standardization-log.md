@@ -305,7 +305,7 @@ Verified on 2026-08-30:
   emission regressions passed: 8 files, 91 tests.
 - AST/frontend, SSR cell-lowering/isolation, diagnostics, and emission
   regressions passed: 6 files, 67 tests.
-- Full root suite passed: 99 files, 594 tests.
+- Full root suite passed: 99 files, 610 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
 
