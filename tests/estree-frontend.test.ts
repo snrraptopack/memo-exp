@@ -26,6 +26,7 @@ import {
 } from '../packages/compiler/src/lists/source-shapes';
 import { analyzeComputed } from '../packages/compiler/src/analysis/computed';
 import { cloneRuntimeBindingPattern } from '../packages/compiler/src/analysis/runtime-pattern';
+import { isStaticDerivedChain } from '../packages/compiler/src/lists/static-derived';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -192,6 +193,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(chain).not.toBeNull();
     expect(isStaticPrimitiveList(array!)).toBe(true);
     expect(isStaticListExpression(chain!)).toBe(true);
+    expect(isStaticDerivedChain(chain!)).toBe(true);
   });
 
   it('analyzes computed state reads from parsed ESTree', () => {

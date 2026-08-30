@@ -9,48 +9,67 @@
  * Because the value never changes, the rule applies at module scope as well
  * as component scope.
  */
-import * as t from '@babel/types';
+import type { BaseNode } from '../ast';
 import type { Ctx } from '../context';
 import {
   isStaticListExpression,
   transparentListExpression,
 } from './source-shapes';
 
-/** Remove transparent TypeScript wrappers around an expression. */
-function unwrap(expression: t.Expression): t.Expression {
-  return transparentListExpression(expression);
+function field(node: BaseNode, name: string): unknown {
+  return (node as unknown as Record<string, unknown>)[name];
+}
+
+function isNode(value: unknown): value is BaseNode {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { type?: unknown }).type === 'string'
+  );
+}
+
+function childNode(node: BaseNode, name: string): BaseNode | null {
+  const value = field(node, name);
+  return isNode(value) ? value : null;
+}
+
+function childNodes(node: BaseNode, name: string): BaseNode[] {
+  const value = field(node, name);
+  return Array.isArray(value) ? value.filter(isNode) : [];
 }
 
 /**
- * Find the initializer of a `const` binding declared at module scope or in
- * the component body.
+ * Find the initializer of a binding declared at module scope or in the
+ * component body.
  */
 export function findConstInitializer(
   ctx: Ctx,
   name: string,
   compName?: string | null,
-): t.Expression | null {
-  const scopes: t.Statement[] = [];
+): BaseNode | null {
+  const scopes: BaseNode[] = [];
   const componentPath =
     compName !== undefined && compName !== null
       ? ctx.compPaths.get(compName)
       : undefined;
   if (componentPath !== undefined) {
-    // getProgramParent's path is typed as Program - no narrowing dance.
     const programPath = componentPath.scope.getProgramParent().path;
-    scopes.push(...(programPath.node as t.Program).body);
-    scopes.push(...componentPath.node.body.body);
+    scopes.push(
+      ...childNodes(programPath.node as unknown as BaseNode, 'body'),
+    );
+    scopes.push(...childNodes(componentPath.node.body, 'body'));
   }
-  for (const stmt of scopes) {
-    if (!t.isVariableDeclaration(stmt)) continue;
-    for (const declarator of stmt.declarations) {
+  for (const statement of scopes) {
+    if (statement.type !== 'VariableDeclaration') continue;
+    for (const declarator of childNodes(statement, 'declarations')) {
+      const id = childNode(declarator, 'id');
+      const init = childNode(declarator, 'init');
       if (
-        t.isIdentifier(declarator.id) &&
-        declarator.id.name === name &&
-        declarator.init !== null &&
-        t.isExpression(declarator.init)
+        id?.type === 'Identifier' &&
+        field(id, 'name') === name &&
+        init !== null
       ) {
-        return unwrap(declarator.init);
+        return transparentListExpression(init);
       }
     }
   }
@@ -62,18 +81,13 @@ export function findConstInitializer(
  * applied to a primitive array literal root (`[...].filter(fn)`). A plain
  * array literal (`[...]`) is NOT derived - it is ordinary reactive state.
  */
-export function isStaticDerivedChain(
-  expression: t.Expression,
-): boolean {
+export function isStaticDerivedChain(expression: BaseNode): boolean {
   const current = transparentListExpression(expression);
-  if (
-    !t.isCallExpression(current) ||
-    !t.isMemberExpression(current.callee)
-  ) {
-    return false;
-  }
-  // The root below the outermost transform must be a static list.
-  return isStaticListExpression(current.callee.object as t.Expression);
+  if (current.type !== 'CallExpression') return false;
+  const callee = childNode(current, 'callee');
+  if (callee?.type !== 'MemberExpression') return false;
+  const source = childNode(callee, 'object');
+  return source !== null && isStaticListExpression(source);
 }
 
 /**

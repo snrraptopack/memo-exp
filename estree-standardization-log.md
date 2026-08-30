@@ -72,18 +72,20 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - inline callback JSX discovery in `components/callback-props.ts`;
 - runtime binding-pattern cloning in `analysis/runtime-pattern.ts`;
 - component ref-prop scanning in `components/ref-props.ts`;
-- static list-source classification in `lists/source-shapes.ts`; and
+- static list-source classification in `lists/source-shapes.ts`;
+- static derived-list discovery in `lists/static-derived.ts`; and
 - module computed-state analysis in `analysis/computed.ts`.
 
 `lists/targeted-refresh.ts`, `analysis/type-candidates.ts`, and
 `analysis/component-reads.ts`, plus `jsx/events.ts`, have no direct Babel import.
 `handlers/local-calls.ts`, `analysis/runtime-pattern.ts`,
-`components/ref-props.ts`, `lists/source-shapes.ts`, and
-`analysis/computed.ts` are also fully Babel-free. Frontend tests now feed OXC
-TS-ESTree directly into real compiler type, JSX, handler-call, component-prop,
-static-list, computed-state, and runtime-pattern analysis while the existing
-Babel pipeline parity tests remain green. The other migrated paths still accept
-Babel node types at their current boundary and therefore remain transitional.
+`components/ref-props.ts`, `lists/source-shapes.ts`,
+`lists/static-derived.ts`, and `analysis/computed.ts` are also fully Babel-free.
+Frontend tests now feed OXC TS-ESTree directly into real compiler type, JSX,
+handler-call, component-prop, static-list, computed-state, and runtime-pattern
+analysis while the existing Babel pipeline parity tests remain green. The other
+migrated paths still accept Babel node types at their current boundary and
+therefore remain transitional.
 
 ## Standalone frontend checkpoint
 
@@ -119,7 +121,7 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 59 compiler source files still directly import or declare a
+At this checkpoint, 58 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
 
@@ -166,6 +168,8 @@ Verified on 2026-08-30:
   semantic regressions passed: 5 files, 59 tests.
 - Runtime-pattern, indexed-list, nested-list, render-callback, and
   render-function regressions passed: 5 files, 26 tests.
+- Static-derived, calculated-list, gated-map, and list regressions passed:
+  6 files, 34 tests.
 - Full root suite passed: 99 files, 590 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.

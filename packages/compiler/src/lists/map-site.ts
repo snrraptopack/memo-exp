@@ -326,7 +326,7 @@ function analyzeIdentifierSource(
     const init = findConstInitializer(ctx, source.name, ownerName);
     if (init !== null) {
       return {
-        expression: t.cloneNode(init),
+        expression: t.cloneNode(init as unknown as t.Expression),
         key: '$static-list',
         local: true,
         suffixBase: '$static-list',
