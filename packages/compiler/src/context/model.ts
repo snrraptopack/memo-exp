@@ -8,6 +8,7 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import type { ScopeAnalysis } from '../ast';
 import type {
   ComponentPropsPlan,
   ControlFlowDerivation,
@@ -349,6 +350,8 @@ export interface Ctx {
   >;
 
   // ---- module analysis (filled by analysis.ts) ----
+  /** Parser-neutral lexical scope and parent index for the current AST shape. */
+  astAnalysis: ScopeAnalysis | null;
   state: Map<string, StateKind>;
   /** Local binding name -> canonical state root. */
   stateKeys: Map<string, string>;
@@ -583,6 +586,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
       opts.emitRouteManifest ?? opts.linkedRoutes === undefined,
     routeElements: new WeakMap(),
     localRoutes: [],
+    astAnalysis: null,
     usesRouter: false,
     usesTransparentData: false,
     transparentSourceFactories: new Set(),

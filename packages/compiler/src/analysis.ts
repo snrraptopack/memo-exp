@@ -31,6 +31,7 @@ import {
   keyPathOf,
   memberKey,
   nodeHasJsx,
+  refreshAstAnalysis,
   registerState,
   walkNodes,
   writeTouchesKey,
@@ -1452,6 +1453,7 @@ function collectReads(ctx: Ctx): void {
  * always an ERROR, never a silent plain const.
  */
 export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
+  refreshAstAnalysis(ctx, programPath.node);
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
@@ -1504,4 +1506,5 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
       );
     }
   }
+  refreshAstAnalysis(ctx, programPath.node);
 }

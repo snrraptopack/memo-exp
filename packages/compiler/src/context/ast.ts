@@ -1,7 +1,38 @@
 import * as t from '@babel/types';
-import { walkAst, type BaseNode } from '../ast';
+import {
+  analyzeScope,
+  walkAst,
+  type BaseNode,
+  type Binding as AstBinding,
+  type Scope,
+  type ScopeAnalysis,
+} from '../ast';
 import { generatedIdentifier } from '../identifiers';
 import type { Ctx, StateKind } from './model';
+
+/** Rebuild parser-neutral parent and lexical-scope facts after AST mutation. */
+export function refreshAstAnalysis(
+  ctx: Ctx,
+  root: BaseNode,
+): ScopeAnalysis {
+  const analysis = analyzeScope(root);
+  ctx.astAnalysis = analysis;
+  return analysis;
+}
+
+/** Lexical scope active at a node in the latest parser-neutral index. */
+export function astScopeAt(ctx: Ctx, node: BaseNode): Scope | undefined {
+  return ctx.astAnalysis?.nodeToScope.get(node);
+}
+
+/** Resolve a binding from a node without Babel NodePath scope services. */
+export function astBindingAt(
+  ctx: Ctx,
+  node: BaseNode,
+  name: string,
+): AstBinding | undefined {
+  return astScopeAt(ctx, node)?.getBinding(name);
+}
 
 /** Remove TypeScript-only wrappers without changing runtime semantics. */
 export function unwrapTypeExpression<TExpression extends BaseNode>(

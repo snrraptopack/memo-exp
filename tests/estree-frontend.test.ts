@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EstreeParseError,
+  analyzeScope,
   type BaseNode,
   collectNodes,
   findNode,
@@ -273,5 +274,48 @@ describe('ESTree parser and printer boundary', () => {
       delegatedEvents: ['onClick'],
     });
     expect(components.has('helper')).toBe(false);
+  });
+
+  it('builds lexical bindings and parent metadata from OXC TS-ESTree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        import fallback, { thing as alias } from 'values';
+        const top = 1;
+        export function View(
+          { item: local = top, ...rest }: Props,
+        ) {
+          let inner = local;
+          { const top = 2; inner += top; }
+          return <div>{inner}{alias}{rest.extra}</div>;
+        }
+      `,
+      { filename: 'scope.tsx' },
+    );
+    const analysis = analyzeScope(parsed.program);
+    const view = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+
+    expect(view).not.toBeNull();
+    expect([...analysis.rootScope.bindings.keys()].sort()).toEqual([
+      'View',
+      'alias',
+      'fallback',
+      'top',
+    ]);
+    expect(analysis.rootScope.getBinding('top')?.references).toHaveLength(1);
+    expect(analysis.rootScope.getBinding('alias')?.references).toHaveLength(1);
+    const viewScope = analysis.nodeToScope.get(view!);
+    expect([...viewScope!.bindings.keys()].sort()).toEqual([
+      'inner',
+      'local',
+      'rest',
+    ]);
+    expect(viewScope?.getBinding('local')?.references).toHaveLength(1);
+    expect(viewScope?.getBinding('inner')?.references).toHaveLength(2);
+    expect(analysis.parentByNode.get(view!)).toMatchObject({
+      type: 'ExportNamedDeclaration',
+    });
   });
 });

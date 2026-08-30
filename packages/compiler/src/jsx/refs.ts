@@ -7,7 +7,8 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import type { Ctx } from '../context';
+import { type BaseNode } from '../ast';
+import { astBindingAt, type Ctx } from '../context';
 import { renderPropReferenceName } from '../components/children';
 import { generatedIdentifier, md } from '../identifiers';
 import type { EmitScope } from '../emission/scope';
@@ -41,7 +42,7 @@ export function compileRefValue(
   if (isForwardedRef(ctx, componentName, expression)) {
     return t.cloneNode(expression, true);
   }
-  if (isMutableIdentifier(componentPath, expression)) {
+  if (isMutableIdentifier(ctx, componentPath, expression)) {
     return mutableAdapter(ctx, expression);
   }
   if (t.isMemberExpression(expression)) {
@@ -97,27 +98,33 @@ function isForwardedRef(
 }
 
 function isMutableIdentifier(
+  ctx: Ctx,
   componentPath: NodePath<t.FunctionDeclaration>,
   expression: t.Expression,
 ): expression is t.Identifier {
   if (!t.isIdentifier(expression) || expression.name === 'undefined') {
     return false;
   }
-  const binding = componentPath.scope.getBinding(expression.name);
+  const binding = astBindingAt(
+    ctx,
+    componentPath.node as unknown as BaseNode,
+    expression.name,
+  );
   if (binding === undefined) return false;
-  if (binding.path.isFunctionDeclaration()) return false;
   if (
-    binding.path.isImportSpecifier() ||
-    binding.path.isImportDefaultSpecifier() ||
-    binding.path.isImportNamespaceSpecifier()
+    binding.declarationNode.type === 'FunctionDeclaration' ||
+    binding.declarationNode.type === 'ImportDeclaration'
   ) {
     return false;
   }
-  if (binding.path.isVariableDeclarator()) {
-    const declaration = binding.path.parentPath;
-    if (declaration.isVariableDeclaration({ kind: 'const' })) return false;
-    const init = binding.path.node.init;
-    if (t.isFunctionExpression(init) || t.isArrowFunctionExpression(init)) {
+  if (binding.kind === 'const') return false;
+  const declarator = ctx.astAnalysis?.parentByNode.get(binding.identifier);
+  if (declarator?.type === 'VariableDeclarator') {
+    const init = (declarator as unknown as { init?: BaseNode | null }).init;
+    if (
+      init?.type === 'FunctionExpression' ||
+      init?.type === 'ArrowFunctionExpression'
+    ) {
       return false;
     }
   }

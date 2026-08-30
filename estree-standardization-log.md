@@ -10,7 +10,7 @@ completed work.
 
 | Area | State | Verified result |
 |---|---|---|
-| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 19 passing tests; root TypeScript typecheck passes |
+| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 20 passing tests; root TypeScript typecheck passes |
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
 | Compiler analysis migration | Started | Multiple type, JSX, handler, list, prop, and computed passes accept ESTree |
@@ -43,7 +43,7 @@ explicit `any` types:
 - `builders.ts`: plain-object ESTree factories, predicates, and deep cloning.
 - `walk.ts`: visitor-key traversal with parent, field, and array-index context.
 - `scope.ts`: program/function/block/loop/catch scopes, bindings, shadow lookup,
-  and identifier references.
+  identifier references, and node parent/key/index metadata.
 - `transform.ts`: immutable replace, remove, and array-splice transformations.
 - `parser.ts`: OXC adapter producing one ESTree/TS-ESTree shape with locations.
 - `printer.ts`: Esrap adapter preserving comments and producing source maps.
@@ -76,7 +76,12 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - static derived-list discovery in `lists/static-derived.ts`; and
 - module computed-state analysis in `analysis/computed.ts`; and
 - first-pass component export discovery in `components/manifest.ts` and
-  parser-neutral parameter shaping in `components/prop-shape.ts`.
+  parser-neutral parameter shaping in `components/prop-shape.ts`; and
+- mutable DOM-ref binding classification in `jsx/refs.ts`.
+
+The real analysis pipeline now builds and refreshes the parser-neutral scope
+index on `Ctx`. Binding-aware passes can migrate incrementally through
+`astBindingAt` without requiring a Babel `NodePath` at the lookup site.
 
 `lists/targeted-refresh.ts`, `analysis/type-candidates.ts`, and
 `analysis/component-reads.ts`, plus `jsx/events.ts`, have no direct Babel import.
@@ -110,7 +115,9 @@ The focused frontend suite verifies:
 - cloned TS-ESTree binding patterns have runtime-only annotations removed
   without modifying the parsed input; and
 - exported component contracts and delegated events are discovered directly
-  from an OXC-produced program.
+  from an OXC-produced program; and
+- imports, destructured/default/rest parameters, block shadowing, references,
+  and parent metadata are indexed from OXC TS-ESTree.
 
 This boundary is not yet wired into the public `compile` function. The existing
 Babel path remains the compatibility oracle while transformations migrate.
@@ -163,7 +170,7 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 19 tests.
+- Focused AST/frontend suites passed: 2 files, 20 tests.
 - Handler, render-prop, render-function, render-callback, indexed-map, and
   delegated-event regressions passed: 6 files, 29 tests.
 - Calculated, nested, opaque-derived, gated, and targeted-list regressions
@@ -176,6 +183,7 @@ Verified on 2026-08-30:
   6 files, 34 tests.
 - Linker discovery, linked dynamic-component, delegated-event, render-prop,
   and render-function regressions passed: 6 files, 30 tests.
+- AST/frontend, DOM-ref, and emission regressions passed: 4 files, 44 tests.
 - Full root suite passed: 99 files, 590 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.

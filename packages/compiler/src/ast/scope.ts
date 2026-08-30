@@ -7,16 +7,8 @@
 
 import type {
   BaseNode,
-  CatchClause,
-  ClassDeclaration,
-  FunctionDeclaration,
   Identifier,
-  MemberExpression,
-  MethodDefinition,
-  Pattern,
   Program,
-  Property,
-  VariableDeclaration,
 } from './types';
 import { walkAst } from './walk';
 import { isIdentifier } from './builders';
@@ -101,28 +93,66 @@ export class Scope {
   }
 }
 
-export function extractPatternIdentifiers(pattern: Pattern): Identifier[] {
+function field(node: BaseNode, name: string): unknown {
+  return (node as unknown as Record<string, unknown>)[name];
+}
+
+function isNode(value: unknown): value is BaseNode {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { type?: unknown }).type === 'string'
+  );
+}
+
+function childNode(node: BaseNode, name: string): BaseNode | null {
+  const value = field(node, name);
+  return isNode(value) ? value : null;
+}
+
+function childNodes(node: BaseNode, name: string): BaseNode[] {
+  const value = field(node, name);
+  return Array.isArray(value) ? value.filter(isNode) : [];
+}
+
+function asIdentifier(node: BaseNode | null): Identifier | null {
+  return node?.type === 'Identifier'
+    ? (node as unknown as Identifier)
+    : null;
+}
+
+export function extractPatternIdentifiers(pattern: BaseNode): Identifier[] {
   const identifiers: Identifier[] = [];
   if (pattern.type === 'Identifier') {
-    identifiers.push(pattern);
+    identifiers.push(pattern as unknown as Identifier);
   } else if (pattern.type === 'ObjectPattern') {
-    for (const property of pattern.properties) {
-      if (property.type === 'Property') {
-        identifiers.push(...extractPatternIdentifiers(property.value as Pattern));
+    for (const property of childNodes(pattern, 'properties')) {
+      if (property.type === 'Property' || property.type === 'ObjectProperty') {
+        const value = childNode(property, 'value');
+        if (value !== null) {
+          identifiers.push(...extractPatternIdentifiers(value));
+        }
       } else if (property.type === 'RestElement') {
-        identifiers.push(...extractPatternIdentifiers(property.argument));
+        identifiers.push(...extractPatternIdentifiers(property));
       }
     }
   } else if (pattern.type === 'ArrayPattern') {
-    for (const elem of pattern.elements) {
-      if (elem) {
-        identifiers.push(...extractPatternIdentifiers(elem));
-      }
+    for (const element of childNodes(pattern, 'elements')) {
+      identifiers.push(...extractPatternIdentifiers(element));
     }
   } else if (pattern.type === 'RestElement') {
-    identifiers.push(...extractPatternIdentifiers(pattern.argument));
+    const argument = childNode(pattern, 'argument');
+    if (argument !== null) {
+      identifiers.push(...extractPatternIdentifiers(argument));
+    }
   } else if (pattern.type === 'AssignmentPattern') {
-    identifiers.push(...extractPatternIdentifiers(pattern.left));
+    const left = childNode(pattern, 'left');
+    if (left !== null) identifiers.push(...extractPatternIdentifiers(left));
+  } else if (pattern.type === 'TSParameterProperty') {
+    const parameter = childNode(pattern, 'parameter');
+    if (parameter !== null) {
+      identifiers.push(...extractPatternIdentifiers(parameter));
+    }
   }
   return identifiers;
 }
@@ -135,18 +165,22 @@ function isReferenceIdentifier(
   if (
     (parent.type === 'MemberExpression' &&
       key === 'property' &&
-      (parent as unknown as MemberExpression).computed === false) ||
-    (parent.type === 'Property' &&
+      field(parent, 'computed') === false) ||
+    (parent.type === 'OptionalMemberExpression' &&
+      key === 'property' &&
+      field(parent, 'computed') === false) ||
+    ((parent.type === 'Property' || parent.type === 'ObjectProperty') &&
       key === 'key' &&
-      (parent as unknown as Property).computed === false) ||
+      field(parent, 'computed') === false) ||
     (parent.type === 'MethodDefinition' &&
       key === 'key' &&
-      (parent as unknown as MethodDefinition).computed === false) ||
+      field(parent, 'computed') === false) ||
     (parent.type === 'LabeledStatement' && key === 'label') ||
     ((parent.type === 'BreakStatement' || parent.type === 'ContinueStatement') &&
       key === 'label') ||
     (parent.type === 'ExportSpecifier' && key === 'exported') ||
-    parent.type === 'MetaProperty'
+    parent.type === 'MetaProperty' ||
+    parent.type.startsWith('TS')
   ) {
     return false;
   }
@@ -154,40 +188,51 @@ function isReferenceIdentifier(
 }
 
 /** Analyze lexical scopes of an AST tree. */
-export function analyzeScope(root: Program | BaseNode): {
+export interface ScopeAnalysis {
   rootScope: Scope;
   nodeToScope: Map<BaseNode, Scope>;
-} {
+  parentByNode: Map<BaseNode, BaseNode | null>;
+  keyByNode: Map<BaseNode, string | undefined>;
+  indexByNode: Map<BaseNode, number | undefined>;
+}
+
+export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
   const rootScope = new Scope(root, null, false);
   const nodeToScope = new Map<BaseNode, Scope>();
+  const parentByNode = new Map<BaseNode, BaseNode | null>();
+  const keyByNode = new Map<BaseNode, string | undefined>();
+  const indexByNode = new Map<BaseNode, number | undefined>();
   const scopeOwners = new Map<BaseNode, Scope>();
   const bindingIdentifiers = new Set<Identifier>();
   let currentScope = rootScope;
   nodeToScope.set(root, rootScope);
 
   walkAst(root, {
-    enter(node, parent) {
+    enter(node, parent, key, index) {
+      parentByNode.set(node, parent);
+      keyByNode.set(node, key);
+      indexByNode.set(node, index);
       if (node.type === 'FunctionDeclaration') {
-        const declaration = node as unknown as FunctionDeclaration;
-        if (declaration.id !== null) {
+        const id = asIdentifier(childNode(node, 'id'));
+        if (id !== null) {
           currentScope.registerBinding(
-            declaration.id.name,
+            id.name,
             'function',
-            declaration.id,
+            id,
             node,
           );
-          bindingIdentifiers.add(declaration.id);
+          bindingIdentifiers.add(id);
         }
       } else if (node.type === 'ClassDeclaration') {
-        const declaration = node as unknown as ClassDeclaration;
-        if (declaration.id !== null) {
+        const id = asIdentifier(childNode(node, 'id'));
+        if (id !== null) {
           currentScope.registerBinding(
-            declaration.id.name,
+            id.name,
             'class',
-            declaration.id,
+            id,
             node,
           );
-          bindingIdentifiers.add(declaration.id);
+          bindingIdentifiers.add(id);
         }
       }
 
@@ -202,13 +247,18 @@ export function analyzeScope(root: Program | BaseNode): {
         currentScope = fnScope;
         nodeToScope.set(node, fnScope);
 
-        const fnNode = node as { id?: Identifier | null; params?: Pattern[] };
-        if (node.type === 'FunctionExpression' && fnNode.id) {
-          fnScope.registerBinding(fnNode.id.name, 'function', fnNode.id, node);
-          bindingIdentifiers.add(fnNode.id);
+        const functionId = asIdentifier(childNode(node, 'id'));
+        if (node.type === 'FunctionExpression' && functionId !== null) {
+          fnScope.registerBinding(
+            functionId.name,
+            'function',
+            functionId,
+            node,
+          );
+          bindingIdentifiers.add(functionId);
         }
 
-        for (const param of fnNode.params ?? []) {
+        for (const param of childNodes(node, 'params')) {
           for (const id of extractPatternIdentifiers(param)) {
             fnScope.registerBinding(id.name, 'param', id, node);
             bindingIdentifiers.add(id);
@@ -248,7 +298,7 @@ export function analyzeScope(root: Program | BaseNode): {
         currentScope = lexicalScope;
         nodeToScope.set(node, lexicalScope);
         if (node.type === 'CatchClause') {
-          const parameter = (node as unknown as CatchClause).param;
+          const parameter = childNode(node, 'param');
           if (parameter !== null) {
             for (const id of extractPatternIdentifiers(parameter)) {
               lexicalScope.registerBinding(id.name, 'param', id, node);
@@ -262,14 +312,17 @@ export function analyzeScope(root: Program | BaseNode): {
       nodeToScope.set(node, currentScope);
 
       if (node.type === 'VariableDeclaration') {
-        const varDecl = node as VariableDeclaration;
+        const kind = field(node, 'kind');
+        if (kind !== 'var' && kind !== 'let' && kind !== 'const') return;
         const targetScope =
-          varDecl.kind === 'var'
+          kind === 'var'
             ? currentScope.getFunctionScope() ?? currentScope.getProgramScope()
             : currentScope;
-        for (const decl of varDecl.declarations) {
-          for (const id of extractPatternIdentifiers(decl.id)) {
-            targetScope.registerBinding(id.name, varDecl.kind, id, node);
+        for (const declaration of childNodes(node, 'declarations')) {
+          const pattern = childNode(declaration, 'id');
+          if (pattern === null) continue;
+          for (const id of extractPatternIdentifiers(pattern)) {
+            targetScope.registerBinding(id.name, kind, id, node);
             bindingIdentifiers.add(id);
           }
         }
@@ -277,11 +330,11 @@ export function analyzeScope(root: Program | BaseNode): {
 
       if (node.type === 'ImportDeclaration') {
         const programScope = currentScope.getProgramScope();
-        const importDecl = node as { specifiers?: Array<{ local?: Identifier }> };
-        for (const spec of importDecl.specifiers ?? []) {
-          if (spec.local && isIdentifier(spec.local)) {
-            programScope.registerBinding(spec.local.name, 'import', spec.local, node);
-            bindingIdentifiers.add(spec.local);
+        for (const specifier of childNodes(node, 'specifiers')) {
+          const local = childNode(specifier, 'local');
+          if (local !== null && isIdentifier(local)) {
+            programScope.registerBinding(local.name, 'import', local, node);
+            bindingIdentifiers.add(local);
           }
         }
       }
@@ -314,5 +367,11 @@ export function analyzeScope(root: Program | BaseNode): {
     },
   });
 
-  return { rootScope, nodeToScope };
+  return {
+    rootScope,
+    nodeToScope,
+    parentByNode,
+    keyByNode,
+    indexByNode,
+  };
 }
