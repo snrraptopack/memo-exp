@@ -1,20 +1,24 @@
 import * as t from '@babel/types';
-import { walkAst } from '../ast';
+import { walkAst, type BaseNode } from '../ast';
 import { generatedIdentifier } from '../identifiers';
 import type { Ctx, StateKind } from './model';
 
 /** Remove TypeScript-only wrappers without changing runtime semantics. */
-export function unwrapTypeExpression(expression: t.Expression): t.Expression {
+export function unwrapTypeExpression<TExpression extends BaseNode>(
+  expression: TExpression,
+): TExpression {
+  let current: BaseNode = expression;
   while (
-    t.isTSAsExpression(expression) ||
-    t.isTSTypeAssertion(expression) ||
-    t.isTSNonNullExpression(expression) ||
-    t.isTSSatisfiesExpression(expression) ||
-    t.isTSInstantiationExpression(expression)
+    current.type === 'TSAsExpression' ||
+    current.type === 'TSTypeAssertion' ||
+    current.type === 'TSNonNullExpression' ||
+    current.type === 'TSSatisfiesExpression' ||
+    current.type === 'TSInstantiationExpression'
   ) {
-    expression = expression.expression;
+    const inner = (current as unknown as { expression: BaseNode }).expression;
+    current = inner;
   }
-  return expression;
+  return current as TExpression;
 }
 
 /** Register a state binding while preserving a linker-provided import entry. */

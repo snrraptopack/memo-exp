@@ -20,6 +20,10 @@ import { hostJsxEventNames } from '../packages/compiler/src/jsx/events';
 import { callsOnlyCommittedLocalHelpers } from '../packages/compiler/src/handlers/local-calls';
 import { renderPropReferenceName } from '../packages/compiler/src/components/children';
 import type { Ctx } from '../packages/compiler/src/context';
+import {
+  isStaticListExpression,
+  isStaticPrimitiveList,
+} from '../packages/compiler/src/lists/source-shapes';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -166,5 +170,25 @@ describe('ESTree parser and printer boundary', () => {
 
     expect(target).not.toBeNull();
     expect(renderPropReferenceName(context, 'View', target!)).toBe('target');
+  });
+
+  it('recognizes static list sources from parsed ESTree', () => {
+    const parsed = parseEstreeOrThrow(
+      `['a', 'b'].map((value) => value.toUpperCase());`,
+      { filename: 'list.ts' },
+    );
+    const array = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'ArrayExpression',
+    );
+    const chain = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'CallExpression',
+    );
+
+    expect(array).not.toBeNull();
+    expect(chain).not.toBeNull();
+    expect(isStaticPrimitiveList(array!)).toBe(true);
+    expect(isStaticListExpression(chain!)).toBe(true);
   });
 });

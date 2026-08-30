@@ -1,72 +1,108 @@
-import * as t from '@babel/types';
+import type { BaseNode } from '../ast';
 import { unwrapTypeExpression } from '../context';
 
 /** Remove transparent TypeScript wrappers around a collection expression. */
-export function transparentListExpression(
-  expression: t.Expression,
-): t.Expression {
+export function transparentListExpression<TExpression extends BaseNode>(
+  expression: TExpression,
+): TExpression {
   return unwrapTypeExpression(expression);
 }
 
-/** A literal primitive list has stable value identity and no mutable source. */
-export function isStaticPrimitiveList(
-  expression: t.Expression,
-): boolean {
-  const current = transparentListExpression(expression);
+function field(node: BaseNode, name: string): unknown {
+  return (node as unknown as Record<string, unknown>)[name];
+}
+
+function isNode(value: unknown): value is BaseNode {
   return (
-    t.isArrayExpression(current) &&
-    current.elements.every(
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { type?: unknown }).type === 'string'
+  );
+}
+
+function isPrimitiveLiteral(node: BaseNode): boolean {
+  if (
+    node.type === 'StringLiteral' ||
+    node.type === 'NumericLiteral' ||
+    node.type === 'BooleanLiteral' ||
+    node.type === 'NullLiteral' ||
+    node.type === 'BigIntLiteral'
+  ) {
+    return true;
+  }
+  if (node.type !== 'Literal') return false;
+  const value = field(node, 'value');
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  );
+}
+
+function isInlineArgument(node: BaseNode): boolean {
+  return (
+    node.type === 'ArrowFunctionExpression' ||
+    node.type === 'FunctionExpression' ||
+    node.type === 'StringLiteral' ||
+    node.type === 'NumericLiteral' ||
+    node.type === 'BooleanLiteral' ||
+    (node.type === 'Literal' &&
+      ['string', 'number', 'boolean'].includes(typeof field(node, 'value')))
+  );
+}
+
+/** A literal primitive list has stable value identity and no mutable source. */
+export function isStaticPrimitiveList(expression: BaseNode): boolean {
+  const current = transparentListExpression(expression);
+  if (current.type !== 'ArrayExpression') return false;
+  const elements = field(current, 'elements');
+  return (
+    Array.isArray(elements) &&
+    elements.every(
       (element) =>
-        element !== null &&
-        !t.isSpreadElement(element) &&
-        (t.isStringLiteral(element) ||
-          t.isNumericLiteral(element) ||
-          t.isBooleanLiteral(element) ||
-          t.isNullLiteral(element) ||
-          t.isBigIntLiteral(element)),
+        isNode(element) &&
+        element.type !== 'SpreadElement' &&
+        isPrimitiveLiteral(element),
     )
   );
 }
 
 /**
  * A structural method chain rooted at a primitive array literal. The chain
- * shape is recognized structurally — ANY method name is accepted, because
+ * shape is recognized structurally: any method name is accepted, because
  * the value is fixed at creation regardless of how it was computed. Every
  * argument must be self-contained (inline functions or literals): a
  * reference to an outside binding would make the chain's result depend on
  * mutable state, which requires the reactive derivation path instead.
  */
 export function isStaticListExpression(
-  expression: t.Expression,
-  seen: Set<t.Node> = new Set(),
+  expression: BaseNode,
+  seen: Set<BaseNode> = new Set(),
 ): boolean {
   const current = transparentListExpression(expression);
   if (seen.has(current)) return false;
   seen.add(current);
   if (isStaticPrimitiveList(current)) return true;
-  if (
-    t.isCallExpression(current) &&
-    (t.isMemberExpression(current.callee) ||
-      t.isOptionalMemberExpression(current.callee)) &&
-    t.isExpression(current.callee.object)
-  ) {
-    // Arguments must be self-contained: inline functions or literals.
-    for (const argument of current.arguments) {
-      if (argument === null || t.isSpreadElement(argument)) return false;
-      if (
-        !t.isArrowFunctionExpression(argument) &&
-        !t.isFunctionExpression(argument) &&
-        !t.isStringLiteral(argument) &&
-        !t.isNumericLiteral(argument) &&
-        !t.isBooleanLiteral(argument)
-      ) {
-        return false;
-      }
+  if (current.type === 'CallExpression') {
+    const callee = field(current, 'callee');
+    if (
+      !isNode(callee) ||
+      (callee.type !== 'MemberExpression' &&
+        callee.type !== 'OptionalMemberExpression')
+    ) {
+      return false;
     }
-    return isStaticListExpression(
-      current.callee.object as t.Expression,
-      seen,
-    );
+    const source = field(callee, 'object');
+    const args = field(current, 'arguments');
+    if (!isNode(source) || !Array.isArray(args)) return false;
+
+    // Arguments must be self-contained: inline functions or literals.
+    for (const argument of args) {
+      if (!isNode(argument) || !isInlineArgument(argument)) return false;
+    }
+    return isStaticListExpression(source, seen);
   }
   return false;
 }
