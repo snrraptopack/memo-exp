@@ -1466,6 +1466,9 @@ export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
   normalizeComponentJsxValues(ctx);
   normalizeDynamicTags(ctx);
   normalizeCalculatedListSources(ctx);
+  // Normalization can replace declarations and expressions. Rebuild the
+  // parser-neutral index before binding-aware analysis consumes those nodes.
+  refreshAstAnalysis(ctx, programPath.node);
   scanInstanceState(ctx);
   excludeRefBindings(ctx);
   // Volatility must precede derivation scanning: consts rooted at opaque

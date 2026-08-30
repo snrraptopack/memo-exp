@@ -1,34 +1,61 @@
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import type { Ctx } from '../context';
+import { walkAst, type BaseNode, type Binding } from '../ast';
+import { astBindingAt, type Ctx } from '../context';
 import type { ControlFlowDerivation } from '../components/props';
 
-type ReplayControlPath = NodePath<t.IfStatement | t.SwitchStatement>;
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function childNode(node: BaseNode, key: string): BaseNode | null {
+  const value = fields(node)[key];
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? (value as BaseNode)
+    : null;
+}
+
+const FUNCTION_NODES = new Set([
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ArrowFunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
+
+const IMPURE_REPLAY_NODES = new Set([
+  ...FUNCTION_NODES,
+  'AssignmentExpression',
+  'AwaitExpression',
+  'NewExpression',
+  'TaggedTemplateExpression',
+  'UpdateExpression',
+  'YieldExpression',
+]);
 
 function replayExpressionIsPure(expression: t.Expression): boolean {
   let pure = true;
-  t.traverseFast(expression, (node) => {
-    if (
-      t.isAssignmentExpression(node) ||
-      t.isUpdateExpression(node) ||
-      t.isAwaitExpression(node) ||
-      t.isYieldExpression(node) ||
-      t.isNewExpression(node) ||
-      t.isTaggedTemplateExpression(node) ||
-      t.isFunction(node)
-    ) {
-      pure = false;
-      return;
-    }
-    if (t.isCallExpression(node) || t.isOptionalCallExpression(node)) {
-      const callee = node.callee;
+  walkAst<BaseNode>(expression as unknown as BaseNode, {
+    enter(node) {
+      if (IMPURE_REPLAY_NODES.has(node.type)) {
+        pure = false;
+        return false;
+      }
+      if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
+        return;
+      }
+      const callee = childNode(node, 'callee');
+      const object = callee === null ? null : childNode(callee, 'object');
+      const property = callee === null ? null : childNode(callee, 'property');
       pure =
         pure &&
-        t.isMemberExpression(callee) &&
-        !callee.computed &&
-        t.isIdentifier(callee.object, { name: 'Math' }) &&
-        t.isIdentifier(callee.property);
-    }
+        callee?.type === 'MemberExpression' &&
+        fields(callee).computed === false &&
+        object?.type === 'Identifier' &&
+        fields(object).name === 'Math' &&
+        property?.type === 'Identifier';
+      return pure ? undefined : false;
+    },
   });
   return pure;
 }
@@ -142,14 +169,62 @@ function replayBindingsForSwitch(
   return common;
 }
 
-function violationBelongsTo(
-  violation: NodePath,
+function nodeBelongsTo(
+  ctx: Ctx,
+  node: BaseNode,
   statement: t.Statement,
 ): boolean {
-  return (
-    violation.node === statement ||
-    violation.findParent((parent) => parent.node === statement) !== null
-  );
+  let current: BaseNode | null = node;
+  while (current !== null) {
+    if (current === statement) return true;
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return false;
+}
+
+function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') return current;
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return null;
+}
+
+function identifierIsRead(ctx: Ctx, identifier: BaseNode): boolean {
+  const parent = ctx.astAnalysis?.parentByNode.get(identifier) ?? null;
+  const key = ctx.astAnalysis?.keyByNode.get(identifier);
+  if (parent?.type === 'AssignmentExpression' && key === 'left') {
+    return fields(parent).operator !== '=';
+  }
+  if (
+    (parent?.type === 'UpdateExpression' && key === 'argument') ||
+    ((parent?.type === 'ForInStatement' || parent?.type === 'ForOfStatement') &&
+      key === 'left')
+  ) {
+    return parent.type === 'UpdateExpression';
+  }
+  return true;
+}
+
+function noteReactiveReads(
+  ctx: Ctx,
+  root: BaseNode,
+  reactiveBindings: ReadonlyMap<Binding, string>,
+  reads: Set<string>,
+): void {
+  walkAst<BaseNode>(root, {
+    enter(node) {
+      if (node !== root && FUNCTION_NODES.has(node.type)) return false;
+      if (node.type !== 'Identifier' || !identifierIsRead(ctx, node)) return;
+      const name = fields(node).name;
+      if (typeof name !== 'string') return;
+      const binding = astBindingAt(ctx, node, name);
+      const source =
+        binding === undefined ? undefined : reactiveBindings.get(binding);
+      if (source !== undefined) reads.add(source);
+    },
+  });
 }
 
 /**
@@ -158,22 +233,38 @@ function violationBelongsTo(
  */
 export function scanInstanceControlFlow(ctx: Ctx): void {
   for (const [componentName, componentPath] of ctx.compPaths) {
-    const reactiveBindings = new Map<unknown, string>();
+    const reactiveBindings = new Map<Binding, string>();
     for (const name of ctx.componentProps.get(componentName)?.bindings ?? []) {
-      const binding = componentPath.scope.getBinding(name);
+      const binding = astBindingAt(
+        ctx,
+        componentPath.node as unknown as BaseNode,
+        name,
+      );
       if (binding) reactiveBindings.set(binding, name);
     }
     for (const name of ctx.instanceState.get(componentName) ?? []) {
-      const binding = componentPath.scope.getBinding(name);
+      const binding = astBindingAt(
+        ctx,
+        componentPath.node as unknown as BaseNode,
+        name,
+      );
       if (binding) reactiveBindings.set(binding, name);
     }
     for (const name of ctx.instanceDerivedBindings.get(componentName) ?? []) {
-      const binding = componentPath.scope.getBinding(name);
+      const binding = astBindingAt(
+        ctx,
+        componentPath.node as unknown as BaseNode,
+        name,
+      );
       if (binding) reactiveBindings.set(binding, name);
     }
     for (const name of ctx.state.keys()) {
-      const binding = componentPath.scope.getBinding(name);
-      if (binding?.scope.path.isProgram()) {
+      const binding = astBindingAt(
+        ctx,
+        componentPath.node as unknown as BaseNode,
+        name,
+      );
+      if (binding?.scope.isProgramScope === true) {
         reactiveBindings.set(binding, name);
       }
     }
@@ -181,96 +272,95 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
     const controls: ControlFlowDerivation[] = [];
     const derivedBindings =
       ctx.instanceDerivedBindings.get(componentName) ?? new Set<string>();
-    for (const statementPath of componentPath.get('body').get('body')) {
-      if (
-        !statementPath.isIfStatement() &&
-        !statementPath.isSwitchStatement()
-      ) {
+    for (const statement of componentPath.node.body.body) {
+      if (!t.isIfStatement(statement) && !t.isSwitchStatement(statement)) {
         continue;
       }
-      const path = statementPath as ReplayControlPath;
-      const shape = path.isIfStatement()
-        ? replayBindingsForStatement(path.node)
-        : replayBindingsForSwitch(path.node);
+      const shape = t.isIfStatement(statement)
+        ? replayBindingsForStatement(statement)
+        : replayBindingsForSwitch(statement);
       if (shape === null) continue;
 
       let eligible = true;
       const resets: ControlFlowDerivation['resets'] = [];
-      const resetPaths: NodePath<t.Expression>[] = [];
+      const resetExpressions: t.Expression[] = [];
       for (const name of shape.bindings) {
-        const binding = componentPath.scope.getBinding(name);
-        const declaration = binding?.path;
-        const declarationStatement = declaration?.parentPath;
+        const binding = astBindingAt(
+          ctx,
+          statement as unknown as BaseNode,
+          name,
+        );
+        const declaration =
+          binding === undefined ? null : variableDeclaratorFor(ctx, binding);
+        const declarationStatement = binding?.declarationNode;
+        const declarationKind =
+          declarationStatement?.type === 'VariableDeclaration'
+            ? fields(declarationStatement).kind
+            : null;
         if (
           binding === undefined ||
-          !declaration?.isVariableDeclarator() ||
-          !declarationStatement?.isVariableDeclaration() ||
-          (declarationStatement.node.kind !== 'let' &&
-            declarationStatement.node.kind !== 'var') ||
+          declaration === null ||
+          (declarationKind !== 'let' && declarationKind !== 'var') ||
           binding.constantViolations.some(
-            (violation) => !violationBelongsTo(violation, path.node),
+            (violation) => !nodeBelongsTo(ctx, violation, statement),
           )
         ) {
           eligible = false;
           break;
         }
         if (shape.partial.has(name)) {
-          const initPath = declaration.get('init');
+          const init = childNode(declaration, 'init');
           if (
-            !initPath.isExpression() ||
-            !replayExpressionIsPure(initPath.node)
+            init === null ||
+            !replayExpressionIsPure(init as unknown as t.Expression)
           ) {
             eligible = false;
             break;
           }
-          resets.push({ binding: name, source: initPath.node });
-          resetPaths.push(initPath);
+          const expression = init as unknown as t.Expression;
+          resets.push({ binding: name, source: expression });
+          resetExpressions.push(expression);
         }
       }
       if (!eligible) continue;
 
       const reads = new Set<string>();
-      const noteIdentifier = (identifierPath: NodePath<t.Identifier>) => {
-        const binding = identifierPath.scope.getBinding(
-          identifierPath.node.name,
+      noteReactiveReads(
+        ctx,
+        statement as unknown as BaseNode,
+        reactiveBindings,
+        reads,
+      );
+      for (const resetExpression of resetExpressions) {
+        noteReactiveReads(
+          ctx,
+          resetExpression as unknown as BaseNode,
+          reactiveBindings,
+          reads,
         );
-        const source =
-          binding === undefined ? undefined : reactiveBindings.get(binding);
-        if (source !== undefined) reads.add(source);
-      };
-      const visitor = {
-        Function(functionPath) {
-          functionPath.skip();
-        },
-        ReferencedIdentifier(identifierPath) {
-          if (identifierPath.isIdentifier()) noteIdentifier(identifierPath);
-        },
-      } satisfies Parameters<NodePath['traverse']>[0];
-      path.traverse(visitor);
-      for (const resetPath of resetPaths) {
-        if (resetPath.isReferencedIdentifier()) {
-          noteIdentifier(resetPath);
-        }
-        resetPath.traverse(visitor);
       }
       if (reads.size === 0) continue;
       for (const name of shape.bindings) {
         if (reads.has(name)) {
-          throw path.buildCodeFrameError(
+          throw componentPath.buildCodeFrameError(
             `memo-dom: reactive control-flow derivation '${name}' reads its own previous value`,
           );
         }
       }
 
       controls.push({
-        statement: path.node,
+        statement,
         bindings: [...shape.bindings].sort(),
         resets,
         sources: [...reads].sort(),
       });
       for (const name of shape.bindings) {
         derivedBindings.add(name);
-        const binding = componentPath.scope.getBinding(name);
+        const binding = astBindingAt(
+          ctx,
+          statement as unknown as BaseNode,
+          name,
+        );
         if (binding) reactiveBindings.set(binding, name);
         ctx.instanceState.get(componentName)?.delete(name);
       }

@@ -35,6 +35,7 @@ import { isRenderCallbackJsxRoot } from '../packages/compiler/src/components/ren
 import { scanModuleControlFlow } from '../packages/compiler/src/module-control-flow';
 import { analyzeComponentReturns } from '../packages/compiler/src/components/return-plan';
 import { collectComponentPropSources } from '../packages/compiler/src/components/prop-origins';
+import { scanInstanceControlFlow } from '../packages/compiler/src/analysis/instance-control-flow';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -502,5 +503,55 @@ describe('ESTree parser and printer boundary', () => {
         ],
       ]),
     );
+  });
+
+  it('classifies instance control flow from OXC bindings and violations', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        function View(active: boolean) {
+          let label = 'off';
+          if (active) label = 'on';
+          return <p>{label}</p>;
+        }
+      `,
+      { filename: 'instance-flow.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      compPaths: new Map([['View', { node: component! }]]),
+      componentProps: new Map([
+        [
+          'View',
+          {
+            bindings: ['active'],
+          },
+        ],
+      ]),
+      instanceState: new Map([['View', new Set(['label'])]]),
+      instanceDerivedBindings: new Map<string, Set<string>>(),
+      instanceControlFlow: new Map(),
+      state: new Map(),
+    } as unknown as Ctx;
+
+    expect(component).not.toBeNull();
+    scanInstanceControlFlow(context);
+
+    expect(context.instanceControlFlow.get('View')).toEqual([
+      expect.objectContaining({
+        bindings: ['label'],
+        sources: ['active'],
+        resets: [
+          expect.objectContaining({ binding: 'label' }),
+        ],
+      }),
+    ]);
+    expect(context.instanceDerivedBindings.get('View')).toEqual(
+      new Set(['label']),
+    );
+    expect(context.instanceState.get('View')).toEqual(new Set());
   });
 });
