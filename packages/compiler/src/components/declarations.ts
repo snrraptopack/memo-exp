@@ -6,9 +6,18 @@
  * function expressions before analysis keeps component/linker/emitter logic
  * unified instead of adding expression-path branches to every pass.
  */
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { nodeHasJsx } from '../context';
+
+interface ProgramContainer {
+  node: t.Program;
+  buildCodeFrameError(message: string): Error;
+  scope: { crawl(): void };
+}
+
+interface ErrorPath {
+  buildCodeFrameError(message: string): Error;
+}
 
 type ComponentExpression = t.ArrowFunctionExpression | t.FunctionExpression;
 
@@ -30,7 +39,7 @@ function componentExpression(
 function functionDeclaration(
   name: string,
   expression: ComponentExpression,
-  at: NodePath,
+  at: ErrorPath,
 ): t.FunctionDeclaration {
   if (expression.async || expression.generator) {
     throw at.buildCodeFrameError(
@@ -71,7 +80,7 @@ function functionDeclaration(
 function normalizedVariableStatement(
   declaration: t.VariableDeclaration,
   exported: boolean,
-  at: NodePath,
+  at: ErrorPath,
 ): t.Statement[] {
   if (declaration.kind !== 'const') {
     return [
@@ -115,18 +124,17 @@ function normalizedVariableStatement(
  * canonical declaration shape consumed by all later passes.
  */
 export function normalizeComponentDeclarations(
-  programPath: NodePath<t.Program>,
+  programPath: ProgramContainer,
 ): void {
   const body: t.Statement[] = [];
   let changed = false;
 
-  for (const statementPath of programPath.get('body')) {
-    const statement = statementPath.node;
+  for (const statement of programPath.node.body) {
     if (t.isVariableDeclaration(statement)) {
       const normalized = normalizedVariableStatement(
         statement,
         false,
-        statementPath,
+        programPath,
       );
       changed ||= normalized.some((item) => t.isFunctionDeclaration(item));
       body.push(...normalized);
@@ -139,7 +147,7 @@ export function normalizeComponentDeclarations(
       const normalized = normalizedVariableStatement(
         statement.declaration,
         true,
-        statementPath,
+        programPath,
       );
       changed ||= normalized.some(
         (item) =>
@@ -153,6 +161,6 @@ export function normalizeComponentDeclarations(
   }
 
   if (!changed) return;
-  programPath.set('body', body);
+  programPath.node.body = body;
   programPath.scope.crawl();
 }
