@@ -29,6 +29,7 @@ export interface Binding {
   declarationNode: BaseNode;
   scope: Scope;
   references: Identifier[];
+  constantViolations: BaseNode[];
 }
 
 export class Scope {
@@ -66,6 +67,7 @@ export class Scope {
       declarationNode,
       scope: this,
       references: [],
+      constantViolations: [],
     };
     this.bindings.set(name, binding);
     return binding;
@@ -185,6 +187,38 @@ function isReferenceIdentifier(
     return false;
   }
   return !parent.type.startsWith('Import');
+}
+
+function bindingViolation(
+  identifier: BaseNode,
+  parentByNode: Map<BaseNode, BaseNode | null>,
+  keyByNode: Map<BaseNode, string | undefined>,
+): BaseNode | null {
+  let current = identifier;
+  let parent = parentByNode.get(current) ?? null;
+  while (parent !== null) {
+    const key = keyByNode.get(current);
+    if (parent.type === 'UpdateExpression' && key === 'argument') return parent;
+    if (parent.type === 'AssignmentExpression') {
+      return key === 'left' ? parent : null;
+    }
+    if (parent.type === 'ForInStatement' || parent.type === 'ForOfStatement') {
+      return key === 'left' ? parent : null;
+    }
+    if (
+      parent.type !== 'ArrayPattern' &&
+      parent.type !== 'ObjectPattern' &&
+      parent.type !== 'AssignmentPattern' &&
+      parent.type !== 'RestElement' &&
+      parent.type !== 'Property' &&
+      parent.type !== 'ObjectProperty'
+    ) {
+      return null;
+    }
+    current = parent;
+    parent = parentByNode.get(current) ?? null;
+  }
+  return null;
 }
 
 /** Analyze lexical scopes of an AST tree. */
@@ -357,7 +391,17 @@ export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
         !bindingIdentifiers.has(node) &&
         isReferenceIdentifier(parent, key)
       ) {
-        currentScope.getBinding(node.name)?.references.push(node);
+        const binding = currentScope.getBinding(node.name);
+        if (binding !== undefined) {
+          binding.references.push(node);
+          const violation = bindingViolation(node, parentByNode, keyByNode);
+          if (
+            violation !== null &&
+            !binding.constantViolations.includes(violation)
+          ) {
+            binding.constantViolations.push(violation);
+          }
+        }
       }
     },
     leave(node) {

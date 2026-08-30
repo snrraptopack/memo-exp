@@ -32,6 +32,7 @@ import { isStaticDerivedChain } from '../packages/compiler/src/lists/static-deri
 import { discoverComponentExports } from '../packages/compiler/src/components/manifest';
 import { GeneratedIdentifiers } from '../packages/compiler/src/identifiers';
 import { isRenderCallbackJsxRoot } from '../packages/compiler/src/components/render-callbacks';
+import { scanModuleControlFlow } from '../packages/compiler/src/module-control-flow';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -317,6 +318,7 @@ describe('ESTree parser and printer boundary', () => {
     ]);
     expect(viewScope?.getBinding('local')?.references).toHaveLength(1);
     expect(viewScope?.getBinding('inner')?.references).toHaveLength(2);
+    expect(viewScope?.getBinding('inner')?.constantViolations).toHaveLength(1);
     expect(analysis.parentByNode.get(view!)).toMatchObject({
       type: 'ExportNamedDeclaration',
     });
@@ -360,5 +362,50 @@ describe('ESTree parser and printer boundary', () => {
     expect(elements).toHaveLength(2);
     expect(isRenderCallbackJsxRoot(context, elements[1]!)).toBe(true);
     expect(isRenderCallbackJsxRoot(context, elements[0]!)).toBe(false);
+  });
+
+  it('discovers module control-flow derivations from OXC bindings', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        let count = 0;
+        let parity = 'even';
+        if (count % 2 === 0) {
+          parity = 'even';
+        } else {
+          parity = 'odd';
+        }
+      `,
+      { filename: 'flow.ts' },
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      state: new Map([['count', 'let']]),
+      stateKeys: new Map([['count', './flow.ts#count']]),
+      helpers: new Map(),
+      importedFunctions: new Map(),
+      moduleControlFlow: [],
+      rootId: 'App',
+      moduleId: './flow.ts',
+    } as unknown as Ctx;
+
+    scanModuleControlFlow(
+      context,
+      {
+        node: parsed.program,
+        buildCodeFrameError(message) {
+          return new Error(message);
+        },
+      },
+      analyzeComputed,
+    );
+
+    expect(context.moduleControlFlow).toEqual([
+      expect.objectContaining({
+        bindings: ['parity'],
+        sources: ['count'],
+        entityId: 'App/$computed/.%2Fflow.ts#$flow0',
+      }),
+    ]);
+    expect(context.state.get('parity')).toBe('computed');
   });
 });

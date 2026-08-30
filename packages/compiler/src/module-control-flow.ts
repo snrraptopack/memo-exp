@@ -1,13 +1,19 @@
 /**
  * Pure exhaustive module-level if/switch derivations.
  */
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import type { BaseNode } from './ast';
 import {
+  astBindingAt,
   registerState,
   type ComputedAnalysis,
   type Ctx,
 } from './context';
+
+interface ProgramContainer {
+  node: BaseNode;
+  buildCodeFrameError(message: string): Error;
+}
 
 interface ReplayShape {
   bindings: Set<string>;
@@ -98,66 +104,68 @@ function switchShape(statement: t.SwitchStatement): ReplayShape | null {
     : { bindings: common, expressions };
 }
 
-function belongsTo(violation: NodePath, statement: t.Statement): boolean {
-  return (
-    violation.node === statement ||
-    violation.findParent((parent) => parent.node === statement) !== null
-  );
+function belongsTo(ctx: Ctx, node: BaseNode, owner: BaseNode): boolean {
+  let current: BaseNode | null = node;
+  while (current !== null) {
+    if (current === owner) return true;
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return false;
 }
 
 function topLevelStatement(
-  path: NodePath,
-  programPath: NodePath<t.Program>,
-): NodePath | null {
-  let current: NodePath | null = path;
-  while (current?.parentPath !== programPath) {
-    current = current?.parentPath ?? null;
+  ctx: Ctx,
+  node: BaseNode,
+  program: BaseNode,
+): BaseNode | null {
+  let current: BaseNode | null = node;
+  while (
+    current !== null &&
+    ctx.astAnalysis?.parentByNode.get(current) !== program
+  ) {
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
   }
   return current;
 }
 
 export function scanModuleControlFlow(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
-  analyze: (ctx: Ctx, expression: t.Node) => ComputedAnalysis,
+  programPath: ProgramContainer,
+  analyze: (ctx: Ctx, expression: BaseNode) => ComputedAnalysis,
 ): void {
-  const bodyPaths = programPath.get('body');
+  const programBody = (
+    programPath.node as unknown as { body: t.Program['body'] }
+  ).body;
   const bodyOrder = new Map(
-    bodyPaths.map((statementPath, index) => [statementPath.node, index]),
+    programBody.map((statement, index) => [statement, index]),
   );
-  for (const statementPath of bodyPaths) {
-    if (
-      !statementPath.isIfStatement() &&
-      !statementPath.isSwitchStatement()
-    ) {
-      continue;
-    }
-    const flowStatement = statementPath.node as
-      | t.IfStatement
-      | t.SwitchStatement;
-    const shape = statementPath.isIfStatement()
-      ? statementShape(flowStatement as t.IfStatement)
-      : switchShape(flowStatement as t.SwitchStatement);
+  for (const statement of programBody) {
+    if (!t.isIfStatement(statement) && !t.isSwitchStatement(statement)) continue;
+    const flowStatement = statement;
+    const shape = t.isIfStatement(flowStatement)
+      ? statementShape(flowStatement)
+      : switchShape(flowStatement);
     if (shape === null) continue;
 
     let eligible = true;
-    const externalWrites: NodePath[] = [];
+    const externalWrites: BaseNode[] = [];
     for (const name of shape.bindings) {
-      const binding = programPath.scope.getBinding(name);
-      const declaration = binding?.path;
-      const variableDeclaration = declaration?.parentPath;
+      const binding = astBindingAt(ctx, flowStatement, name);
+      const declaration = binding?.identifier;
+      const declarator =
+        declaration === undefined
+          ? null
+          : ctx.astAnalysis?.parentByNode.get(declaration) ?? null;
       const topLevel =
         declaration === undefined
           ? null
-          : topLevelStatement(declaration, programPath);
+          : topLevelStatement(ctx, declaration, programPath.node);
       if (
         binding === undefined ||
-        !declaration?.isVariableDeclarator() ||
-        !variableDeclaration?.isVariableDeclaration() ||
-        (variableDeclaration.node.kind !== 'let' &&
-          variableDeclaration.node.kind !== 'var') ||
+        declarator?.type !== 'VariableDeclarator' ||
+        (binding.kind !== 'let' && binding.kind !== 'var') ||
         topLevel === null ||
-        (bodyOrder.get(topLevel.node as t.Program['body'][number]) ??
+        (bodyOrder.get(topLevel as t.Program['body'][number]) ??
           Number.MAX_SAFE_INTEGER) >=
           (bodyOrder.get(flowStatement) ?? -1)
       ) {
@@ -166,7 +174,7 @@ export function scanModuleControlFlow(
       }
       externalWrites.push(
         ...binding.constantViolations.filter(
-          (violation) => !belongsTo(violation, flowStatement),
+          (violation) => !belongsTo(ctx, violation, flowStatement),
         ),
       );
     }
@@ -183,19 +191,19 @@ export function scanModuleControlFlow(
     }
     if (sources.size === 0) continue;
     if (impureReason !== null) {
-      throw statementPath.buildCodeFrameError(
+      throw programPath.buildCodeFrameError(
         `memo-dom: module control-flow derivation ${impureReason}`,
       );
     }
     for (const name of shape.bindings) {
       if (sources.has(name)) {
-        throw statementPath.buildCodeFrameError(
+        throw programPath.buildCodeFrameError(
           `memo-dom: module control-flow derivation '${name}' reads its own previous value`,
         );
       }
     }
     if (externalWrites.length > 0) {
-      throw externalWrites[0]!.buildCodeFrameError(
+      throw programPath.buildCodeFrameError(
         `memo-dom: cannot assign module control-flow computed '${
           [...shape.bindings].sort().join(', ')
         }' outside its derivation`,
