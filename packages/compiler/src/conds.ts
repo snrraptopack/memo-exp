@@ -4,11 +4,14 @@
  * Direct JSX-child ternaries and logical conditions become anchored regions.
  * Right-associated ternary chains flatten into one multi-branch region.
  */
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { nodeHasJsx } from './context';
 import { matchMapCall } from './lists';
 import type { JsxNode } from './jsx/children';
+
+interface ErrorPath {
+  buildCodeFrameError(message: string): Error;
+}
 
 export interface CondSite {
   /** Expression selecting an index in branches. */
@@ -69,7 +72,7 @@ function validateBranchJsx(jsx: JsxNode, fail: (msg: string) => never): void {
 
 export function analyzeCondSite(
   expr: t.ConditionalExpression | t.LogicalExpression,
-  errorAt: Pick<NodePath, 'buildCodeFrameError'>,
+  errorAt: ErrorPath,
   usedConds: { count: number },
 ): CondSite {
   const fail = (message: string): never => {
