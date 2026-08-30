@@ -1,40 +1,84 @@
-/**
- * Compile-time JSX-returning functions.
- *
- * Supported functions are expanded at local call sites. Their parameters and
- * pure top-level consts are substituted into cloned JSX/control expressions,
- * leaving ordinary JSX for the existing DOM/list/conditional passes.
- */
-import type { NodePath } from '@babel/traverse';
+/** Compile-time JSX-returning function expansion. */
+
 import * as t from '@babel/types';
-import { nodeHasJsx, type Ctx } from '../context';
+import {
+  ESTREE_VISITOR_KEYS,
+  cloneNode as cloneAstNode,
+  extractPatternIdentifiers,
+  removeNode,
+  replaceNode,
+  walkAst,
+  type BaseNode,
+  type Binding,
+  type ScopeAnalysis,
+} from '../ast';
+import {
+  astBindingAt,
+  nodeHasJsx,
+  refreshAstAnalysis,
+  type Ctx,
+} from '../context';
 
 type RenderFunction =
   | t.FunctionDeclaration
   | t.FunctionExpression
   | t.ArrowFunctionExpression;
 
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
 interface ResolvedRenderFunction {
   node: RenderFunction;
-  bindingPath: NodePath;
+  bindingNode: BaseNode;
+}
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function node(value: unknown): BaseNode | null {
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? (value as BaseNode)
+    : null;
+}
+
+function childNode(parent: BaseNode, key: string): BaseNode | null {
+  return node(fields(parent)[key]);
+}
+
+function childNodes(parent: BaseNode, key: string): BaseNode[] {
+  const value = fields(parent)[key];
+  return Array.isArray(value)
+    ? value.map(node).filter((item) => item !== null)
+    : [];
+}
+
+function identifierName(value: BaseNode | null): string | null {
+  if (value?.type !== 'Identifier') return null;
+  const name = fields(value).name;
+  return typeof name === 'string' ? name : null;
+}
+
+function cloneNode<TNode>(value: TNode): TNode {
+  return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;
+}
+
+function fail(component: ComponentPath, message: string): never {
+  throw component.buildCodeFrameError(message);
 }
 
 function directReturn(statement: t.Statement): t.Expression | null {
-  if (t.isReturnStatement(statement) && t.isExpression(statement.argument)) {
-    return statement.argument;
+  if (t.isReturnStatement(statement) && statement.argument !== null) {
+    return statement.argument as t.Expression;
   }
-  if (
-    t.isBlockStatement(statement) &&
-    statement.body.length === 1
-  ) {
+  if (t.isBlockStatement(statement) && statement.body.length === 1) {
     return directReturn(statement.body[0]!);
   }
   return null;
 }
 
-function controlExpression(
-  statement: t.Statement,
-): t.Expression | null {
+function controlExpression(statement: t.Statement): t.Expression | null {
   const direct = directReturn(statement);
   if (direct !== null) return direct;
   if (t.isIfStatement(statement) && statement.alternate != null) {
@@ -42,9 +86,9 @@ function controlExpression(
     const alternate = controlExpression(statement.alternate);
     if (consequent === null || alternate === null) return null;
     return t.conditionalExpression(
-      t.cloneNode(statement.test, true),
-      t.cloneNode(consequent, true),
-      t.cloneNode(alternate, true),
+      cloneNode(statement.test),
+      cloneNode(consequent),
+      cloneNode(alternate),
     );
   }
   if (t.isSwitchStatement(statement)) {
@@ -61,10 +105,10 @@ function controlExpression(
       selection = t.conditionalExpression(
         t.binaryExpression(
           '===',
-          t.cloneNode(statement.discriminant, true),
-          t.cloneNode(item.test, true),
+          cloneNode(statement.discriminant),
+          cloneNode(item.test),
         ),
-        t.cloneNode(branch, true),
+        cloneNode(branch),
         selection,
       );
     }
@@ -75,33 +119,27 @@ function controlExpression(
 
 function functionExpression(
   fn: RenderFunction,
-  fail: (message: string) => never,
-): {
-  expression: t.Expression;
-  locals: Map<string, t.Expression>;
-} {
-  if (t.isExpression(fn.body)) {
+  onError: (message: string) => never,
+): { expression: t.Expression; locals: Map<string, t.Expression> } {
+  const body = fn.body as unknown as BaseNode;
+  if (body.type !== 'BlockStatement') {
     return {
-      expression: t.cloneNode(fn.body, true),
+      expression: cloneNode(fn.body as t.Expression),
       locals: new Map(),
     };
   }
 
   const locals = new Map<string, t.Expression>();
   const controls: t.Statement[] = [];
-  for (const statement of fn.body.body) {
+  for (const statement of (fn.body as t.BlockStatement).body) {
     if (t.isVariableDeclaration(statement, { kind: 'const' })) {
       for (const declaration of statement.declarations) {
-        if (
-          !t.isIdentifier(declaration.id) ||
-          declaration.init == null ||
-          !t.isExpression(declaration.init)
-        ) {
-          fail(
+        if (!t.isIdentifier(declaration.id) || declaration.init == null) {
+          onError(
             'memo-dom: JSX render functions require identifier const declarations with expression initializers',
           );
         }
-        locals.set(declaration.id.name, t.cloneNode(declaration.init, true));
+        locals.set(declaration.id.name, cloneNode(declaration.init));
       }
       continue;
     }
@@ -113,360 +151,332 @@ function functionExpression(
     const expression = controlExpression(controls[0]!);
     if (expression !== null) return { expression, locals };
   }
-
   const final = controls.at(-1);
   const fallback = final === undefined ? null : directReturn(final);
   if (fallback !== null) {
-    let expression = t.cloneNode(fallback, true);
+    let expression = cloneNode(fallback);
     for (let index = controls.length - 2; index >= 0; index--) {
       const statement = controls[index]!;
       if (t.isIfStatement(statement) && statement.alternate == null) {
         const branch = controlExpression(statement.consequent);
         if (branch !== null) {
           expression = t.conditionalExpression(
-            t.cloneNode(statement.test, true),
-            t.cloneNode(branch, true),
+            cloneNode(statement.test),
+            cloneNode(branch),
             expression,
           );
           continue;
         }
       }
-      fail(
+      onError(
         'memo-dom: JSX render functions support pure const setup, JSX return expressions, tail early-return if statements, exhaustive return if/else, or exhaustive return switch statements',
       );
     }
     return { expression, locals };
   }
-
-  return fail(
+  return onError(
     'memo-dom: JSX render function does not have supported exhaustive return control flow',
   );
 }
 
-function identifierIsKey(
-  parent: t.Node,
-  key: string,
-): boolean {
+function identifierIsKey(parent: BaseNode, key: string): boolean {
   return (
-    ((t.isMemberExpression(parent) || t.isOptionalMemberExpression(parent)) &&
+    ((parent.type === 'MemberExpression' ||
+      parent.type === 'OptionalMemberExpression') &&
       key === 'property' &&
-      !parent.computed) ||
-    ((t.isObjectProperty(parent) ||
-      t.isObjectMethod(parent) ||
-      t.isClassMethod(parent)) &&
+      fields(parent).computed !== true) ||
+    ((parent.type === 'ObjectProperty' ||
+      parent.type === 'Property' ||
+      parent.type === 'ObjectMethod' ||
+      parent.type === 'ClassMethod') &&
       key === 'key' &&
-      !parent.computed) ||
-    (t.isVariableDeclarator(parent) && key === 'id') ||
-    ((t.isFunction(parent) || t.isCatchClause(parent)) &&
+      fields(parent).computed !== true) ||
+    (parent.type === 'VariableDeclarator' && key === 'id') ||
+    ((parent.type === 'FunctionDeclaration' ||
+      parent.type === 'FunctionExpression' ||
+      parent.type === 'ArrowFunctionExpression' ||
+      parent.type === 'CatchClause') &&
       (key === 'params' || key === 'param' || key === 'id')) ||
-    (t.isLabeledStatement(parent) && key === 'label')
+    (parent.type === 'LabeledStatement' && key === 'label')
   );
 }
 
-function substituteNode<T extends t.Node>(
-  input: T,
+function substituteNode<TNode>(
+  input: TNode,
   substitutions: ReadonlyMap<string, t.Expression>,
   blocked = new Set<string>(),
-): T {
-  const root = t.cloneNode(input, true);
-
+): TNode {
+  const root = cloneNode(input) as unknown as BaseNode;
   const visit = (
-    node: t.Node,
-    parent: t.Node | null,
+    current: BaseNode,
+    parent: BaseNode | null,
     key: string,
     activeBlocked: ReadonlySet<string>,
-  ): t.Node => {
+  ): BaseNode => {
+    const name = identifierName(current);
     if (
-      t.isIdentifier(node) &&
-      !activeBlocked.has(node.name) &&
-      substitutions.has(node.name) &&
+      name !== null &&
+      !activeBlocked.has(name) &&
+      substitutions.has(name) &&
       (parent === null || !identifierIsKey(parent, key))
     ) {
-      return t.cloneNode(substitutions.get(node.name)!, true);
+      return cloneNode(substitutions.get(name)!) as unknown as BaseNode;
     }
 
     let nextBlocked = activeBlocked;
-    if (t.isFunction(node) && node !== root) {
-      const names = node.params.flatMap((param) =>
-        Object.keys(t.getBindingIdentifiers(param)),
+    if (
+      current !== root &&
+      (current.type === 'FunctionDeclaration' ||
+        current.type === 'FunctionExpression' ||
+        current.type === 'ArrowFunctionExpression')
+    ) {
+      const names = childNodes(current, 'params').flatMap((parameter) =>
+        extractPatternIdentifiers(parameter).map((identifier) => identifier.name),
       );
       nextBlocked = new Set([...activeBlocked, ...names]);
     }
 
-    for (const childKey of t.VISITOR_KEYS[node.type] ?? []) {
-      const child = (node as unknown as Record<string, unknown>)[childKey];
+    for (const childKey of ESTREE_VISITOR_KEYS[current.type] ?? Object.keys(fields(current))) {
+      const child = fields(current)[childKey];
       if (Array.isArray(child)) {
-        (node as unknown as Record<string, unknown>)[childKey] = child.map(
-          (entry) =>
-            entry != null && typeof entry === 'object' && 'type' in entry
-              ? visit(entry as t.Node, node, childKey, nextBlocked)
-              : entry,
-        );
-      } else if (
-        child != null &&
-        typeof child === 'object' &&
-        'type' in child
-      ) {
-        (node as unknown as Record<string, unknown>)[childKey] = visit(
-          child as t.Node,
-          node,
-          childKey,
-          nextBlocked,
-        );
+        fields(current)[childKey] = child.map((entry) => {
+          const item = node(entry);
+          return item === null
+            ? entry
+            : visit(item, current, childKey, nextBlocked);
+        });
+      } else {
+        const item = node(child);
+        if (item !== null) {
+          fields(current)[childKey] = visit(
+            item,
+            current,
+            childKey,
+            nextBlocked,
+          );
+        }
       }
     }
     if (
-      t.isObjectProperty(node) &&
-      node.shorthand &&
-      !t.isIdentifier(node.value, {
-        name: t.isIdentifier(node.key) ? node.key.name : '',
-      })
+      (current.type === 'ObjectProperty' || current.type === 'Property') &&
+      fields(current).shorthand === true
     ) {
-      node.shorthand = false;
+      const keyName = identifierName(childNode(current, 'key'));
+      const valueName = identifierName(childNode(current, 'value'));
+      if (keyName !== valueName) fields(current).shorthand = false;
     }
-    return node;
+    return current;
   };
-
-  return visit(root, null, '', blocked) as T;
+  return visit(root, null, '', blocked) as unknown as TNode;
 }
 
 function instantiate(
   resolved: ResolvedRenderFunction,
-  call: NodePath<t.CallExpression>,
+  call: BaseNode,
+  component: ComponentPath,
 ): t.Expression {
-  const fail = (message: string): never => {
-    throw call.buildCodeFrameError(message);
-  };
+  const onError = (message: string): never => fail(component, message);
   const fn = resolved.node;
   if (fn.async || fn.generator) {
-    fail('memo-dom: JSX render functions must be synchronous');
+    onError('memo-dom: JSX render functions must be synchronous');
   }
-  if (call.node.arguments.some((argument) => t.isSpreadElement(argument))) {
-    fail('memo-dom: JSX render function calls do not support spread arguments');
+  const args = childNodes(call, 'arguments');
+  if (args.some((argument) => argument.type === 'SpreadElement')) {
+    onError('memo-dom: JSX render function calls do not support spread arguments');
   }
-  if (call.node.arguments.length > fn.params.length) {
-    fail('memo-dom: JSX render function received more arguments than parameters');
+  if (args.length > fn.params.length) {
+    onError('memo-dom: JSX render function received more arguments than parameters');
   }
 
   const substitutions = new Map<string, t.Expression>();
   for (let index = 0; index < fn.params.length; index++) {
     const parameter = fn.params[index]!;
-    const argument = call.node.arguments[index];
+    const argument = args[index];
     const argumentExpression =
-      argument !== undefined && t.isExpression(argument)
-        ? argument
-        : t.identifier('undefined');
+      argument === undefined
+        ? t.identifier('undefined')
+        : (argument as unknown as t.Expression);
     if (t.isIdentifier(parameter)) {
-      substitutions.set(parameter.name, t.cloneNode(argumentExpression, true));
+      substitutions.set(parameter.name, cloneNode(argumentExpression));
       continue;
     }
-    if (
-      t.isAssignmentPattern(parameter) &&
-      t.isIdentifier(parameter.left)
-    ) {
+    if (t.isAssignmentPattern(parameter) && t.isIdentifier(parameter.left)) {
       substitutions.set(
         parameter.left.name,
         t.conditionalExpression(
           t.binaryExpression(
             '===',
-            t.cloneNode(argumentExpression, true),
+            cloneNode(argumentExpression),
             t.identifier('undefined'),
           ),
-          t.cloneNode(parameter.right, true),
-          t.cloneNode(argumentExpression, true),
+          cloneNode(parameter.right),
+          cloneNode(argumentExpression),
         ),
       );
       continue;
     }
-    fail(
+    onError(
       'memo-dom: JSX render functions currently require identifier parameters with optional defaults',
     );
   }
 
-  const planned = functionExpression(fn, fail);
+  const planned = functionExpression(fn, onError);
   for (const [name, source] of planned.locals) {
     substitutions.set(name, substituteNode(source, substitutions));
   }
   const expression = substituteNode(planned.expression, substitutions);
   if (!nodeHasJsx(expression)) {
-    fail('memo-dom: JSX render function expansion did not produce JSX');
+    onError('memo-dom: JSX render function expansion did not produce JSX');
   }
   return expression;
 }
 
-function resolvedRenderFunction(
-  ctx: Ctx,
-  call: NodePath<t.CallExpression>,
-): ResolvedRenderFunction | null {
-  const callee = call.get('callee');
-  if (Array.isArray(callee) || !callee.isIdentifier()) return null;
-  return resolvedRenderIdentifier(ctx, callee);
-}
-
-function resolvedRenderIdentifier(
-  ctx: Ctx,
-  identifier: NodePath<t.Identifier>,
-): ResolvedRenderFunction | null {
-  const name = identifier.node.name;
-  const topLevel = ctx.jsxHelpers.get(name);
-  if (topLevel !== undefined) {
-    return {
-      node: topLevel.node,
-      bindingPath: topLevel,
-    };
-  }
-  const binding = identifier.scope.getBinding(name);
-  if (binding?.path.isFunctionDeclaration() && nodeHasJsx(binding.path.node)) {
-    return {
-      node: binding.path.node,
-      bindingPath: binding.path,
-    };
-  }
-  if (binding?.path.isVariableDeclarator()) {
-    const init = binding.path.node.init;
-    if (
-      (t.isFunctionExpression(init) || t.isArrowFunctionExpression(init)) &&
-      nodeHasJsx(init.body)
-    ) {
-      return {
-        node: init,
-        bindingPath: binding.path,
-      };
-    }
+function bindingDeclarator(
+  analysis: ScopeAnalysis,
+  binding: Binding,
+): BaseNode | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') return current;
+    current = analysis.parentByNode.get(current) ?? null;
   }
   return null;
 }
 
-function isMapCall(call: t.CallExpression): boolean {
+function resolvedRenderIdentifier(
+  ctx: Ctx,
+  identifier: BaseNode,
+): ResolvedRenderFunction | null {
+  const name = identifierName(identifier);
+  if (name === null) return null;
+  const binding = astBindingAt(ctx, identifier, name);
+  if (binding === undefined) return null;
+  if (
+    binding.declarationNode.type === 'FunctionDeclaration' &&
+    nodeHasJsx(binding.declarationNode as unknown as t.Node)
+  ) {
+    return {
+      node: binding.declarationNode as unknown as t.FunctionDeclaration,
+      bindingNode: binding.declarationNode,
+    };
+  }
+  const declaration = bindingDeclarator(ctx.astAnalysis!, binding);
+  const initializer =
+    declaration === null ? null : childNode(declaration, 'init');
+  if (
+    initializer !== null &&
+    (initializer.type === 'FunctionExpression' ||
+      initializer.type === 'ArrowFunctionExpression') &&
+    nodeHasJsx(childNode(initializer, 'body') as unknown as t.Node)
+  ) {
+    return {
+      node: initializer as unknown as t.FunctionExpression | t.ArrowFunctionExpression,
+      bindingNode: declaration!,
+    };
+  }
+  return null;
+}
+
+function resolvedRenderFunction(
+  ctx: Ctx,
+  call: BaseNode,
+): ResolvedRenderFunction | null {
+  const callee = childNode(call, 'callee');
+  return callee === null ? null : resolvedRenderIdentifier(ctx, callee);
+}
+
+function isMapCall(call: BaseNode): boolean {
+  const callee = childNode(call, 'callee');
   return (
-    t.isMemberExpression(call.callee) &&
-    !call.callee.computed &&
-    t.isIdentifier(call.callee.property, { name: 'map' })
+    callee?.type === 'MemberExpression' &&
+    fields(callee).computed !== true &&
+    identifierName(childNode(callee, 'property')) === 'map'
   );
 }
 
-function isRenderReference(reference: NodePath<t.Identifier>): boolean {
-  const call = reference.parentPath;
+function isRenderReference(
+  analysis: ScopeAnalysis,
+  reference: BaseNode,
+): boolean {
+  const call = analysis.parentByNode.get(reference) ?? null;
   return (
-    call?.isCallExpression() === true &&
-    (call.node.callee === reference.node ||
-      (isMapCall(call.node) && call.node.arguments[0] === reference.node))
+    call?.type === 'CallExpression' &&
+    (childNode(call, 'callee') === reference ||
+      (isMapCall(call) && childNodes(call, 'arguments')[0] === reference))
   );
 }
 
 function renderCallbackArrow(
   resolved: ResolvedRenderFunction,
-  at: NodePath,
+  component: ComponentPath,
 ): t.ArrowFunctionExpression {
   const fn = resolved.node;
   if (fn.async || fn.generator) {
-    throw at.buildCodeFrameError(
-      'memo-dom: JSX render callbacks must be synchronous',
-    );
+    fail(component, 'memo-dom: JSX render callbacks must be synchronous');
   }
   return t.arrowFunctionExpression(
-    fn.params.map((parameter) => t.cloneNode(parameter, true)),
-    t.cloneNode(fn.body, true),
+    fn.params.map(cloneNode),
+    cloneNode(fn.body),
   );
 }
 
-function removeBinding(path: NodePath): void {
-  if (path.removed) return;
-  if (path.isFunctionDeclaration()) {
-    if (path.parentPath?.isExportNamedDeclaration()) path.parentPath.remove();
-    else path.remove();
-    return;
+function removalTarget(
+  analysis: ScopeAnalysis,
+  bindingNode: BaseNode,
+): BaseNode {
+  if (bindingNode.type === 'FunctionDeclaration') {
+    const parent = analysis.parentByNode.get(bindingNode) ?? null;
+    return parent?.type === 'ExportNamedDeclaration' ? parent : bindingNode;
   }
-  if (path.isVariableDeclarator()) {
-    const declaration = path.parentPath;
-    if (!declaration?.isVariableDeclaration()) return;
-    if (declaration.node.declarations.length === 1) {
-      if (declaration.parentPath?.isExportNamedDeclaration()) {
-        declaration.parentPath.remove();
-      } else {
-        declaration.remove();
-      }
-    } else {
-      path.remove();
-    }
-    return;
-  }
-  if (
-    path.isArrowFunctionExpression() ||
-    path.isFunctionExpression()
-  ) {
-    const declaration = path.parentPath;
-    if (declaration?.isVariableDeclarator()) removeBinding(declaration);
-  }
-}
-
-function removeTopLevelHelper(name: string, helper: NodePath): void {
-  const programPath = helper.findParent((path) => path.isProgram());
-  if (programPath === null || !programPath.isProgram()) {
-    removeBinding(helper);
-    return;
-  }
-
-  for (const statementPath of programPath.get('body')) {
-    const declarationPath = statementPath.isExportNamedDeclaration()
-      ? statementPath.get('declaration')
-      : statementPath;
-    if (Array.isArray(declarationPath) || declarationPath == null) continue;
-
-    if (
-      declarationPath.isFunctionDeclaration() &&
-      declarationPath.node.id?.name === name
-    ) {
-      statementPath.remove();
-      return;
-    }
-    if (!declarationPath.isVariableDeclaration()) continue;
-
-    const declarators = declarationPath.get('declarations');
-    const matching = declarators.find(
-      (declarator) =>
-        declarator.isVariableDeclarator() &&
-        t.isIdentifier(declarator.node.id, { name }),
-    );
-    if (matching === undefined) continue;
-    if (declarators.length === 1) statementPath.remove();
-    else matching.remove();
-    return;
-  }
-
-  removeBinding(helper);
+  if (bindingNode.type !== 'VariableDeclarator') return bindingNode;
+  const declaration = analysis.parentByNode.get(bindingNode) ?? null;
+  if (declaration?.type !== 'VariableDeclaration') return bindingNode;
+  if (childNodes(declaration, 'declarations').length !== 1) return bindingNode;
+  const parent = analysis.parentByNode.get(declaration) ?? null;
+  return parent?.type === 'ExportNamedDeclaration' ? parent : declaration;
 }
 
 function replaceRenderCall(
-  call: NodePath<t.CallExpression>,
+  ctx: Ctx,
+  call: BaseNode,
   expression: t.Expression,
 ): void {
-  const container = call.parentPath;
-  const jsxParent = container?.parentPath;
+  const analysis = ctx.astAnalysis!;
+  const container = analysis.parentByNode.get(call) ?? null;
+  const jsxParent =
+    container === null ? null : analysis.parentByNode.get(container) ?? null;
   if (
     (t.isJSXElement(expression) || t.isJSXFragment(expression)) &&
-    container?.isJSXExpressionContainer() &&
-    (jsxParent?.isJSXElement() || jsxParent?.isJSXFragment()) &&
-    jsxParent.node.children.includes(container.node)
+    container?.type === 'JSXExpressionContainer' &&
+    (jsxParent?.type === 'JSXElement' || jsxParent?.type === 'JSXFragment')
   ) {
-    container.replaceWith(expression);
+    replaceNode(analysis, container, expression as unknown as BaseNode);
     return;
   }
-  call.replaceWith(expression);
+  replaceNode(analysis, call, expression as unknown as BaseNode);
+}
+
+function currentProgram(ctx: Ctx): BaseNode {
+  const root = ctx.astAnalysis?.rootScope.block;
+  if (root === undefined || root.type !== 'Program') {
+    throw new Error('memo-dom: missing ESTree program during render expansion');
+  }
+  return root;
 }
 
 /** Expand every locally resolvable JSX-returning call inside components. */
 export function normalizeRenderFunctions(ctx: Ctx): void {
-  const usedBindings = new Set<NodePath>();
+  const program = currentProgram(ctx);
+  const usedBindings = new Set<BaseNode>();
+  const removedBindings = new Set<BaseNode>();
 
   for (const [name, helper] of ctx.jsxHelpers) {
-    const binding =
-      helper.scope.parent?.getBinding(name) ??
-      helper.parentPath?.scope.getBinding(name);
+    const helperNode = helper.node as unknown as BaseNode;
+    const binding = astBindingAt(ctx, helperNode, name);
     if (
-      binding?.referencePaths.some(
+      binding?.references.some(
         (reference) =>
-          reference.isIdentifier() && !isRenderReference(reference),
+          !isRenderReference(ctx.astAnalysis!, reference as unknown as BaseNode),
       )
     ) {
       throw helper.buildCodeFrameError(
@@ -476,48 +486,77 @@ export function normalizeRenderFunctions(ctx: Ctx): void {
   }
 
   for (const [, componentPath] of ctx.compPaths) {
-    componentPath.scope.crawl();
-    componentPath.traverse({
-      CallExpression(path) {
-        if (!isMapCall(path.node) || path.node.arguments.length !== 1) return;
-        const argument = path.get('arguments')[0];
+    const component = componentPath.node as unknown as BaseNode;
+    const mapArguments: Array<{
+      identifier: BaseNode;
+      resolved: ResolvedRenderFunction;
+    }> = [];
+    walkAst<BaseNode>(component, {
+      enter(current) {
         if (
-          argument === undefined ||
-          Array.isArray(argument) ||
-          !argument.isIdentifier()
+          current.type !== 'CallExpression' ||
+          !isMapCall(current) ||
+          childNodes(current, 'arguments').length !== 1
         ) {
           return;
         }
+        const argument = childNodes(current, 'arguments')[0]!;
+        if (argument.type !== 'Identifier') return;
         const resolved = resolvedRenderIdentifier(ctx, argument);
-        if (resolved === null) return;
-        argument.replaceWith(renderCallbackArrow(resolved, argument));
-        usedBindings.add(resolved.bindingPath);
+        if (resolved !== null) mapArguments.push({ identifier: argument, resolved });
       },
     });
+    for (const { identifier, resolved } of mapArguments) {
+      replaceNode(
+        ctx.astAnalysis!,
+        identifier,
+        renderCallbackArrow(resolved, componentPath) as unknown as BaseNode,
+      );
+      usedBindings.add(resolved.bindingNode);
+    }
+    if (mapArguments.length > 0) refreshAstAnalysis(ctx, program);
 
     let changed = true;
     while (changed) {
       changed = false;
-      componentPath.scope.crawl();
-      const calls: NodePath<t.CallExpression>[] = [];
-      componentPath.traverse({
-        CallExpression(path) {
-          calls.push(path);
+      const calls: BaseNode[] = [];
+      walkAst<BaseNode>(component, {
+        enter(current) {
+          if (current.type === 'CallExpression') calls.push(current);
         },
       });
       for (const call of calls.reverse()) {
-        if (call.removed) continue;
         const resolved = resolvedRenderFunction(ctx, call);
         if (resolved === null) continue;
-        replaceRenderCall(call, instantiate(resolved, call));
-        usedBindings.add(resolved.bindingPath);
+        replaceRenderCall(ctx, call, instantiate(resolved, call, componentPath));
+        usedBindings.add(resolved.bindingNode);
         changed = true;
       }
+      if (changed) refreshAstAnalysis(ctx, program);
     }
   }
 
   for (const [name, helper] of ctx.jsxHelpers) {
-    removeTopLevelHelper(name, helper);
+    const helperNode = helper.node as unknown as BaseNode;
+    const binding = astBindingAt(ctx, helperNode, name);
+    const bindingNode =
+      binding === undefined
+        ? helperNode
+        : binding.declarationNode.type === 'FunctionDeclaration'
+          ? binding.declarationNode
+          : bindingDeclarator(ctx.astAnalysis!, binding) ?? helperNode;
+    const target = removalTarget(ctx.astAnalysis!, bindingNode);
+    removeNode(ctx.astAnalysis!, target);
+    removedBindings.add(bindingNode);
   }
-  for (const binding of usedBindings) removeBinding(binding);
+  for (const bindingNode of usedBindings) {
+    if (removedBindings.has(bindingNode)) continue;
+    removeNode(
+      ctx.astAnalysis!,
+      removalTarget(ctx.astAnalysis!, bindingNode),
+    );
+  }
+  if (ctx.jsxHelpers.size > 0 || usedBindings.size > 0) {
+    refreshAstAnalysis(ctx, program);
+  }
 }

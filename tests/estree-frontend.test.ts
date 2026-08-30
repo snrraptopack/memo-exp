@@ -48,6 +48,7 @@ import {
 import { summarizeHelper } from '../packages/compiler/src/helper-summaries';
 import { scanInstanceDerivations } from '../packages/compiler/src/analysis/instance';
 import { normalizeComponentJsxValues } from '../packages/compiler/src/components/jsx-values';
+import { normalizeRenderFunctions } from '../packages/compiler/src/components/render-functions';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -830,5 +831,43 @@ describe('ESTree parser and printer boundary', () => {
     const output = printEstree(parsed.program).code;
     expect(output).not.toContain('const content');
     expect(output).not.toContain('{content}');
+  });
+
+  it('expands local render functions directly on an OXC tree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        function View() {
+          const renderName = (name: string) => <span>{name}</span>;
+          return <main>{renderName('Ada')}</main>;
+        }
+      `,
+      { filename: 'render-function.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      compPaths: new Map([
+        [
+          'View',
+          {
+            node: component!,
+            buildCodeFrameError(message: string) {
+              return new Error(message);
+            },
+          },
+        ],
+      ]),
+      jsxHelpers: new Map(),
+    } as unknown as Ctx;
+
+    expect(component).not.toBeNull();
+    normalizeRenderFunctions(context);
+
+    const output = printEstree(parsed.program).code;
+    expect(output).not.toContain('renderName');
+    expect(output).toContain("<span>{'Ada'}</span>");
   });
 });
