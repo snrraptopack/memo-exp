@@ -18,6 +18,8 @@ import {
 } from '../packages/compiler/src/analysis/type-candidates';
 import { hostJsxEventNames } from '../packages/compiler/src/jsx/events';
 import { callsOnlyCommittedLocalHelpers } from '../packages/compiler/src/handlers/local-calls';
+import { renderPropReferenceName } from '../packages/compiler/src/components/children';
+import type { Ctx } from '../packages/compiler/src/context';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -137,5 +139,32 @@ describe('ESTree parser and printer boundary', () => {
       callsOnlyCommittedLocalHelpers(handler!, (name) => name === 'save'),
     ).toBe(true);
     expect(callsOnlyCommittedLocalHelpers(handler!, () => false)).toBe(false);
+  });
+
+  it('matches component prop references from parsed ESTree', () => {
+    const parsed = parseEstreeOrThrow('target;', { filename: 'ref.ts' });
+    const target = findNode(parsed.program, isIdentifier);
+    const context = {
+      componentProps: new Map([
+        [
+          'View',
+          {
+            mode: 'positional',
+            names: ['target'],
+            acceptsUnknown: false,
+            bindings: ['target'],
+            params: [],
+            hasWholeDefault: false,
+            renderProps: [],
+            renderCallbacks: [],
+            refProps: [],
+          },
+        ],
+      ]),
+      instanceDerivedBindings: new Map(),
+    } as unknown as Ctx;
+
+    expect(target).not.toBeNull();
+    expect(renderPropReferenceName(context, 'View', target!)).toBe('target');
   });
 });

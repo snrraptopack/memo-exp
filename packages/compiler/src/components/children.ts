@@ -7,6 +7,11 @@
  */
 
 import * as t from '@babel/types';
+import {
+  isIdentifier as isAstIdentifier,
+  isMemberExpression as isAstMemberExpression,
+  type BaseNode,
+} from '../ast';
 import { nodeHasJsx, type Ctx } from '../context';
 import {
   cacheDecl,
@@ -64,21 +69,22 @@ export function hasComponentChildren(children: readonly JsxChild[]): boolean {
 export function renderPropReferenceName(
   ctx: Ctx,
   compName: string,
-  expression: t.Expression,
+  expression: BaseNode,
 ): string | null {
   const plan = ctx.componentProps.get(compName);
   if (plan === undefined) return null;
   const objectBinding = objectBindingName(plan);
   if (
     objectBinding !== null &&
-    t.isMemberExpression(expression) &&
+    isAstMemberExpression(expression) &&
     !expression.computed &&
-    t.isIdentifier(expression.object, { name: objectBinding }) &&
-    t.isIdentifier(expression.property)
+    isAstIdentifier(expression.object) &&
+    expression.object.name === objectBinding &&
+    isAstIdentifier(expression.property)
   ) {
     return expression.property.name;
   }
-  if (t.isIdentifier(expression)) {
+  if (isAstIdentifier(expression)) {
     const declared = propNameForBinding(plan, expression.name);
     if (declared !== null) return declared;
     if (
