@@ -6,7 +6,6 @@
  * structural-region creation remain in emit.ts.
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { isLightweightListedComponent } from '../analysis';
 import {
@@ -54,6 +53,9 @@ import { applyRepeatedDomTemplate } from './dom-template';
 import { transparentSourceMounts } from '../data-sources';
 
 type ComponentEmitScope = ReturnType<typeof newEmitScope>;
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
 
 function hasComponentLocalEffects(effects: readonly EffectSite[] | undefined): boolean {
   return effects?.some(
@@ -217,7 +219,7 @@ function buildFactoryParameters(
 
 export function transformComponent(
   ctx: Ctx,
-  path: NodePath<t.FunctionDeclaration>,
+  path: ComponentPath,
   name: string,
 ): void {
   const node = path.node;
@@ -458,7 +460,7 @@ function emitComponentReturnRegion(
   scope: ReturnType<typeof newEmitScope>,
   plan: ComponentReturnPlan,
   name: string,
-  path: NodePath<t.FunctionDeclaration>,
+  path: ComponentPath,
   factoryId: string,
 ): string {
   const fragment = generatedIdentifier(ctx, 'returnRoot').name;
