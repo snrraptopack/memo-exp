@@ -212,7 +212,7 @@ Verified on 2026-08-30:
   regressions passed: 4 files, 43 tests.
 - JSX, conditional-effect, and delegated-event regressions passed: 3 files,
   17 tests.
-- Full root suite passed: 99 files, 590 tests.
+- Full root suite passed: 99 files, 594 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
 
