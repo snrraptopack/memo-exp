@@ -2,8 +2,8 @@
  * R7 list-site analysis. Emission remains separate from this source-shape
  * validation and deterministic identity planning.
  */
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode } from '../ast';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
 import {
@@ -21,6 +21,12 @@ import {
 } from './source-shapes';
 
 type Fail = (message: string) => never;
+interface ErrorPath {
+  buildCodeFrameError(message: string): Error;
+}
+interface NodeHolder {
+  node: BaseNode;
+}
 type RuntimeBindingPattern =
   | t.Identifier
   | t.ObjectPattern
@@ -143,14 +149,16 @@ export function matchMapCall(expr: t.Node): MapCallExpression | null {
 }
 
 /** Does a subtree contain JSX? */
-export function containsJsx(path: NodePath): boolean {
+export function containsJsx(input: BaseNode | NodeHolder): boolean {
   let found = false;
-  path.traverse({
-    JSXElement() {
-      found = true;
-    },
-    JSXFragment() {
-      found = true;
+  const root = 'node' in input ? input.node : input;
+  walkAst(root, {
+    enter(node) {
+      if (found) return false;
+      if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+        found = true;
+        return false;
+      }
     },
   });
   return found;
@@ -163,7 +171,7 @@ export function containsJsx(path: NodePath): boolean {
 export function analyzeMapSite(
   ctx: Ctx,
   call: MapCallExpression,
-  errorAt: Pick<NodePath, 'buildCodeFrameError'>,
+  errorAt: ErrorPath,
   ownerName: string,
   usedPrefixes: Map<string, number>,
   parentRow?: ParentRow,
