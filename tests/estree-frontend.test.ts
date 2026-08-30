@@ -51,6 +51,7 @@ import { normalizeComponentJsxValues } from '../packages/compiler/src/components
 import { normalizeRenderFunctions } from '../packages/compiler/src/components/render-functions';
 import { analyzeRouterJsx } from '../packages/compiler/src/router';
 import { normalizeDynamicTags } from '../packages/compiler/src/jsx/dynamic-tags';
+import { liftModuleStateCells } from '../packages/compiler/src/cells';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -941,5 +942,45 @@ describe('ESTree parser and printer boundary', () => {
     const output = printEstree(parsed.program).code;
     expect(output).toContain('<section />');
     expect(output).not.toContain('<Tag');
+  });
+
+  it('lowers module-state reads and writes on an OXC tree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        let count = 1;
+        count = 2;
+        function View() { return <p>{count}</p>; }
+      `,
+      { filename: 'cells.tsx' },
+    );
+    const context = {
+      moduleStateCells: true,
+      state: new Map([['count', 'let']]),
+      stateKeys: new Map([['count', './cells.tsx#count']]),
+      header: [],
+      identifiers: new GeneratedIdentifiers(parsed.program),
+      astAnalysis: analyzeScope(parsed.program),
+    } as unknown as Ctx;
+
+    liftModuleStateCells(context, {
+      node: parsed.program as unknown as Parameters<typeof liftModuleStateCells>[1]['node'],
+      buildCodeFrameError(message) {
+        return new Error(message);
+      },
+    });
+
+    const calls = collectNodes(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'CallExpression',
+    );
+    const methods = calls.flatMap((call) => {
+      const callee = (call as unknown as { callee?: BaseNode }).callee;
+      const property = (callee as unknown as { property?: { name?: string } })
+        ?.property;
+      return property?.name === undefined ? [] : [property.name];
+    });
+    expect(methods).toContain('setCell');
+    expect(methods).toContain('readCell');
+    expect(context.header).toHaveLength(1);
   });
 });

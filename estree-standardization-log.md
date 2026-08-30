@@ -158,7 +158,7 @@ The compiler package still declares these five dependencies:
 At this checkpoint, 56 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
-Of those files, 8 still import or declare `@babel/traverse`. Component/ref,
+Of those files, 7 still import or declare `@babel/traverse`. Component/ref,
 conditional-region, render-callback, and list-region emission now share the
 central component-path boundary instead of importing the traversal package.
 The shared identifier allocator no longer needs a Babel program scope, and
@@ -203,6 +203,9 @@ mutation, including OXC string literals.
 Dynamic component import installation, candidate propagation, binding/history
 resolution, finite tag selection, and JSX replacement now run on ESTree scope
 and mutation metadata, with direct OXC tag lowering coverage.
+SSR module-state cell discovery, import-specifier removal, read replacement,
+and assignment/update lowering now use ESTree bindings and raw parent fields.
+Generated cell shells accept OXC child nodes without Babel builder validation.
 Its final `scope.crawl()` is a temporary synchronization bridge for downstream
 passes.
 
@@ -240,7 +243,7 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 36 tests.
+- Focused AST/frontend suites passed: 2 files, 37 tests.
 - Handler, render-prop, render-function, render-callback, indexed-map, and
   delegated-event regressions passed: 6 files, 29 tests.
 - Calculated, nested, opaque-derived, gated, and targeted-list regressions
@@ -300,6 +303,8 @@ Verified on 2026-08-30:
   passed: 6 files, 63 tests.
 - AST/frontend, dynamic-tag, linked-component, semantic, diagnostics, and
   emission regressions passed: 8 files, 91 tests.
+- AST/frontend, SSR cell-lowering/isolation, diagnostics, and emission
+  regressions passed: 6 files, 67 tests.
 - Full root suite passed: 99 files, 594 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
