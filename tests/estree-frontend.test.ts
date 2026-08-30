@@ -52,8 +52,40 @@ import { normalizeRenderFunctions } from '../packages/compiler/src/components/re
 import { analyzeRouterJsx } from '../packages/compiler/src/router';
 import { normalizeDynamicTags } from '../packages/compiler/src/jsx/dynamic-tags';
 import { liftModuleStateCells } from '../packages/compiler/src/cells';
+import {
+  discoverTopLevelFunctions,
+  findUnlinkedValueImports,
+} from '../packages/compiler/src/analysis/module-discovery';
 
 describe('ESTree parser and printer boundary', () => {
+  it('discovers components, helpers, and runtime imports directly from OXC ESTree', () => {
+    const parsed = parseEstreeOrThrow(`
+      import type { Shape } from './types';
+      import { linked, missing as localMissing } from './state';
+      export function App(props: Shape) { return <main>{props.title}</main>; }
+      function renderBadge() { return <strong>new</strong>; }
+      function calculate() { return 42; }
+      const renderRow = (value: string) => <li>{value}</li>;
+    `);
+
+    expect(
+      discoverTopLevelFunctions(parsed.program).map(({ name, kind }) => ({
+        name,
+        kind,
+      })),
+    ).toEqual([
+      { name: 'App', kind: 'component' },
+      { name: 'renderBadge', kind: 'jsx-helper' },
+      { name: 'calculate', kind: 'helper' },
+      { name: 'renderRow', kind: 'jsx-helper' },
+    ]);
+    expect(
+      findUnlinkedValueImports(parsed.program, new Set(['linked'])).map(
+        ({ local }) => local,
+      ),
+    ).toEqual(['localMissing']);
+  });
+
   it('parses and prints TSX without a Babel AST conversion', () => {
     const source = `
       // shared counter
