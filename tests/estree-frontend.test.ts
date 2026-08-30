@@ -38,6 +38,11 @@ import { collectComponentPropSources } from '../packages/compiler/src/components
 import { scanInstanceControlFlow } from '../packages/compiler/src/analysis/instance-control-flow';
 import { scanOpaqueVolatility } from '../packages/compiler/src/analysis/opaque-volatility';
 import { resolveLocalHelper } from '../packages/compiler/src/handlers';
+import {
+  AliasTracker,
+  bindingScopeIsProgram,
+  moduleOrigin,
+} from '../packages/compiler/src/mutation-analysis';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -621,5 +626,57 @@ describe('ESTree parser and printer boundary', () => {
       'ArrowFunctionExpression',
     );
     expect(resolveLocalHelper(context, componentPath, 'missing')).toBeNull();
+  });
+
+  it('tracks reactive aliases with the OXC scope index', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        let store = { user: { name: 'Ada' } };
+        function View() {
+          const alias = store.user;
+          return <p>{alias.name}</p>;
+        }
+      `,
+      { filename: 'aliases.tsx' },
+    );
+    const analysis = analyzeScope(parsed.program);
+    const declarator = findNode(
+      parsed.program,
+      (node): node is BaseNode =>
+        node.type === 'VariableDeclarator' &&
+        (node as unknown as { id?: { name?: string } }).id?.name === 'alias',
+    );
+    const members = collectNodes(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'MemberExpression',
+    );
+    const rendered = members.find(
+      (member) =>
+        (member as unknown as { object?: { name?: string } }).object?.name ===
+        'alias',
+    );
+    const aliases = new AliasTracker((name, binding) =>
+      binding !== undefined && bindingScopeIsProgram(binding)
+        ? moduleOrigin(name, 'store')
+        : null,
+    );
+
+    expect(declarator).not.toBeNull();
+    expect(rendered).not.toBeUndefined();
+    aliases.trackDeclarator(
+      analysis.nodeToScope.get(declarator!)!,
+      declarator as unknown as Parameters<AliasTracker['trackDeclarator']>[1],
+    );
+    expect(
+      aliases.resolveExpression(
+        analysis.nodeToScope.get(rendered!)!,
+        rendered as unknown as Parameters<AliasTracker['resolveExpression']>[1],
+      ),
+    ).toEqual({
+      locality: 'module',
+      root: 'store',
+      key: 'store.user.name',
+      stateKind: 'store',
+    });
   });
 });

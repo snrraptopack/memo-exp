@@ -19,6 +19,7 @@ import {
 import { buildEventOriginCommit } from '../handler-origin';
 import {
   AliasTracker,
+  bindingScopeIsProgram,
   callArgumentExpressions,
   extendOrigin,
   memberName,
@@ -289,7 +290,7 @@ export function analyzeHandler(
     if (rowCtx !== undefined && name === rowCtx.itemParam) {
       return { locality: 'row', root: name, key: name };
     }
-    if (binding !== undefined && !binding.scope.path.isProgram()) return null;
+    if (binding !== undefined && !bindingScopeIsProgram(binding)) return null;
     const projected = projectedProps.get(name);
     if (projected !== undefined) return projected;
     if (instVars?.has(name) === true) {

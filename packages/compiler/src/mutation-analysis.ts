@@ -1,12 +1,11 @@
 /**
  * mutation-analysis.ts - shared provenance helpers for conservative writes.
  *
- * Tracks local aliases back to reactive roots using Babel binding identity.
+ * Tracks local aliases back to reactive roots using lexical binding identity.
  * Consumers decide whether a resolved origin permits a precise write key or
  * whether reassignment/destructuring requires a root-subtree fallback.
  */
 
-import type { Binding, Scope } from '@babel/traverse';
 import * as t from '@babel/types';
 import { walkAst } from './ast';
 import { memberKey, type StateKind } from './context';
@@ -24,16 +23,37 @@ export interface ReactiveOrigin {
 
 type OriginFallback = (
   name: string,
-  binding: Binding | undefined,
+  binding: BindingLike | undefined,
 ) => ReactiveOrigin | null;
 
+/** Minimal parser-neutral binding contract needed by alias analysis. */
+export interface BindingLike {
+  identifier: object;
+  scope: ScopeLike;
+}
+
+/** Babel scopes and the compiler ESTree scopes both satisfy this contract. */
+export interface ScopeLike {
+  block: object;
+  isProgramScope?: boolean;
+  path?: { isProgram(): boolean };
+  getBinding(name: string): BindingLike | undefined;
+}
+
+export function bindingScopeIsProgram(binding: BindingLike): boolean {
+  return (
+    binding.scope.isProgramScope === true ||
+    binding.scope.path?.isProgram() === true
+  );
+}
+
 export class AliasTracker {
-  private readonly origins = new WeakMap<t.Identifier, ReactiveOrigin>();
+  private readonly origins = new WeakMap<object, ReactiveOrigin>();
 
   constructor(private readonly fallback: OriginFallback) {}
 
   trackDeclarator(
-    scope: Scope,
+    scope: ScopeLike,
     declarator: t.VariableDeclarator,
   ): void {
     if (
@@ -53,7 +73,7 @@ export class AliasTracker {
    * provenance cannot be represented as one exact origin (for example a
    * conditional alias or destructuring source).
    */
-  referencedOrigins(scope: Scope, node: t.Node): ReactiveOrigin[] {
+  referencedOrigins(scope: ScopeLike, node: t.Node): ReactiveOrigin[] {
     const origins = new Map<string, ReactiveOrigin>();
     walkAst(node, {
       enter: (current) => {
@@ -76,7 +96,7 @@ export class AliasTracker {
     return [...origins.values()];
   }
 
-  resolveName(scope: Scope, name: string): ReactiveOrigin | null {
+  resolveName(scope: ScopeLike, name: string): ReactiveOrigin | null {
     const binding = scope.getBinding(name);
     if (binding !== undefined) {
       const tracked = this.origins.get(binding.identifier);
@@ -85,7 +105,7 @@ export class AliasTracker {
     return this.fallback(name, binding);
   }
 
-  resolveExpression(scope: Scope, raw: t.Node): ReactiveOrigin | null {
+  resolveExpression(scope: ScopeLike, raw: t.Node): ReactiveOrigin | null {
     const expression = unwrapExpression(raw);
     if (
       t.isCallExpression(expression) &&

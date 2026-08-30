@@ -16,6 +16,7 @@ import {
 } from './context';
 import {
   AliasTracker,
+  bindingScopeIsProgram,
   callArgumentExpressions,
   extendOrigin,
   memberName,
@@ -65,7 +66,7 @@ export function summarizeHelper(
     }
     const kind = ctx.state.get(bindingName);
     if (kind === undefined) return null;
-    if (binding !== undefined && !binding.scope.path.isProgram()) return null;
+    if (binding !== undefined && !bindingScopeIsProgram(binding)) return null;
     return moduleOrigin(bindingName, kind);
   });
   const isComputedOrigin = (origin: ReactiveOrigin): boolean =>
