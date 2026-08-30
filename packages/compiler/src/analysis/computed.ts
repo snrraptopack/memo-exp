@@ -1,20 +1,129 @@
-import type { NodePath } from '@babel/traverse';
-import * as t from '@babel/types';
+import { walkAst, type BaseNode } from '../ast';
 import {
-  memberKey,
-  memberRootName,
   registerState,
-  walkNodes,
   type ComputedAnalysis,
   type Ctx,
 } from '../context';
 import { summarizeHelper } from '../helper-summaries';
 
+const FUNCTION_NODES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
+
+const TYPE_WRAPPERS = new Set([
+  'TSAsExpression',
+  'TSTypeAssertion',
+  'TSNonNullExpression',
+  'TSSatisfiesExpression',
+  'TSInstantiationExpression',
+]);
+
+interface ProgramPathLike {
+  node: BaseNode;
+}
+
+function field(node: BaseNode, name: string): unknown {
+  return (node as unknown as Record<string, unknown>)[name];
+}
+
+function isNode(value: unknown): value is BaseNode {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { type?: unknown }).type === 'string'
+  );
+}
+
+function childNode(node: BaseNode, name: string): BaseNode | null {
+  const value = field(node, name);
+  return isNode(value) ? value : null;
+}
+
+function childNodes(node: BaseNode, name: string): BaseNode[] {
+  const value = field(node, name);
+  return Array.isArray(value) ? value.filter(isNode) : [];
+}
+
+function identifierName(node: BaseNode | null): string | null {
+  if (node?.type !== 'Identifier') return null;
+  const name = field(node, 'name');
+  return typeof name === 'string' ? name : null;
+}
+
+function unwrapTypes(node: BaseNode): BaseNode {
+  let current = node;
+  while (TYPE_WRAPPERS.has(current.type)) {
+    const expression = childNode(current, 'expression');
+    if (expression === null) break;
+    current = expression;
+  }
+  return current;
+}
+
+function isMember(node: BaseNode): boolean {
+  return (
+    node.type === 'MemberExpression' ||
+    node.type === 'OptionalMemberExpression'
+  );
+}
+
+function memberRootName(node: BaseNode): string | null {
+  let current = node;
+  while (true) {
+    if (isMember(current)) {
+      const object = childNode(current, 'object');
+      if (object === null || object.type === 'Super') return null;
+      current = object;
+      continue;
+    }
+    const unwrapped = unwrapTypes(current);
+    if (unwrapped !== current) {
+      current = unwrapped;
+      continue;
+    }
+    return identifierName(current);
+  }
+}
+
+function stringLiteralValue(node: BaseNode | null): string | null {
+  if (node === null) return null;
+  if (node.type !== 'StringLiteral' && node.type !== 'Literal') return null;
+  const value = field(node, 'value');
+  return typeof value === 'string' ? value : null;
+}
+
+function memberKey(node: BaseNode): string | null {
+  const parts: string[] = [];
+  let current = node;
+  while (isMember(current)) {
+    const property = childNode(current, 'property');
+    const part =
+      field(current, 'computed') === true
+        ? stringLiteralValue(property)
+        : identifierName(property);
+    if (part === null) return null;
+    parts.unshift(part);
+    const object = childNode(current, 'object');
+    if (object === null || object.type === 'Super') return null;
+    current = object;
+  }
+  current = unwrapTypes(current);
+  const root = identifierName(current);
+  if (root === null) return null;
+  parts.unshift(root);
+  return parts.join('.');
+}
+
 /**
  * Analyze a candidate module-level computed initializer. Detection is by
  * reactive-state reference rather than by a whitelist of expression forms.
  */
-export function analyzeComputed(ctx: Ctx, expr: t.Node): ComputedAnalysis {
+export function analyzeComputed(ctx: Ctx, expr: BaseNode): ComputedAnalysis {
   const reads = new Set<string>();
   let impure = false;
   let reason: string | undefined;
@@ -25,119 +134,122 @@ export function analyzeComputed(ctx: Ctx, expr: t.Node): ComputedAnalysis {
       reason = message;
     }
   };
-  const noteLocalPattern = (id: t.LVal): void => {
-    if (t.isIdentifier(id)) locals.add(id.name);
-    else {
-      walkNodes(id, (node) => {
-        if (t.isIdentifier(node)) locals.add(node.name);
-      });
-    }
+  const noteLocalPattern = (pattern: BaseNode): void => {
+    walkAst(pattern, {
+      enter(node) {
+        const name = identifierName(node);
+        if (name !== null) locals.add(name);
+      },
+    });
   };
 
-  walkNodes(expr, (node, parent) => {
-    if (t.isFunction(node)) {
-      const executesAsPartOfExpression =
-        parent !== null &&
-        (t.isCallExpression(parent) || t.isNewExpression(parent));
-      if (!executesAsPartOfExpression) return false;
-      for (const param of node.params) {
-        if (t.isLVal(param)) noteLocalPattern(param);
+  walkAst(expr, {
+    enter(node, parent) {
+      if (FUNCTION_NODES.has(node.type)) {
+        const executesAsPartOfExpression =
+          parent !== null &&
+          (parent.type === 'CallExpression' || parent.type === 'NewExpression');
+        if (!executesAsPartOfExpression) return false;
+        for (const param of childNodes(node, 'params')) noteLocalPattern(param);
+        return;
       }
-      return;
-    }
-    if (t.isVariableDeclarator(node) && t.isLVal(node.id)) {
-      noteLocalPattern(node.id);
-      return;
-    }
-    if (t.isAssignmentExpression(node)) {
-      const root = t.isIdentifier(node.left)
-        ? node.left.name
-        : t.isMemberExpression(node.left)
-          ? memberRootName(node.left)
-          : null;
-      if (root === null || !locals.has(root)) {
-        fail('contains an assignment — writes belong in handlers, not derivations');
+      if (node.type === 'VariableDeclarator') {
+        const id = childNode(node, 'id');
+        if (id !== null) noteLocalPattern(id);
+        return;
       }
-      return;
-    }
-    if (t.isUpdateExpression(node)) {
-      const argument = node.argument;
-      const root = t.isIdentifier(argument)
-        ? argument.name
-        : t.isMemberExpression(argument)
-          ? memberRootName(argument)
-          : null;
-      if (root === null || !locals.has(root)) {
-        fail('contains an update (++/--) — writes belong in handlers, not derivations');
+      if (node.type === 'AssignmentExpression') {
+        const left = childNode(node, 'left');
+        const root =
+          identifierName(left) ??
+          (left !== null && isMember(left) ? memberRootName(left) : null);
+        if (root === null || !locals.has(root)) {
+          fail('contains an assignment: writes belong in handlers, not derivations');
+        }
+        return;
       }
-      return;
-    }
-    if (t.isAwaitExpression(node) || t.isYieldExpression(node)) {
-      fail('uses await/yield — derivations must be synchronous');
-      return;
-    }
-    if (t.isCallExpression(node)) {
-      const callee = node.callee;
-      if (
-        t.isIdentifier(callee) &&
-        (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name))
-      ) {
-        const summary =
-          ctx.importedFunctions.get(callee.name) ??
-          summarizeHelper(ctx, callee.name);
-        for (const read of summary.reads) reads.add(read);
-        if (summary.writes.size > 0) {
-          for (const write of summary.writes) reads.add(write);
-          fail(
-            `calls helper '${callee.name}' which writes state — writes belong in handlers`,
-          );
-        } else if (summary.unbounded && ctx.helpers.has(callee.name)) {
-          fail(`calls recursive helper '${callee.name}' which cannot be analyzed`);
+      if (node.type === 'UpdateExpression') {
+        const argument = childNode(node, 'argument');
+        const root =
+          identifierName(argument) ??
+          (argument !== null && isMember(argument)
+            ? memberRootName(argument)
+            : null);
+        if (root === null || !locals.has(root)) {
+          fail('contains an update (++/--): writes belong in handlers, not derivations');
+        }
+        return;
+      }
+      if (node.type === 'AwaitExpression' || node.type === 'YieldExpression') {
+        fail('uses await/yield: derivations must be synchronous');
+        return;
+      }
+      if (node.type === 'CallExpression') {
+        const callee = identifierName(childNode(node, 'callee'));
+        if (
+          callee !== null &&
+          (ctx.helpers.has(callee) || ctx.importedFunctions.has(callee))
+        ) {
+          const summary =
+            ctx.importedFunctions.get(callee) ?? summarizeHelper(ctx, callee);
+          for (const read of summary.reads) reads.add(read);
+          if (summary.writes.size > 0) {
+            for (const write of summary.writes) reads.add(write);
+            fail(
+              `calls helper '${callee}' which writes state: writes belong in handlers`,
+            );
+          } else if (summary.unbounded && ctx.helpers.has(callee)) {
+            fail(`calls recursive helper '${callee}' which cannot be analyzed`);
+          }
+        }
+        return;
+      }
+      const name = identifierName(node);
+      if (name !== null) {
+        if (!locals.has(name) && ctx.state.has(name)) reads.add(name);
+        return;
+      }
+      if (node.type === 'MemberExpression' && field(node, 'computed') !== true) {
+        const key = memberKey(node);
+        if (key !== null && key.includes('.')) {
+          const root = key.split('.')[0]!;
+          if (!locals.has(root) && ctx.state.get(root) === 'store') {
+            reads.add(key);
+          }
         }
       }
-      return;
-    }
-    if (t.isIdentifier(node)) {
-      if (!locals.has(node.name) && ctx.state.has(node.name)) {
-        reads.add(node.name);
-      }
-      return;
-    }
-    if (t.isMemberExpression(node) && !node.computed) {
-      const key = memberKey(node);
-      if (key !== null && key.includes('.')) {
-        const root = key.split('.')[0]!;
-        if (!locals.has(root) && ctx.state.get(root) === 'store') {
-          reads.add(key);
-        }
-      }
-    }
+    },
   });
 
   return { reads, impure, reason };
 }
 
 /** Discover ordered module-level const derivations after module state exists. */
-export function scanComputeds(
-  ctx: Ctx,
-  programPath: NodePath<t.Program>,
-): void {
-  for (const statement of programPath.node.body) {
-    const inner = t.isExportNamedDeclaration(statement)
-      ? statement.declaration
-      : statement;
-    if (!t.isVariableDeclaration(inner) || inner.kind !== 'const') continue;
-    for (const declaration of inner.declarations) {
-      if (!t.isIdentifier(declaration.id) || declaration.init == null) continue;
-      const name = declaration.id.name;
+export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
+  for (const statement of childNodes(programPath.node, 'body')) {
+    const inner =
+      statement.type === 'ExportNamedDeclaration'
+        ? childNode(statement, 'declaration')
+        : statement;
+    if (inner?.type !== 'VariableDeclaration' || field(inner, 'kind') !== 'const') {
+      continue;
+    }
+    for (const declaration of childNodes(inner, 'declarations')) {
+      const id = childNode(declaration, 'id');
+      const init = childNode(declaration, 'init');
+      const name = identifierName(id);
+      if (name === null || init === null) continue;
+      if (ctx.state.get(name) === 'let' || ctx.state.get(name) === 'computed') {
+        continue;
+      }
       if (
-        ctx.state.get(name) === 'let' ||
-        ctx.state.get(name) === 'computed'
+        FUNCTION_NODES.has(init.type) ||
+        init.type === 'JSXElement' ||
+        init.type === 'JSXFragment'
       ) {
         continue;
       }
-      if (t.isFunction(declaration.init) || t.isJSX(declaration.init)) continue;
-      const result = analyzeComputed(ctx, declaration.init);
+      const result = analyzeComputed(ctx, init);
       if (result.impure) {
         if (result.reads.size > 0) {
           throw new Error(

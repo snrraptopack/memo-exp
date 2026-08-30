@@ -24,6 +24,7 @@ import {
   isStaticListExpression,
   isStaticPrimitiveList,
 } from '../packages/compiler/src/lists/source-shapes';
+import { analyzeComputed } from '../packages/compiler/src/analysis/computed';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -190,5 +191,32 @@ describe('ESTree parser and printer boundary', () => {
     expect(chain).not.toBeNull();
     expect(isStaticPrimitiveList(array!)).toBe(true);
     expect(isStaticListExpression(chain!)).toBe(true);
+  });
+
+  it('analyzes computed state reads from parsed ESTree', () => {
+    const parsed = parseEstreeOrThrow('store.total + count;', {
+      filename: 'computed.ts',
+    });
+    const expression = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'BinaryExpression',
+    );
+    const context = {
+      state: new Map([
+        ['store', 'store'],
+        ['count', 'let'],
+      ]),
+      helpers: new Map(),
+      importedFunctions: new Map(),
+    } as unknown as Ctx;
+
+    expect(expression).not.toBeNull();
+    const result = analyzeComputed(context, expression!);
+    expect(result.impure).toBe(false);
+    expect([...result.reads].sort()).toEqual([
+      'count',
+      'store',
+      'store.total',
+    ]);
   });
 });
