@@ -10,10 +10,10 @@ completed work.
 
 | Area | State | Verified result |
 |---|---|---|
-| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 17 passing tests; root TypeScript typecheck passes |
+| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 18 passing tests; root TypeScript typecheck passes |
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
-| Compiler analysis migration | Started | Shared traversal paths and finite type-candidate analysis accept ESTree |
+| Compiler analysis migration | Started | Multiple type, JSX, handler, list, prop, and computed passes accept ESTree |
 | Babel removal | Not complete | Babel remains the parser, `NodePath`/scope provider, and generator boundary |
 | ESTree emission | Not started | Existing emitters still create Babel-dialect nodes |
 
@@ -66,24 +66,24 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - targeted list dependency analysis in `lists/targeted-refresh.ts`;
 - finite TypeScript string-candidate analysis in `analysis/type-candidates.ts`;
 - component-subtree and render-callback read folding in
-  `analysis/component-reads.ts`; and
+  `analysis/component-reads.ts`;
 - JSX host-event discovery in `jsx/events.ts`;
 - committed-local helper call classification in `handlers/local-calls.ts`;
-- inline callback JSX discovery in `components/callback-props.ts`; and
-- runtime binding-pattern cloning in `analysis/runtime-pattern.ts`; and
-- component ref-prop scanning in `components/ref-props.ts`; and
+- inline callback JSX discovery in `components/callback-props.ts`;
+- runtime binding-pattern cloning in `analysis/runtime-pattern.ts`;
+- component ref-prop scanning in `components/ref-props.ts`;
 - static list-source classification in `lists/source-shapes.ts`; and
 - module computed-state analysis in `analysis/computed.ts`.
 
 `lists/targeted-refresh.ts`, `analysis/type-candidates.ts`, and
 `analysis/component-reads.ts`, plus `jsx/events.ts`, have no direct Babel import.
-`handlers/local-calls.ts`, `components/ref-props.ts`, and
-`lists/source-shapes.ts`, plus `analysis/computed.ts`, are also fully Babel-free.
-Frontend tests now feed OXC TS-ESTree directly into real compiler type, JSX,
-handler-call, component-prop, static-list, and computed-state analysis while the
-existing Babel pipeline parity tests remain green. The other migrated paths
-still accept Babel node types at their current boundary and therefore remain
-transitional.
+`handlers/local-calls.ts`, `analysis/runtime-pattern.ts`,
+`components/ref-props.ts`, `lists/source-shapes.ts`, and
+`analysis/computed.ts` are also fully Babel-free. Frontend tests now feed OXC
+TS-ESTree directly into real compiler type, JSX, handler-call, component-prop,
+static-list, computed-state, and runtime-pattern analysis while the existing
+Babel pipeline parity tests remain green. The other migrated paths still accept
+Babel node types at their current boundary and therefore remain transitional.
 
 ## Standalone frontend checkpoint
 
@@ -95,14 +95,16 @@ The focused frontend suite verifies:
 - comments and source locations survive printing;
 - Esrap produces a non-empty source map;
 - trees can mix parsed nodes with nodes from the ESTree builders;
-- printed output reparses successfully; and
-- parse diagnostics are available through returning and throwing APIs; and
+- printed output reparses successfully;
+- parse diagnostics are available through returning and throwing APIs;
 - handler call classification and component prop-reference matching operate
-  directly on OXC-produced nodes; and
+  directly on OXC-produced nodes;
 - static primitive lists and self-contained method chains are recognized from
-  OXC's standard `Literal` nodes; and
+  OXC's standard `Literal` nodes;
 - computed analysis discovers scalar and dotted store reads directly from
-  OXC-produced expressions.
+  OXC-produced expressions; and
+- cloned TS-ESTree binding patterns have runtime-only annotations removed
+  without modifying the parsed input.
 
 This boundary is not yet wired into the public `compile` function. The existing
 Babel path remains the compatibility oracle while transformations migrate.
@@ -117,7 +119,7 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 60 compiler source files still directly import or declare a
+At this checkpoint, 59 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
 
@@ -155,14 +157,16 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 17 tests.
+- Focused AST/frontend suites passed: 2 files, 18 tests.
 - Handler, render-prop, render-function, render-callback, indexed-map, and
   delegated-event regressions passed: 6 files, 29 tests.
 - Calculated, nested, opaque-derived, gated, and targeted-list regressions
   passed: 5 files, 18 tests.
 - Computed, evaluation-metadata, emission-golden, diagnostic, and frontend
   semantic regressions passed: 5 files, 59 tests.
-- Full root suite passed: 98 files, 581 tests.
+- Runtime-pattern, indexed-list, nested-list, render-callback, and
+  render-function regressions passed: 5 files, 26 tests.
+- Full root suite passed: 99 files, 590 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
 

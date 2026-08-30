@@ -25,6 +25,7 @@ import {
   isStaticPrimitiveList,
 } from '../packages/compiler/src/lists/source-shapes';
 import { analyzeComputed } from '../packages/compiler/src/analysis/computed';
+import { cloneRuntimeBindingPattern } from '../packages/compiler/src/analysis/runtime-pattern';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -218,5 +219,28 @@ describe('ESTree parser and printer boundary', () => {
       'store',
       'store.total',
     ]);
+  });
+
+  it('strips runtime pattern annotations from parsed TS-ESTree', () => {
+    const parsed = parseEstreeOrThrow(
+      'const read = ({ value }: { value: string }) => value;',
+      { filename: 'pattern.ts' },
+    );
+    const pattern = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'ObjectPattern',
+    );
+
+    expect(pattern).not.toBeNull();
+    const cloned = cloneRuntimeBindingPattern(pattern!);
+    const originalAnnotation = (
+      pattern as unknown as Record<string, unknown>
+    ).typeAnnotation;
+    const clonedAnnotation = (
+      cloned as unknown as Record<string, unknown>
+    ).typeAnnotation;
+    expect(originalAnnotation).not.toBeNull();
+    expect(cloned).not.toBe(pattern);
+    expect(clonedAnnotation).toBeNull();
   });
 });

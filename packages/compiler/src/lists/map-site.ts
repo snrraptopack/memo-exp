@@ -4,10 +4,7 @@
  */
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import {
-  cloneRuntimeBindingPattern,
-  type RuntimeBindingPattern,
-} from '../analysis/runtime-pattern';
+import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
 import {
   attrExpr,
@@ -24,6 +21,10 @@ import {
 } from './source-shapes';
 
 type Fail = (message: string) => never;
+type RuntimeBindingPattern =
+  | t.Identifier
+  | t.ObjectPattern
+  | t.ArrayPattern;
 type ParentRow = Pick<
   MapSite,
   'itemParam' | 'sourceKey' | 'sourceLocal'
