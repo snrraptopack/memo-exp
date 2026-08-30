@@ -7,3 +7,5 @@ export * from './builders';
 export * from './walk';
 export * from './scope';
 export * from './transform';
+export * from './parser';
+export * from './printer';
