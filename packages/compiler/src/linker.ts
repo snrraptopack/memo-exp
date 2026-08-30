@@ -531,7 +531,7 @@ function analyzeManifest(
           linkedImports,
         });
         installLinkedDynamicComponentImports(ctx, programPath);
-        initializeGeneratedIdentifiers(ctx, programPath);
+        initializeGeneratedIdentifiers(ctx, programPath.node);
         scanTransparentSourceImports(ctx, programPath);
         lowerTransparentGroups(ctx, programPath);
         scanAndLowerModuleSourceDeclarations(ctx, programPath);

@@ -1,14 +1,13 @@
 /**
  * identifiers.ts - compiler-wide lexical binding allocation.
  *
- * Every compiler-owned binding is reserved through one Babel Program scope.
- * Source identifiers from descendant scopes are also reserved so generated
- * outer bindings cannot be shadowed inside user callbacks.
+ * Source identifiers from every descendant scope are reserved so generated
+ * outer bindings cannot be shadowed inside user callbacks. Allocation mirrors
+ * Babel's historical UID sequence while remaining parser/scope independent.
  */
 
-import type { NodePath, Scope } from '@babel/traverse';
 import * as t from '@babel/types';
-import { walkAst } from './ast';
+import { walkAst, type BaseNode } from './ast';
 
 export class GeneratedIdentifiers {
   readonly runtimeId: string;
@@ -17,20 +16,26 @@ export class GeneratedIdentifiers {
   private readonly reserved = new Set<string>();
   private readonly componentIds = new Map<string, string>();
 
-  constructor(private readonly scope: Scope, programPath: NodePath<t.Program>) {
-    walkIdentifiers(programPath.node, (name) => this.reserved.add(name));
+  constructor(program: BaseNode) {
+    walkIdentifiers(program, (name) => this.reserved.add(name));
     this.runtimeId = this.generate('MD').name;
     this.routerId = this.generate('MR').name;
     this.dataRuntimeId = this.generate('MDD').name;
   }
 
   generate(hint: string): t.Identifier {
-    let id: t.Identifier;
-    do {
-      id = this.scope.generateUidIdentifier(hint);
-    } while (this.reserved.has(id.name));
-    this.reserved.add(id.name);
-    return id;
+    const name = t.toIdentifier(hint).replace(/^_+/, '').replace(/\d+$/g, '');
+    let index = 0;
+    for (;;) {
+      let candidate = `_${name}`;
+      if (index >= 11) candidate += index - 1;
+      else if (index >= 9) candidate += index - 9;
+      else if (index >= 1) candidate += index + 1;
+      index++;
+      if (this.reserved.has(candidate)) continue;
+      this.reserved.add(candidate);
+      return t.identifier(candidate);
+    }
   }
 
   registerComponentId(component: string, id: string): void {
@@ -59,9 +64,9 @@ export interface IdentifierOwner {
 
 export function initializeGeneratedIdentifiers(
   owner: IdentifierOwner,
-  programPath: NodePath<t.Program>,
+  program: BaseNode,
 ): GeneratedIdentifiers {
-  const identifiers = new GeneratedIdentifiers(programPath.scope, programPath);
+  const identifiers = new GeneratedIdentifiers(program);
   owner.identifiers = identifiers;
   return identifiers;
 }
@@ -107,10 +112,12 @@ export function requireIdentifiers(owner: IdentifierOwner): GeneratedIdentifiers
   return owner.identifiers;
 }
 
-function walkIdentifiers(root: t.Node, visit: (name: string) => void): void {
+function walkIdentifiers(root: BaseNode, visit: (name: string) => void): void {
   walkAst(root, {
     enter(node) {
-      if (t.isIdentifier(node)) visit(node.name);
+      if (node.type !== 'Identifier') return;
+      const name = (node as unknown as { name?: unknown }).name;
+      if (typeof name === 'string') visit(name);
     },
   });
 }

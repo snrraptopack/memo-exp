@@ -206,7 +206,7 @@ export default function memoDomPlugin(
         normalizeComponentDeclarations(programPath);
         installLinkedDynamicComponentImports(ctx, programPath);
         normalizeConditionalJsxDirectives(programPath);
-        initializeGeneratedIdentifiers(ctx, programPath);
+        initializeGeneratedIdentifiers(ctx, programPath.node);
         scanTransparentSourceImports(ctx, programPath);
         lowerTransparentGroups(ctx, programPath);
         scanAndLowerModuleSourceDeclarations(ctx, programPath);

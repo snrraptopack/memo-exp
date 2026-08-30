@@ -29,6 +29,7 @@ import { analyzeComputed } from '../packages/compiler/src/analysis/computed';
 import { cloneRuntimeBindingPattern } from '../packages/compiler/src/analysis/runtime-pattern';
 import { isStaticDerivedChain } from '../packages/compiler/src/lists/static-derived';
 import { discoverComponentExports } from '../packages/compiler/src/components/manifest';
+import { GeneratedIdentifiers } from '../packages/compiler/src/identifiers';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -317,5 +318,17 @@ describe('ESTree parser and printer boundary', () => {
     expect(analysis.parentByNode.get(view!)).toMatchObject({
       type: 'ExportNamedDeclaration',
     });
+  });
+
+  it('allocates collision-free compiler identifiers from an OXC program', () => {
+    const parsed = parseEstreeOrThrow('const _MD = 1, _value = 2;', {
+      filename: 'identifiers.ts',
+    });
+    const identifiers = new GeneratedIdentifiers(parsed.program);
+
+    expect(identifiers.runtimeId).toBe('_MD2');
+    expect(identifiers.routerId).toBe('_MR');
+    expect(identifiers.dataRuntimeId).toBe('_MDD');
+    expect(identifiers.generate('value').name).toBe('_value2');
   });
 });

@@ -10,7 +10,7 @@ completed work.
 
 | Area | State | Verified result |
 |---|---|---|
-| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 20 passing tests; root TypeScript typecheck passes |
+| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 21 passing tests; root TypeScript typecheck passes |
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
 | Compiler analysis migration | Started | Multiple type, JSX, handler, list, prop, and computed passes accept ESTree |
@@ -79,7 +79,8 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
   parser-neutral parameter shaping in `components/prop-shape.ts`; and
 - mutable DOM-ref binding classification in `jsx/refs.ts`; and
 - intrinsic lifecycle call and shared-helper binding resolution in
-  `lifecycle.ts`.
+  `lifecycle.ts`; and
+- compiler-wide collision-free identifier allocation in `identifiers.ts`.
 
 The real analysis pipeline now builds and refreshes the parser-neutral scope
 index on `Ctx`. Binding-aware passes can migrate incrementally through
@@ -119,7 +120,9 @@ The focused frontend suite verifies:
 - exported component contracts and delegated events are discovered directly
   from an OXC-produced program; and
 - imports, destructured/default/rest parameters, block shadowing, references,
-  and parent metadata are indexed from OXC TS-ESTree.
+  and parent metadata are indexed from OXC TS-ESTree; and
+- generated identifiers reserve every authored OXC identifier while retaining
+  the established output naming sequence.
 
 This boundary is not yet wired into the public `compile` function. The existing
 Babel path remains the compatibility oracle while transformations migrate.
@@ -137,6 +140,8 @@ The compiler package still declares these five dependencies:
 At this checkpoint, 57 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
+Of those files, 37 still import or declare `@babel/traverse`; the shared
+identifier allocator no longer needs a Babel program scope.
 
 ## Migration order
 
@@ -172,7 +177,7 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 20 tests.
+- Focused AST/frontend suites passed: 2 files, 21 tests.
 - Handler, render-prop, render-function, render-callback, indexed-map, and
   delegated-event regressions passed: 6 files, 29 tests.
 - Calculated, nested, opaque-derived, gated, and targeted-list regressions
@@ -188,6 +193,8 @@ Verified on 2026-08-30:
 - AST/frontend, DOM-ref, and emission regressions passed: 4 files, 44 tests.
 - Cleanup, callback-boundary, effect, and linker-lifecycle regressions passed:
   6 files, 41 tests.
+- Identifier, golden-emission, diagnostics, linker-lifecycle, list, and ref
+  regressions passed: 5 files, 33 tests.
 - Full root suite passed: 99 files, 590 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
