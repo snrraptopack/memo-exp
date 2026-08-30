@@ -93,7 +93,9 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - lightweight component eligibility in `analysis/component-graph.ts`; and
 - route-region component-path typing in `emission/route-region.ts`;
 - binding-write violation indexing in `ast/scope.ts`; and
-- module control-flow derivation analysis in `module-control-flow.ts`.
+- module control-flow derivation analysis in `module-control-flow.ts`; and
+- conditional JSX sibling folding and standalone replacement in
+  `jsx/conditional-directives.ts`.
 
 The real analysis pipeline now builds and refreshes the parser-neutral scope
 index on `Ctx`. Binding-aware passes can migrate incrementally through
@@ -156,7 +158,7 @@ The compiler package still declares these five dependencies:
 At this checkpoint, 57 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
-Of those files, 28 still import or declare `@babel/traverse`. The shared
+Of those files, 27 still import or declare `@babel/traverse`. The shared
 identifier allocator no longer needs a Babel program scope, and calculated
 list normalization no longer uses NodePath traversal or replacement. Its final
 `scope.crawl()` is a temporary synchronization bridge for downstream passes.
@@ -225,6 +227,8 @@ Verified on 2026-08-30:
   and linker-lifecycle regressions passed: 8 files, 47 tests.
 - Module-control-flow, computed, golden, and diagnostic regressions passed:
   4 files, 39 tests.
+- Conditional-directive, nested/mixed conditional, hydration, effect, and
+  golden regressions passed: 6 files, 34 tests.
 - Full root suite passed: 99 files, 594 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.

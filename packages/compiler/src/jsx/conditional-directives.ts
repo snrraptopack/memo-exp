@@ -5,13 +5,21 @@
  * the structural-region pipeline already understands. Formatting whitespace
  * and JSX comments do not interrupt a chain.
  */
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode } from '../ast';
 import type { JsxChild } from '../components/children';
 
 type ConditionalParent = t.JSXElement | t.JSXFragment;
-type ErrorPath = Pick<NodePath, 'buildCodeFrameError'>;
 type DirectiveKind = 'if' | 'else-if' | 'else';
+
+interface ErrorPath {
+  buildCodeFrameError(message: string): Error;
+}
+
+interface ProgramContainer extends ErrorPath {
+  node: t.Program;
+  scope: { crawl(): void };
+}
 
 interface ConditionalDirective {
   kind: DirectiveKind;
@@ -81,14 +89,12 @@ function isFormattingTrivia(child: JsxChild): boolean {
   );
 }
 
-function normalizeChildren(path: NodePath<ConditionalParent>): void {
-  const children = path.node.children;
+function normalizeChildren(
+  parent: ConditionalParent,
+  errorAt: ErrorPath,
+): void {
+  const children = parent.children;
   if (children.length === 0) return;
-  const childPaths = path.get('children') as NodePath<JsxChild>[];
-  const paths = new Map<t.Node, NodePath<JsxChild>>(
-    childPaths.map((childPath) => [childPath.node, childPath]),
-  );
-  const errorAt = (child: JsxChild): ErrorPath => paths.get(child) ?? path;
   const output: JsxChild[] = [];
 
   let index = 0;
@@ -100,9 +106,9 @@ function normalizeChildren(path: NodePath<ConditionalParent>): void {
       continue;
     }
 
-    const first = readDirective(child, errorAt(child));
+    const first = readDirective(child, errorAt);
     if (first?.kind === 'else-if' || first?.kind === 'else') {
-      throw errorAt(child).buildCodeFrameError(
+      throw errorAt.buildCodeFrameError(
         `memo-dom: JSX ${first.kind} must immediately follow an if or else-if sibling`,
       );
     }
@@ -137,7 +143,7 @@ function normalizeChildren(path: NodePath<ConditionalParent>): void {
         trailingTrivia = trivia;
         break;
       }
-      const next = readDirective(candidate, errorAt(candidate));
+      const next = readDirective(candidate, errorAt);
       if (next?.kind === 'else-if') {
         removeDirective(candidate);
         conditionalBranches.push({
@@ -174,56 +180,68 @@ function normalizeChildren(path: NodePath<ConditionalParent>): void {
     index = cursor;
   }
 
-  path.node.children = output;
+  parent.children = output;
+}
+
+function replaceChild(
+  parent: BaseNode,
+  key: string | undefined,
+  index: number | undefined,
+  replacement: BaseNode,
+): void {
+  if (key === undefined) return;
+  const fields = parent as unknown as Record<string, unknown>;
+  if (index === undefined) {
+    fields[key] = replacement;
+    return;
+  }
+  const children = fields[key];
+  if (Array.isArray(children)) children[index] = replacement;
 }
 
 /** Lower conditional JSX directives before route and reactivity analysis. */
 export function normalizeConditionalJsxDirectives(
-  programPath: NodePath<t.Program>,
+  programPath: ProgramContainer,
 ): void {
-  programPath.traverse({
-    JSXElement: {
-      exit(path) {
-        normalizeChildren(path);
-      },
-    },
-    JSXFragment: {
-      exit(path) {
-        normalizeChildren(path);
-      },
+  walkAst<BaseNode>(programPath.node, {
+    leave(node) {
+      if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+        normalizeChildren(node as unknown as ConditionalParent, programPath);
+      }
     },
   });
 
   // An `if` element used outside a JSX sibling list still gets conditional
   // semantics. A fragment keeps component returns in the compiler's supported
   // direct-JSX shape.
-  programPath.traverse({
-    JSXElement(path) {
-      const directive = readDirective(path.node, path);
+  walkAst<BaseNode>(programPath.node, {
+    enter(node, parent, key, index) {
+      if (node.type !== 'JSXElement') return;
+      const element = node as unknown as t.JSXElement;
+      const directive = readDirective(element, programPath);
       if (directive === null) return;
       if (directive.kind !== 'if') {
-        throw path.buildCodeFrameError(
+        throw programPath.buildCodeFrameError(
           `memo-dom: JSX ${directive.kind} must immediately follow an if or else-if sibling`,
         );
       }
-      removeDirective(path.node);
-      const element = path.node;
-      path.replaceWith(
-        t.jsxFragment(
-          t.jsxOpeningFragment(),
-          t.jsxClosingFragment(),
-          [
-            t.jsxExpressionContainer(
-              t.conditionalExpression(
-                directive.condition!,
-                element,
-                t.nullLiteral(),
-              ),
+      removeDirective(element);
+      const fragment = t.jsxFragment(
+        t.jsxOpeningFragment(),
+        t.jsxClosingFragment(),
+        [
+          t.jsxExpressionContainer(
+            t.conditionalExpression(
+              directive.condition!,
+              element,
+              t.nullLiteral(),
             ),
-          ],
-        ),
+          ),
+        ],
       );
-      path.skip();
+      if (parent !== null) replaceChild(parent, key, index, fragment);
+      return false;
     },
   });
+  programPath.scope.crawl();
 }
