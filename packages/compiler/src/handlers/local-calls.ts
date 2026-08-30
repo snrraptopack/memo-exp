@@ -7,46 +7,58 @@
  * have their own execution boundary and are instrumented separately.
  */
 
-import * as t from '@babel/types';
-import type { HandlerFn } from '../handlers';
+import { walkAst, type BaseNode } from '../ast';
+
+const FUNCTION_NODES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function identifierName(value: unknown): string | null {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    (value as { type?: unknown }).type !== 'Identifier'
+  ) {
+    return null;
+  }
+  const name = (value as { name?: unknown }).name;
+  return typeof name === 'string' ? name : null;
+}
 
 export function callsOnlyCommittedLocalHelpers(
-  root: HandlerFn,
+  root: BaseNode,
   isCommittedHelper: (name: string) => boolean,
 ): boolean {
   let sawCall = false;
   let valid = true;
 
-  const visit = (node: t.Node): void => {
-    if (!valid) return;
-    if (node !== root && t.isFunction(node)) return;
-
-    if (t.isCallExpression(node) || t.isOptionalCallExpression(node)) {
-      sawCall = true;
-      if (!t.isIdentifier(node.callee) || !isCommittedHelper(node.callee.name)) {
-        valid = false;
+  walkAst<BaseNode>(root, {
+    enter(current) {
+      if (!valid) return false;
+      if (current !== root && FUNCTION_NODES.has(current.type)) return false;
+      if (
+        current.type !== 'CallExpression' &&
+        current.type !== 'OptionalCallExpression'
+      ) {
         return;
       }
-    }
-
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-      const child = (node as unknown as Record<string, unknown>)[key];
-      if (Array.isArray(child)) {
-        for (const item of child) {
-          if (item !== null && typeof item === 'object' && 'type' in item) {
-            visit(item as t.Node);
-          }
-        }
-      } else if (
-        child !== null &&
-        typeof child === 'object' &&
-        'type' in child
-      ) {
-        visit(child as t.Node);
+      sawCall = true;
+      const name = identifierName(fields(current).callee);
+      if (name === null || !isCommittedHelper(name)) {
+        valid = false;
+        return false;
       }
-    }
-  };
+    },
+  });
 
-  visit(root);
   return sawCall && valid;
 }

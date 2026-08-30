@@ -1,4 +1,5 @@
 import * as t from '@babel/types';
+import { cloneNode, walkAst } from '../ast';
 
 export type RuntimeBindingPattern =
   | t.Identifier
@@ -13,17 +14,19 @@ export type RuntimeBindingPattern =
 export function cloneRuntimeBindingPattern(
   pattern: RuntimeBindingPattern,
 ): RuntimeBindingPattern {
-  const cloned = t.cloneNode(pattern, true);
-  t.traverseFast(cloned, (node) => {
-    if (
-      t.isIdentifier(node) ||
-      t.isObjectPattern(node) ||
-      t.isArrayPattern(node) ||
-      t.isRestElement(node) ||
-      t.isAssignmentPattern(node)
-    ) {
-      node.typeAnnotation = null;
-    }
+  const cloned = cloneNode(pattern);
+  walkAst<t.Node>(cloned, {
+    enter(node) {
+      if (
+        t.isIdentifier(node) ||
+        t.isObjectPattern(node) ||
+        t.isArrayPattern(node) ||
+        t.isRestElement(node) ||
+        t.isAssignmentPattern(node)
+      ) {
+        node.typeAnnotation = null;
+      }
+    },
   });
   return cloned;
 }

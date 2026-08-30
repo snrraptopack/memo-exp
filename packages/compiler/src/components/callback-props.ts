@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { walkAst } from '../ast';
 import type { Ctx } from '../context';
 import { generatedIdentifier } from '../identifiers';
 import type { EmitScope } from '../emission/scope';
@@ -52,11 +53,14 @@ export function stabilizeInlineCallbackStatement(
 
 function containsJsx(node: t.Node): boolean {
   let found = false;
-  t.traverseFast(node, (child) => {
-    if (t.isJSXElement(child) || t.isJSXFragment(child)) {
-      found = true;
-      return t.traverseFast.stop;
-    }
+  walkAst(node, {
+    enter(child) {
+      if (found) return false;
+      if (t.isJSXElement(child) || t.isJSXFragment(child)) {
+        found = true;
+        return false;
+      }
+    },
   });
   return found;
 }

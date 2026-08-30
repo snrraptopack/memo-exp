@@ -10,7 +10,7 @@ completed work.
 
 | Area | State | Verified result |
 |---|---|---|
-| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 13 passing tests; root TypeScript typecheck passes |
+| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 14 passing tests; root TypeScript typecheck passes |
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
 | Compiler analysis migration | Started | Shared traversal paths and finite type-candidate analysis accept ESTree |
@@ -67,14 +67,18 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - finite TypeScript string-candidate analysis in `analysis/type-candidates.ts`;
 - component-subtree and render-callback read folding in
   `analysis/component-reads.ts`; and
-- JSX host-event discovery in `jsx/events.ts`.
+- JSX host-event discovery in `jsx/events.ts`;
+- committed-local helper call classification in `handlers/local-calls.ts`;
+- inline callback JSX discovery in `components/callback-props.ts`; and
+- runtime binding-pattern cloning in `analysis/runtime-pattern.ts`.
 
 `lists/targeted-refresh.ts`, `analysis/type-candidates.ts`, and
 `analysis/component-reads.ts`, plus `jsx/events.ts`, have no direct Babel import.
-Frontend tests now feed OXC TS-ESTree directly into real compiler type and JSX
-analysis while the existing Babel pipeline parity tests remain green. The other
-migrated paths still accept Babel node types at their current boundary and
-therefore remain transitional.
+`handlers/local-calls.ts` is also fully Babel-free. Frontend tests now feed OXC
+TS-ESTree directly into real compiler type, JSX, and handler-call analysis while
+the existing Babel pipeline parity tests remain green. The other migrated paths
+still accept Babel node types at their current boundary and therefore remain
+transitional.
 
 ## Standalone frontend checkpoint
 
@@ -87,7 +91,8 @@ The focused frontend suite verifies:
 - Esrap produces a non-empty source map;
 - trees can mix parsed nodes with nodes from the ESTree builders;
 - printed output reparses successfully; and
-- parse diagnostics are available through returning and throwing APIs.
+- parse diagnostics are available through returning and throwing APIs; and
+- handler call classification operates directly on OXC-produced nodes.
 
 This boundary is not yet wired into the public `compile` function. The existing
 Babel path remains the compatibility oracle while transformations migrate.
@@ -102,7 +107,7 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 64 compiler source files still directly import or declare a
+At this checkpoint, 63 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
 
@@ -140,7 +145,9 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 13 tests.
+- Focused AST/frontend suites passed: 2 files, 14 tests.
+- Handler, render-prop, render-function, render-callback, indexed-map, and
+  delegated-event regressions passed: 6 files, 29 tests.
 - Full root suite passed: 98 files, 581 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.

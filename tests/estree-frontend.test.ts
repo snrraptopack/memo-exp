@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   EstreeParseError,
+  type BaseNode,
   collectNodes,
+  findNode,
   isIdentifier,
   isNumericLiteral,
   numericLiteral,
@@ -15,6 +17,7 @@ import {
   moduleStateStringCandidates,
 } from '../packages/compiler/src/analysis/type-candidates';
 import { hostJsxEventNames } from '../packages/compiler/src/jsx/events';
+import { callsOnlyCommittedLocalHelpers } from '../packages/compiler/src/handlers/local-calls';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -112,5 +115,27 @@ describe('ESTree parser and printer boundary', () => {
       'onClick',
       'onMouseEnter',
     ]);
+  });
+
+  it('classifies handler calls directly from parsed ESTree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        const handler = () => {
+          save();
+          const deferred = () => external();
+        };
+      `,
+      { filename: 'handler.ts' },
+    );
+    const handler = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'ArrowFunctionExpression',
+    );
+
+    expect(handler).not.toBeNull();
+    expect(
+      callsOnlyCommittedLocalHelpers(handler!, (name) => name === 'save'),
+    ).toBe(true);
+    expect(callsOnlyCommittedLocalHelpers(handler!, () => false)).toBe(false);
   });
 });
