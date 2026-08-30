@@ -13,8 +13,8 @@
  * created per item by the region.
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode } from './ast';
 import {
   attrExpr,
   exprReadsState,
@@ -86,6 +86,10 @@ import {
   transparentExpressionSources,
   transparentPolicyRenderer,
 } from './data-sources';
+
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
 
 // ---------------------------------------------------------------------
 // shared statement builders
@@ -200,8 +204,16 @@ function emitText(
 
 function expressionReadsBinding(node: t.Node, name: string): boolean {
   let found = false;
-  t.traverseFast(node, (child) => {
-    if (t.isIdentifier(child, { name })) found = true;
+  walkAst<BaseNode>(node as unknown as BaseNode, {
+    enter(child) {
+      if (
+        child.type === 'Identifier' &&
+        (child as unknown as { name: string }).name === name
+      ) {
+        found = true;
+        return false;
+      }
+    },
   });
   return found;
 }
@@ -211,7 +223,7 @@ export function emitNode(
   scope: EmitScope,
   node: JsxNode,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   nestedIn: 'row' | 'cond' | null = null,
   rowCtx?: RowCtx,
   eventOriginId?: t.Expression,
@@ -250,7 +262,7 @@ function emitFragment(
   scope: EmitScope,
   fragment: t.JSXFragment,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   nestedIn: 'row' | 'cond' | null,
   rowCtx?: RowCtx,
   eventOriginId?: t.Expression,
@@ -314,7 +326,7 @@ function emitDirectChildOperations(
   operations: DirectChildOperation[],
   parentVar: string,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   nestedIn: 'row' | 'cond' | null = null,
   rowCtx?: RowCtx,
   inSvg = false,
@@ -374,7 +386,7 @@ function buildAuthoredChildrenSlot(
   ownerScope: EmitScope,
   children: readonly JsxChild[],
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   nestedIn: 'row' | 'cond' | null,
   rowCtx: RowCtx | undefined,
   eventOriginId: t.Expression | undefined,
@@ -454,7 +466,7 @@ function buildAuthoredRenderValueSlot(
   ownerScope: EmitScope,
   value: t.Expression,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   nestedIn: 'row' | 'cond' | null,
   rowCtx: RowCtx | undefined,
   eventOriginId: t.Expression | undefined,
@@ -484,7 +496,7 @@ function emitElement(
   scope: EmitScope,
   el: t.JSXElement,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   nestedIn: 'row' | 'cond' | null = null,
   rowCtx?: RowCtx,
   eventOriginId?: t.Expression,
@@ -1250,7 +1262,7 @@ function emitRegion(
   call: import('./context').MapCallExpression,
   parentElVar: string,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
   parentRow?: RowCtx,
@@ -1287,7 +1299,7 @@ function emitCondRegion(
   expr: t.ConditionalExpression | t.LogicalExpression,
   parentElVar: string,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
   forwardFromOwner = false,
@@ -1315,7 +1327,7 @@ export function buildBranchCreate(
   ctx: Ctx,
   jsx: JsxNode,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   regionId: t.Expression,
   inSvg = false,
   ownerId: t.Expression = regionId,

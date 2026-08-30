@@ -158,7 +158,7 @@ The compiler package still declares these five dependencies:
 At this checkpoint, 56 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
-Of those files, 17 still import or declare `@babel/traverse`. Component/ref,
+Of those files, 16 still import or declare `@babel/traverse`. Component/ref,
 conditional-region, render-callback, and list-region emission now share the
 central component-path boundary instead of importing the traversal package.
 The shared identifier allocator no longer needs a Babel program scope, and
@@ -178,6 +178,8 @@ returns, assignments, arguments, declarations, and rendered roots all use the
 ESTree scope and parent indexes.
 Component factory emission now receives the central component-container type
 without importing NodePath directly.
+Structural JSX emission now shares that same container boundary, and its local
+binding-name scan uses the ESTree walker instead of Babel `traverseFast`.
 Its final `scope.crawl()` is a temporary synchronization bridge for downstream
 passes.
 
