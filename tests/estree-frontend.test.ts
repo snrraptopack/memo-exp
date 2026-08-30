@@ -12,6 +12,8 @@ import {
   parseEstree,
   parseEstreeOrThrow,
   printEstree,
+  removeNode,
+  replaceNode,
   transformAst,
 } from '../packages/compiler/src/ast';
 import {
@@ -45,6 +47,7 @@ import {
 } from '../packages/compiler/src/mutation-analysis';
 import { summarizeHelper } from '../packages/compiler/src/helper-summaries';
 import { scanInstanceDerivations } from '../packages/compiler/src/analysis/instance';
+import { normalizeComponentJsxValues } from '../packages/compiler/src/components/jsx-values';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -96,6 +99,26 @@ describe('ESTree parser and printer boundary', () => {
     expect(transformed).not.toBeNull();
     expect(printEstree(transformed!).code).toContain('export const answer = 42;');
     expect(collectNodes(parsed.program, isNumericLiteral)[0]?.value).toBe(1);
+  });
+
+  it('replaces and removes nodes through ESTree parent metadata', () => {
+    const parsed = parseEstreeOrThrow('let first = 1, second = 2;', {
+      filename: 'mutate.ts',
+    });
+    const analysis = analyzeScope(parsed.program);
+    const one = collectNodes(parsed.program, isNumericLiteral)[0]!;
+    const second = findNode(
+      parsed.program,
+      (node): node is BaseNode =>
+        node.type === 'VariableDeclarator' &&
+        (node as unknown as { id?: { name?: string } }).id?.name === 'second',
+    );
+
+    expect(second).not.toBeNull();
+    replaceNode(analysis, one, numericLiteral(3));
+    removeNode(analysis, second!);
+
+    expect(printEstree(parsed.program).code).toContain('let first = 3;');
   });
 
   it('returns diagnostics and exposes a typed throwing API', () => {
@@ -768,5 +791,44 @@ describe('ESTree parser and printer boundary', () => {
     expect(context.instanceDerivedBindings.get('View')).toEqual(
       new Set(['doubled']),
     );
+  });
+
+  it('expands component JSX aliases directly on an OXC tree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        function View() {
+          const content = <span />;
+          return <main>{content}</main>;
+        }
+      `,
+      { filename: 'jsx-alias.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      compPaths: new Map([
+        [
+          'View',
+          {
+            node: component!,
+            buildCodeFrameError(message: string) {
+              return new Error(message);
+            },
+          },
+        ],
+      ]),
+      componentProps: new Map(),
+    } as unknown as Ctx;
+
+    expect(component).not.toBeNull();
+    normalizeComponentJsxValues(context);
+
+    expect(collectNodes(parsed.program, isJSXElement)).toHaveLength(2);
+    const output = printEstree(parsed.program).code;
+    expect(output).not.toContain('const content');
+    expect(output).not.toContain('{content}');
   });
 });

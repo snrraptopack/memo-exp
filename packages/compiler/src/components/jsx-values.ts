@@ -1,76 +1,26 @@
-/**
- * Component-local JSX values are compile-time render aliases.
- *
- * Expanding them before analysis lets the normal host/component/list/region
- * passes retain direct DOM emission without introducing a virtual-node value.
- */
-import type { NodePath } from '@babel/traverse';
+/** Component-local JSX values are compile-time render aliases. */
+
 import * as t from '@babel/types';
-import { nodeHasJsx, type Ctx } from '../context';
+import {
+  cloneNode as cloneAstNode,
+  nodeIsWithin,
+  removeNode,
+  replaceNode,
+  walkAst,
+  type BaseNode,
+  type Binding,
+  type ScopeAnalysis,
+} from '../ast';
+import {
+  astBindingAt,
+  nodeHasJsx,
+  refreshAstAnalysis,
+  type Ctx,
+} from '../context';
 
-function belongsToComponent(
-  reference: NodePath<t.Identifier>,
-  componentPath: NodePath<t.FunctionDeclaration>,
-): boolean {
-  const owner = reference.findParent(
-    (parent) =>
-      parent.isFunctionDeclaration() ||
-      parent.isFunctionExpression() ||
-      parent.isArrowFunctionExpression(),
-  );
-  if (owner === componentPath) return true;
-  return owner?.findParent((parent) => parent === componentPath) !== null;
-}
-
-function isRenderPosition(
-  reference: NodePath,
-  ctx: Ctx,
-): boolean {
-  let current: NodePath | null = reference;
-  while (current !== null) {
-    const parent: NodePath | null = current.parentPath;
-    if (parent === null) return false;
-    if (parent.isJSXAttribute() || parent.isJSXSpreadAttribute()) return false;
-    if (parent.isJSXExpressionContainer()) {
-      if (parent.parentPath?.isJSXAttribute() === true) {
-        const attribute = parent.parentPath.node;
-        const opening = parent.parentPath.parentPath;
-        if (!opening?.isJSXOpeningElement()) return false;
-        const tag = opening.node.name;
-        if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return false;
-        const attrName = t.isJSXIdentifier(attribute.name)
-          ? attribute.name.name
-          : attribute.name.name.name;
-        return (
-          ctx.componentProps
-            .get(tag.name)
-            ?.renderProps.includes(attrName) === true
-        );
-      }
-      return (
-        parent.parentPath?.isJSXElement() === true ||
-        parent.parentPath?.isJSXFragment() === true
-      );
-    }
-    if (parent.isReturnStatement() && parent.node.argument === current.node) {
-      return true;
-    }
-    if (
-      parent.isArrowFunctionExpression() &&
-      parent.node.body === current.node
-    ) {
-      return true;
-    }
-    if (
-      parent.isVariableDeclarator() &&
-      parent.node.init === current.node
-    ) {
-      return true;
-    }
-    current = parent;
-  }
-  return false;
-}
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
 
 interface StructuredCandidate {
   key: t.Expression;
@@ -84,164 +34,289 @@ type JsxChild =
   | t.JSXElement
   | t.JSXFragment;
 
-function staticArray(
-  expression: t.Expression,
-  at: NodePath,
-): t.ArrayExpression | null {
-  if (t.isArrayExpression(expression)) return expression;
-  if (!t.isIdentifier(expression)) return null;
-  const binding = at.scope.getBinding(expression.name);
-  if (!binding?.path.isVariableDeclarator()) return null;
-  return t.isArrayExpression(binding.path.node.init)
-    ? binding.path.node.init
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function node(value: unknown): BaseNode | null {
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? (value as BaseNode)
     : null;
 }
 
-function arrayChildren(
-  initializer: t.ArrayExpression,
-  at: NodePath,
-  visiting = new Set<t.Node>(),
-): JsxChild[] {
-  if (visiting.has(initializer)) {
-    throw at.buildCodeFrameError('memo-dom: cyclic JSX array spread');
+function childNode(parent: BaseNode, key: string): BaseNode | null {
+  return node(fields(parent)[key]);
+}
+
+function identifierName(value: BaseNode | null): string | null {
+  if (value?.type !== 'Identifier' && value?.type !== 'JSXIdentifier') {
+    return null;
   }
-  visiting.add(initializer);
+  const name = fields(value).name;
+  return typeof name === 'string' ? name : null;
+}
+
+function cloneNode<TNode>(value: TNode): TNode {
+  return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;
+}
+
+function fail(component: ComponentPath, message: string): never {
+  throw component.buildCodeFrameError(`memo-dom: ${message}`);
+}
+
+function bindingDeclarator(
+  analysis: ScopeAnalysis,
+  binding: Binding,
+): BaseNode | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') return current;
+    current = analysis.parentByNode.get(current) ?? null;
+  }
+  return null;
+}
+
+function isRenderPosition(
+  ctx: Ctx,
+  reference: BaseNode,
+): boolean {
+  const analysis = ctx.astAnalysis!;
+  let current = reference;
+  while (true) {
+    const parent = analysis.parentByNode.get(current) ?? null;
+    if (parent === null) return false;
+    if (parent.type === 'JSXAttribute' || parent.type === 'JSXSpreadAttribute') {
+      return false;
+    }
+    if (parent.type === 'JSXExpressionContainer') {
+      const containerParent = analysis.parentByNode.get(parent) ?? null;
+      if (containerParent?.type === 'JSXAttribute') {
+        const opening = analysis.parentByNode.get(containerParent) ?? null;
+        if (opening?.type !== 'JSXOpeningElement') return false;
+        const tag = identifierName(childNode(opening, 'name'));
+        if (tag === null || !/^[A-Z]/.test(tag)) return false;
+        const attributeNameNode = childNode(containerParent, 'name');
+        const attributeName =
+          identifierName(attributeNameNode) ??
+          (attributeNameNode === null
+            ? null
+            : identifierName(childNode(attributeNameNode, 'name')));
+        return (
+          attributeName !== null &&
+          ctx.componentProps.get(tag)?.renderProps.includes(attributeName) === true
+        );
+      }
+      return (
+        containerParent?.type === 'JSXElement' ||
+        containerParent?.type === 'JSXFragment'
+      );
+    }
+    if (
+      parent.type === 'ReturnStatement' &&
+      childNode(parent, 'argument') === current
+    ) {
+      return true;
+    }
+    if (
+      parent.type === 'ArrowFunctionExpression' &&
+      childNode(parent, 'body') === current
+    ) {
+      return true;
+    }
+    if (
+      parent.type === 'VariableDeclarator' &&
+      childNode(parent, 'init') === current
+    ) {
+      return true;
+    }
+    current = parent;
+  }
+}
+
+function staticArray(
+  ctx: Ctx,
+  expression: BaseNode,
+): t.ArrayExpression | null {
+  if (expression.type === 'ArrayExpression') {
+    return expression as unknown as t.ArrayExpression;
+  }
+  const name = identifierName(expression);
+  if (name === null) return null;
+  const binding = astBindingAt(ctx, expression, name);
+  if (binding === undefined) return null;
+  const declaration = bindingDeclarator(ctx.astAnalysis!, binding);
+  const initializer =
+    declaration === null ? null : childNode(declaration, 'init');
+  return initializer?.type === 'ArrayExpression'
+    ? (initializer as unknown as t.ArrayExpression)
+    : null;
+}
+
+function isNonRenderingLiteral(value: BaseNode): boolean {
+  if (value.type === 'NullLiteral' || value.type === 'BooleanLiteral') {
+    return true;
+  }
+  return (
+    value.type === 'Literal' &&
+    (fields(value).value === null || typeof fields(value).value === 'boolean')
+  );
+}
+
+function arrayChildren(
+  ctx: Ctx,
+  initializer: t.ArrayExpression,
+  component: ComponentPath,
+  visiting = new Set<BaseNode>(),
+): JsxChild[] {
+  const initializerNode = initializer as unknown as BaseNode;
+  if (visiting.has(initializerNode)) {
+    return fail(component, 'cyclic JSX array spread');
+  }
+  visiting.add(initializerNode);
   const children: JsxChild[] = [];
   try {
     for (const element of initializer.elements) {
-      // Array holes and static non-rendering values have normal JSX
-      // collection semantics: they do not occupy a DOM position.
-      if (
-        element == null ||
-        t.isNullLiteral(element) ||
-        t.isBooleanLiteral(element)
-      ) {
+      if (element == null || isNonRenderingLiteral(element as unknown as BaseNode)) {
         continue;
       }
       if (t.isSpreadElement(element)) {
-        if (!t.isExpression(element.argument)) {
-          throw at.buildCodeFrameError(
-            'memo-dom: JSX array spreads must resolve to a static JSX array',
-          );
-        }
-        const spread = staticArray(element.argument, at);
+        const spread = staticArray(ctx, element.argument as unknown as BaseNode);
         if (spread === null) {
-          throw at.buildCodeFrameError(
-            'memo-dom: JSX array spreads must resolve to a static JSX array',
+          return fail(
+            component,
+            'JSX array spreads must resolve to a static JSX array',
           );
         }
-        children.push(...arrayChildren(spread, at, visiting));
+        children.push(...arrayChildren(ctx, spread, component, visiting));
         continue;
       }
       if (t.isArrayExpression(element)) {
-        children.push(...arrayChildren(element, at, visiting));
+        children.push(...arrayChildren(ctx, element, component, visiting));
         continue;
       }
       if (t.isJSXElement(element) || t.isJSXFragment(element)) {
-        children.push(t.cloneNode(element, true));
+        children.push(cloneNode(element));
         continue;
       }
-      if (!t.isExpression(element)) {
-        throw at.buildCodeFrameError(
-          'memo-dom: JSX arrays require renderable expression entries',
-        );
-      }
       children.push(
-        t.jsxExpressionContainer(t.cloneNode(element, true)),
+        t.jsxExpressionContainer(cloneNode(element as t.Expression)),
       );
     }
   } finally {
-    visiting.delete(initializer);
+    visiting.delete(initializerNode);
   }
   return children;
 }
 
 function arrayFragment(
+  ctx: Ctx,
   initializer: t.ArrayExpression,
-  at: NodePath,
+  component: ComponentPath,
 ): t.JSXFragment {
   return t.jsxFragment(
     t.jsxOpeningFragment(),
     t.jsxClosingFragment(),
-    arrayChildren(initializer, at),
+    arrayChildren(ctx, initializer, component),
   );
+}
+
+function literalValue(value: BaseNode): string | number | null {
+  if (
+    value.type !== 'StringLiteral' &&
+    value.type !== 'NumericLiteral' &&
+    value.type !== 'Literal'
+  ) {
+    return null;
+  }
+  const literal = fields(value).value;
+  return typeof literal === 'string' || typeof literal === 'number'
+    ? literal
+    : null;
 }
 
 function structuredCandidates(
   initializer: t.ObjectExpression | t.ArrayExpression,
-  at: NodePath,
+  component: ComponentPath,
 ): StructuredCandidate[] {
   if (t.isArrayExpression(initializer)) {
     return initializer.elements.map((element, index) => {
       if (element == null || t.isSpreadElement(element)) {
-        throw at.buildCodeFrameError(
-          'memo-dom: JSX arrays cannot contain holes or spread elements',
+        return fail(
+          component,
+          'JSX arrays cannot contain holes or spread elements',
         );
       }
-      return {
-        key: t.numericLiteral(index),
-        value: element as t.Expression,
-      };
+      return { key: t.numericLiteral(index), value: element as t.Expression };
     });
   }
   return initializer.properties.map((property) => {
+    const propertyNode = property as unknown as BaseNode;
     if (
-      !t.isObjectProperty(property) ||
-      property.computed ||
-      !t.isExpression(property.value)
+      (propertyNode.type !== 'ObjectProperty' &&
+        propertyNode.type !== 'Property') ||
+      fields(propertyNode).computed === true
     ) {
-      throw at.buildCodeFrameError(
-        'memo-dom: JSX objects require static data properties without spreads',
+      return fail(
+        component,
+        'JSX objects require static data properties without spreads',
       );
     }
-    const key = t.isIdentifier(property.key)
-      ? t.stringLiteral(property.key.name)
-      : t.isStringLiteral(property.key) || t.isNumericLiteral(property.key)
-        ? t.cloneNode(property.key)
-        : null;
+    const keyNode = childNode(propertyNode, 'key');
+    const valueNode = childNode(propertyNode, 'value');
+    if (keyNode === null || valueNode === null) {
+      return fail(
+        component,
+        'JSX objects require static data properties without spreads',
+      );
+    }
+    const name = identifierName(keyNode);
+    const literal = literalValue(keyNode);
+    const key =
+      name !== null
+        ? t.stringLiteral(name)
+        : typeof literal === 'string'
+          ? t.stringLiteral(literal)
+          : typeof literal === 'number'
+            ? t.numericLiteral(literal)
+            : null;
     if (key === null) {
-      throw at.buildCodeFrameError(
-        'memo-dom: JSX objects require identifier, string, or numeric keys',
+      return fail(
+        component,
+        'JSX objects require identifier, string, or numeric keys',
       );
     }
-    return {
-      key,
-      value: property.value,
-    };
+    return { key, value: valueNode as unknown as t.Expression };
   });
 }
 
 function selectedStructuredValue(
-  memberPath: NodePath<t.MemberExpression>,
+  member: BaseNode,
   candidates: readonly StructuredCandidate[],
+  component: ComponentPath,
 ): t.Expression {
-  const member = memberPath.node;
+  const property = childNode(member, 'property');
+  const computed = fields(member).computed === true;
   let selectedKey: string | number | null = null;
-  if (!member.computed && t.isIdentifier(member.property)) {
-    selectedKey = member.property.name;
-  } else if (
-    member.computed &&
-    (t.isStringLiteral(member.property) || t.isNumericLiteral(member.property))
-  ) {
-    selectedKey = member.property.value;
-  }
+  if (!computed) selectedKey = identifierName(property);
+  else if (property !== null) selectedKey = literalValue(property);
+
   if (selectedKey !== null) {
     const selected = candidates.find(
       (candidate) =>
-        (t.isStringLiteral(candidate.key) ||
-          t.isNumericLiteral(candidate.key)) &&
-        candidate.key.value === selectedKey,
+        literalValue(candidate.key as unknown as BaseNode) === selectedKey,
     );
     if (selected === undefined) {
-      throw memberPath.buildCodeFrameError(
-        `memo-dom: JSX collection has no entry for '${selectedKey}'`,
+      return fail(
+        component,
+        `JSX collection has no entry for '${selectedKey}'`,
       );
     }
-    return t.cloneNode(selected.value, true);
+    return cloneNode(selected.value);
   }
-  if (!member.computed || !t.isExpression(member.property)) {
-    throw memberPath.buildCodeFrameError(
-      'memo-dom: JSX collection selection requires a static or expression key',
+  if (!computed || property === null) {
+    return fail(
+      component,
+      'JSX collection selection requires a static or expression key',
     );
   }
 
@@ -251,166 +326,200 @@ function selectedStructuredValue(
     selection = t.conditionalExpression(
       t.binaryExpression(
         '===',
-        t.cloneNode(member.property, true),
-        t.cloneNode(candidate.key, true),
+        cloneNode(property as unknown as t.Expression),
+        cloneNode(candidate.key),
       ),
-      t.cloneNode(candidate.value, true),
+      cloneNode(candidate.value),
       selection,
     );
   }
   return selection;
 }
 
-/**
- * Expand top-level component `const view = <JSX />` aliases at each render
- * use. Aliases may chain and may hold JSX-bearing conditional expressions.
- */
+function currentProgram(ctx: Ctx): BaseNode {
+  const root = ctx.astAnalysis?.rootScope.block;
+  if (root === undefined || root.type !== 'Program') {
+    throw new Error('memo-dom: missing ESTree program during JSX normalization');
+  }
+  return root;
+}
+
+/** Expand component JSX aliases and statically structured JSX collections. */
 export function normalizeComponentJsxValues(ctx: Ctx): void {
+  const program = currentProgram(ctx);
   for (const [, componentPath] of ctx.compPaths) {
+    const component = componentPath.node as unknown as BaseNode;
     let changed = false;
 
-    // Inline arrays in child positions are compile-time fragments, not
-    // runtime virtual-node arrays.
-    componentPath.traverse({
-      JSXExpressionContainer(containerPath) {
+    const inlineArrays: BaseNode[] = [];
+    walkAst<BaseNode>(component, {
+      enter(current, parent) {
         if (
-          !containerPath.parentPath?.isJSXElement() &&
-          !containerPath.parentPath?.isJSXFragment()
+          current.type !== 'JSXExpressionContainer' ||
+          (parent?.type !== 'JSXElement' && parent?.type !== 'JSXFragment')
         ) {
           return;
         }
-        const expressionPath = containerPath.get('expression');
+        const expression = childNode(current, 'expression');
         if (
-          Array.isArray(expressionPath) ||
-          !expressionPath.isArrayExpression() ||
-          !nodeHasJsx(expressionPath.node)
+          expression?.type === 'ArrayExpression' &&
+          nodeHasJsx(expression as unknown as t.Node)
         ) {
-          return;
+          inlineArrays.push(current);
         }
-        containerPath.replaceWith(arrayFragment(expressionPath.node, expressionPath));
-        changed = true;
       },
     });
+    for (const container of inlineArrays) {
+      const expression = childNode(container, 'expression')!;
+      replaceNode(
+        ctx.astAnalysis!,
+        container,
+        arrayFragment(
+          ctx,
+          expression as unknown as t.ArrayExpression,
+          componentPath,
+        ) as unknown as BaseNode,
+      );
+      changed = true;
+    }
+    if (inlineArrays.length > 0) refreshAstAnalysis(ctx, program);
 
     let discovered = true;
-
     while (discovered) {
       discovered = false;
-      componentPath.scope.crawl();
-      const statements = componentPath.get('body').get('body');
-
-      for (const statementPath of statements) {
-        if (!statementPath.isVariableDeclaration({ kind: 'const' })) continue;
-        for (const declarationPath of statementPath.get('declarations')) {
-          const declaration = declarationPath.node;
-          const initializer = declaration.init;
+      const statements = componentPath.node.body.body;
+      for (const statement of statements) {
+        if (!t.isVariableDeclaration(statement, { kind: 'const' })) continue;
+        for (const declaration of statement.declarations) {
           if (
             !t.isIdentifier(declaration.id) ||
-            initializer == null ||
-            !nodeHasJsx(initializer)
+            declaration.init == null ||
+            !nodeHasJsx(declaration.init)
           ) {
             continue;
           }
-
-          const binding = declarationPath.scope.getBinding(declaration.id.name);
-          if (binding?.path !== declarationPath) continue;
-          const references = [...binding.referencePaths];
+          const declarationNode = declaration as unknown as BaseNode;
+          const binding = astBindingAt(
+            ctx,
+            declarationNode,
+            declaration.id.name,
+          );
           if (
-            t.isObjectExpression(initializer) ||
-            t.isArrayExpression(initializer)
+            binding === undefined ||
+            bindingDeclarator(ctx.astAnalysis!, binding) !== declarationNode
           ) {
+            continue;
+          }
+          const references = [...binding.references] as unknown as BaseNode[];
+          const initializer = declaration.init;
+          if (t.isObjectExpression(initializer) || t.isArrayExpression(initializer)) {
+            const candidates = structuredCandidates(initializer, componentPath);
             for (const reference of references) {
-              if (
-                !reference.isIdentifier() ||
-                !belongsToComponent(reference, componentPath)
-              ) {
-                throw reference.buildCodeFrameError(
-                  `memo-dom: JSX collection '${declaration.id.name}' is used outside its component`,
+              if (!nodeIsWithin(ctx.astAnalysis!, reference, component)) {
+                fail(
+                  componentPath,
+                  `JSX collection '${declaration.id.name}' is used outside its component`,
                 );
               }
+              const parent = ctx.astAnalysis!.parentByNode.get(reference) ?? null;
               if (
-                reference.parentPath?.isMemberExpression() &&
-                reference.parentPath.node.object === reference.node
+                parent?.type === 'MemberExpression' &&
+                childNode(parent, 'object') === reference
               ) {
-                const memberPath = reference.parentPath;
-                if (!isRenderPosition(memberPath, ctx)) {
-                  throw memberPath.buildCodeFrameError(
-                    `memo-dom: JSX collection '${declaration.id.name}' is used outside a render position`,
+                if (!isRenderPosition(ctx, parent)) {
+                  fail(
+                    componentPath,
+                    `JSX collection '${declaration.id.name}' is used outside a render position`,
                   );
                 }
-                memberPath.replaceWith(
-                  selectedStructuredValue(
-                    memberPath,
-                    structuredCandidates(initializer, declarationPath),
-                  ),
+                replaceNode(
+                  ctx.astAnalysis!,
+                  parent,
+                  selectedStructuredValue(parent, candidates, componentPath) as unknown as BaseNode,
                 );
                 continue;
               }
               if (
                 t.isArrayExpression(initializer) &&
-                reference.parentPath?.isSpreadElement() &&
-                reference.parentPath.parentPath?.isArrayExpression()
+                parent?.type === 'SpreadElement' &&
+                (ctx.astAnalysis!.parentByNode.get(parent)?.type === 'ArrayExpression')
               ) {
-                reference.replaceWith(t.cloneNode(initializer, true));
+                replaceNode(
+                  ctx.astAnalysis!,
+                  reference,
+                  cloneNode(initializer) as unknown as BaseNode,
+                );
                 continue;
               }
-              if (
-                t.isArrayExpression(initializer) &&
-                isRenderPosition(reference, ctx)
-              ) {
-                reference.replaceWith(arrayFragment(initializer, reference));
+              if (t.isArrayExpression(initializer) && isRenderPosition(ctx, reference)) {
+                replaceNode(
+                  ctx.astAnalysis!,
+                  reference,
+                  arrayFragment(ctx, initializer, componentPath) as unknown as BaseNode,
+                );
                 continue;
               }
-              throw reference.buildCodeFrameError(
+              fail(
+                componentPath,
                 t.isArrayExpression(initializer)
-                  ? `memo-dom: JSX collection '${declaration.id.name}' must be rendered directly or selected with a direct index access`
-                  : `memo-dom: JSX collection '${declaration.id.name}' is used outside a render position`,
+                  ? `JSX collection '${declaration.id.name}' must be rendered directly or selected with a direct index access`
+                  : `JSX collection '${declaration.id.name}' is used outside a render position`,
               );
             }
           } else {
             for (const reference of references) {
-              if (
-                !reference.isIdentifier() ||
-                !belongsToComponent(reference, componentPath)
-              ) {
-                continue;
-              }
-              if (!isRenderPosition(reference, ctx)) {
-                throw reference.buildCodeFrameError(
-                  `memo-dom: JSX value '${declaration.id.name}' is used outside a render position`,
+              if (!nodeIsWithin(ctx.astAnalysis!, reference, component)) continue;
+              if (!isRenderPosition(ctx, reference)) {
+                fail(
+                  componentPath,
+                  `JSX value '${declaration.id.name}' is used outside a render position`,
                 );
               }
-              reference.replaceWith(t.cloneNode(initializer, true));
+              replaceNode(
+                ctx.astAnalysis!,
+                reference,
+                cloneNode(initializer) as unknown as BaseNode,
+              );
             }
           }
 
-          if (statementPath.node.declarations.length === 1) {
-            statementPath.remove();
+          if (statement.declarations.length === 1) {
+            removeNode(ctx.astAnalysis!, statement as unknown as BaseNode);
           } else {
-            declarationPath.remove();
+            removeNode(ctx.astAnalysis!, declarationNode);
           }
           changed = true;
           discovered = true;
+          refreshAstAnalysis(ctx, program);
           break;
         }
         if (discovered) break;
       }
     }
 
-    if (changed) {
-      componentPath.traverse({
-        JSXExpressionContainer(containerPath) {
-          const expression = containerPath.node.expression;
-          if (
-            (containerPath.parentPath?.isJSXElement() === true ||
-              containerPath.parentPath?.isJSXFragment() === true) &&
-            (t.isJSXElement(expression) || t.isJSXFragment(expression))
-          ) {
-            containerPath.replaceWith(expression);
-          }
-        },
-      });
-      componentPath.scope.crawl();
+    if (!changed) continue;
+    const containers: BaseNode[] = [];
+    walkAst<BaseNode>(component, {
+      enter(current, parent) {
+        if (
+          current.type !== 'JSXExpressionContainer' ||
+          (parent?.type !== 'JSXElement' && parent?.type !== 'JSXFragment')
+        ) {
+          return;
+        }
+        const expression = childNode(current, 'expression');
+        if (expression?.type === 'JSXElement' || expression?.type === 'JSXFragment') {
+          containers.push(current);
+        }
+      },
+    });
+    for (const container of containers) {
+      replaceNode(
+        ctx.astAnalysis!,
+        container,
+        childNode(container, 'expression')!,
+      );
     }
+    refreshAstAnalysis(ctx, program);
   }
 }

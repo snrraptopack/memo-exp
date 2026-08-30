@@ -7,5 +7,6 @@ export * from './builders';
 export * from './walk';
 export * from './scope';
 export * from './transform';
+export * from './mutate';
 export * from './parser';
 export * from './printer';
