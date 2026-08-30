@@ -1,6 +1,5 @@
 /** Anchored DOM region controlled by one compiler-generated route match ID. */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md, mr } from '../identifiers';
@@ -10,13 +9,17 @@ import { registerStmt, renderDocument } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { buildConditionalBranchCreate } from './conditional-region';
 
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
 export function emitRouteRegion(
   ctx: Ctx,
   scope: EmitScope,
   element: t.JSXElement,
   route: CompilerRouteElement,
   componentName: string,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  componentPath: ComponentPath,
   emitNode: NodeEmitter,
   inSvg: boolean,
   ownerId: t.Expression,

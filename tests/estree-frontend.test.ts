@@ -6,6 +6,7 @@ import {
   collectNodes,
   findNode,
   isIdentifier,
+  isJSXElement,
   isNumericLiteral,
   numericLiteral,
   parseEstree,
@@ -30,6 +31,7 @@ import { cloneRuntimeBindingPattern } from '../packages/compiler/src/analysis/ru
 import { isStaticDerivedChain } from '../packages/compiler/src/lists/static-derived';
 import { discoverComponentExports } from '../packages/compiler/src/components/manifest';
 import { GeneratedIdentifiers } from '../packages/compiler/src/identifiers';
+import { isRenderCallbackJsxRoot } from '../packages/compiler/src/components/render-callbacks';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -330,5 +332,33 @@ describe('ESTree parser and printer boundary', () => {
     expect(identifiers.routerId).toBe('_MR');
     expect(identifiers.dataRuntimeId).toBe('_MDD');
     expect(identifiers.generate('value').name).toBe('_value2');
+  });
+
+  it('finds render-callback JSX roots through ESTree parent metadata', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        function View() {
+          return <List row={(item) => <span>{item}</span>} />;
+        }
+      `,
+      { filename: 'render-callback.tsx' },
+    );
+    const astAnalysis = analyzeScope(parsed.program);
+    const elements = collectNodes(parsed.program, isJSXElement);
+    const context = {
+      astAnalysis,
+      componentProps: new Map([
+        [
+          'List',
+          {
+            renderCallbacks: ['row'],
+          },
+        ],
+      ]),
+    } as unknown as Ctx;
+
+    expect(elements).toHaveLength(2);
+    expect(isRenderCallbackJsxRoot(context, elements[1]!)).toBe(true);
+    expect(isRenderCallbackJsxRoot(context, elements[0]!)).toBe(false);
   });
 });

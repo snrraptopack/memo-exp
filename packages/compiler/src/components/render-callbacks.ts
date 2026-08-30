@@ -1,5 +1,5 @@
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode } from '../ast';
 import type { Ctx, MapCallExpression } from '../context';
 import {
   localBindingForProp,
@@ -13,52 +13,94 @@ export interface RenderCallbackInvocation {
   arguments: t.Expression[];
 }
 
+interface NodeHolder {
+  node: BaseNode;
+}
+
+function field(node: BaseNode, name: string): unknown {
+  return (node as unknown as Record<string, unknown>)[name];
+}
+
+function isNode(value: unknown): value is BaseNode {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { type?: unknown }).type === 'string'
+  );
+}
+
+function childNode(node: BaseNode, name: string): BaseNode | null {
+  const value = field(node, name);
+  return isNode(value) ? value : null;
+}
+
+function childNodes(node: BaseNode, name: string): BaseNode[] {
+  const value = field(node, name);
+  return Array.isArray(value) ? value.filter(isNode) : [];
+}
+
 /** Is this JSX element the returned root of a declared callback prop value? */
 export function isRenderCallbackJsxRoot(
   ctx: Ctx,
-  element: NodePath<t.JSXElement>,
+  input: BaseNode | NodeHolder,
 ): boolean {
-  const fn = element.findParent(
-    (parent) =>
-      parent.isArrowFunctionExpression() || parent.isFunctionExpression(),
-  );
-  if (
-    fn === null ||
-    (!fn.isArrowFunctionExpression() && !fn.isFunctionExpression())
+  const element = 'node' in input ? input.node : input;
+  let fn = ctx.astAnalysis?.parentByNode.get(element) ?? null;
+  while (
+    fn !== null &&
+    fn.type !== 'ArrowFunctionExpression' &&
+    fn.type !== 'FunctionExpression'
   ) {
-    return false;
+    fn = ctx.astAnalysis?.parentByNode.get(fn) ?? null;
   }
-  const body = fn.get('body');
+  if (fn === null) return false;
+  const body = childNode(fn, 'body');
+  if (body === null) return false;
   const returnedRoot =
-    (body.isJSXElement() && body.node === element.node) ||
-    (body.isBlockStatement() &&
-      body.node.body.length === 1 &&
-      t.isReturnStatement(body.node.body[0]) &&
-      body.node.body[0].argument === element.node);
+    (body.type === 'JSXElement' && body === element) ||
+    (body.type === 'BlockStatement' &&
+      childNodes(body, 'body').length === 1 &&
+      childNodes(body, 'body')[0]?.type === 'ReturnStatement' &&
+      childNode(childNodes(body, 'body')[0]!, 'argument') === element);
   if (!returnedRoot) return false;
-  const container = fn.parentPath;
-  const attribute = container?.parentPath;
-  const opening = attribute?.parentPath;
+  const container = ctx.astAnalysis?.parentByNode.get(fn) ?? null;
+  const attribute =
+    container === null
+      ? null
+      : ctx.astAnalysis?.parentByNode.get(container) ?? null;
+  const opening =
+    attribute === null
+      ? null
+      : ctx.astAnalysis?.parentByNode.get(attribute) ?? null;
   if (
-    !container?.isJSXExpressionContainer() ||
-    !attribute?.isJSXAttribute() ||
-    !opening?.isJSXOpeningElement() ||
-    !t.isJSXIdentifier(opening.node.name)
+    container?.type !== 'JSXExpressionContainer' ||
+    attribute?.type !== 'JSXAttribute' ||
+    opening?.type !== 'JSXOpeningElement'
   ) {
     return false;
   }
-  const attributeName = t.isJSXIdentifier(attribute.node.name)
-    ? attribute.node.name.name
-    : attribute.node.name.name.name;
+  const openingName = childNode(opening, 'name');
+  const attributeNameNode = childNode(attribute, 'name');
+  if (openingName?.type !== 'JSXIdentifier' || attributeNameNode === null) {
+    return false;
+  }
+  const tagName = field(openingName, 'name');
+  const attributeName =
+    attributeNameNode.type === 'JSXIdentifier'
+      ? field(attributeNameNode, 'name')
+      : field(childNode(attributeNameNode, 'name') ?? attributeNameNode, 'name');
+  if (typeof tagName !== 'string' || typeof attributeName !== 'string') {
+    return false;
+  }
   return (
     ctx.componentProps
-      .get(opening.node.name.name)
+      .get(tagName)
       ?.renderCallbacks.includes(attributeName) === true ||
     // Linker discovery passes intentionally begin with incomplete imported
     // contracts. Let the later component-prop validation own the diagnostic;
     // this root-level key is valid if the fixed point resolves it as a
     // structural callback and otherwise the JSX prop is rejected normally.
-    /^[A-Z]/.test(opening.node.name.name)
+    /^[A-Z]/.test(tagName)
   );
 }
 
@@ -156,13 +198,18 @@ export function matchRenderCallbackMap(
 export function scanRenderCallbacks(ctx: Ctx): void {
   for (const [componentName, componentPath] of ctx.compPaths) {
     const plan = ctx.componentProps.get(componentName)!;
-    const checkCall = (
-      path: NodePath<t.CallExpression | t.OptionalCallExpression>,
-    ): void => {
+    walkAst<BaseNode>(componentPath.node, {
+      enter(node) {
+        if (
+          node.type !== 'CallExpression' &&
+          node.type !== 'OptionalCallExpression'
+        ) {
+          return;
+        }
       const invocation = matchRenderCallbackMap(
         ctx,
         componentName,
-        path.node,
+          node as unknown as MapCallExpression,
       );
       if (
         invocation !== null &&
@@ -170,10 +217,7 @@ export function scanRenderCallbacks(ctx: Ctx): void {
       ) {
         plan.renderCallbacks.push(invocation.propName);
       }
-    };
-    componentPath.traverse({
-      CallExpression: checkCall,
-      OptionalCallExpression: checkCall,
+      },
     });
   }
 }

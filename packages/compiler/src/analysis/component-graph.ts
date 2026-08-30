@@ -1,6 +1,6 @@
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import type { Ctx } from '../context';
+import { walkAst, type BaseNode } from '../ast';
+import { astBindingAt, type Ctx } from '../context';
 import { containsJsx, matchMapCall } from '../lists';
 import { expandRenderSlotPaths } from './slot-paths';
 
@@ -163,35 +163,43 @@ export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
   if ((ctx.instanceState.get(name)?.size ?? 0) > 0) return false;
   let eligible = true;
   const path = ctx.compPaths.get(name)!;
-  const checkCall = (
-    callPath: NodePath<t.CallExpression | t.OptionalCallExpression>,
-  ): void => {
+  walkAst<BaseNode>(path.node, {
+    enter(node) {
+      if (node.type === 'JSXElement') {
+        const element = node as unknown as t.JSXElement;
+        const tag = element.openingElement.name;
+        if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) {
+          eligible = false;
+        }
+        return;
+      }
+      if (
+        node.type === 'CallExpression' ||
+        node.type === 'OptionalCallExpression'
+      ) {
+        const call = node as unknown as
+          | t.CallExpression
+          | t.OptionalCallExpression;
     if (
-      (t.isIdentifier(callPath.node.callee, { name: 'cleanup' }) &&
-        callPath.scope.getBinding('cleanup') === undefined) ||
-      (t.isIdentifier(callPath.node.callee, { name: 'effect' }) &&
-        callPath.scope.getBinding('effect') === undefined)
+          (t.isIdentifier(call.callee, { name: 'cleanup' }) &&
+            astBindingAt(ctx, node, 'cleanup') === undefined) ||
+          (t.isIdentifier(call.callee, { name: 'effect' }) &&
+            astBindingAt(ctx, node, 'effect') === undefined)
     ) {
       eligible = false;
     }
-    if (matchMapCall(callPath.node) && containsJsx(callPath)) {
+        if (matchMapCall(call) && containsJsx(node)) {
       eligible = false;
     }
-  };
-  path.traverse({
-    JSXElement(elementPath) {
-      const tag = elementPath.node.openingElement.name;
-      if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) {
+        return;
+      }
+      if (
+        (node.type === 'ConditionalExpression' ||
+          node.type === 'LogicalExpression') &&
+        containsJsx(node)
+      ) {
         eligible = false;
       }
-    },
-    CallExpression: checkCall,
-    OptionalCallExpression: checkCall,
-    ConditionalExpression(conditionalPath) {
-      if (containsJsx(conditionalPath)) eligible = false;
-    },
-    LogicalExpression(logicalPath) {
-      if (containsJsx(logicalPath)) eligible = false;
     },
   });
   return eligible;
