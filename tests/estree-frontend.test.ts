@@ -44,6 +44,7 @@ import {
   moduleOrigin,
 } from '../packages/compiler/src/mutation-analysis';
 import { summarizeHelper } from '../packages/compiler/src/helper-summaries';
+import { scanInstanceDerivations } from '../packages/compiler/src/analysis/instance';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -712,5 +713,60 @@ describe('ESTree parser and printer boundary', () => {
     expect(summary.parameterWrites).toEqual([{ index: 0, path: ['value'] }]);
     expect(summary.writes).toEqual(new Set(['store.count']));
     expect(summary.unbounded).toBe(false);
+  });
+
+  it('discovers component derivations directly from OXC ESTree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        function View(count: number) {
+          const doubled = count * 2;
+          return <p>{doubled}</p>;
+        }
+      `,
+      { filename: 'instance-derived.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      compPaths: new Map([
+        [
+          'View',
+          {
+            node: component!,
+            buildCodeFrameError(message: string) {
+              return new Error(message);
+            },
+          },
+        ],
+      ]),
+      componentProps: new Map([['View', { bindings: ['count'] }]]),
+      opaqueBindings: new Map(),
+      transparentSources: new Map(),
+      transparentSourceFactories: new Set(),
+      instanceState: new Map(),
+      state: new Map(),
+      helpers: new Map(),
+      importedFunctions: new Map(),
+      instanceDerivations: new Map(),
+      instanceDerivedBindings: new Map(),
+      instanceReasonIds: new Map(),
+      selectiveDerivationComponents: new Set(),
+    } as unknown as Ctx;
+
+    expect(component).not.toBeNull();
+    scanInstanceDerivations(context);
+
+    expect(context.instanceDerivations.get('View')).toEqual([
+      expect.objectContaining({
+        bindings: ['doubled'],
+        sources: ['count'],
+      }),
+    ]);
+    expect(context.instanceDerivedBindings.get('View')).toEqual(
+      new Set(['doubled']),
+    );
   });
 });

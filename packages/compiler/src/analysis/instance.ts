@@ -1,6 +1,13 @@
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
+  cloneNode as cloneAstNode,
+  walkAst,
+  type BaseNode,
+  type Binding,
+  type Identifier,
+} from '../ast';
+import {
+  astBindingAt,
   isConstObjectState,
   isStoreObject,
   memberRootName,
@@ -19,49 +26,160 @@ interface LocalDerivationHelperSummary {
   reason: string | null;
 }
 
-function localFunctionPath(
-  componentPath: NodePath<t.FunctionDeclaration>,
-  at: NodePath,
+const FUNCTION_NODES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function cloneNode<TNode>(value: TNode): TNode {
+  return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;
+}
+
+function node(value: unknown): BaseNode | null {
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? (value as BaseNode)
+    : null;
+}
+
+function childNode(parent: BaseNode, key: string): BaseNode | null {
+  return node(fields(parent)[key]);
+}
+
+function childNodes(parent: BaseNode, key: string): BaseNode[] {
+  const value = fields(parent)[key];
+  return Array.isArray(value)
+    ? value.map(node).filter((item) => item !== null)
+    : [];
+}
+
+function identifierName(value: BaseNode | null): string | null {
+  if (value?.type !== 'Identifier') return null;
+  const name = fields(value).name;
+  return typeof name === 'string' ? name : null;
+}
+
+function parentOf(ctx: Ctx, current: BaseNode): BaseNode | null {
+  return ctx.astAnalysis?.parentByNode.get(current) ?? null;
+}
+
+function isWithin(ctx: Ctx, current: BaseNode, ancestor: BaseNode): boolean {
+  let candidate: BaseNode | null = current;
+  while (candidate !== null) {
+    if (candidate === ancestor) return true;
+    candidate = parentOf(ctx, candidate);
+  }
+  return false;
+}
+
+function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') return current;
+    current = parentOf(ctx, current);
+  }
+  return null;
+}
+
+function localFunction(
+  ctx: Ctx,
+  component: BaseNode,
+  at: BaseNode,
   name: string,
-): NodePath<t.Function> | null {
-  const binding = at.scope.getBinding(name);
+): BaseNode | null {
+  const binding = astBindingAt(ctx, at, name);
   if (binding === undefined) return null;
-  let candidate: NodePath | null = null;
-  if (binding.path.isFunctionDeclaration()) {
-    candidate = binding.path;
-  } else if (binding.path.isVariableDeclarator()) {
-    const init = binding.path.get('init');
-    if (
-      !Array.isArray(init) &&
-      (init.isFunctionExpression() || init.isArrowFunctionExpression())
-    ) {
-      candidate = init;
+  let candidate: BaseNode | null = null;
+  if (binding.declarationNode.type === 'FunctionDeclaration') {
+    candidate = binding.declarationNode;
+  } else {
+    const declaration = variableDeclaratorFor(ctx, binding);
+    const initializer =
+      declaration === null ? null : childNode(declaration, 'init');
+    if (initializer !== null && FUNCTION_NODES.has(initializer.type)) {
+      candidate = initializer;
     }
   }
-  if (
-    candidate === null ||
-    candidate.findParent((parent) => parent.node === componentPath.node) ===
-      null
-  ) {
-    return null;
+  return candidate !== null && isWithin(ctx, candidate, component)
+    ? candidate
+    : null;
+}
+
+function functionParticipates(
+  ctx: Ctx,
+  fn: BaseNode,
+  includeArguments: boolean,
+): boolean {
+  const parent = parentOf(ctx, fn);
+  if (parent?.type !== 'CallExpression' && parent?.type !== 'NewExpression') {
+    return false;
   }
-  return candidate as NodePath<t.Function>;
+  if (childNode(parent, 'callee') === fn) return true;
+  return includeArguments && childNodes(parent, 'arguments').includes(fn);
+}
+
+function walkExecuted(
+  ctx: Ctx,
+  root: BaseNode,
+  includeFunctionArguments: boolean,
+  visit: (current: BaseNode) => void,
+): void {
+  walkAst<BaseNode>(root, {
+    enter(current) {
+      if (
+        current !== root &&
+        FUNCTION_NODES.has(current.type) &&
+        !functionParticipates(ctx, current, includeFunctionArguments)
+      ) {
+        return false;
+      }
+      visit(current);
+    },
+  });
+}
+
+function isReferencedIdentifier(
+  ctx: Ctx,
+  identifier: BaseNode,
+): identifier is BaseNode & { type: 'Identifier'; name: string } {
+  const name = identifierName(identifier);
+  if (name === null) return false;
+  const binding = astBindingAt(ctx, identifier, name);
+  return (
+    binding === undefined ||
+    binding.references.includes(identifier as unknown as Identifier)
+  );
+}
+
+function mutationRoot(target: BaseNode | null): string | null {
+  const name = identifierName(target);
+  if (name !== null) return name;
+  return target?.type === 'MemberExpression'
+    ? memberRootName(target as unknown as t.MemberExpression)
+    : null;
 }
 
 function summarizeLocalDerivationHelper(
   ctx: Ctx,
-  componentPath: NodePath<t.FunctionDeclaration>,
-  at: NodePath,
+  component: BaseNode,
+  at: BaseNode,
   name: string,
-  reactiveBindings: Map<unknown, string>,
-  cache: Map<t.Function, LocalDerivationHelperSummary>,
-  visiting: Set<t.Function>,
+  reactiveBindings: Map<Binding, string>,
+  cache: Map<BaseNode, LocalDerivationHelperSummary>,
+  visiting: Set<BaseNode>,
 ): LocalDerivationHelperSummary | null {
-  const functionPath = localFunctionPath(componentPath, at, name);
-  if (functionPath === null) return null;
-  const cached = cache.get(functionPath.node);
+  const fn = localFunction(ctx, component, at, name);
+  if (fn === null) return null;
+  const cached = cache.get(fn);
   if (cached !== undefined) return cached;
-  if (visiting.has(functionPath.node)) {
+  if (visiting.has(fn)) {
     return {
       reads: new Set(),
       reason: `calls recursive local helper '${name}'`,
@@ -75,35 +193,31 @@ function summarizeLocalDerivationHelper(
   const fail = (message: string): void => {
     summary.reason ??= message;
   };
-  const noteReactiveIdentifier = (path: NodePath): void => {
-    if (!path.isIdentifier()) return;
-    const binding = path.scope.getBinding(path.node.name);
+  const noteReactiveIdentifier = (current: BaseNode): void => {
+    if (!isReferencedIdentifier(ctx, current)) return;
+    const binding = astBindingAt(ctx, current, current.name);
     const source =
       binding === undefined ? undefined : reactiveBindings.get(binding);
     if (source !== undefined) summary.reads.add(source);
   };
-  const noteReactiveMutation = (path: NodePath, node: t.Node): void => {
-    const root = t.isIdentifier(node)
-      ? node.name
-      : t.isMemberExpression(node)
-        ? memberRootName(node)
-        : null;
+  const noteReactiveMutation = (current: BaseNode, target: BaseNode | null): void => {
+    const root = mutationRoot(target);
     if (root === null) return;
-    const binding = path.scope.getBinding(root);
+    const binding = astBindingAt(ctx, current, root);
     const source =
       binding === undefined ? undefined : reactiveBindings.get(binding);
     if (source !== undefined) {
       fail(`calls local helper '${name}' which writes reactive state '${source}'`);
     }
   };
-  const noteCall = (callPath: NodePath<t.CallExpression>): void => {
-    const callee = callPath.node.callee;
-    if (!t.isIdentifier(callee)) return;
+  const noteCall = (call: BaseNode): void => {
+    const calleeName = identifierName(childNode(call, 'callee'));
+    if (calleeName === null) return;
     const local = summarizeLocalDerivationHelper(
       ctx,
-      componentPath,
-      callPath,
-      callee.name,
+      component,
+      call,
+      calleeName,
       reactiveBindings,
       cache,
       visiting,
@@ -113,85 +227,42 @@ function summarizeLocalDerivationHelper(
       if (local.reason !== null) fail(local.reason);
       return;
     }
-    if (!ctx.helpers.has(callee.name) && !ctx.importedFunctions.has(callee.name)) {
+    if (!ctx.helpers.has(calleeName) && !ctx.importedFunctions.has(calleeName)) {
       return;
     }
     const moduleSummary =
-      ctx.importedFunctions.get(callee.name) ??
-      summarizeHelper(ctx, callee.name);
+      ctx.importedFunctions.get(calleeName) ?? summarizeHelper(ctx, calleeName);
     for (const read of moduleSummary.reads) summary.reads.add(read);
     if (
       moduleSummary.writes.size !== 0 ||
       moduleSummary.boundedWrites.size !== 0
     ) {
-      fail(`calls helper '${callee.name}' which writes reactive state`);
-    } else if (moduleSummary.unbounded && ctx.helpers.has(callee.name)) {
-      fail(`calls recursive helper '${callee.name}' which cannot be analyzed`);
+      fail(`calls helper '${calleeName}' which writes reactive state`);
+    } else if (moduleSummary.unbounded && ctx.helpers.has(calleeName)) {
+      fail(`calls recursive helper '${calleeName}' which cannot be analyzed`);
+    }
+  };
+  const inspect = (current: BaseNode): void => {
+    if (current.type === 'Identifier') noteReactiveIdentifier(current);
+    else if (current.type === 'AssignmentExpression') {
+      noteReactiveMutation(current, childNode(current, 'left'));
+    } else if (current.type === 'UpdateExpression') {
+      noteReactiveMutation(current, childNode(current, 'argument'));
+    } else if (current.type === 'AwaitExpression') {
+      fail(`calls async local helper '${name}'`);
+    } else if (current.type === 'YieldExpression') {
+      fail(`calls yielding local helper '${name}'`);
+    } else if (current.type === 'CallExpression') {
+      noteCall(current);
     }
   };
 
-  visiting.add(functionPath.node);
-  functionPath.traverse({
-    Function(path) {
-      const parent = path.parentPath;
-      const executesNow =
-        (parent.isCallExpression() || parent.isNewExpression()) &&
-        parent.node.callee === path.node;
-      if (!executesNow) {
-        path.skip();
-      }
-    },
-    ReferencedIdentifier(path) {
-      noteReactiveIdentifier(path);
-    },
-    AssignmentExpression(path) {
-      noteReactiveMutation(path, path.node.left);
-    },
-    UpdateExpression(path) {
-      noteReactiveMutation(path, path.node.argument);
-    },
-    AwaitExpression() {
-      fail(`calls async local helper '${name}'`);
-    },
-    YieldExpression() {
-      fail(`calls yielding local helper '${name}'`);
-    },
-    CallExpression(path) {
-      noteCall(path);
-    },
-  });
-  if (summary.reads.size !== 0) {
-    functionPath.traverse({
-      Function(path) {
-        const parent = path.parentPath;
-        const participatesInCall =
-          (parent.isCallExpression() || parent.isNewExpression()) &&
-          (parent.node.callee === path.node ||
-            parent.node.arguments.some((argument) => argument === path.node));
-        if (!participatesInCall) path.skip();
-      },
-      ReferencedIdentifier(path) {
-        noteReactiveIdentifier(path);
-      },
-      AssignmentExpression(path) {
-        noteReactiveMutation(path, path.node.left);
-      },
-      UpdateExpression(path) {
-        noteReactiveMutation(path, path.node.argument);
-      },
-      AwaitExpression() {
-        fail(`calls async local helper '${name}'`);
-      },
-      YieldExpression() {
-        fail(`calls yielding local helper '${name}'`);
-      },
-      CallExpression(path) {
-        noteCall(path);
-      },
-    });
-  }
-  visiting.delete(functionPath.node);
-  cache.set(functionPath.node, summary);
+  visiting.add(fn);
+  const body = childNode(fn, 'body') ?? fn;
+  walkExecuted(ctx, body, false, inspect);
+  if (summary.reads.size !== 0) walkExecuted(ctx, body, true, inspect);
+  visiting.delete(fn);
+  cache.set(fn, summary);
   return summary;
 }
 
@@ -224,38 +295,29 @@ export function scanInstanceState(ctx: Ctx): void {
   }
 }
 
-/**
- * Local bindings used as a JSX `ref={name}` sink hold external DOM nodes.
- * They are mutable references, not reactive state: assigning the binding is
- * the ref adapter's job, and field writes / receiver calls through the node
- * (`input.value = x`, `canvas.getContext('2d')`) mutate the outside world.
- * Treating those as reactive writes made every ref-using effect invalidate
- * its own owner, which re-marks the effect — a render cycle (see the
- * TelemetryCanvas cascade). Exclude them from instance state so neither the
- * write analyzers nor the reason-id system ever route through them.
- */
+/** Exclude JSX ref sinks from reactive instance state. */
 export function excludeRefBindings(ctx: Ctx): void {
   for (const [name, componentPath] of ctx.compPaths) {
     const state = ctx.instanceState.get(name);
     if (state === undefined || state.size === 0) continue;
     const refs = new Set<string>();
-    componentPath.traverse({
-      JSXAttribute(path) {
-        if (jsxAttributeName(path.node.name) !== 'ref') return;
-        const value = path.node.value;
-        if (!t.isJSXExpressionContainer(value)) return;
-        const expression = value.expression;
-        if (t.isIdentifier(expression)) {
-          refs.add(expression.name);
+    walkAst<BaseNode>(componentPath.node as unknown as BaseNode, {
+      enter(current) {
+        if (current.type !== 'JSXAttribute') return;
+        const attribute = current as unknown as t.JSXAttribute;
+        if (jsxAttributeName(attribute.name) !== 'ref') return;
+        const value = childNode(current, 'value');
+        if (value?.type !== 'JSXExpressionContainer') return;
+        const expression = childNode(value, 'expression');
+        const direct = identifierName(expression);
+        if (direct !== null) {
+          refs.add(direct);
           return;
         }
-        // ref={[a, b]} installs several refs in deterministic order
-        if (t.isArrayExpression(expression)) {
-          for (const element of expression.elements) {
-            if (element !== null && t.isIdentifier(element)) {
-              refs.add(element.name);
-            }
-          }
+        if (expression?.type !== 'ArrayExpression') return;
+        for (const element of childNodes(expression, 'elements')) {
+          const item = identifierName(element);
+          if (item !== null) refs.add(item);
         }
       },
     });
@@ -263,46 +325,38 @@ export function excludeRefBindings(ctx: Ctx): void {
   }
 }
 
-/**
- * Discover ordered component-local const derivations. These replay in the
- * owning component update before guarded DOM setters.
- */
+/** Discover ordered component-local const derivations. */
 export function scanInstanceDerivations(ctx: Ctx): void {
   for (const [componentName, componentPath] of ctx.compPaths) {
-    const reactiveBindings = new Map<unknown, string>();
-    // Opaque roots ($fetch handles, external clients) change outside the
-    // access table; consts derived from them must replay on every update or
-    // their values freeze at factory time. Reading one qualifies a const as
-    // a derivation exactly like a reactive read does.
+    const component = componentPath.node as unknown as BaseNode;
+    const reactiveBindings = new Map<Binding, string>();
     const opaqueRoots = ctx.opaqueBindings.get(componentName);
-    const isOpaqueLocal = (name: string, at: NodePath): boolean => {
+    const ownerBinding = (name: string): Binding | undefined =>
+      astBindingAt(ctx, component, name);
+    const isOpaqueLocal = (name: string, at: BaseNode): boolean => {
       if (opaqueRoots?.has(name) !== true) return false;
-      const binding = at.scope.getBinding(name);
-      return (
-        binding !== undefined &&
-        binding === componentPath.scope.getBinding(name)
-      );
+      const binding = astBindingAt(ctx, at, name);
+      return binding !== undefined && binding === ownerBinding(name);
     };
-    const isTransparentLocal = (name: string, at: NodePath): boolean => {
+    const isTransparentLocal = (name: string, at: BaseNode): boolean => {
       if (ctx.transparentSources.get(componentName)?.has(name) !== true) {
         return false;
       }
-      const binding = at.scope.getBinding(name);
-      return binding !== undefined &&
-        binding === componentPath.scope.getBinding(name);
+      const binding = astBindingAt(ctx, at, name);
+      return binding !== undefined && binding === ownerBinding(name);
     };
 
     for (const name of ctx.componentProps.get(componentName)?.bindings ?? []) {
-      const binding = componentPath.scope.getBinding(name);
+      const binding = ownerBinding(name);
       if (binding) reactiveBindings.set(binding, name);
     }
     for (const name of ctx.instanceState.get(componentName) ?? []) {
-      const binding = componentPath.scope.getBinding(name);
+      const binding = ownerBinding(name);
       if (binding) reactiveBindings.set(binding, name);
     }
     for (const name of ctx.state.keys()) {
-      const binding = componentPath.scope.getBinding(name);
-      if (binding?.scope.path.isProgram()) {
+      const binding = ownerBinding(name);
+      if (binding?.scope.isProgramScope === true) {
         reactiveBindings.set(binding, name);
       }
     }
@@ -311,41 +365,27 @@ export function scanInstanceDerivations(ctx: Ctx): void {
     const derivedBindings = new Set<string>();
     const derivedSources = new Map<string, Set<string>>();
 
-    const isTransparentFetchCall = (
-      initPath: NodePath<t.Expression>,
-    ): boolean => {
-      if (!initPath.isCallExpression() || !t.isIdentifier(initPath.node.callee)) {
+    const isTransparentFetchCall = (initializer: BaseNode): boolean => {
+      if (initializer.type !== 'CallExpression') return false;
+      const calleeName = identifierName(childNode(initializer, 'callee'));
+      if (
+        calleeName === null ||
+        !ctx.transparentSourceFactories.has(calleeName)
+      ) {
         return false;
       }
-      if (!ctx.transparentSourceFactories.has(initPath.node.callee.name)) {
-        return false;
-      }
-      const factory = initPath.scope.getBinding(initPath.node.callee.name);
-      return factory?.kind === 'module';
+      return astBindingAt(ctx, initializer, calleeName)?.kind === 'import';
     };
 
-    /**
-     * Classify how an opaque local is used inside a candidate initializer.
-     * Only PROPERTY READS through the value (`tasksResource.data?.todos`)
-     * are pure, replayable live queries. Using the opaque value ITSELF as a
-     * value — destructuring (`const { status } = users`), copying, invoking
-     * it (`taskApi.$fetch(...)`), or passing it as an argument — takes a
-     * snapshot or hands control outside: such initializers must run once in
-     * the factory.
-     */
-    const opaqueUseIsLiveRead = (
-      start: NodePath<t.Identifier>,
-    ): boolean => {
-      let current: NodePath = start;
+    const opaqueUseIsLiveRead = (start: BaseNode): boolean => {
+      let current = start;
       let climbed = false;
       for (;;) {
-        const parent: NodePath | undefined = current.parentPath;
-        if (parent === undefined) break;
+        const parent = parentOf(ctx, current);
         if (
-          (parent.isMemberExpression() &&
-            parent.node.object === current.node) ||
-          (parent.isOptionalMemberExpression() &&
-            parent.node.object === current.node)
+          (parent?.type === 'MemberExpression' ||
+            parent?.type === 'OptionalMemberExpression') &&
+          childNode(parent, 'object') === current
         ) {
           current = parent;
           climbed = true;
@@ -353,29 +393,25 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         }
         break;
       }
-      // A bare reference to the opaque value itself is snapshot semantics.
       if (!climbed) return false;
-      const user = current.parentPath;
-      if (user !== undefined) {
+      const user = parentOf(ctx, current);
+      if (user !== null) {
         if (
-          (user.isCallExpression() || user.isNewExpression()) &&
-          user.node.callee === current.node
+          (user.type === 'CallExpression' || user.type === 'NewExpression') &&
+          childNode(user, 'callee') === current
         ) {
-          // Transparent values are rewritten to an honest payload before
-          // execution, so payload method derivations such as
-          // `todos.filter(...)` are safe to replay. Other opaque handles keep
-          // their historical escape restriction.
-          return isTransparentLocal(start.node.name, start);
+          return isTransparentLocal(identifierName(start)!, start);
         }
         if (
-          (user.isCallExpression() || user.isNewExpression()) ||
-          user.isSpreadElement()
+          user.type === 'CallExpression' ||
+          user.type === 'NewExpression' ||
+          user.type === 'SpreadElement'
         ) {
-          return false; // passed as an argument — escapes our control
+          return false;
         }
         if (
-          user.isAssignmentExpression() &&
-          user.node.left === current.node
+          user.type === 'AssignmentExpression' &&
+          childNode(user, 'left') === current
         ) {
           return false;
         }
@@ -383,43 +419,23 @@ export function scanInstanceDerivations(ctx: Ctx): void {
       return true;
     };
 
-    /**
-     * How opaque locals appear in a candidate initializer:
-     * - 'none': no opaque use — the reactive-read path decides alone.
-     * - 'ok':   every opaque use is a pure member read (live derivation).
-     * - 'bad':  some opaque use snapshots or escapes — keep factory-time.
-     * Reads of already-accepted derivation bindings are reactive reads, not
-     * opaque uses, even when the derivation itself is opaque-rooted.
-     */
-    const classifyOpaqueReads = (initPath: NodePath): 'none' | 'ok' | 'bad' => {
+    const classifyOpaqueReads = (
+      initializer: BaseNode,
+    ): 'none' | 'ok' | 'bad' => {
       let verdict: 'none' | 'ok' | 'bad' = 'none';
-      initPath.traverse({
-        Function(functionPath) {
-          const parent = functionPath.parentPath;
-          const participatesInCall =
-            (parent.isCallExpression() || parent.isNewExpression()) &&
-            (parent.node.callee === functionPath.node ||
-              parent.node.arguments.some(
-                (argument) => argument === functionPath.node,
-              ));
-          if (!participatesInCall) functionPath.skip();
-        },
-        ReferencedIdentifier(path) {
-          if (verdict === 'bad' || !path.isIdentifier()) return;
-          const binding = path.scope.getBinding(path.node.name);
-          if (binding !== undefined && reactiveBindings.has(binding)) return;
-          if (!isOpaqueLocal(path.node.name, path)) return;
-          verdict = opaqueUseIsLiveRead(path) ? 'ok' : 'bad';
-        },
+      walkExecuted(ctx, initializer, true, (current) => {
+        if (verdict === 'bad' || !isReferencedIdentifier(ctx, current)) return;
+        const binding = astBindingAt(ctx, current, current.name);
+        if (binding !== undefined && reactiveBindings.has(binding)) return;
+        if (!isOpaqueLocal(current.name, current)) return;
+        verdict = opaqueUseIsLiveRead(current) ? 'ok' : 'bad';
       });
       return verdict;
     };
 
-    const statements = componentPath.get('body').get('body');
-    for (const statementPath of statements) {
-      if (!statementPath.isVariableDeclaration({ kind: 'const' })) continue;
-      for (const declarationPath of statementPath.get('declarations')) {
-        const declaration = declarationPath.node;
+    for (const statement of componentPath.node.body.body) {
+      if (!t.isVariableDeclaration(statement, { kind: 'const' })) continue;
+      for (const declaration of statement.declarations) {
         if (
           (!t.isIdentifier(declaration.id) &&
             !t.isObjectPattern(declaration.id) &&
@@ -439,52 +455,36 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         ) {
           continue;
         }
-        const initPath = declarationPath.get('init');
-        if (!initPath.isExpression()) continue;
-        const isTransparentFetch = isTransparentFetchCall(initPath);
-        // A transparent fetch binding is a stable hidden resource, never a
-        // replaceable local derivation. Reactive target/options inputs rebind
-        // that same resource below instead of replacing the binding.
-        const reactivePath = initPath;
-        // An initializer that invokes or hands off an opaque value performs
-        // side effects (fetches, client construction): keep it factory-time.
-        if (classifyOpaqueReads(reactivePath) === 'bad') continue;
+        const initializer = declaration.init as unknown as BaseNode;
+        const isTransparentFetch = isTransparentFetchCall(initializer);
+        if (classifyOpaqueReads(initializer) === 'bad') continue;
 
         const directReads = new Set<string>();
         let reason: string | null = null;
-        const bindingIsReactive = (name: string, at: NodePath): boolean => {
-          const binding = at.scope.getBinding(name);
+        const bindingIsReactive = (name: string, at: BaseNode): boolean => {
+          const binding = astBindingAt(ctx, at, name);
           return binding !== undefined && reactiveBindings.has(binding);
         };
-        const noteIdentifier = (path: NodePath): void => {
-          if (!t.isIdentifier(path.node)) return;
-          const binding = path.scope.getBinding(path.node.name);
+        const noteIdentifier = (current: BaseNode): void => {
+          if (!isReferencedIdentifier(ctx, current)) return;
+          const binding = astBindingAt(ctx, current, current.name);
           const source =
             binding === undefined ? undefined : reactiveBindings.get(binding);
           if (source !== undefined) directReads.add(source);
-          else if (isOpaqueLocal(path.node.name, path)) {
-            directReads.add(path.node.name);
+          else if (isOpaqueLocal(current.name, current)) {
+            directReads.add(current.name);
           }
         };
-        const mutationRoot = (node: t.Node): string | null =>
-          t.isIdentifier(node)
-            ? node.name
-            : t.isMemberExpression(node)
-              ? memberRootName(node)
-              : null;
-        const helperCache = new Map<
-          t.Function,
-          LocalDerivationHelperSummary
-        >();
-        const helperVisiting = new Set<t.Function>();
-        const noteCall = (path: NodePath<t.CallExpression>): void => {
-          const callee = path.node.callee;
-          if (!t.isIdentifier(callee)) return;
+        const helperCache = new Map<BaseNode, LocalDerivationHelperSummary>();
+        const helperVisiting = new Set<BaseNode>();
+        const noteCall = (call: BaseNode): void => {
+          const calleeName = identifierName(childNode(call, 'callee'));
+          if (calleeName === null) return;
           const local = summarizeLocalDerivationHelper(
             ctx,
-            componentPath,
-            path,
-            callee.name,
+            component,
+            call,
+            calleeName,
             reactiveBindings,
             helperCache,
             helperVisiting,
@@ -495,126 +495,51 @@ export function scanInstanceDerivations(ctx: Ctx): void {
             return;
           }
           if (
-            !ctx.helpers.has(callee.name) &&
-            !ctx.importedFunctions.has(callee.name)
+            !ctx.helpers.has(calleeName) &&
+            !ctx.importedFunctions.has(calleeName)
           ) {
             return;
           }
           const summary =
-            ctx.importedFunctions.get(callee.name) ??
-            summarizeHelper(ctx, callee.name);
+            ctx.importedFunctions.get(calleeName) ??
+            summarizeHelper(ctx, calleeName);
           for (const read of summary.reads) directReads.add(read);
           if (
             summary.writes.size !== 0 ||
             summary.boundedWrites.size !== 0
           ) {
-            reason ??= `calls helper '${callee.name}' which writes reactive state`;
-          } else if (summary.unbounded && ctx.helpers.has(callee.name)) {
-            reason ??= `calls recursive helper '${callee.name}' which cannot be analyzed`;
+            reason ??= `calls helper '${calleeName}' which writes reactive state`;
+          } else if (summary.unbounded && ctx.helpers.has(calleeName)) {
+            reason ??= `calls recursive helper '${calleeName}' which cannot be analyzed`;
+          }
+        };
+        const inspect = (current: BaseNode): void => {
+          if (current.type === 'Identifier') noteIdentifier(current);
+          else if (current.type === 'AssignmentExpression') {
+            const root = mutationRoot(childNode(current, 'left'));
+            if (root !== null && bindingIsReactive(root, current)) {
+              reason = 'contains an assignment to reactive state';
+            }
+          } else if (current.type === 'UpdateExpression') {
+            const root = mutationRoot(childNode(current, 'argument'));
+            if (root !== null && bindingIsReactive(root, current)) {
+              reason = 'contains an update (++/--) to reactive state';
+            }
+          } else if (current.type === 'AwaitExpression') {
+            reason = 'uses await; per-instance derivations must be synchronous';
+          } else if (current.type === 'YieldExpression') {
+            reason = 'uses yield; per-instance derivations must be synchronous';
+          } else if (current.type === 'CallExpression') {
+            noteCall(current);
           }
         };
 
-        // A bare opaque identifier as the whole initializer is a snapshot
-        // (`const { status } = users`) — never a live read — so only note it
-        // when it resolves to reactive state.
-        if (
-          reactivePath.isReferencedIdentifier() &&
-          !isOpaqueLocal(reactivePath.node.name, reactivePath)
-        ) {
-          noteIdentifier(reactivePath);
-        }
-        if (reactivePath.isAssignmentExpression()) {
-          const root = mutationRoot(reactivePath.node.left);
-          if (root !== null && bindingIsReactive(root, reactivePath)) {
-            reason = 'contains an assignment to reactive state';
-          }
-        } else if (reactivePath.isUpdateExpression()) {
-          const root = mutationRoot(reactivePath.node.argument);
-          if (root !== null && bindingIsReactive(root, reactivePath)) {
-            reason = 'contains an update (++/--) to reactive state';
-          }
-        } else if (reactivePath.isAwaitExpression()) {
-          reason = 'uses await; per-instance derivations must be synchronous';
-        } else if (reactivePath.isYieldExpression()) {
-          reason = 'uses yield; per-instance derivations must be synchronous';
-        }
-        if (reactivePath.isCallExpression()) noteCall(reactivePath);
-        reactivePath.traverse({
-          Function(functionPath) {
-            const parent = functionPath.parentPath;
-            const executesNow =
-              (parent.isCallExpression() || parent.isNewExpression()) &&
-              parent.node.callee === functionPath.node;
-            if (!executesNow) {
-              functionPath.skip();
-            }
-          },
-          ReferencedIdentifier(path) {
-            noteIdentifier(path);
-          },
-          AssignmentExpression(path) {
-            const root = mutationRoot(path.node.left);
-            if (root !== null && bindingIsReactive(root, path)) {
-              reason = 'contains an assignment to reactive state';
-            }
-          },
-          UpdateExpression(path) {
-            const root = mutationRoot(path.node.argument);
-            if (root !== null && bindingIsReactive(root, path)) {
-              reason = 'contains an update (++/--) to reactive state';
-            }
-          },
-          AwaitExpression() {
-            reason = 'uses await; per-instance derivations must be synchronous';
-          },
-          YieldExpression() {
-            reason = 'uses yield; per-instance derivations must be synchronous';
-          },
-          CallExpression(path) {
-            noteCall(path);
-          },
-        });
-
+        walkExecuted(ctx, initializer, false, inspect);
         if (directReads.size === 0) continue;
-        reactivePath.traverse({
-          Function(functionPath) {
-            const parent = functionPath.parentPath;
-            const participatesInCall =
-              (parent.isCallExpression() || parent.isNewExpression()) &&
-              (parent.node.callee === functionPath.node ||
-                parent.node.arguments.some(
-                  (argument) => argument === functionPath.node,
-                ));
-            if (!participatesInCall) functionPath.skip();
-          },
-          ReferencedIdentifier(path) {
-            noteIdentifier(path);
-          },
-          AssignmentExpression(path) {
-            const root = mutationRoot(path.node.left);
-            if (root !== null && bindingIsReactive(root, path)) {
-              reason = 'contains an assignment to reactive state';
-            }
-          },
-          UpdateExpression(path) {
-            const root = mutationRoot(path.node.argument);
-            if (root !== null && bindingIsReactive(root, path)) {
-              reason = 'contains an update (++/--) to reactive state';
-            }
-          },
-          AwaitExpression() {
-            reason = 'uses await; per-instance derivations must be synchronous';
-          },
-          YieldExpression() {
-            reason = 'uses yield; per-instance derivations must be synchronous';
-          },
-          CallExpression(path) {
-            noteCall(path);
-          },
-        });
+        walkExecuted(ctx, initializer, true, inspect);
         if (reason !== null) {
           const names = bindingNames(declaration.id);
-          throw declarationPath.buildCodeFrameError(
+          throw componentPath.buildCodeFrameError(
             `memo-dom: local const '${
               names.join(', ') || '<pattern>'
             }' is a per-instance derivation but ${reason}`,
@@ -630,20 +555,18 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         }
         const stableFetchTarget =
           isTransparentFetch && t.isIdentifier(declaration.id);
-        const replay = stableFetchTarget && initPath.isCallExpression()
+        const replay = stableFetchTarget && t.isCallExpression(declaration.init)
           ? t.expressionStatement(
               t.callExpression(mdd(ctx, 'rebindResolvedValue'), [
                 t.identifier((declaration.id as t.Identifier).name),
-                ...(initPath.node.arguments.map((argument) =>
-                  t.cloneNode(argument, true)
-                )),
+                ...declaration.init.arguments.map(cloneNode),
               ]),
             )
           : undefined;
         derivations.push({
-          declaration: statementPath.node,
-          target: t.cloneNode(declaration.id),
-          source: t.cloneNode(declaration.init),
+          declaration: statement,
+          target: cloneNode(declaration.id),
+          source: cloneNode(declaration.init),
           bindings: names,
           sources: [...sources].sort(),
           ...(stableFetchTarget ? { stableTarget: true, replay } : {}),
@@ -652,7 +575,7 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         for (const name of names) {
           derivedBindings.add(name);
           derivedSources.set(name, new Set(sources));
-          const binding = componentPath.scope.getBinding(name);
+          const binding = ownerBinding(name);
           if (binding) reactiveBindings.set(binding, name);
           ctx.instanceState.get(componentName)?.delete(name);
         }
@@ -667,9 +590,7 @@ export function scanInstanceDerivations(ctx: Ctx): void {
       ...(ctx.componentProps.get(componentName)?.bindings ?? []),
     ]);
     const selective = [...exactSources].some((source) =>
-      derivations.some(
-        (derivation) => !derivation.sources.includes(source),
-      ),
+      derivations.some((derivation) => !derivation.sources.includes(source)),
     );
     if (!selective) continue;
     const reasonSources = new Set<string>([
@@ -679,9 +600,7 @@ export function scanInstanceDerivations(ctx: Ctx): void {
     ctx.instanceReasonIds.set(
       componentName,
       new Map(
-        [...reasonSources]
-          .sort()
-          .map((source, index) => [source, index]),
+        [...reasonSources].sort().map((source, index) => [source, index]),
       ),
     );
     ctx.selectiveDerivationComponents.add(componentName);
