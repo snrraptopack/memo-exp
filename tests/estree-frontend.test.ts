@@ -27,6 +27,7 @@ import {
 import { analyzeComputed } from '../packages/compiler/src/analysis/computed';
 import { cloneRuntimeBindingPattern } from '../packages/compiler/src/analysis/runtime-pattern';
 import { isStaticDerivedChain } from '../packages/compiler/src/lists/static-derived';
+import { discoverComponentExports } from '../packages/compiler/src/components/manifest';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -244,5 +245,33 @@ describe('ESTree parser and printer boundary', () => {
     expect(originalAnnotation).not.toBeNull();
     expect(cloned).not.toBe(pattern);
     expect(clonedAnnotation).toBeNull();
+  });
+
+  it('discovers component exports directly from an OXC program', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        interface CardProps {
+          title: string;
+          onSave(): void;
+        }
+        export function Card(
+          { title, onSave, ...rest }: CardProps,
+        ) {
+          return <button onClick={onSave}>{title}</button>;
+        }
+        function helper() { return 1; }
+      `,
+      { filename: 'card.tsx' },
+    );
+
+    const components = discoverComponentExports(parsed.program, './card.tsx');
+    expect(components.get('Card')).toMatchObject({
+      key: './card.tsx#Card',
+      props: ['title', 'onSave'],
+      objectProps: true,
+      acceptsUnknownProps: true,
+      delegatedEvents: ['onClick'],
+    });
+    expect(components.has('helper')).toBe(false);
   });
 });

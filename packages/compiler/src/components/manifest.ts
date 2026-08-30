@@ -6,8 +6,7 @@
  * remains in component-linker.ts.
  */
 
-import type { NodePath } from '@babel/traverse';
-import * as t from '@babel/types';
+import { walkAst, type BaseNode } from '../ast';
 import { isListLightweightCandidate } from '../analysis';
 import {
   canonicalStateKey,
@@ -18,8 +17,7 @@ import {
   type ComponentGraphEdge,
   type ComponentGraphNode,
 } from '../component-linker';
-import { containsJsx } from '../lists';
-import { analyzeComponentProps } from './props';
+import { analyzeComponentPropShape } from './prop-shape';
 import {
   collectComponentPropSources,
 } from './prop-origins';
@@ -42,37 +40,58 @@ export interface ComponentExportInfo {
 
 /** Discover enough component shape to bootstrap the first import-link pass. */
 export function discoverComponentExports(
-  programPath: NodePath<t.Program>,
+  program: BaseNode,
   moduleId: string,
 ): Map<string, ComponentExportInfo> {
   const components = new Map<string, ComponentExportInfo>();
-  programPath.traverse({
-    FunctionDeclaration(path) {
-      const name = path.node.id?.name;
-      if (
-        name !== undefined &&
-        /^[A-Z]/.test(name) &&
-        path.scope.parent?.path.isProgram() === true &&
-        containsJsx(path)
-      ) {
-        const props = analyzeComponentProps(path.node.params);
-        components.set(name, {
-          key: `${moduleId}#${name}`,
-          props: [...props.names],
-          objectProps: props.mode === 'object',
-          acceptsUnknownProps: props.acceptsUnknown,
-          hasWholeDefault: props.hasWholeDefault,
-          listLightweight: false,
-          delegatedEvents: hostJsxEventNames(path.node.body),
-          renderProps: [],
-          renderCallbacks: [],
-          refProps: [],
-          subtreeReads: [],
-        });
-      }
-      path.skip();
-    },
-  });
+  const fields = (node: BaseNode): Record<string, unknown> =>
+    node as unknown as Record<string, unknown>;
+  const node = (value: unknown): BaseNode | null =>
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { type?: unknown }).type === 'string'
+      ? (value as BaseNode)
+      : null;
+  const nodes = (value: unknown): BaseNode[] =>
+    Array.isArray(value) ? value.filter((item): item is BaseNode => node(item) !== null) : [];
+  const body = nodes(fields(program).body);
+  for (const statement of body) {
+    const declaration =
+      statement.type === 'ExportNamedDeclaration' ||
+      statement.type === 'ExportDefaultDeclaration'
+        ? node(fields(statement).declaration)
+        : statement;
+    if (declaration?.type !== 'FunctionDeclaration') continue;
+    const id = node(fields(declaration).id);
+    const name = id?.type === 'Identifier' ? fields(id).name : null;
+    if (typeof name !== 'string' || !/^[A-Z]/.test(name)) continue;
+    let hasJsx = false;
+    walkAst(declaration, {
+      enter(current) {
+        if (current.type === 'JSXElement' || current.type === 'JSXFragment') {
+          hasJsx = true;
+          return false;
+        }
+      },
+    });
+    if (!hasJsx) continue;
+    const props = analyzeComponentPropShape(nodes(fields(declaration).params));
+    const functionBody = node(fields(declaration).body);
+    components.set(name, {
+      key: `${moduleId}#${name}`,
+      props: [...props.names],
+      objectProps: props.mode === 'object',
+      acceptsUnknownProps: props.acceptsUnknown,
+      hasWholeDefault: props.hasWholeDefault,
+      listLightweight: false,
+      delegatedEvents:
+        functionBody === null ? [] : hostJsxEventNames(functionBody),
+      renderProps: [],
+      renderCallbacks: [],
+      refProps: [],
+      subtreeReads: [],
+    });
+  }
   return components;
 }
 

@@ -670,7 +670,7 @@ function discoverManifest(
         const functionTagCandidates = moduleFunctionStringCandidates(
           programPath.node,
         );
-        const components = discoverComponentExports(programPath, entry.id);
+        const components = discoverComponentExports(programPath.node, entry.id);
         const componentNames = new Set(components.keys());
         const providerSources = new Map(
           (options.transparentAsyncSources ??

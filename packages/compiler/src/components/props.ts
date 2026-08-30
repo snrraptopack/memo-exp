@@ -8,7 +8,8 @@
  */
 
 import * as t from '@babel/types';
-import { walkAst } from '../ast';
+import { walkAst, type BaseNode } from '../ast';
+import { analyzeComponentPropShape } from './prop-shape';
 
 export type ComponentParam = Exclude<
   t.FunctionDeclaration['params'][number],
@@ -119,66 +120,13 @@ export interface ControlFlowDerivation {
 export function analyzeComponentProps(
   params: t.FunctionDeclaration['params'],
 ): ComponentPropsPlan {
-  if (params.some((param) => t.isTSParameterProperty(param))) {
-    throw new Error('TypeScript parameter properties are not valid component props');
-  }
   const plain = params as ComponentParam[];
-  if (plain.length === 0) {
-    return {
-      mode: 'positional',
-      names: [],
-      acceptsUnknown: false,
-      bindings: [],
-      params: [],
-      hasWholeDefault: false,
-      renderProps: [],
-      renderCallbacks: [],
-      refProps: [],
-    };
-  }
-
-  const firstTarget = parameterTarget(plain[0]!);
-  const objectMode =
-    plain.length === 1 &&
-    (t.isObjectPattern(firstTarget) ||
-      (t.isIdentifier(firstTarget) && firstTarget.name === 'props'));
-
-  if (objectMode) {
-    const names = t.isObjectPattern(firstTarget)
-      ? objectPropertyNames(firstTarget)
-      : [];
-    return {
-      mode: 'object',
-      names,
-      acceptsUnknown:
-        t.isIdentifier(firstTarget) ||
-        firstTarget.properties.some((property) => t.isRestElement(property)),
-      bindings: bindingNames(firstTarget),
-      params: plain.map((param) => t.cloneNode(param)),
-      hasWholeDefault: t.isAssignmentPattern(plain[0]),
-      renderProps: [],
-      renderCallbacks: [],
-      refProps: [],
-    };
-  }
-
-  const names: string[] = [];
-  for (const param of plain) {
-    const target = parameterTarget(param);
-    if (!t.isIdentifier(target)) {
-      throw new Error(
-        'object-destructured props must be the component\'s only parameter',
-      );
-    }
-    names.push(target.name);
-  }
+  const shape = analyzeComponentPropShape(
+    plain as unknown as BaseNode[],
+  );
   return {
-    mode: 'positional',
-    names,
-    acceptsUnknown: false,
-    bindings: plain.flatMap((param) => bindingNames(parameterTarget(param))),
+    ...shape,
     params: plain.map((param) => t.cloneNode(param)),
-    hasWholeDefault: false,
     renderProps: [],
     renderCallbacks: [],
     refProps: [],
@@ -333,22 +281,6 @@ function inputWithDefault(
     t.cloneNode(param.right),
     t.cloneNode(source),
   );
-}
-
-function objectPropertyNames(pattern: t.ObjectPattern): string[] {
-  const names: string[] = [];
-  for (const property of pattern.properties) {
-    if (t.isRestElement(property)) continue;
-    if (property.computed) {
-      throw new Error('computed keys are not supported in component prop patterns');
-    }
-    if (t.isIdentifier(property.key)) names.push(property.key.name);
-    else if (t.isStringLiteral(property.key)) names.push(property.key.value);
-    else {
-      throw new Error('component prop pattern keys must be identifiers or strings');
-    }
-  }
-  return names;
 }
 
 function declarationTarget(target: PropTarget): PropTarget {

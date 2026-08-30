@@ -10,7 +10,7 @@ completed work.
 
 | Area | State | Verified result |
 |---|---|---|
-| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 18 passing tests; root TypeScript typecheck passes |
+| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 19 passing tests; root TypeScript typecheck passes |
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
 | Compiler analysis migration | Started | Multiple type, JSX, handler, list, prop, and computed passes accept ESTree |
@@ -74,7 +74,9 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - component ref-prop scanning in `components/ref-props.ts`;
 - static list-source classification in `lists/source-shapes.ts`;
 - static derived-list discovery in `lists/static-derived.ts`; and
-- module computed-state analysis in `analysis/computed.ts`.
+- module computed-state analysis in `analysis/computed.ts`; and
+- first-pass component export discovery in `components/manifest.ts` and
+  parser-neutral parameter shaping in `components/prop-shape.ts`.
 
 `lists/targeted-refresh.ts`, `analysis/type-candidates.ts`, and
 `analysis/component-reads.ts`, plus `jsx/events.ts`, have no direct Babel import.
@@ -83,9 +85,9 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 `lists/static-derived.ts`, and `analysis/computed.ts` are also fully Babel-free.
 Frontend tests now feed OXC TS-ESTree directly into real compiler type, JSX,
 handler-call, component-prop, static-list, computed-state, and runtime-pattern
-analysis while the existing Babel pipeline parity tests remain green. The other
-migrated paths still accept Babel node types at their current boundary and
-therefore remain transitional.
+analysis, plus linker component discovery, while the existing Babel pipeline
+parity tests remain green. The other migrated paths still accept Babel node
+types at their current boundary and therefore remain transitional.
 
 ## Standalone frontend checkpoint
 
@@ -106,7 +108,9 @@ The focused frontend suite verifies:
 - computed analysis discovers scalar and dotted store reads directly from
   OXC-produced expressions; and
 - cloned TS-ESTree binding patterns have runtime-only annotations removed
-  without modifying the parsed input.
+  without modifying the parsed input; and
+- exported component contracts and delegated events are discovered directly
+  from an OXC-produced program.
 
 This boundary is not yet wired into the public `compile` function. The existing
 Babel path remains the compatibility oracle while transformations migrate.
@@ -121,7 +125,7 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 58 compiler source files still directly import or declare a
+At this checkpoint, 57 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
 
@@ -159,7 +163,7 @@ bun run --cwd packages/compiler build
 Verified on 2026-08-30:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 18 tests.
+- Focused AST/frontend suites passed: 2 files, 19 tests.
 - Handler, render-prop, render-function, render-callback, indexed-map, and
   delegated-event regressions passed: 6 files, 29 tests.
 - Calculated, nested, opaque-derived, gated, and targeted-list regressions
@@ -170,6 +174,8 @@ Verified on 2026-08-30:
   render-function regressions passed: 5 files, 26 tests.
 - Static-derived, calculated-list, gated-map, and list regressions passed:
   6 files, 34 tests.
+- Linker discovery, linked dynamic-component, delegated-event, render-prop,
+  and render-function regressions passed: 6 files, 30 tests.
 - Full root suite passed: 99 files, 590 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
