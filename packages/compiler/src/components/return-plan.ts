@@ -1,9 +1,33 @@
 /**
  * Normalize supported JSX return control flow into one stable branch picker.
  */
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode } from '../ast';
 import type { JsxNode } from '../jsx/children';
+
+interface ComponentFunctionContainer {
+  node: t.FunctionDeclaration;
+  buildCodeFrameError(message: string): Error;
+}
+
+const FUNCTION_NODES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
+
+const HOIST_BARRIERS = new Set([
+  'AwaitExpression',
+  'CallExpression',
+  'NewExpression',
+  'OptionalCallExpression',
+  'TaggedTemplateExpression',
+  'UpdateExpression',
+  'YieldExpression',
+]);
 
 export interface ComponentReturnPlan {
   /** Branch picker passed directly to createCondRegion(). */
@@ -38,11 +62,17 @@ function jsxReturn(statement: t.Statement): DirectComponentReturn | null {
 function isEmptyReturnArgument(
   argument: t.Expression | null | undefined,
 ): boolean {
+  if (argument == null) return true;
+  const candidate = argument as unknown as BaseNode & {
+    name?: string;
+    value?: unknown;
+  };
   return (
-    argument == null ||
-    t.isNullLiteral(argument) ||
-    t.isBooleanLiteral(argument, { value: false }) ||
-    t.isIdentifier(argument, { name: 'undefined' })
+    candidate.type === 'NullLiteral' ||
+    (candidate.type === 'BooleanLiteral' && candidate.value === false) ||
+    (candidate.type === 'Literal' &&
+      (candidate.value === null || candidate.value === false)) ||
+    (candidate.type === 'Identifier' && candidate.name === 'undefined')
   );
 }
 
@@ -76,15 +106,15 @@ function soleBranchReturn(statement: t.Statement): BranchReturn | null {
 }
 
 function componentReturns(
-  path: NodePath<t.FunctionDeclaration>,
+  path: ComponentFunctionContainer,
 ): t.ReturnStatement[] {
   const returns: t.ReturnStatement[] = [];
-  path.get('body').traverse({
-    ReturnStatement(returnPath) {
-      returns.push(returnPath.node);
-    },
-    Function(functionPath) {
-      functionPath.skip();
+  walkAst<BaseNode>(path.node.body as unknown as BaseNode, {
+    enter(node) {
+      if (FUNCTION_NODES.has(node.type)) return false;
+      if (node.type === 'ReturnStatement') {
+        returns.push(node as unknown as t.ReturnStatement);
+      }
     },
   });
   return returns;
@@ -102,19 +132,15 @@ function canHoistPastEarlyReturn(statement: t.Statement): boolean {
   }
   if (t.isSwitchStatement(statement) || t.isIfStatement(statement)) {
     let safe = true;
-    t.traverseFast(statement, (node) => {
-      if (
-        t.isCallExpression(node) ||
-        t.isOptionalCallExpression(node) ||
-        t.isNewExpression(node) ||
-        t.isAwaitExpression(node) ||
-        t.isYieldExpression(node) ||
-        t.isThrowStatement(node) ||
-        t.isTaggedTemplateExpression(node) ||
-        t.isUpdateExpression(node)
-      ) {
-        safe = false;
-      }
+    walkAst<BaseNode>(statement as unknown as BaseNode, {
+      enter(node) {
+        if (
+          HOIST_BARRIERS.has(node.type) ||
+          node.type === 'ThrowStatement'
+        ) {
+          safe = false;
+        }
+      },
     });
     return safe;
   }
@@ -123,19 +149,15 @@ function canHoistPastEarlyReturn(statement: t.Statement): boolean {
 
 function expressionCanHoist(expression: t.Expression): boolean {
   let safe = true;
-  t.traverseFast(expression, (node) => {
-    if (
-      t.isCallExpression(node) ||
-      t.isOptionalCallExpression(node) ||
-      t.isNewExpression(node) ||
-      t.isAwaitExpression(node) ||
-      t.isYieldExpression(node) ||
-      t.isTaggedTemplateExpression(node) ||
-      t.isAssignmentExpression(node) ||
-      t.isUpdateExpression(node)
-    ) {
-      safe = false;
-    }
+  walkAst<BaseNode>(expression as unknown as BaseNode, {
+    enter(node) {
+      if (
+        HOIST_BARRIERS.has(node.type) ||
+        node.type === 'AssignmentExpression'
+      ) {
+        safe = false;
+      }
+    },
   });
   return safe;
 }
@@ -178,7 +200,7 @@ function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
  * - a terminal exhaustive switch whose cases return JSX or an empty value
  */
 export function analyzeComponentReturns(
-  path: NodePath<t.FunctionDeclaration>,
+  path: ComponentFunctionContainer,
   name: string,
 ): ComponentReturns {
   const body = path.node.body.body;

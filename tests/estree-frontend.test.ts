@@ -33,6 +33,7 @@ import { discoverComponentExports } from '../packages/compiler/src/components/ma
 import { GeneratedIdentifiers } from '../packages/compiler/src/identifiers';
 import { isRenderCallbackJsxRoot } from '../packages/compiler/src/components/render-callbacks';
 import { scanModuleControlFlow } from '../packages/compiler/src/module-control-flow';
+import { analyzeComponentReturns } from '../packages/compiler/src/components/return-plan';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -407,5 +408,40 @@ describe('ESTree parser and printer boundary', () => {
       }),
     ]);
     expect(context.state.get('parity')).toBe('computed');
+  });
+
+  it('plans component return branches directly from OXC ESTree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        function View(visible: boolean) {
+          if (visible) return <main />;
+          return null;
+        }
+      `,
+      { filename: 'returns.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+
+    expect(component).not.toBeNull();
+    const returns = analyzeComponentReturns(
+      {
+        node: component!,
+        buildCodeFrameError(message) {
+          return new Error(message);
+        },
+      } as unknown as Parameters<typeof analyzeComponentReturns>[0],
+      'View',
+    );
+
+    expect('branches' in returns).toBe(true);
+    if ('branches' in returns) {
+      expect(returns.branches.map((branch) => branch?.type ?? null)).toEqual([
+        'JSXElement',
+        null,
+      ]);
+    }
   });
 });
