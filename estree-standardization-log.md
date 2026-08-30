@@ -147,7 +147,7 @@ The compiler package still declares these five dependencies:
 At this checkpoint, 57 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
-Of those files, 33 still import or declare `@babel/traverse`. The shared
+Of those files, 32 still import or declare `@babel/traverse`. The shared
 identifier allocator no longer needs a Babel program scope, and calculated
 list normalization no longer uses NodePath traversal or replacement. Its final
 `scope.crawl()` is a temporary synchronization bridge for downstream passes.
