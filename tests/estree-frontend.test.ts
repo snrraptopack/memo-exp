@@ -50,6 +50,7 @@ import { scanInstanceDerivations } from '../packages/compiler/src/analysis/insta
 import { normalizeComponentJsxValues } from '../packages/compiler/src/components/jsx-values';
 import { normalizeRenderFunctions } from '../packages/compiler/src/components/render-functions';
 import { analyzeRouterJsx } from '../packages/compiler/src/router';
+import { normalizeDynamicTags } from '../packages/compiler/src/jsx/dynamic-tags';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -901,5 +902,44 @@ describe('ESTree parser and printer boundary', () => {
     ]);
     expect(context.usesRouter).toBe(true);
     expect(printEstree(parsed.program).code).not.toContain('route=');
+  });
+
+  it('lowers a finite dynamic tag directly on an OXC tree', () => {
+    const parsed = parseEstreeOrThrow(
+      `function View() { const Tag = 'section'; return <Tag />; }`,
+      { filename: 'dynamic-tag.tsx' },
+    );
+    const component = findNode(
+      parsed.program,
+      (node): node is BaseNode => node.type === 'FunctionDeclaration',
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      compPaths: new Map([
+        [
+          'View',
+          {
+            node: component!,
+            buildCodeFrameError(message: string) {
+              return new Error(message);
+            },
+          },
+        ],
+      ]),
+      comps: new Map(),
+      importedComponents: new Map(),
+      componentProps: new Map(),
+      stateTagCandidates: new Map(),
+      functionTagCandidates: new Map(),
+      stateComponentCandidates: new Map(),
+      functionComponentCandidates: new Map(),
+    } as unknown as Ctx;
+
+    expect(component).not.toBeNull();
+    normalizeDynamicTags(context);
+
+    const output = printEstree(parsed.program).code;
+    expect(output).toContain('<section />');
+    expect(output).not.toContain('<Tag');
   });
 });

@@ -1,17 +1,22 @@
-/**
- * Finite dynamic JSX tag lowering.
- *
- * Known string/component candidates become ordinary JSX branches selected by
- * the authored binding value. Existing conditional regions then own identity,
- * updates, and teardown without a runtime virtual-node representation.
- */
-import type { NodePath } from '@babel/traverse';
+/** Finite dynamic JSX tag lowering over parser-neutral AST metadata. */
+
 import * as t from '@babel/types';
 import {
+  analyzeScope,
+  cloneNode as cloneAstNode,
+  replaceNode,
+  walkAst,
+  type BaseNode,
+  type Binding,
+  type ScopeAnalysis,
+} from '../ast';
+import {
+  astBindingAt,
   attrExpr,
   memberKey,
   memberRootName,
   nodeHasJsx,
+  refreshAstAnalysis,
   type Ctx,
 } from '../context';
 import type { ComponentPropsPlan } from '../components/props';
@@ -19,6 +24,57 @@ import type { ComponentPropsPlan } from '../components/props';
 interface DynamicTagCandidate {
   compare: t.Expression;
   tag: t.JSXIdentifier;
+}
+
+interface ProgramContainer {
+  node: t.Program;
+}
+
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function node(value: unknown): BaseNode | null {
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? (value as BaseNode)
+    : null;
+}
+
+function childNode(parent: BaseNode, key: string): BaseNode | null {
+  return node(fields(parent)[key]);
+}
+
+function childNodes(parent: BaseNode, key: string): BaseNode[] {
+  const value = fields(parent)[key];
+  return Array.isArray(value)
+    ? value.map(node).filter((item) => item !== null)
+    : [];
+}
+
+function identifierName(value: BaseNode | null): string | null {
+  if (value?.type !== 'Identifier' && value?.type !== 'JSXIdentifier') {
+    return null;
+  }
+  const name = fields(value).name;
+  return typeof name === 'string' ? name : null;
+}
+
+function stringValue(value: BaseNode | null): string | null {
+  if (value?.type !== 'StringLiteral' && value?.type !== 'Literal') return null;
+  const literal = fields(value).value;
+  return typeof literal === 'string' ? literal : null;
+}
+
+function cloneNode<TNode>(value: TNode): TNode {
+  return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;
+}
+
+function fail(at: ComponentPath, message: string): never {
+  throw at.buildCodeFrameError(message);
 }
 
 function linkedComponentPlan(
@@ -39,17 +95,14 @@ function linkedComponentPlan(
   };
 }
 
-/**
- * Install finite linked component candidates before ordinary import
- * validation and generated-identifier allocation.
- */
+/** Install finite linked component candidates before ordinary import analysis. */
 export function installLinkedDynamicComponentImports(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramContainer,
 ): void {
   if (ctx.linkedDynamicComponentCandidates.size === 0) return;
-  programPath.scope.crawl();
-  const occupied = new Set(Object.keys(programPath.scope.bindings));
+  const program = programPath.node as unknown as BaseNode;
+  const occupied = new Set(analyzeScope(program).rootScope.bindings.keys());
   const existingByKey = new Map(
     [...ctx.importedComponents].map(([local, component]) => [
       component.key,
@@ -108,32 +161,29 @@ export function installLinkedDynamicComponentImports(
       locals.push(local);
     }
     const unique = [...new Set(locals)];
-    if (ctx.state.has(owner)) {
-      ctx.stateComponentCandidates.set(owner, unique);
-    } else {
-      ctx.functionComponentCandidates.set(owner, unique);
-    }
+    if (ctx.state.has(owner)) ctx.stateComponentCandidates.set(owner, unique);
+    else ctx.functionComponentCandidates.set(owner, unique);
   }
-
-  for (const declaration of declarations.reverse()) {
-    programPath.unshiftContainer('body', declaration);
-  }
-  programPath.scope.crawl();
+  programPath.node.body.unshift(...declarations);
 }
 
-function unwrap(expression: t.Expression): t.Expression {
+function unwrap(expression: BaseNode): BaseNode {
   let current = expression;
   while (
-    t.isTSAsExpression(current) ||
-    t.isTSTypeAssertion(current) ||
-    t.isTSNonNullExpression(current)
+    current.type === 'TSAsExpression' ||
+    current.type === 'TSTypeAssertion' ||
+    current.type === 'TSNonNullExpression'
   ) {
-    current = current.expression;
+    const inner = childNode(current, 'expression');
+    if (inner === null) break;
+    current = inner;
   }
   return current;
 }
 
-function jsxNameExpression(name: t.JSXIdentifier | t.JSXMemberExpression): t.Expression {
+function jsxNameExpression(
+  name: t.JSXIdentifier | t.JSXMemberExpression,
+): t.Expression {
   if (t.isJSXIdentifier(name)) return t.identifier(name.name);
   return t.memberExpression(
     jsxNameExpression(name.object),
@@ -141,163 +191,171 @@ function jsxNameExpression(name: t.JSXIdentifier | t.JSXMemberExpression): t.Exp
   );
 }
 
+function bindingDeclarator(
+  analysis: ScopeAnalysis,
+  binding: Binding,
+): BaseNode | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') return current;
+    current = analysis.parentByNode.get(current) ?? null;
+  }
+  return null;
+}
+
+function bindingInitializer(ctx: Ctx, binding: Binding): BaseNode | null {
+  const declaration = bindingDeclarator(ctx.astAnalysis!, binding);
+  return declaration === null ? null : childNode(declaration, 'init');
+}
+
 function propertyValue(
-  at: NodePath,
+  ctx: Ctx,
+  at: BaseNode,
   expression: t.MemberExpression,
 ): t.Expression | null {
   const key = memberKey(expression);
   if (key === null) return null;
   const [root, ...segments] = key.split('.');
   if (root === undefined || segments.length === 0) return null;
-  const binding = at.scope.getBinding(root);
-  if (!binding?.path.isVariableDeclarator()) return null;
-  let current = binding.path.node.init;
-  if (current == null) return null;
+  const binding = astBindingAt(ctx, at, root);
+  if (binding === undefined) return null;
+  let current = bindingInitializer(ctx, binding);
+  if (current === null) return null;
 
   for (const segment of segments) {
     current = unwrap(current);
-    if (!t.isObjectExpression(current)) return null;
-    const property = current.properties.find((candidate) => {
-      if (!t.isObjectProperty(candidate) || candidate.computed) return false;
-      const name = t.isIdentifier(candidate.key)
-        ? candidate.key.name
-        : t.isStringLiteral(candidate.key)
-          ? candidate.key.value
-          : null;
-      return name === segment;
+    if (current.type !== 'ObjectExpression') return null;
+    const property = childNodes(current, 'properties').find((candidate) => {
+      if (
+        (candidate.type !== 'ObjectProperty' && candidate.type !== 'Property') ||
+        fields(candidate).computed === true
+      ) {
+        return false;
+      }
+      return (
+        identifierName(childNode(candidate, 'key')) ??
+        stringValue(childNode(candidate, 'key'))
+      ) === segment;
     });
-    if (
-      property === undefined ||
-      !t.isObjectProperty(property) ||
-      !t.isExpression(property.value)
-    ) {
-      return null;
-    }
-    current = property.value;
+    if (property === undefined) return null;
+    current = childNode(property, 'value');
+    if (current === null) return null;
   }
-  return current;
+  return current as unknown as t.Expression;
+}
+
+function functionReturnExpressions(fn: BaseNode): t.Expression[] {
+  const body = childNode(fn, 'body');
+  if (body === null) return [];
+  if (body.type !== 'BlockStatement') {
+    return [body as unknown as t.Expression];
+  }
+  const returns: t.Expression[] = [];
+  walkAst<BaseNode>(body, {
+    enter(current) {
+      if (current !== body && (
+        current.type === 'FunctionDeclaration' ||
+        current.type === 'FunctionExpression' ||
+        current.type === 'ArrowFunctionExpression'
+      )) {
+        return false;
+      }
+      if (current.type !== 'ReturnStatement') return;
+      const argument = childNode(current, 'argument');
+      if (argument !== null) returns.push(argument as unknown as t.Expression);
+      return false;
+    },
+  });
+  return returns;
 }
 
 function localFunctionReturns(
-  at: NodePath,
+  ctx: Ctx,
+  at: BaseNode,
   name: string,
 ): t.Expression[] {
-  const binding = at.scope.getBinding(name);
+  const binding = astBindingAt(ctx, at, name);
   if (binding === undefined) return [];
-
-  let fn:
-    | t.FunctionDeclaration
-    | t.FunctionExpression
-    | t.ArrowFunctionExpression
-    | null = null;
-  if (binding.path.isFunctionDeclaration()) {
-    fn = binding.path.node;
-  } else if (
-    binding.path.isVariableDeclarator() &&
-    (t.isFunctionExpression(binding.path.node.init) ||
-      t.isArrowFunctionExpression(binding.path.node.init))
-  ) {
-    fn = binding.path.node.init;
-  }
-  if (fn === null) return [];
-  return functionReturnExpressions(fn);
-}
-
-function functionReturnExpressions(
-  fn:
-    | t.FunctionDeclaration
-    | t.FunctionExpression
-    | t.ArrowFunctionExpression,
-): t.Expression[] {
-  if (t.isExpression(fn.body)) return [fn.body];
-
-  const returns: t.Expression[] = [];
-  const visit = (node: t.Node): void => {
-    if (t.isFunction(node)) return;
-    if (t.isReturnStatement(node)) {
-      if (t.isExpression(node.argument)) returns.push(node.argument);
-      return;
-    }
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-      const child = (node as unknown as Record<string, unknown>)[key];
-      if (Array.isArray(child)) {
-        for (const entry of child) {
-          if (entry != null && typeof entry === 'object' && 'type' in entry) {
-            visit(entry as t.Node);
-          }
-        }
-      } else if (
-        child != null &&
-        typeof child === 'object' &&
-        'type' in child
-      ) {
-        visit(child as t.Node);
-      }
-    }
-  };
-  for (const statement of fn.body.body) visit(statement);
-  return returns;
+  const candidate =
+    binding.declarationNode.type === 'FunctionDeclaration'
+      ? binding.declarationNode
+      : bindingInitializer(ctx, binding);
+  return candidate !== null && (
+    candidate.type === 'FunctionDeclaration' ||
+    candidate.type === 'FunctionExpression' ||
+    candidate.type === 'ArrowFunctionExpression'
+  )
+    ? functionReturnExpressions(candidate)
+    : [];
 }
 
 function collectLocalComponentNames(
   ctx: Ctx,
   expression: t.Expression,
   output: Set<string>,
-  visiting = new Set<t.Node>(),
+  visiting = new Set<BaseNode>(),
 ): void {
-  const current = unwrap(expression);
+  const current = unwrap(expression as unknown as BaseNode);
   if (visiting.has(current)) return;
   visiting.add(current);
-  if (
-    t.isIdentifier(current) &&
-    (ctx.comps.has(current.name) || ctx.importedComponents.has(current.name))
-  ) {
-    output.add(current.name);
-    return;
-  }
-  if (t.isIdentifier(current)) {
-    for (const candidate of ctx.stateComponentCandidates.get(current.name) ??
-      ctx.functionComponentCandidates.get(current.name) ??
-      []) {
+  const name = identifierName(current);
+  if (name !== null) {
+    if (ctx.comps.has(name) || ctx.importedComponents.has(name)) {
+      output.add(name);
+      return;
+    }
+    for (const candidate of ctx.stateComponentCandidates.get(name) ??
+      ctx.functionComponentCandidates.get(name) ?? []) {
       output.add(candidate);
     }
     return;
   }
-  if (t.isConditionalExpression(current)) {
-    collectLocalComponentNames(ctx, current.consequent, output, visiting);
-    collectLocalComponentNames(ctx, current.alternate, output, visiting);
+  if (current.type === 'ConditionalExpression') {
+    const consequent = childNode(current, 'consequent');
+    const alternate = childNode(current, 'alternate');
+    if (consequent !== null) {
+      collectLocalComponentNames(ctx, consequent as unknown as t.Expression, output, visiting);
+    }
+    if (alternate !== null) {
+      collectLocalComponentNames(ctx, alternate as unknown as t.Expression, output, visiting);
+    }
     return;
   }
-  if (t.isLogicalExpression(current)) {
-    collectLocalComponentNames(ctx, current.right, output, visiting);
+  if (current.type === 'LogicalExpression') {
+    const right = childNode(current, 'right');
+    if (right !== null) {
+      collectLocalComponentNames(ctx, right as unknown as t.Expression, output, visiting);
+    }
     return;
   }
-  if (t.isObjectExpression(current)) {
-    for (const property of current.properties) {
-      if (t.isObjectProperty(property) && t.isExpression(property.value)) {
-        collectLocalComponentNames(ctx, property.value, output, visiting);
+  if (current.type === 'ObjectExpression') {
+    for (const property of childNodes(current, 'properties')) {
+      const value = childNode(property, 'value');
+      if (value !== null) {
+        collectLocalComponentNames(ctx, value as unknown as t.Expression, output, visiting);
       }
     }
     return;
   }
-  if (t.isArrayExpression(current)) {
-    for (const element of current.elements) {
-      if (element != null && !t.isSpreadElement(element)) {
-        collectLocalComponentNames(ctx, element, output, visiting);
+  if (current.type === 'ArrayExpression') {
+    for (const element of childNodes(current, 'elements')) {
+      if (element.type !== 'SpreadElement') {
+        collectLocalComponentNames(ctx, element as unknown as t.Expression, output, visiting);
       }
     }
     return;
   }
-  if (t.isCallExpression(current) && t.isIdentifier(current.callee)) {
-    for (const candidate of ctx.functionComponentCandidates.get(
-      current.callee.name,
-    ) ?? []) {
-      output.add(candidate);
+  if (current.type === 'CallExpression') {
+    const callee = identifierName(childNode(current, 'callee'));
+    if (callee !== null) {
+      for (const candidate of ctx.functionComponentCandidates.get(callee) ?? []) {
+        output.add(candidate);
+      }
     }
     return;
   }
-  if (t.isMemberExpression(current)) {
-    const root = memberRootName(current);
+  if (current.type === 'MemberExpression') {
+    const root = memberRootName(current as unknown as t.MemberExpression);
     if (root !== null) {
       for (const candidate of ctx.stateComponentCandidates.get(root) ?? []) {
         output.add(candidate);
@@ -309,7 +367,7 @@ function collectLocalComponentNames(
 /** Discover local component registries/helper returns before tag lowering. */
 export function scanLocalDynamicComponentCandidates(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramContainer,
 ): void {
   for (const statement of programPath.node.body) {
     const declaration = t.isExportNamedDeclaration(statement)
@@ -325,28 +383,19 @@ export function scanLocalDynamicComponentCandidates(
       }
     }
   }
-
   let changed = true;
   while (changed) {
     changed = false;
     for (const [name, helperPath] of ctx.helpers) {
       const output = new Set(ctx.functionComponentCandidates.get(name) ?? []);
-      let returns: t.Expression[] = [];
-      const node = helperPath.node;
-      if (
-        t.isFunctionDeclaration(node) ||
-        t.isFunctionExpression(node) ||
-        t.isArrowFunctionExpression(node)
-      ) {
-        returns = functionReturnExpressions(node);
-      }
-      for (const expression of returns) {
+      for (const expression of functionReturnExpressions(
+        helperPath.node as unknown as BaseNode,
+      )) {
         collectLocalComponentNames(ctx, expression, output);
       }
       if (
         output.size > 0 &&
-        output.size !==
-          (ctx.functionComponentCandidates.get(name)?.length ?? 0)
+        output.size !== (ctx.functionComponentCandidates.get(name)?.length ?? 0)
       ) {
         ctx.functionComponentCandidates.set(name, [...output]);
         changed = true;
@@ -357,181 +406,172 @@ export function scanLocalDynamicComponentCandidates(
 
 function collectCandidates(
   ctx: Ctx,
-  at: NodePath,
+  at: BaseNode,
   expression: t.Expression,
   output: DynamicTagCandidate[],
-  visiting = new Set<t.Node>(),
+  onError: (message: string) => never,
+  visiting = new Set<BaseNode>(),
 ): void {
-  const current = unwrap(expression);
+  const current = unwrap(expression as unknown as BaseNode);
   if (visiting.has(current)) return;
   visiting.add(current);
-
-  if (t.isConditionalExpression(current)) {
-    collectCandidates(ctx, at, current.consequent, output, visiting);
-    collectCandidates(ctx, at, current.alternate, output, visiting);
+  if (current.type === 'ConditionalExpression') {
+    const consequent = childNode(current, 'consequent')!;
+    const alternate = childNode(current, 'alternate')!;
+    collectCandidates(ctx, at, consequent as unknown as t.Expression, output, onError, visiting);
+    collectCandidates(ctx, at, alternate as unknown as t.Expression, output, onError, visiting);
     return;
   }
-  if (t.isStringLiteral(current)) {
-    if (!/^[A-Za-z][A-Za-z0-9:_-]*$/.test(current.value)) {
-      throw at.buildCodeFrameError(
-        `memo-dom: '${current.value}' is not a valid dynamic intrinsic tag name`,
-      );
+  const literal = stringValue(current);
+  if (literal !== null) {
+    if (!/^[A-Za-z][A-Za-z0-9:_-]*$/.test(literal)) {
+      onError(`memo-dom: '${literal}' is not a valid dynamic intrinsic tag name`);
     }
     output.push({
-      compare: t.cloneNode(current),
-      tag: t.jsxIdentifier(current.value),
+      compare: cloneNode(expression),
+      tag: t.jsxIdentifier(literal),
     });
     return;
   }
-  if (t.isIdentifier(current)) {
-    if (ctx.comps.has(current.name) || ctx.importedComponents.has(current.name)) {
-      output.push({
-        compare: t.cloneNode(current),
-        tag: t.jsxIdentifier(current.name),
-      });
+  const name = identifierName(current);
+  if (name !== null) {
+    if (ctx.comps.has(name) || ctx.importedComponents.has(name)) {
+      output.push({ compare: cloneNode(expression), tag: t.jsxIdentifier(name) });
       return;
     }
-    const stateCandidates = ctx.stateTagCandidates.get(current.name);
-    if (stateCandidates !== undefined) {
-      for (const candidate of stateCandidates) {
-        collectCandidates(
-          ctx,
-          at,
-          t.stringLiteral(candidate),
-          output,
-          visiting,
-        );
-      }
+    for (const candidate of ctx.stateTagCandidates.get(name) ?? []) {
+      collectCandidates(ctx, at, t.stringLiteral(candidate), output, onError, visiting);
     }
-    const binding = at.scope.getBinding(current.name);
-    if (binding?.path.isVariableDeclarator() && binding.path.node.init != null) {
-      collectCandidates(ctx, at, binding.path.node.init, output, visiting);
+    const binding = astBindingAt(ctx, at, name);
+    const initializer = binding === undefined ? null : bindingInitializer(ctx, binding);
+    if (initializer !== null) {
+      collectCandidates(ctx, at, initializer as unknown as t.Expression, output, onError, visiting);
     }
     return;
   }
-  if (t.isCallExpression(current) && t.isIdentifier(current.callee)) {
-    for (const candidate of ctx.functionTagCandidates.get(current.callee.name) ??
-      []) {
-      collectCandidates(
-        ctx,
-        at,
-        t.stringLiteral(candidate),
-        output,
-        visiting,
-      );
+  if (current.type === 'CallExpression') {
+    const callee = identifierName(childNode(current, 'callee'));
+    if (callee === null) return;
+    for (const candidate of ctx.functionTagCandidates.get(callee) ?? []) {
+      collectCandidates(ctx, at, t.stringLiteral(candidate), output, onError, visiting);
     }
-    for (const returned of localFunctionReturns(at, current.callee.name)) {
-      collectCandidates(ctx, at, returned, output, visiting);
+    for (const returned of localFunctionReturns(ctx, at, callee)) {
+      collectCandidates(ctx, at, returned, output, onError, visiting);
     }
-    for (const candidate of ctx.functionComponentCandidates.get(
-      current.callee.name,
-    ) ?? []) {
-      collectCandidates(ctx, at, t.identifier(candidate), output, visiting);
+    for (const candidate of ctx.functionComponentCandidates.get(callee) ?? []) {
+      collectCandidates(ctx, at, t.identifier(candidate), output, onError, visiting);
     }
     return;
   }
-  if (t.isMemberExpression(current)) {
-    const value = propertyValue(at, current);
-    if (value !== null) {
-      collectCandidates(ctx, at, value, output, visiting);
-      return;
+  if (current.type !== 'MemberExpression') return;
+  const member = current as unknown as t.MemberExpression;
+  const value = propertyValue(ctx, at, member);
+  if (value !== null) {
+    collectCandidates(ctx, at, value, output, onError, visiting);
+    return;
+  }
+  const root = memberRootName(member);
+  if (root === null) return;
+  const binding = astBindingAt(ctx, at, root);
+  const initializer = binding === undefined ? null : bindingInitializer(ctx, binding);
+  if (initializer !== null) {
+    const localComponents = new Set<string>();
+    collectLocalComponentNames(ctx, initializer as unknown as t.Expression, localComponents);
+    for (const candidate of localComponents) {
+      collectCandidates(ctx, at, t.identifier(candidate), output, onError, visiting);
     }
-    const root = memberRootName(current);
-    if (root === null) return;
-    const binding = at.scope.getBinding(root);
-    if (
-      binding?.path.isVariableDeclarator() &&
-      binding.path.node.init != null
-    ) {
-      const localComponents = new Set<string>();
-      collectLocalComponentNames(
-        ctx,
-        binding.path.node.init,
-        localComponents,
-      );
-      for (const candidate of localComponents) {
-        collectCandidates(ctx, at, t.identifier(candidate), output, visiting);
-      }
-    }
-    for (const candidate of ctx.stateTagCandidates.get(root) ?? []) {
-      collectCandidates(
-        ctx,
-        at,
-        t.stringLiteral(candidate),
-        output,
-        visiting,
-      );
-    }
-    for (const candidate of ctx.stateComponentCandidates.get(root) ?? []) {
-      collectCandidates(ctx, at, t.identifier(candidate), output, visiting);
-    }
+  }
+  for (const candidate of ctx.stateTagCandidates.get(root) ?? []) {
+    collectCandidates(ctx, at, t.stringLiteral(candidate), output, onError, visiting);
+  }
+  for (const candidate of ctx.stateComponentCandidates.get(root) ?? []) {
+    collectCandidates(ctx, at, t.identifier(candidate), output, onError, visiting);
   }
 }
 
 function candidateKey(candidate: DynamicTagCandidate): string {
-  return t.isStringLiteral(candidate.compare)
-    ? `string:${candidate.compare.value}`
-    : t.isIdentifier(candidate.compare)
-      ? `component:${candidate.compare.name}`
-      : JSON.stringify(candidate.compare);
+  const literal = stringValue(candidate.compare as unknown as BaseNode);
+  if (literal !== null) return `string:${literal}`;
+  const name = identifierName(candidate.compare as unknown as BaseNode);
+  return name === null
+    ? JSON.stringify(candidate.compare)
+    : `component:${name}`;
+}
+
+function functionOwner(ctx: Ctx, at: BaseNode): BaseNode {
+  let current: BaseNode | null = at;
+  while (current !== null) {
+    if (
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'FunctionExpression' ||
+      current.type === 'ArrowFunctionExpression' ||
+      current.type === 'Program'
+    ) {
+      return current;
+    }
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return ctx.astAnalysis!.rootScope.block;
 }
 
 function bindingInitializers(
-  at: NodePath<t.JSXElement>,
+  ctx: Ctx,
+  at: BaseNode,
   selector: t.Expression,
 ): t.Expression[] {
   if (t.isIdentifier(selector)) {
-    const binding = at.scope.getBinding(selector.name);
-    if (!binding?.path.isVariableDeclarator()) return [];
+    const binding = astBindingAt(ctx, at, selector.name);
+    if (binding === undefined) return [];
+    const initial = bindingInitializer(ctx, binding);
     return [
-      ...(binding.path.node.init == null ? [] : [binding.path.node.init]),
+      ...(initial === null ? [] : [initial as unknown as t.Expression]),
       ...binding.constantViolations.flatMap((violation) => {
         if (
-          violation.isAssignmentExpression() &&
-          violation.node.operator === '=' &&
-          t.isExpression(violation.node.right)
+          violation.type === 'AssignmentExpression' &&
+          fields(violation).operator === '='
         ) {
-          return [violation.node.right];
+          const right = childNode(violation, 'right');
+          return right === null ? [] : [right as unknown as t.Expression];
         }
         return [];
       }),
     ];
   }
-  if (t.isMemberExpression(selector)) {
-    const initial = propertyValue(at, selector);
-    const key = memberKey(selector);
-    const assignments: t.Expression[] = [];
-    if (key !== null) {
-      const functionOwner = at.getFunctionParent();
-      const search = functionOwner ?? at.findParent((parent) => parent.isProgram());
-      search?.traverse({
-        AssignmentExpression(path) {
-          if (
-            path.node.operator === '=' &&
-            t.isMemberExpression(path.node.left) &&
-            memberKey(path.node.left) === key &&
-            t.isExpression(path.node.right)
-          ) {
-            assignments.push(path.node.right);
-          }
-        },
-      });
-    }
-    return [...(initial === null ? [] : [initial]), ...assignments];
+  if (!t.isMemberExpression(selector)) return [];
+  const initial = propertyValue(ctx, at, selector);
+  const key = memberKey(selector);
+  const assignments: t.Expression[] = [];
+  if (key !== null) {
+    walkAst<BaseNode>(functionOwner(ctx, at), {
+      enter(current) {
+        if (
+          current.type !== 'AssignmentExpression' ||
+          fields(current).operator !== '='
+        ) {
+          return;
+        }
+        const left = childNode(current, 'left');
+        const right = childNode(current, 'right');
+        if (
+          left?.type === 'MemberExpression' &&
+          memberKey(left as unknown as t.MemberExpression) === key &&
+          right !== null
+        ) {
+          assignments.push(right as unknown as t.Expression);
+        }
+      },
+    });
   }
-  return [];
+  return [...(initial === null ? [] : [initial]), ...assignments];
 }
 
 function cloneWithTag(
   element: t.JSXElement,
   tag: t.JSXIdentifier,
 ): t.JSXElement {
-  const clone = t.cloneNode(element, true);
-  clone.openingElement.name = t.cloneNode(tag);
-  const closingElement = clone.closingElement;
-  if (closingElement != null) {
-    closingElement.name = t.cloneNode(tag);
-  }
+  const clone = cloneNode(element);
+  clone.openingElement.name = cloneNode(tag);
+  if (clone.closingElement != null) clone.closingElement.name = cloneNode(tag);
   return clone;
 }
 
@@ -546,8 +586,8 @@ function finiteSelection(
     selection = t.conditionalExpression(
       t.binaryExpression(
         '===',
-        t.cloneNode(selector, true),
-        t.cloneNode(candidate.compare, true),
+        cloneNode(selector),
+        cloneNode(candidate.compare),
       ),
       cloneWithTag(element, candidate.tag),
       selection,
@@ -568,27 +608,22 @@ function selectorName(selector: t.Expression): string {
 export function normalizeDynamicTags(ctx: Ctx): void {
   const propUsage = new Map<
     string,
-    Map<string, { scalar: boolean; jsx: boolean; at: NodePath }>
+    Map<string, { scalar: boolean; jsx: boolean; at: ComponentPath }>
   >();
+  const program = ctx.astAnalysis!.rootScope.block;
   for (const [, componentPath] of ctx.compPaths) {
-    componentPath.scope.crawl();
-    const elements: NodePath<t.JSXElement>[] = [];
-    componentPath.traverse({
-      JSXElement(elementPath) {
-        elements.push(elementPath);
+    const component = componentPath.node as unknown as BaseNode;
+    const elements: BaseNode[] = [];
+    walkAst<BaseNode>(component, {
+      enter(current) {
+        if (current.type === 'JSXElement') elements.push(current);
       },
     });
-
-    // Normalize inside-out. Lowering a dynamic parent clones its authored
-    // subtree into finite branches; nested selectors must already be lowered
-    // so every clone carries the normalized conditional region.
-    for (const elementPath of elements.reverse()) {
-      if (elementPath.removed) continue;
-      const name = elementPath.node.openingElement.name;
+    for (const elementNode of elements.reverse()) {
+      const element = elementNode as unknown as t.JSXElement;
+      const name = element.openingElement.name;
       if (t.isJSXNamespacedName(name)) {
-        throw elementPath.buildCodeFrameError(
-          'memo-dom: namespaced JSX tags are not supported',
-        );
+        fail(componentPath, 'memo-dom: namespaced JSX tags are not supported');
       }
       if (
         t.isJSXIdentifier(name) &&
@@ -600,10 +635,15 @@ export function normalizeDynamicTags(ctx: Ctx): void {
       }
 
       const selector = jsxNameExpression(name);
-      const initializers = bindingInitializers(elementPath, selector);
       const candidates: DynamicTagCandidate[] = [];
-      for (const initializer of initializers) {
-        collectCandidates(ctx, elementPath, initializer, candidates);
+      for (const initializer of bindingInitializers(ctx, elementNode, selector)) {
+        collectCandidates(
+          ctx,
+          elementNode,
+          initializer,
+          candidates,
+          (message) => fail(componentPath, message),
+        );
       }
       const unique = [
         ...new Map(
@@ -611,14 +651,12 @@ export function normalizeDynamicTags(ctx: Ctx): void {
         ).values(),
       ];
       if (unique.length === 0) {
-        throw elementPath.buildCodeFrameError(
-          `memo-dom: dynamic JSX tag '${selectorName(
-            selector,
-          )}' has no finite string or linked-component candidates`,
+        fail(
+          componentPath,
+          `memo-dom: dynamic JSX tag '${selectorName(selector)}' has no finite string or linked-component candidates`,
         );
       }
       for (const candidate of unique) {
-        if (!t.isJSXIdentifier(candidate.tag)) continue;
         const plan = ctx.componentProps.get(candidate.tag.name);
         if (plan === undefined || plan.renderProps.length === 0) continue;
         let byProp = propUsage.get(candidate.tag.name);
@@ -626,7 +664,7 @@ export function normalizeDynamicTags(ctx: Ctx): void {
           byProp = new Map();
           propUsage.set(candidate.tag.name, byProp);
         }
-        for (const attribute of elementPath.node.openingElement.attributes) {
+        for (const attribute of element.openingElement.attributes) {
           if (
             t.isJSXSpreadAttribute(attribute) ||
             !t.isJSXIdentifier(attribute.name) ||
@@ -638,37 +676,39 @@ export function normalizeDynamicTags(ctx: Ctx): void {
           const usage = byProp.get(attribute.name.name) ?? {
             scalar: false,
             jsx: false,
-            at: elementPath,
+            at: componentPath,
           };
           if (value !== null && nodeHasJsx(value)) usage.jsx = true;
           else usage.scalar = true;
           byProp.set(attribute.name.name, usage);
         }
       }
-      if (unique.length === 1) {
-        elementPath.replaceWith(cloneWithTag(elementPath.node, unique[0]!.tag));
-        continue;
-      }
-
-      elementPath.replaceWith(
-        t.jsxFragment(
-          t.jsxOpeningFragment(),
-          t.jsxClosingFragment(),
-          [
-            t.jsxExpressionContainer(
-              finiteSelection(selector, elementPath.node, unique),
-            ),
-          ],
-        ),
+      const replacement =
+        unique.length === 1
+          ? cloneWithTag(element, unique[0]!.tag)
+          : t.jsxFragment(
+              t.jsxOpeningFragment(),
+              t.jsxClosingFragment(),
+              [
+                t.jsxExpressionContainer(
+                  finiteSelection(selector, element, unique),
+                ),
+              ],
+            );
+      replaceNode(
+        ctx.astAnalysis!,
+        elementNode,
+        replacement as unknown as BaseNode,
       );
     }
-    componentPath.scope.crawl();
+    if (elements.length > 0) refreshAstAnalysis(ctx, program);
   }
   for (const [component, byProp] of propUsage) {
     const plan = ctx.componentProps.get(component)!;
     for (const [prop, usage] of byProp) {
       if (usage.scalar && usage.jsx) {
-        throw usage.at.buildCodeFrameError(
+        fail(
+          usage.at,
           `memo-dom: dynamic component prop '${prop}' is used as both scalar data and JSX content`,
         );
       }
