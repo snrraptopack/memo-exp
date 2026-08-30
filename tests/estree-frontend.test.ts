@@ -49,6 +49,7 @@ import { summarizeHelper } from '../packages/compiler/src/helper-summaries';
 import { scanInstanceDerivations } from '../packages/compiler/src/analysis/instance';
 import { normalizeComponentJsxValues } from '../packages/compiler/src/components/jsx-values';
 import { normalizeRenderFunctions } from '../packages/compiler/src/components/render-functions';
+import { analyzeRouterJsx } from '../packages/compiler/src/router';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -869,5 +870,36 @@ describe('ESTree parser and printer boundary', () => {
     const output = printEstree(parsed.program).code;
     expect(output).not.toContain('renderName');
     expect(output).toContain("<span>{'Ada'}</span>");
+  });
+
+  it('discovers and erases route attributes on an OXC tree', () => {
+    const parsed = parseEstreeOrThrow(
+      `function App() { return <main route="/"><section /></main>; }`,
+      { filename: 'route.tsx' },
+    );
+    const context = {
+      moduleId: './route.tsx',
+      routeElements: new Map(),
+      localRoutes: [],
+      linkedRoutes: undefined,
+      usesRouter: false,
+    } as unknown as Ctx;
+
+    analyzeRouterJsx(context, {
+      node: parsed.program as unknown as Parameters<typeof analyzeRouterJsx>[1]['node'],
+      buildCodeFrameError(message) {
+        return new Error(message);
+      },
+    });
+
+    expect(context.localRoutes).toEqual([
+      expect.objectContaining({
+        moduleId: './route.tsx',
+        pattern: '/',
+        fullPattern: '/',
+      }),
+    ]);
+    expect(context.usesRouter).toBe(true);
+    expect(printEstree(parsed.program).code).not.toContain('route=');
   });
 });
