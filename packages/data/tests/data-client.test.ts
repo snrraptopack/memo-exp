@@ -3,6 +3,7 @@ import { RequestError } from '../src';
 import { createDataRuntime } from '../src/client';
 import { disposeFetchResource } from '../src/resource';
 import type {
+  ActionResult,
   FetchResource,
   StandardSchemaV1,
 } from '../src';
@@ -18,6 +19,12 @@ async function settled<T>(resource: FetchResource<T>): Promise<void> {
   await vi.waitFor(() => {
     expect(resource.pending).toBe(false);
     expect(['success', 'error']).toContain(resource.status);
+  });
+}
+
+async function actionSettled<T>(result: ActionResult<T>): Promise<void> {
+  await vi.waitFor(() => {
+    expect(['success', 'error']).toContain(result.state);
   });
 }
 
@@ -156,7 +163,7 @@ describe('$action', () => {
     title: string;
   }
 
-  it('encodes plain input as JSON and exposes live action state', async () => {
+  it('returns one live result and encodes plain input as JSON', async () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.method).toBe('POST');
       expect(init?.headers).toBeInstanceOf(Headers);
@@ -167,114 +174,45 @@ describe('$action', () => {
     const client = createDataRuntime({ fetch: fetcher as typeof fetch });
     const createTodo = client.$action<Todo, CreateTodo>('/api/todos');
 
-    const operation = createTodo({ title: 'Write tests' });
-    expect(createTodo.pending).toBe(true);
-    const created = await operation;
+    const creation = createTodo({ title: 'Write tests' });
+    expect(creation.id).toBe('action-1');
+    expect(creation.state).toBe('idle');
 
-    expect(created).toEqual({ id: '1', title: 'Write tests' });
-    expect(createTodo.status).toBe('success');
-    expect(createTodo.pending).toBe(false);
-    expect(createTodo.data).toEqual(created);
+    await vi.waitFor(() => expect(creation.state).toBe('success'));
+    expect(creation.data).toEqual({ id: '1', title: 'Write tests' });
   });
 
-  it('commits an optimistic append from the returned item without refreshing', async () => {
-    const existing: Todo = { id: '1', title: 'Existing' };
-    const created: Todo = { id: '2', title: 'Created' };
-    const temporary: Todo = { id: 'temporary', title: 'Created' };
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
-      init?.method === 'GET' ? json([existing]) : json(created),
-    );
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
-    const todos = client.$fetch<Todo[]>('/api/todos');
-    await settled(todos);
+  it('keeps concurrent invocations independent', async () => {
+    const responses: Array<(response: Response) => void> = [];
+    const client = createDataRuntime({
+      fetch: (() => new Promise<Response>(resolve => responses.push(resolve))) as typeof fetch,
+    });
     const createTodo = client.$action<Todo, CreateTodo>('/api/todos');
+    const first = createTodo({ title: 'First' });
+    const second = createTodo({ title: 'Second' });
 
-    const operation = createTodo(
-      { title: 'Created' },
-      { optimistic: todos.append(temporary) },
-    );
-    expect(todos.data).toEqual([existing, temporary]);
+    expect(first.id).not.toBe(second.id);
+    await vi.waitFor(() => expect(responses).toHaveLength(2));
+    responses[1]!(json({ id: '2', title: 'Second' }));
+    await actionSettled(second);
+    expect(second.state).toBe('success');
+    expect(first.state).toBe('pending');
 
-    await expect(operation).resolves.toEqual(created);
-    expect(todos.data).toEqual([existing, created]);
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    responses[0]!(json({ id: '1', title: 'First' }));
+    await actionSettled(first);
+    expect(first.data.id).toBe('1');
+    expect(second.data.id).toBe('2');
   });
 
-  it('rolls back only its own failed append and preserves later changes', async () => {
-    const existing: Todo = { id: '1', title: 'Existing' };
-    const temporary: Todo = { id: 'temporary', title: 'Temporary' };
-    const concurrent: Todo = { id: '3', title: 'Concurrent' };
-    let resolveAction!: (response: Response) => void;
-    const actionResponse = new Promise<Response>(done => {
-      resolveAction = done;
+  it('stores a request failure on the returned result', async () => {
+    const client = createDataRuntime({
+      fetch: (async () => json({ message: 'No' }, 500)) as typeof fetch,
     });
-    const fetcher = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
-      init?.method === 'GET'
-        ? Promise.resolve(json([existing]))
-        : actionResponse,
-    );
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
-    const todos = client.$fetch<Todo[]>('/api/todos');
-    await settled(todos);
     const createTodo = client.$action<Todo, CreateTodo>('/api/todos');
+    const creation = createTodo({ title: 'Rejected' });
 
-    const operation = createTodo(
-      { title: temporary.title },
-      { optimistic: todos.append(temporary) },
-    );
-    todos.mutate(items => items?.push(concurrent));
-    resolveAction(json({ message: 'No' }, 500));
-
-    await expect(operation).rejects.toMatchObject({ kind: 'http', status: 500 });
-    expect(todos.data).toEqual([existing, concurrent]);
-  });
-
-  it('replaces an optimistic update with the authoritative action result', async () => {
-    const existing: Todo = { id: '1', title: 'Old title' };
-    const temporary: Todo = { id: '1', title: 'Saving title' };
-    const saved: Todo = { id: '1', title: 'Server title' };
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
-      init?.method === 'GET' ? json([existing]) : json(saved),
-    );
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
-    const todos = client.$fetch<Todo[]>('/api/todos');
-    await settled(todos);
-    const updateTodo = client.$action<Todo, CreateTodo>('/api/todos/1', {
-      method: 'PATCH',
-    });
-
-    const operation = updateTodo(
-      { title: temporary.title },
-      { optimistic: todos.replace(todos.data![0]!, temporary) },
-    );
-    expect(todos.data).toEqual([temporary]);
-    await operation;
-    expect(todos.data).toEqual([saved]);
-  });
-
-  it('restores an optimistically removed item at its original position', async () => {
-    const first: Todo = { id: '1', title: 'First' };
-    const removed: Todo = { id: '2', title: 'Removed' };
-    const last: Todo = { id: '3', title: 'Last' };
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
-      init?.method === 'GET'
-        ? json([first, removed, last])
-        : json({ message: 'No' }, 500),
-    );
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
-    const todos = client.$fetch<Todo[]>('/api/todos');
-    await settled(todos);
-    const deleteTodo = client.$action<void, string>('/api/todos/2', {
-      method: 'DELETE',
-    });
-    const loadedRemoved = todos.data![1]!;
-
-    const operation = deleteTodo(loadedRemoved.id, {
-      optimistic: todos.remove<void>(loadedRemoved),
-    });
-    expect(todos.data?.map(todo => todo.id)).toEqual(['1', '3']);
-
-    await expect(operation).rejects.toMatchObject({ status: 500 });
-    expect(todos.data?.map(todo => todo.id)).toEqual(['1', '2', '3']);
+    await actionSettled(creation);
+    expect(creation.state).toBe('error');
+    expect(creation.error).toMatchObject({ kind: 'http', status: 500 });
   });
 });

@@ -1,8 +1,8 @@
 export { createDataRuntime } from './client';
 export {
-  actionSnapshot,
-  disposeAction,
-  subscribeAction,
+  actionResultSnapshot,
+  disposeActionResult,
+  subscribeActionResult,
 } from './action';
 export {
   disposeFetchResource,
@@ -23,7 +23,6 @@ export {
   resolvedValuesPending,
   resolvedValuesPendingIndex,
   retryResolvedValues,
-  resolvedValueOperations,
   resolvedValueSnapshot,
   trackResolvedValue,
   throwResolvedValuesError,
@@ -39,8 +38,8 @@ export {
 } from './transparent-module';
 export type { ModuleSourceRef } from './transparent-module';
 export type {
-  ActionListener,
-  ActionSnapshot,
+  ActionResultListener,
+  ActionResultSnapshot,
   DataRuntime,
   DataRuntimeOptions,
   ResourceListener,

@@ -44,7 +44,32 @@ export function RouterApp() {
 
   const deployAction = dataRuntime.$action<CloudService, DeployActionInput>(
     '/api/deploy',
-    { method: 'POST' },
+    {
+      method: 'POST',
+      onSuccess(updated) {
+        servicesState = servicesState.map((service) =>
+          service.id === updated.id ? updated : service,
+        );
+        deploymentsState = [
+          {
+            id: `dep-${Date.now().toString().slice(-4)}`,
+            serviceId: updated.id,
+            serviceName: updated.name,
+            version: updated.version,
+            commitSha: Math.random().toString(16).slice(2, 9),
+            author: 'Current User (Console)',
+            timestamp: 'Just now',
+            status: 'success',
+            duration: '18s',
+          },
+          ...deploymentsState,
+        ];
+        isDeploying = false;
+      },
+      onError() {
+        isDeploying = false;
+      },
+    },
   );
 
   let servicesState: CloudService[] = [...initialServices];
@@ -52,35 +77,15 @@ export function RouterApp() {
   let orgSettingsState: OrganizationSettings = { ...initialOrgSettings };
   let isDeploying = false;
 
-  async function handleDeployVersion(serviceId: string, version: string) {
+  function handleDeployVersion(serviceId: string, version: string) {
     if (isDeploying) return;
     isDeploying = true;
 
-    const updated = await deployAction({
+    const deployment = deployAction({
       serviceId,
       targetVersion: version,
     });
-
-    if (updated) {
-      servicesState = servicesState.map((s) =>
-        s.id === serviceId ? updated : s,
-      );
-      deploymentsState = [
-        {
-          id: `dep-${Date.now().toString().slice(-4)}`,
-          serviceId: updated.id,
-          serviceName: updated.name,
-          version: updated.version,
-          commitSha: Math.random().toString(16).slice(2, 9),
-          author: 'Current User (Console)',
-          timestamp: 'Just now',
-          status: 'success',
-          duration: '18s',
-        },
-        ...deploymentsState,
-      ];
-    }
-    isDeploying = false;
+    void deployment;
   }
 
   function handleScaleReplicas(serviceId: string, replicas: number) {

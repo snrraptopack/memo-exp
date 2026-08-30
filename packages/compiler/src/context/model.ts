@@ -24,7 +24,6 @@ export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceD
     module: '@memoized-dom/data',
     source: '$fetch',
     track: '$track',
-    operations: '$ops',
     group: 'Group',
     pending: 'Pending',
     error: 'Error',

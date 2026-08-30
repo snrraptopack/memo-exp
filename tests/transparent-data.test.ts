@@ -23,7 +23,6 @@ const fixture = join(outDir, 'transparent-data.compiled.ts');
 const source = `
   import {
     $fetch,
-    $ops,
     $track,
     Error,
     Group,
@@ -91,7 +90,7 @@ const source = `
         <p if={request.pending}>Loading</p>
         <strong id="greeting">{greeting}</strong>
         <button id="rename" onClick={() => {
-          $ops(user).update(current => ({ ...current!, name: 'Grace' }));
+          user.name = 'Grace';
         }}>Rename</button>
         <button id="consume" onClick={() => consumeName(user.name)}>
           Consume
@@ -139,9 +138,6 @@ const source = `
               {open.map(todo => <li key={todo.id}>{todo.title}</li>)}
             </Group>
           </ul>
-          <button id="clear-todos" onClick={() => $ops(todos).update(() => [])}>
-            Clear
-          </button>
         </section>
       </Group>
     );
@@ -222,7 +218,7 @@ describe('compiler-transparent data values', () => {
     previous = null;
   });
 
-  it('keeps initial sites empty, replays derivations on push, and updates through $ops', async () => {
+  it('keeps initial sites empty, replays derivations on push, and supports ordinary writes', async () => {
     let resolve!: (response: Response) => void;
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
@@ -359,11 +355,6 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('#todo-rows')?.textContent).toBe('Ship compiler');
     expect(ownerRenders()).toBe(0);
 
-    document.querySelector<HTMLButtonElement>('#clear-todos')!.click();
-    expect(document.querySelector('#open-count')?.textContent).toBe('0');
-    expect(document.querySelector('#open-state')?.textContent).toBe('All done');
-    expect(document.querySelector('#todo-rows')?.textContent).toBe('');
-    expect(ownerRenders()).toBe(0);
   });
 
   it('routes a derived-source failure to each nearest Group policy before replay', async () => {

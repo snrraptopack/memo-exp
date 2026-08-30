@@ -6,7 +6,7 @@
  * 1. Group status-test arrays must keep holder refs (refs), not resolved
  *    payloads — nesting a materializing read inside resolvedValuesError/
  *    Pending throws `Value is not a fetch resource` at runtime.
- * 2. $track/$ops arguments must keep receiving the ref; wrapping them in
+ * 2. $track arguments must keep receiving the ref; wrapping them in
  *    readResolvedValue throws UnresolvedDataReadError before first commit.
  * 3. Derived values over module refs (unread = list.filter().length) must
  *    gate through deriveResolvedValues instead of imperative reads.
@@ -60,7 +60,7 @@ const sessionSource = `
 `;
 
 const appSource = `
-  import { $track, $ops, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+  import { $track, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
   import { notifications } from './session';
 
   function Skeleton() {
@@ -77,7 +77,6 @@ const appSource = `
     return (
       <section>
         <span class="pill" class={{ busy: state.refreshing }}>{unread} unread</span>
-        <button onClick={() => void $ops(notifications).refresh()}>Refresh</button>
         <Group data={notifications}>
           <Pending component={Skeleton} />
           <ErrorArm component={ErrorRow} />
@@ -116,15 +115,14 @@ describe('module-scope sources through Group/$track/derivations', () => {
     );
   });
 
-  it('leaves $track and $ops arguments untouched', () => {
+  it('leaves $track arguments untouched', () => {
     const out = compile();
     const panel = out['./panel.tsx']!;
     writeCompiled('track-passthrough', panel);
     expect(panel).toContain('$track(notifications)');
-    expect(panel).toContain('$ops(notifications)');
     // The throwing imperative guard must not wrap passthrough arguments
     expect(panel).not.toMatch(
-      /readResolvedValue\([^)]*"[^"]*notifications[^"]*"\s*\)\)\.\s*(refresh|pending|refreshing)/,
+      /readResolvedValue\([^)]*"[^"]*notifications[^"]*"\s*\)\)\.\s*(pending|refreshing)/,
     );
     expect(panel).not.toMatch(/\$track\(_?MDD\.readResolvedValue/);
   });

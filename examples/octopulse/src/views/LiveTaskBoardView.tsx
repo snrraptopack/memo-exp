@@ -22,11 +22,32 @@ export function LiveTaskBoardView() {
     query: { limit: 10 },
     cache: { scope: 'app' },
   });
+  let isCreating = false;
 
   // Action: POST /todos/add to create a task
   const createTaskAction = taskApi.$action<LiveTask, { todo: string; completed: boolean; userId: number }>(
     'todos/add',
-    { method: 'POST' }
+    {
+      method: 'POST',
+      onSuccess(result, input) {
+        tasksResource.mutate(current => {
+          const index = current?.todos.findIndex(
+            task => task.todo === input.todo && task.id > 1_000_000,
+          ) ?? -1;
+          if (current && index >= 0) current.todos[index] = result;
+        });
+        isCreating = false;
+      },
+      onError(_error, input) {
+        tasksResource.mutate(current => {
+          const index = current?.todos.findIndex(
+            task => task.todo === input.todo && task.id > 1_000_000,
+          ) ?? -1;
+          if (current && index >= 0) current.todos.splice(index, 1);
+        });
+        isCreating = false;
+      },
+    }
   );
 
   cleanup(taskApi.clear);
@@ -51,7 +72,7 @@ export function LiveTaskBoardView() {
     console.log(filteredTasks);
   });
 
-  async function handleAddTask(e: Event) {
+  function handleAddTask(e: Event) {
     e.preventDefault();
     if (!taskInput || !taskInput.value.trim()) return;
 
@@ -70,12 +91,9 @@ export function LiveTaskBoardView() {
       current?.todos.unshift(optimisticItem);
     });
 
-    try {
-      await createTaskAction({ todo: title, completed: false, userId: 5 });
-    } catch {
-      // In case of error, refresh from server to restore ground truth
-      tasksResource.refresh();
-    }
+    isCreating = true;
+    const creation = createTaskAction({ todo: title, completed: false, userId: 5 });
+    void creation;
   }
 
   function toggleTaskState(task: LiveTask) {
@@ -159,10 +177,10 @@ export function LiveTaskBoardView() {
           />
           <button
             type="submit"
-            disabled={createTaskAction.pending}
+            disabled={isCreating}
             className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-stone-950 font-bold text-sm shadow-md shadow-emerald-950 transition-all flex items-center justify-center gap-1.5 whitespace-nowrap"
           >
-            <span>+</span> {createTaskAction.pending ? 'Saving...' : 'Create Task'}
+            <span>+</span> {isCreating ? 'Saving...' : 'Create Task'}
           </button>
         </form>
       </div>

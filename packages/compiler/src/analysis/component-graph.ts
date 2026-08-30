@@ -143,7 +143,7 @@ export function isLightweightListedComponent(
  *   2. no transparent async-source bindings (`transparentSources`)
  *   3. no inherited data-policy parameter (`transparentPolicyParams`)
  *
- * Missing gates 2–3 was the bug: a component that closes over `$ops(src).mutate()`
+ * Missing gates 2–3 was the bug: a component that closes over a transparent source
  * gets emitted as an entity-factory `function Comp(_id, _parent, _propsBox)`,
  * but the list create factory was calling it as `Comp({ item }, _rowId, ...)`,
  * mapping `{ item }` → `_id` and leaving `_propsBox` as the parent string.

@@ -1,4 +1,4 @@
-import { $ops, $track, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+import { $track, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
 import { currentUser, notifications } from './session';
 
 function UserBadge() {
@@ -21,13 +21,7 @@ function NotificationsPanel() {
     <section class="panel">
       <div class="panel-head">
         <h2>Notifications</h2>
-        <span class="pill">{unread} unread</span>
-        <button
-          class={state.refreshing ? 'ghost spinning' : 'ghost'}
-          onClick={() => void $ops(notifications).refresh()}
-        >
-          {state.refreshing ? 'Syncing…' : 'Refresh'}
-        </button>
+        <span class={{ pill: true, busy: state.refreshing }}>{unread} unread</span>
       </div>
 
       <Group data={notifications}>
@@ -41,11 +35,7 @@ function NotificationsPanel() {
                 <button
                   class="tiny"
                   onClick={() => {
-                    $ops(notifications).mutate((items) => {
-                      for (const item of items ?? []) {
-                        if (item.id === n.id) item.read = true;
-                      }
-                    });
+                    n.read = true;
                   }}
                 >
                   Mark read
@@ -88,8 +78,8 @@ export function WorkspaceApp() {
       </header>
       <NotificationsPanel />
       <p class="hint">
-        Module-scope sources + colorless reads. Refresh keeps committed rows
-        visible while syncing.
+        Module-scope sources + colorless reads. Ordinary object writes update
+        the exact dependent UI.
       </p>
     </main>
   );

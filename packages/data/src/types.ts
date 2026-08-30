@@ -104,24 +104,6 @@ export type ResolvedValue<T> = T & {
   readonly [resolvedValue]: T;
 };
 
-export interface ResolvedOperations<T> {
-  refresh(): Promise<T>;
-  abort(): void;
-  update(change: (current: T | undefined) => T): void;
-  mutate(change: (current: T | undefined) => void): void;
-}
-
-export interface ResolvedCollectionOperations<TItem> {
-  append(temporary: TItem): OptimisticChange<TItem>;
-  replace(current: TItem, temporary: TItem): OptimisticChange<TItem>;
-  remove<TResult = unknown>(current: TItem): OptimisticChange<TResult>;
-}
-
-export type OperationsFor<T> = ResolvedOperations<T> &
-  (T extends Array<infer TItem>
-    ? ResolvedCollectionOperations<TItem>
-    : object);
-
 /** Reactive request state exposed for authored conditional rendering. */
 export interface TrackedValue<T> {
   readonly status: AsyncStatus;
@@ -152,15 +134,6 @@ export interface ErrorPolicyComponentProps {
 
 export interface ErrorProps {
   readonly component: DataPolicyComponent<ErrorPolicyComponentProps>;
-}
-
-export interface ActionCallOptions<TResult> {
-  readonly optimistic?: OptimisticChange<TResult>;
-  readonly refresh?: readonly (
-    | RefreshableResource
-    | ResolvedValue<unknown>
-  )[];
-  readonly signal?: AbortSignal;
 }
 
 export interface FetchResourceCore<T> extends RefreshableResource {
@@ -214,27 +187,19 @@ export interface TransparentFetchFunction {
   ): ResolvedValue<InferSchemaOutput<TSchema>>;
 }
 
-interface ActionState<TResult> {
-  readonly data: TResult | undefined;
-  readonly error: import('./errors').RequestError | null;
-  readonly status: AsyncStatus;
-  readonly pending: boolean;
-  abort(): void;
-  reset(): void;
+/** One independently tracked invocation returned immediately by an action. */
+export interface ActionResult<TResult> {
+  readonly id: string;
+  readonly state: AsyncStatus;
+  readonly data: TResult;
+  readonly error: import('./errors').RequestError;
 }
 
 type ActionCall<TResult, TInput> = [TInput] extends [void]
-  ? (
-      input?: TInput,
-      options?: ActionCallOptions<TResult>,
-    ) => Promise<TResult>
-  : (
-      input: TInput,
-      options?: ActionCallOptions<TResult>,
-    ) => Promise<TResult>;
+  ? (input?: TInput) => ActionResult<TResult>
+  : (input: TInput) => ActionResult<TResult>;
 
-export type Action<TResult, TInput = void> = ActionState<TResult> &
-  ActionCall<TResult, TInput>;
+export type Action<TResult, TInput = void> = ActionCall<TResult, TInput>;
 
 export interface ActionFunction {
   <TResult, TInput = void>(
@@ -317,11 +282,13 @@ export type ResourceListener<T> = (
   snapshot: ResourceSnapshot<T>,
 ) => void;
 
-export interface ActionSnapshot<T> {
+export interface ActionResultSnapshot<T> {
+  readonly id: string;
   readonly data: T | undefined;
   readonly error: import('./errors').RequestError | null;
-  readonly status: AsyncStatus;
-  readonly pending: boolean;
+  readonly state: AsyncStatus;
 }
 
-export type ActionListener<T> = (snapshot: ActionSnapshot<T>) => void;
+export type ActionResultListener<T> = (
+  snapshot: ActionResultSnapshot<T>,
+) => void;

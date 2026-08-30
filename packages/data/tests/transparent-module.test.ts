@@ -12,9 +12,9 @@ import {
   createDataRuntime,
   getActiveDataRuntime,
   setActiveDataRuntime,
-  $ops,
   $track,
   type DataRuntime,
+  type FetchResource,
   type ResolvedValue,
 } from '../src';
 import {
@@ -104,8 +104,8 @@ describe('module transparent sources', () => {
 
     runWithApplicationRuntime(runtimeA, () => {
       setActiveDataRuntime(settled.runtime);
-      const user = resolveModuleSource(ref);
-      $ops(user as ResolvedValue<User>).update(() => ({
+      const user = resolveModuleSource<User>(ref) as unknown as FetchResource<User>;
+      user.update(() => ({
         id: 1,
         name: 'From-A',
       }));
@@ -135,7 +135,7 @@ describe('module transparent sources', () => {
     runtimeB.dispose();
   });
 
-  it('$track and $ops observe and operate through the ref', () => {
+  it('$track observes request state through the ref', () => {
     const { runtime, calls } = neverRuntime();
     const previous = setActiveDataRuntime(runtime);
 
@@ -148,7 +148,7 @@ describe('module transparent sources', () => {
     expect(state.pending).toBe(true);
     expect(state.status).toBe('pending');
 
-    $ops<User>(ref).update((current) => ({
+    (resolveModuleSource<User>(ref) as unknown as FetchResource<User>).update((current) => ({
       ...(current ?? { id: 0 }),
       name: 'Local',
     }));

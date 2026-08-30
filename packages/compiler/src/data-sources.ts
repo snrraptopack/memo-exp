@@ -1506,7 +1506,7 @@ function lowerModuleRefReads(
     Identifier(path) {
       if (!path.isReferencedIdentifier() || !matches(path)) return;
       if (insideDerivationInit(path)) return;
-      // $track/$ops and friends receive the ref itself; wrapping their
+      // Source passthrough helpers receive the ref itself; wrapping their
       // arguments in a resolved read would throw before first commit.
       if (
         isPassthroughArgument(ctx, path) ||

@@ -9,7 +9,6 @@ import type {
   GroupProps,
   PendingProps,
   ErrorProps,
-  OperationsFor,
   ResolvedValue,
   ResourceListener,
   ResourceSnapshot,
@@ -80,12 +79,6 @@ export function trackResolvedValue<T>(
   value: ResolvedValue<T> | ModuleSourceRef,
 ): TrackedValue<T> {
   return source(value) as unknown as TrackedValue<T>;
-}
-
-export function resolvedValueOperations<T>(
-  value: ResolvedValue<T> | ModuleSourceRef,
-): OperationsFor<T> {
-  return source(value) as unknown as OperationsFor<T>;
 }
 
 /** Resolve an honest payload for an imperative/derived read. */

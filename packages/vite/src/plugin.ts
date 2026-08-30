@@ -170,6 +170,20 @@ export function memoizedDom(
     return lazyStateContaining(environment, file);
   }
 
+  async function finishPendingCompilation(state: AdapterState): Promise<void> {
+    const pending = state.compiling;
+    if (pending === undefined) return;
+    try {
+      await pending;
+    } catch {
+      // The update that owns this compilation reports its own error. A newer
+      // edit must compile again with its own source instead of inheriting the
+      // stale rejection.
+    } finally {
+      if (state.compiling === pending) state.compiling = undefined;
+    }
+  }
+
   function lazyStatesFor(environment: object): Map<string, AdapterState> {
     let perFile = lazyStates.get(environment);
     if (perFile === undefined) {
@@ -284,10 +298,16 @@ export function memoizedDom(
           ? new Map<string, string>()
           : new Map([[file, await update.read()]]);
       const context = hotGraphContext(this.environment, this);
-      if (isPrimary) {
-        await refreshGraph(context, state, overrides);
-      } else {
-        await refreshLazyGraph(context, state, file, overrides);
+      await finishPendingCompilation(state);
+      try {
+        if (isPrimary) {
+          await refreshGraph(context, state, overrides);
+        } else {
+          await refreshLazyGraph(context, state, file, overrides);
+        }
+      } catch (error) {
+        state.hotUpdateFailed = true;
+        throw error;
       }
       const changed = new Set<string>();
       for (const candidate of new Set([
@@ -297,6 +317,13 @@ export function memoizedDom(
         if (previous.get(candidate) !== state.output.get(candidate)) {
           changed.add(candidate);
         }
+      }
+      if (state.hotUpdateFailed) {
+        // A repaired edit can compile to the same output as the last good
+        // graph. It still needs one HMR update so Vite clears its error
+        // overlay and resumes the client update pipeline.
+        changed.add(file);
+        state.hotUpdateFailed = false;
       }
       return invalidateManagedModules(
         this.environment,

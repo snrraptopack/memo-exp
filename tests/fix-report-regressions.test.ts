@@ -76,8 +76,8 @@ describe('fix.md regressions', () => {
     expect(diagnostic.message).not.toMatch(/\x1B\[/);
   });
 
-  it('uses entity-factory ABI for a listed component that closes over $ops writes', () => {
-    // A component row with a transparent async source (e.g. $ops) must be emitted
+  it('uses entity-factory ABI for a listed component that writes a transparent source', () => {
+    // A component row with a transparent async source write must be emitted
     // with the entity-factory calling convention: Comp(_id, _parent, _propsBox).
     // Before the fix, buildComponentRowCreate used only isLightweightListedComponent
     // (which returned true) and emitted Comp({ item }, _rowId, ...) — the wrong
@@ -86,7 +86,7 @@ describe('fix.md regressions', () => {
     //
     // The bug requires StoryRow to directly reference a module-scope transparent
     // source (stories) within its body — that adds 'stories' to its transparentSources
-    // set, forcing the entity-factory ABI. Calling $ops(stories) inside the row
+    // set, forcing the entity-factory ABI. Mutating stories inside the row
     // component body satisfies this requirement.
     const code = compileModules({
       './session.ts': `
@@ -95,13 +95,11 @@ describe('fix.md regressions', () => {
       `,
       './app.tsx': `
         import { stories } from './session';
-        import { $ops } from '@memoized-dom/data';
-
         function StoryRow({ item }) {
           return (
             <li>
               <span>{item.title}</span>
-              <button onClick={() => $ops(stories).update(prev => prev!.filter(s => s.id !== item.id))}>
+              <button onClick={() => stories.splice(stories.findIndex(s => s.id === item.id), 1)}>
                 delete
               </button>
             </li>

@@ -9,14 +9,64 @@ export function DataReactivityApp() {
   const dataRuntime = createDataRuntime({
     fetch: mockFetch as typeof fetch,
   });
+  const previousStatuses = new Map<string, TaskStatus>();
+  const deletedTasks = new Map<string, { task: Task; index: number }>();
+  let isCreating = false;
   const createTaskAction = dataRuntime.$action<Task, CreateTaskInput>('/api/tasks', {
     method: 'POST',
+    onSuccess(result, input) {
+      tasksResource.mutate(items => {
+        const index = items?.findIndex(
+          item => item.isOptimistic && item.title === input.title,
+        ) ?? -1;
+        if (items && index >= 0) items[index] = result;
+      });
+      actionNotification = '✓ Task created and committed successfully by server!';
+      isCreating = false;
+    },
+    onError(error, input) {
+      tasksResource.mutate(items => {
+        const index = items?.findIndex(
+          item => item.isOptimistic && item.title === input.title,
+        ) ?? -1;
+        if (items && index >= 0) items.splice(index, 1);
+      });
+      actionNotification = `❌ Server Error: Optimistic creation rolled back! (${error.message})`;
+      isCreating = false;
+    },
   });
   const updateTaskAction = dataRuntime.$action<Task, { id: string; status: TaskStatus }>('/api/tasks/update', {
     method: 'PATCH',
+    onSuccess(result, input) {
+      tasksResource.mutate(items => {
+        const index = items?.findIndex(item => item.id === input.id) ?? -1;
+        if (items && index >= 0) items[index] = result;
+      });
+      previousStatuses.delete(input.id);
+      actionNotification = '✓ Task status updated on server!';
+    },
+    onError(_error, input) {
+      const previous = previousStatuses.get(input.id);
+      const task = tasksResource.data?.find(item => item.id === input.id);
+      if (task && previous) task.status = previous;
+      previousStatuses.delete(input.id);
+      actionNotification = '❌ Server Error: Status update rolled back!';
+    },
   });
   const deleteTaskAction = dataRuntime.$action<void, { id: string }>('/api/tasks/delete', {
     method: 'DELETE',
+    onSuccess(_result, input) {
+      deletedTasks.delete(input.id);
+      actionNotification = '✓ Task deleted on server!';
+    },
+    onError(_error, input) {
+      const deleted = deletedTasks.get(input.id);
+      if (deleted) {
+        tasksResource.mutate(items => items?.splice(deleted.index, 0, deleted.task));
+      }
+      deletedTasks.delete(input.id);
+      actionNotification = '❌ Server Error: Deleted task restored to list!';
+    },
   });
   let statusFilter: TaskStatus | 'all' = 'all';
   let searchQuery = '';
@@ -45,7 +95,7 @@ export function DataReactivityApp() {
     previous.abort();
   }
 
-  async function handleCreateTask(e: Event) {
+  function handleCreateTask(e: Event) {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
@@ -70,47 +120,33 @@ export function DataReactivityApp() {
     newTitle = '';
     newDescription = '';
 
-    try {
-      actionNotification = '⚡ Submitting task with optimistic UI list insertion...';
-      await createTaskAction(inputData, {
-        optimistic: tasksResource.append(tempTask),
-      });
-      actionNotification = '✓ Task created and committed successfully by server!';
-    } catch (err) {
-      actionNotification = `❌ Server Error: Optimistic creation rolled back! (${err instanceof Error ? err.message : String(err)})`;
-    }
+    actionNotification = '⚡ Submitting task with optimistic UI list insertion...';
+    isCreating = true;
+    tasksResource.mutate(items => items?.push(tempTask));
+    const creation = createTaskAction(inputData);
+    void creation;
   }
 
-  async function handleUpdateStatus(task: Task, nextStatus: TaskStatus) {
-    const optimisticTask: Task = { ...task, status: nextStatus, isOptimistic: true };
-
-    try {
-      actionNotification = `⚡ Updating task status optimistically to ${nextStatus.toUpperCase()}...`;
-      await updateTaskAction(
-        { id: task.id, status: nextStatus },
-        {
-          optimistic: tasksResource.replace(task, optimisticTask),
-        },
-      );
-      actionNotification = '✓ Task status updated on server!';
-    } catch (err) {
-      actionNotification = `❌ Server Error: Status update rolled back to ${task.status.toUpperCase()}!`;
-    }
+  function handleUpdateStatus(task: Task, nextStatus: TaskStatus) {
+    previousStatuses.set(task.id, task.status);
+    task.status = nextStatus;
+    task.isOptimistic = true;
+    actionNotification = `⚡ Updating task status optimistically to ${nextStatus.toUpperCase()}...`;
+    const update = updateTaskAction({ id: task.id, status: nextStatus });
+    void update;
   }
 
-  async function handleDeleteTask(task: Task) {
-    try {
-      actionNotification = `⚡ Removing task optimistically...`;
-      await deleteTaskAction(
-        { id: task.id },
-        {
-          optimistic: tasksResource.remove<void>(task),
-        },
-      );
-      actionNotification = '✓ Task deleted on server!';
-    } catch (err) {
-      actionNotification = `❌ Server Error: Deleted task restored to list!`;
-    }
+  function handleDeleteTask(task: Task) {
+    actionNotification = '⚡ Removing task optimistically...';
+    tasksResource.mutate(items => {
+      const index = items?.indexOf(task) ?? -1;
+      if (items && index >= 0) {
+        deletedTasks.set(task.id, { task, index });
+        items.splice(index, 1);
+      }
+    });
+    const deletion = deleteTaskAction({ id: task.id });
+    void deletion;
   }
 
   function handleRefresh() {
@@ -224,7 +260,7 @@ export function DataReactivityApp() {
           <form class="create-task-card" onSubmit={handleCreateTask}>
             <div class="form-title-row">
               <h3>✨ Add New Sprint Task</h3>
-              <span class="form-hint">Tests `$action` with `resource.append()`</span>
+              <span class="form-hint">Tests `$action` with ordinary optimistic data writes</span>
             </div>
 
             <div class="form-inputs-grid">
@@ -272,9 +308,9 @@ export function DataReactivityApp() {
               <button
                 type="submit"
                 class="btn-submit-task"
-                disabled={createTaskAction.pending}
+                disabled={isCreating}
               >
-                {createTaskAction.pending ? '⚡ Sending Request...' : '➕ Create Task (Optimistic)'}
+                {isCreating ? '⚡ Sending Request...' : '➕ Create Task (Optimistic)'}
               </button>
             </div>
           </form>

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDataRuntime } from '../src';
 import {
-  disposeAction,
+  disposeActionResult,
   disposeFetchResource,
-  subscribeAction,
+  subscribeActionResult,
   subscribeFetchResource,
 } from '../src/internal';
 import type { FetchResource } from '../src';
@@ -73,55 +73,32 @@ describe('data runtime lifecycle', () => {
     await expect(resource.refresh()).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  it('makes abort a logical boundary for a non-cooperative action fetcher', async () => {
+  it('makes runtime clearing a logical boundary for a non-cooperative action fetcher', async () => {
     let finish!: (response: Response) => void;
     const fetcher = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
     const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
     const action = runtime.$action<{ saved: boolean }>('/save');
-    const operation = action();
-    const rejection = expect(operation).rejects.toMatchObject({ name: 'AbortError' });
+    const result = action();
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
 
-    action.abort();
+    runtime.clear();
     finish(json({ saved: true }));
 
-    await rejection;
-    expect(action.status).toBe('idle');
-    expect(action.pending).toBe(false);
-    expect(action.data).toBeUndefined();
-  });
-
-  it('preserves a caller signal reason without storing it as an action failure', async () => {
-    const runtime = createDataRuntime({
-      fetch: (() => new Promise<Response>(() => {})) as typeof fetch,
-    });
-    const owner = new AbortController();
-    const action = runtime.$action('/save');
-    const operation = action(undefined, { signal: owner.signal });
-    const reason = new Error('owner disposed');
-
-    owner.abort(reason);
-
-    await expect(operation).rejects.toBe(reason);
-    expect(action.status).toBe('idle');
-    expect(action.error).toBeNull();
-    expect(action.pending).toBe(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(result.state).toBe('idle');
   });
 
   it('resets active actions when their runtime is cleared', async () => {
     const fetcher = vi.fn(() => new Promise<Response>(() => {}));
     const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
     const action = runtime.$action('/save');
-    const operation = action();
-    const rejection = expect(operation).rejects.toMatchObject({ name: 'AbortError' });
+    const result = action();
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
 
     runtime.clear();
 
-    await rejection;
-    expect(action.status).toBe('idle');
-    expect(action.pending).toBe(false);
-    expect(action.data).toBeUndefined();
+    expect(result.state).toBe('idle');
   });
 
   it('isolates listener failures from resource and action state transitions', async () => {
@@ -139,12 +116,12 @@ describe('data runtime lifecycle', () => {
     expect(resource.data).toEqual(['ready']);
 
     const action = runtime.$action<{ saved: boolean }>('/save');
-    subscribeAction(action, value => {
-      if (value.status === 'pending') throw new Error('action listener');
+    const result = action();
+    subscribeActionResult(result, value => {
+      if (value.state === 'pending') throw new Error('action listener');
     });
-    await expect(action()).resolves.toEqual({ saved: true });
-    expect(action.status).toBe('success');
-    expect(action.pending).toBe(false);
+    await vi.waitFor(() => expect(result.state).toBe('success'));
+    expect(result.data).toEqual({ saved: true });
     expect(reportError).toHaveBeenCalledTimes(2);
   });
 
@@ -153,11 +130,12 @@ describe('data runtime lifecycle', () => {
     vi.stubGlobal('reportError', reportError);
     const runtime = createDataRuntime({ fetch: (() => new Promise(() => {})) as typeof fetch });
     const action = runtime.$action('/save');
+    const result = action();
 
-    expect(() => subscribeAction(action, () => {
+    expect(() => subscribeActionResult(result, () => {
       throw new Error('initial listener');
     })).toThrow('initial listener');
-    action.abort();
+    runtime.clear();
     expect(reportError).not.toHaveBeenCalled();
   });
 
@@ -166,17 +144,15 @@ describe('data runtime lifecycle', () => {
     const resource = runtime.$fetch<unknown[]>('/read');
     await settled(resource);
     const action = runtime.$action('/save');
+    const result = action();
     disposeFetchResource(resource);
-    disposeAction(action);
+    disposeActionResult(result);
 
     await expect(resource.refresh()).rejects.toThrow('disposed fetch resource');
     expect(() => resource.abort()).toThrow('disposed fetch resource');
     expect(() => resource.update(() => [])).toThrow('disposed fetch resource');
     expect(() => resource.mutate(() => {})).toThrow('disposed fetch resource');
     expect(() => subscribeFetchResource(resource, () => {})).toThrow('disposed');
-    await expect(action()).rejects.toThrow('disposed action');
-    expect(() => action.abort()).toThrow('disposed action');
-    expect(() => action.reset()).toThrow('disposed action');
-    expect(() => subscribeAction(action, () => {})).toThrow('disposed');
+    expect(() => subscribeActionResult(result, () => {})).toThrow('disposed');
   });
 });

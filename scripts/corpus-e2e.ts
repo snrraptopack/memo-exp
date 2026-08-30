@@ -21,8 +21,17 @@ import { dirname, join } from 'node:path';
 
 const examplesDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'examples');
 
-/** Examples without their own index.html (helpers, external demos). */
-const SKIP = new Set(['dist', 'node_modules', 'external-library']);
+/**
+ * Examples that are not standalone client applications. The SSR showcase
+ * requires its own fullstack server to provide hydration markers; serving its
+ * index through this client-only harness would correctly fail hydration.
+ */
+const SKIP = new Set([
+  'dist',
+  'node_modules',
+  'external-library',
+  'ssr-showcase',
+]);
 
 interface CaseExpectation {
   /** Text that must appear once async data has committed. */

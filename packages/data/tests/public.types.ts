@@ -1,12 +1,13 @@
 import {
+  $action,
   $fetch,
-  $ops,
   $track,
   createDataRuntime,
   type DataRuntime,
   type DataRuntimeOptions,
   type ResolvedValue,
 } from '../src';
+import * as data from '../src';
 
 const options = {
   baseURL: new URL('https://example.test/api/'),
@@ -30,18 +31,26 @@ interface User {
   name: string;
 }
 
-const user = $fetch<User>('/user');
+const user = $fetch<User>('/user', { cache: { scope: 'app' } });
 const assignableUser: User = user;
 const preservedSource: ResolvedValue<User> = user;
 void assignableUser.name;
 void preservedSource.id;
 void $track(user).pending;
 void $track(user).error;
-$ops(user).refresh();
-$ops(user).update(current => ({ ...current!, name: 'Grace' }));
+
+// @ts-expect-error The legacy operations facade is no longer public.
+data.$ops(user);
 
 // @ts-expect-error Operations never collide with or decorate the payload.
 user.refresh();
 
-const todos = $fetch<Array<{ id: number }>>('/todos');
-$ops(todos).append({ id: 1 });
+const createUser = $action<User, { name: string }>('/users');
+const creation = createUser({ name: 'Grace' });
+void creation.id;
+void creation.state;
+void creation.data.name;
+void creation.error.message;
+
+// @ts-expect-error Action invocation results are not promises.
+creation.then(() => {});

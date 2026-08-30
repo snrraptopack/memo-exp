@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  $ops,
   $track,
   createDataRuntime,
   RequestError,
@@ -26,7 +25,7 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe('transparent resolved values', () => {
-  it('separates value reads, reactive request state, and operations', async () => {
+  it('separates transparent value reads from tracked request state', async () => {
     let resolve!: (response: Response) => void;
     const runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
@@ -36,7 +35,6 @@ describe('transparent resolved values', () => {
     const resource = runtime.$fetch<User>('/user');
     const user = resource as unknown as ResolvedValue<User>;
     const state = $track(user);
-    const operations = $ops(user);
 
     expect(state.pending).toBe(true);
     expect(readResolvedValueForRender(user)).toBeUndefined();
@@ -54,7 +52,7 @@ describe('transparent resolved values', () => {
     expect(state.pending).toBe(false);
     expect(transitions).toBe(1);
 
-    operations.update(current => ({ ...current!, name: 'Grace' }));
+    resource.update(current => ({ ...current!, name: 'Grace' }));
     expect(readResolvedValue(user).name).toBe('Grace');
     expect(transitions).toBe(2);
 

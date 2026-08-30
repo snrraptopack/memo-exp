@@ -50,9 +50,12 @@ class. Module state is not a special store type.
     once per instance; reactive updates do not rerun the whole component.
 12. Use compiler-owned `route` and `route-to` JSX attributes for application
     routing. Do not import anything from `@memoized-dom/router/internal`.
-13. Keep `$fetch` resource objects intact. Reading `resource.data` later is
-    live; destructuring `{ data }` takes an ordinary JavaScript snapshot.
-14. Own long-lived resources explicitly with `cleanup(...)`.
+13. Treat `$fetch<T>()` as the resolved `T`: read properties, derive values,
+    and map arrays directly. Do not use `.data`, `.refresh()`, or mutation
+    facades on the fetched value.
+14. Put unresolved render reads under `Group`, use `$track(value)` only when
+    request status is part of the UI, and use the `Error` arm's `retry`
+    callback for retries.
 
 ## Minimal published-package project
 
@@ -83,7 +86,7 @@ Package roles:
 | `@memoized-dom/runtime` | Public `mount` boundary and generated-code runtime. |
 | `@memoized-dom/compiler` | Build-time compiler plus `@memoized-dom/compiler/jsx` ambient types. Application modules normally do not import its JavaScript API. |
 | `@memoized-dom/vite` | Compiles the connected authored graph during Vite development and builds. |
-| `@memoized-dom/data` | Optional `$fetch`, `$action`, validation, sharing, cancellation, and optimistic updates. |
+| `@memoized-dom/data` | Optional transparent `$fetch` values, `$track`, declarative data boundaries, independent action results, validation, caching, and SSR state transfer. |
 | `@memoized-dom/router` | Optional public route state and imperative navigation; compiler routing also emits imports from its generated-code bridge. |
 | `@memoized-dom/language-service` | Optional tsserver diagnostics and fixes for compiler errors and `let` bindings that can safely be `const`. |
 
@@ -493,9 +496,10 @@ promises, subscriptions, and linked helpers. If an external library mutates a
 rendered object later through code the compiler cannot see, Memoized DOM falls
 back to pulling that rendered state once per visible animation frame while its
 owner is mounted. Existing DOM value guards prevent unchanged writes. This is
-why ordinary animation libraries and getter-backed data resources work without
-package-name-specific compiler rules. Still dispose external resources with
-`cleanup`.
+why ordinary animation libraries and other getter-backed external state can
+work without package-name-specific compiler rules. Transparent `$fetch` values
+use their dedicated compiler integration instead. Still dispose external
+resources with `cleanup`.
 
 ## Derived state
 
@@ -618,9 +622,9 @@ Normal JSX conditionals work:
 For readable sibling branches, use compiler-owned directives:
 
 ```tsx
-<LoadingPanel if={request.pending} />
-<ErrorPanel else-if={!!request.error} error={request.error} />
-<Results else items={request.data ?? []} />
+<LoadingPanel if={mode === 'loading'} />
+<ErrorPanel else-if={mode === 'error'} message={message} />
+<Results else items={items} />
 ```
 
 Rules for `if`/`else-if`/`else`:
@@ -666,10 +670,9 @@ inserted, removed, or reordered. Keyed rows retain their DOM nodes, local state,
 effects, and refs across reorders. Removing a row disposes only that row.
 
 Calculated sources such as `items.filter(predicate).map(...)` and optional
-sources such as `resource.data?.map(...)` are supported. Static JSX arrays may
-be flattened, but a mutable runtime array of JSX is not a virtual-node store;
-keep mutable data in an ordinary collection and map it to JSX at the render
-site.
+sources such as `maybeItems?.map(...)` are supported. Static JSX arrays may be
+flattened, but a mutable runtime array of JSX is not a virtual-node store; keep
+mutable data in an ordinary collection and map it to JSX at the render site.
 
 ## Effects and cleanup
 
@@ -881,83 +884,114 @@ cannot preserve the ability to assign back to that lexical binding.
 
 ## Data loading: `@memoized-dom/data`
 
-The data package exports public browser-first fetch resources and callable
-actions:
+The authored data API is colorless: fetched payloads retain their ordinary
+TypeScript shape, while the compiler preserves the hidden request provenance
+needed for availability checks and targeted DOM updates.
 
 ```ts
 import {
   $fetch,
+  $track,
   $action,
+  Group,
+  Pending,
+  Error as ErrorArm,
   createDataRuntime,
   clearDataRuntime,
   RequestError,
 } from '@memoized-dom/data';
 ```
 
-The package is usable independently of the compiler. Memoized DOM currently
-treats its getter-backed values like any other opaque external state and
-pulls rendered getters through the compatibility path. There is no compiler
-rule based on the names `$fetch` or `$action`.
+Do not import `@memoized-dom/data/internal`. That entry exists only for
+generated code and framework adapters.
 
-### Fetch resources
+### Transparent fetch values
 
-`$fetch` starts a GET request immediately and returns one stable resource:
+`$fetch<T>` declares a GET source and returns a compiler-aware value assignable
+to `T`. Consume the payload directly: there is no public `.data` wrapper.
 
 ```tsx
-import { $fetch } from '@memoized-dom/data';
+import {
+  $fetch,
+  Group,
+  Pending,
+  Error as ErrorArm,
+} from '@memoized-dom/data';
 
 interface Todo {
   id: number;
   title: string;
+  done: boolean;
+}
+
+const todos = $fetch<Todo[]>('/api/todos', {
+  cache: { scope: 'app' },
+});
+
+function TodoSkeleton() {
+  return <p>Loading…</p>;
+}
+
+function TodoFailure({ error, retry }) {
+  return (
+    <div>
+      <strong>{error.message}</strong>
+      <button onClick={retry}>Retry</button>
+    </div>
+  );
 }
 
 export function Todos() {
-  const todos = $fetch<Todo[]>('/api/todos');
-  cleanup(todos.abort);
+  const open = todos.filter((todo) => !todo.done);
 
   return (
-    <section>
-      <p if={todos.pending && !todos.data}>Loading…</p>
-      <div else-if={!!todos.error && !todos.data}>
-        <strong>{todos.error?.message}</strong>
-        <button onClick={() => todos.refresh()}>Retry</button>
-      </div>
-      <ul else>
-        {todos.data?.map((todo) => (
+    <Group data={todos}>
+      <Pending component={TodoSkeleton} />
+      <ErrorArm component={TodoFailure} />
+      <ul>
+        {open.map((todo) => (
           <li key={todo.id}>{todo.title}</li>
         ))}
       </ul>
-    </section>
+    </Group>
   );
 }
 ```
 
-Component factories run once, so this declaration does not issue a new request
-on every reactive update.
+`Group` owns the unavailable states for its data sources. Its first child is a
+`Pending` policy, its second child is an `Error` policy, and its final child is
+the resolved UI. The error component receives `{ error, retry }`; retrying is a
+boundary capability, not a method added to the payload.
 
-Resource state:
+The compiler carries source dependencies through property reads, derivations,
+conditions, lists, and component props. Render reads wait for the source instead
+of evaluating against a fake `null` payload. An imperative read that truly runs
+too early raises `UnresolvedDataReadError`, which identifies the source and read
+site instead of producing a random `null.length` or null-property crash.
 
-```ts
-resource.data;       // T | undefined
-resource.error;      // RequestError | null
-resource.status;     // 'idle' | 'pending' | 'success' | 'error'
-resource.pending;    // boolean
-resource.refreshing; // boolean
+Use `$track` when status itself belongs in the UI:
+
+```tsx
+import { $track } from '@memoized-dom/data';
+
+export function SyncState() {
+  const request = $track(todos);
+  return (
+    <output class={{ busy: request.refreshing }}>
+      {request.refreshing ? 'Syncing…' : request.status}
+    </output>
+  );
+}
 ```
 
-During refresh, existing successful data remains available,
-`pending === true`, and `refreshing === true`. A failed refresh preserves old
-data and places the refresh error in `error`.
-
-Do not destructure live state:
+Tracked state is:
 
 ```ts
-const resource = $fetch<User[]>('/api/users');
-const { data, pending } = resource; // snapshots; these bindings do not update
+request.status;     // 'idle' | 'pending' | 'success' | 'error'
+request.pending;    // cold request is in flight
+request.refreshing; // existing data is being revalidated
+request.error;      // RequestError | null
 ```
-
-Keep the resource and read `resource.data`/`resource.pending` where needed.
-Bound methods such as `const { refresh } = resource` are safe to extract.
 
 Request options include query values, headers, identity, sharing, validation,
 and cancellation:
@@ -985,7 +1019,7 @@ request identity unless `key` is supplied.
 
 Cache modes:
 
-- Omit `cache` or use `'active'` to share while a matching resource is active.
+- Omit `cache` or use `'active'` to share while a matching source is active.
 - Use `cache: false` for a private request/result.
 - Use `cache: { scope: 'app' }` to retain data until that data runtime is
   cleared.
@@ -998,123 +1032,146 @@ No time-based freshness/retention option is currently part of the public API.
 const user = $fetch<User>(userId ? `/api/users/${userId}` : null);
 ```
 
-The target and options are captured when the resource is created. Changing
-`userId` does not currently recreate the resource automatically. Replace a
-component-local resource explicitly and abort the previous resource when
-request arguments change:
-
-```tsx
-let user = loadUser(userId);
-
-function selectUser(nextId: string) {
-  userId = nextId;
-  const previous = user;
-  user = loadUser(userId);
-  previous.abort();
-}
-```
-
-Resource operations:
-
-```ts
-await resource.refresh();
-resource.abort();
-
-resource.update((current) => [...(current ?? []), newItem]);
-resource.mutate((current) => {
-  current?.push(newItem);
-});
-```
-
-`update` must return a replacement top-level value. `mutate` ignores its
-callback result and preserves the existing top-level value, which makes
-in-place operations such as `push` safe. Both supersede an older in-flight
-read so stale results cannot overwrite the local change.
+The target and options belong to that source declaration. The public payload
+does not expose refresh, abort, update, or mutate methods, and there is no
+`$ops` facade. Use ordinary application data writes for local state changes;
+use an action for server writes.
 
 The generic `$fetch<T>()` is a TypeScript assertion, not runtime validation.
 Pass a Standard Schema-compatible validator with `validate` when the response
 is untrusted; the output type is inferred from the schema and validation
 failures use `error.kind === 'validation'`.
 
-### Isolated data runtimes and ownership
+### Data runtimes and ownership
 
-Use `createDataRuntime` for a separate request/cache/action boundary, a custom
-base URL, or an injected fetch implementation:
+Use `createDataRuntime` for application/request isolation, a custom base URL,
+or an injected fetch implementation. Install it as the active runtime before
+mounting; authored modules still use the exported transparent `$fetch` and
+`$action` facades.
 
-```tsx
-import { createDataRuntime } from '@memoized-dom/data';
+```ts
+import {
+  createDataRuntime,
+  setActiveDataRuntime,
+} from '@memoized-dom/data';
+import { mount } from '@memoized-dom/runtime';
+import { App } from './App';
 
-export function Users() {
-  const data = createDataRuntime({
-    baseURL: 'https://api.example.com/',
-  });
-  const users = data.$fetch<User[]>('users');
-  cleanup(data.clear);
-
-  return <output>{users.pending ? 'Loading' : users.data?.length ?? 0}</output>;
-}
+const data = createDataRuntime({
+  baseURL: 'https://api.example.com/',
+});
+setActiveDataRuntime(data);
+mount('root', App);
 ```
 
-`data.clear()` aborts active reads/actions, resets their pending state, detaches
-resources, and drops retained results. Existing resource objects remain valid
-and may later be refreshed. `clearDataRuntime()` clears the exported default
-runtime. For one default-runtime resource, `cleanup(resource.abort)` is the
-smaller ownership boundary.
+`data.clear()` aborts active work and drops retained results.
+`clearDataRuntime()` clears the currently active runtime. Server rendering and
+tests can use `runWithDataRuntime(runtime, callback)` for scoped isolation.
 
-### Actions and optimistic updates
+### Actions and action results
 
 `$action` creates a lazy write operation. Creating it sends nothing; calling it
-sends the request:
+sends the request and immediately returns that invocation's independent live
+result. It does not return a promise.
 
-```tsx
-import { $action, $fetch } from '@memoized-dom/data';
+```ts
+import { $action } from '@memoized-dom/data';
 
 interface Todo { id: string; title: string }
 interface CreateTodo { title: string }
 
-const todos = $fetch<Todo[]>('/api/todos');
 const createTodo = $action<Todo, CreateTodo>('/api/todos', {
   method: 'POST',
 });
 
-async function addTodo(title: string) {
-  const temporary: Todo = { id: `temp-${Date.now()}`, title };
-  await createTodo(
-    { title },
-    { optimistic: todos.append(temporary) },
-  );
-}
+const creation = createTodo({ title: 'Write the guide' });
+
+creation.id;    // unique to this invocation
+creation.state; // initially 'idle', then 'pending'/'success'/'error'
 ```
 
 Supported methods are `POST`, `PUT`, `PATCH`, and `DELETE`; the default is
 `POST`. Plain objects/arrays are JSON encoded, while native request bodies such
 as `FormData`, blobs, and `URLSearchParams` pass through.
 
-Action state uses `data`, `error`, `status`, and `pending`. Calls return normal
-promises and may be handled with `await`/`try`/`catch`. `abort()` cancels active
-client work and `reset()` returns visible state to `idle`. The visible state
-belongs to the most recently started invocation, so an older late result cannot
-overwrite it.
+Read `data` and `error` under the matching state boundary. No optional chaining
+is needed inside those arms:
 
-Array resources expose optimistic change constructors:
+```tsx
+import type { ActionResult } from '@memoized-dom/data';
 
-```ts
-await createTodo(input, {
-  optimistic: todos.append(temporary),
-});
-
-await updateTodo(input, {
-  optimistic: todos.replace(existing, optimisticVersion),
-});
-
-await deleteTodo(existing.id, {
-  optimistic: todos.remove<void>(existing),
-});
+function CreationState({ creation }: { creation: ActionResult<Todo> }) {
+  return (
+    <section>
+      <p if={creation.state === 'pending'}>Creating…</p>
+      <p if={creation.state === 'error'}>{creation.error.message}</p>
+      <TodoRow if={creation.state === 'success'} todo={creation.data} />
+    </section>
+  );
+}
 ```
 
-Each change is single-use. Failure rolls back only that change; success
-reconciles from the action result. Use `refresh: [anotherResource]` only for
-related authoritative data that cannot be derived from the action result.
+Every call returns a different `id` and state record, so concurrent calls cannot
+overwrite one another. There is no `await`, `.settled`, `pending` boolean,
+`status`, `abort`, `reset`, `refresh`, or action-call options object.
+
+Optimistic UI is ordinary program logic, not a data-package mutation API:
+create a temporary item, insert it into the same data structure the UI reads,
+and retain the returned action result with that temporary item's identity. On
+`success`, replace/reconcile it from `creation.data`; on `error`, remove only
+the temporary item owned by `creation.id`. The package does not invent
+`append`, `replace`, `remove`, `mutate`, or rollback methods.
+
+```ts
+import {
+  $action,
+  $fetch,
+  type ActionResult,
+} from '@memoized-dom/data';
+
+interface Todo {
+  id: string;
+  title: string;
+}
+
+interface CreateTodo {
+  title: string;
+  temporaryId: string;
+}
+
+const todos = $fetch<Todo[]>('/api/todos');
+const creations = new Map<string, ActionResult<Todo>>();
+
+const createTodo = $action<Todo, CreateTodo>('/api/todos', {
+  onSuccess(created, input) {
+    const index = todos.findIndex((todo) => todo.id === input.temporaryId);
+    if (index !== -1) todos[index] = created;
+  },
+  onError(_error, input) {
+    const index = todos.findIndex((todo) => todo.id === input.temporaryId);
+    if (index !== -1) todos.splice(index, 1);
+  },
+});
+
+function addTodo(title: string) {
+  const temporary: Todo = {
+    id: `temporary-${crypto.randomUUID()}`,
+    title,
+  };
+
+  todos.unshift(temporary);
+
+  const creation = createTodo({
+    title,
+    temporaryId: temporary.id,
+  });
+  creations.set(creation.id, creation);
+}
+```
+
+The temporary ID connects the ordinary array entry to its request. The action
+result remains available in `creations` for pending/error UI, while the action
+callbacks perform only the success/error reconciliation owned by that request.
 
 ## Routing: `@memoized-dom/router`
 
@@ -1298,7 +1355,12 @@ export function toggleCompact() {
 `src/App.tsx`:
 
 ```tsx
-import { $fetch } from '@memoized-dom/data';
+import {
+  $fetch,
+  Group,
+  Pending,
+  Error as ErrorArm,
+} from '@memoized-dom/data';
 import { route } from '@memoized-dom/router';
 import {
   recordVisit,
@@ -1312,12 +1374,23 @@ interface Post {
   title: string;
 }
 
+function PostsPending() {
+  return <p>Loading…</p>;
+}
+
+function PostsError({ error, retry }) {
+  return (
+    <div>
+      <strong>{error.message}</strong>
+      <button onClick={retry}>Retry</button>
+    </div>
+  );
+}
+
 function Home() {
   let heading: HTMLHeadingElement | undefined;
   const posts = $fetch<Post[]>('/api/posts', { cache: { scope: 'app' } });
-  const visiblePosts = posts.data?.slice(0, session.compact ? 3 : 10) ?? [];
-
-  cleanup(posts.abort);
+  const visiblePosts = posts.slice(0, session.compact ? 3 : 10);
 
   effect(() => {
     document.title = `${visitLabel} · Memoized DOM`;
@@ -1334,23 +1407,22 @@ function Home() {
         <button onClick={() => heading?.focus()}>Focus heading</button>
       </div>
 
-      <p if={posts.pending && !posts.data}>Loading…</p>
-      <div else-if={!!posts.error && !posts.data}>
-        <strong>{posts.error?.message}</strong>
-        <button onClick={() => posts.refresh()}>Retry</button>
-      </div>
-      <ul else>
-        {visiblePosts.map((post) => (
-          <li key={post.id}>
-            <a route-to={{
-              path: '/posts/:postId',
-              params: { postId: post.id },
-            }}>
-              {post.title}
-            </a>
-          </li>
-        ))}
-      </ul>
+      <Group data={posts}>
+        <Pending component={PostsPending} />
+        <ErrorArm component={PostsError} />
+        <ul>
+          {visiblePosts.map((post) => (
+            <li key={post.id}>
+              <a route-to={{
+                path: '/posts/:postId',
+                params: { postId: post.id },
+              }}>
+                {post.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </Group>
     </main>
   );
 }
@@ -1416,10 +1488,11 @@ effect(() => { doubled = count * 2; });
 
 Use `const doubled = count * 2`. Effects are for external synchronization.
 
-### Destructuring data resources
+### Treating transparent fetch values as resource wrappers
 
-Do not render a destructured `data` or `pending` snapshot. Retain the resource
-object and read its getters in derived/JSX expressions.
+Do not write `users.data`, `users.pending`, or `users.refresh()`. A
+`$fetch<User[]>()` value is the `User[]` payload; read request state through
+`$track(users)` and handle unavailable UI through `Group`.
 
 ### Importing compiler intrinsics
 
@@ -1465,8 +1538,11 @@ Before returning a generated Memoized DOM project, verify:
 - `effect` and `cleanup` are used without imports and only in supported owner
   positions.
 - Refs use `ref={target}` or callback refs, with explicit component forwarding.
-- `$fetch` resources are not destructured, changing request arguments are
-  handled explicitly, and resources/runtimes have cleanup ownership.
+- `$fetch` values are consumed as plain payloads, unresolved reads are covered
+  by `Group`, request state uses `$track`, and no resource methods or `$ops`
+  facade are invented.
+- `$action` invocations are stored as independent action results and are never
+  awaited or given `.settled`/refresh/optimistic call options.
 - Router paths start with `/`, route targets are declared, param keys are exact,
   and no router internals are imported.
 

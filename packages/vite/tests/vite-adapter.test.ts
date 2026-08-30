@@ -255,6 +255,19 @@ describe('Vite 8 adapter', () => {
       },
       { timeout: 15_000 },
     );
+
+    send.mockClear();
+    await writeFile(appFile, app);
+    await vi.waitFor(
+      () => {
+        expect(
+          send.mock.calls.some(([payload]) => payload.type === 'update'),
+        ).toBe(true);
+      },
+      { timeout: 15_000 },
+    );
+    expect(send.mock.calls.some(([payload]) => payload.type === 'full-reload'))
+      .toBe(false);
   }, 30_000);
   it('serves Web handlers through first-class fullstack dev middleware', async () => {
     server = await createServer({

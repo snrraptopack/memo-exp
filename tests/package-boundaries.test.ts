@@ -80,11 +80,11 @@ describe('workspace package boundaries', () => {
     expect(publicData).toHaveProperty('createDataRuntime');
     expect(publicData).toHaveProperty('clearDataRuntime');
     expect(publicData).not.toHaveProperty('subscribeFetchResource');
-    expect(publicData).not.toHaveProperty('subscribeAction');
+    expect(publicData).not.toHaveProperty('subscribeActionResult');
     expect(internalData).toHaveProperty('subscribeFetchResource');
-    expect(internalData).toHaveProperty('subscribeAction');
+    expect(internalData).toHaveProperty('subscribeActionResult');
     expect(internalData).toHaveProperty('disposeFetchResource');
-    expect(internalData).toHaveProperty('disposeAction');
+    expect(internalData).toHaveProperty('disposeActionResult');
   });
 
   it('publishes scoped router creation separately from generated-code hooks', async () => {

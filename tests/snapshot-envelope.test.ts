@@ -69,7 +69,7 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
     expect(calls).toEqual([]);
   });
 
-  it('restores pending paused and starts only on explicit refresh', async () => {
+  it('resumes a restored pending request on the client', async () => {
     const pending = Promise.withResolvers<Response>();
     const calls: string[] = [];
     const neverFetch = ((url: RequestInfo | URL) => {
@@ -90,12 +90,6 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
     target.restoreState(envelope);
     setActiveDataRuntime(target);
     const restored = target.$fetch('/api/slow');
-    await Promise.resolve();
-    expect(restored.status).toBe('pending');
-    expect(restored.pending).toBe(true);
-    expect(targetCalls).toEqual([]);
-
-    restored.refresh();
     await vi.waitFor(() => {
       expect(restored.status).toBe('success');
     });

@@ -12,7 +12,6 @@ import {
   Error,
   Group,
   Pending,
-  resolvedValueOperations,
   trackResolvedValue,
 } from './transparent';
 
@@ -30,8 +29,6 @@ export const $fetch = ((
 ) => getActiveDataRuntime().$fetch(target, options)) as unknown as TransparentFetchFunction;
 export const $track = (<T>(value: ResolvedValue<T>) =>
   trackResolvedValue(value)) as typeof trackResolvedValue;
-export const $ops = (<T>(value: ResolvedValue<T>) =>
-  resolvedValueOperations(value)) as typeof resolvedValueOperations;
 export { Group, Pending, Error };
 export const $action = ((
   target: string | URL,
@@ -46,10 +43,10 @@ export { UnresolvedDataReadError } from './transparent';
 
 export type {
   Action,
-  ActionCallOptions,
   ActionFunction,
   ActionMethod,
   ActionOptions,
+  ActionResult,
   AppCacheOptions,
   AsyncStatus,
   DataRuntime,
@@ -63,7 +60,6 @@ export type {
   GroupProps,
   InferSchemaOutput,
   OptimisticChange,
-  OperationsFor,
   PendingProps,
   ErrorProps,
   ErrorPolicyComponentProps,
@@ -72,8 +68,6 @@ export type {
   QueryValue,
   RequestKey,
   RequestKeyPart,
-  ResolvedCollectionOperations,
-  ResolvedOperations,
   ResolvedValue,
   SerializedDataState,
   SerializedSourceError,

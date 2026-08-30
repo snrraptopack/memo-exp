@@ -9,6 +9,7 @@ export class AdapterState {
   readonly output = new Map<string, string>();
   readonly maps = new Map<string, CompilerSourceMap>();
   compiling: Promise<CompiledGraph> | undefined;
+  hotUpdateFailed = false;
 
   replace(graph: CompiledGraph): void {
     this.files.clear();

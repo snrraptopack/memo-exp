@@ -14,12 +14,13 @@
  * Data loading uses colorless module sources from session.ts. Reading
  * `currentUser.name` or iterating `stories` is a live reactive read — no
  * selector or subscription call required. `Group` renders the pending/error
- * arms while sources are in flight; `$ops(...).mutate(...)` commits an
- * optimistic local mutation that propagates to every reader immediately.
+ * arms while sources are in flight; ordinary data writes propagate to every
+ * dependent reader immediately.
  */
 import { route } from '@memoized-dom/router';
-import { $ops, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
-import { currentUser, stories, type Story } from './session';
+import { Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+import { currentUser, stories, type Story,storiesAction } from './session';
+
 
 // ── Session badge ─────────────────────────────────────────────────────────────
 
@@ -126,11 +127,7 @@ function StoryRow({ item }: { item: Story }) {
         class="vote"
         aria-label={`Upvote ${item.title}`}
         onClick={() => {
-          $ops(stories).mutate((items) => {
-            for (const current of items ?? []) {
-              if (current.id === item.id) current.votes++;
-            }
-          });
+          item.votes++;
         }}
       >
         ▲
@@ -147,26 +144,29 @@ function StoryRow({ item }: { item: Story }) {
 }
 
 function Stories() {
+
+  function handleUpdate() {
+    const nextId = stories.length + 1;
+    const tempStory: Story = {
+      id: nextId,
+      title: `Fresh signal #${nextId} — published client-side`,
+      category: 'Live',
+      author: 'you',
+      votes: 1,
+      posted: 'just now',
+    };
+
+    const result = storiesAction(tempStory);
+
+    stories.unshift(tempStory);
+    void result
+  }
+
   return (
     <section class="panel">
       <div class="panel-head">
         <h2>Top stories</h2>
-        <button
-          class="action"
-          onClick={() => {
-            $ops(stories).mutate((items) => {
-              const nextId = (items?.length ?? 0) + 1;
-              items?.unshift({
-                id: nextId,
-                title: `Fresh signal #${nextId} — published client-side`,
-                category: 'Live',
-                author: 'you',
-                votes: 1,
-                posted: 'just now',
-              });
-            });
-          }}
-        >
+        <button class="action" onClick={handleUpdate}>
           + Publish
         </button>
       </div>

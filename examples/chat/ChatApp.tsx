@@ -25,17 +25,66 @@ export function ChatApp() {
 
   const sendMessageAction = dataRuntime.$action<Message, CreateMessageInput>(
     '/api/messages',
-    { method: 'POST' },
+    {
+      method: 'POST',
+      onSuccess(result, input) {
+        messagesResource.mutate((items) => {
+          const index = items?.findIndex(
+            item => item.isOptimistic && item.content === input.content,
+          ) ?? -1;
+          if (items && index >= 0) items[index] = result;
+        });
+        actionNotification = '✓ Server verified: message committed in-place!';
+        isSending = false;
+      },
+      onError(error, input) {
+        messagesResource.mutate((items) => {
+          const index = items?.findIndex(
+            item => item.isOptimistic && item.content === input.content,
+          ) ?? -1;
+          if (items && index >= 0) items.splice(index, 1);
+        });
+        actionNotification = `❌ Network Error: Optimistic message rolled back! (${error.message})`;
+        isSending = false;
+      },
+    },
   );
 
   const reactMessageAction = dataRuntime.$action<Message, ReactMessageInput>(
     '/api/messages/react',
-    { method: 'POST' },
+    {
+      method: 'POST',
+      onSuccess(result) {
+        messagesResource.mutate((items) => {
+          const index = items?.findIndex(item => item.id === result.id) ?? -1;
+          if (items && index >= 0) items[index] = result;
+        });
+        actionNotification = '✓ Reaction confirmed by server!';
+      },
+      onError() {
+        actionNotification = '❌ Reaction failed!';
+      },
+    },
   );
 
   const replyThreadAction = dataRuntime.$action<Message, ReplyThreadInput>(
     '/api/messages/reply',
-    { method: 'POST' },
+    {
+      method: 'POST',
+      onSuccess(result) {
+        messagesResource.mutate((items) => {
+          const index = items?.findIndex(item => item.id === result.id) ?? -1;
+          if (items && index >= 0) items[index] = result;
+        });
+        activeThreadMessage = result;
+        actionNotification = '✓ Thread reply committed!';
+        isSendingReply = false;
+      },
+      onError() {
+        actionNotification = '❌ Thread reply failed!';
+        isSendingReply = false;
+      },
+    },
   );
 
   let activeChannelId = 'c-engineering';
@@ -84,7 +133,7 @@ export function ChatApp() {
     reloadMessages();
   }
 
-  async function handleSendMessage() {
+  function handleSendMessage() {
     if (!draftMessage.trim() || isSending) return;
 
     const content = draftMessage.trim();
@@ -109,20 +158,13 @@ export function ChatApp() {
       authorId: currentUser.id,
     };
 
-    try {
-      actionNotification = '⚡ In-flight: message rendered optimistically to real DOM...';
-      await sendMessageAction(inputData, {
-        optimistic: messagesResource.append(tempMessage),
-      });
-      actionNotification = '✓ Server verified: message committed in-place!';
-    } catch (err) {
-      actionNotification = `❌ Network Error: Optimistic message rolled back! (${err instanceof Error ? err.message : String(err)})`;
-    } finally {
-      isSending = false;
-    }
+    actionNotification = '⚡ In-flight: message rendered optimistically to real DOM...';
+    messagesResource.mutate(items => items?.push(tempMessage));
+    const sending = sendMessageAction(inputData);
+    void sending;
   }
 
-  async function handleReact(message: Message, emoji: string) {
+  function handleReact(message: Message, emoji: string) {
     const currentReactions = [...message.reactions];
     const existingIndex = currentReactions.findIndex((r) => r.emoji === emoji);
     let nextReactions = [...currentReactions];
@@ -156,25 +198,20 @@ export function ChatApp() {
       reactions: nextReactions,
     };
 
-    try {
-      actionNotification = `⚡ Reacted with ${emoji} (optimistic UI update)...`;
-      await reactMessageAction(
-        {
-          messageId: message.id,
-          emoji,
-          userId: currentUser.id,
-        },
-        {
-          optimistic: messagesResource.replace(message, optimisticMessage),
-        },
-      );
-      actionNotification = '✓ Reaction confirmed by server!';
-    } catch (err) {
-      actionNotification = `❌ Reaction failed and rolled back!`;
-    }
+    actionNotification = `⚡ Reacted with ${emoji} (optimistic UI update)...`;
+    messagesResource.mutate(items => {
+      const index = items?.indexOf(message) ?? -1;
+      if (items && index >= 0) items[index] = optimisticMessage;
+    });
+    const reaction = reactMessageAction({
+      messageId: message.id,
+      emoji,
+      userId: currentUser.id,
+    });
+    void reaction;
   }
 
-  async function handleSendReply() {
+  function handleSendReply() {
     if (!activeThreadMessage || !replyDraft.trim() || isSendingReply) return;
 
     const content = replyDraft.trim();
@@ -201,26 +238,17 @@ export function ChatApp() {
     const parentRef = activeThreadMessage;
     activeThreadMessage = optimisticParent;
 
-    try {
-      actionNotification = '⚡ Submitting thread reply with optimistic drawer update...';
-      const updated = await replyThreadAction(
-        {
-          parentId: parentRef.id,
-          content,
-          authorId: currentUser.id,
-        },
-        {
-          optimistic: messagesResource.replace(parentRef, optimisticParent),
-        },
-      );
-      activeThreadMessage = updated;
-      actionNotification = '✓ Thread reply committed!';
-    } catch (err) {
-      activeThreadMessage = parentRef;
-      actionNotification = '❌ Thread reply rolled back on error!';
-    } finally {
-      isSendingReply = false;
-    }
+    actionNotification = '⚡ Submitting thread reply with optimistic drawer update...';
+    messagesResource.mutate(items => {
+      const index = items?.indexOf(parentRef) ?? -1;
+      if (items && index >= 0) items[index] = optimisticParent;
+    });
+    const reply = replyThreadAction({
+      parentId: parentRef.id,
+      content,
+      authorId: currentUser.id,
+    });
+    void reply;
   }
 
   function handleOpenThread(message: Message) {
