@@ -82,7 +82,9 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
   `lifecycle.ts`; and
 - compiler-wide collision-free identifier allocation in `identifiers.ts`; and
 - list JSX-subtree discovery and map-site diagnostic boundaries in
-  `lists/map-site.ts`.
+  `lists/map-site.ts`; and
+- calculated-list receiver replacement and ordered declaration insertion in
+  `lists/calculated-sources.ts`.
 
 The real analysis pipeline now builds and refreshes the parser-neutral scope
 index on `Ctx`. Binding-aware passes can migrate incrementally through
@@ -142,8 +144,10 @@ The compiler package still declares these five dependencies:
 At this checkpoint, 57 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
-Of those files, 36 still import or declare `@babel/traverse`; the shared
-identifier allocator no longer needs a Babel program scope.
+Of those files, 35 still import or declare `@babel/traverse`. The shared
+identifier allocator no longer needs a Babel program scope, and calculated
+list normalization no longer uses NodePath traversal or replacement. Its final
+`scope.crawl()` is a temporary synchronization bridge for downstream passes.
 
 ## Migration order
 
@@ -199,6 +203,8 @@ Verified on 2026-08-30:
   regressions passed: 5 files, 33 tests.
 - Indexed/nested/calculated-list and callback regressions passed: 5 files,
   16 tests.
+- Calculated/gated/indexed/nested/opaque-derived/targeted-list regressions
+  passed: 6 files, 24 tests.
 - Full root suite passed: 99 files, 590 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.

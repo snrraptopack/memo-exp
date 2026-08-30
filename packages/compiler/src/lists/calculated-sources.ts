@@ -7,8 +7,8 @@
  * scheduling and keyed retention without adding a runtime list-expression
  * interpreter.
  */
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode } from '../ast';
 import type { Ctx, MapCallExpression } from '../context';
 import { generatedIdentifier } from '../identifiers';
 import { matchMapCall } from '../lists';
@@ -28,29 +28,18 @@ function directSourceShape(expression: t.Expression): boolean {
 }
 
 function containingTopLevelStatement(
-  path: NodePath,
-  componentPath: NodePath<t.FunctionDeclaration>,
-): NodePath<t.Statement> | null {
-  let current: NodePath | null = path;
-  const body = componentPath.get('body');
-  while (current !== null && current.parentPath !== body) {
-    current = current.parentPath;
+  ctx: Ctx,
+  node: BaseNode,
+  componentBody: BaseNode,
+): t.Statement | null {
+  let current: BaseNode | null = node;
+  while (
+    current !== null &&
+    ctx.astAnalysis?.parentByNode.get(current) !== componentBody
+  ) {
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
   }
-  return current?.isStatement() === true ? current : null;
-}
-
-function belongsDirectlyToComponent(
-  path: NodePath,
-  componentPath: NodePath<t.FunctionDeclaration>,
-): boolean {
-  return (
-    path.findParent(
-      (parent) =>
-        parent.isFunctionDeclaration() ||
-        parent.isFunctionExpression() ||
-        parent.isArrowFunctionExpression(),
-    ) === componentPath
-  );
+  return current as unknown as t.Statement | null;
 }
 
 /**
@@ -61,45 +50,62 @@ function belongsDirectlyToComponent(
 export function normalizeCalculatedListSources(ctx: Ctx): void {
   for (const [, componentPath] of ctx.compPaths) {
     const candidates: Array<{
-      path: NodePath<MapCallExpression>;
+      call: MapCallExpression;
       source: t.Expression;
-      statement: NodePath<t.Statement>;
+      statement: t.Statement;
     }> = [];
+    const componentBody = componentPath.node.body as unknown as BaseNode;
 
-    const checkCall = (path: NodePath<MapCallExpression>): void => {
-      const callee = path.node.callee;
-      if (
-        matchMapCall(path.node) === null ||
-        (!t.isMemberExpression(callee) && !t.isOptionalMemberExpression(callee)) ||
-        !t.isExpression(callee.object) ||
-        directSourceShape(callee.object) ||
-        !belongsDirectlyToComponent(path, componentPath)
-      ) {
-        return;
-      }
-      const statement = containingTopLevelStatement(path, componentPath);
-      if (statement === null) return;
-      candidates.push({
-        path,
-        source: t.cloneNode(callee.object, true),
-        statement,
-      });
-    };
-
-    componentPath.traverse({
-      CallExpression: checkCall,
-      OptionalCallExpression: checkCall,
+    walkAst(componentBody, {
+      enter(node) {
+        if (
+          node !== componentBody &&
+          (node.type === 'FunctionDeclaration' ||
+            node.type === 'FunctionExpression' ||
+            node.type === 'ArrowFunctionExpression')
+        ) {
+          return false;
+        }
+        if (
+          node.type !== 'CallExpression' &&
+          node.type !== 'OptionalCallExpression'
+        ) {
+          return;
+        }
+        const call = node as unknown as MapCallExpression;
+        const callee = call.callee;
+        if (
+          matchMapCall(call) === null ||
+          (!t.isMemberExpression(callee) &&
+            !t.isOptionalMemberExpression(callee)) ||
+          !t.isExpression(callee.object) ||
+          directSourceShape(callee.object)
+        ) {
+          return;
+        }
+        const statement = containingTopLevelStatement(
+          ctx,
+          node,
+          componentBody,
+        );
+        if (statement === null) return;
+        candidates.push({
+          call,
+          source: t.cloneNode(callee.object, true),
+          statement,
+        });
+      },
     });
 
     if (candidates.length === 0) continue;
-    const bodyPaths = componentPath.get('body').get('body');
+    const body = componentPath.node.body.body;
     const statementOrder = new Map(
-      bodyPaths.map((path, index) => [path.node, index]),
+      body.map((statement, index) => [statement, index]),
     );
     candidates.sort(
       (left, right) =>
-        (statementOrder.get(left.statement.node) ?? 0) -
-        (statementOrder.get(right.statement.node) ?? 0),
+        (statementOrder.get(left.statement) ?? 0) -
+        (statementOrder.get(right.statement) ?? 0),
     );
 
     const declarations: t.VariableDeclarator[] = [];
@@ -108,22 +114,23 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
       declarations.push(
         t.variableDeclarator(t.cloneNode(binding), candidate.source),
       );
-      const callee = candidate.path.get('callee');
+      const callee = candidate.call.callee;
       if (
-        Array.isArray(callee) ||
-        (!callee.isMemberExpression() && !callee.isOptionalMemberExpression())
+        (!t.isMemberExpression(callee) && !t.isOptionalMemberExpression(callee)) ||
+        !t.isExpression(callee.object)
       ) {
         continue;
       }
-      const object = callee.get('object');
-      if (Array.isArray(object)) continue;
-      object.replaceWith(t.cloneNode(binding));
+      callee.object = t.cloneNode(binding);
     }
 
-    candidates[0]!.statement.insertBefore(
+    const insertionIndex = body.indexOf(candidates[0]!.statement);
+    if (insertionIndex < 0) continue;
+    body.splice(
+      insertionIndex,
+      0,
       t.variableDeclaration('const', declarations),
     );
     componentPath.scope.crawl();
-
   }
 }
