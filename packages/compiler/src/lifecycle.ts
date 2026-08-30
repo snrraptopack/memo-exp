@@ -7,9 +7,8 @@
  * its own normal-exit invalidation when it writes reactive state.
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import type { BaseNode } from './ast';
+import { walkAst, type BaseNode } from './ast';
 import {
   astBindingAt,
   nodeHasJsx,
@@ -23,9 +22,27 @@ import {
 } from './handlers';
 import { md } from './identifiers';
 
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
+interface ProgramContainer {
+  node: t.Program;
+  buildCodeFrameError(message: string): Error;
+}
+
+const FUNCTION_NODES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
+
 function instrumentIdentifier(
   ctx: Ctx,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   name: string,
   compName: string,
   rowCtx?: RowCtx,
@@ -62,7 +79,7 @@ function instrumentIdentifier(
 
 function instrumentArgument(
   ctx: Ctx,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   argument: t.CallExpression['arguments'][number],
   compName: string,
   rowCtx?: RowCtx,
@@ -92,7 +109,7 @@ function instrumentArgument(
 
 function instrumentSharedIdentifier(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramContainer,
   name: string,
   executionAwareRoot = false,
 ): void {
@@ -114,7 +131,7 @@ function instrumentSharedIdentifier(
 
 function instrumentSharedArgument(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramContainer,
   argument: t.CallExpression['arguments'][number],
   executionAwareRoot = false,
 ): void {
@@ -137,68 +154,80 @@ function instrumentSharedArgument(
  */
 export function transformComponentLifecycle(
   ctx: Ctx,
-  compPath: NodePath<t.FunctionDeclaration>,
+  compPath: ComponentPath,
   compName: string,
   factoryId: string,
   rowCtx?: RowCtx,
 ): void {
-  compPath.traverse({
-    CallExpression(call) {
-      const directFactoryCall = call.getFunctionParent() === compPath;
-      const originalCallee = call.node.callee;
-      const intrinsicEffect =
-        t.isIdentifier(originalCallee, { name: 'effect' }) &&
-        astBindingAt(ctx, call.node, 'effect') === undefined;
+  let functionDepth = 0;
+  walkAst<BaseNode>(compPath.node.body, {
+    enter(node) {
+      if (FUNCTION_NODES.has(node.type)) {
+        functionDepth++;
+        return;
+      }
+      if (node.type === 'CallExpression') {
+        const call = node as unknown as t.CallExpression;
+        const directFactoryCall = functionDepth === 0;
+        const originalCallee = call.callee;
+        const intrinsicEffect =
+          t.isIdentifier(originalCallee, { name: 'effect' }) &&
+          astBindingAt(ctx, node, 'effect') === undefined;
 
-      if (
-        t.isIdentifier(originalCallee, { name: 'cleanup' }) &&
-        astBindingAt(ctx, call.node, 'cleanup') === undefined
-      ) {
-        if (!directFactoryCall) {
-          throw call.buildCodeFrameError(
-            'memo-dom: cleanup(disposer) must run directly during component factory initialization',
-          );
-        }
-        const disposer = call.node.arguments[0];
         if (
-          call.node.arguments.length !== 1 ||
-          disposer === undefined ||
-          !t.isExpression(disposer)
+          t.isIdentifier(originalCallee, { name: 'cleanup' }) &&
+          astBindingAt(ctx, node, 'cleanup') === undefined
         ) {
-          throw call.buildCodeFrameError(
-            'memo-dom: cleanup(disposer) requires exactly one disposer expression',
+          if (!directFactoryCall) {
+            throw compPath.buildCodeFrameError(
+              'memo-dom: cleanup(disposer) must run directly during component factory initialization',
+            );
+          }
+          const disposer = call.arguments[0];
+          if (
+            call.arguments.length !== 1 ||
+            disposer === undefined ||
+            !t.isExpression(disposer)
+          ) {
+            throw compPath.buildCodeFrameError(
+              'memo-dom: cleanup(disposer) requires exactly one disposer expression',
+            );
+          }
+          call.callee = md(ctx, 'cleanup');
+          call.arguments.unshift(t.identifier(factoryId));
+        }
+
+        if (!directFactoryCall) return;
+        if (t.isIdentifier(originalCallee)) {
+          instrumentIdentifier(
+            ctx,
+            compPath,
+            originalCallee.name,
+            compName,
+            rowCtx,
           );
         }
-        call.node.callee = md(ctx, 'cleanup');
-        call.node.arguments.unshift(t.identifier(factoryId));
+        for (const argument of call.arguments) {
+          instrumentArgument(
+            ctx,
+            compPath,
+            argument,
+            compName,
+            rowCtx,
+            intrinsicEffect,
+          );
+        }
+        return;
       }
-
-      if (!directFactoryCall) return;
-      if (t.isIdentifier(originalCallee)) {
-        instrumentIdentifier(
-          ctx,
-          compPath,
-          originalCallee.name,
-          compName,
-          rowCtx,
-        );
-      }
-      for (const argument of call.node.arguments) {
-        instrumentArgument(
-          ctx,
-          compPath,
-          argument,
-          compName,
-          rowCtx,
-          intrinsicEffect,
-        );
+      if (node.type === 'NewExpression' && functionDepth === 0) {
+        const call = node as unknown as t.NewExpression;
+        for (const argument of call.arguments) {
+          instrumentArgument(ctx, compPath, argument, compName, rowCtx);
+        }
       }
     },
-    NewExpression(call) {
-      if (call.getFunctionParent() !== compPath) return;
-      for (const argument of call.node.arguments) {
-        instrumentArgument(ctx, compPath, argument, compName, rowCtx);
-      }
+    leave(node) {
+      if (FUNCTION_NODES.has(node.type)) functionDepth--;
     },
   });
 }
@@ -209,35 +238,46 @@ export function transformComponentLifecycle(
  */
 export function transformProgramCallbacks(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramContainer,
 ): void {
-  programPath.traverse({
-    CallExpression(call) {
-      if (call.getFunctionParent() !== null) return;
-      const intrinsicEffect =
-        t.isIdentifier(call.node.callee, { name: 'effect' }) &&
-        astBindingAt(ctx, call.node, 'effect') === undefined;
-      if (t.isIdentifier(call.node.callee)) {
-        instrumentSharedIdentifier(
-          ctx,
-          programPath,
-          call.node.callee.name,
-        );
+  let functionDepth = 0;
+  walkAst<BaseNode>(programPath.node, {
+    enter(node) {
+      if (FUNCTION_NODES.has(node.type)) {
+        functionDepth++;
+        return;
       }
-      for (const argument of call.node.arguments) {
-        instrumentSharedArgument(
-          ctx,
-          programPath,
-          argument,
-          intrinsicEffect,
-        );
+      if (node.type === 'CallExpression' && functionDepth === 0) {
+        const call = node as unknown as t.CallExpression;
+        const intrinsicEffect =
+          t.isIdentifier(call.callee, { name: 'effect' }) &&
+          astBindingAt(ctx, node, 'effect') === undefined;
+        if (t.isIdentifier(call.callee)) {
+          instrumentSharedIdentifier(
+            ctx,
+            programPath,
+            call.callee.name,
+          );
+        }
+        for (const argument of call.arguments) {
+          instrumentSharedArgument(
+            ctx,
+            programPath,
+            argument,
+            intrinsicEffect,
+          );
+        }
+        return;
+      }
+      if (node.type === 'NewExpression' && functionDepth === 0) {
+        const call = node as unknown as t.NewExpression;
+        for (const argument of call.arguments) {
+          instrumentSharedArgument(ctx, programPath, argument);
+        }
       }
     },
-    NewExpression(call) {
-      if (call.getFunctionParent() !== null) return;
-      for (const argument of call.node.arguments) {
-        instrumentSharedArgument(ctx, programPath, argument);
-      }
+    leave(node) {
+      if (FUNCTION_NODES.has(node.type)) functionDepth--;
     },
   });
 }
@@ -257,15 +297,17 @@ export function transformSharedAsyncHelpers(ctx: Ctx): void {
 /** Reject cleanup syntax outside a component instead of leaving a runtime trap. */
 export function rejectUnownedCleanup(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramContainer,
 ): void {
-  programPath.traverse({
-    CallExpression(call) {
+  walkAst<BaseNode>(programPath.node, {
+    enter(node) {
+      if (node.type !== 'CallExpression') return;
+      const call = node as unknown as t.CallExpression;
       if (
-        t.isIdentifier(call.node.callee, { name: 'cleanup' }) &&
-        astBindingAt(ctx, call.node, 'cleanup') === undefined
+        t.isIdentifier(call.callee, { name: 'cleanup' }) &&
+        astBindingAt(ctx, node, 'cleanup') === undefined
       ) {
-        throw call.buildCodeFrameError(
+        throw programPath.buildCodeFrameError(
           'memo-dom: cleanup(disposer) is only valid directly inside a component factory',
         );
       }
