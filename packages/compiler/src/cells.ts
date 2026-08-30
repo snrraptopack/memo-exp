@@ -258,6 +258,22 @@ export function liftModuleStateCells(
         const propertyPath = path.parentPath;
         if (
           propertyPath.isObjectProperty() &&
+          propertyPath.node.key === path.node &&
+          !propertyPath.node.computed
+        ) {
+          if (
+            propertyPath.node.shorthand &&
+            propertyPath.node.value === path.node
+          ) {
+            propertyPath.node.shorthand = false;
+            propertyPath.node.value = readCall(lift);
+            rewrote = true;
+          }
+          // A non-computed object key is never a state read.
+          return;
+        }
+        if (
+          propertyPath.isObjectProperty() &&
           propertyPath.node.shorthand &&
           propertyPath.node.value === path.node
         ) {

@@ -291,6 +291,7 @@ export function finalizeInstancePreludes(ctx: Ctx): void {
 
     const graph = new Map<string, Set<string>>();
     for (const derivation of locals) {
+      if (derivation.stableTarget === true) continue;
       for (const binding of derivation.bindings) {
         graph.set(binding, new Set(derivation.sources));
       }

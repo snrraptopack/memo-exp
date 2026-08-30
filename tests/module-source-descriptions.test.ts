@@ -23,6 +23,7 @@ import {
   createSource,
   describeModuleSource,
   readModuleSourceList,
+  rebindModuleSource,
   readResolvedValueForRender,
   resolveModuleSource,
   sourceRef,
@@ -191,5 +192,38 @@ describe('runtime-owned module source descriptions (RFC §16.4)', () => {
       resolveModuleSource(sourceRef('lazy#list'));
     });
     expect(calls).toEqual(['3']);
+  });
+
+  it('rebinds a materialized module source without making descriptions eager', async () => {
+    const { calls, fetch } = fetchCalls();
+    describeModuleSource('reactive#list', () =>
+      createSource('/api/list', { query: { page: 1 } })
+    );
+    const application = createApplicationRuntime('reactive-module');
+    const data = createDataRuntime({ fetch });
+
+    runWithApplicationRuntime(application, () => {
+      setActiveDataRuntime(data);
+      rebindModuleSource(
+        sourceRef('reactive#list'),
+        '/api/list',
+        { query: { page: 2 } },
+      );
+    });
+    expect(calls).toEqual([]);
+
+    runWithApplicationRuntime(application, () => {
+      setActiveDataRuntime(data);
+      resolveModuleSource(sourceRef('reactive#list'));
+      rebindModuleSource(
+        sourceRef('reactive#list'),
+        '/api/list',
+        { query: { page: 2 } },
+      );
+    });
+    await vi.waitFor(() => expect(calls).toEqual(['list?page=1', 'list?page=2']));
+
+    data.clear();
+    application.dispose();
   });
 });

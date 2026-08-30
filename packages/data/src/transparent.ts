@@ -2,6 +2,7 @@ import { RequestError } from './errors';
 import {
   disposeFetchResource,
   fetchResourceSnapshot,
+  rebindFetchResource,
   subscribeFetchResource,
 } from './resource';
 import type {
@@ -79,6 +80,15 @@ export function trackResolvedValue<T>(
   value: ResolvedValue<T> | ModuleSourceRef,
 ): TrackedValue<T> {
   return source(value) as unknown as TrackedValue<T>;
+}
+
+/** Compiler hook: update the request behind a stable transparent binding. */
+export function rebindResolvedValue<T>(
+  value: ResolvedValue<T> | ModuleSourceRef,
+  target: string | URL | null,
+  options: import('./types').FetchOptions = {},
+): void {
+  rebindFetchResource(source(value), target, options);
 }
 
 /** Resolve an honest payload for an imperative/derived read. */

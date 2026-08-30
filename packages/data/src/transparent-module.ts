@@ -23,7 +23,7 @@
 
 import { getExtensionStore } from '@memoized-dom/runtime';
 import { getActiveDataRuntime } from './active-runtime';
-import { disposeFetchResource } from './resource';
+import { disposeFetchResource, rebindFetchResource } from './resource';
 import type { FetchOptions, FetchResource, ResolvedValue } from './types';
 
 /** Stable lazy handle placed in the authored binding. */
@@ -150,6 +150,26 @@ export function createSource<T>(
     target,
     options,
   ) as unknown as ResolvedValue<T>;
+}
+
+/**
+ * Compiler hook for reactive module-scope request inputs. It deliberately
+ * does not materialize an unused description; the first real consumer still
+ * owns lazy request creation.
+ */
+export function rebindModuleSource<T>(
+  ref: ModuleSourceRef,
+  target: string | URL | null,
+  options: FetchOptions = {},
+): void {
+  const cached = runtimeCache().get(ref.key);
+  const described = describedSources.get(ref.key);
+  if (cached === undefined || cached.version !== described?.version) return;
+  rebindFetchResource(
+    cached.instance as unknown as FetchResource<T>,
+    target,
+    options,
+  );
 }
 
 /**

@@ -307,7 +307,9 @@ export function transformComponent(
 
   if (localDerivations !== undefined) {
     for (const derivation of localDerivations) {
-      derivation.declaration.kind = 'let';
+      if (derivation.stableTarget !== true) {
+        derivation.declaration.kind = 'let';
+      }
     }
   }
   if (localDerivations !== undefined || controlFlow !== undefined) {

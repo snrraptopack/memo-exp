@@ -168,6 +168,33 @@ const source = `
       </section>
     );
   }
+
+  export function ReactiveQueryApp() {
+    let search = 'Ada';
+    const users = $fetch<User[]>('/users', { query: { search } });
+    const request = $track(users);
+
+    return (
+      <main>
+        <button id="same-query" onClick={() => search = 'Ada'}>Same</button>
+        <button id="next-query" onClick={() => search = 'Grace'}>Next</button>
+        <p if={request.pending}>Searching</p>
+        <output id="query-result">{users[0].name}</output>
+      </main>
+    );
+  }
+
+  export function ReactiveTargetApp() {
+    let userId = 1;
+    const user = $fetch<User>(\`/users/\${userId}\`);
+
+    return (
+      <main>
+        <button id="next-user" onClick={() => userId = 2}>Next user</button>
+        <output id="target-result">{user.name}</output>
+      </main>
+    );
+  }
 `;
 
 function importFixture(): Promise<any> {
@@ -203,6 +230,9 @@ describe('compiler-transparent data values', () => {
     expect(compiled).toContain('/$data/0');
     expect(compiled).not.toContain('markDirtySubtree');
     expect(compiled).toContain('readResolvedValue(user, "user"');
+    expect(compiled).toContain('rebindResolvedValue(users, \'/users\'');
+    expect(compiled).toMatch(/const users = \$fetch<User\[]>/);
+    expect(compiled).toContain('rebindResolvedValue(user, `/users/${userId}`');
     expect(compiled).not.toContain('volatile: true');
     writeFileSync(fixture, compiled);
   });
@@ -355,6 +385,88 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('#todo-rows')?.textContent).toBe('Ship compiler');
     expect(ownerRenders()).toBe(0);
 
+  });
+
+  it('reruns a fetch query without replacing its transparent binding', async () => {
+    const requests: Array<{
+      url: string;
+      signal: AbortSignal;
+      resolve: (response: Response) => void;
+    }> = [];
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>(resolve => {
+          requests.push({
+            url: String(input),
+            signal: init!.signal!,
+            resolve,
+          });
+        })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(mod.ReactiveQueryApp('ReactiveQueryApp', null));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.url).toMatch(/\/users\?search=Ada$/);
+    expect(document.querySelector('#query-result')?.textContent).toBe('');
+
+    document.querySelector<HTMLButtonElement>('#same-query')!.click();
+    expect(requests).toHaveLength(1);
+
+    document.querySelector<HTMLButtonElement>('#next-query')!.click();
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[0]!.signal.aborted).toBe(true);
+    expect(requests[1]!.url).toMatch(/\/users\?search=Grace$/);
+    expect(document.querySelector('p')?.textContent).toBe('Searching');
+
+    requests[1]!.resolve(new Response(JSON.stringify([
+      { id: 2, name: 'Grace' },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#query-result')?.textContent,
+    ).toBe('Grace');
+    expect(document.querySelector('p')).toBeNull();
+
+    requests[0]!.resolve(new Response(JSON.stringify([
+      { id: 1, name: 'Ada' },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(document.querySelector('#query-result')?.textContent).toBe('Grace');
+  });
+
+  it('reruns a fetch when a compiler-visible target interpolation changes', async () => {
+    const requests: Array<{
+      url: string;
+      resolve: (response: Response) => void;
+    }> = [];
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) =>
+        new Promise<Response>(resolve => {
+          requests.push({ url: String(input), resolve });
+        })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(mod.ReactiveTargetApp('ReactiveTargetApp', null));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.url).toMatch(/\/users\/1$/);
+
+    document.querySelector<HTMLButtonElement>('#next-user')!.click();
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1]!.url).toMatch(/\/users\/2$/);
+
+    requests[1]!.resolve(new Response(JSON.stringify({
+      id: 2,
+      name: 'Grace',
+    }), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#target-result')?.textContent,
+    ).toBe('Grace');
   });
 
   it('routes a derived-source failure to each nearest Group policy before replay', async () => {

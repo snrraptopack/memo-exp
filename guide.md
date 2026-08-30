@@ -1017,6 +1017,47 @@ Query `undefined` values are omitted and array values become repeated query
 fields. Normalized URL, query, headers, and validator form the automatic
 request identity unless `key` is supplied.
 
+Request inputs are compiler-reactive. When a compiler-visible value used by
+the target or options changes, the compiler rebinds the same hidden source and
+runs the new request. The authored payload binding remains stable, so existing
+render dependencies, `Group`, and `$track` continue observing it.
+
+```tsx
+export function UserSearch() {
+  let search = '';
+  const users = $fetch<User[]>('/api/users', {
+    query: { search },
+  });
+  const request = $track(users);
+
+  return (
+    <section>
+      <input
+        value={search}
+        onInput={(event) => {
+          search = event.currentTarget.value;
+        }}
+      />
+      <p if={request.pending}>Searchingâ€¦</p>
+      <ul>{users.map((user) => <li key={user.id}>{user.name}</li>)}</ul>
+    </section>
+  );
+}
+```
+
+For `search === 'Ada Lovelace'`, that declaration requests
+`/api/users?search=Ada+Lovelace`. Query values are URL encoded; do not build the
+query string manually. Dynamic path segments are reactive too:
+
+```ts
+const user = $fetch<User>(`/api/users/${userId}`);
+```
+
+Changing `userId` re-runs the source for the new path. Replaying an equivalent
+normalized request identity does not issue a duplicate request. If an older
+request is still in flight when the inputs change, it is detached from this
+source and cannot overwrite the newer result.
+
 Cache modes:
 
 - Omit `cache` or use `'active'` to share while a matching source is active.
@@ -1067,6 +1108,294 @@ mount('root', App);
 `data.clear()` aborts active work and drops retained results.
 `clearDataRuntime()` clears the currently active runtime. Server rendering and
 tests can use `runWithDataRuntime(runtime, callback)` for scoped isolation.
+
+### Server rendering and hydration
+
+The server package is a set of rendering primitives, not a server framework.
+Each primitive accepts a compiled root component and creates three isolated
+runtimes for that render:
+
+- an `ApplicationRuntime` containing the entity graph, cleanup, state cells,
+  scheduler, and render environment;
+- a memory-history route runtime initialized from `options.url`;
+- a data runtime containing that request's fetch entries, cache, actions, and
+  transferable state.
+
+That isolation is also what makes module code safe on the server. Compiler-
+lowered module state is stored in the active application runtime, and a
+module-scope `$fetch` is only a lazy description until the active request reads
+it. Concurrent requests can evaluate the same imported application modules
+without sharing request state.
+
+The application runtime uses explicit server capabilities. `server-dom` uses
+an injected DOM document, while `server-string` uses the string writer. Server
+scheduling does not run browser animation frames, and effects and refs are
+disabled. String renderers dispose their internal runtimes before returning.
+The DOM renderers return their `ApplicationRuntime` because the caller owns the
+live server DOM and must dispose it.
+
+#### Server rendering primitives
+
+| Primitive | Rendering tier | Return value | Data behavior | Ownership |
+| --- | --- | --- | --- | --- |
+| `renderWithDom` | LinkeDOM or injected `DocumentLike` | live document, nodes, HTML, runtime | immediate shell | caller disposes `result.runtime` |
+| `renderWithDomAsync` | LinkeDOM or injected `DocumentLike` | live document, nodes, HTML, runtime | can settle in `resolve` mode | caller disposes `result.runtime` |
+| `renderToString` | fast string document | HTML string | immediate shell | disposed automatically |
+| `renderToStringAsync` | fast string document | HTML string | can settle in `resolve` mode | disposed automatically |
+| `renderToResult` | fast string document | HTML, payload object, payload script | immediate shell | disposed automatically |
+| `renderToResultAsync` | fast string document | HTML, payload object, payload script | can settle in `resolve` mode | disposed automatically |
+| `renderToReadableStream` | fast string document | Web `ReadableStream<Uint8Array>` | shell or ordered settled streaming | disposed when the stream finishes/errors |
+
+All primitives accept the common render options:
+
+```ts
+interface RenderOptions {
+  mode?: 'shell' | 'resolve';
+  timeout?: number;
+  url?: string;
+  fetch?: typeof globalThis.fetch;
+  markers?: boolean;
+  document?: DocumentLike;
+}
+```
+
+`url` supplies the request-local route location. `fetch` supplies the
+request-local implementation used by `$fetch` and `$action`; relative data
+URLs therefore do not need to be sent through the public network. `document`
+is for the DOM tier when a host already owns a compatible document.
+
+`markers` defaults to `false` and produces clean non-hydratable HTML. Use
+`markers: true` for hydration: the renderer preserves structural region
+comments and wraps the application in its root marker pair.
+
+The data modes are:
+
+- `shell` serializes the current UI immediately. Pending `Group` arms remain
+  in the HTML, and transferred pending sources begin their client request after
+  hydration.
+- `resolve` waits for active fetch entries, up to `timeout` (5000 ms by
+  default), lets their targeted entities update, and then serializes the
+  resulting UI/state.
+
+The synchronous primitives cannot wait and are shell renderers. Use an async
+primitive when `resolve` is required. Streaming is ordered rather than
+out-of-order region replacement: shell mode emits pending HTML immediately;
+resolve mode waits and then emits one resolved application body.
+
+Use the DOM tier when server code needs to inspect or post-process live nodes:
+
+```ts
+import { renderWithDomAsync } from '@memoized-dom/server';
+import { App } from './App';
+
+const rendered = await renderWithDomAsync(App, {
+  url: new URL(request.url).pathname,
+  fetch: fetchData,
+  mode: 'resolve',
+});
+
+try {
+  audit(rendered.nodes);
+  return new Response(rendered.html, {
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  });
+} finally {
+  rendered.runtime.dispose();
+}
+```
+
+Use the string tier for ordinary HTML output:
+
+```ts
+import { renderToStringAsync } from '@memoized-dom/server';
+
+const html = await renderToStringAsync(App, {
+  url: new URL(request.url).pathname,
+  fetch: fetchData,
+  mode: 'resolve',
+});
+```
+
+That returns HTML only. If the page will hydrate fetched data, use a result or
+stream primitive so the data payload travels with the HTML:
+
+```ts
+import { renderToResultAsync } from '@memoized-dom/server';
+
+const result = await renderToResultAsync(App, {
+  url: new URL(request.url).pathname,
+  fetch: fetchData,
+  mode: 'resolve',
+  markers: true,
+});
+
+const document = `<!doctype html>
+  <html>
+    <body>
+      <div id="root">${result.html}</div>
+      ${result.scriptTag}
+      <script type="module" src="/main.ts"></script>
+    </body>
+  </html>`;
+```
+
+`result.payload` is the structured version and `result.scriptTag` is its
+safe DOM transport:
+`<script type="application/mmd+json" data-mmd-root="App">...</script>`.
+The JSON is escaped for script-tag embedding.
+
+#### Streaming and server hosts
+
+`renderToReadableStream` returns a standard Web stream containing the
+application HTML followed by its payload script. A host can concatenate a
+document prefix, the application stream, and a suffix without buffering:
+
+```ts
+import {
+  createDocumentStream,
+  htmlResponse,
+} from '@memoized-dom/adapters';
+import { renderToReadableStream } from '@memoized-dom/server';
+
+export function handleRequest(request: Request): Response {
+  const url = new URL(request.url);
+  const body = renderToReadableStream(App, {
+    url: url.pathname + url.search,
+    fetch: fetchData,
+    mode: 'resolve',
+    markers: true,
+    signal: request.signal,
+  });
+
+  return htmlResponse(createDocumentStream({
+    prefix: '<!doctype html><html><body><div id="root">',
+    body,
+    suffix:
+      '</div><script type="module" src="/main.ts"></script></body></html>',
+  }));
+}
+```
+
+The stream-specific `signal` aborts settling and request-owned data work when
+the client disconnects. `createDocumentStream` propagates cancellation to the
+application stream.
+
+The handler above already uses the Web `Request`/`Response` contract used by
+Bun, Deno, and worker-style hosts. The adapters package also supplies explicit
+Bun and Node bridges:
+
+```ts
+// Bun
+import { createBunFetch } from '@memoized-dom/adapters/bun';
+
+Bun.serve({
+  fetch: createBunFetch(handleRequest),
+});
+```
+
+```ts
+// Node
+import { createServer } from 'node:http';
+import { createNodeHandler } from '@memoized-dom/adapters/node';
+
+createServer(createNodeHandler(handleRequest)).listen(3000);
+```
+
+The Node adapter converts incoming messages to Web requests, preserves abort
+signals, streams Web responses with backpressure, and forwards multiple
+`Set-Cookie` headers.
+
+#### Using the application runtime directly
+
+The renderer helpers build on the public runtime isolation API:
+
+```ts
+import {
+  createApplicationRuntime,
+  runWithApplicationRuntime,
+} from '@memoized-dom/runtime';
+import { createDataRuntime, runWithDataRuntime } from '@memoized-dom/data';
+import {
+  createMemoryRouteHistory,
+  createRouteRuntime,
+  runWithRouteRuntime,
+} from '@memoized-dom/router';
+
+const application = createApplicationRuntime('request-42', {
+  mode: 'server-dom',
+  document: serverDocument,
+  schedule: null,
+  effects: 'disabled',
+  refs: 'disabled',
+});
+const route = createRouteRuntime({
+  routeHistory: createMemoryRouteHistory({
+    initialEntries: ['/account?tab=profile'],
+  }),
+});
+const data = createDataRuntime({ fetch: fetchData });
+
+try {
+  runWithApplicationRuntime(application, () =>
+    runWithRouteRuntime(route, () =>
+      runWithDataRuntime(data, () => {
+        // Custom renderer/host work using this request's complete runtime.
+      }),
+    ),
+  );
+} finally {
+  route.dispose();
+  data.clear();
+  application.dispose();
+}
+```
+
+This low-level path is for custom renderer or host integrations. The scoped
+callbacks use the runtime's async-context storage, so async work started inside
+them continues to resolve the correct application, route, and data ownership.
+The `@memoized-dom/server` primitives already assemble and tear down this same
+three-runtime stack, so application servers normally call those rather than
+manually reproducing the lifecycle.
+
+#### Payload restore and hydration
+
+Install the browser data runtime before hydration. Hydration reads the embedded
+payload, restores matching fetch entries, and then adopts the marker-delimited
+DOM:
+
+```ts
+import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
+import { mount } from '@memoized-dom/runtime';
+import { App } from './App';
+
+setActiveDataRuntime(createDataRuntime());
+
+mount('root', App, {
+  hydration: {
+    recover: true,
+    onRecover(error) {
+      console.error('Hydration recovered:', error.message);
+    },
+  },
+});
+```
+
+The payload option defaults to `'auto'`, which finds the
+`application/mmd+json` script by root ID. Pass an explicit payload object when
+the host transports state outside the DOM, or `payload: 'none'` to ignore
+transported state.
+
+Hydration is strict by default. A structural or tag mismatch raises
+`HydrationMismatchError`. With `recover: true`, the mismatch is reported
+through `onRecover`, the server root is removed, and a clean client mount is
+performed.
+
+Transferred fetch state is matched by normalized request identity. Matching
+initial targets and queries adopt committed server data without a duplicate
+browser request. A different initial identity performs its own request. After
+hydration, changing a compiler-reactive query or dynamic target rebinds the same
+transparent value and requests the new identity; stale work from the prior
+identity cannot replace it.
 
 ### Actions and action results
 

@@ -90,6 +90,14 @@ export interface LocalDerivation {
   bindings: string[];
   /** Transitive non-derived roots that can change this value. */
   sources: string[];
+  /**
+   * Some reactive setup keeps its authored binding stable and only updates
+   * the hidden value behind it. Fetch query rebinding is the first such
+   * case: subscribers must keep the original resource identity.
+   */
+  stableTarget?: boolean;
+  /** Compiler-owned replay used instead of assigning `source` to `target`. */
+  replay?: t.Statement;
 }
 
 export interface ControlFlowDerivation {
@@ -213,6 +221,9 @@ export function buildPropReplay(
 export function buildDerivationReplay(
   derivation: LocalDerivation,
 ): t.Statement {
+  if (derivation.replay !== undefined) {
+    return t.cloneNode(derivation.replay, true);
+  }
   return t.expressionStatement(
     t.assignmentExpression(
       '=',

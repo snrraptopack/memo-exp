@@ -65,6 +65,36 @@ function normalizedCache(cache: FetchCache | undefined): FetchCache {
   return cache ?? 'active';
 }
 
+function equalCache(left: FetchCache, right: FetchCache): boolean {
+  if (left === right) return true;
+  return typeof left === 'object' && typeof right === 'object' &&
+    left.scope === right.scope;
+}
+
+function equalHeaders(
+  left: HeadersInit | undefined,
+  right: HeadersInit | undefined,
+): boolean {
+  const entries = (value: HeadersInit | undefined): string =>
+    [...new Headers(value).entries()]
+      .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
+      .map(([name, value]) => `${name}:${value}`)
+      .join('\n');
+  return entries(left) === entries(right);
+}
+
+function equalDescriptor(
+  left: FetchDescriptor,
+  right: FetchDescriptor,
+): boolean {
+  return left.identity === right.identity &&
+    left.url === right.url &&
+    equalHeaders(left.headers, right.headers) &&
+    equalCache(left.cache, right.cache) &&
+    left.schema === right.schema &&
+    left.signal === right.signal;
+}
+
 class FetchEntry {
   readonly consumers = new Set<ResourceController<unknown>>();
   snapshot: MutableSnapshot<unknown> = idleSnapshot();
@@ -380,13 +410,16 @@ export class FetchStore {
     descriptor: FetchDescriptor,
     consumer: ResourceController<unknown>,
     force = false,
+    replace = false,
   ): FetchEntry {
     let entry: FetchEntry;
     if (descriptor.cache === false) {
       entry = new FetchEntry(this, descriptor);
       this.allEntries.add(entry);
     } else {
-      const existing = this.entries.get(descriptor.identity);
+      const existing = replace
+        ? undefined
+        : this.entries.get(descriptor.identity);
       if (existing === undefined) {
         entry = new FetchEntry(this, descriptor);
         this.allEntries.add(entry);
@@ -469,23 +502,32 @@ class ResourceController<T> {
 
   constructor(
     readonly store: FetchStore,
-    readonly descriptor: FetchDescriptor,
-    readonly paused = false,
+    descriptor: FetchDescriptor,
+    paused = false,
   ) {
-    const signal = descriptor.signal;
-    if (signal !== undefined) {
-      const abort = () => this.abort(abortReason(signal));
-      if (signal.aborted) return;
-      else {
-        signal.addEventListener('abort', abort, { once: true });
-        this.removeSignalListener = () =>
-          signal.removeEventListener('abort', abort);
-      }
-    }
+    this.descriptor = descriptor;
+    this.paused = paused;
+    if (!this.bindSignal(descriptor.signal)) return;
     if (!paused) this.attach(false);
   }
 
-  attach(force: boolean): void {
+  descriptor: FetchDescriptor;
+  paused: boolean;
+
+  private bindSignal(signal: AbortSignal | undefined): boolean {
+    this.removeSignalListener?.();
+    this.removeSignalListener = null;
+    if (signal !== undefined) {
+      const abort = () => this.abort(abortReason(signal));
+      if (signal.aborted) return false;
+      signal.addEventListener('abort', abort, { once: true });
+      this.removeSignalListener = () =>
+        signal.removeEventListener('abort', abort);
+    }
+    return true;
+  }
+
+  attach(force: boolean, replace = false): void {
     if (this.disposed) {
       throw new Error('Cannot refresh a disposed fetch resource');
     }
@@ -493,7 +535,37 @@ class ResourceController<T> {
       this.descriptor,
       this as ResourceController<unknown>,
       force,
+      replace,
     );
+  }
+
+  rebind(descriptor: FetchDescriptor, paused: boolean): void {
+    if (this.disposed) {
+      throw new Error('Cannot rebind a disposed fetch resource');
+    }
+    const unchanged =
+      this.paused === paused &&
+      equalDescriptor(this.descriptor, descriptor);
+    if (unchanged) return;
+
+    const replaceSharedIdentity =
+      !paused &&
+      this.descriptor.identity === descriptor.identity &&
+      !unchanged;
+    const previous = this.entry;
+    if (previous !== null) {
+      this.entry = null;
+      previous.remove(this as ResourceController<unknown>);
+    }
+    this.descriptor = descriptor;
+    this.paused = paused;
+    this.snapshot = idleSnapshot();
+
+    if (!this.bindSignal(descriptor.signal) || paused) {
+      this.notify();
+      return;
+    }
+    this.attach(false, replaceSharedIdentity);
   }
 
   receive(entry: FetchEntry, snapshot: MutableSnapshot<unknown>): void {
@@ -768,21 +840,31 @@ export function createFetchResource<T>(
   target: string | URL | null,
   options: FetchOptions & { readonly validate?: StandardSchemaV1 },
 ): FetchResource<T> {
+  const { descriptor, paused } = fetchDescriptor(
+    environment,
+    target,
+    options,
+  );
+  return resourceObject(new ResourceController<T>(store, descriptor, paused));
+}
+
+function fetchDescriptor(
+  environment: FetchEnvironment,
+  target: string | URL | null,
+  options: FetchOptions & { readonly validate?: StandardSchemaV1 },
+): { descriptor: FetchDescriptor; paused: boolean } {
   if (target === null) {
-    return resourceObject(
-      new ResourceController<T>(
-        store,
-        {
-          url: '',
-          headers: options.headers,
-          identity: 'paused',
-          cache: normalizedCache(options.cache),
-          schema: options.validate,
-          signal: options.signal,
-        },
-        true,
-      ),
-    );
+    return {
+      descriptor: {
+        url: '',
+        headers: options.headers,
+        identity: 'paused',
+        cache: normalizedCache(options.cache),
+        schema: options.validate,
+        signal: options.signal,
+      },
+      paused: true,
+    };
   }
 
   const url = resolveRequestURL(target, options.query, environment.baseURL);
@@ -795,7 +877,7 @@ export function createFetchResource<T>(
     schema: options.validate,
     signal: options.signal,
   };
-  return resourceObject(new ResourceController<T>(store, descriptor));
+  return { descriptor, paused: false };
 }
 
 function resourceObject<T>(
@@ -856,6 +938,17 @@ export function subscribeFetchResource<T>(
 
 export function disposeFetchResource<T>(resource: FetchResource<T>): void {
   resourceController(resource).dispose();
+}
+
+/** Rebind one stable resource when compiler-tracked request inputs change. */
+export function rebindFetchResource<T>(
+  resource: FetchResource<T>,
+  target: string | URL | null,
+  options: FetchOptions & { readonly validate?: StandardSchemaV1 } = {},
+): void {
+  const controller = resourceController(resource);
+  const next = fetchDescriptor(controller.store.environment, target, options);
+  controller.rebind(next.descriptor, next.paused);
 }
 
 export function fetchResourceSnapshot<T>(

@@ -788,6 +788,8 @@ export function scanAndLowerModuleSourceDeclarations(
   programPath: NodePath<t.Program>,
 ): void {
   for (const statement of programPath.get('body')) {
+    const sourceDescriptions: t.Statement[] = [];
+    const requestInputEffects: t.Statement[] = [];
     const inner = statement.isExportNamedDeclaration()
       ? statement.node.declaration
       : statement.node;
@@ -809,10 +811,46 @@ export function scanAndLowerModuleSourceDeclarations(
 
       const target = declarator.init.arguments[0];
       const options = declarator.init.arguments[1];
+      let readsProgramBinding = false;
+      const noteProgramReads = (input: t.Node | undefined): void => {
+        if (input === undefined) return;
+        t.traverseFast(input, (node) => {
+          if (
+            t.isIdentifier(node) &&
+            programPath.scope.getBinding(node.name)?.scope.path.isProgram()
+          ) {
+            readsProgramBinding = true;
+          }
+        });
+      };
+      noteProgramReads(t.isNode(target) ? target : undefined);
+      noteProgramReads(t.isNode(options) ? options : undefined);
+      if (readsProgramBinding) {
+        requestInputEffects.push(
+          t.expressionStatement(
+            t.callExpression(t.identifier('effect'), [
+              t.arrowFunctionExpression(
+                [],
+                t.callExpression(mdd(ctx, 'rebindModuleSource'), [
+                  t.callExpression(mdd(ctx, 'sourceRef'), [
+                    t.stringLiteral(key),
+                  ]),
+                  target === undefined
+                    ? t.nullLiteral()
+                    : t.cloneNode(target, true),
+                  ...(options === undefined
+                    ? []
+                    : [t.cloneNode(options, true)]),
+                ]),
+              ),
+            ]),
+          ),
+        );
+      }
       declarator.init = t.callExpression(mdd(ctx, 'sourceRef'), [
         t.stringLiteral(key),
       ]);
-      ctx.header.push(
+      sourceDescriptions.push(
         t.expressionStatement(
           t.callExpression(mdd(ctx, 'describeModuleSource'), [
             t.stringLiteral(key),
@@ -832,6 +870,14 @@ export function scanAndLowerModuleSourceDeclarations(
           ]),
         ),
       );
+    }
+    if (sourceDescriptions.length > 0) {
+      // Keep descriptions in the program so server cell lowering can rewrite
+      // reactive request inputs to request-owned reads before final emission.
+      statement.insertBefore(sourceDescriptions);
+    }
+    if (requestInputEffects.length > 0) {
+      statement.insertAfter(requestInputEffects);
     }
   }
 }

@@ -134,6 +134,32 @@ describe('module-state cell lowering', () => {
     ).toThrow(/initialized from a literal/);
   });
 
+  it('keeps reactive module fetch inputs request-owned in server builds', () => {
+    const output = compileModules(
+      {
+        './search.ts': `
+          import { $fetch } from '@memoized-dom/data';
+          export let search = 'Ada';
+          export const users = $fetch('/api/users', {
+            query: { search },
+          });
+          export function setSearch(next) { search = next; }
+        `,
+      },
+      { runtimePath: '@memoized-dom/runtime', moduleStateCells: true },
+    );
+    const compiled = output['./search.ts']!;
+
+    expect(compiled).toContain('describeModuleSource');
+    expect(compiled).toMatch(
+      /createSource\('\/api\/users',[\s\S]*?search: _MD\.readCell\(_cell_search\)/,
+    );
+    expect(compiled).toMatch(
+      /rebindModuleSource\([\s\S]*?search: _MD\.readCell\(_cell_search\)/,
+    );
+    expect(compiled).not.toMatch(/query:\s*\{\s*search\s*\}/);
+  });
+
   it('isolates two concurrent requests over ONE compiled module record', async () => {
     mkdirSync(outDir, { recursive: true });
     const output = compileWithCells();

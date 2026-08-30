@@ -79,6 +79,22 @@ describe('module-scope transparent sources', () => {
     expect(sessionMod.currentUser).toBeDefined();
   });
 
+  it('lowers reactive module request inputs to a lazy stable-handle rebind', () => {
+    const output = compileModules({
+      './reactive-source.ts': `
+        import { $fetch } from '@memoized-dom/data';
+        export let search = 'Ada';
+        export const users = $fetch('/api/users', { query: { search } });
+        export function setSearch(next) { search = next; }
+      `,
+    }, { runtimePath: '@memoized-dom/runtime' });
+    const compiled = output['./reactive-source.ts']!;
+
+    expect(compiled).toContain('describeModuleSource');
+    expect(compiled).toContain('rebindModuleSource');
+    expect(compiled).toContain('.registerEffect(');
+  });
+
   it('materializes request-locally across concurrent runtimes', async () => {
     let calls = 0;
     const never = (() => {

@@ -12,6 +12,7 @@ import {
 } from '../components/props';
 import { jsxAttributeName } from '../jsx/attributes';
 import { summarizeHelper } from '../helper-summaries';
+import { mdd } from '../identifiers';
 
 interface LocalDerivationHelperSummary {
   reads: Set<string>;
@@ -310,6 +311,19 @@ export function scanInstanceDerivations(ctx: Ctx): void {
     const derivedBindings = new Set<string>();
     const derivedSources = new Map<string, Set<string>>();
 
+    const isTransparentFetchCall = (
+      initPath: NodePath<t.Expression>,
+    ): boolean => {
+      if (!initPath.isCallExpression() || !t.isIdentifier(initPath.node.callee)) {
+        return false;
+      }
+      if (!ctx.transparentSourceFactories.has(initPath.node.callee.name)) {
+        return false;
+      }
+      const factory = initPath.scope.getBinding(initPath.node.callee.name);
+      return factory?.kind === 'module';
+    };
+
     /**
      * Classify how an opaque local is used inside a candidate initializer.
      * Only PROPERTY READS through the value (`tasksResource.data?.todos`)
@@ -427,9 +441,14 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         }
         const initPath = declarationPath.get('init');
         if (!initPath.isExpression()) continue;
+        const isTransparentFetch = isTransparentFetchCall(initPath);
+        // A transparent fetch binding is a stable hidden resource, never a
+        // replaceable local derivation. Reactive target/options inputs rebind
+        // that same resource below instead of replacing the binding.
+        const reactivePath = initPath;
         // An initializer that invokes or hands off an opaque value performs
         // side effects (fetches, client construction): keep it factory-time.
-        if (classifyOpaqueReads(initPath) === 'bad') continue;
+        if (classifyOpaqueReads(reactivePath) === 'bad') continue;
 
         const directReads = new Set<string>();
         let reason: string | null = null;
@@ -499,28 +518,28 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         // (`const { status } = users`) — never a live read — so only note it
         // when it resolves to reactive state.
         if (
-          initPath.isReferencedIdentifier() &&
-          !isOpaqueLocal(initPath.node.name, initPath)
+          reactivePath.isReferencedIdentifier() &&
+          !isOpaqueLocal(reactivePath.node.name, reactivePath)
         ) {
-          noteIdentifier(initPath);
+          noteIdentifier(reactivePath);
         }
-        if (initPath.isAssignmentExpression()) {
-          const root = mutationRoot(initPath.node.left);
-          if (root !== null && bindingIsReactive(root, initPath)) {
+        if (reactivePath.isAssignmentExpression()) {
+          const root = mutationRoot(reactivePath.node.left);
+          if (root !== null && bindingIsReactive(root, reactivePath)) {
             reason = 'contains an assignment to reactive state';
           }
-        } else if (initPath.isUpdateExpression()) {
-          const root = mutationRoot(initPath.node.argument);
-          if (root !== null && bindingIsReactive(root, initPath)) {
+        } else if (reactivePath.isUpdateExpression()) {
+          const root = mutationRoot(reactivePath.node.argument);
+          if (root !== null && bindingIsReactive(root, reactivePath)) {
             reason = 'contains an update (++/--) to reactive state';
           }
-        } else if (initPath.isAwaitExpression()) {
+        } else if (reactivePath.isAwaitExpression()) {
           reason = 'uses await; per-instance derivations must be synchronous';
-        } else if (initPath.isYieldExpression()) {
+        } else if (reactivePath.isYieldExpression()) {
           reason = 'uses yield; per-instance derivations must be synchronous';
         }
-        if (initPath.isCallExpression()) noteCall(initPath);
-        initPath.traverse({
+        if (reactivePath.isCallExpression()) noteCall(reactivePath);
+        reactivePath.traverse({
           Function(functionPath) {
             const parent = functionPath.parentPath;
             const executesNow =
@@ -557,7 +576,7 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         });
 
         if (directReads.size === 0) continue;
-        initPath.traverse({
+        reactivePath.traverse({
           Function(functionPath) {
             const parent = functionPath.parentPath;
             const participatesInCall =
@@ -609,13 +628,27 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           if (upstream === undefined) sources.add(read);
           else for (const source of upstream) sources.add(source);
         }
+        const stableFetchTarget =
+          isTransparentFetch && t.isIdentifier(declaration.id);
+        const replay = stableFetchTarget && initPath.isCallExpression()
+          ? t.expressionStatement(
+              t.callExpression(mdd(ctx, 'rebindResolvedValue'), [
+                t.identifier((declaration.id as t.Identifier).name),
+                ...(initPath.node.arguments.map((argument) =>
+                  t.cloneNode(argument, true)
+                )),
+              ]),
+            )
+          : undefined;
         derivations.push({
           declaration: statementPath.node,
           target: t.cloneNode(declaration.id),
           source: t.cloneNode(declaration.init),
           bindings: names,
           sources: [...sources].sort(),
+          ...(stableFetchTarget ? { stableTarget: true, replay } : {}),
         });
+        if (stableFetchTarget) continue;
         for (const name of names) {
           derivedBindings.add(name);
           derivedSources.set(name, new Set(sources));

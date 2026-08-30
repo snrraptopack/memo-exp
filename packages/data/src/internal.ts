@@ -15,6 +15,7 @@ export {
   deriveResolvedValues,
   observeResolvedValue,
   ownResolvedValue,
+  rebindResolvedValue,
   readResolvedValue,
   readResolvedValueForRender,
   readResolvedValuesForRender,
@@ -33,6 +34,7 @@ export {
   describeModuleSource,
   isModuleSourceRef,
   readModuleSourceList,
+  rebindModuleSource,
   resolveModuleSource,
   sourceRef,
 } from './transparent-module';
