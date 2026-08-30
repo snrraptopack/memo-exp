@@ -1,15 +1,16 @@
 /**
- * helper-summaries.ts - interprocedural effects for module-local helpers.
+ * Interprocedural read/write summaries for module-local helpers.
  *
  * Summaries distinguish exact writes from effects conservatively bounded to
  * a receiver. Parameter receiver effects are retained by argument position,
- * so callers can map them back to their own state. Only effects with no
- * finite receiver/argument boundary are unbounded.
+ * so callers can map them back to their own state.
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode, type Scope } from './ast';
 import {
+  astBindingAt,
+  astScopeAt,
   memberKey,
   type Ctx,
   type FnSummary,
@@ -17,13 +18,73 @@ import {
 import {
   AliasTracker,
   bindingScopeIsProgram,
-  callArgumentExpressions,
   extendOrigin,
   memberName,
   moduleOrigin,
   staticAssignedKeys,
   type ReactiveOrigin,
 } from './mutation-analysis';
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function node(value: unknown): BaseNode | null {
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? (value as BaseNode)
+    : null;
+}
+
+function childNode(parent: BaseNode, key: string): BaseNode | null {
+  return node(fields(parent)[key]);
+}
+
+function childNodes(parent: BaseNode, key: string): BaseNode[] {
+  const value = fields(parent)[key];
+  return Array.isArray(value)
+    ? value.map(node).filter((item) => item !== null)
+    : [];
+}
+
+function identifierName(value: BaseNode | null): string | null {
+  if (value?.type !== 'Identifier') return null;
+  const name = fields(value).name;
+  return typeof name === 'string' ? name : null;
+}
+
+function scopeAt(ctx: Ctx, at: BaseNode): Scope {
+  const scope = astScopeAt(ctx, at);
+  if (scope === undefined) {
+    throw new Error('memo-dom: missing ESTree scope during helper analysis');
+  }
+  return scope;
+}
+
+function argumentExpressions(call: BaseNode): BaseNode[] {
+  return childNodes(call, 'arguments').flatMap((argument) => {
+    if (argument.type === 'SpreadElement') {
+      const expression = childNode(argument, 'argument');
+      return expression === null ? [] : [expression];
+    }
+    return argument.type === 'JSXNamespacedName' ||
+      argument.type === 'ArgumentPlaceholder'
+      ? []
+      : [argument];
+  });
+}
+
+function assignmentLeftIs(
+  ctx: Ctx,
+  current: BaseNode,
+  candidate: BaseNode,
+): boolean {
+  const parent = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  return (
+    parent?.type === 'AssignmentExpression' &&
+    fields(parent).operator === '=' &&
+    childNode(parent, 'left') === candidate
+  );
+}
 
 /** Read/write summary of a module-level helper, memoized and cycle-safe. */
 export function summarizeHelper(
@@ -43,11 +104,12 @@ export function summarizeHelper(
     };
   }
 
-  const path = ctx.helpers.get(name)!;
+  const helper = ctx.helpers.get(name)!.node;
+  const helperNode = helper as unknown as BaseNode;
   const locals = new Set<string>();
   const parameterIndexes = new Map(
-    path.node.params.flatMap((param, index) =>
-      t.isIdentifier(param) ? [[param.name, index] as const] : [],
+    helper.params.flatMap((parameter, index) =>
+      t.isIdentifier(parameter) ? [[parameter.name, index] as const] : [],
     ),
   );
   const summary: FnSummary = {
@@ -60,7 +122,7 @@ export function summarizeHelper(
   const aliases = new AliasTracker((bindingName, binding) => {
     if (
       parameterIndexes.has(bindingName) &&
-      binding?.scope.block === path.node
+      binding?.scope.block === helperNode
     ) {
       return { locality: 'prop', root: bindingName, key: bindingName };
     }
@@ -73,20 +135,30 @@ export function summarizeHelper(
     origin.stateKind === 'computed' || ctx.state.get(origin.root) === 'computed';
 
   visiting.add(name);
-  path.traverse({
-    VariableDeclarator(declarator) {
-      if (!t.isIdentifier(declarator.node.id)) return;
-      locals.add(declarator.node.id.name);
-      if (declarator.parentPath.isVariableDeclaration()) {
+  walkAst<BaseNode>(helperNode, {
+    enter(current) {
+      if (current.type === 'VariableDeclarator') {
+        const declarationName = identifierName(childNode(current, 'id'));
+        if (declarationName === null) return;
+        locals.add(declarationName);
         aliases.trackDeclarator(
-          declarator.scope,
-          declarator.node,
+          scopeAt(ctx, current),
+          current as unknown as t.VariableDeclarator,
         );
+        return;
       }
-    },
-    Function(fn) {
-      for (const param of fn.node.params) {
-        if (t.isIdentifier(param)) locals.add(param.name);
+      if (
+        current.type === 'FunctionDeclaration' ||
+        current.type === 'FunctionExpression' ||
+        current.type === 'ArrowFunctionExpression' ||
+        current.type === 'ObjectMethod' ||
+        current.type === 'ClassMethod' ||
+        current.type === 'ClassPrivateMethod'
+      ) {
+        for (const parameter of childNodes(current, 'params')) {
+          const parameterName = identifierName(parameter);
+          if (parameterName !== null) locals.add(parameterName);
+        }
       }
     },
   });
@@ -106,12 +178,7 @@ export function summarizeHelper(
   };
 
   const noteReceiverEffect = (origin: ReactiveOrigin): void => {
-    if (isComputedOrigin(origin)) {
-      // Computeds are read-only values. Passing one to a helper or utility
-      // does not imply a write; only directly visible mutations should be
-      // rejected by the caller-side handler analysis.
-      return;
-    }
+    if (isComputedOrigin(origin)) return;
     if (origin.locality === 'module') {
       summary.boundedWrites.add(origin.key ?? origin.root);
       return;
@@ -142,171 +209,193 @@ export function summarizeHelper(
     }
   };
 
-  const noteMemberWrite = (
-    nodePath: NodePath,
-    node: t.MemberExpression,
-  ): void => {
-    const origin = aliases.resolveExpression(nodePath.scope, node);
+  const noteMemberWrite = (at: BaseNode, member: BaseNode): void => {
+    const origin = aliases.resolveExpression(
+      scopeAt(ctx, at),
+      member as unknown as t.MemberExpression,
+    );
     if (origin !== null) noteOriginWrite(origin);
   };
 
-  const noteBoundedArguments = (
-    nodePath: NodePath,
-    args: t.CallExpression['arguments'],
-  ): void => {
-    for (const expression of callArgumentExpressions(args)) {
-      if (!t.isIdentifier(expression)) continue;
-      const origin = aliases.resolveExpression(nodePath.scope, expression);
+  const noteBoundedArguments = (call: BaseNode): void => {
+    for (const expression of argumentExpressions(call)) {
+      if (expression.type !== 'Identifier') continue;
+      const origin = aliases.resolveExpression(
+        scopeAt(ctx, expression),
+        expression as unknown as t.Expression,
+      );
       if (origin !== null && !isComputedOrigin(origin)) {
         noteReceiverEffect(origin);
       }
     }
   };
 
-  path.traverse({
-    VariableDeclarator(declarator) {
-      if (
-        !t.isIdentifier(declarator.node.id) &&
-        declarator.node.init !== null
-      ) {
-        for (
-          const origin of aliases.referencedOrigins(
-            declarator.scope,
-            declarator.node.init as t.Expression,
-          )
-        ) {
-          noteReceiverEffect(origin);
-        }
-      }
-    },
-    AssignmentExpression(assignment) {
-      const left = assignment.node.left;
-      if (t.isIdentifier(left)) {
-        if (locals.has(left.name)) {
-          if (t.isIdentifier(assignment.node.right)) {
-            const origin = aliases.resolveExpression(
-              assignment.scope,
-              assignment.node.right,
-            );
-            if (origin !== null) noteReceiverEffect(origin);
+  const body = childNode(helperNode, 'body') ?? helperNode;
+  walkAst<BaseNode>(body, {
+    enter(current) {
+      const lexicalScope = scopeAt(ctx, current);
+      if (current.type === 'VariableDeclarator') {
+        const pattern = childNode(current, 'id');
+        const initializer = childNode(current, 'init');
+        if (pattern?.type !== 'Identifier' && initializer !== null) {
+          for (const origin of aliases.referencedOrigins(
+            lexicalScope,
+            initializer as unknown as t.Expression,
+          )) {
+            noteReceiverEffect(origin);
           }
-        } else if (ctx.state.has(left.name)) {
-          summary.writes.add(left.name);
         }
-      } else if (t.isMemberExpression(left)) {
-        noteMemberWrite(assignment, left);
-      } else {
-        for (
-          const origin of aliases.referencedOrigins(
-            assignment.scope,
-            assignment.node.right,
-          )
-        ) {
-          noteReceiverEffect(origin);
-        }
+        return;
       }
-    },
-    UpdateExpression(update) {
-      const argument = update.node.argument;
-      if (t.isIdentifier(argument)) {
-        if (!locals.has(argument.name) && ctx.state.has(argument.name)) {
-          summary.writes.add(argument.name);
+
+      if (current.type === 'AssignmentExpression') {
+        const left = childNode(current, 'left');
+        const right = childNode(current, 'right');
+        const leftName = identifierName(left);
+        if (leftName !== null) {
+          if (locals.has(leftName)) {
+            const rightName = identifierName(right);
+            if (rightName !== null && right !== null) {
+              const origin = aliases.resolveExpression(
+                lexicalScope,
+                right as unknown as t.Expression,
+              );
+              if (origin !== null) noteReceiverEffect(origin);
+            }
+          } else if (ctx.state.has(leftName)) {
+            summary.writes.add(leftName);
+          }
+        } else if (left?.type === 'MemberExpression') {
+          noteMemberWrite(current, left);
+        } else if (right !== null) {
+          for (const origin of aliases.referencedOrigins(
+            lexicalScope,
+            right as unknown as t.Expression,
+          )) {
+            noteReceiverEffect(origin);
+          }
         }
-      } else if (t.isMemberExpression(argument)) {
-        noteMemberWrite(update, argument);
+        return;
       }
-    },
-    UnaryExpression(unary) {
+
+      if (current.type === 'UpdateExpression') {
+        const argument = childNode(current, 'argument');
+        const argumentName = identifierName(argument);
+        if (argumentName !== null) {
+          if (!locals.has(argumentName) && ctx.state.has(argumentName)) {
+            summary.writes.add(argumentName);
+          }
+        } else if (argument?.type === 'MemberExpression') {
+          noteMemberWrite(current, argument);
+        }
+        return;
+      }
+
       if (
-        unary.node.operator === 'delete' &&
-        t.isMemberExpression(unary.node.argument)
+        current.type === 'UnaryExpression' &&
+        fields(current).operator === 'delete'
       ) {
-        noteMemberWrite(unary, unary.node.argument);
+        const argument = childNode(current, 'argument');
+        if (argument?.type === 'MemberExpression') {
+          noteMemberWrite(current, argument);
+        }
+        return;
       }
-    },
-    CallExpression(call) {
-      const callee = call.node.callee;
-      if (t.isMemberExpression(callee)) {
-        const method = memberName(callee);
-        if (
-          method === 'assign' &&
-          t.isIdentifier(callee.object, { name: 'Object' })
-        ) {
-          const targetArg = call.node.arguments[0];
-          const target =
-            targetArg !== undefined && t.isExpression(targetArg)
-              ? aliases.resolveExpression(call.scope, targetArg)
-              : null;
-          if (target !== null) {
-            const keys = staticAssignedKeys(
-              target,
-              call.node.arguments.slice(1),
-            );
-            if (keys === null) {
-              noteReceiverEffect(target);
-            } else {
-              for (const key of keys) {
-                noteOriginWrite({ ...target, key });
+
+      if (current.type === 'CallExpression') {
+        const callee = childNode(current, 'callee');
+        if (callee?.type === 'MemberExpression') {
+          const method = memberName(callee as unknown as t.MemberExpression);
+          const receiver = childNode(callee, 'object');
+          if (
+            method === 'assign' &&
+            identifierName(receiver) === 'Object'
+          ) {
+            const args = childNodes(current, 'arguments');
+            const targetArg = args[0];
+            const target =
+              targetArg === undefined
+                ? null
+                : aliases.resolveExpression(
+                    lexicalScope,
+                    targetArg as unknown as t.Expression,
+                  );
+            if (target !== null) {
+              const keys = staticAssignedKeys(
+                target,
+                args.slice(1) as unknown as t.CallExpression['arguments'],
+              );
+              if (keys === null) {
+                noteReceiverEffect(target);
+              } else {
+                for (const key of keys) noteOriginWrite({ ...target, key });
               }
             }
+            return;
           }
+
+          const origin =
+            receiver === null
+              ? null
+              : aliases.resolveExpression(
+                  lexicalScope,
+                  receiver as unknown as t.Expression,
+                );
+          if (origin !== null) noteReceiverEffect(origin);
+          else noteBoundedArguments(current);
           return;
         }
 
-        const receiver =
-          t.isExpression(callee.object)
-            ? aliases.resolveExpression(call.scope, callee.object)
-            : null;
-        if (receiver !== null) {
-          noteReceiverEffect(receiver);
-        } else {
-          noteBoundedArguments(call, call.node.arguments);
+        const calleeName = identifierName(callee);
+        if (
+          calleeName !== null &&
+          (ctx.helpers.has(calleeName) || ctx.importedFunctions.has(calleeName))
+        ) {
+          const nested =
+            ctx.importedFunctions.get(calleeName) ??
+            summarizeHelper(ctx, calleeName, visiting);
+          for (const read of nested.reads) summary.reads.add(read);
+          for (const write of nested.writes) summary.writes.add(write);
+          for (const write of nested.boundedWrites) {
+            summary.boundedWrites.add(write);
+          }
+          const args = childNodes(current, 'arguments');
+          for (const effect of nested.parameterWrites) {
+            const argument = args[effect.index];
+            if (
+              argument === undefined ||
+              argument.type === 'SpreadElement' ||
+              argument.type === 'ArgumentPlaceholder'
+            ) {
+              continue;
+            }
+            const origin = aliases.resolveExpression(
+              lexicalScope,
+              argument as unknown as t.Expression,
+            );
+            if (origin !== null) {
+              noteReceiverEffect(extendOrigin(origin, effect.path));
+            }
+          }
+          if (nested.unbounded) summary.unbounded = true;
+          return;
         }
+        noteBoundedArguments(current);
         return;
       }
 
-      if (
-        t.isIdentifier(callee) &&
-        (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name))
-      ) {
-        const nested =
-          ctx.importedFunctions.get(callee.name) ??
-          summarizeHelper(ctx, callee.name, visiting);
-        for (const read of nested.reads) summary.reads.add(read);
-        for (const write of nested.writes) summary.writes.add(write);
-        for (const write of nested.boundedWrites) {
-          summary.boundedWrites.add(write);
-        }
-        for (const effect of nested.parameterWrites) {
-          const argument = call.node.arguments[effect.index];
-          if (argument === undefined || !t.isExpression(argument)) continue;
-          const origin = aliases.resolveExpression(call.scope, argument);
-          if (origin !== null) {
-            noteReceiverEffect(extendOrigin(origin, effect.path));
-          }
-        }
-        if (nested.unbounded) {
-          summary.unbounded = true;
-        }
+      if (current.type === 'Identifier') {
+        const identifier = identifierName(current)!;
+        if (!ctx.state.has(identifier) || locals.has(identifier)) return;
+        if (assignmentLeftIs(ctx, current, current)) return;
+        summary.reads.add(identifier);
         return;
       }
-      noteBoundedArguments(call, call.node.arguments);
-    },
-    Identifier(identifier) {
-      const identifierName = identifier.node.name;
-      if (!ctx.state.has(identifierName) || locals.has(identifierName)) return;
-      const parent = identifier.parentPath;
-      if (
-        parent.isAssignmentExpression({ operator: '=' }) &&
-        parent.node.left === identifier.node
-      ) {
-        return;
+
+      if (current.type === 'MemberExpression') {
+        const key = storeReadKey(ctx, current);
+        if (key !== null) summary.reads.add(key);
       }
-      summary.reads.add(identifierName);
-    },
-    MemberExpression(member) {
-      const key = storeReadKey(ctx, member);
-      if (key !== null) summary.reads.add(key);
     },
   });
 
@@ -315,27 +404,18 @@ export function summarizeHelper(
   return summary;
 }
 
-function storeReadKey(
-  ctx: Ctx,
-  member: NodePath<t.MemberExpression>,
-): string | null {
-  const key = memberKey(member.node);
+function storeReadKey(ctx: Ctx, member: BaseNode): string | null {
+  const key = memberKey(member as unknown as t.MemberExpression);
   if (!key || !key.includes('.')) return null;
   const root = key.split('.')[0]!;
   if (ctx.state.get(root) !== 'store') return null;
-  if (member.scope.getBinding(root)?.scope.path.isProgram() !== true) return null;
-  const parent = member.parentPath;
-  if (
-    parent.isAssignmentExpression({ operator: '=' }) &&
-    parent.node.left === member.node
-  ) {
+  if (astBindingAt(ctx, member, root)?.scope.isProgramScope !== true) {
     return null;
   }
-  if (isMemberCallCallee(member)) return null;
+  if (assignmentLeftIs(ctx, member, member)) return null;
+  const parent = ctx.astAnalysis?.parentByNode.get(member) ?? null;
+  if (parent?.type === 'CallExpression' && childNode(parent, 'callee') === member) {
+    return null;
+  }
   return key;
-}
-
-function isMemberCallCallee(member: NodePath<t.MemberExpression>): boolean {
-  const parent = member.parentPath;
-  return parent.isCallExpression() && parent.node.callee === member.node;
 }

@@ -43,6 +43,7 @@ import {
   bindingScopeIsProgram,
   moduleOrigin,
 } from '../packages/compiler/src/mutation-analysis';
+import { summarizeHelper } from '../packages/compiler/src/helper-summaries';
 
 describe('ESTree parser and printer boundary', () => {
   it('parses and prints TSX without a Babel AST conversion', () => {
@@ -678,5 +679,38 @@ describe('ESTree parser and printer boundary', () => {
       key: 'store.user.name',
       stateKind: 'store',
     });
+  });
+
+  it('summarizes helper writes directly from OXC ESTree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        let store = { count: 0 };
+        function mutate(target: { value: number }) {
+          target.value++;
+          store.count++;
+          return store.count;
+        }
+      `,
+      { filename: 'summary.ts' },
+    );
+    const helper = findNode(
+      parsed.program,
+      (node): node is BaseNode =>
+        node.type === 'FunctionDeclaration' &&
+        (node as unknown as { id?: { name?: string } }).id?.name === 'mutate',
+    );
+    const context = {
+      astAnalysis: analyzeScope(parsed.program),
+      helpers: new Map([['mutate', { node: helper! }]]),
+      helperSummaries: new Map(),
+      state: new Map([['store', 'store']]),
+      importedFunctions: new Map(),
+    } as unknown as Ctx;
+
+    expect(helper).not.toBeNull();
+    const summary = summarizeHelper(context, 'mutate');
+    expect(summary.parameterWrites).toEqual([{ index: 0, path: ['value'] }]);
+    expect(summary.writes).toEqual(new Set(['store.count']));
+    expect(summary.unbounded).toBe(false);
   });
 });
