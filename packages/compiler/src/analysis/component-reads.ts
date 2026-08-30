@@ -1,6 +1,36 @@
-import * as t from '@babel/types';
-import { walkNodes, type Ctx } from '../context';
-import { jsxAttributeName } from '../jsx/attributes';
+import { walkAst, type BaseNode } from '../ast';
+import type { Ctx } from '../context';
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function node(value: unknown): BaseNode | null {
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { type?: unknown }).type === 'string'
+  ) {
+    return value as BaseNode;
+  }
+  return null;
+}
+
+function jsxIdentifierName(value: unknown): string | null {
+  const identifier = node(value);
+  if (identifier?.type !== 'JSXIdentifier') return null;
+  const name = fields(identifier).name;
+  return typeof name === 'string' ? name : null;
+}
+
+function jsxAttributeName(value: unknown): string | null {
+  const name = node(value);
+  if (name?.type === 'JSXIdentifier') return jsxIdentifierName(name);
+  if (name?.type !== 'JSXNamespacedName') return null;
+  const namespace = jsxIdentifierName(fields(name).namespace);
+  const local = jsxIdentifierName(fields(name).name);
+  return namespace === null || local === null ? null : `${namespace}:${local}`;
+}
 
 /** Module dependencies read anywhere in an already-analyzed component tree. */
 export function componentSubtreeReads(
@@ -21,11 +51,14 @@ export function componentSubtreeReads(
   }
   const path = ctx.compPaths.get(componentName);
   if (path !== undefined) {
-    path.traverse({
-      JSXElement(element) {
-        const name = element.node.openingElement.name;
-        if (!t.isJSXIdentifier(name) || !/^[A-Z]/.test(name.name)) return;
-        for (const read of componentSubtreeReads(ctx, name.name, visiting)) {
+    walkAst<BaseNode>(path.node, {
+      enter(current) {
+        if (current.type !== 'JSXElement') return;
+        const opening = node(fields(current).openingElement);
+        const name =
+          opening === null ? null : jsxIdentifierName(fields(opening).name);
+        if (name === null || !/^[A-Z]/.test(name)) return;
+        for (const read of componentSubtreeReads(ctx, name, visiting)) {
           reads.add(read);
         }
       },
@@ -44,40 +77,42 @@ export function foldRenderCallbackSubtreeReads(ctx: Ctx): void {
   for (const [caller, callerPath] of ctx.compPaths) {
     const callerReads = ctx.compReads.get(caller);
     if (callerReads === undefined) continue;
-    callerPath.traverse({
-      JSXAttribute(attribute) {
-        const opening = attribute.parentPath;
-        if (!opening?.isJSXOpeningElement()) return;
-        const targetName = opening.node.name;
-        if (!t.isJSXIdentifier(targetName)) return;
-        const propName = jsxAttributeName(attribute.node.name);
+    walkAst<BaseNode>(callerPath.node, {
+      enter(current, parent) {
+        if (
+          current.type !== 'JSXAttribute' ||
+          parent?.type !== 'JSXOpeningElement'
+        ) {
+          return;
+        }
+        const targetName = jsxIdentifierName(fields(parent).name);
+        if (targetName === null) return;
+        const propName = jsxAttributeName(fields(current).name);
+        if (propName === null) return;
         if (
           ctx.componentProps
-            .get(targetName.name)
+            .get(targetName)
             ?.renderCallbacks.includes(propName) !== true
         ) {
           return;
         }
-        const value = attribute.node.value;
-        if (
-          !t.isJSXExpressionContainer(value) ||
-          !t.isExpression(value.expression)
-        ) {
-          return;
-        }
-        walkNodes(value.expression, (node) => {
-          if (
-            t.isJSXOpeningElement(node) &&
-            t.isJSXIdentifier(node.name) &&
-            /^[A-Z]/.test(node.name.name)
-          ) {
+        const value = node(fields(current).value);
+        if (value?.type !== 'JSXExpressionContainer') return;
+        const expression = node(fields(value).expression);
+        if (expression === null || expression.type === 'JSXEmptyExpression') return;
+        walkAst<BaseNode>(expression, {
+          enter(descendant) {
+            if (descendant.type !== 'JSXOpeningElement') return;
+            const name = jsxIdentifierName(fields(descendant).name);
+            if (name !== null && /^[A-Z]/.test(name)) {
             for (const read of componentSubtreeReads(
               ctx,
-              node.name.name,
+                name,
             )) {
               callerReads.add(read);
             }
           }
+          },
         });
       },
     });

@@ -65,12 +65,14 @@ hand-written `@babel/types.VISITOR_KEYS` recursion:
 - component parameter type-syntax traversal in `components/props.ts`;
 - targeted list dependency analysis in `lists/targeted-refresh.ts`.
 - finite TypeScript string-candidate analysis in `analysis/type-candidates.ts`.
+- component-subtree and render-callback read folding in
+  `analysis/component-reads.ts`.
 
-`lists/targeted-refresh.ts` and `analysis/type-candidates.ts` have no direct
-Babel import. Type-candidate tests now feed OXC TS-ESTree directly into real
-compiler analysis while the existing Babel pipeline parity tests remain green.
-The other migrated paths still accept Babel node types at their current boundary
-and therefore remain transitional.
+`lists/targeted-refresh.ts`, `analysis/type-candidates.ts`, and
+`analysis/component-reads.ts` have no direct Babel import. Type-candidate tests
+now feed OXC TS-ESTree directly into real compiler analysis while the existing
+Babel pipeline parity tests remain green. The other migrated paths still accept
+Babel node types at their current boundary and therefore remain transitional.
 
 ## Standalone frontend checkpoint
 
@@ -98,7 +100,7 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 66 compiler source files still directly import or declare a
+At this checkpoint, 65 compiler source files still directly import or declare a
 Babel module. Removing the package dependencies before replacing parsing,
 scope/path services, and code generation would break the compiler.
 
