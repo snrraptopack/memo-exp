@@ -289,6 +289,20 @@ export function transformComponent(
   );
 
   transformComponentLifecycle(ctx, path, name, factoryId, rowCtx);
+  // Structural emitters may replace nodes inside the authored return subtree.
+  // Snapshot the statements retained by the factory before emission so
+  // removal does not depend on object identity after those replacements.
+  const effectStatements = new Set<t.Statement>(
+    effects?.map((site) => site.statement) ?? [],
+  );
+  const kept = node.body.body.filter(
+    (statement) =>
+      !(
+        'jsx' in returns
+          ? statement === returns.statement
+          : returns.statements.has(statement)
+      ) && !effectStatements.has(statement),
+  );
   const rootVar =
     'jsx' in returns
       ? emitNode(ctx, scope, returns.jsx, name, path, null, rowCtx)
@@ -338,18 +352,6 @@ export function transformComponent(
       ),
     );
   }
-  const effectStatements = new Set<t.Statement>(
-    effects?.map((site) => site.statement) ?? [],
-  );
-  const kept = node.body.body.filter(
-    (statement) =>
-      !(
-        'jsx' in returns
-          ? statement === returns.statement
-          : returns.statements.has(statement)
-      ) && !effectStatements.has(statement),
-  );
-
   if (propSlotCount > 0 && !lightweight) {
     scope.updaters.unshift(() =>
       t.blockStatement(

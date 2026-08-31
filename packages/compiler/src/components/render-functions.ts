@@ -352,6 +352,7 @@ function resolvedRenderIdentifier(
   const binding = astBindingAt(ctx, identifier, name);
   if (binding === undefined) return null;
   if (
+    binding.kind === 'function' &&
     binding.declarationNode.type === 'FunctionDeclaration' &&
     nodeHasJsx(binding.declarationNode as unknown as t.Node)
   ) {

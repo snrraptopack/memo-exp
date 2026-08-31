@@ -81,7 +81,10 @@ export function resolveLocalHelper(
   ) {
     return null;
   }
-  if (binding.declarationNode.type === 'FunctionDeclaration') {
+  if (
+    binding.kind === 'function' &&
+    binding.declarationNode.type === 'FunctionDeclaration'
+  ) {
     return binding.declarationNode as unknown as t.FunctionDeclaration;
   }
   const declaration = variableDeclaratorFor(ctx, binding);
