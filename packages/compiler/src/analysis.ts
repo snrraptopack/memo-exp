@@ -100,45 +100,21 @@ export {
 } from './analysis/component-graph';
 export { buildAccessTable } from './analysis/access-table';
 
-/**
- * R8: a JSX-bearing conditional is allowed ONLY as a direct JSX child:
- * <div>{cond ? <A/> : <B/>}</div>. Full form validation is analyzeCondSite
- * (run in collectReads); here we only fix the position and skip the subtree.
- */
-function isRenderAttributePosition(
-  ctx: Ctx,
-  container: NodePath<t.JSXExpressionContainer> | null | undefined,
-): boolean {
-  const attribute = container?.parentPath;
-  if (!attribute?.isJSXAttribute()) return false;
-  const opening = attribute.parentPath;
-  if (!opening.isJSXOpeningElement()) return false;
-  const tag = opening.node.name;
+/** Whether a JSX expression container is a declared component render slot. */
+function isRenderAttributeContainer(ctx: Ctx, container: BaseNode): boolean {
+  if (container.type !== 'JSXExpressionContainer') return false;
+  const attribute = ctx.astAnalysis?.parentByNode.get(container) ?? null;
+  if (attribute?.type !== 'JSXAttribute') return false;
+  const opening = ctx.astAnalysis?.parentByNode.get(attribute) ?? null;
+  if (opening?.type !== 'JSXOpeningElement') return false;
+  const openingNode = opening as unknown as t.JSXOpeningElement;
+  const tag = openingNode.name;
   if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return false;
-  const name = attribute.node.name;
+  const name = (attribute as unknown as t.JSXAttribute).name;
   const attrName = t.isJSXIdentifier(name) ? name.name : name.name.name;
   return (
     ctx.componentProps.get(tag.name)?.renderProps.includes(attrName) === true
   );
-}
-
-function validateCondPosition(
-  ctx: Ctx,
-  c: NodePath<t.ConditionalExpression> | NodePath<t.LogicalExpression>,
-): void {
-  const parent = c.parentPath;
-  const grand = parent?.parentPath;
-  if (
-    !parent?.isJSXExpressionContainer() ||
-    (!grand?.isJSXElement() &&
-      !grand?.isJSXFragment() &&
-      !isRenderAttributePosition(ctx, parent))
-  ) {
-    throw c.buildCodeFrameError(
-      'memo-dom: conditional rendering must be a direct JSX child: <div>{cond ? <A/> : <B/>}</div>',
-    );
-  }
-  c.skip();
 }
 
 // ---------------------------------------------------------------------
@@ -701,54 +677,66 @@ function scanRenderProps(ctx: Ctx): void {
 function analyzeComponent(ctx: Ctx, name: string): void {
   const p = ctx.compPaths.get(name)!;
   const info = ctx.comps.get(name)!;
-  const checkMapCall = (
-    call: NodePath<t.CallExpression | t.OptionalCallExpression>,
-  ): void => {
-    const mapCall = matchMapCall(call.node);
+  const fail = (message: string): never => {
+    throw p.buildCodeFrameError(message);
+  };
+  const checkMapCall = (call: BaseNode): boolean => {
+    const mapCall = matchMapCall(
+      call as unknown as t.CallExpression | t.OptionalCallExpression,
+    );
     if (
       mapCall &&
       (containsJsx(call) ||
         matchRenderCallbackMap(ctx, name, mapCall) !== null)
     ) {
       // allowed ONLY as a direct JSX child: <ul>{items.map(...)}</ul>
-      const parent = call.parentPath;
-      const grand = parent?.parentPath;
+      const parent = ctx.astAnalysis?.parentByNode.get(call) ?? null;
+      const grand = parent === null
+        ? null
+        : ctx.astAnalysis?.parentByNode.get(parent) ?? null;
       if (
-        !parent?.isJSXExpressionContainer() ||
-        (!grand?.isJSXElement() &&
-          !grand?.isJSXFragment() &&
-          !isRenderAttributePosition(ctx, parent))
+        parent?.type !== 'JSXExpressionContainer' ||
+        (grand?.type !== 'JSXElement' &&
+          grand?.type !== 'JSXFragment' &&
+          !isRenderAttributeContainer(ctx, parent))
       ) {
-        throw call.buildCodeFrameError(
+        fail(
           'memo-dom: list rendering must be a direct JSX child: <ul>{items.map(item => <Row />)}</ul>',
         );
       }
       // full form validation happens in collectReads (needs composition)
-      call.skip();
+      return false;
     }
+    return true;
   };
-  p.traverse({
-    JSXElement(el) {
-      const open = el.node.openingElement;
-      if (!t.isJSXIdentifier(open.name)) {
-        throw el.buildCodeFrameError(
+  walkAst<BaseNode>(p.node as unknown as BaseNode, {
+    enter(node) {
+      if (node.type === 'JSXElement') {
+      const element = node as unknown as t.JSXElement;
+      const open = element.openingElement;
+      const openName = open.name;
+      if (!t.isJSXIdentifier(openName)) {
+        return fail(
           'memo-dom: namespaced or member-expression JSX tags are not supported (L1)',
         );
       }
       // key is region metadata — meaningless (and misleading) elsewhere
       for (const attr of open.attributes) {
-        if (!t.isJSXSpreadAttribute(attr) && (attr.name as t.JSXIdentifier).name === 'key') {
-          if (isRenderCallbackJsxRoot(ctx, el)) continue;
-          throw el.buildCodeFrameError(
+        if (
+          !t.isJSXSpreadAttribute(attr) &&
+          t.isJSXIdentifier(attr.name, { name: 'key' })
+        ) {
+          if (isRenderCallbackJsxRoot(ctx, node)) continue;
+          fail(
             'memo-dom: key={...} is only meaningful on list rows: items.map(item => <Row key={item.id} />)',
           );
         }
       }
-      const tag = open.name.name;
+      const tag = openName.name;
       if (/^[A-Z]/.test(tag)) {
         const localComponent = ctx.comps.has(tag);
         if (!localComponent && !ctx.importedComponents.has(tag)) {
-          throw el.buildCodeFrameError(
+          fail(
             `memo-dom: <${tag} /> is not a linked component factory`,
           );
         }
@@ -761,7 +749,7 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         if (!counts) ctx.childRefCounts.set(name, (counts = new Map()));
         counts.set(tag, (counts.get(tag) ?? 0) + 1);
         if (
-          el.node.children.some(
+          element.children.some(
             (child) =>
               !t.isJSXText(child) || child.value.trim() !== '',
           ) ||
@@ -789,22 +777,56 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         return;
       }
       info.jsxCount++;
-    },
-    ConditionalExpression(c) {
-      if (containsJsx(c)) validateCondPosition(ctx, c);
-    },
-    LogicalExpression(l) {
-      if (containsJsx(l)) {
-        if (l.node.operator !== '&&' && l.node.operator !== '||') {
-          throw l.buildCodeFrameError(
+      return;
+      }
+      if (node.type === 'ConditionalExpression' && containsJsx(node)) {
+        const parent = ctx.astAnalysis?.parentByNode.get(node) ?? null;
+        const grand = parent === null
+          ? null
+          : ctx.astAnalysis?.parentByNode.get(parent) ?? null;
+        if (
+          parent?.type !== 'JSXExpressionContainer' ||
+          (grand?.type !== 'JSXElement' &&
+            grand?.type !== 'JSXFragment' &&
+            !isRenderAttributeContainer(ctx, parent))
+        ) {
+          fail(
+            'memo-dom: conditional rendering must be a direct JSX child: <div>{cond ? <A/> : <B/>}</div>',
+          );
+        }
+        return false;
+      }
+      if (node.type === 'LogicalExpression' && containsJsx(node)) {
+        const logical = node as unknown as t.LogicalExpression;
+        if (logical.operator !== '&&' && logical.operator !== '||') {
+          fail(
             'memo-dom: only && / || conditionals are supported (R8 L1), not ??',
           );
         }
-        validateCondPosition(ctx, l);
+        const parent = ctx.astAnalysis?.parentByNode.get(node) ?? null;
+        const grand = parent === null
+          ? null
+          : ctx.astAnalysis?.parentByNode.get(parent) ?? null;
+        if (
+          parent?.type !== 'JSXExpressionContainer' ||
+          (grand?.type !== 'JSXElement' &&
+            grand?.type !== 'JSXFragment' &&
+            !isRenderAttributeContainer(ctx, parent))
+        ) {
+          fail(
+            'memo-dom: conditional rendering must be a direct JSX child: <div>{cond ? <A/> : <B/>}</div>',
+          );
+        }
+        return false;
       }
+      if (
+        node.type === 'CallExpression' ||
+        node.type === 'OptionalCallExpression'
+      ) {
+        return checkMapCall(node);
+      }
+      return;
     },
-    CallExpression: checkMapCall,
-    OptionalCallExpression: checkMapCall,
   });
 }
 
