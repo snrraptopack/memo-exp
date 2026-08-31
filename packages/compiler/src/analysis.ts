@@ -1036,16 +1036,18 @@ function collectReads(ctx: Ctx): void {
      * routing matches the nested runtime ids.
      */
     function collectConditionalMap(
-      call: NodePath<t.CallExpression | t.OptionalCallExpression>,
+      call: t.CallExpression | t.OptionalCallExpression,
       condSuffix: string,
       branchPrefixes: Map<string, number>,
-    ): void {
-      const mapCall = matchMapCall(call.node);
-      if (mapCall === null || !containsJsx(call)) return;
+    ): boolean {
+      const mapCall = matchMapCall(call);
+      if (mapCall === null || !containsJsx(call as unknown as BaseNode)) {
+        return true;
+      }
       const site = analyzeMapSite(
         ctx,
         mapCall,
-        call,
+        p,
         name,
         branchPrefixes,
       );
@@ -1071,9 +1073,9 @@ function collectReads(ctx: Ctx): void {
         }
         ctx.listedSites.set(site.rowComp!, sites);
       } else {
-        collectInlineRowSite(call.node, site, nestedSuffix);
+        collectInlineRowSite(call, site, nestedSuffix);
       }
-      call.skip();
+      return false;
     }
 
     function recordConditionalComponent(
@@ -1247,81 +1249,80 @@ function collectReads(ctx: Ctx): void {
      * ('<owner>/when<n>'), so writes dirty the region, not the owner.
      */
     function handleCond(
-      c: NodePath<t.ConditionalExpression> | NodePath<t.LogicalExpression>,
+      node: t.ConditionalExpression | t.LogicalExpression,
       parentSuffix: string | null = null,
-    ): void {
-      const node = c.node;
-      if (!containsJsx(c)) return; // attribute ternaries etc.: plain reads
-      const site = analyzeCondSite(node, c, usedConds);
+    ): boolean {
+      const rawNode = node as unknown as BaseNode;
+      if (!containsJsx(rawNode)) return true;
+      const site = analyzeCondSite(node, p, usedConds);
       const fullSuffix =
         parentSuffix === null
           ? site.suffix
           : `${parentSuffix}/${site.suffix}`;
-      const branchPaths: NodePath[] = [];
-      if (c.isConditionalExpression()) {
-        let current = c as NodePath;
-        while (current.isConditionalExpression()) {
-          branchPaths.push(current.get('consequent') as NodePath);
-          current = current.get('alternate') as NodePath;
+      const branches: t.Expression[] = [];
+      if (t.isConditionalExpression(node)) {
+        let current: t.Expression = node;
+        while (t.isConditionalExpression(current)) {
+          branches.push(current.consequent);
+          current = current.alternate;
         }
-        branchPaths.push(current);
+        branches.push(current);
       } else {
-        branchPaths.push(c.get('right') as NodePath);
+        branches.push(node.right);
       }
-      for (const branchPath of branchPaths) {
+      for (const branch of branches) {
         const branchPrefixes = new Map<string, number>();
         const branchChildren = new Map<string, number>();
         if (
-          (branchPath.isConditionalExpression() ||
-            branchPath.isLogicalExpression()) &&
-          containsJsx(branchPath)
+          (t.isConditionalExpression(branch) || t.isLogicalExpression(branch)) &&
+          containsJsx(branch as unknown as BaseNode)
         ) {
-          handleCond(
-            branchPath as
-              | NodePath<t.ConditionalExpression>
-              | NodePath<t.LogicalExpression>,
-            fullSuffix,
-          );
+          handleCond(branch, fullSuffix);
           continue;
         }
-        if (branchPath.isJSXElement()) {
+        if (t.isJSXElement(branch)) {
           recordConditionalComponent(
-            branchPath.node as t.JSXElement,
+            branch,
             fullSuffix,
             branchChildren,
           );
         }
-        branchPath.traverse({
-          ConditionalExpression(inner) {
-            if (!containsJsx(inner)) return;
-            handleCond(inner, fullSuffix);
-            inner.skip();
-          },
-          LogicalExpression(inner) {
-            if (!containsJsx(inner)) return;
-            handleCond(inner, fullSuffix);
-            inner.skip();
-          },
-          JSXElement(element) {
-            recordConditionalComponent(
-              element.node,
-              fullSuffix,
-              branchChildren,
-            );
-          },
-          CallExpression(call) {
-            collectConditionalMap(
-              call,
-              fullSuffix,
-              branchPrefixes,
-            );
-          },
-          OptionalCallExpression(call) {
-            collectConditionalMap(
-              call,
-              fullSuffix,
-              branchPrefixes,
-            );
+        const branchRoot = branch as unknown as BaseNode;
+        walkAst<BaseNode>(branchRoot, {
+          enter(current) {
+            if (current === branchRoot) return;
+            if (
+              (current.type === 'ConditionalExpression' ||
+                current.type === 'LogicalExpression') &&
+              containsJsx(current)
+            ) {
+              return handleCond(
+                current as unknown as
+                  | t.ConditionalExpression
+                  | t.LogicalExpression,
+                fullSuffix,
+              );
+            }
+            if (current.type === 'JSXElement') {
+              recordConditionalComponent(
+                current as unknown as t.JSXElement,
+                fullSuffix,
+                branchChildren,
+              );
+            }
+            if (
+              current.type === 'CallExpression' ||
+              current.type === 'OptionalCallExpression'
+            ) {
+              return collectConditionalMap(
+                current as unknown as
+                  | t.CallExpression
+                  | t.OptionalCallExpression,
+                fullSuffix,
+                branchPrefixes,
+              );
+            }
+            return;
           },
         });
       }
@@ -1336,7 +1337,7 @@ function collectReads(ctx: Ctx): void {
           vars,
         });
       }
-      c.skip(); // region reads are not owner reads
+      return false;
     }
 
     function checkCallExpression(
@@ -1460,10 +1461,10 @@ function collectReads(ctx: Ctx): void {
         }
       },
       ConditionalExpression(c) {
-        handleCond(c);
+        if (!handleCond(c.node)) c.skip();
       },
       LogicalExpression(l) {
-        handleCond(l);
+        if (!handleCond(l.node)) l.skip();
       },
       CallExpression: checkCallExpression,
       OptionalCallExpression: checkCallExpression,
