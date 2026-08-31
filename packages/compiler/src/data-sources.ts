@@ -15,6 +15,7 @@ import {
 } from './context';
 import {
   extractPatternIdentifiers,
+  replaceNode,
   walkAst,
   type BaseNode,
   type Binding as AstBinding,
@@ -106,45 +107,46 @@ function jsxTagName(element: t.JSXElement): string | null {
 }
 
 function meaningfulGroupChildren(
-  path: NodePath<t.JSXElement>,
-): NodePath<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer>[] {
-  return path.get('children').filter((child): child is NodePath<
-    t.JSXElement | t.JSXFragment | t.JSXExpressionContainer
-  > => {
-    if (child.isJSXText()) {
-      if (child.node.value.trim() !== '') {
-        throw child.buildCodeFrameError(
+  element: t.JSXElement,
+  errorAt: { buildCodeFrameError(message: string): Error },
+): Array<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer> {
+  return element.children.filter((child): child is
+    t.JSXElement | t.JSXFragment | t.JSXExpressionContainer => {
+    if (t.isJSXText(child)) {
+      if (child.value.trim() !== '') {
+        throw errorAt.buildCodeFrameError(
           'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
         );
       }
       return false;
     }
     if (
-      child.isJSXExpressionContainer() &&
-      child.get('expression').isJSXEmptyExpression()
+      t.isJSXExpressionContainer(child) &&
+      t.isJSXEmptyExpression(child.expression)
     ) {
       return false;
     }
-    return child.isJSXElement() ||
-      child.isJSXFragment() ||
-      child.isJSXExpressionContainer();
+    return t.isJSXElement(child) ||
+      t.isJSXFragment(child) ||
+      t.isJSXExpressionContainer(child);
   });
 }
 
 function componentPolicy(
-  path: NodePath<t.JSXElement>,
+  element: t.JSXElement,
   expected: ReadonlySet<string>,
   label: string,
+  errorAt: { buildCodeFrameError(message: string): Error },
 ): string {
-  const tag = jsxTagName(path.node);
+  const tag = jsxTagName(element);
   if (tag === null || !expected.has(tag)) {
-    throw path.buildCodeFrameError(
+    throw errorAt.buildCodeFrameError(
       `memo-dom: Group child must be <${label} component={...} />`,
     );
   }
-  const attributes = path.node.openingElement.attributes;
+  const attributes = element.openingElement.attributes;
   if (attributes.length !== 1 || !t.isJSXAttribute(attributes[0])) {
-    throw path.buildCodeFrameError(
+    throw errorAt.buildCodeFrameError(
       `memo-dom: <${label}> requires exactly one component prop`,
     );
   }
@@ -158,15 +160,18 @@ function componentPolicy(
     !t.isJSXExpressionContainer(value) ||
     !t.isIdentifier(value.expression)
   ) {
-    throw path.buildCodeFrameError(
+    throw errorAt.buildCodeFrameError(
       `memo-dom: <${label}> component must reference a component identifier`,
     );
   }
   return value.expression.name;
 }
 
-function groupDataNames(path: NodePath<t.JSXElement>): string[] {
-  const attributes = path.node.openingElement.attributes;
+function groupDataNames(
+  element: t.JSXElement,
+  errorAt: { buildCodeFrameError(message: string): Error },
+): string[] {
+  const attributes = element.openingElement.attributes;
   const data = attributes.find((attribute) =>
     t.isJSXAttribute(attribute) &&
     t.isJSXIdentifier(attribute.name, { name: 'data' }),
@@ -175,14 +180,14 @@ function groupDataNames(path: NodePath<t.JSXElement>): string[] {
     !t.isJSXAttribute(data) ||
     !t.isJSXExpressionContainer(data.value)
   ) {
-    throw path.buildCodeFrameError(
+    throw errorAt.buildCodeFrameError(
       'memo-dom: <Group> requires data={source} or data={{ source, ... }}',
     );
   }
   const expression = data.value.expression;
   if (t.isIdentifier(expression)) return [expression.name];
   if (!t.isObjectExpression(expression)) {
-    throw path.buildCodeFrameError(
+    throw errorAt.buildCodeFrameError(
       'memo-dom: Group.data currently accepts a source identifier or an object of source identifiers',
     );
   }
@@ -193,7 +198,7 @@ function groupDataNames(path: NodePath<t.JSXElement>): string[] {
       property.computed ||
       !t.isIdentifier(property.value)
     ) {
-      throw path.buildCodeFrameError(
+      throw errorAt.buildCodeFrameError(
         'memo-dom: every Group.data object value must be a source identifier',
       );
     }
@@ -534,7 +539,7 @@ function annotateGroupComponentCalls(
 
 function wrapGroupSite(
   ctx: Ctx,
-  expression: NodePath<t.Expression>,
+  expression: t.Expression,
   dependencies: readonly string[],
   pending: string,
   error: string,
@@ -553,7 +558,7 @@ function wrapGroupSite(
   const committed = t.jsxFragment(
     t.jsxOpeningFragment(),
     t.jsxClosingFragment(),
-    [t.jsxExpressionContainer(t.cloneNode(expression.node, true))],
+    [t.jsxExpressionContainer(t.cloneNode(expression, true))],
   );
   const conditional = t.conditionalExpression(
     errorRead(),
@@ -579,7 +584,11 @@ function wrapGroupSite(
     __memoDomTransparentGroup?: boolean;
   }).__memoDomTransparentGroup = true;
   annotateTransparentSources(conditional, dependencies);
-  expression.replaceWith(conditional);
+  replaceNode(
+    ctx.astAnalysis!,
+    expression as unknown as BaseNode,
+    conditional as unknown as BaseNode,
+  );
 }
 
 interface TransparentPolicyRenderer {
@@ -736,79 +745,84 @@ function wrapAutomaticSite(
 /** Normalize the exact three-child Group form into independent local sites. */
 export function lowerTransparentGroups(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: {
+    node: t.Program;
+    buildCodeFrameError(message: string): Error;
+  },
 ): void {
   refreshAstAnalysis(ctx, programPath.node);
-  programPath.traverse({
-    JSXElement: {
-      exit(path) {
-        const tag = jsxTagName(path.node);
+  walkAst<BaseNode>(programPath.node as unknown as BaseNode, {
+    leave(node) {
+        if (node.type !== 'JSXElement') return;
+        const element = node as unknown as t.JSXElement;
+        const tag = jsxTagName(element);
         if (tag === null || !ctx.transparentGroups.has(tag)) return;
-        const children = meaningfulGroupChildren(path);
+        const children = meaningfulGroupChildren(element, programPath);
         if (children.length !== 3) {
-          throw path.buildCodeFrameError(
+          throw programPath.buildCodeFrameError(
             'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
           );
         }
-        const [pendingPath, errorPath, content] = children as [
-          NodePath<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer>,
-          NodePath<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer>,
-          NodePath<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer>,
-        ];
-        if (!pendingPath.isJSXElement() || !errorPath.isJSXElement()) {
-          throw path.buildCodeFrameError(
+        const [pendingElement, errorElement, content] = children;
+        if (!t.isJSXElement(pendingElement) || !t.isJSXElement(errorElement)) {
+          throw programPath.buildCodeFrameError(
             'memo-dom: Group children one and two must be Pending and Error declarations',
           );
         }
         const pending = componentPolicy(
-          pendingPath,
+          pendingElement,
           ctx.transparentPendingPolicies,
           'Pending',
+          programPath,
         );
         const error = componentPolicy(
-          errorPath,
+          errorElement,
           ctx.transparentErrorPolicies,
           'Error',
+          programPath,
         );
-        const data = groupDataNames(path);
+        const data = groupDataNames(element, programPath);
         const origins = groupOrigins(
           ctx,
-          path.node as unknown as BaseNode,
+          node,
           data,
         );
         annotateGroupComponentCalls(
           ctx,
-          content.node as unknown as BaseNode,
+          content as unknown as BaseNode,
           origins,
           pending,
           error,
         );
-        const visit = (container: NodePath<t.JSXExpressionContainer>): void => {
-          if (container.parentPath.isJSXAttribute()) return;
-          const expression = container.get('expression');
-          if (Array.isArray(expression) || !expression.isExpression()) return;
-          if (isLoweredGroupExpression(expression.node)) {
-            container.skip();
-            return;
-          }
-          const used = expressionOrigins(
-            ctx,
-            expression.node as unknown as BaseNode,
-            origins,
-          );
-          if (used.size === 0) return;
-          wrapGroupSite(ctx, expression, [...used], pending, error);
-          container.skip();
-        };
-        if (content.isJSXExpressionContainer()) visit(content);
-        content.traverse({ JSXExpressionContainer: visit });
+        walkAst(content as unknown as BaseNode, {
+          enter(current) {
+            if (current.type !== 'JSXExpressionContainer') return;
+            const parent = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+            if (parent?.type === 'JSXAttribute') return false;
+            const expression = childNode(current, 'expression');
+            if (
+              expression === null ||
+              !t.isExpression(expression as unknown as t.Node)
+            ) return false;
+            const authoredExpression = expression as unknown as t.Expression;
+            if (isLoweredGroupExpression(authoredExpression)) return false;
+            const used = expressionOrigins(ctx, expression, origins);
+            if (used.size === 0) return undefined;
+            wrapGroupSite(ctx, authoredExpression, [...used], pending, error);
+            return false;
+          },
+        });
         ctx.usesTransparentData = true;
         // Move the authored content node so Group's internal lowering markers
         // survive into the later transparent-read pass.
-        path.replaceWith(content.node);
-      },
+        replaceNode(
+          ctx.astAnalysis!,
+          node,
+          content as unknown as BaseNode,
+        );
     },
   });
+  refreshAstAnalysis(ctx, programPath.node);
 }
 
 /**
