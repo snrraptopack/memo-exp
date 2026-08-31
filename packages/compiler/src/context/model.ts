@@ -261,7 +261,6 @@ export interface KeyedListMutationPlan {
   keyPath: string[];
   keysVariable: string;
   targetedReason: string;
-  topologyReason: string;
   structuralReason: string;
   call: MapCallExpression;
 }

@@ -1032,7 +1032,6 @@ function registerKeyedListMutationPlan(
     keyPath,
     keysVariable: generatedIdentifier(ctx, `${source}ChangedKeys`).name,
     targetedReason: `${address}\0content`,
-    topologyReason: `${address}\0topology`,
     structuralReason: `${address}\0structure`,
     call,
   };
@@ -1042,7 +1041,6 @@ function registerKeyedListMutationPlan(
   addInstanceReasons(ctx, component, [
     source,
     plan.targetedReason,
-    plan.topologyReason,
     plan.structuralReason,
   ]);
 }

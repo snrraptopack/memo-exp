@@ -1,6 +1,12 @@
-import type { NodePath } from '@babel/traverse';
-import _traverse from '@babel/traverse';
 import * as t from '@babel/types';
+import {
+  analyzeScope,
+  overwriteNode,
+  walkAst,
+  type BaseNode,
+  type Scope,
+  type ScopeAnalysis,
+} from '../ast';
 import {
   memberKey,
   memberRootName,
@@ -36,20 +42,128 @@ import {
 import { generatedIdentifier, md } from '../identifiers';
 import { transparentListExpression } from '../lists/source-shapes';
 
-const traverse: typeof _traverse =
-  (_traverse as unknown as { default?: typeof _traverse }).default ?? _traverse;
+type FunctionNode =
+  | t.ArrowFunctionExpression
+  | t.FunctionExpression
+  | t.FunctionDeclaration;
 
-const ARRAY_TOPOLOGY_METHODS = new Set([
-  'copyWithin',
-  'fill',
-  'pop',
-  'push',
-  'reverse',
-  'shift',
-  'sort',
-  'splice',
-  'unshift',
-]);
+class HandlerPath<TNode extends t.Node = t.Node> {
+  public readonly node: TNode;
+  public readonly parentPath: HandlerPath | null;
+  public shouldSkip = false;
+
+  constructor(
+    node: BaseNode,
+    private readonly analysis: ScopeAnalysis,
+  ) {
+    this.node = node as unknown as TNode;
+    const parent = analysis.parentByNode.get(node) ?? null;
+    this.parentPath = parent === null
+      ? null
+      : new HandlerPath(parent, analysis);
+  }
+
+  public get parent(): t.Node | null {
+    return this.parentPath?.node ?? null;
+  }
+
+  public get scope(): Scope {
+    const scope = this.analysis.nodeToScope.get(
+      this.node as unknown as BaseNode,
+    );
+    if (scope === undefined) {
+      throw new TypeError(`Missing handler scope for ${this.node.type}`);
+    }
+    return scope;
+  }
+
+  public getFunctionParent(): HandlerPath<FunctionNode> | null {
+    let current = this.parentPath;
+    while (current !== null) {
+      if (t.isFunction(current.node)) {
+        return current as HandlerPath<FunctionNode>;
+      }
+      current = current.parentPath;
+    }
+    return null;
+  }
+
+  public isExpression(): this is HandlerPath<t.Expression> {
+    return t.isExpression(this.node);
+  }
+
+  public isVariableDeclarator(): this is HandlerPath<t.VariableDeclarator> {
+    return t.isVariableDeclarator(this.node);
+  }
+
+  public isVariableDeclaration(): this is HandlerPath<t.VariableDeclaration> {
+    return t.isVariableDeclaration(this.node);
+  }
+
+  public isAssignmentExpression(
+    options?: { operator?: string },
+  ): this is HandlerPath<t.AssignmentExpression> {
+    return t.isAssignmentExpression(this.node) &&
+      (options?.operator === undefined || this.node.operator === options.operator);
+  }
+
+  public replaceWith(replacement: t.Node): void {
+    overwriteNode(
+      this.node as unknown as BaseNode,
+      replacement as unknown as BaseNode,
+    );
+  }
+
+  public skip(): void {
+    this.shouldSkip = true;
+  }
+
+  public buildCodeFrameError(message: string): Error {
+    return new Error(message);
+  }
+}
+
+interface HandlerVisitor {
+  VariableDeclarator?(path: HandlerPath<t.VariableDeclarator>): void;
+  Function?(path: HandlerPath<FunctionNode>): void;
+  AssignmentExpression?(path: HandlerPath<t.AssignmentExpression>): void;
+  UpdateExpression?(path: HandlerPath<t.UpdateExpression>): void;
+  UnaryExpression?(path: HandlerPath<t.UnaryExpression>): void;
+  CallExpression?(path: HandlerPath<t.CallExpression>): void;
+}
+
+function walkHandler(root: t.Node, visitor: HandlerVisitor): ScopeAnalysis {
+  const analysis = analyzeScope(root as unknown as BaseNode);
+  walkAst(root as unknown as BaseNode, {
+    enter(node) {
+      const path = new HandlerPath(node, analysis);
+      if (node.type === 'VariableDeclarator') {
+        visitor.VariableDeclarator?.(
+          path as HandlerPath<t.VariableDeclarator>,
+        );
+      }
+      if (t.isFunction(node as unknown as t.Node)) {
+        visitor.Function?.(path as HandlerPath<FunctionNode>);
+      }
+      if (node.type === 'AssignmentExpression') {
+        visitor.AssignmentExpression?.(
+          path as HandlerPath<t.AssignmentExpression>,
+        );
+      }
+      if (node.type === 'UpdateExpression') {
+        visitor.UpdateExpression?.(path as HandlerPath<t.UpdateExpression>);
+      }
+      if (node.type === 'UnaryExpression') {
+        visitor.UnaryExpression?.(path as HandlerPath<t.UnaryExpression>);
+      }
+      if (node.type === 'CallExpression') {
+        visitor.CallExpression?.(path as HandlerPath<t.CallExpression>);
+      }
+      return path.shouldSkip ? false : undefined;
+    },
+  });
+  return analysis;
+}
 
 function directListItemMutationKey(
   node: t.MemberExpression,
@@ -142,7 +256,7 @@ function itemFieldVisibleBeyondList(
 }
 
 interface HandlerExecutionSite {
-  path: NodePath;
+  path: HandlerPath;
   writes: ScopeWrites;
   flag?: t.Identifier;
   temporaries?: t.Identifier[];
@@ -316,7 +430,7 @@ export function analyzeHandler(
   const recordInstanceMutation = (
     scope: ScopeWrites,
     source: string,
-    kind: 'targeted' | 'topology' | 'structural' = 'structural',
+    kind: 'targeted' | 'structural' = 'structural',
   ): void => {
     recordInstanceWrite(scope, source);
     const plan = listMutationPlans?.get(source);
@@ -325,18 +439,17 @@ export function analyzeHandler(
         scope,
         kind === 'targeted'
           ? plan.targetedReason
-          : kind === 'topology'
-            ? plan.topologyReason
-            : plan.structuralReason,
+          : plan.structuralReason,
       );
     }
   };
   const journalTargetedMutation = (
-    p: NodePath,
+    p: HandlerPath,
     plan: KeyedListMutationPlan,
     key: t.Expression,
   ): void => {
     if (!p.isExpression()) return;
+    const original = t.cloneNode(p.node, true);
     p.replaceWith(
       t.sequenceExpression([
         t.callExpression(
@@ -346,7 +459,7 @@ export function analyzeHandler(
           ),
           [key],
         ),
-        p.node,
+        original,
       ]),
     );
     p.skip();
@@ -366,11 +479,11 @@ export function analyzeHandler(
   );
 
   // pass A: locals declared anywhere inside the handler
-  traverse(wrapper, {
+  walkHandler(wrapper, {
     VariableDeclarator(p) {
       if (t.isIdentifier(p.node.id)) {
         locals.add(p.node.id.name);
-        if (p.parentPath.isVariableDeclaration()) {
+        if (p.parentPath?.isVariableDeclaration() === true) {
           aliases.trackDeclarator(p.scope, p.node);
         }
       }
@@ -385,7 +498,7 @@ export function analyzeHandler(
   // pass B: writes grouped by innermost enclosing function scope
   const scopes = new Map<t.Node, ScopeWrites>();
   const executionSites = new Map<t.Node, HandlerExecutionSite>();
-  const scopeOf = (p: NodePath): ScopeWrites => {
+  const scopeOf = (p: HandlerPath): ScopeWrites => {
     const fn = p.getFunctionParent()?.node ?? ROOT;
     let s = scopes.get(fn);
     if (!s) {
@@ -394,7 +507,7 @@ export function analyzeHandler(
     return s;
   };
   const mutateScope = (
-    p: NodePath,
+    p: HandlerPath,
     mutate: (scope: ScopeWrites) => void,
   ): void => {
     mutate(scopeOf(p));
@@ -411,7 +524,7 @@ export function analyzeHandler(
     }
     mutate(site.writes);
   };
-  const noteSourceWrite = (p: NodePath): void => {
+  const noteSourceWrite = (p: HandlerPath): void => {
     mutateScope(p, (scope) => {
       if (rowCtx?.sourceLocal) {
         scope.rowOwnerLocal = true;
@@ -433,7 +546,7 @@ export function analyzeHandler(
     return segments.slice(rowCtx.itemPath.length);
   };
   const noteNonItemRowProp = (
-    p: NodePath,
+    p: HandlerPath,
     origin?: ReactiveOrigin,
   ): void => {
     mutateScope(p, (scope) => {
@@ -449,7 +562,7 @@ export function analyzeHandler(
     });
   };
   const notePropWrite = (
-    p: NodePath,
+    p: HandlerPath,
     origin: ReactiveOrigin,
   ): void => {
     mutateScope(p, (scope) => {
@@ -474,7 +587,7 @@ export function analyzeHandler(
   // visible ONLY to this row's DOM → the commit is a local markDirty(rowId).
   // Key-field writes change the row identity → structural fallback: a normal
   // invalidation of the collection source (full reconcile, re-keys everything).
-  const noteItemWrite = (p: NodePath, node: t.MemberExpression): boolean => {
+  const noteItemWrite = (p: HandlerPath, node: t.MemberExpression): boolean => {
     if (rowCtx === undefined) return false;
     if (memberRootName(node) !== rowCtx.itemParam) return false;
     const key = memberKey(node); // 'todo.done.x' or null when dynamic
@@ -516,7 +629,7 @@ export function analyzeHandler(
     return true;
   };
 
-  const noteOriginWrite = (p: NodePath, origin: ReactiveOrigin): void => {
+  const noteOriginWrite = (p: HandlerPath, origin: ReactiveOrigin): void => {
     if (origin.locality === 'instance') {
       mutateScope(p, (scope) => {
         recordInstanceMutation(scope, origin.root);
@@ -584,7 +697,7 @@ export function analyzeHandler(
   };
 
   const noteReceiverEffect = (
-    p: NodePath,
+    p: HandlerPath,
     origin: ReactiveOrigin,
   ): void => {
     if (origin.locality === 'instance') {
@@ -645,7 +758,7 @@ export function analyzeHandler(
   };
 
   const noteBoundedArguments = (
-    p: NodePath,
+    p: HandlerPath,
     args: t.CallExpression['arguments'],
   ): void => {
     if (
@@ -676,7 +789,7 @@ export function analyzeHandler(
     }
   };
 
-  const noteMemberWrite = (p: NodePath, node: t.MemberExpression): void => {
+  const noteMemberWrite = (p: HandlerPath, node: t.MemberExpression): void => {
     const rootName = memberRootName(node);
     if (
       rootName !== null &&
@@ -783,7 +896,7 @@ export function analyzeHandler(
   // R12: instance state of the enclosing component — writes are always a
   // bare markDirty(id), never table routing (the closure belongs to one
   // instance; listed components included).
-  traverse(wrapper, {
+  walkHandler(wrapper, {
     VariableDeclarator(p) {
       if (
         !t.isIdentifier(p.node.id) &&
@@ -989,20 +1102,6 @@ export function analyzeHandler(
           return;
         }
 
-        if (
-          method !== null &&
-          ARRAY_TOPOLOGY_METHODS.has(method) &&
-          t.isIdentifier(callee.object) &&
-          instVars?.has(callee.object.name) === true &&
-          listMutationPlans?.has(callee.object.name) === true
-        ) {
-          const source = callee.object.name;
-          mutateScope(p, (scope) => {
-            recordInstanceMutation(scope, source, 'topology');
-          });
-          return;
-        }
-
         const receiverRoot = t.isIdentifier(callee.object)
           ? callee.object.name
           : t.isMemberExpression(callee.object)
@@ -1166,9 +1265,9 @@ export function analyzeHandler(
   );
 }
 
-function pathDepth(path: NodePath): number {
+function pathDepth(path: HandlerPath): number {
   let depth = 0;
-  let current: NodePath | null = path;
+  let current: HandlerPath | null = path;
   while (current.parentPath !== null) {
     depth++;
     current = current.parentPath;
@@ -1178,7 +1277,7 @@ function pathDepth(path: NodePath): number {
 
 function markExecutionSite(
   ctx: Ctx,
-  path: NodePath,
+  path: HandlerPath,
   flag: t.Identifier,
 ): t.Identifier[] {
   if (
@@ -1273,7 +1372,7 @@ function markExecutionSite(
   path.replaceWith(
     t.sequenceExpression([
       mark,
-      path.node,
+      t.cloneNode(path.node, true),
     ]),
   );
   return [];

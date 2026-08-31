@@ -280,7 +280,6 @@ export function emitListRegion(
         site.optional,
         dependencyCaches,
         mutation,
-        site.indexParam === null,
       ),
     );
   }
@@ -338,7 +337,6 @@ function buildTargetedListUpdate(
     cache: string;
   }>,
   mutation: KeyedListMutationPlan | undefined,
-  allowTopologyOnly: boolean,
 ): t.Statement {
   const ownerReasons = ctx.instanceReasonIds.get(componentName);
   if (ownerReasons === undefined) {
@@ -400,44 +398,6 @@ function buildTargetedListUpdate(
           ),
         ]),
   ];
-  let topologyOnly: t.Statement | null = null;
-  if (mutation !== undefined && allowTopologyOnly) {
-    const topologyReason = ownerReasons.get(mutation.topologyReason);
-    if (topologyReason !== undefined) {
-      let topologyCondition = hasReason(reasonVar, topologyReason);
-      for (const reason of [
-        ownerReasons.get(mutation.targetedReason),
-        ownerReasons.get(mutation.structuralReason),
-        ...dependencies.map(({ dependency }) =>
-          ownerReasons.get(dependency.value),
-        ),
-      ]) {
-        if (reason === undefined) continue;
-        topologyCondition = t.logicalExpression(
-          '&&',
-          topologyCondition,
-          t.unaryExpression('!', hasReason(reasonVar, reason)),
-        );
-      }
-      topologyOnly = t.ifStatement(
-        topologyCondition,
-        t.blockStatement([
-          t.expressionStatement(
-            t.callExpression(
-              t.memberExpression(
-                t.identifier(regionVariable),
-                t.identifier('reconcile'),
-              ),
-              [
-                runtimeListSource(sourceExpr, optional),
-                t.booleanLiteral(false),
-              ],
-            ),
-          ),
-        ]),
-      );
-    }
-  }
   const targetedBody: t.Statement[] = [];
   if (mutation !== undefined) {
     const targetedReason = ownerReasons.get(mutation.targetedReason);
@@ -518,20 +478,12 @@ function buildTargetedListUpdate(
   );
   if (mutation !== undefined) {
     const structuralReason = ownerReasons.get(mutation.structuralReason);
-    const topologyReason = ownerReasons.get(mutation.topologyReason);
     const targetedReason = ownerReasons.get(mutation.targetedReason);
     if (structuralReason !== undefined) {
       fullCondition = t.logicalExpression(
         '||',
         fullCondition,
         hasReason(reasonVar, structuralReason),
-      );
-    }
-    if (topologyReason !== undefined) {
-      fullCondition = t.logicalExpression(
-        '||',
-        fullCondition,
-        hasReason(reasonVar, topologyReason),
       );
     }
     fullCondition = t.logicalExpression(
@@ -557,9 +509,7 @@ function buildTargetedListUpdate(
     t.blockStatement(fullBody),
     targetedBody.length === 0 ? undefined : t.blockStatement(targetedBody),
   );
-  if (topologyOnly === null) return generalUpdate;
-  topologyOnly.alternate = generalUpdate;
-  return topologyOnly;
+  return generalUpdate;
 }
 
 function buildCallbackRowCreate(

@@ -13,8 +13,8 @@ completed work.
 | Pure AST toolkit (`src/ast`) | Working foundation | Focused AST/frontend suites: 38 passing tests; root TypeScript typecheck passes |
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
-| Compiler analysis migration | Advanced, incomplete | Component discovery, validation, render-prop inference, and component/list/conditional read routing now consume ESTree metadata |
-| Babel removal | Not complete | Babel remains the parser, `NodePath`/scope provider, and generator boundary |
+| Compiler analysis migration | Advanced, incomplete | Binding-aware discovery, effects, data-source lowering, plugin mutation, and handler-write analysis now consume ESTree scope/parent metadata |
+| Babel removal | Not complete | Direct `@babel/traverse` use is gone from compiler source; Babel core still owns the public parser/plugin/generator boundary and `@babel/types` remains the transitional node API |
 | ESTree emission | Not started | Existing emitters still create Babel-dialect nodes |
 
 ## Audit correction
@@ -145,6 +145,26 @@ The focused frontend suite verifies:
 This boundary is not yet wired into the public `compile` function. The existing
 Babel path remains the compatibility oracle while transformations migrate.
 
+## ESTree traversal checkpoint
+
+The remaining production `@babel/traverse` dependency was removed from handler
+analysis. Handler locals, lexical scopes, nested execution sites, assignments,
+updates, deletes, and call effects now use the shared ESTree scope and parent
+indexes. Mutation sites retain object identity only at the temporary live-tree
+boundary, using the compiler-owned overwrite primitive rather than `NodePath`
+replacement.
+
+Compiler source now has zero direct `@babel/traverse` imports and no executable
+`NodePath` types. Effects, linked-JSX inspection, plugin program mutation,
+data-source discovery/lowering, transparent-read rewriting, and handler-write
+analysis all run through compiler-owned traversal and mutation services.
+
+The keyed-list method-name whitelist and its topology-only invalidation channel
+were removed. Proven direct item writes still use the changed-key journal;
+opaque receiver calls and structural writes conservatively perform a full
+reconcile. The runtime no longer exposes the unused topology-only reconcile
+argument.
+
 ## Babel boundary inventory
 
 The compiler package still declares these five dependencies:
@@ -155,10 +175,11 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 56 compiler source files still directly import or declare a
-Babel module. Removing the package dependencies before replacing parsing,
-scope/path services, and code generation would break the compiler.
-Of those files, 7 still import or declare `@babel/traverse`. Component/ref,
+At this checkpoint, 55 compiler source files still directly import
+`@babel/types`, while Babel core/plugin declarations remain at the public
+frontend boundary. Removing the package dependencies before replacing parsing,
+node builders/types, TypeScript erasure, and code generation would break the
+compiler. No compiler source file imports `@babel/traverse`. Component/ref,
 conditional-region, render-callback, and list-region emission now share the
 central component-path boundary instead of importing the traversal package.
 The shared identifier allocator no longer needs a Babel program scope, and

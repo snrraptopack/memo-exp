@@ -64,12 +64,8 @@ export type KeyFn<T> = (item: T, index: number) => unknown;
 const identityKey = <T>(item: T): unknown => item;
 
 export interface ListRegion<T> {
-  /**
-   * Reconcile collection identity and order. Compiler-proven topology-only
-   * writes may pass `false`: retained rows whose item reference is unchanged
-   * then skip content replay while inserted/replaced items still synchronize.
-   */
-  reconcile(items: readonly T[], syncRetained?: boolean): void;
+  /** Reconcile collection identity, order, and retained row content. */
+  reconcile(items: readonly T[]): void;
   /** Re-sync one retained row through the region's O(1) key cache. */
   refreshKey(key: unknown): void;
   size(): number;
@@ -297,7 +293,7 @@ export function createListRegion<T>(
     return entry!;
   }
 
-  function reconcile(items: readonly T[], syncRetained = true): void {
+  function reconcile(items: readonly T[]): void {
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
     // Same length AND every key identical at every position → no additions,
@@ -309,7 +305,6 @@ export function createListRegion<T>(
         if (items[i] !== prevItems[i]) { same = false; break; }
       }
       if (same) {
-        if (!syncRetained) return;
         for (let i = 0; i < items.length; i++) {
           syncRow(
             prevEntries[i]!,
@@ -356,9 +351,7 @@ export function createListRegion<T>(
         if (oldPos <= lastOld) inOrder = false;
         else lastOld = oldPos;
         rec.pos = i;
-        if (syncRetained || item !== prevItems[oldPos]) {
-          syncRow(rec.e, item, rec.id, i);
-        }
+        syncRow(rec.e, item, rec.id, i);
       } else {
         const createId = trackRowIds ? rowIdFor(k) : idPrefix;
         const encoded = encodeListKey(k);

@@ -200,7 +200,7 @@ describe('R46 performance code generation', () => {
     expect(code).toContain('.reconcile(items)');
   });
 
-  it('uses topology-only reconciliation for known array mutations', () => {
+  it('does not whitelist array mutation method names', () => {
     const code = compile(`
       function Row({ item }) {
         return <li>{item.label}</li>;
@@ -218,7 +218,6 @@ describe('R46 performance code generation', () => {
       }
     `);
 
-    expect(code).toContain('.reconcile(items, false)');
     expect(code).toContain('.reconcile(items)');
     expect(code).toContain('.refreshKey(');
   });
@@ -237,7 +236,6 @@ describe('R46 performance code generation', () => {
       }
     `);
 
-    expect(code).not.toContain('.reconcile(items, false)');
     expect(code).toContain('.reconcile(items)');
   });
 });

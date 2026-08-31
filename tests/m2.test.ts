@@ -271,30 +271,4 @@ describe('M2 keyed list reconciliation', () => {
     region.dispose();
   });
 
-  it('skips unchanged retained row replay for topology-only reconciliation', () => {
-    const parent = document.createElement('ul');
-    const updates: Array<[number, number]> = [];
-    const a = { id: 1 };
-    const b = { id: 2 };
-    const region = createListRegion(
-      parent,
-      'App/list',
-      () => ({
-        nodes: document.createElement('li'),
-        entities: [],
-        updateProps: (next, index) =>
-          updates.push([(next as { id: number }).id, index]),
-      }),
-      (item) => item.id,
-      false,
-    );
-
-    region.reconcile([a, b]);
-    region.reconcile([b, a], false);
-    expect(updates).toEqual([]);
-
-    region.reconcile([{ id: 2 }, a], false);
-    expect(updates).toEqual([[2, 0]]);
-    region.dispose();
-  });
 });
