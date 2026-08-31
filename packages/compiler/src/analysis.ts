@@ -21,7 +21,6 @@
  *     children are compile errors (were silent miscompiles)
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
   isExpression as isAstExpression,
@@ -101,6 +100,35 @@ export {
 } from './analysis/component-graph';
 export { buildAccessTable } from './analysis/access-table';
 
+type ProgramPath = Parameters<typeof scanEffects>[1];
+type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+type HelperPath = Ctx['helpers'] extends Map<string, infer TPath>
+  ? TPath
+  : never;
+
+interface FrontendPathView {
+  node: t.Node | null;
+  get(key: string): FrontendPathView | FrontendPathView[];
+}
+
+function frontendChildren(
+  path: FrontendPathView,
+  key: string,
+): FrontendPathView[] {
+  const children = path.get(key);
+  return Array.isArray(children) ? children : [];
+}
+
+function frontendChild(
+  path: FrontendPathView,
+  key: string,
+): FrontendPathView | null {
+  const child = path.get(key);
+  return Array.isArray(child) ? null : child;
+}
+
 /** Whether a JSX expression container is a declared component render slot. */
 function isRenderAttributeContainer(ctx: Ctx, container: BaseNode): boolean {
   if (container.type !== 'JSXExpressionContainer') return false;
@@ -122,30 +150,24 @@ function isRenderAttributeContainer(ctx: Ctx, container: BaseNode): boolean {
 // pass 1
 // ---------------------------------------------------------------------
 
-function validateLinkedImports(ctx: Ctx, programPath: NodePath<t.Program>): void {
+function validateLinkedImports(ctx: Ctx, programPath: ProgramPath): void {
   const linked = new Set<string>([
     ...ctx.importedState,
     ...ctx.importedFunctions.keys(),
     ...ctx.importedComponents.keys(),
     ...ctx.importedValues,
   ]);
-  const statementPaths = new Map(
-    programPath.get('body').map((path) => [path.node, path]),
-  );
   for (const imported of findUnlinkedValueImports(
     programPath.node as unknown as BaseNode,
     linked,
   )) {
-    const statementPath = statementPaths.get(
-      imported.declaration as unknown as t.Statement,
-    );
-    throw (statementPath ?? programPath).buildCodeFrameError(
+    throw programPath.buildCodeFrameError(
       `memo-dom: value import '${imported.local}' requires compileModules() so its reactive identity can be linked`,
     );
   }
 }
 
-function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
+function scanModuleState(ctx: Ctx, programPath: ProgramPath): void {
   const tagCandidates = moduleStateStringCandidates(programPath.node);
   for (const stmt of programPath.node.body) {
     // M5.5: exported state is still state — unwrap the export wrapper
@@ -178,57 +200,61 @@ function scanModuleState(ctx: Ctx, programPath: NodePath<t.Program>): void {
  * and function-expression variables without JSX are helpers as well. M5.3
  * previously treated every declaration as a component.
  */
-function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
+function scanComponents(ctx: Ctx, programPath: ProgramPath): void {
   const unwrapFunctionPath = (
-    raw:
-      | NodePath<t.Expression | null>
-      | NodePath<t.Expression | null>[]
-      | null,
-  ): NodePath<t.ArrowFunctionExpression | t.FunctionExpression> | null => {
+    raw: FrontendPathView | FrontendPathView[] | null,
+  ): FrontendPathView | null => {
     if (raw === null || Array.isArray(raw)) return null;
     let current = raw;
     while (
-      current.isTSAsExpression() ||
-      current.isTSTypeAssertion() ||
-      current.isTSNonNullExpression() ||
-      current.isTSSatisfiesExpression() ||
-      current.isTSInstantiationExpression()
+      current.node?.type === 'TSAsExpression' ||
+      current.node?.type === 'TSTypeAssertion' ||
+      current.node?.type === 'TSNonNullExpression' ||
+      current.node?.type === 'TSSatisfiesExpression' ||
+      current.node?.type === 'TSInstantiationExpression'
     ) {
-      const expression = current.get('expression');
-      if (Array.isArray(expression)) return null;
+      const expression = frontendChild(current, 'expression');
+      if (expression === null) return null;
       current = expression;
     }
-    return current.isArrowFunctionExpression() || current.isFunctionExpression()
-      ? current as NodePath<t.ArrowFunctionExpression | t.FunctionExpression>
+    return current.node?.type === 'ArrowFunctionExpression' ||
+      current.node?.type === 'FunctionExpression'
+      ? current
       : null;
   };
 
-  const functionPaths = new Map<
-    t.Node,
-    NodePath<t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression>
-  >();
-  for (const statementPath of programPath.get('body')) {
-    const declarationPath = statementPath.isExportNamedDeclaration() ||
-      statementPath.isExportDefaultDeclaration()
-      ? statementPath.get('declaration')
+  const functionPaths = new Map<t.Node, HelperPath>();
+  const programView = programPath as unknown as FrontendPathView;
+  for (const statementPath of frontendChildren(programView, 'body')) {
+    const declarationPath = statementPath.node?.type === 'ExportNamedDeclaration' ||
+      statementPath.node?.type === 'ExportDefaultDeclaration'
+      ? frontendChild(statementPath, 'declaration')
       : statementPath;
     if (
-      !Array.isArray(declarationPath) &&
-      declarationPath.isFunctionDeclaration()
+      declarationPath !== null &&
+      declarationPath.node?.type === 'FunctionDeclaration'
     ) {
-      functionPaths.set(declarationPath.node, declarationPath);
+      functionPaths.set(
+        declarationPath.node,
+        declarationPath as unknown as HelperPath,
+      );
       continue;
     }
     if (
-      Array.isArray(declarationPath) ||
-      !declarationPath.isVariableDeclaration()
+      declarationPath === null ||
+      declarationPath.node?.type !== 'VariableDeclaration'
     ) {
       continue;
     }
-    for (const declaratorPath of declarationPath.get('declarations')) {
-      if (!declaratorPath.isVariableDeclarator()) continue;
-      const initPath = unwrapFunctionPath(declaratorPath.get('init'));
-      if (initPath !== null) functionPaths.set(initPath.node, initPath);
+    for (const declaratorPath of frontendChildren(
+      declarationPath,
+      'declarations',
+    )) {
+      if (declaratorPath.node?.type !== 'VariableDeclarator') continue;
+      const initPath = unwrapFunctionPath(frontendChild(declaratorPath, 'init'));
+      if (initPath?.node !== null && initPath?.node !== undefined) {
+        functionPaths.set(initPath.node, initPath as unknown as HelperPath);
+      }
     }
   }
 
@@ -252,10 +278,11 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
       ctx.jsxHelpers.set(discovered.name, path);
       continue;
     }
-    if (!path.isFunctionDeclaration()) continue;
+    if (path.node.type !== 'FunctionDeclaration') continue;
+    const componentPath = path as unknown as ComponentPath;
     ctx.comps.set(discovered.name, { parents: new Set(), jsxCount: 0 });
-    ctx.compPaths.set(discovered.name, path);
-    const hostEvents = hostJsxEventNames(path.node.body);
+    ctx.compPaths.set(discovered.name, componentPath);
+    const hostEvents = hostJsxEventNames(componentPath.node.body);
     ctx.componentHostEvents.set(discovered.name, hostEvents);
     if (hostEvents.length !== 0) {
       ctx.componentsWithHostEvents.add(discovered.name);
@@ -263,7 +290,7 @@ function scanComponents(ctx: Ctx, programPath: NodePath<t.Program>): void {
     try {
       ctx.componentProps.set(
         discovered.name,
-        analyzeComponentProps(path.node.params),
+        analyzeComponentProps(componentPath.node.params),
       );
     } catch (error) {
       throw path.buildCodeFrameError(
@@ -1543,7 +1570,7 @@ function collectReads(ctx: Ctx): void {
  * impure: read collection continues so a state-touching impure const is
  * always an ERROR, never a silent plain const.
  */
-export function runAnalysis(ctx: Ctx, programPath: NodePath<t.Program>): void {
+export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   refreshAstAnalysis(ctx, programPath.node);
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
