@@ -8,7 +8,17 @@
  */
 import type { Binding, NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import type { Ctx } from './context';
+import {
+  astBindingAt,
+  refreshAstAnalysis,
+  type Ctx,
+} from './context';
+import {
+  walkAst,
+  type BaseNode,
+  type Binding as AstBinding,
+  type Identifier as AstIdentifier,
+} from './ast';
 import { orderCallProps } from './components/calls';
 import { localBindingForProp } from './components/props';
 import { generatedIdentifier, md, mdd } from './identifiers';
@@ -26,7 +36,7 @@ function importedName(specifier: t.ImportSpecifier): string {
 /** Resolve provider metadata to local import aliases before module analysis. */
 export function scanTransparentSourceImports(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: { node: t.Program },
 ): void {
   const definitions = new Map(
     ctx.transparentAsyncSources.map((definition) => [
@@ -34,11 +44,11 @@ export function scanTransparentSourceImports(
       definition,
     ]),
   );
-  for (const statement of programPath.get('body')) {
-    if (!statement.isImportDeclaration()) continue;
-    const definition = definitions.get(statement.node.source.value);
+  for (const statement of programPath.node.body) {
+    if (!t.isImportDeclaration(statement)) continue;
+    const definition = definitions.get(statement.source.value);
     if (definition === undefined) continue;
-    for (const specifier of statement.node.specifiers) {
+    for (const specifier of statement.specifiers) {
       if (!t.isImportSpecifier(specifier)) continue;
       const name = importedName(specifier);
       if (name === definition.source) {
@@ -785,14 +795,15 @@ export function registerTransparentSourceRoots(ctx: Ctx): void {
  */
 export function scanAndLowerModuleSourceDeclarations(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: { node: t.Program },
 ): void {
-  for (const statement of programPath.get('body')) {
+  refreshAstAnalysis(ctx, programPath.node);
+  for (const statement of programPath.node.body.slice()) {
     const sourceDescriptions: t.Statement[] = [];
     const requestInputEffects: t.Statement[] = [];
-    const inner = statement.isExportNamedDeclaration()
-      ? statement.node.declaration
-      : statement.node;
+    const inner = t.isExportNamedDeclaration(statement)
+      ? statement.declaration
+      : statement;
     if (!t.isVariableDeclaration(inner)) continue;
     for (const declarator of inner.declarations) {
       if (!t.isIdentifier(declarator.id)) continue;
@@ -801,8 +812,12 @@ export function scanAndLowerModuleSourceDeclarations(
       if (!ctx.transparentSourceFactories.has(declarator.init.callee.name)) {
         continue;
       }
-      const binding = programPath.scope.getBinding(declarator.init.callee.name);
-      if (binding === undefined || binding.kind !== 'module') continue;
+      const binding = astBindingAt(
+        ctx,
+        declarator.init,
+        declarator.init.callee.name,
+      );
+      if (binding?.kind !== 'import') continue;
 
       const name = declarator.id.name;
       const key = `${ctx.moduleId}#${name}`;
@@ -814,13 +829,19 @@ export function scanAndLowerModuleSourceDeclarations(
       let readsProgramBinding = false;
       const noteProgramReads = (input: t.Node | undefined): void => {
         if (input === undefined) return;
-        t.traverseFast(input, (node) => {
-          if (
-            t.isIdentifier(node) &&
-            programPath.scope.getBinding(node.name)?.scope.path.isProgram()
-          ) {
-            readsProgramBinding = true;
-          }
+        walkAst(input as unknown as BaseNode, {
+          enter(node) {
+            if (
+              node.type === 'Identifier' &&
+              astBindingAt(
+                ctx,
+                node,
+                (node as unknown as AstIdentifier).name,
+              )?.scope.isProgramScope === true
+            ) {
+              readsProgramBinding = true;
+            }
+          },
         });
       };
       noteProgramReads(t.isNode(target) ? target : undefined);
@@ -874,66 +895,76 @@ export function scanAndLowerModuleSourceDeclarations(
     if (sourceDescriptions.length > 0) {
       // Keep descriptions in the program so server cell lowering can rewrite
       // reactive request inputs to request-owned reads before final emission.
-      statement.insertBefore(sourceDescriptions);
+      const index = programPath.node.body.indexOf(statement);
+      if (index !== -1) {
+        programPath.node.body.splice(index, 0, ...sourceDescriptions);
+      }
     }
     if (requestInputEffects.length > 0) {
-      statement.insertAfter(requestInputEffects);
+      const index = programPath.node.body.indexOf(statement);
+      if (index !== -1) {
+        programPath.node.body.splice(index + 1, 0, ...requestInputEffects);
+      }
     }
   }
 }
 
 function importedProgramBinding(
-  componentPath: NodePath<t.FunctionDeclaration>,
+  ctx: Ctx,
+  component: BaseNode,
   name: string,
-): Binding | undefined {
-  const binding = componentPath.scope.getBinding(name);
-  return binding?.path.isImportSpecifier() === true ? binding : undefined;
+): AstBinding | undefined {
+  const binding = astBindingAt(ctx, component, name);
+  return binding?.kind === 'import' ? binding : undefined;
 }
 
 function isCallToImported(
-  componentPath: NodePath<t.FunctionDeclaration>,
+  ctx: Ctx,
+  component: BaseNode,
   call: t.Expression | null | undefined,
   names: ReadonlySet<string>,
 ): boolean {
   if (!t.isCallExpression(call) || !t.isIdentifier(call.callee)) return false;
   if (!names.has(call.callee.name)) return false;
-  return importedProgramBinding(componentPath, call.callee.name) !== undefined;
+  return importedProgramBinding(ctx, component, call.callee.name) !== undefined;
 }
 
 /** Find direct component-local source declarations and track aliases. */
 export function scanTransparentSourceBindings(ctx: Ctx): void {
   for (const [component, componentPath] of ctx.compPaths) {
+    const componentNode = componentPath.node as unknown as BaseNode;
     const sources = new Set<string>();
     const trackCandidates: Array<{
       name: string;
       argument: t.CallExpression['arguments'][number] | undefined;
     }> = [];
-    for (const statement of componentPath.get('body').get('body')) {
-      if (!statement.isVariableDeclaration()) continue;
-      for (const declaration of statement.get('declarations')) {
-        if (!declaration.isVariableDeclarator()) continue;
-        if (!t.isIdentifier(declaration.node.id)) continue;
-        const init = declaration.node.init;
+    for (const statement of componentPath.node.body.body) {
+      if (!t.isVariableDeclaration(statement)) continue;
+      for (const declaration of statement.declarations) {
+        if (!t.isIdentifier(declaration.id)) continue;
+        const init = declaration.init;
         if (!t.isCallExpression(init)) continue;
         if (
           isCallToImported(
-            componentPath,
+            ctx,
+            componentNode,
             init,
             ctx.transparentSourceFactories,
           )
         ) {
-          sources.add(declaration.node.id.name);
+          sources.add(declaration.id.name);
           continue;
         }
         if (
           isCallToImported(
-            componentPath,
+            ctx,
+            componentNode,
             init,
             ctx.transparentTrackFactories,
           )
         ) {
           trackCandidates.push({
-            name: declaration.node.id.name,
+            name: declaration.id.name,
             argument: init.arguments[0],
           });
         }
@@ -945,16 +976,15 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
     // subscription/ownership mounts so commits push-invalidate the entity
     // (without this, plain gated reads never re-render after commit).
     if (ctx.transparentModuleSources.size > 0) {
-      componentPath.traverse({
-        ReferencedIdentifier(identifier) {
-          const name = identifier.node.name;
+      walkAst(componentNode, {
+        enter(node) {
+          if (node.type !== 'Identifier') return;
+          const identifier = node as unknown as AstIdentifier;
+          const name = identifier.name;
           if (!ctx.transparentModuleSources.has(name)) return;
-          if (
-            importedProgramBinding(componentPath, name) === undefined &&
-            identifier.scope.getBinding(name)?.kind !== 'module'
-          ) {
-            return;
-          }
+          const binding = astBindingAt(ctx, node, name);
+          if (binding === undefined || !binding.references.includes(identifier)) return;
+          if (binding.kind !== 'import' && !binding.scope.isProgramScope) return;
           sources.add(name);
         },
       });
