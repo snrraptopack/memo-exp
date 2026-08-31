@@ -10,12 +10,13 @@ import { posix } from 'node:path';
 import {
   parseSync,
   transformFromAstSync,
+  type PluginObject,
   type PluginTarget,
 } from '@babel/core';
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode } from './ast';
 import { buildAccessTable, runAnalysis } from './analysis';
 import {
   compileAst,
@@ -261,9 +262,11 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
   };
 
   for (const [owner, componentPath] of ctx.compPaths) {
-    componentPath.traverse({
-      JSXElement(path) {
-        const opening = path.node.openingElement;
+    walkAst<BaseNode>(componentPath.node as unknown as BaseNode, {
+      enter(node) {
+        if (node.type !== 'JSXElement') return;
+        const element = node as unknown as t.JSXElement;
+        const opening = element.openingElement;
         const tag = opening.name;
         if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
         const target =
@@ -291,7 +294,7 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
           }
         }
         if (
-          path.node.children.some(
+          element.children.some(
             (child) => !t.isJSXText(child) || child.value.trim() !== '',
           )
         ) {
@@ -520,7 +523,7 @@ function analyzeManifest(
   rootId: string,
 ): ModuleManifest {
   let manifest: ModuleManifest | undefined;
-  const analysisPlugin = (): { visitor: { Program(path: NodePath<t.Program>): void } } => ({
+  const analysisPlugin = (): PluginObject => ({
     visitor: {
       Program(programPath) {
         normalizeComponentDeclarations(programPath);
@@ -661,7 +664,7 @@ function discoverManifest(
   options: CompileModulesOptions,
 ): ModuleManifest {
   let manifest: ModuleManifest | undefined;
-  const discoveryPlugin = (): { visitor: { Program(path: NodePath<t.Program>): void } } => ({
+  const discoveryPlugin = (): PluginObject => ({
     visitor: {
       Program(programPath) {
         normalizeComponentDeclarations(programPath);
