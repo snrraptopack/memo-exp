@@ -30,6 +30,7 @@ import {
 } from './ast';
 import {
   attrExpr,
+  astBindingAt,
   collectStateIds,
   isConstObjectState,
   isStoreObject,
@@ -835,29 +836,36 @@ function analyzeComponent(ctx: Ctx, name: string): void {
 // ---------------------------------------------------------------------
 
 /** Is this complete member expression being invoked (`store.items.method()`)? */
-function isMemberCallCallee(m: NodePath<t.MemberExpression>): boolean {
-  const parent = m.parentPath;
-  return parent.isCallExpression() && parent.node.callee === m.node;
+function isMemberCallCallee(ctx: Ctx, member: BaseNode): boolean {
+  const parent = ctx.astAnalysis?.parentByNode.get(member) ?? null;
+  return (
+    parent?.type === 'CallExpression' &&
+    (parent as unknown as t.CallExpression).callee === member
+  );
 }
 
 /**
  * The dotted read key of a store member expression ('store.items.length'),
  * or null when it is not a read (write target, method callee, non-store).
  */
-function storeReadKey(ctx: Ctx, m: NodePath<t.MemberExpression>): string | null {
-  const key = memberKey(m.node);
+function storeReadKey(ctx: Ctx, member: BaseNode): string | null {
+  const expression = member as unknown as t.MemberExpression;
+  const key = memberKey(expression);
   if (!key || !key.includes('.')) return null;
   const rootName = key.split('.')[0]!;
   if (ctx.state.get(rootName) !== 'store') return null;
-  if (m.scope.getBinding(rootName)?.scope.path.isProgram() !== true) return null;
-  const parent = m.parentPath;
+  if (astBindingAt(ctx, member, rootName)?.scope.isProgramScope !== true) {
+    return null;
+  }
+  const parent = ctx.astAnalysis?.parentByNode.get(member) ?? null;
   if (
-    parent.isAssignmentExpression({ operator: '=' }) &&
-    parent.node.left === m.node
+    parent?.type === 'AssignmentExpression' &&
+    (parent as unknown as t.AssignmentExpression).operator === '=' &&
+    (parent as unknown as t.AssignmentExpression).left === expression
   ) {
     return null; // write target, not a read
   }
-  if (isMemberCallCallee(m)) return null; // the object chain registers itself
+  if (isMemberCallCallee(ctx, member)) return null;
   return key;
 }
 
@@ -926,12 +934,12 @@ function directItemWrittenPath(
 }
 
 function componentHasDirectItemMutation(
-  componentPath: NodePath<t.FunctionDeclaration>,
+  component: t.FunctionDeclaration,
   source: string,
   keyPath: string[],
 ): boolean {
   let found = false;
-  walkNodes(componentPath.node.body, (node) => {
+  walkNodes(component.body, (node) => {
     if (found) return;
     const target =
       t.isAssignmentExpression(node) && t.isMemberExpression(node.left)
@@ -965,7 +973,7 @@ function registerKeyedListMutationPlan(
   const componentPath = ctx.compPaths.get(component);
   if (
     componentPath === undefined ||
-    !componentHasDirectItemMutation(componentPath, source, keyPath)
+    !componentHasDirectItemMutation(componentPath.node, source, keyPath)
   ) {
     return;
   }
@@ -1461,7 +1469,7 @@ function collectReads(ctx: Ctx): void {
         reads.add(id.node.name);
       },
       MemberExpression(m) {
-        const key = storeReadKey(ctx, m);
+        const key = storeReadKey(ctx, m.node as unknown as BaseNode);
         if (key !== null) reads.add(key);
       },
     });
