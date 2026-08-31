@@ -8,6 +8,7 @@
  * interpreter.
  */
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import {
   refreshAstAnalysis,
@@ -95,7 +96,7 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
         if (statement === null) return;
         candidates.push({
           call,
-          source: t.cloneNode(callee.object, true),
+          source: cloneEstreeNode(callee.object, true),
           statement,
         });
       },
@@ -116,7 +117,7 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
     for (const candidate of candidates) {
       const binding = generatedIdentifier(ctx, 'listView');
       declarations.push(
-        t.variableDeclarator(t.cloneNode(binding), candidate.source),
+        t.variableDeclarator(cloneEstreeNode(binding), candidate.source),
       );
       const callee = candidate.call.callee;
       if (
@@ -125,7 +126,7 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
       ) {
         continue;
       }
-      callee.object = t.cloneNode(binding);
+      callee.object = cloneEstreeNode(binding);
     }
 
     const insertionIndex = body.indexOf(candidates[0]!.statement);

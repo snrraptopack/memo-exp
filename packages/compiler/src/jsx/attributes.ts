@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 
 export interface OrderedAttributes {
   expression: t.ObjectExpression;
@@ -38,8 +39,8 @@ export function buildOrderedAttributes(
   for (let index = 0; index < attributes.length; index++) {
     const attribute = attributes[index]!;
     if (t.isJSXSpreadAttribute(attribute)) {
-      properties.push(t.spreadElement(t.cloneNode(attribute.argument)));
-      sources.push(t.cloneNode(attribute.argument));
+      properties.push(t.spreadElement(cloneEstreeNode(attribute.argument)));
+      sources.push(cloneEstreeNode(attribute.argument));
       continue;
     }
 
@@ -62,7 +63,7 @@ export function buildOrderedAttributes(
         t.isIdentifier(event) && event.name === name,
       ),
     );
-    sources.push(t.cloneNode(sourceValue));
+    sources.push(cloneEstreeNode(sourceValue));
     if (/^on[A-Z]/.test(name) && index > lastSpread) {
       safeEventKeys.push(name);
     }
@@ -88,13 +89,13 @@ function jsxAttributeValue(
 ): t.Expression {
   if (attribute.value == null) return t.booleanLiteral(true);
   if (t.isStringLiteral(attribute.value)) {
-    return t.cloneNode(attribute.value);
+    return cloneEstreeNode(attribute.value);
   }
   if (
     t.isJSXExpressionContainer(attribute.value) &&
     t.isExpression(attribute.value.expression)
   ) {
-    return t.cloneNode(attribute.value.expression);
+    return cloneEstreeNode(attribute.value.expression);
   }
   return fail(
     `memo-dom: attribute '${jsxAttributeName(

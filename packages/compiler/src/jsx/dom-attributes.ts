@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 
 const DOM_PROPERTY_ATTRIBUTES = new Set([
   'innerHTML',
@@ -58,24 +59,24 @@ export function domPropertyWrite(
         t.assignmentExpression(
           '=',
           t.memberExpression(element, t.identifier(name)),
-          t.cloneNode(value),
+          cloneEstreeNode(value),
         ),
       );
     }
     return t.expressionStatement(
       t.conditionalExpression(
-        t.binaryExpression('==', t.cloneNode(value), t.nullLiteral()),
+        t.binaryExpression('==', cloneEstreeNode(value), t.nullLiteral()),
         t.callExpression(
           t.memberExpression(
-            t.cloneNode(element),
+            cloneEstreeNode(element),
             t.identifier('removeAttribute'),
           ),
           [t.stringLiteral('tabindex')],
         ),
         t.assignmentExpression(
           '=',
-          t.memberExpression(t.cloneNode(element), t.identifier(name)),
-          t.cloneNode(value),
+          t.memberExpression(cloneEstreeNode(element), t.identifier(name)),
+          cloneEstreeNode(value),
         ),
       ),
     );
@@ -86,11 +87,11 @@ export function domPropertyWrite(
       ? t.stringLiteral('')
       : t.booleanLiteral(false);
   const assigned = t.isStringLiteral(value)
-    ? t.cloneNode(value)
+    ? cloneEstreeNode(value)
     : t.conditionalExpression(
-        t.binaryExpression('==', t.cloneNode(value), t.nullLiteral()),
+        t.binaryExpression('==', cloneEstreeNode(value), t.nullLiteral()),
         empty,
-        t.cloneNode(value),
+        cloneEstreeNode(value),
       );
   return t.expressionStatement(
     t.assignmentExpression(
@@ -112,7 +113,7 @@ export function domAttributeWrite(
     return t.expressionStatement(
       t.callExpression(
         t.memberExpression(element, t.identifier('setAttribute')),
-        [t.stringLiteral(attribute), t.cloneNode(value)],
+        [t.stringLiteral(attribute), cloneEstreeNode(value)],
       ),
     );
   }
@@ -121,12 +122,12 @@ export function domAttributeWrite(
     t.conditionalExpression(
       t.logicalExpression(
         '||',
-        t.binaryExpression('==', t.cloneNode(value), t.nullLiteral()),
-        t.binaryExpression('===', t.cloneNode(value), t.booleanLiteral(false)),
+        t.binaryExpression('==', cloneEstreeNode(value), t.nullLiteral()),
+        t.binaryExpression('===', cloneEstreeNode(value), t.booleanLiteral(false)),
       ),
       t.callExpression(
         t.memberExpression(
-          t.cloneNode(element),
+          cloneEstreeNode(element),
           t.identifier('removeAttribute'),
         ),
         [t.stringLiteral(attribute)],
@@ -138,11 +139,11 @@ export function domAttributeWrite(
           t.conditionalExpression(
             t.binaryExpression(
               '===',
-              t.cloneNode(value),
+              cloneEstreeNode(value),
               t.booleanLiteral(true),
             ),
             t.stringLiteral(''),
-            t.callExpression(t.identifier('String'), [t.cloneNode(value)]),
+            t.callExpression(t.identifier('String'), [cloneEstreeNode(value)]),
           ),
         ],
       ),

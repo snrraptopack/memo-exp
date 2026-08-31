@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkNodes, type Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 import type { EmitScope } from './scope';
@@ -80,7 +81,7 @@ export function applyRepeatedDomTemplate(
       t.isVariableDeclaration(statement) ||
       isStaticTemplateOperation(statement, nodeNames)
     ) {
-      templateStatements.push(t.cloneNode(statement, true));
+      templateStatements.push(cloneEstreeNode(statement, true));
     } else {
       retained.push(statement);
     }
@@ -97,15 +98,15 @@ export function applyRepeatedDomTemplate(
   );
   ctx.header.push(
     t.variableDeclaration('let', [
-      t.variableDeclarator(t.cloneNode(template)),
-      t.variableDeclarator(t.cloneNode(templateDocument)),
+      t.variableDeclarator(cloneEstreeNode(template)),
+      t.variableDeclarator(cloneEstreeNode(templateDocument)),
     ]),
     // Keep the DOM constructor in one module-level function. Hydration needs
     // a fresh claim per row, while client-create caches its first result; an
     // inline constructor in both branches duplicates emitted code and static
     // creation work.
     t.functionDeclaration(
-      t.cloneNode(createTemplate),
+      cloneEstreeNode(createTemplate),
       [t.identifier(scope.documentVar)],
       t.blockStatement([
         ...templateStatements,
@@ -115,7 +116,7 @@ export function applyRepeatedDomTemplate(
   );
 
   const initializeTemplate = t.callExpression(
-    t.cloneNode(createTemplate),
+    cloneEstreeNode(createTemplate),
     [t.identifier(scope.documentVar)],
   );
   // Hydrate mode must not clone: row factories claim their server nodes
@@ -127,17 +128,17 @@ export function applyRepeatedDomTemplate(
   const getTemplate = t.conditionalExpression(
     t.logicalExpression(
       '&&',
-      t.cloneNode(canReuse),
+      cloneEstreeNode(canReuse),
       t.logicalExpression(
         '||',
         t.binaryExpression(
           '===',
-          t.cloneNode(template),
+          cloneEstreeNode(template),
           t.unaryExpression('void', t.numericLiteral(0)),
         ),
         t.binaryExpression(
           '!==',
-          t.cloneNode(templateDocument),
+          cloneEstreeNode(templateDocument),
           t.identifier(scope.documentVar),
         ),
       ),
@@ -145,23 +146,23 @@ export function applyRepeatedDomTemplate(
     t.sequenceExpression([
       t.assignmentExpression(
         '=',
-        t.cloneNode(templateDocument),
+        cloneEstreeNode(templateDocument),
         t.identifier(scope.documentVar),
       ),
       t.assignmentExpression(
         '=',
-        t.cloneNode(template),
+        cloneEstreeNode(template),
         initializeTemplate,
       ),
     ]),
     t.conditionalExpression(
-      t.cloneNode(canReuse),
-      t.cloneNode(template),
+      cloneEstreeNode(canReuse),
+      cloneEstreeNode(template),
       initializeTemplate,
     ),
   );
   const rootClone = t.conditionalExpression(
-    t.cloneNode(canReuse),
+    cloneEstreeNode(canReuse),
     t.callExpression(
       t.memberExpression(getTemplate, t.identifier('cloneNode')),
       [t.booleanLiteral(true)],
@@ -188,7 +189,7 @@ export function applyRepeatedDomTemplate(
       const path = paths.get(name)!;
       let value: t.Expression;
       if (name === rootVar) {
-        value = t.cloneNode(rootClone, true);
+        value = cloneEstreeNode(rootClone, true);
       } else {
         let base = bound[0]!;
         for (const candidate of bound) {

@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import {
   ESTREE_VISITOR_KEYS,
   walkAst,
@@ -368,7 +369,7 @@ function routeToTarget(
           (property): property is t.ObjectProperty =>
             t.isObjectProperty(property) && propertyName(property) !== 'path',
         )
-        .map((property) => t.cloneNode(property, true)),
+        .map((property) => cloneEstreeNode(property, true)),
     );
 
     const expected = routeParameterNames(path);
@@ -447,7 +448,7 @@ function buildRouteHref(ctx: Ctx, target: RouteToTarget): t.Expression {
     if (name !== null) values.set(name, property.value);
   }
   const value = (name: string): t.Expression =>
-    t.cloneNode(values.get(name) ?? t.identifier('undefined'), true);
+    cloneEstreeNode(values.get(name) ?? t.identifier('undefined'), true);
   return t.callExpression(mr(ctx, 'buildRoutePath'), [
     t.stringLiteral(target.path),
     value('params'),
@@ -459,7 +460,7 @@ function buildRouteHref(ctx: Ctx, target: RouteToTarget): t.Expression {
 function navigateExpression(ctx: Ctx, target: RouteToTarget): t.CallExpression {
   return t.callExpression(mr(ctx, 'navigateRoute'), [
     t.stringLiteral(target.path),
-    ...(target.options === null ? [] : [t.cloneNode(target.options, true)]),
+    ...(target.options === null ? [] : [cloneEstreeNode(target.options, true)]),
   ]);
 }
 
@@ -526,8 +527,8 @@ function installRouteTo(
     statements.push(
       t.variableDeclaration('const', [
         t.variableDeclarator(
-          t.cloneNode(result),
-          t.callExpression(t.cloneNode(handler, true), [t.cloneNode(event)]),
+          cloneEstreeNode(result),
+          t.callExpression(cloneEstreeNode(handler, true), [cloneEstreeNode(event)]),
         ),
       ]),
     );
@@ -537,18 +538,18 @@ function installRouteTo(
     t.ifStatement(
       t.unaryExpression(
         '!',
-        t.memberExpression(t.cloneNode(event), t.identifier('defaultPrevented')),
+        t.memberExpression(cloneEstreeNode(event), t.identifier('defaultPrevented')),
       ),
       t.expressionStatement(navigateExpression(ctx, target)),
     ),
   );
-  if (result !== null) statements.push(t.returnStatement(t.cloneNode(result)));
+  if (result !== null) statements.push(t.returnStatement(cloneEstreeNode(result)));
   opening.attributes.push(
     t.jsxAttribute(
       t.jsxIdentifier('onClick'),
       t.jsxExpressionContainer(
         t.arrowFunctionExpression(
-          [t.cloneNode(event)],
+          [cloneEstreeNode(event)],
           t.blockStatement(statements),
         ),
       ),
@@ -677,7 +678,7 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
   return [
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(manifest),
+        cloneEstreeNode(manifest),
         t.callExpression(mr(ctx, 'createRouteManifest'), [
           t.arrayExpression(
             definitions.map((definition) =>
@@ -700,7 +701,7 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
     ]),
     t.expressionStatement(
       t.callExpression(mr(ctx, 'replaceRouteResolver'), [
-        t.memberExpression(t.cloneNode(manifest), t.identifier('resolve')),
+        t.memberExpression(cloneEstreeNode(manifest), t.identifier('resolve')),
       ]),
     ),
     t.expressionStatement(t.callExpression(mr(ctx, 'ensureRouterConnected'), [])),

@@ -6,6 +6,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { type BaseNode } from '../ast';
 import { astBindingAt, type Ctx } from '../context';
 import { renderPropReferenceName } from '../components/children';
@@ -43,7 +44,7 @@ export function compileRefValue(
   }
 
   if (isForwardedRef(ctx, componentName, expression)) {
-    return t.cloneNode(expression, true);
+    return cloneEstreeNode(expression, true);
   }
   if (isMutableIdentifier(ctx, componentPath, expression)) {
     return mutableAdapter(ctx, expression);
@@ -51,7 +52,7 @@ export function compileRefValue(
   if (t.isMemberExpression(expression)) {
     return mutableAdapter(ctx, expression);
   }
-  return t.cloneNode(expression, true);
+  return cloneEstreeNode(expression, true);
 }
 
 /** Emit one mount operation and attach its disposer to this scope's policy. */
@@ -66,10 +67,10 @@ export function emitRefMount(
   scope.mounts.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(disposer),
+        cloneEstreeNode(disposer),
         t.callExpression(md(ctx, 'mountRef'), [
-          t.cloneNode(node, true),
-          t.cloneNode(value, true),
+          cloneEstreeNode(node, true),
+          cloneEstreeNode(value, true),
         ]),
       ),
     ]),
@@ -80,8 +81,8 @@ export function emitRefMount(
     scope.mounts.push(
       t.expressionStatement(
         t.callExpression(md(ctx, 'cleanup'), [
-          t.cloneNode(ownerId, true),
-          t.cloneNode(disposer),
+          cloneEstreeNode(ownerId, true),
+          cloneEstreeNode(disposer),
         ]),
       ),
     );
@@ -146,31 +147,31 @@ function mutableAdapter(
       : null;
     const member = (): t.MemberExpression =>
       t.memberExpression(
-        t.cloneNode(receiver),
+        cloneEstreeNode(receiver),
         key === null
-          ? t.cloneNode(target.property, true)
-          : t.cloneNode(key),
+          ? cloneEstreeNode(target.property, true)
+          : cloneEstreeNode(key),
         target.computed,
       );
     return t.arrowFunctionExpression(
-      [t.cloneNode(node)],
+      [cloneEstreeNode(node)],
       t.blockStatement([
         t.variableDeclaration('const', [
           t.variableDeclarator(
-            t.cloneNode(receiver),
-            t.cloneNode(target.object, true) as t.Expression,
+            cloneEstreeNode(receiver),
+            cloneEstreeNode(target.object, true) as t.Expression,
           ),
           ...(key === null
             ? []
             : [
                 t.variableDeclarator(
-                  t.cloneNode(key),
-                  t.cloneNode(target.property, true) as t.Expression,
+                  cloneEstreeNode(key),
+                  cloneEstreeNode(target.property, true) as t.Expression,
                 ),
               ]),
         ]),
         t.expressionStatement(
-          t.assignmentExpression('=', member(), t.cloneNode(node)),
+          t.assignmentExpression('=', member(), cloneEstreeNode(node)),
         ),
         t.returnStatement(
           t.arrowFunctionExpression(
@@ -180,7 +181,7 @@ function mutableAdapter(
                 t.binaryExpression(
                   '===',
                   member(),
-                  t.cloneNode(node),
+                  cloneEstreeNode(node),
                 ),
                 t.expressionStatement(
                   t.assignmentExpression(
@@ -197,13 +198,13 @@ function mutableAdapter(
     );
   }
   return t.arrowFunctionExpression(
-    [t.cloneNode(node)],
+    [cloneEstreeNode(node)],
     t.blockStatement([
       t.expressionStatement(
         t.assignmentExpression(
           '=',
-          t.cloneNode(target, true),
-          t.cloneNode(node),
+          cloneEstreeNode(target, true),
+          cloneEstreeNode(node),
         ),
       ),
       t.returnStatement(
@@ -213,13 +214,13 @@ function mutableAdapter(
             t.ifStatement(
               t.binaryExpression(
                 '===',
-                t.cloneNode(target, true),
-                t.cloneNode(node),
+                cloneEstreeNode(target, true),
+                cloneEstreeNode(node),
               ),
               t.expressionStatement(
                 t.assignmentExpression(
                   '=',
-                  t.cloneNode(target, true),
+                  cloneEstreeNode(target, true),
                   t.identifier('undefined'),
                 ),
               ),

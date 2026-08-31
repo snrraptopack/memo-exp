@@ -715,8 +715,8 @@ function cloneValue(value: unknown): unknown {
   return value;
 }
 
-export function cloneNode<T extends BaseNode>(node: T): T {
-  return cloneValue(node) as T;
+export function cloneNode<T extends BaseNode>(node: T, _deep = true): T {
+  return (_deep ? cloneValue(node) : { ...node }) as T;
 }
 
 // -- Type Predicates ----------------------------------------------------------

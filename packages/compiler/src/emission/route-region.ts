@@ -1,6 +1,7 @@
 /** Anchored DOM region controlled by one compiler-generated route match ID. */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md, mr } from '../identifiers';
 import type { CompilerRouteElement } from '../router';
@@ -33,7 +34,7 @@ export function emitRouteRegion(
   const regionIndex = scope.regionCounter++;
   const regionId = t.binaryExpression(
     '+',
-    t.cloneNode(ownerId),
+    cloneEstreeNode(ownerId),
     t.stringLiteral(`/route${regionIndex}`),
   );
 
@@ -59,21 +60,21 @@ export function emitRouteRegion(
     ctx.routeElements.set(element, route);
   }
   const selected = t.arrowFunctionExpression(
-    [t.cloneNode(currentRoute)],
+    [cloneEstreeNode(currentRoute)],
     t.callExpression(
       t.memberExpression(
         t.memberExpression(
-          t.cloneNode(currentRoute),
+          cloneEstreeNode(currentRoute),
           t.identifier('matches'),
         ),
         t.identifier('some'),
       ),
       [
         t.arrowFunctionExpression(
-          [t.cloneNode(match)],
+          [cloneEstreeNode(match)],
           t.binaryExpression(
             '===',
-            t.memberExpression(t.cloneNode(match), t.identifier('id')),
+            t.memberExpression(cloneEstreeNode(match), t.identifier('id')),
             t.stringLiteral(route.id),
           ),
         ),
@@ -83,7 +84,7 @@ export function emitRouteRegion(
   const updateRegion = t.arrowFunctionExpression(
     [],
     t.callExpression(
-      t.memberExpression(t.cloneNode(region), t.identifier('update')),
+      t.memberExpression(cloneEstreeNode(region), t.identifier('update')),
       [],
     ),
   );
@@ -91,7 +92,7 @@ export function emitRouteRegion(
   scope.creation.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(fragment),
+        cloneEstreeNode(fragment),
         t.callExpression(
           t.memberExpression(
             renderDocument(ctx, scope),
@@ -103,16 +104,16 @@ export function emitRouteRegion(
     ]),
     registerStmt(
       ctx,
-      t.cloneNode(regionId),
-      t.cloneNode(ownerId),
-      t.cloneNode(updateRegion),
+      cloneEstreeNode(regionId),
+      cloneEstreeNode(ownerId),
+      cloneEstreeNode(updateRegion),
     ),
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(region),
+        cloneEstreeNode(region),
         t.callExpression(md(ctx, 'createCondRegion'), [
-          t.cloneNode(fragment),
-          t.cloneNode(regionId),
+          cloneEstreeNode(fragment),
+          cloneEstreeNode(regionId),
           t.arrowFunctionExpression(
             [],
             t.conditionalExpression(
@@ -127,25 +128,25 @@ export function emitRouteRegion(
     ]),
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(unsubscribe),
+        cloneEstreeNode(unsubscribe),
         t.callExpression(mr(ctx, 'subscribeRouteSelected'), [
-          t.cloneNode(selected),
-          t.cloneNode(updateRegion),
+          cloneEstreeNode(selected),
+          cloneEstreeNode(updateRegion),
         ]),
       ),
     ]),
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(dispose),
+        cloneEstreeNode(dispose),
         t.arrowFunctionExpression(
           [],
           t.blockStatement([
             t.expressionStatement(
-              t.callExpression(t.cloneNode(unsubscribe), []),
+              t.callExpression(cloneEstreeNode(unsubscribe), []),
             ),
             t.expressionStatement(
               t.callExpression(
-                t.memberExpression(t.cloneNode(region), t.identifier('dispose')),
+                t.memberExpression(cloneEstreeNode(region), t.identifier('dispose')),
                 [],
               ),
             ),
@@ -157,13 +158,13 @@ export function emitRouteRegion(
 
   if (scope.manualDisposal) {
     scope.disposableCallbacks.push(dispose);
-    scope.disposableEntities.push(t.cloneNode(regionId));
+    scope.disposableEntities.push(cloneEstreeNode(regionId));
   } else {
     scope.creation.push(
       t.expressionStatement(
         t.callExpression(md(ctx, 'cleanup'), [
-          t.cloneNode(ownerId),
-          t.cloneNode(dispose),
+          cloneEstreeNode(ownerId),
+          cloneEstreeNode(dispose),
         ]),
       ),
     );

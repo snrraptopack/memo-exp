@@ -5,6 +5,7 @@
  * Right-associated ternary chains flatten into one multi-branch region.
  */
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import { nodeHasJsx } from './context';
 import { matchMapCall } from './lists';
 import type { JsxNode } from './jsx/children';
@@ -86,7 +87,7 @@ export function analyzeCondSite(
     branchNodes = [];
     let current: t.Expression = expr;
     while (t.isConditionalExpression(current)) {
-      tests.push(t.cloneNode(current.test));
+      tests.push(cloneEstreeNode(current.test));
       branchNodes.push(current.consequent);
       current = current.alternate;
     }
@@ -101,14 +102,14 @@ export function analyzeCondSite(
     }
   } else if (expr.operator === '&&') {
     pickExpr = t.conditionalExpression(
-      t.cloneNode(expr.left),
+      cloneEstreeNode(expr.left),
       t.numericLiteral(0),
       t.numericLiteral(1),
     );
     branchNodes = [expr.right, null];
   } else {
     pickExpr = t.conditionalExpression(
-      t.cloneNode(expr.left),
+      cloneEstreeNode(expr.left),
       t.numericLiteral(1),
       t.numericLiteral(0),
     );
@@ -122,7 +123,7 @@ export function analyzeCondSite(
       return t.jsxFragment(
         t.jsxOpeningFragment(),
         t.jsxClosingFragment(),
-        [t.jsxExpressionContainer(t.cloneNode(node, true))],
+        [t.jsxExpressionContainer(cloneEstreeNode(node, true))],
       );
     }
     return fail(

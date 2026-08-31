@@ -3,6 +3,7 @@
  * validation and deterministic identity planning.
  */
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
@@ -193,7 +194,7 @@ export function analyzeMapSite(
 
   return {
     sourceKey: source.key,
-    sourceExpr: t.cloneNode(source.expression),
+    sourceExpr: cloneEstreeNode(source.expression),
     optional:
       t.isOptionalCallExpression(call) ||
       containsOptionalMember(callee.object),
@@ -334,7 +335,7 @@ function analyzeIdentifierSource(
     const init = findConstInitializer(ctx, source.name, ownerName);
     if (init !== null) {
       return {
-        expression: t.cloneNode(init as unknown as t.Expression),
+        expression: cloneEstreeNode(init as unknown as t.Expression),
         key: '$static-list',
         local: true,
         suffixBase: '$static-list',
@@ -633,12 +634,12 @@ function substituteNode<T extends t.Node>(
 ): T {
   if (t.isIdentifier(node)) {
     if (reference && resolved.has(node.name)) {
-      return t.cloneNode(resolved.get(node.name)!, true) as unknown as T;
+      return cloneEstreeNode(resolved.get(node.name)!, true) as unknown as T;
     }
     return node;
   }
   if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
-    const next = t.cloneNode(node, false);
+    const next = cloneEstreeNode(node, false);
     next.object = substituteNode(node.object, resolved, true) as typeof next.object;
     if (node.computed) {
       next.property = substituteNode(
@@ -650,7 +651,7 @@ function substituteNode<T extends t.Node>(
     return next;
   }
   if (t.isObjectProperty(node) && node.shorthand && t.isIdentifier(node.key)) {
-    const next = t.cloneNode(node, false);
+    const next = cloneEstreeNode(node, false);
     next.value = substituteNode(
       node.value as t.Expression,
       resolved,
@@ -660,14 +661,14 @@ function substituteNode<T extends t.Node>(
     return next;
   }
   if (t.isFunction(node)) {
-    const next = t.cloneNode(node, false);
+    const next = cloneEstreeNode(node, false);
     next.params = node.params.map((parameter) =>
-      t.cloneNode(parameter, true),
+      cloneEstreeNode(parameter, true),
     );
     next.body = substituteNode(node.body, resolved, true);
     return next;
   }
-  const next = t.cloneNode(node, false);
+  const next = cloneEstreeNode(node, false);
   const source = node as unknown as Record<string, unknown>;
   const target = next as unknown as Record<string, unknown>;
   for (const key of t.VISITOR_KEYS[node.type] ?? []) {
@@ -707,7 +708,7 @@ function analyzeRow(
     return {
       form: 'callback',
       rowComp: null,
-      renderCallback: t.cloneNode(
+      renderCallback: cloneEstreeNode(
         callback.renderInvocation.target,
         true,
       ),

@@ -14,6 +14,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import { walkAst, type BaseNode } from './ast';
 import {
   attrExpr,
@@ -114,15 +115,15 @@ function textValue(tmp: t.Identifier): t.Expression {
   return t.conditionalExpression(
     t.logicalExpression(
       '||',
-      t.binaryExpression('==', t.cloneNode(tmp), t.nullLiteral()),
+      t.binaryExpression('==', cloneEstreeNode(tmp), t.nullLiteral()),
       t.binaryExpression(
         '===',
-        t.unaryExpression('typeof', t.cloneNode(tmp), true),
+        t.unaryExpression('typeof', cloneEstreeNode(tmp), true),
         t.stringLiteral('boolean'),
       ),
     ),
     t.stringLiteral(''),
-    t.callExpression(t.identifier('String'), [t.cloneNode(tmp)]),
+    t.callExpression(t.identifier('String'), [cloneEstreeNode(tmp)]),
   );
 }
 
@@ -138,7 +139,7 @@ function textSetter(
   expr: t.Expression,
 ): () => t.Statement {
   return () =>
-    slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+    slotGuard(scope, key, cloneEstreeNode(expr), (tmp) =>
       t.expressionStatement(
         t.assignmentExpression(
           '=',
@@ -512,7 +513,7 @@ function emitElement(
       : `/$dataPolicy[${seen}]`;
     const childId = t.binaryExpression(
       '+',
-      t.cloneNode(ownerId),
+      cloneEstreeNode(ownerId),
       t.stringLiteral(suffix),
     );
     const variable = freshNodeName(ctx, scope, 'dataPolicy');
@@ -520,15 +521,15 @@ function emitElement(
       t.variableDeclaration('const', [
         t.variableDeclarator(
           t.identifier(variable),
-          t.callExpression(t.cloneNode(policyRenderer.renderer), [
-            t.cloneNode(childId),
-            t.cloneNode(ownerId),
-            ...policyRenderer.args.map((argument) => t.cloneNode(argument, true)),
+          t.callExpression(cloneEstreeNode(policyRenderer.renderer), [
+            cloneEstreeNode(childId),
+            cloneEstreeNode(ownerId),
+            ...policyRenderer.args.map((argument) => cloneEstreeNode(argument, true)),
           ]),
         ),
       ]),
     );
-    scope.disposableEntities.push(t.cloneNode(childId));
+    scope.disposableEntities.push(cloneEstreeNode(childId));
     return variable;
   }
   const route = ctx.routeElements.get(el);
@@ -708,7 +709,7 @@ function emitElement(
         if (isRenderPropReference(ctx, compName, v)) {
           propEntries.push({
             name: propName,
-            value: t.cloneNode(v),
+            value: cloneEstreeNode(v),
           });
           continue;
         }
@@ -789,7 +790,7 @@ function emitElement(
               v,
               `${propName}Callback`,
             )
-          : t.cloneNode(v),
+          : cloneEstreeNode(v),
       });
     }
     }
@@ -821,13 +822,13 @@ function emitElement(
         orderedPropObject.properties.push(
           t.objectProperty(
             t.identifier('children'),
-            t.cloneNode(childrenSlot),
+            cloneEstreeNode(childrenSlot),
           ),
         );
       } else {
         propEntries.push({
           name: 'children',
-          value: t.cloneNode(childrenSlot),
+          value: cloneEstreeNode(childrenSlot),
         });
       }
     }
@@ -840,8 +841,8 @@ function emitElement(
       scope.creation.push(
         t.variableDeclaration('const', [
           t.variableDeclarator(
-            t.cloneNode(propObject),
-            t.cloneNode(orderedPropObject),
+            cloneEstreeNode(propObject),
+            cloneEstreeNode(orderedPropObject),
           ),
         ]),
       );
@@ -851,7 +852,7 @@ function emitElement(
     }
     const childId = t.binaryExpression(
       '+',
-      t.cloneNode(ownerId),
+      cloneEstreeNode(ownerId),
       t.stringLiteral(idSuffix),
     );
     const dataPolicies = transparentCallPolicyArgument(
@@ -865,14 +866,14 @@ function emitElement(
           t.identifier(varName),
           t.callExpression(t.identifier(tag), [
             childId,
-            t.cloneNode(ownerId),
+            cloneEstreeNode(ownerId),
             ...(props.length > 0 ? [t.arrayExpression(props)] : []),
             ...(dataPolicies === null ? [] : [dataPolicies]),
           ]),
         ),
       ]),
     );
-    scope.disposableEntities.push(t.cloneNode(childId));
+    scope.disposableEntities.push(cloneEstreeNode(childId));
     // R10: re-push state-reading props inside the parent's update — the box
     // flows down through setProps (shallow-compare → no-op when unchanged)
     const pushProps = (): t.Statement =>
@@ -881,10 +882,10 @@ function emitElement(
             t.callExpression(md(ctx, 'setProps'), [
               t.binaryExpression(
                 '+',
-                t.cloneNode(ownerId),
+                cloneEstreeNode(ownerId),
                 t.stringLiteral(idSuffix),
               ),
-              t.arrayExpression(props.map((p) => t.cloneNode(p))),
+              t.arrayExpression(props.map((p) => cloneEstreeNode(p))),
             ]),
           )
         : buildSpreadComponentPropUpdate(
@@ -983,7 +984,7 @@ function emitElement(
         const binding = generatedIdentifier(ctx, `${name}Handler`);
         scope.creation.push(
           t.variableDeclaration('const', [
-            t.variableDeclarator(t.cloneNode(binding), handler),
+            t.variableDeclarator(cloneEstreeNode(binding), handler),
           ]),
         );
         return binding;
@@ -996,8 +997,8 @@ function emitElement(
     scope.creation.push(
       t.variableDeclaration('const', [
         t.variableDeclarator(
-          t.cloneNode(propObject),
-          t.cloneNode(ordered.expression),
+          cloneEstreeNode(propObject),
+          cloneEstreeNode(ordered.expression),
         ),
       ]),
     );
@@ -1005,7 +1006,7 @@ function emitElement(
       t.expressionStatement(
         t.callExpression(md(ctx, 'patchDomProps'), [
           t.identifier(varName),
-          t.cloneNode(value),
+          cloneEstreeNode(value),
           t.stringLiteral(ctx.rootId),
           t.arrayExpression(
             ordered.safeEventKeys.map((name) => t.stringLiteral(name)),
@@ -1018,7 +1019,7 @@ function emitElement(
       scope,
       t.identifier(varName),
       ownerId,
-      t.memberExpression(t.cloneNode(propObject), t.identifier('ref')),
+      t.memberExpression(cloneEstreeNode(propObject), t.identifier('ref')),
     );
     scope.updaters.push(() => patch(ordered.expression));
   } else {
@@ -1158,13 +1159,13 @@ function emitElement(
       );
     }
     const dataSources = transparentExpressionSources(ctx, v);
-    const expr = t.cloneNode(v);
+    const expr = cloneEstreeNode(v);
     if (attrName === 'style') {
       const setStyle = (): t.Statement =>
         t.expressionStatement(
           t.callExpression(md(ctx, 'setStyleValue'), [
             t.identifier(varName),
-            t.cloneNode(expr),
+            cloneEstreeNode(expr),
           ]),
         );
       scope.creation.push(setStyle());
@@ -1189,7 +1190,7 @@ function emitElement(
         return slotGuard(
           scope,
           key,
-          t.callExpression(md(ctx, 'classValue'), [t.cloneNode(expr)]),
+          t.callExpression(md(ctx, 'classValue'), [cloneEstreeNode(expr)]),
           (tmp) =>
             t.expressionStatement(
               t.callExpression(md(ctx, 'setClassValue'), [
@@ -1200,17 +1201,17 @@ function emitElement(
         );
       }
       if (propName !== null) {
-        return slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+        return slotGuard(scope, key, cloneEstreeNode(expr), (tmp) =>
           domPropertyWrite(varName, propName, tmp),
         );
       }
       if (isMappedDomAttribute(attrName, elementSvg)) {
-        return slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+        return slotGuard(scope, key, cloneEstreeNode(expr), (tmp) =>
           domAttributeWrite(varName, attrName, tmp),
         );
       }
       if (elementSvg) {
-        return slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+        return slotGuard(scope, key, cloneEstreeNode(expr), (tmp) =>
           t.expressionStatement(
             t.callExpression(md(ctx, 'setDomValue'), [
               t.identifier(varName),
@@ -1220,7 +1221,7 @@ function emitElement(
           ),
         );
       }
-      return slotGuard(scope, key, t.cloneNode(expr), (tmp) =>
+      return slotGuard(scope, key, cloneEstreeNode(expr), (tmp) =>
         domAttributeWrite(varName, attrName, tmp),
       );
     };

@@ -195,6 +195,11 @@ These numbers are local measurements rather than an architectural choice: the
 cross-frontend equality test is the portability gate, and parser speed can be
 re-measured independently with `bun run bench:frontends`.
 
+The compiler-owned cloner now serves every production clone site, including
+shallow-clone substitution passes. All 410 `t.cloneNode` calls across 32
+compiler modules were removed, so OXC/Yuku `Property` and `Literal` subtrees no
+longer cross a Babel cloning API during analysis or emission.
+
 ## Babel boundary inventory
 
 The compiler package still declares these five dependencies:

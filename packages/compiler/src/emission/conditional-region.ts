@@ -1,4 +1,5 @@
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   exprReadsInstanceState,
   type Ctx,
@@ -44,12 +45,12 @@ export function emitConditionalRegion(
   const regionVariable = generatedIdentifier(ctx, site.suffix).name;
   const regionId = t.binaryExpression(
     '+',
-    t.cloneNode(ownerId),
+    cloneEstreeNode(ownerId),
     t.stringLiteral(`/${site.suffix}`),
   );
   const transparentSources = transparentExpressionSources(ctx, expression);
 
-  const pick = t.arrowFunctionExpression([], t.cloneNode(site.pickExpr));
+  const pick = t.arrowFunctionExpression([], cloneEstreeNode(site.pickExpr));
   const branchFactories: t.Expression[] = site.branches.map((jsx) =>
     jsx !== null
       ? buildConditionalBranchCreate(
@@ -71,8 +72,8 @@ export function emitConditionalRegion(
   scope.creation.push(
     registerStmt(
       ctx,
-      t.cloneNode(regionId),
-      t.cloneNode(ownerId),
+      cloneEstreeNode(regionId),
+      cloneEstreeNode(ownerId),
       t.arrowFunctionExpression(
         [],
         t.callExpression(
@@ -97,7 +98,7 @@ export function emitConditionalRegion(
         t.identifier(regionVariable),
         t.callExpression(md(ctx, 'createCondRegion'), [
           t.identifier(parentElementVariable),
-          t.cloneNode(regionId),
+          cloneEstreeNode(regionId),
           pick,
           t.arrayExpression(branchFactories),
         ]),
@@ -122,7 +123,7 @@ export function emitConditionalRegion(
     );
   }
   scope.disposableRegions.push(regionVariable);
-  scope.disposableEntities.push(t.cloneNode(regionId));
+  scope.disposableEntities.push(cloneEstreeNode(regionId));
 }
 
 /** Build a non-entity branch factory with isolated slots and cleanup. */
@@ -181,11 +182,11 @@ export function buildConditionalBranchCreate(
         t.ifStatement(
           t.binaryExpression(
             '!==',
-            t.cloneNode(callback),
+            cloneEstreeNode(callback),
             t.nullLiteral(),
           ),
           t.expressionStatement(
-            t.callExpression(t.cloneNode(callback), []),
+            t.callExpression(cloneEstreeNode(callback), []),
           ),
         ),
       ),
@@ -203,7 +204,7 @@ export function buildConditionalBranchCreate(
       ...branchScope.disposableEntities.map((entity) =>
         t.expressionStatement(
           t.callExpression(md(ctx, 'unregisterSubtree'), [
-            t.cloneNode(entity),
+            cloneEstreeNode(entity),
           ]),
         ),
       ),

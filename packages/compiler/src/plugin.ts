@@ -17,6 +17,7 @@
 
 import type { PluginObject } from '@babel/core';
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import {
   normalizeEstreeDialect,
   walkAst,
@@ -80,7 +81,7 @@ function rewriteComputeds(ctx: Ctx, program: t.Program): void {
       const name = d.id.name;
       if (!ctx.computeds.has(name)) continue;
       declNode.kind = 'let';
-      const init = t.cloneNode(d.init);
+      const init = cloneEstreeNode(d.init);
       const next = generatedIdentifier(ctx, `${name}Next`);
       const registerStmt = t.expressionStatement(
         t.callExpression(md(ctx, 'register'), [
@@ -105,11 +106,11 @@ function rewriteComputeds(ctx: Ctx, program: t.Program): void {
                   t.ifStatement(
                     t.callExpression(md(ctx, 'computedChanged'), [
                       t.identifier(name),
-                      t.cloneNode(next),
+                      cloneEstreeNode(next),
                     ]),
                     t.blockStatement([
                       t.expressionStatement(
-                        t.assignmentExpression('=', t.identifier(name), t.cloneNode(next)),
+                        t.assignmentExpression('=', t.identifier(name), cloneEstreeNode(next)),
                       ),
                       t.expressionStatement(
                         t.callExpression(md(ctx, 'commitWrites'), [freshWriteConst(ctx, [name])]),
@@ -149,16 +150,16 @@ function rewriteModuleControlFlow(
         'const',
         flow.bindings.map((binding) =>
           t.variableDeclarator(
-            t.cloneNode(previous.get(binding)!),
+            cloneEstreeNode(previous.get(binding)!),
             t.identifier(binding),
           ),
         ),
       ),
-      t.cloneNode(flow.statement, true),
+      cloneEstreeNode(flow.statement, true),
       ...flow.bindings.map((binding) =>
         t.ifStatement(
           t.callExpression(md(ctx, 'computedChanged'), [
-            t.cloneNode(previous.get(binding)!),
+            cloneEstreeNode(previous.get(binding)!),
             t.identifier(binding),
           ]),
           t.blockStatement([

@@ -1,4 +1,5 @@
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import {
   attrExpr,
@@ -147,7 +148,7 @@ export function buildRenderCallbackAdapter(
   ownerScope.creation.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(liveRows),
+        cloneEstreeNode(liveRows),
         t.newExpression(t.identifier('Set'), []),
       ),
     ]),
@@ -155,11 +156,11 @@ export function buildRenderCallbackAdapter(
   ownerScope.updaters.push(() =>
     t.forOfStatement(
       t.variableDeclaration('const', [
-        t.variableDeclarator(t.cloneNode(nextUpdate)),
+        t.variableDeclarator(cloneEstreeNode(nextUpdate)),
       ]),
-      t.cloneNode(liveRows),
+      cloneEstreeNode(liveRows),
       t.expressionStatement(
-        t.callExpression(t.cloneNode(nextUpdate), []),
+        t.callExpression(cloneEstreeNode(nextUpdate), []),
       ),
     ),
   );
@@ -168,8 +169,8 @@ export function buildRenderCallbackAdapter(
     t.expressionStatement(
       t.assignmentExpression(
         '=',
-        t.cloneNode(itemPattern, true),
-        t.cloneNode(nextItem),
+        cloneEstreeNode(itemPattern, true),
+        cloneEstreeNode(nextItem),
       ),
     ),
   ];
@@ -179,7 +180,7 @@ export function buildRenderCallbackAdapter(
         t.assignmentExpression(
           '=',
           t.identifier(indexParam),
-          t.cloneNode(nextIndex),
+          cloneEstreeNode(nextIndex),
         ),
       ),
     );
@@ -187,8 +188,8 @@ export function buildRenderCallbackAdapter(
 
   const create = t.arrowFunctionExpression(
     [
-      t.cloneNode(itemPattern, true),
-      t.cloneNode(rowId),
+      cloneEstreeNode(itemPattern, true),
+      cloneEstreeNode(rowId),
       ...(indexParam === null ? [] : [t.identifier(indexParam)]),
     ],
     t.blockStatement([
@@ -196,7 +197,7 @@ export function buildRenderCallbackAdapter(
       updateDecl(rowScope),
       t.variableDeclaration('const', [
         t.variableDeclarator(
-          t.cloneNode(refreshRow),
+          cloneEstreeNode(refreshRow),
           t.arrowFunctionExpression(
             [],
             t.blockStatement([
@@ -205,7 +206,7 @@ export function buildRenderCallbackAdapter(
               ),
               t.expressionStatement(
                 t.callExpression(md(ctx, 'renderDescendants'), [
-                  t.cloneNode(rowId),
+                  cloneEstreeNode(rowId),
                 ]),
               ),
             ]),
@@ -215,16 +216,16 @@ export function buildRenderCallbackAdapter(
       ...rowScope.prelude,
       registerStmt(
         ctx,
-        t.cloneNode(rowId),
-        t.cloneNode(ownerId, true),
-        t.cloneNode(refreshRow),
+        cloneEstreeNode(rowId),
+        cloneEstreeNode(ownerId, true),
+        cloneEstreeNode(refreshRow),
       ),
       ...rowScope.creation,
       ...rowScope.mounts,
       t.expressionStatement(
         t.callExpression(
-          t.memberExpression(t.cloneNode(liveRows), t.identifier('add')),
-          [t.cloneNode(refreshRow)],
+          t.memberExpression(cloneEstreeNode(liveRows), t.identifier('add')),
+          [cloneEstreeNode(refreshRow)],
         ),
       ),
       t.returnStatement(
@@ -235,21 +236,21 @@ export function buildRenderCallbackAdapter(
           ),
           t.objectProperty(
             t.identifier('entities'),
-            t.arrayExpression([t.cloneNode(rowId)]),
+            t.arrayExpression([cloneEstreeNode(rowId)]),
           ),
           t.objectProperty(
             t.identifier('updateProps'),
             t.arrowFunctionExpression(
               [
-                t.cloneNode(nextItem),
-                ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
+                cloneEstreeNode(nextItem),
+                ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
               ],
               t.blockStatement(bindingUpdates),
             ),
           ),
           t.objectProperty(
             t.identifier('update'),
-            t.cloneNode(refreshRow),
+            cloneEstreeNode(refreshRow),
           ),
           t.objectProperty(
             t.identifier('dispose'),
@@ -257,10 +258,10 @@ export function buildRenderCallbackAdapter(
               [],
               t.callExpression(
                 t.memberExpression(
-                  t.cloneNode(liveRows),
+                  cloneEstreeNode(liveRows),
                   t.identifier('delete'),
                 ),
-                [t.cloneNode(refreshRow)],
+                [cloneEstreeNode(refreshRow)],
               ),
             ),
           ),
@@ -273,16 +274,16 @@ export function buildRenderCallbackAdapter(
       ? t.nullLiteral()
       : t.arrowFunctionExpression(
           [
-            t.cloneNode(itemPattern, true),
+            cloneEstreeNode(itemPattern, true),
             ...(indexParam === null ? [] : [t.identifier(indexParam)]),
           ],
-          t.cloneNode(keyExpression),
+          cloneEstreeNode(keyExpression),
         );
 
   ownerScope.creation.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(adapter),
+        cloneEstreeNode(adapter),
         t.objectExpression([
           t.objectProperty(t.identifier('create'), create),
           t.objectProperty(t.identifier('key'), key),

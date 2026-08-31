@@ -1,4 +1,5 @@
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   attrExpr,
   keyPathOf,
@@ -72,7 +73,7 @@ function runtimeListSource(
   source: t.Expression,
   optional: boolean,
 ): t.Expression {
-  const value = t.cloneNode(source);
+  const value = cloneEstreeNode(source);
   return optional
     ? t.logicalExpression('??', value, t.arrayExpression([]))
     : value;
@@ -125,7 +126,7 @@ export function emitListRegion(
     scope.creation.push(
       t.variableDeclaration('const', [
         t.variableDeclarator(
-          t.cloneNode(binding),
+          cloneEstreeNode(binding),
           t.callExpression(md(ctx, 'createDelegatedEventBinding'), [
             t.identifier(parentElementVariable),
             t.stringLiteral(eventName),
@@ -163,29 +164,29 @@ export function emitListRegion(
     t.identifier(parentElementVariable),
     t.binaryExpression(
       '+',
-      t.cloneNode(ownerId),
+      cloneEstreeNode(ownerId),
       t.stringLiteral(`/${site.suffix}`),
     ),
     createFactory,
   ];
   if (site.form === 'callback') {
     const keyTarget = t.memberExpression(
-      t.cloneNode(site.renderCallback!, true),
+      cloneEstreeNode(site.renderCallback!, true),
       t.identifier('key'),
     );
     args.push(
       t.arrowFunctionExpression(
         [
-          t.cloneNode(site.itemPattern, true),
+          cloneEstreeNode(site.itemPattern, true),
           ...(site.indexParam === null
             ? []
             : [t.identifier(site.indexParam)]),
         ],
         t.conditionalExpression(
-          t.binaryExpression('==', t.cloneNode(keyTarget), t.nullLiteral()),
-          t.cloneNode(site.itemPattern, true) as t.Expression,
-          t.callExpression(t.cloneNode(keyTarget), [
-            t.cloneNode(site.itemPattern, true) as t.Expression,
+          t.binaryExpression('==', cloneEstreeNode(keyTarget), t.nullLiteral()),
+          cloneEstreeNode(site.itemPattern, true) as t.Expression,
+          t.callExpression(cloneEstreeNode(keyTarget), [
+            cloneEstreeNode(site.itemPattern, true) as t.Expression,
             ...(site.indexParam === null
               ? []
               : [t.identifier(site.indexParam)]),
@@ -197,12 +198,12 @@ export function emitListRegion(
     args.push(
       t.arrowFunctionExpression(
         [
-          t.cloneNode(site.itemPattern, true),
+          cloneEstreeNode(site.itemPattern, true),
           ...(site.indexParam === null
             ? []
             : [t.identifier(site.indexParam)]),
         ],
-        t.cloneNode(site.keyExpr),
+        cloneEstreeNode(site.keyExpr),
       ),
     );
   }
@@ -409,11 +410,11 @@ function buildTargetedListUpdate(
           t.blockStatement([
             t.forOfStatement(
               t.variableDeclaration('const', [
-                t.variableDeclarator(t.cloneNode(key)),
+                t.variableDeclarator(cloneEstreeNode(key)),
               ]),
               t.identifier(mutation.keysVariable),
               t.blockStatement([
-                refreshKey(regionVariable, t.cloneNode(key)),
+                refreshKey(regionVariable, cloneEstreeNode(key)),
               ]),
             ),
             t.expressionStatement(
@@ -448,7 +449,7 @@ function buildTargetedListUpdate(
               t.identifier(dependency.value),
             ),
           ),
-          refreshKey(regionVariable, t.cloneNode(previous)),
+          refreshKey(regionVariable, cloneEstreeNode(previous)),
           t.ifStatement(
             t.unaryExpression(
               '!',
@@ -457,7 +458,7 @@ function buildTargetedListUpdate(
                   t.identifier('Object'),
                   t.identifier('is'),
                 ),
-                [t.cloneNode(previous), t.identifier(cache)],
+                [cloneEstreeNode(previous), t.identifier(cache)],
               ),
             ),
             refreshKey(regionVariable, t.identifier(cache)),
@@ -519,20 +520,20 @@ function buildCallbackRowCreate(
   const rowId = generatedIdentifier(ctx, 'renderRowId');
   return t.arrowFunctionExpression(
     [
-      t.cloneNode(site.itemPattern, true),
-      t.cloneNode(rowId),
+      cloneEstreeNode(site.itemPattern, true),
+      cloneEstreeNode(rowId),
       ...(site.indexParam === null
         ? []
         : [t.identifier(site.indexParam)]),
     ],
     t.callExpression(
       t.memberExpression(
-        t.cloneNode(site.renderCallback!, true),
+        cloneEstreeNode(site.renderCallback!, true),
         t.identifier('create'),
       ),
       [
-        t.cloneNode(site.itemPattern, true) as t.Expression,
-        t.cloneNode(rowId),
+        cloneEstreeNode(site.itemPattern, true) as t.Expression,
+        cloneEstreeNode(rowId),
         ...(site.indexParam === null
           ? []
           : [t.identifier(site.indexParam)]),
@@ -586,26 +587,26 @@ function buildComponentRowFactory({
     ? [
         t.objectProperty(
           t.identifier('nodes'),
-          t.memberExpression(t.cloneNode(result), t.identifier('nodes')),
+          t.memberExpression(cloneEstreeNode(result), t.identifier('nodes')),
         ),
         t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
         t.objectProperty(
           t.identifier('update'),
-          t.memberExpression(t.cloneNode(result), t.identifier('update')),
+          t.memberExpression(cloneEstreeNode(result), t.identifier('update')),
         ),
         t.objectProperty(
           t.identifier('dispose'),
-          t.memberExpression(t.cloneNode(result), t.identifier('dispose')),
+          t.memberExpression(cloneEstreeNode(result), t.identifier('dispose')),
         ),
       ]
     : [
         t.objectProperty(
           t.identifier('nodes'),
-          t.callExpression(md(ctx, 'rootNodes'), [t.cloneNode(result)]),
+          t.callExpression(md(ctx, 'rootNodes'), [cloneEstreeNode(result)]),
         ),
         t.objectProperty(
           t.identifier('entities'),
-          t.arrayExpression([t.cloneNode(rowId)]),
+          t.arrayExpression([cloneEstreeNode(rowId)]),
         ),
       ];
   if (needsUpdateProps && !reuseLightweightEntry) {
@@ -614,8 +615,8 @@ function buildComponentRowFactory({
         t.identifier('updateProps'),
         t.arrowFunctionExpression(
           [
-            t.cloneNode(nextItem),
-            ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
+            cloneEstreeNode(nextItem),
+            ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
           ],
           t.blockStatement(updateStatements),
         ),
@@ -625,8 +626,8 @@ function buildComponentRowFactory({
 
   return t.arrowFunctionExpression(
     [
-      t.cloneNode(site.itemPattern, true),
-      t.cloneNode(rowId),
+      cloneEstreeNode(site.itemPattern, true),
+      cloneEstreeNode(rowId),
       ...(site.indexParam === null ? [] : [t.identifier(site.indexParam)]),
     ],
     t.blockStatement([
@@ -639,19 +640,19 @@ function buildComponentRowFactory({
       ...prefixStatements,
       t.variableDeclaration('const', [
         t.variableDeclarator(
-          t.cloneNode(result),
+          cloneEstreeNode(result),
           lightweight
             ? t.callExpression(t.identifier(rowComponent), [
-                ...callProps.map((prop) => t.cloneNode(prop)),
-                t.cloneNode(rowId),
-                ...(site.sourceLocal ? [t.cloneNode(ownerId)] : []),
+                ...callProps.map((prop) => cloneEstreeNode(prop)),
+                cloneEstreeNode(rowId),
+                ...(site.sourceLocal ? [cloneEstreeNode(ownerId)] : []),
                 ...[...eventBindings.values()].map((binding) =>
-                  t.cloneNode(binding),
+                  cloneEstreeNode(binding),
                 ),
               ])
             : t.callExpression(t.identifier(rowComponent), [
-                t.cloneNode(rowId),
-                t.cloneNode(ownerId),
+                cloneEstreeNode(rowId),
+                cloneEstreeNode(ownerId),
                 ...(callProps.length > 0
                   ? [t.arrayExpression(callProps)]
                   : []),
@@ -662,7 +663,7 @@ function buildComponentRowFactory({
         ? [
             t.variableDeclaration('const', [
               t.variableDeclarator(
-                t.cloneNode(rowRefresh),
+                cloneEstreeNode(rowRefresh),
                 t.arrowFunctionExpression(
                   [],
                   t.blockStatement([
@@ -670,13 +671,13 @@ function buildComponentRowFactory({
                       lightweight
                         ? t.callExpression(
                             t.memberExpression(
-                              t.cloneNode(result),
+                              cloneEstreeNode(result),
                               t.identifier('update'),
                             ),
                             [],
                           )
                         : t.callExpression(md(ctx, 'markDirty'), [
-                            t.cloneNode(rowId),
+                            cloneEstreeNode(rowId),
                           ]),
                     ),
                     t.expressionStatement(
@@ -693,9 +694,9 @@ function buildComponentRowFactory({
         : [
             t.variableDeclaration('const', [
               t.variableDeclarator(
-                t.cloneNode(lightweightPushProps),
+                cloneEstreeNode(lightweightPushProps),
                 t.memberExpression(
-                  t.cloneNode(result),
+                  cloneEstreeNode(result),
                   t.identifier('updateProps'),
                 ),
               ),
@@ -704,13 +705,13 @@ function buildComponentRowFactory({
               t.assignmentExpression(
                 '=',
                 t.memberExpression(
-                  t.cloneNode(result),
+                  cloneEstreeNode(result),
                   t.identifier('updateProps'),
                 ),
                 t.arrowFunctionExpression(
                   [
-                    t.cloneNode(nextItem),
-                    ...(nextIndex === null ? [] : [t.cloneNode(nextIndex)]),
+                    cloneEstreeNode(nextItem),
+                    ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
                   ],
                   t.blockStatement(updateStatements),
                 ),
@@ -719,7 +720,7 @@ function buildComponentRowFactory({
           ]),
       t.returnStatement(
         reuseLightweightEntry
-          ? t.cloneNode(result)
+          ? cloneEstreeNode(result)
           : t.objectExpression(entryProperties),
       ),
     ]),
@@ -790,7 +791,7 @@ function buildComponentRowCreate(
       propEntries.map(({ name, value }) => [name, value]),
     );
     return positionalObjectProps!.map(({ name }) =>
-      t.cloneNode(byName.get(name) ?? t.identifier('undefined')),
+      cloneEstreeNode(byName.get(name) ?? t.identifier('undefined')),
     );
   };
   const positionalPropsFromObject = (
@@ -798,7 +799,7 @@ function buildComponentRowCreate(
   ): t.Expression[] =>
     positionalObjectProps!.map(({ name }) =>
       t.memberExpression(
-        t.cloneNode(object),
+        cloneEstreeNode(object),
         t.isValidIdentifier(name)
           ? t.identifier(name)
           : t.stringLiteral(name),
@@ -898,7 +899,7 @@ function buildComponentRowCreate(
         if (isRenderPropReference(ctx, componentName, value)) {
           propEntries.push({
             name: propName,
-            value: t.cloneNode(value),
+            value: cloneEstreeNode(value),
           });
           continue;
         }
@@ -965,7 +966,7 @@ function buildComponentRowCreate(
               value,
               `${propName}Callback`,
             )
-          : t.cloneNode(value),
+          : cloneEstreeNode(value),
       });
     }
   }
@@ -998,13 +999,13 @@ function buildComponentRowCreate(
       propObjectExpression.properties.push(
         t.objectProperty(
           t.identifier('children'),
-          t.cloneNode(childrenSlot),
+          cloneEstreeNode(childrenSlot),
         ),
       );
     } else {
       propEntries.push({
         name: 'children',
-        value: t.cloneNode(childrenSlot),
+        value: cloneEstreeNode(childrenSlot),
       });
     }
   }
@@ -1015,8 +1016,8 @@ function buildComponentRowCreate(
     prefixStatements.push(
       t.variableDeclaration('const', [
         t.variableDeclarator(
-          t.cloneNode(propObject),
-          t.cloneNode(propObjectExpression),
+          cloneEstreeNode(propObject),
+          cloneEstreeNode(propObjectExpression),
         ),
       ]),
     );
@@ -1035,8 +1036,8 @@ function buildComponentRowCreate(
     t.expressionStatement(
       t.assignmentExpression(
         '=',
-        t.cloneNode(site.itemPattern, true),
-        t.cloneNode(nextItem),
+        cloneEstreeNode(site.itemPattern, true),
+        cloneEstreeNode(nextItem),
       ),
     ),
   ];
@@ -1046,19 +1047,19 @@ function buildComponentRowCreate(
         t.assignmentExpression(
           '=',
           t.identifier(site.indexParam),
-          t.cloneNode(nextIndex),
+          cloneEstreeNode(nextIndex),
         ),
       ),
     );
   }
-  let nextCallProps = callProps.map((prop) => t.cloneNode(prop));
+  let nextCallProps = callProps.map((prop) => cloneEstreeNode(prop));
   if (propObjectExpression !== null) {
     const nextProps = generatedIdentifier(ctx, `next${rowComponent}Props`);
     updateStatements.push(
       t.variableDeclaration('const', [
         t.variableDeclarator(
-          t.cloneNode(nextProps),
-          t.cloneNode(propObjectExpression),
+          cloneEstreeNode(nextProps),
+          cloneEstreeNode(propObjectExpression),
         ),
       ]),
     );
@@ -1084,10 +1085,10 @@ function buildComponentRowCreate(
         t.callExpression(
           lightweightPushProps === null
             ? t.memberExpression(
-                t.cloneNode(result),
+                cloneEstreeNode(result),
                 t.identifier('updateProps'),
               )
-            : t.cloneNode(lightweightPushProps),
+            : cloneEstreeNode(lightweightPushProps),
           nextCallProps,
         ),
       ),
@@ -1096,12 +1097,12 @@ function buildComponentRowCreate(
     updateStatements.push(
       t.expressionStatement(
         t.callExpression(md(ctx, 'setProps'), [
-          t.cloneNode(rowId),
+          cloneEstreeNode(rowId),
           t.arrayExpression(nextCallProps),
         ]),
       ),
       t.expressionStatement(
-        t.callExpression(md(ctx, 'markDirty'), [t.cloneNode(rowId)]),
+        t.callExpression(md(ctx, 'markDirty'), [cloneEstreeNode(rowId)]),
       ),
     );
   }
@@ -1192,8 +1193,8 @@ function buildInlineRowCreate(
       t.expressionStatement(
         t.assignmentExpression(
           '=',
-          t.cloneNode(site.itemPattern, true),
-          t.cloneNode(nextItem),
+          cloneEstreeNode(site.itemPattern, true),
+          cloneEstreeNode(nextItem),
         ),
       ),
     ];
@@ -1203,7 +1204,7 @@ function buildInlineRowCreate(
         t.assignmentExpression(
           '=',
           t.identifier(site.indexParam),
-          t.cloneNode(nextIndex),
+          cloneEstreeNode(nextIndex),
         ),
       ),
     );
@@ -1211,7 +1212,7 @@ function buildInlineRowCreate(
 
   return t.arrowFunctionExpression(
     [
-      t.cloneNode(site.itemPattern, true),
+      cloneEstreeNode(site.itemPattern, true),
       t.identifier(rowId),
       ...(site.indexParam === null
         ? []
@@ -1224,7 +1225,7 @@ function buildInlineRowCreate(
       registerStmt(
         ctx,
         t.identifier(rowId),
-        t.cloneNode(ownerId),
+        cloneEstreeNode(ownerId),
         t.identifier(rowScope.updateVar),
       ),
       ...rowScope.creation,
@@ -1243,10 +1244,10 @@ function buildInlineRowCreate(
             t.identifier('updateProps'),
             t.arrowFunctionExpression(
               [
-                t.cloneNode(nextItem),
+                cloneEstreeNode(nextItem),
                 ...(nextIndex === null
                   ? []
-                  : [t.cloneNode(nextIndex)]),
+                  : [cloneEstreeNode(nextIndex)]),
               ],
               t.blockStatement(bindingUpdates),
             ),

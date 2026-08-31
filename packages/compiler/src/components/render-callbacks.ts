@@ -1,4 +1,5 @@
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import type { Ctx, MapCallExpression } from '../context';
 import {
@@ -183,9 +184,9 @@ export function matchRenderCallbackMap(
   if (propName === null) return null;
   return {
     propName,
-    target: t.cloneNode(returned.callee, true),
+    target: cloneEstreeNode(returned.callee, true),
     arguments: returned.arguments.map((argument) =>
-      t.cloneNode(argument as t.Expression, true),
+      cloneEstreeNode(argument as t.Expression, true),
     ),
   };
 }

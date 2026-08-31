@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { nodeHasJsx } from '../context';
 import { matchCond } from '../conds';
 import {
@@ -100,7 +101,7 @@ export function collectDirectChildren(
     const expression = child.expression;
     if (emitters.isForwarded(expression)) {
       flushText();
-      result.push({ type: 'slot', expression: t.cloneNode(expression) });
+      result.push({ type: 'slot', expression: cloneEstreeNode(expression) });
       continue;
     }
     if (
@@ -123,7 +124,7 @@ export function collectDirectChildren(
       continue;
     }
 
-    pendingText.push(t.cloneNode(expression));
+    pendingText.push(cloneEstreeNode(expression));
   }
 
   flushText();

@@ -6,6 +6,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import {
   freshReasonConst,
   freshWriteConst,
@@ -153,7 +154,7 @@ export function appendScopeCommit(
       t.variableDeclarator(result, fn.body as t.Expression),
     ]),
     commit,
-    t.returnStatement(t.cloneNode(result)),
+    t.returnStatement(cloneEstreeNode(result)),
   ]);
 }
 
@@ -170,7 +171,7 @@ function insertBeforeReturns(node: t.Node, commit: t.Statement): void {
         const childNode = item as t.Node;
         if (t.isFunction(childNode)) continue;
         if (t.isReturnStatement(childNode)) {
-          children.splice(index, 0, t.cloneNode(commit));
+          children.splice(index, 0, cloneEstreeNode(commit));
           index++;
         } else {
           insertBeforeReturns(childNode, commit);
@@ -181,7 +182,7 @@ function insertBeforeReturns(node: t.Node, commit: t.Statement): void {
       if (t.isFunction(childNode)) continue;
       if (t.isReturnStatement(childNode)) {
         fields[key] = t.blockStatement([
-          t.cloneNode(commit),
+          cloneEstreeNode(commit),
           childNode,
         ]);
       } else {

@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst } from '../ast';
 import type { Ctx } from '../context';
 import { generatedIdentifier } from '../identifiers';
@@ -30,7 +31,7 @@ export function stabilizeInlineCallbackProp(
   const callback = generatedIdentifier(ctx, hint);
   scope.creation.push(
     t.variableDeclaration('const', [
-      t.variableDeclarator(t.cloneNode(callback), t.cloneNode(value, true)),
+      t.variableDeclarator(cloneEstreeNode(callback), cloneEstreeNode(value, true)),
     ]),
   );
   return callback;
@@ -45,7 +46,7 @@ export function stabilizeInlineCallbackStatement(
   const callback = generatedIdentifier(ctx, hint);
   statements.push(
     t.variableDeclaration('const', [
-      t.variableDeclarator(t.cloneNode(callback), t.cloneNode(value, true)),
+      t.variableDeclarator(cloneEstreeNode(callback), cloneEstreeNode(value, true)),
     ]),
   );
   return callback;

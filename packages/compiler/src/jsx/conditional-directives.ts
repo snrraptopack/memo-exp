@@ -6,6 +6,7 @@
  * and JSX comments do not interrupt a chain.
  */
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import type { JsxChild } from '../components/children';
 
@@ -68,7 +69,7 @@ function readDirective(
     }
     directive = {
       kind,
-      condition: t.cloneNode(attribute.value.expression, true),
+      condition: cloneEstreeNode(attribute.value.expression, true),
     };
   }
   return directive;

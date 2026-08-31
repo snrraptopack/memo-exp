@@ -7,6 +7,7 @@
  * through the ordinary runtime dirty queue.
  */
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import {
   astBindingAt,
   refreshAstAnalysis,
@@ -352,13 +353,13 @@ function subscribeTransparentEntity(
   scope.mounts.push(
     t.expressionStatement(
       t.callExpression(md(ctx, 'cleanup'), [
-        t.cloneNode(entityId, true),
+        cloneEstreeNode(entityId, true),
         t.callExpression(mdd(ctx, 'connectResolvedValues'), [
           sourceArray(bindingNames),
           t.arrowFunctionExpression(
             [],
             t.callExpression(md(ctx, 'markDirty'), [
-              t.cloneNode(entityId, true),
+              cloneEstreeNode(entityId, true),
             ]),
           ),
         ]),
@@ -382,19 +383,19 @@ export function registerTransparentDataSite(
   const suffix = `/$data/${scope.dataSiteCounter.count++}`;
   const siteId = t.binaryExpression(
     '+',
-    t.cloneNode(ownerId, true),
+    cloneEstreeNode(ownerId, true),
     t.stringLiteral(suffix),
   );
   scope.creation.push(
     registerStmt(
       ctx,
-      t.cloneNode(siteId, true),
-      t.cloneNode(ownerId, true),
+      cloneEstreeNode(siteId, true),
+      cloneEstreeNode(ownerId, true),
       t.arrowFunctionExpression([], t.blockStatement([render])),
     ),
   );
   subscribeTransparentEntity(ctx, scope, routed, siteId);
-  scope.disposableEntities.push(t.cloneNode(siteId, true));
+  scope.disposableEntities.push(cloneEstreeNode(siteId, true));
   return true;
 }
 
@@ -547,18 +548,18 @@ function wrapGroupSite(
   const sources = sourceArray(dependencies);
   const errorRead = (): t.CallExpression =>
     t.callExpression(mdd(ctx, 'resolvedValuesError'), [
-      t.cloneNode(sources, true),
+      cloneEstreeNode(sources, true),
     ]);
   const retry = t.arrowFunctionExpression(
     [],
     t.callExpression(mdd(ctx, 'retryResolvedValues'), [
-      t.cloneNode(sources, true),
+      cloneEstreeNode(sources, true),
     ]),
   );
   const committed = t.jsxFragment(
     t.jsxOpeningFragment(),
     t.jsxClosingFragment(),
-    [t.jsxExpressionContainer(t.cloneNode(expression, true))],
+    [t.jsxExpressionContainer(cloneEstreeNode(expression, true))],
   );
   const conditional = t.conditionalExpression(
     errorRead(),
@@ -574,7 +575,7 @@ function wrapGroupSite(
     ]),
     t.conditionalExpression(
       t.callExpression(mdd(ctx, 'resolvedValuesPending'), [
-        t.cloneNode(sources, true),
+        cloneEstreeNode(sources, true),
       ]),
       policyElement(pending, []),
       committed,
@@ -633,7 +634,7 @@ function sourcePolicy(
   const prop = ctx.transparentSourceProps.get(component)?.get(source);
   if (parameter === undefined || prop === undefined) return t.nullLiteral();
   return t.optionalMemberExpression(
-    t.cloneNode(parameter),
+    cloneEstreeNode(parameter),
     t.isValidIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
     !t.isValidIdentifier(prop),
     true,
@@ -664,7 +665,7 @@ function policyMember(
   name: 'pending' | 'error',
 ): t.Expression {
   return t.optionalMemberExpression(
-    t.cloneNode(policy),
+    cloneEstreeNode(policy),
     t.identifier(name),
     false,
     true,
@@ -688,11 +689,11 @@ function wrapAutomaticSite(
   const sources = sourceArray(dependencies);
   const errorRead = (): t.CallExpression =>
     t.callExpression(mdd(ctx, 'resolvedValuesError'), [
-      t.cloneNode(sources, true),
+      cloneEstreeNode(sources, true),
     ]);
   const pendingRead = (): t.CallExpression =>
     t.callExpression(mdd(ctx, 'resolvedValuesPending'), [
-      t.cloneNode(sources, true),
+      cloneEstreeNode(sources, true),
     ]);
   const errorPolicy = policyForStatus(
     ctx,
@@ -711,26 +712,26 @@ function wrapAutomaticSite(
   const retry = t.arrowFunctionExpression(
     [],
     t.callExpression(mdd(ctx, 'retryResolvedValues'), [
-      t.cloneNode(sources, true),
+      cloneEstreeNode(sources, true),
     ]),
   );
   const conditional = t.conditionalExpression(
-    t.logicalExpression('&&', errorRead(), t.cloneNode(errorRenderer)),
-    policyRendererElement(t.cloneNode(errorRenderer), [errorRead(), retry]),
+    t.logicalExpression('&&', errorRead(), cloneEstreeNode(errorRenderer)),
+    policyRendererElement(cloneEstreeNode(errorRenderer), [errorRead(), retry]),
     t.conditionalExpression(
       errorRead(),
       fragmentExpression(
         t.callExpression(mdd(ctx, 'throwResolvedValuesError'), [
-          t.cloneNode(sources, true),
+          cloneEstreeNode(sources, true),
         ]),
       ),
       t.conditionalExpression(
-        t.logicalExpression('&&', pendingRead(), t.cloneNode(pendingRenderer)),
-        policyRendererElement(t.cloneNode(pendingRenderer), []),
+        t.logicalExpression('&&', pendingRead(), cloneEstreeNode(pendingRenderer)),
+        policyRendererElement(cloneEstreeNode(pendingRenderer), []),
         t.conditionalExpression(
           pendingRead(),
           t.jsxFragment(t.jsxOpeningFragment(), t.jsxClosingFragment(), []),
-          fragmentExpression(t.cloneNode(expression, true)),
+          fragmentExpression(cloneEstreeNode(expression, true)),
         ),
       ),
     ),
@@ -915,10 +916,10 @@ export function scanAndLowerModuleSourceDeclarations(
                   ]),
                   target === undefined
                     ? t.nullLiteral()
-                    : t.cloneNode(target, true),
+                    : cloneEstreeNode(target, true),
                   ...(options === undefined
                     ? []
-                    : [t.cloneNode(options, true)]),
+                    : [cloneEstreeNode(options, true)]),
                 ]),
               ),
             ]),
@@ -939,8 +940,8 @@ export function scanAndLowerModuleSourceDeclarations(
                   t.callExpression(mdd(ctx, 'createSource'), [
                     target === undefined
                       ? t.nullLiteral()
-                      : t.cloneNode(target),
-                    ...(options === undefined ? [] : [t.cloneNode(options)]),
+                      : cloneEstreeNode(target),
+                    ...(options === undefined ? [] : [cloneEstreeNode(options)]),
                   ]),
                 ),
               ]),
@@ -1292,7 +1293,7 @@ function replaceDerivedReads(
   for (const { identifier, expression } of found) {
     overwriteNode(
       identifier,
-      t.cloneNode(expression, true) as unknown as BaseNode,
+      cloneEstreeNode(expression, true) as unknown as BaseNode,
     );
   }
 }
@@ -1347,7 +1348,7 @@ function replaceSourceReads(
   for (const { identifier, replacement } of found) {
     overwriteNode(
       identifier,
-      t.cloneNode(replacement) as unknown as BaseNode,
+      cloneEstreeNode(replacement) as unknown as BaseNode,
     );
   }
 }
@@ -1423,7 +1424,7 @@ function resolvedRenderExpression(
   const parameters = dependencies.map((source) => {
     const parameter = generatedIdentifier(ctx, `${source}Value`);
     replacements.set(source, parameter);
-    return t.cloneNode(parameter);
+    return cloneEstreeNode(parameter);
   });
   replaceSourceReads(
     ctx,
@@ -1435,7 +1436,7 @@ function resolvedRenderExpression(
     t.arrayExpression(
       dependencies.map((source) => t.identifier(source)),
     ),
-    t.arrowFunctionExpression(parameters, t.cloneNode(expression, true)),
+    t.arrowFunctionExpression(parameters, cloneEstreeNode(expression, true)),
   ]);
 }
 
@@ -1613,15 +1614,15 @@ function lowerModuleRefReadsEstree(
           const parameters = uniqueEntries.map((entry) => {
             const parameter = generatedIdentifier(ctx, `${entry.name}Value`);
             replacements.set(entry.name, parameter);
-            return t.cloneNode(parameter);
+            return cloneEstreeNode(parameter);
           });
           for (const { identifier, entry } of remaining) {
             overwriteNode(
               identifier,
-              t.cloneNode(replacements.get(entry.name)!) as unknown as BaseNode,
+              cloneEstreeNode(replacements.get(entry.name)!) as unknown as BaseNode,
             );
           }
-          const body = t.cloneNode(expression, true);
+          const body = cloneEstreeNode(expression, true);
           overwriteNode(
             rawExpression,
             t.callExpression(mdd(ctx, 'readResolvedValuesForRender'), [
@@ -1759,7 +1760,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         derived,
       );
       refresh();
-      const projection = t.cloneNode(init, true);
+      const projection = cloneEstreeNode(init, true);
       const wrapped = resolvedRenderExpression(
         ctx,
         init,
@@ -1771,14 +1772,14 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         init as unknown as BaseNode,
         wrapped as unknown as BaseNode,
       );
-      derivation.source = t.cloneNode(wrapped, true);
+      derivation.source = cloneEstreeNode(wrapped, true);
       for (const name of derivation.bindings) {
         const binding = astBindingAt(ctx, componentNode, name);
         if (binding !== undefined) {
           derived.set(name, {
             binding,
             sources,
-            expression: t.cloneNode(projection, true),
+            expression: cloneEstreeNode(projection, true),
           });
         }
       }
@@ -1938,20 +1939,20 @@ function policyComponentRenderer(
   const retry = generatedIdentifier(ctx, 'dataPolicyRetry');
   const entries = kind === 'error'
     ? [
-        { name: 'error', value: t.cloneNode(error) as t.Expression },
-        { name: 'retry', value: t.cloneNode(retry) as t.Expression },
+        { name: 'error', value: cloneEstreeNode(error) as t.Expression },
+        { name: 'retry', value: cloneEstreeNode(retry) as t.Expression },
       ]
     : [];
   const props = orderCallProps(ctx, component, entries);
   return t.arrowFunctionExpression(
     [
-      t.cloneNode(id),
-      t.cloneNode(parent),
-      ...(kind === 'error' ? [t.cloneNode(error), t.cloneNode(retry)] : []),
+      cloneEstreeNode(id),
+      cloneEstreeNode(parent),
+      ...(kind === 'error' ? [cloneEstreeNode(error), cloneEstreeNode(retry)] : []),
     ],
     t.callExpression(t.identifier(component), [
-      t.cloneNode(id),
-      t.cloneNode(parent),
+      cloneEstreeNode(id),
+      cloneEstreeNode(parent),
       ...(props.length > 0 ? [t.arrayExpression(props)] : []),
     ]),
   );
@@ -1999,7 +2000,7 @@ export function transparentCallPolicyArgument(
       entries.set(
         attribute.name.name,
         t.optionalMemberExpression(
-          t.cloneNode(inherited),
+          cloneEstreeNode(inherited),
           t.isValidIdentifier(ownerProp)
             ? t.identifier(ownerProp)
             : t.stringLiteral(ownerProp),
@@ -2033,7 +2034,7 @@ export function transparentSourceMounts(
     .map((source) =>
       t.expressionStatement(
         t.callExpression(md(ctx, 'cleanup'), [
-          t.cloneNode(owner),
+          cloneEstreeNode(owner),
           t.callExpression(mdd(ctx, 'ownResolvedValue'), [
             t.identifier(source),
           ]),

@@ -21,6 +21,7 @@ import {
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import memoDomPlugin, { type MemoDomOptions } from './plugin';
 import type { InternalMemoDomOptions } from './context';
 
@@ -62,7 +63,7 @@ function transform(
   };
   return ast === undefined
     ? transformSync(source, transformOptions)
-    : transformFromAstSync(t.cloneNode(ast, true), source, transformOptions);
+    : transformFromAstSync(cloneEstreeNode(ast, true), source, transformOptions);
 }
 
 /** Compile source while preserving the historical string-only API. */

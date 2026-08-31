@@ -2,6 +2,7 @@
  * Normalize supported JSX return control flow into one stable branch picker.
  */
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import type { JsxNode } from '../jsx/children';
 
@@ -174,7 +175,7 @@ function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
     branches.push(returned.jsx);
     cases.push(
       t.switchCase(
-        item.test === null ? null : t.cloneNode(item.test),
+        item.test == null ? null : cloneEstreeNode(item.test),
         [t.returnStatement(t.numericLiteral(index))],
       ),
     );
@@ -183,7 +184,7 @@ function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
     pick: t.arrowFunctionExpression(
       [],
       t.blockStatement([
-        t.switchStatement(t.cloneNode(statement.discriminant), cases),
+        t.switchStatement(cloneEstreeNode(statement.discriminant), cases),
       ]),
     ),
     branches,
@@ -226,7 +227,7 @@ export function analyzeComponentReturns(
         pick: t.arrowFunctionExpression(
           [],
           t.conditionalExpression(
-            t.cloneNode(final.test),
+            cloneEstreeNode(final.test),
             t.numericLiteral(0),
             t.numericLiteral(1),
           ),
@@ -255,7 +256,7 @@ export function analyzeComponentReturns(
         const returned = soleBranchReturn(statement.consequent);
         if (returned !== null) {
           if (firstEarlyReturn === -1) firstEarlyReturn = index;
-          tests.push(t.cloneNode(statement.test));
+          tests.push(cloneEstreeNode(statement.test));
           branches.push(returned.jsx);
           statements.add(statement);
           continue;

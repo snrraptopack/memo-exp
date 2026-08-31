@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
@@ -82,14 +83,14 @@ export function createElementExpression(
   return svg
     ? t.callExpression(
         t.memberExpression(
-          t.cloneNode(document),
+          cloneEstreeNode(document),
           t.identifier('createElementNS'),
         ),
         [t.stringLiteral(SVG_NAMESPACE), t.stringLiteral(tag)],
       )
     : t.callExpression(
         t.memberExpression(
-          t.cloneNode(document),
+          cloneEstreeNode(document),
           t.identifier('createElement'),
         ),
         [t.stringLiteral(tag)],

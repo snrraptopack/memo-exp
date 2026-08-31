@@ -16,6 +16,7 @@ import {
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import { walkAst, type BaseNode } from './ast';
 import { buildAccessTable, runAnalysis } from './analysis';
 import {
@@ -639,7 +640,7 @@ function analyzeManifest(
     },
   });
 
-  transformFromAstSync(t.cloneNode(entry.ast, true), entry.source, {
+  transformFromAstSync(cloneEstreeNode(entry.ast, true), entry.source, {
     filename: entry.id,
     plugins: [
       [syntaxJsx as PluginTarget, {}],
@@ -809,7 +810,7 @@ function discoverManifest(
       },
     },
   });
-  transformFromAstSync(t.cloneNode(entry.ast, true), entry.source, {
+  transformFromAstSync(cloneEstreeNode(entry.ast, true), entry.source, {
     filename: entry.id,
     plugins: [
       [syntaxJsx as PluginTarget, {}],

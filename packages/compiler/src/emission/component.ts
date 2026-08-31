@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { isLightweightListedComponent } from '../analysis';
 import {
   keyPathOf,
@@ -129,7 +130,7 @@ function buildLightweightReturn(
           t.assignmentExpression(
             '=',
             t.identifier(local),
-            t.cloneNode(nextProps[index]!),
+            cloneEstreeNode(nextProps[index]!),
           ),
         ),
       );
@@ -164,11 +165,11 @@ function buildLightweightReturn(
                       t.ifStatement(
                         t.binaryExpression(
                           '!==',
-                          t.cloneNode(callback),
+                          cloneEstreeNode(callback),
                           t.nullLiteral(),
                         ),
                         t.expressionStatement(
-                          t.callExpression(t.cloneNode(callback), []),
+                          t.callExpression(cloneEstreeNode(callback), []),
                         ),
                       ),
                     ),
@@ -208,12 +209,12 @@ function buildFactoryParameters(
         t.identifier(factoryId),
         t.identifier(factoryParent!),
         t.identifier(propsBox!),
-        ...(dataPolicies === null ? [] : [t.cloneNode(dataPolicies)]),
+        ...(dataPolicies === null ? [] : [cloneEstreeNode(dataPolicies)]),
       ]
     : [
         t.identifier(factoryId),
         t.identifier(factoryParent!),
-        ...(dataPolicies === null ? [] : [t.cloneNode(dataPolicies)]),
+        ...(dataPolicies === null ? [] : [cloneEstreeNode(dataPolicies)]),
       ];
 }
 
@@ -470,7 +471,7 @@ function emitComponentReturnRegion(
   const owner = t.identifier(factoryId);
   const regionId = t.binaryExpression(
     '+',
-    t.cloneNode(owner),
+    cloneEstreeNode(owner),
     t.stringLiteral('/$return'),
   );
   scope.creation.push(
@@ -493,8 +494,8 @@ function emitComponentReturnRegion(
         t.identifier(region),
         t.callExpression(md(ctx, 'createCondRegion'), [
           t.identifier(fragment),
-          t.cloneNode(regionId),
-          t.cloneNode(plan.pick),
+          cloneEstreeNode(regionId),
+          cloneEstreeNode(plan.pick),
           t.arrayExpression(
             plan.branches.map((jsx) =>
               jsx !== null

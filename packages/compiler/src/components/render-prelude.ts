@@ -7,6 +7,7 @@
  * reason-less update conservatively runs every calculation.
  */
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import type { Ctx } from '../context';
 import {
   buildDerivationReplay,
@@ -54,11 +55,11 @@ export function buildRenderPreludeReplay(
             t.assignmentExpression(
               '=',
               t.identifier(reset.binding),
-              t.cloneNode(reset.source, true),
+              cloneEstreeNode(reset.source, true),
             ),
           ),
         ),
-        t.cloneNode(control.statement, true),
+        cloneEstreeNode(control.statement, true),
       ]),
     })),
   ].sort(

@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 
@@ -75,10 +76,10 @@ export function callPropsFromObject(
   object: t.Expression,
 ): t.Expression[] {
   const plan = ctx.componentProps.get(tag);
-  if (plan?.mode === 'object') return [t.cloneNode(object)];
+  if (plan?.mode === 'object') return [cloneEstreeNode(object)];
   return (plan?.names ?? []).map((name) =>
     t.memberExpression(
-      t.cloneNode(object),
+      cloneEstreeNode(object),
       t.isValidIdentifier(name)
         ? t.identifier(name)
         : t.stringLiteral(name),
@@ -98,15 +99,15 @@ export function buildSpreadComponentPropUpdate(
   return t.blockStatement([
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(next),
-        t.cloneNode(expression),
+        cloneEstreeNode(next),
+        cloneEstreeNode(expression),
       ),
     ]),
     t.expressionStatement(
       t.callExpression(md(ctx, 'setProps'), [
         t.binaryExpression(
           '+',
-          t.cloneNode(ownerId),
+          cloneEstreeNode(ownerId),
           t.stringLiteral(idSuffix),
         ),
         t.arrayExpression(callPropsFromObject(ctx, tag, next)),

@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   isIdentifier as isAstIdentifier,
   isMemberExpression as isAstMemberExpression,
@@ -145,40 +146,40 @@ export function buildChildrenSlot(
 
   ownerScope.creation.push(
     t.variableDeclaration('let', [
-      t.variableDeclarator(t.cloneNode(updateHolder), t.nullLiteral()),
-      t.variableDeclarator(t.cloneNode(additionalUpdates), t.nullLiteral()),
-      t.variableDeclarator(t.cloneNode(mountSequence), t.numericLiteral(0)),
+      t.variableDeclarator(cloneEstreeNode(updateHolder), t.nullLiteral()),
+      t.variableDeclarator(cloneEstreeNode(additionalUpdates), t.nullLiteral()),
+      t.variableDeclarator(cloneEstreeNode(mountSequence), t.numericLiteral(0)),
     ]),
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(mount),
+        cloneEstreeNode(mount),
         t.arrowFunctionExpression(
           [
-            t.cloneNode(parentNode),
-            t.cloneNode(mountOwner),
-            t.cloneNode(mountKey),
+            cloneEstreeNode(parentNode),
+            cloneEstreeNode(mountOwner),
+            cloneEstreeNode(mountKey),
           ],
           t.blockStatement([
             t.variableDeclaration('const', [
               t.variableDeclarator(
-                t.cloneNode(slotOwner),
+                cloneEstreeNode(slotOwner),
                 t.conditionalExpression(
                   t.binaryExpression(
                     '===',
-                    t.cloneNode(mountSequence),
+                    cloneEstreeNode(mountSequence),
                     t.numericLiteral(0),
                   ),
-                  t.cloneNode(identityOwner, true),
+                  cloneEstreeNode(identityOwner, true),
                   t.binaryExpression(
                     '+',
                     t.binaryExpression(
                       '+',
-                      t.cloneNode(identityOwner, true),
+                      cloneEstreeNode(identityOwner, true),
                       t.stringLiteral('/$slot['),
                     ),
                     t.binaryExpression(
                       '+',
-                      t.cloneNode(mountSequence),
+                      cloneEstreeNode(mountSequence),
                       t.stringLiteral(']'),
                     ),
                   ),
@@ -186,11 +187,11 @@ export function buildChildrenSlot(
               ),
             ]),
             t.expressionStatement(
-              t.updateExpression('++', t.cloneNode(mountSequence)),
+              t.updateExpression('++', cloneEstreeNode(mountSequence)),
             ),
             t.variableDeclaration('let', [
               t.variableDeclarator(
-                t.cloneNode(active),
+                cloneEstreeNode(active),
                 t.booleanLiteral(true),
               ),
             ]),
@@ -202,13 +203,13 @@ export function buildChildrenSlot(
             t.ifStatement(
               t.binaryExpression(
                 '===',
-                t.cloneNode(updateHolder),
+                cloneEstreeNode(updateHolder),
                 t.nullLiteral(),
               ),
               t.expressionStatement(
                 t.assignmentExpression(
                   '=',
-                  t.cloneNode(updateHolder),
+                  cloneEstreeNode(updateHolder),
                   t.identifier(childScope.updateVar),
                 ),
               ),
@@ -216,13 +217,13 @@ export function buildChildrenSlot(
                 t.ifStatement(
                   t.binaryExpression(
                     '===',
-                    t.cloneNode(additionalUpdates),
+                    cloneEstreeNode(additionalUpdates),
                     t.nullLiteral(),
                   ),
                   t.expressionStatement(
                     t.assignmentExpression(
                       '=',
-                      t.cloneNode(additionalUpdates),
+                      cloneEstreeNode(additionalUpdates),
                       t.newExpression(t.identifier('Set'), []),
                     ),
                   ),
@@ -230,7 +231,7 @@ export function buildChildrenSlot(
                 t.expressionStatement(
                   t.callExpression(
                     t.memberExpression(
-                      t.cloneNode(additionalUpdates),
+                      cloneEstreeNode(additionalUpdates),
                       t.identifier('add'),
                     ),
                     [t.identifier(childScope.updateVar)],
@@ -240,44 +241,44 @@ export function buildChildrenSlot(
             ),
             t.variableDeclaration('const', [
               t.variableDeclarator(
-                t.cloneNode(dispose),
+                cloneEstreeNode(dispose),
                 t.arrowFunctionExpression(
                   [],
                   t.blockStatement([
                     t.ifStatement(
-                      t.unaryExpression('!', t.cloneNode(active)),
+                      t.unaryExpression('!', cloneEstreeNode(active)),
                       t.returnStatement(),
                     ),
                     t.expressionStatement(
                       t.assignmentExpression(
                         '=',
-                        t.cloneNode(active),
+                        cloneEstreeNode(active),
                         t.booleanLiteral(false),
                       ),
                     ),
                     t.ifStatement(
                       t.binaryExpression(
                         '===',
-                        t.cloneNode(updateHolder),
+                        cloneEstreeNode(updateHolder),
                         t.identifier(childScope.updateVar),
                       ),
                       t.expressionStatement(
                         t.assignmentExpression(
                           '=',
-                          t.cloneNode(updateHolder),
+                          cloneEstreeNode(updateHolder),
                           t.nullLiteral(),
                         ),
                       ),
                       t.ifStatement(
                         t.binaryExpression(
                           '!==',
-                          t.cloneNode(additionalUpdates),
+                          cloneEstreeNode(additionalUpdates),
                           t.nullLiteral(),
                         ),
                         t.expressionStatement(
                           t.callExpression(
                             t.memberExpression(
-                              t.cloneNode(additionalUpdates),
+                              cloneEstreeNode(additionalUpdates),
                               t.identifier('delete'),
                             ),
                             [t.identifier(childScope.updateVar)],
@@ -300,18 +301,18 @@ export function buildChildrenSlot(
                       t.ifStatement(
                         t.binaryExpression(
                           '!==',
-                          t.cloneNode(callback),
+                          cloneEstreeNode(callback),
                           t.nullLiteral(),
                         ),
                         t.expressionStatement(
-                          t.callExpression(t.cloneNode(callback), []),
+                          t.callExpression(cloneEstreeNode(callback), []),
                         ),
                       ),
                     ),
                     ...childScope.disposableEntities.map((entity) =>
                       t.expressionStatement(
                         t.callExpression(md(ctx, 'unregisterSubtree'), [
-                          t.cloneNode(entity, true),
+                          cloneEstreeNode(entity, true),
                         ]),
                       ),
                     ),
@@ -321,11 +322,11 @@ export function buildChildrenSlot(
             ]),
             t.expressionStatement(
               t.callExpression(md(ctx, 'cleanup'), [
-                t.cloneNode(mountOwner),
-                t.cloneNode(dispose),
+                cloneEstreeNode(mountOwner),
+                cloneEstreeNode(dispose),
               ]),
             ),
-            t.returnStatement(t.cloneNode(dispose)),
+            t.returnStatement(cloneEstreeNode(dispose)),
           ]),
         ),
       ),
@@ -334,22 +335,22 @@ export function buildChildrenSlot(
   ownerScope.updaters.push(() =>
     t.blockStatement([
       t.ifStatement(
-        t.binaryExpression('!==', t.cloneNode(updateHolder), t.nullLiteral()),
-        t.expressionStatement(t.callExpression(t.cloneNode(updateHolder), [])),
+        t.binaryExpression('!==', cloneEstreeNode(updateHolder), t.nullLiteral()),
+        t.expressionStatement(t.callExpression(cloneEstreeNode(updateHolder), [])),
       ),
       t.ifStatement(
         t.binaryExpression(
           '!==',
-          t.cloneNode(additionalUpdates),
+          cloneEstreeNode(additionalUpdates),
           t.nullLiteral(),
         ),
         t.forOfStatement(
           t.variableDeclaration('const', [
-            t.variableDeclarator(t.cloneNode(nextUpdate)),
+            t.variableDeclarator(cloneEstreeNode(nextUpdate)),
           ]),
-          t.cloneNode(additionalUpdates),
+          cloneEstreeNode(additionalUpdates),
           t.expressionStatement(
-            t.callExpression(t.cloneNode(nextUpdate), []),
+            t.callExpression(cloneEstreeNode(nextUpdate), []),
           ),
         ),
       ),
@@ -371,17 +372,17 @@ export function emitForwardedSlotMount(
   scope.creation.push(
     t.variableDeclaration('const', [
       t.variableDeclarator(
-        t.cloneNode(disposer),
+        cloneEstreeNode(disposer),
         t.conditionalExpression(
           t.binaryExpression(
             '==',
-            t.cloneNode(expression, true),
+            cloneEstreeNode(expression, true),
             t.nullLiteral(),
           ),
           t.nullLiteral(),
-          t.callExpression(t.cloneNode(expression, true), [
+          t.callExpression(cloneEstreeNode(expression, true), [
             t.identifier(parentVar),
-            t.cloneNode(ownerId, true),
+            cloneEstreeNode(ownerId, true),
             t.stringLiteral(String(key)),
           ]),
         ),
@@ -452,6 +453,6 @@ export function emitChildrenIntoParent(
       emitters.emitCondition(condition, parentVar);
       continue;
     }
-    append(emitters.emitText(t.cloneNode(expression)));
+    append(emitters.emitText(cloneEstreeNode(expression)));
   }
 }

@@ -7,6 +7,7 @@
  * unified instead of adding expression-path branches to every pass.
  */
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import { nodeHasJsx } from '../context';
 
 interface ProgramContainer {
@@ -58,21 +59,21 @@ function functionDeclaration(
 
   const declaration = t.functionDeclaration(
     t.identifier(name),
-    expression.params.map((parameter) => t.cloneNode(parameter, true)),
+    expression.params.map((parameter) => cloneEstreeNode(parameter, true)),
     t.isBlockStatement(expression.body)
-      ? t.cloneNode(expression.body, true)
+      ? cloneEstreeNode(expression.body, true)
       : t.blockStatement([
-          t.returnStatement(t.cloneNode(expression.body, true)),
+          t.returnStatement(cloneEstreeNode(expression.body, true)),
         ]),
   );
   declaration.returnType =
     expression.returnType == null
       ? null
-      : t.cloneNode(expression.returnType, true);
+      : cloneEstreeNode(expression.returnType, true);
   declaration.typeParameters =
     expression.typeParameters == null
       ? null
-      : t.cloneNode(expression.typeParameters, true);
+      : cloneEstreeNode(expression.typeParameters, true);
   declaration.loc = expression.loc;
   return declaration;
 }
@@ -85,8 +86,8 @@ function normalizedVariableStatement(
   if (declaration.kind !== 'const') {
     return [
       exported
-        ? t.exportNamedDeclaration(t.cloneNode(declaration, true))
-        : t.cloneNode(declaration, true),
+        ? t.exportNamedDeclaration(cloneEstreeNode(declaration, true))
+        : cloneEstreeNode(declaration, true),
     ];
   }
 
@@ -96,7 +97,7 @@ function normalizedVariableStatement(
     let statement: t.Statement;
     if (expression === null) {
       statement = t.variableDeclaration('const', [
-        t.cloneNode(declarator, true),
+        cloneEstreeNode(declarator, true),
       ]);
     } else {
       statement = functionDeclaration(

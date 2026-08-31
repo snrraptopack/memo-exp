@@ -6,6 +6,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import type { Ctx, RowCtx } from './context';
 import {
   componentId,
@@ -33,7 +34,7 @@ export function buildEventOriginCommit(
         ? componentId(ctx, compName)
         : t.stringLiteral(ctx.rootId));
   return t.expressionStatement(
-    t.callExpression(md(ctx, 'markDirty'), [t.cloneNode(id)]),
+    t.callExpression(md(ctx, 'markDirty'), [cloneEstreeNode(id)]),
   );
 }
 
@@ -51,11 +52,11 @@ export function wrapSharedHandlerWithOrigin(
       t.variableDeclaration('const', [
         t.variableDeclarator(
           result,
-          t.callExpression(t.cloneNode(handler), [t.cloneNode(event)]),
+          t.callExpression(cloneEstreeNode(handler), [cloneEstreeNode(event)]),
         ),
       ]),
       originCommit,
-      t.returnStatement(t.cloneNode(result)),
+      t.returnStatement(cloneEstreeNode(result)),
     ]),
   );
 }

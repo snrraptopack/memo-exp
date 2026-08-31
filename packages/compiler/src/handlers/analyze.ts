@@ -1,4 +1,5 @@
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   analyzeScope,
   cloneNode,
@@ -207,7 +208,7 @@ function directListItemMutationKey(
   }
   if (writeTouchesKey(writtenSegments, plan.keyPath)) return null;
 
-  let key: t.Expression = t.cloneNode(itemAccess, true);
+  let key: t.Expression = cloneEstreeNode(itemAccess, true);
   for (const segment of plan.keyPath) {
     key = t.memberExpression(key, t.identifier(segment));
   }
@@ -313,8 +314,8 @@ function finalizeHandlerInstrumentation(
           : t.blockStatement(
               guardedRootSites.map((site) =>
                 t.ifStatement(
-                  t.cloneNode(site.flag!),
-                  t.cloneNode(site.commit),
+                  cloneEstreeNode(site.flag!),
+                  cloneEstreeNode(site.commit),
                 ),
               ),
             )
@@ -337,9 +338,9 @@ function finalizeHandlerInstrumentation(
       t.variableDeclaration(
         'let',
         guardedRootSites.flatMap((site) => [
-          t.variableDeclarator(t.cloneNode(site.flag!), t.booleanLiteral(false)),
+          t.variableDeclarator(cloneEstreeNode(site.flag!), t.booleanLiteral(false)),
           ...(site.temporaries ?? []).map((temporary) =>
-            t.variableDeclarator(t.cloneNode(temporary)),
+            t.variableDeclarator(cloneEstreeNode(temporary)),
           ),
         ]),
       ),
@@ -444,7 +445,7 @@ export function analyzeHandler(
     key: t.Expression,
   ): void => {
     if (!p.isExpression()) return;
-    const original = t.cloneNode(p.node, true);
+    const original = cloneEstreeNode(p.node, true);
     p.replaceWith(
       t.sequenceExpression([
         t.callExpression(
@@ -1292,7 +1293,7 @@ function markExecutionSite(
 
     if (t.isIdentifier(original.left)) {
       before = t.identifier(original.left.name);
-      assignment = t.cloneNode(original, true);
+      assignment = cloneEstreeNode(original, true);
       after = t.identifier(original.left.name);
     } else if (t.isMemberExpression(original.left)) {
       const receiver = generatedIdentifier(ctx, 'assignmentReceiver');
@@ -1300,23 +1301,23 @@ function markExecutionSite(
       temporaries.push(receiver, property);
       const access = (): t.MemberExpression =>
         t.memberExpression(
-          t.cloneNode(receiver),
-          t.cloneNode(property),
+          cloneEstreeNode(receiver),
+          cloneEstreeNode(property),
           true,
         );
       const propertyExpression = original.left.computed
-        ? t.cloneNode(original.left.property as t.Expression, true)
+        ? cloneEstreeNode(original.left.property as t.Expression, true)
         : t.stringLiteral((original.left.property as t.Identifier).name);
       before = t.sequenceExpression([
         t.assignmentExpression(
           '=',
-          t.cloneNode(receiver),
-          t.cloneNode(original.left.object as t.Expression, true),
+          cloneEstreeNode(receiver),
+          cloneEstreeNode(original.left.object as t.Expression, true),
         ),
-        t.assignmentExpression('=', t.cloneNode(property), propertyExpression),
+        t.assignmentExpression('=', cloneEstreeNode(property), propertyExpression),
         access(),
       ]);
-      assignment = t.assignmentExpression('=', access(), t.cloneNode(original.right, true));
+      assignment = t.assignmentExpression('=', access(), cloneEstreeNode(original.right, true));
       after = access();
     } else {
       return [];
@@ -1324,21 +1325,21 @@ function markExecutionSite(
 
     path.replaceWith(
       t.sequenceExpression([
-        t.assignmentExpression('=', t.cloneNode(previous), before),
-        t.assignmentExpression('=', t.cloneNode(result), assignment),
+        t.assignmentExpression('=', cloneEstreeNode(previous), before),
+        t.assignmentExpression('=', cloneEstreeNode(result), assignment),
         t.assignmentExpression(
           '=',
-          t.cloneNode(flag),
+          cloneEstreeNode(flag),
           t.logicalExpression(
             '||',
-            t.cloneNode(flag),
+            cloneEstreeNode(flag),
             t.callExpression(md(ctx, 'effectAssignmentChanged'), [
-              t.cloneNode(previous),
+              cloneEstreeNode(previous),
               after,
             ]),
           ),
         ),
-        t.cloneNode(result),
+        cloneEstreeNode(result),
       ]),
     );
     return temporaries;
@@ -1346,7 +1347,7 @@ function markExecutionSite(
 
   const mark = t.assignmentExpression(
     '=',
-    t.cloneNode(flag),
+    cloneEstreeNode(flag),
     t.booleanLiteral(true),
   );
   if (path.isVariableDeclarator()) {
@@ -1367,7 +1368,7 @@ function markExecutionSite(
   path.replaceWith(
     t.sequenceExpression([
       mark,
-      t.cloneNode(path.node, true),
+      cloneEstreeNode(path.node, true),
     ]),
   );
   return [];

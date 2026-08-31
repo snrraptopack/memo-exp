@@ -7,6 +7,7 @@
  */
 
 import * as t from '@babel/types';
+import { cloneNode as cloneEstreeNode } from './ast';
 import {
   cloneNode,
   walkAst,
@@ -950,10 +951,10 @@ export function buildEffectRegistrations(
             : [
                 t.arrowFunctionExpression(
                   [],
-                  t.cloneNode(site.condition, true),
+                  cloneEstreeNode(site.condition, true),
                 ),
               ]),
-          t.cloneNode(site.callback, true),
+          cloneEstreeNode(site.callback, true),
         ],
       ),
     ),
@@ -1002,10 +1003,10 @@ export function rewriteModuleEffects(
                 : [
                     t.arrowFunctionExpression(
                       [],
-                      t.cloneNode(site.condition, true),
+                      cloneEstreeNode(site.condition, true),
                     ),
                   ]),
-              t.cloneNode(site.callback, true),
+              cloneEstreeNode(site.callback, true),
             ],
           ),
         ),
