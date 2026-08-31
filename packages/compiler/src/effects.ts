@@ -6,12 +6,20 @@
  * teardown returned by the callback.
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import {
+  cloneNode,
+  walkAst,
+  type BaseNode,
+  type Binding,
+  type Identifier,
+} from './ast';
+import {
+  astBindingAt,
   memberKey,
   memberRootName,
   nodeHasJsx,
+  refreshAstAnalysis,
   type Ctx,
   type EffectSite,
   type ModuleEffectSite,
@@ -21,12 +29,52 @@ import { generatedIdentifier, md } from './identifiers';
 
 import type { EmitScope } from './emission/scope';
 
+interface DiagnosticPath<TNode extends BaseNode = BaseNode> {
+  node: TNode;
+  buildCodeFrameError(message: string): Error;
+}
+
+type ProgramPath = DiagnosticPath<BaseNode & { type: 'Program' }>;
+type ComponentPath = DiagnosticPath<
+  BaseNode & { type: 'FunctionDeclaration'; body: BaseNode }
+>;
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function childNode(node: BaseNode, key: string): BaseNode | null {
+  const value = fields(node)[key];
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? value as BaseNode
+    : null;
+}
+
+function childNodes(node: BaseNode, key: string): BaseNode[] {
+  const value = fields(node)[key];
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is BaseNode =>
+          item !== null && typeof item === 'object' && 'type' in item,
+      )
+    : [];
+}
+
+function identifierName(node: BaseNode | null): string | null {
+  if (node?.type !== 'Identifier') return null;
+  const name = fields(node).name;
+  return typeof name === 'string' ? name : null;
+}
+
 function isIntrinsicEffect(
-  call: NodePath<t.CallExpression>,
+  ctx: Ctx,
+  call: BaseNode,
 ): boolean {
+  const callee = childNode(call, 'callee');
   return (
-    t.isIdentifier(call.node.callee, { name: 'effect' }) &&
-    call.scope.getBinding('effect') === undefined
+    call.type === 'CallExpression' &&
+    identifierName(callee) === 'effect' &&
+    astBindingAt(ctx, call, 'effect') === undefined
   );
 }
 
@@ -46,86 +94,116 @@ function activeEffectId(factoryId: string, index: number): t.Expression {
   );
 }
 
-type EffectFunctionPath = NodePath<
-  t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration
->;
+type EffectFunctionNode =
+  | t.ArrowFunctionExpression
+  | t.FunctionExpression
+  | t.FunctionDeclaration;
 
 interface ResolvedEffectCallback {
   expression: t.Expression;
-  path: EffectFunctionPath | null;
+  node: EffectFunctionNode | null;
   importedReads: Set<string>;
 }
 
-function functionPathFromBinding(path: NodePath): EffectFunctionPath | null {
-  if (path.isFunctionDeclaration()) return path;
-  if (!path.isVariableDeclarator()) return null;
-  const initializer = path.get('init');
-  return initializer.isArrowFunctionExpression() ||
-    initializer.isFunctionExpression()
-    ? initializer
+function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') return current;
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return null;
+}
+
+function functionNodeFromBinding(
+  ctx: Ctx,
+  binding: Binding,
+): EffectFunctionNode | null {
+  if (
+    binding.kind === 'function' &&
+    binding.declarationNode.type === 'FunctionDeclaration'
+  ) {
+    return binding.declarationNode as unknown as t.FunctionDeclaration;
+  }
+  if (
+    binding.kind !== 'const' &&
+    binding.kind !== 'let' &&
+    binding.kind !== 'var'
+  ) {
+    return null;
+  }
+  const declaration = variableDeclaratorFor(ctx, binding);
+  const initializer = declaration === null
+    ? null
+    : childNode(declaration, 'init');
+  return initializer !== null &&
+    (initializer.type === 'ArrowFunctionExpression' ||
+      initializer.type === 'FunctionExpression')
+    ? initializer as unknown as t.ArrowFunctionExpression | t.FunctionExpression
     : null;
 }
 
 function resolveEffectCallback(
   ctx: Ctx,
-  callPath: NodePath<t.CallExpression>,
+  call: BaseNode,
+  errorAt: DiagnosticPath,
 ): ResolvedEffectCallback {
-  const args = callPath.get('arguments');
-  const argumentPath = args[0];
-  if (args.length !== 1 || argumentPath === undefined) {
-    throw callPath.buildCodeFrameError(
+  const args = childNodes(call, 'arguments');
+  const argument = args[0];
+  if (args.length !== 1 || argument === undefined) {
+    throw errorAt.buildCodeFrameError(
       'memo-dom: effect() requires exactly one callback',
     );
   }
   if (
-    argumentPath.isArrowFunctionExpression() ||
-    argumentPath.isFunctionExpression()
+    argument.type === 'ArrowFunctionExpression' ||
+    argument.type === 'FunctionExpression'
   ) {
-    if (argumentPath.node.async || argumentPath.node.generator) {
-      throw argumentPath.buildCodeFrameError(
+    if (fields(argument).async === true || fields(argument).generator === true) {
+      throw errorAt.buildCodeFrameError(
         'memo-dom: effect callback must be synchronous; start async work inside it and return a synchronous teardown',
       );
     }
     return {
-      expression: argumentPath.node,
-      path: argumentPath,
+      expression: argument as unknown as t.Expression,
+      node: argument as unknown as EffectFunctionNode,
       importedReads: new Set(),
     };
   }
-  if (!argumentPath.isIdentifier()) {
-    throw argumentPath.buildCodeFrameError(
+  const argumentName = identifierName(argument);
+  if (argumentName === null) {
+    throw errorAt.buildCodeFrameError(
       'memo-dom: effect callback must be an inline function or a resolvable function identifier',
     );
   }
 
-  const imported = ctx.importedFunctions.get(argumentPath.node.name);
+  const imported = ctx.importedFunctions.get(argumentName);
   if (imported !== undefined) {
-    throw argumentPath.buildCodeFrameError(
-      `memo-dom: imported named effect callback '${argumentPath.node.name}' is not supported yet; define a local synchronous wrapper so its cleanup and writes can be instrumented`,
+    throw errorAt.buildCodeFrameError(
+      `memo-dom: imported named effect callback '${argumentName}' is not supported yet; define a local synchronous wrapper so its cleanup and writes can be instrumented`,
     );
   }
 
-  const binding = argumentPath.scope.getBinding(argumentPath.node.name);
-  const callbackPath =
-    binding === undefined ? null : functionPathFromBinding(binding.path);
-  if (callbackPath === null) {
-    throw argumentPath.buildCodeFrameError(
-      `memo-dom: cannot resolve effect callback '${argumentPath.node.name}' — use an inline function or a local/module-level function declaration or const`,
+  const binding = astBindingAt(ctx, argument, argumentName);
+  const callback =
+    binding === undefined ? null : functionNodeFromBinding(ctx, binding);
+  if (callback === null) {
+    throw errorAt.buildCodeFrameError(
+      `memo-dom: cannot resolve effect callback '${argumentName}' — use an inline function or a local/module-level function declaration or const`,
     );
   }
-  if (callbackPath.node.async || callbackPath.node.generator) {
-    throw callbackPath.buildCodeFrameError(
+  if (callback.async || callback.generator) {
+    throw errorAt.buildCodeFrameError(
       'memo-dom: effect callback must be synchronous; start async work inside it and return a synchronous teardown',
     );
   }
-  if (nodeHasJsx(callbackPath.node.body)) {
-    throw callbackPath.buildCodeFrameError(
+  if (nodeHasJsx(callback.body)) {
+    throw errorAt.buildCodeFrameError(
       'memo-dom: a JSX component cannot be used as an effect callback',
     );
   }
   return {
-    expression: t.cloneNode(argumentPath.node),
-    path: callbackPath,
+    expression: cloneNode(argument) as unknown as t.Expression,
+    node: callback,
     importedReads: new Set(),
   };
 }
@@ -133,12 +211,12 @@ function resolveEffectCallback(
 function collectEffectReads(
   ctx: Ctx,
   compName: string,
-  compPath: NodePath<t.FunctionDeclaration>,
-  rootPath: NodePath,
+  compPath: ComponentPath,
+  root: BaseNode,
 ): Pick<EffectSite, 'moduleReads' | 'localReads' | 'localDerivationReads'> {
   const moduleReads = new Set<string>();
   const directLocalReads = new Set<string>();
-  const bindings = new Map<unknown, { source: string; local: boolean }>();
+  const bindings = new Map<Binding, { source: string; local: boolean }>();
   const localRoots = new Set<string>([
     ...(ctx.componentProps.get(compName)?.bindings ?? []),
     ...(ctx.instanceState.get(compName) ?? []),
@@ -157,36 +235,41 @@ function collectEffectReads(
   }
 
   for (const name of localRoots) {
-    const binding = compPath.scope.getBinding(name);
+    const binding = astBindingAt(ctx, compPath.node, name);
     if (binding !== undefined) {
       bindings.set(binding, { source: name, local: true });
     }
   }
   for (const name of derivedSources.keys()) {
-    const binding = compPath.scope.getBinding(name);
+    const binding = astBindingAt(ctx, compPath.node, name);
     if (binding !== undefined) {
       bindings.set(binding, { source: name, local: true });
     }
   }
   for (const name of ctx.state.keys()) {
-    const binding = compPath.scope.getBinding(name);
-    if (binding?.scope.path.isProgram() === true) {
+    const binding = astBindingAt(ctx, compPath.node, name);
+    if (binding?.scope.isProgramScope === true) {
       bindings.set(binding, { source: name, local: false });
     }
   }
 
-  const noteIdentifier = (path: NodePath<t.Identifier>): void => {
-    const binding = path.scope.getBinding(path.node.name);
+  const noteIdentifier = (identifier: BaseNode): void => {
+    const name = identifierName(identifier);
+    if (name === null) return;
+    const binding = astBindingAt(ctx, identifier, name);
+    if (binding !== undefined && !binding.references.includes(
+      identifier as unknown as Identifier,
+    )) return;
     const origin = binding === undefined ? undefined : bindings.get(binding);
     if (origin === undefined) return;
 
     // Store members are path-keyed by the MemberExpression visitor below.
-    const parent = path.parentPath;
+    const parent = ctx.astAnalysis?.parentByNode.get(identifier) ?? null;
     if (
       !origin.local &&
       ctx.state.get(origin.source) === 'store' &&
-      parent?.isMemberExpression() &&
-      parent.node.object === path.node
+      parent?.type === 'MemberExpression' &&
+      childNode(parent, 'object') === identifier
     ) {
       return;
     }
@@ -195,56 +278,51 @@ function collectEffectReads(
     else moduleReads.add(origin.source);
   };
 
-  const noteMember = (path: NodePath<t.MemberExpression>): void => {
-    const key = memberKey(path.node);
-    const root = memberRootName(path.node);
+  const noteMember = (member: BaseNode): void => {
+    const key = memberKey(member as unknown as t.MemberExpression);
+    const rootName = memberRootName(member as unknown as t.MemberExpression);
     if (
       key === null ||
-      root === null ||
-      ctx.state.get(root) !== 'store' ||
-      path.scope.getBinding(root)?.scope.path.isProgram() !== true
+      rootName === null ||
+      ctx.state.get(rootName) !== 'store' ||
+      astBindingAt(ctx, member, rootName)?.scope.isProgramScope !== true
     ) {
       return;
     }
     moduleReads.add(key);
   };
 
-  const noteCall = (path: NodePath<t.CallExpression>): void => {
-    const callee = path.node.callee;
+  const noteCall = (call: BaseNode): void => {
+    const callee = childNode(call, 'callee');
+    const calleeName = identifierName(callee);
     if (
-      !t.isIdentifier(callee) ||
-      path.scope.getBinding(callee.name)?.scope.path.isProgram() !== true ||
-      (!ctx.helpers.has(callee.name) &&
-        !ctx.importedFunctions.has(callee.name))
+      callee === null ||
+      calleeName === null ||
+      astBindingAt(ctx, call, calleeName)?.scope.isProgramScope !== true ||
+      (!ctx.helpers.has(calleeName) &&
+        !ctx.importedFunctions.has(calleeName))
     ) {
       return;
     }
     const summary =
-      ctx.importedFunctions.get(callee.name) ??
-      summarizeHelper(ctx, callee.name);
+      ctx.importedFunctions.get(calleeName) ??
+      summarizeHelper(ctx, calleeName);
     for (const read of summary.reads) moduleReads.add(read);
   };
 
-  if (rootPath.isIdentifier() && rootPath.isReferencedIdentifier()) {
-    noteIdentifier(rootPath);
-  }
-  if (rootPath.isMemberExpression()) noteMember(rootPath);
-  if (rootPath.isCallExpression()) noteCall(rootPath);
-
-  rootPath.traverse({
-    Function(path) {
+  walkAst(root, {
+    enter(node) {
       // Reads deferred into timers/promises/listeners are not dependencies of
       // the surrounding effect execution.
-      path.skip();
-    },
-    ReferencedIdentifier(path) {
-      if (path.isIdentifier()) noteIdentifier(path);
-    },
-    MemberExpression(path) {
-      noteMember(path);
-    },
-    CallExpression(path) {
-      noteCall(path);
+      if (node !== root && (
+        node.type === 'ArrowFunctionExpression' ||
+        node.type === 'FunctionExpression' ||
+        node.type === 'FunctionDeclaration'
+      )) return false;
+      if (node.type === 'Identifier') noteIdentifier(node);
+      if (node.type === 'MemberExpression') noteMember(node);
+      if (node.type === 'CallExpression') noteCall(node);
+      return undefined;
     },
   });
 
@@ -283,196 +361,212 @@ function collectEffectReads(
 
 function collectModuleEffectReads(
   ctx: Ctx,
-  rootPath: NodePath,
+  root: BaseNode,
 ): Set<string> {
   const reads = new Set<string>();
-  const noteIdentifier = (path: NodePath<t.Identifier>): void => {
-    const name = path.node.name;
+  const noteIdentifier = (identifier: BaseNode): void => {
+    const name = identifierName(identifier);
     if (
+      name === null ||
       !ctx.state.has(name) ||
-      path.scope.getBinding(name)?.scope.path.isProgram() !== true
+      astBindingAt(ctx, identifier, name)?.scope.isProgramScope !== true
     ) {
       return;
     }
-    const parent = path.parentPath;
+    const binding = astBindingAt(ctx, identifier, name);
+    if (binding !== undefined && !binding.references.includes(
+      identifier as unknown as Identifier,
+    )) return;
+    const parent = ctx.astAnalysis?.parentByNode.get(identifier) ?? null;
     if (
       ctx.state.get(name) === 'store' &&
-      parent?.isMemberExpression() &&
-      parent.node.object === path.node
+      parent?.type === 'MemberExpression' &&
+      childNode(parent, 'object') === identifier
     ) {
       return;
     }
     reads.add(name);
   };
 
-  const noteMember = (path: NodePath<t.MemberExpression>): void => {
-    const key = memberKey(path.node);
-    const root = memberRootName(path.node);
+  const noteMember = (member: BaseNode): void => {
+    const key = memberKey(member as unknown as t.MemberExpression);
+    const rootName = memberRootName(member as unknown as t.MemberExpression);
     if (
       key !== null &&
-      root !== null &&
-      ctx.state.get(root) === 'store' &&
-      path.scope.getBinding(root)?.scope.path.isProgram() === true
+      rootName !== null &&
+      ctx.state.get(rootName) === 'store' &&
+      astBindingAt(ctx, member, rootName)?.scope.isProgramScope === true
     ) {
       reads.add(key);
     }
   };
-  const noteCall = (path: NodePath<t.CallExpression>): void => {
-    const callee = path.node.callee;
+  const noteCall = (call: BaseNode): void => {
+    const calleeName = identifierName(childNode(call, 'callee'));
     if (
-      !t.isIdentifier(callee) ||
-      path.scope.getBinding(callee.name)?.scope.path.isProgram() !== true ||
-      (!ctx.helpers.has(callee.name) &&
-        !ctx.importedFunctions.has(callee.name))
+      calleeName === null ||
+      astBindingAt(ctx, call, calleeName)?.scope.isProgramScope !== true ||
+      (!ctx.helpers.has(calleeName) &&
+        !ctx.importedFunctions.has(calleeName))
     ) {
       return;
     }
     const summary =
-      ctx.importedFunctions.get(callee.name) ??
-      summarizeHelper(ctx, callee.name);
+      ctx.importedFunctions.get(calleeName) ??
+      summarizeHelper(ctx, calleeName);
     for (const read of summary.reads) reads.add(read);
   };
 
-  if (rootPath.isIdentifier() && rootPath.isReferencedIdentifier()) {
-    noteIdentifier(rootPath);
-  }
-  if (rootPath.isMemberExpression()) noteMember(rootPath);
-  if (rootPath.isCallExpression()) noteCall(rootPath);
-
-  rootPath.traverse({
-    Function(path) {
-      path.skip();
-    },
-    ReferencedIdentifier(path) {
-      if (path.isIdentifier()) noteIdentifier(path);
-    },
-    MemberExpression(path) {
-      noteMember(path);
-    },
-    CallExpression(path) {
-      noteCall(path);
+  walkAst(root, {
+    enter(node) {
+      if (node !== root && (
+        node.type === 'ArrowFunctionExpression' ||
+        node.type === 'FunctionExpression' ||
+        node.type === 'FunctionDeclaration'
+      )) return false;
+      if (node.type === 'Identifier') noteIdentifier(node);
+      if (node.type === 'MemberExpression') noteMember(node);
+      if (node.type === 'CallExpression') noteCall(node);
+      return undefined;
     },
   });
   return reads;
 }
 
 interface EffectConditionPath {
-  path: NodePath<t.Expression>;
+  node: t.Expression;
   negated: boolean;
 }
 
 interface OwnedEffectCall {
-  callPath: NodePath<t.CallExpression>;
+  call: t.CallExpression;
   rootStatement: t.Statement;
   conditions: EffectConditionPath[];
 }
 
 function directEffectCall(
-  statementPath: NodePath<t.Statement>,
-): NodePath<t.CallExpression> | null {
-  if (!statementPath.isExpressionStatement()) return null;
-  const expressionPath = statementPath.get('expression');
-  return expressionPath.isCallExpression() && isIntrinsicEffect(expressionPath)
-    ? expressionPath
+  ctx: Ctx,
+  statement: BaseNode,
+): t.CallExpression | null {
+  if (statement.type !== 'ExpressionStatement') return null;
+  const expression = childNode(statement, 'expression');
+  return expression !== null && isIntrinsicEffect(ctx, expression)
+    ? expression as unknown as t.CallExpression
     : null;
 }
 
-function containsOwnedEffect(statementPath: NodePath<t.Statement>): boolean {
-  if (directEffectCall(statementPath) !== null) return true;
+function containsOwnedEffect(ctx: Ctx, statement: BaseNode): boolean {
+  if (directEffectCall(ctx, statement) !== null) return true;
   let found = false;
-  statementPath.traverse({
-    Function(path) {
-      path.skip();
-    },
-    CallExpression(path) {
-      if (isIntrinsicEffect(path)) {
+  walkAst(statement, {
+    enter(node) {
+      if (node !== statement && (
+        node.type === 'ArrowFunctionExpression' ||
+        node.type === 'FunctionExpression' ||
+        node.type === 'FunctionDeclaration'
+      )) return false;
+      if (node.type === 'CallExpression' && isIntrinsicEffect(ctx, node)) {
         found = true;
-        path.stop();
+        return false;
       }
+      return undefined;
     },
   });
   return found;
 }
 
 function collectOwnedEffectCalls(
-  statementPath: NodePath<t.Statement>,
+  ctx: Ctx,
+  statement: BaseNode,
   rootStatement: t.Statement,
   conditions: EffectConditionPath[],
   output: OwnedEffectCall[],
+  errorAt: DiagnosticPath,
 ): void {
-  const direct = directEffectCall(statementPath);
+  const direct = directEffectCall(ctx, statement);
   if (direct !== null) {
     output.push({
-      callPath: direct,
+      call: direct,
       rootStatement,
       conditions: [...conditions],
     });
     return;
   }
-  if (statementPath.isEmptyStatement()) return;
-  if (statementPath.isBlockStatement()) {
-    for (const childPath of statementPath.get('body')) {
-      if (childPath.isEmptyStatement()) continue;
-      if (!containsOwnedEffect(childPath)) {
-        throw childPath.buildCodeFrameError(
+  if (statement.type === 'EmptyStatement') return;
+  if (statement.type === 'BlockStatement') {
+    for (const child of childNodes(statement, 'body')) {
+      if (child.type === 'EmptyStatement') continue;
+      if (!containsOwnedEffect(ctx, child)) {
+        throw errorAt.buildCodeFrameError(
           'memo-dom: a conditional effect branch may contain only effect() calls, nested if statements, or empty statements',
         );
       }
       collectOwnedEffectCalls(
-        childPath,
+        ctx,
+        child,
         rootStatement,
         conditions,
         output,
+        errorAt,
       );
     }
     return;
   }
-  if (statementPath.isIfStatement()) {
-    const testPath = statementPath.get('test') as NodePath<t.Expression>;
+  if (statement.type === 'IfStatement') {
+    const test = childNode(statement, 'test') as t.Expression | null;
+    const consequent = childNode(statement, 'consequent');
+    if (test === null || consequent === null) return;
     collectOwnedEffectCalls(
-      statementPath.get('consequent'),
+      ctx,
+      consequent,
       rootStatement,
-      [...conditions, { path: testPath, negated: false }],
+      [...conditions, { node: test, negated: false }],
       output,
+      errorAt,
     );
-    const alternatePath = statementPath.get('alternate');
-    if (alternatePath.node !== null) {
+    const alternate = childNode(statement, 'alternate');
+    if (alternate !== null) {
       collectOwnedEffectCalls(
-        alternatePath as NodePath<t.Statement>,
+        ctx,
+        alternate,
         rootStatement,
-        [...conditions, { path: testPath, negated: true }],
+        [...conditions, { node: test, negated: true }],
         output,
+        errorAt,
       );
     }
     return;
   }
-  throw statementPath.buildCodeFrameError(
+  throw errorAt.buildCodeFrameError(
     'memo-dom: conditional effect() calls must be controlled by top-level if statements',
   );
 }
 
 function discoverOwnedEffectCalls(
-  statementPaths: NodePath<t.Statement>[],
+  ctx: Ctx,
+  statements: BaseNode[],
+  errorAt: DiagnosticPath,
 ): OwnedEffectCall[] {
   const output: OwnedEffectCall[] = [];
-  for (const statementPath of statementPaths) {
-    const direct = directEffectCall(statementPath);
+  for (const statement of statements) {
+    const direct = directEffectCall(ctx, statement);
     if (direct !== null) {
       output.push({
-        callPath: direct,
-        rootStatement: statementPath.node,
+        call: direct,
+        rootStatement: statement as unknown as t.Statement,
         conditions: [],
       });
       continue;
     }
-    if (!statementPath.isIfStatement() || !containsOwnedEffect(statementPath)) {
+    if (statement.type !== 'IfStatement' || !containsOwnedEffect(ctx, statement)) {
       continue;
     }
     collectOwnedEffectCalls(
-      statementPath,
-      statementPath.node,
+      ctx,
+      statement,
+      statement as unknown as t.Statement,
       [],
       output,
+      errorAt,
     );
   }
   return output;
@@ -482,10 +576,10 @@ function combinedCondition(
   conditions: EffectConditionPath[],
 ): t.Expression | null {
   if (conditions.length === 0) return null;
-  const expressions = conditions.map(({ path, negated }) =>
+  const expressions = conditions.map(({ node, negated }) =>
     negated
-      ? t.unaryExpression('!', t.cloneNode(path.node, true))
-      : t.cloneNode(path.node, true),
+      ? t.unaryExpression('!', cloneNode(node) as unknown as t.Expression)
+      : cloneNode(node) as unknown as t.Expression,
   );
   return expressions.reduce((left, right) =>
     t.logicalExpression('&&', left, right),
@@ -494,21 +588,23 @@ function combinedCondition(
 
 function scanModuleEffects(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramPath,
 ): void {
   const sites: ModuleEffectSite[] = [];
   const occurrences = discoverOwnedEffectCalls(
-    programPath.get('body') as NodePath<t.Statement>[],
+    ctx,
+    childNodes(programPath.node, 'body'),
+    programPath,
   );
   for (const occurrence of occurrences) {
-    const resolved = resolveEffectCallback(ctx, occurrence.callPath);
+    const resolved = resolveEffectCallback(ctx, occurrence.call, programPath);
     const moduleReads =
-      resolved.path === null
+      resolved.node === null
         ? resolved.importedReads
-        : collectModuleEffectReads(ctx, resolved.path);
+        : collectModuleEffectReads(ctx, resolved.node);
     const conditionModuleReads = new Set<string>();
     for (const condition of occurrence.conditions) {
-      for (const read of collectModuleEffectReads(ctx, condition.path)) {
+      for (const read of collectModuleEffectReads(ctx, condition.node)) {
         conditionModuleReads.add(read);
       }
     }
@@ -533,20 +629,22 @@ function scanModuleEffects(
  */
 export function scanEffects(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramPath,
 ): void {
   scanModuleEffects(ctx, programPath);
   for (const [compName, compPath] of ctx.compPaths) {
     const sites: EffectSite[] = [];
     const accepted = new Set<t.CallExpression>();
     const occurrences = discoverOwnedEffectCalls(
-      compPath.get('body').get('body') as NodePath<t.Statement>[],
+      ctx,
+      childNodes(compPath.node.body, 'body'),
+      compPath,
     );
 
     for (const occurrence of occurrences) {
-      const resolved = resolveEffectCallback(ctx, occurrence.callPath);
+      const resolved = resolveEffectCallback(ctx, occurrence.call, compPath);
       const reads =
-        resolved.path === null
+        resolved.node === null
           ? {
               moduleReads: resolved.importedReads,
               localReads: new Set<string>(),
@@ -556,7 +654,7 @@ export function scanEffects(
               ctx,
               compName,
               compPath,
-              resolved.path,
+              resolved.node,
             );
       const conditionModuleReads = new Set<string>();
       const conditionLocalReads = new Set<string>();
@@ -566,7 +664,7 @@ export function scanEffects(
           ctx,
           compName,
           compPath,
-          condition.path,
+          condition.node,
         );
         for (const read of conditionReads.moduleReads) {
           conditionModuleReads.add(read);
@@ -588,13 +686,22 @@ export function scanEffects(
         conditionLocalReads,
         conditionLocalDerivationReads,
       });
-      accepted.add(occurrence.callPath.node);
+      accepted.add(occurrence.call);
     }
 
-    compPath.traverse({
-      CallExpression(path) {
-        if (!isIntrinsicEffect(path) || accepted.has(path.node)) return;
-        throw path.buildCodeFrameError(
+    walkAst(compPath.node.body as unknown as BaseNode, {
+      enter(node) {
+        if (node !== compPath.node.body && (
+          node.type === 'ArrowFunctionExpression' ||
+          node.type === 'FunctionExpression' ||
+          node.type === 'FunctionDeclaration'
+        )) return false;
+        if (
+          node.type !== 'CallExpression' ||
+          !isIntrinsicEffect(ctx, node) ||
+          accepted.has(node as unknown as t.CallExpression)
+        ) return undefined;
+        throw compPath.buildCodeFrameError(
           'memo-dom: effect() must be a direct top-level statement in a component body',
         );
       },
@@ -863,15 +970,9 @@ function importMetaHot(): t.MemberExpression {
 /** Lower direct module effects to stable singleton registrations. */
 export function rewriteModuleEffects(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  programPath: ProgramPath,
 ): void {
   if (ctx.moduleEffects.length === 0) return;
-  const statementPaths = new Map(
-    programPath.get('body').map((statementPath) => [
-      statementPath.node,
-      statementPath,
-    ]),
-  );
   const grouped = new Map<t.Statement, ModuleEffectSite[]>();
   for (const site of ctx.moduleEffects) {
     const sites = grouped.get(site.statement) ?? [];
@@ -879,8 +980,9 @@ export function rewriteModuleEffects(
     grouped.set(site.statement, sites);
   }
   for (const [statement, sites] of grouped) {
-    const statementPath = statementPaths.get(statement);
-    if (statementPath === undefined) continue;
+    const body = fields(programPath.node).body as t.Statement[];
+    const index = body.indexOf(statement);
+    if (index === -1) continue;
     const replacements: t.Statement[] = [];
     for (const site of sites) {
       replacements.push(
@@ -925,18 +1027,20 @@ export function rewriteModuleEffects(
         ),
       );
     }
-    statementPath.replaceWithMultiple(replacements);
+    body.splice(index, 1, ...replacements);
   }
 }
 
 /** Reject effect syntax that was not consumed by component emission. */
 export function rejectUnownedEffects(
-  programPath: NodePath<t.Program>,
+  ctx: Ctx,
+  programPath: ProgramPath,
 ): void {
-  programPath.traverse({
-    CallExpression(path) {
-      if (isIntrinsicEffect(path)) {
-        throw path.buildCodeFrameError(
+  refreshAstAnalysis(ctx, programPath.node);
+  walkAst(programPath.node as unknown as BaseNode, {
+    enter(node) {
+      if (node.type === 'CallExpression' && isIntrinsicEffect(ctx, node)) {
+        throw programPath.buildCodeFrameError(
           'memo-dom: effect() must be a direct top-level statement or be controlled by a top-level effect-only if branch in a component or module',
         );
       }

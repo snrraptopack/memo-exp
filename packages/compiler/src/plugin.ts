@@ -220,7 +220,7 @@ export default function memoDomPlugin(
         liftModuleStateCells(ctx, programPath);
         rewriteModuleEffects(ctx, programPath);
         rejectUnownedCleanup(ctx, programPath);
-        rejectUnownedEffects(programPath);
+        rejectUnownedEffects(ctx, programPath);
         ctx.header.unshift(...routeManifestStatements(ctx));
 
         // safety net: any JSX left over lived outside a component function.

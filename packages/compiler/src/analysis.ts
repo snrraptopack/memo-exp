@@ -100,7 +100,10 @@ export {
 } from './analysis/component-graph';
 export { buildAccessTable } from './analysis/access-table';
 
-type ProgramPath = Parameters<typeof scanEffects>[1];
+interface ProgramPath {
+  node: t.Program;
+  buildCodeFrameError(message: string): Error;
+}
 type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
   ? TPath
   : never;

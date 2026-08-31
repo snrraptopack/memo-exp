@@ -23,7 +23,13 @@ import {
 import { hostJsxEventNames } from '../packages/compiler/src/jsx/events';
 import { callsOnlyCommittedLocalHelpers } from '../packages/compiler/src/handlers/local-calls';
 import { renderPropReferenceName } from '../packages/compiler/src/components/children';
-import type { Ctx } from '../packages/compiler/src/context';
+import {
+  createCtx,
+  refreshAstAnalysis,
+  registerState,
+  type Ctx,
+} from '../packages/compiler/src/context';
+import { scanEffects } from '../packages/compiler/src/effects';
 import {
   isStaticListExpression,
   isStaticPrimitiveList,
@@ -84,6 +90,26 @@ describe('ESTree parser and printer boundary', () => {
         ({ local }) => local,
       ),
     ).toEqual(['localMissing']);
+  });
+
+  it('discovers module effects and their reads directly from OXC ESTree', () => {
+    const parsed = parseEstreeOrThrow(`
+      let count = 0;
+      effect(() => console.log(count));
+    `);
+    const context = createCtx({ moduleId: './effect.ts' });
+    registerState(context, 'count', 'let');
+    refreshAstAnalysis(context, parsed.program);
+
+    scanEffects(context, {
+      node: parsed.program,
+      buildCodeFrameError(message) {
+        return new Error(message);
+      },
+    });
+
+    expect(context.moduleEffects).toHaveLength(1);
+    expect([...context.moduleEffects[0]!.moduleReads]).toEqual(['count']);
   });
 
   it('parses and prints TSX without a Babel AST conversion', () => {
