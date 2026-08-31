@@ -1071,20 +1071,20 @@ function collectReads(ctx: Ctx): void {
         }
         ctx.listedSites.set(site.rowComp!, sites);
       } else {
-        collectInlineRowSite(call, site, nestedSuffix);
+        collectInlineRowSite(call.node, site, nestedSuffix);
       }
       call.skip();
     }
 
     function recordConditionalComponent(
-      element: NodePath<t.JSXElement>,
+      element: t.JSXElement,
       condSuffix: string,
       childCounts: Map<string, number>,
     ): void {
-      const tag = element.node.openingElement.name;
+      const tag = element.openingElement.name;
       if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
       if (!ctx.comps.has(tag.name) && !ctx.importedComponents.has(tag.name)) {
-        throw element.buildCodeFrameError(
+        throw p.buildCodeFrameError(
           `memo-dom: <${tag.name} /> is not a linked component factory`,
         );
       }
@@ -1106,14 +1106,14 @@ function collectReads(ctx: Ctx): void {
     }
 
     function recordRowComponent(
-      element: NodePath<t.JSXElement>,
+      element: t.JSXElement,
       containerSuffix: string,
       childCounts: Map<string, number>,
     ): void {
-      const tag = element.node.openingElement.name;
+      const tag = element.openingElement.name;
       if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
       if (!ctx.comps.has(tag.name) && !ctx.importedComponents.has(tag.name)) {
-        throw element.buildCodeFrameError(
+        throw p.buildCodeFrameError(
           `memo-dom: <${tag.name} /> is not a linked component factory`,
         );
       }
@@ -1155,25 +1155,26 @@ function collectReads(ctx: Ctx): void {
     }
 
     function collectInlineRowSite(
-      call: NodePath<t.CallExpression | t.OptionalCallExpression>,
+      call: t.CallExpression | t.OptionalCallExpression,
       site: ReturnType<typeof analyzeMapSite>,
       containerSuffix: string,
     ): void {
-      const callbackPath = call.get('arguments')[0];
-      if (callbackPath === undefined) return;
+      const callback = call.arguments[0] as unknown as BaseNode | undefined;
+      if (callback === undefined) return;
       const rowVars = new Set<string>();
       const childCounts = new Map<string, number>();
       const nestedPrefixes = new Map<string, number>();
 
-      const checkNestedCall = (
-        inner: NodePath<t.CallExpression | t.OptionalCallExpression>,
-      ): void => {
-        const nestedMap = matchMapCall(inner.node);
+      const checkNestedCall = (innerNode: BaseNode): boolean => {
+        const inner = innerNode as unknown as
+          | t.CallExpression
+          | t.OptionalCallExpression;
+        const nestedMap = matchMapCall(inner);
         if (nestedMap !== null && containsJsx(inner)) {
           const nestedSite = analyzeMapSite(
             ctx,
             nestedMap,
-            inner,
+            p,
             name,
             nestedPrefixes,
             site,
@@ -1185,37 +1186,50 @@ function collectReads(ctx: Ctx): void {
           } else {
             collectInlineRowSite(inner, nestedSite, nestedSuffix);
           }
-          inner.skip();
-          return;
+          return false;
         }
-        const callee = inner.node.callee;
+        const callee = inner.callee;
         if (
           t.isIdentifier(callee) &&
           (ctx.helpers.has(callee.name) ||
-            ctx.importedFunctions.has(callee.name))
+            ctx.importedFunctions.has(callee.name)) &&
+          astBindingAt(ctx, innerNode, callee.name)?.scope.isProgramScope === true
         ) {
           const summary =
             ctx.importedFunctions.get(callee.name) ??
             summarizeHelper(ctx, callee.name);
           for (const read of summary.reads) rowVars.add(read);
         }
+        return true;
       };
 
-      callbackPath.traverse({
-        Identifier(id) {
+      walkAst<BaseNode>(callback, {
+        enter(node) {
+          if (node.type === 'Identifier') {
+            const id = node as unknown as t.Identifier;
           if (
-            id.node.name !== site.itemParam &&
-            ctx.state.has(id.node.name) &&
-            id.scope.getBinding(id.node.name)?.scope.path.isProgram() === true
+              id.name !== site.itemParam &&
+              ctx.state.has(id.name) &&
+              astBindingAt(ctx, node, id.name)?.scope.isProgramScope === true
           ) {
-            rowVars.add(id.node.name);
+              rowVars.add(id.name);
           }
+          }
+          if (node.type === 'JSXElement') {
+            recordRowComponent(
+              node as unknown as t.JSXElement,
+              containerSuffix,
+              childCounts,
+            );
+          }
+          if (
+            node.type === 'CallExpression' ||
+            node.type === 'OptionalCallExpression'
+          ) {
+            return checkNestedCall(node);
+          }
+          return;
         },
-        JSXElement(element) {
-          recordRowComponent(element, containerSuffix, childCounts);
-        },
-        CallExpression: checkNestedCall,
-        OptionalCallExpression: checkNestedCall,
       });
 
       if (rowVars.size > 0) {
@@ -1272,7 +1286,7 @@ function collectReads(ctx: Ctx): void {
         }
         if (branchPath.isJSXElement()) {
           recordConditionalComponent(
-            branchPath,
+            branchPath.node as t.JSXElement,
             fullSuffix,
             branchChildren,
           );
@@ -1290,7 +1304,7 @@ function collectReads(ctx: Ctx): void {
           },
           JSXElement(element) {
             recordConditionalComponent(
-              element,
+              element.node,
               fullSuffix,
               branchChildren,
             );
@@ -1416,7 +1430,7 @@ function collectReads(ctx: Ctx): void {
           }
           ctx.listedSites.set(site.rowComp!, sites);
         } else {
-          collectInlineRowSite(call, site, site.suffix);
+          collectInlineRowSite(call.node, site, site.suffix);
         }
         call.skip(); // callback contents are not owner reads
         return;
