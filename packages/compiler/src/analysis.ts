@@ -23,7 +23,11 @@
 
 import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
-import type { BaseNode } from './ast';
+import {
+  isExpression as isAstExpression,
+  walkAst,
+  type BaseNode,
+} from './ast';
 import {
   attrExpr,
   collectStateIds,
@@ -86,6 +90,7 @@ import {
 import {
   discoverTopLevelFunctions,
   findUnlinkedValueImports,
+  subtreeHasJsx,
 } from './analysis/module-discovery';
 
 export {
@@ -339,18 +344,37 @@ function scalarTsType(
 }
 
 function declaredScalarProp(
-  componentPath: NodePath<t.FunctionDeclaration>,
+  component: t.FunctionDeclaration,
+  program: t.Program,
   prop: string,
 ): boolean {
+  const hasNodeType = (node: object, type: string): boolean =>
+    (node as unknown as { type?: unknown }).type === type;
   const scalarDefault = (expression: t.Expression): boolean =>
     t.isStringLiteral(expression) ||
     t.isNumericLiteral(expression) ||
     t.isBooleanLiteral(expression) ||
     t.isBigIntLiteral(expression) ||
+    (hasNodeType(expression, 'Literal') &&
+      (typeof (expression as unknown as { value?: unknown }).value === 'string' ||
+        typeof (expression as unknown as { value?: unknown }).value === 'number' ||
+        typeof (expression as unknown as { value?: unknown }).value === 'boolean' ||
+        typeof (expression as unknown as { value?: unknown }).value === 'bigint')) ||
     (t.isUnaryExpression(expression) &&
       (expression.operator === '+' || expression.operator === '-') &&
-      t.isNumericLiteral(expression.argument));
-  for (const parameter of componentPath.node.params) {
+      (t.isNumericLiteral(expression.argument) ||
+        (hasNodeType(expression.argument, 'Literal') &&
+          typeof (expression.argument as unknown as { value?: unknown }).value === 'number')));
+  const keyName = (key: t.Expression | t.PrivateName): string | null => {
+    if (t.isIdentifier(key)) return key.name;
+    if (t.isStringLiteral(key)) return key.value;
+    if (hasNodeType(key, 'Literal')) {
+      const value = (key as unknown as { value?: unknown }).value;
+      return typeof value === 'string' ? value : null;
+    }
+    return null;
+  };
+  for (const parameter of component.params) {
     if (t.isTSParameterProperty(parameter)) continue;
     if (
       t.isAssignmentPattern(parameter) &&
@@ -366,12 +390,7 @@ function declaredScalarProp(
     ) {
       const defaultProperty = parameter.right.properties.find((property) => {
         if (!t.isObjectProperty(property) || property.computed) return false;
-        const name = t.isIdentifier(property.key)
-          ? property.key.name
-          : t.isStringLiteral(property.key)
-            ? property.key.value
-            : null;
-        return name === prop;
+        return keyName(property.key) === prop;
       });
       if (
         t.isObjectProperty(defaultProperty) &&
@@ -387,13 +406,8 @@ function declaredScalarProp(
     if (!t.isObjectPattern(parameterTarget)) continue;
     for (const property of parameterTarget.properties) {
       if (!t.isObjectProperty(property) || property.computed) continue;
-      const name = t.isIdentifier(property.key)
-        ? property.key.name
-        : t.isStringLiteral(property.key)
-          ? property.key.value
-          : null;
       if (
-        name === prop &&
+        keyName(property.key) === prop &&
         t.isAssignmentPattern(property.value) &&
         scalarDefault(property.value.right)
       ) {
@@ -402,7 +416,7 @@ function declaredScalarProp(
     }
   }
 
-  const first = componentPath.node.params[0];
+  const first = component.params[0];
   if (first == null || t.isTSParameterProperty(first)) return false;
   const target = t.isAssignmentPattern(first) ? first.left : first;
   if (
@@ -414,13 +428,11 @@ function declaredScalarProp(
   }
   const annotation = target.typeAnnotation;
   if (!t.isTSTypeAnnotation(annotation)) return false;
-  const program = componentPath.findParent((path) => path.isProgram());
-  if (!program?.isProgram()) return false;
 
   let shape = annotation.typeAnnotation;
   if (t.isTSTypeReference(shape) && t.isIdentifier(shape.typeName)) {
     const referenceName = shape.typeName.name;
-    const declaration = program.node.body
+    const declaration = program.body
       .map((statement) =>
         t.isExportNamedDeclaration(statement)
           ? statement.declaration
@@ -441,18 +453,13 @@ function declaredScalarProp(
   if (!t.isTSTypeLiteral(shape)) return false;
   for (const member of shape.members) {
     if (!t.isTSPropertySignature(member) || member.computed) continue;
-    const name = t.isIdentifier(member.key)
-      ? member.key.name
-      : t.isStringLiteral(member.key)
-        ? member.key.value
-        : null;
     if (
-      name === prop &&
+      keyName(member.key) === prop &&
       t.isTSTypeAnnotation(member.typeAnnotation)
     ) {
       return scalarTsType(
         member.typeAnnotation.typeAnnotation,
-        program.node,
+        program,
       );
     }
   }
@@ -460,24 +467,36 @@ function declaredScalarProp(
 }
 
 function expressionCarriesJsx(
-  path: NodePath,
-  visiting = new Set<t.Node>(),
+  ctx: Ctx,
+  expression: BaseNode,
+  visiting = new Set<BaseNode>(),
 ): boolean {
-  if (nodeHasJsx(path.node)) return true;
-  if (visiting.has(path.node)) return false;
-  visiting.add(path.node);
-  if (path.isIdentifier()) {
-    const binding = path.scope.getBinding(path.node.name);
-    if (binding?.path.isVariableDeclarator()) {
-      const init = binding.path.get('init');
-      return !Array.isArray(init) && init.node != null
-        ? expressionCarriesJsx(init, visiting)
+  if (subtreeHasJsx(expression)) return true;
+  if (visiting.has(expression)) return false;
+  visiting.add(expression);
+  if (expression.type === 'Identifier') {
+    const name = (expression as unknown as { name: string }).name;
+    const binding = ctx.astAnalysis?.nodeToScope.get(expression)?.getBinding(name);
+    let declaration: BaseNode | null = binding?.identifier ?? null;
+    while (
+      declaration !== null &&
+      declaration !== binding?.declarationNode &&
+      declaration.type !== 'VariableDeclarator'
+    ) {
+      declaration = ctx.astAnalysis?.parentByNode.get(declaration) ?? null;
+    }
+    if (declaration?.type === 'VariableDeclarator') {
+      const init = (declaration as unknown as { init?: unknown }).init;
+      return isAstExpression(init)
+        ? expressionCarriesJsx(ctx, init, visiting)
         : false;
     }
   }
-  if (path.isMemberExpression()) {
-    const object = path.get('object');
-    return !Array.isArray(object) && expressionCarriesJsx(object, visiting);
+  if (expression.type === 'MemberExpression') {
+    const object = (expression as unknown as { object?: unknown }).object;
+    return isAstExpression(object)
+      ? expressionCarriesJsx(ctx, object, visiting)
+      : false;
   }
   return false;
 }
@@ -488,23 +507,34 @@ function expressionCarriesJsx(
  * propagated to a fixed point for wrapper components.
  */
 function scanRenderProps(ctx: Ctx): void {
+  const program = ctx.astAnalysis?.rootScope.block;
+  if (program?.type !== 'Program') return;
   const potential = new Map<string, Set<string>>();
   for (const [name, componentPath] of ctx.compPaths) {
     const candidates = new Set<string>();
     potential.set(name, candidates);
-    componentPath.traverse({
-      JSXExpressionContainer(path) {
+    walkAst<BaseNode>(componentPath.node as unknown as BaseNode, {
+      enter(node, parent) {
+        if (node.type !== 'JSXExpressionContainer') return;
         if (
-          !path.parentPath?.isJSXElement() &&
-          !path.parentPath?.isJSXFragment()
+          parent?.type !== 'JSXElement' &&
+          parent?.type !== 'JSXFragment'
         ) {
           return;
         }
-        const expression = path.node.expression;
-        if (!t.isExpression(expression)) return;
+        const expression = (node as unknown as { expression?: unknown }).expression;
+        if (!isAstExpression(expression)) return;
         const prop = renderPropReferenceName(ctx, name, expression);
         if (prop === null) return;
-        if (!declaredScalarProp(componentPath, prop)) candidates.add(prop);
+        if (
+          !declaredScalarProp(
+            componentPath.node,
+            program as unknown as t.Program,
+            prop,
+          )
+        ) {
+          candidates.add(prop);
+        }
       },
     });
     if (
@@ -526,12 +556,14 @@ function scanRenderProps(ctx: Ctx): void {
   // linkedComponentRenderProps below. This avoids guessing from host layout.
   const localUsage = new Map<
     string,
-    Map<string, { scalar: boolean; jsx: boolean; at: NodePath }>
+    Map<string, { scalar: boolean; jsx: boolean; at: Ctx['compPaths'] extends Map<string, infer TPath> ? TPath : never }>
   >();
   for (const [owner, ownerPath] of ctx.compPaths) {
-    ownerPath.traverse({
-      JSXElement(path) {
-        const tag = path.node.openingElement.name;
+    walkAst<BaseNode>(ownerPath.node as unknown as BaseNode, {
+      enter(node) {
+        if (node.type !== 'JSXElement') return;
+        const element = node as unknown as t.JSXElement;
+        const tag = element.openingElement.name;
         if (!t.isJSXIdentifier(tag) || !ctx.comps.has(tag.name)) return;
         const target = ctx.componentProps.get(tag.name)!;
         const candidates = potential.get(tag.name);
@@ -543,7 +575,7 @@ function scanRenderProps(ctx: Ctx): void {
         }
         if (
           candidates.has('children') &&
-          path.node.children.some(
+          element.children.some(
             (child) =>
               !t.isJSXText(child) || child.value.trim() !== '',
           ) &&
@@ -553,12 +585,12 @@ function scanRenderProps(ctx: Ctx): void {
           byProp.set('children', {
             scalar: false,
             jsx: true,
-            at: path,
+            at: ownerPath,
           });
         }
-        for (const attributePath of path.get('openingElement').get('attributes')) {
-          if (!attributePath.isJSXAttribute()) continue;
-          const name = attributePath.node.name;
+        for (const attribute of element.openingElement.attributes) {
+          if (!t.isJSXAttribute(attribute)) continue;
+          const name = attribute.name;
           const prop = t.isJSXIdentifier(name) ? name.name : name.name.name;
           if (
             !candidates.has(prop)
@@ -568,24 +600,17 @@ function scanRenderProps(ctx: Ctx): void {
           const usage = byProp.get(prop) ?? {
             scalar: false,
             jsx: false,
-            at: attributePath,
+            at: ownerPath,
           };
-          const value = attributePath.get('value');
+          const value = attribute.value;
           let carriesJsx = false;
           if (
-            value.isJSXExpressionContainer() &&
-            t.isExpression(value.node.expression)
+            t.isJSXExpressionContainer(value) &&
+            isAstExpression(value.expression)
           ) {
-            const expressionPath = value.get('expression');
             if (
-              !Array.isArray(expressionPath) &&
-              (expressionCarriesJsx(expressionPath) ||
-                (t.isExpression(expressionPath.node) &&
-                  renderPropReferenceName(
-                    ctx,
-                    owner,
-                    expressionPath.node,
-                  ) !== null))
+              expressionCarriesJsx(ctx, value.expression) ||
+              renderPropReferenceName(ctx, owner, value.expression) !== null
             ) {
               carriesJsx = true;
             }
@@ -624,29 +649,30 @@ function scanRenderProps(ctx: Ctx): void {
     changed = false;
     for (const [name, componentPath] of ctx.compPaths) {
       const plan = ctx.componentProps.get(name)!;
-      componentPath.traverse({
-        JSXAttribute(path) {
-          const container = path.get('value');
+      walkAst<BaseNode>(componentPath.node as unknown as BaseNode, {
+        enter(node, parent) {
+          if (node.type !== 'JSXAttribute') return;
+          const attribute = node as unknown as t.JSXAttribute;
+          const container = attribute.value;
           if (
-            !container.isJSXExpressionContainer() ||
-            !t.isExpression(container.node.expression)
+            !t.isJSXExpressionContainer(container) ||
+            !isAstExpression(container.expression)
           ) {
             return;
           }
           const sourceProp = renderPropReferenceName(
             ctx,
             name,
-            container.node.expression,
+            container.expression,
           );
           if (sourceProp === null || plan.renderProps.includes(sourceProp)) {
             return;
           }
-          const opening = path.parentPath;
-          if (!opening.isJSXOpeningElement()) return;
-          const tag = opening.node.name;
+          if (parent?.type !== 'JSXOpeningElement') return;
+          const tag = (parent as unknown as t.JSXOpeningElement).name;
           if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
           const target = ctx.componentProps.get(tag.name);
-          const attr = path.node.name;
+          const attr = attribute.name;
           const attrName = t.isJSXIdentifier(attr) ? attr.name : attr.name.name;
           if (target?.renderProps.includes(attrName) === true) {
             plan.renderProps.push(sourceProp);
