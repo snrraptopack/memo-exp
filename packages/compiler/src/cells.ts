@@ -10,6 +10,7 @@ import {
 import {
   astBindingAt,
   refreshAstAnalysis,
+  unwrapTypeExpression,
   type Ctx,
 } from './context';
 import { generatedIdentifier, md } from './identifiers';
@@ -90,10 +91,20 @@ function literalValue(value: BaseNode): unknown {
 
 function isDeepLiteral(current: BaseNode): boolean {
   if (
+    current.type === 'TSAsExpression' ||
+    current.type === 'TSTypeAssertion' ||
+    current.type === 'TSNonNullExpression' ||
+    current.type === 'TSSatisfiesExpression' ||
+    current.type === 'TSInstantiationExpression'
+  ) {
+    const expression = childNode(current, 'expression');
+    return expression !== null && isDeepLiteral(expression);
+  }
+  if (current.type === 'NullLiteral') return true;
+  if (
     current.type === 'StringLiteral' ||
     current.type === 'NumericLiteral' ||
     current.type === 'BooleanLiteral' ||
-    current.type === 'NullLiteral' ||
     current.type === 'Literal'
   ) {
     const value = literalValue(current);
@@ -193,7 +204,10 @@ export function liftModuleStateCells(
     if (owned) {
       const declarator = variableDeclaratorFor(ctx, binding);
       if (declarator === null) continue;
-      const initializer = childNode(declarator, 'init');
+      const rawInitializer = childNode(declarator, 'init');
+      const initializer = rawInitializer === null
+        ? null
+        : unwrapTypeExpression(rawInitializer);
       if (kind === 'store') {
         if (initializer === null || !isDeepLiteral(initializer)) {
           throw programPath.buildCodeFrameError(

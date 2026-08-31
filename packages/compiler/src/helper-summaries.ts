@@ -12,6 +12,7 @@ import {
   astBindingAt,
   astScopeAt,
   memberKey,
+  refreshAstAnalysis,
   type Ctx,
   type FnSummary,
 } from './context';
@@ -53,7 +54,14 @@ function identifierName(value: BaseNode | null): string | null {
 }
 
 function scopeAt(ctx: Ctx, at: BaseNode): Scope {
-  const scope = astScopeAt(ctx, at);
+  let scope = astScopeAt(ctx, at);
+  if (scope === undefined) {
+    const program = ctx.astAnalysis?.rootScope.block;
+    if (program?.type === 'Program') {
+      refreshAstAnalysis(ctx, program);
+      scope = astScopeAt(ctx, at);
+    }
+  }
   if (scope === undefined) {
     throw new Error('memo-dom: missing ESTree scope during helper analysis');
   }

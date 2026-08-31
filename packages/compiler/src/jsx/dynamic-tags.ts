@@ -164,7 +164,7 @@ export function installLinkedDynamicComponentImports(
     if (ctx.state.has(owner)) ctx.stateComponentCandidates.set(owner, unique);
     else ctx.functionComponentCandidates.set(owner, unique);
   }
-  programPath.node.body.unshift(...declarations);
+  ctx.header.push(...declarations);
 }
 
 function unwrap(expression: BaseNode): BaseNode {

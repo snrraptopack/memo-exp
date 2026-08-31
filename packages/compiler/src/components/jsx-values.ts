@@ -240,10 +240,16 @@ function structuredCandidates(
 ): StructuredCandidate[] {
   if (t.isArrayExpression(initializer)) {
     return initializer.elements.map((element, index) => {
-      if (element == null || t.isSpreadElement(element)) {
+      if (element == null) {
         return fail(
           component,
-          'JSX arrays cannot contain holes or spread elements',
+          'JSX arrays cannot contain holes',
+        );
+      }
+      if (t.isSpreadElement(element)) {
+        return fail(
+          component,
+          'JSX array spreads must resolve to a static JSX array',
         );
       }
       return { key: t.numericLiteral(index), value: element as t.Expression };
@@ -444,10 +450,19 @@ export function normalizeComponentJsxValues(ctx: Ctx): void {
                 parent?.type === 'SpreadElement' &&
                 (ctx.astAnalysis!.parentByNode.get(parent)?.type === 'ArrayExpression')
               ) {
-                replaceNode(
-                  ctx.astAnalysis!,
-                  reference,
-                  cloneNode(initializer) as unknown as BaseNode,
+                const outer = ctx.astAnalysis!.parentByNode.get(parent)! as unknown as t.ArrayExpression;
+                const index = outer.elements.indexOf(
+                  parent as unknown as t.SpreadElement,
+                );
+                if (index < 0) {
+                  fail(componentPath, 'memo-dom: could not flatten JSX array spread');
+                }
+                outer.elements.splice(
+                  index,
+                  1,
+                  ...initializer.elements.map((element) =>
+                    element === null ? null : cloneNode(element),
+                  ),
                 );
                 continue;
               }
