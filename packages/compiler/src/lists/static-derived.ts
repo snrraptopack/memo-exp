@@ -53,10 +53,10 @@ export function findConstInitializer(
       ? ctx.compPaths.get(compName)
       : undefined;
   if (componentPath !== undefined) {
-    const programPath = componentPath.scope.getProgramParent().path;
-    scopes.push(
-      ...childNodes(programPath.node as unknown as BaseNode, 'body'),
-    );
+    const program = ctx.astAnalysis?.rootScope.block;
+    if (program?.type === 'Program') {
+      scopes.push(...childNodes(program, 'body'));
+    }
     scopes.push(...childNodes(componentPath.node.body, 'body'));
   }
   for (const statement of scopes) {

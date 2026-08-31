@@ -6,7 +6,6 @@
  * is created per compiled module.
  */
 
-import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import type { ScopeAnalysis } from '../ast';
 import type {
@@ -306,7 +305,12 @@ export interface ModuleControlFlowDerivation {
   entityId: string;
 }
 
-export type HelperPath = NodePath<
+export interface CompilerPath<TNode extends t.Node> {
+  node: TNode;
+  buildCodeFrameError(message: string): Error;
+}
+
+export type HelperPath = CompilerPath<
   t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
 >;
 
@@ -379,7 +383,7 @@ export interface Ctx {
   >;
   linkedComponentRenderProps: Map<string, string[]>;
   comps: Map<string, CompInfo>;
-  compPaths: Map<string, NodePath<t.FunctionDeclaration>>;
+  compPaths: Map<string, CompilerPath<t.FunctionDeclaration>>;
   /** Top-level functions WITHOUT JSX — helpers, summarized for interprocedural effects. */
   helpers: Map<string, HelperPath>;
   /** JSX-returning functions expanded at local render call sites. */

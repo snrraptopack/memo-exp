@@ -9,7 +9,11 @@
  */
 import * as t from '@babel/types';
 import { walkAst, type BaseNode } from '../ast';
-import type { Ctx, MapCallExpression } from '../context';
+import {
+  refreshAstAnalysis,
+  type Ctx,
+  type MapCallExpression,
+} from '../context';
 import { generatedIdentifier } from '../identifiers';
 import { matchMapCall } from '../lists';
 import {
@@ -131,6 +135,7 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
       0,
       t.variableDeclaration('const', declarations),
     );
-    componentPath.scope.crawl();
+    const program = ctx.astAnalysis?.rootScope.block;
+    if (program !== undefined) refreshAstAnalysis(ctx, program);
   }
 }
