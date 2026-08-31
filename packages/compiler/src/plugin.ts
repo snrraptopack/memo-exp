@@ -15,9 +15,9 @@
  * row composition are normalized before the core analysis/emission passes.
  */
 
-import type { Visitor } from '@babel/traverse';
-import type { NodePath } from '@babel/traverse';
+import type { PluginObject } from '@babel/core';
 import * as t from '@babel/types';
+import { walkAst, type BaseNode } from './ast';
 import {
   createCtx,
   freshWriteConst,
@@ -63,12 +63,14 @@ import {
  * 'x' downstream ONLY when the value actually changed (computedChanged).
  * Depth -1 guarantees the recompute renders BEFORE any reader in a commit.
  */
-function rewriteComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
+function rewriteComputeds(ctx: Ctx, program: t.Program): void {
   const computedPrefix = `${ctx.rootId}/$computed/${encodeURIComponent(ctx.moduleId)}#`;
-  for (const stmtPath of programPath.get('body')) {
-    let declNode: t.Node | null | undefined = stmtPath.node;
+  for (let statementIndex = 0; statementIndex < program.body.length; statementIndex++) {
+    const statement = program.body[statementIndex]!;
+    let declNode: t.Node | null | undefined = statement;
     if (t.isExportNamedDeclaration(declNode)) declNode = declNode.declaration;
     if (!t.isVariableDeclaration(declNode) || declNode.kind !== 'const') continue;
+    const registrations: t.Statement[] = [];
     for (const d of declNode.declarations) {
       if (!t.isIdentifier(d.id) || d.init == null) continue;
       const name = d.id.name;
@@ -116,24 +118,22 @@ function rewriteComputeds(ctx: Ctx, programPath: NodePath<t.Program>): void {
           ]),
         ]),
       );
-      stmtPath.insertAfter(registerStmt);
+      registrations.push(registerStmt);
+    }
+    if (registrations.length > 0) {
+      program.body.splice(statementIndex + 1, 0, ...registrations);
+      statementIndex += registrations.length;
     }
   }
 }
 
 function rewriteModuleControlFlow(
   ctx: Ctx,
-  programPath: NodePath<t.Program>,
+  program: t.Program,
 ): void {
-  const paths = new Map(
-    programPath.get('body').map((statementPath) => [
-      statementPath.node,
-      statementPath,
-    ]),
-  );
   for (const flow of ctx.moduleControlFlow) {
-    const statementPath = paths.get(flow.statement);
-    if (statementPath === undefined) continue;
+    const statementIndex = program.body.indexOf(flow.statement);
+    if (statementIndex === -1) continue;
     const previous = new Map(
       flow.bindings.map((binding) => [
         binding,
@@ -167,7 +167,9 @@ function rewriteModuleControlFlow(
         ),
       ),
     ];
-    statementPath.insertAfter(
+    program.body.splice(
+      statementIndex + 1,
+      0,
       t.expressionStatement(
         t.callExpression(md(ctx, 'register'), [
           t.objectExpression([
@@ -191,16 +193,71 @@ function rewriteModuleControlFlow(
   }
 }
 
+interface ProgramDiagnostic {
+  node: t.Program;
+  buildCodeFrameError(message: string): Error;
+}
+
+function rejectLeftoverJsx(ctx: Ctx, programPath: ProgramDiagnostic): void {
+  const analysis = ctx.astAnalysis;
+  if (analysis === null) return;
+
+  const describeOwner = (node: BaseNode): string => {
+    let current = analysis.parentByNode.get(node) ?? null;
+    while (current !== null) {
+      if (current.type === 'FunctionDeclaration') {
+        const id = (current as unknown as { id?: BaseNode | null }).id;
+        if (id?.type === 'Identifier') {
+          const name = (id as unknown as { name: string }).name;
+          return ` in component '${name}'`;
+        }
+      }
+      current = analysis.parentByNode.get(current) ?? null;
+    }
+    return ' at module scope';
+  };
+
+  const location = (node: BaseNode): string | null => {
+    let current: BaseNode | null = node;
+    while (current !== null) {
+      if (current.loc !== null && current.loc !== undefined) {
+        return `${current.loc.start.line}:${current.loc.start.column + 1}`;
+      }
+      current = analysis.parentByNode.get(current) ?? null;
+    }
+    return null;
+  };
+
+  walkAst<BaseNode>(programPath.node as unknown as BaseNode, {
+    enter(node) {
+      if (node.type !== 'JSXElement' && node.type !== 'JSXFragment') return;
+      const at = location(node);
+      let leftover = 'fragment';
+      if (node.type === 'JSXElement') {
+        const opening = (node as unknown as t.JSXElement).openingElement;
+        leftover = t.isJSXIdentifier(opening.name)
+          ? `<${opening.name.name}>`
+          : '<element>';
+      }
+      throw programPath.buildCodeFrameError(
+        `memo-dom: JSX outside a component or compile-time render helper — leftover ${leftover}${describeOwner(node)}${
+          at === null ? '' : ` near ${at}`
+        }; components must use a supported top-level declaration`,
+      );
+    },
+  });
+}
+
 export type { MemoDomOptions };
 
 export default function memoDomPlugin(
   _api: unknown,
   opts: InternalMemoDomOptions = {},
-): { name: string; visitor: Visitor } {
+): PluginObject {
   const ctx = createCtx(opts);
   const transformed = new WeakSet<t.Node>();
 
-  const visitor: Visitor = {
+  const visitor: NonNullable<PluginObject['visitor']> = {
     Program: {
       enter(programPath) {
         normalizeComponentDeclarations(programPath);
@@ -227,55 +284,12 @@ export default function memoDomPlugin(
         // Synthetic nodes created by transforms carry no loc, so walk up to
         // the nearest ancestor that does; without this Babel degrades to the
         // useless "internal node" message and users cannot locate the site.
-        const describeJsxOwner = (p: NodePath): string => {
-          const component = p.findParent((parent) =>
-            parent.isFunctionDeclaration() &&
-            parent.node.id !== null &&
-            parent.node.id !== undefined,
-          );
-          const owner =
-            component !== null && component.isFunctionDeclaration()
-              ? ` in component '${component.node.id!.name}'`
-              : ' at module scope';
-          return owner;
-        };
-        const located = (p: NodePath): string | null => {
-          if (p.node.loc !== null && p.node.loc !== undefined) {
-            return `${p.node.loc.start.line}:${p.node.loc.start.column + 1}`;
-          }
-          const ancestor = p.findParent(
-            (parent) => parent.node.loc !== null && parent.node.loc !== undefined,
-          );
-          if (ancestor === null) return null;
-          const loc = ancestor.node.loc!;
-          return `${loc.start.line}:${loc.start.column + 1}`;
-        };
-        programPath.traverse({
-          JSXElement(p) {
-            const tag = t.isJSXIdentifier(p.node.openingElement.name)
-              ? `<${p.node.openingElement.name.name}>`
-              : '<element>';
-            const at = located(p);
-            throw p.buildCodeFrameError(
-              `memo-dom: JSX outside a component or compile-time render helper — leftover ${tag}${describeJsxOwner(p)}${
-                at === null ? '' : ` near ${at}`
-              }; components must use a supported top-level declaration`,
-            );
-          },
-          JSXFragment(p) {
-            const at = located(p);
-            throw p.buildCodeFrameError(
-              `memo-dom: JSX outside a component or compile-time render helper — leftover fragment${describeJsxOwner(p)}${
-                at === null ? '' : ` near ${at}`
-              }; components must use a supported top-level declaration`,
-            );
-          },
-        });
+        rejectLeftoverJsx(ctx, programPath);
 
         const table = buildAccessTable(ctx);
-        if (ctx.computeds.size > 0) rewriteComputeds(ctx, programPath); // R13
+        if (ctx.computeds.size > 0) rewriteComputeds(ctx, programPath.node); // R13
         if (ctx.moduleControlFlow.length > 0) {
-          rewriteModuleControlFlow(ctx, programPath);
+          rewriteModuleControlFlow(ctx, programPath.node);
         }
         if (table) ctx.header.push(table);
 
