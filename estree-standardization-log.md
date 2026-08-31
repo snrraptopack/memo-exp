@@ -1,7 +1,7 @@
 # Memoized DOM ESTree standardization - implementation log
 
 Status: active development  
-Last verified: 2026-08-30
+Last verified: 2026-08-31
 
 This log records verified repository state. It does not treat planned work as
 completed work.
@@ -10,10 +10,10 @@ completed work.
 
 | Area | State | Verified result |
 |---|---|---|
-| Pure AST toolkit (`src/ast`) | Working foundation | Foundation/frontend suites: 23 passing tests; root TypeScript typecheck passes |
+| Pure AST toolkit (`src/ast`) | Working foundation | Focused AST/frontend suites: 38 passing tests; root TypeScript typecheck passes |
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
-| Compiler analysis migration | Started | Multiple type, JSX, handler, list, prop, and computed passes accept ESTree |
+| Compiler analysis migration | Advanced, incomplete | Component discovery, validation, render-prop inference, and component/list/conditional read routing now consume ESTree metadata |
 | Babel removal | Not complete | Babel remains the parser, `NodePath`/scope provider, and generator boundary |
 | ESTree emission | Not started | Existing emitters still create Babel-dialect nodes |
 
@@ -208,6 +208,22 @@ and assignment/update lowering now use ESTree bindings and raw parent fields.
 Generated cell shells accept OXC child nodes without Babel builder validation.
 Its final `scope.crawl()` is a temporary synchronization bridge for downstream
 passes.
+Module import/function discovery now has a parser-neutral ESTree pass with
+direct OXC coverage. The Babel frontend currently attaches mutation/diagnostic
+paths to those raw discovery results; that adapter remains to be removed.
+Component render-prop inference, JSX/component validation, composition graph
+discovery, store-read classification, inline/nested row attribution,
+conditional-region attribution, helper-read folding, and the final component
+read collector now traverse raw ESTree and resolve lexical ownership from the
+shared scope index.
+Scope consumers now distinguish declaration ownership from binding kind, so a
+function parameter whose declaration owner is a component cannot be mistaken
+for the component function itself. Helper summaries also rebuild the ESTree
+index after a transformed helper body replaces indexed nodes.
+Compiler-generated dynamic-component imports are queued through the shared
+header rather than inserted ahead of live Babel traversal paths. JSX collection
+spread flattening and nested TypeScript literal wrappers in SSR cell defaults
+are covered by the full behavior suite.
 
 ## Migration order
 
@@ -240,10 +256,10 @@ bun run test:root
 bun run --cwd packages/compiler build
 ```
 
-Verified on 2026-08-30:
+Verified through 2026-08-31:
 
 - TypeScript typecheck passed.
-- Focused AST/frontend suites passed: 2 files, 37 tests.
+- Focused AST/frontend suites passed: 2 files, 38 tests.
 - Handler, render-prop, render-function, render-callback, indexed-map, and
   delegated-event regressions passed: 6 files, 29 tests.
 - Calculated, nested, opaque-derived, gated, and targeted-list regressions
@@ -305,7 +321,10 @@ Verified on 2026-08-30:
   emission regressions passed: 8 files, 91 tests.
 - AST/frontend, SSR cell-lowering/isolation, diagnostics, and emission
   regressions passed: 6 files, 67 tests.
-- Full root suite passed: 99 files, 610 tests.
+- Component discovery, render-prop, row-read, conditional-read, linked dynamic
+  component, JSX collection, helper-handler, and SSR cell-lowering regressions
+  passed after rebuilding the compiler package.
+- Full root suite passed: 99 files, 611 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
 
