@@ -15,6 +15,7 @@ import {
 } from './context';
 import {
   extractPatternIdentifiers,
+  overwriteNode,
   replaceNode,
   walkAst,
   type BaseNode,
@@ -1082,10 +1083,13 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
 }
 
 function isBoundTo(
-  path: NodePath<t.Identifier>,
-  binding: Binding,
+  ctx: Ctx,
+  identifier: BaseNode,
+  binding: AstBinding,
 ): boolean {
-  return path.scope.getBinding(path.node.name) === binding;
+  if (identifier.type !== 'Identifier') return false;
+  const name = (identifier as unknown as AstIdentifier).name;
+  return astBindingAt(ctx, identifier, name)?.identifier === binding.identifier;
 }
 
 function jsxAttributeName(attribute: t.JSXAttribute): string {
@@ -1102,38 +1106,41 @@ function isEventOrRefContainer(ctx: Ctx, container: BaseNode): boolean {
   return name === 'ref' || /^on[A-Z]/.test(name);
 }
 
-function isComponentPropContainer(path: NodePath<t.JSXExpressionContainer>): boolean {
-  const attribute = path.parentPath;
-  if (!attribute.isJSXAttribute()) return false;
-  const opening = attribute.parentPath;
-  return opening.isJSXOpeningElement() &&
-    t.isJSXIdentifier(opening.node.name) &&
-    /^[A-Z]/.test(opening.node.name.name);
+function isComponentPropContainer(ctx: Ctx, container: BaseNode): boolean {
+  const attribute = ctx.astAnalysis?.parentByNode.get(container) ?? null;
+  if (attribute?.type !== 'JSXAttribute') return false;
+  const opening = ctx.astAnalysis?.parentByNode.get(attribute) ?? null;
+  if (opening?.type !== 'JSXOpeningElement') return false;
+  const name = (opening as unknown as t.JSXOpeningElement).name;
+  return t.isJSXIdentifier(name) && /^[A-Z]/.test(name.name);
 }
 
 function isDirectSourceComponentProp(
-  path: NodePath<t.JSXExpressionContainer>,
-  bindings: ReadonlyMap<string, Binding>,
+  ctx: Ctx,
+  container: BaseNode,
+  bindings: ReadonlyMap<string, AstBinding>,
 ): boolean {
-  if (!isComponentPropContainer(path)) return false;
-  const expression = path.get('expression');
-  if (Array.isArray(expression) || !expression.isReferencedIdentifier()) {
-    return false;
-  }
-  const identifier = expression as NodePath<t.Identifier>;
-  const binding = bindings.get(identifier.node.name);
-  return binding !== undefined && isBoundTo(identifier, binding);
+  if (!isComponentPropContainer(ctx, container)) return false;
+  const expression = childNode(container, 'expression');
+  if (expression?.type !== 'Identifier') return false;
+  const name = (expression as unknown as AstIdentifier).name;
+  const binding = bindings.get(name);
+  return binding !== undefined && isBoundTo(ctx, expression, binding);
 }
 
 function isWithinDirectSourceComponentProp(
-  path: NodePath<t.Identifier>,
-  bindings: ReadonlyMap<string, Binding>,
+  ctx: Ctx,
+  identifier: BaseNode,
+  bindings: ReadonlyMap<string, AstBinding>,
 ): boolean {
-  const container = path.parentPath;
-  if (!container.isJSXExpressionContainer() || container.node.expression !== path.node) {
+  const container = ctx.astAnalysis?.parentByNode.get(identifier) ?? null;
+  if (
+    container?.type !== 'JSXExpressionContainer' ||
+    childNode(container, 'expression') !== identifier
+  ) {
     return false;
   }
-  return isDirectSourceComponentProp(container, bindings);
+  return isDirectSourceComponentProp(ctx, container, bindings);
 }
 
 function isGroupDataContainer(ctx: Ctx, container: BaseNode): boolean {
@@ -1209,12 +1216,13 @@ function isGeneratedDataCall(ctx: Ctx, node: BaseNode): boolean {
 }
 
 function sourceBindings(
-  componentPath: NodePath<t.FunctionDeclaration>,
+  ctx: Ctx,
+  component: BaseNode,
   names: ReadonlySet<string>,
-): Map<string, Binding> {
-  const bindings = new Map<string, Binding>();
+): Map<string, AstBinding> {
+  const bindings = new Map<string, AstBinding>();
   for (const name of names) {
-    const binding = componentPath.scope.getBinding(name);
+    const binding = astBindingAt(ctx, component, name);
     if (binding !== undefined) bindings.set(name, binding);
   }
   return bindings;
@@ -1222,81 +1230,86 @@ function sourceBindings(
 
 function sourceDependencies(
   ctx: Ctx,
-  path: NodePath,
-  bindings: ReadonlyMap<string, Binding>,
+  root: BaseNode,
+  bindings: ReadonlyMap<string, AstBinding>,
   derived: ReadonlyMap<
     string,
-    { binding: Binding; sources: readonly string[]; expression: t.Expression }
+    { binding: AstBinding; sources: readonly string[]; expression: t.Expression }
   >,
 ): string[] {
   const found = new Set<string>();
-  const note = (identifier: NodePath<t.Identifier>): void => {
-    const binding = bindings.get(identifier.node.name);
-    if (binding !== undefined && isBoundTo(identifier, binding)) {
-      if (!isPassthroughArgument(ctx, identifier.node as unknown as BaseNode)) {
-        found.add(identifier.node.name);
+  const note = (identifier: BaseNode): void => {
+    const name = (identifier as unknown as AstIdentifier).name;
+    const binding = bindings.get(name);
+    if (binding !== undefined && isBoundTo(ctx, identifier, binding)) {
+      if (!isPassthroughArgument(ctx, identifier)) {
+        found.add(name);
       }
       return;
     }
-    const derivation = derived.get(identifier.node.name);
+    const derivation = derived.get(name);
     if (
       derivation !== undefined &&
-      isBoundTo(identifier, derivation.binding)
+      isBoundTo(ctx, identifier, derivation.binding)
     ) {
       for (const source of derivation.sources) found.add(source);
     }
   };
-  if (path.isReferencedIdentifier()) note(path as NodePath<t.Identifier>);
-  path.traverse({
-    ReferencedIdentifier(identifier) {
-      if (!identifier.isIdentifier()) return;
-      note(identifier as NodePath<t.Identifier>);
+  walkAst(root, {
+    enter(node) {
+      if (node.type === 'Identifier') note(node);
     },
   });
   return [...found].sort();
 }
 
 function replaceDerivedReads(
-  path: NodePath,
+  ctx: Ctx,
+  root: BaseNode,
   derived: ReadonlyMap<
     string,
-    { binding: Binding; sources: readonly string[]; expression: t.Expression }
+    { binding: AstBinding; sources: readonly string[]; expression: t.Expression }
   >,
 ): void {
-  const replace = (identifier: NodePath<t.Identifier>): void => {
-    const projection = derived.get(identifier.node.name);
+  const found: Array<{ identifier: BaseNode; expression: t.Expression }> = [];
+  walkAst(root, {
+    enter(node) {
+      if (node.type !== 'Identifier') return;
+      const name = (node as unknown as AstIdentifier).name;
+      const projection = derived.get(name);
     if (
       projection === undefined ||
-      !isBoundTo(identifier, projection.binding)
+        !isBoundTo(ctx, node, projection.binding)
     ) return;
-    identifier.replaceWith(t.cloneNode(projection.expression, true));
-    identifier.skip();
-  };
-  if (path.isReferencedIdentifier()) replace(path as NodePath<t.Identifier>);
-  path.traverse({
-    ReferencedIdentifier(identifier) {
-      if (identifier.isIdentifier()) replace(identifier as NodePath<t.Identifier>);
+      found.push({ identifier: node, expression: projection.expression });
+      return false;
     },
   });
+  for (const { identifier, expression } of found) {
+    overwriteNode(
+      identifier,
+      t.cloneNode(expression, true) as unknown as BaseNode,
+    );
+  }
 }
 
 function trackDependencies(
-  path: NodePath,
-  componentPath: NodePath<t.FunctionDeclaration>,
+  ctx: Ctx,
+  root: BaseNode,
   tracks: ReadonlyMap<string, readonly string[]>,
 ): string[] {
   const found = new Set<string>();
-  const note = (identifier: NodePath<t.Identifier>): void => {
-    const sources = tracks.get(identifier.node.name);
+  const note = (identifier: BaseNode): void => {
+    const name = (identifier as unknown as AstIdentifier).name;
+    const sources = tracks.get(name);
     if (sources === undefined) return;
-    const binding = componentPath.scope.getBinding(identifier.node.name);
-    if (binding === undefined || !isBoundTo(identifier, binding)) return;
+    const binding = astBindingAt(ctx, root, name);
+    if (binding === undefined || !isBoundTo(ctx, identifier, binding)) return;
     for (const source of sources) found.add(source);
   };
-  if (path.isReferencedIdentifier()) note(path as NodePath<t.Identifier>);
-  path.traverse({
-    ReferencedIdentifier(identifier) {
-      if (identifier.isIdentifier()) note(identifier as NodePath<t.Identifier>);
+  walkAst(root, {
+    enter(node) {
+      if (node.type === 'Identifier') note(node);
     },
   });
   return [...found].sort();
@@ -1304,30 +1317,35 @@ function trackDependencies(
 
 function replaceSourceReads(
   ctx: Ctx,
-  path: NodePath,
-  bindings: ReadonlyMap<string, Binding>,
+  root: BaseNode,
+  bindings: ReadonlyMap<string, AstBinding>,
   replacements: ReadonlyMap<string, t.Identifier>,
 ): void {
-  const replace = (identifier: NodePath<t.Identifier>): void => {
-    const binding = bindings.get(identifier.node.name);
-    const replacement = replacements.get(identifier.node.name);
+  const found: Array<{ identifier: BaseNode; replacement: t.Identifier }> = [];
+  walkAst(root, {
+    enter(node) {
+      if (node.type !== 'Identifier') return;
+      const name = (node as unknown as AstIdentifier).name;
+      const binding = bindings.get(name);
+      const replacement = replacements.get(name);
     if (
       binding === undefined ||
       replacement === undefined ||
-      !isBoundTo(identifier, binding) ||
-      isPassthroughArgument(ctx, identifier.node as unknown as BaseNode)
+        !isBoundTo(ctx, node, binding) ||
+        isPassthroughArgument(ctx, node)
     ) {
       return;
     }
-    identifier.replaceWith(t.cloneNode(replacement));
-  };
-  if (path.isReferencedIdentifier()) replace(path as NodePath<t.Identifier>);
-  path.traverse({
-    ReferencedIdentifier(identifier) {
-      if (!identifier.isIdentifier()) return;
-      replace(identifier as NodePath<t.Identifier>);
+      found.push({ identifier: node, replacement });
+      return false;
     },
   });
+  for (const { identifier, replacement } of found) {
+    overwriteNode(
+      identifier,
+      t.cloneNode(replacement) as unknown as BaseNode,
+    );
+  }
 }
 
 /**
@@ -1337,30 +1355,32 @@ function replaceSourceReads(
  */
 function replaceSourceReadsWithRenderGates(
   ctx: Ctx,
-  path: NodePath,
-  bindings: ReadonlyMap<string, Binding>,
+  root: BaseNode,
+  bindings: ReadonlyMap<string, AstBinding>,
 ): void {
   // Collect first, replace after — the replacement call embeds the same
   // identifier, so replacing during traversal would recurse forever.
-  const found: NodePath<t.Identifier>[] = [];
-  const note = (identifier: NodePath<t.Identifier>): void => {
-    const binding = bindings.get(identifier.node.name);
-    if (binding === undefined || !isBoundTo(identifier, binding)) return;
-    if (isPassthroughArgument(ctx, identifier.node as unknown as BaseNode)) return;
+  const found: BaseNode[] = [];
+  const note = (identifier: BaseNode): void => {
+    const name = (identifier as unknown as AstIdentifier).name;
+    const binding = bindings.get(name);
+    if (binding === undefined || !isBoundTo(ctx, identifier, binding)) return;
+    if (isPassthroughArgument(ctx, identifier)) return;
     found.push(identifier);
   };
-  if (path.isReferencedIdentifier()) note(path as NodePath<t.Identifier>);
-  path.traverse({
-    ReferencedIdentifier(identifier) {
-      if (!identifier.isIdentifier()) return;
-      note(identifier as NodePath<t.Identifier>);
+  walkAst(root, {
+    enter(node) {
+      if (node.type === 'Identifier') note(node);
     },
   });
   for (const identifier of found) {
-    identifier.replaceWith(
-      t.callExpression(mdd(ctx, 'readResolvedValueForRender'), [
-        t.identifier(identifier.node.name),
-      ]),
+    const name = (identifier as unknown as AstIdentifier).name;
+    overwriteNode(
+      identifier,
+      t.callExpression(
+        mdd(ctx, 'readResolvedValueForRender'),
+        [t.identifier(name)],
+      ) as unknown as BaseNode,
     );
   }
 }
@@ -1390,9 +1410,9 @@ function isInsideRenderGate(ctx: Ctx, identifier: BaseNode): boolean {
 
 function resolvedRenderExpression(
   ctx: Ctx,
-  path: NodePath<t.Expression>,
+  expression: t.Expression,
   dependencies: readonly string[],
-  bindings: ReadonlyMap<string, Binding>,
+  bindings: ReadonlyMap<string, AstBinding>,
   helper = 'readResolvedValuesForRender',
 ): t.Expression {
   const replacements = new Map<string, t.Identifier>();
@@ -1401,12 +1421,17 @@ function resolvedRenderExpression(
     replacements.set(source, parameter);
     return t.cloneNode(parameter);
   });
-  replaceSourceReads(ctx, path, bindings, replacements);
+  replaceSourceReads(
+    ctx,
+    expression as unknown as BaseNode,
+    bindings,
+    replacements,
+  );
   return t.callExpression(mdd(ctx, helper), [
     t.arrayExpression(
       dependencies.map((source) => t.identifier(source)),
     ),
-    t.arrowFunctionExpression(parameters, t.cloneNode(path.node, true)),
+    t.arrowFunctionExpression(parameters, t.cloneNode(expression, true)),
   ]);
 }
 
@@ -1692,24 +1717,25 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
   refresh();
   // Module-scope refs join the same derivation machinery as component-local
   const moduleBinding = (
-    componentPath: NodePath<t.FunctionDeclaration>,
+    component: BaseNode,
     name: string,
-  ): Binding | undefined => {
+  ): AstBinding | undefined => {
     if (!ctx.transparentModuleSources.has(name)) return undefined;
-    const binding = componentPath.scope.getBinding(name);
-    return binding?.path.isImportSpecifier() === true ? binding : undefined;
+    const binding = astBindingAt(ctx, component, name);
+    return binding?.kind === 'import' ? binding : undefined;
   };
 
   for (const [component, componentPath] of ctx.compPaths) {
+    const componentNode = componentPath.node as unknown as BaseNode;
     const localNames =
       ctx.transparentSources.get(component) ?? new Set<string>();
-    const bindings = sourceBindings(componentPath, localNames);
+    const bindings = sourceBindings(ctx, componentNode, localNames);
     // Seed module-scope source bindings so derivation and container passes
     // treat imported refs like component-local holders (runtime helpers
     // accept ModuleSourceRef uniformly).
     let hasModuleRefs = false;
     for (const name of ctx.transparentModuleSources.keys()) {
-      const binding = moduleBinding(componentPath, name);
+      const binding = moduleBinding(componentNode, name);
       if (binding === undefined) continue;
       bindings.set(name, binding);
       hasModuleRefs = true;
@@ -1720,7 +1746,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
     const derived = new Map<
       string,
       {
-        binding: Binding;
+        binding: AstBinding;
         sources: readonly string[];
         expression: t.Expression;
       }
@@ -1752,11 +1778,16 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
       if (init === undefined || Array.isArray(init) || !init.isExpression()) {
         continue;
       }
-      replaceDerivedReads(init, derived);
+      replaceDerivedReads(
+        ctx,
+        init.node as unknown as BaseNode,
+        derived,
+      );
+      refresh();
       const projection = t.cloneNode(init.node, true);
       const wrapped = resolvedRenderExpression(
         ctx,
-        init,
+        init.node,
         sources,
         bindings,
         'deriveResolvedValues',
@@ -1764,7 +1795,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
       init.replaceWith(wrapped);
       derivation.source = t.cloneNode(wrapped, true);
       for (const name of derivation.bindings) {
-        const binding = componentPath.scope.getBinding(name);
+        const binding = astBindingAt(ctx, componentNode, name);
         if (binding !== undefined) {
           derived.set(name, {
             binding,
@@ -1781,7 +1812,11 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         if (
           isEventOrRefContainer(ctx, container.node as unknown as BaseNode) ||
           isGroupDataContainer(ctx, container.node as unknown as BaseNode) ||
-          isDirectSourceComponentProp(container, bindings)
+          isDirectSourceComponentProp(
+            ctx,
+            container.node as unknown as BaseNode,
+            bindings,
+          )
         ) {
           return;
         }
@@ -1795,19 +1830,23 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           // Group already owns render policy for this whole generated subtree.
           // Flatten local derivations so the structural entity can update
           // without replaying the whole component owner.
-          replaceDerivedReads(expression, derived);
+          replaceDerivedReads(
+            ctx,
+            expression.node as unknown as BaseNode,
+            derived,
+          );
           container.skip();
           return;
         }
         const dependencies = sourceDependencies(
           ctx,
-          expression,
+          expression.node as unknown as BaseNode,
           bindings,
           derived,
         );
         const stateDependencies = trackDependencies(
-          expression,
-          componentPath,
+          ctx,
+          expression.node as unknown as BaseNode,
           tracks,
         );
         if (dependencies.length === 0) {
@@ -1819,7 +1858,12 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         const allDependencies = [
           ...new Set([...dependencies, ...stateDependencies]),
         ].sort();
-        replaceDerivedReads(expression, derived);
+        replaceDerivedReads(
+          ctx,
+          expression.node as unknown as BaseNode,
+          derived,
+        );
+        refresh();
         if (
           containsJsx(expression.node as unknown as BaseNode) ||
           dependencies.some((source) =>
@@ -1831,7 +1875,11 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
             // the selector and state arms evaluate immediately; payload
             // sinks self-gate per site instead of hiding behind an
             // availability ladder.
-            replaceSourceReadsWithRenderGates(ctx, expression, bindings);
+            replaceSourceReadsWithRenderGates(
+              ctx,
+              expression.node as unknown as BaseNode,
+              bindings,
+            );
             (expression.node as RenderGatedExpression).__memoDomRenderGated =
               true;
             annotateTransparentSources(expression.node, allDependencies);
@@ -1844,7 +1892,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         }
         const resolved = resolvedRenderExpression(
           ctx,
-          expression,
+          expression.node,
           dependencies,
           bindings,
         );
@@ -1861,13 +1909,21 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         const binding = bindings.get(sourceIdentifier.node.name);
         if (
           binding === undefined ||
-          !isBoundTo(sourceIdentifier, binding)
+          !isBoundTo(
+            ctx,
+            sourceIdentifier.node as unknown as BaseNode,
+            binding,
+          )
         ) return;
         if (
           isPassthroughArgument(ctx, sourceIdentifier.node as unknown as BaseNode) ||
           isActionRefreshTarget(ctx, sourceIdentifier.node as unknown as BaseNode) ||
           isWithinGroupData(ctx, sourceIdentifier.node as unknown as BaseNode) ||
-          isWithinDirectSourceComponentProp(sourceIdentifier, bindings) ||
+          isWithinDirectSourceComponentProp(
+            ctx,
+            sourceIdentifier.node as unknown as BaseNode,
+            bindings,
+          ) ||
           isInsideRenderGate(ctx, sourceIdentifier.node as unknown as BaseNode) ||
           isGeneratedDataCall(ctx, sourceIdentifier.node as unknown as BaseNode)
         ) {

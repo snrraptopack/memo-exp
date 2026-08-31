@@ -35,6 +35,19 @@ export function replaceNode(
   fields(parent)[key] = replacement;
 }
 
+/**
+ * Overwrite a node in place while preserving its object identity.
+ *
+ * This is useful at temporary frontend-adapter boundaries where a live path
+ * may still retain the node object while parser-neutral mutation owns its
+ * fields. Rebuild scope/parent analysis after the surrounding batch.
+ */
+export function overwriteNode(target: BaseNode, replacement: BaseNode): void {
+  const targetFields = fields(target);
+  for (const key of Object.keys(targetFields)) delete targetFields[key];
+  Object.assign(targetFields, fields(replacement));
+}
+
 /** Remove a node held in an array-valued parent field. */
 export function removeNode(
   analysis: ScopeAnalysis,
