@@ -514,9 +514,12 @@ function scanRenderProps(ctx: Ctx): void {
         }
       },
     });
+    const componentParent = ctx.astAnalysis?.parentByNode.get(
+      componentPath.node as unknown as BaseNode,
+    ) ?? null;
     if (
-      (componentPath.parentPath?.isExportNamedDeclaration() ||
-        componentPath.parentPath?.isExportDefaultDeclaration()) &&
+      (componentParent?.type === 'ExportNamedDeclaration' ||
+        componentParent?.type === 'ExportDefaultDeclaration') &&
       !ctx.linkedComponentRenderProps.has(name)
     ) {
       const plan = ctx.componentProps.get(name)!;
@@ -1340,24 +1343,23 @@ function collectReads(ctx: Ctx): void {
       return false;
     }
 
-    function checkCallExpression(
-      call: NodePath<t.CallExpression | t.OptionalCallExpression>,
-    ): void {
+    function checkCallExpression(callNode: BaseNode): boolean {
+      const call = callNode as unknown as
+        | t.CallExpression
+        | t.OptionalCallExpression;
       if (
-        t.isIdentifier(call.node.callee, { name: 'effect' }) &&
-        call.scope.getBinding('effect') === undefined
+        t.isIdentifier(call.callee, { name: 'effect' }) &&
+        astBindingAt(ctx, callNode, 'effect') === undefined
       ) {
-        // Effect reads belong to the effect entity, not its owner.
-        call.skip();
-        return;
+        return false;
       }
-      const mapCall = matchMapCall(call.node);
+      const mapCall = matchMapCall(call);
       if (
         mapCall &&
-        (containsJsx(call) ||
+        (containsJsx(callNode) ||
           matchRenderCallbackMap(ctx, name, mapCall) !== null)
       ) {
-        const site = analyzeMapSite(ctx, mapCall, call, name, usedPrefixes);
+        const site = analyzeMapSite(ctx, mapCall, p, name, usedPrefixes);
         registerKeyedListMutationPlan(ctx, name, mapCall, site);
         const targeted = findTargetedListDependencies(
           site,
@@ -1400,7 +1402,11 @@ function collectReads(ctx: Ctx): void {
               if (
                 t.isIdentifier(n) &&
                 ctx.state.has(n.name) &&
-                call.scope.getBinding(n.name)?.scope.path.isProgram() === true
+                astBindingAt(
+                  ctx,
+                  n as unknown as BaseNode,
+                  n.name,
+                )?.scope.isProgramScope === true
               ) {
                 reads.add(n.name);
               }
@@ -1410,7 +1416,11 @@ function collectReads(ctx: Ctx): void {
                   const rootName = key.split('.')[0]!;
                   if (
                     ctx.state.get(rootName) === 'store' &&
-                    call.scope.getBinding(rootName)?.scope.path.isProgram() === true
+                    astBindingAt(
+                      ctx,
+                      n as unknown as BaseNode,
+                      rootName,
+                    )?.scope.isProgramScope === true
                   ) {
                     reads.add(key);
                   }
@@ -1431,61 +1441,78 @@ function collectReads(ctx: Ctx): void {
           }
           ctx.listedSites.set(site.rowComp!, sites);
         } else {
-          collectInlineRowSite(call.node, site, site.suffix);
+          collectInlineRowSite(call, site, site.suffix);
         }
-        call.skip(); // callback contents are not owner reads
-        return;
+        return false;
       }
       // helper calls: the callee's summarized reads belong to this component
-      const callee = call.node.callee;
+      const callee = call.callee;
       if (
         t.isIdentifier(callee) &&
         (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name)) &&
-        call.scope.getBinding(callee.name)?.scope.path.isProgram() === true
+        astBindingAt(ctx, callNode, callee.name)?.scope.isProgramScope === true
       ) {
         const summary =
           ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
         for (const r of summary.reads) reads.add(r);
       }
+      return true;
     }
 
-    p.traverse({
-      JSXAttribute(attribute) {
-        const name = attribute.node.name;
+    walkAst<BaseNode>(p.node as unknown as BaseNode, {
+      enter(node) {
+        if (node.type === 'JSXAttribute') {
+          const attribute = node as unknown as t.JSXAttribute;
+          const attributeName = attribute.name;
         if (
-          t.isJSXIdentifier(name, { name: 'ref' }) ||
-          t.isJSXNamespacedName(name) &&
-            name.namespace.name === 'ref'
+            t.isJSXIdentifier(attributeName, { name: 'ref' }) ||
+            (t.isJSXNamespacedName(attributeName) &&
+              attributeName.namespace.name === 'ref')
         ) {
-          attribute.skip();
+            return false;
         }
-      },
-      ConditionalExpression(c) {
-        if (!handleCond(c.node)) c.skip();
-      },
-      LogicalExpression(l) {
-        if (!handleCond(l.node)) l.skip();
-      },
-      CallExpression: checkCallExpression,
-      OptionalCallExpression: checkCallExpression,
-
-      Identifier(id) {
-        if (!ctx.state.has(id.node.name)) return;
+          return;
+        }
+        if (
+          node.type === 'ConditionalExpression' ||
+          node.type === 'LogicalExpression'
+        ) {
+          return handleCond(
+            node as unknown as
+              | t.ConditionalExpression
+              | t.LogicalExpression,
+          );
+        }
+        if (
+          node.type === 'CallExpression' ||
+          node.type === 'OptionalCallExpression'
+        ) {
+          return checkCallExpression(node);
+        }
+        if (node.type === 'Identifier') {
+          const id = node as unknown as t.Identifier;
+          if (!ctx.state.has(id.name)) return;
         // Static-table keys identify module bindings, not same-spelled props,
         // instance state, or local derivations.
-        if (id.scope.getBinding(id.node.name)?.scope.path.isProgram() !== true) return;
-        const parent = id.parentPath;
+          if (astBindingAt(ctx, node, id.name)?.scope.isProgramScope !== true) {
+            return;
+          }
+          const parent = ctx.astAnalysis?.parentByNode.get(node) ?? null;
         if (
-          parent.isAssignmentExpression({ operator: '=' }) &&
-          parent.node.left === id.node
+            parent?.type === 'AssignmentExpression' &&
+            (parent as unknown as t.AssignmentExpression).operator === '=' &&
+            (parent as unknown as t.AssignmentExpression).left === id
         ) {
           return; // write target, not a read
         }
-        reads.add(id.node.name);
-      },
-      MemberExpression(m) {
-        const key = storeReadKey(ctx, m.node as unknown as BaseNode);
-        if (key !== null) reads.add(key);
+          reads.add(id.name);
+          return;
+        }
+        if (node.type === 'MemberExpression') {
+          const key = storeReadKey(ctx, node);
+          if (key !== null) reads.add(key);
+        }
+        return;
       },
     });
 
