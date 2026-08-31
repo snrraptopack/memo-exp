@@ -14,6 +14,7 @@ import {
   type Ctx,
 } from './context';
 import {
+  extractPatternIdentifiers,
   walkAst,
   type BaseNode,
   type Binding as AstBinding,
@@ -26,6 +27,17 @@ import {
   registerStmt,
   type EmitScope,
 } from './emission/scope';
+
+function fields(node: BaseNode): Record<string, unknown> {
+  return node as unknown as Record<string, unknown>;
+}
+
+function childNode(node: BaseNode, key: string): BaseNode | null {
+  const value = fields(node)[key];
+  return value !== null && typeof value === 'object' && 'type' in value
+    ? value as BaseNode
+    : null;
+}
 
 function importedName(specifier: t.ImportSpecifier): string {
   return t.isIdentifier(specifier.imported)
@@ -396,51 +408,60 @@ export function subscribeTransparentStructuralSite(
   );
 }
 
-type GroupOrigins = Map<Binding, Set<string>>;
+type GroupOrigins = Map<AstBinding, Set<string>>;
 
 function expressionOrigins(
-  path: NodePath,
-  origins: ReadonlyMap<Binding, ReadonlySet<string>>,
+  ctx: Ctx,
+  root: BaseNode,
+  origins: ReadonlyMap<AstBinding, ReadonlySet<string>>,
 ): Set<string> {
   const found = new Set<string>();
-  const note = (identifier: NodePath<t.Identifier>): void => {
-    const binding = identifier.scope.getBinding(identifier.node.name);
-    if (binding === undefined) return;
+  const note = (identifier: AstIdentifier): void => {
+    const binding = astBindingAt(ctx, identifier, identifier.name);
+    if (binding === undefined || !binding.references.includes(identifier)) return;
     for (const source of origins.get(binding) ?? []) found.add(source);
   };
-  if (path.isReferencedIdentifier()) note(path as NodePath<t.Identifier>);
-  path.traverse({
-    ReferencedIdentifier(identifier) {
-      if (identifier.isIdentifier()) note(identifier as NodePath<t.Identifier>);
+  walkAst(root, {
+    enter(node) {
+      if (node.type === 'Identifier') note(node as unknown as AstIdentifier);
     },
   });
   return found;
 }
 
 function groupOrigins(
-  path: NodePath<t.JSXElement>,
+  ctx: Ctx,
+  element: BaseNode,
   sources: readonly string[],
 ): GroupOrigins {
   const origins: GroupOrigins = new Map();
   for (const source of sources) {
-    const binding = path.scope.getBinding(source);
+    const binding = astBindingAt(ctx, element, source);
     if (binding !== undefined) origins.set(binding, new Set([source]));
   }
-  const component = path.findParent((parent): parent is NodePath<t.FunctionDeclaration> =>
-    parent.isFunctionDeclaration(),
-  );
-  if (component === null || !component.isFunctionDeclaration()) return origins;
+  let component = ctx.astAnalysis?.parentByNode.get(element) ?? null;
+  while (component !== null && component.type !== 'FunctionDeclaration') {
+    component = ctx.astAnalysis?.parentByNode.get(component) ?? null;
+  }
+  if (component === null) return origins;
   let changed = true;
   while (changed) {
     changed = false;
-    component.traverse({
-      VariableDeclarator(declaration) {
-        const init = declaration.get('init');
-        if (Array.isArray(init) || !init.isExpression()) return;
-        const dependencies = expressionOrigins(init, origins);
+    walkAst(component, {
+      enter(node) {
+        if (node !== component && (
+          node.type === 'ArrowFunctionExpression' ||
+          node.type === 'FunctionExpression' ||
+          node.type === 'FunctionDeclaration'
+        )) return false;
+        if (node.type !== 'VariableDeclarator') return undefined;
+        const init = childNode(node, 'init');
+        const pattern = childNode(node, 'id');
+        if (init === null || pattern === null) return undefined;
+        const dependencies = expressionOrigins(ctx, init, origins);
         if (dependencies.size === 0) return;
-        for (const name of Object.keys(t.getBindingIdentifiers(declaration.node.id))) {
-          const binding = declaration.scope.getBinding(name);
+        for (const identifier of extractPatternIdentifiers(pattern)) {
+          const binding = astBindingAt(ctx, identifier, identifier.name);
           if (binding === undefined) continue;
           const current = origins.get(binding) ?? new Set<string>();
           const before = current.size;
@@ -448,63 +469,67 @@ function groupOrigins(
           origins.set(binding, current);
           changed ||= current.size !== before;
         }
-      },
-      Function(inner) {
-        if (inner.node !== component.node) inner.skip();
+        return undefined;
       },
     });
   }
   return origins;
 }
 
-function isLoweredGroupExpression(path: NodePath<t.Expression>): boolean {
-  return (path.node as t.Expression & {
+function isLoweredGroupExpression(expression: t.Expression): boolean {
+  return (expression as t.Expression & {
     __memoDomTransparentGroup?: boolean;
   }).__memoDomTransparentGroup === true;
 }
 
-function componentPropName(attribute: NodePath<t.JSXAttribute>): string | null {
-  return t.isJSXIdentifier(attribute.node.name)
-    ? attribute.node.name.name
+function componentPropName(attribute: t.JSXAttribute): string | null {
+  return t.isJSXIdentifier(attribute.name)
+    ? attribute.name.name
     : null;
 }
 
 function annotateGroupComponentCalls(
   ctx: Ctx,
-  content: NodePath,
-  origins: ReadonlyMap<Binding, ReadonlySet<string>>,
+  content: BaseNode,
+  origins: ReadonlyMap<AstBinding, ReadonlySet<string>>,
   pending: string,
   error: string,
 ): void {
-  const note = (element: NodePath<t.JSXElement>): void => {
-    const tag = jsxTagName(element.node);
+  const note = (node: BaseNode): void => {
+    const element = node as unknown as t.JSXElement;
+    const tag = jsxTagName(element);
     if (tag === null || !/^[A-Z]/.test(tag)) return;
-    let policies = ctx.transparentGroupCallPolicies.get(element.node);
-    for (const attribute of element.get('openingElement').get('attributes')) {
-      if (!attribute.isJSXAttribute()) continue;
+    let policies = ctx.transparentGroupCallPolicies.get(element);
+    for (const attribute of element.openingElement.attributes) {
+      if (!t.isJSXAttribute(attribute)) continue;
       const prop = componentPropName(attribute);
-      const value = attribute.get('value');
+      const value = attribute.value;
       if (
         prop === null ||
-        Array.isArray(value) ||
-        !value.isJSXExpressionContainer()
+        !t.isJSXExpressionContainer(value)
       ) continue;
-      const expression = value.get('expression');
+      const expression = value.expression;
       if (
-        Array.isArray(expression) ||
-        !expression.isReferencedIdentifier() ||
-        expressionOrigins(expression, origins).size === 0
+        !t.isIdentifier(expression) ||
+        expressionOrigins(
+          ctx,
+          expression as unknown as BaseNode,
+          origins,
+        ).size === 0
       ) continue;
       policies ??= new Map();
       // Inner groups run first (exit traversal) and own the nearest match.
       if (!policies.has(prop)) policies.set(prop, { pending, error });
     }
     if (policies !== undefined) {
-      ctx.transparentGroupCallPolicies.set(element.node, policies);
+      ctx.transparentGroupCallPolicies.set(element, policies);
     }
   };
-  if (content.isJSXElement()) note(content);
-  content.traverse({ JSXElement: note });
+  walkAst(content, {
+    enter(node) {
+      if (node.type === 'JSXElement') note(node);
+    },
+  });
 }
 
 function wrapGroupSite(
@@ -713,6 +738,7 @@ export function lowerTransparentGroups(
   ctx: Ctx,
   programPath: NodePath<t.Program>,
 ): void {
+  refreshAstAnalysis(ctx, programPath.node);
   programPath.traverse({
     JSXElement: {
       exit(path) {
@@ -745,17 +771,31 @@ export function lowerTransparentGroups(
           'Error',
         );
         const data = groupDataNames(path);
-        const origins = groupOrigins(path, data);
-        annotateGroupComponentCalls(ctx, content, origins, pending, error);
+        const origins = groupOrigins(
+          ctx,
+          path.node as unknown as BaseNode,
+          data,
+        );
+        annotateGroupComponentCalls(
+          ctx,
+          content.node as unknown as BaseNode,
+          origins,
+          pending,
+          error,
+        );
         const visit = (container: NodePath<t.JSXExpressionContainer>): void => {
           if (container.parentPath.isJSXAttribute()) return;
           const expression = container.get('expression');
           if (Array.isArray(expression) || !expression.isExpression()) return;
-          if (isLoweredGroupExpression(expression)) {
+          if (isLoweredGroupExpression(expression.node)) {
             container.skip();
             return;
           }
-          const used = expressionOrigins(expression, origins);
+          const used = expressionOrigins(
+            ctx,
+            expression.node as unknown as BaseNode,
+            origins,
+          );
           if (used.size === 0) return;
           wrapGroupSite(ctx, expression, [...used], pending, error);
           container.skip();
