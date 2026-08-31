@@ -111,27 +111,6 @@ type HelperPath = Ctx['helpers'] extends Map<string, infer TPath>
   ? TPath
   : never;
 
-interface FrontendPathView {
-  node: t.Node | null;
-  get(key: string): FrontendPathView | FrontendPathView[];
-}
-
-function frontendChildren(
-  path: FrontendPathView,
-  key: string,
-): FrontendPathView[] {
-  const children = path.get(key);
-  return Array.isArray(children) ? children : [];
-}
-
-function frontendChild(
-  path: FrontendPathView,
-  key: string,
-): FrontendPathView | null {
-  const child = path.get(key);
-  return Array.isArray(child) ? null : child;
-}
-
 /** Whether a JSX expression container is a declared component render slot. */
 function isRenderAttributeContainer(ctx: Ctx, container: BaseNode): boolean {
   if (container.type !== 'JSXExpressionContainer') return false;
@@ -204,59 +183,47 @@ function scanModuleState(ctx: Ctx, programPath: ProgramPath): void {
  * previously treated every declaration as a component.
  */
 function scanComponents(ctx: Ctx, programPath: ProgramPath): void {
-  const unwrapFunctionPath = (
-    raw: FrontendPathView | FrontendPathView[] | null,
-  ): FrontendPathView | null => {
-    if (raw === null || Array.isArray(raw)) return null;
+  const unwrapFunctionNode = (
+    raw: t.Node | null | undefined,
+  ): HelperPath['node'] | null => {
+    if (raw === null || raw === undefined) return null;
     let current = raw;
     while (
-      current.node?.type === 'TSAsExpression' ||
-      current.node?.type === 'TSTypeAssertion' ||
-      current.node?.type === 'TSNonNullExpression' ||
-      current.node?.type === 'TSSatisfiesExpression' ||
-      current.node?.type === 'TSInstantiationExpression'
+      current.type === 'TSAsExpression' ||
+      current.type === 'TSTypeAssertion' ||
+      current.type === 'TSNonNullExpression' ||
+      current.type === 'TSSatisfiesExpression' ||
+      current.type === 'TSInstantiationExpression'
     ) {
-      const expression = frontendChild(current, 'expression');
-      if (expression === null) return null;
-      current = expression;
+      current = current.expression;
     }
-    return current.node?.type === 'ArrowFunctionExpression' ||
-      current.node?.type === 'FunctionExpression'
+    return current.type === 'ArrowFunctionExpression' ||
+      current.type === 'FunctionExpression'
       ? current
       : null;
   };
 
   const functionPaths = new Map<t.Node, HelperPath>();
-  const programView = programPath as unknown as FrontendPathView;
-  for (const statementPath of frontendChildren(programView, 'body')) {
-    const declarationPath = statementPath.node?.type === 'ExportNamedDeclaration' ||
-      statementPath.node?.type === 'ExportDefaultDeclaration'
-      ? frontendChild(statementPath, 'declaration')
-      : statementPath;
-    if (
-      declarationPath !== null &&
-      declarationPath.node?.type === 'FunctionDeclaration'
-    ) {
-      functionPaths.set(
-        declarationPath.node,
-        declarationPath as unknown as HelperPath,
-      );
+  const asPath = (node: HelperPath['node']): HelperPath => ({
+    node,
+    buildCodeFrameError(message) {
+      return programPath.buildCodeFrameError(message);
+    },
+  });
+  for (const statement of programPath.node.body) {
+    const declaration = t.isExportNamedDeclaration(statement) ||
+      t.isExportDefaultDeclaration(statement)
+      ? statement.declaration
+      : statement;
+    if (t.isFunctionDeclaration(declaration)) {
+      functionPaths.set(declaration, asPath(declaration));
       continue;
     }
-    if (
-      declarationPath === null ||
-      declarationPath.node?.type !== 'VariableDeclaration'
-    ) {
-      continue;
-    }
-    for (const declaratorPath of frontendChildren(
-      declarationPath,
-      'declarations',
-    )) {
-      if (declaratorPath.node?.type !== 'VariableDeclarator') continue;
-      const initPath = unwrapFunctionPath(frontendChild(declaratorPath, 'init'));
-      if (initPath?.node !== null && initPath?.node !== undefined) {
-        functionPaths.set(initPath.node, initPath as unknown as HelperPath);
+    if (!t.isVariableDeclaration(declaration)) continue;
+    for (const declarator of declaration.declarations) {
+      const init = unwrapFunctionNode(declarator.init);
+      if (init !== null) {
+        functionPaths.set(init, asPath(init));
       }
     }
   }

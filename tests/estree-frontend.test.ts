@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parse as parseYuku } from 'yuku-parser';
 import {
   EstreeParseError,
   analyzeScope,
@@ -38,7 +39,11 @@ import { analyzeComputed } from '../packages/compiler/src/analysis/computed';
 import { cloneRuntimeBindingPattern } from '../packages/compiler/src/analysis/runtime-pattern';
 import { isStaticDerivedChain } from '../packages/compiler/src/lists/static-derived';
 import { discoverComponentExports } from '../packages/compiler/src/components/manifest';
-import { GeneratedIdentifiers } from '../packages/compiler/src/identifiers';
+import {
+  GeneratedIdentifiers,
+  initializeGeneratedIdentifiers,
+} from '../packages/compiler/src/identifiers';
+import { runAnalysis } from '../packages/compiler/src/analysis';
 import { isRenderCallbackJsxRoot } from '../packages/compiler/src/components/render-callbacks';
 import { scanModuleControlFlow } from '../packages/compiler/src/module-control-flow';
 import { analyzeComponentReturns } from '../packages/compiler/src/components/return-plan';
@@ -62,8 +67,91 @@ import {
   discoverTopLevelFunctions,
   findUnlinkedValueImports,
 } from '../packages/compiler/src/analysis/module-discovery';
+import { transformEstreeProgram } from '../packages/compiler/src/plugin';
 
 describe('ESTree parser and printer boundary', () => {
+  it('transforms equivalent OXC and Yuku programs through one ESTree core', () => {
+    const source = `
+      interface Item { id: number; label: string }
+      export function App({ title }: { title: string }) {
+        let items: Item[] = [{ id: 1, label: 'one' }];
+        return <main>
+          <h1>{title}</h1>
+          <button onClick={() => items.push({ id: 2, label: 'two' })}>add</button>
+          <ul>{items.map(item => <li key={item.id}>{item.label}</li>)}</ul>
+        </main>;
+      }
+    `;
+    const oxc = parseEstreeOrThrow(source, {
+      filename: 'frontend.tsx',
+      language: 'tsx',
+    });
+    const yuku = parseYuku(source, {
+      lang: 'tsx',
+      preserveParens: false,
+    });
+    expect(yuku.diagnostics).toEqual([]);
+
+    const transform = (program: BaseNode): string => {
+      transformEstreeProgram(
+        {
+          node: program as unknown as Parameters<
+            typeof transformEstreeProgram
+          >[0]['node'],
+          buildCodeFrameError(message: string) {
+            return new Error(message);
+          },
+        },
+        { moduleId: './frontend.tsx' },
+      );
+      const transitional = collectNodes(program, (node): node is BaseNode =>
+        node.type === 'StringLiteral' ||
+        node.type === 'NumericLiteral' ||
+        node.type === 'BooleanLiteral' ||
+        node.type === 'NullLiteral' ||
+        node.type === 'ObjectProperty'
+      );
+      expect(transitional).toEqual([]);
+      return printEstree(program).code;
+    };
+
+    const oxcCode = transform(oxc.program);
+    const yukuCode = transform(yuku.program as unknown as BaseNode);
+    expect(yukuCode).toBe(oxcCode);
+    expect(oxcCode).toContain('createListRegion');
+    expect(oxcCode).not.toContain('<main>');
+  });
+
+  it('runs the complete compiler analysis directly on OXC ESTree', () => {
+    const parsed = parseEstreeOrThrow(
+      `
+        export function App({ name }: { name: string }) {
+          let count = 0;
+          return <button onClick={() => count++}>{name}:{count}</button>;
+        }
+      `,
+      { filename: 'analysis.tsx' },
+    );
+    const context = createCtx({ moduleId: './analysis.tsx' });
+    const programPath = {
+      node: parsed.program,
+      buildCodeFrameError(message: string) {
+        return new Error(message);
+      },
+    } as unknown as Parameters<typeof runAnalysis>[1];
+
+    initializeGeneratedIdentifiers(context, parsed.program);
+    runAnalysis(context, programPath);
+
+    expect([...context.comps.keys()]).toEqual(['App']);
+    expect([...context.instanceState.get('App') ?? []]).toEqual(['count']);
+    expect(context.componentProps.get('App')).toMatchObject({
+      mode: 'object',
+      names: ['name'],
+      bindings: ['name'],
+    });
+  });
+
   it('discovers components, helpers, and runtime imports directly from OXC ESTree', () => {
     const parsed = parseEstreeOrThrow(`
       import type { Shape } from './types';

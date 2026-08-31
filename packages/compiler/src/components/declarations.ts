@@ -12,7 +12,7 @@ import { nodeHasJsx } from '../context';
 interface ProgramContainer {
   node: t.Program;
   buildCodeFrameError(message: string): Error;
-  scope: { crawl(): void };
+  scope?: { crawl(): void };
 }
 
 interface ErrorPath {
@@ -162,5 +162,5 @@ export function normalizeComponentDeclarations(
 
   if (!changed) return;
   programPath.node.body = body;
-  programPath.scope.crawl();
+  programPath.scope?.crawl();
 }

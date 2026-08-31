@@ -8,7 +8,12 @@
  */
 
 import * as t from '@babel/types';
-import { walkAst, type BaseNode } from '../ast';
+import {
+  cloneNode,
+  extractPatternIdentifiers,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 import { analyzeComponentPropShape } from './prop-shape';
 
 export type ComponentParam = Exclude<
@@ -16,6 +21,23 @@ export type ComponentParam = Exclude<
   t.TSParameterProperty
 >;
 type PropTarget = t.Identifier | t.ObjectPattern | t.ArrayPattern;
+
+function cloneCompilerNode<TNode extends t.Node>(node: TNode): TNode {
+  return cloneNode(node as unknown as BaseNode) as unknown as TNode;
+}
+
+function isObjectProperty(node: t.Node): node is t.ObjectProperty {
+  return t.isObjectProperty(node) ||
+    (node as unknown as BaseNode).type === 'Property';
+}
+
+function propertyName(node: t.Node): string | null {
+  if (t.isIdentifier(node)) return node.name;
+  if (t.isStringLiteral(node)) return node.value;
+  if ((node as unknown as BaseNode).type !== 'Literal') return null;
+  const value = (node as unknown as { value?: unknown }).value;
+  return typeof value === 'string' ? value : null;
+}
 
 export interface ComponentPropsPlan {
   mode: 'positional' | 'object';
@@ -64,17 +86,13 @@ export function simpleObjectPropBindings(
   const bindings: SimpleObjectPropBinding[] = [];
   for (const property of param.properties) {
     if (
-      !t.isObjectProperty(property) ||
+      !isObjectProperty(property) ||
       property.computed ||
       !t.isIdentifier(property.value)
     ) {
       return null;
     }
-    const name = t.isIdentifier(property.key)
-      ? property.key.name
-      : t.isStringLiteral(property.key)
-        ? property.key.value
-        : null;
+    const name = propertyName(property.key);
     if (name === null) return null;
     bindings.push({ name, local: property.value.name });
   }
@@ -126,7 +144,7 @@ export function analyzeComponentProps(
   );
   return {
     ...shape,
-    params: plain.map((param) => t.cloneNode(param)),
+    params: plain.map(cloneCompilerNode),
     renderProps: [],
     renderCallbacks: [],
     refProps: [],
@@ -171,20 +189,22 @@ export function buildDerivationReplay(
   derivation: LocalDerivation,
 ): t.Statement {
   if (derivation.replay !== undefined) {
-    return t.cloneNode(derivation.replay, true);
+    return cloneCompilerNode(derivation.replay);
   }
   return t.expressionStatement(
     t.assignmentExpression(
       '=',
       assignmentTarget(derivation.target),
-      t.cloneNode(derivation.source),
+      cloneCompilerNode(derivation.source),
     ),
   );
 }
 
 /** All lexical bindings introduced by an identifier or destructuring pattern. */
 export function bindingNames(node: t.LVal): string[] {
-  return Object.keys(t.getBindingIdentifiers(node));
+  return extractPatternIdentifiers(node as unknown as BaseNode).map(
+    (identifier) => identifier.name,
+  );
 }
 
 /** Generic object parameter binding, or null for an object pattern. */
@@ -206,13 +226,9 @@ export function localBindingForProp(
   const target = parameterTarget(plan.params[0]!);
   if (!t.isObjectPattern(target)) return null;
   for (const property of target.properties) {
-    if (!t.isObjectProperty(property) || property.computed) continue;
-    const propertyName = t.isIdentifier(property.key)
-      ? property.key.name
-      : t.isStringLiteral(property.key)
-        ? property.key.value
-        : null;
-    if (propertyName !== name) continue;
+    if (!isObjectProperty(property) || property.computed) continue;
+    const declaredName = propertyName(property.key);
+    if (declaredName !== name) continue;
     const value = t.isAssignmentPattern(property.value)
       ? property.value.left
       : property.value;
@@ -233,14 +249,15 @@ export function propNameForBinding(
   const target = parameterTarget(plan.params[0]!);
   if (!t.isObjectPattern(target)) return null;
   for (const property of target.properties) {
-    if (!t.isObjectProperty(property) || property.computed) continue;
+    if (!isObjectProperty(property) || property.computed) continue;
     if (
-      !Object.keys(t.getBindingIdentifiers(property.value)).includes(binding)
+      !bindingNames(property.value as t.LVal).includes(binding)
     ) {
       continue;
     }
     if (t.isIdentifier(property.key)) return property.key.name;
-    if (t.isStringLiteral(property.key)) return property.key.value;
+    const declaredName = propertyName(property.key);
+    if (declaredName !== null) return declaredName;
   }
   return null;
 }
@@ -262,7 +279,7 @@ function parameterTarget(param: ComponentParam): PropTarget {
 
 /** Clone an authored parameter for emitted JavaScript factory syntax. */
 export function runtimeParameter(param: ComponentParam): ComponentParam {
-  const cloned = t.cloneNode(param);
+  const cloned = cloneCompilerNode(param);
   stripTypeSyntax(cloned);
   return cloned;
 }
@@ -271,26 +288,26 @@ function inputWithDefault(
   param: ComponentParam,
   source: t.Expression,
 ): t.Expression {
-  if (!t.isAssignmentPattern(param)) return t.cloneNode(source);
+  if (!t.isAssignmentPattern(param)) return cloneCompilerNode(source);
   return t.conditionalExpression(
     t.binaryExpression(
       '===',
-      t.cloneNode(source),
+      cloneCompilerNode(source),
       t.identifier('undefined'),
     ),
-    t.cloneNode(param.right),
-    t.cloneNode(source),
+    cloneCompilerNode(param.right),
+    cloneCompilerNode(source),
   );
 }
 
 function declarationTarget(target: PropTarget): PropTarget {
-  const cloned = t.cloneNode(target);
+  const cloned = cloneCompilerNode(target);
   stripTypeSyntax(cloned);
   return cloned;
 }
 
 function assignmentTarget(target: PropTarget): PropTarget {
-  const cloned = t.cloneNode(target);
+  const cloned = cloneCompilerNode(target);
   stripTypeSyntax(cloned);
   return cloned;
 }

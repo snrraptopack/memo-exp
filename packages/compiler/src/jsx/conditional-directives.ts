@@ -18,7 +18,7 @@ interface ErrorPath {
 
 interface ProgramContainer extends ErrorPath {
   node: t.Program;
-  scope: { crawl(): void };
+  scope?: { crawl(): void };
 }
 
 interface ConditionalDirective {
@@ -243,5 +243,5 @@ export function normalizeConditionalJsxDirectives(
       return false;
     },
   });
-  programPath.scope.crawl();
+  programPath.scope?.crawl();
 }

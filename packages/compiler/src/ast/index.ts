@@ -8,5 +8,6 @@ export * from './walk';
 export * from './scope';
 export * from './transform';
 export * from './mutate';
+export * from './normalize';
 export * from './parser';
 export * from './printer';

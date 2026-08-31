@@ -165,6 +165,36 @@ opaque receiver calls and structural writes conservatively perform a full
 reconcile. The runtime no longer exposes the unused topology-only reconcile
 argument.
 
+## Parser-neutral transform checkpoint
+
+The compiler now exposes an internal whole-program transform that accepts a
+plain ESTree program container, runs the real analysis and emission pipeline,
+and returns strict ESTree for Esrap. The temporary Babel builder output is
+normalized at this boundary (`StringLiteral`/`NumericLiteral`/`NullLiteral`
+and `ObjectProperty` become their ESTree equivalents). This normalization is a
+transition aid; replacing the remaining Babel node builders and types is still
+required before dependency removal.
+
+The complete transform is covered with both OXC and Yuku TSX programs. Both
+frontends feed the same compiler-owned scope, analysis, mutation, and emission
+logic and produce byte-identical Esrap output. The Babel compatibility plugin
+retains its staged visitor timing only as a frontend adapter while the public
+compile/linker boundary is migrated.
+
+`yuku-parser` is a root development dependency used for cross-frontend tests
+and the Node benchmark, not a compiler package dependency. On Node 24.19.0,
+the representative 80-component TSX parse benchmark measured:
+
+| Frontend | Median parses/second | Relative elapsed time |
+|---|---:|---:|
+| Yuku | 123.5 | 1.00x |
+| Babel | 51.7 | 2.39x |
+| OXC | 33.7 | 3.66x |
+
+These numbers are local measurements rather than an architectural choice: the
+cross-frontend equality test is the portability gate, and parser speed can be
+re-measured independently with `bun run bench:frontends`.
+
 ## Babel boundary inventory
 
 The compiler package still declares these five dependencies:
@@ -345,7 +375,7 @@ Verified through 2026-08-31:
 - Component discovery, render-prop, row-read, conditional-read, linked dynamic
   component, JSX collection, helper-handler, and SSR cell-lowering regressions
   passed after rebuilding the compiler package.
-- Full root suite passed: 99 files, 611 tests.
+- Full root suite passed: 99 files, 613 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
 

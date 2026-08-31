@@ -17,7 +17,11 @@
 
 import type { PluginObject } from '@babel/core';
 import * as t from '@babel/types';
-import { walkAst, type BaseNode } from './ast';
+import {
+  normalizeEstreeDialect,
+  walkAst,
+  type BaseNode,
+} from './ast';
 import {
   createCtx,
   freshWriteConst,
@@ -198,6 +202,8 @@ interface ProgramDiagnostic {
   buildCodeFrameError(message: string): Error;
 }
 
+export interface ProgramTransformPath extends ProgramDiagnostic {}
+
 function rejectLeftoverJsx(ctx: Ctx, programPath: ProgramDiagnostic): void {
   const analysis = ctx.astAnalysis;
   if (analysis === null) return;
@@ -250,123 +256,163 @@ function rejectLeftoverJsx(ctx: Ctx, programPath: ProgramDiagnostic): void {
 
 export type { MemoDomOptions };
 
+function prepareProgram(
+  ctx: Ctx,
+  programPath: ProgramTransformPath,
+): void {
+  normalizeComponentDeclarations(programPath);
+  installLinkedDynamicComponentImports(ctx, programPath);
+  normalizeConditionalJsxDirectives(programPath);
+  initializeGeneratedIdentifiers(ctx, programPath.node);
+  scanTransparentSourceImports(ctx, programPath);
+  lowerTransparentGroups(ctx, programPath);
+  scanAndLowerModuleSourceDeclarations(ctx, programPath);
+  analyzeRouterJsx(ctx, programPath);
+  runAnalysis(ctx, programPath);
+  rewriteTransparentDataReads(ctx);
+  transformProgramCallbacks(ctx, programPath);
+  transformSharedAsyncHelpers(ctx);
+}
+
+function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
+  liftModuleStateCells(ctx, programPath);
+  rewriteModuleEffects(ctx, programPath);
+  rejectUnownedCleanup(ctx, programPath);
+  rejectUnownedEffects(ctx, programPath);
+  ctx.header.unshift(...routeManifestStatements(ctx));
+
+  // Safety net: any JSX left over lived outside a component function.
+  rejectLeftoverJsx(ctx, programPath);
+
+  const table = buildAccessTable(ctx);
+  if (ctx.computeds.size > 0) rewriteComputeds(ctx, programPath.node);
+  if (ctx.moduleControlFlow.length > 0) {
+    rewriteModuleControlFlow(ctx, programPath.node);
+  }
+  if (table) ctx.header.push(table);
+
+  const imports = [
+    t.importDeclaration(
+      [
+        t.importNamespaceSpecifier(
+          t.identifier(requireIdentifiers(ctx).runtimeId),
+        ),
+      ],
+      t.stringLiteral(ctx.runtimePath),
+    ),
+  ];
+  if (ctx.usesRouter) {
+    imports.push(
+      t.importDeclaration(
+        [
+          t.importNamespaceSpecifier(
+            t.identifier(requireIdentifiers(ctx).routerId),
+          ),
+        ],
+        t.stringLiteral(ctx.routerPath),
+      ),
+    );
+  }
+  if (ctx.usesTransparentData) {
+    imports.push(
+      t.importDeclaration(
+        [
+          t.importNamespaceSpecifier(
+            t.identifier(requireIdentifiers(ctx).dataRuntimeId),
+          ),
+        ],
+        t.stringLiteral(ctx.dataRuntimePath),
+      ),
+    );
+  }
+  const babelContainer = programPath as ProgramTransformPath & {
+    unshiftContainer?(
+      key: 'body',
+      nodes: t.Statement | t.Statement[],
+    ): unknown;
+    pushContainer?(key: 'body', node: t.Statement): unknown;
+  };
+  if (babelContainer.unshiftContainer === undefined) {
+    programPath.node.body.unshift(...imports, ...ctx.header);
+  } else {
+    for (let index = ctx.header.length - 1; index >= 0; index--) {
+      babelContainer.unshiftContainer('body', ctx.header[index]!);
+    }
+    babelContainer.unshiftContainer('body', imports);
+  }
+  if (ctx.rootComponent !== null) {
+    const registration = t.expressionStatement(
+      t.callExpression(md(ctx, 'registerRootFactory'), [
+        t.identifier(ctx.rootComponent),
+        t.objectExpression([
+          t.objectProperty(t.identifier('id'), t.stringLiteral(ctx.rootId)),
+          t.objectProperty(
+            t.identifier('create'),
+            t.arrowFunctionExpression(
+              [],
+              t.callExpression(t.identifier(ctx.rootComponent), [
+                t.stringLiteral(ctx.rootId),
+                t.nullLiteral(),
+                t.arrayExpression([]),
+              ]),
+            ),
+          ),
+        ]),
+      ]),
+    );
+    if (babelContainer.pushContainer === undefined) {
+      programPath.node.body.push(registration);
+    } else {
+      babelContainer.pushContainer('body', registration);
+    }
+  }
+}
+
+function transformProgramAst(
+  programPath: ProgramTransformPath,
+  opts: InternalMemoDomOptions = {},
+): void {
+  const ctx = createCtx(opts);
+  prepareProgram(ctx, programPath);
+  for (const [name, componentPath] of ctx.compPaths) {
+    transformComponent(ctx, componentPath, name);
+  }
+  finishProgram(ctx, programPath);
+}
+
+/** Transform a plain ESTree program and leave the result in strict ESTree. */
+export function transformEstreeProgram(
+  programPath: ProgramTransformPath,
+  opts: InternalMemoDomOptions = {},
+): void {
+  transformProgramAst(programPath, opts);
+  normalizeEstreeDialect(programPath.node as unknown as BaseNode);
+}
+
 export default function memoDomPlugin(
   _api: unknown,
   opts: InternalMemoDomOptions = {},
 ): PluginObject {
   const ctx = createCtx(opts);
   const transformed = new WeakSet<t.Node>();
-
-  const visitor: NonNullable<PluginObject['visitor']> = {
-    Program: {
-      enter(programPath) {
-        normalizeComponentDeclarations(programPath);
-        installLinkedDynamicComponentImports(ctx, programPath);
-        normalizeConditionalJsxDirectives(programPath);
-        initializeGeneratedIdentifiers(ctx, programPath.node);
-        scanTransparentSourceImports(ctx, programPath);
-        lowerTransparentGroups(ctx, programPath);
-        scanAndLowerModuleSourceDeclarations(ctx, programPath);
-        analyzeRouterJsx(ctx, programPath);
-        runAnalysis(ctx, programPath);
-        rewriteTransparentDataReads(ctx);
-        transformProgramCallbacks(ctx, programPath);
-        transformSharedAsyncHelpers(ctx);
+  return {
+    name: 'memo-dom',
+    visitor: {
+      Program: {
+        enter(programPath) {
+          prepareProgram(ctx, programPath);
+        },
+        exit(programPath) {
+          finishProgram(ctx, programPath);
+        },
       },
-      exit(programPath) {
-        liftModuleStateCells(ctx, programPath);
-        rewriteModuleEffects(ctx, programPath);
-        rejectUnownedCleanup(ctx, programPath);
-        rejectUnownedEffects(ctx, programPath);
-        ctx.header.unshift(...routeManifestStatements(ctx));
-
-        // safety net: any JSX left over lived outside a component function.
-        // Synthetic nodes created by transforms carry no loc, so walk up to
-        // the nearest ancestor that does; without this Babel degrades to the
-        // useless "internal node" message and users cannot locate the site.
-        rejectLeftoverJsx(ctx, programPath);
-
-        const table = buildAccessTable(ctx);
-        if (ctx.computeds.size > 0) rewriteComputeds(ctx, programPath.node); // R13
-        if (ctx.moduleControlFlow.length > 0) {
-          rewriteModuleControlFlow(ctx, programPath.node);
-        }
-        if (table) ctx.header.push(table);
-
-        // flush header (write consts, access table) right after the import
-        for (let i = ctx.header.length - 1; i >= 0; i--) {
-          programPath.unshiftContainer('body', ctx.header[i]!);
-        }
-        const imports = [
-          t.importDeclaration(
-            [
-              t.importNamespaceSpecifier(
-                t.identifier(requireIdentifiers(ctx).runtimeId),
-              ),
-            ],
-            t.stringLiteral(ctx.runtimePath),
-          ),
-        ];
-        if (ctx.usesRouter) {
-          imports.push(
-            t.importDeclaration(
-              [
-                t.importNamespaceSpecifier(
-                  t.identifier(requireIdentifiers(ctx).routerId),
-                ),
-              ],
-              t.stringLiteral(ctx.routerPath),
-            ),
-          );
-        }
-        if (ctx.usesTransparentData) {
-          imports.push(
-            t.importDeclaration(
-              [
-                t.importNamespaceSpecifier(
-                  t.identifier(requireIdentifiers(ctx).dataRuntimeId),
-                ),
-              ],
-              t.stringLiteral(ctx.dataRuntimePath),
-            ),
-          );
-        }
-        programPath.unshiftContainer('body', imports);
-        if (ctx.rootComponent !== null) {
-          programPath.pushContainer(
-            'body',
-            t.expressionStatement(
-              t.callExpression(md(ctx, 'registerRootFactory'), [
-                t.identifier(ctx.rootComponent),
-                t.objectExpression([
-                  t.objectProperty(t.identifier('id'), t.stringLiteral(ctx.rootId)),
-                  t.objectProperty(
-                    t.identifier('create'),
-                    t.arrowFunctionExpression(
-                      [],
-                      t.callExpression(t.identifier(ctx.rootComponent), [
-                        t.stringLiteral(ctx.rootId),
-                        t.nullLiteral(),
-                        t.arrayExpression([]),
-                      ]),
-                    ),
-                  ),
-                ]),
-              ]),
-            ),
-          );
-        }
+      FunctionDeclaration(path) {
+        const name = path.node.id?.name;
+        if (!name || !ctx.comps.has(name) || transformed.has(path.node)) return;
+        transformed.add(path.node);
+        transformComponent(ctx, path, name);
+        path.skip();
       },
-    },
-
-    FunctionDeclaration(path) {
-      const name = path.node.id?.name;
-      if (!name || !ctx.comps.has(name) || transformed.has(path.node)) return;
-      transformed.add(path.node);
-      transformComponent(ctx, path, name);
-      path.skip();
     },
   };
-
-  return { name: 'memo-dom', visitor };
 }

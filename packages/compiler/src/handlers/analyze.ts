@@ -1,6 +1,7 @@
 import * as t from '@babel/types';
 import {
   analyzeScope,
+  cloneNode,
   overwriteNode,
   walkAst,
   type BaseNode,
@@ -356,19 +357,13 @@ export function analyzeHandler(
   eventOriginId?: t.Expression,
   executionAwareRoot = false,
 ): void {
-  // Standalone traversal requires a Program/File root, so analysis runs on
-  // a deep clone; commits are appended into the clone's scopes and the
-  // mutated body is adopted wholesale at the end. (A FunctionDeclaration is
-  // already a statement; expressions need an ExpressionStatement wrapper.)
-  const clonedFn = t.cloneNode(rootFn);
+  // Analysis runs on a deep parser-neutral clone. Commits are appended into
+  // the clone's scopes and the mutated body is adopted wholesale at the end.
+  const clonedFn = cloneNode(
+    rootFn as unknown as BaseNode,
+  ) as unknown as typeof rootFn;
   const ROOT: t.Node = clonedFn;
-  const wrapper = t.file(
-    t.program([
-      t.isFunctionDeclaration(clonedFn)
-        ? clonedFn
-        : t.expressionStatement(clonedFn as t.Expression),
-    ]),
-  );
+  const wrapper = clonedFn;
 
   const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
   const instDerived =
