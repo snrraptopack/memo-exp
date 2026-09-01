@@ -6,7 +6,7 @@
  * namespace argument through the component ABI.
  */
 
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 

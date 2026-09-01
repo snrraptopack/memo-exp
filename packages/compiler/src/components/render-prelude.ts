@@ -6,7 +6,7 @@
  * Dirty reasons guard adjacent calculations with equal dependencies; a
  * reason-less update conservatively runs every calculation.
  */
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import type { Ctx } from '../context';

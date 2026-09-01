@@ -7,7 +7,7 @@
  * scheduling and keyed retention without adding a runtime list-expression
  * interpreter.
  */
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';

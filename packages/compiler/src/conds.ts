@@ -4,7 +4,7 @@
  * Direct JSX-child ternaries and logical conditions become anchored regions.
  * Right-associated ternary chains flatten into one multi-branch region.
  */
-import type * as t from '@babel/types';
+import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import { nodeHasJsx } from './context';

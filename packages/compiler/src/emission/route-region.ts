@@ -1,6 +1,6 @@
 /** Anchored DOM region controlled by one compiler-generated route match ID. */
 
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import type { Ctx } from '../context';

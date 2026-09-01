@@ -1,7 +1,7 @@
 /**
  * Collects caller-side provenance for values passed through component props.
  */
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import type { BaseNode } from '../ast';
 import {

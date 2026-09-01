@@ -8,8 +8,8 @@
  *   2. memoDomPlugin                      — the paradigm transform (R1–R6, L1)
  *   3. @babel/plugin-transform-typescript — strip types from emitted code
  *
- * The transform is written against standard ESTree nodes via @babel/types so
- * frontend #2 (oxc) can reuse the emission logic later.
+ * The transform is written against compiler-owned ESTree nodes so alternate
+ * parser frontends can reuse the same analysis and emission logic.
  */
 
 import {
@@ -21,7 +21,7 @@ import {
 } from '@babel/core';
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
-import type * as t from '@babel/types';
+import type * as t from './ast/compiler-types';
 import {
   cloneNode as cloneEstreeNode,
   normalizeBabelDialect,

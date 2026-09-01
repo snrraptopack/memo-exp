@@ -6,7 +6,7 @@
  * Babel's historical UID sequence while remaining parser/scope independent.
  */
 
-import type * as t from '@babel/types';
+import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { toIdentifier, walkAst, type BaseNode } from './ast';
 

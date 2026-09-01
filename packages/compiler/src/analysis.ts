@@ -21,7 +21,7 @@
  *     children are compile errors (were silent miscompiles)
  */
 
-import type * as t from '@babel/types';
+import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import {
   isExpression as isAstExpression,

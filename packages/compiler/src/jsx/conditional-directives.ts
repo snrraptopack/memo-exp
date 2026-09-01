@@ -5,7 +5,7 @@
  * the structural-region pipeline already understands. Formatting whitespace
  * and JSX comments do not interrupt a chain.
  */
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';

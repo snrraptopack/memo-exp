@@ -1,6 +1,6 @@
 /** Component-local JSX values are compile-time render aliases. */
 
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneAstNode,

@@ -217,6 +217,12 @@ members only at its generator boundary, while the OXC/Yuku path remains strict
 ESTree throughout. Linker discovery and analysis transformations now disable
 unused Babel code generation.
 
+Transitional Babel node annotations are now isolated behind
+`ast/compiler-types.ts`; production analysis, mutation, and emission modules no
+longer import `@babel/types` directly. The compatibility module and the ESTree
+factory are the only remaining type-level references, providing one controlled
+replacement point for the next type-shape pass.
+
 ## Babel boundary inventory
 
 The compiler package still declares these five dependencies:

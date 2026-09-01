@@ -6,7 +6,7 @@
  * prop replay only causes identity churn and needless child invalidation.
  */
 
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst } from '../ast';

@@ -6,7 +6,7 @@
  * ordinary state routing and guarded DOM writes keep their existing shape.
  */
 
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {

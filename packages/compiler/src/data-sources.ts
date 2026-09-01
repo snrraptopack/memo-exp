@@ -6,7 +6,7 @@
  * imperative resolution guard; source transitions push the owning component
  * through the ordinary runtime dirty queue.
  */
-import type * as t from '@babel/types';
+import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {

@@ -1,7 +1,7 @@
 /**
  * Retains prop provenance through compiler-replayed body destructuring.
  */
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   memberKey,

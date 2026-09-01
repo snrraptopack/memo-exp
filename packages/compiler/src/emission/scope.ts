@@ -5,7 +5,7 @@
  * registration so emit.ts can focus on component and JSX structure.
  */
 
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';

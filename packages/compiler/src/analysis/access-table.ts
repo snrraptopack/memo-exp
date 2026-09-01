@@ -1,4 +1,4 @@
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { canonicalStateKey, type Ctx } from '../context';
 import { md } from '../identifiers';

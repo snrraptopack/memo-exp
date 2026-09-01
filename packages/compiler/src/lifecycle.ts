@@ -7,7 +7,7 @@
  * its own normal-exit invalidation when it writes reactive state.
  */
 
-import type * as t from '@babel/types';
+import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { walkAst, type BaseNode } from './ast';
 import {

@@ -6,7 +6,7 @@
  * function expressions before analysis keeps component/linker/emitter logic
  * unified instead of adding expression-path branches to every pass.
  */
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,

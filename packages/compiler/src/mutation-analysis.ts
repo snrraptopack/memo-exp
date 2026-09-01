@@ -6,7 +6,7 @@
  * whether reassignment/destructuring requires a root-subtree fallback.
  */
 
-import type * as t from '@babel/types';
+import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { walkAst } from './ast';
 import { memberKey, type StateKind } from './context';

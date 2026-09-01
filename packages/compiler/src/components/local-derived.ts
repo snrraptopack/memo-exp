@@ -1,7 +1,7 @@
 /**
  * Emits dependency-selected replay for component-local derivations.
  */
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 
 function or(expressions: t.Expression[]): t.Expression {

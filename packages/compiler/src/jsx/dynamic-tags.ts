@@ -1,6 +1,6 @@
 /** Finite dynamic JSX tag lowering over parser-neutral AST metadata. */
 
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   analyzeScope,

@@ -1,4 +1,4 @@
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import type { Ctx, RowCtx } from '../context';
 import type { JsxNode } from '../jsx/children';
 import type { EmitScope } from './scope';

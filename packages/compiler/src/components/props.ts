@@ -7,7 +7,7 @@
  * box update. It contains no runtime or component-placement policy.
  */
 
-import type * as t from '@babel/types';
+import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   cloneNode,

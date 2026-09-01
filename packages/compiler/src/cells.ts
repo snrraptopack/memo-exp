@@ -1,6 +1,6 @@
 /** Request-owned module state-cell lowering for server builds. */
 
-import type * as t from '@babel/types';
+import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import {
   cloneNode as cloneAstNode,
