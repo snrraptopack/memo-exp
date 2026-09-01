@@ -304,6 +304,7 @@ describe('R23 - stable local state', () => {
       compile(`
         export function App() {
           let count = 1;
+          function changeCount() { count++; }
           function read() { return count > 0 ? read() : count; }
           const double = read() * 2;
           return <p>{double}</p>;
@@ -316,6 +317,7 @@ describe('R23 - stable local state', () => {
     const output = compileModules({
       './state.ts': `
         export let count = 1;
+        export function setCount(next) { count = next; }
         export function getCount() { return count; }
       `,
       './App.tsx': `

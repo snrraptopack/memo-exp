@@ -329,7 +329,7 @@ describe('conditional gated maps', () => {
         let selected = 0;
         function Row(item) {
           let n = 0;
-          return <li>{item.id}:{n}:{selected}</li>;
+          return <li onClick={() => n++}>{item.id}:{n}:{selected}</li>;
         }
         export function App() {
           return <main>{show ? <ul>
@@ -344,7 +344,8 @@ describe('conditional gated maps', () => {
     expect(code).toMatch(/_id\d* \+ "\/when0" \+ "\/items"/);
     expect(code).toContain('dispose: () =>');
     expect(code).toContain('.dispose()');
-    expect(code).toContain('"App/when0/items/Row[*]"');
+    expect(code).toContain('register({ id: _id, parent: _parent, render: _update })');
+    expect(code).toContain('entities: [_rowId]');
   });
 
   it('updates local gates and sources, and unregisters rows on branch swaps', async () => {

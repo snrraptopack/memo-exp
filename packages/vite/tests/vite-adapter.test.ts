@@ -304,7 +304,7 @@ describe('Vite 8 adapter', () => {
       )
       .replace(
         '<button onClick={increment}>',
-        '<button onClick={() => double++}>',
+        '<button onClick={() => { local++; double++; }}>',
       );
     await writeFile(appFile, invalid);
 
@@ -314,7 +314,8 @@ describe('Vite 8 adapter', () => {
           send.mock.calls.some(
             ([payload]) =>
               payload.type === 'error' &&
-              payload.err.message.includes("cannot update computed 'double'"),
+              payload.err.message.includes("cannot update computed 'double'") &&
+              payload.err.loc?.line !== undefined,
           ),
         ).toBe(true);
       },

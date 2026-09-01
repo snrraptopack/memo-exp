@@ -196,6 +196,7 @@ function defineFrontendConformance(frontend: CompilerFrontend): void {
       expect(() =>
         frontend.compile(`
           let endpoint = '/items';
+          function changeEndpoint() { endpoint = '/other'; }
           const resource = client.create(endpoint);
           export function App() {
             return <button onClick={() => ${invocation}}>run</button>;
@@ -212,6 +213,7 @@ function defineFrontendConformance(frontend: CompilerFrontend): void {
       expect(() =>
         frontend.compile(`
           let endpoint = '/items';
+          function changeEndpoint() { endpoint = '/other'; }
           const resource = client.create(endpoint);
           export function App() {
             return <button onClick={() => { ${write}; }}>run</button>;

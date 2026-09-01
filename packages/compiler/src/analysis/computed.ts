@@ -25,6 +25,7 @@ const TYPE_WRAPPERS = new Set([
 
 interface ProgramPathLike {
   node: BaseNode;
+  buildCodeFrameError(message: string, at?: BaseNode): Error;
 }
 
 function field(node: BaseNode, name: string): unknown {
@@ -224,16 +225,17 @@ export function analyzeComputed(ctx: Ctx, expr: BaseNode): ComputedAnalysis {
   return { reads, impure, reason };
 }
 
-/** Discover ordered module-level const derivations after module state exists. */
+/** Discover ordered module-level derivations after actual writable state exists. */
 export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
   for (const statement of childNodes(programPath.node, 'body')) {
     const inner =
       statement.type === 'ExportNamedDeclaration'
         ? childNode(statement, 'declaration')
         : statement;
-    if (inner?.type !== 'VariableDeclaration' || field(inner, 'kind') !== 'const') {
+    if (inner?.type !== 'VariableDeclaration') {
       continue;
     }
+    const declarationKind = field(inner, 'kind');
     for (const declaration of childNodes(inner, 'declarations')) {
       const id = childNode(declaration, 'id');
       const init = childNode(declaration, 'init');
@@ -250,12 +252,28 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
         continue;
       }
       const result = analyzeComputed(ctx, init);
+      if (declarationKind !== 'const') {
+        const binding = ctx.astAnalysis?.nodeToScope
+          .get(declaration)
+          ?.getBinding(name);
+        if (
+          result.reads.size > 0 &&
+          (binding?.constantViolations.length ?? 0) === 0
+        ) {
+          throw programPath.buildCodeFrameError(
+            `memo-dom: ${String(declarationKind)} '${name}' is never reassigned and its initializer reads reactive state; use const for derived values`,
+            declaration,
+          );
+        }
+        continue;
+      }
       if (result.impure) {
         if (result.reads.size > 0) {
-          throw new Error(
+          throw programPath.buildCodeFrameError(
             `memo-dom: const '${name}' is a state derivation but ${
               result.reason ?? 'cannot be analyzed'
             }. Fix the derivation, or make it a 'let' you update in handlers.`,
+            declaration,
           );
         }
         continue;

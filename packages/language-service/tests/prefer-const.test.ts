@@ -39,7 +39,7 @@ describe('prefer const guidance', () => {
         export function App() {
           let count = 0;
           const double = count * 2;
-          return <button onClick={() => double++}>{double}</button>;
+          return <button onClick={() => { count++; double++; }}>{double}</button>;
         }
       `,
       { compilerDiagnostics: true },

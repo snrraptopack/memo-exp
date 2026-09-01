@@ -100,7 +100,7 @@ describe('M5.10 - lightweight listed component rows', () => {
     expect(code).toMatch(
       /_liTemplateDocument\d* !== _document\d*/,
     );
-    expect(code).toMatch(/\.createListRegion\([\s\S]*?, false\)/);
+    expect(code).toMatch(/\.createListRegion\([\s\S]*?,\s*false\s*\)/);
     expect(code).toContain('entities: []');
     expect(code).toContain('"./component.tsx#selected": ["App", "App/*"]');
   });

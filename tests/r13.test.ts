@@ -70,15 +70,35 @@ describe('R13 — computeds, code generation', () => {
 
   it('scalar derivations and chains work', () => {
     const code = compile(
-      `let first = 'a';\nlet last = 'b';\nconst full = first + ' ' + last;\nconst shout = full.toUpperCase();\nfunction C() { return <p>{shout}</p>; }`,
+      `let first = 'a';\nlet last = 'b';\nfunction rename() { first = 'c'; last = 'd'; }\nconst full = first + ' ' + last;\nconst shout = full.toUpperCase();\nfunction C() { return <button onClick={rename}>{shout}</button>; }`,
     );
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#full"');
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#shout"');
   });
 
+  it('requires an unwritten module derivation to use const', () => {
+    expect(() =>
+      compile(`
+        let count = 1;
+        let doubled = count * 2;
+        export function App() {
+          return <button onClick={() => count++}>{doubled}</button>;
+        }
+      `),
+    ).toThrowError(/let 'doubled' is never reassigned.*use const for derived values/);
+  });
+
+  it('does not treat an unwritten primitive let as reactive by declaration kind', () => {
+    const code = compile(`
+      let stable = 1;
+      export function App() { return <output>{stable}</output>; }
+    `);
+    expect(code).not.toContain('./component.tsx#stable');
+  });
+
   it('collection literals derived from state take precedence over mutable-collection classification', () => {
     const code = compile(
-      `let count = 1;\nconst pair = [count, count + 1];\nfunction C() { return <p>{pair.join(',')}</p>; }`,
+      `let count = 1;\nconst pair = [count, count + 1];\nfunction C() { return <button onClick={() => count++}>{pair.join(',')}</button>; }`,
     );
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#pair"');
     expect(code).toMatch(/\.computedChanged\(pair, _pairNext\d*\)/);

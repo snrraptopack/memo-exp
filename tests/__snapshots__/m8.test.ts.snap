@@ -2,87 +2,111 @@
 
 exports[`R8 — code generation > compiles a ternary to an anchored region with its own entity 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#loggedIn"];
 const _WRITES_2 = ["./component.tsx#count"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#count": ["App", "App/*", "App/when0", "App/when0/*"],
-    "./component.tsx#loggedIn": ["App", "App/*", "App/when0", "App/when0/*"]
-  }
-}, "App", "./component.tsx");
+
+_MD.installAccessTable(
+	{
+		readers: {
+			"./component.tsx#count": ["App", "App/*", "App/when0", "App/when0/*"],
+			"./component.tsx#loggedIn": ["App", "App/*", "App/when0", "App/when0/*"]
+		}
+	},
+	"App",
+	"./component.tsx"
+);
+
 // Fixture: R8 conditional region — a login toggle written as plain TSX.
 // 'loggedIn' is read ONLY by the region (condition), 'count' only by the
 // then-branch — both must route to 'App/when0', never to the owner. Branch
 // swaps destroy DOM but module state survives, so 'count' persists.
 let loggedIn = false;
+
 let count = 0;
+
 export function CondApp(_id, _parent) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const toggle = () => {
-    loggedIn = !loggedIn;
-    _MD.commitWrites(_WRITES_);
-  };
-  const inc = () => {
-    count++;
-    _MD.commitWrites(_WRITES_2);
-  };
-  const _update = () => {};
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("toggle");
-  const _button = _document.createElement("button");
-  _button.onclick = toggle;
-  _button.appendChild(_text);
-  const _div = _document.createElement("div");
-  _div.appendChild(_button);
-  _MD.register({
-    id: _id + "/when0",
-    parent: _id,
-    render: () => _when.update()
-  });
-  const _when = _MD.createCondRegion(_div, _id + "/when0", () => loggedIn ? 0 : 1, [() => {
-    let _slot, _value2;
-    const _document2 = _MD.getActiveEnvironment().document;
-    const _update2 = () => {
-      if (_slot !== (_value2 = "in " + count + " ")) {
-        _slot = _value2;
-        _text2.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-      }
-    };
-    const _text2 = _document2.createTextNode("");
-    if (_slot !== (_value2 = "in " + count + " ")) {
-      _slot = _value2;
-      _text2.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-    }
-    const _text3 = _document2.createTextNode("+");
-    const _button2 = _document2.createElement("button");
-    _button2.onclick = inc;
-    _button2.appendChild(_text3);
-    const _span = _document2.createElement("span");
-    _MD.setClassValue(_span, "in");
-    _span.appendChild(_text2);
-    _span.appendChild(_button2);
-    return {
-      nodes: _MD.rootNodes(_span),
-      update: _update2
-    };
-  }, () => {
-    let _value3;
-    const _document3 = _MD.getActiveEnvironment().document;
-    const _update3 = () => {};
-    const _text4 = _document3.createTextNode("out");
-    const _span2 = _document3.createElement("span");
-    _MD.setClassValue(_span2, "out");
-    _span2.appendChild(_text4);
-    return {
-      nodes: _MD.rootNodes(_span2),
-      update: _update3
-    };
-  }]);
-  return _div;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const toggle = () => {
+		loggedIn = !loggedIn;
+		_MD.commitWrites(_WRITES_);
+	};
+
+	const inc = () => {
+		count++;
+		_MD.commitWrites(_WRITES_2);
+	};
+
+	const _update = () => {};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("toggle");
+	const _button = _document.createElement("button");
+
+	_button.onclick = toggle;
+	_button.appendChild(_text);
+
+	const _div = _document.createElement("div");
+
+	_div.appendChild(_button);
+
+	_MD.register({
+		id: _id + "/when0",
+		parent: _id,
+		render: () => _when.update()
+	});
+
+	const _when = _MD.createCondRegion(_div, _id + "/when0", () => loggedIn ? 0 : 1, [
+		() => {
+			let _slot, _value2;
+			const _document2 = _MD.getActiveEnvironment().document;
+
+			const _update2 = () => {
+				if (_slot !== (_value2 = "in " + count + " ")) {
+					_slot = _value2;
+					_text2.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+				}
+			};
+
+			const _text2 = _document2.createTextNode("");
+
+			if (_slot !== (_value2 = "in " + count + " ")) {
+				_slot = _value2;
+				_text2.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+			}
+
+			const _text3 = _document2.createTextNode("+");
+			const _button2 = _document2.createElement("button");
+
+			_button2.onclick = inc;
+			_button2.appendChild(_text3);
+
+			const _span = _document2.createElement("span");
+
+			_MD.setClassValue(_span, "in");
+			_span.appendChild(_text2);
+			_span.appendChild(_button2);
+
+			return { nodes: _MD.rootNodes(_span), update: _update2 };
+		},
+
+		() => {
+			let _value3;
+			const _document3 = _MD.getActiveEnvironment().document;
+			const _update3 = () => {};
+			const _text4 = _document3.createTextNode("out");
+			const _span2 = _document3.createElement("span");
+
+			_MD.setClassValue(_span2, "out");
+			_span2.appendChild(_text4);
+
+			return { nodes: _MD.rootNodes(_span2), update: _update3 };
+		}
+	]);
+
+	return _div;
 }"
 `;

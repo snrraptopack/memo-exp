@@ -125,6 +125,7 @@ describe('R30 - dynamic tags', () => {
   it('supports a module-level reactive tag selector', () => {
     const code = compile(`
       let compact = true;
+      export function toggleCompact() { compact = !compact; }
       const Tag = compact ? "section" : "article";
       export function App() {
         return <Tag>content</Tag>;

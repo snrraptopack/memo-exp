@@ -31,6 +31,7 @@ import {
 import {
   attrExpr,
   astBindingAt,
+  bindingHasVisibleWrite,
   collectStateIds,
   isConstObjectState,
   isStoreObject,
@@ -103,7 +104,7 @@ export { buildAccessTable } from './analysis/access-table';
 
 interface ProgramPath {
   node: t.Program;
-  buildCodeFrameError(message: string): Error;
+  buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
   ? TPath
@@ -159,7 +160,18 @@ function scanModuleState(ctx: Ctx, programPath: ProgramPath): void {
     for (const decl of inner.declarations) {
       if (!astFactory.isIdentifier(decl.id)) continue;
       if (inner.kind === 'let' || inner.kind === 'var') {
-        registerState(ctx, decl.id.name, 'let');
+        const binding = astBindingAt(
+          ctx,
+          decl as unknown as BaseNode,
+          decl.id.name,
+        );
+        if (bindingHasVisibleWrite(ctx, binding)) {
+          registerState(ctx, decl.id.name, 'let');
+        } else if (isStoreObject(decl.init)) {
+          registerState(ctx, decl.id.name, 'store');
+        } else if (isConstObjectState(decl.init)) {
+          registerState(ctx, decl.id.name, 'const');
+        }
       } else if (inner.kind === 'const') {
         if (isStoreObject(decl.init)) {
           registerState(ctx, decl.id.name, 'store');
@@ -199,8 +211,8 @@ function scanComponents(ctx: Ctx, programPath: ProgramPath): void {
   const functionPaths = new Map<t.Node, HelperPath>();
   const asPath = (node: HelperPath['node']): HelperPath => ({
     node,
-    buildCodeFrameError(message) {
-      return programPath.buildCodeFrameError(message);
+    buildCodeFrameError(message, at = node) {
+      return programPath.buildCodeFrameError(message, at);
     },
   });
   for (const statement of programPath.node.body) {

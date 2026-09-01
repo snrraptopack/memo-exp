@@ -39,7 +39,7 @@ interface RouteToTarget {
 
 interface ProgramContainer {
   node: t.Program;
-  buildCodeFrameError(message: string): Error;
+  buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 
 interface DiagnosticNode<TNode> {
@@ -582,7 +582,7 @@ export function analyzeRouterJsx(
       const diagnostic: DiagnosticNode<t.JSXAttribute> = {
         node: attribute,
         buildCodeFrameError(message) {
-          return programPath.buildCodeFrameError(message);
+          return programPath.buildCodeFrameError(message, attribute);
         },
       };
       const raw = staticAttributeString(attribute);
@@ -658,7 +658,7 @@ export function analyzeRouterJsx(
       const diagnostic: DiagnosticNode<t.JSXAttribute> = {
         node: attribute,
         buildCodeFrameError(message) {
-          return programPath.buildCodeFrameError(message);
+          return programPath.buildCodeFrameError(message, attribute);
         },
       };
       const target = routeToTarget(diagnostic, knownRoutes);

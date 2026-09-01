@@ -36,6 +36,7 @@ describe('R26 — effect code generation and validation', () => {
   it('registers an effect and routes module reads directly to it', () => {
     const code = compile(`
       let count = 0;
+      export function increment() { count++; }
       export function App() {
         effect(() => console.log(count));
         return <main>ready</main>;
@@ -79,6 +80,7 @@ describe('R26 — effect code generation and validation', () => {
     const code = compile(`
       let source = 1;
       let sink = 0;
+      export function updateSource() { source++; }
 
       export function App() {
         effect(() => {
@@ -129,7 +131,7 @@ describe('R26 — effect code generation and validation', () => {
     const registration = code.slice(code.indexOf('.registerEffect('));
     expect(registration).toMatch(/let _didWrite\w* = false/);
     expect(registration).toMatch(
-      /if \(count < 2\) _didWrite\w* = true, count\+\+/,
+      /if \(count < 2\) \(_didWrite\w* = true, count\+\+\)/,
     );
     expect(registration).toMatch(
       /if \(_didWrite\w*\) _MD\.commitWrites\(/,

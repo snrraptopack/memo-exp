@@ -2,739 +2,868 @@
 
 exports[`emission golden snapshots (emission-spec.md) > Cleanup — ownership-scoped teardown 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Timer(_id, _parent) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  _MD.cleanup(_id, () => {
-    disposeTimer();
-  });
-  const _update = () => {};
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("tick");
-  const _span = _document.createElement("span");
-  _span.appendChild(_text);
-  return _span;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	_MD.cleanup(_id, () => {
+		disposeTimer();
+	});
+
+	const _update = () => {};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("tick");
+	const _span = _document.createElement("span");
+
+	_span.appendChild(_text);
+
+	return _span;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > Cross-module — imported state keeps canonical identity > ./app.tsx 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./state.ts#count"];
-_MD.installAccessTable({
-  readers: {
-    "./state.ts#count": ["App", "App/*"]
-  }
-}, "App", "./app.tsx");
+
+_MD.installAccessTable({ readers: { "./state.ts#count": ["App", "App/*"] } }, "App", "./app.tsx");
+
 import { count, bump } from './state';
+
 export function App(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const _update = () => {
-    if (_slot !== (_value = count)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = count)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _button = _document.createElement("button");
-  _button.onclick = _event => {
-    const _returnValue = bump(_event);
-    _MD.commitWrites(_WRITES_);
-    return _returnValue;
-  };
-  _button.appendChild(_text);
-  return _button;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const _update = () => {
+		if (_slot !== (_value = count)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = count)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _button = _document.createElement("button");
+
+	_button.onclick = (_event) => {
+		const _returnValue = bump(_event);
+
+		_MD.commitWrites(_WRITES_);
+
+		return _returnValue;
+	};
+
+	_button.appendChild(_text);
+
+	return _button;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > Cross-module — imported state keeps canonical identity > ./state.ts 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export let count = 0;
+
 export function bump() {
-  count++;
+	count++;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > Effects — compiler-owned lifecycle registers deferred entities 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Ticker(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let ticks = 0;
-  const _update = (_reasons = null) => {
-    if (_slot !== (_value = ticks)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-    {
-      if (!(_reasons === -1 || _reasons !== null && typeof _reasons !== "number" && _reasons.size === 1 && _reasons.has(-1))) if (_reasons === null || (typeof _reasons === "number" ? _reasons === 0 : _reasons.has(0))) _MD.markDirty(_id + "/$effects/0");
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = ticks)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _span = _document.createElement("span");
-  _span.appendChild(_text);
-  _MD.registerEffect(_id + "/$effects/0", _id, () => {
-    let _didWrite = false;
-    _didWrite = true, ticks++;
-    {
-      if (_didWrite) _MD.markDirty(_id, 0);
-    }
-  });
-  return _span;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let ticks = 0;
+
+	const _update = (_reasons = null) => {
+		if (_slot !== (_value = ticks)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+
+		{
+			if (!(_reasons === -1 || _reasons !== null && typeof _reasons !== "number" && (_reasons.size === 1 && _reasons.has(-1)))) if (_reasons === null || (typeof _reasons === "number" ? _reasons === 0 : _reasons.has(0))) _MD.markDirty(_id + "/$effects/0");
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = ticks)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _span = _document.createElement("span");
+
+	_span.appendChild(_text);
+
+	_MD.registerEffect(_id + "/$effects/0", _id, () => {
+		let _didWrite = false;
+
+		(_didWrite = true, ticks++);
+
+		{
+			if (_didWrite) _MD.markDirty(_id, 0);
+		}
+	});
+
+	return _span;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > Module state — module-level let shares across instances 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#selected"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#selected": ["App", "App/*"]
-  }
-}, "App", "./component.tsx");
+
+_MD.installAccessTable({ readers: { "./component.tsx#selected": ["App", "App/*"] } }, "App", "./component.tsx");
+
 export let selected = null;
+
 export function Picker(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const _update = () => {
-    if (_slot !== (_value = selected)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = selected)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _button = _document.createElement("button");
-  _button.onclick = () => {
-    selected = 'a';
-    _MD.commitWrites(_WRITES_);
-  };
-  _button.appendChild(_text);
-  return _button;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const _update = () => {
+		if (_slot !== (_value = selected)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = selected)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _button = _document.createElement("button");
+
+	_button.onclick = () => {
+		selected = 'a';
+		_MD.commitWrites(_WRITES_);
+	};
+
+	_button.appendChild(_text);
+
+	return _button;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R1 — components become (id, parent) factories registering an entity 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Counter(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let count = 0;
-  const _update = () => {
-    if (_slot !== (_value = count)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = count)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _button = _document.createElement("button");
-  _button.onclick = () => {
-    count++;
-    _MD.markDirty(_id);
-  };
-  _button.appendChild(_text);
-  return _button;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let count = 0;
+
+	const _update = () => {
+		if (_slot !== (_value = count)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = count)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _button = _document.createElement("button");
+
+	_button.onclick = () => {
+		count++;
+		_MD.markDirty(_id);
+	};
+
+	_button.appendChild(_text);
+
+	return _button;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R2 — JSX becomes a creation branch with cached nodes 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Card(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const ready = true;
-  const _update = () => {
-    if (_slot !== (_value = ready)) {
-      _slot = _value;
-      _value == null || _value === false ? _section.removeAttribute("data-ready") : _section.setAttribute("data-ready", _value === true ? "" : String(_value));
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("Title");
-  const _h = _document.createElement("h1");
-  _h.appendChild(_text);
-  const _section = _document.createElement("section");
-  _MD.setClassValue(_section, "card");
-  if (_slot !== (_value = ready)) {
-    _slot = _value;
-    _value == null || _value === false ? _section.removeAttribute("data-ready") : _section.setAttribute("data-ready", _value === true ? "" : String(_value));
-  }
-  _section.appendChild(_h);
-  return _section;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	const ready = true;
+
+	const _update = () => {
+		if (_slot !== (_value = ready)) {
+			_slot = _value;
+
+			_value == null || _value === false
+				? _section.removeAttribute("data-ready")
+				: _section.setAttribute("data-ready", _value === true ? "" : String(_value));
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("Title");
+	const _h = _document.createElement("h1");
+
+	_h.appendChild(_text);
+
+	const _section = _document.createElement("section");
+
+	_MD.setClassValue(_section, "card");
+
+	if (_slot !== (_value = ready)) {
+		_slot = _value;
+
+		_value == null || _value === false
+			? _section.removeAttribute("data-ready")
+			: _section.setAttribute("data-ready", _value === true ? "" : String(_value));
+	}
+
+	_section.appendChild(_h);
+
+	return _section;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R4 — update branch writes only dynamic slots, value-cached 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Label(_id, _parent) {
-  let _slot, _slot2, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let name = 'a';
-  const _update = () => {
-    if (_slot !== (_value = name)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-    if (_slot2 !== (_value = _MD.classValue({
-      big: name.length > 2
-    }))) {
-      _slot2 = _value;
-      _MD.setClassValue(_span, _value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = name)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _span = _document.createElement("span");
-  if (_slot2 !== (_value = _MD.classValue({
-    big: name.length > 2
-  }))) {
-    _slot2 = _value;
-    _MD.setClassValue(_span, _value);
-  }
-  _span.appendChild(_text);
-  return _span;
+	let _slot, _slot2, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let name = 'a';
+
+	const _update = () => {
+		if (_slot !== (_value = name)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+
+		if (_slot2 !== (_value = _MD.classValue({ big: name.length > 2 }))) {
+			_slot2 = _value;
+			_MD.setClassValue(_span, _value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = name)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _span = _document.createElement("span");
+
+	if (_slot2 !== (_value = _MD.classValue({ big: name.length > 2 }))) {
+		_slot2 = _value;
+		_MD.setClassValue(_span, _value);
+	}
+
+	_span.appendChild(_text);
+
+	return _span;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R5 — component props become a props box with positional binding 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Row(_id, _parent, _props) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let {
-    item,
-    index
-  } = _props[0];
-  const _update = () => {
-    {
-      ({
-        item,
-        index
-      } = _props[0]);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  _MD.registerProps(_id, _props);
-  const _text = _document.createTextNode(" at ");
-  const _li = _document.createElement("li");
-  const _slotDispose = item == null ? null : item(_li, _id, "0");
-  _li.appendChild(_text);
-  const _slotDispose2 = index == null ? null : index(_li, _id, "1");
-  return _li;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let { item, index } = _props[0];
+
+	const _update = () => {
+		{
+			({ item, index } = _props[0]);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerProps(_id, _props);
+
+	const _text = _document.createTextNode(" at ");
+	const _li = _document.createElement("li");
+	const _slotDispose = item == null ? null : item(_li, _id, "0");
+
+	_li.appendChild(_text);
+
+	const _slotDispose2 = index == null ? null : index(_li, _id, "1");
+
+	return _li;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R6 — children slots forward rendered content 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Shell(_id, _parent, _props) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let {
-    header,
-    children
-  } = _props[0];
-  const _update = () => {
-    {
-      ({
-        header,
-        children
-      } = _props[0]);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  _MD.registerProps(_id, _props);
-  const _header = _document.createElement("header");
-  const _slotDispose = header == null ? null : header(_header, _id, "0");
-  const _div = _document.createElement("div");
-  _div.appendChild(_header);
-  const _slotDispose2 = children == null ? null : children(_div, _id, "1");
-  return _div;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let { header, children } = _props[0];
+
+	const _update = () => {
+		{
+			({ header, children } = _props[0]);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerProps(_id, _props);
+
+	const _header = _document.createElement("header");
+	const _slotDispose = header == null ? null : header(_header, _id, "0");
+	const _div = _document.createElement("div");
+
+	_div.appendChild(_header);
+
+	const _slotDispose2 = children == null ? null : children(_div, _id, "1");
+
+	return _div;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R7 — keyed lists cache rows per key with stable identity 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 let _liTemplate, _liTemplateDocument;
+
 function _liCreateTemplate(_document2) {
-  const _text = _document2.createTextNode("");
-  const _li = _document2.createElement("li");
-  _li.appendChild(_text);
-  return _li;
+	const _text = _document2.createTextNode("");
+	const _li = _document2.createElement("li");
+
+	_li.appendChild(_text);
+
+	return _li;
 }
+
 export function Feed(_id, _parent, _props) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let items = _props[0];
-  const _update = () => {
-    {
-      items = _props[0];
-    }
-    _region.reconcile(items);
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  _MD.registerProps(_id, _props);
-  const _ul = _document.createElement("ul");
-  const _region = _MD.createListRegion(_ul, _id + "/items", (item, _rowId) => {
-    let _slot, _value2;
-    const _update2 = () => {
-      if (_slot !== (_value2 = item.label)) {
-        _slot = _value2;
-        _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-      }
-    };
-    const _document2 = _MD.getActiveEnvironment().document;
-    _MD.register({
-      id: _rowId,
-      parent: _id,
-      render: _update2
-    });
-    const _li = _MD.canReuseTemplate() ? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true) : _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
-    const _text = _li.firstChild;
-    if (_slot !== (_value2 = item.label)) {
-      _slot = _value2;
-      _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-    }
-    return {
-      nodes: [_li],
-      entities: [_rowId],
-      updateProps: _nextItem => {
-        item = _nextItem;
-      },
-      update: _update2
-    };
-  }, item => item.id);
-  _region.reconcile(items);
-  return _ul;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let items = _props[0];
+
+	const _update = () => {
+		{
+			items = _props[0];
+		}
+
+		_region.reconcile(items);
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerProps(_id, _props);
+
+	const _ul = _document.createElement("ul");
+
+	const _region = _MD.createListRegion(
+		_ul,
+		_id + "/items",
+		(item, _rowId) => {
+			let _slot, _value2;
+
+			const _update2 = () => {
+				if (_slot !== (_value2 = item.label)) {
+					_slot = _value2;
+					_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+				}
+			};
+
+			const _document2 = _MD.getActiveEnvironment().document;
+
+			_MD.register({ id: _rowId, parent: _id, render: _update2 });
+
+			const _li = _MD.canReuseTemplate()
+				? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
+					? (
+						_liTemplateDocument = _document2,
+						_liTemplate = _liCreateTemplate(_document2)
+					)
+					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true)
+				: _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
+					? (
+						_liTemplateDocument = _document2,
+						_liTemplate = _liCreateTemplate(_document2)
+					)
+					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
+
+			const _text = _li.firstChild;
+
+			if (_slot !== (_value2 = item.label)) {
+				_slot = _value2;
+				_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+			}
+
+			return {
+				nodes: [_li],
+				entities: [_rowId],
+				updateProps: (_nextItem) => {
+					item = _nextItem;
+				},
+				update: _update2
+			};
+		},
+		(item) => item.id
+	);
+
+	_region.reconcile(items);
+
+	return _ul;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R8 — conditional regions anchor branch swaps 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Badge(_id, _parent, _props) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let loaded = _props[0];
-  const _update = () => {
-    {
-      loaded = _props[0];
-    }
-    if (_slot !== (_value = loaded)) {
-      _slot = _value;
-      _value == null || _value === false ? _if.removeAttribute("condition") : _if.setAttribute("condition", _value === true ? "" : String(_value));
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  _MD.registerProps(_id, _props);
-  const _text = _document.createTextNode("ready");
-  const _if = _document.createElement("if");
-  if (_slot !== (_value = loaded)) {
-    _slot = _value;
-    _value == null || _value === false ? _if.removeAttribute("condition") : _if.setAttribute("condition", _value === true ? "" : String(_value));
-  }
-  _if.appendChild(_text);
-  const _text2 = _document.createTextNode("waiting");
-  const _else = _document.createElement("else");
-  _else.appendChild(_text2);
-  const _fragment = _document.createDocumentFragment();
-  _fragment.appendChild(_if);
-  _fragment.appendChild(_else);
-  return _fragment;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let loaded = _props[0];
+
+	const _update = () => {
+		{
+			loaded = _props[0];
+		}
+
+		if (_slot !== (_value = loaded)) {
+			_slot = _value;
+
+			_value == null || _value === false
+				? _if.removeAttribute("condition")
+				: _if.setAttribute("condition", _value === true ? "" : String(_value));
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerProps(_id, _props);
+
+	const _text = _document.createTextNode("ready");
+	const _if = _document.createElement("if");
+
+	if (_slot !== (_value = loaded)) {
+		_slot = _value;
+
+		_value == null || _value === false
+			? _if.removeAttribute("condition")
+			: _if.setAttribute("condition", _value === true ? "" : String(_value));
+	}
+
+	_if.appendChild(_text);
+
+	const _text2 = _document.createTextNode("waiting");
+	const _else = _document.createElement("else");
+
+	_else.appendChild(_text2);
+
+	const _fragment = _document.createDocumentFragment();
+
+	_fragment.appendChild(_if);
+	_fragment.appendChild(_else);
+
+	return _fragment;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R12/R13 — computeds compile to replaying derivation entities 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Totals(_id, _parent, _props) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let items = _props[0];
-  let total = items.length * 2;
-  const _update = () => {
-    {
-      items = _props[0];
-    }
-    {
-      {
-        total = items.length * 2;
-      }
-    }
-    if (_slot !== (_value = total)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  _MD.registerProps(_id, _props);
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = total)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _output = _document.createElement("output");
-  _output.appendChild(_text);
-  return _output;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let items = _props[0];
+	let total = items.length * 2;
+
+	const _update = () => {
+		{
+			items = _props[0];
+		}
+
+		{
+			{
+				total = items.length * 2;
+			}
+		}
+
+		if (_slot !== (_value = total)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerProps(_id, _props);
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = total)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _output = _document.createElement("output");
+
+	_output.appendChild(_text);
+
+	return _output;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R20 — factory callbacks and explicit cleanup are entity-owned 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function LiveFeed(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let status = 'idle';
-  const sub = subscribe(val => {
-    status = val;
-    _MD.markDirty(_id);
-  });
-  _MD.cleanup(_id, () => sub.unsubscribe());
-  const _update = () => {
-    if (_slot !== (_value = status)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = status)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _span = _document.createElement("span");
-  _span.appendChild(_text);
-  return _span;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let status = 'idle';
+
+	const sub = subscribe((val) => {
+		status = val;
+		_MD.markDirty(_id);
+	});
+
+	_MD.cleanup(_id, () => sub.unsubscribe());
+
+	const _update = () => {
+		if (_slot !== (_value = status)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = status)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _span = _document.createElement("span");
+
+	_span.appendChild(_text);
+
+	return _span;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R24 — component props with default values and destructuring 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function Avatar(_id, _parent, _props) {
-  let _slot, _slot2, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let {
-    user = {
-      name: 'anon'
-    },
-    size = 32
-  } = _props[0];
-  const _update = () => {
-    {
-      ({
-        user = {
-          name: 'anon'
-        },
-        size = 32
-      } = _props[0]);
-    }
-    if (_slot !== (_value = user.name)) {
-      _slot = _value;
-      _value == null || _value === false ? _img.removeAttribute("alt") : _img.setAttribute("alt", _value === true ? "" : String(_value));
-    }
-    if (_slot2 !== (_value = size)) {
-      _slot2 = _value;
-      _value == null || _value === false ? _img.removeAttribute("width") : _img.setAttribute("width", _value === true ? "" : String(_value));
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  _MD.registerProps(_id, _props);
-  const _img = _document.createElement("img");
-  if (_slot !== (_value = user.name)) {
-    _slot = _value;
-    _value == null || _value === false ? _img.removeAttribute("alt") : _img.setAttribute("alt", _value === true ? "" : String(_value));
-  }
-  if (_slot2 !== (_value = size)) {
-    _slot2 = _value;
-    _value == null || _value === false ? _img.removeAttribute("width") : _img.setAttribute("width", _value === true ? "" : String(_value));
-  }
-  return _img;
+	let _slot, _slot2, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let { user = { name: 'anon' }, size = 32 } = _props[0];
+
+	const _update = () => {
+		{
+			({ user = { name: 'anon' }, size = 32 } = _props[0]);
+		}
+
+		if (_slot !== (_value = user.name)) {
+			_slot = _value;
+
+			_value == null || _value === false
+				? _img.removeAttribute("alt")
+				: _img.setAttribute("alt", _value === true ? "" : String(_value));
+		}
+
+		if (_slot2 !== (_value = size)) {
+			_slot2 = _value;
+
+			_value == null || _value === false
+				? _img.removeAttribute("width")
+				: _img.setAttribute("width", _value === true ? "" : String(_value));
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerProps(_id, _props);
+
+	const _img = _document.createElement("img");
+
+	if (_slot !== (_value = user.name)) {
+		_slot = _value;
+
+		_value == null || _value === false
+			? _img.removeAttribute("alt")
+			: _img.setAttribute("alt", _value === true ? "" : String(_value));
+	}
+
+	if (_slot2 !== (_value = size)) {
+		_slot2 = _value;
+
+		_value == null || _value === false
+			? _img.removeAttribute("width")
+			: _img.setAttribute("width", _value === true ? "" : String(_value));
+	}
+
+	return _img;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R31 — explicit innerHTML is a guarded raw-HTML property 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function RawViewer(_id, _parent, _props) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let htmlContent = _props[0];
-  const _update = () => {
-    {
-      htmlContent = _props[0];
-    }
-    if (_slot !== (_value = htmlContent)) {
-      _slot = _value;
-      _div.innerHTML = _value == null ? "" : _value;
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  _MD.registerProps(_id, _props);
-  const _div = _document.createElement("div");
-  if (_slot !== (_value = htmlContent)) {
-    _slot = _value;
-    _div.innerHTML = _value == null ? "" : _value;
-  }
-  return _div;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let htmlContent = _props[0];
+
+	const _update = () => {
+		{
+			htmlContent = _props[0];
+		}
+
+		if (_slot !== (_value = htmlContent)) {
+			_slot = _value;
+			_div.innerHTML = _value == null ? "" : _value;
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerProps(_id, _props);
+
+	const _div = _document.createElement("div");
+
+	if (_slot !== (_value = htmlContent)) {
+		_slot = _value;
+		_div.innerHTML = _value == null ? "" : _value;
+	}
+
+	return _div;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R32 — module effects are linked singleton entities 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#route"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#route": ["App/$module-effects/.%2Fcomponent.tsx/0"]
-  }
-}, "App", "./component.tsx");
+
+_MD.installAccessTable(
+	{
+		readers: {
+			"./component.tsx#route": ["App/$module-effects/.%2Fcomponent.tsx/0"]
+		}
+	},
+	"App",
+	"./component.tsx"
+);
+
 let route = '/';
+
 _MD.registerEffect("App/$module-effects/.%2Fcomponent.tsx/0", null, () => {
-  document.title = route;
+	document.title = route;
 });
+
 if (import.meta.hot) import.meta.hot.dispose(() => _MD.unregisterSubtree("App/$module-effects/.%2Fcomponent.tsx/0"));
+
 export function Nav(_id, _parent) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const _update = () => {};
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("go");
-  const _button = _document.createElement("button");
-  _button.onclick = () => {
-    route = '/about';
-    _MD.commitWrites(_WRITES_);
-  };
-  _button.appendChild(_text);
-  return _button;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+	const _update = () => {};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("go");
+	const _button = _document.createElement("button");
+
+	_button.onclick = () => {
+		route = '/about';
+		_MD.commitWrites(_WRITES_);
+	};
+
+	_button.appendChild(_text);
+
+	return _button;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R40 — arrow and function-expression components normalize to factories 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function ArrowBadge(_id, _parent, _props) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let {
-    label
-  } = _props[0];
-  const _update = () => {
-    {
-      ({
-        label
-      } = _props[0]);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  _MD.registerProps(_id, _props);
-  const _span = _document.createElement("span");
-  const _slotDispose = label == null ? null : label(_span, _id, "0");
-  return _span;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let { label } = _props[0];
+
+	const _update = () => {
+		{
+			({ label } = _props[0]);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerProps(_id, _props);
+
+	const _span = _document.createElement("span");
+	const _slotDispose = label == null ? null : label(_span, _id, "0");
+
+	return _span;
 }
+
 export function ExprCard(_id2, _parent2, _props2) {
-  let _value2;
-  const _document2 = _MD.getActiveEnvironment().document;
-  let {
-    title
-  } = _props2[0];
-  const _update2 = () => {
-    {
-      ({
-        title
-      } = _props2[0]);
-    }
-  };
-  _MD.register({
-    id: _id2,
-    parent: _parent2,
-    render: _update2
-  });
-  _MD.registerProps(_id2, _props2);
-  const _div = _document2.createElement("div");
-  const _slotDispose2 = title == null ? null : title(_div, _id2, "0");
-  return _div;
+	let _value2;
+	const _document2 = _MD.getActiveEnvironment().document;
+	let { title } = _props2[0];
+
+	const _update2 = () => {
+		{
+			({ title } = _props2[0]);
+		}
+	};
+
+	_MD.register({ id: _id2, parent: _parent2, render: _update2 });
+	_MD.registerProps(_id2, _props2);
+
+	const _div = _document2.createElement("div");
+	const _slotDispose2 = title == null ? null : title(_div, _id2, "0");
+
+	return _div;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R42 — calculated list sources use the normal derivation contract 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 let _liTemplate, _liTemplateDocument;
+
 function _liCreateTemplate(_document2) {
-  const _text = _document2.createTextNode("");
-  const _li = _document2.createElement("li");
-  _li.appendChild(_text);
-  return _li;
+	const _text = _document2.createTextNode("");
+	const _li = _document2.createElement("li");
+
+	_li.appendChild(_text);
+
+	return _li;
 }
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#filter": ["App", "App/*"],
-    "./component.tsx#items": ["App", "App/*"]
-  }
-}, "App", "./component.tsx");
+
+_MD.installAccessTable({ readers: { "./component.tsx#items": ["App", "App/*"] } }, "App", "./component.tsx");
+
 let filter = 'all';
-let items = [{
-  id: 1,
-  text: 'a',
-  done: false
-}];
+let items = [{ id: 1, text: 'a', done: false }];
+
 export function FilteredList(_id, _parent) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let _listView = items.filter(i => filter === 'all' || i.done);
-  const _update = () => {
-    {
-      {
-        _listView = items.filter(i => filter === 'all' || i.done);
-      }
-    }
-    _region.reconcile(_listView);
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _ul = _document.createElement("ul");
-  const _region = _MD.createListRegion(_ul, _id + "/_listView", (item, _rowId) => {
-    let _slot, _value2;
-    const _update2 = () => {
-      if (_slot !== (_value2 = item.text)) {
-        _slot = _value2;
-        _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-      }
-    };
-    const _document2 = _MD.getActiveEnvironment().document;
-    _MD.register({
-      id: _rowId,
-      parent: _id,
-      render: _update2
-    });
-    const _li = _MD.canReuseTemplate() ? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true) : _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
-    const _text = _li.firstChild;
-    if (_slot !== (_value2 = item.text)) {
-      _slot = _value2;
-      _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-    }
-    return {
-      nodes: [_li],
-      entities: [_rowId],
-      updateProps: _nextItem => {
-        item = _nextItem;
-      },
-      update: _update2
-    };
-  }, item => item.id);
-  _region.reconcile(_listView);
-  return _ul;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let _listView = items.filter((i) => filter === 'all' || i.done);
+
+	const _update = () => {
+		{
+			{
+				_listView = items.filter((i) => filter === 'all' || i.done);
+			}
+		}
+
+		_region.reconcile(_listView);
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _ul = _document.createElement("ul");
+
+	const _region = _MD.createListRegion(
+		_ul,
+		_id + "/_listView",
+		(item, _rowId) => {
+			let _slot, _value2;
+
+			const _update2 = () => {
+				if (_slot !== (_value2 = item.text)) {
+					_slot = _value2;
+					_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+				}
+			};
+
+			const _document2 = _MD.getActiveEnvironment().document;
+
+			_MD.register({ id: _rowId, parent: _id, render: _update2 });
+
+			const _li = _MD.canReuseTemplate()
+				? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
+					? (
+						_liTemplateDocument = _document2,
+						_liTemplate = _liCreateTemplate(_document2)
+					)
+					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true)
+				: _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
+					? (
+						_liTemplateDocument = _document2,
+						_liTemplate = _liCreateTemplate(_document2)
+					)
+					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
+
+			const _text = _li.firstChild;
+
+			if (_slot !== (_value2 = item.text)) {
+				_slot = _value2;
+				_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+			}
+
+			return {
+				nodes: [_li],
+				entities: [_rowId],
+				updateProps: (_nextItem) => {
+					item = _nextItem;
+				},
+				update: _update2
+			};
+		},
+		(item) => item.id
+	);
+
+	_region.reconcile(_listView);
+
+	return _ul;
 }"
 `;
 
 exports[`emission golden snapshots (emission-spec.md) > R44 — DOM refs are compiler-native lifecycle slots 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 export function CanvasView(_id, _parent) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  let canvasEl = null;
-  const _update = () => {};
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _canvas = _document.createElement("canvas");
-  const _refDispose = _MD.mountRef(_canvas, _refNode => {
-    canvasEl = _refNode;
-    return () => {
-      if (canvasEl === _refNode) canvasEl = undefined;
-    };
-  });
-  _MD.cleanup(_id, _refDispose);
-  return _canvas;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+	let canvasEl = null;
+	const _update = () => {};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _canvas = _document.createElement("canvas");
+
+	const _refDispose = _MD.mountRef(_canvas, (_refNode) => {
+		canvasEl = _refNode;
+
+		return () => {
+			if (canvasEl === _refNode) canvasEl = undefined;
+		};
+	});
+
+	_MD.cleanup(_id, _refDispose);
+
+	return _canvas;
 }"
 `;
 
@@ -742,40 +871,45 @@ exports[`emission golden snapshots (emission-spec.md) > Transparent data — $fe
 "import * as _MD from "@memoized-dom/runtime";
 import * as _MDD from "@memoized-dom/data/internal";
 import { $fetch } from '@memoized-dom/data';
+
 export function Profile(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const user = $fetch('/api/user');
-  const _update = () => {
-    if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], _userValue => _userValue.name))) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], _userValue => _userValue.name))) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  _MD.register({
-    id: _id + "/$data/0",
-    parent: _id,
-    render: () => {
-      if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], _userValue => _userValue.name))) {
-        _slot = _value;
-        _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-      }
-    }
-  });
-  const _h = _document.createElement("h1");
-  _h.appendChild(_text);
-  _MD.cleanup(_id + "/$data/0", _MDD.connectResolvedValues([user], () => _MD.markDirty(_id + "/$data/0")));
-  _MD.cleanup(_id, _MDD.ownResolvedValue(user));
-  return _h;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+	const user = $fetch('/api/user');
+
+	const _update = () => {
+		if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name))) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name))) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	_MD.register({
+		id: _id + "/$data/0",
+		parent: _id,
+		render: () => {
+			if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name))) {
+				_slot = _value;
+				_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+			}
+		}
+	});
+
+	const _h = _document.createElement("h1");
+
+	_h.appendChild(_text);
+	_MD.cleanup(_id + "/$data/0", _MDD.connectResolvedValues([user], () => _MD.markDirty(_id + "/$data/0")));
+	_MD.cleanup(_id, _MDD.ownResolvedValue(user));
+
+	return _h;
 }"
 `;

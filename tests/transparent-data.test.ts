@@ -231,7 +231,7 @@ describe('compiler-transparent data values', () => {
     expect(compiled).not.toContain('markDirtySubtree');
     expect(compiled).toContain('readResolvedValue(user, "user"');
     expect(compiled).toContain('rebindResolvedValue(users, \'/users\'');
-    expect(compiled).toMatch(/const users = \$fetch<User\[]>/);
+    expect(compiled).toMatch(/const users = \$fetch\('\/users'/);
     expect(compiled).toContain('rebindResolvedValue(user, `/users/${userId}`');
     expect(compiled).not.toContain('volatile: true');
     writeFileSync(fixture, compiled);

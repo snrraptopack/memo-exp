@@ -38,6 +38,13 @@ function isNode(value: unknown): value is BaseNode {
     typeof (value as { type?: unknown }).type === 'string';
 }
 
+function isIfBranchNode(node: BaseNode | null | undefined): node is JSXIfExpression {
+  return node !== null && node !== undefined && (
+    node.type === 'JSXIfExpression' ||
+    node.type === 'IfStatement'
+  );
+}
+
 export class TsrxLoweringError extends SyntaxError {
   constructor(
     message: string,
@@ -142,8 +149,8 @@ function lowerIfExpression(node: JSXIfExpression): BaseNode {
   const consequent = lowerTemplateBlockExpression(node.consequent);
   const alternate = node.alternate === null
     ? literal(null)
-    : node.alternate.type === 'JSXIfExpression'
-    ? lowerIfExpression(node.alternate as JSXIfExpression)
+    : isIfBranchNode(node.alternate)
+    ? lowerIfExpression(node.alternate)
     : lowerTemplateBlockExpression(node.alternate);
   return { type: 'ConditionalExpression', test, consequent, alternate } as BaseNode;
 }
@@ -277,8 +284,8 @@ function lowerRootIf(node: JSXIfExpression): BaseNode {
     consequent: returningBlock(node.consequent),
     alternate: node.alternate === null
       ? blockStatement([returnStatement(literal(null))])
-      : node.alternate.type === 'JSXIfExpression'
-      ? lowerRootIf(node.alternate as JSXIfExpression)
+      : isIfBranchNode(node.alternate)
+      ? lowerRootIf(node.alternate)
       : returningBlock(node.alternate),
   } as BaseNode;
 }
@@ -339,9 +346,6 @@ function lowerNode(node: BaseNode): BaseNode {
     fields(node).lazy === true
   ) {
     fail(node, 'lazy destructuring requires explicit reactive binding semantics');
-  }
-  if (node.type === 'JSXCodeBlock') {
-    fail(node, 'statement containers are currently supported only as function bodies');
   }
   if (node.type === 'JSXIfExpression') {
     return lowerIfExpression(node as JSXIfExpression);

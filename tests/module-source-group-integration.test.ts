@@ -132,7 +132,7 @@ describe('module-scope sources through Group/$track/derivations', () => {
     const panel = out['./panel.tsx']!;
     writeCompiled('derived-gated', panel);
     expect(panel).toMatch(
-      /deriveResolvedValues\(\[notifications\], \w+ => \w+\.filter/,
+      /deriveResolvedValues\(\[notifications\], \(\w+\) => \w+\.filter/,
     );
     // No bare imperative read of the module source at creation time
     expect(panel).not.toMatch(/let unread = _MDD\.readResolvedValue\(/);

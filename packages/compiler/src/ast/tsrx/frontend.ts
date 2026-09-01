@@ -71,7 +71,7 @@ export function parseTsrxEstree(
     }) as unknown as BaseNode;
   } catch (error) {
     const parseError = error instanceof Error ? error as TsrxParserError : new Error(String(error));
-    throw new EstreeParseError(filename, [diagnostic(parseError)]);
+    throw new EstreeParseError(filename, [diagnostic(parseError)], source);
   }
 
   const diagnostics = errors.map(diagnostic);

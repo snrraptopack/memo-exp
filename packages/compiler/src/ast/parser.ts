@@ -87,8 +87,14 @@ export function createExtensionEstreeFrontend(
 
 export class EstreeParseError extends SyntaxError {
   public readonly diagnostics: AstDiagnostic[];
+  public readonly moduleId: string;
+  public readonly loc?: { line: number; column: number };
 
-  constructor(filename: string, diagnostics: AstDiagnostic[]) {
+  constructor(
+    filename: string,
+    diagnostics: AstDiagnostic[],
+    source?: string,
+  ) {
     const first = diagnostics[0];
     super(
       first === undefined
@@ -96,7 +102,12 @@ export class EstreeParseError extends SyntaxError {
         : `${filename}: ${first.message}`,
     );
     this.name = 'EstreeParseError';
+    this.moduleId = filename;
     this.diagnostics = diagnostics;
+    const offset = first?.labels[0]?.start;
+    if (source !== undefined && offset !== undefined) {
+      this.loc = sourcePosition(offset, sourceLocations(source));
+    }
   }
 }
 
@@ -258,7 +269,11 @@ export function parseWithEstreeFrontendOrThrow(
     (diagnostic) => diagnostic.severity === 'Error',
   );
   if (errors.length > 0) {
-    throw new EstreeParseError(options.filename ?? 'module.tsx', errors);
+    throw new EstreeParseError(
+      options.filename ?? 'module.tsx',
+      errors,
+      source,
+    );
   }
   return parsed;
 }
@@ -274,7 +289,11 @@ export function parseEstreeOrThrow(
     (diagnostic) => diagnostic.severity === 'Error',
   );
   if (errors.length > 0) {
-    throw new EstreeParseError(options.filename ?? 'module.tsx', errors);
+    throw new EstreeParseError(
+      options.filename ?? 'module.tsx',
+      errors,
+      source,
+    );
   }
   return parsed;
 }

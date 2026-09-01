@@ -50,6 +50,7 @@ describe('R28 - module control-flow generation', () => {
   it('emits one computed entity for an exhaustive if assignment', () => {
     const code = compile(`
       let count = 0;
+      export function increment() { count++; }
       export let parity = '';
       if (count % 2 === 0) parity = 'even';
       else parity = 'odd';
@@ -70,6 +71,7 @@ describe('R28 - module control-flow generation', () => {
     expect(() =>
       compile(`
         let count = 0;
+        function increment() { count++; }
         let parity = '';
         if (count % 2 === 0) parity = 'even';
         else parity = 'odd';

@@ -100,7 +100,7 @@ describe('M5 compiler — code generation', () => {
       asyncBody.indexOf('.commitWrites('),
     );
     // the timer write commits inside the setTimeout callback, not outside it
-    const timerCb = code.slice(code.indexOf('setTimeout(() =>'), code.indexOf('}, 0)'));
+    const timerCb = code.slice(code.indexOf('setTimeout('), code.indexOf('\n\t};', code.indexOf('setTimeout(')));
     expect(timerCb).toContain('count = 10');
     expect(timerCb).toContain('.commitWrites(');
   });
@@ -127,7 +127,7 @@ describe('M5 compiler — code generation', () => {
   it('compiles inline list rows to regions with row-scoped patterns (R7)', () => {
     const code = compile(readFixture('list-inline'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
-    expect(code).toMatch(/\.createListRegion\(_ul\d*, _id\d* \+ "\/items"/);
+    expect(code).toMatch(/\.createListRegion\(\s*_ul\d*,\s*_id\d* \+ "\/items"/);
     expect(code).toMatch(/_region\d*\.reconcile\(items\)/);
     // rows are multi-instance: the click routes through the table
     expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);

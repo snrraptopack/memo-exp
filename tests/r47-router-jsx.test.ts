@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { compile, compileModules } from '@memoized-dom/compiler';
+import {
+  compile,
+  compileModules,
+  diagnoseModules,
+} from '@memoized-dom/compiler';
 
 describe('compiler-owned JSX routing', () => {
   it('composes nearest route ancestors and emits route regions plus one manifest', () => {
@@ -121,5 +125,46 @@ describe('compiler-owned JSX routing', () => {
 
     expect(output['./App.tsx']).toContain('createRouteManifest');
     expect(output['./App.tsx']).toContain('subscribeRouteSelected');
+  });
+
+  it('validates navigation in one module against routes declared in another', () => {
+    const output = compileModules({
+      './App.tsx': `
+        import { StoryLink } from './StoryLink';
+        export function App() {
+          return <main route="/"><article route="/item/:storyId" /><StoryLink /></main>;
+        }
+      `,
+      './StoryLink.tsx': `
+        export function StoryLink() {
+          const storyId = 42;
+          return <a route-to={{ path: '/item/:storyId', params: { storyId } }}>Story</a>;
+        }
+      `,
+    });
+
+    expect(output['./StoryLink.tsx']).toContain('buildRoutePath');
+    expect(output['./StoryLink.tsx']).not.toContain('route-to');
+  });
+
+  it('reports the owning module and authored route attribute location', () => {
+    const diagnostics = diagnoseModules({
+      './App.tsx': `
+        import { StoryLink } from './StoryLink';
+        export function App() { return <main route="/"><StoryLink /></main>; }
+      `,
+      './StoryLink.tsx': `
+        export function StoryLink() {
+          return <a route-to="/missing">Missing</a>;
+        }
+      `,
+    });
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      moduleId: './StoryLink.tsx',
+      line: 3,
+    });
+    expect(diagnostics[0]!.column).toBeGreaterThan(0);
   });
 });

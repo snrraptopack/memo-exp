@@ -10,8 +10,9 @@ describe('fix.md regressions', () => {
     const code = compile(`
         export function App() {
           let endpoint = '/rows';
+          const changeEndpoint = () => endpoint = '/other';
           const resource = client.create<{ data?: Array<{ id: string }> }>(endpoint);
-          return <ul>{resource.data?.map(row => <li key={row.id}>{row.id}</li>)}</ul>;
+          return <><button onClick={changeEndpoint}>change</button><ul>{resource.data?.map(row => <li key={row.id}>{row.id}</li>)}</ul></>;
         }
       `);
 
@@ -56,6 +57,7 @@ describe('fix.md regressions', () => {
     expect(() =>
       compile(`
         let endpoint = '/first';
+        function changeEndpoint() { endpoint = '/second'; }
         const resource = client.create(endpoint);
         export function App() {
           return <button onClick={() => { resource.status = 'forced'; }}>bad</button>;

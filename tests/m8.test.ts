@@ -74,7 +74,7 @@ describe('R8 — code generation', () => {
 
   it('owner-side reads of the same var route to BOTH owner and region', () => {
     const code = compile(
-      `let loggedIn = false;\nfunction C() { return <div><span>{loggedIn ? 'bye' : 'hi'}</span>{loggedIn ? <b>a</b> : <i>b</i>}</div>; }`,
+      `let loggedIn = false;\nfunction C() { return <div><button onClick={() => loggedIn = !loggedIn}>toggle</button><span>{loggedIn ? 'bye' : 'hi'}</span>{loggedIn ? <b>a</b> : <i>b</i>}</div>; }`,
     );
     // 'loggedIn' readers: the owner (text ternary) and the region
     expect(code).toMatch(

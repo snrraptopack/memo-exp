@@ -2,469 +2,603 @@
 
 exports[`M5 compiler — code generation > attributes commits to the scope that writes (async handlers, timers) 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#count"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#count": ["App", "App/*"]
-  }
-}, "App", "./component.tsx");
+
+_MD.installAccessTable({ readers: { "./component.tsx#count": ["App", "App/*"] } }, "App", "./component.tsx");
+
 // Fixture: async commit attribution.
 let count = 0;
+
 export function AsyncCounter(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const incLater = async () => {
-    await Promise.resolve();
-    count++;
-    _MD.commitWrites(_WRITES_);
-  };
-  const incTimer = () => {
-    setTimeout(() => {
-      count = 10;
-      _MD.commitWrites(_WRITES_);
-    }, 0);
-  };
-  const _update = () => {
-    if (_slot !== (_value = count)) {
-      _slot = _value;
-      _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("async");
-  const _button = _document.createElement("button");
-  _button.onclick = _event => {
-    const _returnValue = incLater(_event);
-    _MD.markDirty(_id);
-    return _returnValue;
-  };
-  _button.appendChild(_text);
-  const _text2 = _document.createTextNode("timer");
-  const _button2 = _document.createElement("button");
-  _button2.onclick = _event2 => {
-    const _returnValue2 = incTimer(_event2);
-    _MD.markDirty(_id);
-    return _returnValue2;
-  };
-  _button2.appendChild(_text2);
-  const _text3 = _document.createTextNode("");
-  if (_slot !== (_value = count)) {
-    _slot = _value;
-    _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _span = _document.createElement("span");
-  _span.appendChild(_text3);
-  const _div = _document.createElement("div");
-  _div.appendChild(_button);
-  _div.appendChild(_button2);
-  _div.appendChild(_span);
-  return _div;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const incLater = async () => {
+		await Promise.resolve();
+		count++;
+		_MD.commitWrites(_WRITES_);
+	};
+
+	const incTimer = () => {
+		setTimeout(
+			() => {
+				count = 10;
+				_MD.commitWrites(_WRITES_);
+			},
+			0
+		);
+	};
+
+	const _update = () => {
+		if (_slot !== (_value = count)) {
+			_slot = _value;
+			_text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("async");
+	const _button = _document.createElement("button");
+
+	_button.onclick = (_event) => {
+		const _returnValue = incLater(_event);
+
+		_MD.markDirty(_id);
+
+		return _returnValue;
+	};
+
+	_button.appendChild(_text);
+
+	const _text2 = _document.createTextNode("timer");
+	const _button2 = _document.createElement("button");
+
+	_button2.onclick = (_event2) => {
+		const _returnValue2 = incTimer(_event2);
+
+		_MD.markDirty(_id);
+
+		return _returnValue2;
+	};
+
+	_button2.appendChild(_text2);
+
+	const _text3 = _document.createTextNode("");
+
+	if (_slot !== (_value = count)) {
+		_slot = _value;
+		_text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _span = _document.createElement("span");
+
+	_span.appendChild(_text3);
+
+	const _div = _document.createElement("div");
+
+	_div.appendChild(_button);
+	_div.appendChild(_button2);
+	_div.appendChild(_span);
+
+	return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles eligible component list rows as lightweight factories (M5.10) 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#selected"];
 let _liTemplate, _liTemplateDocument;
+
 function _liCreateTemplate(_document) {
-  const _text = _document.createTextNode("");
-  const _li = _document.createElement("li");
-  _li.appendChild(_text);
-  return _li;
+	const _text = _document.createTextNode("");
+	const _li = _document.createElement("li");
+
+	_li.appendChild(_text);
+
+	return _li;
 }
+
 const _WRITES_2 = ["./component.tsx#items"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#items": ["App", "App/*"],
-    "./component.tsx#selected": ["App", "App/*"]
-  }
-}, "App", "./component.tsx");
-// Fixture: R7 component list rows — a Row component used via .map().
-// Row reads 'selected' directly (the L1 rule: props are for item data,
-// shared state is read inside the row), so a click must dirty ALL rows
-// through the table's 'App/CompList/items/Row[*]' pattern.
-const items = [{
-  id: 1,
-  label: 'one'
-}, {
-  id: 2,
-  label: 'two'
-}];
+
+_MD.installAccessTable(
+	{
+		readers: {
+			"./component.tsx#items": ["App", "App/*"],
+			"./component.tsx#selected": ["App", "App/*"]
+		}
+	},
+	"App",
+	"./component.tsx"
+);
+
+const items = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
 let selected = 0;
+
 function Row(item, _id, _onClickBinding) {
-  let _slot, _slot2, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const _update = () => {
-    if (_slot !== (_value = item.label)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-    if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-      _slot2 = _value;
-      _MD.setClassValue(_li, _value);
-    }
-  };
-  const _li = _MD.canReuseTemplate() ? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document) ? (_liTemplateDocument = _document, _liTemplate = _liCreateTemplate(_document)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document)).cloneNode(true) : _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document) ? (_liTemplateDocument = _document, _liTemplate = _liCreateTemplate(_document)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document);
-  const _text = _li.firstChild;
-  if (_slot !== (_value = item.label)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-    _slot2 = _value;
-    _MD.setClassValue(_li, _value);
-  }
-  _MD.setDelegatedEvent(_onClickBinding, _li, () => {
-    selected = item.id;
-    _MD.commitWrites(_WRITES_);
-  });
-  return {
-    nodes: _li,
-    entities: [],
-    update: _update,
-    updateProps: _nextProp => {
-      item = _nextProp;
-    }
-  };
+	let _slot, _slot2, _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const _update = () => {
+		if (_slot !== (_value = item.label)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+
+		if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+			_slot2 = _value;
+			_MD.setClassValue(_li, _value);
+		}
+	};
+
+	const _li = _MD.canReuseTemplate()
+		? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document)
+			? (
+				_liTemplateDocument = _document,
+				_liTemplate = _liCreateTemplate(_document)
+			)
+			: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document)).cloneNode(true)
+		: _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document)
+			? (
+				_liTemplateDocument = _document,
+				_liTemplate = _liCreateTemplate(_document)
+			)
+			: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document);
+
+	const _text = _li.firstChild;
+
+	if (_slot !== (_value = item.label)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+		_slot2 = _value;
+		_MD.setClassValue(_li, _value);
+	}
+
+	_MD.setDelegatedEvent(_onClickBinding, _li, () => {
+		selected = item.id;
+		_MD.commitWrites(_WRITES_);
+	});
+
+	return {
+		nodes: _li,
+		entities: [],
+		update: _update,
+		updateProps: (_nextProp) => {
+			item = _nextProp;
+		}
+	};
 }
+
 export function CompList(_id2, _parent) {
-  let _value2;
-  const _document2 = _MD.getActiveEnvironment().document;
-  const add = () => {
-    items.push({
-      id: items.length + 1,
-      label: 'three'
-    });
-    _MD.commitWrites(_WRITES_2);
-  };
-  const _update2 = () => {
-    _region.reconcile(items);
-  };
-  _MD.register({
-    id: _id2,
-    parent: _parent,
-    render: _update2
-  });
-  const _ul = _document2.createElement("ul");
-  const _onClickBinding2 = _MD.createDelegatedEventBinding(_ul, "onClick");
-  const _region = _MD.createListRegion(_ul, _id2 + "/items", (item, _rowId) => {
-    const _entry = Row(item, _rowId, _onClickBinding2);
-    const _pushRowProps = _entry.updateProps;
-    _entry.updateProps = _nextItem => {
-      item = _nextItem;
-      _pushRowProps(item);
-    };
-    return _entry;
-  }, item => item.id, false);
-  _region.reconcile(items);
-  const _text2 = _document2.createTextNode("add");
-  const _button = _document2.createElement("button");
-  _button.onclick = add;
-  _button.appendChild(_text2);
-  const _div = _document2.createElement("div");
-  _div.appendChild(_ul);
-  _div.appendChild(_button);
-  return _div;
+	let _value2;
+	const _document2 = _MD.getActiveEnvironment().document;
+
+	const add = () => {
+		items.push({ id: items.length + 1, label: 'three' });
+		_MD.commitWrites(_WRITES_2);
+	};
+
+	const _update2 = () => {
+		_region.reconcile(items);
+	};
+
+	_MD.register({ id: _id2, parent: _parent, render: _update2 });
+
+	const _ul = _document2.createElement("ul");
+	const _onClickBinding2 = _MD.createDelegatedEventBinding(_ul, "onClick");
+
+	const _region = _MD.createListRegion(
+		_ul,
+		_id2 + "/items",
+		(item, _rowId) => {
+			const _entry = Row(item, _rowId, _onClickBinding2);
+			const _pushRowProps = _entry.updateProps;
+
+			_entry.updateProps = (_nextItem) => {
+				item = _nextItem;
+				_pushRowProps(item);
+			};
+
+			return _entry;
+		},
+		(item) => item.id,
+		false
+	);
+
+	_region.reconcile(items);
+
+	const _text2 = _document2.createTextNode("add");
+	const _button = _document2.createElement("button");
+
+	_button.onclick = add;
+	_button.appendChild(_text2);
+
+	const _div = _document2.createElement("div");
+
+	_div.appendChild(_ul);
+	_div.appendChild(_button);
+
+	return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles inline list rows to regions with row-scoped patterns (R7) 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#selected"];
 let _liTemplate, _liTemplateDocument;
+
 function _liCreateTemplate(_document2) {
-  const _text = _document2.createTextNode("");
-  const _li = _document2.createElement("li");
-  _li.appendChild(_text);
-  return _li;
+	const _text = _document2.createTextNode("");
+	const _li = _document2.createElement("li");
+
+	_li.appendChild(_text);
+
+	return _li;
 }
+
 const _WRITES_2 = ["./component.tsx#items"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#items": ["App", "App/*"],
-    "./component.tsx#selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
-  }
-}, "App", "./component.tsx");
-// Fixture: R7 inline list rows — the select-list shape written as plain TSX.
-// 'selected' is read inside row JSX (row pattern) and written by row
-// handlers (commitWrites — rows are multi-instance, never local).
-// 'items.push' routes as a write to 'items' → local markDirty on the owner.
-let items = [{
-  id: 1,
-  label: 'one'
-}, {
-  id: 2,
-  label: 'two'
-}];
+
+_MD.installAccessTable(
+	{
+		readers: {
+			"./component.tsx#items": ["App", "App/*"],
+			"./component.tsx#selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
+		}
+	},
+	"App",
+	"./component.tsx"
+);
+
+let items = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
 let selected = 0;
+
 export function InlineList(_id, _parent) {
-  let _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const add = () => {
-    items.push({
-      id: items.length + 1,
-      label: 'three'
-    });
-    _MD.commitWrites(_WRITES_2);
-  };
-  const _update = () => {
-    _region.reconcile(items);
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _ul = _document.createElement("ul");
-  const _onClickBinding = _MD.createDelegatedEventBinding(_ul, "onClick");
-  const _region = _MD.createListRegion(_ul, _id + "/items", (item, _rowId) => {
-    let _slot, _slot2, _value2;
-    const _update2 = () => {
-      if (_slot !== (_value2 = item.label)) {
-        _slot = _value2;
-        _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-      }
-      if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-        _slot2 = _value2;
-        _MD.setClassValue(_li, _value2);
-      }
-    };
-    const _document2 = _MD.getActiveEnvironment().document;
-    _MD.register({
-      id: _rowId,
-      parent: _id,
-      render: _update2
-    });
-    const _li = _MD.canReuseTemplate() ? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true) : _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2) ? (_liTemplateDocument = _document2, _liTemplate = _liCreateTemplate(_document2)) : _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
-    const _text = _li.firstChild;
-    if (_slot !== (_value2 = item.label)) {
-      _slot = _value2;
-      _text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-    }
-    if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-      _slot2 = _value2;
-      _MD.setClassValue(_li, _value2);
-    }
-    _MD.setDelegatedEvent(_onClickBinding, _li, () => {
-      selected = item.id;
-      _MD.commitWrites(_WRITES_);
-    });
-    return {
-      nodes: [_li],
-      entities: [_rowId],
-      updateProps: _nextItem => {
-        item = _nextItem;
-      },
-      update: _update2
-    };
-  }, item => item.id);
-  _region.reconcile(items);
-  const _text2 = _document.createTextNode("add");
-  const _button = _document.createElement("button");
-  _button.onclick = add;
-  _button.appendChild(_text2);
-  const _div = _document.createElement("div");
-  _div.appendChild(_ul);
-  _div.appendChild(_button);
-  return _div;
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const add = () => {
+		items.push({ id: items.length + 1, label: 'three' });
+		_MD.commitWrites(_WRITES_2);
+	};
+
+	const _update = () => {
+		_region.reconcile(items);
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _ul = _document.createElement("ul");
+	const _onClickBinding = _MD.createDelegatedEventBinding(_ul, "onClick");
+
+	const _region = _MD.createListRegion(
+		_ul,
+		_id + "/items",
+		(item, _rowId) => {
+			let _slot, _slot2, _value2;
+
+			const _update2 = () => {
+				if (_slot !== (_value2 = item.label)) {
+					_slot = _value2;
+					_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+				}
+
+				if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+					_slot2 = _value2;
+					_MD.setClassValue(_li, _value2);
+				}
+			};
+
+			const _document2 = _MD.getActiveEnvironment().document;
+
+			_MD.register({ id: _rowId, parent: _id, render: _update2 });
+
+			const _li = _MD.canReuseTemplate()
+				? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
+					? (
+						_liTemplateDocument = _document2,
+						_liTemplate = _liCreateTemplate(_document2)
+					)
+					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true)
+				: _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
+					? (
+						_liTemplateDocument = _document2,
+						_liTemplate = _liCreateTemplate(_document2)
+					)
+					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
+
+			const _text = _li.firstChild;
+
+			if (_slot !== (_value2 = item.label)) {
+				_slot = _value2;
+				_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
+			}
+
+			if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+				_slot2 = _value2;
+				_MD.setClassValue(_li, _value2);
+			}
+
+			_MD.setDelegatedEvent(_onClickBinding, _li, () => {
+				selected = item.id;
+				_MD.commitWrites(_WRITES_);
+			});
+
+			return {
+				nodes: [_li],
+				entities: [_rowId],
+				updateProps: (_nextItem) => {
+					item = _nextItem;
+				},
+				update: _update2
+			};
+		},
+		(item) => item.id
+	);
+
+	_region.reconcile(items);
+
+	const _text2 = _document.createTextNode("add");
+	const _button = _document.createElement("button");
+
+	_button.onclick = add;
+	_button.appendChild(_text2);
+
+	const _div = _document.createElement("div");
+
+	_div.appendChild(_ul);
+	_div.appendChild(_button);
+
+	return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles repeated children with distinct ids and covering patterns 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#label"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#label": ["App/Tag", "App/Tag/*", "App/Tag[*]", "App/Tag[*]/*"]
-  }
-}, "App", "./component.tsx");
+
+_MD.installAccessTable(
+	{
+		readers: {
+			"./component.tsx#label": ["App/Tag", "App/Tag/*", "App/Tag[*]", "App/Tag[*]/*"]
+		}
+	},
+	"App",
+	"./component.tsx"
+);
+
 // repeated.tsx — same child mounted twice; instances must get distinct
 // entity ids and the table must cover both.
 let label = 'hello';
+
 function Tag(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const _update = () => {
-    if (_slot !== (_value = label)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = label)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _span = _document.createElement("span");
-  _MD.setClassValue(_span, "tag");
-  _span.appendChild(_text);
-  return _span;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const _update = () => {
+		if (_slot !== (_value = label)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = label)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _span = _document.createElement("span");
+
+	_MD.setClassValue(_span, "tag");
+	_span.appendChild(_text);
+
+	return _span;
 }
+
 export function App(_id2, _parent2) {
-  let _value2;
-  const _document2 = _MD.getActiveEnvironment().document;
-  const swap = () => {
-    label = 'world';
-    _MD.commitWrites(_WRITES_);
-  };
-  const _update2 = () => {};
-  _MD.register({
-    id: _id2,
-    parent: _parent2,
-    render: _update2
-  });
-  const _tag = Tag(_id2 + "/Tag", _id2);
-  const _tag2 = Tag(_id2 + "/Tag[1]", _id2);
-  const _text2 = _document2.createTextNode("swap");
-  const _button = _document2.createElement("button");
-  _button.onclick = swap;
-  _button.appendChild(_text2);
-  const _div = _document2.createElement("div");
-  _div.appendChild(_tag);
-  _div.appendChild(_tag2);
-  _div.appendChild(_button);
-  return _div;
+	let _value2;
+	const _document2 = _MD.getActiveEnvironment().document;
+
+	const swap = () => {
+		label = 'world';
+		_MD.commitWrites(_WRITES_);
+	};
+
+	const _update2 = () => {};
+
+	_MD.register({ id: _id2, parent: _parent2, render: _update2 });
+
+	const _tag = Tag(_id2 + "/Tag", _id2);
+	const _tag2 = Tag(_id2 + "/Tag[1]", _id2);
+	const _text2 = _document2.createTextNode("swap");
+	const _button = _document2.createElement("button");
+
+	_button.onclick = swap;
+	_button.appendChild(_text2);
+
+	const _div = _document2.createElement("div");
+
+	_div.appendChild(_tag);
+	_div.appendChild(_tag2);
+	_div.appendChild(_button);
+
+	return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles the counter fixture to the emission form 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#again", "./component.tsx#count"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#again": ["App", "App/*"],
-    "./component.tsx#count": ["App", "App/*"]
-  }
-}, "App", "./component.tsx");
+
+_MD.installAccessTable(
+	{
+		readers: {
+			"./component.tsx#again": ["App", "App/*"],
+			"./component.tsx#count": ["App", "App/*"]
+		}
+	},
+	"App",
+	"./component.tsx"
+);
+
 let count = 0;
 let again = 0;
+
 export function Counter(_id, _parent) {
-  let _slot, _slot2, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const inc = () => {
-    count++;
-    again++;
-    _MD.commitWrites(_WRITES_);
-  };
-  const _update = () => {
-    if (_slot !== (_value = count)) {
-      _slot = _value;
-      _text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-    if (_slot2 !== (_value = again)) {
-      _slot2 = _value;
-      _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("increment");
-  const _button = _document.createElement("button");
-  _button.onclick = inc;
-  _button.appendChild(_text);
-  const _text2 = _document.createTextNode("");
-  if (_slot !== (_value = count)) {
-    _slot = _value;
-    _text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _span = _document.createElement("span");
-  _span.appendChild(_text2);
-  const _text3 = _document.createTextNode("");
-  if (_slot2 !== (_value = again)) {
-    _slot2 = _value;
-    _text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _span2 = _document.createElement("span");
-  _span2.appendChild(_text3);
-  const _div = _document.createElement("div");
-  _MD.setClassValue(_div, "counter");
-  _div.appendChild(_button);
-  _div.appendChild(_span);
-  _div.appendChild(_span2);
-  return _div;
+	let _slot, _slot2, _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const inc = () => {
+		count++;
+		again++;
+		_MD.commitWrites(_WRITES_);
+	};
+
+	const _update = () => {
+		if (_slot !== (_value = count)) {
+			_slot = _value;
+			_text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+
+		if (_slot2 !== (_value = again)) {
+			_slot2 = _value;
+			_text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("increment");
+	const _button = _document.createElement("button");
+
+	_button.onclick = inc;
+	_button.appendChild(_text);
+
+	const _text2 = _document.createTextNode("");
+
+	if (_slot !== (_value = count)) {
+		_slot = _value;
+		_text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _span = _document.createElement("span");
+
+	_span.appendChild(_text2);
+
+	const _text3 = _document.createTextNode("");
+
+	if (_slot2 !== (_value = again)) {
+		_slot2 = _value;
+		_text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _span2 = _document.createElement("span");
+
+	_span2.appendChild(_text3);
+
+	const _div = _document.createElement("div");
+
+	_MD.setClassValue(_div, "counter");
+	_div.appendChild(_button);
+	_div.appendChild(_span);
+	_div.appendChild(_span2);
+
+	return _div;
 }"
 `;
 
 exports[`M5 compiler — code generation > compiles the shared-state fixture with an access table 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
+
 const _WRITES_ = ["./component.tsx#name"];
-_MD.installAccessTable({
-  readers: {
-    "./component.tsx#name": ["App/Badge", "App/Badge/*"]
-  }
-}, "App", "./component.tsx");
+
+_MD.installAccessTable(
+	{
+		readers: { "./component.tsx#name": ["App/Badge", "App/Badge/*"] }
+	},
+	"App",
+	"./component.tsx"
+);
+
 // shared.tsx — two siblings sharing module state; the write must route
 // to Badge only, never to App or Editor.
 let name = 'Ada';
+
 function Badge(_id, _parent) {
-  let _slot, _value;
-  const _document = _MD.getActiveEnvironment().document;
-  const _update = () => {
-    if (_slot !== (_value = name)) {
-      _slot = _value;
-      _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-    }
-  };
-  _MD.register({
-    id: _id,
-    parent: _parent,
-    render: _update
-  });
-  const _text = _document.createTextNode("");
-  if (_slot !== (_value = name)) {
-    _slot = _value;
-    _text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-  }
-  const _span = _document.createElement("span");
-  _MD.setClassValue(_span, "badge");
-  _span.appendChild(_text);
-  return _span;
+	let _slot, _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const _update = () => {
+		if (_slot !== (_value = name)) {
+			_slot = _value;
+			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		}
+	};
+
+	_MD.register({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	if (_slot !== (_value = name)) {
+		_slot = _value;
+		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+	}
+
+	const _span = _document.createElement("span");
+
+	_MD.setClassValue(_span, "badge");
+	_span.appendChild(_text);
+
+	return _span;
 }
+
 function Editor(_id2, _parent2) {
-  let _value2;
-  const _document2 = _MD.getActiveEnvironment().document;
-  const rename = () => {
-    name = 'Grace';
-    _MD.commitWrites(_WRITES_);
-  };
-  const _update2 = () => {};
-  _MD.register({
-    id: _id2,
-    parent: _parent2,
-    render: _update2
-  });
-  const _text2 = _document2.createTextNode("rename");
-  const _button = _document2.createElement("button");
-  _button.onclick = rename;
-  _button.appendChild(_text2);
-  return _button;
+	let _value2;
+	const _document2 = _MD.getActiveEnvironment().document;
+
+	const rename = () => {
+		name = 'Grace';
+		_MD.commitWrites(_WRITES_);
+	};
+
+	const _update2 = () => {};
+
+	_MD.register({ id: _id2, parent: _parent2, render: _update2 });
+
+	const _text2 = _document2.createTextNode("rename");
+	const _button = _document2.createElement("button");
+
+	_button.onclick = rename;
+	_button.appendChild(_text2);
+
+	return _button;
 }
+
 export function App(_id3, _parent3) {
-  let _value3;
-  const _document3 = _MD.getActiveEnvironment().document;
-  const _update3 = () => {};
-  _MD.register({
-    id: _id3,
-    parent: _parent3,
-    render: _update3
-  });
-  const _badge = Badge(_id3 + "/Badge", _id3);
-  const _editor = Editor(_id3 + "/Editor", _id3);
-  const _div = _document3.createElement("div");
-  _div.appendChild(_badge);
-  _div.appendChild(_editor);
-  return _div;
+	let _value3;
+	const _document3 = _MD.getActiveEnvironment().document;
+	const _update3 = () => {};
+
+	_MD.register({ id: _id3, parent: _parent3, render: _update3 });
+
+	const _badge = Badge(_id3 + "/Badge", _id3);
+	const _editor = Editor(_id3 + "/Editor", _id3);
+	const _div = _document3.createElement("div");
+
+	_div.appendChild(_badge);
+	_div.appendChild(_editor);
+
+	return _div;
 }"
 `;

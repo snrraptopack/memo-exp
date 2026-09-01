@@ -89,15 +89,20 @@ function replaceRecord(
 
   unregisterSubtree(record.id);
   for (const node of record.nodes) node.parentNode?.removeChild(node);
-  const root =
-    record.props === null
-      ? next(record.id, record.parent)
-      : next(record.id, record.parent, record.props);
-  const nextNodes = rootNodes(root);
-  if (anchor?.parentNode !== null && anchor?.parentNode !== undefined) {
-    const anchorParent = anchor.parentNode;
-    for (const node of nextNodes) anchorParent.insertBefore(node, anchor);
-    anchorParent.removeChild(anchor);
+  try {
+    const root =
+      record.props === null
+        ? next(record.id, record.parent)
+        : next(record.id, record.parent, record.props);
+    const nextNodes = rootNodes(root);
+    if (anchor?.parentNode !== null && anchor?.parentNode !== undefined) {
+      const anchorParent = anchor.parentNode;
+      for (const node of nextNodes) anchorParent.insertBefore(node, anchor);
+      anchorParent.removeChild(anchor);
+    }
+  } catch {
+    anchor?.parentNode?.removeChild(anchor);
+    remountRoots();
   }
 }
 

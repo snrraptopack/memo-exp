@@ -17,6 +17,7 @@ import {
   type MemoDomOptions,
 } from './plugin';
 import type { InternalMemoDomOptions } from './context';
+import { compilerError } from './errors';
 
 export type { MemoDomOptions };
 
@@ -83,8 +84,12 @@ function transform(
   transformEstreeProgram(
     {
       node: input.program,
-      buildCodeFrameError(message) {
-        return new Error(message);
+      buildCodeFrameError(message, at = input.program) {
+        return compilerError(
+          message,
+          moduleId,
+          at as unknown as BaseNode,
+        );
       },
     },
     opts,

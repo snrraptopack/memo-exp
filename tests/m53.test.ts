@@ -71,7 +71,7 @@ describe('M5.3 fixes — code generation', () => {
 
   it('multi-parent components route to every instance', () => {
     const code = compile(
-      `let a = 0;\nfunction Child() { return <span>{a}</span>; }\nfunction P1() { return <div><Child /></div>; }\nfunction P2() { return <section><Child /></section>; }\nfunction App() { return <main><P1 /><P2 /></main>; }`,
+      `let a = 0;\nfunction Child() { return <span>{a}</span>; }\nfunction P1() { return <div><Child /></div>; }\nfunction P2() { return <section><Child /></section>; }\nfunction App() { return <main><button onClick={() => a++}>change</button><P1 /><P2 /></main>; }`,
     );
     expect(code).toContain('"App/P1/Child"');
     expect(code).toContain('"App/P2/Child"');
@@ -79,7 +79,7 @@ describe('M5.3 fixes — code generation', () => {
 
   it('lists inside repeated children expand the repeated ancestor in row patterns', () => {
     const code = compile(
-      `let items = [1, 2];\nlet sel = 0;\nfunction Tag() { return <ul>{items.map((i) => <li key={i} class={sel === i ? 'x' : ''}>{i}</li>)}</ul>; }\nfunction App() { return <div><Tag /><Tag /></div>; }`,
+      `let items = [1, 2];\nlet sel = 0;\nfunction Tag() { return <ul>{items.map((i) => <li key={i} onClick={() => sel = i} class={sel === i ? 'x' : ''}>{i}</li>)}</ul>; }\nfunction App() { return <div><Tag /><Tag /></div>; }`,
     );
     expect(code).toContain('"App/Tag/items/Row[*]"');
     expect(code).toContain('"App/Tag[*]/items/Row[*]"');
@@ -112,7 +112,7 @@ describe('M5.3 fixes — code generation', () => {
 
   it('helper calls in JSX fold their summarized reads into the component', () => {
     const code = compile(
-      `let locale = 'en';\nfunction fmt(x) { return locale + ':' + x; }\nfunction C() { return <span>{fmt(1)}</span>; }`,
+      `let locale = 'en';\nfunction setLocale() { locale = 'fr'; }\nfunction fmt(x) { return locale + ':' + x; }\nfunction C() { return <span>{fmt(1)}</span>; }`,
     );
     expect(code).toContain('"./component.tsx#locale"');
   });
@@ -138,7 +138,7 @@ describe('M5.3 fixes — code generation', () => {
     // state-reading props on a static child: R10 — allowed, re-pushed via setProps
     {
       const code = compile(
-        `let a = 0;\nfunction Badge(x) { return <span>{x}</span>; }\nfunction C() { return <div><Badge x={a} /></div>; }`,
+        `let a = 0;\nfunction Badge(x) { return <span>{x}</span>; }\nfunction C() { return <div><button onClick={() => a++}>change</button><Badge x={a} /></div>; }`,
       );
       expect(code).toMatch(/\.setProps\(_id\d* \+ "\/Badge", \[a\]\)/);
       expect(code).toMatch(/\.registerProps\(_id\d*, _props\d*\)/);

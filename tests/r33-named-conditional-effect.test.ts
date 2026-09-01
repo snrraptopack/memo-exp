@@ -130,7 +130,7 @@ describe('R33 - named and conditional effects', () => {
       }
       if (enabled) effect(synchronize);
       export function App() {
-        return <button onClick={() => enabled = !enabled}>{count}</button>;
+        return <button onClick={() => { enabled = !enabled; count++; }}>{count}</button>;
       }
     `);
     expect(code).toContain('.registerConditionalEffect(');

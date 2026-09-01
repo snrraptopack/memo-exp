@@ -306,7 +306,7 @@ export interface ModuleControlFlowDerivation {
 
 export interface CompilerPath<TNode extends t.Node> {
   node: TNode;
-  buildCodeFrameError(message: string): Error;
+  buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 
 export type HelperPath = CompilerPath<
@@ -481,6 +481,8 @@ export interface Ctx {
   reasonConsts: Map<string, string>;
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
+  /** Pure callbacks synthesized and owned by compiler derivation/read helpers. */
+  compilerOwnedCallbacks: WeakSet<t.Node>;
   /** Whether a shared handler already emits a commit in its event scope. */
   handlerHasRootCommit: WeakMap<t.Node, boolean>;
   /**
@@ -690,6 +692,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     reasonConstCounter: 0,
     reasonConsts: new Map(),
     analyzedFunctions: new WeakSet(),
+    compilerOwnedCallbacks: new WeakSet(),
     handlerHasRootCommit: new WeakMap(),
     localParamEffects: new WeakMap(),
     identifiers: null,

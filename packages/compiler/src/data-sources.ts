@@ -1435,11 +1435,16 @@ function resolvedRenderExpression(
     bindings,
     replacements,
   );
+  const callback = astFactory.arrowFunctionExpression(
+    parameters,
+    cloneEstreeNode(expression, true),
+  );
+  ctx.compilerOwnedCallbacks.add(callback);
   return astFactory.callExpression(mdd(ctx, helper), [
     astFactory.arrayExpression(
       dependencies.map((source) => astFactory.identifier(source)),
     ),
-    astFactory.arrowFunctionExpression(parameters, cloneEstreeNode(expression, true)),
+    callback,
   ]);
 }
 
@@ -1626,11 +1631,13 @@ function lowerModuleRefReadsEstree(
             );
           }
           const body = cloneEstreeNode(expression, true);
+          const callback = astFactory.arrowFunctionExpression(parameters, body);
+          ctx.compilerOwnedCallbacks.add(callback);
           overwriteNode(
             rawExpression,
             astFactory.callExpression(mdd(ctx, 'readResolvedValuesForRender'), [
               astFactory.arrayExpression(uniqueEntries.map((entry) => refCall(entry.key))),
-              astFactory.arrowFunctionExpression(parameters, body),
+              callback,
             ]) as unknown as BaseNode,
           );
         }

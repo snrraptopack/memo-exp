@@ -9,6 +9,7 @@ import {
 } from '../ast';
 import {
   astBindingAt,
+  bindingHasVisibleWrite,
   isConstObjectState,
   isStoreObject,
   memberRootName,
@@ -282,9 +283,14 @@ export function scanInstanceState(ctx: Ctx): void {
       }
       for (const declaration of statement.declarations) {
         if (!astFactory.isIdentifier(declaration.id)) continue;
+        const binding = astBindingAt(
+          ctx,
+          declaration as unknown as BaseNode,
+          declaration.id.name,
+        );
         if (
-          statement.kind === 'let' ||
-          statement.kind === 'var' ||
+          ((statement.kind === 'let' || statement.kind === 'var') &&
+            bindingHasVisibleWrite(ctx, binding)) ||
           isStoreObject(declaration.init) ||
           isConstObjectState(declaration.init)
         ) {
@@ -435,7 +441,7 @@ export function scanInstanceDerivations(ctx: Ctx): void {
     };
 
     for (const statement of componentPath.node.body.body) {
-      if (!astFactory.isVariableDeclaration(statement, { kind: 'const' })) continue;
+      if (!astFactory.isVariableDeclaration(statement)) continue;
       for (const declaration of statement.declarations) {
         if (
           (!astFactory.isIdentifier(declaration.id) &&
@@ -538,6 +544,25 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         walkExecuted(ctx, initializer, false, inspect);
         if (directReads.size === 0) continue;
         walkExecuted(ctx, initializer, true, inspect);
+        if (statement.kind !== 'const') {
+          const names = bindingNames(declaration.id);
+          const bindings = names.map((name) => ownerBinding(name));
+          if (
+            bindings.length > 0 &&
+            bindings.every(
+              (binding) =>
+                binding !== undefined && binding.constantViolations.length === 0,
+            )
+          ) {
+            throw componentPath.buildCodeFrameError(
+              `memo-dom: ${statement.kind} '${
+                names.join(', ') || '<pattern>'
+              }' is never reassigned and its initializer reads reactive state; use const for derived values`,
+              declaration,
+            );
+          }
+          continue;
+        }
         if (reason !== null) {
           const names = bindingNames(declaration.id);
           throw componentPath.buildCodeFrameError(

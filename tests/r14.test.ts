@@ -63,7 +63,7 @@ describe('R14 - code generation', () => {
     const code = compile(`
       let count = 0;
       function Label(count) { return <span>{count}</span>; }
-      function App() { return <Label count={count} />; }
+      function App() { return <div><Label count={count} /><button onClick={() => count++}>inc</button></div>; }
     `);
     expect(code).toContain('"./component.tsx#count": ["App", "App/*"]');
     expect(code).not.toContain('"App/Label"');
@@ -91,6 +91,28 @@ describe('R14 - code generation', () => {
     expect(code).toContain("label = 'v=' + doubled");
     const timer = code.slice(code.indexOf('setTimeout'), code.indexOf('}, 0)'));
     expect(timer).toMatch(/\.markDirty\(_id\d*\)/);
+  });
+
+  it('requires an unwritten local derivation to use const', () => {
+    expect(() =>
+      compile(`
+        export function App() {
+          let count = 1;
+          let doubled = count * 2;
+          return <button onClick={() => count++}>{doubled}</button>;
+        }
+      `),
+    ).toThrowError(/let 'doubled' is never reassigned.*use const for derived values/);
+  });
+
+  it('keeps const collection contents reactive', () => {
+    const code = compile(`
+      export function App() {
+        const items = [1];
+        return <button onClick={() => items.push(2)}>{items.length}</button>;
+      }
+    `);
+    expect(code).toContain('markDirty');
   });
 
   it('does not infer local-derivation method semantics from method names', () => {

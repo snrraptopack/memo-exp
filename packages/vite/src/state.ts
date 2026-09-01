@@ -9,9 +9,9 @@ export class AdapterState {
   readonly output = new Map<string, string>();
   readonly maps = new Map<string, CompilerSourceMap>();
   readonly css = new Map<string, string>();
+  entry?: string;
   compiling: Promise<CompiledGraph> | undefined;
   hotUpdateFailed = false;
-
   replace(graph: CompiledGraph): void {
     this.files.clear();
     for (const file of graph.files) this.files.add(file);

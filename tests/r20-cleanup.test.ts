@@ -141,7 +141,7 @@ describe('R20 - cleanup compiler contract', () => {
   it('lowers explicit ownership and instruments direct factory timers', () => {
     const code = compile(SOURCES['r20-timer']!);
     expect(code).toMatch(/\.cleanup\(_id\d*, \(\) =>/);
-    expect(code).toMatch(/setInterval\(\(\) => \{[\s\S]*\.markDirty\(_id\d*\)/);
+    expect(code).toMatch(/setInterval\(\s*\(\) => \{[\s\S]*\.markDirty\(_id\d*\)/);
     expect(code).not.toContain('try {');
     expect(code).not.toContain('finally');
   });

@@ -68,7 +68,9 @@ import {
 import {
   collectCompilerRoutes,
   validateCompilerRouteGraph,
+  type CompilerRouteDefinition,
 } from './router';
+import { compilerError } from './errors';
 
 export interface CompileModulesOptions
   extends Omit<
@@ -527,12 +529,13 @@ function analyzeManifest(
   linkedImports: Record<string, LinkedImport>,
   options: CompileModulesOptions,
   rootId: string,
+  linkedRoutes: readonly CompilerRouteDefinition[],
 ): ModuleManifest {
   let manifest: ModuleManifest | undefined;
   const compilerPath = {
     node: cloneEstreeNode(entry.ast, true),
-    buildCodeFrameError(message: string) {
-      return new Error(message);
+    buildCodeFrameError(message: string, at = entry.ast) {
+      return compilerError(message, entry.id, at as unknown as BaseNode);
     },
   };
         normalizeComponentDeclarations(compilerPath);
@@ -541,6 +544,7 @@ function analyzeManifest(
           ...compilerOptions(options, rootId),
           moduleId: entry.id,
           linkedImports,
+          linkedRoutes,
         });
         installLinkedDynamicComponentImports(ctx, compilerPath);
         initializeGeneratedIdentifiers(ctx, compilerPath.node);
@@ -661,8 +665,8 @@ function discoverManifest(
   let manifest: ModuleManifest | undefined;
   const compilerPath = {
     node: cloneEstreeNode(entry.ast, true),
-    buildCodeFrameError(message: string) {
-      return new Error(message);
+    buildCodeFrameError(message: string, at = entry.ast) {
+      return compilerError(message, entry.id, at as unknown as BaseNode);
     },
   };
         normalizeComponentDeclarations(compilerPath);
@@ -1090,6 +1094,7 @@ function linkManifestWorklist(
   initial: Map<string, ModuleManifest>,
   options: CompileModulesOptions,
   rootId: string,
+  linkedRoutes: readonly CompilerRouteDefinition[],
 ): Map<string, ModuleManifest> {
   const manifests = new Map(initial);
   const importers = reverseModuleDependencies(entries, manifests, options);
@@ -1104,7 +1109,13 @@ function linkManifestWorklist(
     const entry = entries.get(id)!;
     const previous = manifests.get(id)!;
     const linked = linkImports(entry, previous, manifests, entries, options);
-    const current = analyzeManifest(entry, linked, options, rootId);
+    const current = analyzeManifest(
+      entry,
+      linked,
+      options,
+      rootId,
+      linkedRoutes,
+    );
     analyses++;
     if (analyses > maximumAnalyses) {
       throw new Error('memo-dom: cross-module export summaries did not converge');
@@ -1147,19 +1158,6 @@ function compileLinkedModules(
     });
   }
 
-  const discovered = new Map<string, ModuleManifest>();
-  for (const entry of entries.values()) {
-    discovered.set(entry.id, discoverManifest(entry, options));
-  }
-  const discoveredRoot = resolveApplicationRoot(entries, discovered, options);
-  const rootId = discoveredRoot?.rootId ?? 'App';
-  const manifests = linkManifestWorklist(
-    entries,
-    discovered,
-    options,
-    rootId,
-  );
-  const applicationRoot = resolveApplicationRoot(entries, manifests, options);
   const linkedRoutes = [...entries.values()].flatMap((entry) => {
     try {
       return collectCompilerRoutes(entry.ast, entry.id);
@@ -1172,6 +1170,21 @@ function compileLinkedModules(
   } catch (error) {
     throw new Error(`memo-dom: ${(error as Error).message}`);
   }
+
+  const discovered = new Map<string, ModuleManifest>();
+  for (const entry of entries.values()) {
+    discovered.set(entry.id, discoverManifest(entry, options));
+  }
+  const discoveredRoot = resolveApplicationRoot(entries, discovered, options);
+  const rootId = discoveredRoot?.rootId ?? 'App';
+  const manifests = linkManifestWorklist(
+    entries,
+    discovered,
+    options,
+    rootId,
+    linkedRoutes,
+  );
+  const applicationRoot = resolveApplicationRoot(entries, manifests, options);
   const routeManifestModule =
     applicationRoot?.moduleId ?? entries.values().next().value?.id;
 

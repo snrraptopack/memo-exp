@@ -19,6 +19,7 @@ export interface CompilerDiagnostic {
 
 interface ErrorLike {
   message?: unknown;
+  moduleId?: unknown;
   loc?: { line?: unknown; column?: unknown };
 }
 
@@ -68,6 +69,7 @@ export function toCompilerDiagnostic(
         : Number(parseLocation[2]);
   const prefix = marker === -1 ? '' : raw.slice(0, marker);
   const moduleId =
+    (typeof error?.moduleId === 'string' ? error.moduleId : undefined) ??
     moduleFromPrefix(prefix, moduleIds) ??
     (moduleIds.length === 1 ? moduleIds[0] : undefined);
   const message = marker === -1 ? raw : raw.slice(marker + 2);

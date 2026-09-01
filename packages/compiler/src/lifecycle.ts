@@ -16,6 +16,7 @@ import {
   type Ctx,
   type RowCtx,
 } from './context';
+import { extractPatternIdentifiers } from './ast';
 import {
   instrumentComponentCallback,
   instrumentSharedCallback,
@@ -40,6 +41,17 @@ const FUNCTION_NODES = new Set([
   'ClassMethod',
   'ClassPrivateMethod',
 ]);
+
+function declarationIntroduces(
+  declaration: t.VariableDeclaration,
+  names: ReadonlySet<string>,
+): boolean {
+  return declaration.declarations.some((declarator) =>
+    extractPatternIdentifiers(declarator.id as unknown as BaseNode).some(
+      (identifier) => names.has(identifier.name),
+    ),
+  );
+}
 
 function instrumentIdentifier(
   ctx: Ctx,
@@ -86,6 +98,7 @@ function instrumentArgument(
   rowCtx?: RowCtx,
   executionAwareRoot = false,
 ): void {
+  if (ctx.compilerOwnedCallbacks.has(argument as t.Node)) return;
   if (astFactory.isArrowFunctionExpression(argument) || astFactory.isFunctionExpression(argument)) {
     if (nodeHasJsx(argument.body)) return;
     instrumentComponentCallback(
@@ -136,6 +149,7 @@ function instrumentSharedArgument(
   argument: t.CallExpression['arguments'][number],
   executionAwareRoot = false,
 ): void {
+  if (ctx.compilerOwnedCallbacks.has(argument as t.Node)) return;
   if (astFactory.isArrowFunctionExpression(argument) || astFactory.isFunctionExpression(argument)) {
     if (nodeHasJsx(argument.body)) return;
     instrumentSharedCallback(ctx, argument, executionAwareRoot);
@@ -161,8 +175,19 @@ export function transformComponentLifecycle(
   rowCtx?: RowCtx,
 ): void {
   let functionDepth = 0;
+  let derivationDepth = 0;
+  const derivedBindings = ctx.instanceDerivedBindings.get(compName) ?? new Set();
   walkAst<BaseNode>(compPath.node.body, {
     enter(node) {
+      if (
+        node.type === 'VariableDeclaration' &&
+        declarationIntroduces(
+          node as unknown as t.VariableDeclaration,
+          derivedBindings,
+        )
+      ) {
+        derivationDepth++;
+      }
       if (FUNCTION_NODES.has(node.type)) {
         functionDepth++;
         return;
@@ -170,6 +195,7 @@ export function transformComponentLifecycle(
       if (node.type === 'CallExpression') {
         const call = node as unknown as t.CallExpression;
         const directFactoryCall = functionDepth === 0;
+        if (directFactoryCall && derivationDepth > 0) return false;
         const originalCallee = call.callee;
         const intrinsicEffect =
           astFactory.isIdentifier(originalCallee, { name: 'effect' }) &&
@@ -221,6 +247,7 @@ export function transformComponentLifecycle(
         return;
       }
       if (node.type === 'NewExpression' && functionDepth === 0) {
+        if (derivationDepth > 0) return false;
         const call = node as unknown as t.NewExpression;
         for (const argument of call.arguments) {
           instrumentArgument(ctx, compPath, argument, compName, rowCtx);
@@ -229,6 +256,15 @@ export function transformComponentLifecycle(
     },
     leave(node) {
       if (FUNCTION_NODES.has(node.type)) functionDepth--;
+      if (
+        node.type === 'VariableDeclaration' &&
+        declarationIntroduces(
+          node as unknown as t.VariableDeclaration,
+          derivedBindings,
+        )
+      ) {
+        derivationDepth--;
+      }
     },
   });
 }

@@ -121,11 +121,12 @@ export function memoizedDom(
         'memoized-dom: Vite graph compilation started before config resolution',
       );
     }
+    const entry = state.entry ?? file;
     if (state.compiling === undefined) {
       state.compiling = compileGraph(
         graphContext(context),
         config.root,
-        [file],
+        [entry],
         options,
         overrides,
         config.command === 'serve',
@@ -147,11 +148,11 @@ export function memoizedDom(
     file: string,
   ): AdapterState | undefined {
     const perFile = lazyStates.get(environment);
-    const direct = perFile?.get(file);
-    if (direct !== undefined && direct.files.has(file)) return direct;
     if (perFile === undefined) return undefined;
+    const direct = perFile.get(file);
+    if (direct !== undefined && (direct.files.has(file) || direct.css.has(file))) return direct;
     for (const state of perFile.values()) {
-      if (state.files.has(file)) return state;
+      if (state.files.has(file) || state.css.has(file)) return state;
     }
     return undefined;
   }
@@ -161,7 +162,7 @@ export function memoizedDom(
     file: string,
   ): AdapterState | undefined {
     const primary = states.get(environment);
-    if (primary !== undefined && primary.files.has(file)) return primary;
+    if (primary !== undefined && (primary.files.has(file) || primary.css.has(file))) return primary;
     return lazyStateContaining(environment, file);
   }
 
@@ -227,6 +228,7 @@ export function memoizedDom(
     let lazy = lazyStateContaining(context.environment, file);
     if (lazy === undefined) {
       lazy = new AdapterState();
+      lazy.entry = file;
       perFile.set(file, lazy);
     }
     const lazyCached = lazy.output.get(file);

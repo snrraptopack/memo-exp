@@ -281,6 +281,21 @@ describe('ESTree parser and printer boundary', () => {
     ).toThrow(EstreeParseError);
   });
 
+  it('attaches the module and source location to parser failures', () => {
+    const source = `export const okay = 1;\nexport const = ;`;
+
+    try {
+      parseEstreeOrThrow(source, { filename: './broken.ts' });
+      throw new Error('expected parsing to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(EstreeParseError);
+      expect(error).toMatchObject({
+        moduleId: './broken.ts',
+        loc: { line: 2 },
+      });
+    }
+  });
+
   it('feeds TS-ESTree directly into migrated compiler analysis', () => {
     const parsed = parseEstreeOrThrow(
       `

@@ -169,7 +169,7 @@ export const initialOrgSettings: OrganizationSettings = {
 // In-memory mock database store
 let servicesDb = [...initialServices];
 let deploymentsDb = [...initialDeployments];
-let orgSettingsDb = { ...initialOrgSettings };
+const orgSettingsDb = { ...initialOrgSettings };
 
 export function getServiceById(id: string): CloudService | undefined {
   return servicesDb.find((s) => s.id === id);

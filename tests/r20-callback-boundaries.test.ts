@@ -20,9 +20,9 @@ describe('R20 - ordinary callback boundaries', () => {
     `);
 
     expect(code).toContain(
-      'mapped = values.map(value => value * factor)',
+      'mapped = values.map((value) => value * factor)',
     );
-    expect(code.match(/values\.map\(value => value \* factor\)/g)).toHaveLength(
+    expect(code.match(/values\.map\(\(value\) => value \* factor\)/g)).toHaveLength(
       2,
     );
     expect(code).not.toContain('commitWrites');

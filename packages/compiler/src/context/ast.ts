@@ -35,6 +35,63 @@ export function astBindingAt(
   return astScopeAt(ctx, node)?.getBinding(name);
 }
 
+/** Whether a binding has a visible rebind or receiver/member mutation site. */
+export function bindingHasVisibleWrite(
+  ctx: Ctx,
+  binding: AstBinding | undefined,
+): boolean {
+  if (binding === undefined) return false;
+  if (binding.constantViolations.length > 0) return true;
+  const parents = ctx.astAnalysis?.parentByNode;
+  if (parents === undefined) return false;
+
+  for (const reference of binding.references) {
+    let current: BaseNode = reference;
+    let parent = parents.get(current) ?? null;
+    while (parent !== null) {
+      const record = parent as unknown as Record<string, unknown>;
+      if (
+        (parent.type === 'MemberExpression' ||
+          parent.type === 'OptionalMemberExpression') &&
+        record.object === current
+      ) {
+        current = parent;
+        parent = parents.get(current) ?? null;
+        continue;
+      }
+      if (
+        (parent.type === 'TSAsExpression' ||
+          parent.type === 'TSTypeAssertion' ||
+          parent.type === 'TSNonNullExpression' ||
+          parent.type === 'TSSatisfiesExpression' ||
+          parent.type === 'TSInstantiationExpression' ||
+          parent.type === 'ChainExpression') &&
+        record.expression === current
+      ) {
+        current = parent;
+        parent = parents.get(current) ?? null;
+        continue;
+      }
+      break;
+    }
+    if (current === reference) continue;
+    const record = parent as unknown as Record<string, unknown> | null;
+    if (
+      (parent?.type === 'AssignmentExpression' && record?.left === current) ||
+      (parent?.type === 'UpdateExpression' && record?.argument === current) ||
+      (parent?.type === 'UnaryExpression' &&
+        record?.operator === 'delete' &&
+        record.argument === current) ||
+      ((parent?.type === 'CallExpression' ||
+        parent?.type === 'OptionalCallExpression') &&
+        record?.callee === current)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Remove TypeScript-only wrappers without changing runtime semantics. */
 export function unwrapTypeExpression<TExpression extends BaseNode>(
   expression: TExpression,

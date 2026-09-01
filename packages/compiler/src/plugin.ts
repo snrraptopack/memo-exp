@@ -200,7 +200,7 @@ function rewriteModuleControlFlow(
 
 interface ProgramDiagnostic {
   node: t.Program;
-  buildCodeFrameError(message: string): Error;
+  buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 
 export interface ProgramTransformPath extends ProgramDiagnostic {}

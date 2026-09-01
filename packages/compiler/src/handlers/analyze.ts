@@ -45,11 +45,21 @@ import {
 } from '../components/prop-projections';
 import { generatedIdentifier, md } from '../identifiers';
 import { transparentListExpression } from '../lists/source-shapes';
+import { compilerError } from '../errors';
 
 type FunctionNode =
   | t.ArrowFunctionExpression
   | t.FunctionExpression
   | t.FunctionDeclaration;
+
+function isLinkedImport(ctx: Ctx, name: string): boolean {
+  return (
+    ctx.importedState.has(name) ||
+    ctx.importedValues.has(name) ||
+    ctx.importedFunctions.has(name) ||
+    ctx.importedComponents.has(name)
+  );
+}
 
 class HandlerPath<TNode extends t.Node = t.Node> {
   public readonly node: TNode;
@@ -59,12 +69,13 @@ class HandlerPath<TNode extends t.Node = t.Node> {
   constructor(
     node: BaseNode,
     private readonly analysis: ScopeAnalysis,
+    private readonly moduleId: string,
   ) {
     this.node = node as unknown as TNode;
     const parent = analysis.parentByNode.get(node) ?? null;
     this.parentPath = parent === null
       ? null
-      : new HandlerPath(parent, analysis);
+      : new HandlerPath(parent, analysis, moduleId);
   }
 
   public get parent(): t.Node | null {
@@ -123,7 +134,11 @@ class HandlerPath<TNode extends t.Node = t.Node> {
   }
 
   public buildCodeFrameError(message: string): Error {
-    return new Error(message);
+    return compilerError(
+      message,
+      this.moduleId,
+      this.node as unknown as BaseNode,
+    );
   }
 }
 
@@ -136,11 +151,15 @@ interface HandlerVisitor {
   CallExpression?(path: HandlerPath<t.CallExpression>): void;
 }
 
-function walkHandler(root: t.Node, visitor: HandlerVisitor): ScopeAnalysis {
+function walkHandler(
+  root: t.Node,
+  visitor: HandlerVisitor,
+  moduleId: string,
+): ScopeAnalysis {
   const analysis = analyzeScope(root as unknown as BaseNode);
   walkAst(root as unknown as BaseNode, {
     enter(node) {
-      const path = new HandlerPath(node, analysis);
+      const path = new HandlerPath(node, analysis, moduleId);
       if (node.type === 'VariableDeclarator') {
         visitor.VariableDeclarator?.(
           path as HandlerPath<t.VariableDeclarator>,
@@ -493,7 +512,7 @@ export function analyzeHandler(
         if (astFactory.isIdentifier(param)) locals.add(param.name);
       }
     },
-  });
+  }, ctx.moduleId);
 
   // pass B: writes grouped by innermost enclosing function scope
   const scopes = new Map<t.Node, ScopeWrites>();
@@ -854,6 +873,9 @@ export function analyzeHandler(
           ctx.localParamEffects.set(rootFn, recorded);
         }
       }
+      mutateScope(p, (scope) => {
+        scope.rootFallback = true;
+      });
       return;
     }
     const origin = aliases.resolveExpression(p.scope, node);
@@ -950,6 +972,14 @@ export function analyzeHandler(
             `memo-dom: cannot assign component-local const '${left.name}'`,
           );
         }
+        if (
+          p.scope.getBinding(left.name)?.kind === 'import' ||
+          isLinkedImport(ctx, left.name)
+        ) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot reassign imported state '${left.name}' - ES module imports are read-only; export a mutator instead`,
+          );
+        }
         const kind = ctx.state.get(left.name);
         if (!kind) {
           throw p.buildCodeFrameError(
@@ -1017,6 +1047,14 @@ export function analyzeHandler(
         if (componentLocals.has(arg.name)) {
           throw p.buildCodeFrameError(
             `memo-dom: cannot update component-local const '${arg.name}'`,
+          );
+        }
+        if (
+          p.scope.getBinding(arg.name)?.kind === 'import' ||
+          isLinkedImport(ctx, arg.name)
+        ) {
+          throw p.buildCodeFrameError(
+            `memo-dom: cannot update imported state '${arg.name}' - ES module imports are read-only; call an exported mutator instead`,
           );
         }
         const kind = ctx.state.get(arg.name);
@@ -1116,6 +1154,35 @@ export function analyzeHandler(
           // so invalidate the owner without declaring the invocation illegal.
           mutateScope(p, (scope) => {
             recordInstanceMutation(scope, receiverRoot);
+          });
+          return;
+        }
+        if (
+          rowCtx === undefined &&
+          receiverRoot !== null &&
+          rootParamIndex.has(receiverRoot)
+        ) {
+          const key = astFactory.isMemberExpression(callee.object)
+            ? memberKey(callee.object)
+            : null;
+          const relative = key !== null ? key.split('.').slice(1) : [];
+          const recorded = ctx.localParamEffects.get(rootFn) ?? [];
+          const entry = {
+            index: rootParamIndex.get(receiverRoot)!,
+            path: relative,
+          };
+          const signature = `${entry.index}:${entry.path.join('.')}`;
+          if (
+            !recorded.some(
+              (existing) =>
+                `${existing.index}:${existing.path.join('.')}` === signature,
+            )
+          ) {
+            recorded.push(entry);
+            ctx.localParamEffects.set(rootFn, recorded);
+          }
+          mutateScope(p, (scope) => {
+            scope.rootFallback = true;
           });
           return;
         }
@@ -1248,7 +1315,7 @@ export function analyzeHandler(
       // this call scope. Retained future callbacks remain lifecycle work.
       noteBoundedArguments(p, p.node.arguments);
     },
-  });
+  }, ctx.moduleId);
 
   finalizeHandlerInstrumentation(
     ctx,

@@ -758,7 +758,6 @@ function buildComponentRowCreate(
     itemParam: site.itemParam,
     itemPath: [],
     rowIdVar: rowId.name,
-    refreshVar: rowRefresh.name,
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
     sourceKey: site.sourceKey,
     sourceLocal: site.sourceLocal,
@@ -959,7 +958,7 @@ function buildComponentRowCreate(
             componentPath,
             localFn,
             componentName,
-            rowContext,
+            undefined,
             true,
           );
         }

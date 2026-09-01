@@ -1,6 +1,6 @@
 # Memoized DOM ESTree standardization — implementation log
 
-Status: final verification in progress
+Status: complete
 Last updated: 2026-09-01
 
 This file records reproducible repository state. A feature is only marked
@@ -68,13 +68,22 @@ without changing compiler analysis or emission.
 ## Verification recorded in this batch
 
 - Root TypeScript typecheck: passed.
-- Compiler package build and declaration emission: passed.
-- Focused frontend, TSRX, semantic-conformance, source-map, and diagnostic suite:
-  5 files, 64 tests passed.
-- Mixed Yuku/TSRX Vite production build with extracted scoped CSS: passed.
-
-The full root and Vite suites remain the final gate before this status changes
-from “verification in progress”.
+- Full workspace build and declaration emission: passed.
+- Full root suite: 100 files, 629 tests passed.
+- Focused regression suite: 20 files, 170 tests passed.
+- Language-service suite: 1 file, 10 tests passed.
+- Vite adapter suite: 1 file, 8 tests passed.
+- Adapter, data, router, and server package suites: 16 files, 130 tests passed.
+- Live Chrome example corpus: 19 examples passed, including Hacker News,
+  class todo, Octopulse, TSRX todo, and the multi-file TSRX board.
+- Octopulse Vite production build: passed (26 modules transformed).
+- Frontend benchmark: Yuku parsed 250 modules at a median 2625.54 ms,
+  approximately 95.2 parses/second on this machine.
+- `git diff --check`: passed (line-ending notices only).
+- Compiler source contains no explicit `any` annotations or assertions.
+- Compiler and Vite source contain no Babel or OXC imports. Rolldown, which is
+  the workspace bundler, owns transitive `@oxc-project/types` lockfile entries;
+  these are not compiler frontends or compiler dependencies.
 
 ## Final gates
 

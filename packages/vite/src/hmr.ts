@@ -10,18 +10,20 @@ export function invalidateManagedModules(
   files: ReadonlySet<string>,
   timestamp: number,
 ): EnvironmentModuleNode[] {
-  const invalidated = new Set<EnvironmentModuleNode>();
+  const direct = new Set<EnvironmentModuleNode>();
+  const seen = new Set<EnvironmentModuleNode>();
   for (const file of files) {
     const modules = environment.moduleGraph.getModulesByFile(file);
     if (modules === undefined) continue;
     for (const module of modules) {
+      direct.add(module);
       environment.moduleGraph.invalidateModule(
         module,
-        invalidated,
+        seen,
         timestamp,
         true,
       );
     }
   }
-  return [...invalidated];
+  return [...direct];
 }

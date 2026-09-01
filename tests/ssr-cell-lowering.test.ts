@@ -100,10 +100,9 @@ describe('module-state cell lowering', () => {
     expect(importer).toContain(
       '_MD.defineStateCell("./cell-state.ts#store")',
     );
-    // Authored value imports of lifted bindings collapse to a side-effect
-    // import (owner evaluation order preserved); reads are cell reads.
-    expect(importer).toContain("import './cell-state'");
-    expect(importer).not.toMatch(/import \{[^}]*\} from '\.\/cell-state'/);
+    // Lifted state bindings disappear while ordinary value imports remain.
+    expect(importer).toContain("import { inc } from './cell-state'");
+    expect(importer).not.toMatch(/import \{[^}]*(?:count|store)[^}]*\} from '\.\/cell-state'/);
     expect(importer).toContain('_MD.readCell(_cell');
     // Canonical access-table routing is untouched.
     expect(importer).toContain('"./cell-state.ts#count"');
@@ -127,6 +126,7 @@ describe('module-state cell lowering', () => {
         {
           './bad-let.ts': `
             let derived = base + 1;
+            export function setDerived(next) { derived = next; }
           `,
         },
         { runtimePath: '@memoized-dom/runtime', moduleStateCells: true },
