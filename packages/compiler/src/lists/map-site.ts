@@ -4,7 +4,12 @@
  */
 import * as t from '@babel/types';
 import { cloneNode as cloneEstreeNode } from '../ast';
-import { walkAst, type BaseNode } from '../ast';
+import {
+  ESTREE_VISITOR_KEYS,
+  extractPatternIdentifiers,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
 import {
@@ -450,7 +455,9 @@ function analyzeCallback(
   }
 
   const itemPattern = cloneRuntimeBindingPattern(first);
-  const itemBindings = Object.keys(t.getBindingIdentifiers(itemPattern));
+  const itemBindings = extractPatternIdentifiers(
+    itemPattern as unknown as BaseNode,
+  ).map((identifier) => identifier.name);
   if (itemBindings.length === 0) {
     return fail(
       'memo-dom: list callback item pattern must bind at least one name — R7 L1',
@@ -506,7 +513,9 @@ function resolveCallbackJsx(
   const jsx = tail.argument;
   if (statements.length > 1) {
     const reserved = new Set([
-      ...Object.keys(t.getBindingIdentifiers(itemPattern)),
+      ...extractPatternIdentifiers(itemPattern as unknown as BaseNode).map(
+        (identifier) => identifier.name,
+      ),
       ...(indexParam === null ? [] : [indexParam]),
     ]);
     const derivations = collectRowDerivations(
@@ -563,17 +572,20 @@ function collectRowDerivations(
         `memo-dom: list callback derivation '${declaration.id.name}' shadows an item or index binding — R7 L1`,
       );
     }
-    t.traverseFast(declaration.init, (node) => {
-      if (
-        t.isAssignmentExpression(node) ||
-        t.isUpdateExpression(node) ||
-        t.isAwaitExpression(node) ||
-        t.isYieldExpression(node)
-      ) {
-        fail(
-          'memo-dom: list callback derivations must be pure const expressions — R7 L1',
-        );
-      }
+    walkAst(declaration.init as unknown as BaseNode, {
+      enter(node) {
+        const current = node as unknown as t.Node;
+        if (
+          t.isAssignmentExpression(current) ||
+          t.isUpdateExpression(current) ||
+          t.isAwaitExpression(current) ||
+          t.isYieldExpression(current)
+        ) {
+          fail(
+            'memo-dom: list callback derivations must be pure const expressions — R7 L1',
+          );
+        }
+      },
     });
     derivations.push({ name: declaration.id.name, init: declaration.init });
   }
@@ -588,7 +600,9 @@ function assertNoShadowing(
   if (names.size === 0) return;
   const checkParams = (params: readonly t.Node[]): void => {
     for (const parameter of params) {
-      for (const name of Object.keys(t.getBindingIdentifiers(parameter))) {
+      for (const { name } of extractPatternIdentifiers(
+        parameter as unknown as BaseNode,
+      )) {
         if (names.has(name)) {
           fail(
             `memo-dom: list callback derivation '${name}' is shadowed inside the row JSX — R7 L1`,
@@ -597,19 +611,22 @@ function assertNoShadowing(
       }
     }
   };
-  t.traverseFast(root, (node) => {
-    if (t.isFunction(node)) {
-      checkParams(node.params);
-    }
-    if (
-      t.isVariableDeclarator(node) &&
-      t.isIdentifier(node.id) &&
-      names.has(node.id.name)
-    ) {
-      fail(
-        `memo-dom: list callback derivation '${node.id.name}' is shadowed inside the row JSX — R7 L1`,
-      );
-    }
+  walkAst(root as unknown as BaseNode, {
+    enter(node) {
+      const current = node as unknown as t.Node;
+      if (t.isFunction(current)) {
+        checkParams(current.params);
+      }
+      if (
+        t.isVariableDeclarator(current) &&
+        t.isIdentifier(current.id) &&
+        names.has(current.id.name)
+      ) {
+        fail(
+          `memo-dom: list callback derivation '${current.id.name}' is shadowed inside the row JSX — R7 L1`,
+        );
+      }
+    },
   });
 }
 
@@ -671,7 +688,7 @@ function substituteNode<T extends t.Node>(
   const next = cloneEstreeNode(node, false);
   const source = node as unknown as Record<string, unknown>;
   const target = next as unknown as Record<string, unknown>;
-  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+  for (const key of ESTREE_VISITOR_KEYS[node.type] ?? []) {
     const child = source[key];
     if (Array.isArray(child)) {
       target[key] = child.map((entry) =>

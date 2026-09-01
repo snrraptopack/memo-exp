@@ -7,7 +7,10 @@
  */
 
 import * as t from '@babel/types';
-import { cloneNode as cloneEstreeNode } from '../ast';
+import {
+  cloneNode as cloneEstreeNode,
+  isValidIdentifier as isValidEstreeIdentifier,
+} from '../ast';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 
@@ -80,10 +83,10 @@ export function callPropsFromObject(
   return (plan?.names ?? []).map((name) =>
     t.memberExpression(
       cloneEstreeNode(object),
-      t.isValidIdentifier(name)
+      isValidEstreeIdentifier(name)
         ? t.identifier(name)
         : t.stringLiteral(name),
-      !t.isValidIdentifier(name),
+      !isValidEstreeIdentifier(name),
     ),
   );
 }

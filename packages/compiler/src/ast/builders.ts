@@ -719,6 +719,17 @@ export function cloneNode<T extends BaseNode>(node: T, _deep = true): T {
   return (_deep ? cloneValue(node) : { ...node }) as T;
 }
 
+/** Copy comment attachments without depending on a parser-specific node API. */
+export function inheritComments<TTarget extends BaseNode>(
+  target: TTarget,
+  source: BaseNode,
+): TTarget {
+  target.leadingComments = source.leadingComments;
+  target.trailingComments = source.trailingComments;
+  target.innerComments = source.innerComments;
+  return target;
+}
+
 // -- Type Predicates ----------------------------------------------------------
 
 export function isIdentifier(node: unknown): node is Identifier {
@@ -920,8 +931,74 @@ export function isJSXText(node: unknown): node is JSXText {
 export function isJSXFragment(node: unknown): node is JSXFragment {
   return Boolean(node && typeof node === 'object' && (node as BaseNode).type === 'JSXFragment');
 }
+const RESERVED_IDENTIFIERS = new Set([
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'instanceof',
+  'interface',
+  'let',
+  'new',
+  'null',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'return',
+  'static',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+]);
+
+const IDENTIFIER_NAME = /^(?:[$_\p{ID_Start}])(?:[$_\p{ID_Continue}]|\u{200C}|\u{200D})*$/u;
+const IDENTIFIER_PART = /^(?:[$_\p{ID_Continue}]|\u{200C}|\u{200D})$/u;
+
 export function isValidIdentifier(name: string): boolean {
-  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name);
+  return IDENTIFIER_NAME.test(name) && !RESERVED_IDENTIFIERS.has(name);
+}
+
+/** Convert an arbitrary compiler hint into one valid identifier spelling. */
+export function toIdentifier(input: string): string {
+  let name = '';
+  for (const character of input) {
+    name += IDENTIFIER_PART.test(character) ? character : '-';
+  }
+  name = name.replace(/^[-0-9]+/, '');
+  name = name.replace(/[-\s]+(.)?/g, (_match, character: string | undefined) =>
+    character === undefined ? '' : character.toUpperCase(),
+  );
+  if (!isValidIdentifier(name)) name = `_${name}`;
+  return name || '_';
 }
 
 export function isJSXSpreadAttribute(node: unknown): node is JSXSpreadAttribute {

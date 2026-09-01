@@ -21,6 +21,7 @@ import {
   isLiteral,
   isNumericLiteral,
   isStringLiteral,
+  isValidIdentifier,
   isVariableDeclarator,
   jsxAttribute,
   jsxClosingElement,
@@ -37,6 +38,7 @@ import {
   program,
   returnStatement,
   stringLiteral,
+  toIdentifier,
   transformAst,
   variableDeclaration,
   variableDeclarator,
@@ -66,6 +68,16 @@ describe('ESTree AST Standardization Foundation', () => {
       const genLit = literal(true);
       expect(genLit.value).toBe(true);
       expect(genLit.type).toBe('Literal');
+    });
+
+    it('normalizes identifier hints without parser utilities', () => {
+      expect(toIdentifier('store.items-list')).toBe('storeItemsList');
+      expect(toIdentifier('123 value')).toBe('value');
+      expect(toIdentifier('class')).toBe('_class');
+      expect(toIdentifier('é')).toBe('é');
+      expect(isValidIdentifier('renderRow')).toBe(true);
+      expect(isValidIdentifier('default')).toBe(false);
+      expect(isValidIdentifier('row-value')).toBe(false);
     });
 
     it('creates expressions, member chains, calls, and object properties', () => {

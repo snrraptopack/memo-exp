@@ -7,7 +7,7 @@
  */
 
 import * as t from '@babel/types';
-import { walkAst, type BaseNode } from './ast';
+import { toIdentifier, walkAst, type BaseNode } from './ast';
 
 export class GeneratedIdentifiers {
   readonly runtimeId: string;
@@ -24,7 +24,7 @@ export class GeneratedIdentifiers {
   }
 
   generate(hint: string): t.Identifier {
-    const name = t.toIdentifier(hint).replace(/^_+/, '').replace(/\d+$/g, '');
+    const name = toIdentifier(hint).replace(/^_+/, '').replace(/\d+$/g, '');
     let index = 0;
     for (;;) {
       let candidate = `_${name}`;

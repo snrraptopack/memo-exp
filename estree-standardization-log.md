@@ -200,6 +200,12 @@ shallow-clone substitution passes. All 410 `t.cloneNode` calls across 32
 compiler modules were removed, so OXC/Yuku `Property` and `Literal` subtrees no
 longer cross a Babel cloning API during analysis or emission.
 
+Compiler-owned visitor keys, walking, binding-pattern extraction, identifier
+validation/normalization, value conversion, and comment inheritance now serve
+the remaining production passes. There are no calls to Babel's `VISITOR_KEYS`,
+`traverseFast`, `getBindingIdentifiers`, `isValidIdentifier`, `toIdentifier`,
+`valueToNode`, or `inheritsComments` utilities.
+
 ## Babel boundary inventory
 
 The compiler package still declares these five dependencies:

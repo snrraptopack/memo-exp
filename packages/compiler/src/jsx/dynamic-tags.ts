@@ -4,6 +4,7 @@ import * as t from '@babel/types';
 import {
   analyzeScope,
   cloneNode as cloneAstNode,
+  isValidIdentifier as isValidEstreeIdentifier,
   replaceNode,
   walkAst,
   type BaseNode,
@@ -149,7 +150,7 @@ export function installLinkedDynamicComponentImports(
               : [
                   t.importSpecifier(
                     t.identifier(local),
-                    t.isValidIdentifier(candidate.imported)
+                    isValidEstreeIdentifier(candidate.imported)
                       ? t.identifier(candidate.imported)
                       : t.stringLiteral(candidate.imported),
                   ),

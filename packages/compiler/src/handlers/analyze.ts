@@ -3,6 +3,7 @@ import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   analyzeScope,
   cloneNode,
+  extractPatternIdentifiers,
   overwriteNode,
   walkAst,
   type BaseNode,
@@ -386,7 +387,9 @@ export function analyzeHandler(
     for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
       if (t.isVariableDeclaration(stmt)) {
         for (const d of stmt.declarations) {
-          for (const name of Object.keys(t.getBindingIdentifiers(d.id))) {
+          for (const { name } of extractPatternIdentifiers(
+            d.id as unknown as BaseNode,
+          )) {
             componentLocals.add(name);
           }
         }

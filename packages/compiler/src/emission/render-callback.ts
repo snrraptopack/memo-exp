@@ -1,5 +1,9 @@
 import * as t from '@babel/types';
-import { cloneNode as cloneEstreeNode } from '../ast';
+import {
+  cloneNode as cloneEstreeNode,
+  extractPatternIdentifiers,
+  type BaseNode,
+} from '../ast';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import {
   attrExpr,
@@ -82,7 +86,9 @@ export function buildRenderCallbackAdapter(
   }
 
   const itemPattern = cloneRuntimeBindingPattern(first);
-  const itemBindings = Object.keys(t.getBindingIdentifiers(itemPattern));
+  const itemBindings = extractPatternIdentifiers(
+    itemPattern as unknown as BaseNode,
+  ).map((identifier) => identifier.name);
   if (itemBindings.length === 0) {
     throw componentPath.buildCodeFrameError(
       'memo-dom: render callback item patterns must bind at least one name',

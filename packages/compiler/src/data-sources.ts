@@ -14,7 +14,9 @@ import {
   type Ctx,
 } from './context';
 import {
+  ESTREE_VISITOR_KEYS,
   extractPatternIdentifiers,
+  isValidIdentifier as isValidEstreeIdentifier,
   overwriteNode,
   replaceNode,
   walkAst,
@@ -306,7 +308,7 @@ export function transparentExpressionSources(
         }
       }
     }
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+    for (const key of ESTREE_VISITOR_KEYS[node.type] ?? []) {
       const child = (node as unknown as Record<string, unknown>)[key];
       if (Array.isArray(child)) {
         for (const entry of child) {
@@ -635,8 +637,8 @@ function sourcePolicy(
   if (parameter === undefined || prop === undefined) return t.nullLiteral();
   return t.optionalMemberExpression(
     cloneEstreeNode(parameter),
-    t.isValidIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
-    !t.isValidIdentifier(prop),
+    isValidEstreeIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
+    !isValidEstreeIdentifier(prop),
     true,
   );
 }
@@ -2001,10 +2003,10 @@ export function transparentCallPolicyArgument(
         attribute.name.name,
         t.optionalMemberExpression(
           cloneEstreeNode(inherited),
-          t.isValidIdentifier(ownerProp)
+          isValidEstreeIdentifier(ownerProp)
             ? t.identifier(ownerProp)
             : t.stringLiteral(ownerProp),
-          !t.isValidIdentifier(ownerProp),
+          !isValidEstreeIdentifier(ownerProp),
           true,
         ),
       );
@@ -2014,9 +2016,9 @@ export function transparentCallPolicyArgument(
   return t.objectExpression(
     [...entries].map(([prop, value]) =>
       t.objectProperty(
-        t.isValidIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
+        isValidEstreeIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
         value,
-        !t.isValidIdentifier(prop),
+        !isValidEstreeIdentifier(prop),
       )
     ),
   );

@@ -7,7 +7,10 @@
  */
 
 import * as t from '@babel/types';
-import { cloneNode as cloneEstreeNode } from '../ast';
+import {
+  cloneNode as cloneEstreeNode,
+  isValidIdentifier as isValidEstreeIdentifier,
+} from '../ast';
 
 export interface OrderedAttributes {
   expression: t.ObjectExpression;
@@ -55,7 +58,7 @@ export function buildOrderedAttributes(
         : value;
     properties.push(
       t.objectProperty(
-        t.isValidIdentifier(name)
+        isValidEstreeIdentifier(name)
           ? t.identifier(name)
           : t.stringLiteral(name),
         event,

@@ -7,7 +7,11 @@
  * unified instead of adding expression-path branches to every pass.
  */
 import * as t from '@babel/types';
-import { cloneNode as cloneEstreeNode } from '../ast';
+import {
+  cloneNode as cloneEstreeNode,
+  inheritComments,
+  type BaseNode,
+} from '../ast';
 import { nodeHasJsx } from '../context';
 
 interface ProgramContainer {
@@ -115,7 +119,10 @@ function normalizedVariableStatement(
     );
   }
   if (statements.length > 0) {
-    t.inheritsComments(statements[0]!, declaration);
+    inheritComments(
+      statements[0]! as unknown as BaseNode,
+      declaration as unknown as BaseNode,
+    );
   }
   return statements;
 }

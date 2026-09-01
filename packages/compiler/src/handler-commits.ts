@@ -6,7 +6,10 @@
  */
 
 import * as t from '@babel/types';
-import { cloneNode as cloneEstreeNode } from './ast';
+import {
+  cloneNode as cloneEstreeNode,
+  ESTREE_VISITOR_KEYS,
+} from './ast';
 import {
   freshReasonConst,
   freshWriteConst,
@@ -160,7 +163,7 @@ export function appendScopeCommit(
 
 function insertBeforeReturns(node: t.Node, commit: t.Statement): void {
   if (t.isFunction(node)) return;
-  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+  for (const key of ESTREE_VISITOR_KEYS[node.type] ?? []) {
     const fields = node as unknown as Record<string, unknown>;
     const child = fields[key];
     if (Array.isArray(child)) {

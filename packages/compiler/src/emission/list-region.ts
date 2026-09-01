@@ -1,5 +1,8 @@
 import * as t from '@babel/types';
-import { cloneNode as cloneEstreeNode } from '../ast';
+import {
+  cloneNode as cloneEstreeNode,
+  isValidIdentifier as isValidEstreeIdentifier,
+} from '../ast';
 import {
   attrExpr,
   keyPathOf,
@@ -288,7 +291,10 @@ export function emitListRegion(
 
 function hasReason(reasonVar: string, reason: number): t.Expression {
   const current = (): t.Identifier => t.identifier(reasonVar);
-  const reasonNode = (): t.Expression => t.valueToNode(reason) as t.Expression;
+  const reasonNode = (): t.Expression =>
+    reason < 0
+      ? t.unaryExpression('-', t.numericLiteral(-reason), true)
+      : t.numericLiteral(reason);
   return t.logicalExpression(
     '||',
     t.binaryExpression('===', current(), reasonNode()),
@@ -800,10 +806,10 @@ function buildComponentRowCreate(
     positionalObjectProps!.map(({ name }) =>
       t.memberExpression(
         cloneEstreeNode(object),
-        t.isValidIdentifier(name)
+        isValidEstreeIdentifier(name)
           ? t.identifier(name)
           : t.stringLiteral(name),
-        !t.isValidIdentifier(name),
+        !isValidEstreeIdentifier(name),
       ),
     );
   const renderValueSlot = (value: t.Expression): t.Identifier => {

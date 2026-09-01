@@ -17,7 +17,11 @@ import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
 import * as t from '@babel/types';
 import { cloneNode as cloneEstreeNode } from './ast';
-import { walkAst, type BaseNode } from './ast';
+import {
+  ESTREE_VISITOR_KEYS,
+  walkAst,
+  type BaseNode,
+} from './ast';
 import { buildAccessTable, runAnalysis } from './analysis';
 import {
   compileAst,
@@ -389,7 +393,7 @@ function directFunctionComponentNames(
       }
       return;
     }
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+    for (const key of ESTREE_VISITOR_KEYS[node.type] ?? []) {
       const child = (node as unknown as Record<string, unknown>)[key];
       if (Array.isArray(child)) {
         for (const entry of child) {
