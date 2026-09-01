@@ -132,7 +132,7 @@ function isMemberLike(node: t.Node): node is MemberLike {
 /** Static property-path key for `a.b.c`, including optional member chains. */
 export function memberKey(node: MemberLike): string | null {
   const parts: string[] = [];
-  let current: t.Expression | t.PrivateName = node;
+  let current: t.Node = node;
   while (isMemberLike(current)) {
     if (current.computed) {
       if (!astFactory.isStringLiteral(current.property)) return null;
@@ -214,7 +214,7 @@ export interface ComputedAnalysis {
 
 /** Root identifier of a member chain, including optional member segments. */
 export function memberRootName(node: MemberLike): string | null {
-  let current: t.Expression = node;
+  let current: t.Node = node;
   while (true) {
     if (isMemberLike(current)) {
       if (astFactory.isSuper(current.object)) return null;

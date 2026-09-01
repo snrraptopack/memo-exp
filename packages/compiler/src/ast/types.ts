@@ -119,6 +119,7 @@ export type Expression =
 export interface Identifier extends BaseNode {
   type: 'Identifier';
   name: string;
+  typeAnnotation?: BaseNode | null;
 }
 
 export interface Literal extends BaseNode {
@@ -170,6 +171,8 @@ export interface FunctionDeclaration extends BaseNode {
   body: BlockStatement;
   generator: boolean;
   async: boolean;
+  returnType?: BaseNode | null;
+  typeParameters?: BaseNode | null;
 }
 
 export interface FunctionExpression extends BaseNode {
@@ -179,6 +182,8 @@ export interface FunctionExpression extends BaseNode {
   body: BlockStatement;
   generator: boolean;
   async: boolean;
+  returnType?: BaseNode | null;
+  typeParameters?: BaseNode | null;
 }
 
 export interface ArrowFunctionExpression extends BaseNode {
@@ -188,6 +193,8 @@ export interface ArrowFunctionExpression extends BaseNode {
   generator: boolean;
   async: boolean;
   expression: boolean;
+  returnType?: BaseNode | null;
+  typeParameters?: BaseNode | null;
 }
 
 export interface VariableDeclaration extends BaseNode {
@@ -588,11 +595,13 @@ export type Pattern =
 export interface ObjectPattern extends BaseNode {
   type: 'ObjectPattern';
   properties: Array<Property | RestElement>;
+  typeAnnotation?: BaseNode | null;
 }
 
 export interface ArrayPattern extends BaseNode {
   type: 'ArrayPattern';
   elements: Array<Pattern | null>;
+  typeAnnotation?: BaseNode | null;
 }
 
 export interface RestElement extends BaseNode {
@@ -609,13 +618,15 @@ export interface AssignmentPattern extends BaseNode {
 export interface ImportDeclaration extends BaseNode {
   type: 'ImportDeclaration';
   specifiers: Array<ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier>;
-  source: Literal;
+  source: StringLiteral;
+  importKind?: 'type' | 'typeof' | 'value' | null;
 }
 
 export interface ImportSpecifier extends BaseNode {
   type: 'ImportSpecifier';
-  imported: Identifier;
+  imported: Identifier | StringLiteral;
   local: Identifier;
+  importKind?: 'type' | 'typeof' | 'value' | null;
 }
 
 export interface ImportDefaultSpecifier extends BaseNode {
@@ -632,13 +643,13 @@ export interface ExportNamedDeclaration extends BaseNode {
   type: 'ExportNamedDeclaration';
   declaration: Declaration | null;
   specifiers: ExportSpecifier[];
-  source: Literal | null;
+  source: StringLiteral | null;
 }
 
 export interface ExportSpecifier extends BaseNode {
   type: 'ExportSpecifier';
   local: Identifier;
-  exported: Identifier;
+  exported: Identifier | StringLiteral;
 }
 
 export interface ExportDefaultDeclaration extends BaseNode {

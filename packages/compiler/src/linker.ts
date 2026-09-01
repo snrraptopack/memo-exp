@@ -238,7 +238,7 @@ function parseModule(id: string, source: string): t.File {
   if (ast === null) {
     throw new Error(`memo-dom: failed to parse module '${id}'`);
   }
-  return ast;
+  return ast as unknown as t.File;
 }
 
 function compilerOptions(
@@ -337,13 +337,15 @@ function directComponentNames(
   componentNames: ReadonlySet<string>,
   output: Set<string>,
 ): void {
+  let current: t.Node = expression;
   while (
-    astFactory.isTSAsExpression(expression) ||
-    astFactory.isTSTypeAssertion(expression) ||
-    astFactory.isTSNonNullExpression(expression)
+    astFactory.isTSAsExpression(current) ||
+    astFactory.isTSTypeAssertion(current) ||
+    astFactory.isTSNonNullExpression(current)
   ) {
-    expression = expression.expression;
+    current = current.expression;
   }
+  expression = current as t.Expression;
   if (astFactory.isIdentifier(expression)) {
     if (componentNames.has(expression.name)) output.add(expression.name);
     return;
@@ -513,9 +515,9 @@ function exportedLocals(program: t.Program): Map<string, string> {
     for (const spec of stmt.specifiers) {
       if (!astFactory.isExportSpecifier(spec)) continue;
       const local = spec.local.name;
-      const exported = astFactory.isIdentifier(spec.exported)
-        ? spec.exported.name
-        : spec.exported.value;
+      const exported = astFactory.isStringLiteral(spec.exported)
+        ? spec.exported.value
+        : spec.exported.name;
       out.set(exported, local);
     }
   }
@@ -532,28 +534,32 @@ function analyzeManifest(
   const analysisPlugin = (): PluginObject => ({
     visitor: {
       Program(programPath) {
-        normalizeComponentDeclarations(programPath);
-        const authoredImports = importRefs(programPath.node);
+        const compilerPath = programPath as unknown as {
+          node: t.Program;
+          buildCodeFrameError(message: string): Error;
+        };
+        normalizeComponentDeclarations(compilerPath);
+        const authoredImports = importRefs(compilerPath.node);
         const ctx = createCtx({
           ...compilerOptions(options, rootId),
           moduleId: entry.id,
           linkedImports,
         });
-        installLinkedDynamicComponentImports(ctx, programPath);
-        initializeGeneratedIdentifiers(ctx, programPath.node);
-        scanTransparentSourceImports(ctx, programPath);
-        lowerTransparentGroups(ctx, programPath);
-        scanAndLowerModuleSourceDeclarations(ctx, programPath);
-        analyzeRouterJsx(ctx, programPath);
-        runAnalysis(ctx, programPath);
+        installLinkedDynamicComponentImports(ctx, compilerPath);
+        initializeGeneratedIdentifiers(ctx, compilerPath.node);
+        scanTransparentSourceImports(ctx, compilerPath);
+        lowerTransparentGroups(ctx, compilerPath);
+        scanAndLowerModuleSourceDeclarations(ctx, compilerPath);
+        analyzeRouterJsx(ctx, compilerPath);
+        runAnalysis(ctx, compilerPath);
         // buildAccessTable also materializes ctx.readers. The returned AST is
         // intentionally discarded here; final emission builds its own table.
         buildAccessTable(ctx);
         const exports: Record<string, LinkedExport> = {};
         const functionTagCandidates = moduleFunctionStringCandidates(
-          programPath.node,
+          compilerPath.node,
         );
-        for (const [exported, local] of exportedLocals(programPath.node)) {
+        for (const [exported, local] of exportedLocals(compilerPath.node)) {
           if (ctx.comps.has(local)) {
             exports[exported] = {
               type: 'component',
@@ -630,7 +636,7 @@ function analyzeManifest(
           exports,
           imports: authoredImports,
           mounts: applicationMounts(
-            programPath.node,
+            compilerPath.node,
             options.runtimePath ?? '@memoized-dom/runtime',
           ),
           components: analyzedComponentDeclarations(entry.id, ctx),
@@ -645,7 +651,10 @@ function analyzeManifest(
     },
   });
 
-  transformFromAstSync(cloneEstreeNode(entry.ast, true), entry.source, {
+  transformFromAstSync(
+    cloneEstreeNode(entry.ast, true) as unknown as Parameters<typeof transformFromAstSync>[0],
+    entry.source,
+    {
     filename: entry.id,
     plugins: [
       [syntaxJsx as PluginTarget, {}],
@@ -655,7 +664,8 @@ function analyzeManifest(
     code: false,
     configFile: false,
     babelrc: false,
-  });
+    },
+  );
   if (manifest === undefined) {
     throw new Error(`memo-dom: failed to analyze module '${entry.id}'`);
   }
@@ -674,13 +684,17 @@ function discoverManifest(
   const discoveryPlugin = (): PluginObject => ({
     visitor: {
       Program(programPath) {
-        normalizeComponentDeclarations(programPath);
+        const compilerPath = programPath as unknown as {
+          node: t.Program;
+          buildCodeFrameError(message: string): Error;
+        };
+        normalizeComponentDeclarations(compilerPath);
         const locals = new Map<string, LinkedExport>();
-        const tagCandidates = moduleStateStringCandidates(programPath.node);
+        const tagCandidates = moduleStateStringCandidates(compilerPath.node);
         const functionTagCandidates = moduleFunctionStringCandidates(
-          programPath.node,
+          compilerPath.node,
         );
-        const components = discoverComponentExports(programPath.node, entry.id);
+        const components = discoverComponentExports(compilerPath.node, entry.id);
         const componentNames = new Set(components.keys());
         const providerSources = new Map(
           (options.transparentAsyncSources ??
@@ -689,7 +703,7 @@ function discoverManifest(
           ),
         );
         const providerFactories = new Set<string>();
-        for (const stmt of programPath.node.body) {
+        for (const stmt of compilerPath.node.body) {
           if (!astFactory.isImportDeclaration(stmt)) continue;
           const def = providerSources.get(stmt.source.value);
           if (def === undefined) continue;
@@ -706,7 +720,7 @@ function discoverManifest(
         for (const [name, component] of components) {
           locals.set(name, { type: 'component', ...component });
         }
-        for (const stmt of programPath.node.body) {
+        for (const stmt of compilerPath.node.body) {
           const inner = astFactory.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
           if (astFactory.isVariableDeclaration(inner)) {
             for (const decl of inner.declarations) {
@@ -798,15 +812,15 @@ function discoverManifest(
           }
         }
         const exports: Record<string, LinkedExport> = {};
-        for (const [exported, local] of exportedLocals(programPath.node)) {
+        for (const [exported, local] of exportedLocals(compilerPath.node)) {
           const value = locals.get(local);
           if (value !== undefined) exports[exported] = value;
         }
         manifest = {
           exports,
-          imports: importRefs(programPath.node),
+          imports: importRefs(compilerPath.node),
           mounts: applicationMounts(
-            programPath.node,
+            compilerPath.node,
             options.runtimePath ?? '@memoized-dom/runtime',
           ),
           components: [],
@@ -816,7 +830,10 @@ function discoverManifest(
       },
     },
   });
-  transformFromAstSync(cloneEstreeNode(entry.ast, true), entry.source, {
+  transformFromAstSync(
+    cloneEstreeNode(entry.ast, true) as unknown as Parameters<typeof transformFromAstSync>[0],
+    entry.source,
+    {
     filename: entry.id,
     plugins: [
       [syntaxJsx as PluginTarget, {}],
@@ -826,7 +843,8 @@ function discoverManifest(
     code: false,
     configFile: false,
     babelrc: false,
-  });
+    },
+  );
   if (manifest === undefined) {
     throw new Error(`memo-dom: failed to discover module '${entry.id}'`);
   }

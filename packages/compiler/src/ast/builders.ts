@@ -166,8 +166,9 @@ export function optionalMemberExpression(
   object: Expression,
   property: Expression,
   computed = false,
+  optional = true,
 ): MemberExpression {
-  return memberExpression(object, property, computed, true);
+  return memberExpression(object, property, computed, optional);
 }
 
 export function arrayExpression(
@@ -504,7 +505,7 @@ export function program(
 
 export function importDeclaration(
   specifiers: Array<ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier>,
-  source: Literal,
+  source: StringLiteral,
 ): ImportDeclaration {
   return {
     type: 'ImportDeclaration',
@@ -515,7 +516,7 @@ export function importDeclaration(
 
 export function importSpecifier(
   local: Identifier,
-  imported: Identifier = local,
+  imported: Identifier | StringLiteral = local,
 ): ImportSpecifier {
   return {
     type: 'ImportSpecifier',
@@ -541,7 +542,7 @@ export function importNamespaceSpecifier(local: Identifier): ImportNamespaceSpec
 export function exportNamedDeclaration(
   declaration: Declaration | null = null,
   specifiers: ExportSpecifier[] = [],
-  source: Literal | null = null,
+  source: StringLiteral | null = null,
 ): ExportNamedDeclaration {
   return {
     type: 'ExportNamedDeclaration',
@@ -553,7 +554,7 @@ export function exportNamedDeclaration(
 
 export function exportSpecifier(
   local: Identifier,
-  exported: Identifier = local,
+  exported: Identifier | StringLiteral = local,
 ): ExportSpecifier {
   return {
     type: 'ExportSpecifier',

@@ -418,9 +418,11 @@ function analyzeMemberSource(
 function containsOptionalMember(source: t.Expression | t.Super): boolean {
   let current: t.Expression | t.Super = source;
   while (!astFactory.isSuper(current)) {
-    if (astFactory.isOptionalMemberExpression(current)) return true;
-    if (!astFactory.isMemberExpression(current)) return false;
-    current = current.object;
+    const isOptional = astFactory.isOptionalMemberExpression(current);
+    if (!astFactory.isMemberExpression(current) && !isOptional) return false;
+    const member = current as t.MemberExpression;
+    if (isOptional) return true;
+    current = member.object;
   }
   return false;
 }

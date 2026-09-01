@@ -189,19 +189,11 @@ function scanComponents(ctx: Ctx, programPath: ProgramPath): void {
   ): HelperPath['node'] | null => {
     if (raw === null || raw === undefined) return null;
     let current = raw;
-    while (
-      current.type === 'TSAsExpression' ||
-      current.type === 'TSTypeAssertion' ||
-      current.type === 'TSNonNullExpression' ||
-      current.type === 'TSSatisfiesExpression' ||
-      current.type === 'TSInstantiationExpression'
-    ) {
+    while (astFactory.isTransparentExpression(current)) {
       current = current.expression;
     }
-    return current.type === 'ArrowFunctionExpression' ||
-      current.type === 'FunctionExpression'
-      ? current
-      : null;
+    if (astFactory.isArrowFunctionExpression(current)) return current;
+    return astFactory.isFunctionExpression(current) ? current : null;
   };
 
   const functionPaths = new Map<t.Node, HelperPath>();
@@ -304,7 +296,7 @@ function scalarTsType(
     const next = new Set(visiting);
     next.add(name);
     for (const statement of program.body) {
-      const declaration = astFactory.isExportNamedDeclaration(statement)
+      const declaration: t.Node | null = astFactory.isExportNamedDeclaration(statement)
         ? statement.declaration
         : statement;
       if (
@@ -407,18 +399,26 @@ function declaredScalarProp(
   let shape = annotation.typeAnnotation;
   if (astFactory.isTSTypeReference(shape) && astFactory.isIdentifier(shape.typeName)) {
     const referenceName = shape.typeName.name;
-    const declaration = program.body
-      .map((statement) =>
-        astFactory.isExportNamedDeclaration(statement)
-          ? statement.declaration
-          : statement,
-      )
-      .find(
-        (candidate) =>
-          (astFactory.isTSInterfaceDeclaration(candidate) ||
-            astFactory.isTSTypeAliasDeclaration(candidate)) &&
-          candidate.id.name === referenceName,
-      );
+    let declaration: t.TSInterfaceDeclaration | t.TSTypeAliasDeclaration | null = null;
+    for (const statement of program.body) {
+      const candidate: unknown = astFactory.isExportNamedDeclaration(statement)
+        ? statement.declaration
+        : statement;
+      if (
+        astFactory.isTSInterfaceDeclaration(candidate) &&
+        candidate.id.name === referenceName
+      ) {
+        declaration = candidate;
+        break;
+      }
+      if (
+        astFactory.isTSTypeAliasDeclaration(candidate) &&
+        candidate.id.name === referenceName
+      ) {
+        declaration = candidate;
+        break;
+      }
+    }
     if (astFactory.isTSInterfaceDeclaration(declaration)) {
       shape = astFactory.tsTypeLiteral(declaration.body.body);
     } else if (astFactory.isTSTypeAliasDeclaration(declaration)) {

@@ -37,7 +37,7 @@ function isProjectionTarget(
 }
 
 function unwrap(node: t.Expression): t.Expression {
-  let current = node;
+  let current: t.Node = node;
   while (
     astFactory.isTSAsExpression(current) ||
     astFactory.isTSTypeAssertion(current) ||
@@ -46,7 +46,7 @@ function unwrap(node: t.Expression): t.Expression {
   ) {
     current = current.expression;
   }
-  return current;
+  return current as t.Expression;
 }
 
 function bindPattern(

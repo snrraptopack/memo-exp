@@ -82,7 +82,11 @@ function transform(
   };
   return ast === undefined
     ? transformSync(source, transformOptions)
-    : transformFromAstSync(cloneEstreeNode(ast, true), source, transformOptions);
+    : transformFromAstSync(
+        cloneEstreeNode(ast, true) as unknown as Parameters<typeof transformFromAstSync>[0],
+        source,
+        transformOptions,
+      );
 }
 
 /** Compile source while preserving the historical string-only API. */

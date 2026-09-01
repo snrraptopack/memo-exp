@@ -32,7 +32,7 @@ export type ComponentPropSourceRefs = Record<
 >;
 
 function unwrapExpression(node: t.Expression): t.Expression {
-  let current = node;
+  let current: t.Node = node;
   while (
     astFactory.isTSAsExpression(current) ||
     astFactory.isTSTypeAssertion(current) ||
@@ -41,7 +41,7 @@ function unwrapExpression(node: t.Expression): t.Expression {
   ) {
     current = current.expression;
   }
-  return current;
+  return current as t.Expression;
 }
 
 function moduleStateSource(

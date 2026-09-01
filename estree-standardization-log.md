@@ -326,6 +326,21 @@ The verified migration order is therefore:
 6. Delete Babel adapters, shims, imports, package dependencies, and lockfile
    entries only after parity tests pass through the standalone entrypoint.
 
+## Compiler-owned node contracts
+
+The production passes no longer import or alias `@babel/types`. Their shared
+`compiler-types` boundary is now defined entirely from compiler-owned ESTree
+nodes, with explicit structural extensions for TypeScript syntax that analysis
+must inspect before type stripping. Babel AST and path values are converted
+through `unknown` only inside the remaining legacy frontend shell; those casts
+are temporary adapter boundaries, not types consumed by the domain engine.
+
+The contract migration also standardizes string-named imports/exports and
+optional-chain construction without introducing method or function-name
+allowlists. Compiler typecheck, package build, and the focused AST/frontend,
+semantic-conformance, source-map, and diagnostic suites pass (5 files,
+65 tests).
+
 ## Verification commands
 
 ```sh

@@ -29,6 +29,7 @@ import {
   createCtx,
   freshWriteConst,
   type Ctx,
+  type CompilerPath,
   type InternalMemoDomOptions,
   type MemoDomOptions,
 } from './context';
@@ -403,10 +404,10 @@ export default function memoDomPlugin(
     visitor: {
       Program: {
         enter(programPath) {
-          prepareProgram(ctx, programPath);
+          prepareProgram(ctx, programPath as unknown as ProgramTransformPath);
         },
         exit(programPath) {
-          finishProgram(ctx, programPath);
+          finishProgram(ctx, programPath as unknown as ProgramTransformPath);
           normalizeBabelDialect(programPath.node as unknown as BaseNode);
         },
       },
@@ -414,7 +415,7 @@ export default function memoDomPlugin(
         const name = path.node.id?.name;
         if (!name || !ctx.comps.has(name) || transformed.has(path.node)) return;
         transformed.add(path.node);
-        transformComponent(ctx, path, name);
+        transformComponent(ctx, path as unknown as CompilerPath<t.FunctionDeclaration>, name);
         path.skip();
       },
     },
