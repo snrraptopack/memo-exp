@@ -5,96 +5,97 @@
  * ESTree nodes at runtime.
  */
 
-import type * as t from '@babel/types';
+import type * as t from './compiler-types';
+import type { AstCompatibilityModule } from './compiler-types';
 import * as estree from './builders';
 
-export const identifier = estree.identifier as unknown as typeof t.identifier;
-export const stringLiteral = estree.stringLiteral as unknown as typeof t.stringLiteral;
-export const numericLiteral = estree.numericLiteral as unknown as typeof t.numericLiteral;
-export const booleanLiteral = estree.booleanLiteral as unknown as typeof t.booleanLiteral;
-export const nullLiteral = estree.nullLiteral as unknown as typeof t.nullLiteral;
-export const callExpression = estree.callExpression as unknown as typeof t.callExpression;
-export const memberExpression = estree.memberExpression as unknown as typeof t.memberExpression;
+export const identifier = estree.identifier as unknown as AstCompatibilityModule['identifier'];
+export const stringLiteral = estree.stringLiteral as unknown as AstCompatibilityModule['stringLiteral'];
+export const numericLiteral = estree.numericLiteral as unknown as AstCompatibilityModule['numericLiteral'];
+export const booleanLiteral = estree.booleanLiteral as unknown as AstCompatibilityModule['booleanLiteral'];
+export const nullLiteral = estree.nullLiteral as unknown as AstCompatibilityModule['nullLiteral'];
+export const callExpression = estree.callExpression as unknown as AstCompatibilityModule['callExpression'];
+export const memberExpression = estree.memberExpression as unknown as AstCompatibilityModule['memberExpression'];
 export const optionalMemberExpression =
-  estree.optionalMemberExpression as unknown as typeof t.optionalMemberExpression;
-export const arrayExpression = estree.arrayExpression as unknown as typeof t.arrayExpression;
-export const objectExpression = estree.objectExpression as unknown as typeof t.objectExpression;
-export const objectProperty = estree.objectProperty as unknown as typeof t.objectProperty;
-export const spreadElement = estree.spreadElement as unknown as typeof t.spreadElement;
-export const newExpression = estree.newExpression as unknown as typeof t.newExpression;
-export const binaryExpression = estree.binaryExpression as unknown as typeof t.binaryExpression;
-export const unaryExpression = estree.unaryExpression as unknown as typeof t.unaryExpression;
-export const logicalExpression = estree.logicalExpression as unknown as typeof t.logicalExpression;
+  estree.optionalMemberExpression as unknown as AstCompatibilityModule['optionalMemberExpression'];
+export const arrayExpression = estree.arrayExpression as unknown as AstCompatibilityModule['arrayExpression'];
+export const objectExpression = estree.objectExpression as unknown as AstCompatibilityModule['objectExpression'];
+export const objectProperty = estree.objectProperty as unknown as AstCompatibilityModule['objectProperty'];
+export const spreadElement = estree.spreadElement as unknown as AstCompatibilityModule['spreadElement'];
+export const newExpression = estree.newExpression as unknown as AstCompatibilityModule['newExpression'];
+export const binaryExpression = estree.binaryExpression as unknown as AstCompatibilityModule['binaryExpression'];
+export const unaryExpression = estree.unaryExpression as unknown as AstCompatibilityModule['unaryExpression'];
+export const logicalExpression = estree.logicalExpression as unknown as AstCompatibilityModule['logicalExpression'];
 export const assignmentExpression =
-  estree.assignmentExpression as unknown as typeof t.assignmentExpression;
+  estree.assignmentExpression as unknown as AstCompatibilityModule['assignmentExpression'];
 export const conditionalExpression =
-  estree.conditionalExpression as unknown as typeof t.conditionalExpression;
+  estree.conditionalExpression as unknown as AstCompatibilityModule['conditionalExpression'];
 export const sequenceExpression =
-  estree.sequenceExpression as unknown as typeof t.sequenceExpression;
+  estree.sequenceExpression as unknown as AstCompatibilityModule['sequenceExpression'];
 export const assignmentPattern =
-  estree.assignmentPattern as unknown as typeof t.assignmentPattern;
+  estree.assignmentPattern as unknown as AstCompatibilityModule['assignmentPattern'];
 export const functionDeclaration =
-  estree.functionDeclaration as unknown as typeof t.functionDeclaration;
+  estree.functionDeclaration as unknown as AstCompatibilityModule['functionDeclaration'];
 export const arrowFunctionExpression =
-  estree.arrowFunctionExpression as unknown as typeof t.arrowFunctionExpression;
-export const blockStatement = estree.blockStatement as unknown as typeof t.blockStatement;
+  estree.arrowFunctionExpression as unknown as AstCompatibilityModule['arrowFunctionExpression'];
+export const blockStatement = estree.blockStatement as unknown as AstCompatibilityModule['blockStatement'];
 export const expressionStatement =
-  estree.expressionStatement as unknown as typeof t.expressionStatement;
-export const returnStatement = estree.returnStatement as unknown as typeof t.returnStatement;
-export const ifStatement = estree.ifStatement as unknown as typeof t.ifStatement;
-export const forOfStatement = estree.forOfStatement as unknown as typeof t.forOfStatement;
+  estree.expressionStatement as unknown as AstCompatibilityModule['expressionStatement'];
+export const returnStatement = estree.returnStatement as unknown as AstCompatibilityModule['returnStatement'];
+export const ifStatement = estree.ifStatement as unknown as AstCompatibilityModule['ifStatement'];
+export const forOfStatement = estree.forOfStatement as unknown as AstCompatibilityModule['forOfStatement'];
 export const variableDeclaration =
-  estree.variableDeclaration as unknown as typeof t.variableDeclaration;
+  estree.variableDeclaration as unknown as AstCompatibilityModule['variableDeclaration'];
 export const variableDeclarator =
-  estree.variableDeclarator as unknown as typeof t.variableDeclarator;
+  estree.variableDeclarator as unknown as AstCompatibilityModule['variableDeclarator'];
 export const importDeclaration =
-  estree.importDeclaration as unknown as typeof t.importDeclaration;
-export const importSpecifier = estree.importSpecifier as unknown as typeof t.importSpecifier;
+  estree.importDeclaration as unknown as AstCompatibilityModule['importDeclaration'];
+export const importSpecifier = estree.importSpecifier as unknown as AstCompatibilityModule['importSpecifier'];
 export const importDefaultSpecifier =
-  estree.importDefaultSpecifier as unknown as typeof t.importDefaultSpecifier;
+  estree.importDefaultSpecifier as unknown as AstCompatibilityModule['importDefaultSpecifier'];
 export const importNamespaceSpecifier =
-  estree.importNamespaceSpecifier as unknown as typeof t.importNamespaceSpecifier;
+  estree.importNamespaceSpecifier as unknown as AstCompatibilityModule['importNamespaceSpecifier'];
 export const exportNamedDeclaration =
-  estree.exportNamedDeclaration as unknown as typeof t.exportNamedDeclaration;
-export const jsxIdentifier = estree.jsxIdentifier as unknown as typeof t.jsxIdentifier;
-export const jsxAttribute = estree.jsxAttribute as unknown as typeof t.jsxAttribute;
+  estree.exportNamedDeclaration as unknown as AstCompatibilityModule['exportNamedDeclaration'];
+export const jsxIdentifier = estree.jsxIdentifier as unknown as AstCompatibilityModule['jsxIdentifier'];
+export const jsxAttribute = estree.jsxAttribute as unknown as AstCompatibilityModule['jsxAttribute'];
 export const jsxExpressionContainer =
-  estree.jsxExpressionContainer as unknown as typeof t.jsxExpressionContainer;
+  estree.jsxExpressionContainer as unknown as AstCompatibilityModule['jsxExpressionContainer'];
 export const jsxOpeningElement =
-  estree.jsxOpeningElement as unknown as typeof t.jsxOpeningElement;
-export const jsxElement = estree.jsxElement as unknown as typeof t.jsxElement;
+  estree.jsxOpeningElement as unknown as AstCompatibilityModule['jsxOpeningElement'];
+export const jsxElement = estree.jsxElement as unknown as AstCompatibilityModule['jsxElement'];
 export const jsxOpeningFragment =
-  estree.jsxOpeningFragment as unknown as typeof t.jsxOpeningFragment;
+  estree.jsxOpeningFragment as unknown as AstCompatibilityModule['jsxOpeningFragment'];
 export const jsxClosingFragment =
-  estree.jsxClosingFragment as unknown as typeof t.jsxClosingFragment;
-export const jsxFragment = estree.jsxFragment as unknown as typeof t.jsxFragment;
+  estree.jsxClosingFragment as unknown as AstCompatibilityModule['jsxClosingFragment'];
+export const jsxFragment = estree.jsxFragment as unknown as AstCompatibilityModule['jsxFragment'];
 
 export const updateExpression = ((
   operator: t.UpdateExpression['operator'],
   argument: t.Expression,
   prefix = false,
-) => ({ type: 'UpdateExpression', operator, argument, prefix })) as typeof t.updateExpression;
+) => ({ type: 'UpdateExpression', operator, argument, prefix })) as AstCompatibilityModule['updateExpression'];
 
 export const switchCase = ((
   test: t.Expression | null,
   consequent: t.Statement[],
-) => ({ type: 'SwitchCase', test, consequent })) as typeof t.switchCase;
+) => ({ type: 'SwitchCase', test, consequent })) as AstCompatibilityModule['switchCase'];
 
 export const switchStatement = ((
   discriminant: t.Expression,
   cases: t.SwitchCase[],
-) => ({ type: 'SwitchStatement', discriminant, cases })) as typeof t.switchStatement;
+) => ({ type: 'SwitchStatement', discriminant, cases })) as AstCompatibilityModule['switchStatement'];
 
 export const metaProperty = ((meta: t.Identifier, property: t.Identifier) => ({
   type: 'MetaProperty',
   meta,
   property,
-})) as typeof t.metaProperty;
+})) as AstCompatibilityModule['metaProperty'];
 
 export const tsTypeLiteral = ((members: t.TSTypeElement[] = []) => ({
   type: 'TSTypeLiteral',
   members,
-})) as typeof t.tsTypeLiteral;
+})) as AstCompatibilityModule['tsTypeLiteral'];
 
 function nodeType(node: unknown): string | null {
   if (!node || typeof node !== 'object') return null;
@@ -132,45 +133,45 @@ const isNull = (node: unknown): boolean =>
   nodeType(node) === 'NullLiteral' || estree.isNullLiteral(node);
 const isObjectPropertyNode = hasType('Property', 'ObjectProperty');
 
-export const isNode = predicate<typeof t.isNode>((node) => nodeType(node) !== null);
-export const isIdentifier = predicate<typeof t.isIdentifier>(estree.isIdentifier);
-export const isStringLiteral = predicate<typeof t.isStringLiteral>(isString);
-export const isNumericLiteral = predicate<typeof t.isNumericLiteral>(isNumber);
-export const isBooleanLiteral = predicate<typeof t.isBooleanLiteral>(isBoolean);
-export const isNullLiteral = predicate<typeof t.isNullLiteral>(isNull);
-export const isBigIntLiteral = predicate<typeof t.isBigIntLiteral>(hasType('BigIntLiteral'));
-export const isCallExpression = predicate<typeof t.isCallExpression>(
+export const isNode = predicate<AstCompatibilityModule['isNode']>((node) => nodeType(node) !== null);
+export const isIdentifier = predicate<AstCompatibilityModule['isIdentifier']>(estree.isIdentifier);
+export const isStringLiteral = predicate<AstCompatibilityModule['isStringLiteral']>(isString);
+export const isNumericLiteral = predicate<AstCompatibilityModule['isNumericLiteral']>(isNumber);
+export const isBooleanLiteral = predicate<AstCompatibilityModule['isBooleanLiteral']>(isBoolean);
+export const isNullLiteral = predicate<AstCompatibilityModule['isNullLiteral']>(isNull);
+export const isBigIntLiteral = predicate<AstCompatibilityModule['isBigIntLiteral']>(hasType('BigIntLiteral'));
+export const isCallExpression = predicate<AstCompatibilityModule['isCallExpression']>(
   hasType('CallExpression'),
 );
-export const isOptionalCallExpression = predicate<typeof t.isOptionalCallExpression>((node) =>
+export const isOptionalCallExpression = predicate<AstCompatibilityModule['isOptionalCallExpression']>((node) =>
   nodeType(node) === 'OptionalCallExpression' ||
   (nodeType(node) === 'CallExpression' &&
     (node as Record<string, unknown>).optional === true),
 );
-export const isMemberExpression = predicate<typeof t.isMemberExpression>(
+export const isMemberExpression = predicate<AstCompatibilityModule['isMemberExpression']>(
   hasType('MemberExpression'),
 );
-export const isOptionalMemberExpression = predicate<typeof t.isOptionalMemberExpression>(
+export const isOptionalMemberExpression = predicate<AstCompatibilityModule['isOptionalMemberExpression']>(
   (node) =>
     nodeType(node) === 'OptionalMemberExpression' ||
     (nodeType(node) === 'MemberExpression' &&
       (node as Record<string, unknown>).optional === true),
 );
-export const isArrayExpression = predicate<typeof t.isArrayExpression>(estree.isArrayExpression);
-export const isObjectExpression = predicate<typeof t.isObjectExpression>(
+export const isArrayExpression = predicate<AstCompatibilityModule['isArrayExpression']>(estree.isArrayExpression);
+export const isObjectExpression = predicate<AstCompatibilityModule['isObjectExpression']>(
   estree.isObjectExpression,
 );
-export const isObjectProperty = predicate<typeof t.isObjectProperty>(isObjectPropertyNode);
-export const isFunctionDeclaration = predicate<typeof t.isFunctionDeclaration>(
+export const isObjectProperty = predicate<AstCompatibilityModule['isObjectProperty']>(isObjectPropertyNode);
+export const isFunctionDeclaration = predicate<AstCompatibilityModule['isFunctionDeclaration']>(
   estree.isFunctionDeclaration,
 );
-export const isFunctionExpression = predicate<typeof t.isFunctionExpression>(
+export const isFunctionExpression = predicate<AstCompatibilityModule['isFunctionExpression']>(
   hasType('FunctionExpression'),
 );
-export const isArrowFunctionExpression = predicate<typeof t.isArrowFunctionExpression>(
+export const isArrowFunctionExpression = predicate<AstCompatibilityModule['isArrowFunctionExpression']>(
   estree.isArrowFunctionExpression,
 );
-export const isFunction = predicate<typeof t.isFunction>(
+export const isFunction = predicate<AstCompatibilityModule['isFunction']>(
   hasType(
     'FunctionDeclaration',
     'FunctionExpression',
@@ -180,32 +181,32 @@ export const isFunction = predicate<typeof t.isFunction>(
     'ClassPrivateMethod',
   ),
 );
-export const isVariableDeclaration = predicate<typeof t.isVariableDeclaration>(
+export const isVariableDeclaration = predicate<AstCompatibilityModule['isVariableDeclaration']>(
   estree.isVariableDeclaration,
 );
-export const isVariableDeclarator = predicate<typeof t.isVariableDeclarator>(
+export const isVariableDeclarator = predicate<AstCompatibilityModule['isVariableDeclarator']>(
   estree.isVariableDeclarator,
 );
-export const isBlockStatement = predicate<typeof t.isBlockStatement>(estree.isBlockStatement);
-export const isReturnStatement = predicate<typeof t.isReturnStatement>(estree.isReturnStatement);
-export const isIfStatement = predicate<typeof t.isIfStatement>(estree.isIfStatement);
-export const isExpressionStatement = predicate<typeof t.isExpressionStatement>(
+export const isBlockStatement = predicate<AstCompatibilityModule['isBlockStatement']>(estree.isBlockStatement);
+export const isReturnStatement = predicate<AstCompatibilityModule['isReturnStatement']>(estree.isReturnStatement);
+export const isIfStatement = predicate<AstCompatibilityModule['isIfStatement']>(estree.isIfStatement);
+export const isExpressionStatement = predicate<AstCompatibilityModule['isExpressionStatement']>(
   estree.isExpressionStatement,
 );
-export const isAssignmentExpression = predicate<typeof t.isAssignmentExpression>(
+export const isAssignmentExpression = predicate<AstCompatibilityModule['isAssignmentExpression']>(
   estree.isAssignmentExpression,
 );
-export const isUpdateExpression = predicate<typeof t.isUpdateExpression>(
+export const isUpdateExpression = predicate<AstCompatibilityModule['isUpdateExpression']>(
   hasType('UpdateExpression'),
 );
-export const isUnaryExpression = predicate<typeof t.isUnaryExpression>(estree.isUnaryExpression);
-export const isLogicalExpression = predicate<typeof t.isLogicalExpression>(
+export const isUnaryExpression = predicate<AstCompatibilityModule['isUnaryExpression']>(estree.isUnaryExpression);
+export const isLogicalExpression = predicate<AstCompatibilityModule['isLogicalExpression']>(
   estree.isLogicalExpression,
 );
-export const isConditionalExpression = predicate<typeof t.isConditionalExpression>(
+export const isConditionalExpression = predicate<AstCompatibilityModule['isConditionalExpression']>(
   estree.isConditionalExpression,
 );
-export const isExpression = predicate<typeof t.isExpression>((node) => {
+export const isExpression = predicate<AstCompatibilityModule['isExpression']>((node) => {
   const type = nodeType(node);
   return (
     estree.isExpression(node) ||
@@ -231,116 +232,116 @@ export const isExpression = predicate<typeof t.isExpression>((node) => {
     type === 'TypeCastExpression'
   );
 });
-export const isJSXElement = predicate<typeof t.isJSXElement>(estree.isJSXElement);
-export const isJSXFragment = predicate<typeof t.isJSXFragment>(estree.isJSXFragment);
-export const isJSXAttribute = predicate<typeof t.isJSXAttribute>(estree.isJSXAttribute);
-export const isJSXSpreadAttribute = predicate<typeof t.isJSXSpreadAttribute>(
+export const isJSXElement = predicate<AstCompatibilityModule['isJSXElement']>(estree.isJSXElement);
+export const isJSXFragment = predicate<AstCompatibilityModule['isJSXFragment']>(estree.isJSXFragment);
+export const isJSXAttribute = predicate<AstCompatibilityModule['isJSXAttribute']>(estree.isJSXAttribute);
+export const isJSXSpreadAttribute = predicate<AstCompatibilityModule['isJSXSpreadAttribute']>(
   estree.isJSXSpreadAttribute,
 );
-export const isJSXExpressionContainer = predicate<typeof t.isJSXExpressionContainer>(
+export const isJSXExpressionContainer = predicate<AstCompatibilityModule['isJSXExpressionContainer']>(
   estree.isJSXExpressionContainer,
 );
-export const isJSXIdentifier = predicate<typeof t.isJSXIdentifier>(estree.isJSXIdentifier);
-export const isJSXText = predicate<typeof t.isJSXText>(estree.isJSXText);
-export const isJSXEmptyExpression = predicate<typeof t.isJSXEmptyExpression>(
+export const isJSXIdentifier = predicate<AstCompatibilityModule['isJSXIdentifier']>(estree.isJSXIdentifier);
+export const isJSXText = predicate<AstCompatibilityModule['isJSXText']>(estree.isJSXText);
+export const isJSXEmptyExpression = predicate<AstCompatibilityModule['isJSXEmptyExpression']>(
   hasType('JSXEmptyExpression'),
 );
-export const isJSXNamespacedName = predicate<typeof t.isJSXNamespacedName>(
+export const isJSXNamespacedName = predicate<AstCompatibilityModule['isJSXNamespacedName']>(
   hasType('JSXNamespacedName'),
 );
-export const isObjectPattern = predicate<typeof t.isObjectPattern>(hasType('ObjectPattern'));
-export const isArrayPattern = predicate<typeof t.isArrayPattern>(hasType('ArrayPattern'));
-export const isAssignmentPattern = predicate<typeof t.isAssignmentPattern>(
+export const isObjectPattern = predicate<AstCompatibilityModule['isObjectPattern']>(hasType('ObjectPattern'));
+export const isArrayPattern = predicate<AstCompatibilityModule['isArrayPattern']>(hasType('ArrayPattern'));
+export const isAssignmentPattern = predicate<AstCompatibilityModule['isAssignmentPattern']>(
   hasType('AssignmentPattern'),
 );
-export const isRestElement = predicate<typeof t.isRestElement>(hasType('RestElement'));
-export const isSpreadElement = predicate<typeof t.isSpreadElement>(hasType('SpreadElement'));
-export const isExportNamedDeclaration = predicate<typeof t.isExportNamedDeclaration>(
+export const isRestElement = predicate<AstCompatibilityModule['isRestElement']>(hasType('RestElement'));
+export const isSpreadElement = predicate<AstCompatibilityModule['isSpreadElement']>(hasType('SpreadElement'));
+export const isExportNamedDeclaration = predicate<AstCompatibilityModule['isExportNamedDeclaration']>(
   hasType('ExportNamedDeclaration'),
 );
-export const isExportDefaultDeclaration = predicate<typeof t.isExportDefaultDeclaration>(
+export const isExportDefaultDeclaration = predicate<AstCompatibilityModule['isExportDefaultDeclaration']>(
   hasType('ExportDefaultDeclaration'),
 );
-export const isExportSpecifier = predicate<typeof t.isExportSpecifier>(
+export const isExportSpecifier = predicate<AstCompatibilityModule['isExportSpecifier']>(
   hasType('ExportSpecifier'),
 );
-export const isImportDeclaration = predicate<typeof t.isImportDeclaration>(
+export const isImportDeclaration = predicate<AstCompatibilityModule['isImportDeclaration']>(
   hasType('ImportDeclaration'),
 );
-export const isImportSpecifier = predicate<typeof t.isImportSpecifier>(hasType('ImportSpecifier'));
-export const isImportDefaultSpecifier = predicate<typeof t.isImportDefaultSpecifier>(
+export const isImportSpecifier = predicate<AstCompatibilityModule['isImportSpecifier']>(hasType('ImportSpecifier'));
+export const isImportDefaultSpecifier = predicate<AstCompatibilityModule['isImportDefaultSpecifier']>(
   hasType('ImportDefaultSpecifier'),
 );
-export const isSwitchStatement = predicate<typeof t.isSwitchStatement>(
+export const isSwitchStatement = predicate<AstCompatibilityModule['isSwitchStatement']>(
   hasType('SwitchStatement'),
 );
-export const isBreakStatement = predicate<typeof t.isBreakStatement>(hasType('BreakStatement'));
-export const isEmptyStatement = predicate<typeof t.isEmptyStatement>(hasType('EmptyStatement'));
-export const isAwaitExpression = predicate<typeof t.isAwaitExpression>(hasType('AwaitExpression'));
-export const isYieldExpression = predicate<typeof t.isYieldExpression>(hasType('YieldExpression'));
-export const isNewExpression = predicate<typeof t.isNewExpression>(hasType('NewExpression'));
-export const isTemplateLiteral = predicate<typeof t.isTemplateLiteral>(hasType('TemplateLiteral'));
-export const isSuper = predicate<typeof t.isSuper>(hasType('Super'));
-export const isPrivateName = predicate<typeof t.isPrivateName>(hasType('PrivateName'));
-export const isClassDeclaration = predicate<typeof t.isClassDeclaration>(
+export const isBreakStatement = predicate<AstCompatibilityModule['isBreakStatement']>(hasType('BreakStatement'));
+export const isEmptyStatement = predicate<AstCompatibilityModule['isEmptyStatement']>(hasType('EmptyStatement'));
+export const isAwaitExpression = predicate<AstCompatibilityModule['isAwaitExpression']>(hasType('AwaitExpression'));
+export const isYieldExpression = predicate<AstCompatibilityModule['isYieldExpression']>(hasType('YieldExpression'));
+export const isNewExpression = predicate<AstCompatibilityModule['isNewExpression']>(hasType('NewExpression'));
+export const isTemplateLiteral = predicate<AstCompatibilityModule['isTemplateLiteral']>(hasType('TemplateLiteral'));
+export const isSuper = predicate<AstCompatibilityModule['isSuper']>(hasType('Super'));
+export const isPrivateName = predicate<AstCompatibilityModule['isPrivateName']>(hasType('PrivateName'));
+export const isClassDeclaration = predicate<AstCompatibilityModule['isClassDeclaration']>(
   hasType('ClassDeclaration'),
 );
-export const isTypeCastExpression = predicate<typeof t.isTypeCastExpression>(
+export const isTypeCastExpression = predicate<AstCompatibilityModule['isTypeCastExpression']>(
   hasType('TypeCastExpression'),
 );
-export const isTypeScript = predicate<typeof t.isTypeScript>((node) =>
+export const isTypeScript = predicate<AstCompatibilityModule['isTypeScript']>((node) =>
   nodeType(node)?.startsWith('TS') === true,
 );
 
-export const isTSAsExpression = predicate<typeof t.isTSAsExpression>(hasType('TSAsExpression'));
-export const isTSTypeAssertion = predicate<typeof t.isTSTypeAssertion>(
+export const isTSAsExpression = predicate<AstCompatibilityModule['isTSAsExpression']>(hasType('TSAsExpression'));
+export const isTSTypeAssertion = predicate<AstCompatibilityModule['isTSTypeAssertion']>(
   hasType('TSTypeAssertion'),
 );
-export const isTSNonNullExpression = predicate<typeof t.isTSNonNullExpression>(
+export const isTSNonNullExpression = predicate<AstCompatibilityModule['isTSNonNullExpression']>(
   hasType('TSNonNullExpression'),
 );
-export const isTSSatisfiesExpression = predicate<typeof t.isTSSatisfiesExpression>(
+export const isTSSatisfiesExpression = predicate<AstCompatibilityModule['isTSSatisfiesExpression']>(
   hasType('TSSatisfiesExpression'),
 );
-export const isTSInstantiationExpression = predicate<typeof t.isTSInstantiationExpression>(
+export const isTSInstantiationExpression = predicate<AstCompatibilityModule['isTSInstantiationExpression']>(
   hasType('TSInstantiationExpression'),
 );
-export const isTSTypeAliasDeclaration = predicate<typeof t.isTSTypeAliasDeclaration>(
+export const isTSTypeAliasDeclaration = predicate<AstCompatibilityModule['isTSTypeAliasDeclaration']>(
   hasType('TSTypeAliasDeclaration'),
 );
-export const isTSInterfaceDeclaration = predicate<typeof t.isTSInterfaceDeclaration>(
+export const isTSInterfaceDeclaration = predicate<AstCompatibilityModule['isTSInterfaceDeclaration']>(
   hasType('TSInterfaceDeclaration'),
 );
-export const isTSParameterProperty = predicate<typeof t.isTSParameterProperty>(
+export const isTSParameterProperty = predicate<AstCompatibilityModule['isTSParameterProperty']>(
   hasType('TSParameterProperty'),
 );
-export const isTSTypeAnnotation = predicate<typeof t.isTSTypeAnnotation>(
+export const isTSTypeAnnotation = predicate<AstCompatibilityModule['isTSTypeAnnotation']>(
   hasType('TSTypeAnnotation'),
 );
-export const isTSTypeReference = predicate<typeof t.isTSTypeReference>(
+export const isTSTypeReference = predicate<AstCompatibilityModule['isTSTypeReference']>(
   hasType('TSTypeReference'),
 );
-export const isTSTypeLiteral = predicate<typeof t.isTSTypeLiteral>(hasType('TSTypeLiteral'));
-export const isTSPropertySignature = predicate<typeof t.isTSPropertySignature>(
+export const isTSTypeLiteral = predicate<AstCompatibilityModule['isTSTypeLiteral']>(hasType('TSTypeLiteral'));
+export const isTSPropertySignature = predicate<AstCompatibilityModule['isTSPropertySignature']>(
   hasType('TSPropertySignature'),
 );
-export const isTSUndefinedKeyword = predicate<typeof t.isTSUndefinedKeyword>(
+export const isTSUndefinedKeyword = predicate<AstCompatibilityModule['isTSUndefinedKeyword']>(
   hasType('TSUndefinedKeyword'),
 );
-export const isTSNullKeyword = predicate<typeof t.isTSNullKeyword>(hasType('TSNullKeyword'));
-export const isTSSymbolKeyword = predicate<typeof t.isTSSymbolKeyword>(hasType('TSSymbolKeyword'));
-export const isTSUnionType = predicate<typeof t.isTSUnionType>(hasType('TSUnionType'));
-export const isTSParenthesizedType = predicate<typeof t.isTSParenthesizedType>(
+export const isTSNullKeyword = predicate<AstCompatibilityModule['isTSNullKeyword']>(hasType('TSNullKeyword'));
+export const isTSSymbolKeyword = predicate<AstCompatibilityModule['isTSSymbolKeyword']>(hasType('TSSymbolKeyword'));
+export const isTSUnionType = predicate<AstCompatibilityModule['isTSUnionType']>(hasType('TSUnionType'));
+export const isTSParenthesizedType = predicate<AstCompatibilityModule['isTSParenthesizedType']>(
   hasType('TSParenthesizedType'),
 );
-export const isTSLiteralType = predicate<typeof t.isTSLiteralType>(hasType('TSLiteralType'));
-export const isTSStringKeyword = predicate<typeof t.isTSStringKeyword>(
+export const isTSLiteralType = predicate<AstCompatibilityModule['isTSLiteralType']>(hasType('TSLiteralType'));
+export const isTSStringKeyword = predicate<AstCompatibilityModule['isTSStringKeyword']>(
   hasType('TSStringKeyword'),
 );
-export const isTSBigIntKeyword = predicate<typeof t.isTSBigIntKeyword>(hasType('TSBigIntKeyword'));
-export const isTSBooleanKeyword = predicate<typeof t.isTSBooleanKeyword>(
+export const isTSBigIntKeyword = predicate<AstCompatibilityModule['isTSBigIntKeyword']>(hasType('TSBigIntKeyword'));
+export const isTSBooleanKeyword = predicate<AstCompatibilityModule['isTSBooleanKeyword']>(
   hasType('TSBooleanKeyword'),
 );
-export const isTSNumberKeyword = predicate<typeof t.isTSNumberKeyword>(
+export const isTSNumberKeyword = predicate<AstCompatibilityModule['isTSNumberKeyword']>(
   hasType('TSNumberKeyword'),
 );

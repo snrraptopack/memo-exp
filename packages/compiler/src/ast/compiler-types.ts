@@ -7,6 +7,8 @@
  * standardized.
  */
 
+export type AstCompatibilityModule = typeof import('@babel/types');
+
 export type {
   ArgumentPlaceholder,
   ArrayExpression,
