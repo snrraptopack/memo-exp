@@ -5,7 +5,8 @@
  * shared module handlers when their declaration cannot close over a site ID.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import type { Ctx, RowCtx } from './context';
 import {
@@ -22,19 +23,19 @@ export function buildEventOriginCommit(
   eventOriginId?: t.Expression,
 ): t.Statement {
   if (eventOriginId === undefined && rowCtx?.refreshVar !== undefined) {
-    return t.expressionStatement(
-      t.callExpression(t.identifier(rowCtx.refreshVar), []),
+    return astFactory.expressionStatement(
+      astFactory.callExpression(astFactory.identifier(rowCtx.refreshVar), []),
     );
   }
   const id =
     eventOriginId ??
     (rowCtx !== undefined
-      ? t.identifier(rowCtx.rowIdVar)
+      ? astFactory.identifier(rowCtx.rowIdVar)
       : compName !== null
         ? componentId(ctx, compName)
-        : t.stringLiteral(ctx.rootId));
-  return t.expressionStatement(
-    t.callExpression(md(ctx, 'markDirty'), [cloneEstreeNode(id)]),
+        : astFactory.stringLiteral(ctx.rootId));
+  return astFactory.expressionStatement(
+    astFactory.callExpression(md(ctx, 'markDirty'), [cloneEstreeNode(id)]),
   );
 }
 
@@ -46,17 +47,17 @@ export function wrapSharedHandlerWithOrigin(
 ): t.ArrowFunctionExpression {
   const event = generatedIdentifier(ctx, 'event');
   const result = generatedIdentifier(ctx, 'returnValue');
-  return t.arrowFunctionExpression(
+  return astFactory.arrowFunctionExpression(
     [event],
-    t.blockStatement([
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
+    astFactory.blockStatement([
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
           result,
-          t.callExpression(cloneEstreeNode(handler), [cloneEstreeNode(event)]),
+          astFactory.callExpression(cloneEstreeNode(handler), [cloneEstreeNode(event)]),
         ),
       ]),
       originCommit,
-      t.returnStatement(cloneEstreeNode(result)),
+      astFactory.returnStatement(cloneEstreeNode(result)),
     ]),
   );
 }

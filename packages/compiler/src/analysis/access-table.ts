@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { canonicalStateKey, type Ctx } from '../context';
 import { md } from '../identifiers';
 import { componentPatterns, pathVariants } from './component-graph';
@@ -76,23 +77,23 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
   const readerProperties = [...ctx.readers.entries()]
     .sort(([left], [right]) => (left < right ? -1 : 1))
     .map(([variable, readers]) =>
-      t.objectProperty(
-        t.stringLiteral(variable),
-        t.arrayExpression(
-          [...readers].sort().map((reader) => t.stringLiteral(reader)),
+      astFactory.objectProperty(
+        astFactory.stringLiteral(variable),
+        astFactory.arrayExpression(
+          [...readers].sort().map((reader) => astFactory.stringLiteral(reader)),
         ),
       ),
     );
-  return t.expressionStatement(
-    t.callExpression(md(ctx, 'installAccessTable'), [
-      t.objectExpression([
-        t.objectProperty(
-          t.identifier('readers'),
-          t.objectExpression(readerProperties),
+  return astFactory.expressionStatement(
+    astFactory.callExpression(md(ctx, 'installAccessTable'), [
+      astFactory.objectExpression([
+        astFactory.objectProperty(
+          astFactory.identifier('readers'),
+          astFactory.objectExpression(readerProperties),
         ),
       ]),
-      t.stringLiteral(ctx.rootId),
-      t.stringLiteral(ctx.moduleId),
+      astFactory.stringLiteral(ctx.rootId),
+      astFactory.stringLiteral(ctx.moduleId),
     ]),
   );
 }

@@ -16,12 +16,17 @@ import {
   transformFromAstSync,
   transformSync,
   type InputOptions,
+  type PluginObject,
   type PluginTarget,
 } from '@babel/core';
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
-import * as t from '@babel/types';
-import { cloneNode as cloneEstreeNode } from './ast';
+import type * as t from '@babel/types';
+import {
+  cloneNode as cloneEstreeNode,
+  normalizeBabelDialect,
+  type BaseNode,
+} from './ast';
 import memoDomPlugin, { type MemoDomOptions } from './plugin';
 import type { InternalMemoDomOptions } from './context';
 
@@ -42,6 +47,19 @@ export interface CompiledSource {
   map: CompilerSourceMap;
 }
 
+function babelOutputAdapter(): PluginObject {
+  return {
+    name: 'memo-dom-estree-to-babel-output',
+    visitor: {
+      Program: {
+        exit(programPath) {
+          normalizeBabelDialect(programPath.node as unknown as BaseNode);
+        },
+      },
+    },
+  };
+}
+
 function transform(
   source: string,
   opts: InternalMemoDomOptions,
@@ -57,6 +75,7 @@ function transform(
       [syntaxJsx as PluginTarget, {}],
       [memoDomPlugin, opts],
       [transformTypescript as PluginTarget, { isTSX: true }],
+      babelOutputAdapter,
     ],
     configFile: false,
     babelrc: false,

@@ -4,7 +4,8 @@
  * Direct JSX-child ternaries and logical conditions become anchored regions.
  * Right-associated ternary chains flatten into one multi-branch region.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import { nodeHasJsx } from './context';
 import { matchMapCall } from './lists';
@@ -25,9 +26,9 @@ export interface CondSite {
 export function matchCond(
   expr: t.Node,
 ): t.ConditionalExpression | t.LogicalExpression | null {
-  if (t.isConditionalExpression(expr)) return expr;
+  if (astFactory.isConditionalExpression(expr)) return expr;
   if (
-    t.isLogicalExpression(expr) &&
+    astFactory.isLogicalExpression(expr) &&
     (expr.operator === '&&' || expr.operator === '||')
   ) {
     return expr;
@@ -37,9 +38,9 @@ export function matchCond(
 
 function isEmptyBranch(node: t.Node): boolean {
   return (
-    t.isNullLiteral(node) ||
-    t.isBooleanLiteral(node, { value: false }) ||
-    t.isIdentifier(node, { name: 'undefined' })
+    astFactory.isNullLiteral(node) ||
+    astFactory.isBooleanLiteral(node, { value: false }) ||
+    astFactory.isIdentifier(node, { name: 'undefined' })
   );
 }
 
@@ -47,21 +48,21 @@ function validateBranchJsx(jsx: JsxNode, fail: (msg: string) => never): void {
   const stack: t.Node[] = [jsx];
   while (stack.length > 0) {
     const node = stack.pop()!;
-    if (t.isJSXElement(node)) {
+    if (astFactory.isJSXElement(node)) {
       for (const attribute of node.openingElement.attributes) {
         if (
-          !t.isJSXSpreadAttribute(attribute) &&
+          !astFactory.isJSXSpreadAttribute(attribute) &&
           (attribute.name as t.JSXIdentifier).name === 'key'
         ) {
           fail('memo-dom: key={...} is only meaningful on list rows');
         }
       }
       stack.push(...node.children);
-    } else if (t.isJSXFragment(node)) {
+    } else if (astFactory.isJSXFragment(node)) {
       stack.push(...node.children);
     } else if (
-      t.isJSXExpressionContainer(node) &&
-      t.isExpression(node.expression)
+      astFactory.isJSXExpressionContainer(node) &&
+      astFactory.isExpression(node.expression)
     ) {
       const expression = node.expression;
       if (matchMapCall(expression) !== null && nodeHasJsx(expression)) {
@@ -82,48 +83,48 @@ export function analyzeCondSite(
 
   let pickExpr: t.Expression;
   let branchNodes: (t.Node | null)[];
-  if (t.isConditionalExpression(expr)) {
+  if (astFactory.isConditionalExpression(expr)) {
     const tests: t.Expression[] = [];
     branchNodes = [];
     let current: t.Expression = expr;
-    while (t.isConditionalExpression(current)) {
+    while (astFactory.isConditionalExpression(current)) {
       tests.push(cloneEstreeNode(current.test));
       branchNodes.push(current.consequent);
       current = current.alternate;
     }
     branchNodes.push(current);
-    pickExpr = t.numericLiteral(branchNodes.length - 1);
+    pickExpr = astFactory.numericLiteral(branchNodes.length - 1);
     for (let index = tests.length - 1; index >= 0; index--) {
-      pickExpr = t.conditionalExpression(
+      pickExpr = astFactory.conditionalExpression(
         tests[index]!,
-        t.numericLiteral(index),
+        astFactory.numericLiteral(index),
         pickExpr,
       );
     }
   } else if (expr.operator === '&&') {
-    pickExpr = t.conditionalExpression(
+    pickExpr = astFactory.conditionalExpression(
       cloneEstreeNode(expr.left),
-      t.numericLiteral(0),
-      t.numericLiteral(1),
+      astFactory.numericLiteral(0),
+      astFactory.numericLiteral(1),
     );
     branchNodes = [expr.right, null];
   } else {
-    pickExpr = t.conditionalExpression(
+    pickExpr = astFactory.conditionalExpression(
       cloneEstreeNode(expr.left),
-      t.numericLiteral(1),
-      t.numericLiteral(0),
+      astFactory.numericLiteral(1),
+      astFactory.numericLiteral(0),
     );
     branchNodes = [expr.right, null];
   }
 
   const resolveBranch = (node: t.Node | null): JsxNode | null => {
     if (node === null || isEmptyBranch(node)) return null;
-    if (t.isJSXElement(node) || t.isJSXFragment(node)) return node;
-    if (t.isExpression(node)) {
-      return t.jsxFragment(
-        t.jsxOpeningFragment(),
-        t.jsxClosingFragment(),
-        [t.jsxExpressionContainer(cloneEstreeNode(node, true))],
+    if (astFactory.isJSXElement(node) || astFactory.isJSXFragment(node)) return node;
+    if (astFactory.isExpression(node)) {
+      return astFactory.jsxFragment(
+        astFactory.jsxOpeningFragment(),
+        astFactory.jsxClosingFragment(),
+        [astFactory.jsxExpressionContainer(cloneEstreeNode(node, true))],
       );
     }
     return fail(

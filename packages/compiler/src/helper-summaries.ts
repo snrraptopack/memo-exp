@@ -6,7 +6,8 @@
  * so callers can map them back to their own state.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { walkAst, type BaseNode, type Scope } from './ast';
 import {
   astBindingAt,
@@ -117,7 +118,7 @@ export function summarizeHelper(
   const locals = new Set<string>();
   const parameterIndexes = new Map(
     helper.params.flatMap((parameter, index) =>
-      t.isIdentifier(parameter) ? [[parameter.name, index] as const] : [],
+      astFactory.isIdentifier(parameter) ? [[parameter.name, index] as const] : [],
     ),
   );
   const summary: FnSummary = {

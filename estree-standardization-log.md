@@ -1,7 +1,7 @@
 # Memoized DOM ESTree standardization - implementation log
 
 Status: active development  
-Last verified: 2026-08-31
+Last verified: 2026-09-01
 
 This log records verified repository state. It does not treat planned work as
 completed work.
@@ -14,8 +14,8 @@ completed work.
 | Explicit `any` in compiler source | Removed | No explicit `any` annotations or assertions remain in executable compiler TypeScript |
 | ESTree frontend | Working boundary | OXC parses ESTree/TS-ESTree; Esrap prints it with comments and source maps |
 | Compiler analysis migration | Advanced, incomplete | Binding-aware discovery, effects, data-source lowering, plugin mutation, and handler-write analysis now consume ESTree scope/parent metadata |
-| Babel removal | Not complete | Direct `@babel/traverse` use is gone from compiler source; Babel core still owns the public parser/plugin/generator boundary and `@babel/types` remains the transitional node API |
-| ESTree emission | Not started | Existing emitters still create Babel-dialect nodes |
+| Babel removal | Not complete | Direct `@babel/traverse` use and runtime `@babel/types` use are gone; Babel core still owns the public parser/plugin/generator boundary and Babel types remain transitional type-only annotations |
+| ESTree emission | Working, types transitional | Production builders and predicates create/recognize plain ESTree nodes; the legacy Babel plugin receives one output-only dialect adaptation |
 
 ## Audit correction
 
@@ -206,6 +206,17 @@ the remaining production passes. There are no calls to Babel's `VISITOR_KEYS`,
 `traverseFast`, `getBindingIdentifiers`, `isValidIdentifier`, `toIdentifier`,
 `valueToNode`, or `inheritsComments` utilities.
 
+All production AST builders and predicates now resolve through the
+compiler-owned ESTree factory. Generated literals use standard `Literal` nodes,
+object members use `Property`, and optional members retain ESTree optional
+semantics. There are no remaining `t.<builder>()` or `t.is*()` calls in compiler
+source. Every `@babel/types` import is type-only; the temporary factory exposes
+those type signatures only until the compiler's public node contracts migrate.
+The legacy Babel plugin converts strict ESTree literals/properties/optional
+members only at its generator boundary, while the OXC/Yuku path remains strict
+ESTree throughout. Linker discovery and analysis transformations now disable
+unused Babel code generation.
+
 ## Babel boundary inventory
 
 The compiler package still declares these five dependencies:
@@ -216,11 +227,12 @@ The compiler package still declares these five dependencies:
 - `@babel/traverse`
 - `@babel/types`
 
-At this checkpoint, 55 compiler source files still directly import
-`@babel/types`, while Babel core/plugin declarations remain at the public
-frontend boundary. Removing the package dependencies before replacing parsing,
-node builders/types, TypeScript erasure, and code generation would break the
-compiler. No compiler source file imports `@babel/traverse`. Component/ref,
+At this checkpoint, compiler source files still import `@babel/types` only for
+transitional type annotations, while Babel core/plugin declarations remain at
+the public frontend boundary. Removing the package dependencies before
+replacing those node types, parsing, TypeScript erasure, and code generation
+would break the compiler. No compiler source file imports `@babel/traverse`.
+Component/ref,
 conditional-region, render-callback, and list-region emission now share the
 central component-path boundary instead of importing the traversal package.
 The shared identifier allocator no longer needs a Babel program scope, and
@@ -386,7 +398,7 @@ Verified through 2026-08-31:
 - Component discovery, render-prop, row-read, conditional-read, linked dynamic
   component, JSX collection, helper-handler, and SSR cell-lowering regressions
   passed after rebuilding the compiler package.
-- Full root suite passed: 99 files, 613 tests.
+- Full root suite passed: 99 files, 614 tests.
 - Compiler package build passed, including Rolldown bundling and declaration
   emission.
 

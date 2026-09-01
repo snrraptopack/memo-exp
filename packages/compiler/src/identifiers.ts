@@ -6,7 +6,8 @@
  * Babel's historical UID sequence while remaining parser/scope independent.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { toIdentifier, walkAst, type BaseNode } from './ast';
 
 export class GeneratedIdentifiers {
@@ -34,7 +35,7 @@ export class GeneratedIdentifiers {
       index++;
       if (this.reserved.has(candidate)) continue;
       this.reserved.add(candidate);
-      return t.identifier(candidate);
+      return astFactory.identifier(candidate);
     }
   }
 
@@ -47,13 +48,13 @@ export class GeneratedIdentifiers {
     if (id === undefined) {
       throw new Error(`memo-dom: missing generated factory id for '${component}'`);
     }
-    return t.identifier(id);
+    return astFactory.identifier(id);
   }
 
   runtimeMember(name: string): t.MemberExpression {
-    return t.memberExpression(
-      t.identifier(this.runtimeId),
-      t.identifier(name),
+    return astFactory.memberExpression(
+      astFactory.identifier(this.runtimeId),
+      astFactory.identifier(name),
     );
   }
 }
@@ -91,17 +92,17 @@ export function md(owner: IdentifierOwner, name: string): t.MemberExpression {
 
 export function mr(owner: IdentifierOwner, name: string): t.MemberExpression {
   const identifiers = requireIdentifiers(owner);
-  return t.memberExpression(
-    t.identifier(identifiers.routerId),
-    t.identifier(name),
+  return astFactory.memberExpression(
+    astFactory.identifier(identifiers.routerId),
+    astFactory.identifier(name),
   );
 }
 
 export function mdd(owner: IdentifierOwner, name: string): t.MemberExpression {
   const identifiers = requireIdentifiers(owner);
-  return t.memberExpression(
-    t.identifier(identifiers.dataRuntimeId),
-    t.identifier(name),
+  return astFactory.memberExpression(
+    astFactory.identifier(identifiers.dataRuntimeId),
+    astFactory.identifier(name),
   );
 }
 

@@ -1,7 +1,8 @@
 /**
  * Pure exhaustive module-level if/switch derivations.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import type { BaseNode } from './ast';
 import {
   astBindingAt,
@@ -44,17 +45,17 @@ function sequenceShape(statements: t.Statement[]): ReplayShape | null {
 
 function statementShape(statement: t.Statement): ReplayShape | null {
   if (
-    t.isExpressionStatement(statement) &&
-    t.isAssignmentExpression(statement.expression, { operator: '=' }) &&
-    t.isIdentifier(statement.expression.left)
+    astFactory.isExpressionStatement(statement) &&
+    astFactory.isAssignmentExpression(statement.expression, { operator: '=' }) &&
+    astFactory.isIdentifier(statement.expression.left)
   ) {
     return {
       bindings: new Set([statement.expression.left.name]),
       expressions: [statement.expression.right],
     };
   }
-  if (t.isBlockStatement(statement)) return sequenceShape(statement.body);
-  if (t.isIfStatement(statement)) {
+  if (astFactory.isBlockStatement(statement)) return sequenceShape(statement.body);
+  if (astFactory.isIfStatement(statement)) {
     const alternate = statement.alternate;
     if (alternate == null) return null;
     const consequent = statementShape(statement.consequent);
@@ -90,8 +91,8 @@ function switchShape(statement: t.SwitchStatement): ReplayShape | null {
       pendingFallthrough = true;
       continue;
     }
-    if (body.at(-1) && t.isBreakStatement(body.at(-1)!)) body.pop();
-    if (body.some((child) => t.isBreakStatement(child))) return null;
+    if (body.at(-1) && astFactory.isBreakStatement(body.at(-1)!)) body.pop();
+    if (body.some((child) => astFactory.isBreakStatement(child))) return null;
     const shape = sequenceShape(body);
     if (shape === null) return null;
     pendingFallthrough = false;
@@ -140,9 +141,9 @@ export function scanModuleControlFlow(
     programBody.map((statement, index) => [statement, index]),
   );
   for (const statement of programBody) {
-    if (!t.isIfStatement(statement) && !t.isSwitchStatement(statement)) continue;
+    if (!astFactory.isIfStatement(statement) && !astFactory.isSwitchStatement(statement)) continue;
     const flowStatement = statement;
-    const shape = t.isIfStatement(flowStatement)
+    const shape = astFactory.isIfStatement(flowStatement)
       ? statementShape(flowStatement)
       : switchShape(flowStatement);
     if (shape === null) continue;

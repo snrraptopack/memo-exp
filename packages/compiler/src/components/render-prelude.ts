@@ -6,7 +6,8 @@
  * Dirty reasons guard adjacent calculations with equal dependencies; a
  * reason-less update conservatively runs every calculation.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import type { Ctx } from '../context';
 import {
@@ -49,12 +50,12 @@ export function buildRenderPreludeReplay(
       order: order.get(control.statement) ?? Number.MAX_SAFE_INTEGER,
       sequence: sequence++,
       sources: control.sources,
-      statement: t.blockStatement([
+      statement: astFactory.blockStatement([
         ...control.resets.map((reset) =>
-          t.expressionStatement(
-            t.assignmentExpression(
+          astFactory.expressionStatement(
+            astFactory.assignmentExpression(
               '=',
-              t.identifier(reset.binding),
+              astFactory.identifier(reset.binding),
               cloneEstreeNode(reset.source, true),
             ),
           ),
@@ -94,13 +95,13 @@ export function buildRenderPreludeReplay(
     }
   }
 
-  return t.blockStatement(
+  return astFactory.blockStatement(
     groups.map((group) =>
       group.reasons === null || reasonVar === null
-        ? t.blockStatement(group.statements)
-        : t.ifStatement(
+        ? astFactory.blockStatement(group.statements)
+        : astFactory.ifStatement(
             reasonCondition(reasonVar, group.reasons),
-            t.blockStatement(group.statements),
+            astFactory.blockStatement(group.statements),
           ),
     ),
   );

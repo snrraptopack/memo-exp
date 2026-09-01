@@ -6,7 +6,8 @@
  * teardown returned by the callback.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   cloneNode,
@@ -80,18 +81,18 @@ function isIntrinsicEffect(
 }
 
 function effectId(factoryId: string, index: number): t.Expression {
-  return t.binaryExpression(
+  return astFactory.binaryExpression(
     '+',
-    t.identifier(factoryId),
-    t.stringLiteral(`/$effects/${index}`),
+    astFactory.identifier(factoryId),
+    astFactory.stringLiteral(`/$effects/${index}`),
   );
 }
 
 function activeEffectId(factoryId: string, index: number): t.Expression {
-  return t.binaryExpression(
+  return astFactory.binaryExpression(
     '+',
     effectId(factoryId, index),
-    t.stringLiteral('/$active'),
+    astFactory.stringLiteral('/$active'),
   );
 }
 
@@ -579,11 +580,11 @@ function combinedCondition(
   if (conditions.length === 0) return null;
   const expressions = conditions.map(({ node, negated }) =>
     negated
-      ? t.unaryExpression('!', cloneNode(node) as unknown as t.Expression)
+      ? astFactory.unaryExpression('!', cloneNode(node) as unknown as t.Expression)
       : cloneNode(node) as unknown as t.Expression,
   );
   return expressions.reduce((left, right) =>
-    t.logicalExpression('&&', left, right),
+    astFactory.logicalExpression('&&', left, right),
   );
 }
 
@@ -733,7 +734,7 @@ export function scanEffects(
 
 function or(expressions: t.Expression[]): t.Expression {
   return expressions.reduce((left, right) =>
-    t.logicalExpression('||', left, right),
+    astFactory.logicalExpression('||', left, right),
   );
 }
 
@@ -752,28 +753,28 @@ function localEffectCondition(
   if (reasons.length === 0 || reasons.length !== reads.size) {
     return null;
   }
-  const current = (): t.Identifier => t.identifier(reasonVar);
+  const current = (): t.Identifier => astFactory.identifier(reasonVar);
   const numberMatch = or(
     reasons.map((reason) =>
-      t.binaryExpression('===', current(), t.numericLiteral(reason)),
+      astFactory.binaryExpression('===', current(), astFactory.numericLiteral(reason)),
     ),
   );
   const setMatch = or(
     reasons.map((reason) =>
-      t.callExpression(
-        t.memberExpression(current(), t.identifier('has')),
-        [t.numericLiteral(reason)],
+      astFactory.callExpression(
+        astFactory.memberExpression(current(), astFactory.identifier('has')),
+        [astFactory.numericLiteral(reason)],
       ),
     ),
   );
-  return t.logicalExpression(
+  return astFactory.logicalExpression(
     '||',
-    t.binaryExpression('===', current(), t.nullLiteral()),
-    t.conditionalExpression(
-      t.binaryExpression(
+    astFactory.binaryExpression('===', current(), astFactory.nullLiteral()),
+    astFactory.conditionalExpression(
+      astFactory.binaryExpression(
         '===',
-        t.unaryExpression('typeof', current()),
-        t.stringLiteral('number'),
+        astFactory.unaryExpression('typeof', current()),
+        astFactory.stringLiteral('number'),
       ),
       numberMatch,
       setMatch,
@@ -783,31 +784,31 @@ function localEffectCondition(
 
 /** A pull-only frame is not evidence that any effect dependency was written. */
 function volatilePullOnly(reasonVar: string): t.Expression {
-  const current = (): t.Identifier => t.identifier(reasonVar);
-  return t.logicalExpression(
+  const current = (): t.Identifier => astFactory.identifier(reasonVar);
+  return astFactory.logicalExpression(
     '||',
-    t.binaryExpression('===', current(), t.unaryExpression('-', t.numericLiteral(1))),
-    t.logicalExpression(
+    astFactory.binaryExpression('===', current(), astFactory.unaryExpression('-', astFactory.numericLiteral(1))),
+    astFactory.logicalExpression(
       '&&',
-      t.logicalExpression(
+      astFactory.logicalExpression(
         '&&',
-        t.binaryExpression('!==', current(), t.nullLiteral()),
-        t.binaryExpression(
+        astFactory.binaryExpression('!==', current(), astFactory.nullLiteral()),
+        astFactory.binaryExpression(
           '!==',
-          t.unaryExpression('typeof', current()),
-          t.stringLiteral('number'),
+          astFactory.unaryExpression('typeof', current()),
+          astFactory.stringLiteral('number'),
         ),
       ),
-      t.logicalExpression(
+      astFactory.logicalExpression(
         '&&',
-        t.binaryExpression(
+        astFactory.binaryExpression(
           '===',
-          t.memberExpression(current(), t.identifier('size')),
-          t.numericLiteral(1),
+          astFactory.memberExpression(current(), astFactory.identifier('size')),
+          astFactory.numericLiteral(1),
         ),
-        t.callExpression(
-          t.memberExpression(current(), t.identifier('has')),
-          [t.unaryExpression('-', t.numericLiteral(1))],
+        astFactory.callExpression(
+          astFactory.memberExpression(current(), astFactory.identifier('has')),
+          [astFactory.unaryExpression('-', astFactory.numericLiteral(1))],
         ),
       ),
     ),
@@ -833,8 +834,8 @@ export function buildLocalEffectInvalidations(
     label: string,
   ): t.Statement | null => {
       if (localReads.size === 0 && derivationReads.size === 0) return null;
-      let mark: t.Statement = t.expressionStatement(
-        t.callExpression(md(ctx, 'markDirty'), [
+      let mark: t.Statement = astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'markDirty'), [
           target,
         ]),
       );
@@ -849,26 +850,26 @@ export function buildLocalEffectInvalidations(
             `eff${site.index}_${label}_${derivName}`,
           ).name;
           scope.creation.push(
-            t.variableDeclaration('let', [
-              t.variableDeclarator(
-                t.identifier(slotName),
-                t.identifier(derivName),
+            astFactory.variableDeclaration('let', [
+              astFactory.variableDeclarator(
+                astFactory.identifier(slotName),
+                astFactory.identifier(derivName),
               ),
             ]),
           );
           checks.push(
-            t.binaryExpression(
+            astFactory.binaryExpression(
               '!==',
-              t.identifier(slotName),
-              t.identifier(derivName),
+              astFactory.identifier(slotName),
+              astFactory.identifier(derivName),
             ),
           );
           updates.push(
-            t.expressionStatement(
-              t.assignmentExpression(
+            astFactory.expressionStatement(
+              astFactory.assignmentExpression(
                 '=',
-                t.identifier(slotName),
-                t.identifier(derivName),
+                astFactory.identifier(slotName),
+                astFactory.identifier(derivName),
               ),
             ),
           );
@@ -878,12 +879,12 @@ export function buildLocalEffectInvalidations(
           checks.length === 1
             ? checks[0]!
             : checks.reduce((left, right) =>
-                t.logicalExpression('||', left, right),
+                astFactory.logicalExpression('||', left, right),
               );
 
-        mark = t.ifStatement(
+        mark = astFactory.ifStatement(
           condition,
-          t.blockStatement([...updates, mark]),
+          astFactory.blockStatement([...updates, mark]),
         );
       }
 
@@ -894,9 +895,9 @@ export function buildLocalEffectInvalidations(
         reasonVar,
         localReads,
       );
-      const routed = condition === null ? mark : t.ifStatement(condition, mark);
-      return t.ifStatement(
-        t.unaryExpression('!', volatilePullOnly(reasonVar)),
+      const routed = condition === null ? mark : astFactory.ifStatement(condition, mark);
+      return astFactory.ifStatement(
+        astFactory.unaryExpression('!', volatilePullOnly(reasonVar)),
         routed,
       );
   };
@@ -925,7 +926,7 @@ export function buildLocalEffectInvalidations(
       (statement): statement is t.Statement => statement !== null,
     );
   });
-  return t.blockStatement(statements);
+  return astFactory.blockStatement(statements);
 }
 
 /** Runtime registrations emitted after the owner's DOM creation statements. */
@@ -935,8 +936,8 @@ export function buildEffectRegistrations(
   sites: EffectSite[],
 ): t.Statement[] {
   return sites.map((site) =>
-    t.expressionStatement(
-      t.callExpression(
+    astFactory.expressionStatement(
+      astFactory.callExpression(
         md(
           ctx,
           site.condition === null
@@ -945,11 +946,11 @@ export function buildEffectRegistrations(
         ),
         [
           effectId(factoryId, site.index),
-          t.identifier(factoryId),
+          astFactory.identifier(factoryId),
           ...(site.condition === null
             ? []
             : [
-                t.arrowFunctionExpression(
+                astFactory.arrowFunctionExpression(
                   [],
                   cloneEstreeNode(site.condition, true),
                 ),
@@ -962,9 +963,9 @@ export function buildEffectRegistrations(
 }
 
 function importMetaHot(): t.MemberExpression {
-  return t.memberExpression(
-    t.metaProperty(t.identifier('import'), t.identifier('meta')),
-    t.identifier('hot'),
+  return astFactory.memberExpression(
+    astFactory.metaProperty(astFactory.identifier('import'), astFactory.identifier('meta')),
+    astFactory.identifier('hot'),
   );
 }
 
@@ -987,8 +988,8 @@ export function rewriteModuleEffects(
     const replacements: t.Statement[] = [];
     for (const site of sites) {
       replacements.push(
-        t.expressionStatement(
-          t.callExpression(
+        astFactory.expressionStatement(
+          astFactory.callExpression(
             md(
               ctx,
               site.condition === null
@@ -996,12 +997,12 @@ export function rewriteModuleEffects(
                 : 'registerConditionalEffect',
             ),
             [
-              t.stringLiteral(site.entityId),
-              t.nullLiteral(),
+              astFactory.stringLiteral(site.entityId),
+              astFactory.nullLiteral(),
               ...(site.condition === null
                 ? []
                 : [
-                    t.arrowFunctionExpression(
+                    astFactory.arrowFunctionExpression(
                       [],
                       cloneEstreeNode(site.condition, true),
                     ),
@@ -1010,16 +1011,16 @@ export function rewriteModuleEffects(
             ],
           ),
         ),
-        t.ifStatement(
+        astFactory.ifStatement(
           importMetaHot(),
-          t.expressionStatement(
-            t.callExpression(
-              t.memberExpression(importMetaHot(), t.identifier('dispose')),
+          astFactory.expressionStatement(
+            astFactory.callExpression(
+              astFactory.memberExpression(importMetaHot(), astFactory.identifier('dispose')),
               [
-                t.arrowFunctionExpression(
+                astFactory.arrowFunctionExpression(
                   [],
-                  t.callExpression(md(ctx, 'unregisterSubtree'), [
-                    t.stringLiteral(site.entityId),
+                  astFactory.callExpression(md(ctx, 'unregisterSubtree'), [
+                    astFactory.stringLiteral(site.entityId),
                   ]),
                 ),
               ],

@@ -1,6 +1,7 @@
 /** Request-owned module state-cell lowering for server builds. */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import {
   cloneNode as cloneAstNode,
   walkAst,
@@ -256,7 +257,7 @@ export function liftModuleStateCells(
   }
 
   for (const lift of lifts.values()) {
-    const arguments_: t.Expression[] = [t.stringLiteral(lift.key)];
+    const arguments_: t.Expression[] = [astFactory.stringLiteral(lift.key)];
     if (lift.owned) {
       const declarator = variableDeclaratorFor(ctx, lift.binding);
       const initializer =
@@ -265,18 +266,18 @@ export function liftModuleStateCells(
         const cloned = cloneNode(initializer as unknown as t.Expression);
         arguments_.push(
           lift.kind === 'store'
-            ? t.arrowFunctionExpression(
+            ? astFactory.arrowFunctionExpression(
                 [],
-                t.blockStatement([returnStatement(cloned)]),
+                astFactory.blockStatement([returnStatement(cloned)]),
               )
             : cloned,
         );
       }
     }
     ctx.header.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.identifier(lift.cellId),
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
+          astFactory.identifier(lift.cellId),
           callExpression(md(ctx, 'defineStateCell'), arguments_),
         ),
       ]),
@@ -299,7 +300,7 @@ export function liftModuleStateCells(
     return !lift.owned && current === undefined ? lift : undefined;
   };
   const readCall = (lift: CellLift): t.CallExpression =>
-    callExpression(md(ctx, 'readCell'), [t.identifier(lift.cellId)]);
+    callExpression(md(ctx, 'readCell'), [astFactory.identifier(lift.cellId)]);
 
   let typeDepth = 0;
   walkAst<BaseNode>(program, {
@@ -360,7 +361,7 @@ export function liftModuleStateCells(
       const operator = fields(current).operator;
       if (operator === '=') {
         return callExpression(md(ctx, 'setCell'), [
-          t.identifier(lift.cellId),
+          astFactory.identifier(lift.cellId),
           cloneNode(right),
         ]);
       }
@@ -372,19 +373,19 @@ export function liftModuleStateCells(
         );
       }
       return callExpression(md(ctx, 'updateCell'), [
-        t.identifier(lift.cellId),
-        t.arrowFunctionExpression(
-          [t.identifier('c')],
-          binaryExpression(compound, t.identifier('c'), cloneNode(right)),
+        astFactory.identifier(lift.cellId),
+        astFactory.arrowFunctionExpression(
+          [astFactory.identifier('c')],
+          binaryExpression(compound, astFactory.identifier('c'), cloneNode(right)),
         ),
       ]);
     }
     const delta = fields(current).operator === '--' ? '-' : '+';
     return callExpression(md(ctx, 'updateCell'), [
-      t.identifier(lift.cellId),
-      t.arrowFunctionExpression(
-        [t.identifier('c')],
-        binaryExpression(delta, t.identifier('c'), t.numericLiteral(1)),
+      astFactory.identifier(lift.cellId),
+      astFactory.arrowFunctionExpression(
+        [astFactory.identifier('c')],
+        binaryExpression(delta, astFactory.identifier('c'), astFactory.numericLiteral(1)),
       ),
     ]);
   };

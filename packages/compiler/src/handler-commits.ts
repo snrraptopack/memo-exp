@@ -5,7 +5,8 @@
  * invalidation statements and inserts them on every normal function exit.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   ESTREE_VISITOR_KEYS,
@@ -67,11 +68,11 @@ export function buildScopeCommit(
 ): t.Statement | null {
   const rowCommit =
     scope.rowLocal && rowCtx !== undefined
-      ? t.expressionStatement(
+      ? astFactory.expressionStatement(
           rowCtx.refreshVar !== undefined
-            ? t.callExpression(t.identifier(rowCtx.refreshVar), [])
-            : t.callExpression(md(ctx, 'markDirty'), [
-                t.identifier(rowCtx.rowIdVar),
+            ? astFactory.callExpression(astFactory.identifier(rowCtx.refreshVar), [])
+            : astFactory.callExpression(md(ctx, 'markDirty'), [
+                astFactory.identifier(rowCtx.rowIdVar),
               ]),
         )
       : null;
@@ -85,13 +86,13 @@ export function buildScopeCommit(
     const exact =
       scope.instanceWrites.size > 0 &&
       reasons.length === scope.instanceWrites.size;
-    instanceCommit = t.expressionStatement(
-      t.callExpression(md(ctx, 'markDirty'), [
+    instanceCommit = astFactory.expressionStatement(
+      astFactory.callExpression(md(ctx, 'markDirty'), [
         componentId(ctx, compName),
         ...(exact
           ? [
               reasons.length === 1
-                ? t.numericLiteral(reasons[0]!)
+                ? astFactory.numericLiteral(reasons[0]!)
                 : freshReasonConst(ctx, reasons),
             ]
           : []),
@@ -100,9 +101,9 @@ export function buildScopeCommit(
   }
   const rowOwnerCommit =
     scope.rowOwnerLocal && rowCtx?.ownerIdVar !== undefined
-      ? t.expressionStatement(
-          t.callExpression(md(ctx, 'markDirty'), [
-            t.identifier(rowCtx.ownerIdVar),
+      ? astFactory.expressionStatement(
+          astFactory.callExpression(md(ctx, 'markDirty'), [
+            astFactory.identifier(rowCtx.ownerIdVar),
           ]),
         )
       : null;
@@ -115,16 +116,16 @@ export function buildScopeCommit(
     if (instanceCommit !== null) parts.push(instanceCommit);
     if (routed !== null) parts.push(routed);
     if (parts.length === 0) return null;
-    return parts.length === 1 ? parts[0]! : t.blockStatement(parts);
+    return parts.length === 1 ? parts[0]! : astFactory.blockStatement(parts);
   };
 
   if (scope.rootFallback) {
     // The root subtree contains every more precise destination above. Emitting
     // both forms only schedules the same entity twice and obscures why the
     // conservative fallback was selected.
-    return t.expressionStatement(
-      t.callExpression(md(ctx, 'markDirtySubtree'), [
-        t.stringLiteral(ctx.rootId),
+    return astFactory.expressionStatement(
+      astFactory.callExpression(md(ctx, 'markDirtySubtree'), [
+        astFactory.stringLiteral(ctx.rootId),
       ]),
     );
   }
@@ -132,8 +133,8 @@ export function buildScopeCommit(
 
   const writes = [...scope.writes].sort();
   return combine(
-    t.expressionStatement(
-      t.callExpression(md(ctx, 'commitWrites'), [
+    astFactory.expressionStatement(
+      astFactory.callExpression(md(ctx, 'commitWrites'), [
         freshWriteConst(ctx, writes),
       ]),
     ),
@@ -146,23 +147,23 @@ export function appendScopeCommit(
   fn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
   commit: t.Statement,
 ): void {
-  if (t.isBlockStatement(fn.body)) {
+  if (astFactory.isBlockStatement(fn.body)) {
     insertBeforeReturns(fn.body, commit);
     fn.body.body.push(commit);
     return;
   }
   const result = generatedIdentifier(ctx, 'returnValue');
-  fn.body = t.blockStatement([
-    t.variableDeclaration('const', [
-      t.variableDeclarator(result, fn.body as t.Expression),
+  fn.body = astFactory.blockStatement([
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(result, fn.body as t.Expression),
     ]),
     commit,
-    t.returnStatement(cloneEstreeNode(result)),
+    astFactory.returnStatement(cloneEstreeNode(result)),
   ]);
 }
 
 function insertBeforeReturns(node: t.Node, commit: t.Statement): void {
-  if (t.isFunction(node)) return;
+  if (astFactory.isFunction(node)) return;
   for (const key of ESTREE_VISITOR_KEYS[node.type] ?? []) {
     const fields = node as unknown as Record<string, unknown>;
     const child = fields[key];
@@ -172,8 +173,8 @@ function insertBeforeReturns(node: t.Node, commit: t.Statement): void {
         const item = children[index];
         if (!item || typeof item !== 'object' || !('type' in item)) continue;
         const childNode = item as t.Node;
-        if (t.isFunction(childNode)) continue;
-        if (t.isReturnStatement(childNode)) {
+        if (astFactory.isFunction(childNode)) continue;
+        if (astFactory.isReturnStatement(childNode)) {
           children.splice(index, 0, cloneEstreeNode(commit));
           index++;
         } else {
@@ -182,9 +183,9 @@ function insertBeforeReturns(node: t.Node, commit: t.Statement): void {
       }
     } else if (child && typeof child === 'object' && 'type' in child) {
       const childNode = child as t.Node;
-      if (t.isFunction(childNode)) continue;
-      if (t.isReturnStatement(childNode)) {
-        fields[key] = t.blockStatement([
+      if (astFactory.isFunction(childNode)) continue;
+      if (astFactory.isReturnStatement(childNode)) {
+        fields[key] = astFactory.blockStatement([
           cloneEstreeNode(commit),
           childNode,
         ]);

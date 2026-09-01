@@ -1,6 +1,7 @@
 /** Compile-time JSX-returning function expansion. */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   ESTREE_VISITOR_KEYS,
   cloneNode as cloneAstNode,
@@ -69,10 +70,10 @@ function fail(component: ComponentPath, message: string): never {
 }
 
 function directReturn(statement: t.Statement): t.Expression | null {
-  if (t.isReturnStatement(statement) && statement.argument !== null) {
+  if (astFactory.isReturnStatement(statement) && statement.argument !== null) {
     return statement.argument as t.Expression;
   }
-  if (t.isBlockStatement(statement) && statement.body.length === 1) {
+  if (astFactory.isBlockStatement(statement) && statement.body.length === 1) {
     return directReturn(statement.body[0]!);
   }
   return null;
@@ -81,17 +82,17 @@ function directReturn(statement: t.Statement): t.Expression | null {
 function controlExpression(statement: t.Statement): t.Expression | null {
   const direct = directReturn(statement);
   if (direct !== null) return direct;
-  if (t.isIfStatement(statement) && statement.alternate != null) {
+  if (astFactory.isIfStatement(statement) && statement.alternate != null) {
     const consequent = controlExpression(statement.consequent);
     const alternate = controlExpression(statement.alternate);
     if (consequent === null || alternate === null) return null;
-    return t.conditionalExpression(
+    return astFactory.conditionalExpression(
       cloneNode(statement.test),
       cloneNode(consequent),
       cloneNode(alternate),
     );
   }
-  if (t.isSwitchStatement(statement)) {
+  if (astFactory.isSwitchStatement(statement)) {
     const fallback = statement.cases.find((item) => item.test == null);
     if (fallback === undefined || fallback.consequent.length !== 1) return null;
     let selection = controlExpression(fallback.consequent[0]!);
@@ -102,8 +103,8 @@ function controlExpression(statement: t.Statement): t.Expression | null {
       if (item.consequent.length !== 1) return null;
       const branch = controlExpression(item.consequent[0]!);
       if (branch === null) return null;
-      selection = t.conditionalExpression(
-        t.binaryExpression(
+      selection = astFactory.conditionalExpression(
+        astFactory.binaryExpression(
           '===',
           cloneNode(statement.discriminant),
           cloneNode(item.test),
@@ -132,9 +133,9 @@ function functionExpression(
   const locals = new Map<string, t.Expression>();
   const controls: t.Statement[] = [];
   for (const statement of (fn.body as t.BlockStatement).body) {
-    if (t.isVariableDeclaration(statement, { kind: 'const' })) {
+    if (astFactory.isVariableDeclaration(statement, { kind: 'const' })) {
       for (const declaration of statement.declarations) {
-        if (!t.isIdentifier(declaration.id) || declaration.init == null) {
+        if (!astFactory.isIdentifier(declaration.id) || declaration.init == null) {
           onError(
             'memo-dom: JSX render functions require identifier const declarations with expression initializers',
           );
@@ -143,7 +144,7 @@ function functionExpression(
       }
       continue;
     }
-    if (t.isTypeScript(statement) || t.isEmptyStatement(statement)) continue;
+    if (astFactory.isTypeScript(statement) || astFactory.isEmptyStatement(statement)) continue;
     controls.push(statement);
   }
 
@@ -157,10 +158,10 @@ function functionExpression(
     let expression = cloneNode(fallback);
     for (let index = controls.length - 2; index >= 0; index--) {
       const statement = controls[index]!;
-      if (t.isIfStatement(statement) && statement.alternate == null) {
+      if (astFactory.isIfStatement(statement) && statement.alternate == null) {
         const branch = controlExpression(statement.consequent);
         if (branch !== null) {
-          expression = t.conditionalExpression(
+          expression = astFactory.conditionalExpression(
             cloneNode(statement.test),
             cloneNode(branch),
             expression,
@@ -294,20 +295,20 @@ function instantiate(
     const argument = args[index];
     const argumentExpression =
       argument === undefined
-        ? t.identifier('undefined')
+        ? astFactory.identifier('undefined')
         : (argument as unknown as t.Expression);
-    if (t.isIdentifier(parameter)) {
+    if (astFactory.isIdentifier(parameter)) {
       substitutions.set(parameter.name, cloneNode(argumentExpression));
       continue;
     }
-    if (t.isAssignmentPattern(parameter) && t.isIdentifier(parameter.left)) {
+    if (astFactory.isAssignmentPattern(parameter) && astFactory.isIdentifier(parameter.left)) {
       substitutions.set(
         parameter.left.name,
-        t.conditionalExpression(
-          t.binaryExpression(
+        astFactory.conditionalExpression(
+          astFactory.binaryExpression(
             '===',
             cloneNode(argumentExpression),
-            t.identifier('undefined'),
+            astFactory.identifier('undefined'),
           ),
           cloneNode(parameter.right),
           cloneNode(argumentExpression),
@@ -415,7 +416,7 @@ function renderCallbackArrow(
   if (fn.async || fn.generator) {
     fail(component, 'memo-dom: JSX render callbacks must be synchronous');
   }
-  return t.arrowFunctionExpression(
+  return astFactory.arrowFunctionExpression(
     fn.params.map(cloneNode),
     cloneNode(fn.body),
   );
@@ -447,7 +448,7 @@ function replaceRenderCall(
   const jsxParent =
     container === null ? null : analysis.parentByNode.get(container) ?? null;
   if (
-    (t.isJSXElement(expression) || t.isJSXFragment(expression)) &&
+    (astFactory.isJSXElement(expression) || astFactory.isJSXFragment(expression)) &&
     container?.type === 'JSXExpressionContainer' &&
     (jsxParent?.type === 'JSXElement' || jsxParent?.type === 'JSXFragment')
   ) {

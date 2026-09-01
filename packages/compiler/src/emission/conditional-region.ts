@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   exprReadsInstanceState,
@@ -43,14 +44,14 @@ export function emitConditionalRegion(
     scope.usedConds,
   );
   const regionVariable = generatedIdentifier(ctx, site.suffix).name;
-  const regionId = t.binaryExpression(
+  const regionId = astFactory.binaryExpression(
     '+',
     cloneEstreeNode(ownerId),
-    t.stringLiteral(`/${site.suffix}`),
+    astFactory.stringLiteral(`/${site.suffix}`),
   );
   const transparentSources = transparentExpressionSources(ctx, expression);
 
-  const pick = t.arrowFunctionExpression([], cloneEstreeNode(site.pickExpr));
+  const pick = astFactory.arrowFunctionExpression([], cloneEstreeNode(site.pickExpr));
   const branchFactories: t.Expression[] = site.branches.map((jsx) =>
     jsx !== null
       ? buildConditionalBranchCreate(
@@ -66,7 +67,7 @@ export function emitConditionalRegion(
           scope.usedConds,
           transparentSources,
         )
-      : t.nullLiteral(),
+      : astFactory.nullLiteral(),
   );
 
   scope.creation.push(
@@ -74,12 +75,12 @@ export function emitConditionalRegion(
       ctx,
       cloneEstreeNode(regionId),
       cloneEstreeNode(ownerId),
-      t.arrowFunctionExpression(
+      astFactory.arrowFunctionExpression(
         [],
-        t.callExpression(
-          t.memberExpression(
-            t.identifier(regionVariable),
-            t.identifier('update'),
+        astFactory.callExpression(
+          astFactory.memberExpression(
+            astFactory.identifier(regionVariable),
+            astFactory.identifier('update'),
           ),
           [],
         ),
@@ -93,14 +94,14 @@ export function emitConditionalRegion(
     regionId,
   );
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(regionVariable),
-        t.callExpression(md(ctx, 'createCondRegion'), [
-          t.identifier(parentElementVariable),
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        astFactory.identifier(regionVariable),
+        astFactory.callExpression(md(ctx, 'createCondRegion'), [
+          astFactory.identifier(parentElementVariable),
           cloneEstreeNode(regionId),
           pick,
-          t.arrayExpression(branchFactories),
+          astFactory.arrayExpression(branchFactories),
         ]),
       ),
     ]),
@@ -111,11 +112,11 @@ export function emitConditionalRegion(
     exprReadsInstanceState(ctx, expression, componentName)
   ) {
     scope.updaters.push(() =>
-      t.expressionStatement(
-        t.callExpression(
-          t.memberExpression(
-            t.identifier(regionVariable),
-            t.identifier('update'),
+      astFactory.expressionStatement(
+        astFactory.callExpression(
+          astFactory.memberExpression(
+            astFactory.identifier(regionVariable),
+            astFactory.identifier('update'),
           ),
           [],
         ),
@@ -160,15 +161,15 @@ export function buildConditionalBranchCreate(
     ownerId,
   );
   const properties: t.ObjectProperty[] = [
-    t.objectProperty(
-      t.identifier('nodes'),
-      t.callExpression(md(ctx, 'rootNodes'), [
-        t.identifier(rootVariable),
+    astFactory.objectProperty(
+      astFactory.identifier('nodes'),
+      astFactory.callExpression(md(ctx, 'rootNodes'), [
+        astFactory.identifier(rootVariable),
       ]),
     ),
-    t.objectProperty(
-      t.identifier('update'),
-      t.identifier(branchScope.updateVar),
+    astFactory.objectProperty(
+      astFactory.identifier('update'),
+      astFactory.identifier(branchScope.updateVar),
     ),
   ];
 
@@ -179,56 +180,56 @@ export function buildConditionalBranchCreate(
   ) {
     const disposeStatements: t.Statement[] = [
       ...[...branchScope.disposableCallbacks].reverse().map((callback) =>
-        t.ifStatement(
-          t.binaryExpression(
+        astFactory.ifStatement(
+          astFactory.binaryExpression(
             '!==',
             cloneEstreeNode(callback),
-            t.nullLiteral(),
+            astFactory.nullLiteral(),
           ),
-          t.expressionStatement(
-            t.callExpression(cloneEstreeNode(callback), []),
+          astFactory.expressionStatement(
+            astFactory.callExpression(cloneEstreeNode(callback), []),
           ),
         ),
       ),
       ...branchScope.disposableRegions.map((region) =>
-        t.expressionStatement(
-          t.callExpression(
-            t.memberExpression(
-              t.identifier(region),
-              t.identifier('dispose'),
+        astFactory.expressionStatement(
+          astFactory.callExpression(
+            astFactory.memberExpression(
+              astFactory.identifier(region),
+              astFactory.identifier('dispose'),
             ),
             [],
           ),
         ),
       ),
       ...branchScope.disposableEntities.map((entity) =>
-        t.expressionStatement(
-          t.callExpression(md(ctx, 'unregisterSubtree'), [
+        astFactory.expressionStatement(
+          astFactory.callExpression(md(ctx, 'unregisterSubtree'), [
             cloneEstreeNode(entity),
           ]),
         ),
       ),
     ];
     properties.push(
-      t.objectProperty(
-        t.identifier('dispose'),
-        t.arrowFunctionExpression(
+      astFactory.objectProperty(
+        astFactory.identifier('dispose'),
+        astFactory.arrowFunctionExpression(
           [],
-          t.blockStatement(disposeStatements),
+          astFactory.blockStatement(disposeStatements),
         ),
       ),
     );
   }
 
-  return t.arrowFunctionExpression(
+  return astFactory.arrowFunctionExpression(
     [],
-    t.blockStatement([
+    astFactory.blockStatement([
       cacheDecl(branchScope),
       ...branchScope.prelude,
       updateDecl(branchScope),
       ...branchScope.creation,
       ...branchScope.mounts,
-      t.returnStatement(t.objectExpression(properties)),
+      astFactory.returnStatement(astFactory.objectExpression(properties)),
     ]),
   );
 }

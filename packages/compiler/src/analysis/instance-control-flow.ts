@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { walkAst, type BaseNode, type Binding } from '../ast';
 import { astBindingAt, type Ctx } from '../context';
 import type { ControlFlowDerivation } from '../components/props';
@@ -62,9 +63,9 @@ function replayExpressionIsPure(expression: t.Expression): boolean {
 
 function replayAssignmentTarget(statement: t.Statement): string | null {
   if (
-    !t.isExpressionStatement(statement) ||
-    !t.isAssignmentExpression(statement.expression, { operator: '=' }) ||
-    !t.isIdentifier(statement.expression.left) ||
+    !astFactory.isExpressionStatement(statement) ||
+    !astFactory.isAssignmentExpression(statement.expression, { operator: '=' }) ||
+    !astFactory.isIdentifier(statement.expression.left) ||
     !replayExpressionIsPure(statement.expression.right)
   ) {
     return null;
@@ -88,13 +89,13 @@ interface ReplayControlShape {
 function replayBindingsForStatement(
   statement: t.Statement,
 ): ReplayControlShape | null {
-  if (t.isExpressionStatement(statement)) {
+  if (astFactory.isExpressionStatement(statement)) {
     const target = replayAssignmentTarget(statement);
     return target === null
       ? null
       : { bindings: new Set([target]), partial: new Set() };
   }
-  if (t.isBlockStatement(statement)) {
+  if (astFactory.isBlockStatement(statement)) {
     const bindings = new Set<string>();
     const partial = new Set<string>();
     for (const child of statement.body) {
@@ -108,7 +109,7 @@ function replayBindingsForStatement(
     }
     return bindings.size === 0 ? null : { bindings, partial };
   }
-  if (t.isIfStatement(statement)) {
+  if (astFactory.isIfStatement(statement)) {
     if (!replayExpressionIsPure(statement.test)) return null;
     const consequent = replayBindingsForStatement(statement.consequent);
     if (consequent === null) return null;
@@ -149,9 +150,9 @@ function replayBindingsForSwitch(
       return null;
     }
     const body = [...switchCase.consequent];
-    if (body.at(-1) && t.isBreakStatement(body.at(-1)!)) body.pop();
-    if (body.some((child) => t.isBreakStatement(child))) return null;
-    const shape = replayBindingsForStatement(t.blockStatement(body));
+    if (body.at(-1) && astFactory.isBreakStatement(body.at(-1)!)) body.pop();
+    if (body.some((child) => astFactory.isBreakStatement(child))) return null;
+    const shape = replayBindingsForStatement(astFactory.blockStatement(body));
     if (shape === null) return null;
     if (common === null) {
       common = shape;
@@ -273,10 +274,10 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
     const derivedBindings =
       ctx.instanceDerivedBindings.get(componentName) ?? new Set<string>();
     for (const statement of componentPath.node.body.body) {
-      if (!t.isIfStatement(statement) && !t.isSwitchStatement(statement)) {
+      if (!astFactory.isIfStatement(statement) && !astFactory.isSwitchStatement(statement)) {
         continue;
       }
-      const shape = t.isIfStatement(statement)
+      const shape = astFactory.isIfStatement(statement)
         ? replayBindingsForStatement(statement)
         : replayBindingsForSwitch(statement);
       if (shape === null) continue;

@@ -7,7 +7,8 @@
  * box update. It contains no runtime or component-placement policy.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode,
   extractPatternIdentifiers,
@@ -27,13 +28,13 @@ function cloneCompilerNode<TNode extends t.Node>(node: TNode): TNode {
 }
 
 function isObjectProperty(node: t.Node): node is t.ObjectProperty {
-  return t.isObjectProperty(node) ||
+  return astFactory.isObjectProperty(node) ||
     (node as unknown as BaseNode).type === 'Property';
 }
 
 function propertyName(node: t.Node): string | null {
-  if (t.isIdentifier(node)) return node.name;
-  if (t.isStringLiteral(node)) return node.value;
+  if (astFactory.isIdentifier(node)) return node.name;
+  if (astFactory.isStringLiteral(node)) return node.value;
   if ((node as unknown as BaseNode).type !== 'Literal') return null;
   const value = (node as unknown as { value?: unknown }).value;
   return typeof value === 'string' ? value : null;
@@ -81,14 +82,14 @@ export function simpleObjectPropBindings(
     return null;
   }
   const param = plan.params[0]!;
-  if (!t.isObjectPattern(param)) return null;
+  if (!astFactory.isObjectPattern(param)) return null;
 
   const bindings: SimpleObjectPropBinding[] = [];
   for (const property of param.properties) {
     if (
       !isObjectProperty(property) ||
       property.computed ||
-      !t.isIdentifier(property.value)
+      !astFactory.isIdentifier(property.value)
     ) {
       return null;
     }
@@ -157,12 +158,12 @@ export function buildPropDeclaration(
   sources: t.Expression[],
 ): t.VariableDeclaration | null {
   if (plan.params.length === 0) return null;
-  return t.variableDeclaration(
+  return astFactory.variableDeclaration(
     'let',
     plan.params.map((param, index) =>
-      t.variableDeclarator(
+      astFactory.variableDeclarator(
         declarationTarget(parameterTarget(param)),
-        inputWithDefault(param, sources[index] ?? t.identifier('undefined')),
+        inputWithDefault(param, sources[index] ?? astFactory.identifier('undefined')),
       ),
     ),
   );
@@ -174,11 +175,11 @@ export function buildPropReplay(
   sources: t.Expression[],
 ): t.Statement[] {
   return plan.params.map((param, index) =>
-    t.expressionStatement(
-      t.assignmentExpression(
+    astFactory.expressionStatement(
+      astFactory.assignmentExpression(
         '=',
         assignmentTarget(parameterTarget(param)),
-        inputWithDefault(param, sources[index] ?? t.identifier('undefined')),
+        inputWithDefault(param, sources[index] ?? astFactory.identifier('undefined')),
       ),
     ),
   );
@@ -191,8 +192,8 @@ export function buildDerivationReplay(
   if (derivation.replay !== undefined) {
     return cloneCompilerNode(derivation.replay);
   }
-  return t.expressionStatement(
-    t.assignmentExpression(
+  return astFactory.expressionStatement(
+    astFactory.assignmentExpression(
       '=',
       assignmentTarget(derivation.target),
       cloneCompilerNode(derivation.source),
@@ -211,7 +212,7 @@ export function bindingNames(node: t.LVal): string[] {
 export function objectBindingName(plan: ComponentPropsPlan): string | null {
   if (plan.mode !== 'object' || plan.params.length !== 1) return null;
   const target = parameterTarget(plan.params[0]!);
-  return t.isIdentifier(target) ? target.name : null;
+  return astFactory.isIdentifier(target) ? target.name : null;
 }
 
 /** Local identifier bound from one top-level object property. */
@@ -224,15 +225,15 @@ export function localBindingForProp(
   }
   if (plan.params.length !== 1) return null;
   const target = parameterTarget(plan.params[0]!);
-  if (!t.isObjectPattern(target)) return null;
+  if (!astFactory.isObjectPattern(target)) return null;
   for (const property of target.properties) {
     if (!isObjectProperty(property) || property.computed) continue;
     const declaredName = propertyName(property.key);
     if (declaredName !== name) continue;
-    const value = t.isAssignmentPattern(property.value)
+    const value = astFactory.isAssignmentPattern(property.value)
       ? property.value.left
       : property.value;
-    return t.isIdentifier(value) ? value.name : null;
+    return astFactory.isIdentifier(value) ? value.name : null;
   }
   return null;
 }
@@ -247,7 +248,7 @@ export function propNameForBinding(
   }
   if (plan.params.length !== 1) return null;
   const target = parameterTarget(plan.params[0]!);
-  if (!t.isObjectPattern(target)) return null;
+  if (!astFactory.isObjectPattern(target)) return null;
   for (const property of target.properties) {
     if (!isObjectProperty(property) || property.computed) continue;
     if (
@@ -255,7 +256,7 @@ export function propNameForBinding(
     ) {
       continue;
     }
-    if (t.isIdentifier(property.key)) return property.key.name;
+    if (astFactory.isIdentifier(property.key)) return property.key.name;
     const declaredName = propertyName(property.key);
     if (declaredName !== null) return declaredName;
   }
@@ -263,14 +264,14 @@ export function propNameForBinding(
 }
 
 function parameterTarget(param: ComponentParam): PropTarget {
-  if (t.isRestElement(param)) {
+  if (astFactory.isRestElement(param)) {
     throw new Error('rest component parameters are not supported');
   }
-  const target = t.isAssignmentPattern(param) ? param.left : param;
+  const target = astFactory.isAssignmentPattern(param) ? param.left : param;
   if (
-    !t.isIdentifier(target) &&
-    !t.isObjectPattern(target) &&
-    !t.isArrayPattern(target)
+    !astFactory.isIdentifier(target) &&
+    !astFactory.isObjectPattern(target) &&
+    !astFactory.isArrayPattern(target)
   ) {
     throw new Error('unsupported component parameter target');
   }
@@ -288,12 +289,12 @@ function inputWithDefault(
   param: ComponentParam,
   source: t.Expression,
 ): t.Expression {
-  if (!t.isAssignmentPattern(param)) return cloneCompilerNode(source);
-  return t.conditionalExpression(
-    t.binaryExpression(
+  if (!astFactory.isAssignmentPattern(param)) return cloneCompilerNode(source);
+  return astFactory.conditionalExpression(
+    astFactory.binaryExpression(
       '===',
       cloneCompilerNode(source),
-      t.identifier('undefined'),
+      astFactory.identifier('undefined'),
     ),
     cloneCompilerNode(param.right),
     cloneCompilerNode(source),

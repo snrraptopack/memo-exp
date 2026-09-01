@@ -21,7 +21,8 @@
  *     children are compile errors (were silent miscompiles)
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import {
   isExpression as isAstExpression,
   walkAst,
@@ -120,9 +121,9 @@ function isRenderAttributeContainer(ctx: Ctx, container: BaseNode): boolean {
   if (opening?.type !== 'JSXOpeningElement') return false;
   const openingNode = opening as unknown as t.JSXOpeningElement;
   const tag = openingNode.name;
-  if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return false;
+  if (!astFactory.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return false;
   const name = (attribute as unknown as t.JSXAttribute).name;
-  const attrName = t.isJSXIdentifier(name) ? name.name : name.name.name;
+  const attrName = astFactory.isJSXIdentifier(name) ? name.name : name.name.name;
   return (
     ctx.componentProps.get(tag.name)?.renderProps.includes(attrName) === true
   );
@@ -153,10 +154,10 @@ function scanModuleState(ctx: Ctx, programPath: ProgramPath): void {
   const tagCandidates = moduleStateStringCandidates(programPath.node);
   for (const stmt of programPath.node.body) {
     // M5.5: exported state is still state — unwrap the export wrapper
-    const inner = t.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
-    if (!t.isVariableDeclaration(inner)) continue;
+    const inner = astFactory.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
+    if (!astFactory.isVariableDeclaration(inner)) continue;
     for (const decl of inner.declarations) {
-      if (!t.isIdentifier(decl.id)) continue;
+      if (!astFactory.isIdentifier(decl.id)) continue;
       if (inner.kind === 'let' || inner.kind === 'var') {
         registerState(ctx, decl.id.name, 'let');
       } else if (inner.kind === 'const') {
@@ -211,15 +212,15 @@ function scanComponents(ctx: Ctx, programPath: ProgramPath): void {
     },
   });
   for (const statement of programPath.node.body) {
-    const declaration = t.isExportNamedDeclaration(statement) ||
-      t.isExportDefaultDeclaration(statement)
+    const declaration = astFactory.isExportNamedDeclaration(statement) ||
+      astFactory.isExportDefaultDeclaration(statement)
       ? statement.declaration
       : statement;
-    if (t.isFunctionDeclaration(declaration)) {
+    if (astFactory.isFunctionDeclaration(declaration)) {
       functionPaths.set(declaration, asPath(declaration));
       continue;
     }
-    if (!t.isVariableDeclaration(declaration)) continue;
+    if (!astFactory.isVariableDeclaration(declaration)) continue;
     for (const declarator of declaration.declarations) {
       const init = unwrapFunctionNode(declarator.init);
       if (init !== null) {
@@ -278,36 +279,36 @@ function scalarTsType(
   visiting = new Set<string>(),
 ): boolean {
   if (
-    t.isTSStringKeyword(type) ||
-    t.isTSNumberKeyword(type) ||
-    t.isTSBooleanKeyword(type) ||
-    t.isTSBigIntKeyword(type) ||
-    t.isTSSymbolKeyword(type) ||
-    t.isTSNullKeyword(type) ||
-    t.isTSUndefinedKeyword(type) ||
-    t.isTSLiteralType(type)
+    astFactory.isTSStringKeyword(type) ||
+    astFactory.isTSNumberKeyword(type) ||
+    astFactory.isTSBooleanKeyword(type) ||
+    astFactory.isTSBigIntKeyword(type) ||
+    astFactory.isTSSymbolKeyword(type) ||
+    astFactory.isTSNullKeyword(type) ||
+    astFactory.isTSUndefinedKeyword(type) ||
+    astFactory.isTSLiteralType(type)
   ) {
     return true;
   }
-  if (t.isTSParenthesizedType(type)) {
+  if (astFactory.isTSParenthesizedType(type)) {
     return scalarTsType(type.typeAnnotation, program, visiting);
   }
-  if (t.isTSUnionType(type)) {
+  if (astFactory.isTSUnionType(type)) {
     return type.types.every((member) =>
       scalarTsType(member, program, visiting),
     );
   }
-  if (t.isTSTypeReference(type) && t.isIdentifier(type.typeName)) {
+  if (astFactory.isTSTypeReference(type) && astFactory.isIdentifier(type.typeName)) {
     const name = type.typeName.name;
     if (visiting.has(name)) return false;
     const next = new Set(visiting);
     next.add(name);
     for (const statement of program.body) {
-      const declaration = t.isExportNamedDeclaration(statement)
+      const declaration = astFactory.isExportNamedDeclaration(statement)
         ? statement.declaration
         : statement;
       if (
-        t.isTSTypeAliasDeclaration(declaration) &&
+        astFactory.isTSTypeAliasDeclaration(declaration) &&
         declaration.id.name === name
       ) {
         return scalarTsType(declaration.typeAnnotation, program, next);
@@ -325,23 +326,23 @@ function declaredScalarProp(
   const hasNodeType = (node: object, type: string): boolean =>
     (node as unknown as { type?: unknown }).type === type;
   const scalarDefault = (expression: t.Expression): boolean =>
-    t.isStringLiteral(expression) ||
-    t.isNumericLiteral(expression) ||
-    t.isBooleanLiteral(expression) ||
-    t.isBigIntLiteral(expression) ||
+    astFactory.isStringLiteral(expression) ||
+    astFactory.isNumericLiteral(expression) ||
+    astFactory.isBooleanLiteral(expression) ||
+    astFactory.isBigIntLiteral(expression) ||
     (hasNodeType(expression, 'Literal') &&
       (typeof (expression as unknown as { value?: unknown }).value === 'string' ||
         typeof (expression as unknown as { value?: unknown }).value === 'number' ||
         typeof (expression as unknown as { value?: unknown }).value === 'boolean' ||
         typeof (expression as unknown as { value?: unknown }).value === 'bigint')) ||
-    (t.isUnaryExpression(expression) &&
+    (astFactory.isUnaryExpression(expression) &&
       (expression.operator === '+' || expression.operator === '-') &&
-      (t.isNumericLiteral(expression.argument) ||
+      (astFactory.isNumericLiteral(expression.argument) ||
         (hasNodeType(expression.argument, 'Literal') &&
           typeof (expression.argument as unknown as { value?: unknown }).value === 'number')));
   const keyName = (key: t.Expression | t.PrivateName): string | null => {
-    if (t.isIdentifier(key)) return key.name;
-    if (t.isStringLiteral(key)) return key.value;
+    if (astFactory.isIdentifier(key)) return key.name;
+    if (astFactory.isStringLiteral(key)) return key.value;
     if (hasNodeType(key, 'Literal')) {
       const value = (key as unknown as { value?: unknown }).value;
       return typeof value === 'string' ? value : null;
@@ -349,40 +350,40 @@ function declaredScalarProp(
     return null;
   };
   for (const parameter of component.params) {
-    if (t.isTSParameterProperty(parameter)) continue;
+    if (astFactory.isTSParameterProperty(parameter)) continue;
     if (
-      t.isAssignmentPattern(parameter) &&
-      t.isIdentifier(parameter.left, { name: prop }) &&
+      astFactory.isAssignmentPattern(parameter) &&
+      astFactory.isIdentifier(parameter.left, { name: prop }) &&
       scalarDefault(parameter.right)
     ) {
       return true;
     }
     if (
-      t.isAssignmentPattern(parameter) &&
-      t.isObjectPattern(parameter.left) &&
-      t.isObjectExpression(parameter.right)
+      astFactory.isAssignmentPattern(parameter) &&
+      astFactory.isObjectPattern(parameter.left) &&
+      astFactory.isObjectExpression(parameter.right)
     ) {
       const defaultProperty = parameter.right.properties.find((property) => {
-        if (!t.isObjectProperty(property) || property.computed) return false;
+        if (!astFactory.isObjectProperty(property) || property.computed) return false;
         return keyName(property.key) === prop;
       });
       if (
-        t.isObjectProperty(defaultProperty) &&
-        t.isExpression(defaultProperty.value) &&
+        astFactory.isObjectProperty(defaultProperty) &&
+        astFactory.isExpression(defaultProperty.value) &&
         scalarDefault(defaultProperty.value)
       ) {
         return true;
       }
     }
-    const parameterTarget = t.isAssignmentPattern(parameter)
+    const parameterTarget = astFactory.isAssignmentPattern(parameter)
       ? parameter.left
       : parameter;
-    if (!t.isObjectPattern(parameterTarget)) continue;
+    if (!astFactory.isObjectPattern(parameterTarget)) continue;
     for (const property of parameterTarget.properties) {
-      if (!t.isObjectProperty(property) || property.computed) continue;
+      if (!astFactory.isObjectProperty(property) || property.computed) continue;
       if (
         keyName(property.key) === prop &&
-        t.isAssignmentPattern(property.value) &&
+        astFactory.isAssignmentPattern(property.value) &&
         scalarDefault(property.value.right)
       ) {
         return true;
@@ -391,45 +392,45 @@ function declaredScalarProp(
   }
 
   const first = component.params[0];
-  if (first == null || t.isTSParameterProperty(first)) return false;
-  const target = t.isAssignmentPattern(first) ? first.left : first;
+  if (first == null || astFactory.isTSParameterProperty(first)) return false;
+  const target = astFactory.isAssignmentPattern(first) ? first.left : first;
   if (
-    !t.isIdentifier(target) &&
-    !t.isObjectPattern(target) &&
-    !t.isArrayPattern(target)
+    !astFactory.isIdentifier(target) &&
+    !astFactory.isObjectPattern(target) &&
+    !astFactory.isArrayPattern(target)
   ) {
     return false;
   }
   const annotation = target.typeAnnotation;
-  if (!t.isTSTypeAnnotation(annotation)) return false;
+  if (!astFactory.isTSTypeAnnotation(annotation)) return false;
 
   let shape = annotation.typeAnnotation;
-  if (t.isTSTypeReference(shape) && t.isIdentifier(shape.typeName)) {
+  if (astFactory.isTSTypeReference(shape) && astFactory.isIdentifier(shape.typeName)) {
     const referenceName = shape.typeName.name;
     const declaration = program.body
       .map((statement) =>
-        t.isExportNamedDeclaration(statement)
+        astFactory.isExportNamedDeclaration(statement)
           ? statement.declaration
           : statement,
       )
       .find(
         (candidate) =>
-          (t.isTSInterfaceDeclaration(candidate) ||
-            t.isTSTypeAliasDeclaration(candidate)) &&
+          (astFactory.isTSInterfaceDeclaration(candidate) ||
+            astFactory.isTSTypeAliasDeclaration(candidate)) &&
           candidate.id.name === referenceName,
       );
-    if (t.isTSInterfaceDeclaration(declaration)) {
-      shape = t.tsTypeLiteral(declaration.body.body);
-    } else if (t.isTSTypeAliasDeclaration(declaration)) {
+    if (astFactory.isTSInterfaceDeclaration(declaration)) {
+      shape = astFactory.tsTypeLiteral(declaration.body.body);
+    } else if (astFactory.isTSTypeAliasDeclaration(declaration)) {
       shape = declaration.typeAnnotation;
     }
   }
-  if (!t.isTSTypeLiteral(shape)) return false;
+  if (!astFactory.isTSTypeLiteral(shape)) return false;
   for (const member of shape.members) {
-    if (!t.isTSPropertySignature(member) || member.computed) continue;
+    if (!astFactory.isTSPropertySignature(member) || member.computed) continue;
     if (
       keyName(member.key) === prop &&
-      t.isTSTypeAnnotation(member.typeAnnotation)
+      astFactory.isTSTypeAnnotation(member.typeAnnotation)
     ) {
       return scalarTsType(
         member.typeAnnotation.typeAnnotation,
@@ -541,7 +542,7 @@ function scanRenderProps(ctx: Ctx): void {
         if (node.type !== 'JSXElement') return;
         const element = node as unknown as t.JSXElement;
         const tag = element.openingElement.name;
-        if (!t.isJSXIdentifier(tag) || !ctx.comps.has(tag.name)) return;
+        if (!astFactory.isJSXIdentifier(tag) || !ctx.comps.has(tag.name)) return;
         const target = ctx.componentProps.get(tag.name)!;
         const candidates = potential.get(tag.name);
         if (candidates === undefined) return;
@@ -554,7 +555,7 @@ function scanRenderProps(ctx: Ctx): void {
           candidates.has('children') &&
           element.children.some(
             (child) =>
-              !t.isJSXText(child) || child.value.trim() !== '',
+              !astFactory.isJSXText(child) || child.value.trim() !== '',
           ) &&
           !target.renderProps.includes('children')
         ) {
@@ -566,9 +567,9 @@ function scanRenderProps(ctx: Ctx): void {
           });
         }
         for (const attribute of element.openingElement.attributes) {
-          if (!t.isJSXAttribute(attribute)) continue;
+          if (!astFactory.isJSXAttribute(attribute)) continue;
           const name = attribute.name;
-          const prop = t.isJSXIdentifier(name) ? name.name : name.name.name;
+          const prop = astFactory.isJSXIdentifier(name) ? name.name : name.name.name;
           if (
             !candidates.has(prop)
           ) {
@@ -582,7 +583,7 @@ function scanRenderProps(ctx: Ctx): void {
           const value = attribute.value;
           let carriesJsx = false;
           if (
-            t.isJSXExpressionContainer(value) &&
+            astFactory.isJSXExpressionContainer(value) &&
             isAstExpression(value.expression)
           ) {
             if (
@@ -632,7 +633,7 @@ function scanRenderProps(ctx: Ctx): void {
           const attribute = node as unknown as t.JSXAttribute;
           const container = attribute.value;
           if (
-            !t.isJSXExpressionContainer(container) ||
+            !astFactory.isJSXExpressionContainer(container) ||
             !isAstExpression(container.expression)
           ) {
             return;
@@ -647,10 +648,10 @@ function scanRenderProps(ctx: Ctx): void {
           }
           if (parent?.type !== 'JSXOpeningElement') return;
           const tag = (parent as unknown as t.JSXOpeningElement).name;
-          if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
+          if (!astFactory.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
           const target = ctx.componentProps.get(tag.name);
           const attr = attribute.name;
-          const attrName = t.isJSXIdentifier(attr) ? attr.name : attr.name.name;
+          const attrName = astFactory.isJSXIdentifier(attr) ? attr.name : attr.name.name;
           if (target?.renderProps.includes(attrName) === true) {
             plan.renderProps.push(sourceProp);
             changed = true;
@@ -716,7 +717,7 @@ function analyzeComponent(ctx: Ctx, name: string): void {
       const element = node as unknown as t.JSXElement;
       const open = element.openingElement;
       const openName = open.name;
-      if (!t.isJSXIdentifier(openName)) {
+      if (!astFactory.isJSXIdentifier(openName)) {
         return fail(
           'memo-dom: namespaced or member-expression JSX tags are not supported (L1)',
         );
@@ -724,8 +725,8 @@ function analyzeComponent(ctx: Ctx, name: string): void {
       // key is region metadata — meaningless (and misleading) elsewhere
       for (const attr of open.attributes) {
         if (
-          !t.isJSXSpreadAttribute(attr) &&
-          t.isJSXIdentifier(attr.name, { name: 'key' })
+          !astFactory.isJSXSpreadAttribute(attr) &&
+          astFactory.isJSXIdentifier(attr.name, { name: 'key' })
         ) {
           if (isRenderCallbackJsxRoot(ctx, node)) continue;
           fail(
@@ -752,15 +753,15 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         if (
           element.children.some(
             (child) =>
-              !t.isJSXText(child) || child.value.trim() !== '',
+              !astFactory.isJSXText(child) || child.value.trim() !== '',
           ) ||
           open.attributes.some((attribute) => {
             if (
-              t.isJSXSpreadAttribute(attribute) ||
+              astFactory.isJSXSpreadAttribute(attribute) ||
               ctx.componentProps
                 .get(tag)
                 ?.renderProps.includes(
-                  t.isJSXIdentifier(attribute.name)
+                  astFactory.isJSXIdentifier(attribute.name)
                     ? attribute.name.name
                     : attribute.name.name.name,
                 ) !== true
@@ -900,21 +901,21 @@ function directItemWrittenPath(
   let current: t.Expression = member;
   for (;;) {
     current = transparentListExpression(current);
-    if (!t.isMemberExpression(current)) break;
+    if (!astFactory.isMemberExpression(current)) break;
     chain.unshift(current);
-    if (t.isSuper(current.object)) return null;
+    if (astFactory.isSuper(current.object)) return null;
     current = current.object;
   }
-  if (!t.isIdentifier(current, { name: source })) return null;
+  if (!astFactory.isIdentifier(current, { name: source })) return null;
   const itemAccess = chain[0];
   if (
     itemAccess === undefined ||
     !itemAccess.computed ||
-    !t.isExpression(itemAccess.property) ||
+    !astFactory.isExpression(itemAccess.property) ||
     !(
-      t.isIdentifier(itemAccess.property) ||
-      t.isNumericLiteral(itemAccess.property) ||
-      t.isStringLiteral(itemAccess.property)
+      astFactory.isIdentifier(itemAccess.property) ||
+      astFactory.isNumericLiteral(itemAccess.property) ||
+      astFactory.isStringLiteral(itemAccess.property)
     ) ||
     chain.length < 2
   ) {
@@ -922,9 +923,9 @@ function directItemWrittenPath(
   }
   const path: string[] = [];
   for (const segment of chain.slice(1)) {
-    if (!segment.computed && t.isIdentifier(segment.property)) {
+    if (!segment.computed && astFactory.isIdentifier(segment.property)) {
       path.push(segment.property.name);
-    } else if (segment.computed && t.isStringLiteral(segment.property)) {
+    } else if (segment.computed && astFactory.isStringLiteral(segment.property)) {
       path.push(segment.property.value);
     } else {
       return null;
@@ -942,12 +943,12 @@ function componentHasDirectItemMutation(
   walkNodes(component.body, (node) => {
     if (found) return;
     const target =
-      t.isAssignmentExpression(node) && t.isMemberExpression(node.left)
+      astFactory.isAssignmentExpression(node) && astFactory.isMemberExpression(node.left)
         ? node.left
-        : t.isUpdateExpression(node) && t.isMemberExpression(node.argument)
+        : astFactory.isUpdateExpression(node) && astFactory.isMemberExpression(node.argument)
           ? node.argument
-          : t.isUnaryExpression(node, { operator: 'delete' }) &&
-              t.isMemberExpression(node.argument)
+          : astFactory.isUnaryExpression(node, { operator: 'delete' }) &&
+              astFactory.isMemberExpression(node.argument)
             ? node.argument
             : null;
     if (target === null) return;
@@ -965,7 +966,7 @@ function registerKeyedListMutationPlan(
   call: t.CallExpression | t.OptionalCallExpression,
   site: ReturnType<typeof analyzeMapSite>,
 ): void {
-  if (!site.sourceLocal || !t.isIdentifier(site.sourceExpr)) return;
+  if (!site.sourceLocal || !astFactory.isIdentifier(site.sourceExpr)) return;
   const source = site.sourceExpr.name;
   if (ctx.instanceState.get(component)?.has(source) !== true) return;
   const keyPath = keyPathOf(site.keyExpr, site.itemParam);
@@ -1082,7 +1083,7 @@ function collectReads(ctx: Ctx): void {
       childCounts: Map<string, number>,
     ): void {
       const tag = element.openingElement.name;
-      if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
+      if (!astFactory.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
       if (!ctx.comps.has(tag.name) && !ctx.importedComponents.has(tag.name)) {
         throw p.buildCodeFrameError(
           `memo-dom: <${tag.name} /> is not a linked component factory`,
@@ -1111,7 +1112,7 @@ function collectReads(ctx: Ctx): void {
       childCounts: Map<string, number>,
     ): void {
       const tag = element.openingElement.name;
-      if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
+      if (!astFactory.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
       if (!ctx.comps.has(tag.name) && !ctx.importedComponents.has(tag.name)) {
         throw p.buildCodeFrameError(
           `memo-dom: <${tag.name} /> is not a linked component factory`,
@@ -1190,7 +1191,7 @@ function collectReads(ctx: Ctx): void {
         }
         const callee = inner.callee;
         if (
-          t.isIdentifier(callee) &&
+          astFactory.isIdentifier(callee) &&
           (ctx.helpers.has(callee.name) ||
             ctx.importedFunctions.has(callee.name)) &&
           astBindingAt(ctx, innerNode, callee.name)?.scope.isProgramScope === true
@@ -1258,9 +1259,9 @@ function collectReads(ctx: Ctx): void {
           ? site.suffix
           : `${parentSuffix}/${site.suffix}`;
       const branches: t.Expression[] = [];
-      if (t.isConditionalExpression(node)) {
+      if (astFactory.isConditionalExpression(node)) {
         let current: t.Expression = node;
-        while (t.isConditionalExpression(current)) {
+        while (astFactory.isConditionalExpression(current)) {
           branches.push(current.consequent);
           current = current.alternate;
         }
@@ -1272,13 +1273,13 @@ function collectReads(ctx: Ctx): void {
         const branchPrefixes = new Map<string, number>();
         const branchChildren = new Map<string, number>();
         if (
-          (t.isConditionalExpression(branch) || t.isLogicalExpression(branch)) &&
+          (astFactory.isConditionalExpression(branch) || astFactory.isLogicalExpression(branch)) &&
           containsJsx(branch as unknown as BaseNode)
         ) {
           handleCond(branch, fullSuffix);
           continue;
         }
-        if (t.isJSXElement(branch)) {
+        if (astFactory.isJSXElement(branch)) {
           recordConditionalComponent(
             branch,
             fullSuffix,
@@ -1343,7 +1344,7 @@ function collectReads(ctx: Ctx): void {
         | t.CallExpression
         | t.OptionalCallExpression;
       if (
-        t.isIdentifier(call.callee, { name: 'effect' }) &&
+        astFactory.isIdentifier(call.callee, { name: 'effect' }) &&
         astBindingAt(ctx, callNode, 'effect') === undefined
       ) {
         return false;
@@ -1360,7 +1361,7 @@ function collectReads(ctx: Ctx): void {
           site,
           ctx.instanceState.get(name) ?? new Set(),
         );
-        if (targeted.length > 0 && t.isIdentifier(site.sourceExpr)) {
+        if (targeted.length > 0 && astFactory.isIdentifier(site.sourceExpr)) {
           const source = site.sourceExpr.name;
           ctx.targetedListDependencies.set(
             mapCall,
@@ -1377,9 +1378,9 @@ function collectReads(ctx: Ctx): void {
           // R10: row-prop reads are OWNER reads — the owner re-pushes row
           // props via updateProps during reconcile
           for (const attr of site.jsx!.openingElement.attributes) {
-            if (t.isJSXSpreadAttribute(attr)) continue;
+            if (astFactory.isJSXSpreadAttribute(attr)) continue;
             const a = attr as t.JSXAttribute;
-            const propName = t.isJSXIdentifier(a.name)
+            const propName = astFactory.isJSXIdentifier(a.name)
               ? a.name.name
               : `${a.name.namespace.name}:${a.name.name.name}`;
             if (
@@ -1395,7 +1396,7 @@ function collectReads(ctx: Ctx): void {
             if (!v) continue;
             walkNodes(v, (n) => {
               if (
-                t.isIdentifier(n) &&
+                astFactory.isIdentifier(n) &&
                 ctx.state.has(n.name) &&
                 astBindingAt(
                   ctx,
@@ -1405,7 +1406,7 @@ function collectReads(ctx: Ctx): void {
               ) {
                 reads.add(n.name);
               }
-              if (t.isMemberExpression(n)) {
+              if (astFactory.isMemberExpression(n)) {
                 const key = memberKey(n);
                 if (key !== null && key.includes('.')) {
                   const rootName = key.split('.')[0]!;
@@ -1443,7 +1444,7 @@ function collectReads(ctx: Ctx): void {
       // helper calls: the callee's summarized reads belong to this component
       const callee = call.callee;
       if (
-        t.isIdentifier(callee) &&
+        astFactory.isIdentifier(callee) &&
         (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name)) &&
         astBindingAt(ctx, callNode, callee.name)?.scope.isProgramScope === true
       ) {
@@ -1460,8 +1461,8 @@ function collectReads(ctx: Ctx): void {
           const attribute = node as unknown as t.JSXAttribute;
           const attributeName = attribute.name;
         if (
-            t.isJSXIdentifier(attributeName, { name: 'ref' }) ||
-            (t.isJSXNamespacedName(attributeName) &&
+            astFactory.isJSXIdentifier(attributeName, { name: 'ref' }) ||
+            (astFactory.isJSXNamespacedName(attributeName) &&
               attributeName.namespace.name === 'ref')
         ) {
             return false;

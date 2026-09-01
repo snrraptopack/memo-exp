@@ -88,3 +88,48 @@ export function normalizeEstreeDialect(root: BaseNode): void {
     },
   });
 }
+
+/** Convert strict ESTree nodes only when returning through the legacy Babel plugin. */
+export function normalizeBabelDialect(root: BaseNode): void {
+  walkAst(root, {
+    leave(node) {
+      const record = fields(node);
+      if (node.type === 'MemberExpression' && record.optional === true) {
+        record.type = 'OptionalMemberExpression';
+        return;
+      }
+      if (node.type === 'CallExpression' && record.optional === true) {
+        record.type = 'OptionalCallExpression';
+        return;
+      }
+      if (node.type === 'Property') {
+        record.type = 'ObjectProperty';
+        return;
+      }
+      if (node.type !== 'Literal') return;
+      const value = record.value;
+      if (typeof value === 'string') {
+        record.type = 'StringLiteral';
+      } else if (typeof value === 'number') {
+        record.type = 'NumericLiteral';
+      } else if (typeof value === 'boolean') {
+        record.type = 'BooleanLiteral';
+      } else if (typeof value === 'bigint') {
+        record.type = 'BigIntLiteral';
+        record.value = value.toString();
+      } else if (record.regex !== undefined) {
+        const regex = record.regex;
+        if (regex && typeof regex === 'object') {
+          const descriptor = regex as Record<string, unknown>;
+          record.type = 'RegExpLiteral';
+          record.pattern = descriptor.pattern;
+          record.flags = descriptor.flags;
+        }
+      } else {
+        record.type = 'NullLiteral';
+        delete record.value;
+      }
+      delete record.raw;
+    },
+  });
+}

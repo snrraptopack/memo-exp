@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { walkAst, type BaseNode } from '../ast';
 import { astBindingAt, type Ctx } from '../context';
 import { containsJsx, matchMapCall } from '../lists';
@@ -168,7 +169,7 @@ export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
       if (node.type === 'JSXElement') {
         const element = node as unknown as t.JSXElement;
         const tag = element.openingElement.name;
-        if (t.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) {
+        if (astFactory.isJSXIdentifier(tag) && /^[A-Z]/.test(tag.name)) {
           eligible = false;
         }
         return;
@@ -181,9 +182,9 @@ export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
           | t.CallExpression
           | t.OptionalCallExpression;
     if (
-          (t.isIdentifier(call.callee, { name: 'cleanup' }) &&
+          (astFactory.isIdentifier(call.callee, { name: 'cleanup' }) &&
             astBindingAt(ctx, node, 'cleanup') === undefined) ||
-          (t.isIdentifier(call.callee, { name: 'effect' }) &&
+          (astFactory.isIdentifier(call.callee, { name: 'effect' }) &&
             astBindingAt(ctx, node, 'effect') === undefined)
     ) {
       eligible = false;

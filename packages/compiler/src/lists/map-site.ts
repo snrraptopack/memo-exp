@@ -2,7 +2,8 @@
  * R7 list-site analysis. Emission remains separate from this source-shape
  * validation and deterministic identity planning.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   ESTREE_VISITOR_KEYS,
@@ -99,42 +100,42 @@ interface RowPlan {
 function compilerResolvedRoots(ctx: Ctx, expression: t.Expression): string[] {
   const current = transparentListExpression(expression);
   if (
-    t.isCallExpression(current) &&
-    t.isMemberExpression(current.callee) &&
+    astFactory.isCallExpression(current) &&
+    astFactory.isMemberExpression(current.callee) &&
     !current.callee.computed &&
-    t.isIdentifier(current.callee.object, {
+    astFactory.isIdentifier(current.callee.object, {
       name: ctx.identifiers?.dataRuntimeId,
     }) &&
-    t.isIdentifier(current.callee.property)
+    astFactory.isIdentifier(current.callee.property)
   ) {
     if (
       current.callee.property.name === 'readResolvedValue' &&
-      t.isIdentifier(current.arguments[0])
+      astFactory.isIdentifier(current.arguments[0])
     ) {
       return [current.arguments[0].name];
     }
     if (
       (current.callee.property.name === 'readResolvedValuesForRender' ||
         current.callee.property.name === 'deriveResolvedValues') &&
-      t.isArrayExpression(current.arguments[0])
+      astFactory.isArrayExpression(current.arguments[0])
     ) {
       return current.arguments[0].elements
-        .filter((element): element is t.Identifier => t.isIdentifier(element))
+        .filter((element): element is t.Identifier => astFactory.isIdentifier(element))
         .map((element) => element.name);
     }
   }
   if (
-    t.isCallExpression(current) &&
-    (t.isMemberExpression(current.callee) ||
-      t.isOptionalMemberExpression(current.callee)) &&
-    t.isExpression(current.callee.object)
+    astFactory.isCallExpression(current) &&
+    (astFactory.isMemberExpression(current.callee) ||
+      astFactory.isOptionalMemberExpression(current.callee)) &&
+    astFactory.isExpression(current.callee.object)
   ) {
     return compilerResolvedRoots(ctx, current.callee.object);
   }
   if (
-    (t.isMemberExpression(current) ||
-      t.isOptionalMemberExpression(current)) &&
-    t.isExpression(current.object)
+    (astFactory.isMemberExpression(current) ||
+      astFactory.isOptionalMemberExpression(current)) &&
+    astFactory.isExpression(current.object)
   ) {
     return compilerResolvedRoots(ctx, current.object);
   }
@@ -143,13 +144,13 @@ function compilerResolvedRoots(ctx: Ctx, expression: t.Expression): string[] {
 
 /** Is this expression a `.map(...)` call, including optional chains? */
 export function matchMapCall(expr: t.Node): MapCallExpression | null {
-  if (!t.isCallExpression(expr) && !t.isOptionalCallExpression(expr)) {
+  if (!astFactory.isCallExpression(expr) && !astFactory.isOptionalCallExpression(expr)) {
     return null;
   }
   const callee = expr.callee;
-  return (t.isMemberExpression(callee) || t.isOptionalMemberExpression(callee)) &&
+  return (astFactory.isMemberExpression(callee) || astFactory.isOptionalMemberExpression(callee)) &&
     !callee.computed &&
-    t.isIdentifier(callee.property, { name: 'map' })
+    astFactory.isIdentifier(callee.property, { name: 'map' })
     ? expr
     : null;
 }
@@ -201,7 +202,7 @@ export function analyzeMapSite(
     sourceKey: source.key,
     sourceExpr: cloneEstreeNode(source.expression),
     optional:
-      t.isOptionalCallExpression(call) ||
+      astFactory.isOptionalCallExpression(call) ||
       containsOptionalMember(callee.object),
     sourceLocal: source.local,
     itemPattern: callback.itemPattern,
@@ -225,20 +226,20 @@ function analyzeSource(
   parentRow: ParentRow | undefined,
   fail: Fail,
 ): SourcePlan {
-  const current = t.isExpression(source)
+  const current = astFactory.isExpression(source)
     ? transparentListExpression(source)
     : source;
-  if (t.isIdentifier(current)) {
+  if (astFactory.isIdentifier(current)) {
     return analyzeIdentifierSource(ctx, current, ownerName, fail);
   }
   if (
-    t.isCallExpression(current) &&
-    t.isMemberExpression(current.callee) &&
+    astFactory.isCallExpression(current) &&
+    astFactory.isMemberExpression(current.callee) &&
     !current.callee.computed &&
-    t.isIdentifier(current.callee.object, {
+    astFactory.isIdentifier(current.callee.object, {
       name: ctx.identifiers?.dataRuntimeId,
     }) &&
-    t.isIdentifier(current.callee.property, {
+    astFactory.isIdentifier(current.callee.property, {
       name: 'readModuleSourceList',
     })
   ) {
@@ -246,12 +247,12 @@ function analyzeSource(
     // readModuleSourceList(_MDD.sourceRef("key")) (current RFC §16.4
     // lowering — identity is the key itself, matching data-sources.ts).
     const argument = current.arguments[0];
-    const key = t.isStringLiteral(argument)
+    const key = astFactory.isStringLiteral(argument)
       ? argument.value
-      : t.isCallExpression(argument) &&
-          t.isMemberExpression(argument.callee) &&
-          t.isIdentifier(argument.callee.property, { name: 'sourceRef' }) &&
-          t.isStringLiteral(argument.arguments[0])
+      : astFactory.isCallExpression(argument) &&
+          astFactory.isMemberExpression(argument.callee) &&
+          astFactory.isIdentifier(argument.callee.property, { name: 'sourceRef' }) &&
+          astFactory.isStringLiteral(argument.arguments[0])
         ? argument.arguments[0].value
         : null;
     if (key !== null) {
@@ -264,16 +265,16 @@ function analyzeSource(
     }
   }
   if (
-    t.isCallExpression(current) &&
-    t.isMemberExpression(current.callee) &&
+    astFactory.isCallExpression(current) &&
+    astFactory.isMemberExpression(current.callee) &&
     !current.callee.computed &&
-    t.isIdentifier(current.callee.object, {
+    astFactory.isIdentifier(current.callee.object, {
       name: ctx.identifiers?.dataRuntimeId,
     }) &&
-    t.isIdentifier(current.callee.property) &&
+    astFactory.isIdentifier(current.callee.property) &&
     (current.callee.property.name === 'readResolvedValue' ||
       current.callee.property.name === 'readResolvedValueForRender') &&
-    t.isIdentifier(current.arguments[0])
+    astFactory.isIdentifier(current.arguments[0])
   ) {
     const source = current.arguments[0];
     const renderGated =
@@ -282,17 +283,17 @@ function analyzeSource(
       // Render-gated sources yield no rows while unavailable (§10: no
       // Group → empty local region); the imperative form stays loud.
       expression: renderGated
-        ? t.logicalExpression('||', current, t.arrayExpression([]))
+        ? astFactory.logicalExpression('||', current, astFactory.arrayExpression([]))
         : current,
       key: source.name,
       local: true,
       suffixBase: source.name,
     };
   }
-  const resolvedRoots = t.isExpression(current)
+  const resolvedRoots = astFactory.isExpression(current)
     ? compilerResolvedRoots(ctx, current)
     : [];
-  if (t.isExpression(current) && resolvedRoots.length > 0) {
+  if (astFactory.isExpression(current) && resolvedRoots.length > 0) {
     const key = resolvedRoots.join('$');
     return {
       expression: current,
@@ -301,7 +302,7 @@ function analyzeSource(
       suffixBase: key,
     };
   }
-  if (t.isMemberExpression(current) || t.isOptionalMemberExpression(current)) {
+  if (astFactory.isMemberExpression(current) || astFactory.isOptionalMemberExpression(current)) {
     return analyzeMemberSource(
       ctx,
       current,
@@ -311,7 +312,7 @@ function analyzeSource(
     );
   }
   if (
-    t.isExpression(current) &&
+    astFactory.isExpression(current) &&
     (isStaticPrimitiveList(current) || isStaticListExpression(current))
   ) {
     return {
@@ -416,9 +417,9 @@ function analyzeMemberSource(
 
 function containsOptionalMember(source: t.Expression | t.Super): boolean {
   let current: t.Expression | t.Super = source;
-  while (!t.isSuper(current)) {
-    if (t.isOptionalMemberExpression(current)) return true;
-    if (!t.isMemberExpression(current)) return false;
+  while (!astFactory.isSuper(current)) {
+    if (astFactory.isOptionalMemberExpression(current)) return true;
+    if (!astFactory.isMemberExpression(current)) return false;
     current = current.object;
   }
   return false;
@@ -432,7 +433,7 @@ function analyzeCallback(
 ): CallbackPlan {
   if (
     call.arguments.length !== 1 ||
-    !t.isArrowFunctionExpression(call.arguments[0])
+    !astFactory.isArrowFunctionExpression(call.arguments[0])
   ) {
     return fail(
       'memo-dom: list rendering expects items.map(item => <JSX />) — R7 L1',
@@ -444,10 +445,10 @@ function analyzeCallback(
   if (
     callback.params.length < 1 ||
     callback.params.length > 2 ||
-    (!t.isIdentifier(first) &&
-      !t.isObjectPattern(first) &&
-      !t.isArrayPattern(first)) ||
-    (second !== undefined && !t.isIdentifier(second))
+    (!astFactory.isIdentifier(first) &&
+      !astFactory.isObjectPattern(first) &&
+      !astFactory.isArrayPattern(first)) ||
+    (second !== undefined && !astFactory.isIdentifier(second))
   ) {
     return fail(
       'memo-dom: list callback must take an item binding pattern and optional index identifier — R7 L1',
@@ -463,10 +464,10 @@ function analyzeCallback(
       'memo-dom: list callback item pattern must bind at least one name — R7 L1',
     );
   }
-  const itemParam = t.isIdentifier(itemPattern)
+  const itemParam = astFactory.isIdentifier(itemPattern)
     ? itemPattern.name
     : itemBindings[0]!;
-  const indexParam = t.isIdentifier(second) ? second.name : null;
+  const indexParam = astFactory.isIdentifier(second) ? second.name : null;
   const jsx = resolveCallbackJsx(callback, itemPattern, indexParam, fail);
   const renderInvocation = matchRenderCallbackMap(ctx, ownerName, call);
   if (jsx === null && renderInvocation === null) {
@@ -499,14 +500,14 @@ function resolveCallbackJsx(
   indexParam: string | null,
   fail: Fail,
 ): t.JSXElement | null {
-  if (t.isJSXElement(callback.body)) return callback.body;
-  if (!t.isBlockStatement(callback.body)) return null;
+  if (astFactory.isJSXElement(callback.body)) return callback.body;
+  if (!astFactory.isBlockStatement(callback.body)) return null;
   const statements = callback.body.body;
   const tail = statements.at(-1);
   if (
     tail === undefined ||
-    !t.isReturnStatement(tail) ||
-    !t.isJSXElement(tail.argument)
+    !astFactory.isReturnStatement(tail) ||
+    !astFactory.isJSXElement(tail.argument)
   ) {
     return null;
   }
@@ -551,7 +552,7 @@ function collectRowDerivations(
   const derivations: RowDerivation[] = [];
   for (const statement of statements) {
     const declaration =
-      t.isVariableDeclaration(statement) &&
+      astFactory.isVariableDeclaration(statement) &&
       statement.kind === 'const' &&
       statement.declarations.length === 1
         ? statement.declarations[0]
@@ -559,9 +560,9 @@ function collectRowDerivations(
     if (
       declaration === undefined ||
       declaration === null ||
-      !t.isIdentifier(declaration.id) ||
+      !astFactory.isIdentifier(declaration.id) ||
       declaration.init == null ||
-      !t.isExpression(declaration.init)
+      !astFactory.isExpression(declaration.init)
     ) {
       return fail(
         'memo-dom: list callback statements before return must be single-name const declarations — R7 L1',
@@ -576,10 +577,10 @@ function collectRowDerivations(
       enter(node) {
         const current = node as unknown as t.Node;
         if (
-          t.isAssignmentExpression(current) ||
-          t.isUpdateExpression(current) ||
-          t.isAwaitExpression(current) ||
-          t.isYieldExpression(current)
+          astFactory.isAssignmentExpression(current) ||
+          astFactory.isUpdateExpression(current) ||
+          astFactory.isAwaitExpression(current) ||
+          astFactory.isYieldExpression(current)
         ) {
           fail(
             'memo-dom: list callback derivations must be pure const expressions — R7 L1',
@@ -614,12 +615,12 @@ function assertNoShadowing(
   walkAst(root as unknown as BaseNode, {
     enter(node) {
       const current = node as unknown as t.Node;
-      if (t.isFunction(current)) {
+      if (astFactory.isFunction(current)) {
         checkParams(current.params);
       }
       if (
-        t.isVariableDeclarator(current) &&
-        t.isIdentifier(current.id) &&
+        astFactory.isVariableDeclarator(current) &&
+        astFactory.isIdentifier(current.id) &&
         names.has(current.id.name)
       ) {
         fail(
@@ -649,13 +650,13 @@ function substituteNode<T extends t.Node>(
   resolved: ReadonlyMap<string, t.Expression>,
   reference: boolean,
 ): T {
-  if (t.isIdentifier(node)) {
+  if (astFactory.isIdentifier(node)) {
     if (reference && resolved.has(node.name)) {
       return cloneEstreeNode(resolved.get(node.name)!, true) as unknown as T;
     }
     return node;
   }
-  if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
+  if (astFactory.isMemberExpression(node) || astFactory.isOptionalMemberExpression(node)) {
     const next = cloneEstreeNode(node, false);
     next.object = substituteNode(node.object, resolved, true) as typeof next.object;
     if (node.computed) {
@@ -667,7 +668,7 @@ function substituteNode<T extends t.Node>(
     }
     return next;
   }
-  if (t.isObjectProperty(node) && node.shorthand && t.isIdentifier(node.key)) {
+  if (astFactory.isObjectProperty(node) && node.shorthand && astFactory.isIdentifier(node.key)) {
     const next = cloneEstreeNode(node, false);
     next.value = substituteNode(
       node.value as t.Expression,
@@ -677,7 +678,7 @@ function substituteNode<T extends t.Node>(
     next.shorthand = false;
     return next;
   }
-  if (t.isFunction(node)) {
+  if (astFactory.isFunction(node)) {
     const next = cloneEstreeNode(node, false);
     next.params = node.params.map((parameter) =>
       cloneEstreeNode(parameter, true),
@@ -713,11 +714,11 @@ function analyzeRow(
   fail: Fail,
 ): RowPlan {
   const opening = callback.jsx?.openingElement ?? null;
-  if (opening !== null && !t.isJSXIdentifier(opening.name)) {
+  if (opening !== null && !astFactory.isJSXIdentifier(opening.name)) {
     return fail('memo-dom: namespaced JSX tags are not supported (L1)');
   }
   const tag =
-    opening !== null && t.isJSXIdentifier(opening.name)
+    opening !== null && astFactory.isJSXIdentifier(opening.name)
       ? opening.name.name
       : null;
   if (callback.renderInvocation !== null) {
@@ -754,15 +755,15 @@ function validateRenderInvocation(
 ): void {
   const invocation = callback.renderInvocation!;
   if (
-    !t.isIdentifier(callback.itemPattern) ||
+    !astFactory.isIdentifier(callback.itemPattern) ||
     invocation.arguments.length < 1 ||
     invocation.arguments.length > 2 ||
-    !t.isIdentifier(invocation.arguments[0], {
+    !astFactory.isIdentifier(invocation.arguments[0], {
       name: callback.itemPattern.name,
     }) ||
     (invocation.arguments.length === 2 &&
       (callback.indexParam === null ||
-        !t.isIdentifier(invocation.arguments[1], {
+        !astFactory.isIdentifier(invocation.arguments[1], {
           name: callback.indexParam,
         })))
   ) {
@@ -779,8 +780,8 @@ function extractKey(
   let key: t.Expression | null = null;
   for (const attribute of opening?.attributes ?? []) {
     if (
-      t.isJSXAttribute(attribute) &&
-      t.isJSXIdentifier(attribute.name, { name: 'key' })
+      astFactory.isJSXAttribute(attribute) &&
+      astFactory.isJSXIdentifier(attribute.name, { name: 'key' })
     ) {
       key = attrExpr(attribute.value);
       if (key === null) {

@@ -6,7 +6,8 @@
  * function expressions before analysis keeps component/linker/emitter logic
  * unified instead of adding expression-path branches to every pass.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   inheritComments,
@@ -30,10 +31,10 @@ function componentExpression(
   declaration: t.VariableDeclarator,
 ): ComponentExpression | null {
   if (
-    !t.isIdentifier(declaration.id) ||
+    !astFactory.isIdentifier(declaration.id) ||
     !/^[A-Z]/.test(declaration.id.name) ||
-    (!t.isArrowFunctionExpression(declaration.init) &&
-      !t.isFunctionExpression(declaration.init)) ||
+    (!astFactory.isArrowFunctionExpression(declaration.init) &&
+      !astFactory.isFunctionExpression(declaration.init)) ||
     !nodeHasJsx(declaration.init.body)
   ) {
     return null;
@@ -52,7 +53,7 @@ function functionDeclaration(
     );
   }
   if (
-    t.isFunctionExpression(expression) &&
+    astFactory.isFunctionExpression(expression) &&
     expression.id != null &&
     expression.id.name !== name
   ) {
@@ -61,13 +62,13 @@ function functionDeclaration(
     );
   }
 
-  const declaration = t.functionDeclaration(
-    t.identifier(name),
+  const declaration = astFactory.functionDeclaration(
+    astFactory.identifier(name),
     expression.params.map((parameter) => cloneEstreeNode(parameter, true)),
-    t.isBlockStatement(expression.body)
+    astFactory.isBlockStatement(expression.body)
       ? cloneEstreeNode(expression.body, true)
-      : t.blockStatement([
-          t.returnStatement(cloneEstreeNode(expression.body, true)),
+      : astFactory.blockStatement([
+          astFactory.returnStatement(cloneEstreeNode(expression.body, true)),
         ]),
   );
   declaration.returnType =
@@ -90,7 +91,7 @@ function normalizedVariableStatement(
   if (declaration.kind !== 'const') {
     return [
       exported
-        ? t.exportNamedDeclaration(cloneEstreeNode(declaration, true))
+        ? astFactory.exportNamedDeclaration(cloneEstreeNode(declaration, true))
         : cloneEstreeNode(declaration, true),
     ];
   }
@@ -100,7 +101,7 @@ function normalizedVariableStatement(
     const expression = componentExpression(declarator);
     let statement: t.Statement;
     if (expression === null) {
-      statement = t.variableDeclaration('const', [
+      statement = astFactory.variableDeclaration('const', [
         cloneEstreeNode(declarator, true),
       ]);
     } else {
@@ -112,7 +113,7 @@ function normalizedVariableStatement(
     }
     statements.push(
       exported
-        ? t.exportNamedDeclaration(
+        ? astFactory.exportNamedDeclaration(
             statement as t.FunctionDeclaration | t.VariableDeclaration,
           )
         : statement,
@@ -138,19 +139,19 @@ export function normalizeComponentDeclarations(
   let changed = false;
 
   for (const statement of programPath.node.body) {
-    if (t.isVariableDeclaration(statement)) {
+    if (astFactory.isVariableDeclaration(statement)) {
       const normalized = normalizedVariableStatement(
         statement,
         false,
         programPath,
       );
-      changed ||= normalized.some((item) => t.isFunctionDeclaration(item));
+      changed ||= normalized.some((item) => astFactory.isFunctionDeclaration(item));
       body.push(...normalized);
       continue;
     }
     if (
-      t.isExportNamedDeclaration(statement) &&
-      t.isVariableDeclaration(statement.declaration)
+      astFactory.isExportNamedDeclaration(statement) &&
+      astFactory.isVariableDeclaration(statement.declaration)
     ) {
       const normalized = normalizedVariableStatement(
         statement.declaration,
@@ -159,8 +160,8 @@ export function normalizeComponentDeclarations(
       );
       changed ||= normalized.some(
         (item) =>
-          t.isExportNamedDeclaration(item) &&
-          t.isFunctionDeclaration(item.declaration),
+          astFactory.isExportNamedDeclaration(item) &&
+          astFactory.isFunctionDeclaration(item.declaration),
       );
       body.push(...normalized);
       continue;

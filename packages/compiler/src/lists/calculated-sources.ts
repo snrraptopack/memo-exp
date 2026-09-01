@@ -7,7 +7,8 @@
  * scheduling and keyed retention without adding a runtime list-expression
  * interpreter.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import {
@@ -25,9 +26,9 @@ import {
 function directSourceShape(expression: t.Expression): boolean {
   const current = transparentListExpression(expression);
   return (
-    t.isIdentifier(current) ||
-    t.isMemberExpression(current) ||
-    t.isOptionalMemberExpression(current) ||
+    astFactory.isIdentifier(current) ||
+    astFactory.isMemberExpression(current) ||
+    astFactory.isOptionalMemberExpression(current) ||
     isStaticPrimitiveList(current)
   );
 }
@@ -81,9 +82,9 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
         const callee = call.callee;
         if (
           matchMapCall(call) === null ||
-          (!t.isMemberExpression(callee) &&
-            !t.isOptionalMemberExpression(callee)) ||
-          !t.isExpression(callee.object) ||
+          (!astFactory.isMemberExpression(callee) &&
+            !astFactory.isOptionalMemberExpression(callee)) ||
+          !astFactory.isExpression(callee.object) ||
           directSourceShape(callee.object)
         ) {
           return;
@@ -117,12 +118,12 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
     for (const candidate of candidates) {
       const binding = generatedIdentifier(ctx, 'listView');
       declarations.push(
-        t.variableDeclarator(cloneEstreeNode(binding), candidate.source),
+        astFactory.variableDeclarator(cloneEstreeNode(binding), candidate.source),
       );
       const callee = candidate.call.callee;
       if (
-        (!t.isMemberExpression(callee) && !t.isOptionalMemberExpression(callee)) ||
-        !t.isExpression(callee.object)
+        (!astFactory.isMemberExpression(callee) && !astFactory.isOptionalMemberExpression(callee)) ||
+        !astFactory.isExpression(callee.object)
       ) {
         continue;
       }
@@ -134,7 +135,7 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
     body.splice(
       insertionIndex,
       0,
-      t.variableDeclaration('const', declarations),
+      astFactory.variableDeclaration('const', declarations),
     );
     const program = ctx.astAnalysis?.rootScope.block;
     if (program !== undefined) refreshAstAnalysis(ctx, program);

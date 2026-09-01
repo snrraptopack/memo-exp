@@ -6,7 +6,8 @@
  * namespace argument through the component ABI.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
@@ -81,18 +82,18 @@ export function createElementExpression(
   svg: boolean,
 ): t.CallExpression {
   return svg
-    ? t.callExpression(
-        t.memberExpression(
+    ? astFactory.callExpression(
+        astFactory.memberExpression(
           cloneEstreeNode(document),
-          t.identifier('createElementNS'),
+          astFactory.identifier('createElementNS'),
         ),
-        [t.stringLiteral(SVG_NAMESPACE), t.stringLiteral(tag)],
+        [astFactory.stringLiteral(SVG_NAMESPACE), astFactory.stringLiteral(tag)],
       )
-    : t.callExpression(
-        t.memberExpression(
+    : astFactory.callExpression(
+        astFactory.memberExpression(
           cloneEstreeNode(document),
-          t.identifier('createElement'),
+          astFactory.identifier('createElement'),
         ),
-        [t.stringLiteral(tag)],
+        [astFactory.stringLiteral(tag)],
       );
 }

@@ -6,7 +6,8 @@
  * delegating explicit event instrumentation to the owning emitter.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   isValidIdentifier as isValidEstreeIdentifier,
@@ -35,14 +36,14 @@ export function buildOrderedAttributes(
   const sources: t.Expression[] = [];
   let lastSpread = -1;
   for (let index = 0; index < attributes.length; index++) {
-    if (t.isJSXSpreadAttribute(attributes[index]!)) lastSpread = index;
+    if (astFactory.isJSXSpreadAttribute(attributes[index]!)) lastSpread = index;
   }
   const safeEventKeys: string[] = [];
 
   for (let index = 0; index < attributes.length; index++) {
     const attribute = attributes[index]!;
-    if (t.isJSXSpreadAttribute(attribute)) {
-      properties.push(t.spreadElement(cloneEstreeNode(attribute.argument)));
+    if (astFactory.isJSXSpreadAttribute(attribute)) {
+      properties.push(astFactory.spreadElement(cloneEstreeNode(attribute.argument)));
       sources.push(cloneEstreeNode(attribute.argument));
       continue;
     }
@@ -57,13 +58,13 @@ export function buildOrderedAttributes(
         ? options.eventValue(name, value)
         : value;
     properties.push(
-      t.objectProperty(
+      astFactory.objectProperty(
         isValidEstreeIdentifier(name)
-          ? t.identifier(name)
-          : t.stringLiteral(name),
+          ? astFactory.identifier(name)
+          : astFactory.stringLiteral(name),
         event,
         false,
-        t.isIdentifier(event) && event.name === name,
+        astFactory.isIdentifier(event) && event.name === name,
       ),
     );
     sources.push(cloneEstreeNode(sourceValue));
@@ -72,7 +73,7 @@ export function buildOrderedAttributes(
     }
   }
   return {
-    expression: t.objectExpression(properties),
+    expression: astFactory.objectExpression(properties),
     sources,
     safeEventKeys,
   };
@@ -81,7 +82,7 @@ export function buildOrderedAttributes(
 export function jsxAttributeName(
   name: t.JSXIdentifier | t.JSXNamespacedName,
 ): string {
-  return t.isJSXIdentifier(name)
+  return astFactory.isJSXIdentifier(name)
     ? name.name
     : `${name.namespace.name}:${name.name.name}`;
 }
@@ -90,13 +91,13 @@ function jsxAttributeValue(
   attribute: t.JSXAttribute,
   fail: (message: string) => never,
 ): t.Expression {
-  if (attribute.value == null) return t.booleanLiteral(true);
-  if (t.isStringLiteral(attribute.value)) {
+  if (attribute.value == null) return astFactory.booleanLiteral(true);
+  if (astFactory.isStringLiteral(attribute.value)) {
     return cloneEstreeNode(attribute.value);
   }
   if (
-    t.isJSXExpressionContainer(attribute.value) &&
-    t.isExpression(attribute.value.expression)
+    astFactory.isJSXExpressionContainer(attribute.value) &&
+    astFactory.isExpression(attribute.value.expression)
   ) {
     return cloneEstreeNode(attribute.value.expression);
   }

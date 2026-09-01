@@ -5,7 +5,8 @@
  * registration so emit.ts can focus on component and JSX structure.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 
@@ -80,24 +81,24 @@ export function renderDocument(ctx: Ctx, scope: EmitScope): t.Identifier {
   if (scope.documentVar === null) {
     scope.documentVar = generatedIdentifier(ctx, 'document').name;
     scope.prelude.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.identifier(scope.documentVar),
-          t.memberExpression(
-            t.callExpression(md(ctx, 'getActiveEnvironment'), []),
-            t.identifier('document'),
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
+          astFactory.identifier(scope.documentVar),
+          astFactory.memberExpression(
+            astFactory.callExpression(md(ctx, 'getActiveEnvironment'), []),
+            astFactory.identifier('document'),
           ),
         ),
       ]),
     );
   }
-  return t.identifier(scope.documentVar);
+  return astFactory.identifier(scope.documentVar);
 }
 
 export function cacheDecl(scope: EmitScope): t.Statement {
-  return t.variableDeclaration('let', [
-    ...scope.slots.map((name) => t.variableDeclarator(t.identifier(name))),
-    t.variableDeclarator(t.identifier(scope.tempVar)),
+  return astFactory.variableDeclaration('let', [
+    ...scope.slots.map((name) => astFactory.variableDeclarator(astFactory.identifier(name))),
+    astFactory.variableDeclarator(astFactory.identifier(scope.tempVar)),
   ]);
 }
 
@@ -123,35 +124,35 @@ export function slotGuard(
   expression: t.Expression,
   write: (value: t.Identifier) => t.Statement,
 ): t.Statement {
-  const value = (): t.Identifier => t.identifier(scope.tempVar);
-  const slotId = (): t.Identifier => t.identifier(slot);
-  return t.ifStatement(
-    t.binaryExpression(
+  const value = (): t.Identifier => astFactory.identifier(scope.tempVar);
+  const slotId = (): t.Identifier => astFactory.identifier(slot);
+  return astFactory.ifStatement(
+    astFactory.binaryExpression(
       '!==',
       slotId(),
-      t.assignmentExpression('=', value(), expression),
+      astFactory.assignmentExpression('=', value(), expression),
     ),
-    t.blockStatement([
-      t.expressionStatement(t.assignmentExpression('=', slotId(), value())),
+    astFactory.blockStatement([
+      astFactory.expressionStatement(astFactory.assignmentExpression('=', slotId(), value())),
       write(value()),
     ]),
   );
 }
 
 export function updateDecl(scope: EmitScope): t.Statement {
-  return t.variableDeclaration('const', [
-    t.variableDeclarator(
-      t.identifier(scope.updateVar),
-      t.arrowFunctionExpression(
+  return astFactory.variableDeclaration('const', [
+    astFactory.variableDeclarator(
+      astFactory.identifier(scope.updateVar),
+      astFactory.arrowFunctionExpression(
         scope.reasonVar === null
           ? []
           : [
-              t.assignmentPattern(
-                t.identifier(scope.reasonVar),
-                t.nullLiteral(),
+              astFactory.assignmentPattern(
+                astFactory.identifier(scope.reasonVar),
+                astFactory.nullLiteral(),
               ),
             ],
-        t.blockStatement(scope.updaters.map((updater) => updater())),
+        astFactory.blockStatement(scope.updaters.map((updater) => updater())),
       ),
     ),
   ]);
@@ -164,14 +165,14 @@ export function registerStmt(
   render: t.Expression,
   volatile = false,
 ): t.Statement {
-  return t.expressionStatement(
-    t.callExpression(md(ctx, 'register'), [
-      t.objectExpression([
-        t.objectProperty(t.identifier('id'), id),
-        t.objectProperty(t.identifier('parent'), parent),
-        t.objectProperty(t.identifier('render'), render),
+  return astFactory.expressionStatement(
+    astFactory.callExpression(md(ctx, 'register'), [
+      astFactory.objectExpression([
+        astFactory.objectProperty(astFactory.identifier('id'), id),
+        astFactory.objectProperty(astFactory.identifier('parent'), parent),
+        astFactory.objectProperty(astFactory.identifier('render'), render),
         ...(volatile
-          ? [t.objectProperty(t.identifier('volatile'), t.booleanLiteral(true))]
+          ? [astFactory.objectProperty(astFactory.identifier('volatile'), astFactory.booleanLiteral(true))]
           : []),
       ]),
     ]),

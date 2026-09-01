@@ -6,7 +6,8 @@
  * structural-region creation remain in emit.ts.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { isLightweightListedComponent } from '../analysis';
 import {
@@ -126,50 +127,50 @@ function buildLightweightReturn(
   const replay = positionalObjectProps === null
     ? buildPropReplay(propPlan, nextProps)
     : positionalObjectProps.map(({ local }, index) =>
-        t.expressionStatement(
-          t.assignmentExpression(
+        astFactory.expressionStatement(
+          astFactory.assignmentExpression(
             '=',
-            t.identifier(local),
+            astFactory.identifier(local),
             cloneEstreeNode(nextProps[index]!),
           ),
         ),
       );
-  return t.returnStatement(
-    t.objectExpression([
-      t.objectProperty(
-        t.identifier('nodes'),
+  return astFactory.returnStatement(
+    astFactory.objectExpression([
+      astFactory.objectProperty(
+        astFactory.identifier('nodes'),
         singleRoot
-          ? t.identifier(rootVar)
-          : t.callExpression(md(ctx, 'rootNodes'), [t.identifier(rootVar)]),
+          ? astFactory.identifier(rootVar)
+          : astFactory.callExpression(md(ctx, 'rootNodes'), [astFactory.identifier(rootVar)]),
       ),
-      t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
-      t.objectProperty(t.identifier('update'), t.identifier(scope.updateVar)),
+      astFactory.objectProperty(astFactory.identifier('entities'), astFactory.arrayExpression([])),
+      astFactory.objectProperty(astFactory.identifier('update'), astFactory.identifier(scope.updateVar)),
       ...(lightweightPropCount > 0
         ? [
-            t.objectProperty(
-              t.identifier('updateProps'),
-              t.arrowFunctionExpression(nextProps, t.blockStatement(replay)),
+            astFactory.objectProperty(
+              astFactory.identifier('updateProps'),
+              astFactory.arrowFunctionExpression(nextProps, astFactory.blockStatement(replay)),
             ),
           ]
         : []),
       ...(scope.disposableCallbacks.length > 0
         ? [
-            t.objectProperty(
-              t.identifier('dispose'),
-              t.arrowFunctionExpression(
+            astFactory.objectProperty(
+              astFactory.identifier('dispose'),
+              astFactory.arrowFunctionExpression(
                 [],
-                t.blockStatement(
+                astFactory.blockStatement(
                   [...scope.disposableCallbacks]
                     .reverse()
                     .map((callback) =>
-                      t.ifStatement(
-                        t.binaryExpression(
+                      astFactory.ifStatement(
+                        astFactory.binaryExpression(
                           '!==',
                           cloneEstreeNode(callback),
-                          t.nullLiteral(),
+                          astFactory.nullLiteral(),
                         ),
-                        t.expressionStatement(
-                          t.callExpression(cloneEstreeNode(callback), []),
+                        astFactory.expressionStatement(
+                          astFactory.callExpression(cloneEstreeNode(callback), []),
                         ),
                       ),
                     ),
@@ -198,22 +199,22 @@ function buildFactoryParameters(
     return [
       ...(positionalObjectProps === null
         ? propPlan.params.map(runtimeParameter)
-        : positionalObjectProps.map(({ local }) => t.identifier(local))),
-      t.identifier(factoryId),
-      ...(factoryOwner === null ? [] : [t.identifier(factoryOwner)]),
-      ...[...eventBindings.values()].map((binding) => t.identifier(binding)),
+        : positionalObjectProps.map(({ local }) => astFactory.identifier(local))),
+      astFactory.identifier(factoryId),
+      ...(factoryOwner === null ? [] : [astFactory.identifier(factoryOwner)]),
+      ...[...eventBindings.values()].map((binding) => astFactory.identifier(binding)),
     ];
   }
   return propSlotCount > 0
     ? [
-        t.identifier(factoryId),
-        t.identifier(factoryParent!),
-        t.identifier(propsBox!),
+        astFactory.identifier(factoryId),
+        astFactory.identifier(factoryParent!),
+        astFactory.identifier(propsBox!),
         ...(dataPolicies === null ? [] : [cloneEstreeNode(dataPolicies)]),
       ]
     : [
-        t.identifier(factoryId),
-        t.identifier(factoryParent!),
+        astFactory.identifier(factoryId),
+        astFactory.identifier(factoryParent!),
         ...(dataPolicies === null ? [] : [cloneEstreeNode(dataPolicies)]),
       ];
 }
@@ -316,7 +317,7 @@ export function transformComponent(
           factoryId,
         );
   const lightweightSingleRoot =
-    lightweight && 'jsx' in returns && t.isJSXElement(returns.jsx);
+    lightweight && 'jsx' in returns && astFactory.isJSXElement(returns.jsx);
 
   if (lightweight) {
     applyRepeatedDomTemplate(ctx, scope, rootVar);
@@ -355,13 +356,13 @@ export function transformComponent(
   }
   if (propSlotCount > 0 && !lightweight) {
     scope.updaters.unshift(() =>
-      t.blockStatement(
+      astFactory.blockStatement(
         buildPropReplay(
           propPlan,
           propPlan.params.map((_, index) =>
-            t.memberExpression(
-              t.identifier(propsBox!),
-              t.numericLiteral(index),
+            astFactory.memberExpression(
+              astFactory.identifier(propsBox!),
+              astFactory.numericLiteral(index),
               true,
             ),
           ),
@@ -375,9 +376,9 @@ export function transformComponent(
     const declaration = buildPropDeclaration(
       propPlan,
       propPlan.params.map((_, index) =>
-        t.memberExpression(
-          t.identifier(propsBox!),
-          t.numericLiteral(index),
+        astFactory.memberExpression(
+          astFactory.identifier(propsBox!),
+          astFactory.numericLiteral(index),
           true,
         ),
       ),
@@ -392,39 +393,39 @@ export function transformComponent(
       : [
           registerStmt(
             ctx,
-            t.identifier(factoryId),
-            t.identifier(factoryParent!),
-            t.identifier(scope.updateVar),
+            astFactory.identifier(factoryId),
+            astFactory.identifier(factoryParent!),
+            astFactory.identifier(scope.updateVar),
             ctx.volatileComponents.has(name),
           ),
         ]),
   );
   if (propSlotCount > 0 && !lightweight) {
     body.push(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'registerProps'), [
-          t.identifier(factoryId),
-          t.identifier(propsBox!),
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'registerProps'), [
+          astFactory.identifier(factoryId),
+          astFactory.identifier(propsBox!),
         ]),
       ),
     );
   }
   body.push(...scope.creation, ...scope.mounts);
   body.push(
-    ...transparentSourceMounts(ctx, name, t.identifier(factoryId)),
+    ...transparentSourceMounts(ctx, name, astFactory.identifier(factoryId)),
   );
   if (effects !== undefined) {
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));
   }
   if (ctx.hot && !lightweight) {
     body.push(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'registerHotComponent'), [
-          t.identifier(name),
-          t.identifier(factoryId),
-          t.identifier(factoryParent!),
-          t.callExpression(md(ctx, 'rootNodes'), [t.identifier(rootVar)]),
-          propsBox === null ? t.nullLiteral() : t.identifier(propsBox),
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'registerHotComponent'), [
+          astFactory.identifier(name),
+          astFactory.identifier(factoryId),
+          astFactory.identifier(factoryParent!),
+          astFactory.callExpression(md(ctx, 'rootNodes'), [astFactory.identifier(rootVar)]),
+          propsBox === null ? astFactory.nullLiteral() : astFactory.identifier(propsBox),
         ]),
       ),
     );
@@ -440,7 +441,7 @@ export function transformComponent(
           rootVar,
           lightweightSingleRoot,
         )
-      : t.returnStatement(t.identifier(rootVar)),
+      : astFactory.returnStatement(astFactory.identifier(rootVar)),
   );
 
   node.params = buildFactoryParameters(
@@ -455,7 +456,7 @@ export function transformComponent(
     propsBox,
     dataPolicies,
   );
-  node.body = t.blockStatement(body);
+  node.body = astFactory.blockStatement(body);
 }
 
 function emitComponentReturnRegion(
@@ -468,20 +469,20 @@ function emitComponentReturnRegion(
 ): string {
   const fragment = generatedIdentifier(ctx, 'returnRoot').name;
   const region = generatedIdentifier(ctx, 'returnRegion').name;
-  const owner = t.identifier(factoryId);
-  const regionId = t.binaryExpression(
+  const owner = astFactory.identifier(factoryId);
+  const regionId = astFactory.binaryExpression(
     '+',
     cloneEstreeNode(owner),
-    t.stringLiteral('/$return'),
+    astFactory.stringLiteral('/$return'),
   );
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(fragment),
-        t.callExpression(
-          t.memberExpression(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        astFactory.identifier(fragment),
+        astFactory.callExpression(
+          astFactory.memberExpression(
             renderDocument(ctx, scope),
-            t.identifier('createDocumentFragment'),
+            astFactory.identifier('createDocumentFragment'),
           ),
           [],
         ),
@@ -489,14 +490,14 @@ function emitComponentReturnRegion(
     ]),
   );
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(region),
-        t.callExpression(md(ctx, 'createCondRegion'), [
-          t.identifier(fragment),
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        astFactory.identifier(region),
+        astFactory.callExpression(md(ctx, 'createCondRegion'), [
+          astFactory.identifier(fragment),
           cloneEstreeNode(regionId),
           cloneEstreeNode(plan.pick),
-          t.arrayExpression(
+          astFactory.arrayExpression(
             plan.branches.map((jsx) =>
               jsx !== null
                 ? buildBranchCreate(
@@ -510,7 +511,7 @@ function emitComponentReturnRegion(
                     true,
                     scope.usedConds,
                   )
-                : t.nullLiteral(),
+                : astFactory.nullLiteral(),
             ),
           ),
         ]),
@@ -518,11 +519,11 @@ function emitComponentReturnRegion(
     ]),
   );
   scope.updaters.push(() =>
-    t.expressionStatement(
-      t.callExpression(
-        t.memberExpression(
-          t.identifier(region),
-          t.identifier('update'),
+    astFactory.expressionStatement(
+      astFactory.callExpression(
+        astFactory.memberExpression(
+          astFactory.identifier(region),
+          astFactory.identifier('update'),
         ),
         [],
       ),

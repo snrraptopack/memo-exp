@@ -1,11 +1,12 @@
 /**
  * Emits dependency-selected replay for component-local derivations.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 
 function or(expressions: t.Expression[]): t.Expression {
   return expressions.reduce((left, right) =>
-    t.logicalExpression('||', left, right),
+    astFactory.logicalExpression('||', left, right),
   );
 }
 
@@ -13,47 +14,47 @@ export function reasonCondition(
   reasonVar: string,
   reasons: number[],
 ): t.Expression {
-  const current = (): t.Identifier => t.identifier(reasonVar);
-  const volatileMatch = t.logicalExpression(
+  const current = (): t.Identifier => astFactory.identifier(reasonVar);
+  const volatileMatch = astFactory.logicalExpression(
     '||',
-    t.binaryExpression('===', current(), t.unaryExpression('-', t.numericLiteral(1))),
-    t.logicalExpression(
+    astFactory.binaryExpression('===', current(), astFactory.unaryExpression('-', astFactory.numericLiteral(1))),
+    astFactory.logicalExpression(
       '&&',
-      t.binaryExpression(
+      astFactory.binaryExpression(
         '!==',
-        t.unaryExpression('typeof', current()),
-        t.stringLiteral('number'),
+        astFactory.unaryExpression('typeof', current()),
+        astFactory.stringLiteral('number'),
       ),
-      t.callExpression(
-        t.memberExpression(current(), t.identifier('has')),
-        [t.unaryExpression('-', t.numericLiteral(1))],
+      astFactory.callExpression(
+        astFactory.memberExpression(current(), astFactory.identifier('has')),
+        [astFactory.unaryExpression('-', astFactory.numericLiteral(1))],
       ),
     ),
   );
   const numberMatch = or(
     reasons.map((reason) =>
-      t.binaryExpression('===', current(), t.numericLiteral(reason)),
+      astFactory.binaryExpression('===', current(), astFactory.numericLiteral(reason)),
     ),
   );
   const setMatch = or(
     reasons.map((reason) =>
-      t.callExpression(
-        t.memberExpression(current(), t.identifier('has')),
-        [t.numericLiteral(reason)],
+      astFactory.callExpression(
+        astFactory.memberExpression(current(), astFactory.identifier('has')),
+        [astFactory.numericLiteral(reason)],
       ),
     ),
   );
-  return t.logicalExpression(
+  return astFactory.logicalExpression(
     '||',
-    t.binaryExpression('===', current(), t.nullLiteral()),
-    t.logicalExpression(
+    astFactory.binaryExpression('===', current(), astFactory.nullLiteral()),
+    astFactory.logicalExpression(
       '||',
       volatileMatch,
-      t.conditionalExpression(
-        t.binaryExpression(
+      astFactory.conditionalExpression(
+        astFactory.binaryExpression(
           '===',
-          t.unaryExpression('typeof', current()),
-          t.stringLiteral('number'),
+          astFactory.unaryExpression('typeof', current()),
+          astFactory.stringLiteral('number'),
         ),
         numberMatch,
         setMatch,

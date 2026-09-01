@@ -1,6 +1,7 @@
 /** Component-local JSX values are compile-time render aliases. */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneAstNode,
   nodeIsWithin,
@@ -179,7 +180,7 @@ function arrayChildren(
       if (element == null || isNonRenderingLiteral(element as unknown as BaseNode)) {
         continue;
       }
-      if (t.isSpreadElement(element)) {
+      if (astFactory.isSpreadElement(element)) {
         const spread = staticArray(ctx, element.argument as unknown as BaseNode);
         if (spread === null) {
           return fail(
@@ -190,16 +191,16 @@ function arrayChildren(
         children.push(...arrayChildren(ctx, spread, component, visiting));
         continue;
       }
-      if (t.isArrayExpression(element)) {
+      if (astFactory.isArrayExpression(element)) {
         children.push(...arrayChildren(ctx, element, component, visiting));
         continue;
       }
-      if (t.isJSXElement(element) || t.isJSXFragment(element)) {
+      if (astFactory.isJSXElement(element) || astFactory.isJSXFragment(element)) {
         children.push(cloneNode(element));
         continue;
       }
       children.push(
-        t.jsxExpressionContainer(cloneNode(element as t.Expression)),
+        astFactory.jsxExpressionContainer(cloneNode(element as t.Expression)),
       );
     }
   } finally {
@@ -213,9 +214,9 @@ function arrayFragment(
   initializer: t.ArrayExpression,
   component: ComponentPath,
 ): t.JSXFragment {
-  return t.jsxFragment(
-    t.jsxOpeningFragment(),
-    t.jsxClosingFragment(),
+  return astFactory.jsxFragment(
+    astFactory.jsxOpeningFragment(),
+    astFactory.jsxClosingFragment(),
     arrayChildren(ctx, initializer, component),
   );
 }
@@ -238,7 +239,7 @@ function structuredCandidates(
   initializer: t.ObjectExpression | t.ArrayExpression,
   component: ComponentPath,
 ): StructuredCandidate[] {
-  if (t.isArrayExpression(initializer)) {
+  if (astFactory.isArrayExpression(initializer)) {
     return initializer.elements.map((element, index) => {
       if (element == null) {
         return fail(
@@ -246,13 +247,13 @@ function structuredCandidates(
           'JSX arrays cannot contain holes',
         );
       }
-      if (t.isSpreadElement(element)) {
+      if (astFactory.isSpreadElement(element)) {
         return fail(
           component,
           'JSX array spreads must resolve to a static JSX array',
         );
       }
-      return { key: t.numericLiteral(index), value: element as t.Expression };
+      return { key: astFactory.numericLiteral(index), value: element as t.Expression };
     });
   }
   return initializer.properties.map((property) => {
@@ -279,11 +280,11 @@ function structuredCandidates(
     const literal = literalValue(keyNode);
     const key =
       name !== null
-        ? t.stringLiteral(name)
+        ? astFactory.stringLiteral(name)
         : typeof literal === 'string'
-          ? t.stringLiteral(literal)
+          ? astFactory.stringLiteral(literal)
           : typeof literal === 'number'
-            ? t.numericLiteral(literal)
+            ? astFactory.numericLiteral(literal)
             : null;
     if (key === null) {
       return fail(
@@ -326,11 +327,11 @@ function selectedStructuredValue(
     );
   }
 
-  let selection: t.Expression = t.nullLiteral();
+  let selection: t.Expression = astFactory.nullLiteral();
   for (let index = candidates.length - 1; index >= 0; index--) {
     const candidate = candidates[index]!;
-    selection = t.conditionalExpression(
-      t.binaryExpression(
+    selection = astFactory.conditionalExpression(
+      astFactory.binaryExpression(
         '===',
         cloneNode(property as unknown as t.Expression),
         cloneNode(candidate.key),
@@ -395,10 +396,10 @@ export function normalizeComponentJsxValues(ctx: Ctx): void {
       discovered = false;
       const statements = componentPath.node.body.body;
       for (const statement of statements) {
-        if (!t.isVariableDeclaration(statement, { kind: 'const' })) continue;
+        if (!astFactory.isVariableDeclaration(statement, { kind: 'const' })) continue;
         for (const declaration of statement.declarations) {
           if (
-            !t.isIdentifier(declaration.id) ||
+            !astFactory.isIdentifier(declaration.id) ||
             declaration.init == null ||
             !nodeHasJsx(declaration.init)
           ) {
@@ -418,7 +419,7 @@ export function normalizeComponentJsxValues(ctx: Ctx): void {
           }
           const references = [...binding.references] as unknown as BaseNode[];
           const initializer = declaration.init;
-          if (t.isObjectExpression(initializer) || t.isArrayExpression(initializer)) {
+          if (astFactory.isObjectExpression(initializer) || astFactory.isArrayExpression(initializer)) {
             const candidates = structuredCandidates(initializer, componentPath);
             for (const reference of references) {
               if (!nodeIsWithin(ctx.astAnalysis!, reference, component)) {
@@ -446,7 +447,7 @@ export function normalizeComponentJsxValues(ctx: Ctx): void {
                 continue;
               }
               if (
-                t.isArrayExpression(initializer) &&
+                astFactory.isArrayExpression(initializer) &&
                 parent?.type === 'SpreadElement' &&
                 (ctx.astAnalysis!.parentByNode.get(parent)?.type === 'ArrayExpression')
               ) {
@@ -466,7 +467,7 @@ export function normalizeComponentJsxValues(ctx: Ctx): void {
                 );
                 continue;
               }
-              if (t.isArrayExpression(initializer) && isRenderPosition(ctx, reference)) {
+              if (astFactory.isArrayExpression(initializer) && isRenderPosition(ctx, reference)) {
                 replaceNode(
                   ctx.astAnalysis!,
                   reference,
@@ -476,7 +477,7 @@ export function normalizeComponentJsxValues(ctx: Ctx): void {
               }
               fail(
                 componentPath,
-                t.isArrayExpression(initializer)
+                astFactory.isArrayExpression(initializer)
                   ? `JSX collection '${declaration.id.name}' must be rendered directly or selected with a direct index access`
                   : `JSX collection '${declaration.id.name}' is used outside a render position`,
               );

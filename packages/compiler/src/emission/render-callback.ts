@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   extractPatternIdentifiers,
@@ -29,12 +30,12 @@ type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
 function callbackJsx(
   callback: t.ArrowFunctionExpression | t.FunctionExpression,
 ): t.JSXElement | null {
-  if (t.isJSXElement(callback.body)) return callback.body;
+  if (astFactory.isJSXElement(callback.body)) return callback.body;
   if (
-    t.isBlockStatement(callback.body) &&
+    astFactory.isBlockStatement(callback.body) &&
     callback.body.body.length === 1 &&
-    t.isReturnStatement(callback.body.body[0]) &&
-    t.isJSXElement(callback.body.body[0].argument)
+    astFactory.isReturnStatement(callback.body.body[0]) &&
+    astFactory.isJSXElement(callback.body.body[0].argument)
   ) {
     return callback.body.body[0].argument;
   }
@@ -59,8 +60,8 @@ export function buildRenderCallbackAdapter(
   ownerId: t.Expression,
 ): t.Identifier {
   if (
-    (!t.isArrowFunctionExpression(source) &&
-      !t.isFunctionExpression(source)) ||
+    (!astFactory.isArrowFunctionExpression(source) &&
+      !astFactory.isFunctionExpression(source)) ||
     source.async ||
     source.generator
   ) {
@@ -75,10 +76,10 @@ export function buildRenderCallbackAdapter(
     jsx === null ||
     source.params.length < 1 ||
     source.params.length > 2 ||
-    (!t.isIdentifier(first) &&
-      !t.isObjectPattern(first) &&
-      !t.isArrayPattern(first)) ||
-    (second !== undefined && !t.isIdentifier(second))
+    (!astFactory.isIdentifier(first) &&
+      !astFactory.isObjectPattern(first) &&
+      !astFactory.isArrayPattern(first)) ||
+    (second !== undefined && !astFactory.isIdentifier(second))
   ) {
     throw componentPath.buildCodeFrameError(
       'memo-dom: render callbacks take an item binding pattern and optional index, then return one JSX element',
@@ -94,7 +95,7 @@ export function buildRenderCallbackAdapter(
       'memo-dom: render callback item patterns must bind at least one name',
     );
   }
-  const itemParam = t.isIdentifier(itemPattern)
+  const itemParam = astFactory.isIdentifier(itemPattern)
     ? itemPattern.name
     : itemBindings[0]!;
   const indexParam = second === undefined ? null : second.name;
@@ -103,8 +104,8 @@ export function buildRenderCallbackAdapter(
   jsx.openingElement.attributes = jsx.openingElement.attributes.filter(
     (attribute) => {
       if (
-        t.isJSXSpreadAttribute(attribute) ||
-        !t.isJSXIdentifier(attribute.name) ||
+        astFactory.isJSXSpreadAttribute(attribute) ||
+        !astFactory.isJSXIdentifier(attribute.name) ||
         attribute.name.name !== 'key'
       ) {
         return true;
@@ -135,7 +136,7 @@ export function buildRenderCallbackAdapter(
     keyPath: keyPathOf(keyExpression, itemParam),
     sourceKey: '$render-callback',
     sourceLocal: true,
-    ...(t.isIdentifier(ownerId) ? { ownerIdVar: ownerId.name } : {}),
+    ...(astFactory.isIdentifier(ownerId) ? { ownerIdVar: ownerId.name } : {}),
   };
   const root = emitNode(
     ctx,
@@ -152,28 +153,28 @@ export function buildRenderCallbackAdapter(
   applyRepeatedDomTemplate(ctx, rowScope, root);
 
   ownerScope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(liveRows),
-        t.newExpression(t.identifier('Set'), []),
+        astFactory.newExpression(astFactory.identifier('Set'), []),
       ),
     ]),
   );
   ownerScope.updaters.push(() =>
-    t.forOfStatement(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(cloneEstreeNode(nextUpdate)),
+    astFactory.forOfStatement(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(cloneEstreeNode(nextUpdate)),
       ]),
       cloneEstreeNode(liveRows),
-      t.expressionStatement(
-        t.callExpression(cloneEstreeNode(nextUpdate), []),
+      astFactory.expressionStatement(
+        astFactory.callExpression(cloneEstreeNode(nextUpdate), []),
       ),
     ),
   );
 
   const bindingUpdates: t.Statement[] = [
-    t.expressionStatement(
-      t.assignmentExpression(
+    astFactory.expressionStatement(
+      astFactory.assignmentExpression(
         '=',
         cloneEstreeNode(itemPattern, true),
         cloneEstreeNode(nextItem),
@@ -182,36 +183,36 @@ export function buildRenderCallbackAdapter(
   ];
   if (nextIndex !== null && indexParam !== null) {
     bindingUpdates.push(
-      t.expressionStatement(
-        t.assignmentExpression(
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
           '=',
-          t.identifier(indexParam),
+          astFactory.identifier(indexParam),
           cloneEstreeNode(nextIndex),
         ),
       ),
     );
   }
 
-  const create = t.arrowFunctionExpression(
+  const create = astFactory.arrowFunctionExpression(
     [
       cloneEstreeNode(itemPattern, true),
       cloneEstreeNode(rowId),
-      ...(indexParam === null ? [] : [t.identifier(indexParam)]),
+      ...(indexParam === null ? [] : [astFactory.identifier(indexParam)]),
     ],
-    t.blockStatement([
+    astFactory.blockStatement([
       cacheDecl(rowScope),
       updateDecl(rowScope),
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
           cloneEstreeNode(refreshRow),
-          t.arrowFunctionExpression(
+          astFactory.arrowFunctionExpression(
             [],
-            t.blockStatement([
-              t.expressionStatement(
-                t.callExpression(t.identifier(rowScope.updateVar), []),
+            astFactory.blockStatement([
+              astFactory.expressionStatement(
+                astFactory.callExpression(astFactory.identifier(rowScope.updateVar), []),
               ),
-              t.expressionStatement(
-                t.callExpression(md(ctx, 'renderDescendants'), [
+              astFactory.expressionStatement(
+                astFactory.callExpression(md(ctx, 'renderDescendants'), [
                   cloneEstreeNode(rowId),
                 ]),
               ),
@@ -228,44 +229,44 @@ export function buildRenderCallbackAdapter(
       ),
       ...rowScope.creation,
       ...rowScope.mounts,
-      t.expressionStatement(
-        t.callExpression(
-          t.memberExpression(cloneEstreeNode(liveRows), t.identifier('add')),
+      astFactory.expressionStatement(
+        astFactory.callExpression(
+          astFactory.memberExpression(cloneEstreeNode(liveRows), astFactory.identifier('add')),
           [cloneEstreeNode(refreshRow)],
         ),
       ),
-      t.returnStatement(
-        t.objectExpression([
-          t.objectProperty(
-            t.identifier('nodes'),
-            t.callExpression(md(ctx, 'rootNodes'), [t.identifier(root)]),
+      astFactory.returnStatement(
+        astFactory.objectExpression([
+          astFactory.objectProperty(
+            astFactory.identifier('nodes'),
+            astFactory.callExpression(md(ctx, 'rootNodes'), [astFactory.identifier(root)]),
           ),
-          t.objectProperty(
-            t.identifier('entities'),
-            t.arrayExpression([cloneEstreeNode(rowId)]),
+          astFactory.objectProperty(
+            astFactory.identifier('entities'),
+            astFactory.arrayExpression([cloneEstreeNode(rowId)]),
           ),
-          t.objectProperty(
-            t.identifier('updateProps'),
-            t.arrowFunctionExpression(
+          astFactory.objectProperty(
+            astFactory.identifier('updateProps'),
+            astFactory.arrowFunctionExpression(
               [
                 cloneEstreeNode(nextItem),
                 ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
               ],
-              t.blockStatement(bindingUpdates),
+              astFactory.blockStatement(bindingUpdates),
             ),
           ),
-          t.objectProperty(
-            t.identifier('update'),
+          astFactory.objectProperty(
+            astFactory.identifier('update'),
             cloneEstreeNode(refreshRow),
           ),
-          t.objectProperty(
-            t.identifier('dispose'),
-            t.arrowFunctionExpression(
+          astFactory.objectProperty(
+            astFactory.identifier('dispose'),
+            astFactory.arrowFunctionExpression(
               [],
-              t.callExpression(
-                t.memberExpression(
+              astFactory.callExpression(
+                astFactory.memberExpression(
                   cloneEstreeNode(liveRows),
-                  t.identifier('delete'),
+                  astFactory.identifier('delete'),
                 ),
                 [cloneEstreeNode(refreshRow)],
               ),
@@ -277,22 +278,22 @@ export function buildRenderCallbackAdapter(
   );
   const key =
     keyExpression === null
-      ? t.nullLiteral()
-      : t.arrowFunctionExpression(
+      ? astFactory.nullLiteral()
+      : astFactory.arrowFunctionExpression(
           [
             cloneEstreeNode(itemPattern, true),
-            ...(indexParam === null ? [] : [t.identifier(indexParam)]),
+            ...(indexParam === null ? [] : [astFactory.identifier(indexParam)]),
           ],
           cloneEstreeNode(keyExpression),
         );
 
   ownerScope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(adapter),
-        t.objectExpression([
-          t.objectProperty(t.identifier('create'), create),
-          t.objectProperty(t.identifier('key'), key),
+        astFactory.objectExpression([
+          astFactory.objectProperty(astFactory.identifier('create'), create),
+          astFactory.objectProperty(astFactory.identifier('key'), key),
         ]),
       ),
     ]),

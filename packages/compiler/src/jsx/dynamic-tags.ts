@@ -1,6 +1,7 @@
 /** Finite dynamic JSX tag lowering over parser-neutral AST metadata. */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   analyzeScope,
   cloneNode as cloneAstNode,
@@ -144,18 +145,18 @@ export function installLinkedDynamicComponentImports(
         ctx.importedComponents.set(local, component);
         ctx.componentProps.set(local, linkedComponentPlan(component));
         declarations.push(
-          t.importDeclaration(
+          astFactory.importDeclaration(
             candidate.imported === 'default'
-              ? [t.importDefaultSpecifier(t.identifier(local))]
+              ? [astFactory.importDefaultSpecifier(astFactory.identifier(local))]
               : [
-                  t.importSpecifier(
-                    t.identifier(local),
+                  astFactory.importSpecifier(
+                    astFactory.identifier(local),
                     isValidEstreeIdentifier(candidate.imported)
-                      ? t.identifier(candidate.imported)
-                      : t.stringLiteral(candidate.imported),
+                      ? astFactory.identifier(candidate.imported)
+                      : astFactory.stringLiteral(candidate.imported),
                   ),
                 ],
-            t.stringLiteral(candidate.source),
+            astFactory.stringLiteral(candidate.source),
           ),
         );
       }
@@ -185,10 +186,10 @@ function unwrap(expression: BaseNode): BaseNode {
 function jsxNameExpression(
   name: t.JSXIdentifier | t.JSXMemberExpression,
 ): t.Expression {
-  if (t.isJSXIdentifier(name)) return t.identifier(name.name);
-  return t.memberExpression(
+  if (astFactory.isJSXIdentifier(name)) return astFactory.identifier(name.name);
+  return astFactory.memberExpression(
     jsxNameExpression(name.object),
-    t.identifier(name.property.name),
+    astFactory.identifier(name.property.name),
   );
 }
 
@@ -371,12 +372,12 @@ export function scanLocalDynamicComponentCandidates(
   programPath: ProgramContainer,
 ): void {
   for (const statement of programPath.node.body) {
-    const declaration = t.isExportNamedDeclaration(statement)
+    const declaration = astFactory.isExportNamedDeclaration(statement)
       ? statement.declaration
       : statement;
-    if (!t.isVariableDeclaration(declaration)) continue;
+    if (!astFactory.isVariableDeclaration(declaration)) continue;
     for (const declarator of declaration.declarations) {
-      if (!t.isIdentifier(declarator.id) || declarator.init == null) continue;
+      if (!astFactory.isIdentifier(declarator.id) || declarator.init == null) continue;
       const output = new Set<string>();
       collectLocalComponentNames(ctx, declarator.init, output);
       if (output.size > 0 && ctx.state.has(declarator.id.name)) {
@@ -430,18 +431,18 @@ function collectCandidates(
     }
     output.push({
       compare: cloneNode(expression),
-      tag: t.jsxIdentifier(literal),
+      tag: astFactory.jsxIdentifier(literal),
     });
     return;
   }
   const name = identifierName(current);
   if (name !== null) {
     if (ctx.comps.has(name) || ctx.importedComponents.has(name)) {
-      output.push({ compare: cloneNode(expression), tag: t.jsxIdentifier(name) });
+      output.push({ compare: cloneNode(expression), tag: astFactory.jsxIdentifier(name) });
       return;
     }
     for (const candidate of ctx.stateTagCandidates.get(name) ?? []) {
-      collectCandidates(ctx, at, t.stringLiteral(candidate), output, onError, visiting);
+      collectCandidates(ctx, at, astFactory.stringLiteral(candidate), output, onError, visiting);
     }
     const binding = astBindingAt(ctx, at, name);
     const initializer = binding === undefined ? null : bindingInitializer(ctx, binding);
@@ -454,13 +455,13 @@ function collectCandidates(
     const callee = identifierName(childNode(current, 'callee'));
     if (callee === null) return;
     for (const candidate of ctx.functionTagCandidates.get(callee) ?? []) {
-      collectCandidates(ctx, at, t.stringLiteral(candidate), output, onError, visiting);
+      collectCandidates(ctx, at, astFactory.stringLiteral(candidate), output, onError, visiting);
     }
     for (const returned of localFunctionReturns(ctx, at, callee)) {
       collectCandidates(ctx, at, returned, output, onError, visiting);
     }
     for (const candidate of ctx.functionComponentCandidates.get(callee) ?? []) {
-      collectCandidates(ctx, at, t.identifier(candidate), output, onError, visiting);
+      collectCandidates(ctx, at, astFactory.identifier(candidate), output, onError, visiting);
     }
     return;
   }
@@ -479,14 +480,14 @@ function collectCandidates(
     const localComponents = new Set<string>();
     collectLocalComponentNames(ctx, initializer as unknown as t.Expression, localComponents);
     for (const candidate of localComponents) {
-      collectCandidates(ctx, at, t.identifier(candidate), output, onError, visiting);
+      collectCandidates(ctx, at, astFactory.identifier(candidate), output, onError, visiting);
     }
   }
   for (const candidate of ctx.stateTagCandidates.get(root) ?? []) {
-    collectCandidates(ctx, at, t.stringLiteral(candidate), output, onError, visiting);
+    collectCandidates(ctx, at, astFactory.stringLiteral(candidate), output, onError, visiting);
   }
   for (const candidate of ctx.stateComponentCandidates.get(root) ?? []) {
-    collectCandidates(ctx, at, t.identifier(candidate), output, onError, visiting);
+    collectCandidates(ctx, at, astFactory.identifier(candidate), output, onError, visiting);
   }
 }
 
@@ -520,7 +521,7 @@ function bindingInitializers(
   at: BaseNode,
   selector: t.Expression,
 ): t.Expression[] {
-  if (t.isIdentifier(selector)) {
+  if (astFactory.isIdentifier(selector)) {
     const binding = astBindingAt(ctx, at, selector.name);
     if (binding === undefined) return [];
     const initial = bindingInitializer(ctx, binding);
@@ -538,7 +539,7 @@ function bindingInitializers(
       }),
     ];
   }
-  if (!t.isMemberExpression(selector)) return [];
+  if (!astFactory.isMemberExpression(selector)) return [];
   const initial = propertyValue(ctx, at, selector);
   const key = memberKey(selector);
   const assignments: t.Expression[] = [];
@@ -581,11 +582,11 @@ function finiteSelection(
   element: t.JSXElement,
   candidates: DynamicTagCandidate[],
 ): t.Expression {
-  let selection: t.Expression = t.nullLiteral();
+  let selection: t.Expression = astFactory.nullLiteral();
   for (let index = candidates.length - 1; index >= 0; index--) {
     const candidate = candidates[index]!;
-    selection = t.conditionalExpression(
-      t.binaryExpression(
+    selection = astFactory.conditionalExpression(
+      astFactory.binaryExpression(
         '===',
         cloneNode(selector),
         cloneNode(candidate.compare),
@@ -598,8 +599,8 @@ function finiteSelection(
 }
 
 function selectorName(selector: t.Expression): string {
-  if (t.isIdentifier(selector)) return selector.name;
-  if (t.isMemberExpression(selector)) {
+  if (astFactory.isIdentifier(selector)) return selector.name;
+  if (astFactory.isMemberExpression(selector)) {
     return memberKey(selector) ?? '<member expression>';
   }
   return '<expression>';
@@ -623,11 +624,11 @@ export function normalizeDynamicTags(ctx: Ctx): void {
     for (const elementNode of elements.reverse()) {
       const element = elementNode as unknown as t.JSXElement;
       const name = element.openingElement.name;
-      if (t.isJSXNamespacedName(name)) {
+      if (astFactory.isJSXNamespacedName(name)) {
         fail(componentPath, 'memo-dom: namespaced JSX tags are not supported');
       }
       if (
-        t.isJSXIdentifier(name) &&
+        astFactory.isJSXIdentifier(name) &&
         (!/^[A-Z]/.test(name.name) ||
           ctx.comps.has(name.name) ||
           ctx.importedComponents.has(name.name))
@@ -667,8 +668,8 @@ export function normalizeDynamicTags(ctx: Ctx): void {
         }
         for (const attribute of element.openingElement.attributes) {
           if (
-            t.isJSXSpreadAttribute(attribute) ||
-            !t.isJSXIdentifier(attribute.name) ||
+            astFactory.isJSXSpreadAttribute(attribute) ||
+            !astFactory.isJSXIdentifier(attribute.name) ||
             !plan.renderProps.includes(attribute.name.name)
           ) {
             continue;
@@ -687,11 +688,11 @@ export function normalizeDynamicTags(ctx: Ctx): void {
       const replacement =
         unique.length === 1
           ? cloneWithTag(element, unique[0]!.tag)
-          : t.jsxFragment(
-              t.jsxOpeningFragment(),
-              t.jsxClosingFragment(),
+          : astFactory.jsxFragment(
+              astFactory.jsxOpeningFragment(),
+              astFactory.jsxClosingFragment(),
               [
-                t.jsxExpressionContainer(
+                astFactory.jsxExpressionContainer(
                   finiteSelection(selector, element, unique),
                 ),
               ],

@@ -6,7 +6,8 @@
  * component emission so prop order and spread projection cannot drift.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   isValidIdentifier as isValidEstreeIdentifier,
@@ -38,16 +39,16 @@ export function orderCallProps(
       }
     }
     if (entries.length === 0 && plan.hasWholeDefault) {
-      return [t.identifier('undefined')];
+      return [astFactory.identifier('undefined')];
     }
     return [
-      t.objectExpression(
+      astFactory.objectExpression(
         entries.map((entry) =>
-          t.objectProperty(
-            t.identifier(entry.name),
+          astFactory.objectProperty(
+            astFactory.identifier(entry.name),
             entry.value,
             false,
-            t.isIdentifier(entry.value) &&
+            astFactory.isIdentifier(entry.value) &&
               entry.value.name === entry.name,
           ),
         ),
@@ -69,7 +70,7 @@ export function orderCallProps(
     }
   }
   return declared.map(
-    (name) => byName.get(name) ?? t.identifier('undefined'),
+    (name) => byName.get(name) ?? astFactory.identifier('undefined'),
   );
 }
 
@@ -81,11 +82,11 @@ export function callPropsFromObject(
   const plan = ctx.componentProps.get(tag);
   if (plan?.mode === 'object') return [cloneEstreeNode(object)];
   return (plan?.names ?? []).map((name) =>
-    t.memberExpression(
+    astFactory.memberExpression(
       cloneEstreeNode(object),
       isValidEstreeIdentifier(name)
-        ? t.identifier(name)
-        : t.stringLiteral(name),
+        ? astFactory.identifier(name)
+        : astFactory.stringLiteral(name),
       !isValidEstreeIdentifier(name),
     ),
   );
@@ -99,21 +100,21 @@ export function buildSpreadComponentPropUpdate(
   expression: t.ObjectExpression,
 ): t.Statement {
   const next = generatedIdentifier(ctx, `${tag}Props`);
-  return t.blockStatement([
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+  return astFactory.blockStatement([
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(next),
         cloneEstreeNode(expression),
       ),
     ]),
-    t.expressionStatement(
-      t.callExpression(md(ctx, 'setProps'), [
-        t.binaryExpression(
+    astFactory.expressionStatement(
+      astFactory.callExpression(md(ctx, 'setProps'), [
+        astFactory.binaryExpression(
           '+',
           cloneEstreeNode(ownerId),
-          t.stringLiteral(idSuffix),
+          astFactory.stringLiteral(idSuffix),
         ),
-        t.arrayExpression(callPropsFromObject(ctx, tag, next)),
+        astFactory.arrayExpression(callPropsFromObject(ctx, tag, next)),
       ]),
     ),
   ]);

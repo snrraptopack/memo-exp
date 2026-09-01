@@ -13,7 +13,8 @@
  * created per item by the region.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import { walkAst, type BaseNode } from './ast';
 import {
@@ -112,18 +113,18 @@ type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
  */
 /** The value-normalization shared by text semantics: null/undefined/bool → ''. */
 function textValue(tmp: t.Identifier): t.Expression {
-  return t.conditionalExpression(
-    t.logicalExpression(
+  return astFactory.conditionalExpression(
+    astFactory.logicalExpression(
       '||',
-      t.binaryExpression('==', cloneEstreeNode(tmp), t.nullLiteral()),
-      t.binaryExpression(
+      astFactory.binaryExpression('==', cloneEstreeNode(tmp), astFactory.nullLiteral()),
+      astFactory.binaryExpression(
         '===',
-        t.unaryExpression('typeof', cloneEstreeNode(tmp), true),
-        t.stringLiteral('boolean'),
+        astFactory.unaryExpression('typeof', cloneEstreeNode(tmp), true),
+        astFactory.stringLiteral('boolean'),
       ),
     ),
-    t.stringLiteral(''),
-    t.callExpression(t.identifier('String'), [cloneEstreeNode(tmp)]),
+    astFactory.stringLiteral(''),
+    astFactory.callExpression(astFactory.identifier('String'), [cloneEstreeNode(tmp)]),
   );
 }
 
@@ -140,10 +141,10 @@ function textSetter(
 ): () => t.Statement {
   return () =>
     slotGuard(scope, key, cloneEstreeNode(expr), (tmp) =>
-      t.expressionStatement(
-        t.assignmentExpression(
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
           '=',
-          t.memberExpression(t.identifier(varName), t.identifier('data')),
+          astFactory.memberExpression(astFactory.identifier(varName), astFactory.identifier('data')),
           textValue(tmp),
         ),
       ),
@@ -157,18 +158,18 @@ function emitText(
   ownerId: t.Expression,
 ): string {
   const varName = generatedIdentifier(ctx, `text${scope.textCounter++}`).name;
-  if (t.isStringLiteral(expr)) {
+  if (astFactory.isStringLiteral(expr)) {
     // static text: no slot, content baked into the node
     scope.creation.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.identifier(varName),
-          t.callExpression(
-            t.memberExpression(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
+          astFactory.identifier(varName),
+          astFactory.callExpression(
+            astFactory.memberExpression(
               renderDocument(ctx, scope),
-              t.identifier('createTextNode'),
+              astFactory.identifier('createTextNode'),
             ),
-            [t.stringLiteral(expr.value)],
+            [astFactory.stringLiteral(expr.value)],
           ),
         ),
       ]),
@@ -177,15 +178,15 @@ function emitText(
   }
   const key = freshSlot(ctx, scope);
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(varName),
-        t.callExpression(
-          t.memberExpression(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        astFactory.identifier(varName),
+        astFactory.callExpression(
+          astFactory.memberExpression(
             renderDocument(ctx, scope),
-            t.identifier('createTextNode'),
+            astFactory.identifier('createTextNode'),
           ),
-          [t.stringLiteral('')],
+          [astFactory.stringLiteral('')],
         ),
       ),
     ]),
@@ -231,7 +232,7 @@ export function emitNode(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): string {
-  return t.isJSXFragment(node)
+  return astFactory.isJSXFragment(node)
     ? emitFragment(
         ctx,
         scope,
@@ -293,13 +294,13 @@ function emitFragment(
   });
   const variable = freshNodeName(ctx, scope, 'fragment');
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(variable),
-        t.callExpression(
-          t.memberExpression(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        astFactory.identifier(variable),
+        astFactory.callExpression(
+          astFactory.memberExpression(
             renderDocument(ctx, scope),
-            t.identifier('createDocumentFragment'),
+            astFactory.identifier('createDocumentFragment'),
           ),
           [],
         ),
@@ -336,13 +337,13 @@ function emitDirectChildOperations(
   for (const operation of operations) {
     if (operation.type === 'node') {
       scope.creation.push(
-        t.expressionStatement(
-          t.callExpression(
-            t.memberExpression(
-              t.identifier(parentVar),
-              t.identifier('appendChild'),
+        astFactory.expressionStatement(
+          astFactory.callExpression(
+            astFactory.memberExpression(
+              astFactory.identifier(parentVar),
+              astFactory.identifier('appendChild'),
             ),
-            [t.identifier(operation.variable)],
+            [astFactory.identifier(operation.variable)],
           ),
         ),
       );
@@ -475,9 +476,9 @@ function buildAuthoredRenderValueSlot(
   ownerId: t.Expression,
 ): t.Identifier {
   const children: JsxChild[] =
-    t.isJSXElement(value) || t.isJSXFragment(value)
+    astFactory.isJSXElement(value) || astFactory.isJSXFragment(value)
       ? [value]
-      : [t.jsxExpressionContainer(value)];
+      : [astFactory.jsxExpressionContainer(value)];
   return buildAuthoredChildrenSlot(
     ctx,
     ownerScope,
@@ -511,17 +512,17 @@ function emitElement(
     const suffix = seen === 0
       ? '/$dataPolicy'
       : `/$dataPolicy[${seen}]`;
-    const childId = t.binaryExpression(
+    const childId = astFactory.binaryExpression(
       '+',
       cloneEstreeNode(ownerId),
-      t.stringLiteral(suffix),
+      astFactory.stringLiteral(suffix),
     );
     const variable = freshNodeName(ctx, scope, 'dataPolicy');
     scope.creation.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.identifier(variable),
-          t.callExpression(cloneEstreeNode(policyRenderer.renderer), [
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
+          astFactory.identifier(variable),
+          astFactory.callExpression(cloneEstreeNode(policyRenderer.renderer), [
             cloneEstreeNode(childId),
             cloneEstreeNode(ownerId),
             ...policyRenderer.args.map((argument) => cloneEstreeNode(argument, true)),
@@ -568,7 +569,7 @@ function emitElement(
       hasComponentChildren(el.children) &&
       open.attributes.some(
         (attribute) =>
-          t.isJSXAttribute(attribute) &&
+          astFactory.isJSXAttribute(attribute) &&
           jsxAttributeName(attribute.name) === 'children',
       )
     ) {
@@ -577,7 +578,7 @@ function emitElement(
       );
     }
     const componentHasSpread = open.attributes.some((attribute) =>
-      t.isJSXSpreadAttribute(attribute),
+      astFactory.isJSXSpreadAttribute(attribute),
     );
     let orderedPropObject: t.ObjectExpression | null = null;
     let needsPush = false;
@@ -595,15 +596,15 @@ function emitElement(
       orderedPropObject = ordered.expression;
       for (const property of orderedPropObject.properties) {
         if (
-          !t.isObjectProperty(property) ||
+          !astFactory.isObjectProperty(property) ||
           property.computed ||
-          !t.isExpression(property.value)
+          !astFactory.isExpression(property.value)
         ) {
           continue;
         }
-        const propName = t.isIdentifier(property.key)
+        const propName = astFactory.isIdentifier(property.key)
           ? property.key.name
-          : t.isStringLiteral(property.key)
+          : astFactory.isStringLiteral(property.key)
             ? property.key.value
             : null;
         if (propName === null) continue;
@@ -671,7 +672,7 @@ function emitElement(
       const a = attr as t.JSXAttribute;
       const propName = jsxAttributeName(a.name);
       const v =
-        a.value == null ? t.booleanLiteral(true) : attrExpr(a.value);
+        a.value == null ? astFactory.booleanLiteral(true) : attrExpr(a.value);
       if (v == null) {
         throw compPath.buildCodeFrameError(
           `memo-dom: prop '${jsxAttributeName(
@@ -768,7 +769,7 @@ function emitElement(
       // through a native onClick attribute on the same component.
       if (inlineCallback) {
         instrumentComponentCallback(ctx, compPath, v, compName, rowCtx, true);
-      } else if (t.isIdentifier(v)) {
+      } else if (astFactory.isIdentifier(v)) {
         const localFn = resolveLocalHelper(ctx, compPath, v.name);
         if (localFn !== null && !nodeHasJsx(localFn.body)) {
           instrumentComponentCallback(
@@ -798,7 +799,7 @@ function emitElement(
       if (
         open.attributes.some(
           (attribute) =>
-            t.isJSXAttribute(attribute) &&
+            astFactory.isJSXAttribute(attribute) &&
             jsxAttributeName(attribute.name) === 'children',
         )
       ) {
@@ -820,8 +821,8 @@ function emitElement(
       );
       if (orderedPropObject !== null) {
         orderedPropObject.properties.push(
-          t.objectProperty(
-            t.identifier('children'),
+          astFactory.objectProperty(
+            astFactory.identifier('children'),
             cloneEstreeNode(childrenSlot),
           ),
         );
@@ -839,8 +840,8 @@ function emitElement(
     if (orderedPropObject !== null) {
       const propObject = generatedIdentifier(ctx, `${base}Props`);
       scope.creation.push(
-        t.variableDeclaration('const', [
-          t.variableDeclarator(
+        astFactory.variableDeclaration('const', [
+          astFactory.variableDeclarator(
             cloneEstreeNode(propObject),
             cloneEstreeNode(orderedPropObject),
           ),
@@ -850,10 +851,10 @@ function emitElement(
     } else {
       props = orderCallProps(ctx, tag, propEntries);
     }
-    const childId = t.binaryExpression(
+    const childId = astFactory.binaryExpression(
       '+',
       cloneEstreeNode(ownerId),
-      t.stringLiteral(idSuffix),
+      astFactory.stringLiteral(idSuffix),
     );
     const dataPolicies = transparentCallPolicyArgument(
       ctx,
@@ -861,13 +862,13 @@ function emitElement(
       el,
     );
     scope.creation.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.identifier(varName),
-          t.callExpression(t.identifier(tag), [
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
+          astFactory.identifier(varName),
+          astFactory.callExpression(astFactory.identifier(tag), [
             childId,
             cloneEstreeNode(ownerId),
-            ...(props.length > 0 ? [t.arrayExpression(props)] : []),
+            ...(props.length > 0 ? [astFactory.arrayExpression(props)] : []),
             ...(dataPolicies === null ? [] : [dataPolicies]),
           ]),
         ),
@@ -878,14 +879,14 @@ function emitElement(
     // flows down through setProps (shallow-compare → no-op when unchanged)
     const pushProps = (): t.Statement =>
       orderedPropObject === null
-        ? t.expressionStatement(
-            t.callExpression(md(ctx, 'setProps'), [
-              t.binaryExpression(
+        ? astFactory.expressionStatement(
+            astFactory.callExpression(md(ctx, 'setProps'), [
+              astFactory.binaryExpression(
                 '+',
                 cloneEstreeNode(ownerId),
-                t.stringLiteral(idSuffix),
+                astFactory.stringLiteral(idSuffix),
               ),
-              t.arrayExpression(props.map((p) => cloneEstreeNode(p))),
+              astFactory.arrayExpression(props.map((p) => cloneEstreeNode(p))),
             ]),
           )
         : buildSpreadComponentPropUpdate(
@@ -910,7 +911,7 @@ function emitElement(
   const childSvg = elementSvg && tag !== 'foreignObject';
   const innerHtmlAttribute = open.attributes.find(
     (attribute) =>
-      t.isJSXAttribute(attribute) &&
+      astFactory.isJSXAttribute(attribute) &&
       jsxAttributeName(attribute.name) === 'innerHTML',
   );
   if (innerHtmlAttribute !== undefined) {
@@ -920,7 +921,7 @@ function emitElement(
       );
     }
     const hasMeaningfulChildren = el.children.some(
-      (child) => !t.isJSXText(child) || child.value.trim() !== '',
+      (child) => !astFactory.isJSXText(child) || child.value.trim() !== '',
     );
     if (hasMeaningfulChildren) {
       throw compPath.buildCodeFrameError(
@@ -953,9 +954,9 @@ function emitElement(
   });
   const varName = freshNodeName(ctx, scope, tag);
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(varName),
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        astFactory.identifier(varName),
         createElementExpression(renderDocument(ctx, scope), tag, elementSvg),
       ),
     ]),
@@ -963,7 +964,7 @@ function emitElement(
 
   // -- attributes ---------------------------------------------------------
   const hasSpread = open.attributes.some((attribute) =>
-    t.isJSXSpreadAttribute(attribute),
+    astFactory.isJSXSpreadAttribute(attribute),
   );
   if (hasSpread) {
     const ordered = buildOrderedAttributes(open.attributes, {
@@ -983,8 +984,8 @@ function emitElement(
         );
         const binding = generatedIdentifier(ctx, `${name}Handler`);
         scope.creation.push(
-          t.variableDeclaration('const', [
-            t.variableDeclarator(cloneEstreeNode(binding), handler),
+          astFactory.variableDeclaration('const', [
+            astFactory.variableDeclarator(cloneEstreeNode(binding), handler),
           ]),
         );
         return binding;
@@ -995,21 +996,21 @@ function emitElement(
     });
     const propObject = generatedIdentifier(ctx, `${tag}Props`);
     scope.creation.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
           cloneEstreeNode(propObject),
           cloneEstreeNode(ordered.expression),
         ),
       ]),
     );
     const patch = (value: t.Expression): t.Statement =>
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'patchDomProps'), [
-          t.identifier(varName),
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'patchDomProps'), [
+          astFactory.identifier(varName),
           cloneEstreeNode(value),
-          t.stringLiteral(ctx.rootId),
-          t.arrayExpression(
-            ordered.safeEventKeys.map((name) => t.stringLiteral(name)),
+          astFactory.stringLiteral(ctx.rootId),
+          astFactory.arrayExpression(
+            ordered.safeEventKeys.map((name) => astFactory.stringLiteral(name)),
           ),
         ]),
       );
@@ -1017,9 +1018,9 @@ function emitElement(
     emitRefMount(
       ctx,
       scope,
-      t.identifier(varName),
+      astFactory.identifier(varName),
       ownerId,
-      t.memberExpression(cloneEstreeNode(propObject), t.identifier('ref')),
+      astFactory.memberExpression(cloneEstreeNode(propObject), astFactory.identifier('ref')),
     );
     scope.updaters.push(() => patch(ordered.expression));
   } else {
@@ -1037,7 +1038,7 @@ function emitElement(
       emitRefMount(
         ctx,
         scope,
-        t.identifier(varName),
+        astFactory.identifier(varName),
         ownerId,
         compileRefValue(ctx, compPath, compName, value),
       );
@@ -1072,20 +1073,20 @@ function emitElement(
       const delegatedBinding = scope.delegatedEventBindings.get(attrName);
       scope.creation.push(
         delegatedBinding === undefined
-          ? t.expressionStatement(
-              t.assignmentExpression(
+          ? astFactory.expressionStatement(
+              astFactory.assignmentExpression(
                 '=',
-                t.memberExpression(
-                  t.identifier(varName),
-                  t.identifier(attrName.toLowerCase()),
+                astFactory.memberExpression(
+                  astFactory.identifier(varName),
+                  astFactory.identifier(attrName.toLowerCase()),
                 ),
                 handler,
               ),
             )
-          : t.expressionStatement(
-              t.callExpression(md(ctx, 'setDelegatedEvent'), [
-                t.identifier(delegatedBinding),
-                t.identifier(varName),
+          : astFactory.expressionStatement(
+              astFactory.callExpression(md(ctx, 'setDelegatedEvent'), [
+                astFactory.identifier(delegatedBinding),
+                astFactory.identifier(varName),
                 handler,
               ]),
             ),
@@ -1093,22 +1094,22 @@ function emitElement(
       continue;
     }
 
-    if (t.isStringLiteral(a.value)) {
+    if (astFactory.isStringLiteral(a.value)) {
       if (attrName === 'class' || attrName === 'className') {
         scope.creation.push(
-          t.expressionStatement(
-            t.callExpression(md(ctx, 'setClassValue'), [
-              t.identifier(varName),
-              t.stringLiteral(a.value.value),
+          astFactory.expressionStatement(
+            astFactory.callExpression(md(ctx, 'setClassValue'), [
+              astFactory.identifier(varName),
+              astFactory.stringLiteral(a.value.value),
             ]),
           ),
         );
       } else if (attrName === 'style') {
         scope.creation.push(
-          t.expressionStatement(
-            t.callExpression(md(ctx, 'setStyleValue'), [
-              t.identifier(varName),
-              t.stringLiteral(a.value.value),
+          astFactory.expressionStatement(
+            astFactory.callExpression(md(ctx, 'setStyleValue'), [
+              astFactory.identifier(varName),
+              astFactory.stringLiteral(a.value.value),
             ]),
           ),
         );
@@ -1117,7 +1118,7 @@ function emitElement(
           domPropertyWrite(
             varName,
             attrName,
-            t.stringLiteral(a.value.value),
+            astFactory.stringLiteral(a.value.value),
           ),
         );
       } else if (isMappedDomAttribute(attrName, elementSvg)) {
@@ -1125,25 +1126,25 @@ function emitElement(
           domAttributeWrite(
             varName,
             attrName,
-            t.stringLiteral(a.value.value),
+            astFactory.stringLiteral(a.value.value),
           ),
         );
       } else if (elementSvg) {
         scope.creation.push(
-          t.expressionStatement(
-            t.callExpression(md(ctx, 'setDomValue'), [
-              t.identifier(varName),
-              t.stringLiteral(attrName),
-              t.stringLiteral(a.value.value),
+          astFactory.expressionStatement(
+            astFactory.callExpression(md(ctx, 'setDomValue'), [
+              astFactory.identifier(varName),
+              astFactory.stringLiteral(attrName),
+              astFactory.stringLiteral(a.value.value),
             ]),
           ),
         );
       } else {
         scope.creation.push(
-          t.expressionStatement(
-            t.callExpression(
-              t.memberExpression(t.identifier(varName), t.identifier('setAttribute')),
-              [t.stringLiteral(attrName), t.stringLiteral(a.value.value)],
+          astFactory.expressionStatement(
+            astFactory.callExpression(
+              astFactory.memberExpression(astFactory.identifier(varName), astFactory.identifier('setAttribute')),
+              [astFactory.stringLiteral(attrName), astFactory.stringLiteral(a.value.value)],
             ),
           ),
         );
@@ -1152,7 +1153,7 @@ function emitElement(
     }
 
     const v =
-      a.value == null ? t.booleanLiteral(true) : attrExpr(a.value);
+      a.value == null ? astFactory.booleanLiteral(true) : attrExpr(a.value);
     if (v == null) {
       throw compPath.buildCodeFrameError(
         `memo-dom: attribute '${attrName}' needs a string or an expression (L1)`,
@@ -1162,9 +1163,9 @@ function emitElement(
     const expr = cloneEstreeNode(v);
     if (attrName === 'style') {
       const setStyle = (): t.Statement =>
-        t.expressionStatement(
-          t.callExpression(md(ctx, 'setStyleValue'), [
-            t.identifier(varName),
+        astFactory.expressionStatement(
+          astFactory.callExpression(md(ctx, 'setStyleValue'), [
+            astFactory.identifier(varName),
             cloneEstreeNode(expr),
           ]),
         );
@@ -1190,11 +1191,11 @@ function emitElement(
         return slotGuard(
           scope,
           key,
-          t.callExpression(md(ctx, 'classValue'), [cloneEstreeNode(expr)]),
+          astFactory.callExpression(md(ctx, 'classValue'), [cloneEstreeNode(expr)]),
           (tmp) =>
-            t.expressionStatement(
-              t.callExpression(md(ctx, 'setClassValue'), [
-                t.identifier(varName),
+            astFactory.expressionStatement(
+              astFactory.callExpression(md(ctx, 'setClassValue'), [
+                astFactory.identifier(varName),
                 tmp,
               ]),
             ),
@@ -1212,10 +1213,10 @@ function emitElement(
       }
       if (elementSvg) {
         return slotGuard(scope, key, cloneEstreeNode(expr), (tmp) =>
-          t.expressionStatement(
-            t.callExpression(md(ctx, 'setDomValue'), [
-              t.identifier(varName),
-              t.stringLiteral(attrName),
+          astFactory.expressionStatement(
+            astFactory.callExpression(md(ctx, 'setDomValue'), [
+              astFactory.identifier(varName),
+              astFactory.stringLiteral(attrName),
               tmp,
             ]),
           ),

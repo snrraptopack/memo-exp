@@ -5,7 +5,8 @@
  * the structural-region pipeline already understands. Formatting whitespace
  * and JSX comments do not interrupt a chain.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import type { JsxChild } from '../components/children';
@@ -28,7 +29,7 @@ interface ConditionalDirective {
 }
 
 function directiveName(attribute: t.JSXAttribute): DirectiveKind | null {
-  if (!t.isJSXIdentifier(attribute.name)) return null;
+  if (!astFactory.isJSXIdentifier(attribute.name)) return null;
   const name = attribute.name.name;
   return name === 'if' || name === 'else-if' || name === 'else'
     ? name
@@ -41,7 +42,7 @@ function readDirective(
 ): ConditionalDirective | null {
   let directive: ConditionalDirective | null = null;
   for (const attribute of element.openingElement.attributes) {
-    if (!t.isJSXAttribute(attribute)) continue;
+    if (!astFactory.isJSXAttribute(attribute)) continue;
     const kind = directiveName(attribute);
     if (kind === null) continue;
     if (directive !== null) {
@@ -59,9 +60,9 @@ function readDirective(
       continue;
     }
     if (
-      !t.isJSXExpressionContainer(attribute.value) ||
-      t.isJSXEmptyExpression(attribute.value.expression) ||
-      !t.isExpression(attribute.value.expression)
+      !astFactory.isJSXExpressionContainer(attribute.value) ||
+      astFactory.isJSXEmptyExpression(attribute.value.expression) ||
+      !astFactory.isExpression(attribute.value.expression)
     ) {
       throw errorAt.buildCodeFrameError(
         `memo-dom: the JSX ${kind} directive requires an expression, for example ${kind}={condition}`,
@@ -78,15 +79,15 @@ function readDirective(
 function removeDirective(element: t.JSXElement): void {
   element.openingElement.attributes = element.openingElement.attributes.filter(
     (attribute) =>
-      !t.isJSXAttribute(attribute) || directiveName(attribute) === null,
+      !astFactory.isJSXAttribute(attribute) || directiveName(attribute) === null,
   );
 }
 
 function isFormattingTrivia(child: JsxChild): boolean {
   return (
-    (t.isJSXText(child) && child.value.trim() === '') ||
-    (t.isJSXExpressionContainer(child) &&
-      t.isJSXEmptyExpression(child.expression))
+    (astFactory.isJSXText(child) && child.value.trim() === '') ||
+    (astFactory.isJSXExpressionContainer(child) &&
+      astFactory.isJSXEmptyExpression(child.expression))
   );
 }
 
@@ -101,7 +102,7 @@ function normalizeChildren(
   let index = 0;
   while (index < children.length) {
     const child = children[index]!;
-    if (!t.isJSXElement(child)) {
+    if (!astFactory.isJSXElement(child)) {
       output.push(child);
       index++;
       continue;
@@ -140,7 +141,7 @@ function normalizeChildren(
       }
 
       const candidate = children[cursor]!;
-      if (!t.isJSXElement(candidate)) {
+      if (!astFactory.isJSXElement(candidate)) {
         trailingTrivia = trivia;
         break;
       }
@@ -168,16 +169,16 @@ function normalizeChildren(
       break;
     }
 
-    let expression: t.Expression = finalElse ?? t.nullLiteral();
+    let expression: t.Expression = finalElse ?? astFactory.nullLiteral();
     for (let branch = conditionalBranches.length - 1; branch >= 0; branch--) {
       const item = conditionalBranches[branch]!;
-      expression = t.conditionalExpression(
+      expression = astFactory.conditionalExpression(
         item.condition,
         item.element,
         expression,
       );
     }
-    output.push(t.jsxExpressionContainer(expression), ...trailingTrivia);
+    output.push(astFactory.jsxExpressionContainer(expression), ...trailingTrivia);
     index = cursor;
   }
 
@@ -227,15 +228,15 @@ export function normalizeConditionalJsxDirectives(
         );
       }
       removeDirective(element);
-      const fragment = t.jsxFragment(
-        t.jsxOpeningFragment(),
-        t.jsxClosingFragment(),
+      const fragment = astFactory.jsxFragment(
+        astFactory.jsxOpeningFragment(),
+        astFactory.jsxClosingFragment(),
         [
-          t.jsxExpressionContainer(
-            t.conditionalExpression(
+          astFactory.jsxExpressionContainer(
+            astFactory.conditionalExpression(
               directive.condition!,
               element,
-              t.nullLiteral(),
+              astFactory.nullLiteral(),
             ),
           ),
         ],

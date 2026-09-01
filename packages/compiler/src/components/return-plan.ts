@@ -1,7 +1,8 @@
 /**
  * Normalize supported JSX return control flow into one stable branch picker.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import type { JsxNode } from '../jsx/children';
@@ -48,9 +49,9 @@ export type ComponentReturns = DirectComponentReturn | ComponentReturnPlan;
 
 function jsxReturn(statement: t.Statement): DirectComponentReturn | null {
   if (
-    !t.isReturnStatement(statement) ||
-    (!t.isJSXElement(statement.argument) &&
-      !t.isJSXFragment(statement.argument))
+    !astFactory.isReturnStatement(statement) ||
+    (!astFactory.isJSXElement(statement.argument) &&
+      !astFactory.isJSXFragment(statement.argument))
   ) {
     return null;
   }
@@ -84,13 +85,13 @@ interface BranchReturn {
 }
 
 function branchReturn(statement: t.Statement): BranchReturn | null {
-  if (!t.isReturnStatement(statement)) return null;
+  if (!astFactory.isReturnStatement(statement)) return null;
   if (isEmptyReturnArgument(statement.argument)) {
     return { jsx: null, statement };
   }
   if (
-    !t.isJSXElement(statement.argument) &&
-    !t.isJSXFragment(statement.argument)
+    !astFactory.isJSXElement(statement.argument) &&
+    !astFactory.isJSXFragment(statement.argument)
   ) {
     return null;
   }
@@ -98,7 +99,7 @@ function branchReturn(statement: t.Statement): BranchReturn | null {
 }
 
 function soleBranchReturn(statement: t.Statement): BranchReturn | null {
-  if (t.isBlockStatement(statement)) {
+  if (astFactory.isBlockStatement(statement)) {
     return statement.body.length === 1
       ? branchReturn(statement.body[0]!)
       : null;
@@ -122,16 +123,16 @@ function componentReturns(
 }
 
 function canHoistPastEarlyReturn(statement: t.Statement): boolean {
-  if (t.isFunctionDeclaration(statement)) return true;
-  if (t.isVariableDeclaration(statement)) {
+  if (astFactory.isFunctionDeclaration(statement)) return true;
+  if (astFactory.isVariableDeclaration(statement)) {
     return statement.declarations.every(
       (declaration) =>
         declaration.init == null ||
-        t.isFunction(declaration.init) ||
+        astFactory.isFunction(declaration.init) ||
         expressionCanHoist(declaration.init),
     );
   }
-  if (t.isSwitchStatement(statement) || t.isIfStatement(statement)) {
+  if (astFactory.isSwitchStatement(statement) || astFactory.isIfStatement(statement)) {
     let safe = true;
     walkAst<BaseNode>(statement as unknown as BaseNode, {
       enter(node) {
@@ -145,7 +146,7 @@ function canHoistPastEarlyReturn(statement: t.Statement): boolean {
     });
     return safe;
   }
-  return t.isTypeScript(statement);
+  return astFactory.isTypeScript(statement);
 }
 
 function expressionCanHoist(expression: t.Expression): boolean {
@@ -174,17 +175,17 @@ function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
     const index = branches.length;
     branches.push(returned.jsx);
     cases.push(
-      t.switchCase(
+      astFactory.switchCase(
         item.test == null ? null : cloneEstreeNode(item.test),
-        [t.returnStatement(t.numericLiteral(index))],
+        [astFactory.returnStatement(astFactory.numericLiteral(index))],
       ),
     );
   }
   return {
-    pick: t.arrowFunctionExpression(
+    pick: astFactory.arrowFunctionExpression(
       [],
-      t.blockStatement([
-        t.switchStatement(cloneEstreeNode(statement.discriminant), cases),
+      astFactory.blockStatement([
+        astFactory.switchStatement(cloneEstreeNode(statement.discriminant), cases),
       ]),
     ),
     branches,
@@ -213,7 +214,7 @@ export function analyzeComponentReturns(
     if (direct !== null) return direct;
   }
 
-  if (final && t.isIfStatement(final) && final.alternate != null) {
+  if (final && astFactory.isIfStatement(final) && final.alternate != null) {
     const alternateStatement = final.alternate;
     const consequent = soleBranchReturn(final.consequent);
     const alternate = soleBranchReturn(alternateStatement);
@@ -224,12 +225,12 @@ export function analyzeComponentReturns(
       returns.length === 2
     ) {
       return {
-        pick: t.arrowFunctionExpression(
+        pick: astFactory.arrowFunctionExpression(
           [],
-          t.conditionalExpression(
+          astFactory.conditionalExpression(
             cloneEstreeNode(final.test),
-            t.numericLiteral(0),
-            t.numericLiteral(1),
+            astFactory.numericLiteral(0),
+            astFactory.numericLiteral(1),
           ),
         ),
         branches: [consequent.jsx, alternate.jsx],
@@ -238,7 +239,7 @@ export function analyzeComponentReturns(
     }
   }
 
-  if (final && t.isSwitchStatement(final)) {
+  if (final && astFactory.isSwitchStatement(final)) {
     const plan = switchPlan(final);
     if (plan !== null && plan.branches.length === returns.length) return plan;
   }
@@ -252,7 +253,7 @@ export function analyzeComponentReturns(
     let hoistable = true;
     for (let index = 0; index < body.length - 1; index++) {
       const statement = body[index]!;
-      if (t.isIfStatement(statement) && statement.alternate == null) {
+      if (astFactory.isIfStatement(statement) && statement.alternate == null) {
         const returned = soleBranchReturn(statement.consequent);
         if (returned !== null) {
           if (firstEarlyReturn === -1) firstEarlyReturn = index;
@@ -277,16 +278,16 @@ export function analyzeComponentReturns(
       branches.length > 1 &&
       branches.some((branch) => branch !== null)
     ) {
-      let pick: t.Expression = t.numericLiteral(branches.length - 1);
+      let pick: t.Expression = astFactory.numericLiteral(branches.length - 1);
       for (let index = tests.length - 1; index >= 0; index--) {
-        pick = t.conditionalExpression(
+        pick = astFactory.conditionalExpression(
           tests[index]!,
-          t.numericLiteral(index),
+          astFactory.numericLiteral(index),
           pick,
         );
       }
       return {
-        pick: t.arrowFunctionExpression([], pick),
+        pick: astFactory.arrowFunctionExpression([], pick),
         branches,
         statements,
       };

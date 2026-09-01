@@ -1,7 +1,8 @@
 /**
  * Collects caller-side provenance for values passed through component props.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import type { BaseNode } from '../ast';
 import {
   astBindingAt,
@@ -33,10 +34,10 @@ export type ComponentPropSourceRefs = Record<
 function unwrapExpression(node: t.Expression): t.Expression {
   let current = node;
   while (
-    t.isTSAsExpression(current) ||
-    t.isTSTypeAssertion(current) ||
-    t.isTSNonNullExpression(current) ||
-    t.isTSSatisfiesExpression(current)
+    astFactory.isTSAsExpression(current) ||
+    astFactory.isTSTypeAssertion(current) ||
+    astFactory.isTSNonNullExpression(current) ||
+    astFactory.isTSSatisfiesExpression(current)
   ) {
     current = current.expression;
   }
@@ -48,7 +49,7 @@ function moduleStateSource(
   raw: t.Expression,
 ): string | null {
   const expression = unwrapExpression(raw);
-  if (t.isIdentifier(expression)) {
+  if (astFactory.isIdentifier(expression)) {
     if (
       !ctx.state.has(expression.name) ||
       astBindingAt(ctx, expression as unknown as BaseNode, expression.name)
@@ -58,7 +59,7 @@ function moduleStateSource(
     }
     return canonicalStateKey(ctx, expression.name);
   }
-  if (!t.isMemberExpression(expression)) return null;
+  if (!astFactory.isMemberExpression(expression)) return null;
   const root = memberRootName(expression);
   if (
     root === null ||
@@ -76,13 +77,13 @@ function parentPropSource(
   raw: t.Expression,
 ): ComponentPropSourceRef | null {
   const expression = unwrapExpression(raw);
-  if (t.isIdentifier(expression)) {
+  if (astFactory.isIdentifier(expression)) {
     const name = propNameForBinding(plan, expression.name);
     return name === null
       ? null
       : { type: 'prop', name, path: [] };
   }
-  if (!t.isMemberExpression(expression)) return null;
+  if (!astFactory.isMemberExpression(expression)) return null;
   const root = memberRootName(expression);
   const key = memberKey(expression);
   if (root === null || key === null) return null;
@@ -108,7 +109,7 @@ function mentionsParentProp(
   const genericProps = objectBindingName(plan);
   walkNodes(expression, (node) => {
     if (
-      t.isIdentifier(node) &&
+      astFactory.isIdentifier(node) &&
       (node.name === genericProps ||
         propNameForBinding(plan, node.name) !== null)
     ) {
@@ -120,12 +121,12 @@ function mentionsParentProp(
 
 function isIdentityFree(expression: t.Expression): boolean {
   return (
-    t.isStringLiteral(expression) ||
-    t.isNumericLiteral(expression) ||
-    t.isBooleanLiteral(expression) ||
-    t.isNullLiteral(expression) ||
-    t.isBigIntLiteral(expression) ||
-    t.isTemplateLiteral(expression) ||
+    astFactory.isStringLiteral(expression) ||
+    astFactory.isNumericLiteral(expression) ||
+    astFactory.isBooleanLiteral(expression) ||
+    astFactory.isNullLiteral(expression) ||
+    astFactory.isBigIntLiteral(expression) ||
+    astFactory.isTemplateLiteral(expression) ||
     (expression as unknown as BaseNode).type === 'Literal'
   );
 }
@@ -142,7 +143,7 @@ function sourceOf(
   const parentProp = parentPropSource(plan, expression);
   if (parentProp !== null) return parentProp;
 
-  if (t.isIdentifier(expression)) {
+  if (astFactory.isIdentifier(expression)) {
     const binding = astBindingAt(
       ctx,
       expression as unknown as BaseNode,
@@ -167,9 +168,9 @@ function sourceOf(
   }
 
   const root =
-    t.isIdentifier(expression)
+    astFactory.isIdentifier(expression)
       ? expression.name
-      : t.isMemberExpression(expression)
+      : astFactory.isMemberExpression(expression)
         ? memberRootName(expression)
         : null;
   if (
@@ -206,7 +207,7 @@ function addSource(
 }
 
 function jsxPropName(attribute: t.JSXAttribute): string | null {
-  if (t.isJSXIdentifier(attribute.name)) return attribute.name.name;
+  if (astFactory.isJSXIdentifier(attribute.name)) return attribute.name.name;
   return null;
 }
 
@@ -221,18 +222,18 @@ export function collectComponentPropSources(
     if (node.type !== 'JSXOpeningElement') return;
     const opening = node as t.JSXOpeningElement;
     const name = opening.name;
-    if (!t.isJSXIdentifier(name) || !/^[A-Z]/.test(name.name)) return;
+    if (!astFactory.isJSXIdentifier(name) || !/^[A-Z]/.test(name.name)) return;
     const targetPlan = ctx.componentProps.get(name.name);
 
     for (const attribute of opening.attributes) {
-      if (t.isJSXSpreadAttribute(attribute)) {
+      if (astFactory.isJSXSpreadAttribute(attribute)) {
         for (const prop of targetPlan?.names ?? []) {
           if (prop === 'ref' || targetPlan?.refProps.includes(prop)) continue;
           addSource(byTag, name.name, prop, { type: 'root' });
         }
         continue;
       }
-      if (!t.isJSXAttribute(attribute)) continue;
+      if (!astFactory.isJSXAttribute(attribute)) continue;
       const prop = jsxPropName(attribute);
       if (
         prop === null ||
@@ -244,7 +245,7 @@ export function collectComponentPropSources(
       }
       const value = attribute.value;
       if (
-        !t.isJSXExpressionContainer(value) ||
+        !astFactory.isJSXExpressionContainer(value) ||
         value.expression.type === 'JSXEmptyExpression'
       ) {
         addSource(byTag, name.name, prop, { type: 'local' });

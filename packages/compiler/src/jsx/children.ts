@@ -6,7 +6,8 @@
  * without deciding when the eventual parent node is created.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { nodeHasJsx } from '../context';
 import { matchCond } from '../conds';
@@ -40,21 +41,21 @@ function combineTextExpressions(expressions: t.Expression[]): t.Expression {
   const merged: t.Expression[] = [];
   for (const expr of expressions) {
     const last = merged[merged.length - 1];
-    if (last && t.isStringLiteral(last) && t.isStringLiteral(expr)) {
-      merged[merged.length - 1] = t.stringLiteral(last.value + expr.value);
+    if (last && astFactory.isStringLiteral(last) && astFactory.isStringLiteral(expr)) {
+      merged[merged.length - 1] = astFactory.stringLiteral(last.value + expr.value);
     } else {
       merged.push(expr);
     }
   }
   if (merged.length === 1) return merged[0]!;
 
-  const hasString = merged.some((e) => t.isStringLiteral(e));
+  const hasString = merged.some((e) => astFactory.isStringLiteral(e));
   let result: t.Expression = hasString
     ? merged[0]!
-    : t.binaryExpression('+', t.stringLiteral(''), merged[0]!);
+    : astFactory.binaryExpression('+', astFactory.stringLiteral(''), merged[0]!);
 
   for (let i = 1; i < merged.length; i++) {
-    result = t.binaryExpression('+', result, merged[i]!);
+    result = astFactory.binaryExpression('+', result, merged[i]!);
   }
   return result;
 }
@@ -78,23 +79,23 @@ export function collectDirectChildren(
   };
 
   for (const child of children) {
-    if (t.isJSXText(child)) {
+    if (astFactory.isJSXText(child)) {
       const value = normalizeJsxText(child.value);
       if (value !== '') {
-        pendingText.push(t.stringLiteral(value));
+        pendingText.push(astFactory.stringLiteral(value));
       }
       continue;
     }
-    if (t.isJSXElement(child) || t.isJSXFragment(child)) {
+    if (astFactory.isJSXElement(child) || astFactory.isJSXFragment(child)) {
       flushText();
       result.push({ type: 'node', variable: emitters.emitNode(child) });
       continue;
     }
-    if (!t.isJSXExpressionContainer(child)) {
+    if (!astFactory.isJSXExpressionContainer(child)) {
       emitters.fail('memo-dom: spread children are not supported');
     }
-    if (t.isJSXEmptyExpression(child.expression)) continue;
-    if (!t.isExpression(child.expression)) {
+    if (astFactory.isJSXEmptyExpression(child.expression)) continue;
+    if (!astFactory.isExpression(child.expression)) {
       emitters.fail('memo-dom: unsupported expression in JSX child position');
     }
 
@@ -105,9 +106,9 @@ export function collectDirectChildren(
       continue;
     }
     if (
-      t.isNullLiteral(expression) ||
-      t.isBooleanLiteral(expression) ||
-      t.isIdentifier(expression, { name: 'undefined' })
+      astFactory.isNullLiteral(expression) ||
+      astFactory.isBooleanLiteral(expression) ||
+      astFactory.isIdentifier(expression, { name: 'undefined' })
     ) {
       continue;
     }

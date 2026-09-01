@@ -6,7 +6,8 @@
  * imperative resolution guard; source transitions push the owning component
  * through the ordinary runtime dirty queue.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   astBindingAt,
@@ -44,7 +45,7 @@ function childNode(node: BaseNode, key: string): BaseNode | null {
 }
 
 function importedName(specifier: t.ImportSpecifier): string {
-  return t.isIdentifier(specifier.imported)
+  return astFactory.isIdentifier(specifier.imported)
     ? specifier.imported.name
     : specifier.imported.value;
 }
@@ -61,11 +62,11 @@ export function scanTransparentSourceImports(
     ]),
   );
   for (const statement of programPath.node.body) {
-    if (!t.isImportDeclaration(statement)) continue;
+    if (!astFactory.isImportDeclaration(statement)) continue;
     const definition = definitions.get(statement.source.value);
     if (definition === undefined) continue;
     for (const specifier of statement.specifiers) {
-      if (!t.isImportSpecifier(specifier)) continue;
+      if (!astFactory.isImportSpecifier(specifier)) continue;
       const name = importedName(specifier);
       if (name === definition.source) {
         ctx.transparentSourceFactories.add(specifier.local.name);
@@ -104,7 +105,7 @@ export function scanTransparentSourceImports(
 }
 
 function jsxTagName(element: t.JSXElement): string | null {
-  return t.isJSXIdentifier(element.openingElement.name)
+  return astFactory.isJSXIdentifier(element.openingElement.name)
     ? element.openingElement.name.name
     : null;
 }
@@ -115,7 +116,7 @@ function meaningfulGroupChildren(
 ): Array<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer> {
   return element.children.filter((child): child is
     t.JSXElement | t.JSXFragment | t.JSXExpressionContainer => {
-    if (t.isJSXText(child)) {
+    if (astFactory.isJSXText(child)) {
       if (child.value.trim() !== '') {
         throw errorAt.buildCodeFrameError(
           'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
@@ -124,14 +125,14 @@ function meaningfulGroupChildren(
       return false;
     }
     if (
-      t.isJSXExpressionContainer(child) &&
-      t.isJSXEmptyExpression(child.expression)
+      astFactory.isJSXExpressionContainer(child) &&
+      astFactory.isJSXEmptyExpression(child.expression)
     ) {
       return false;
     }
-    return t.isJSXElement(child) ||
-      t.isJSXFragment(child) ||
-      t.isJSXExpressionContainer(child);
+    return astFactory.isJSXElement(child) ||
+      astFactory.isJSXFragment(child) ||
+      astFactory.isJSXExpressionContainer(child);
   });
 }
 
@@ -148,20 +149,20 @@ function componentPolicy(
     );
   }
   const attributes = element.openingElement.attributes;
-  if (attributes.length !== 1 || !t.isJSXAttribute(attributes[0])) {
+  if (attributes.length !== 1 || !astFactory.isJSXAttribute(attributes[0])) {
     throw errorAt.buildCodeFrameError(
       `memo-dom: <${label}> requires exactly one component prop`,
     );
   }
   const attribute = attributes[0];
-  const name = t.isJSXIdentifier(attribute.name)
+  const name = astFactory.isJSXIdentifier(attribute.name)
     ? attribute.name.name
     : null;
   const value = attribute.value;
   if (
     name !== 'component' ||
-    !t.isJSXExpressionContainer(value) ||
-    !t.isIdentifier(value.expression)
+    !astFactory.isJSXExpressionContainer(value) ||
+    !astFactory.isIdentifier(value.expression)
   ) {
     throw errorAt.buildCodeFrameError(
       `memo-dom: <${label}> component must reference a component identifier`,
@@ -176,20 +177,20 @@ function groupDataNames(
 ): string[] {
   const attributes = element.openingElement.attributes;
   const data = attributes.find((attribute) =>
-    t.isJSXAttribute(attribute) &&
-    t.isJSXIdentifier(attribute.name, { name: 'data' }),
+    astFactory.isJSXAttribute(attribute) &&
+    astFactory.isJSXIdentifier(attribute.name, { name: 'data' }),
   );
   if (
-    !t.isJSXAttribute(data) ||
-    !t.isJSXExpressionContainer(data.value)
+    !astFactory.isJSXAttribute(data) ||
+    !astFactory.isJSXExpressionContainer(data.value)
   ) {
     throw errorAt.buildCodeFrameError(
       'memo-dom: <Group> requires data={source} or data={{ source, ... }}',
     );
   }
   const expression = data.value.expression;
-  if (t.isIdentifier(expression)) return [expression.name];
-  if (!t.isObjectExpression(expression)) {
+  if (astFactory.isIdentifier(expression)) return [expression.name];
+  if (!astFactory.isObjectExpression(expression)) {
     throw errorAt.buildCodeFrameError(
       'memo-dom: Group.data currently accepts a source identifier or an object of source identifiers',
     );
@@ -197,9 +198,9 @@ function groupDataNames(
   const names: string[] = [];
   for (const property of expression.properties) {
     if (
-      !t.isObjectProperty(property) ||
+      !astFactory.isObjectProperty(property) ||
       property.computed ||
-      !t.isIdentifier(property.value)
+      !astFactory.isIdentifier(property.value)
     ) {
       throw errorAt.buildCodeFrameError(
         'memo-dom: every Group.data object value must be a source identifier',
@@ -211,15 +212,15 @@ function groupDataNames(
 }
 
 function policyElement(name: string, attributes: t.JSXAttribute[]): t.JSXElement {
-  return t.jsxElement(
-    t.jsxOpeningElement(t.jsxIdentifier(name), attributes, true),
+  return astFactory.jsxElement(
+    astFactory.jsxOpeningElement(astFactory.jsxIdentifier(name), attributes, true),
     null,
     [],
   );
 }
 
 function sourceArray(names: readonly string[]): t.ArrayExpression {
-  return t.arrayExpression(names.map((name) => t.identifier(name)));
+  return astFactory.arrayExpression(names.map((name) => astFactory.identifier(name)));
 }
 
 type TransparentDataExpression = t.Expression & {
@@ -255,19 +256,19 @@ export function transparentExpressionSources(
   );
   const visit = (node: t.Node): void => {
     if (
-      t.isCallExpression(node) &&
-      t.isMemberExpression(node.callee) &&
+      astFactory.isCallExpression(node) &&
+      astFactory.isMemberExpression(node.callee) &&
       !node.callee.computed &&
-      t.isIdentifier(node.callee.object, {
+      astFactory.isIdentifier(node.callee.object, {
         name: ctx.identifiers?.dataRuntimeId,
       }) &&
-      t.isIdentifier(node.callee.property)
+      astFactory.isIdentifier(node.callee.property)
     ) {
       const helper = node.callee.property.name;
       if (
         (helper === 'readResolvedValue' ||
           helper === 'readResolvedValueForRender') &&
-        t.isIdentifier(node.arguments[0])
+        astFactory.isIdentifier(node.arguments[0])
       ) {
         found.add(node.arguments[0].name);
       }
@@ -276,32 +277,32 @@ export function transparentExpressionSources(
       if (
         (helper === 'readModuleSourceList' ||
           helper === 'readResolvedValueForRender') &&
-        t.isCallExpression(node.arguments[0]) &&
-        t.isMemberExpression(node.arguments[0].callee) &&
-        t.isIdentifier(node.arguments[0].callee.property, {
+        astFactory.isCallExpression(node.arguments[0]) &&
+        astFactory.isMemberExpression(node.arguments[0].callee) &&
+        astFactory.isIdentifier(node.arguments[0].callee.property, {
           name: 'sourceRef',
         }) &&
-        t.isStringLiteral(node.arguments[0].arguments[0])
+        astFactory.isStringLiteral(node.arguments[0].arguments[0])
       ) {
         found.add(node.arguments[0].arguments[0].value);
       }
       if (
         (helper === 'readResolvedValuesForRender' ||
           helper === 'deriveResolvedValues') &&
-        t.isArrayExpression(node.arguments[0])
+        astFactory.isArrayExpression(node.arguments[0])
       ) {
         for (const element of node.arguments[0].elements) {
-          if (t.isIdentifier(element)) {
+          if (astFactory.isIdentifier(element)) {
             found.add(element.name);
             continue;
           }
           // Module lowering emits sourceRef("key") elements; identity is
           // the canonical key itself.
           if (
-            t.isCallExpression(element) &&
-            t.isMemberExpression(element.callee) &&
-            t.isIdentifier(element.callee.property, { name: 'sourceRef' }) &&
-            t.isStringLiteral(element.arguments[0])
+            astFactory.isCallExpression(element) &&
+            astFactory.isMemberExpression(element.callee) &&
+            astFactory.isIdentifier(element.callee.property, { name: 'sourceRef' }) &&
+            astFactory.isStringLiteral(element.arguments[0])
           ) {
             found.add(element.arguments[0].value);
           }
@@ -353,14 +354,14 @@ function subscribeTransparentEntity(
   if (routed.length === 0) return;
   const bindingNames = routed.map((source) => routedSourceName(ctx, source));
   scope.mounts.push(
-    t.expressionStatement(
-      t.callExpression(md(ctx, 'cleanup'), [
+    astFactory.expressionStatement(
+      astFactory.callExpression(md(ctx, 'cleanup'), [
         cloneEstreeNode(entityId, true),
-        t.callExpression(mdd(ctx, 'connectResolvedValues'), [
+        astFactory.callExpression(mdd(ctx, 'connectResolvedValues'), [
           sourceArray(bindingNames),
-          t.arrowFunctionExpression(
+          astFactory.arrowFunctionExpression(
             [],
-            t.callExpression(md(ctx, 'markDirty'), [
+            astFactory.callExpression(md(ctx, 'markDirty'), [
               cloneEstreeNode(entityId, true),
             ]),
           ),
@@ -383,17 +384,17 @@ export function registerTransparentDataSite(
   );
   if (routed.length === 0) return false;
   const suffix = `/$data/${scope.dataSiteCounter.count++}`;
-  const siteId = t.binaryExpression(
+  const siteId = astFactory.binaryExpression(
     '+',
     cloneEstreeNode(ownerId, true),
-    t.stringLiteral(suffix),
+    astFactory.stringLiteral(suffix),
   );
   scope.creation.push(
     registerStmt(
       ctx,
       cloneEstreeNode(siteId, true),
       cloneEstreeNode(ownerId, true),
-      t.arrowFunctionExpression([], t.blockStatement([render])),
+      astFactory.arrowFunctionExpression([], astFactory.blockStatement([render])),
     ),
   );
   subscribeTransparentEntity(ctx, scope, routed, siteId);
@@ -491,7 +492,7 @@ function isLoweredGroupExpression(expression: t.Expression): boolean {
 }
 
 function componentPropName(attribute: t.JSXAttribute): string | null {
-  return t.isJSXIdentifier(attribute.name)
+  return astFactory.isJSXIdentifier(attribute.name)
     ? attribute.name.name
     : null;
 }
@@ -509,16 +510,16 @@ function annotateGroupComponentCalls(
     if (tag === null || !/^[A-Z]/.test(tag)) return;
     let policies = ctx.transparentGroupCallPolicies.get(element);
     for (const attribute of element.openingElement.attributes) {
-      if (!t.isJSXAttribute(attribute)) continue;
+      if (!astFactory.isJSXAttribute(attribute)) continue;
       const prop = componentPropName(attribute);
       const value = attribute.value;
       if (
         prop === null ||
-        !t.isJSXExpressionContainer(value)
+        !astFactory.isJSXExpressionContainer(value)
       ) continue;
       const expression = value.expression;
       if (
-        !t.isIdentifier(expression) ||
+        !astFactory.isIdentifier(expression) ||
         expressionOrigins(
           ctx,
           expression as unknown as BaseNode,
@@ -549,34 +550,34 @@ function wrapGroupSite(
 ): void {
   const sources = sourceArray(dependencies);
   const errorRead = (): t.CallExpression =>
-    t.callExpression(mdd(ctx, 'resolvedValuesError'), [
+    astFactory.callExpression(mdd(ctx, 'resolvedValuesError'), [
       cloneEstreeNode(sources, true),
     ]);
-  const retry = t.arrowFunctionExpression(
+  const retry = astFactory.arrowFunctionExpression(
     [],
-    t.callExpression(mdd(ctx, 'retryResolvedValues'), [
+    astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
       cloneEstreeNode(sources, true),
     ]),
   );
-  const committed = t.jsxFragment(
-    t.jsxOpeningFragment(),
-    t.jsxClosingFragment(),
-    [t.jsxExpressionContainer(cloneEstreeNode(expression, true))],
+  const committed = astFactory.jsxFragment(
+    astFactory.jsxOpeningFragment(),
+    astFactory.jsxClosingFragment(),
+    [astFactory.jsxExpressionContainer(cloneEstreeNode(expression, true))],
   );
-  const conditional = t.conditionalExpression(
+  const conditional = astFactory.conditionalExpression(
     errorRead(),
     policyElement(error, [
-      t.jsxAttribute(
-        t.jsxIdentifier('error'),
-        t.jsxExpressionContainer(errorRead()),
+      astFactory.jsxAttribute(
+        astFactory.jsxIdentifier('error'),
+        astFactory.jsxExpressionContainer(errorRead()),
       ),
-      t.jsxAttribute(
-        t.jsxIdentifier('retry'),
-        t.jsxExpressionContainer(retry),
+      astFactory.jsxAttribute(
+        astFactory.jsxIdentifier('retry'),
+        astFactory.jsxExpressionContainer(retry),
       ),
     ]),
-    t.conditionalExpression(
-      t.callExpression(mdd(ctx, 'resolvedValuesPending'), [
+    astFactory.conditionalExpression(
+      astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
         cloneEstreeNode(sources, true),
       ]),
       policyElement(pending, []),
@@ -607,9 +608,9 @@ function policyRendererElement(
   renderer: t.Expression,
   args: t.Expression[],
 ): t.JSXElement {
-  const element = t.jsxElement(
-    t.jsxOpeningElement(
-      t.jsxIdentifier('mmd-data-policy-render'),
+  const element = astFactory.jsxElement(
+    astFactory.jsxOpeningElement(
+      astFactory.jsxIdentifier('mmd-data-policy-render'),
       [],
       true,
     ),
@@ -634,10 +635,10 @@ function sourcePolicy(
 ): t.Expression {
   const parameter = ctx.transparentPolicyParams.get(component);
   const prop = ctx.transparentSourceProps.get(component)?.get(source);
-  if (parameter === undefined || prop === undefined) return t.nullLiteral();
-  return t.optionalMemberExpression(
+  if (parameter === undefined || prop === undefined) return astFactory.nullLiteral();
+  return astFactory.optionalMemberExpression(
     cloneEstreeNode(parameter),
-    isValidEstreeIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
+    isValidEstreeIdentifier(prop) ? astFactory.identifier(prop) : astFactory.stringLiteral(prop),
     !isValidEstreeIdentifier(prop),
     true,
   );
@@ -654,9 +655,9 @@ function policyForStatus(
   );
   const selected = dependencies.length === 1
     ? policies[0]!
-    : t.memberExpression(
-        t.arrayExpression(policies),
-        t.callExpression(mdd(ctx, indexHelper), [sourceArray(dependencies)]),
+    : astFactory.memberExpression(
+        astFactory.arrayExpression(policies),
+        astFactory.callExpression(mdd(ctx, indexHelper), [sourceArray(dependencies)]),
         true,
       );
   return selected;
@@ -666,19 +667,19 @@ function policyMember(
   policy: t.Expression,
   name: 'pending' | 'error',
 ): t.Expression {
-  return t.optionalMemberExpression(
+  return astFactory.optionalMemberExpression(
     cloneEstreeNode(policy),
-    t.identifier(name),
+    astFactory.identifier(name),
     false,
     true,
   );
 }
 
 function fragmentExpression(expression: t.Expression): t.JSXFragment {
-  return t.jsxFragment(
-    t.jsxOpeningFragment(),
-    t.jsxClosingFragment(),
-    [t.jsxExpressionContainer(expression)],
+  return astFactory.jsxFragment(
+    astFactory.jsxOpeningFragment(),
+    astFactory.jsxClosingFragment(),
+    [astFactory.jsxExpressionContainer(expression)],
   );
 }
 
@@ -690,11 +691,11 @@ function wrapAutomaticSite(
 ): void {
   const sources = sourceArray(dependencies);
   const errorRead = (): t.CallExpression =>
-    t.callExpression(mdd(ctx, 'resolvedValuesError'), [
+    astFactory.callExpression(mdd(ctx, 'resolvedValuesError'), [
       cloneEstreeNode(sources, true),
     ]);
   const pendingRead = (): t.CallExpression =>
-    t.callExpression(mdd(ctx, 'resolvedValuesPending'), [
+    astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
       cloneEstreeNode(sources, true),
     ]);
   const errorPolicy = policyForStatus(
@@ -711,28 +712,28 @@ function wrapAutomaticSite(
   );
   const errorRenderer = policyMember(errorPolicy, 'error');
   const pendingRenderer = policyMember(pendingPolicy, 'pending');
-  const retry = t.arrowFunctionExpression(
+  const retry = astFactory.arrowFunctionExpression(
     [],
-    t.callExpression(mdd(ctx, 'retryResolvedValues'), [
+    astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
       cloneEstreeNode(sources, true),
     ]),
   );
-  const conditional = t.conditionalExpression(
-    t.logicalExpression('&&', errorRead(), cloneEstreeNode(errorRenderer)),
+  const conditional = astFactory.conditionalExpression(
+    astFactory.logicalExpression('&&', errorRead(), cloneEstreeNode(errorRenderer)),
     policyRendererElement(cloneEstreeNode(errorRenderer), [errorRead(), retry]),
-    t.conditionalExpression(
+    astFactory.conditionalExpression(
       errorRead(),
       fragmentExpression(
-        t.callExpression(mdd(ctx, 'throwResolvedValuesError'), [
+        astFactory.callExpression(mdd(ctx, 'throwResolvedValuesError'), [
           cloneEstreeNode(sources, true),
         ]),
       ),
-      t.conditionalExpression(
-        t.logicalExpression('&&', pendingRead(), cloneEstreeNode(pendingRenderer)),
+      astFactory.conditionalExpression(
+        astFactory.logicalExpression('&&', pendingRead(), cloneEstreeNode(pendingRenderer)),
         policyRendererElement(cloneEstreeNode(pendingRenderer), []),
-        t.conditionalExpression(
+        astFactory.conditionalExpression(
           pendingRead(),
-          t.jsxFragment(t.jsxOpeningFragment(), t.jsxClosingFragment(), []),
+          astFactory.jsxFragment(astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(), []),
           fragmentExpression(cloneEstreeNode(expression, true)),
         ),
       ),
@@ -770,7 +771,7 @@ export function lowerTransparentGroups(
           );
         }
         const [pendingElement, errorElement, content] = children;
-        if (!t.isJSXElement(pendingElement) || !t.isJSXElement(errorElement)) {
+        if (!astFactory.isJSXElement(pendingElement) || !astFactory.isJSXElement(errorElement)) {
           throw programPath.buildCodeFrameError(
             'memo-dom: Group children one and two must be Pending and Error declarations',
           );
@@ -808,7 +809,7 @@ export function lowerTransparentGroups(
             const expression = childNode(current, 'expression');
             if (
               expression === null ||
-              !t.isExpression(expression as unknown as t.Node)
+              !astFactory.isExpression(expression as unknown as t.Node)
             ) return false;
             const authoredExpression = expression as unknown as t.Expression;
             if (isLoweredGroupExpression(authoredExpression)) return false;
@@ -861,14 +862,14 @@ export function scanAndLowerModuleSourceDeclarations(
   for (const statement of programPath.node.body.slice()) {
     const sourceDescriptions: t.Statement[] = [];
     const requestInputEffects: t.Statement[] = [];
-    const inner = t.isExportNamedDeclaration(statement)
+    const inner = astFactory.isExportNamedDeclaration(statement)
       ? statement.declaration
       : statement;
-    if (!t.isVariableDeclaration(inner)) continue;
+    if (!astFactory.isVariableDeclaration(inner)) continue;
     for (const declarator of inner.declarations) {
-      if (!t.isIdentifier(declarator.id)) continue;
-      if (!t.isCallExpression(declarator.init)) continue;
-      if (!t.isIdentifier(declarator.init.callee)) continue;
+      if (!astFactory.isIdentifier(declarator.id)) continue;
+      if (!astFactory.isCallExpression(declarator.init)) continue;
+      if (!astFactory.isIdentifier(declarator.init.callee)) continue;
       if (!ctx.transparentSourceFactories.has(declarator.init.callee.name)) {
         continue;
       }
@@ -904,20 +905,20 @@ export function scanAndLowerModuleSourceDeclarations(
           },
         });
       };
-      noteProgramReads(t.isNode(target) ? target : undefined);
-      noteProgramReads(t.isNode(options) ? options : undefined);
+      noteProgramReads(astFactory.isNode(target) ? target : undefined);
+      noteProgramReads(astFactory.isNode(options) ? options : undefined);
       if (readsProgramBinding) {
         requestInputEffects.push(
-          t.expressionStatement(
-            t.callExpression(t.identifier('effect'), [
-              t.arrowFunctionExpression(
+          astFactory.expressionStatement(
+            astFactory.callExpression(astFactory.identifier('effect'), [
+              astFactory.arrowFunctionExpression(
                 [],
-                t.callExpression(mdd(ctx, 'rebindModuleSource'), [
-                  t.callExpression(mdd(ctx, 'sourceRef'), [
-                    t.stringLiteral(key),
+                astFactory.callExpression(mdd(ctx, 'rebindModuleSource'), [
+                  astFactory.callExpression(mdd(ctx, 'sourceRef'), [
+                    astFactory.stringLiteral(key),
                   ]),
                   target === undefined
-                    ? t.nullLiteral()
+                    ? astFactory.nullLiteral()
                     : cloneEstreeNode(target, true),
                   ...(options === undefined
                     ? []
@@ -928,20 +929,20 @@ export function scanAndLowerModuleSourceDeclarations(
           ),
         );
       }
-      declarator.init = t.callExpression(mdd(ctx, 'sourceRef'), [
-        t.stringLiteral(key),
+      declarator.init = astFactory.callExpression(mdd(ctx, 'sourceRef'), [
+        astFactory.stringLiteral(key),
       ]);
       sourceDescriptions.push(
-        t.expressionStatement(
-          t.callExpression(mdd(ctx, 'describeModuleSource'), [
-            t.stringLiteral(key),
-            t.arrowFunctionExpression(
+        astFactory.expressionStatement(
+          astFactory.callExpression(mdd(ctx, 'describeModuleSource'), [
+            astFactory.stringLiteral(key),
+            astFactory.arrowFunctionExpression(
               [],
-              t.blockStatement([
-                t.returnStatement(
-                  t.callExpression(mdd(ctx, 'createSource'), [
+              astFactory.blockStatement([
+                astFactory.returnStatement(
+                  astFactory.callExpression(mdd(ctx, 'createSource'), [
                     target === undefined
-                      ? t.nullLiteral()
+                      ? astFactory.nullLiteral()
                       : cloneEstreeNode(target),
                     ...(options === undefined ? [] : [cloneEstreeNode(options)]),
                   ]),
@@ -984,7 +985,7 @@ function isCallToImported(
   call: t.Expression | null | undefined,
   names: ReadonlySet<string>,
 ): boolean {
-  if (!t.isCallExpression(call) || !t.isIdentifier(call.callee)) return false;
+  if (!astFactory.isCallExpression(call) || !astFactory.isIdentifier(call.callee)) return false;
   if (!names.has(call.callee.name)) return false;
   return importedProgramBinding(ctx, component, call.callee.name) !== undefined;
 }
@@ -999,11 +1000,11 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
       argument: t.CallExpression['arguments'][number] | undefined;
     }> = [];
     for (const statement of componentPath.node.body.body) {
-      if (!t.isVariableDeclaration(statement)) continue;
+      if (!astFactory.isVariableDeclaration(statement)) continue;
       for (const declaration of statement.declarations) {
-        if (!t.isIdentifier(declaration.id)) continue;
+        if (!astFactory.isIdentifier(declaration.id)) continue;
         const init = declaration.init;
-        if (!t.isCallExpression(init)) continue;
+        if (!astFactory.isCallExpression(init)) continue;
         if (
           isCallToImported(
             ctx,
@@ -1072,11 +1073,11 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
     const tracks = new Map<string, readonly string[]>();
     for (const candidate of trackCandidates) {
       const found = new Set<string>();
-      if (t.isIdentifier(candidate.argument) && sources.has(candidate.argument.name)) {
+      if (astFactory.isIdentifier(candidate.argument) && sources.has(candidate.argument.name)) {
         found.add(candidate.argument.name);
-      } else if (t.isObjectExpression(candidate.argument)) {
+      } else if (astFactory.isObjectExpression(candidate.argument)) {
         for (const property of candidate.argument.properties) {
-          if (t.isObjectProperty(property) && t.isIdentifier(property.value)) {
+          if (astFactory.isObjectProperty(property) && astFactory.isIdentifier(property.value)) {
             if (sources.has(property.value.name)) found.add(property.value.name);
           }
         }
@@ -1101,7 +1102,7 @@ function isBoundTo(
 
 function jsxAttributeName(attribute: t.JSXAttribute): string {
   const name = attribute.name;
-  return t.isJSXIdentifier(name)
+  return astFactory.isJSXIdentifier(name)
     ? name.name
     : `${name.namespace.name}:${name.name.name}`;
 }
@@ -1119,7 +1120,7 @@ function isComponentPropContainer(ctx: Ctx, container: BaseNode): boolean {
   const opening = ctx.astAnalysis?.parentByNode.get(attribute) ?? null;
   if (opening?.type !== 'JSXOpeningElement') return false;
   const name = (opening as unknown as t.JSXOpeningElement).name;
-  return t.isJSXIdentifier(name) && /^[A-Z]/.test(name.name);
+  return astFactory.isJSXIdentifier(name) && /^[A-Z]/.test(name.name);
 }
 
 function isDirectSourceComponentProp(
@@ -1161,7 +1162,7 @@ function isGroupDataContainer(ctx: Ctx, container: BaseNode): boolean {
   const opening = ctx.astAnalysis?.parentByNode.get(attribute) ?? null;
   return (
     opening?.type === 'JSXOpeningElement' &&
-    t.isJSXIdentifier(
+    astFactory.isJSXIdentifier(
       (opening as unknown as t.JSXOpeningElement).name,
       { name: 'Group' },
     )
@@ -1184,7 +1185,7 @@ function isPassthroughArgument(
   if (parent?.type !== 'CallExpression') return false;
   const call = parent as unknown as t.CallExpression;
   if (!call.arguments.includes(identifier as unknown as t.Expression)) return false;
-  const root = t.isIdentifier(call.callee) ? call.callee.name : null;
+  const root = astFactory.isIdentifier(call.callee) ? call.callee.name : null;
   return root !== null && ctx.transparentSourcePassthroughs.has(root);
 }
 
@@ -1202,8 +1203,8 @@ function isActionRefreshTarget(ctx: Ctx, identifier: BaseNode): boolean {
   const objectProperty = property as unknown as t.ObjectProperty;
   const key = objectProperty.key;
   return (
-    (!objectProperty.computed && t.isIdentifier(key, { name: 'refresh' })) ||
-    t.isStringLiteral(key, { value: 'refresh' })
+    (!objectProperty.computed && astFactory.isIdentifier(key, { name: 'refresh' })) ||
+    astFactory.isStringLiteral(key, { value: 'refresh' })
   );
 }
 
@@ -1215,8 +1216,8 @@ function isGeneratedDataCall(ctx: Ctx, node: BaseNode): boolean {
   if (call === null) return false;
   const callee = (call as unknown as t.CallExpression).callee;
   return (
-    t.isMemberExpression(callee) &&
-    t.isIdentifier(callee.object, {
+    astFactory.isMemberExpression(callee) &&
+    astFactory.isIdentifier(callee.object, {
       name: ctx.identifiers?.dataRuntimeId,
     })
   );
@@ -1384,9 +1385,9 @@ function replaceSourceReadsWithRenderGates(
     const name = (identifier as unknown as AstIdentifier).name;
     overwriteNode(
       identifier,
-      t.callExpression(
+      astFactory.callExpression(
         mdd(ctx, 'readResolvedValueForRender'),
-        [t.identifier(name)],
+        [astFactory.identifier(name)],
       ) as unknown as BaseNode,
     );
   }
@@ -1434,11 +1435,11 @@ function resolvedRenderExpression(
     bindings,
     replacements,
   );
-  return t.callExpression(mdd(ctx, helper), [
-    t.arrayExpression(
-      dependencies.map((source) => t.identifier(source)),
+  return astFactory.callExpression(mdd(ctx, helper), [
+    astFactory.arrayExpression(
+      dependencies.map((source) => astFactory.identifier(source)),
     ),
-    t.arrowFunctionExpression(parameters, cloneEstreeNode(expression, true)),
+    astFactory.arrowFunctionExpression(parameters, cloneEstreeNode(expression, true)),
   ]);
 }
 
@@ -1497,7 +1498,7 @@ function lowerModuleRefReadsEstree(
       : null;
   };
   const refCall = (key: string): t.Expression =>
-    t.callExpression(mdd(ctx, 'sourceRef'), [t.stringLiteral(key)]);
+    astFactory.callExpression(mdd(ctx, 'sourceRef'), [astFactory.stringLiteral(key)]);
   const isListReceiver = (identifier: BaseNode): boolean => {
     const member = ctx.astAnalysis?.parentByNode.get(identifier) ?? null;
     if (member?.type !== 'MemberExpression') return false;
@@ -1505,7 +1506,7 @@ function lowerModuleRefReadsEstree(
     if (
       memberNode.object !== identifier ||
       memberNode.computed ||
-      !t.isIdentifier(memberNode.property, { name: 'map' })
+      !astFactory.isIdentifier(memberNode.property, { name: 'map' })
     ) return false;
     return ctx.astAnalysis?.parentByNode.get(member)?.type === 'CallExpression';
   };
@@ -1534,7 +1535,7 @@ function lowerModuleRefReadsEstree(
   ): void => {
     overwriteNode(
       identifier,
-      t.callExpression(
+      astFactory.callExpression(
         mdd(ctx, helper),
         [refCall(entry.key)],
       ) as unknown as BaseNode,
@@ -1548,7 +1549,7 @@ function lowerModuleRefReadsEstree(
       const rawExpression = childNode(node, 'expression');
       if (
         rawExpression === null ||
-        !t.isExpression(rawExpression as unknown as t.Node)
+        !astFactory.isExpression(rawExpression as unknown as t.Node)
       ) return false;
       const expression = rawExpression as unknown as t.Expression;
       const groupMarked = (
@@ -1627,9 +1628,9 @@ function lowerModuleRefReadsEstree(
           const body = cloneEstreeNode(expression, true);
           overwriteNode(
             rawExpression,
-            t.callExpression(mdd(ctx, 'readResolvedValuesForRender'), [
-              t.arrayExpression(uniqueEntries.map((entry) => refCall(entry.key))),
-              t.arrowFunctionExpression(parameters, body),
+            astFactory.callExpression(mdd(ctx, 'readResolvedValuesForRender'), [
+              astFactory.arrayExpression(uniqueEntries.map((entry) => refCall(entry.key))),
+              astFactory.arrowFunctionExpression(parameters, body),
             ]) as unknown as BaseNode,
           );
         }
@@ -1672,10 +1673,10 @@ function lowerModuleRefReadsEstree(
       : `${ctx.moduleId}:${identifier.loc.start.line}:${identifier.loc.start.column + 1}`;
     overwriteNode(
       identifier,
-      t.callExpression(mdd(ctx, 'readResolvedValue'), [
+      astFactory.callExpression(mdd(ctx, 'readResolvedValue'), [
         refCall(entry.key),
-        t.stringLiteral(entry.name),
-        t.stringLiteral(site),
+        astFactory.stringLiteral(entry.name),
+        astFactory.stringLiteral(site),
       ]) as unknown as BaseNode,
     );
   }
@@ -1755,7 +1756,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           ),
       );
       const init = target?.init;
-      if (init === null || init === undefined || !t.isExpression(init)) continue;
+      if (init === null || init === undefined || !astFactory.isExpression(init)) continue;
       replaceDerivedReads(
         ctx,
         init as unknown as BaseNode,
@@ -1805,7 +1806,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         const rawExpression = childNode(container, 'expression');
         if (
           rawExpression === null ||
-          !t.isExpression(rawExpression as unknown as t.Node)
+          !astFactory.isExpression(rawExpression as unknown as t.Node)
         ) return false;
         const expression = rawExpression as unknown as t.Expression;
         if (
@@ -1919,10 +1920,10 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           : `${ctx.moduleId}:${identifier.loc.start.line}:${identifier.loc.start.column + 1}`;
         overwriteNode(
           identifier,
-          t.callExpression(mdd(ctx, 'readResolvedValue'), [
-            t.identifier(name),
-            t.stringLiteral(name),
-            t.stringLiteral(site),
+          astFactory.callExpression(mdd(ctx, 'readResolvedValue'), [
+            astFactory.identifier(name),
+            astFactory.stringLiteral(name),
+            astFactory.stringLiteral(site),
           ]) as unknown as BaseNode,
         );
     }
@@ -1946,16 +1947,16 @@ function policyComponentRenderer(
       ]
     : [];
   const props = orderCallProps(ctx, component, entries);
-  return t.arrowFunctionExpression(
+  return astFactory.arrowFunctionExpression(
     [
       cloneEstreeNode(id),
       cloneEstreeNode(parent),
       ...(kind === 'error' ? [cloneEstreeNode(error), cloneEstreeNode(retry)] : []),
     ],
-    t.callExpression(t.identifier(component), [
+    astFactory.callExpression(astFactory.identifier(component), [
       cloneEstreeNode(id),
       cloneEstreeNode(parent),
-      ...(props.length > 0 ? [t.arrayExpression(props)] : []),
+      ...(props.length > 0 ? [astFactory.arrayExpression(props)] : []),
     ]),
   );
 }
@@ -1964,13 +1965,13 @@ function fixedPolicyExpression(
   ctx: Ctx,
   policy: { pending: string; error: string },
 ): t.ObjectExpression {
-  return t.objectExpression([
-    t.objectProperty(
-      t.identifier('pending'),
+  return astFactory.objectExpression([
+    astFactory.objectProperty(
+      astFactory.identifier('pending'),
       policyComponentRenderer(ctx, policy.pending, 'pending'),
     ),
-    t.objectProperty(
-      t.identifier('error'),
+    astFactory.objectProperty(
+      astFactory.identifier('error'),
       policyComponentRenderer(ctx, policy.error, 'error'),
     ),
   ]);
@@ -1991,21 +1992,21 @@ export function transparentCallPolicyArgument(
   if (inherited !== undefined && sourceProps !== undefined) {
     for (const attribute of element.openingElement.attributes) {
       if (
-        !t.isJSXAttribute(attribute) ||
-        !t.isJSXIdentifier(attribute.name) ||
-        !t.isJSXExpressionContainer(attribute.value) ||
-        !t.isIdentifier(attribute.value.expression) ||
+        !astFactory.isJSXAttribute(attribute) ||
+        !astFactory.isJSXIdentifier(attribute.name) ||
+        !astFactory.isJSXExpressionContainer(attribute.value) ||
+        !astFactory.isIdentifier(attribute.value.expression) ||
         entries.has(attribute.name.name)
       ) continue;
       const ownerProp = sourceProps.get(attribute.value.expression.name);
       if (ownerProp === undefined) continue;
       entries.set(
         attribute.name.name,
-        t.optionalMemberExpression(
+        astFactory.optionalMemberExpression(
           cloneEstreeNode(inherited),
           isValidEstreeIdentifier(ownerProp)
-            ? t.identifier(ownerProp)
-            : t.stringLiteral(ownerProp),
+            ? astFactory.identifier(ownerProp)
+            : astFactory.stringLiteral(ownerProp),
           !isValidEstreeIdentifier(ownerProp),
           true,
         ),
@@ -2013,10 +2014,10 @@ export function transparentCallPolicyArgument(
     }
   }
   if (entries.size === 0) return null;
-  return t.objectExpression(
+  return astFactory.objectExpression(
     [...entries].map(([prop, value]) =>
-      t.objectProperty(
-        isValidEstreeIdentifier(prop) ? t.identifier(prop) : t.stringLiteral(prop),
+      astFactory.objectProperty(
+        isValidEstreeIdentifier(prop) ? astFactory.identifier(prop) : astFactory.stringLiteral(prop),
         value,
         !isValidEstreeIdentifier(prop),
       )
@@ -2034,11 +2035,11 @@ export function transparentSourceMounts(
   return [...(ctx.transparentSources.get(component) ?? [])]
     .filter((source) => transported?.has(source) !== true)
     .map((source) =>
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'cleanup'), [
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'cleanup'), [
           cloneEstreeNode(owner),
-          t.callExpression(mdd(ctx, 'ownResolvedValue'), [
-            t.identifier(source),
+          astFactory.callExpression(mdd(ctx, 'ownResolvedValue'), [
+            astFactory.identifier(source),
           ]),
         ]),
       ),

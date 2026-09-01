@@ -6,7 +6,8 @@
  * direct DOM operations, avoiding unrelated runtime style/SVG machinery.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 
 const DOM_PROPERTY_ATTRIBUTES = new Set([
@@ -52,30 +53,30 @@ export function domPropertyWrite(
   name: string,
   value: t.Expression,
 ): t.Statement {
-  const element = t.identifier(varName);
+  const element = astFactory.identifier(varName);
   if (name === 'tabIndex') {
-    if (t.isStringLiteral(value)) {
-      return t.expressionStatement(
-        t.assignmentExpression(
+    if (astFactory.isStringLiteral(value)) {
+      return astFactory.expressionStatement(
+        astFactory.assignmentExpression(
           '=',
-          t.memberExpression(element, t.identifier(name)),
+          astFactory.memberExpression(element, astFactory.identifier(name)),
           cloneEstreeNode(value),
         ),
       );
     }
-    return t.expressionStatement(
-      t.conditionalExpression(
-        t.binaryExpression('==', cloneEstreeNode(value), t.nullLiteral()),
-        t.callExpression(
-          t.memberExpression(
+    return astFactory.expressionStatement(
+      astFactory.conditionalExpression(
+        astFactory.binaryExpression('==', cloneEstreeNode(value), astFactory.nullLiteral()),
+        astFactory.callExpression(
+          astFactory.memberExpression(
             cloneEstreeNode(element),
-            t.identifier('removeAttribute'),
+            astFactory.identifier('removeAttribute'),
           ),
-          [t.stringLiteral('tabindex')],
+          [astFactory.stringLiteral('tabindex')],
         ),
-        t.assignmentExpression(
+        astFactory.assignmentExpression(
           '=',
-          t.memberExpression(cloneEstreeNode(element), t.identifier(name)),
+          astFactory.memberExpression(cloneEstreeNode(element), astFactory.identifier(name)),
           cloneEstreeNode(value),
         ),
       ),
@@ -84,19 +85,19 @@ export function domPropertyWrite(
 
   const empty =
     name === 'value' || name === 'innerHTML'
-      ? t.stringLiteral('')
-      : t.booleanLiteral(false);
-  const assigned = t.isStringLiteral(value)
+      ? astFactory.stringLiteral('')
+      : astFactory.booleanLiteral(false);
+  const assigned = astFactory.isStringLiteral(value)
     ? cloneEstreeNode(value)
-    : t.conditionalExpression(
-        t.binaryExpression('==', cloneEstreeNode(value), t.nullLiteral()),
+    : astFactory.conditionalExpression(
+        astFactory.binaryExpression('==', cloneEstreeNode(value), astFactory.nullLiteral()),
         empty,
         cloneEstreeNode(value),
       );
-  return t.expressionStatement(
-    t.assignmentExpression(
+  return astFactory.expressionStatement(
+    astFactory.assignmentExpression(
       '=',
-      t.memberExpression(element, t.identifier(name)),
+      astFactory.memberExpression(element, astFactory.identifier(name)),
       assigned,
     ),
   );
@@ -107,43 +108,43 @@ export function domAttributeWrite(
   name: string,
   value: t.Expression,
 ): t.Statement {
-  const element = t.identifier(varName);
+  const element = astFactory.identifier(varName);
   const attribute = DOM_ATTRIBUTE_NAMES[name] ?? name;
-  if (t.isStringLiteral(value)) {
-    return t.expressionStatement(
-      t.callExpression(
-        t.memberExpression(element, t.identifier('setAttribute')),
-        [t.stringLiteral(attribute), cloneEstreeNode(value)],
+  if (astFactory.isStringLiteral(value)) {
+    return astFactory.expressionStatement(
+      astFactory.callExpression(
+        astFactory.memberExpression(element, astFactory.identifier('setAttribute')),
+        [astFactory.stringLiteral(attribute), cloneEstreeNode(value)],
       ),
     );
   }
 
-  return t.expressionStatement(
-    t.conditionalExpression(
-      t.logicalExpression(
+  return astFactory.expressionStatement(
+    astFactory.conditionalExpression(
+      astFactory.logicalExpression(
         '||',
-        t.binaryExpression('==', cloneEstreeNode(value), t.nullLiteral()),
-        t.binaryExpression('===', cloneEstreeNode(value), t.booleanLiteral(false)),
+        astFactory.binaryExpression('==', cloneEstreeNode(value), astFactory.nullLiteral()),
+        astFactory.binaryExpression('===', cloneEstreeNode(value), astFactory.booleanLiteral(false)),
       ),
-      t.callExpression(
-        t.memberExpression(
+      astFactory.callExpression(
+        astFactory.memberExpression(
           cloneEstreeNode(element),
-          t.identifier('removeAttribute'),
+          astFactory.identifier('removeAttribute'),
         ),
-        [t.stringLiteral(attribute)],
+        [astFactory.stringLiteral(attribute)],
       ),
-      t.callExpression(
-        t.memberExpression(element, t.identifier('setAttribute')),
+      astFactory.callExpression(
+        astFactory.memberExpression(element, astFactory.identifier('setAttribute')),
         [
-          t.stringLiteral(attribute),
-          t.conditionalExpression(
-            t.binaryExpression(
+          astFactory.stringLiteral(attribute),
+          astFactory.conditionalExpression(
+            astFactory.binaryExpression(
               '===',
               cloneEstreeNode(value),
-              t.booleanLiteral(true),
+              astFactory.booleanLiteral(true),
             ),
-            t.stringLiteral(''),
-            t.callExpression(t.identifier('String'), [cloneEstreeNode(value)]),
+            astFactory.stringLiteral(''),
+            astFactory.callExpression(astFactory.identifier('String'), [cloneEstreeNode(value)]),
           ),
         ],
       ),

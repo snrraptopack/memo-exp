@@ -7,7 +7,8 @@
  * its own normal-exit invalidation when it writes reactive state.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { walkAst, type BaseNode } from './ast';
 import {
   astBindingAt,
@@ -85,7 +86,7 @@ function instrumentArgument(
   rowCtx?: RowCtx,
   executionAwareRoot = false,
 ): void {
-  if (t.isArrowFunctionExpression(argument) || t.isFunctionExpression(argument)) {
+  if (astFactory.isArrowFunctionExpression(argument) || astFactory.isFunctionExpression(argument)) {
     if (nodeHasJsx(argument.body)) return;
     instrumentComponentCallback(
       ctx,
@@ -95,7 +96,7 @@ function instrumentArgument(
       rowCtx,
       executionAwareRoot,
     );
-  } else if (t.isIdentifier(argument)) {
+  } else if (astFactory.isIdentifier(argument)) {
     instrumentIdentifier(
       ctx,
       compPath,
@@ -135,10 +136,10 @@ function instrumentSharedArgument(
   argument: t.CallExpression['arguments'][number],
   executionAwareRoot = false,
 ): void {
-  if (t.isArrowFunctionExpression(argument) || t.isFunctionExpression(argument)) {
+  if (astFactory.isArrowFunctionExpression(argument) || astFactory.isFunctionExpression(argument)) {
     if (nodeHasJsx(argument.body)) return;
     instrumentSharedCallback(ctx, argument, executionAwareRoot);
-  } else if (t.isIdentifier(argument)) {
+  } else if (astFactory.isIdentifier(argument)) {
     instrumentSharedIdentifier(
       ctx,
       programPath,
@@ -171,11 +172,11 @@ export function transformComponentLifecycle(
         const directFactoryCall = functionDepth === 0;
         const originalCallee = call.callee;
         const intrinsicEffect =
-          t.isIdentifier(originalCallee, { name: 'effect' }) &&
+          astFactory.isIdentifier(originalCallee, { name: 'effect' }) &&
           astBindingAt(ctx, node, 'effect') === undefined;
 
         if (
-          t.isIdentifier(originalCallee, { name: 'cleanup' }) &&
+          astFactory.isIdentifier(originalCallee, { name: 'cleanup' }) &&
           astBindingAt(ctx, node, 'cleanup') === undefined
         ) {
           if (!directFactoryCall) {
@@ -187,18 +188,18 @@ export function transformComponentLifecycle(
           if (
             call.arguments.length !== 1 ||
             disposer === undefined ||
-            !t.isExpression(disposer)
+            !astFactory.isExpression(disposer)
           ) {
             throw compPath.buildCodeFrameError(
               'memo-dom: cleanup(disposer) requires exactly one disposer expression',
             );
           }
           call.callee = md(ctx, 'cleanup');
-          call.arguments.unshift(t.identifier(factoryId));
+          call.arguments.unshift(astFactory.identifier(factoryId));
         }
 
         if (!directFactoryCall) return;
-        if (t.isIdentifier(originalCallee)) {
+        if (astFactory.isIdentifier(originalCallee)) {
           instrumentIdentifier(
             ctx,
             compPath,
@@ -250,9 +251,9 @@ export function transformProgramCallbacks(
       if (node.type === 'CallExpression' && functionDepth === 0) {
         const call = node as unknown as t.CallExpression;
         const intrinsicEffect =
-          t.isIdentifier(call.callee, { name: 'effect' }) &&
+          astFactory.isIdentifier(call.callee, { name: 'effect' }) &&
           astBindingAt(ctx, node, 'effect') === undefined;
-        if (t.isIdentifier(call.callee)) {
+        if (astFactory.isIdentifier(call.callee)) {
           instrumentSharedIdentifier(
             ctx,
             programPath,
@@ -304,7 +305,7 @@ export function rejectUnownedCleanup(
       if (node.type !== 'CallExpression') return;
       const call = node as unknown as t.CallExpression;
       if (
-        t.isIdentifier(call.callee, { name: 'cleanup' }) &&
+        astFactory.isIdentifier(call.callee, { name: 'cleanup' }) &&
         astBindingAt(ctx, node, 'cleanup') === undefined
       ) {
         throw programPath.buildCodeFrameError(

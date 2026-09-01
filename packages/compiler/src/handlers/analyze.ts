@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   analyzeScope,
@@ -83,7 +84,7 @@ class HandlerPath<TNode extends t.Node = t.Node> {
   public getFunctionParent(): HandlerPath<FunctionNode> | null {
     let current = this.parentPath;
     while (current !== null) {
-      if (t.isFunction(current.node)) {
+      if (astFactory.isFunction(current.node)) {
         return current as HandlerPath<FunctionNode>;
       }
       current = current.parentPath;
@@ -92,21 +93,21 @@ class HandlerPath<TNode extends t.Node = t.Node> {
   }
 
   public isExpression(): this is HandlerPath<t.Expression> {
-    return t.isExpression(this.node);
+    return astFactory.isExpression(this.node);
   }
 
   public isVariableDeclarator(): this is HandlerPath<t.VariableDeclarator> {
-    return t.isVariableDeclarator(this.node);
+    return astFactory.isVariableDeclarator(this.node);
   }
 
   public isVariableDeclaration(): this is HandlerPath<t.VariableDeclaration> {
-    return t.isVariableDeclaration(this.node);
+    return astFactory.isVariableDeclaration(this.node);
   }
 
   public isAssignmentExpression(
     options?: { operator?: string },
   ): this is HandlerPath<t.AssignmentExpression> {
-    return t.isAssignmentExpression(this.node) &&
+    return astFactory.isAssignmentExpression(this.node) &&
       (options?.operator === undefined || this.node.operator === options.operator);
   }
 
@@ -145,7 +146,7 @@ function walkHandler(root: t.Node, visitor: HandlerVisitor): ScopeAnalysis {
           path as HandlerPath<t.VariableDeclarator>,
         );
       }
-      if (t.isFunction(node as unknown as t.Node)) {
+      if (astFactory.isFunction(node as unknown as t.Node)) {
         visitor.Function?.(path as HandlerPath<FunctionNode>);
       }
       if (node.type === 'AssignmentExpression') {
@@ -176,21 +177,21 @@ function directListItemMutationKey(
   let current: t.Expression = node;
   for (;;) {
     current = transparentListExpression(current);
-    if (!t.isMemberExpression(current)) break;
+    if (!astFactory.isMemberExpression(current)) break;
     chain.unshift(current);
-    if (t.isSuper(current.object)) return null;
+    if (astFactory.isSuper(current.object)) return null;
     current = current.object;
   }
-  if (!t.isIdentifier(current, { name: plan.source })) return null;
+  if (!astFactory.isIdentifier(current, { name: plan.source })) return null;
   const itemAccess = chain[0];
   if (
     itemAccess === undefined ||
     !itemAccess.computed ||
-    !t.isExpression(itemAccess.property) ||
+    !astFactory.isExpression(itemAccess.property) ||
     !(
-      t.isIdentifier(itemAccess.property) ||
-      t.isNumericLiteral(itemAccess.property) ||
-      t.isStringLiteral(itemAccess.property)
+      astFactory.isIdentifier(itemAccess.property) ||
+      astFactory.isNumericLiteral(itemAccess.property) ||
+      astFactory.isStringLiteral(itemAccess.property)
     ) ||
     chain.length < 2
   ) {
@@ -199,9 +200,9 @@ function directListItemMutationKey(
 
   const writtenSegments: string[] = [];
   for (const member of chain.slice(1)) {
-    if (!member.computed && t.isIdentifier(member.property)) {
+    if (!member.computed && astFactory.isIdentifier(member.property)) {
       writtenSegments.push(member.property.name);
-    } else if (member.computed && t.isStringLiteral(member.property)) {
+    } else if (member.computed && astFactory.isStringLiteral(member.property)) {
       writtenSegments.push(member.property.value);
     } else {
       return null;
@@ -211,7 +212,7 @@ function directListItemMutationKey(
 
   let key: t.Expression = cloneEstreeNode(itemAccess, true);
   for (const segment of plan.keyPath) {
-    key = t.memberExpression(key, t.identifier(segment));
+    key = astFactory.memberExpression(key, astFactory.identifier(segment));
   }
   return key;
 }
@@ -312,9 +313,9 @@ function finalizeHandlerInstrumentation(
       executionAwareRoot && fn === root
         ? guardedRootSites.length === 0
           ? null
-          : t.blockStatement(
+          : astFactory.blockStatement(
               guardedRootSites.map((site) =>
-                t.ifStatement(
+                astFactory.ifStatement(
                   cloneEstreeNode(site.flag!),
                   cloneEstreeNode(site.commit),
                 ),
@@ -330,18 +331,18 @@ function finalizeHandlerInstrumentation(
   }
 
   if (guardedRootSites.length > 0) {
-    if (!t.isBlockStatement(clonedFn.body)) {
+    if (!astFactory.isBlockStatement(clonedFn.body)) {
       throw new Error(
         'memo-dom: execution-aware callback commit did not produce a block body',
       );
     }
     clonedFn.body.body.unshift(
-      t.variableDeclaration(
+      astFactory.variableDeclaration(
         'let',
         guardedRootSites.flatMap((site) => [
-          t.variableDeclarator(cloneEstreeNode(site.flag!), t.booleanLiteral(false)),
+          astFactory.variableDeclarator(cloneEstreeNode(site.flag!), astFactory.booleanLiteral(false)),
           ...(site.temporaries ?? []).map((temporary) =>
-            t.variableDeclarator(cloneEstreeNode(temporary)),
+            astFactory.variableDeclarator(cloneEstreeNode(temporary)),
           ),
         ]),
       ),
@@ -385,7 +386,7 @@ export function analyzeHandler(
   ]);
   if (compName !== null) {
     for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
-      if (t.isVariableDeclaration(stmt)) {
+      if (astFactory.isVariableDeclaration(stmt)) {
         for (const d of stmt.declarations) {
           for (const { name } of extractPatternIdentifiers(
             d.id as unknown as BaseNode,
@@ -393,7 +394,7 @@ export function analyzeHandler(
             componentLocals.add(name);
           }
         }
-      } else if (t.isFunctionDeclaration(stmt) && stmt.id) {
+      } else if (astFactory.isFunctionDeclaration(stmt) && stmt.id) {
         componentLocals.add(stmt.id.name);
       }
     }
@@ -450,11 +451,11 @@ export function analyzeHandler(
     if (!p.isExpression()) return;
     const original = cloneEstreeNode(p.node, true);
     p.replaceWith(
-      t.sequenceExpression([
-        t.callExpression(
-          t.memberExpression(
-            t.identifier(plan.keysVariable),
-            t.identifier('add'),
+      astFactory.sequenceExpression([
+        astFactory.callExpression(
+          astFactory.memberExpression(
+            astFactory.identifier(plan.keysVariable),
+            astFactory.identifier('add'),
           ),
           [key],
         ),
@@ -466,21 +467,21 @@ export function analyzeHandler(
 
   const locals = new Set<string>();
   for (const param of clonedFn.params) {
-    if (t.isIdentifier(param)) locals.add(param.name);
+    if (astFactory.isIdentifier(param)) locals.add(param.name);
   }
   // Direct parameters of THIS function. Member writes rooted at them are
   // effects the function performs on its arguments — recorded so call sites
   // can route them through their own (possibly row-scoped) context.
   const rootParamIndex = new Map<string, number>(
     clonedFn.params.flatMap((param, index) =>
-      t.isIdentifier(param) ? [[param.name, index] as const] : [],
+      astFactory.isIdentifier(param) ? [[param.name, index] as const] : [],
     ),
   );
 
   // pass A: locals declared anywhere inside the handler
   walkHandler(wrapper, {
     VariableDeclarator(p) {
-      if (t.isIdentifier(p.node.id)) {
+      if (astFactory.isIdentifier(p.node.id)) {
         locals.add(p.node.id.name);
         if (p.parentPath?.isVariableDeclaration() === true) {
           aliases.trackDeclarator(p.scope, p.node);
@@ -489,7 +490,7 @@ export function analyzeHandler(
     },
     Function(p) {
       for (const param of p.node.params) {
-        if (t.isIdentifier(param)) locals.add(param.name);
+        if (astFactory.isIdentifier(param)) locals.add(param.name);
       }
     },
   });
@@ -774,7 +775,7 @@ export function analyzeHandler(
     for (const expression of callArgumentExpressions(args)) {
       // A member expression passes its resulting value, not necessarily the
       // reactive container. Property-value semantics remain author-owned.
-      if (!t.isIdentifier(expression)) continue;
+      if (!astFactory.isIdentifier(expression)) continue;
       const origin = aliases.resolveExpression(p.scope, expression);
       if (origin === null) continue;
       // Computeds are read-only derived values. Passing/capturing one through
@@ -898,7 +899,7 @@ export function analyzeHandler(
   walkHandler(wrapper, {
     VariableDeclarator(p) {
       if (
-        !t.isIdentifier(p.node.id) &&
+        !astFactory.isIdentifier(p.node.id) &&
         p.node.init !== null
       ) {
         for (
@@ -913,9 +914,9 @@ export function analyzeHandler(
     },
     AssignmentExpression(p) {
       const left = p.node.left;
-      if (t.isIdentifier(left)) {
+      if (astFactory.isIdentifier(left)) {
         if (locals.has(left.name)) {
-          if (t.isIdentifier(p.node.right)) {
+          if (astFactory.isIdentifier(p.node.right)) {
             const origin = aliases.resolveExpression(p.scope, p.node.right);
             if (origin !== null) noteReceiverEffect(p, origin);
           }
@@ -978,7 +979,7 @@ export function analyzeHandler(
         mutateScope(p, (scope) => {
           scope.writes.add(left.name);
         });
-      } else if (t.isMemberExpression(left)) {
+      } else if (astFactory.isMemberExpression(left)) {
         noteMemberWrite(p, left);
       } else {
         for (const origin of aliases.referencedOrigins(p.scope, p.node.right)) {
@@ -988,7 +989,7 @@ export function analyzeHandler(
     },
     UpdateExpression(p) {
       const arg = p.node.argument;
-      if (t.isIdentifier(arg)) {
+      if (astFactory.isIdentifier(arg)) {
         if (locals.has(arg.name)) return;
         if (
           isStaticDerivedListConst(ctx, arg.name, compName)
@@ -1039,14 +1040,14 @@ export function analyzeHandler(
         mutateScope(p, (scope) => {
           scope.writes.add(arg.name);
         });
-      } else if (t.isMemberExpression(arg)) {
+      } else if (astFactory.isMemberExpression(arg)) {
         noteMemberWrite(p, arg);
       }
     },
     UnaryExpression(p) {
       if (
         p.node.operator === 'delete' &&
-        t.isMemberExpression(p.node.argument)
+        astFactory.isMemberExpression(p.node.argument)
       ) {
         noteMemberWrite(p, p.node.argument);
       }
@@ -1056,7 +1057,7 @@ export function analyzeHandler(
 
       // A method call on a static-derived const is a mutation attempt on a
       // frozen value (push/splice/shift/...) - always an error.
-      if (t.isMemberExpression(callee)) {
+      if (astFactory.isMemberExpression(callee)) {
         const receiverRoot = memberRootName(callee);
         if (
           receiverRoot !== null &&
@@ -1070,15 +1071,15 @@ export function analyzeHandler(
 
       // Every method call on a reactive receiver has a bounded receiver
       // effect. No method-name purity/mutation table is consulted.
-      if (t.isMemberExpression(callee)) {
+      if (astFactory.isMemberExpression(callee)) {
         const method = memberName(callee);
         if (
           method === 'assign' &&
-          t.isIdentifier(callee.object, { name: 'Object' })
+          astFactory.isIdentifier(callee.object, { name: 'Object' })
         ) {
           const targetArg = p.node.arguments[0];
           const target =
-            targetArg !== undefined && t.isExpression(targetArg)
+            targetArg !== undefined && astFactory.isExpression(targetArg)
               ? aliases.resolveExpression(p.scope, targetArg)
               : null;
           if (target !== null) {
@@ -1101,9 +1102,9 @@ export function analyzeHandler(
           return;
         }
 
-        const receiverRoot = t.isIdentifier(callee.object)
+        const receiverRoot = astFactory.isIdentifier(callee.object)
           ? callee.object.name
-          : t.isMemberExpression(callee.object)
+          : astFactory.isMemberExpression(callee.object)
             ? memberRootName(callee.object)
             : null;
         if (
@@ -1119,7 +1120,7 @@ export function analyzeHandler(
           return;
         }
         const receiver =
-          t.isExpression(callee.object)
+          astFactory.isExpression(callee.object)
             ? aliases.resolveExpression(p.scope, callee.object)
             : null;
         if (receiver !== null) {
@@ -1136,7 +1137,7 @@ export function analyzeHandler(
       // caller's row scope — the helper body itself cannot reference row
       // identifiers, so without this fold the write would be invisible.
       if (
-        t.isIdentifier(callee) &&
+        astFactory.isIdentifier(callee) &&
         compName !== null &&
         componentLocals.has(callee.name)
       ) {
@@ -1146,19 +1147,19 @@ export function analyzeHandler(
         let helperFn: t.Node | null = null;
         for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
           if (
-            t.isFunctionDeclaration(stmt) &&
+            astFactory.isFunctionDeclaration(stmt) &&
             stmt.id?.name === callee.name
           ) {
             helperFn = stmt;
             break;
           }
-          if (t.isVariableDeclaration(stmt)) {
+          if (astFactory.isVariableDeclaration(stmt)) {
             for (const d of stmt.declarations) {
               if (
-                t.isIdentifier(d.id) &&
+                astFactory.isIdentifier(d.id) &&
                 d.id.name === callee.name &&
                 d.init !== null &&
-                t.isFunction(d.init)
+                astFactory.isFunction(d.init)
               ) {
                 helperFn = d.init;
                 break;
@@ -1171,7 +1172,7 @@ export function analyzeHandler(
         if (parameterEffects !== undefined) {
           for (const effect of parameterEffects) {
             const argument = p.node.arguments[effect.index];
-            if (argument === undefined || !t.isExpression(argument)) continue;
+            if (argument === undefined || !astFactory.isExpression(argument)) continue;
             const origin = aliases.resolveExpression(p.scope, argument);
             if (origin !== null) {
               if (isComputedOrigin(origin)) continue;
@@ -1183,7 +1184,7 @@ export function analyzeHandler(
             // it under OUR node so an outer caller can keep folding up to
             // the scope that actually owns row identifiers.
             if (
-              t.isIdentifier(argument) &&
+              astFactory.isIdentifier(argument) &&
               rootParamIndex.has(argument.name)
             ) {
               const recorded = ctx.localParamEffects.get(rootFn) ?? [];
@@ -1210,7 +1211,7 @@ export function analyzeHandler(
       // calls to module-level helpers: fold the callee's summary into this
       // scope (M5.3 — writes inside helpers used to vanish silently)
       if (
-        t.isIdentifier(callee) &&
+        astFactory.isIdentifier(callee) &&
         !componentLocals.has(callee.name) &&
         (ctx.helpers.has(callee.name) || ctx.importedFunctions.has(callee.name))
       ) {
@@ -1234,7 +1235,7 @@ export function analyzeHandler(
         });
         for (const effect of sum.parameterWrites) {
           const argument = p.node.arguments[effect.index];
-          if (argument === undefined || !t.isExpression(argument)) continue;
+          if (argument === undefined || !astFactory.isExpression(argument)) continue;
           const origin = aliases.resolveExpression(p.scope, argument);
           if (origin !== null) {
             if (isComputedOrigin(origin)) continue;
@@ -1281,10 +1282,10 @@ function markExecutionSite(
 ): t.Identifier[] {
   if (
     path.isAssignmentExpression({ operator: '=' }) &&
-    (t.isIdentifier(path.node.left) ||
-      t.isMemberExpression(path.node.left) &&
-      !t.isSuper(path.node.left.object) &&
-      !t.isPrivateName(path.node.left.property))
+    (astFactory.isIdentifier(path.node.left) ||
+      astFactory.isMemberExpression(path.node.left) &&
+      !astFactory.isSuper(path.node.left.object) &&
+      !astFactory.isPrivateName(path.node.left.property))
   ) {
     const original = path.node;
     const previous = generatedIdentifier(ctx, 'previousValue');
@@ -1294,49 +1295,49 @@ function markExecutionSite(
     let assignment: t.AssignmentExpression;
     let after: t.Expression;
 
-    if (t.isIdentifier(original.left)) {
-      before = t.identifier(original.left.name);
+    if (astFactory.isIdentifier(original.left)) {
+      before = astFactory.identifier(original.left.name);
       assignment = cloneEstreeNode(original, true);
-      after = t.identifier(original.left.name);
-    } else if (t.isMemberExpression(original.left)) {
+      after = astFactory.identifier(original.left.name);
+    } else if (astFactory.isMemberExpression(original.left)) {
       const receiver = generatedIdentifier(ctx, 'assignmentReceiver');
       const property = generatedIdentifier(ctx, 'assignmentProperty');
       temporaries.push(receiver, property);
       const access = (): t.MemberExpression =>
-        t.memberExpression(
+        astFactory.memberExpression(
           cloneEstreeNode(receiver),
           cloneEstreeNode(property),
           true,
         );
       const propertyExpression = original.left.computed
         ? cloneEstreeNode(original.left.property as t.Expression, true)
-        : t.stringLiteral((original.left.property as t.Identifier).name);
-      before = t.sequenceExpression([
-        t.assignmentExpression(
+        : astFactory.stringLiteral((original.left.property as t.Identifier).name);
+      before = astFactory.sequenceExpression([
+        astFactory.assignmentExpression(
           '=',
           cloneEstreeNode(receiver),
           cloneEstreeNode(original.left.object as t.Expression, true),
         ),
-        t.assignmentExpression('=', cloneEstreeNode(property), propertyExpression),
+        astFactory.assignmentExpression('=', cloneEstreeNode(property), propertyExpression),
         access(),
       ]);
-      assignment = t.assignmentExpression('=', access(), cloneEstreeNode(original.right, true));
+      assignment = astFactory.assignmentExpression('=', access(), cloneEstreeNode(original.right, true));
       after = access();
     } else {
       return [];
     }
 
     path.replaceWith(
-      t.sequenceExpression([
-        t.assignmentExpression('=', cloneEstreeNode(previous), before),
-        t.assignmentExpression('=', cloneEstreeNode(result), assignment),
-        t.assignmentExpression(
+      astFactory.sequenceExpression([
+        astFactory.assignmentExpression('=', cloneEstreeNode(previous), before),
+        astFactory.assignmentExpression('=', cloneEstreeNode(result), assignment),
+        astFactory.assignmentExpression(
           '=',
           cloneEstreeNode(flag),
-          t.logicalExpression(
+          astFactory.logicalExpression(
             '||',
             cloneEstreeNode(flag),
-            t.callExpression(md(ctx, 'effectAssignmentChanged'), [
+            astFactory.callExpression(md(ctx, 'effectAssignmentChanged'), [
               cloneEstreeNode(previous),
               after,
             ]),
@@ -1348,19 +1349,19 @@ function markExecutionSite(
     return temporaries;
   }
 
-  const mark = t.assignmentExpression(
+  const mark = astFactory.assignmentExpression(
     '=',
     cloneEstreeNode(flag),
-    t.booleanLiteral(true),
+    astFactory.booleanLiteral(true),
   );
   if (path.isVariableDeclarator()) {
     const init = path.node.init;
-    if (init === null || !t.isExpression(init)) {
+    if (init === null || !astFactory.isExpression(init)) {
       throw new Error(
         'memo-dom: execution-aware variable site has no expression initializer',
       );
     }
-    path.node.init = t.sequenceExpression([mark, init]);
+    path.node.init = astFactory.sequenceExpression([mark, init]);
     return [];
   }
   if (!path.isExpression()) {
@@ -1369,7 +1370,7 @@ function markExecutionSite(
     );
   }
   path.replaceWith(
-    t.sequenceExpression([
+    astFactory.sequenceExpression([
       mark,
       cloneEstreeNode(path.node, true),
     ]),

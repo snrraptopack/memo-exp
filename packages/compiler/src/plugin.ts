@@ -16,10 +16,12 @@
  */
 
 import type { PluginObject } from '@babel/core';
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   normalizeEstreeDialect,
+  normalizeBabelDialect,
   walkAst,
   type BaseNode,
 } from './ast';
@@ -73,47 +75,47 @@ function rewriteComputeds(ctx: Ctx, program: t.Program): void {
   for (let statementIndex = 0; statementIndex < program.body.length; statementIndex++) {
     const statement = program.body[statementIndex]!;
     let declNode: t.Node | null | undefined = statement;
-    if (t.isExportNamedDeclaration(declNode)) declNode = declNode.declaration;
-    if (!t.isVariableDeclaration(declNode) || declNode.kind !== 'const') continue;
+    if (astFactory.isExportNamedDeclaration(declNode)) declNode = declNode.declaration;
+    if (!astFactory.isVariableDeclaration(declNode) || declNode.kind !== 'const') continue;
     const registrations: t.Statement[] = [];
     for (const d of declNode.declarations) {
-      if (!t.isIdentifier(d.id) || d.init == null) continue;
+      if (!astFactory.isIdentifier(d.id) || d.init == null) continue;
       const name = d.id.name;
       if (!ctx.computeds.has(name)) continue;
       declNode.kind = 'let';
       const init = cloneEstreeNode(d.init);
       const next = generatedIdentifier(ctx, `${name}Next`);
-      const registerStmt = t.expressionStatement(
-        t.callExpression(md(ctx, 'register'), [
-          t.objectExpression([
-            t.objectProperty(
-              t.identifier('id'),
-              t.stringLiteral(`${computedPrefix}${name}`),
+      const registerStmt = astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'register'), [
+          astFactory.objectExpression([
+            astFactory.objectProperty(
+              astFactory.identifier('id'),
+              astFactory.stringLiteral(`${computedPrefix}${name}`),
             ),
-            t.objectProperty(t.identifier('parent'), t.nullLiteral()),
-            t.objectProperty(
-              t.identifier('depth'),
-              t.unaryExpression('-', t.numericLiteral(1)),
+            astFactory.objectProperty(astFactory.identifier('parent'), astFactory.nullLiteral()),
+            astFactory.objectProperty(
+              astFactory.identifier('depth'),
+              astFactory.unaryExpression('-', astFactory.numericLiteral(1)),
             ),
-            t.objectProperty(
-              t.identifier('render'),
-              t.arrowFunctionExpression(
+            astFactory.objectProperty(
+              astFactory.identifier('render'),
+              astFactory.arrowFunctionExpression(
                 [],
-                t.blockStatement([
-                  t.variableDeclaration('const', [
-                    t.variableDeclarator(next, init),
+                astFactory.blockStatement([
+                  astFactory.variableDeclaration('const', [
+                    astFactory.variableDeclarator(next, init),
                   ]),
-                  t.ifStatement(
-                    t.callExpression(md(ctx, 'computedChanged'), [
-                      t.identifier(name),
+                  astFactory.ifStatement(
+                    astFactory.callExpression(md(ctx, 'computedChanged'), [
+                      astFactory.identifier(name),
                       cloneEstreeNode(next),
                     ]),
-                    t.blockStatement([
-                      t.expressionStatement(
-                        t.assignmentExpression('=', t.identifier(name), cloneEstreeNode(next)),
+                    astFactory.blockStatement([
+                      astFactory.expressionStatement(
+                        astFactory.assignmentExpression('=', astFactory.identifier(name), cloneEstreeNode(next)),
                       ),
-                      t.expressionStatement(
-                        t.callExpression(md(ctx, 'commitWrites'), [freshWriteConst(ctx, [name])]),
+                      astFactory.expressionStatement(
+                        astFactory.callExpression(md(ctx, 'commitWrites'), [freshWriteConst(ctx, [name])]),
                       ),
                     ]),
                   ),
@@ -146,25 +148,25 @@ function rewriteModuleControlFlow(
       ]),
     );
     const renderBody: t.Statement[] = [
-      t.variableDeclaration(
+      astFactory.variableDeclaration(
         'const',
         flow.bindings.map((binding) =>
-          t.variableDeclarator(
+          astFactory.variableDeclarator(
             cloneEstreeNode(previous.get(binding)!),
-            t.identifier(binding),
+            astFactory.identifier(binding),
           ),
         ),
       ),
       cloneEstreeNode(flow.statement, true),
       ...flow.bindings.map((binding) =>
-        t.ifStatement(
-          t.callExpression(md(ctx, 'computedChanged'), [
+        astFactory.ifStatement(
+          astFactory.callExpression(md(ctx, 'computedChanged'), [
             cloneEstreeNode(previous.get(binding)!),
-            t.identifier(binding),
+            astFactory.identifier(binding),
           ]),
-          t.blockStatement([
-            t.expressionStatement(
-              t.callExpression(md(ctx, 'commitWrites'), [
+          astFactory.blockStatement([
+            astFactory.expressionStatement(
+              astFactory.callExpression(md(ctx, 'commitWrites'), [
                 freshWriteConst(ctx, [binding]),
               ]),
             ),
@@ -175,21 +177,21 @@ function rewriteModuleControlFlow(
     program.body.splice(
       statementIndex + 1,
       0,
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'register'), [
-          t.objectExpression([
-            t.objectProperty(
-              t.identifier('id'),
-              t.stringLiteral(flow.entityId),
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'register'), [
+          astFactory.objectExpression([
+            astFactory.objectProperty(
+              astFactory.identifier('id'),
+              astFactory.stringLiteral(flow.entityId),
             ),
-            t.objectProperty(t.identifier('parent'), t.nullLiteral()),
-            t.objectProperty(
-              t.identifier('depth'),
-              t.unaryExpression('-', t.numericLiteral(1)),
+            astFactory.objectProperty(astFactory.identifier('parent'), astFactory.nullLiteral()),
+            astFactory.objectProperty(
+              astFactory.identifier('depth'),
+              astFactory.unaryExpression('-', astFactory.numericLiteral(1)),
             ),
-            t.objectProperty(
-              t.identifier('render'),
-              t.arrowFunctionExpression([], t.blockStatement(renderBody)),
+            astFactory.objectProperty(
+              astFactory.identifier('render'),
+              astFactory.arrowFunctionExpression([], astFactory.blockStatement(renderBody)),
             ),
           ]),
         ]),
@@ -242,7 +244,7 @@ function rejectLeftoverJsx(ctx: Ctx, programPath: ProgramDiagnostic): void {
       let leftover = 'fragment';
       if (node.type === 'JSXElement') {
         const opening = (node as unknown as t.JSXElement).openingElement;
-        leftover = t.isJSXIdentifier(opening.name)
+        leftover = astFactory.isJSXIdentifier(opening.name)
           ? `<${opening.name.name}>`
           : '<element>';
       }
@@ -293,36 +295,36 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
   if (table) ctx.header.push(table);
 
   const imports = [
-    t.importDeclaration(
+    astFactory.importDeclaration(
       [
-        t.importNamespaceSpecifier(
-          t.identifier(requireIdentifiers(ctx).runtimeId),
+        astFactory.importNamespaceSpecifier(
+          astFactory.identifier(requireIdentifiers(ctx).runtimeId),
         ),
       ],
-      t.stringLiteral(ctx.runtimePath),
+      astFactory.stringLiteral(ctx.runtimePath),
     ),
   ];
   if (ctx.usesRouter) {
     imports.push(
-      t.importDeclaration(
+      astFactory.importDeclaration(
         [
-          t.importNamespaceSpecifier(
-            t.identifier(requireIdentifiers(ctx).routerId),
+          astFactory.importNamespaceSpecifier(
+            astFactory.identifier(requireIdentifiers(ctx).routerId),
           ),
         ],
-        t.stringLiteral(ctx.routerPath),
+        astFactory.stringLiteral(ctx.routerPath),
       ),
     );
   }
   if (ctx.usesTransparentData) {
     imports.push(
-      t.importDeclaration(
+      astFactory.importDeclaration(
         [
-          t.importNamespaceSpecifier(
-            t.identifier(requireIdentifiers(ctx).dataRuntimeId),
+          astFactory.importNamespaceSpecifier(
+            astFactory.identifier(requireIdentifiers(ctx).dataRuntimeId),
           ),
         ],
-        t.stringLiteral(ctx.dataRuntimePath),
+        astFactory.stringLiteral(ctx.dataRuntimePath),
       ),
     );
   }
@@ -342,19 +344,19 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
     babelContainer.unshiftContainer('body', imports);
   }
   if (ctx.rootComponent !== null) {
-    const registration = t.expressionStatement(
-      t.callExpression(md(ctx, 'registerRootFactory'), [
-        t.identifier(ctx.rootComponent),
-        t.objectExpression([
-          t.objectProperty(t.identifier('id'), t.stringLiteral(ctx.rootId)),
-          t.objectProperty(
-            t.identifier('create'),
-            t.arrowFunctionExpression(
+    const registration = astFactory.expressionStatement(
+      astFactory.callExpression(md(ctx, 'registerRootFactory'), [
+        astFactory.identifier(ctx.rootComponent),
+        astFactory.objectExpression([
+          astFactory.objectProperty(astFactory.identifier('id'), astFactory.stringLiteral(ctx.rootId)),
+          astFactory.objectProperty(
+            astFactory.identifier('create'),
+            astFactory.arrowFunctionExpression(
               [],
-              t.callExpression(t.identifier(ctx.rootComponent), [
-                t.stringLiteral(ctx.rootId),
-                t.nullLiteral(),
-                t.arrayExpression([]),
+              astFactory.callExpression(astFactory.identifier(ctx.rootComponent), [
+                astFactory.stringLiteral(ctx.rootId),
+                astFactory.nullLiteral(),
+                astFactory.arrayExpression([]),
               ]),
             ),
           ),
@@ -405,6 +407,7 @@ export default function memoDomPlugin(
         },
         exit(programPath) {
           finishProgram(ctx, programPath);
+          normalizeBabelDialect(programPath.node as unknown as BaseNode);
         },
       },
       FunctionDeclaration(path) {

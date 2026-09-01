@@ -6,7 +6,8 @@
  * props behind.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   ESTREE_VISITOR_KEYS,
@@ -79,7 +80,7 @@ function attributeNamed(
 ): t.JSXAttribute | undefined {
   return element.openingElement.attributes.find(
     (attribute): attribute is t.JSXAttribute =>
-      t.isJSXAttribute(attribute) &&
+      astFactory.isJSXAttribute(attribute) &&
       jsxAttributeName(attribute.name) === name,
   );
 }
@@ -298,8 +299,8 @@ export function validateCompilerRouteGraph(
 }
 
 function propertyName(property: t.ObjectProperty): string | null {
-  if (!property.computed && t.isIdentifier(property.key)) return property.key.name;
-  if (t.isStringLiteral(property.key)) return property.key.value;
+  if (!property.computed && astFactory.isIdentifier(property.key)) return property.key.name;
+  if (astFactory.isStringLiteral(property.key)) return property.key.value;
   return null;
 }
 
@@ -319,18 +320,18 @@ function routeToTarget(
       throw attributePath.buildCodeFrameError(`memo-dom: ${(error as Error).message}`);
     }
   } else if (
-    t.isJSXExpressionContainer(attribute.value) &&
-    t.isObjectExpression(attribute.value.expression)
+    astFactory.isJSXExpressionContainer(attribute.value) &&
+    astFactory.isObjectExpression(attribute.value.expression)
   ) {
     const object = attribute.value.expression;
-    if (object.properties.some((property) => t.isSpreadElement(property))) {
+    if (object.properties.some((property) => astFactory.isSpreadElement(property))) {
       throw attributePath.buildCodeFrameError(
         'memo-dom: route-to objects must have statically known keys; object spreads are not supported',
       );
     }
     const entries = new Map<string, t.ObjectProperty>();
     for (const property of object.properties) {
-      if (!t.isObjectProperty(property)) continue;
+      if (!astFactory.isObjectProperty(property)) continue;
       const name = propertyName(property);
       if (name === null) {
         throw attributePath.buildCodeFrameError(
@@ -353,7 +354,7 @@ function routeToTarget(
       }
     }
     const pathProperty = entries.get('path');
-    if (pathProperty === undefined || !t.isStringLiteral(pathProperty.value)) {
+    if (pathProperty === undefined || !astFactory.isStringLiteral(pathProperty.value)) {
       throw attributePath.buildCodeFrameError(
         "memo-dom: route-to requires a static string 'path'",
       );
@@ -363,11 +364,11 @@ function routeToTarget(
     } catch (error) {
       throw attributePath.buildCodeFrameError(`memo-dom: ${(error as Error).message}`);
     }
-    options = t.objectExpression(
+    options = astFactory.objectExpression(
       object.properties
         .filter(
           (property): property is t.ObjectProperty =>
-            t.isObjectProperty(property) && propertyName(property) !== 'path',
+            astFactory.isObjectProperty(property) && propertyName(property) !== 'path',
         )
         .map((property) => cloneEstreeNode(property, true)),
     );
@@ -380,18 +381,18 @@ function routeToTarget(
       );
     }
     if (params !== undefined) {
-      if (!t.isObjectExpression(params.value)) {
+      if (!astFactory.isObjectExpression(params.value)) {
         throw attributePath.buildCodeFrameError(
           'memo-dom: route-to params must be an object literal with static keys',
         );
       }
-      if (params.value.properties.some((property) => t.isSpreadElement(property))) {
+      if (params.value.properties.some((property) => astFactory.isSpreadElement(property))) {
         throw attributePath.buildCodeFrameError(
           'memo-dom: route-to params do not support object spreads',
         );
       }
       const actual = params.value.properties.map((property) => {
-        if (!t.isObjectProperty(property)) return null;
+        if (!astFactory.isObjectProperty(property)) return null;
         return propertyName(property);
       });
       if (actual.some((name) => name === null)) {
@@ -440,17 +441,17 @@ function routeToTarget(
 }
 
 function buildRouteHref(ctx: Ctx, target: RouteToTarget): t.Expression {
-  if (target.options === null) return t.stringLiteral(target.path);
+  if (target.options === null) return astFactory.stringLiteral(target.path);
   const values = new Map<string, t.Expression>();
   for (const property of target.options.properties) {
-    if (!t.isObjectProperty(property) || !t.isExpression(property.value)) continue;
+    if (!astFactory.isObjectProperty(property) || !astFactory.isExpression(property.value)) continue;
     const name = propertyName(property);
     if (name !== null) values.set(name, property.value);
   }
   const value = (name: string): t.Expression =>
-    cloneEstreeNode(values.get(name) ?? t.identifier('undefined'), true);
-  return t.callExpression(mr(ctx, 'buildRoutePath'), [
-    t.stringLiteral(target.path),
+    cloneEstreeNode(values.get(name) ?? astFactory.identifier('undefined'), true);
+  return astFactory.callExpression(mr(ctx, 'buildRoutePath'), [
+    astFactory.stringLiteral(target.path),
     value('params'),
     value('query'),
     value('hash'),
@@ -458,8 +459,8 @@ function buildRouteHref(ctx: Ctx, target: RouteToTarget): t.Expression {
 }
 
 function navigateExpression(ctx: Ctx, target: RouteToTarget): t.CallExpression {
-  return t.callExpression(mr(ctx, 'navigateRoute'), [
-    t.stringLiteral(target.path),
+  return astFactory.callExpression(mr(ctx, 'navigateRoute'), [
+    astFactory.stringLiteral(target.path),
     ...(target.options === null ? [] : [cloneEstreeNode(target.options, true)]),
   ]);
 }
@@ -471,7 +472,7 @@ function installRouteTo(
   target: RouteToTarget,
 ): void {
   const opening = element.openingElement;
-  if (!t.isJSXIdentifier(opening.name)) {
+  if (!astFactory.isJSXIdentifier(opening.name)) {
     throw attributePath.buildCodeFrameError(
       'memo-dom: route-to currently requires a statically named JSX element',
     );
@@ -482,7 +483,7 @@ function installRouteTo(
       'memo-dom: route-to currently targets intrinsic elements; put it on the interactive host rendered by this component',
     );
   }
-  if (opening.attributes.some((attribute) => t.isJSXSpreadAttribute(attribute))) {
+  if (opening.attributes.some((attribute) => astFactory.isJSXSpreadAttribute(attribute))) {
     throw attributePath.buildCodeFrameError(
       'memo-dom: route-to cannot be combined with JSX prop spreads because navigation ownership must be static',
     );
@@ -496,11 +497,11 @@ function installRouteTo(
     }
     const href = buildRouteHref(ctx, target);
     opening.attributes.push(
-      t.jsxAttribute(
-        t.jsxIdentifier('href'),
-        t.isStringLiteral(href)
+      astFactory.jsxAttribute(
+        astFactory.jsxIdentifier('href'),
+        astFactory.isStringLiteral(href)
           ? href
-          : t.jsxExpressionContainer(href),
+          : astFactory.jsxExpressionContainer(href),
       ),
     );
     return;
@@ -513,8 +514,8 @@ function installRouteTo(
   if (click !== undefined) {
     let handler: t.Expression | null = null;
     if (
-      t.isJSXExpressionContainer(click.value) &&
-      t.isExpression(click.value.expression)
+      astFactory.isJSXExpressionContainer(click.value) &&
+      astFactory.isExpression(click.value.expression)
     ) {
       handler = click.value.expression;
     }
@@ -525,32 +526,32 @@ function installRouteTo(
     }
     result = generatedIdentifier(ctx, 'routeClickResult');
     statements.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
           cloneEstreeNode(result),
-          t.callExpression(cloneEstreeNode(handler, true), [cloneEstreeNode(event)]),
+          astFactory.callExpression(cloneEstreeNode(handler, true), [cloneEstreeNode(event)]),
         ),
       ]),
     );
     opening.attributes = opening.attributes.filter((attribute) => attribute !== click);
   }
   statements.push(
-    t.ifStatement(
-      t.unaryExpression(
+    astFactory.ifStatement(
+      astFactory.unaryExpression(
         '!',
-        t.memberExpression(cloneEstreeNode(event), t.identifier('defaultPrevented')),
+        astFactory.memberExpression(cloneEstreeNode(event), astFactory.identifier('defaultPrevented')),
       ),
-      t.expressionStatement(navigateExpression(ctx, target)),
+      astFactory.expressionStatement(navigateExpression(ctx, target)),
     ),
   );
-  if (result !== null) statements.push(t.returnStatement(cloneEstreeNode(result)));
+  if (result !== null) statements.push(astFactory.returnStatement(cloneEstreeNode(result)));
   opening.attributes.push(
-    t.jsxAttribute(
-      t.jsxIdentifier('onClick'),
-      t.jsxExpressionContainer(
-        t.arrowFunctionExpression(
+    astFactory.jsxAttribute(
+      astFactory.jsxIdentifier('onClick'),
+      astFactory.jsxExpressionContainer(
+        astFactory.arrowFunctionExpression(
           [cloneEstreeNode(event)],
-          t.blockStatement(statements),
+          astFactory.blockStatement(statements),
         ),
       ),
     ),
@@ -676,21 +677,21 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
   ctx.usesRouter = true;
   const manifest = generatedIdentifier(ctx, 'routeManifest');
   return [
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(manifest),
-        t.callExpression(mr(ctx, 'createRouteManifest'), [
-          t.arrayExpression(
+        astFactory.callExpression(mr(ctx, 'createRouteManifest'), [
+          astFactory.arrayExpression(
             definitions.map((definition) =>
-              t.objectExpression([
-                t.objectProperty(t.identifier('id'), t.stringLiteral(definition.id)),
-                t.objectProperty(t.identifier('pattern'), t.stringLiteral(definition.pattern)),
+              astFactory.objectExpression([
+                astFactory.objectProperty(astFactory.identifier('id'), astFactory.stringLiteral(definition.id)),
+                astFactory.objectProperty(astFactory.identifier('pattern'), astFactory.stringLiteral(definition.pattern)),
                 ...(definition.parentId === undefined
                   ? []
                   : [
-                      t.objectProperty(
-                        t.identifier('parentId'),
-                        t.stringLiteral(definition.parentId),
+                      astFactory.objectProperty(
+                        astFactory.identifier('parentId'),
+                        astFactory.stringLiteral(definition.parentId),
                       ),
                     ]),
               ]),
@@ -699,11 +700,11 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
         ]),
       ),
     ]),
-    t.expressionStatement(
-      t.callExpression(mr(ctx, 'replaceRouteResolver'), [
-        t.memberExpression(cloneEstreeNode(manifest), t.identifier('resolve')),
+    astFactory.expressionStatement(
+      astFactory.callExpression(mr(ctx, 'replaceRouteResolver'), [
+        astFactory.memberExpression(cloneEstreeNode(manifest), astFactory.identifier('resolve')),
       ]),
     ),
-    t.expressionStatement(t.callExpression(mr(ctx, 'ensureRouterConnected'), [])),
+    astFactory.expressionStatement(astFactory.callExpression(mr(ctx, 'ensureRouterConnected'), [])),
   ];
 }

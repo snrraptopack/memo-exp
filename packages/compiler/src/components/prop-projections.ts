@@ -1,7 +1,8 @@
 /**
  * Retains prop provenance through compiler-replayed body destructuring.
  */
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   memberKey,
   memberRootName,
@@ -27,21 +28,21 @@ function isProjectionTarget(
   node: t.Node | null | undefined,
 ): node is ProjectionTarget {
   return (
-    t.isIdentifier(node) ||
-    t.isObjectPattern(node) ||
-    t.isArrayPattern(node) ||
-    t.isAssignmentPattern(node) ||
-    t.isRestElement(node)
+    astFactory.isIdentifier(node) ||
+    astFactory.isObjectPattern(node) ||
+    astFactory.isArrayPattern(node) ||
+    astFactory.isAssignmentPattern(node) ||
+    astFactory.isRestElement(node)
   );
 }
 
 function unwrap(node: t.Expression): t.Expression {
   let current = node;
   while (
-    t.isTSAsExpression(current) ||
-    t.isTSTypeAssertion(current) ||
-    t.isTSNonNullExpression(current) ||
-    t.isTSSatisfiesExpression(current)
+    astFactory.isTSAsExpression(current) ||
+    astFactory.isTSTypeAssertion(current) ||
+    astFactory.isTSNonNullExpression(current) ||
+    astFactory.isTSSatisfiesExpression(current)
   ) {
     current = current.expression;
   }
@@ -53,20 +54,20 @@ function bindPattern(
   target: ProjectionTarget,
   origin: ReactiveOrigin,
 ): void {
-  if (t.isIdentifier(target)) {
+  if (astFactory.isIdentifier(target)) {
     origins.set(target.name, origin);
     return;
   }
-  if (t.isAssignmentPattern(target)) {
+  if (astFactory.isAssignmentPattern(target)) {
     if (isProjectionTarget(target.left)) {
       bindPattern(origins, target.left, origin);
     }
     return;
   }
-  if (t.isRestElement(target)) {
+  if (astFactory.isRestElement(target)) {
     return;
   }
-  if (t.isArrayPattern(target)) {
+  if (astFactory.isArrayPattern(target)) {
     for (let index = 0; index < target.elements.length; index++) {
       const element = target.elements[index];
       if (isProjectionTarget(element)) {
@@ -75,16 +76,16 @@ function bindPattern(
     }
     return;
   }
-  if (!t.isObjectPattern(target)) return;
+  if (!astFactory.isObjectPattern(target)) return;
   for (const property of target.properties) {
-    if (t.isRestElement(property)) {
+    if (astFactory.isRestElement(property)) {
       continue;
     }
     if (
       property.computed ||
-      (!t.isIdentifier(property.key) &&
-        !t.isStringLiteral(property.key) &&
-        !t.isNumericLiteral(property.key))
+      (!astFactory.isIdentifier(property.key) &&
+        !astFactory.isStringLiteral(property.key) &&
+        !astFactory.isNumericLiteral(property.key))
     ) {
       if (isProjectionTarget(property.value)) {
         bindPattern(origins, property.value, {
@@ -94,7 +95,7 @@ function bindPattern(
       }
       continue;
     }
-    const key = t.isIdentifier(property.key)
+    const key = astFactory.isIdentifier(property.key)
       ? property.key.name
       : String(property.key.value);
     if (isProjectionTarget(property.value)) {
@@ -117,7 +118,7 @@ function sourceOrigin(
   const plan = ctx.componentProps.get(component);
   if (plan === undefined) return null;
 
-  if (t.isIdentifier(expression)) {
+  if (astFactory.isIdentifier(expression)) {
     const projected = origins.get(expression.name);
     if (projected !== undefined) return projected;
     if (objectBindingName(plan) === expression.name) {
@@ -136,7 +137,7 @@ function sourceOrigin(
           key: expression.name,
         };
   }
-  if (!t.isMemberExpression(expression)) return null;
+  if (!astFactory.isMemberExpression(expression)) return null;
   const root = memberRootName(expression);
   const key = memberKey(expression);
   if (root === null) return null;
@@ -144,7 +145,7 @@ function sourceOrigin(
     ctx,
     component,
     origins,
-    t.identifier(root),
+    astFactory.identifier(root),
   );
   if (origin === null) return null;
   return key === null

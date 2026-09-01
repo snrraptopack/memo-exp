@@ -6,7 +6,8 @@
  * prop replay only causes identity churn and needless child invalidation.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst } from '../ast';
 import type { Ctx } from '../context';
@@ -17,7 +18,7 @@ export function isInlineScalarCallback(
   value: t.Expression,
 ): value is t.ArrowFunctionExpression | t.FunctionExpression {
   return (
-    (t.isArrowFunctionExpression(value) || t.isFunctionExpression(value)) &&
+    (astFactory.isArrowFunctionExpression(value) || astFactory.isFunctionExpression(value)) &&
     !containsJsx(value.body)
   );
 }
@@ -30,8 +31,8 @@ export function stabilizeInlineCallbackProp(
 ): t.Identifier {
   const callback = generatedIdentifier(ctx, hint);
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(cloneEstreeNode(callback), cloneEstreeNode(value, true)),
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(cloneEstreeNode(callback), cloneEstreeNode(value, true)),
     ]),
   );
   return callback;
@@ -45,8 +46,8 @@ export function stabilizeInlineCallbackStatement(
 ): t.Identifier {
   const callback = generatedIdentifier(ctx, hint);
   statements.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(cloneEstreeNode(callback), cloneEstreeNode(value, true)),
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(cloneEstreeNode(callback), cloneEstreeNode(value, true)),
     ]),
   );
   return callback;
@@ -57,7 +58,7 @@ function containsJsx(node: t.Node): boolean {
   walkAst(node, {
     enter(child) {
       if (found) return false;
-      if (t.isJSXElement(child) || t.isJSXFragment(child)) {
+      if (astFactory.isJSXElement(child) || astFactory.isJSXFragment(child)) {
         found = true;
         return false;
       }

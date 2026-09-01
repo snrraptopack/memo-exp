@@ -6,7 +6,8 @@
  * ordinary state routing and guarded DOM writes keep their existing shape.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   isIdentifier as isAstIdentifier,
@@ -62,7 +63,7 @@ export function normalizeJsxText(raw: string): string {
 /** Does a component element contain authored, non-whitespace children? */
 export function hasComponentChildren(children: readonly JsxChild[]): boolean {
   return children.some(
-    (child) => !t.isJSXText(child) || child.value.trim() !== '',
+    (child) => !astFactory.isJSXText(child) || child.value.trim() !== '',
   );
 }
 
@@ -145,54 +146,54 @@ export function buildChildrenSlot(
   emit(childScope, parentNode, slotOwner);
 
   ownerScope.creation.push(
-    t.variableDeclaration('let', [
-      t.variableDeclarator(cloneEstreeNode(updateHolder), t.nullLiteral()),
-      t.variableDeclarator(cloneEstreeNode(additionalUpdates), t.nullLiteral()),
-      t.variableDeclarator(cloneEstreeNode(mountSequence), t.numericLiteral(0)),
+    astFactory.variableDeclaration('let', [
+      astFactory.variableDeclarator(cloneEstreeNode(updateHolder), astFactory.nullLiteral()),
+      astFactory.variableDeclarator(cloneEstreeNode(additionalUpdates), astFactory.nullLiteral()),
+      astFactory.variableDeclarator(cloneEstreeNode(mountSequence), astFactory.numericLiteral(0)),
     ]),
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(mount),
-        t.arrowFunctionExpression(
+        astFactory.arrowFunctionExpression(
           [
             cloneEstreeNode(parentNode),
             cloneEstreeNode(mountOwner),
             cloneEstreeNode(mountKey),
           ],
-          t.blockStatement([
-            t.variableDeclaration('const', [
-              t.variableDeclarator(
+          astFactory.blockStatement([
+            astFactory.variableDeclaration('const', [
+              astFactory.variableDeclarator(
                 cloneEstreeNode(slotOwner),
-                t.conditionalExpression(
-                  t.binaryExpression(
+                astFactory.conditionalExpression(
+                  astFactory.binaryExpression(
                     '===',
                     cloneEstreeNode(mountSequence),
-                    t.numericLiteral(0),
+                    astFactory.numericLiteral(0),
                   ),
                   cloneEstreeNode(identityOwner, true),
-                  t.binaryExpression(
+                  astFactory.binaryExpression(
                     '+',
-                    t.binaryExpression(
+                    astFactory.binaryExpression(
                       '+',
                       cloneEstreeNode(identityOwner, true),
-                      t.stringLiteral('/$slot['),
+                      astFactory.stringLiteral('/$slot['),
                     ),
-                    t.binaryExpression(
+                    astFactory.binaryExpression(
                       '+',
                       cloneEstreeNode(mountSequence),
-                      t.stringLiteral(']'),
+                      astFactory.stringLiteral(']'),
                     ),
                   ),
                 ),
               ),
             ]),
-            t.expressionStatement(
-              t.updateExpression('++', cloneEstreeNode(mountSequence)),
+            astFactory.expressionStatement(
+              astFactory.updateExpression('++', cloneEstreeNode(mountSequence)),
             ),
-            t.variableDeclaration('let', [
-              t.variableDeclarator(
+            astFactory.variableDeclaration('let', [
+              astFactory.variableDeclarator(
                 cloneEstreeNode(active),
-                t.booleanLiteral(true),
+                astFactory.booleanLiteral(true),
               ),
             ]),
             cacheDecl(childScope),
@@ -200,118 +201,118 @@ export function buildChildrenSlot(
             updateDecl(childScope),
             ...childScope.creation,
             ...childScope.mounts,
-            t.ifStatement(
-              t.binaryExpression(
+            astFactory.ifStatement(
+              astFactory.binaryExpression(
                 '===',
                 cloneEstreeNode(updateHolder),
-                t.nullLiteral(),
+                astFactory.nullLiteral(),
               ),
-              t.expressionStatement(
-                t.assignmentExpression(
+              astFactory.expressionStatement(
+                astFactory.assignmentExpression(
                   '=',
                   cloneEstreeNode(updateHolder),
-                  t.identifier(childScope.updateVar),
+                  astFactory.identifier(childScope.updateVar),
                 ),
               ),
-              t.blockStatement([
-                t.ifStatement(
-                  t.binaryExpression(
+              astFactory.blockStatement([
+                astFactory.ifStatement(
+                  astFactory.binaryExpression(
                     '===',
                     cloneEstreeNode(additionalUpdates),
-                    t.nullLiteral(),
+                    astFactory.nullLiteral(),
                   ),
-                  t.expressionStatement(
-                    t.assignmentExpression(
+                  astFactory.expressionStatement(
+                    astFactory.assignmentExpression(
                       '=',
                       cloneEstreeNode(additionalUpdates),
-                      t.newExpression(t.identifier('Set'), []),
+                      astFactory.newExpression(astFactory.identifier('Set'), []),
                     ),
                   ),
                 ),
-                t.expressionStatement(
-                  t.callExpression(
-                    t.memberExpression(
+                astFactory.expressionStatement(
+                  astFactory.callExpression(
+                    astFactory.memberExpression(
                       cloneEstreeNode(additionalUpdates),
-                      t.identifier('add'),
+                      astFactory.identifier('add'),
                     ),
-                    [t.identifier(childScope.updateVar)],
+                    [astFactory.identifier(childScope.updateVar)],
                   ),
                 ),
               ]),
             ),
-            t.variableDeclaration('const', [
-              t.variableDeclarator(
+            astFactory.variableDeclaration('const', [
+              astFactory.variableDeclarator(
                 cloneEstreeNode(dispose),
-                t.arrowFunctionExpression(
+                astFactory.arrowFunctionExpression(
                   [],
-                  t.blockStatement([
-                    t.ifStatement(
-                      t.unaryExpression('!', cloneEstreeNode(active)),
-                      t.returnStatement(),
+                  astFactory.blockStatement([
+                    astFactory.ifStatement(
+                      astFactory.unaryExpression('!', cloneEstreeNode(active)),
+                      astFactory.returnStatement(),
                     ),
-                    t.expressionStatement(
-                      t.assignmentExpression(
+                    astFactory.expressionStatement(
+                      astFactory.assignmentExpression(
                         '=',
                         cloneEstreeNode(active),
-                        t.booleanLiteral(false),
+                        astFactory.booleanLiteral(false),
                       ),
                     ),
-                    t.ifStatement(
-                      t.binaryExpression(
+                    astFactory.ifStatement(
+                      astFactory.binaryExpression(
                         '===',
                         cloneEstreeNode(updateHolder),
-                        t.identifier(childScope.updateVar),
+                        astFactory.identifier(childScope.updateVar),
                       ),
-                      t.expressionStatement(
-                        t.assignmentExpression(
+                      astFactory.expressionStatement(
+                        astFactory.assignmentExpression(
                           '=',
                           cloneEstreeNode(updateHolder),
-                          t.nullLiteral(),
+                          astFactory.nullLiteral(),
                         ),
                       ),
-                      t.ifStatement(
-                        t.binaryExpression(
+                      astFactory.ifStatement(
+                        astFactory.binaryExpression(
                           '!==',
                           cloneEstreeNode(additionalUpdates),
-                          t.nullLiteral(),
+                          astFactory.nullLiteral(),
                         ),
-                        t.expressionStatement(
-                          t.callExpression(
-                            t.memberExpression(
+                        astFactory.expressionStatement(
+                          astFactory.callExpression(
+                            astFactory.memberExpression(
                               cloneEstreeNode(additionalUpdates),
-                              t.identifier('delete'),
+                              astFactory.identifier('delete'),
                             ),
-                            [t.identifier(childScope.updateVar)],
+                            [astFactory.identifier(childScope.updateVar)],
                           ),
                         ),
                       ),
                     ),
                     ...childScope.disposableRegions.map((region) =>
-                      t.expressionStatement(
-                        t.callExpression(
-                          t.memberExpression(
-                            t.identifier(region),
-                            t.identifier('dispose'),
+                      astFactory.expressionStatement(
+                        astFactory.callExpression(
+                          astFactory.memberExpression(
+                            astFactory.identifier(region),
+                            astFactory.identifier('dispose'),
                           ),
                           [],
                         ),
                       ),
                     ),
                     ...[...childScope.disposableCallbacks].reverse().map((callback) =>
-                      t.ifStatement(
-                        t.binaryExpression(
+                      astFactory.ifStatement(
+                        astFactory.binaryExpression(
                           '!==',
                           cloneEstreeNode(callback),
-                          t.nullLiteral(),
+                          astFactory.nullLiteral(),
                         ),
-                        t.expressionStatement(
-                          t.callExpression(cloneEstreeNode(callback), []),
+                        astFactory.expressionStatement(
+                          astFactory.callExpression(cloneEstreeNode(callback), []),
                         ),
                       ),
                     ),
                     ...childScope.disposableEntities.map((entity) =>
-                      t.expressionStatement(
-                        t.callExpression(md(ctx, 'unregisterSubtree'), [
+                      astFactory.expressionStatement(
+                        astFactory.callExpression(md(ctx, 'unregisterSubtree'), [
                           cloneEstreeNode(entity, true),
                         ]),
                       ),
@@ -320,37 +321,37 @@ export function buildChildrenSlot(
                 ),
               ),
             ]),
-            t.expressionStatement(
-              t.callExpression(md(ctx, 'cleanup'), [
+            astFactory.expressionStatement(
+              astFactory.callExpression(md(ctx, 'cleanup'), [
                 cloneEstreeNode(mountOwner),
                 cloneEstreeNode(dispose),
               ]),
             ),
-            t.returnStatement(cloneEstreeNode(dispose)),
+            astFactory.returnStatement(cloneEstreeNode(dispose)),
           ]),
         ),
       ),
     ]),
   );
   ownerScope.updaters.push(() =>
-    t.blockStatement([
-      t.ifStatement(
-        t.binaryExpression('!==', cloneEstreeNode(updateHolder), t.nullLiteral()),
-        t.expressionStatement(t.callExpression(cloneEstreeNode(updateHolder), [])),
+    astFactory.blockStatement([
+      astFactory.ifStatement(
+        astFactory.binaryExpression('!==', cloneEstreeNode(updateHolder), astFactory.nullLiteral()),
+        astFactory.expressionStatement(astFactory.callExpression(cloneEstreeNode(updateHolder), [])),
       ),
-      t.ifStatement(
-        t.binaryExpression(
+      astFactory.ifStatement(
+        astFactory.binaryExpression(
           '!==',
           cloneEstreeNode(additionalUpdates),
-          t.nullLiteral(),
+          astFactory.nullLiteral(),
         ),
-        t.forOfStatement(
-          t.variableDeclaration('const', [
-            t.variableDeclarator(cloneEstreeNode(nextUpdate)),
+        astFactory.forOfStatement(
+          astFactory.variableDeclaration('const', [
+            astFactory.variableDeclarator(cloneEstreeNode(nextUpdate)),
           ]),
           cloneEstreeNode(additionalUpdates),
-          t.expressionStatement(
-            t.callExpression(cloneEstreeNode(nextUpdate), []),
+          astFactory.expressionStatement(
+            astFactory.callExpression(cloneEstreeNode(nextUpdate), []),
           ),
         ),
       ),
@@ -370,20 +371,20 @@ export function emitForwardedSlotMount(
   const disposer = generatedIdentifier(ctx, 'slotDispose');
   const key = scope.forwardedSlotCounter++;
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(disposer),
-        t.conditionalExpression(
-          t.binaryExpression(
+        astFactory.conditionalExpression(
+          astFactory.binaryExpression(
             '==',
             cloneEstreeNode(expression, true),
-            t.nullLiteral(),
+            astFactory.nullLiteral(),
           ),
-          t.nullLiteral(),
-          t.callExpression(cloneEstreeNode(expression, true), [
-            t.identifier(parentVar),
+          astFactory.nullLiteral(),
+          astFactory.callExpression(cloneEstreeNode(expression, true), [
+            astFactory.identifier(parentVar),
             cloneEstreeNode(ownerId, true),
-            t.stringLiteral(String(key)),
+            astFactory.stringLiteral(String(key)),
           ]),
         ),
       ),
@@ -401,41 +402,41 @@ export function emitChildrenIntoParent(
 ): void {
   const append = (childVar: string): void => {
     scope.creation.push(
-      t.expressionStatement(
-        t.callExpression(
-          t.memberExpression(
-            t.identifier(parentVar),
-            t.identifier('appendChild'),
+      astFactory.expressionStatement(
+        astFactory.callExpression(
+          astFactory.memberExpression(
+            astFactory.identifier(parentVar),
+            astFactory.identifier('appendChild'),
           ),
-          [t.identifier(childVar)],
+          [astFactory.identifier(childVar)],
         ),
       ),
     );
   };
 
   for (const child of children) {
-    if (t.isJSXText(child)) {
+    if (astFactory.isJSXText(child)) {
       const value = normalizeJsxText(child.value);
-      if (value !== '') append(emitters.emitText(t.stringLiteral(value)));
+      if (value !== '') append(emitters.emitText(astFactory.stringLiteral(value)));
       continue;
     }
-    if (t.isJSXElement(child) || t.isJSXFragment(child)) {
+    if (astFactory.isJSXElement(child) || astFactory.isJSXFragment(child)) {
       append(emitters.emitNode(child));
       continue;
     }
-    if (!t.isJSXExpressionContainer(child)) {
+    if (!astFactory.isJSXExpressionContainer(child)) {
       emitters.fail('memo-dom: spread children are not supported (L1)');
     }
-    if (t.isJSXEmptyExpression(child.expression)) continue;
-    if (!t.isExpression(child.expression)) {
+    if (astFactory.isJSXEmptyExpression(child.expression)) continue;
+    if (!astFactory.isExpression(child.expression)) {
       emitters.fail('memo-dom: unsupported expression in component children');
     }
 
     const expression = child.expression;
     if (
-      t.isNullLiteral(expression) ||
-      t.isBooleanLiteral(expression) ||
-      t.isIdentifier(expression, { name: 'undefined' })
+      astFactory.isNullLiteral(expression) ||
+      astFactory.isBooleanLiteral(expression) ||
+      astFactory.isIdentifier(expression, { name: 'undefined' })
     ) {
       continue;
     }

@@ -5,7 +5,8 @@
  * callback adapters so forwarding needs no public ref wrapper or special key.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { type BaseNode } from '../ast';
 import { astBindingAt, type Ctx } from '../context';
@@ -24,11 +25,11 @@ export function compileRefValue(
   componentName: string,
   expression: t.Expression,
 ): t.Expression {
-  if (t.isArrayExpression(expression)) {
-    return t.arrayExpression(
+  if (astFactory.isArrayExpression(expression)) {
+    return astFactory.arrayExpression(
       expression.elements.map((element) => {
         if (element === null) return null;
-        if (t.isSpreadElement(element)) {
+        if (astFactory.isSpreadElement(element)) {
           throw componentPath.buildCodeFrameError(
             'memo-dom: ref arrays must have a static shape; nested arrays are supported but array spreads are not',
           );
@@ -49,7 +50,7 @@ export function compileRefValue(
   if (isMutableIdentifier(ctx, componentPath, expression)) {
     return mutableAdapter(ctx, expression);
   }
-  if (t.isMemberExpression(expression)) {
+  if (astFactory.isMemberExpression(expression)) {
     return mutableAdapter(ctx, expression);
   }
   return cloneEstreeNode(expression, true);
@@ -65,10 +66,10 @@ export function emitRefMount(
 ): void {
   const disposer = generatedIdentifier(ctx, 'refDispose');
   scope.mounts.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(disposer),
-        t.callExpression(md(ctx, 'mountRef'), [
+        astFactory.callExpression(md(ctx, 'mountRef'), [
           cloneEstreeNode(node, true),
           cloneEstreeNode(value, true),
         ]),
@@ -79,8 +80,8 @@ export function emitRefMount(
     scope.disposableCallbacks.push(disposer);
   } else {
     scope.mounts.push(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'cleanup'), [
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'cleanup'), [
           cloneEstreeNode(ownerId, true),
           cloneEstreeNode(disposer),
         ]),
@@ -106,7 +107,7 @@ function isMutableIdentifier(
   componentPath: ComponentPath,
   expression: t.Expression,
 ): expression is t.Identifier {
-  if (!t.isIdentifier(expression) || expression.name === 'undefined') {
+  if (!astFactory.isIdentifier(expression) || expression.name === 'undefined') {
     return false;
   }
   const binding = astBindingAt(
@@ -140,54 +141,54 @@ function mutableAdapter(
   target: t.Identifier | t.MemberExpression,
 ): t.ArrowFunctionExpression {
   const node = generatedIdentifier(ctx, 'refNode');
-  if (t.isMemberExpression(target)) {
+  if (astFactory.isMemberExpression(target)) {
     const receiver = generatedIdentifier(ctx, 'refTarget');
     const key = target.computed
       ? generatedIdentifier(ctx, 'refKey')
       : null;
     const member = (): t.MemberExpression =>
-      t.memberExpression(
+      astFactory.memberExpression(
         cloneEstreeNode(receiver),
         key === null
           ? cloneEstreeNode(target.property, true)
           : cloneEstreeNode(key),
         target.computed,
       );
-    return t.arrowFunctionExpression(
+    return astFactory.arrowFunctionExpression(
       [cloneEstreeNode(node)],
-      t.blockStatement([
-        t.variableDeclaration('const', [
-          t.variableDeclarator(
+      astFactory.blockStatement([
+        astFactory.variableDeclaration('const', [
+          astFactory.variableDeclarator(
             cloneEstreeNode(receiver),
             cloneEstreeNode(target.object, true) as t.Expression,
           ),
           ...(key === null
             ? []
             : [
-                t.variableDeclarator(
+                astFactory.variableDeclarator(
                   cloneEstreeNode(key),
                   cloneEstreeNode(target.property, true) as t.Expression,
                 ),
               ]),
         ]),
-        t.expressionStatement(
-          t.assignmentExpression('=', member(), cloneEstreeNode(node)),
+        astFactory.expressionStatement(
+          astFactory.assignmentExpression('=', member(), cloneEstreeNode(node)),
         ),
-        t.returnStatement(
-          t.arrowFunctionExpression(
+        astFactory.returnStatement(
+          astFactory.arrowFunctionExpression(
             [],
-            t.blockStatement([
-              t.ifStatement(
-                t.binaryExpression(
+            astFactory.blockStatement([
+              astFactory.ifStatement(
+                astFactory.binaryExpression(
                   '===',
                   member(),
                   cloneEstreeNode(node),
                 ),
-                t.expressionStatement(
-                  t.assignmentExpression(
+                astFactory.expressionStatement(
+                  astFactory.assignmentExpression(
                     '=',
                     member(),
-                    t.identifier('undefined'),
+                    astFactory.identifier('undefined'),
                   ),
                 ),
               ),
@@ -197,31 +198,31 @@ function mutableAdapter(
       ]),
     );
   }
-  return t.arrowFunctionExpression(
+  return astFactory.arrowFunctionExpression(
     [cloneEstreeNode(node)],
-    t.blockStatement([
-      t.expressionStatement(
-        t.assignmentExpression(
+    astFactory.blockStatement([
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
           '=',
           cloneEstreeNode(target, true),
           cloneEstreeNode(node),
         ),
       ),
-      t.returnStatement(
-        t.arrowFunctionExpression(
+      astFactory.returnStatement(
+        astFactory.arrowFunctionExpression(
           [],
-          t.blockStatement([
-            t.ifStatement(
-              t.binaryExpression(
+          astFactory.blockStatement([
+            astFactory.ifStatement(
+              astFactory.binaryExpression(
                 '===',
                 cloneEstreeNode(target, true),
                 cloneEstreeNode(node),
               ),
-              t.expressionStatement(
-                t.assignmentExpression(
+              astFactory.expressionStatement(
+                astFactory.assignmentExpression(
                   '=',
                   cloneEstreeNode(target, true),
-                  t.identifier('undefined'),
+                  astFactory.identifier('undefined'),
                 ),
               ),
             ),

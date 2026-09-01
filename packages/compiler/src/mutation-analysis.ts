@@ -6,7 +6,8 @@
  * whether reassignment/destructuring requires a root-subtree fallback.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { walkAst } from './ast';
 import { memberKey, type StateKind } from './context';
 
@@ -57,7 +58,7 @@ export class AliasTracker {
     declarator: t.VariableDeclarator,
   ): void {
     if (
-      !t.isIdentifier(declarator.id) ||
+      !astFactory.isIdentifier(declarator.id) ||
       declarator.init === null
     ) {
       return;
@@ -77,7 +78,7 @@ export class AliasTracker {
     const origins = new Map<string, ReactiveOrigin>();
     walkAst(node, {
       enter: (current) => {
-        if (!t.isIdentifier(current) && !t.isMemberExpression(current)) {
+        if (!astFactory.isIdentifier(current) && !astFactory.isMemberExpression(current)) {
           return undefined;
         }
         const origin = this.resolveExpression(scope, current);
@@ -108,26 +109,26 @@ export class AliasTracker {
   resolveExpression(scope: ScopeLike, raw: t.Node): ReactiveOrigin | null {
     const expression = unwrapExpression(raw);
     if (
-      t.isCallExpression(expression) &&
-      t.isMemberExpression(expression.callee) &&
-      t.isIdentifier(expression.callee.property) &&
+      astFactory.isCallExpression(expression) &&
+      astFactory.isMemberExpression(expression.callee) &&
+      astFactory.isIdentifier(expression.callee.property) &&
       (expression.callee.property.name === 'readResolvedValue' ||
        expression.callee.property.name === 'readResolvedValueForRender' ||
        expression.callee.property.name === 'readModuleSourceList')
     ) {
       const secondArg = expression.arguments[1];
-      if (t.isStringLiteral(secondArg)) {
+      if (astFactory.isStringLiteral(secondArg)) {
         return this.resolveName(scope, secondArg.value);
       }
       const firstArg = expression.arguments[0];
-      if (t.isIdentifier(firstArg)) {
+      if (astFactory.isIdentifier(firstArg)) {
         return this.resolveName(scope, firstArg.name);
       }
     }
-    if (t.isIdentifier(expression)) {
+    if (astFactory.isIdentifier(expression)) {
       return this.resolveName(scope, expression.name);
     }
-    if (!t.isMemberExpression(expression)) return null;
+    if (!astFactory.isMemberExpression(expression)) return null;
 
     const root = memberRoot(expression);
     if (root === null) return null;
@@ -175,16 +176,16 @@ export function staticAssignedKeys(
   if (target.key === null) return null;
   const keys: string[] = [];
   for (const source of sources) {
-    if (!t.isObjectExpression(source)) return null;
+    if (!astFactory.isObjectExpression(source)) return null;
     for (const property of source.properties) {
       if (
-        !t.isObjectProperty(property) ||
+        !astFactory.isObjectProperty(property) ||
         property.computed ||
-        (!t.isIdentifier(property.key) && !t.isStringLiteral(property.key))
+        (!astFactory.isIdentifier(property.key) && !astFactory.isStringLiteral(property.key))
       ) {
         return null;
       }
-      const name = t.isIdentifier(property.key)
+      const name = astFactory.isIdentifier(property.key)
         ? property.key.name
         : property.key.value;
       keys.push(`${target.key}.${name}`);
@@ -198,35 +199,35 @@ export function callArgumentExpressions(
 ): t.Expression[] {
   const out: t.Expression[] = [];
   for (const arg of args) {
-    if (t.isExpression(arg)) out.push(arg);
-    else if (t.isSpreadElement(arg)) out.push(arg.argument);
+    if (astFactory.isExpression(arg)) out.push(arg);
+    else if (astFactory.isSpreadElement(arg)) out.push(arg.argument);
   }
   return out;
 }
 
 export function memberName(node: t.MemberExpression): string | null {
-  if (!node.computed && t.isIdentifier(node.property)) return node.property.name;
-  if (node.computed && t.isStringLiteral(node.property)) return node.property.value;
+  if (!node.computed && astFactory.isIdentifier(node.property)) return node.property.name;
+  if (node.computed && astFactory.isStringLiteral(node.property)) return node.property.value;
   return null;
 }
 
 function memberRoot(node: t.MemberExpression): string | null {
   let current: t.Expression = node;
-  while (t.isMemberExpression(current)) {
-    if (t.isSuper(current.object)) return null;
+  while (astFactory.isMemberExpression(current)) {
+    if (astFactory.isSuper(current.object)) return null;
     current = unwrapExpression(current.object);
   }
-  return t.isIdentifier(current) ? current.name : null;
+  return astFactory.isIdentifier(current) ? current.name : null;
 }
 
 function unwrapExpression(node: t.Node): t.Expression {
   let current = node;
   while (
-    t.isTSAsExpression(current) ||
-    t.isTSTypeAssertion(current) ||
-    t.isTSNonNullExpression(current) ||
-    t.isTypeCastExpression(current) ||
-    t.isTSSatisfiesExpression(current)
+    astFactory.isTSAsExpression(current) ||
+    astFactory.isTSTypeAssertion(current) ||
+    astFactory.isTSNonNullExpression(current) ||
+    astFactory.isTypeCastExpression(current) ||
+    astFactory.isTSSatisfiesExpression(current)
   ) {
     current = current.expression;
   }

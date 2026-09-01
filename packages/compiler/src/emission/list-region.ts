@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   isValidIdentifier as isValidEstreeIdentifier,
@@ -78,7 +79,7 @@ function runtimeListSource(
 ): t.Expression {
   const value = cloneEstreeNode(source);
   return optional
-    ? t.logicalExpression('??', value, t.arrayExpression([]))
+    ? astFactory.logicalExpression('??', value, astFactory.arrayExpression([]))
     : value;
 }
 
@@ -127,12 +128,12 @@ export function emitListRegion(
     const binding = generatedIdentifier(ctx, `${eventName}Binding`);
     eventBindings.set(eventName, binding);
     scope.creation.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
           cloneEstreeNode(binding),
-          t.callExpression(md(ctx, 'createDelegatedEventBinding'), [
-            t.identifier(parentElementVariable),
-            t.stringLiteral(eventName),
+          astFactory.callExpression(md(ctx, 'createDelegatedEventBinding'), [
+            astFactory.identifier(parentElementVariable),
+            astFactory.stringLiteral(eventName),
           ]),
         ),
       ]),
@@ -164,47 +165,47 @@ export function emitListRegion(
         );
 
   const args: t.Expression[] = [
-    t.identifier(parentElementVariable),
-    t.binaryExpression(
+    astFactory.identifier(parentElementVariable),
+    astFactory.binaryExpression(
       '+',
       cloneEstreeNode(ownerId),
-      t.stringLiteral(`/${site.suffix}`),
+      astFactory.stringLiteral(`/${site.suffix}`),
     ),
     createFactory,
   ];
   if (site.form === 'callback') {
-    const keyTarget = t.memberExpression(
+    const keyTarget = astFactory.memberExpression(
       cloneEstreeNode(site.renderCallback!, true),
-      t.identifier('key'),
+      astFactory.identifier('key'),
     );
     args.push(
-      t.arrowFunctionExpression(
+      astFactory.arrowFunctionExpression(
         [
           cloneEstreeNode(site.itemPattern, true),
           ...(site.indexParam === null
             ? []
-            : [t.identifier(site.indexParam)]),
+            : [astFactory.identifier(site.indexParam)]),
         ],
-        t.conditionalExpression(
-          t.binaryExpression('==', cloneEstreeNode(keyTarget), t.nullLiteral()),
+        astFactory.conditionalExpression(
+          astFactory.binaryExpression('==', cloneEstreeNode(keyTarget), astFactory.nullLiteral()),
           cloneEstreeNode(site.itemPattern, true) as t.Expression,
-          t.callExpression(cloneEstreeNode(keyTarget), [
+          astFactory.callExpression(cloneEstreeNode(keyTarget), [
             cloneEstreeNode(site.itemPattern, true) as t.Expression,
             ...(site.indexParam === null
               ? []
-              : [t.identifier(site.indexParam)]),
+              : [astFactory.identifier(site.indexParam)]),
           ]),
         ),
       ),
     );
   } else if (site.keyExpr !== null) {
     args.push(
-      t.arrowFunctionExpression(
+      astFactory.arrowFunctionExpression(
         [
           cloneEstreeNode(site.itemPattern, true),
           ...(site.indexParam === null
             ? []
-            : [t.identifier(site.indexParam)]),
+            : [astFactory.identifier(site.indexParam)]),
         ],
         cloneEstreeNode(site.keyExpr),
       ),
@@ -214,14 +215,14 @@ export function emitListRegion(
     site.form === 'component' &&
     isLightweightRowComponent(ctx, site.rowComp!)
   ) {
-    if (args.length === 3) args.push(t.identifier('undefined'));
-    args.push(t.booleanLiteral(false));
+    if (args.length === 3) args.push(astFactory.identifier('undefined'));
+    args.push(astFactory.booleanLiteral(false));
   }
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(regionVariable),
-        t.callExpression(md(ctx, 'createListRegion'), args),
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        astFactory.identifier(regionVariable),
+        astFactory.callExpression(md(ctx, 'createListRegion'), args),
       ),
     ]),
   );
@@ -231,10 +232,10 @@ export function emitListRegion(
   const mutation = ctx.keyedListMutations.get(call);
   if (mutation !== undefined) {
     scope.creation.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.identifier(mutation.keysVariable),
-          t.newExpression(t.identifier('Set'), []),
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
+          astFactory.identifier(mutation.keysVariable),
+          astFactory.newExpression(astFactory.identifier('Set'), []),
         ),
       ]),
     );
@@ -245,12 +246,12 @@ export function emitListRegion(
   }));
   if (dependencyCaches.length > 0) {
     scope.creation.push(
-      t.variableDeclaration(
+      astFactory.variableDeclaration(
         'let',
         dependencyCaches.map(({ dependency, cache }) =>
-          t.variableDeclarator(
-            t.identifier(cache),
-            t.identifier(dependency.value),
+          astFactory.variableDeclarator(
+            astFactory.identifier(cache),
+            astFactory.identifier(dependency.value),
           ),
         ),
       ),
@@ -258,11 +259,11 @@ export function emitListRegion(
   }
 
   const reconcile = (): t.Statement =>
-    t.expressionStatement(
-      t.callExpression(
-        t.memberExpression(
-          t.identifier(regionVariable),
-          t.identifier('reconcile'),
+    astFactory.expressionStatement(
+      astFactory.callExpression(
+        astFactory.memberExpression(
+          astFactory.identifier(regionVariable),
+          astFactory.identifier('reconcile'),
         ),
         [runtimeListSource(site.sourceExpr, site.optional)],
       ),
@@ -290,26 +291,26 @@ export function emitListRegion(
 }
 
 function hasReason(reasonVar: string, reason: number): t.Expression {
-  const current = (): t.Identifier => t.identifier(reasonVar);
+  const current = (): t.Identifier => astFactory.identifier(reasonVar);
   const reasonNode = (): t.Expression =>
     reason < 0
-      ? t.unaryExpression('-', t.numericLiteral(-reason), true)
-      : t.numericLiteral(reason);
-  return t.logicalExpression(
+      ? astFactory.unaryExpression('-', astFactory.numericLiteral(-reason), true)
+      : astFactory.numericLiteral(reason);
+  return astFactory.logicalExpression(
     '||',
-    t.binaryExpression('===', current(), reasonNode()),
-    t.logicalExpression(
+    astFactory.binaryExpression('===', current(), reasonNode()),
+    astFactory.logicalExpression(
       '&&',
-      t.binaryExpression('!==', current(), t.nullLiteral()),
-      t.logicalExpression(
+      astFactory.binaryExpression('!==', current(), astFactory.nullLiteral()),
+      astFactory.logicalExpression(
         '&&',
-        t.binaryExpression(
+        astFactory.binaryExpression(
           '!==',
-          t.unaryExpression('typeof', current()),
-          t.stringLiteral('number'),
+          astFactory.unaryExpression('typeof', current()),
+          astFactory.stringLiteral('number'),
         ),
-        t.callExpression(
-          t.memberExpression(current(), t.identifier('has')),
+        astFactory.callExpression(
+          astFactory.memberExpression(current(), astFactory.identifier('has')),
           [reasonNode()],
         ),
       ),
@@ -321,11 +322,11 @@ function refreshKey(
   regionVariable: string,
   value: t.Expression,
 ): t.Statement {
-  return t.expressionStatement(
-    t.callExpression(
-      t.memberExpression(
-        t.identifier(regionVariable),
-        t.identifier('refreshKey'),
+  return astFactory.expressionStatement(
+    astFactory.callExpression(
+      astFactory.memberExpression(
+        astFactory.identifier(regionVariable),
+        astFactory.identifier('refreshKey'),
       ),
       [value],
     ),
@@ -347,11 +348,11 @@ function buildTargetedListUpdate(
 ): t.Statement {
   const ownerReasons = ctx.instanceReasonIds.get(componentName);
   if (ownerReasons === undefined) {
-    return t.expressionStatement(
-      t.callExpression(
-        t.memberExpression(
-          t.identifier(regionVariable),
-          t.identifier('reconcile'),
+    return astFactory.expressionStatement(
+      astFactory.callExpression(
+        astFactory.memberExpression(
+          astFactory.identifier(regionVariable),
+          astFactory.identifier('reconcile'),
         ),
         [runtimeListSource(sourceExpr, optional)],
       ),
@@ -361,11 +362,11 @@ function buildTargetedListUpdate(
   const sourceReason =
     source === undefined ? undefined : ownerReasons.get(source);
   if (sourceReason === undefined) {
-    return t.expressionStatement(
-      t.callExpression(
-        t.memberExpression(
-          t.identifier(regionVariable),
-          t.identifier('reconcile'),
+    return astFactory.expressionStatement(
+      astFactory.callExpression(
+        astFactory.memberExpression(
+          astFactory.identifier(regionVariable),
+          astFactory.identifier('reconcile'),
         ),
         [runtimeListSource(sourceExpr, optional)],
       ),
@@ -373,32 +374,32 @@ function buildTargetedListUpdate(
   }
 
   const fullBody: t.Statement[] = [
-    t.expressionStatement(
-      t.callExpression(
-        t.memberExpression(
-          t.identifier(regionVariable),
-          t.identifier('reconcile'),
+    astFactory.expressionStatement(
+      astFactory.callExpression(
+        astFactory.memberExpression(
+          astFactory.identifier(regionVariable),
+          astFactory.identifier('reconcile'),
         ),
         [runtimeListSource(sourceExpr, optional)],
       ),
     ),
     ...dependencies.map(({ dependency, cache }) =>
-      t.expressionStatement(
-        t.assignmentExpression(
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
           '=',
-          t.identifier(cache),
-          t.identifier(dependency.value),
+          astFactory.identifier(cache),
+          astFactory.identifier(dependency.value),
         ),
       ),
     ),
     ...(mutation === undefined
       ? []
       : [
-          t.expressionStatement(
-            t.callExpression(
-              t.memberExpression(
-                t.identifier(mutation.keysVariable),
-                t.identifier('clear'),
+          astFactory.expressionStatement(
+            astFactory.callExpression(
+              astFactory.memberExpression(
+                astFactory.identifier(mutation.keysVariable),
+                astFactory.identifier('clear'),
               ),
               [],
             ),
@@ -411,23 +412,23 @@ function buildTargetedListUpdate(
     if (targetedReason !== undefined) {
       const key = generatedIdentifier(ctx, 'changedListKey');
       targetedBody.push(
-        t.ifStatement(
+        astFactory.ifStatement(
           hasReason(reasonVar, targetedReason),
-          t.blockStatement([
-            t.forOfStatement(
-              t.variableDeclaration('const', [
-                t.variableDeclarator(cloneEstreeNode(key)),
+          astFactory.blockStatement([
+            astFactory.forOfStatement(
+              astFactory.variableDeclaration('const', [
+                astFactory.variableDeclarator(cloneEstreeNode(key)),
               ]),
-              t.identifier(mutation.keysVariable),
-              t.blockStatement([
+              astFactory.identifier(mutation.keysVariable),
+              astFactory.blockStatement([
                 refreshKey(regionVariable, cloneEstreeNode(key)),
               ]),
             ),
-            t.expressionStatement(
-              t.callExpression(
-                t.memberExpression(
-                  t.identifier(mutation.keysVariable),
-                  t.identifier('clear'),
+            astFactory.expressionStatement(
+              astFactory.callExpression(
+                astFactory.memberExpression(
+                  astFactory.identifier(mutation.keysVariable),
+                  astFactory.identifier('clear'),
                 ),
                 [],
               ),
@@ -442,43 +443,43 @@ function buildTargetedListUpdate(
     if (dependencyReason === undefined) continue;
     const previous = generatedIdentifier(ctx, 'previousListKey');
     targetedBody.push(
-      t.ifStatement(
+      astFactory.ifStatement(
         hasReason(reasonVar, dependencyReason),
-        t.blockStatement([
-          t.variableDeclaration('const', [
-            t.variableDeclarator(previous, t.identifier(cache)),
+        astFactory.blockStatement([
+          astFactory.variableDeclaration('const', [
+            astFactory.variableDeclarator(previous, astFactory.identifier(cache)),
           ]),
-          t.expressionStatement(
-            t.assignmentExpression(
+          astFactory.expressionStatement(
+            astFactory.assignmentExpression(
               '=',
-              t.identifier(cache),
-              t.identifier(dependency.value),
+              astFactory.identifier(cache),
+              astFactory.identifier(dependency.value),
             ),
           ),
           refreshKey(regionVariable, cloneEstreeNode(previous)),
-          t.ifStatement(
-            t.unaryExpression(
+          astFactory.ifStatement(
+            astFactory.unaryExpression(
               '!',
-              t.callExpression(
-                t.memberExpression(
-                  t.identifier('Object'),
-                  t.identifier('is'),
+              astFactory.callExpression(
+                astFactory.memberExpression(
+                  astFactory.identifier('Object'),
+                  astFactory.identifier('is'),
                 ),
-                [cloneEstreeNode(previous), t.identifier(cache)],
+                [cloneEstreeNode(previous), astFactory.identifier(cache)],
               ),
             ),
-            refreshKey(regionVariable, t.identifier(cache)),
+            refreshKey(regionVariable, astFactory.identifier(cache)),
           ),
         ]),
       ),
     );
   }
-  let fullCondition: t.Expression = t.binaryExpression(
+  let fullCondition: t.Expression = astFactory.binaryExpression(
     '===',
-    t.identifier(reasonVar),
-    t.nullLiteral(),
+    astFactory.identifier(reasonVar),
+    astFactory.nullLiteral(),
   );
-  fullCondition = t.logicalExpression(
+  fullCondition = astFactory.logicalExpression(
     '||',
     fullCondition,
     hasReason(reasonVar, -1),
@@ -487,34 +488,34 @@ function buildTargetedListUpdate(
     const structuralReason = ownerReasons.get(mutation.structuralReason);
     const targetedReason = ownerReasons.get(mutation.targetedReason);
     if (structuralReason !== undefined) {
-      fullCondition = t.logicalExpression(
+      fullCondition = astFactory.logicalExpression(
         '||',
         fullCondition,
         hasReason(reasonVar, structuralReason),
       );
     }
-    fullCondition = t.logicalExpression(
+    fullCondition = astFactory.logicalExpression(
       '||',
       fullCondition,
       targetedReason === undefined
         ? hasReason(reasonVar, sourceReason)
-        : t.logicalExpression(
+        : astFactory.logicalExpression(
             '&&',
             hasReason(reasonVar, sourceReason),
-            t.unaryExpression('!', hasReason(reasonVar, targetedReason)),
+            astFactory.unaryExpression('!', hasReason(reasonVar, targetedReason)),
           ),
     );
   } else {
-    fullCondition = t.logicalExpression(
+    fullCondition = astFactory.logicalExpression(
       '||',
       fullCondition,
       hasReason(reasonVar, sourceReason),
     );
   }
-  const generalUpdate = t.ifStatement(
+  const generalUpdate = astFactory.ifStatement(
     fullCondition,
-    t.blockStatement(fullBody),
-    targetedBody.length === 0 ? undefined : t.blockStatement(targetedBody),
+    astFactory.blockStatement(fullBody),
+    targetedBody.length === 0 ? undefined : astFactory.blockStatement(targetedBody),
   );
   return generalUpdate;
 }
@@ -524,25 +525,25 @@ function buildCallbackRowCreate(
   site: MapSite,
 ): t.ArrowFunctionExpression {
   const rowId = generatedIdentifier(ctx, 'renderRowId');
-  return t.arrowFunctionExpression(
+  return astFactory.arrowFunctionExpression(
     [
       cloneEstreeNode(site.itemPattern, true),
       cloneEstreeNode(rowId),
       ...(site.indexParam === null
         ? []
-        : [t.identifier(site.indexParam)]),
+        : [astFactory.identifier(site.indexParam)]),
     ],
-    t.callExpression(
-      t.memberExpression(
+    astFactory.callExpression(
+      astFactory.memberExpression(
         cloneEstreeNode(site.renderCallback!, true),
-        t.identifier('create'),
+        astFactory.identifier('create'),
       ),
       [
         cloneEstreeNode(site.itemPattern, true) as t.Expression,
         cloneEstreeNode(rowId),
         ...(site.indexParam === null
           ? []
-          : [t.identifier(site.indexParam)]),
+          : [astFactory.identifier(site.indexParam)]),
       ],
     ),
   );
@@ -591,52 +592,52 @@ function buildComponentRowFactory({
 }: ComponentRowFactoryPlan): t.ArrowFunctionExpression {
   const entryProperties: t.ObjectProperty[] = lightweight
     ? [
-        t.objectProperty(
-          t.identifier('nodes'),
-          t.memberExpression(cloneEstreeNode(result), t.identifier('nodes')),
+        astFactory.objectProperty(
+          astFactory.identifier('nodes'),
+          astFactory.memberExpression(cloneEstreeNode(result), astFactory.identifier('nodes')),
         ),
-        t.objectProperty(t.identifier('entities'), t.arrayExpression([])),
-        t.objectProperty(
-          t.identifier('update'),
-          t.memberExpression(cloneEstreeNode(result), t.identifier('update')),
+        astFactory.objectProperty(astFactory.identifier('entities'), astFactory.arrayExpression([])),
+        astFactory.objectProperty(
+          astFactory.identifier('update'),
+          astFactory.memberExpression(cloneEstreeNode(result), astFactory.identifier('update')),
         ),
-        t.objectProperty(
-          t.identifier('dispose'),
-          t.memberExpression(cloneEstreeNode(result), t.identifier('dispose')),
+        astFactory.objectProperty(
+          astFactory.identifier('dispose'),
+          astFactory.memberExpression(cloneEstreeNode(result), astFactory.identifier('dispose')),
         ),
       ]
     : [
-        t.objectProperty(
-          t.identifier('nodes'),
-          t.callExpression(md(ctx, 'rootNodes'), [cloneEstreeNode(result)]),
+        astFactory.objectProperty(
+          astFactory.identifier('nodes'),
+          astFactory.callExpression(md(ctx, 'rootNodes'), [cloneEstreeNode(result)]),
         ),
-        t.objectProperty(
-          t.identifier('entities'),
-          t.arrayExpression([cloneEstreeNode(rowId)]),
+        astFactory.objectProperty(
+          astFactory.identifier('entities'),
+          astFactory.arrayExpression([cloneEstreeNode(rowId)]),
         ),
       ];
   if (needsUpdateProps && !reuseLightweightEntry) {
     entryProperties.push(
-      t.objectProperty(
-        t.identifier('updateProps'),
-        t.arrowFunctionExpression(
+      astFactory.objectProperty(
+        astFactory.identifier('updateProps'),
+        astFactory.arrowFunctionExpression(
           [
             cloneEstreeNode(nextItem),
             ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
           ],
-          t.blockStatement(updateStatements),
+          astFactory.blockStatement(updateStatements),
         ),
       ),
     );
   }
 
-  return t.arrowFunctionExpression(
+  return astFactory.arrowFunctionExpression(
     [
       cloneEstreeNode(site.itemPattern, true),
       cloneEstreeNode(rowId),
-      ...(site.indexParam === null ? [] : [t.identifier(site.indexParam)]),
+      ...(site.indexParam === null ? [] : [astFactory.identifier(site.indexParam)]),
     ],
-    t.blockStatement([
+    astFactory.blockStatement([
       ...(rowScope.updaters.length > 0
         ? [cacheDecl(rowScope), updateDecl(rowScope)]
         : []),
@@ -644,11 +645,11 @@ function buildComponentRowFactory({
       ...rowScope.creation,
       ...rowScope.mounts,
       ...prefixStatements,
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
           cloneEstreeNode(result),
           lightweight
-            ? t.callExpression(t.identifier(rowComponent), [
+            ? astFactory.callExpression(astFactory.identifier(rowComponent), [
                 ...callProps.map((prop) => cloneEstreeNode(prop)),
                 cloneEstreeNode(rowId),
                 ...(site.sourceLocal ? [cloneEstreeNode(ownerId)] : []),
@@ -656,38 +657,38 @@ function buildComponentRowFactory({
                   cloneEstreeNode(binding),
                 ),
               ])
-            : t.callExpression(t.identifier(rowComponent), [
+            : astFactory.callExpression(astFactory.identifier(rowComponent), [
                 cloneEstreeNode(rowId),
                 cloneEstreeNode(ownerId),
                 ...(callProps.length > 0
-                  ? [t.arrayExpression(callProps)]
+                  ? [astFactory.arrayExpression(callProps)]
                   : []),
               ]),
         ),
       ]),
       ...(rowScope.updaters.length > 0
         ? [
-            t.variableDeclaration('const', [
-              t.variableDeclarator(
+            astFactory.variableDeclaration('const', [
+              astFactory.variableDeclarator(
                 cloneEstreeNode(rowRefresh),
-                t.arrowFunctionExpression(
+                astFactory.arrowFunctionExpression(
                   [],
-                  t.blockStatement([
-                    t.expressionStatement(
+                  astFactory.blockStatement([
+                    astFactory.expressionStatement(
                       lightweight
-                        ? t.callExpression(
-                            t.memberExpression(
+                        ? astFactory.callExpression(
+                            astFactory.memberExpression(
                               cloneEstreeNode(result),
-                              t.identifier('update'),
+                              astFactory.identifier('update'),
                             ),
                             [],
                           )
-                        : t.callExpression(md(ctx, 'markDirty'), [
+                        : astFactory.callExpression(md(ctx, 'markDirty'), [
                             cloneEstreeNode(rowId),
                           ]),
                     ),
-                    t.expressionStatement(
-                      t.callExpression(t.identifier(rowScope.updateVar), []),
+                    astFactory.expressionStatement(
+                      astFactory.callExpression(astFactory.identifier(rowScope.updateVar), []),
                     ),
                   ]),
                 ),
@@ -698,36 +699,36 @@ function buildComponentRowFactory({
       ...(lightweightPushProps === null
         ? []
         : [
-            t.variableDeclaration('const', [
-              t.variableDeclarator(
+            astFactory.variableDeclaration('const', [
+              astFactory.variableDeclarator(
                 cloneEstreeNode(lightweightPushProps),
-                t.memberExpression(
+                astFactory.memberExpression(
                   cloneEstreeNode(result),
-                  t.identifier('updateProps'),
+                  astFactory.identifier('updateProps'),
                 ),
               ),
             ]),
-            t.expressionStatement(
-              t.assignmentExpression(
+            astFactory.expressionStatement(
+              astFactory.assignmentExpression(
                 '=',
-                t.memberExpression(
+                astFactory.memberExpression(
                   cloneEstreeNode(result),
-                  t.identifier('updateProps'),
+                  astFactory.identifier('updateProps'),
                 ),
-                t.arrowFunctionExpression(
+                astFactory.arrowFunctionExpression(
                   [
                     cloneEstreeNode(nextItem),
                     ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
                   ],
-                  t.blockStatement(updateStatements),
+                  astFactory.blockStatement(updateStatements),
                 ),
               ),
             ),
           ]),
-      t.returnStatement(
+      astFactory.returnStatement(
         reuseLightweightEntry
           ? cloneEstreeNode(result)
-          : t.objectExpression(entryProperties),
+          : astFactory.objectExpression(entryProperties),
       ),
     ]),
   );
@@ -761,17 +762,17 @@ function buildComponentRowCreate(
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
     sourceKey: site.sourceKey,
     sourceLocal: site.sourceLocal,
-    ...(site.sourceLocal && t.isIdentifier(ownerId)
+    ...(site.sourceLocal && astFactory.isIdentifier(ownerId)
       ? { ownerIdVar: ownerId.name }
       : {}),
   };
   const attributes = site.jsx!.openingElement.attributes.filter(
     (attribute) =>
-      t.isJSXSpreadAttribute(attribute) ||
+      astFactory.isJSXSpreadAttribute(attribute) ||
       jsxAttributeName(attribute.name) !== 'key',
   );
   const hasSpread = attributes.some((attribute) =>
-    t.isJSXSpreadAttribute(attribute),
+    astFactory.isJSXSpreadAttribute(attribute),
   );
   const propEntries: Array<{ name: string; value: t.Expression }> = [];
   const prefixStatements: t.Statement[] = [];
@@ -797,26 +798,26 @@ function buildComponentRowCreate(
       propEntries.map(({ name, value }) => [name, value]),
     );
     return positionalObjectProps!.map(({ name }) =>
-      cloneEstreeNode(byName.get(name) ?? t.identifier('undefined')),
+      cloneEstreeNode(byName.get(name) ?? astFactory.identifier('undefined')),
     );
   };
   const positionalPropsFromObject = (
     object: t.Expression,
   ): t.Expression[] =>
     positionalObjectProps!.map(({ name }) =>
-      t.memberExpression(
+      astFactory.memberExpression(
         cloneEstreeNode(object),
         isValidEstreeIdentifier(name)
-          ? t.identifier(name)
-          : t.stringLiteral(name),
+          ? astFactory.identifier(name)
+          : astFactory.stringLiteral(name),
         !isValidEstreeIdentifier(name),
       ),
     );
   const renderValueSlot = (value: t.Expression): t.Identifier => {
     const children: JsxChild[] =
-      t.isJSXElement(value) || t.isJSXFragment(value)
+      astFactory.isJSXElement(value) || astFactory.isJSXFragment(value)
         ? [value]
-        : [t.jsxExpressionContainer(value)];
+        : [astFactory.jsxExpressionContainer(value)];
     return buildAuthoredChildrenSlot(
       ctx,
       rowScope,
@@ -843,15 +844,15 @@ function buildComponentRowCreate(
     }).expression;
     for (const property of propObjectExpression.properties) {
       if (
-        !t.isObjectProperty(property) ||
+        !astFactory.isObjectProperty(property) ||
         property.computed ||
-        !t.isExpression(property.value)
+        !astFactory.isExpression(property.value)
       ) {
         continue;
       }
-      const propName = t.isIdentifier(property.key)
+      const propName = astFactory.isIdentifier(property.key)
         ? property.key.name
-        : t.isStringLiteral(property.key)
+        : astFactory.isStringLiteral(property.key)
           ? property.key.value
           : null;
       if (propName === null) continue;
@@ -893,7 +894,7 @@ function buildComponentRowCreate(
       const direct = attribute as t.JSXAttribute;
       const propName = jsxAttributeName(direct.name);
       const value =
-        direct.value == null ? t.booleanLiteral(true) : attrExpr(direct.value);
+        direct.value == null ? astFactory.booleanLiteral(true) : attrExpr(direct.value);
       if (value === null) {
         throw componentPath.buildCodeFrameError(
           `memo-dom: prop '${jsxAttributeName(
@@ -950,7 +951,7 @@ function buildComponentRowCreate(
           rowContext,
           true,
         );
-      } else if (t.isIdentifier(value)) {
+      } else if (astFactory.isIdentifier(value)) {
         const localFn = resolveLocalHelper(ctx, componentPath, value.name);
         if (localFn !== null && !nodeHasJsx(localFn.body)) {
           instrumentComponentCallback(
@@ -981,7 +982,7 @@ function buildComponentRowCreate(
     if (
       attributes.some(
         (attribute) =>
-          t.isJSXAttribute(attribute) &&
+          astFactory.isJSXAttribute(attribute) &&
           jsxAttributeName(attribute.name) === 'children',
       )
     ) {
@@ -1003,8 +1004,8 @@ function buildComponentRowCreate(
     );
     if (propObjectExpression !== null) {
       propObjectExpression.properties.push(
-        t.objectProperty(
-          t.identifier('children'),
+        astFactory.objectProperty(
+          astFactory.identifier('children'),
           cloneEstreeNode(childrenSlot),
         ),
       );
@@ -1020,8 +1021,8 @@ function buildComponentRowCreate(
   if (propObjectExpression !== null) {
     const propObject = generatedIdentifier(ctx, `${rowComponent}Props`);
     prefixStatements.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
           cloneEstreeNode(propObject),
           cloneEstreeNode(propObjectExpression),
         ),
@@ -1039,8 +1040,8 @@ function buildComponentRowCreate(
   }
 
   const updateStatements: t.Statement[] = [
-    t.expressionStatement(
-      t.assignmentExpression(
+    astFactory.expressionStatement(
+      astFactory.assignmentExpression(
         '=',
         cloneEstreeNode(site.itemPattern, true),
         cloneEstreeNode(nextItem),
@@ -1049,10 +1050,10 @@ function buildComponentRowCreate(
   ];
   if (nextIndex !== null && site.indexParam !== null) {
     updateStatements.push(
-      t.expressionStatement(
-        t.assignmentExpression(
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
           '=',
-          t.identifier(site.indexParam),
+          astFactory.identifier(site.indexParam),
           cloneEstreeNode(nextIndex),
         ),
       ),
@@ -1062,8 +1063,8 @@ function buildComponentRowCreate(
   if (propObjectExpression !== null) {
     const nextProps = generatedIdentifier(ctx, `next${rowComponent}Props`);
     updateStatements.push(
-      t.variableDeclaration('const', [
-        t.variableDeclarator(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
           cloneEstreeNode(nextProps),
           cloneEstreeNode(propObjectExpression),
         ),
@@ -1087,12 +1088,12 @@ function buildComponentRowCreate(
     : null;
   if (lightweight) {
     updateStatements.push(
-      t.expressionStatement(
-        t.callExpression(
+      astFactory.expressionStatement(
+        astFactory.callExpression(
           lightweightPushProps === null
-            ? t.memberExpression(
+            ? astFactory.memberExpression(
                 cloneEstreeNode(result),
-                t.identifier('updateProps'),
+                astFactory.identifier('updateProps'),
               )
             : cloneEstreeNode(lightweightPushProps),
           nextCallProps,
@@ -1101,21 +1102,21 @@ function buildComponentRowCreate(
     );
   } else {
     updateStatements.push(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'setProps'), [
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'setProps'), [
           cloneEstreeNode(rowId),
-          t.arrayExpression(nextCallProps),
+          astFactory.arrayExpression(nextCallProps),
         ]),
       ),
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'markDirty'), [cloneEstreeNode(rowId)]),
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'markDirty'), [cloneEstreeNode(rowId)]),
       ),
     );
   }
   if (rowScope.updaters.length > 0) {
     updateStatements.push(
-      t.expressionStatement(
-        t.callExpression(t.identifier(rowScope.updateVar), []),
+      astFactory.expressionStatement(
+        astFactory.callExpression(astFactory.identifier(rowScope.updateVar), []),
       ),
     );
   }
@@ -1155,7 +1156,7 @@ function buildInlineRowCreate(
   site.jsx!.openingElement.attributes =
     site.jsx!.openingElement.attributes.filter(
       (attribute) =>
-        t.isJSXSpreadAttribute(attribute) ||
+        astFactory.isJSXSpreadAttribute(attribute) ||
         (attribute.name as t.JSXIdentifier).name !== 'key',
     );
   const rowScope = newEmitScope(ctx);
@@ -1175,7 +1176,7 @@ function buildInlineRowCreate(
     sourceLocal: site.sourceLocal,
     ...(site.sourceLocal
       ? {
-          ownerIdVar: t.isIdentifier(ownerId)
+          ownerIdVar: astFactory.isIdentifier(ownerId)
             ? ownerId.name
             : componentId(ctx, componentName).name,
         }
@@ -1189,15 +1190,15 @@ function buildInlineRowCreate(
     componentPath,
     'row',
     rowContext,
-    t.identifier(rowId),
+    astFactory.identifier(rowId),
     inSvg,
-    t.identifier(rowId),
+    astFactory.identifier(rowId),
   );
   applyRepeatedDomTemplate(ctx, rowScope, rootVariable);
   const bindingUpdates: t.Statement[] =
     [
-      t.expressionStatement(
-        t.assignmentExpression(
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
           '=',
           cloneEstreeNode(site.itemPattern, true),
           cloneEstreeNode(nextItem),
@@ -1206,61 +1207,61 @@ function buildInlineRowCreate(
     ];
   if (nextIndex !== null && site.indexParam !== null) {
     bindingUpdates.push(
-      t.expressionStatement(
-        t.assignmentExpression(
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
           '=',
-          t.identifier(site.indexParam),
+          astFactory.identifier(site.indexParam),
           cloneEstreeNode(nextIndex),
         ),
       ),
     );
   }
 
-  return t.arrowFunctionExpression(
+  return astFactory.arrowFunctionExpression(
     [
       cloneEstreeNode(site.itemPattern, true),
-      t.identifier(rowId),
+      astFactory.identifier(rowId),
       ...(site.indexParam === null
         ? []
-        : [t.identifier(site.indexParam)]),
+        : [astFactory.identifier(site.indexParam)]),
     ],
-    t.blockStatement([
+    astFactory.blockStatement([
       cacheDecl(rowScope),
       updateDecl(rowScope),
       ...rowScope.prelude,
       registerStmt(
         ctx,
-        t.identifier(rowId),
+        astFactory.identifier(rowId),
         cloneEstreeNode(ownerId),
-        t.identifier(rowScope.updateVar),
+        astFactory.identifier(rowScope.updateVar),
       ),
       ...rowScope.creation,
       ...rowScope.mounts,
-      t.returnStatement(
-        t.objectExpression([
-          t.objectProperty(
-            t.identifier('nodes'),
-            t.arrayExpression([t.identifier(rootVariable)]),
+      astFactory.returnStatement(
+        astFactory.objectExpression([
+          astFactory.objectProperty(
+            astFactory.identifier('nodes'),
+            astFactory.arrayExpression([astFactory.identifier(rootVariable)]),
           ),
-          t.objectProperty(
-            t.identifier('entities'),
-            t.arrayExpression([t.identifier(rowId)]),
+          astFactory.objectProperty(
+            astFactory.identifier('entities'),
+            astFactory.arrayExpression([astFactory.identifier(rowId)]),
           ),
-          t.objectProperty(
-            t.identifier('updateProps'),
-            t.arrowFunctionExpression(
+          astFactory.objectProperty(
+            astFactory.identifier('updateProps'),
+            astFactory.arrowFunctionExpression(
               [
                 cloneEstreeNode(nextItem),
                 ...(nextIndex === null
                   ? []
                   : [cloneEstreeNode(nextIndex)]),
               ],
-              t.blockStatement(bindingUpdates),
+              astFactory.blockStatement(bindingUpdates),
             ),
           ),
-          t.objectProperty(
-            t.identifier('update'),
-            t.identifier(rowScope.updateVar),
+          astFactory.objectProperty(
+            astFactory.identifier('update'),
+            astFactory.identifier(rowScope.updateVar),
           ),
         ]),
       ),

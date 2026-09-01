@@ -1,6 +1,7 @@
 /** Anchored DOM region controlled by one compiler-generated route match ID. */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md, mr } from '../identifiers';
@@ -32,10 +33,10 @@ export function emitRouteRegion(
   const currentRoute = generatedIdentifier(ctx, 'currentRoute');
   const match = generatedIdentifier(ctx, 'routeMatch');
   const regionIndex = scope.regionCounter++;
-  const regionId = t.binaryExpression(
+  const regionId = astFactory.binaryExpression(
     '+',
     cloneEstreeNode(ownerId),
-    t.stringLiteral(`/route${regionIndex}`),
+    astFactory.stringLiteral(`/route${regionIndex}`),
   );
 
   // Suppress only this route while its selected branch is emitted. Keeping the
@@ -59,44 +60,44 @@ export function emitRouteRegion(
   } finally {
     ctx.routeElements.set(element, route);
   }
-  const selected = t.arrowFunctionExpression(
+  const selected = astFactory.arrowFunctionExpression(
     [cloneEstreeNode(currentRoute)],
-    t.callExpression(
-      t.memberExpression(
-        t.memberExpression(
+    astFactory.callExpression(
+      astFactory.memberExpression(
+        astFactory.memberExpression(
           cloneEstreeNode(currentRoute),
-          t.identifier('matches'),
+          astFactory.identifier('matches'),
         ),
-        t.identifier('some'),
+        astFactory.identifier('some'),
       ),
       [
-        t.arrowFunctionExpression(
+        astFactory.arrowFunctionExpression(
           [cloneEstreeNode(match)],
-          t.binaryExpression(
+          astFactory.binaryExpression(
             '===',
-            t.memberExpression(cloneEstreeNode(match), t.identifier('id')),
-            t.stringLiteral(route.id),
+            astFactory.memberExpression(cloneEstreeNode(match), astFactory.identifier('id')),
+            astFactory.stringLiteral(route.id),
           ),
         ),
       ],
     ),
   );
-  const updateRegion = t.arrowFunctionExpression(
+  const updateRegion = astFactory.arrowFunctionExpression(
     [],
-    t.callExpression(
-      t.memberExpression(cloneEstreeNode(region), t.identifier('update')),
+    astFactory.callExpression(
+      astFactory.memberExpression(cloneEstreeNode(region), astFactory.identifier('update')),
       [],
     ),
   );
 
   scope.creation.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(fragment),
-        t.callExpression(
-          t.memberExpression(
+        astFactory.callExpression(
+          astFactory.memberExpression(
             renderDocument(ctx, scope),
-            t.identifier('createDocumentFragment'),
+            astFactory.identifier('createDocumentFragment'),
           ),
           [],
         ),
@@ -108,45 +109,45 @@ export function emitRouteRegion(
       cloneEstreeNode(ownerId),
       cloneEstreeNode(updateRegion),
     ),
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(region),
-        t.callExpression(md(ctx, 'createCondRegion'), [
+        astFactory.callExpression(md(ctx, 'createCondRegion'), [
           cloneEstreeNode(fragment),
           cloneEstreeNode(regionId),
-          t.arrowFunctionExpression(
+          astFactory.arrowFunctionExpression(
             [],
-            t.conditionalExpression(
-              t.callExpression(selected, [mr(ctx, 'route')]),
-              t.numericLiteral(0),
-              t.numericLiteral(1),
+            astFactory.conditionalExpression(
+              astFactory.callExpression(selected, [mr(ctx, 'route')]),
+              astFactory.numericLiteral(0),
+              astFactory.numericLiteral(1),
             ),
           ),
-          t.arrayExpression([branch, t.nullLiteral()]),
+          astFactory.arrayExpression([branch, astFactory.nullLiteral()]),
         ]),
       ),
     ]),
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(unsubscribe),
-        t.callExpression(mr(ctx, 'subscribeRouteSelected'), [
+        astFactory.callExpression(mr(ctx, 'subscribeRouteSelected'), [
           cloneEstreeNode(selected),
           cloneEstreeNode(updateRegion),
         ]),
       ),
     ]),
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         cloneEstreeNode(dispose),
-        t.arrowFunctionExpression(
+        astFactory.arrowFunctionExpression(
           [],
-          t.blockStatement([
-            t.expressionStatement(
-              t.callExpression(cloneEstreeNode(unsubscribe), []),
+          astFactory.blockStatement([
+            astFactory.expressionStatement(
+              astFactory.callExpression(cloneEstreeNode(unsubscribe), []),
             ),
-            t.expressionStatement(
-              t.callExpression(
-                t.memberExpression(cloneEstreeNode(region), t.identifier('dispose')),
+            astFactory.expressionStatement(
+              astFactory.callExpression(
+                astFactory.memberExpression(cloneEstreeNode(region), astFactory.identifier('dispose')),
                 [],
               ),
             ),
@@ -161,8 +162,8 @@ export function emitRouteRegion(
     scope.disposableEntities.push(cloneEstreeNode(regionId));
   } else {
     scope.creation.push(
-      t.expressionStatement(
-        t.callExpression(md(ctx, 'cleanup'), [
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'cleanup'), [
           cloneEstreeNode(ownerId),
           cloneEstreeNode(dispose),
         ]),

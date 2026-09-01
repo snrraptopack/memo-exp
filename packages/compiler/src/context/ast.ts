@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   analyzeScope,
   walkAst,
@@ -79,15 +80,15 @@ export function freshWriteConst(
   ].sort();
   const key = canonicalWrites.join(' ');
   const existing = ctx.writeConsts.get(key);
-  if (existing !== undefined) return t.identifier(existing);
+  if (existing !== undefined) return astFactory.identifier(existing);
   const id = generatedIdentifier(ctx, `WRITES_${ctx.writeConstCounter++}`);
   ctx.writeConsts.set(key, id.name);
   ctx.header.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         id,
-        t.arrayExpression(
-          canonicalWrites.map((write) => t.stringLiteral(write)),
+        astFactory.arrayExpression(
+          canonicalWrites.map((write) => astFactory.stringLiteral(write)),
         ),
       ),
     ]),
@@ -103,18 +104,18 @@ export function freshReasonConst(
   const unique = [...new Set(reasons)].sort((left, right) => left - right);
   const key = unique.join(' ');
   const existing = ctx.reasonConsts.get(key);
-  if (existing !== undefined) return t.identifier(existing);
+  if (existing !== undefined) return astFactory.identifier(existing);
   const id = generatedIdentifier(
     ctx,
     `REASONS_${ctx.reasonConstCounter++}`,
   );
   ctx.reasonConsts.set(key, id.name);
   ctx.header.push(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
         id,
-        t.arrayExpression(
-          unique.map((reason) => t.numericLiteral(reason)),
+        astFactory.arrayExpression(
+          unique.map((reason) => astFactory.numericLiteral(reason)),
         ),
       ),
     ]),
@@ -125,7 +126,7 @@ export function freshReasonConst(
 type MemberLike = t.MemberExpression | t.OptionalMemberExpression;
 
 function isMemberLike(node: t.Node): node is MemberLike {
-  return t.isMemberExpression(node) || t.isOptionalMemberExpression(node);
+  return astFactory.isMemberExpression(node) || astFactory.isOptionalMemberExpression(node);
 }
 
 /** Static property-path key for `a.b.c`, including optional member chains. */
@@ -134,25 +135,25 @@ export function memberKey(node: MemberLike): string | null {
   let current: t.Expression | t.PrivateName = node;
   while (isMemberLike(current)) {
     if (current.computed) {
-      if (!t.isStringLiteral(current.property)) return null;
+      if (!astFactory.isStringLiteral(current.property)) return null;
       parts.unshift(current.property.value);
     } else {
-      if (!t.isIdentifier(current.property)) return null;
+      if (!astFactory.isIdentifier(current.property)) return null;
       parts.unshift(current.property.name);
     }
-    if (t.isSuper(current.object)) return null;
+    if (astFactory.isSuper(current.object)) return null;
     current = current.object;
   }
   while (
-    t.isTSNonNullExpression(current) ||
-    t.isTSAsExpression(current) ||
-    t.isTSTypeAssertion(current) ||
-    t.isTSSatisfiesExpression(current) ||
-    t.isTSInstantiationExpression(current)
+    astFactory.isTSNonNullExpression(current) ||
+    astFactory.isTSAsExpression(current) ||
+    astFactory.isTSTypeAssertion(current) ||
+    astFactory.isTSSatisfiesExpression(current) ||
+    astFactory.isTSInstantiationExpression(current)
   ) {
     current = current.expression;
   }
-  if (!t.isIdentifier(current)) return null;
+  if (!astFactory.isIdentifier(current)) return null;
   parts.unshift(current.name);
   return parts.join('.');
 }
@@ -177,14 +178,14 @@ export function keyPathOf(
   if (keyExpr === null) return [];
   const segments: string[] = [];
   let current: t.Expression = keyExpr;
-  while (t.isMemberExpression(current) && !current.computed) {
-    if (!t.isIdentifier(current.property)) return null;
+  while (astFactory.isMemberExpression(current) && !current.computed) {
+    if (!astFactory.isIdentifier(current.property)) return null;
     segments.unshift(current.property.name);
-    if (t.isSuper(current.object)) return null;
+    if (astFactory.isSuper(current.object)) return null;
     current = current.object;
   }
   if (
-    !t.isIdentifier(current, { name: itemParam }) ||
+    !astFactory.isIdentifier(current, { name: itemParam }) ||
     segments.length === 0
   ) {
     return null;
@@ -216,23 +217,23 @@ export function memberRootName(node: MemberLike): string | null {
   let current: t.Expression = node;
   while (true) {
     if (isMemberLike(current)) {
-      if (t.isSuper(current.object)) return null;
+      if (astFactory.isSuper(current.object)) return null;
       current = current.object;
       continue;
     }
     if (
-      t.isTSNonNullExpression(current) ||
-      t.isTSAsExpression(current) ||
-      t.isTSTypeAssertion(current) ||
-      t.isTSSatisfiesExpression(current) ||
-      t.isTSInstantiationExpression(current)
+      astFactory.isTSNonNullExpression(current) ||
+      astFactory.isTSAsExpression(current) ||
+      astFactory.isTSTypeAssertion(current) ||
+      astFactory.isTSSatisfiesExpression(current) ||
+      astFactory.isTSInstantiationExpression(current)
     ) {
       current = current.expression;
       continue;
     }
     break;
   }
-  return t.isIdentifier(current) ? current.name : null;
+  return astFactory.isIdentifier(current) ? current.name : null;
 }
 
 /** Whether an initializer is a statically-shaped plain object store. */
@@ -241,12 +242,12 @@ export function isStoreObject(
 ): boolean {
   if (!init) return false;
   const current = unwrapTypeExpression(init);
-  if (!t.isObjectExpression(current)) return false;
+  if (!astFactory.isObjectExpression(current)) return false;
   return current.properties.every(
     (property) =>
-      t.isObjectProperty(property) &&
+      astFactory.isObjectProperty(property) &&
       !property.computed &&
-      (t.isIdentifier(property.key) || t.isStringLiteral(property.key)),
+      (astFactory.isIdentifier(property.key) || astFactory.isStringLiteral(property.key)),
   );
 }
 
@@ -256,7 +257,7 @@ export function isConstObjectState(
 ): boolean {
   if (!init) return false;
   const current = unwrapTypeExpression(init);
-  return t.isArrayExpression(current) || t.isNewExpression(current);
+  return astFactory.isArrayExpression(current) || astFactory.isNewExpression(current);
 }
 
 /** Unwrap a string or expression-container JSX attribute value. */
@@ -264,9 +265,9 @@ export function attrExpr(
   value: t.JSXAttribute['value'],
 ): t.Expression | null {
   if (value == null) return null;
-  if (t.isStringLiteral(value)) return value;
-  if (t.isJSXExpressionContainer(value)) {
-    return t.isJSXEmptyExpression(value.expression)
+  if (astFactory.isStringLiteral(value)) return value;
+  if (astFactory.isJSXExpressionContainer(value)) {
+    return astFactory.isJSXEmptyExpression(value.expression)
       ? null
       : (value.expression as t.Expression);
   }
@@ -295,7 +296,7 @@ export function exprReadsState(
   walkNodes(expression, (node) => {
     if (reads) return false;
     if (
-      t.isIdentifier(node) &&
+      astFactory.isIdentifier(node) &&
       (ctx.state.has(node.name) ||
         instance?.has(node.name) === true ||
         derived?.has(node.name) === true ||
@@ -324,7 +325,7 @@ export function exprReadsInstanceState(
 
   let reads = false;
   walkNodes(expression, (node) => {
-    if (t.isIdentifier(node) && roots.has(node.name)) {
+    if (astFactory.isIdentifier(node) && roots.has(node.name)) {
       reads = true;
       return false;
     }
@@ -349,7 +350,7 @@ export function walkNodes(
 export function nodeHasJsx(root: t.Node): boolean {
   let found = false;
   walkNodes(root, (node) => {
-    if (t.isJSXElement(node) || t.isJSXFragment(node)) found = true;
+    if (astFactory.isJSXElement(node) || astFactory.isJSXFragment(node)) found = true;
   });
   return found;
 }
@@ -359,12 +360,12 @@ export function collectStateIds(ctx: Ctx, root: t.Node): Set<string> {
   const output = new Set<string>();
   walkNodes(root, (node) => {
     if (
-      t.isJSXAttribute(node) &&
-      t.isJSXIdentifier(node.name, { name: 'ref' })
+      astFactory.isJSXAttribute(node) &&
+      astFactory.isJSXIdentifier(node.name, { name: 'ref' })
     ) {
       return false;
     }
-    if (t.isIdentifier(node) && ctx.state.has(node.name)) {
+    if (astFactory.isIdentifier(node) && ctx.state.has(node.name)) {
       output.add(node.name);
     }
   });

@@ -6,7 +6,7 @@
  * is created per compiled module.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
 import type { ScopeAnalysis } from '../ast';
 import type {
   ComponentPropsPlan,

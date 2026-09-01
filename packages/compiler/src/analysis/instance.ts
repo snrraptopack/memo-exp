@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneAstNode,
   walkAst,
@@ -271,7 +272,7 @@ export function scanInstanceState(ctx: Ctx): void {
   for (const [name, componentPath] of ctx.compPaths) {
     const variables = new Set<string>();
     for (const statement of componentPath.node.body.body) {
-      if (!t.isVariableDeclaration(statement)) continue;
+      if (!astFactory.isVariableDeclaration(statement)) continue;
       if (
         statement.kind !== 'let' &&
         statement.kind !== 'var' &&
@@ -280,7 +281,7 @@ export function scanInstanceState(ctx: Ctx): void {
         continue;
       }
       for (const declaration of statement.declarations) {
-        if (!t.isIdentifier(declaration.id)) continue;
+        if (!astFactory.isIdentifier(declaration.id)) continue;
         if (
           statement.kind === 'let' ||
           statement.kind === 'var' ||
@@ -434,19 +435,19 @@ export function scanInstanceDerivations(ctx: Ctx): void {
     };
 
     for (const statement of componentPath.node.body.body) {
-      if (!t.isVariableDeclaration(statement, { kind: 'const' })) continue;
+      if (!astFactory.isVariableDeclaration(statement, { kind: 'const' })) continue;
       for (const declaration of statement.declarations) {
         if (
-          (!t.isIdentifier(declaration.id) &&
-            !t.isObjectPattern(declaration.id) &&
-            !t.isArrayPattern(declaration.id)) ||
+          (!astFactory.isIdentifier(declaration.id) &&
+            !astFactory.isObjectPattern(declaration.id) &&
+            !astFactory.isArrayPattern(declaration.id)) ||
           declaration.init == null ||
-          t.isFunction(declaration.init)
+          astFactory.isFunction(declaration.init)
         ) {
           continue;
         }
         if (
-          t.isIdentifier(declaration.id) &&
+          astFactory.isIdentifier(declaration.id) &&
           ctx.instanceState
             .get(componentName)
             ?.has(declaration.id.name) === true &&
@@ -554,11 +555,11 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           else for (const source of upstream) sources.add(source);
         }
         const stableFetchTarget =
-          isTransparentFetch && t.isIdentifier(declaration.id);
-        const replay = stableFetchTarget && t.isCallExpression(declaration.init)
-          ? t.expressionStatement(
-              t.callExpression(mdd(ctx, 'rebindResolvedValue'), [
-                t.identifier((declaration.id as t.Identifier).name),
+          isTransparentFetch && astFactory.isIdentifier(declaration.id);
+        const replay = stableFetchTarget && astFactory.isCallExpression(declaration.init)
+          ? astFactory.expressionStatement(
+              astFactory.callExpression(mdd(ctx, 'rebindResolvedValue'), [
+                astFactory.identifier((declaration.id as t.Identifier).name),
                 ...declaration.init.arguments.map(cloneNode),
               ]),
             )

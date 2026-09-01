@@ -1,4 +1,5 @@
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
 import type { Ctx, MapCallExpression } from '../context';
@@ -107,10 +108,10 @@ export function isRenderCallbackJsxRoot(
 
 function isMapCall(call: MapCallExpression): boolean {
   return (
-    (t.isMemberExpression(call.callee) ||
-      t.isOptionalMemberExpression(call.callee)) &&
+    (astFactory.isMemberExpression(call.callee) ||
+      astFactory.isOptionalMemberExpression(call.callee)) &&
     !call.callee.computed &&
-    t.isIdentifier(call.callee.property, { name: 'map' })
+    astFactory.isIdentifier(call.callee.property, { name: 'map' })
   );
 }
 
@@ -124,14 +125,14 @@ function propReferenceName(
   const objectBinding = objectBindingName(plan);
   if (
     objectBinding !== null &&
-    t.isMemberExpression(expression) &&
+    astFactory.isMemberExpression(expression) &&
     !expression.computed &&
-    t.isIdentifier(expression.object, { name: objectBinding }) &&
-    t.isIdentifier(expression.property)
+    astFactory.isIdentifier(expression.object, { name: objectBinding }) &&
+    astFactory.isIdentifier(expression.property)
   ) {
     return expression.property.name;
   }
-  if (t.isIdentifier(expression)) {
+  if (astFactory.isIdentifier(expression)) {
     return (
       propNameForBinding(plan, expression.name) ??
       (localBindingForProp(plan, expression.name) !== null
@@ -145,11 +146,11 @@ function propReferenceName(
 function returnedExpression(
   callback: t.ArrowFunctionExpression,
 ): t.Expression | null {
-  if (t.isExpression(callback.body)) return callback.body;
+  if (astFactory.isExpression(callback.body)) return callback.body;
   if (
     callback.body.body.length === 1 &&
-    t.isReturnStatement(callback.body.body[0]) &&
-    t.isExpression(callback.body.body[0].argument)
+    astFactory.isReturnStatement(callback.body.body[0]) &&
+    astFactory.isExpression(callback.body.body[0].argument)
   ) {
     return callback.body.body[0].argument;
   }
@@ -164,14 +165,14 @@ export function matchRenderCallbackMap(
 ): RenderCallbackInvocation | null {
   if (!isMapCall(call) || call.arguments.length !== 1) return null;
   const callback = call.arguments[0];
-  if (!t.isArrowFunctionExpression(callback)) return null;
+  if (!astFactory.isArrowFunctionExpression(callback)) return null;
   const returned = returnedExpression(callback);
   if (
     returned === null ||
-    !t.isCallExpression(returned) ||
-    !t.isExpression(returned.callee) ||
+    !astFactory.isCallExpression(returned) ||
+    !astFactory.isExpression(returned.callee) ||
     returned.arguments.some(
-      (argument) => !t.isExpression(argument),
+      (argument) => !astFactory.isExpression(argument),
     )
   ) {
     return null;

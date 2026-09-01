@@ -6,7 +6,8 @@
  * setters and event/ref/lifecycle work remain in the row factory.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkNodes, type Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
@@ -46,7 +47,7 @@ export function applyRepeatedDomTemplate(
   const factories: NodeFactory[] = [];
   const nodeNames = new Set<string>();
   for (const statement of scope.creation) {
-    if (!t.isVariableDeclaration(statement)) continue;
+    if (!astFactory.isVariableDeclaration(statement)) continue;
     const factory = readNodeFactory(statement, scope.documentVar);
     if (factory === null) return false;
     factories.push(factory);
@@ -78,7 +79,7 @@ export function applyRepeatedDomTemplate(
   const retained: t.Statement[] = [];
   for (const statement of scope.creation) {
     if (
-      t.isVariableDeclaration(statement) ||
+      astFactory.isVariableDeclaration(statement) ||
       isStaticTemplateOperation(statement, nodeNames)
     ) {
       templateStatements.push(cloneEstreeNode(statement, true));
@@ -97,75 +98,75 @@ export function applyRepeatedDomTemplate(
     `${rootVar}CreateTemplate`,
   );
   ctx.header.push(
-    t.variableDeclaration('let', [
-      t.variableDeclarator(cloneEstreeNode(template)),
-      t.variableDeclarator(cloneEstreeNode(templateDocument)),
+    astFactory.variableDeclaration('let', [
+      astFactory.variableDeclarator(cloneEstreeNode(template)),
+      astFactory.variableDeclarator(cloneEstreeNode(templateDocument)),
     ]),
     // Keep the DOM constructor in one module-level function. Hydration needs
     // a fresh claim per row, while client-create caches its first result; an
     // inline constructor in both branches duplicates emitted code and static
     // creation work.
-    t.functionDeclaration(
+    astFactory.functionDeclaration(
       cloneEstreeNode(createTemplate),
-      [t.identifier(scope.documentVar)],
-      t.blockStatement([
+      [astFactory.identifier(scope.documentVar)],
+      astFactory.blockStatement([
         ...templateStatements,
-        t.returnStatement(t.identifier(rootVar)),
+        astFactory.returnStatement(astFactory.identifier(rootVar)),
       ]),
     ),
   );
 
-  const initializeTemplate = t.callExpression(
+  const initializeTemplate = astFactory.callExpression(
     cloneEstreeNode(createTemplate),
-    [t.identifier(scope.documentVar)],
+    [astFactory.identifier(scope.documentVar)],
   );
   // Hydrate mode must not clone: row factories claim their server nodes
   // through the document, and cloning a template built from the first claim
   // would recreate every subsequent row. Three-way emission: rebuild+cache
   // when allowed and stale; reuse when allowed and fresh; build fresh
   // WITHOUT caching in hydrate mode. The clone applies only when allowed.
-  const canReuse = t.callExpression(md(ctx, 'canReuseTemplate'), []);
-  const getTemplate = t.conditionalExpression(
-    t.logicalExpression(
+  const canReuse = astFactory.callExpression(md(ctx, 'canReuseTemplate'), []);
+  const getTemplate = astFactory.conditionalExpression(
+    astFactory.logicalExpression(
       '&&',
       cloneEstreeNode(canReuse),
-      t.logicalExpression(
+      astFactory.logicalExpression(
         '||',
-        t.binaryExpression(
+        astFactory.binaryExpression(
           '===',
           cloneEstreeNode(template),
-          t.unaryExpression('void', t.numericLiteral(0)),
+          astFactory.unaryExpression('void', astFactory.numericLiteral(0)),
         ),
-        t.binaryExpression(
+        astFactory.binaryExpression(
           '!==',
           cloneEstreeNode(templateDocument),
-          t.identifier(scope.documentVar),
+          astFactory.identifier(scope.documentVar),
         ),
       ),
     ),
-    t.sequenceExpression([
-      t.assignmentExpression(
+    astFactory.sequenceExpression([
+      astFactory.assignmentExpression(
         '=',
         cloneEstreeNode(templateDocument),
-        t.identifier(scope.documentVar),
+        astFactory.identifier(scope.documentVar),
       ),
-      t.assignmentExpression(
+      astFactory.assignmentExpression(
         '=',
         cloneEstreeNode(template),
         initializeTemplate,
       ),
     ]),
-    t.conditionalExpression(
+    astFactory.conditionalExpression(
       cloneEstreeNode(canReuse),
       cloneEstreeNode(template),
       initializeTemplate,
     ),
   );
-  const rootClone = t.conditionalExpression(
+  const rootClone = astFactory.conditionalExpression(
     cloneEstreeNode(canReuse),
-    t.callExpression(
-      t.memberExpression(getTemplate, t.identifier('cloneNode')),
-      [t.booleanLiteral(true)],
+    astFactory.callExpression(
+      astFactory.memberExpression(getTemplate, astFactory.identifier('cloneNode')),
+      [astFactory.booleanLiteral(true)],
     ),
     getTemplate,
   );
@@ -173,7 +174,7 @@ export function applyRepeatedDomTemplate(
   const referencedNodes = new Set<string>([rootVar]);
   for (const statement of retained) {
     walkNodes(statement, (node) => {
-      if (t.isIdentifier(node) && nodeNames.has(node.name)) {
+      if (astFactory.isIdentifier(node) && nodeNames.has(node.name)) {
         referencedNodes.add(node.name);
       }
     });
@@ -203,9 +204,9 @@ export function applyRepeatedDomTemplate(
         value = nodeAtPath(base.name, path.slice(base.path.length));
       }
       bound.push({ name, path });
-      return t.variableDeclaration('const', [
-        t.variableDeclarator(
-          t.identifier(name),
+      return astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
+          astFactory.identifier(name),
           value,
         ),
       ]);
@@ -232,11 +233,11 @@ function readNodeFactory(
   if (statement.declarations.length !== 1) return null;
   const declaration = statement.declarations[0]!;
   if (
-    !t.isIdentifier(declaration.id) ||
-    !t.isCallExpression(declaration.init) ||
-    !t.isMemberExpression(declaration.init.callee) ||
-    !t.isIdentifier(declaration.init.callee.object, { name: documentVar }) ||
-    !t.isIdentifier(declaration.init.callee.property)
+    !astFactory.isIdentifier(declaration.id) ||
+    !astFactory.isCallExpression(declaration.init) ||
+    !astFactory.isMemberExpression(declaration.init.callee) ||
+    !astFactory.isIdentifier(declaration.init.callee.object, { name: documentVar }) ||
+    !astFactory.isIdentifier(declaration.init.callee.property)
   ) {
     return null;
   }
@@ -251,7 +252,7 @@ function readNodeFactory(
   const tag = declaration.init.arguments.at(-1);
   if (
     (method === 'createElement' || method === 'createElementNS') &&
-    t.isStringLiteral(tag) &&
+    astFactory.isStringLiteral(tag) &&
     tag.value.includes('-')
   ) {
     return null;
@@ -263,15 +264,15 @@ function readAppend(
   statement: t.Statement,
 ): { child: string; parent: string } | null {
   if (
-    !t.isExpressionStatement(statement) ||
-    !t.isCallExpression(statement.expression) ||
-    !t.isMemberExpression(statement.expression.callee) ||
-    !t.isIdentifier(statement.expression.callee.object) ||
-    !t.isIdentifier(statement.expression.callee.property, {
+    !astFactory.isExpressionStatement(statement) ||
+    !astFactory.isCallExpression(statement.expression) ||
+    !astFactory.isMemberExpression(statement.expression.callee) ||
+    !astFactory.isIdentifier(statement.expression.callee.object) ||
+    !astFactory.isIdentifier(statement.expression.callee.property, {
       name: 'appendChild',
     }) ||
     statement.expression.arguments.length !== 1 ||
-    !t.isIdentifier(statement.expression.arguments[0])
+    !astFactory.isIdentifier(statement.expression.arguments[0])
   ) {
     return null;
   }
@@ -303,11 +304,11 @@ function pathFromRoot(
 }
 
 function nodeAtPath(root: string, path: readonly number[]): t.Expression {
-  let current: t.Expression = t.identifier(root);
+  let current: t.Expression = astFactory.identifier(root);
   for (const index of path) {
-    current = t.memberExpression(current, t.identifier('firstChild'));
+    current = astFactory.memberExpression(current, astFactory.identifier('firstChild'));
     for (let sibling = 0; sibling < index; sibling++) {
-      current = t.memberExpression(current, t.identifier('nextSibling'));
+      current = astFactory.memberExpression(current, astFactory.identifier('nextSibling'));
     }
   }
   return current;
@@ -321,34 +322,34 @@ function isStaticTemplateOperation(
   if (append !== null) {
     return nodes.has(append.parent) && nodes.has(append.child);
   }
-  if (!t.isExpressionStatement(statement)) return false;
+  if (!astFactory.isExpressionStatement(statement)) return false;
   const expression = statement.expression;
 
   if (
-    t.isCallExpression(expression) &&
-    t.isMemberExpression(expression.callee)
+    astFactory.isCallExpression(expression) &&
+    astFactory.isMemberExpression(expression.callee)
   ) {
     if (
-      t.isIdentifier(expression.callee.object) &&
+      astFactory.isIdentifier(expression.callee.object) &&
       nodes.has(expression.callee.object.name) &&
-      t.isIdentifier(expression.callee.property, { name: 'setAttribute' }) &&
+      astFactory.isIdentifier(expression.callee.property, { name: 'setAttribute' }) &&
       expression.arguments.every(
-        (argument) => t.isExpression(argument) && isStaticValue(argument),
+        (argument) => astFactory.isExpression(argument) && isStaticValue(argument),
       )
     ) {
       return true;
     }
     if (
-      t.isIdentifier(expression.callee.object) &&
-      t.isIdentifier(expression.callee.property) &&
+      astFactory.isIdentifier(expression.callee.object) &&
+      astFactory.isIdentifier(expression.callee.property) &&
       STATIC_RUNTIME_SETTERS.has(expression.callee.property.name) &&
       expression.arguments.length >= 2 &&
-      t.isIdentifier(expression.arguments[0]) &&
+      astFactory.isIdentifier(expression.arguments[0]) &&
       nodes.has(expression.arguments[0].name) &&
       expression.arguments
         .slice(1)
         .every(
-          (argument) => t.isExpression(argument) && isStaticValue(argument),
+          (argument) => astFactory.isExpression(argument) && isStaticValue(argument),
         )
     ) {
       return true;
@@ -359,24 +360,24 @@ function isStaticTemplateOperation(
 
 function isStaticValue(expression: t.Expression): boolean {
   if (
-    t.isStringLiteral(expression) ||
-    t.isNumericLiteral(expression) ||
-    t.isBooleanLiteral(expression) ||
-    t.isNullLiteral(expression)
+    astFactory.isStringLiteral(expression) ||
+    astFactory.isNumericLiteral(expression) ||
+    astFactory.isBooleanLiteral(expression) ||
+    astFactory.isNullLiteral(expression)
   ) {
     return true;
   }
-  if (t.isArrayExpression(expression)) {
+  if (astFactory.isArrayExpression(expression)) {
     return expression.elements.every(
-      (element) => element === null || (t.isExpression(element) && isStaticValue(element)),
+      (element) => element === null || (astFactory.isExpression(element) && isStaticValue(element)),
     );
   }
-  if (t.isObjectExpression(expression)) {
+  if (astFactory.isObjectExpression(expression)) {
     return expression.properties.every(
       (property) =>
-        t.isObjectProperty(property) &&
+        astFactory.isObjectProperty(property) &&
         !property.computed &&
-        t.isExpression(property.value) &&
+        astFactory.isExpression(property.value) &&
         isStaticValue(property.value),
     );
   }

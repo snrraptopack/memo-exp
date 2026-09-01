@@ -19,7 +19,8 @@
  * memoized update guards absorb unchanged values.
  */
 
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { type BaseNode, type Binding } from './ast';
 import {
   astBindingAt,
@@ -90,7 +91,7 @@ export function resolveLocalHelper(
   const declaration = variableDeclaratorFor(ctx, binding);
   if (declaration === null) return null;
   const init = declaration.init;
-  return init && (t.isArrowFunctionExpression(init) || t.isFunctionExpression(init))
+  return init && (astFactory.isArrowFunctionExpression(init) || astFactory.isFunctionExpression(init))
     ? init
     : null;
 }
@@ -156,7 +157,7 @@ function instrumentReachableLocalHelpers(
 ): void {
   const names = new Set<string>();
   walkNodes(root.body, (node) => {
-    if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
+    if (astFactory.isCallExpression(node) && astFactory.isIdentifier(node.callee)) {
       names.add(node.callee.name);
     }
   });
@@ -200,9 +201,9 @@ export function buildHandler(
     propPlan === undefined ? null : objectBindingName(propPlan);
   const propHandler =
     propPlan !== undefined &&
-    ((t.isIdentifier(value) &&
+    ((astFactory.isIdentifier(value) &&
       propNameForBinding(propPlan, value.name) !== null) ||
-      (t.isMemberExpression(value) &&
+      (astFactory.isMemberExpression(value) &&
         propObject !== null &&
         memberRootName(value) === propObject));
 
@@ -219,9 +220,9 @@ export function buildHandler(
     );
   }
 
-  if (t.isArrowFunctionExpression(value) || t.isFunctionExpression(value)) {
+  if (astFactory.isArrowFunctionExpression(value) || astFactory.isFunctionExpression(value)) {
     target = value;
-  } else if (t.isIdentifier(value)) {
+  } else if (astFactory.isIdentifier(value)) {
     const imported = ctx.importedFunctions.get(value.name);
     if (imported !== undefined) {
       const writes = createScopeWrites();
@@ -247,7 +248,7 @@ export function buildHandler(
       binding === undefined ? null : variableDeclaratorFor(ctx, binding);
     if (declaration !== null) {
       const init = declaration.init;
-      if (init && (t.isArrowFunctionExpression(init) || t.isFunctionExpression(init))) {
+      if (init && (astFactory.isArrowFunctionExpression(init) || astFactory.isFunctionExpression(init))) {
         target = init;
         forceTable =
           binding?.scope.isProgramScope === true &&
@@ -273,9 +274,9 @@ export function buildHandler(
   }
 
   // normalize an implicit-return root body to a block so commits can append
-  if (!t.isBlockStatement(target.body)) {
-    target.body = t.blockStatement([
-      t.expressionStatement(target.body as t.Expression),
+  if (!astFactory.isBlockStatement(target.body)) {
+    target.body = astFactory.blockStatement([
+      astFactory.expressionStatement(target.body as t.Expression),
     ]);
   }
 
@@ -286,7 +287,7 @@ export function buildHandler(
     }
     const committedLocalDelegation =
       !forceTable &&
-      !t.isIdentifier(value) &&
+      !astFactory.isIdentifier(value) &&
       callsOnlyCommittedLocalHelpers(target, (name) => {
         const helper = resolveLocalHelper(ctx, compPath, name);
         return (
@@ -300,14 +301,14 @@ export function buildHandler(
     // A handler RESOLVED BY NAME lives at component scope, so row-scoped
     // commit identifiers are never valid inside it — analyze it without the
     // row context even when the reference site is a row.
-    const nameResolved = t.isIdentifier(value) && !forceTable && rowCtx?.refreshVar === undefined;
+    const nameResolved = astFactory.isIdentifier(value) && !forceTable && rowCtx?.refreshVar === undefined;
     analyzeHandler(
       ctx,
       target,
       forceTable ? null : compName,
       nameResolved ? undefined : rowCtx,
       !forceTable &&
-        !t.isIdentifier(value) &&
+        !astFactory.isIdentifier(value) &&
         !committedLocalDelegation,
       eventOriginId,
     );
@@ -339,7 +340,7 @@ export function buildHandler(
     }
   }
   if (
-    t.isIdentifier(value) &&
+    astFactory.isIdentifier(value) &&
     !forceTable &&
     (ctx.handlerHasRootCommit.get(target) === false || target.async)
   ) {
@@ -349,5 +350,5 @@ export function buildHandler(
       buildEventOriginCommit(ctx, compName, rowCtx, eventOriginId),
     );
   }
-  return t.isIdentifier(value) ? value : (target as t.Expression);
+  return astFactory.isIdentifier(value) ? value : (target as t.Expression);
 }

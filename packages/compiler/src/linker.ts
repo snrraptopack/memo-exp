@@ -15,7 +15,8 @@ import {
 } from '@babel/core';
 import syntaxJsx from '@babel/plugin-syntax-jsx';
 import transformTypescript from '@babel/plugin-transform-typescript';
-import * as t from '@babel/types';
+import type * as t from '@babel/types';
+import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   ESTREE_VISITOR_KEYS,
@@ -273,23 +274,23 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
         const element = node as unknown as t.JSXElement;
         const opening = element.openingElement;
         const tag = opening.name;
-        if (!t.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
+        if (!astFactory.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
         const target =
           ctx.importedComponents.get(tag.name)?.key ??
           (ctx.comps.has(tag.name) ? `${ctx.moduleId}#${tag.name}` : null);
         if (target === null) return;
 
         for (const attribute of opening.attributes) {
-          if (!t.isJSXAttribute(attribute)) continue;
-          const name = t.isJSXIdentifier(attribute.name)
+          if (!astFactory.isJSXAttribute(attribute)) continue;
+          const name = astFactory.isJSXIdentifier(attribute.name)
             ? attribute.name.name
             : attribute.name.name.name;
           const value = attribute.value;
           if (
-            t.isJSXElement(value) ||
-            t.isJSXFragment(value) ||
-            (t.isJSXExpressionContainer(value) &&
-              t.isExpression(value.expression) &&
+            astFactory.isJSXElement(value) ||
+            astFactory.isJSXFragment(value) ||
+            (astFactory.isJSXExpressionContainer(value) &&
+              astFactory.isExpression(value.expression) &&
               (nodeHasJsx(value.expression) ||
                 isRenderPropReference(ctx, owner, value.expression)))
           ) {
@@ -300,7 +301,7 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
         }
         if (
           element.children.some(
-            (child) => !t.isJSXText(child) || child.value.trim() !== '',
+            (child) => !astFactory.isJSXText(child) || child.value.trim() !== '',
           )
         ) {
           record(target, 'children', 'jsx');
@@ -337,36 +338,36 @@ function directComponentNames(
   output: Set<string>,
 ): void {
   while (
-    t.isTSAsExpression(expression) ||
-    t.isTSTypeAssertion(expression) ||
-    t.isTSNonNullExpression(expression)
+    astFactory.isTSAsExpression(expression) ||
+    astFactory.isTSTypeAssertion(expression) ||
+    astFactory.isTSNonNullExpression(expression)
   ) {
     expression = expression.expression;
   }
-  if (t.isIdentifier(expression)) {
+  if (astFactory.isIdentifier(expression)) {
     if (componentNames.has(expression.name)) output.add(expression.name);
     return;
   }
-  if (t.isConditionalExpression(expression)) {
+  if (astFactory.isConditionalExpression(expression)) {
     directComponentNames(expression.consequent, componentNames, output);
     directComponentNames(expression.alternate, componentNames, output);
     return;
   }
-  if (t.isLogicalExpression(expression)) {
+  if (astFactory.isLogicalExpression(expression)) {
     directComponentNames(expression.right, componentNames, output);
     return;
   }
-  if (t.isObjectExpression(expression)) {
+  if (astFactory.isObjectExpression(expression)) {
     for (const property of expression.properties) {
-      if (t.isObjectProperty(property) && t.isExpression(property.value)) {
+      if (astFactory.isObjectProperty(property) && astFactory.isExpression(property.value)) {
         directComponentNames(property.value, componentNames, output);
       }
     }
     return;
   }
-  if (t.isArrayExpression(expression)) {
+  if (astFactory.isArrayExpression(expression)) {
     for (const element of expression.elements) {
-      if (element != null && !t.isSpreadElement(element)) {
+      if (element != null && !astFactory.isSpreadElement(element)) {
         directComponentNames(element, componentNames, output);
       }
     }
@@ -381,14 +382,14 @@ function directFunctionComponentNames(
   componentNames: ReadonlySet<string>,
 ): string[] {
   const output = new Set<string>();
-  if (t.isExpression(fn.body)) {
+  if (astFactory.isExpression(fn.body)) {
     directComponentNames(fn.body, componentNames, output);
     return [...output];
   }
   const visit = (node: t.Node): void => {
-    if (t.isFunction(node)) return;
-    if (t.isReturnStatement(node)) {
-      if (t.isExpression(node.argument)) {
+    if (astFactory.isFunction(node)) return;
+    if (astFactory.isReturnStatement(node)) {
+      if (astFactory.isExpression(node.argument)) {
         directComponentNames(node.argument, componentNames, output);
       }
       return;
@@ -417,15 +418,15 @@ function directFunctionComponentNames(
 function importRefs(program: t.Program): ImportRef[] {
   const refs: ImportRef[] = [];
   for (const stmt of program.body) {
-    if (!t.isImportDeclaration(stmt) || stmt.importKind === 'type') continue;
+    if (!astFactory.isImportDeclaration(stmt) || stmt.importKind === 'type') continue;
     for (const spec of stmt.specifiers) {
-      if (t.isImportSpecifier(spec)) {
+      if (astFactory.isImportSpecifier(spec)) {
         if (spec.importKind === 'type') continue;
-        const imported = t.isIdentifier(spec.imported)
+        const imported = astFactory.isIdentifier(spec.imported)
           ? spec.imported.name
           : spec.imported.value;
         refs.push({ local: spec.local.name, imported, source: stmt.source.value });
-      } else if (t.isImportDefaultSpecifier(spec)) {
+      } else if (astFactory.isImportDefaultSpecifier(spec)) {
         refs.push({ local: spec.local.name, imported: 'default', source: stmt.source.value });
       } else {
         refs.push({ local: spec.local.name, imported: '*', source: stmt.source.value });
@@ -442,16 +443,16 @@ function applicationMounts(
   const mountBindings = new Set<string>();
   for (const statement of program.body) {
     if (
-      !t.isImportDeclaration(statement) ||
+      !astFactory.isImportDeclaration(statement) ||
       statement.source.value !== runtimePath
     ) {
       continue;
     }
     for (const specifier of statement.specifiers) {
       if (
-        t.isImportSpecifier(specifier) &&
-        (t.isIdentifier(specifier.imported, { name: 'mount' }) ||
-          t.isStringLiteral(specifier.imported, { value: 'mount' }))
+        astFactory.isImportSpecifier(specifier) &&
+        (astFactory.isIdentifier(specifier.imported, { name: 'mount' }) ||
+          astFactory.isStringLiteral(specifier.imported, { value: 'mount' }))
       ) {
         mountBindings.add(specifier.local.name);
       }
@@ -460,17 +461,17 @@ function applicationMounts(
 
   const mounted: string[] = [];
   for (const statement of program.body) {
-    if (!t.isExpressionStatement(statement)) continue;
+    if (!astFactory.isExpressionStatement(statement)) continue;
     const expression = statement.expression;
     if (
-      !t.isCallExpression(expression) ||
-      !t.isIdentifier(expression.callee) ||
+      !astFactory.isCallExpression(expression) ||
+      !astFactory.isIdentifier(expression.callee) ||
       !mountBindings.has(expression.callee.name)
     ) {
       continue;
     }
     const component = expression.arguments[1];
-    if (component === undefined || !t.isIdentifier(component)) {
+    if (component === undefined || !astFactory.isIdentifier(component)) {
       throw new Error(
         'memo-dom: mount() must receive a statically imported component identifier',
       );
@@ -483,36 +484,36 @@ function applicationMounts(
 function exportedLocals(program: t.Program): Map<string, string> {
   const out = new Map<string, string>();
   for (const stmt of program.body) {
-    if (t.isExportDefaultDeclaration(stmt)) {
+    if (astFactory.isExportDefaultDeclaration(stmt)) {
       if (
-        (t.isFunctionDeclaration(stmt.declaration) ||
-          t.isClassDeclaration(stmt.declaration)) &&
+        (astFactory.isFunctionDeclaration(stmt.declaration) ||
+          astFactory.isClassDeclaration(stmt.declaration)) &&
         stmt.declaration.id != null
       ) {
         out.set('default', stmt.declaration.id.name);
-      } else if (t.isIdentifier(stmt.declaration)) {
+      } else if (astFactory.isIdentifier(stmt.declaration)) {
         out.set('default', stmt.declaration.name);
       }
       continue;
     }
-    if (!t.isExportNamedDeclaration(stmt)) continue;
+    if (!astFactory.isExportNamedDeclaration(stmt)) continue;
     if (stmt.source !== null) {
       throw new Error(
         `memo-dom: re-export-from declarations are not supported by compileModules(); import then export the binding explicitly`,
       );
     }
     const decl = stmt.declaration;
-    if (t.isVariableDeclaration(decl)) {
+    if (astFactory.isVariableDeclaration(decl)) {
       for (const item of decl.declarations) {
-        if (t.isIdentifier(item.id)) out.set(item.id.name, item.id.name);
+        if (astFactory.isIdentifier(item.id)) out.set(item.id.name, item.id.name);
       }
-    } else if (t.isFunctionDeclaration(decl) && decl.id != null) {
+    } else if (astFactory.isFunctionDeclaration(decl) && decl.id != null) {
       out.set(decl.id.name, decl.id.name);
     }
     for (const spec of stmt.specifiers) {
-      if (!t.isExportSpecifier(spec)) continue;
+      if (!astFactory.isExportSpecifier(spec)) continue;
       const local = spec.local.name;
-      const exported = t.isIdentifier(spec.exported)
+      const exported = astFactory.isIdentifier(spec.exported)
         ? spec.exported.name
         : spec.exported.value;
       out.set(exported, local);
@@ -651,6 +652,7 @@ function analyzeManifest(
       analysisPlugin,
       [transformTypescript as PluginTarget, { isTSX: true }],
     ],
+    code: false,
     configFile: false,
     babelrc: false,
   });
@@ -688,13 +690,13 @@ function discoverManifest(
         );
         const providerFactories = new Set<string>();
         for (const stmt of programPath.node.body) {
-          if (!t.isImportDeclaration(stmt)) continue;
+          if (!astFactory.isImportDeclaration(stmt)) continue;
           const def = providerSources.get(stmt.source.value);
           if (def === undefined) continue;
           for (const spec of stmt.specifiers) {
             if (
-              t.isImportSpecifier(spec) &&
-              t.isIdentifier(spec.imported) &&
+              astFactory.isImportSpecifier(spec) &&
+              astFactory.isIdentifier(spec.imported) &&
               spec.imported.name === def[1]
             ) {
               providerFactories.add(spec.local.name);
@@ -705,17 +707,17 @@ function discoverManifest(
           locals.set(name, { type: 'component', ...component });
         }
         for (const stmt of programPath.node.body) {
-          const inner = t.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
-          if (t.isVariableDeclaration(inner)) {
+          const inner = astFactory.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
+          if (astFactory.isVariableDeclaration(inner)) {
             for (const decl of inner.declarations) {
-              if (!t.isIdentifier(decl.id)) continue;
+              if (!astFactory.isIdentifier(decl.id)) continue;
               const init =
-                decl.init !== null && t.isExpression(decl.init)
+                decl.init !== null && astFactory.isExpression(decl.init)
                   ? unwrapTypeExpression(decl.init)
                   : decl.init;
               if (
-                t.isArrowFunctionExpression(init) ||
-                t.isFunctionExpression(init)
+                astFactory.isArrowFunctionExpression(init) ||
+                astFactory.isFunctionExpression(init)
               ) {
                 const componentCandidates = directFunctionComponentNames(
                   init,
@@ -737,8 +739,8 @@ function discoverManifest(
               }
               let kind: StateKind | undefined;
               if (
-                t.isCallExpression(init) &&
-                t.isIdentifier(init.callee) &&
+                astFactory.isCallExpression(init) &&
+                astFactory.isIdentifier(init.callee) &&
                 providerFactories.has(init.callee.name)
               ) {
                 locals.set(decl.id.name, {
@@ -754,7 +756,7 @@ function discoverManifest(
               else if (isConstObjectState(init)) kind = 'const';
               if (kind !== undefined) {
                 const names = new Set<string>();
-                if (t.isExpression(init)) {
+                if (astFactory.isExpression(init)) {
                   directComponentNames(
                     init,
                     componentNames,
@@ -773,7 +775,7 @@ function discoverManifest(
               }
             }
           } else if (
-            t.isFunctionDeclaration(inner) &&
+            astFactory.isFunctionDeclaration(inner) &&
             inner.id != null &&
             !components.has(inner.id.name)
           ) {
@@ -821,6 +823,7 @@ function discoverManifest(
       discoveryPlugin,
       [transformTypescript as PluginTarget, { isTSX: true }],
     ],
+    code: false,
     configFile: false,
     babelrc: false,
   });
