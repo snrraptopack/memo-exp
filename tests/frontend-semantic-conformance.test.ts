@@ -223,7 +223,7 @@ function defineFrontendConformance(frontend: CompilerFrontend): void {
 }
 
 defineFrontendConformance({
-  name: 'babel-prototype',
+  name: 'yuku-default',
   compile,
   compileModules,
 });

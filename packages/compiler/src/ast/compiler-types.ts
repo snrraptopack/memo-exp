@@ -23,6 +23,7 @@ export type BinaryExpression = e.BinaryExpression;
 export type BlockStatement = e.BlockStatement;
 export type BreakStatement = e.BreakStatement;
 export type CallExpression = e.CallExpression;
+export type ChainExpression = e.ChainExpression;
 export type ConditionalExpression = e.ConditionalExpression;
 export type ClassDeclaration = e.ClassDeclaration;
 export type EmptyStatement = e.EmptyStatement;

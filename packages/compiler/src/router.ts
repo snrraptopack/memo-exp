@@ -211,7 +211,7 @@ function collectDefinitionsFromNode(
           definitions.push(current);
         }
       }
-      // JSX may also live in a render-prop expression. Babel traversal sees it
+      // JSX may also live in a render-prop expression. Full traversal sees it
       // and lexical nearest-ancestor routing must agree with this graph-only
       // collection pass used by compileModules/diagnostics.
       for (const attribute of element.openingElement.attributes) {
@@ -247,10 +247,11 @@ function collectDefinitionsFromNode(
 }
 
 export function collectCompilerRoutes(
-  file: t.File,
+  root: t.File | t.Program,
   moduleId: string,
 ): CompilerRouteDefinition[] {
-  return collectDefinitionsFromNode(file.program as unknown as BaseNode, moduleId);
+  const program = root.type === 'File' ? root.program : root;
+  return collectDefinitionsFromNode(program as unknown as BaseNode, moduleId);
 }
 
 function routeSignature(pattern: string): string {

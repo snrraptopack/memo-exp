@@ -1,5 +1,3 @@
-import { parseSync as parseBabel } from '@babel/core';
-import { parseSync as parseOxc } from 'oxc-parser';
 import { parse as parseYuku } from 'yuku-parser';
 import { performance } from 'node:perf_hooks';
 
@@ -29,29 +27,6 @@ const frontends = [
         sourceType: 'module',
         preserveParens: false,
       }).program;
-    },
-  },
-  {
-    name: 'oxc',
-    parse() {
-      return parseOxc('bench.tsx', source, {
-        lang: 'tsx',
-        sourceType: 'module',
-        astType: 'ts',
-        range: false,
-        preserveParens: false,
-      }).program;
-    },
-  },
-  {
-    name: 'babel',
-    parse() {
-      return parseBabel(source, {
-        filename: 'bench.tsx',
-        configFile: false,
-        babelrc: false,
-        parserOpts: { plugins: ['jsx', 'typescript'] },
-      });
     },
   },
 ];

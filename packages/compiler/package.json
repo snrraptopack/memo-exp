@@ -24,13 +24,9 @@
     "build": "bun run ./scripts/clean.ts && rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@babel/core": "^8.0.1",
-    "@babel/plugin-syntax-jsx": "^8.0.1",
-    "@babel/plugin-transform-typescript": "^8.0.1",
-    "@babel/traverse": "^8.0.4",
-    "@babel/types": "^8.0.4",
+    "@tsrx/core": "0.1.63",
     "esrap": "^2.3.6",
-    "oxc-parser": "^0.147.0"
+    "yuku-parser": "^0.9.3"
   },
   "publishConfig": {
     "access": "public"

@@ -7,21 +7,16 @@
  * untouched for the host bundler.
  */
 import { posix } from 'node:path';
-import {
-  parseSync,
-  transformFromAstSync,
-  type PluginObject,
-  type PluginTarget,
-} from '@babel/core';
-import syntaxJsx from '@babel/plugin-syntax-jsx';
-import transformTypescript from '@babel/plugin-transform-typescript';
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
-import { cloneNode as cloneEstreeNode } from './ast';
 import {
+  cloneNode as cloneEstreeNode,
   ESTREE_VISITOR_KEYS,
+  parseWithEstreeFrontendOrThrow,
   walkAst,
   type BaseNode,
+  type EstreeFrontend,
+  memoizedEstreeFrontend,
 } from './ast';
 import { buildAccessTable, runAnalysis } from './analysis';
 import {
@@ -102,6 +97,8 @@ export interface CompileModulesOptions
    * Defaults to true.
    */
   linkFunctionSummaries?: boolean;
+  /** Parser router used for every module; the default selects by extension. */
+  frontend?: EstreeFrontend;
 }
 
 export interface CompiledComponentExport {
@@ -147,6 +144,7 @@ export interface CompiledModules {
   output: Record<string, string>;
   maps: Record<string, CompilerSourceMap>;
   metadata: Record<string, CompiledModuleMetadata>;
+  css?: Record<string, string>;
   applicationRoot?: CompiledApplicationRoot;
 }
 
@@ -210,7 +208,8 @@ interface ModuleEntry {
   originalId: string;
   id: string;
   source: string;
-  ast: t.File;
+  ast: t.Program;
+  css?: string;
 }
 
 function canonicalModuleId(raw: string): string {
@@ -225,20 +224,19 @@ function canonicalModuleId(raw: string): string {
   return normalized;
 }
 
-function parseModule(id: string, source: string): t.File {
-  const ast = parseSync(source, {
+function parseModule(
+  id: string,
+  source: string,
+  frontend: EstreeFrontend,
+): { ast: t.Program; css?: string } {
+  const parsed = parseWithEstreeFrontendOrThrow(frontend, source, {
     filename: id,
     sourceType: 'module',
-    parserOpts: {
-      plugins: ['typescript', 'jsx'],
-    },
-    configFile: false,
-    babelrc: false,
   });
-  if (ast === null) {
-    throw new Error(`memo-dom: failed to parse module '${id}'`);
-  }
-  return ast as unknown as t.File;
+  return {
+    ast: parsed.program as unknown as t.Program,
+    css: parsed.css,
+  };
 }
 
 function compilerOptions(
@@ -531,13 +529,12 @@ function analyzeManifest(
   rootId: string,
 ): ModuleManifest {
   let manifest: ModuleManifest | undefined;
-  const analysisPlugin = (): PluginObject => ({
-    visitor: {
-      Program(programPath) {
-        const compilerPath = programPath as unknown as {
-          node: t.Program;
-          buildCodeFrameError(message: string): Error;
-        };
+  const compilerPath = {
+    node: cloneEstreeNode(entry.ast, true),
+    buildCodeFrameError(message: string) {
+      return new Error(message);
+    },
+  };
         normalizeComponentDeclarations(compilerPath);
         const authoredImports = importRefs(compilerPath.node);
         const ctx = createCtx({
@@ -647,25 +644,6 @@ function analyzeManifest(
               .map(([key, patterns]) => [key, [...patterns].sort()]),
           ),
         };
-      },
-    },
-  });
-
-  transformFromAstSync(
-    cloneEstreeNode(entry.ast, true) as unknown as Parameters<typeof transformFromAstSync>[0],
-    entry.source,
-    {
-    filename: entry.id,
-    plugins: [
-      [syntaxJsx as PluginTarget, {}],
-      analysisPlugin,
-      [transformTypescript as PluginTarget, { isTSX: true }],
-    ],
-    code: false,
-    configFile: false,
-    babelrc: false,
-    },
-  );
   if (manifest === undefined) {
     throw new Error(`memo-dom: failed to analyze module '${entry.id}'`);
   }
@@ -681,13 +659,12 @@ function discoverManifest(
   options: CompileModulesOptions,
 ): ModuleManifest {
   let manifest: ModuleManifest | undefined;
-  const discoveryPlugin = (): PluginObject => ({
-    visitor: {
-      Program(programPath) {
-        const compilerPath = programPath as unknown as {
-          node: t.Program;
-          buildCodeFrameError(message: string): Error;
-        };
+  const compilerPath = {
+    node: cloneEstreeNode(entry.ast, true),
+    buildCodeFrameError(message: string) {
+      return new Error(message);
+    },
+  };
         normalizeComponentDeclarations(compilerPath);
         const locals = new Map<string, LinkedExport>();
         const tagCandidates = moduleStateStringCandidates(compilerPath.node);
@@ -762,7 +739,9 @@ function discoverManifest(
                   kind: 'let',
                   key: `${entry.id}#${decl.id.name}`,
                   transparentSource: true,
-                } as never);
+                  tagCandidates: [],
+                  componentCandidates: [],
+                });
                 continue;
               }
               if (inner.kind === 'let' || inner.kind === 'var') kind = 'let';
@@ -827,24 +806,6 @@ function discoverManifest(
           componentUsages: [],
           readers: {},
         };
-      },
-    },
-  });
-  transformFromAstSync(
-    cloneEstreeNode(entry.ast, true) as unknown as Parameters<typeof transformFromAstSync>[0],
-    entry.source,
-    {
-    filename: entry.id,
-    plugins: [
-      [syntaxJsx as PluginTarget, {}],
-      discoveryPlugin,
-      [transformTypescript as PluginTarget, { isTSX: true }],
-    ],
-    code: false,
-    configFile: false,
-    babelrc: false,
-    },
-  );
   if (manifest === undefined) {
     throw new Error(`memo-dom: failed to discover module '${entry.id}'`);
   }
@@ -1169,17 +1130,20 @@ function compileLinkedModules(
   options: CompileModulesOptions,
   sourceMaps: boolean,
 ): CompiledModules {
+  const frontend = options.frontend ?? memoizedEstreeFrontend;
   const entries = new Map<string, ModuleEntry>();
   for (const [originalId, source] of Object.entries(modules)) {
     const id = canonicalModuleId(originalId);
     if (entries.has(id)) {
       throw new Error(`memo-dom: duplicate module id after normalization: '${id}'`);
     }
+    const parsed = parseModule(id, source, frontend);
     entries.set(id, {
       originalId,
       id,
       source,
-      ast: parseModule(id, source),
+      ast: parsed.ast,
+      css: parsed.css,
     });
   }
 
@@ -1239,6 +1203,7 @@ function compileLinkedModules(
   const output: Record<string, string> = {};
   const maps: Record<string, CompilerSourceMap> = {};
   const metadata: Record<string, CompiledModuleMetadata> = {};
+  const css: Record<string, string> = {};
   for (const entry of entries.values()) {
     const manifest = manifests.get(entry.id)!;
     metadata[entry.originalId] = {
@@ -1374,14 +1339,18 @@ function compileLinkedModules(
       const compiled = compileAstDetailed(entry.source, compileOptions, entry.ast);
       output[entry.originalId] = compiled.code;
       maps[entry.originalId] = compiled.map;
+      const cssOut = compiled.css ?? entry.css;
+      if (cssOut) css[entry.originalId] = cssOut;
     } else {
       output[entry.originalId] = compileAst(entry.source, compileOptions, entry.ast);
+      if (entry.css) css[entry.originalId] = entry.css;
     }
   }
   return {
     output,
     maps,
     metadata,
+    ...(Object.keys(css).length > 0 ? { css } : {}),
     ...(applicationRoot === undefined ? {} : { applicationRoot }),
   };
 }

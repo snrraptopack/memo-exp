@@ -1,4 +1,8 @@
-import { parseSync } from 'oxc-parser';
+import {
+  langFromPath,
+  parse as parseYuku,
+  sourceTypeFromPath,
+} from 'yuku-parser';
 import type { BaseNode, SourceLocation } from './types';
 
 export type AstLanguage = 'js' | 'jsx' | 'ts' | 'tsx' | 'dts';
@@ -45,6 +49,40 @@ export interface ParsedEstree {
   program: ParsedProgram;
   comments: AstComment[];
   diagnostics: AstDiagnostic[];
+  /** Optional static CSS extracted by a source-language frontend. */
+  css?: string;
+}
+
+/** Parser adapter consumed by the backend-neutral ESTree compiler boundary. */
+export interface EstreeFrontend {
+  readonly name: string;
+  parse(source: string, options?: ParseEstreeOptions): ParsedEstree;
+}
+
+/** Route known source extensions without silently assigning unknown files a parser. */
+export function createExtensionEstreeFrontend(
+  extensions: Readonly<Record<string, EstreeFrontend>>,
+): EstreeFrontend {
+  const routes = Object.entries(extensions)
+    .map(([extension, frontend]) => [
+      extension.startsWith('.') ? extension.toLowerCase() : `.${extension.toLowerCase()}`,
+      frontend,
+    ] as const)
+    .sort(([left], [right]) => right.length - left.length);
+  return {
+    name: `extensions(${routes.map(([extension]) => extension).join(',')})`,
+    parse(source, options = {}) {
+      const filename = options.filename ?? 'module.tsx';
+      const cleanFilename = filename.split(/[?#]/, 1)[0]!.toLowerCase();
+      const route = routes.find(([extension]) => cleanFilename.endsWith(extension));
+      if (route === undefined) {
+        throw new TypeError(
+          `No ESTree frontend is registered for '${filename}'; pass a frontend explicitly`,
+        );
+      }
+      return route[1].parse(source, options);
+    },
+  };
 }
 
 export class EstreeParseError extends SyntaxError {
@@ -136,40 +174,102 @@ function attachLocations(
   visit(root);
 }
 
-/** Parse JavaScript, JSX, TypeScript, or TSX into ESTree/TS-ESTree. */
-export function parseEstree(
+function yukuSeverity(
+  severity: 'error' | 'warning' | 'hint' | 'info',
+): AstDiagnostic['severity'] {
+  if (severity === 'error') return 'Error';
+  if (severity === 'warning') return 'Warning';
+  return 'Advice';
+}
+
+/** Parse through Yuku while returning the same compiler-owned ESTree result. */
+export function parseYukuEstree(
   source: string,
   options: ParseEstreeOptions = {},
 ): ParsedEstree {
   const filename = options.filename ?? 'module.tsx';
-  const result = parseSync(filename, source, {
-    ...(options.language === undefined ? {} : { lang: options.language }),
-    sourceType: options.sourceType ?? 'module',
-    astType: 'ts',
-    range: options.includeRanges ?? true,
+  const cleanFilename = filename.split(/[?#]/, 1)[0]!;
+  const result = parseYuku(source, {
+    lang: options.language ?? langFromPath(cleanFilename),
+    sourceType: options.sourceType === 'unambiguous'
+      ? sourceTypeFromPath(cleanFilename)
+      : options.sourceType ?? sourceTypeFromPath(cleanFilename),
     preserveParens: false,
-    showSemanticErrors: options.checkSemantics ?? false,
+    semanticErrors: options.checkSemantics ?? false,
   });
   const lineStarts = sourceLocations(source);
-  const program = asParsedProgram(result.program);
+  const program = asParsedProgram(result.program as unknown as BaseNode);
   attachLocations(program, lineStarts, filename);
-
   return {
     program,
     comments: result.comments.map((comment) => ({
-      ...comment,
+      type: comment.type,
+      value: comment.value,
+      start: comment.start,
+      end: comment.end,
       loc: locationFor(comment.start, comment.end, lineStarts, filename),
     })),
-    diagnostics: result.errors,
+    diagnostics: result.diagnostics.map((diagnostic) => ({
+      severity: yukuSeverity(diagnostic.severity),
+      message: diagnostic.message,
+      labels: [
+        {
+          message: diagnostic.message,
+          start: diagnostic.start,
+          end: diagnostic.end,
+        },
+        ...diagnostic.labels.map((label) => ({
+          message: label.message,
+          start: label.start,
+          end: label.end,
+        })),
+      ],
+      helpMessage: diagnostic.help,
+      codeframe: null,
+    })),
   };
 }
 
-/** Parse source and throw one typed error when OXC reports a fatal diagnostic. */
+export const yukuEstreeFrontend: EstreeFrontend = {
+  name: 'yuku',
+  parse: parseYukuEstree,
+};
+
+/** Default standard-language parser retained under the original public name. */
+export const parseEstree = parseYukuEstree;
+
+/** Parse with an injected frontend adapter (Yuku, TSRX, or another parser). */
+export function parseWithEstreeFrontend(
+  frontend: EstreeFrontend,
+  source: string,
+  options: ParseEstreeOptions = {},
+): ParsedEstree {
+  return frontend.parse(source, options);
+}
+
+/** Parse through an injected frontend and reject its fatal diagnostics. */
+export function parseWithEstreeFrontendOrThrow(
+  frontend: EstreeFrontend,
+  source: string,
+  options: ParseEstreeOptions = {},
+): ParsedEstree {
+  const parsed = parseWithEstreeFrontend(frontend, source, options);
+  const errors = parsed.diagnostics.filter(
+    (diagnostic) => diagnostic.severity === 'Error',
+  );
+  if (errors.length > 0) {
+    throw new EstreeParseError(options.filename ?? 'module.tsx', errors);
+  }
+  return parsed;
+}
+
+
+/** Parse standard JavaScript/TypeScript source with Yuku and reject fatal diagnostics. */
 export function parseEstreeOrThrow(
   source: string,
   options: ParseEstreeOptions = {},
 ): ParsedEstree {
-  const parsed = parseEstree(source, options);
+  const parsed = parseYukuEstree(source, options);
   const errors = parsed.diagnostics.filter(
     (diagnostic) => diagnostic.severity === 'Error',
   );

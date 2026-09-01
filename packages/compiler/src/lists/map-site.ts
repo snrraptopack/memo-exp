@@ -144,14 +144,21 @@ function compilerResolvedRoots(ctx: Ctx, expression: t.Expression): string[] {
 
 /** Is this expression a `.map(...)` call, including optional chains? */
 export function matchMapCall(expr: t.Node): MapCallExpression | null {
-  if (!astFactory.isCallExpression(expr) && !astFactory.isOptionalCallExpression(expr)) {
+  let current = expr;
+  if (current.type === 'ChainExpression') {
+    current = (current as t.ChainExpression).expression;
+  }
+  while (astFactory.isTransparentExpression(current)) {
+    current = current.expression;
+  }
+  if (!astFactory.isCallExpression(current) && !astFactory.isOptionalCallExpression(current)) {
     return null;
   }
-  const callee = expr.callee;
+  const callee = current.callee;
   return (astFactory.isMemberExpression(callee) || astFactory.isOptionalMemberExpression(callee)) &&
     !callee.computed &&
     astFactory.isIdentifier(callee.property, { name: 'map' })
-    ? expr
+    ? current
     : null;
 }
 
@@ -197,12 +204,15 @@ export function analyzeMapSite(
   const callback = analyzeCallback(ctx, call, ownerName, fail);
   const row = analyzeRow(ctx, callback, fail);
   const suffix = nextSuffix(source.suffixBase, usedPrefixes);
+  const calleeShape = callee as unknown as { type: string; optional?: boolean };
 
   return {
     sourceKey: source.key,
     sourceExpr: cloneEstreeNode(source.expression),
     optional:
       astFactory.isOptionalCallExpression(call) ||
+      calleeShape.type === 'OptionalMemberExpression' ||
+      calleeShape.optional === true ||
       containsOptionalMember(callee.object),
     sourceLocal: source.local,
     itemPattern: callback.itemPattern,

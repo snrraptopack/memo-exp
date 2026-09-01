@@ -1,17 +1,18 @@
 # Compiler
 
-Requires Node.js 24.11 or newer. The compiler uses Babel 8, whose supported
-Node.js range does not include Node 20 or earlier Node 24 releases.
+Requires Node.js 24.11 or newer. Standard JavaScript and TypeScript modules are
+parsed by Yuku, while all compiler analysis and emission operates on ESTree.
 
 Public compilation APIs:
 
 - `compile(source, options)` returns JavaScript and keeps the allocation-light
   legacy path.
-- `compileDetailed(source, options)` returns `{ code, map }` with authored TSX
-  in `sourcesContent`.
+- `compileDetailed(source, options)` returns `{ code, map, css? }` with authored
+  source in `sourcesContent`.
 - `compileModulesDetailed(modules, options)` returns linked `output`, one map
-  per module in `maps`, component `metadata`, and root metadata derived from an
-  ordinary entry module's top-level `mount(target, Component)` call.
+  per module in `maps`, optional extracted `css`, component `metadata`, and root
+  metadata derived from an ordinary entry module's top-level
+  `mount(target, Component)` call.
 
 The top-level files are orchestration and whole-program passes:
 
@@ -23,7 +24,7 @@ The top-level files are orchestration and whole-program passes:
 | `src/handlers.ts` | Handler resolution and callback instrumentation |
 | `src/linker.ts` | Connected module-graph compilation |
 | `src/module-control-flow.ts` | Pure module if/switch computed classification |
-| `src/plugin.ts` | Babel pass ordering and final module rewrite |
+| `src/plugin.ts` | Parser-neutral pass ordering and final module rewrite |
 | `src/router.ts` | Linked JSX route graph, directive validation, and navigation lowering |
 
 Domain folders keep related implementation details discoverable:
@@ -40,6 +41,29 @@ Domain folders keep related implementation details discoverable:
 The top-level analysis, context, emitter, and handler modules intentionally
 remain stable facades. Cross-domain callers use those facades; implementation
 modules within a domain import their siblings directly.
+
+## Experimental TSRX frontend
+
+Files ending in `.tsrx` are parsed by the official `@tsrx/core` parser and
+lowered directly to the ordinary TS-ESTree/JSX consumed by the compiler. The
+`.js`, `.jsx`, `.ts`, `.tsx`, and `.d.ts` extensions explicitly select Yuku; the
+TSRX path is isolated from the standard parser. Unknown extensions must provide a frontend
+explicitly instead of being interpreted through a fallback parser.
+
+The experimental lowering currently supports statement-container function
+bodies, `@if`, `@for (... of ...)` with `index`, `key`, and `@empty`, root
+`@switch`, and scoped style extraction. The implementation is isolated under
+`src/ast/tsrx` so extension nodes never enter the compiler's analysis or
+emission passes.
+
+Lazy destructuring, `@try`/`@pending`/`@catch`, nested statement containers,
+branch-local setup, and TSRX expression-name dynamic tags currently produce
+explicit diagnostics. They need Memoized DOM-specific reactivity or runtime
+semantics before they can be lowered safely.
+
+The public `createExtensionEstreeFrontend()` utility creates a strict extension
+map for specialized frontends. Virtual or extensionless modules must select a
+frontend explicitly; TSRX callers can use `experimentalTsrxEstreeFrontend`.
 
 ## Compiler-owned routing
 

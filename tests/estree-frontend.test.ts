@@ -70,7 +70,7 @@ import {
 import { transformEstreeProgram } from '../packages/compiler/src/plugin';
 
 describe('ESTree parser and printer boundary', () => {
-  it('transforms equivalent OXC and Yuku programs through one ESTree core', () => {
+  it('transforms adapter and direct Yuku programs through one ESTree core', () => {
     const source = `
       interface Item { id: number; label: string }
       export function App({ title }: { title: string }) {
@@ -82,7 +82,7 @@ describe('ESTree parser and printer boundary', () => {
         </main>;
       }
     `;
-    const oxc = parseEstreeOrThrow(source, {
+    const adapter = parseEstreeOrThrow(source, {
       filename: 'frontend.tsx',
       language: 'tsx',
     });
@@ -115,14 +115,14 @@ describe('ESTree parser and printer boundary', () => {
       return printEstree(program).code;
     };
 
-    const oxcCode = transform(oxc.program);
+    const adapterCode = transform(adapter.program);
     const yukuCode = transform(yuku.program as unknown as BaseNode);
-    expect(yukuCode).toBe(oxcCode);
-    expect(oxcCode).toContain('createListRegion');
-    expect(oxcCode).not.toContain('<main>');
+    expect(yukuCode).toBe(adapterCode);
+    expect(adapterCode).toContain('createListRegion');
+    expect(adapterCode).not.toContain('<main>');
   });
 
-  it('runs the complete compiler analysis directly on OXC ESTree', () => {
+  it('runs the complete compiler analysis directly on Yuku ESTree', () => {
     const parsed = parseEstreeOrThrow(
       `
         export function App({ name }: { name: string }) {
@@ -152,7 +152,7 @@ describe('ESTree parser and printer boundary', () => {
     });
   });
 
-  it('discovers components, helpers, and runtime imports directly from OXC ESTree', () => {
+  it('discovers components, helpers, and runtime imports directly from Yuku ESTree', () => {
     const parsed = parseEstreeOrThrow(`
       import type { Shape } from './types';
       import { linked, missing as localMissing } from './state';
@@ -180,7 +180,7 @@ describe('ESTree parser and printer boundary', () => {
     ).toEqual(['localMissing']);
   });
 
-  it('discovers module effects and their reads directly from OXC ESTree', () => {
+  it('discovers module effects and their reads directly from Yuku ESTree', () => {
     const parsed = parseEstreeOrThrow(`
       let count = 0;
       effect(() => console.log(count));
@@ -437,7 +437,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(clonedAnnotation).toBeNull();
   });
 
-  it('discovers component exports directly from an OXC program', () => {
+  it('discovers component exports directly from an Yuku program', () => {
     const parsed = parseEstreeOrThrow(
       `
         interface CardProps {
@@ -465,7 +465,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(components.has('helper')).toBe(false);
   });
 
-  it('builds lexical bindings and parent metadata from OXC TS-ESTree', () => {
+  it('builds lexical bindings and parent metadata from Yuku TS-ESTree', () => {
     const parsed = parseEstreeOrThrow(
       `
         import fallback, { thing as alias } from 'values';
@@ -509,7 +509,7 @@ describe('ESTree parser and printer boundary', () => {
     });
   });
 
-  it('allocates collision-free compiler identifiers from an OXC program', () => {
+  it('allocates collision-free compiler identifiers from an Yuku program', () => {
     const parsed = parseEstreeOrThrow('const _MD = 1, _value = 2;', {
       filename: 'identifiers.ts',
     });
@@ -549,7 +549,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(isRenderCallbackJsxRoot(context, elements[0]!)).toBe(false);
   });
 
-  it('discovers module control-flow derivations from OXC bindings', () => {
+  it('discovers module control-flow derivations from Yuku bindings', () => {
     const parsed = parseEstreeOrThrow(
       `
         let count = 0;
@@ -594,7 +594,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(context.state.get('parity')).toBe('computed');
   });
 
-  it('plans component return branches directly from OXC ESTree', () => {
+  it('plans component return branches directly from Yuku ESTree', () => {
     const parsed = parseEstreeOrThrow(
       `
         function View(visible: boolean) {
@@ -629,7 +629,7 @@ describe('ESTree parser and printer boundary', () => {
     }
   });
 
-  it('resolves component prop origins from OXC lexical bindings', () => {
+  it('resolves component prop origins from Yuku lexical bindings', () => {
     const parsed = parseEstreeOrThrow(
       `
         let shared = 1;
@@ -687,7 +687,7 @@ describe('ESTree parser and printer boundary', () => {
     );
   });
 
-  it('classifies instance control flow from OXC bindings and violations', () => {
+  it('classifies instance control flow from Yuku bindings and violations', () => {
     const parsed = parseEstreeOrThrow(
       `
         function View(active: boolean) {
@@ -737,7 +737,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(context.instanceState.get('View')).toEqual(new Set());
   });
 
-  it('propagates opaque import volatility through an OXC component', () => {
+  it('propagates opaque import volatility through an Yuku component', () => {
     const parsed = parseEstreeOrThrow(
       `
         import { createClient } from 'external-client';
@@ -775,7 +775,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(context.volatileComponents).toEqual(new Set(['View']));
   });
 
-  it('resolves component-local helpers from the OXC scope index', () => {
+  it('resolves component-local helpers from the Yuku scope index', () => {
     const parsed = parseEstreeOrThrow(
       `
         function View() {
@@ -803,7 +803,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(resolveLocalHelper(context, componentPath, 'missing')).toBeNull();
   });
 
-  it('tracks reactive aliases with the OXC scope index', () => {
+  it('tracks reactive aliases with the Yuku scope index', () => {
     const parsed = parseEstreeOrThrow(
       `
         let store = { user: { name: 'Ada' } };
@@ -855,7 +855,7 @@ describe('ESTree parser and printer boundary', () => {
     });
   });
 
-  it('summarizes helper writes directly from OXC ESTree', () => {
+  it('summarizes helper writes directly from Yuku ESTree', () => {
     const parsed = parseEstreeOrThrow(
       `
         let store = { count: 0 };
@@ -888,7 +888,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(summary.unbounded).toBe(false);
   });
 
-  it('discovers component derivations directly from OXC ESTree', () => {
+  it('discovers component derivations directly from Yuku ESTree', () => {
     const parsed = parseEstreeOrThrow(
       `
         function View(count: number) {
@@ -943,7 +943,7 @@ describe('ESTree parser and printer boundary', () => {
     );
   });
 
-  it('expands component JSX aliases directly on an OXC tree', () => {
+  it('expands component JSX aliases directly on an Yuku tree', () => {
     const parsed = parseEstreeOrThrow(
       `
         function View() {
@@ -982,7 +982,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(output).not.toContain('{content}');
   });
 
-  it('expands local render functions directly on an OXC tree', () => {
+  it('expands local render functions directly on an Yuku tree', () => {
     const parsed = parseEstreeOrThrow(
       `
         function View() {
@@ -1020,7 +1020,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(output).toContain("<span>{'Ada'}</span>");
   });
 
-  it('discovers and erases route attributes on an OXC tree', () => {
+  it('discovers and erases route attributes on an Yuku tree', () => {
     const parsed = parseEstreeOrThrow(
       `function App() { return <main route="/"><section /></main>; }`,
       { filename: 'route.tsx' },
@@ -1051,7 +1051,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(printEstree(parsed.program).code).not.toContain('route=');
   });
 
-  it('lowers a finite dynamic tag directly on an OXC tree', () => {
+  it('lowers a finite dynamic tag directly on an Yuku tree', () => {
     const parsed = parseEstreeOrThrow(
       `function View() { const Tag = 'section'; return <Tag />; }`,
       { filename: 'dynamic-tag.tsx' },
@@ -1090,7 +1090,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(output).not.toContain('<Tag');
   });
 
-  it('lowers module-state reads and writes on an OXC tree', () => {
+  it('lowers module-state reads and writes on an Yuku tree', () => {
     const parsed = parseEstreeOrThrow(
       `
         let count = 1;

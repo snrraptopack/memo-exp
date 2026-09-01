@@ -1,5 +1,5 @@
 /**
- * plugin.ts — the memo-dom Babel plugin (compiler frontend #1), thin shell.
+ * plugin.ts — the parser-neutral Memoized DOM program transform.
  *
  * Coordinates the emission-spec passes; implementation is partitioned into:
  *   context.ts              - shared binding and canonical identity facts
@@ -15,13 +15,11 @@
  * row composition are normalized before the core analysis/emission passes.
  */
 
-import type { PluginObject } from '@babel/core';
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   normalizeEstreeDialect,
-  normalizeBabelDialect,
   walkAst,
   type BaseNode,
 } from './ast';
@@ -29,7 +27,6 @@ import {
   createCtx,
   freshWriteConst,
   type Ctx,
-  type CompilerPath,
   type InternalMemoDomOptions,
   type MemoDomOptions,
 } from './context';
@@ -329,21 +326,7 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
       ),
     );
   }
-  const babelContainer = programPath as ProgramTransformPath & {
-    unshiftContainer?(
-      key: 'body',
-      nodes: t.Statement | t.Statement[],
-    ): unknown;
-    pushContainer?(key: 'body', node: t.Statement): unknown;
-  };
-  if (babelContainer.unshiftContainer === undefined) {
-    programPath.node.body.unshift(...imports, ...ctx.header);
-  } else {
-    for (let index = ctx.header.length - 1; index >= 0; index--) {
-      babelContainer.unshiftContainer('body', ctx.header[index]!);
-    }
-    babelContainer.unshiftContainer('body', imports);
-  }
+  programPath.node.body.unshift(...imports, ...ctx.header);
   if (ctx.rootComponent !== null) {
     const registration = astFactory.expressionStatement(
       astFactory.callExpression(md(ctx, 'registerRootFactory'), [
@@ -364,11 +347,7 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
         ]),
       ]),
     );
-    if (babelContainer.pushContainer === undefined) {
-      programPath.node.body.push(registration);
-    } else {
-      babelContainer.pushContainer('body', registration);
-    }
+    programPath.node.body.push(registration);
   }
 }
 
@@ -391,33 +370,4 @@ export function transformEstreeProgram(
 ): void {
   transformProgramAst(programPath, opts);
   normalizeEstreeDialect(programPath.node as unknown as BaseNode);
-}
-
-export default function memoDomPlugin(
-  _api: unknown,
-  opts: InternalMemoDomOptions = {},
-): PluginObject {
-  const ctx = createCtx(opts);
-  const transformed = new WeakSet<t.Node>();
-  return {
-    name: 'memo-dom',
-    visitor: {
-      Program: {
-        enter(programPath) {
-          prepareProgram(ctx, programPath as unknown as ProgramTransformPath);
-        },
-        exit(programPath) {
-          finishProgram(ctx, programPath as unknown as ProgramTransformPath);
-          normalizeBabelDialect(programPath.node as unknown as BaseNode);
-        },
-      },
-      FunctionDeclaration(path) {
-        const name = path.node.id?.name;
-        if (!name || !ctx.comps.has(name) || transformed.has(path.node)) return;
-        transformed.add(path.node);
-        transformComponent(ctx, path as unknown as CompilerPath<t.FunctionDeclaration>, name);
-        path.skip();
-      },
-    },
-  };
 }

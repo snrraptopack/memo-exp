@@ -3,7 +3,7 @@
  *
  * This pass deliberately returns raw ESTree nodes. Frontends may attach their
  * own diagnostic or mutation handles after discovery without making the
- * semantic classification depend on Babel's NodePath implementation.
+ * semantic classification depend on a parser-specific path implementation.
  */
 
 import { walkAst, type BaseNode } from '../ast';

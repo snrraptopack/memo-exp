@@ -73,6 +73,71 @@ describe('Vite 8 adapter', () => {
     expect(code).not.toContain('import.meta.hot.accept(');
   });
 
+  it('builds a mixed graph containing an experimental TSRX component', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    await rm(resolve(temporarySource, 'App.tsx'));
+    await writeFile(
+      resolve(temporarySource, 'main.ts'),
+      `
+        import { mount } from '@memoized-dom/runtime';
+        import { App } from './App.tsrx';
+        mount('root', App);
+      `,
+    );
+    await writeFile(
+      resolve(temporarySource, 'App.tsrx'),
+      `
+        import { items } from './state';
+        export function App() @{
+          <main class="list">
+            <style>.list { color: red; }</style>
+            @for (const item of items; key item) {
+              <span>{item}</span>
+            } @empty {
+              <em>Empty</em>
+            }
+          </main>
+        }
+      `,
+    );
+
+    const result = await build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@': temporarySource,
+          '@memoized-dom/runtime': runtime,
+        },
+      },
+      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    });
+    const builds = Array.isArray(result) ? result : [result];
+    const code = builds
+      .flatMap((item) => item.output)
+      .flatMap((output) => output.type === 'chunk' ? [output.code] : [])
+      .join('\n');
+    const css = builds
+      .flatMap((item) => item.output)
+      .flatMap((output) => output.type === 'asset' && output.fileName.endsWith('.css')
+        ? [String(output.source)]
+        : [])
+      .join('\n');
+
+    expect(code).toContain('createListRegion');
+    expect(code).toContain('createCondRegion');
+    expect(code).not.toContain('@for');
+    expect(css).toContain('color: red');
+    expect(code).not.toContain('color: red');
+  });
+
   it('lowers module state into request-owned cells when opted in', async () => {
     const result = await build({
       root: fixture,

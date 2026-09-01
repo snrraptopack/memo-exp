@@ -11,3 +11,5 @@ export * from './mutate';
 export * from './normalize';
 export * from './parser';
 export * from './printer';
+export * from './strip-typescript';
+export * from './tsrx';

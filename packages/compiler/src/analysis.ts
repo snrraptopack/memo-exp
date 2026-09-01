@@ -692,7 +692,10 @@ function analyzeComponent(ctx: Ctx, name: string): void {
         matchRenderCallbackMap(ctx, name, mapCall) !== null)
     ) {
       // allowed ONLY as a direct JSX child: <ul>{items.map(...)}</ul>
-      const parent = ctx.astAnalysis?.parentByNode.get(call) ?? null;
+      const immediateParent = ctx.astAnalysis?.parentByNode.get(call) ?? null;
+      const parent = immediateParent?.type === 'ChainExpression'
+        ? ctx.astAnalysis?.parentByNode.get(immediateParent) ?? null
+        : immediateParent;
       const grand = parent === null
         ? null
         : ctx.astAnalysis?.parentByNode.get(parent) ?? null;

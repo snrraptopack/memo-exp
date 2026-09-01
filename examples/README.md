@@ -30,6 +30,10 @@ It demonstrates:
 - retained page results and per-page skeleton states;
 - responsive, deliberately familiar Hacker News presentation.
 
+The experimental `tsrx-todo` application exercises direct TSRX AST lowering
+through the normal shared Vite adapter. Run it with `bun run example:tsrx` and
+visit `/tsrx-todo/`.
+
 The Kanban, class-todo, CMS, incident, cart, dashboard, music, todo, and wizard
 applications remain available as additional authored graphs under their
 respective folders.

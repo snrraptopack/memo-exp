@@ -1,7 +1,7 @@
 /**
  * Standard ESTree AST walker for @memoized-dom/compiler.
  *
- * Provides fast, zero-dependency, pure AST traversal without @babel/traverse.
+ * Provides fast, zero-dependency, pure AST traversal over compiler-owned nodes.
  */
 
 import type { BaseNode } from './types';

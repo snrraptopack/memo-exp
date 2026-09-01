@@ -1,8 +1,6 @@
 /**
- * ESTree node construction exposed through the compiler's transitional node
- * typings. The type-only Babel import disappears with the remaining public AST
- * type migration; every function in this module already constructs plain
- * ESTree nodes at runtime.
+ * ESTree node construction and predicates exposed through compiler-owned node
+ * contracts. Every function in this module constructs plain ESTree nodes.
  */
 
 import type * as t from './compiler-types';

@@ -3,8 +3,11 @@
  */
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import {
   compileModulesDetailed,
+  memoizedEstreeFrontend,
+  parseWithEstreeFrontendOrThrow,
   toCompilerDiagnostic,
   type CompiledModules,
   type CompiledModuleMetadata,
@@ -15,7 +18,6 @@ import {
   acceptsSource,
   cleanViteId,
   moduleId,
-  parserLanguage,
 } from '../paths';
 import { valueImports, type ParsedProgram } from './imports';
 
@@ -25,10 +27,6 @@ export interface ResolvedImport {
 }
 
 export interface GraphPluginContext {
-  parse(
-    source: string,
-    options: { lang: 'js' | 'jsx' | 'ts' | 'tsx' },
-  ): ParsedProgram;
   resolve(
     specifier: string,
     importer: string,
@@ -46,6 +44,7 @@ export interface CompiledGraph {
   files: ReadonlySet<string>;
   output: ReadonlyMap<string, string>;
   maps: ReadonlyMap<string, CompilerSourceMap>;
+  css: ReadonlyMap<string, string>;
 }
 
 function resolutionKey(importer: string, specifier: string): string {
@@ -78,9 +77,11 @@ export async function compileGraph(
     sources.set(id, source);
     sourceIds.set(cleanFile, id);
 
-    const program = context.parse(source, {
-      lang: parserLanguage(cleanFile),
-    });
+    const program = parseWithEstreeFrontendOrThrow(
+      options.frontend ?? memoizedEstreeFrontend,
+      source,
+      { filename: id, sourceType: 'module' },
+    ).program as ParsedProgram;
     for (const specifier of valueImports(program)) {
       const resolved = await context.resolve(specifier, cleanFile, {
         skipSelf: true,
@@ -109,13 +110,19 @@ export async function compileGraph(
     seeds.push(entry);
   }
   if (seeds.length === 0) {
-    return { files: new Set(), output: new Map(), maps: new Map() };
+    return {
+      files: new Set(),
+      output: new Map(),
+      maps: new Map(),
+      css: new Map(),
+    };
   }
   for (const entry of seeds) {
     await visit(entry);
   }
 
   const compileOptions = {
+    ...(options.frontend === undefined ? {} : { frontend: options.frontend }),
     ...(options.runtimePath === undefined
       ? {}
       : { runtimePath: options.runtimePath }),
@@ -159,8 +166,13 @@ export async function compileGraph(
   const mountModuleId = compiled.applicationRoot?.mountModuleId;
   const output = new Map<string, string>();
   const maps = new Map<string, CompilerSourceMap>();
+  const css = new Map<string, string>();
   for (const [file, id] of sourceIds) {
-    const code = compiled.output[id]!;
+    let code = compiled.output[id]!;
+    if (compiled.css?.[id]) {
+      css.set(file, compiled.css[id]!);
+      code = `import ${JSON.stringify(`./${basename(file)}?memo-style.css`)};\n${code}`;
+    }
     output.set(
       file,
       hot && mountModuleId !== undefined && id !== mountModuleId
@@ -175,7 +187,7 @@ export async function compileGraph(
     );
     maps.set(file, compiled.maps[id]!);
   }
-  return { files: new Set(sourceIds.keys()), output, maps };
+  return { files: new Set(sourceIds.keys()), output, maps, css };
 }
 
 function appendHotBoundary(

@@ -6,7 +6,7 @@
  * First run writes `__snapshots__/emission-golden.test.ts.snap` — that file
  * is the committed golden. Any compiler change that alters emitted output
  * for a rule fails here and must be a deliberate, reviewed snapshot update.
- * This suite is also the parity oracle the future oxc frontend diffs
+ * This suite is also the parity oracle that future ESTree frontends diff
  * against (spec: both frontends implement the same document).
  */
 import { describe, expect, it } from 'vitest';

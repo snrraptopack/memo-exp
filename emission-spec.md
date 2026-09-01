@@ -1,10 +1,10 @@
 # memoized-dom — Emission Spec
 
 > **Status:** Normative reference for the compiler (M5). This document defines,
-> rule by rule, what code the compiler emits for any valid source. The Babel
-> plugin (frontend #1) and any future oxc frontend (frontend #2) are both
+> rule by rule, what code the compiler emits for any valid source. Yuku, TSRX,
+> and future ESTree frontend adapters are all
 > *implementations of this spec* — if emitted output disagrees with this
-> document, the plugin is wrong, not the document.
+> document, the implementation is wrong, not the document.
 >
 > Companion document: `memoized-dom-paradigm.md` (the *why*). This is the *what*.
 >
@@ -54,8 +54,8 @@ Everything below exists to make that sentence true.
 
 ### R0 - Generated identifiers are hygienic
 
-Every compiler-owned lexical binding is allocated through one Babel
-scope-aware UID allocator initialized from the original program. The allocator
+Every compiler-owned lexical binding is allocated through one compiler-owned
+scope-aware UID allocator initialized from the original ESTree program. It
 reserves user identifiers from the entire source tree, including nested
 callbacks, before emission begins. This covers the runtime namespace, factory
 parameters, props boxes, update functions, slot caches, temporaries, DOM nodes,
@@ -382,7 +382,7 @@ directly; they never enter the app-wide access table. Components with no
 skippable local-derivation group emit bare `markDirty(id)`. Selective
 components add a compiler-assigned numeric reason.
 
-Instance bindings shadow same-spelled module bindings. Analysis follows Babel
+Instance bindings shadow same-spelled module bindings. Analysis follows lexical
 binding identity, not identifier text. Reassigning a component prop remains a
 compile error. Receiver mutation through a prop refreshes the child/row and
 uses its graph-linked canonical caller boundary when available.
@@ -635,7 +635,7 @@ retain their allocation-free row ABI.
 
 A named function declaration directly inside a component is a legal event
 handler, equivalent to a component-local function expression. Resolution uses
-the lexical Babel binding, never text-only lookup.
+the compiler-owned lexical binding, never text-only lookup.
 
 Async named helpers have two completion boundaries without generated
 `try/finally`:

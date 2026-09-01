@@ -953,11 +953,23 @@ function emitElement(
     },
   });
   const varName = freshNodeName(ctx, scope, tag);
+  const creationExpression = createElementExpression(
+    renderDocument(ctx, scope),
+    tag,
+    elementSvg,
+  );
+  if (el.loc !== null && el.loc !== undefined) {
+    walkAst(creationExpression as unknown as BaseNode, {
+      enter(node) {
+        node.loc ??= el.loc;
+      },
+    });
+  }
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
         astFactory.identifier(varName),
-        createElementExpression(renderDocument(ctx, scope), tag, elementSvg),
+        creationExpression,
       ),
     ]),
   );

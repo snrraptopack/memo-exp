@@ -20,7 +20,7 @@ When a compiler is tightly coupled to a single vendor toolchain (like Babel's mu
 ## 2. Why ESTree?
 
 **ESTree** is the universal standard for JavaScript and TypeScript syntax trees across the modern ecosystem. It is the common dialect shared by:
-* **Parsers & Compilers:** Acorn, Meriyah, Espree, SWC, OXC, Biome
+* **Parsers & Compilers:** Yuku, Acorn, Meriyah, Espree, SWC, Biome
 * **Bundlers & Engines:** Rollup, Rolldown, Vite, ESLint, Prettier
 
 By adopting standard ESTree as the compiler's AST interface, `memoized-dom` speaks the universal language of JavaScript tooling.
@@ -30,12 +30,12 @@ By adopting standard ESTree as the compiler's AST interface, `memoized-dom` spea
 ## 3. Key Benefits
 
 ### A. Universal Toolchain Portability
-* **No Single-Vendor Lock-in:** The compiler can run on Babel today, OXC tomorrow, or inside a lightweight bundler plugin without rewriting the transformation logic.
+* **No Single-Vendor Lock-in:** The compiler can run on Yuku today, a custom syntax frontend tomorrow, or inside a lightweight bundler plugin without rewriting the transformation logic.
 * **Interchangeable Frontends:** Adapting to a new parser or build tool only requires a thin adapter wrapper, rather than refactoring the compiler's core.
 
-### B. High-Speed Performance Without Rewriting in Rust
-* **Fast Rust Parsers in Pure TypeScript:** Tools like OXC and SWC provide ultra-fast native parsers that output standard ESTree in JavaScript/Bun.
-* By keeping the compiler pure TypeScript over ESTree, `memoized-dom` can leverage native Rust parsing speeds for $10\times\text{--}50\times$ faster builds while keeping all domain logic in maintainable TypeScript.
+### B. High-Speed Parsing Without Rewriting the Compiler Core
+* **Fast native parsers behind one interface:** Yuku provides the current standard-language frontend, while another ESTree-producing parser can be registered without changing analysis or emission.
+* By keeping the compiler pure TypeScript over ESTree, `memoized-dom` can use native parsing speed while keeping all domain logic maintainable and frontend-independent.
 
 ### C. Future-Proof Path to Native Tooling
 * If the framework ever needs a fully native Rust plugin (e.g., for Rolldown or Turbopack), having a decoupled design makes porting trivial: it becomes a direct $1\text{--to--}1$ translation of pure functions and data structures, rather than untangling a web of mutable traversal hooks.

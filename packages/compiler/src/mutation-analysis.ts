@@ -33,7 +33,7 @@ export interface BindingLike {
   scope: ScopeLike;
 }
 
-/** Babel scopes and the compiler ESTree scopes both satisfy this contract. */
+/** Parser adapters and compiler ESTree scopes can satisfy this contract. */
 export interface ScopeLike {
   block: object;
   isProgramScope?: boolean;

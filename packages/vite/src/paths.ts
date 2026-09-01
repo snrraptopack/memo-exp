@@ -10,7 +10,7 @@ import {
 } from 'node:path';
 import type { ResolvedAdapterOptions } from './options';
 
-const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.jsx']);
+const sourceExtensions = new Set(['.ts', '.tsx', '.tsrx', '.js', '.jsx']);
 
 export function cleanViteId(id: string): string {
   const query = id.search(/[?#]/);
@@ -70,14 +70,4 @@ export function acceptsSource(
     !projectRelative.startsWith(`..${sep}`) &&
     !isAbsolute(projectRelative)
   );
-}
-
-export function parserLanguage(
-  file: string,
-): 'js' | 'jsx' | 'ts' | 'tsx' {
-  const extension = extname(file);
-  if (extension === '.tsx') return 'tsx';
-  if (extension === '.ts') return 'ts';
-  if (extension === '.jsx') return 'jsx';
-  return 'js';
 }

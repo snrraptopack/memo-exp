@@ -8,6 +8,7 @@ export class AdapterState {
   readonly files = new Set<string>();
   readonly output = new Map<string, string>();
   readonly maps = new Map<string, CompilerSourceMap>();
+  readonly css = new Map<string, string>();
   compiling: Promise<CompiledGraph> | undefined;
   hotUpdateFailed = false;
 
@@ -18,5 +19,7 @@ export class AdapterState {
     for (const [file, code] of graph.output) this.output.set(file, code);
     this.maps.clear();
     for (const [file, map] of graph.maps) this.maps.set(file, map);
+    this.css.clear();
+    for (const [file, style] of graph.css) this.css.set(file, style);
   }
 }

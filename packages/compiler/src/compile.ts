@@ -1,33 +1,21 @@
-/**
- * compile.ts — compiler entry point.
- *
- * One function: component source (.tsx) in, compiled JavaScript out.
- *
- * Plugin pipeline:
- *   1. @babel/plugin-syntax-jsx           — parse JSX (no transform)
- *   2. memoDomPlugin                      — the paradigm transform (R1–R6, L1)
- *   3. @babel/plugin-transform-typescript — strip types from emitted code
- *
- * The transform is written against compiler-owned ESTree nodes so alternate
- * parser frontends can reuse the same analysis and emission logic.
- */
+/** Public compiler entry point: frontend ESTree in, compiler transform, Esrap out. */
 
-import {
-  transformFromAstSync,
-  transformSync,
-  type InputOptions,
-  type PluginObject,
-  type PluginTarget,
-} from '@babel/core';
-import syntaxJsx from '@babel/plugin-syntax-jsx';
-import transformTypescript from '@babel/plugin-transform-typescript';
 import type * as t from './ast/compiler-types';
 import {
-  cloneNode as cloneEstreeNode,
-  normalizeBabelDialect,
+  cloneNode,
+  parseWithEstreeFrontendOrThrow,
+  printEstree,
+  stripTypeScript,
+  type AstComment,
   type BaseNode,
+  type EstreeFrontend,
+  type Program,
+  memoizedEstreeFrontend,
 } from './ast';
-import memoDomPlugin, { type MemoDomOptions } from './plugin';
+import {
+  transformEstreeProgram,
+  type MemoDomOptions,
+} from './plugin';
 import type { InternalMemoDomOptions } from './context';
 
 export type { MemoDomOptions };
@@ -45,18 +33,41 @@ export interface CompilerSourceMap {
 export interface CompiledSource {
   code: string;
   map: CompilerSourceMap;
+  css?: string;
 }
 
-function babelOutputAdapter(): PluginObject {
+export interface CompileOptions extends MemoDomOptions {
+  /** Parser adapter. The default selects TSRX or Yuku from the source extension. */
+  frontend?: EstreeFrontend;
+}
+
+interface CompilerInput {
+  program: Program;
+  comments: readonly AstComment[];
+  css?: string;
+}
+
+function inputProgram(
+  source: string,
+  moduleId: string,
+  frontend: EstreeFrontend,
+  ast?: t.File | t.Program,
+): CompilerInput {
+  if (ast !== undefined) {
+    const program = ast.type === 'File' ? ast.program : ast;
+    return {
+      program: cloneNode(program as unknown as BaseNode) as Program,
+      comments: [],
+    };
+  }
+  const parsed = parseWithEstreeFrontendOrThrow(frontend, source, {
+    filename: moduleId,
+    sourceType: 'module',
+  });
   return {
-    name: 'memo-dom-estree-to-babel-output',
-    visitor: {
-      Program: {
-        exit(programPath) {
-          normalizeBabelDialect(programPath.node as unknown as BaseNode);
-        },
-      },
-    },
+    program: parsed.program as unknown as Program,
+    comments: parsed.comments,
+    css: parsed.css,
   };
 }
 
@@ -64,69 +75,76 @@ function transform(
   source: string,
   opts: InternalMemoDomOptions,
   sourceMaps: boolean,
-  ast?: t.File,
-): ReturnType<typeof transformSync> {
+  ast?: t.File | t.Program,
+  frontend: EstreeFrontend = memoizedEstreeFrontend,
+): { code: string; map: CompilerSourceMap | null; css?: string } {
   const moduleId = opts.moduleId ?? './component.tsx';
-  const transformOptions: InputOptions = {
-    filename: moduleId,
-    sourceFileName: moduleId,
-    sourceMaps,
-    plugins: [
-      [syntaxJsx as PluginTarget, {}],
-      [memoDomPlugin, opts],
-      [transformTypescript as PluginTarget, { isTSX: true }],
-      babelOutputAdapter,
-    ],
-    configFile: false,
-    babelrc: false,
+  const input = inputProgram(source, moduleId, frontend, ast);
+  transformEstreeProgram(
+    {
+      node: input.program,
+      buildCodeFrameError(message) {
+        return new Error(message);
+      },
+    },
+    opts,
+  );
+  const program = stripTypeScript(input.program);
+  const printed = printEstree(program, {
+    comments: input.comments,
+    ...(sourceMaps
+      ? { sourceMapSource: moduleId, sourceMapContent: source }
+      : {}),
+  });
+  return {
+    code: printed.code,
+    map: printed.map === null
+      ? null
+      : {
+          ...printed.map,
+          sources: printed.map.sources.map((sourceName) => sourceName ?? moduleId),
+        },
+    ...(input.css ? { css: input.css } : {}),
   };
-  return ast === undefined
-    ? transformSync(source, transformOptions)
-    : transformFromAstSync(
-        cloneEstreeNode(ast, true) as unknown as Parameters<typeof transformFromAstSync>[0],
-        source,
-        transformOptions,
-      );
 }
 
 /** Compile source while preserving the historical string-only API. */
-export function compile(source: string, opts: MemoDomOptions = {}): string {
-  return compileAst(source, opts);
+export function compile(source: string, opts: CompileOptions = {}): string {
+  const { frontend = memoizedEstreeFrontend, ...compilerOptions } = opts;
+  return transform(source, compilerOptions, false, undefined, frontend).code;
 }
 
-/** Internal linked-graph path that reuses an AST without producing a map. */
+/** Internal linked-graph path that reuses an ESTree program. */
 export function compileAst(
   source: string,
   opts: InternalMemoDomOptions,
-  ast?: t.File,
+  ast?: t.File | t.Program,
 ): string {
-  const out = transform(source, opts, false, ast);
-  if (!out || out.code == null) {
-    throw new Error('memo-dom: compilation produced no output');
-  }
-  return out.code;
+  return transform(source, opts, false, ast).code;
 }
 
 /** Compile source and return a source map back to the authored TSX module. */
 export function compileDetailed(
   source: string,
-  opts: MemoDomOptions = {},
+  opts: CompileOptions = {},
 ): CompiledSource {
-  return compileAstDetailed(source, opts);
+  const { frontend = memoizedEstreeFrontend, ...compilerOptions } = opts;
+  const out = transform(source, compilerOptions, true, undefined, frontend);
+  if (out.map === null) {
+    throw new Error('memo-dom: compilation produced no source map');
+  }
+  return { code: out.code, map: out.map, ...(out.css ? { css: out.css } : {}) };
 }
 
-/** Internal linked-graph path that reuses a cached parsed module AST. */
+/** Internal linked-graph path that reuses a cached ESTree program. */
 export function compileAstDetailed(
   source: string,
   opts: InternalMemoDomOptions,
-  ast?: t.File,
+  ast?: t.File | t.Program,
 ): CompiledSource {
   const out = transform(source, opts, true, ast);
-  if (!out || out.code == null || out.map == null) {
-    throw new Error('memo-dom: compilation produced no output or source map');
+  if (out.map === null) {
+    throw new Error('memo-dom: compilation produced no source map');
   }
-  return {
-    code: out.code,
-    map: out.map as CompilerSourceMap,
-  };
+  return { code: out.code, map: out.map, ...(out.css ? { css: out.css } : {}) };
 }

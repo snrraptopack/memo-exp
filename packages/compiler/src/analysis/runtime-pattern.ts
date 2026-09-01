@@ -10,7 +10,7 @@ const ANNOTATED_PATTERN_NODES = new Set([
 
 /**
  * Clone an authored TypeScript binding pattern for generated JavaScript.
- * Babel stores annotations on nested pattern nodes, so clear every supported
+ * Parsers may store annotations on nested pattern nodes, so clear every supported
  * binding shape rather than only the root.
  */
 export function cloneRuntimeBindingPattern<TPattern extends BaseNode>(

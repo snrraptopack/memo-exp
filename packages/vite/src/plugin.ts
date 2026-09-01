@@ -1,6 +1,7 @@
 /**
  * Vite 8 plugin backed by connected compiler graphs and live module HMR.
  */
+import { dirname, join } from 'node:path';
 import type { CompilerSourceMap } from '@memoized-dom/compiler';
 import type {
   DevEnvironment,
@@ -8,7 +9,6 @@ import type {
   Plugin,
   ResolvedConfig,
 } from 'vite';
-import { parseSync } from 'vite';
 import type { GraphPluginContext } from './graph/collector';
 import { compileGraph } from './graph/collector';
 import { invalidateManagedModules } from './hmr';
@@ -24,7 +24,7 @@ import {
 } from './paths';
 import { AdapterState } from './state';
 
-const sourceId = /\.[jt]sx?(?:$|[?#])/;
+const sourceId = /(?:\.[jt]sx?|\.tsrx)(?:$|[?#])/;
 
 interface AdapterTransformContext extends GraphPluginContext {
   environment: object;
@@ -55,8 +55,6 @@ export function memoizedDom(
     context: GraphPluginContext,
   ): GraphPluginContext {
     return {
-      parse: (source, parserOptions) =>
-        context.parse(source, parserOptions),
       resolve: (specifier, importer, resolveOptions) =>
         context.resolve(specifier, importer, resolveOptions),
       addWatchFile: (watched) => context.addWatchFile(watched),
@@ -69,9 +67,6 @@ export function memoizedDom(
     context: MinimalPluginContextWithoutEnvironment,
   ): GraphPluginContext {
     return {
-      parse: (source, parserOptions) =>
-        parseSync(`module.${parserOptions.lang}`, source, parserOptions)
-          .program,
       async resolve(specifier, importer) {
         const resolved =
           await environment.pluginContainer.resolveId(specifier, importer);
@@ -198,7 +193,7 @@ export function memoizedDom(
     code: string,
     id: string,
   ): Promise<{ code: string; map: CompilerSourceMap } | null> {
-    if (config === undefined || !sourceId.test(id)) return null;
+    if (config === undefined || !sourceId.test(id) || id.includes('?memo-style.css')) return null;
     const file = cleanViteId(id);
     const state = stateFor(context.environment);
     const managed = entries.includes(file) || state.files.has(file);
@@ -280,6 +275,34 @@ export function memoizedDom(
         stateFor(this.environment),
       );
     },
+    resolveId(id, importer) {
+      if (id.includes('?memo-style.css')) {
+        if (importer) {
+          const queryIndex = id.indexOf('?');
+          const rawSpecifier = id.slice(0, queryIndex);
+          const query = id.slice(queryIndex);
+          const cleanImporter = cleanViteId(importer);
+          const dir = dirname(cleanImporter);
+          const resolvedPath = normalizeFile(join(dir, rawSpecifier));
+          return `${resolvedPath}${query}`;
+        }
+        const queryIndex = id.indexOf('?');
+        const query = queryIndex === -1 ? '' : id.slice(queryIndex);
+        return `${normalizeFile(cleanViteId(id))}${query}`;
+      }
+      return null;
+    },
+    load(id) {
+      if (id.includes('?memo-style.css')) {
+        const clean = normalizeFile(cleanViteId(id));
+        const state = hotStateFor(this.environment, clean);
+        const style = state?.css.get(clean);
+        if (style !== undefined) {
+          return { code: style, map: { mappings: '' } };
+        }
+      }
+      return null;
+    },
     transform: {
       filter: { id: sourceId },
       handler(code, id) {
@@ -293,6 +316,7 @@ export function memoizedDom(
       const state = hotStateFor(this.environment, file);
       if (state === undefined) return;
       const previous = new Map(state.output);
+      const previousCss = new Map(state.css);
       const overrides =
         update.type === 'delete'
           ? new Map<string, string>()
@@ -315,6 +339,14 @@ export function memoizedDom(
         ...state.output.keys(),
       ])) {
         if (previous.get(candidate) !== state.output.get(candidate)) {
+          changed.add(candidate);
+        }
+      }
+      for (const candidate of new Set([
+        ...previousCss.keys(),
+        ...state.css.keys(),
+      ])) {
+        if (previousCss.get(candidate) !== state.css.get(candidate)) {
           changed.add(candidate);
         }
       }

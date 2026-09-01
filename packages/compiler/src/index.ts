@@ -4,9 +4,24 @@ export {
   compile,
   compileDetailed,
   type CompiledSource,
+  type CompileOptions,
   type CompilerSourceMap,
   type MemoDomOptions,
 } from './compile';
+export {
+  createExtensionEstreeFrontend,
+  parseWithEstreeFrontend,
+  parseWithEstreeFrontendOrThrow,
+  yukuEstreeFrontend,
+  type EstreeFrontend,
+  type ParseEstreeOptions,
+  type ParsedEstree,
+} from './ast/parser';
+export {
+  experimentalTsrxEstreeFrontend,
+  memoizedEstreeFrontend,
+  parseTsrxEstree,
+} from './ast/tsrx';
 export {
   compileModules,
   compileModulesDetailed,
