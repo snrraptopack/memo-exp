@@ -118,6 +118,22 @@ describe('experimental TSRX frontend', () => {
     expect(output['./App.tsrx']).toContain('Card(');
     expect(output['./App.tsrx']).toContain('List(');
   });
+
+  it('supports the official finite prop-union dynamic intrinsic shape', () => {
+    const code = compile(
+      `
+        type PanelProps = { as?: 'section' | 'article' };
+        export function Panel({ as = 'section' }: PanelProps) @{
+          <{as} class="panel">Content</{as}>
+        }
+      `,
+      { moduleId: './Panel.tsrx' },
+    );
+
+    expect(code).toContain('createElement("section")');
+    expect(code).toContain('createElement("article")');
+    expect(code).toContain('createCondRegion');
+  });
   it('extracts scoped styles, annotates JSX class names with hashes, and strips style tags', () => {
     const source = `
       export function Card() @{

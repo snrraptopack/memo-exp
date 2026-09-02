@@ -2,6 +2,7 @@
 
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
+import { lexicalBindingKey } from '../analysis/type-candidates';
 import {
   analyzeScope,
   cloneNode as cloneAstNode,
@@ -445,6 +446,23 @@ function collectCandidates(
       collectCandidates(ctx, at, astFactory.stringLiteral(candidate), output, onError, visiting);
     }
     const binding = astBindingAt(ctx, at, name);
+    const bindingKey = binding === undefined
+      ? null
+      : lexicalBindingKey(binding.identifier);
+    for (const candidate of binding === undefined
+      ? []
+      : bindingKey === null
+      ? []
+      : ctx.bindingTagCandidates.get(bindingKey) ?? []) {
+      collectCandidates(
+        ctx,
+        at,
+        astFactory.stringLiteral(candidate),
+        output,
+        onError,
+        visiting,
+      );
+    }
     const initializer = binding === undefined ? null : bindingInitializer(ctx, binding);
     if (initializer !== null) {
       collectCandidates(ctx, at, initializer as unknown as t.Expression, output, onError, visiting);

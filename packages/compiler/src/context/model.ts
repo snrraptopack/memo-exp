@@ -361,6 +361,8 @@ export interface Ctx {
   /** Finite intrinsic-tag identities proven by state type annotations. */
   stateTagCandidates: Map<string, string[]>;
   functionTagCandidates: Map<string, string[]>;
+  /** Finite string contracts attached to lexical binding identifiers. */
+  bindingTagCandidates: Map<string, string[]>;
   stateComponentCandidates: Map<string, string[]>;
   functionComponentCandidates: Map<string, string[]>;
   linkedDynamicComponentCandidates: Map<
@@ -614,6 +616,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     stateKeys,
     stateTagCandidates,
     functionTagCandidates,
+    bindingTagCandidates: new Map(),
     stateComponentCandidates,
     functionComponentCandidates,
     linkedDynamicComponentCandidates,

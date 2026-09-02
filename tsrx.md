@@ -144,9 +144,9 @@ normal conditional region. Finite linked component choices work the same way:
 ```
 
 Memoized DOM intentionally rejects selectors for which it cannot prove a finite
-set of intrinsic tags or linked components. The official syntax allows runtime
-identifier selectors; propagating a finite string-union type from a component
-prop into the existing candidate analysis remains an implementation gap.
+set of intrinsic tags or linked components. Finite string unions on component
+props, including the official `as?: 'section' | 'article'` shape, participate in
+the same shared candidate analysis.
 
 ## Scoped styles
 
