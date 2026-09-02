@@ -324,6 +324,38 @@ describe('experimental TSRX frontend', () => {
     expect(() => compile(writeSource, { moduleId: './LazyWrite.tsrx' }))
       .toThrow("lazy binding 'value' cannot be assigned directly");
   });
+
+  it('lowers a suspended @try boundary onto colorless data readiness', () => {
+    const output = compileModules({
+      './App.tsrx': `
+        import { $fetch } from '@memoized-dom/data';
+
+        interface User { name: string; }
+
+        function Dashboard({ user }: { user: User }) @{
+          <main>{user.name}</main>
+        }
+
+        export function App() @{
+          const user = $fetch<User>('/api/user');
+          @try {
+            <Dashboard suspend {user} />
+          } @pending {
+            <p>Loading dashboard</p>
+          } @catch (error, reset) {
+            <button onClick={reset}>{error.message}</button>
+          }
+        }
+      `,
+    });
+    const code = output['./App.tsrx'];
+    expect(code).not.toContain('suspend');
+    expect(code).toContain('createCondRegion');
+    expect(code).toContain('resolvedValuesPending');
+    expect(code).toContain('retryResolvedValues');
+    expect(code).toContain('Loading dashboard');
+  });
+
   it('extracts scoped styles, annotates JSX class names with hashes, and strips style tags', () => {
     const source = `
       export function Card() @{
@@ -376,17 +408,6 @@ describe('experimental TSRX frontend', () => {
     );
     const label = parsed.diagnostics[0]!.labels[0]!;
     expect(source.slice(label.start, label.end)).toBe('<p>Invalid</p>');
-  });
-
-  it.each([
-    [
-      'async template control flow',
-      'export function App() @{ @try { <p>Ready</p> } @pending { <p>Wait</p> } }',
-      'runtime semantics',
-    ],
-  ])('rejects unsupported %s intentionally', (_name, source, message) => {
-    expect(() => compile(source, { moduleId: './Unsupported.tsrx' }))
-      .toThrow(message);
   });
 
   it('rejects a dynamic tag whose expression has no finite candidates', () => {

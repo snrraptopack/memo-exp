@@ -89,8 +89,16 @@ export interface TransparentAsyncSourceDefinition {
 }
 
 export interface TransparentPresentationPolicy {
-  pending: string;
-  error: string;
+  pending: string | TransparentPresentationComponent;
+  error: string | TransparentPresentationComponent;
+}
+
+export interface TransparentPresentationComponent {
+  component: string;
+  props: ReadonlyArray<{
+    name: string;
+    value: t.Expression;
+  }>;
 }
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */

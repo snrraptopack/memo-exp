@@ -7,6 +7,7 @@ import type {
   JSXForExpression,
   JSXIfExpression,
   JSXSwitchExpression,
+  JSXTryExpression,
 } from './types';
 
 const TEMPLATE_NODES = new Set([
@@ -457,6 +458,9 @@ function lowerTemplateChild(node: BaseNode): BaseNode {
       lowerCodeBlockExpression(node as JSXCodeBlock),
     );
   }
+  if (node.type === 'JSXTryExpression') {
+    return lowerTryExpression(node as JSXTryExpression);
+  }
   return lowerNode(node);
 }
 
@@ -464,6 +468,46 @@ function returningBlock(block: BaseNode): BaseNode {
   return blockStatement([
     returnStatement(lowerTemplateBlockExpression(block)),
   ]);
+}
+
+interface LoweredTsrxCatch {
+  param: BaseNode | null;
+  resetParam: BaseNode | null;
+  output: BaseNode;
+}
+
+interface LoweredTsrxTry {
+  pending: BaseNode | null;
+  handler: LoweredTsrxCatch | null;
+}
+
+function lowerTryExpression(node: JSXTryExpression): BaseNode {
+  const output = lowerTemplateBlockExpression(node.block);
+  const marker = fragment([
+    output.type === 'JSXElement' || output.type === 'JSXFragment'
+      ? output
+      : expressionContainer(output),
+  ]);
+  const handler = node.handler;
+  const handlerFields = handler === null ? null : fields(handler);
+  const metadata: LoweredTsrxTry = {
+    pending: node.pending === null || node.pending === undefined
+      ? null
+      : lowerTemplateBlockExpression(node.pending),
+    handler: handler === null
+      ? null
+      : {
+          param: isNode(handlerFields?.param) ? cloneNode(handlerFields.param) : null,
+          resetParam: isNode(handlerFields?.resetParam)
+            ? cloneNode(handlerFields.resetParam)
+            : null,
+          output: lowerTemplateBlockExpression(
+            isNode(handlerFields?.body) ? handlerFields.body : handler,
+          ),
+        },
+  };
+  fields(marker).__memoDomTsrxTry = metadata;
+  return marker;
 }
 
 function lowerRootIf(node: JSXIfExpression): BaseNode {
@@ -550,7 +594,7 @@ function lowerNode(node: BaseNode): BaseNode {
     return literal(null);
   }
   if (node.type === 'JSXTryExpression') {
-    fail(node, '@try/@pending/@catch require Memoized DOM runtime semantics');
+    return lowerTryExpression(node as JSXTryExpression);
   }
   if (node.type === 'JSXCodeBlock') {
     return lowerCodeBlockExpression(node as JSXCodeBlock);

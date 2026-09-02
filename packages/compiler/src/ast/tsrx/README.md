@@ -52,6 +52,7 @@ The TSRX path is isolated from the standard Yuku parser.
 | Nested `@{ ... }` statement containers | Inline JSX render calls expanded by the shared render-function planner |
 | Pure setup inside `@if`, `@switch`, and `@empty` branches | Inline JSX render calls expanded before shared region planning |
 | Lazy `&{ ... }` / `&[ ... ]` destructuring | Native reactive destructuring replay; direct binding writes are rejected |
+| `@try` / `@pending` / `@catch` | Static colorless-source policy around one direct component; shorthand component `suspend` changes local-site fallback into atomic initial readiness |
 
 
 The direct mappings intentionally reuse existing Memoized DOM conditional and
@@ -65,7 +66,7 @@ nodes or receiving guessed semantics:
 
 | Surface | Reason |
 |---|---|
-| `@try`, `@pending`, and `@catch` | Need explicit suspense, error-boundary, ownership, and cleanup semantics |
+| General descendant exception boundaries | The current `@try` profile handles statically associated colorless-source failures, not arbitrary synchronous descendant throws |
 | C-style `@for` and `@for (... in ...)` | Existing optimized list semantics are based on iterable `.map()` regions |
 | Keyed loop fragments or multiple loop roots | Existing keyed list analysis requires one JSX element carrying `key` |
 | Dynamic tags without finite intrinsic or linked-component candidates | Existing compiler semantics require a statically bounded host/component set |

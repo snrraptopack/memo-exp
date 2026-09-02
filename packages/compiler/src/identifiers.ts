@@ -39,6 +39,21 @@ export class GeneratedIdentifiers {
     }
   }
 
+  generateComponent(hint: string): t.Identifier {
+    const identifier = toIdentifier(hint).replace(/^_+/, '').replace(/\d+$/g, '');
+    const name = /^[A-Z]/.test(identifier)
+      ? identifier
+      : `Generated${identifier[0]?.toUpperCase() ?? ''}${identifier.slice(1)}`;
+    let index = 0;
+    for (;;) {
+      const candidate = index === 0 ? name : `${name}${index + 1}`;
+      index++;
+      if (this.reserved.has(candidate)) continue;
+      this.reserved.add(candidate);
+      return astFactory.identifier(candidate);
+    }
+  }
+
   registerComponentId(component: string, id: string): void {
     this.componentIds.set(component, id);
   }
@@ -77,6 +92,13 @@ export function generatedIdentifier(
   hint: string,
 ): t.Identifier {
   return requireIdentifiers(owner).generate(hint);
+}
+
+export function generatedComponentIdentifier(
+  owner: IdentifierOwner,
+  hint: string,
+): t.Identifier {
+  return requireIdentifiers(owner).generateComponent(hint);
 }
 
 export function componentId(

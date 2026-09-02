@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { compileModules } from '@memoized-dom/compiler';
+import { compileModules, diagnoseModules } from '@memoized-dom/compiler';
 import {
   createDataRuntime,
   setActiveDataRuntime,
@@ -19,6 +19,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
 const fixture = join(outDir, 'transparent-data.compiled.ts');
+const tsrxFixture = join(outDir, 'transparent-data-tsrx.compiled.ts');
 
 const source = `
   import {
@@ -80,6 +81,15 @@ const source = `
     );
   }
 
+  function SuspendedDashboard({ user, statistics }) {
+    return (
+      <section id="suspended-dashboard">
+        <strong>{user.name}</strong>
+        <output>{statistics.count}</output>
+      </section>
+    );
+  }
+
   export function App() {
     const user = $fetch<User>('/user');
     const request = $track(user);
@@ -112,6 +122,19 @@ const source = `
           <strong id="group-user">{user.name}</strong>
           <output id="group-statistics">{statistics.count}</output>
         </>
+      </Group>
+    );
+  }
+
+  export function SuspendedGroupApp() {
+    const user = $fetch<User>('/suspended-user');
+    const statistics = $fetch<{ count: number }>('/suspended-statistics');
+
+    return (
+      <Group data={{ user, statistics }}>
+        <Pending component={InlinePending} />
+        <Error component={InlineError} />
+        <SuspendedDashboard suspend user={user} statistics={statistics} />
       </Group>
     );
   }
@@ -197,8 +220,77 @@ const source = `
   }
 `;
 
-function importFixture(): Promise<any> {
+const tsrxSource = `
+  import { $fetch } from '@memoized-dom/data';
+
+  interface User { name: string; }
+  interface Statistics { count: number; }
+
+  function Dashboard({ user, statistics }: {
+    user: User;
+    statistics: Statistics;
+  }) @{
+    <section id="tsrx-suspended-dashboard">
+      <strong>{user.name}</strong>
+      <output>{statistics.count}</output>
+    </section>
+  }
+
+  function ColorlessDashboard({ user, statistics }: {
+    user: User;
+    statistics: Statistics;
+  }) @{
+    <section id="tsrx-colorless-dashboard">
+      <h2>Colorless dashboard</h2>
+      <strong id="tsrx-colorless-user">{user.name}</strong>
+      <output id="tsrx-colorless-statistics">{statistics.count}</output>
+    </section>
+  }
+
+  export function SuspendedTsrxApp() @{
+    const user = $fetch<User>('/tsrx-suspended-user');
+    const statistics = $fetch<Statistics>('/tsrx-suspended-statistics');
+
+    @try {
+      <Dashboard suspend {user} {statistics} />
+    } @pending {
+      <p class="tsrx-pending">Loading TSRX dashboard</p>
+    } @catch (error, reset) {
+      <button class="tsrx-error" onClick={reset}>{error.message}</button>
+    }
+  }
+
+  export function ColorlessTsrxApp() @{
+    const user = $fetch<User>('/tsrx-colorless-user');
+    const statistics = $fetch<Statistics>('/tsrx-colorless-statistics');
+    const pendingLabel = 'locally';
+    const failureLabel = 'Colorless failure';
+
+    @try {
+      <ColorlessDashboard {user} {statistics} />
+    } @pending {
+      <i class="tsrx-colorless-pending">Waiting {pendingLabel}</i>
+    } @catch (error, reset) {
+      <button class="tsrx-colorless-error" onClick={reset}>
+        {failureLabel}: {error.message}
+      </button>
+    }
+  }
+`;
+
+type CompiledFixture = Record<string, (id: string, parent: null) => Node>;
+
+function importFixture(): Promise<CompiledFixture> {
   return import(/* @vite-ignore */ pathToFileURL(fixture).href);
+}
+
+interface CompiledTsrxFixture {
+  SuspendedTsrxApp(id: string, parent: null): Node;
+  ColorlessTsrxApp(id: string, parent: null): Node;
+}
+
+function importTsrxFixture(): Promise<CompiledTsrxFixture> {
+  return import(/* @vite-ignore */ pathToFileURL(tsrxFixture).href);
 }
 
 function countEntityRenders(id: string): () => number {
@@ -220,7 +312,10 @@ describe('compiler-transparent data values', () => {
   beforeAll(() => {
     mkdirSync(outDir, { recursive: true });
     const output = compileModules(
-      { './transparent-data.tsx': source },
+      {
+        './transparent-data.tsx': source,
+        './transparent-data.tsrx': tsrxSource,
+      },
       { runtimePath: '@memoized-dom/runtime' },
     );
     const compiled = output['./transparent-data.tsx']!;
@@ -235,6 +330,10 @@ describe('compiler-transparent data values', () => {
     expect(compiled).toContain('rebindResolvedValue(user, `/users/${userId}`');
     expect(compiled).not.toContain('volatile: true');
     writeFileSync(fixture, compiled);
+    writeFileSync(
+      tsrxFixture,
+      output['./transparent-data.tsrx']!,
+    );
   });
 
   afterEach(() => {
@@ -351,6 +450,254 @@ describe('compiler-transparent data values', () => {
     await expect.poll(
       () => document.querySelector('#group-statistics')?.textContent,
     ).toBe('42');
+  });
+
+  it('atomically mounts a suspended Group component after all initial data commits', async () => {
+    const requests: Array<{
+      url: string;
+      resolve: (response: Response) => void;
+    }> = [];
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) =>
+        new Promise<Response>(resolve => {
+          requests.push({ url: String(input), resolve });
+        })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(mod.SuspendedGroupApp('SuspendedGroupApp', null));
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    expect(document.querySelectorAll('.pending')).toHaveLength(1);
+    expect(document.querySelector('#suspended-dashboard')).toBeNull();
+
+    requests.find(request => request.url.endsWith('/suspended-user'))!.resolve(
+      new Response(JSON.stringify({ id: 1, name: 'Ada' }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(document.querySelectorAll('.pending')).toHaveLength(1);
+    });
+    expect(document.querySelector('#suspended-dashboard')).toBeNull();
+
+    requests.find(
+      request => request.url.endsWith('/suspended-statistics'),
+    )!.resolve(
+      new Response(JSON.stringify({ count: 42 }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelector('#suspended-dashboard')?.textContent,
+    ).toBe('Ada42');
+    expect(document.querySelector('.pending')).toBeNull();
+  });
+
+  it('mounts a suspended TSRX @try component after all initial data commits', async () => {
+    const requests: Array<{
+      url: string;
+      resolve: (response: Response) => void;
+    }> = [];
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) =>
+        new Promise<Response>(resolve => {
+          requests.push({ url: String(input), resolve });
+        })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importTsrxFixture();
+    document.body.appendChild(
+      mod.SuspendedTsrxApp('SuspendedTsrxApp', null),
+    );
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    expect(document.querySelectorAll('.tsrx-pending')).toHaveLength(1);
+    expect(document.querySelector('#tsrx-suspended-dashboard')).toBeNull();
+
+    requests.find(
+      request => request.url.endsWith('/tsrx-suspended-user'),
+    )!.resolve(
+      new Response(JSON.stringify({ name: 'Ada' }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(document.querySelectorAll('.tsrx-pending')).toHaveLength(1);
+    });
+
+    requests.find(
+      request => request.url.endsWith('/tsrx-suspended-statistics'),
+    )!.resolve(
+      new Response(JSON.stringify({ count: 42 }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelector('#tsrx-suspended-dashboard')?.textContent,
+    ).toBe('Ada42');
+    expect(document.querySelector('.tsrx-pending')).toBeNull();
+  });
+
+  it('keeps a TSRX @try component colorless when suspend is absent', async () => {
+    const requests: Array<{
+      url: string;
+      resolve: (response: Response) => void;
+    }> = [];
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) =>
+        new Promise<Response>(resolve => {
+          requests.push({ url: String(input), resolve });
+        })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importTsrxFixture();
+    document.body.appendChild(mod.ColorlessTsrxApp('ColorlessTsrxApp', null));
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    expect(document.querySelector('#tsrx-colorless-dashboard h2')?.textContent)
+      .toBe('Colorless dashboard');
+    expect(document.querySelector('#tsrx-colorless-user')?.textContent)
+      .toBe('Waiting locally');
+    expect(document.querySelector('#tsrx-colorless-statistics')?.textContent)
+      .toBe('Waiting locally');
+    expect(document.querySelectorAll('.tsrx-colorless-pending')).toHaveLength(2);
+
+    requests.find(
+      request => request.url.endsWith('/tsrx-colorless-user'),
+    )!.resolve(
+      new Response(JSON.stringify({ name: 'Ada' }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelector('#tsrx-colorless-user')?.textContent,
+    ).toBe('Ada');
+    expect(document.querySelector('#tsrx-colorless-statistics')?.textContent)
+      .toBe('Waiting locally');
+    expect(document.querySelectorAll('.tsrx-colorless-pending')).toHaveLength(1);
+
+    requests.find(
+      request => request.url.endsWith('/tsrx-colorless-statistics'),
+    )!.resolve(
+      new Response(JSON.stringify({ count: 42 }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelector('#tsrx-colorless-statistics')?.textContent,
+    ).toBe('42');
+    expect(document.querySelector('.tsrx-colorless-pending')).toBeNull();
+  });
+
+  it('routes an unsuspended TSRX failure to only its colorless site', async () => {
+    const requests: Array<{
+      url: string;
+      resolve: (response: Response) => void;
+    }> = [];
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) =>
+        new Promise<Response>(resolve => {
+          requests.push({ url: String(input), resolve });
+        })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importTsrxFixture();
+    document.body.appendChild(mod.ColorlessTsrxApp('ColorlessTsrxError', null));
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    requests.find(
+      request => request.url.endsWith('/tsrx-colorless-user'),
+    )!.resolve(
+      new Response(JSON.stringify({ message: 'offline' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelector('#tsrx-colorless-user')?.textContent,
+    ).toContain('Colorless failure:');
+    expect(document.querySelector('#tsrx-colorless-statistics')?.textContent)
+      .toBe('Waiting locally');
+
+    document.querySelector<HTMLButtonElement>('.tsrx-colorless-error')!.click();
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    expect(requests[2]!.url).toMatch(/\/tsrx-colorless-user$/);
+    requests[2]!.resolve(
+      new Response(JSON.stringify({ name: 'Recovered' }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelector('#tsrx-colorless-user')?.textContent,
+    ).toBe('Recovered');
+    expect(document.querySelector('#tsrx-colorless-statistics')?.textContent)
+      .toBe('Waiting locally');
+  });
+
+  it('routes a suspended TSRX data failure through catch and reset', async () => {
+    const requests: Array<{
+      url: string;
+      resolve: (response: Response) => void;
+    }> = [];
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) =>
+        new Promise<Response>(resolve => {
+          requests.push({ url: String(input), resolve });
+        })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importTsrxFixture();
+    document.body.appendChild(
+      mod.SuspendedTsrxApp('SuspendedTsrxErrorApp', null),
+    );
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    requests.find(
+      request => request.url.endsWith('/tsrx-suspended-user'),
+    )!.resolve(
+      new Response(JSON.stringify({ message: 'offline' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelector('.tsrx-error')?.textContent,
+    ).toContain('503');
+    expect(document.querySelector('#tsrx-suspended-dashboard')).toBeNull();
+
+    document.querySelector<HTMLButtonElement>('.tsrx-error')!.click();
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    expect(requests[2]!.url).toMatch(/\/tsrx-suspended-user$/);
+    requests[2]!.resolve(
+      new Response(JSON.stringify({ name: 'Recovered' }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelectorAll('.tsrx-pending').length,
+    ).toBe(1);
+
+    requests.find(
+      request => request.url.endsWith('/tsrx-suspended-statistics'),
+    )!.resolve(
+      new Response(JSON.stringify({ count: 7 }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect.poll(
+      () => document.querySelector('#tsrx-suspended-dashboard')?.textContent,
+    ).toBe('Recovered7');
   });
 
   it('carries Group policy through derivations, conditions, lists, and nested overrides', async () => {
@@ -690,5 +1037,43 @@ describe('compiler-transparent data values', () => {
         }
       `,
     })).toThrow(/Group child must be <Pending/);
+  });
+
+  it('requires component suspend to be a shorthand direct Group child', () => {
+    const invalidSuspend = `
+        function Dashboard() { return <main>Dashboard</main>; }
+        export function App() { return <Dashboard suspend />; }
+      `;
+    const diagnostics = diagnoseModules({
+      './invalid-suspend.tsx': invalidSuspend,
+    });
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]?.message).toMatch(
+      /suspend requires the component to be the direct content child of Group/,
+    );
+    expect(diagnostics[0]?.moduleId).toBe('./invalid-suspend.tsx');
+    expect(diagnostics[0]?.line).toBe(
+      invalidSuspend.slice(0, invalidSuspend.indexOf('suspend')).split('\n').length,
+    );
+    expect(diagnostics[0]?.column).toBeGreaterThan(0);
+
+    expect(() => compileModules({
+      './invalid-suspend-value.tsx': `
+        import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+        function Loading() { return <i>Loading</i>; }
+        function Failed() { return <i>Failed</i>; }
+        function Dashboard() { return <main>Dashboard</main>; }
+        export function App() {
+          const user = $fetch<{ name: string }>('/user');
+          return (
+            <Group data={user}>
+              <Pending component={Loading} />
+              <Error component={Failed} />
+              <Dashboard suspend={true} />
+            </Group>
+          );
+        }
+      `,
+    })).toThrow(/suspend is a shorthand compiler directive/);
   });
 });

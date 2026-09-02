@@ -244,6 +244,55 @@ set of intrinsic tags or linked components. Finite string unions on component
 props, including the official `as?: 'section' | 'article'` shape, participate in
 the same shared candidate analysis.
 
+## Colorless data boundaries
+
+Memoized DOM gives TSRX `@try`, `@pending`, and `@catch` a static colorless-data
+profile. The try body currently contains one direct component and at least one
+of its direct identifier props must be a compiler-known colorless source:
+
+```tsx
+export function Page() @{
+  const user = $fetch<User>('/api/user');
+  const statistics = $fetch<Statistics>('/api/statistics');
+
+  @try {
+    <Dashboard suspend {user} {statistics} />
+  } @pending {
+    <DashboardSkeleton />
+  } @catch (error, reset) {
+    <DashboardFailure {error} {reset} />
+  }
+}
+```
+
+`suspend` is a shorthand compiler directive on the component call. With it,
+the pending output is shown once until every associated source has its initial
+value, then the component mounts atomically. A source failure selects `@catch`;
+`reset` retries the failed source. Committed content remains visible during a
+later refresh.
+
+Without `suspend`, the component mounts immediately. Every unresolved
+colorless read site renders its own instance of the authored `@pending` output;
+as each source commits, only its dependent sites are replaced. A failed site
+similarly renders `@catch`, and `reset` retries that site's failed source. Use a
+site-valid inline fallback in this mode. Use `suspend` when the pending output
+is a whole-panel skeleton that should appear only once.
+
+The suspended form is conceptually the same readiness contract as this TSX:
+
+```tsx
+<Group data={{ user, statistics }}>
+  <Pending component={DashboardSkeleton} />
+  <Error component={DashboardFailure} />
+  <Dashboard suspend user={user} statistics={statistics} />
+</Group>
+```
+
+This is currently a colorless-source boundary, not a universal exception
+boundary for arbitrary synchronous throws inside descendants. The direct
+component and direct source-prop restrictions keep ownership, retry, and
+diagnostics static instead of discovering dependencies by throwing at runtime.
+
 ## Scoped styles
 
 A function-owned `<style>` block is extracted as CSS, its selectors receive the
@@ -281,7 +330,7 @@ not a runtime `<style>` DOM node. Upstream style-expression composition such as
 | Pure branch-local setup in `@if`, `@switch`, or `@empty` | Supported |
 | Nested or expression-position `@switch` | Supported |
 | Lazy `&{ ... }` / `&[ ... ]` destructuring | Supported through native reactive replay; direct binding writes are rejected |
-| `@try` / `@pending` / `@catch` | Not yet supported |
+| `@try` / `@pending` / `@catch` | Supported for one direct component with statically visible colorless-source props; `suspend` opts into atomic initial readiness |
 | Style expressions and style composition | Not yet supported |
 | Server submodules and identifier-source imports | Not yet supported |
 
