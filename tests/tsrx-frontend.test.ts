@@ -43,6 +43,31 @@ describe('experimental TSRX frontend', () => {
     expect(code).not.toContain('@if');
   });
 
+  it('lowers nested statement containers through shared JSX render expansion', () => {
+    const source = `
+      export function App({ value }: { value: string }) @{
+        <main>
+          @{
+            const label = value.toUpperCase();
+            <strong>{label}</strong>
+          }
+        </main>
+      }
+    `;
+    const parsed = parseTsrxEstree(source, { filename: './Nested.tsrx' });
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(
+      collectNodes(parsed.program, (node): node is BaseNode =>
+        extensionTypes.has(node.type),
+      ),
+    ).toEqual([]);
+
+    const code = compile(source, { moduleId: './Nested.tsrx' });
+    expect(code).toContain('createElement("strong")');
+    expect(code).not.toContain('JSXCodeBlock');
+  });
+
   it('maps keyed @for and @empty onto list and conditional regions', () => {
     const code = compile(
       `

@@ -396,7 +396,9 @@ function lowerTemplateChild(node: BaseNode): BaseNode {
     fail(node, 'nested @switch is not supported yet; use @switch as the component output');
   }
   if (node.type === 'JSXCodeBlock') {
-    fail(node, 'nested statement containers are not supported yet');
+    return expressionContainer(
+      lowerCodeBlockExpression(node as JSXCodeBlock),
+    );
   }
   return lowerNode(node);
 }
@@ -460,12 +462,36 @@ function lowerFunctionCodeBlock(node: JSXCodeBlock): BaseNode {
   return blockStatement([...setup, returnStatement(rendered)]);
 }
 
+/**
+ * Preserve a nested statement container as an inline JSX render function.
+ * The shared compiler pass expands this call and applies the same pure-setup
+ * rules used by an equivalent TSX IIFE.
+ */
+function lowerCodeBlockExpression(node: JSXCodeBlock): BaseNode {
+  return {
+    type: 'CallExpression',
+    callee: {
+      type: 'ArrowFunctionExpression',
+      params: [],
+      body: lowerFunctionCodeBlock(node),
+      generator: false,
+      async: false,
+      expression: false,
+    },
+    arguments: [],
+    optional: false,
+  } as BaseNode;
+}
+
 function lowerNode(node: BaseNode): BaseNode {
   if (node.type === 'JSXStyleElement') {
     return literal(null);
   }
   if (node.type === 'JSXTryExpression') {
     fail(node, '@try/@pending/@catch require Memoized DOM runtime semantics');
+  }
+  if (node.type === 'JSXCodeBlock') {
+    return lowerCodeBlockExpression(node as JSXCodeBlock);
   }
   if (node.type === 'TSModuleDeclaration') {
     fail(node, 'module declarations require a future client/server graph contract');

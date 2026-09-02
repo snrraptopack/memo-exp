@@ -57,6 +57,32 @@ export function Card({ title }: { title: string }) {
 An `@{ ... }` function body must contain setup first and finish with one render
 output. Ordinary nested functions continue to use normal TypeScript braces.
 
+A nested statement container provides a render value with local, pure setup:
+
+```tsx
+<main>
+  @{
+    const label = title.toUpperCase();
+    <strong>{label}</strong>
+  }
+</main>
+```
+
+Conceptually:
+
+```tsx
+<main>
+  {(() => {
+    const label = title.toUpperCase();
+    return <strong>{label}</strong>;
+  })()}
+</main>
+```
+
+Both forms use the shared JSX render-function planner. Nested setup therefore
+has the same purity rules as TSX render helpers; it is not a lifecycle hook or
+an independently mounted component.
+
 ## Conditional output
 
 Nested `@if` branches are the template form of a conditional expression:
@@ -181,7 +207,7 @@ not a runtime `<style>` DOM node. Upstream style-expression composition such as
 | Root `@switch` | Supported |
 | Finite dynamic intrinsic/component expressions | Supported |
 | Function-owned scoped `<style>` | Supported |
-| Nested `@{ ... }` statement containers | Not yet supported |
+| Nested `@{ ... }` statement containers with pure setup | Supported |
 | Branch-local setup in `@if`, `@switch`, or `@empty` | Not yet supported |
 | Nested or expression-position `@switch` | Not yet supported |
 | Lazy `&{ ... }` / `&[ ... ]` destructuring | Not yet supported |

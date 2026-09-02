@@ -48,6 +48,7 @@ The TSRX path is isolated from the standard Yuku parser.
 | Root `@switch` | Exhaustive return-oriented `SwitchStatement` consumed by the component return planner |
 | `<{expression}>` dynamic tags | A generated component-local selector consumed by the existing finite intrinsic/component candidate planner |
 | Scoped `<style>` | Extracted as CSS and native JSX receives TSRX's stable scoped class hash |
+| Nested `@{ ... }` statement containers | Inline JSX render calls expanded by the shared render-function planner |
 
 
 The direct mappings intentionally reuse existing Memoized DOM conditional and
@@ -63,7 +64,6 @@ nodes or receiving guessed semantics:
 |---|---|
 | Lazy `&{ ... }` and `&[ ... ]` patterns | Memoized DOM must define their reactive read and write semantics |
 | `@try`, `@pending`, and `@catch` | Need explicit suspense, error-boundary, ownership, and cleanup semantics |
-| Nested `@{ ... }` statement containers | Need a stable render-value lowering accepted by compiler analysis |
 | Setup statements inside `@if`, `@switch`, or `@empty` branches | The current component return planner requires direct branch outputs |
 | Nested `@switch` | Only root exhaustive switches currently map exactly to the return planner |
 | C-style `@for` and `@for (... in ...)` | Existing optimized list semantics are based on iterable `.map()` regions |
