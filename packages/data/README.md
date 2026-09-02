@@ -249,7 +249,9 @@ import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
 import { App } from './App';
 
 setActiveDataRuntime(createDataRuntime());
-mount('root', App, { hydration: { recover: true } });
+import { hydrate } from '@memoized-dom/runtime/hydrate';
+
+hydrate('root', App, { recover: true });
 ```
 
 ---

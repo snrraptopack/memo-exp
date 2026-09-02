@@ -31,7 +31,7 @@ function packageGraph(entries: string | readonly string[]): string[] {
 function measure(
   label: string,
   entries: string | readonly string[],
-): void {
+): { raw: number; gzip: number; files: readonly string[] } {
   const files = packageGraph(entries);
   const raw = files.reduce(
     (total, file) => total + readFileSync(file).byteLength,
@@ -44,6 +44,7 @@ function measure(
   console.log(
     `${label.padEnd(18)} ${String(raw).padStart(8)} B raw  ${String(gzip).padStart(8)} B gzip  (${files.length} file${files.length === 1 ? '' : 's'})`,
   );
+  return { raw, gzip, files };
 }
 
 function browserAssets(directory: string): string[] {
@@ -56,7 +57,37 @@ function browserAssets(directory: string): string[] {
     .map((entry) => resolve(entry.parentPath, entry.name));
 }
 
-measure('runtime', 'packages/runtime/dist/index.js');
+measure('runtime client', 'packages/runtime/dist/index.js');
+measure('runtime hydrate', 'packages/runtime/dist/hydrate.js');
+measure('runtime hot', 'packages/runtime/dist/hot.js');
+measure('runtime server', 'packages/runtime/dist/server.js');
 measure('compiler', 'packages/compiler/dist/index.js');
 measure('Vite adapter', 'packages/vite/dist/index.js');
-measure('todo browser', browserAssets('examples/dist/assets'));
+const browser = measure(
+  'todo browser',
+  browserAssets('bench/package-size/dist/assets'),
+);
+
+const MAX_BROWSER_RAW = 28_000;
+const MAX_BROWSER_GZIP = 9_500;
+if (browser.raw > MAX_BROWSER_RAW || browser.gzip > MAX_BROWSER_GZIP) {
+  throw new Error(
+    `todo browser bundle exceeds its budget: ${browser.raw} B raw / ${browser.gzip} B gzip ` +
+      `(limits: ${MAX_BROWSER_RAW} B raw / ${MAX_BROWSER_GZIP} B gzip)`,
+  );
+}
+
+const forbiddenBrowserRuntime = [
+  'node:async_hooks',
+  'memoized-dom-hmr',
+  'memoized-dom: hydrate',
+  'application-root marker',
+] as const;
+const browserSource = browser.files
+  .map((file) => readFileSync(file, 'utf8'))
+  .join('\n');
+for (const marker of forbiddenBrowserRuntime) {
+  if (browserSource.includes(marker)) {
+    throw new Error(`todo browser bundle leaked runtime marker '${marker}'`);
+  }
+}

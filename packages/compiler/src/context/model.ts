@@ -33,6 +33,8 @@ export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceD
 export interface MemoDomOptions {
   /** Module specifier compiled output imports the runtime from. */
   runtimePath?: string;
+  /** Dev-only runtime subpath used by compiler-emitted HMR ownership. */
+  hotRuntimePath?: string;
   /** Module specifier used by compiler-generated router integration. */
   routerPath?: string;
   /** Runtime helpers used by compiler-transparent async data sources. */
@@ -323,6 +325,7 @@ export type HelperPath = CompilerPath<
 
 export interface Ctx {
   runtimePath: string;
+  hotRuntimePath: string;
   routerPath: string;
   dataRuntimePath: string;
   transparentAsyncSources: readonly TransparentAsyncSourceDefinition[];
@@ -585,8 +588,10 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
       ([component, props]) => [component, [...props]],
     ),
   );
+  const runtimePath = opts.runtimePath ?? '@memoized-dom/runtime';
   return {
-    runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
+    runtimePath,
+    hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',
     dataRuntimePath: opts.dataRuntimePath ?? '@memoized-dom/data/internal',
     transparentAsyncSources: opts.transparentAsyncSources ??

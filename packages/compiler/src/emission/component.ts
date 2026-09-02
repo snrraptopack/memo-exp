@@ -22,6 +22,7 @@ import { buildBranchCreate, emitNode } from '../emit';
 import {
   generatedIdentifier,
   md,
+  mdHot,
   requireIdentifiers,
 } from '../identifiers';
 import { transformComponentLifecycle } from '../lifecycle';
@@ -420,7 +421,7 @@ export function transformComponent(
   if (ctx.hot && !lightweight) {
     body.push(
       astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'registerHotComponent'), [
+        astFactory.callExpression(mdHot(ctx, 'registerHotComponent'), [
           astFactory.identifier(name),
           astFactory.identifier(factoryId),
           astFactory.identifier(factoryParent!),

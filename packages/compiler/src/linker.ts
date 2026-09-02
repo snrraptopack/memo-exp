@@ -247,6 +247,7 @@ function compilerOptions(
 ): InternalMemoDomOptions {
   return {
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
+    ...(options.hotRuntimePath === undefined ? {} : { hotRuntimePath: options.hotRuntimePath }),
     ...(options.dataRuntimePath === undefined ? {} : { dataRuntimePath: options.dataRuntimePath }),
     ...(options.transparentAsyncSources === undefined
       ? {}

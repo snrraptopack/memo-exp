@@ -1334,7 +1334,7 @@ The renderer helpers build on the public runtime isolation API:
 import {
   createApplicationRuntime,
   runWithApplicationRuntime,
-} from '@memoized-dom/runtime';
+} from '@memoized-dom/runtime/server';
 import { createDataRuntime, runWithDataRuntime } from '@memoized-dom/data';
 import {
   createMemoryRouteHistory,
@@ -1386,17 +1386,15 @@ DOM:
 
 ```ts
 import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
-import { mount } from '@memoized-dom/runtime';
+import { hydrate } from '@memoized-dom/runtime/hydrate';
 import { App } from './App';
 
 setActiveDataRuntime(createDataRuntime());
 
-mount('root', App, {
-  hydration: {
-    recover: true,
-    onRecover(error) {
-      console.error('Hydration recovered:', error.message);
-    },
+hydrate('root', App, {
+  recover: true,
+  onRecover(error) {
+    console.error('Hydration recovered:', error.message);
   },
 });
 ```

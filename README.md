@@ -38,7 +38,7 @@ The repository is a Bun workspace with independent packages:
 | Package | Ownership |
 |---|---|
 | `@memoized-dom/data` | Standalone browser-first fetch resources, active sharing, actions, validation, and optimistic transactions |
-| `@memoized-dom/runtime` | Dependency-free browser registry, routing, regions, lifecycle, and DOM updates |
+| `@memoized-dom/runtime` | Dependency-free client registry, regions, lifecycle, and DOM updates; hydration, HMR, and server hosts use explicit subpaths |
 | `@memoized-dom/compiler` | Parser-neutral ESTree analysis/linking with swappable Yuku and TSRX frontends |
 | `@memoized-dom/vite` | Vite 8 graph collection, linked transforms, compiler feedback, and component HMR |
 
@@ -57,6 +57,10 @@ const output = compileModules(modules, {
 ```
 
 The default emitted runtime import is `@memoized-dom/runtime`.
+Browser-only applications retain neither hydration nor server host code.
+Hydrating clients import `@memoized-dom/runtime/hydrate`; framework HMR uses
+`@memoized-dom/runtime/hot`; server integrations use
+`@memoized-dom/runtime/server`.
 All compiler paths emit canonical keys such as
 `./src/state.ts#store.selectedId`. `compileModules()` resolves named imports
 and exact/receiver-bounded function summaries. Pass

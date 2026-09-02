@@ -3,7 +3,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { renderToString, renderToStringAsync } from '@memoized-dom/server';
-import { hydrate, registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import { registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import { hydrate } from '@memoized-dom/runtime/hydrate';
 import { parseHTML } from 'linkedom';
 import { TABLE_SOURCE, DASHBOARD_SOURCE, compileScenario } from './scenarios';
 

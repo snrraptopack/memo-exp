@@ -3,7 +3,7 @@ import {
   setActiveApplicationRuntime,
   runWithApplicationRuntime,
   unregisterSubtree,
-} from '@memoized-dom/runtime';
+} from '@memoized-dom/runtime/server';
 import {
   createMemoryRouteHistory,
   createRouteRuntime,

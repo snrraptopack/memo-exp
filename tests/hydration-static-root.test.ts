@@ -12,12 +12,12 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { compile } from '@memoized-dom/compiler';
 import {
   getActiveEnvironment,
-  hydrate,
   registerRootFactory,
   resetScheduler,
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
+import { hydrate } from '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');

@@ -93,32 +93,13 @@ export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
 export { rootNodes } from './jsx-dom';
 export { decodeListKey, encodeListKey } from './list-keys';
-export { hydrate, mount, registerRootFactory } from './mount';
+export { mount, registerRootFactory } from './mount';
 export type {
-  HydrateOptions,
   MountableComponent,
   MountTarget,
   MountedApplication,
   RootMountContext,
 } from './mount';
-export {
-  createHydrationCursor,
-  HydrationDocument,
-  HydrationMismatchError,
-  HydrationMarkerIndex,
-  HydrationNodePlan,
-  LocalHydrationCursor,
-  parseHydrationMarker,
-} from './hydration';
-export type {
-  ClaimedHydrationRange,
-  HydrationCloseMarker,
-  HydrationMarker,
-  HydrationMarkerKind,
-  HydrationNodeExpectation,
-  HydrationOpenMarker,
-  PairedHydrationMarkerKind,
-} from './hydration';
 export {
   createDelegatedEventBinding,
   setDelegatedEvent,
@@ -126,13 +107,6 @@ export {
 } from './delegated-events';
 export { patchDomProps, setDomValue } from './dom-props';
 export { classValue, setClassValue, setStyleValue } from './dom-values';
-export {
-  applyHotUpdate,
-  disposeHotModule,
-  registerHotComponent,
-} from './hot';
-export type { HotComponentFactory, HotComponentUpdate } from './hot';
-
 export { createCondRegion } from './cond';
 export { registerProps, setProps } from './props';
 export type { CondRegion, CondEntry, CondBranchFactory } from './cond';

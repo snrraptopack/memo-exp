@@ -10,13 +10,15 @@ import {
   diagnoseModules,
 } from '@memoized-dom/compiler';
 import {
-  applyHotUpdate,
   register,
-  registerHotComponent,
   registeredIds,
   unregister,
-  type HotComponentFactory,
 } from '@memoized-dom/runtime/testing';
+import {
+  applyHotUpdate,
+  registerHotComponent,
+  type HotComponentFactory,
+} from '@memoized-dom/runtime/hot';
 
 afterEach(() => {
   document.body.replaceChildren();

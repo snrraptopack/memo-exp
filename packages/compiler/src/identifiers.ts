@@ -12,6 +12,7 @@ import { toIdentifier, walkAst, type BaseNode } from './ast';
 
 export class GeneratedIdentifiers {
   readonly runtimeId: string;
+  readonly hotRuntimeId: string;
   readonly routerId: string;
   readonly dataRuntimeId: string;
   private readonly reserved = new Set<string>();
@@ -20,6 +21,7 @@ export class GeneratedIdentifiers {
   constructor(program: BaseNode) {
     walkIdentifiers(program, (name) => this.reserved.add(name));
     this.runtimeId = this.generate('MD').name;
+    this.hotRuntimeId = this.generate('MDH').name;
     this.routerId = this.generate('MR').name;
     this.dataRuntimeId = this.generate('MDD').name;
   }
@@ -110,6 +112,14 @@ export function componentId(
 
 export function md(owner: IdentifierOwner, name: string): t.MemberExpression {
   return requireIdentifiers(owner).runtimeMember(name);
+}
+
+export function mdHot(owner: IdentifierOwner, name: string): t.MemberExpression {
+  const identifiers = requireIdentifiers(owner);
+  return astFactory.memberExpression(
+    astFactory.identifier(identifiers.hotRuntimeId),
+    astFactory.identifier(name),
+  );
 }
 
 export function mr(owner: IdentifierOwner, name: string): t.MemberExpression {

@@ -12,13 +12,15 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { compile } from '@memoized-dom/compiler';
 import { renderToString } from '@memoized-dom/server';
 import {
-  hydrate,
-  HydrationMismatchError,
   registerRootFactory,
   resetScheduler,
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
+import {
+  hydrate,
+  HydrationMismatchError,
+} from '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');

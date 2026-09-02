@@ -24,7 +24,7 @@ import {
   unregisterSubtree,
   type ApplicationRuntime,
   type DocumentLike,
-} from '@memoized-dom/runtime';
+} from '@memoized-dom/runtime/server';
 import { StringDocument, type StringRenderableNode } from './string-document';
 import {
   createMemoryRouteHistory,

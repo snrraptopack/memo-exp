@@ -180,7 +180,8 @@ export async function compileGraph(
             code,
             compiled.metadata[id]!,
             id,
-            options.runtimePath ?? '@memoized-dom/runtime',
+            options.hotRuntimePath ??
+              `${options.runtimePath ?? '@memoized-dom/runtime'}/hot`,
             rootId,
           )
         : code,
