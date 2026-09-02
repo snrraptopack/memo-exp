@@ -97,6 +97,8 @@ the same hardware, Chrome build, power mode, and headless/headed configuration
 for regression comparisons. `BENCH_SMOOTHNESS_FRAMEWORKS`,
 `BENCH_SMOOTHNESS_COUNT`, `BENCH_SMOOTHNESS_SAMPLES`, and
 `BENCH_SMOOTHNESS_FRAMES` control the run without changing source.
+`BENCH_SMOOTHNESS_OUTPUT` writes an isolated run to a different file so the
+checked-in baseline does not need to be replaced during comparisons.
 
 “Good frames” are intervals no greater than 1.5 times the idle refresh period
 measured immediately before the trace. “Dropped frames” estimate missed

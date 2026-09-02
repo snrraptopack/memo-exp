@@ -163,8 +163,12 @@ const output: SmoothnessRun = {
   platform: `${process.platform} ${process.arch}`,
   results,
 };
+const outputPath = resolve(
+  root,
+  process.env.BENCH_SMOOTHNESS_OUTPUT ?? 'smoothness-latest.json',
+);
 writeFileSync(
-  resolve(root, 'smoothness-latest.json'),
+  outputPath,
   `${JSON.stringify(output, null, 2)}\n`,
 );
 
@@ -198,7 +202,7 @@ for (const result of results) {
   );
 }
 console.log(
-  '\nFull results written to bench/frameworks/application/smoothness-latest.json',
+  `\nFull results written to ${outputPath}`,
 );
 
 async function measureInteractions(
