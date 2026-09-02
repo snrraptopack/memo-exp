@@ -52,14 +52,15 @@ explicitly instead of being interpreted through a fallback parser.
 
 The experimental lowering currently supports statement-container function
 bodies, `@if`, `@for (... of ...)` with `index`, `key`, and `@empty`, root
-`@switch`, and scoped style extraction. The implementation is isolated under
-`src/ast/tsrx` so extension nodes never enter the compiler's analysis or
-emission passes.
+`@switch`, finite dynamic intrinsic/component choices, and scoped style
+extraction. The implementation is isolated under `src/ast/tsrx` so extension
+nodes never enter the compiler's analysis or emission passes. See the repository
+`tsrx.md` for conceptual JSX equivalents and the exact host-profile matrix.
 
 Lazy destructuring, `@try`/`@pending`/`@catch`, nested statement containers,
-branch-local setup, and TSRX expression-name dynamic tags currently produce
-explicit diagnostics. They need Memoized DOM-specific reactivity or runtime
-semantics before they can be lowered safely.
+branch-local setup, style expressions, and dynamic selectors without provable
+finite candidates currently produce explicit diagnostics. They need Memoized
+DOM-specific reactivity or runtime semantics before they can be lowered safely.
 
 The public `createExtensionEstreeFrontend()` utility creates a strict extension
 map for specialized frontends. Virtual or extensionless modules must select a

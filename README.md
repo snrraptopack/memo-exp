@@ -13,6 +13,8 @@ Start with:
 - `data-layer-improvement-plan.md` for the researched implementation priorities
   connecting async reactivity, cache policy, ownership, and server transport.
 - `architecture-review.md` for current implementation status and priorities.
+- `tsrx.md` for the optional TSRX frontend, conceptual TSX equivalents, and the
+  exact Memoized DOM host-profile support matrix.
 - `bench/README.md` for benchmark suites and their latest measurements.
 
 Prerequisites: Node.js 24.11 or newer and Bun.
@@ -37,12 +39,12 @@ The repository is a Bun workspace with independent packages:
 |---|---|
 | `@memoized-dom/data` | Standalone browser-first fetch resources, active sharing, actions, validation, and optimistic transactions |
 | `@memoized-dom/runtime` | Dependency-free browser registry, routing, regions, lifecycle, and DOM updates |
-| `@memoized-dom/compiler` | Babel-based analysis, linking, and TypeScript/JSX emission |
+| `@memoized-dom/compiler` | Parser-neutral ESTree analysis/linking with swappable Yuku and TSRX frontends |
 | `@memoized-dom/vite` | Vite 8 graph collection, linked transforms, compiler feedback, and component HMR |
 
-Root dependencies are development tools only. Babel dependencies belong to the
-compiler package; Happy DOM, Vitest, Puppeteer, esbuild, TypeScript, and type
-packages are not runtime dependencies.
+Root dependencies are development tools only. Happy DOM, Vitest, Puppeteer,
+esbuild, TypeScript, and type packages are not runtime dependencies. The
+compiler does not depend on Babel or OXC.
 
 Compile a connected graph when reactive state crosses file boundaries:
 
