@@ -31,6 +31,9 @@ describe('prefer const guidance', () => {
     expect(String(diagnostic.messageText)).toContain(
       "route-to references undeclared route '/missing'",
     );
+    expect(sourceTextAtDiagnostic(diagnostic)).toBe(
+      'route-to="/missing"',
+    );
   });
 
   it('surfaces the compiler diagnostic verbatim in the owning file', () => {
@@ -170,6 +173,20 @@ function memoDiagnostics(
   return service
     .getSemanticDiagnostics(fileName)
     .filter((diagnostic) => diagnostic.source === 'memoized-dom');
+}
+
+function sourceTextAtDiagnostic(diagnostic: ts.Diagnostic): string {
+  if (
+    diagnostic.file === undefined ||
+    diagnostic.start === undefined ||
+    diagnostic.length === undefined
+  ) {
+    return '';
+  }
+  return diagnostic.file.text.slice(
+    diagnostic.start,
+    diagnostic.start + diagnostic.length,
+  );
 }
 
 function languageService(

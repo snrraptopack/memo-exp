@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compile,
   compileDetailed,
+  compileModules,
   experimentalTsrxEstreeFrontend,
   parseTsrxEstree,
 } from '../packages/compiler/src';
@@ -81,6 +82,42 @@ describe('experimental TSRX frontend', () => {
     expect(code).toContain('createCondRegion');
     expect(code).toContain('switch (value)');
   });
+
+  it('maps finite dynamic intrinsic tags onto the existing dynamic region planner', () => {
+    const code = compile(
+      `
+        export function App({ compact }: { compact: boolean }) @{
+          <main>
+            <{compact ? 'span' : 'section'}>Content</{compact ? 'span' : 'section'}>
+          </main>
+        }
+      `,
+      { moduleId: './DynamicIntrinsic.tsrx' },
+    );
+
+    expect(code).toContain('createCondRegion');
+    expect(code).toContain('createElement("span")');
+    expect(code).toContain('createElement("section")');
+    expect(code).not.toContain('createElement("TsrxDynamic');
+  });
+
+  it('links finite dynamic component tags across TSRX modules', () => {
+    const output = compileModules({
+      './App.tsrx': `
+        import { Card } from './Card.tsrx';
+        import { List } from './List.tsrx';
+        export function App({ compact }: { compact: boolean }) @{
+          <main><{compact ? Card : List} /></main>
+        }
+      `,
+      './Card.tsrx': `export function Card() @{ <article>Card</article> }`,
+      './List.tsrx': `export function List() @{ <ul><li>List</li></ul> }`,
+    });
+
+    expect(output['./App.tsrx']).toContain('createCondRegion');
+    expect(output['./App.tsrx']).toContain('Card(');
+    expect(output['./App.tsrx']).toContain('List(');
+  });
   it('extracts scoped styles, annotates JSX class names with hashes, and strips style tags', () => {
     const source = `
       export function Card() @{
@@ -129,13 +166,17 @@ describe('experimental TSRX frontend', () => {
       'export function App() @{ @try { <p>Ready</p> } @pending { <p>Wait</p> } }',
       'runtime semantics',
     ],
-    [
-      'dynamic tags',
-      'export function App({ tag }) @{ <{tag}>Dynamic</{tag}> }',
-      'dynamic <{expression}> tags are not supported yet',
-    ],
   ])('rejects unsupported %s intentionally', (_name, source, message) => {
     expect(() => compile(source, { moduleId: './Unsupported.tsrx' }))
       .toThrow(message);
+  });
+
+  it('rejects a dynamic tag whose expression has no finite candidates', () => {
+    expect(() =>
+      compile(
+        'export function App({ tag }: { tag: string }) @{ <{tag}>Dynamic</{tag}> }',
+        { moduleId: './UnboundedTag.tsrx' },
+      ),
+    ).toThrow('has no finite string or linked-component candidates');
   });
 });

@@ -78,6 +78,9 @@ Because the compiler sees the whole linked graph, it rejects undeclared
 destinations, non-terminal catch-alls, ambiguous patterns, and missing, extra, or
 duplicate route parameters. These same diagnostics are exposed through
 `diagnoseModules`, Vite, and `@memoized-dom/language-service`.
+The structured diagnostic includes an authored start and end location when the
+frontend supplies a node range, allowing editor integrations to highlight the
+offending expression or JSX attribute precisely.
 
 Projects that do not already include the compiler's global JSX declarations can
 load the published directive types with `"types": ["@memoized-dom/compiler/jsx"]`

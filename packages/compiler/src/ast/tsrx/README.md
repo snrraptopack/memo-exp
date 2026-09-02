@@ -45,6 +45,7 @@ The TSRX path is isolated from the standard Yuku parser.
 | Loop-local setup | Map callback block ending in a JSX return |
 | `@empty` | Conditional expression selecting the map or empty template |
 | Root `@switch` | Exhaustive return-oriented `SwitchStatement` consumed by the component return planner |
+| `<{expression}>` dynamic tags | A generated component-local selector consumed by the existing finite intrinsic/component candidate planner |
 | Scoped `<style>` | Extracted as CSS and native JSX receives TSRX's stable scoped class hash |
 
 
@@ -66,7 +67,7 @@ nodes or receiving guessed semantics:
 | Nested `@switch` | Only root exhaustive switches currently map exactly to the return planner |
 | C-style `@for` and `@for (... in ...)` | Existing optimized list semantics are based on iterable `.map()` regions |
 | Keyed loop fragments or multiple loop roots | Existing keyed list analysis requires one JSX element carrying `key` |
-| `<{expression}>` dynamic tags | Their expression-name shape does not yet match the compiler's TSX dynamic-tag normalizer |
+| Dynamic tags without finite intrinsic or linked-component candidates | Existing compiler semantics require a statically bounded host/component set |
 | Server submodules/imports | Need a client/server graph and serialization contract |
 
 Because TSRX remains beta, `@tsrx/core` is pinned to an exact version. Review its

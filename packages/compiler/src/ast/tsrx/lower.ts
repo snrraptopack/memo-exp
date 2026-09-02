@@ -29,6 +29,15 @@ const TSRX_EXPRESSION_NODES = new Set([
   'JSXTryExpression',
 ]);
 
+const FUNCTION_NODES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
+
 function fields(node: BaseNode): Record<string, unknown> {
   return node as unknown as Record<string, unknown>;
 }
@@ -73,6 +82,132 @@ function blockStatement(body: BaseNode[]): BaseNode {
 
 function expressionContainer(expression: BaseNode): BaseNode {
   return { type: 'JSXExpressionContainer', expression } as BaseNode;
+}
+
+function dynamicTagDeclaration(name: string, init: BaseNode): BaseNode {
+  return {
+    type: 'VariableDeclaration',
+    kind: 'const',
+    declarations: [{
+      type: 'VariableDeclarator',
+      id: { type: 'Identifier', name },
+      init,
+    }],
+  } as BaseNode;
+}
+
+function collectIdentifierNames(root: BaseNode): Set<string> {
+  const names = new Set<string>();
+  const seen = new WeakSet<object>();
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    if (record.type === 'Identifier' && typeof record.name === 'string') {
+      names.add(record.name);
+    }
+    for (const [key, child] of Object.entries(record)) {
+      if (key !== 'loc' && key !== 'metadata') visit(child);
+    }
+  };
+  visit(root);
+  return names;
+}
+
+/**
+ * Turn TSRX expression tag names into ordinary finite-candidate JSX selectors.
+ * The declaration remains inside the owning component factory, so the normal
+ * compiler dynamic-tag pass owns reactivity, linked components, and errors.
+ */
+function prepareDynamicTags(program: BaseNode): void {
+  const names = collectIdentifierNames(program);
+  let counter = 0;
+  const freshName = (): string => {
+    let name: string;
+    do {
+      name = `TsrxDynamic${counter++}`;
+    } while (names.has(name));
+    names.add(name);
+    return name;
+  };
+  const seen = new WeakSet<object>();
+
+  const rewriteTemplate = (
+    node: BaseNode,
+    declarations: BaseNode[],
+    root: BaseNode,
+  ): void => {
+    if (node !== root && FUNCTION_NODES.has(node.type)) return;
+    if (node.type === 'JSXElement') {
+      const element = fields(node);
+      const opening = element.openingElement;
+      if (isNode(opening)) {
+        const openingFields = fields(opening);
+        const originalName = openingFields.name;
+        if (isNode(originalName) && originalName.type === 'JSXExpressionContainer') {
+          const expression = fields(originalName).expression;
+          if (!isNode(expression) || expression.type === 'JSXEmptyExpression') {
+            fail(originalName, 'dynamic tag requires an expression');
+          }
+          const selector = freshName();
+          declarations.push(dynamicTagDeclaration(selector, cloneNode(expression)));
+          openingFields.name = { type: 'JSXIdentifier', name: selector };
+          delete openingFields.isDynamic;
+          const closing = element.closingElement;
+          if (isNode(closing)) {
+            fields(closing).name = { type: 'JSXIdentifier', name: selector };
+            delete fields(closing).isDynamic;
+          }
+          delete element.isDynamic;
+        }
+      }
+    }
+
+    const keys = ESTREE_VISITOR_KEYS[node.type] ?? Object.keys(node);
+    for (const key of keys) {
+      if (key === 'loc' || key === 'metadata') continue;
+      const value = fields(node)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (isNode(child)) rewriteTemplate(child, declarations, root);
+        }
+      } else if (isNode(value)) {
+        rewriteTemplate(value, declarations, root);
+      }
+    }
+  };
+
+  const visit = (node: BaseNode): void => {
+    if (seen.has(node)) return;
+    seen.add(node);
+    if (FUNCTION_NODES.has(node.type)) {
+      const body = fields(node).body;
+      if (isNode(body) && body.type === 'JSXCodeBlock') {
+        const codeBlock = body as JSXCodeBlock;
+        if (codeBlock.render !== null) {
+          const declarations: BaseNode[] = [];
+          rewriteTemplate(codeBlock.render, declarations, codeBlock.render);
+          codeBlock.body.push(...declarations);
+        }
+      }
+    }
+    const keys = ESTREE_VISITOR_KEYS[node.type] ?? Object.keys(node);
+    for (const key of keys) {
+      if (key === 'loc' || key === 'metadata') continue;
+      const value = fields(node)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) if (isNode(child)) visit(child);
+      } else if (isNode(value)) {
+        visit(value);
+      }
+    }
+  };
+  visit(program);
 }
 
 function fragment(children: BaseNode[]): BaseNode {
@@ -338,7 +473,7 @@ function lowerNode(node: BaseNode): BaseNode {
   if (node.type === 'JSXOpeningElement') {
     const name = fields(node).name;
     if (isNode(name) && name.type === 'JSXExpressionContainer') {
-      fail(name, 'dynamic <{expression}> tags are not supported yet');
+      fail(name, 'dynamic tag escaped its owning function lowering');
     }
   }
   if (
@@ -408,5 +543,7 @@ export function lowerTsrxProgram(program: BaseNode): BaseNode {
   if (program.type !== 'Program') {
     throw new TypeError(`Expected a TSRX Program, received '${program.type}'`);
   }
-  return lowerNode(cloneNode(program));
+  const output = cloneNode(program);
+  prepareDynamicTags(output);
+  return lowerNode(output);
 }

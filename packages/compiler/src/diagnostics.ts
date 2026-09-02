@@ -15,12 +15,19 @@ export interface CompilerDiagnostic {
   moduleId?: string;
   line?: number;
   column?: number;
+  endLine?: number;
+  endColumn?: number;
 }
 
 interface ErrorLike {
   message?: unknown;
   moduleId?: unknown;
-  loc?: { line?: unknown; column?: unknown };
+  loc?: {
+    line?: unknown;
+    column?: unknown;
+    endLine?: unknown;
+    endColumn?: unknown;
+  };
 }
 
 const ansiEscape = /\x1B\[[0-?]*[ -/]*[@-~]/g;
@@ -67,6 +74,8 @@ export function toCompilerDiagnostic(
       : parseLocation === null
         ? undefined
         : Number(parseLocation[2]);
+  const endLine = typeof loc?.endLine === 'number' ? loc.endLine : undefined;
+  const endColumn = typeof loc?.endColumn === 'number' ? loc.endColumn : undefined;
   const prefix = marker === -1 ? '' : raw.slice(0, marker);
   const moduleId =
     (typeof error?.moduleId === 'string' ? error.moduleId : undefined) ??
@@ -81,6 +90,8 @@ export function toCompilerDiagnostic(
     ...(moduleId === undefined ? {} : { moduleId }),
     ...(line === undefined ? {} : { line }),
     ...(column === undefined ? {} : { column }),
+    ...(endLine === undefined ? {} : { endLine }),
+    ...(endColumn === undefined ? {} : { endColumn }),
   };
 }
 

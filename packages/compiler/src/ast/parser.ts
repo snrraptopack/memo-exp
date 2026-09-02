@@ -88,7 +88,12 @@ export function createExtensionEstreeFrontend(
 export class EstreeParseError extends SyntaxError {
   public readonly diagnostics: AstDiagnostic[];
   public readonly moduleId: string;
-  public readonly loc?: { line: number; column: number };
+  public readonly loc?: {
+    line: number;
+    column: number;
+    endLine?: number;
+    endColumn?: number;
+  };
 
   constructor(
     filename: string,
@@ -104,9 +109,17 @@ export class EstreeParseError extends SyntaxError {
     this.name = 'EstreeParseError';
     this.moduleId = filename;
     this.diagnostics = diagnostics;
-    const offset = first?.labels[0]?.start;
-    if (source !== undefined && offset !== undefined) {
-      this.loc = sourcePosition(offset, sourceLocations(source));
+    const label = first?.labels[0];
+    if (source !== undefined && label !== undefined) {
+      const lineStarts = sourceLocations(source);
+      const start = sourcePosition(label.start, lineStarts);
+      const end = sourcePosition(label.end, lineStarts);
+      this.loc = {
+        line: start.line,
+        column: start.column,
+        endLine: end.line,
+        endColumn: end.column,
+      };
     }
   }
 }

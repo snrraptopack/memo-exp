@@ -162,10 +162,11 @@ function compilerDiagnostic(
   diagnostic: CompilerDiagnostic,
 ): ts.DiagnosticWithLocation {
   const start = diagnosticStart(sourceFile, diagnostic);
+  const end = diagnosticEnd(typescript, sourceFile, diagnostic, start);
   return {
     file: sourceFile,
     start,
-    length: Math.min(1, Math.max(0, sourceFile.text.length - start)),
+    length: Math.max(1, Math.min(end, sourceFile.text.length) - start),
     category: typescript.DiagnosticCategory.Error,
     code: diagnosticCodes.compiler,
     source: diagnosticSource,
@@ -173,15 +174,53 @@ function compilerDiagnostic(
   };
 }
 
+function diagnosticEnd(
+  typescript: TypeScript,
+  sourceFile: ts.SourceFile,
+  diagnostic: CompilerDiagnostic,
+  start: number,
+): number {
+  if (
+    diagnostic.endLine !== undefined &&
+    diagnostic.endColumn !== undefined
+  ) {
+    const end = sourcePosition(
+      sourceFile,
+      diagnostic.endLine,
+      diagnostic.endColumn,
+    );
+    if (end !== null && end > start) return end;
+  }
+  const node = smallestNodeContaining(typescript, sourceFile, start);
+  return node === null ? start + 1 : Math.max(start + 1, node.end);
+}
+
+function smallestNodeContaining(
+  typescript: TypeScript,
+  sourceFile: ts.SourceFile,
+  position: number,
+): ts.Node | null {
+  let smallest: ts.Node | null = null;
+  const visit = (node: ts.Node): void => {
+    if (position < node.getStart(sourceFile) || position >= node.end) return;
+    smallest = node;
+    typescript.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return smallest;
+}
+
 function diagnosticStart(
   sourceFile: ts.SourceFile,
   diagnostic: CompilerDiagnostic,
 ): number {
   if (diagnostic.line !== undefined && diagnostic.column !== undefined) {
-    const line = Math.max(0, diagnostic.line - 1);
-    if (line < sourceFile.getLineStarts().length) {
-      return sourceFile.getPositionOfLineAndCharacter(line, diagnostic.column);
-    }
+    const position = sourcePosition(
+      sourceFile,
+      diagnostic.line,
+      diagnostic.column,
+    );
+    if (position !== null) return position;
   }
   const binding = diagnostic.message.match(/'([^']+)'/)?.[1];
   if (binding !== undefined) {
@@ -189,6 +228,16 @@ function diagnosticStart(
     if (position !== -1) return position;
   }
   return 0;
+}
+
+function sourcePosition(
+  sourceFile: ts.SourceFile,
+  oneBasedLine: number,
+  column: number,
+): number | null {
+  const line = Math.max(0, oneBasedLine - 1);
+  if (line >= sourceFile.getLineStarts().length) return null;
+  return sourceFile.getPositionOfLineAndCharacter(line, Math.max(0, column));
 }
 
 function normalizePath(fileName: string): string {

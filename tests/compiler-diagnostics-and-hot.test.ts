@@ -48,6 +48,12 @@ describe('compiler-owned diagnostics', () => {
     expect(graph[0]!.message).toContain(
       "cannot update per-instance derivation 'double'",
     );
+    expect(graph[0]).toMatchObject({
+      line: expect.any(Number),
+      column: expect.any(Number),
+      endLine: expect.any(Number),
+      endColumn: expect.any(Number),
+    });
   });
 });
 
