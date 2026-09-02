@@ -108,6 +108,70 @@ describe('experimental TSRX frontend', () => {
     expect(code).toContain('switch (value)');
   });
 
+  it('supports pure setup local to @if, @switch, and @empty branches', () => {
+    const conditional = compile(
+      `
+        export function App({ ready, value }: {
+          ready: boolean;
+          value: string;
+        }) @{
+          <main>
+            @if (ready) {
+              const label = value.toUpperCase();
+              <strong>{label}</strong>
+            } @else {
+              const label = value.toLowerCase();
+              <em>{label}</em>
+            }
+          </main>
+        }
+      `,
+      { moduleId: './BranchIf.tsrx' },
+    );
+    expect(conditional).toContain('createElement("strong")');
+    expect(conditional).toContain('createElement("em")');
+    expect(conditional).toContain('createCondRegion');
+
+    const switched = compile(
+      `
+        export function App({ value }: { value: number }) @{
+          @switch (value) {
+            @case 1: {
+              const oneLabel = 'One';
+              <strong>{oneLabel}</strong>
+            }
+            @default: {
+              const otherLabel = 'Other';
+              <em>{otherLabel}</em>
+            }
+          }
+        }
+      `,
+      { moduleId: './BranchSwitch.tsrx' },
+    );
+    expect(switched).toContain('createElement("strong")');
+    expect(switched).toContain('createElement("em")');
+    expect(switched).toContain('switch (value)');
+
+    const empty = compile(
+      `
+        export function App({ items }: { items: string[] }) @{
+          <main>
+            @for (const item of items) { <span>{item}</span> }
+            @empty {
+              const label = 'Nothing here';
+              <em>{label}</em>
+            }
+          </main>
+        }
+      `,
+      { moduleId: './BranchEmpty.tsrx' },
+    );
+    expect(empty).toContain('createListRegion');
+    expect(empty).toContain('createElement("em")');
+    expect(empty).toContain('createCondRegion');
+  });
+
   it('maps finite dynamic intrinsic tags onto the existing dynamic region planner', () => {
     const code = compile(
       `

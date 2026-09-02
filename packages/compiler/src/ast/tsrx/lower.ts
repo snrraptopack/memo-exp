@@ -270,13 +270,15 @@ function lowerTemplateSequence(nodes: BaseNode[]): BaseNode {
 
 function lowerTemplateBlockExpression(block: BaseNode): BaseNode {
   const { setup, template } = templateBlockParts(block);
-  if (setup.length > 0) {
-    fail(
-      setup[0]!,
-      'branch-local setup is not supported by the experimental direct lowering yet',
-    );
-  }
-  return lowerTemplateSequence(template);
+  const output = lowerTemplateSequence(template);
+  return setup.length === 0
+    ? output
+    : inlineRenderCall(
+        blockStatement([
+          ...setup.map((statement) => lowerNode(statement)),
+          returnStatement(output),
+        ]),
+      );
 }
 
 function lowerIfExpression(node: JSXIfExpression): BaseNode {
@@ -404,14 +406,9 @@ function lowerTemplateChild(node: BaseNode): BaseNode {
 }
 
 function returningBlock(block: BaseNode): BaseNode {
-  const { setup, template } = templateBlockParts(block);
-  if (setup.length > 0) {
-    fail(
-      setup[0]!,
-      'control-flow branch setup is not supported by the current component return planner',
-    );
-  }
-  return blockStatement([returnStatement(lowerTemplateSequence(template))]);
+  return blockStatement([
+    returnStatement(lowerTemplateBlockExpression(block)),
+  ]);
 }
 
 function lowerRootIf(node: JSXIfExpression): BaseNode {
@@ -467,13 +464,13 @@ function lowerFunctionCodeBlock(node: JSXCodeBlock): BaseNode {
  * The shared compiler pass expands this call and applies the same pure-setup
  * rules used by an equivalent TSX IIFE.
  */
-function lowerCodeBlockExpression(node: JSXCodeBlock): BaseNode {
+function inlineRenderCall(body: BaseNode): BaseNode {
   return {
     type: 'CallExpression',
     callee: {
       type: 'ArrowFunctionExpression',
       params: [],
-      body: lowerFunctionCodeBlock(node),
+      body,
       generator: false,
       async: false,
       expression: false,
@@ -481,6 +478,10 @@ function lowerCodeBlockExpression(node: JSXCodeBlock): BaseNode {
     arguments: [],
     optional: false,
   } as BaseNode;
+}
+
+function lowerCodeBlockExpression(node: JSXCodeBlock): BaseNode {
+  return inlineRenderCall(lowerFunctionCodeBlock(node));
 }
 
 function lowerNode(node: BaseNode): BaseNode {

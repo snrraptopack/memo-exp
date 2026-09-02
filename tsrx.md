@@ -103,6 +103,29 @@ Conceptually:
 A root `@if` is conceptually an ordinary return-oriented `if` chain. Both forms
 reuse Memoized DOM's existing conditional-region analysis and ownership.
 
+Pure declarations may stay local to a branch. Conceptually, that branch becomes
+the same inline render helper shown for nested statement containers:
+
+```tsx
+@if (ready) {
+  const label = title.toUpperCase();
+  <strong>{label}</strong>
+}
+```
+
+is equivalent to the true arm of:
+
+```tsx
+ready
+  ? (() => {
+      const label = title.toUpperCase();
+      return <strong>{label}</strong>;
+    })()
+  : null
+```
+
+The same rule applies to `@switch` cases and `@empty` blocks.
+
 ## Lists, indexes, keys, and empty output
 
 ```tsx
@@ -208,7 +231,7 @@ not a runtime `<style>` DOM node. Upstream style-expression composition such as
 | Finite dynamic intrinsic/component expressions | Supported |
 | Function-owned scoped `<style>` | Supported |
 | Nested `@{ ... }` statement containers with pure setup | Supported |
-| Branch-local setup in `@if`, `@switch`, or `@empty` | Not yet supported |
+| Pure branch-local setup in `@if`, `@switch`, or `@empty` | Supported |
 | Nested or expression-position `@switch` | Not yet supported |
 | Lazy `&{ ... }` / `&[ ... ]` destructuring | Not yet supported |
 | `@try` / `@pending` / `@catch` | Not yet supported |
