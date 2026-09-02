@@ -1,5 +1,6 @@
 import { cloneNode } from '../builders';
-import { ESTREE_VISITOR_KEYS } from '../walk';
+import { analyzeScope, extractPatternIdentifiers, type Scope } from '../scope';
+import { ESTREE_VISITOR_KEYS, walkAst } from '../walk';
 import type { BaseNode } from '../types';
 import type {
   JSXCodeBlock,
@@ -208,6 +209,58 @@ function prepareDynamicTags(program: BaseNode): void {
     }
   };
   visit(program);
+}
+
+function lazyBindingIdentifiers(program: BaseNode): Set<BaseNode> {
+  const identifiers = new Set<BaseNode>();
+  walkAst(program, {
+    enter(node) {
+      if (
+        (node.type !== 'ObjectPattern' && node.type !== 'ArrayPattern') ||
+        fields(node).lazy !== true
+      ) {
+        return;
+      }
+      for (const identifier of extractPatternIdentifiers(node)) {
+        identifiers.add(identifier);
+      }
+    },
+  });
+  return identifiers;
+}
+
+function visitScopes(scope: Scope, visit: (scope: Scope) => void): void {
+  visit(scope);
+  for (const child of scope.children) visitScopes(child, visit);
+}
+
+function prepareLazyPatterns(program: BaseNode): void {
+  const identifiers = lazyBindingIdentifiers(program);
+  if (identifiers.size > 0) {
+    const analysis = analyzeScope(program);
+    visitScopes(analysis.rootScope, (scope) => {
+      for (const binding of scope.bindings.values()) {
+        if (!identifiers.has(binding.identifier)) continue;
+        const violation = binding.constantViolations[0];
+        if (violation !== undefined) {
+          fail(
+            violation,
+            `lazy binding '${binding.name}' cannot be assigned directly; write the source property instead`,
+          );
+        }
+      }
+    });
+  }
+  walkAst(program, {
+    enter(node) {
+      if (
+        (node.type === 'ObjectPattern' || node.type === 'ArrayPattern') &&
+        fields(node).lazy === true
+      ) {
+        delete fields(node).lazy;
+      }
+    },
+  });
 }
 
 function fragment(children: BaseNode[]): BaseNode {
@@ -511,12 +564,6 @@ function lowerNode(node: BaseNode): BaseNode {
       fail(name, 'dynamic tag escaped its owning function lowering');
     }
   }
-  if (
-    (node.type === 'ObjectPattern' || node.type === 'ArrayPattern') &&
-    fields(node).lazy === true
-  ) {
-    fail(node, 'lazy destructuring requires explicit reactive binding semantics');
-  }
   if (node.type === 'JSXIfExpression') {
     return lowerIfExpression(node as JSXIfExpression);
   }
@@ -579,6 +626,7 @@ export function lowerTsrxProgram(program: BaseNode): BaseNode {
     throw new TypeError(`Expected a TSRX Program, received '${program.type}'`);
   }
   const output = cloneNode(program);
+  prepareLazyPatterns(output);
   prepareDynamicTags(output);
   return lowerNode(output);
 }

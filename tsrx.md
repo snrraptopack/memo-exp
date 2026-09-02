@@ -83,6 +83,32 @@ Both forms use the shared JSX render-function planner. Nested setup therefore
 has the same purity rules as TSX render helpers; it is not a lifecycle hook or
 an independently mounted component.
 
+## Lazy destructuring
+
+TSRX `&{ ... }` and `&[ ... ]` patterns use Memoized DOM's native reactive
+destructuring analysis. The frontend removes the lazy sigil while preserving
+the authored pattern, types, defaults, aliases, and nesting; the compiler then
+replays those bindings whenever their reactive source changes.
+
+```tsx
+function UserCard(&{ name, age }: Props) @{
+  <article><h2>{name}</h2><p>{age}</p></article>
+}
+```
+
+Conceptually this uses the same component contract as ordinary destructuring:
+
+```tsx
+function UserCard({ name, age }: Props) {
+  return <article><h2>{name}</h2><p>{age}</p></article>;
+}
+```
+
+In Memoized DOM the second form is already reactive rather than a permanent
+snapshot. Direct assignments to a lazy binding are rejected because ordinary
+JavaScript destructuring does not write through to the source property. Write
+the source member explicitly when mutation is intended.
+
 ## Conditional output
 
 Nested `@if` branches are the template form of a conditional expression:
@@ -254,7 +280,7 @@ not a runtime `<style>` DOM node. Upstream style-expression composition such as
 | Nested `@{ ... }` statement containers with pure setup | Supported |
 | Pure branch-local setup in `@if`, `@switch`, or `@empty` | Supported |
 | Nested or expression-position `@switch` | Supported |
-| Lazy `&{ ... }` / `&[ ... ]` destructuring | Not yet supported |
+| Lazy `&{ ... }` / `&[ ... ]` destructuring | Supported through native reactive replay; direct binding writes are rejected |
 | `@try` / `@pending` / `@catch` | Not yet supported |
 | Style expressions and style composition | Not yet supported |
 | Server submodules and identifier-source imports | Not yet supported |

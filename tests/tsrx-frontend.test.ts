@@ -246,6 +246,84 @@ describe('experimental TSRX frontend', () => {
     expect(code).toContain('createElement("article")');
     expect(code).toContain('createCondRegion');
   });
+
+  it('maps lazy destructuring onto native reactive destructuring replay', () => {
+    const output = compileModules({
+      './App.tsrx': `
+        import { UserCard } from './UserCard.tsrx';
+        export function App({ name, age }: {
+          name: string;
+          age: number;
+        }) @{ <UserCard {name} {age} /> }
+      `,
+      './UserCard.tsrx': `
+        type Props = { name: string; age: number };
+        export function UserCard(&{ name, age }: Props) @{
+          <article><h2>{name}</h2><p>{age}</p></article>
+        }
+      `,
+    });
+
+    expect(output['./UserCard.tsrx']).not.toContain('__lazy');
+    expect(output['./UserCard.tsrx']).toContain('createElement("article")');
+    expect(output['./App.tsrx']).toContain('UserCard(');
+
+    const local = compile(
+      `
+        export function App({ source }: {
+          source: { name: string };
+        }) @{
+          const &{ name } = source;
+          <strong>{name}</strong>
+        }
+      `,
+      { moduleId: './LocalLazy.tsrx' },
+    );
+    expect(local).not.toContain('__lazy');
+    expect(local).toContain('createElement("strong")');
+
+    const array = compile(
+      `
+        export function App({ source }: { source: string[] }) @{
+          const &[first] = source;
+          <strong>{first}</strong>
+        }
+      `,
+      { moduleId: './LocalLazyArray.tsrx' },
+    );
+    expect(array).not.toContain('__lazy');
+    expect(array).toContain('createElement("strong")');
+
+    const dynamic = compile(
+      `
+        export function Panel(
+          &{ as }: { as: 'section' | 'article' }
+        ) @{ <{as}>Content</{as}> }
+      `,
+      { moduleId: './LazyDynamic.tsrx' },
+    );
+    expect(dynamic).toContain('createElement("section")');
+    expect(dynamic).toContain('createElement("article")');
+    expect(dynamic).toContain('createCondRegion');
+
+    const writeSource = `
+      export function App(&{ value }: { value: number }) @{
+        function increment() { value++; }
+        <button onClick={increment}>{value}</button>
+      }
+    `;
+    const rejectedWrite = parseTsrxEstree(writeSource, {
+      filename: './LazyWrite.tsrx',
+    });
+    expect(rejectedWrite.diagnostics).toHaveLength(1);
+    expect(rejectedWrite.diagnostics[0]!.message).toContain(
+      "lazy binding 'value' cannot be assigned directly",
+    );
+    const writeLabel = rejectedWrite.diagnostics[0]!.labels[0]!;
+    expect(writeSource.slice(writeLabel.start, writeLabel.end)).toBe('value++');
+    expect(() => compile(writeSource, { moduleId: './LazyWrite.tsrx' }))
+      .toThrow("lazy binding 'value' cannot be assigned directly");
+  });
   it('extracts scoped styles, annotates JSX class names with hashes, and strips style tags', () => {
     const source = `
       export function Card() @{
@@ -301,11 +379,6 @@ describe('experimental TSRX frontend', () => {
   });
 
   it.each([
-    [
-      'lazy patterns',
-      'export function App({ source }) @{ const &{ name } = source; <p>{name}</p> }',
-      'reactive binding semantics',
-    ],
     [
       'async template control flow',
       'export function App() @{ @try { <p>Ready</p> } @pending { <p>Wait</p> } }',
