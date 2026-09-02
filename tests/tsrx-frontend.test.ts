@@ -155,6 +155,23 @@ describe('experimental TSRX frontend', () => {
     expect(code).toContain('createElement("main")');
   });
 
+  it('runs the official target-neutral TSRX semantic validation pass', () => {
+    const source = `
+      function unusedTemplate() {
+        <p>Invalid</p>;
+      }
+      export function App() @{ <main>{unusedTemplate.name}</main> }
+    `;
+    const parsed = parseTsrxEstree(source, { filename: './UnusedTemplate.tsrx' });
+
+    expect(parsed.diagnostics).toHaveLength(1);
+    expect(parsed.diagnostics[0]!.message).toContain(
+      'This TSRX template output is unused',
+    );
+    const label = parsed.diagnostics[0]!.labels[0]!;
+    expect(source.slice(label.start, label.end)).toBe('<p>Invalid</p>');
+  });
+
   it.each([
     [
       'lazy patterns',

@@ -8,11 +8,38 @@ declare module '@tsrx/core' {
     comments?: unknown[];
   }
 
+  export interface TsrxCoreError extends Error {
+    pos?: number;
+    end?: number;
+    raisedAt?: number;
+  }
+
+  export interface AnalyzeTsrxOptions {
+    collect?: boolean;
+    loose?: boolean;
+    typeOnly?: boolean;
+    to_ts?: boolean;
+    errors?: TsrxCoreError[];
+    comments?: unknown[];
+  }
+
+  export interface AnalyzeTsrxResult {
+    ast: unknown;
+    errors: TsrxCoreError[];
+    comments: unknown[];
+  }
+
   export function parseModule(
     source: string,
     filename: string,
     options?: ParseModuleOptions,
   ): unknown;
+
+  export function analyzeTsrx(
+    ast: unknown,
+    filename?: string | null,
+    options?: AnalyzeTsrxOptions,
+  ): AnalyzeTsrxResult;
 
   export function prepareStylesheetForRender(stylesheet: object): object;
   export function annotateWithHash(

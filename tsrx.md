@@ -198,9 +198,11 @@ The official draft separates core syntax and early errors from host-defined
 execution semantics. Memoized DOM is therefore a host profile with stronger
 rules where its static ownership model requires them.
 
-The frontend already uses the official parser and directly lowers its extended
-ESTree nodes without generating and reparsing source text. Before calling the
-profile conformant, it must also run `@tsrx/core`'s target-neutral
-`analyzeTsrx()` pass and merge those diagnostics with Memoized DOM's host-level
-diagnostics. That integration is the next correctness task exposed by this
-audit.
+The frontend uses both the official parser and its target-neutral
+`analyzeTsrx()` semantic pass, then directly lowers the extended ESTree nodes
+without generating and reparsing source text. Diagnostics implemented by that
+shared pass and Memoized DOM's stronger host-level restrictions use the same
+structured diagnostic path. In pinned core 0.1.63, some exported template
+validators remain target-owned rather than being invoked by `analyzeTsrx()`;
+Memoized DOM continues to enforce the corresponding restrictions during its
+host lowering.

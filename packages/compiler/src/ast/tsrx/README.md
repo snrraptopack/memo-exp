@@ -9,6 +9,7 @@ Nothing outside this boundary should need to understand TSRX-specific AST nodes.
 .tsrx source
   -> @tsrx/core parseModule()
   -> extended ESTree + JSX + TSRX nodes
+  -> @tsrx/core analyzeTsrx() target-neutral early errors
   -> lowerTsrxProgram()
   -> ordinary compiler-ready TS-ESTree + JSX
   -> existing Memoized DOM analysis and emission
