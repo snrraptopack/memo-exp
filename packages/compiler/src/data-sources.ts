@@ -13,10 +13,14 @@ import {
   astBindingAt,
   refreshAstAnalysis,
   type Ctx,
+  type TransparentPresentationComponent,
+  type TransparentPresentationPolicy,
 } from './context';
 import {
   ESTREE_VISITOR_KEYS,
+  analyzeScope,
   extractPatternIdentifiers,
+  isReferenceIdentifier,
   isValidIdentifier as isValidEstreeIdentifier,
   overwriteNode,
   replaceNode,
@@ -27,7 +31,12 @@ import {
 } from './ast';
 import { orderCallProps } from './components/calls';
 import { localBindingForProp } from './components/props';
-import { generatedIdentifier, md, mdd } from './identifiers';
+import {
+  generatedComponentIdentifier,
+  generatedIdentifier,
+  md,
+  mdd,
+} from './identifiers';
 import {
   registerStmt,
   type EmitScope,
@@ -112,7 +121,7 @@ function jsxTagName(element: t.JSXElement): string | null {
 
 function meaningfulGroupChildren(
   element: t.JSXElement,
-  errorAt: { buildCodeFrameError(message: string): Error },
+  errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
 ): Array<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer> {
   return element.children.filter((child): child is
     t.JSXElement | t.JSXFragment | t.JSXExpressionContainer => {
@@ -120,6 +129,7 @@ function meaningfulGroupChildren(
       if (child.value.trim() !== '') {
         throw errorAt.buildCodeFrameError(
           'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
+          child,
         );
       }
       return false;
@@ -140,18 +150,20 @@ function componentPolicy(
   element: t.JSXElement,
   expected: ReadonlySet<string>,
   label: string,
-  errorAt: { buildCodeFrameError(message: string): Error },
+  errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
 ): string {
   const tag = jsxTagName(element);
   if (tag === null || !expected.has(tag)) {
     throw errorAt.buildCodeFrameError(
       `memo-dom: Group child must be <${label} component={...} />`,
+      element,
     );
   }
   const attributes = element.openingElement.attributes;
   if (attributes.length !== 1 || !astFactory.isJSXAttribute(attributes[0])) {
     throw errorAt.buildCodeFrameError(
       `memo-dom: <${label}> requires exactly one component prop`,
+      element.openingElement,
     );
   }
   const attribute = attributes[0];
@@ -166,14 +178,135 @@ function componentPolicy(
   ) {
     throw errorAt.buildCodeFrameError(
       `memo-dom: <${label}> component must reference a component identifier`,
+      attribute,
     );
   }
   return value.expression.name;
 }
 
+function suspendDirective(
+  element: t.JSXElement,
+  errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
+): t.JSXAttribute | null {
+  const attribute = element.openingElement.attributes.find(
+    (candidate) =>
+      astFactory.isJSXAttribute(candidate) &&
+      astFactory.isJSXIdentifier(candidate.name, { name: 'suspend' }),
+  );
+  if (!astFactory.isJSXAttribute(attribute)) return null;
+  if (attribute.value !== null) {
+    throw errorAt.buildCodeFrameError(
+      "memo-dom: component suspend is a shorthand compiler directive; write 'suspend', not 'suspend={...}'",
+      attribute,
+    );
+  }
+  return attribute;
+}
+
+function consumeSuspendDirective(
+  element: t.JSXElement,
+  attribute: t.JSXAttribute,
+): void {
+  const index = element.openingElement.attributes.indexOf(attribute);
+  if (index !== -1) element.openingElement.attributes.splice(index, 1);
+}
+
+interface TsrxTryHandlerMetadata {
+  param: BaseNode | null;
+  resetParam: BaseNode | null;
+  output: BaseNode;
+}
+
+interface TsrxTryMetadata {
+  pending: BaseNode | null;
+  handler: TsrxTryHandlerMetadata | null;
+}
+
+function tsrxTryMetadata(node: BaseNode): TsrxTryMetadata | null {
+  const value = fields(node).__memoDomTsrxTry;
+  if (value === null || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const pending = record.pending;
+  const handler = record.handler;
+  if (pending !== null && !astFactory.isNode(pending)) return null;
+  if (handler !== null && (typeof handler !== 'object')) return null;
+  if (handler === null) return { pending: pending as BaseNode | null, handler: null };
+  const handlerRecord = handler as Record<string, unknown>;
+  if (!astFactory.isNode(handlerRecord.output)) return null;
+  return {
+    pending: pending as BaseNode | null,
+    handler: {
+      param: astFactory.isNode(handlerRecord.param)
+        ? handlerRecord.param as BaseNode
+        : null,
+      resetParam: astFactory.isNode(handlerRecord.resetParam)
+        ? handlerRecord.resetParam as BaseNode
+        : null,
+      output: handlerRecord.output as BaseNode,
+    },
+  };
+}
+
+function transparentSourceBindingName(
+  ctx: Ctx,
+  identifier: t.Identifier,
+): string | null {
+  const name = identifier.name;
+  const binding = astBindingAt(
+    ctx,
+    identifier as unknown as BaseNode,
+    name,
+  );
+  if (binding === undefined || !binding.references.includes(identifier as unknown as AstIdentifier)) {
+    return null;
+  }
+  if (ctx.transparentModuleSources.has(name)) return name;
+  const parent = ctx.astAnalysis?.parentByNode.get(binding.identifier) ?? null;
+  if (parent?.type !== 'VariableDeclarator') return null;
+  const init = childNode(parent, 'init');
+  if (
+    init === null ||
+    !astFactory.isCallExpression(init as unknown as t.Node) ||
+    !isCallToImported(
+      ctx,
+      identifier as unknown as BaseNode,
+      init as unknown as t.Expression,
+      ctx.transparentSourceFactories,
+    )
+  ) {
+    return null;
+  }
+  return name;
+}
+
+interface ComponentSourceProp {
+  prop: string;
+  source: string;
+}
+
+function componentSourceProps(
+  ctx: Ctx,
+  element: t.JSXElement,
+): ComponentSourceProp[] {
+  const sources = new Map<string, string>();
+  for (const attribute of element.openingElement.attributes) {
+    if (
+      !astFactory.isJSXAttribute(attribute) ||
+      !astFactory.isJSXIdentifier(attribute.name) ||
+      !astFactory.isJSXExpressionContainer(attribute.value) ||
+      !astFactory.isIdentifier(attribute.value.expression)
+    ) {
+      continue;
+    }
+    const source = transparentSourceBindingName(ctx, attribute.value.expression);
+    if (source !== null) sources.set(attribute.name.name, source);
+  }
+  return [...sources].map(([prop, source]) => ({ prop, source }));
+}
+
 function groupDataNames(
   element: t.JSXElement,
-  errorAt: { buildCodeFrameError(message: string): Error },
+  errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
 ): string[] {
   const attributes = element.openingElement.attributes;
   const data = attributes.find((attribute) =>
@@ -186,6 +319,7 @@ function groupDataNames(
   ) {
     throw errorAt.buildCodeFrameError(
       'memo-dom: <Group> requires data={source} or data={{ source, ... }}',
+      element.openingElement,
     );
   }
   const expression = data.value.expression;
@@ -193,6 +327,7 @@ function groupDataNames(
   if (!astFactory.isObjectExpression(expression)) {
     throw errorAt.buildCodeFrameError(
       'memo-dom: Group.data currently accepts a source identifier or an object of source identifiers',
+      expression,
     );
   }
   const names: string[] = [];
@@ -204,6 +339,7 @@ function groupDataNames(
     ) {
       throw errorAt.buildCodeFrameError(
         'memo-dom: every Group.data object value must be a source identifier',
+        property,
       );
     }
     names.push(property.value.name);
@@ -595,6 +731,394 @@ function wrapGroupSite(
   );
 }
 
+function suspendedGroupOutput(
+  ctx: Ctx,
+  content: t.JSXElement,
+  dependencies: readonly string[],
+  pending: string,
+  error: string,
+): t.JSXFragment {
+  const sources = sourceArray(dependencies);
+  const errorRead = (): t.CallExpression =>
+    astFactory.callExpression(mdd(ctx, 'resolvedValuesError'), [
+      cloneEstreeNode(sources, true),
+    ]);
+  const retry = astFactory.arrowFunctionExpression(
+    [],
+    astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
+      cloneEstreeNode(sources, true),
+    ]),
+  );
+  const committed = astFactory.jsxFragment(
+    astFactory.jsxOpeningFragment(),
+    astFactory.jsxClosingFragment(),
+    [cloneEstreeNode(content, true)],
+  );
+  const conditional = astFactory.conditionalExpression(
+    errorRead(),
+    policyElement(error, [
+      astFactory.jsxAttribute(
+        astFactory.jsxIdentifier('error'),
+        astFactory.jsxExpressionContainer(errorRead()),
+      ),
+      astFactory.jsxAttribute(
+        astFactory.jsxIdentifier('retry'),
+        astFactory.jsxExpressionContainer(retry),
+      ),
+    ]),
+    astFactory.conditionalExpression(
+      astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
+        cloneEstreeNode(sources, true),
+      ]),
+      policyElement(pending, []),
+      committed,
+    ),
+  );
+  (conditional as t.ConditionalExpression & {
+    __memoDomTransparentGroup?: boolean;
+  }).__memoDomTransparentGroup = true;
+  annotateTransparentSources(conditional, dependencies);
+  return astFactory.jsxFragment(
+    astFactory.jsxOpeningFragment(),
+    astFactory.jsxClosingFragment(),
+    [astFactory.jsxExpressionContainer(conditional)],
+  );
+}
+
+function renderOutputFragment(output: BaseNode): t.JSXFragment {
+  const child = cloneEstreeNode(output, true) as unknown as t.Expression;
+  return astFactory.jsxFragment(
+    astFactory.jsxOpeningFragment(),
+    astFactory.jsxClosingFragment(),
+    astFactory.isJSXElement(child) || astFactory.isJSXFragment(child)
+      ? [child]
+      : [astFactory.jsxExpressionContainer(child)],
+  );
+}
+
+function handlerOutput(
+  metadata: TsrxTryHandlerMetadata,
+  error: t.Expression,
+  reset: t.Expression,
+  programPath: { buildCodeFrameError(message: string, at?: t.Node): Error },
+): t.JSXFragment {
+  const params: t.Identifier[] = [];
+  const args: t.Expression[] = [];
+  if (metadata.param !== null) {
+    if (!astFactory.isIdentifier(metadata.param as unknown as t.Node)) {
+      throw programPath.buildCodeFrameError(
+        'memo-dom: TSRX @catch currently requires an identifier error parameter',
+        metadata.param as unknown as t.Node,
+      );
+    }
+    params.push(cloneEstreeNode(metadata.param as unknown as t.Identifier));
+    args.push(cloneEstreeNode(error));
+  }
+  if (metadata.resetParam !== null) {
+    if (!astFactory.isIdentifier(metadata.resetParam as unknown as t.Node)) {
+      throw programPath.buildCodeFrameError(
+        'memo-dom: TSRX @catch currently requires an identifier reset parameter',
+        metadata.resetParam as unknown as t.Node,
+      );
+    }
+    params.push(cloneEstreeNode(metadata.resetParam as unknown as t.Identifier));
+    args.push(cloneEstreeNode(reset));
+  }
+  const output = cloneEstreeNode(metadata.output, true) as unknown as t.Expression;
+  const call = astFactory.callExpression(
+    astFactory.arrowFunctionExpression(params, output),
+    args,
+  );
+  return renderOutputFragment(call as unknown as BaseNode);
+}
+
+function suspendedTsrxTryOutput(
+  ctx: Ctx,
+  component: t.JSXElement,
+  dependencies: readonly string[],
+  metadata: TsrxTryMetadata,
+  programPath: { buildCodeFrameError(message: string, at?: t.Node): Error },
+): t.JSXFragment {
+  const sources = sourceArray(dependencies);
+  const errorRead = (): t.CallExpression =>
+    astFactory.callExpression(mdd(ctx, 'resolvedValuesError'), [
+      cloneEstreeNode(sources, true),
+    ]);
+  const reset = astFactory.arrowFunctionExpression(
+    [],
+    astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
+      cloneEstreeNode(sources, true),
+    ]),
+  );
+  const errorOutput = metadata.handler === null
+    ? renderOutputFragment(
+        astFactory.callExpression(mdd(ctx, 'throwResolvedValuesError'), [
+          cloneEstreeNode(sources, true),
+        ]) as unknown as BaseNode,
+      )
+    : handlerOutput(
+        metadata.handler,
+        errorRead(),
+        reset,
+        programPath,
+      );
+  const pendingOutput = metadata.pending === null
+    ? astFactory.jsxFragment(
+        astFactory.jsxOpeningFragment(),
+        astFactory.jsxClosingFragment(),
+        [],
+      )
+    : renderOutputFragment(metadata.pending);
+  const conditional = astFactory.conditionalExpression(
+    errorRead(),
+    errorOutput,
+    astFactory.conditionalExpression(
+      astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
+        cloneEstreeNode(sources, true),
+      ]),
+      pendingOutput,
+      renderOutputFragment(component as unknown as BaseNode),
+    ),
+  );
+  (conditional as t.ConditionalExpression & {
+    __memoDomTransparentGroup?: boolean;
+  }).__memoDomTransparentGroup = true;
+  annotateTransparentSources(conditional, dependencies);
+  return astFactory.jsxFragment(
+    astFactory.jsxOpeningFragment(),
+    astFactory.jsxClosingFragment(),
+    [astFactory.jsxExpressionContainer(conditional)],
+  );
+}
+
+interface TsrxPolicyCapture {
+  binding: AstBinding;
+  prop: string;
+}
+
+function tsrxPolicyCaptures(
+  ctx: Ctx,
+  boundary: BaseNode,
+  output: BaseNode,
+  excluded: ReadonlySet<string>,
+): TsrxPolicyCapture[] {
+  const local = analyzeScope(output);
+  const captures = new Map<AstBinding, TsrxPolicyCapture>();
+  walkAst(output, {
+    enter(node) {
+      if (node.type !== 'Identifier') return;
+      const identifier = node as unknown as AstIdentifier;
+      const parent = local.parentByNode.get(node) ?? null;
+      const key = local.keyByNode.get(node);
+      if (!isReferenceIdentifier(parent, key)) return;
+      if (local.nodeToScope.get(node)?.getBinding(identifier.name) !== undefined) {
+        return;
+      }
+      if (excluded.has(identifier.name)) return;
+      const binding = astBindingAt(ctx, boundary, identifier.name);
+      if (
+        binding === undefined ||
+        binding.scope.isProgramScope ||
+        captures.has(binding)
+      ) {
+        return;
+      }
+      captures.set(binding, {
+        binding,
+        prop: `capture${captures.size}`,
+      });
+    },
+  });
+  return [...captures.values()];
+}
+
+function objectBindingPattern(
+  entries: ReadonlyArray<{ prop: string; local: t.Identifier }>,
+): t.ObjectPattern {
+  return {
+    type: 'ObjectPattern',
+    properties: entries.map(({ prop, local }) =>
+      astFactory.objectProperty(
+        astFactory.identifier(prop),
+        cloneEstreeNode(local),
+        false,
+        prop === local.name,
+      )
+    ),
+  } as unknown as t.ObjectPattern;
+}
+
+function tsrxPolicyComponent(
+  ctx: Ctx,
+  boundary: BaseNode,
+  output: BaseNode,
+  kind: 'pending' | 'error',
+  handler: TsrxTryHandlerMetadata | null,
+): {
+  declaration: t.FunctionDeclaration;
+  renderer: TransparentPresentationComponent;
+} {
+  const excluded = new Set<string>();
+  if (
+    handler?.param !== null &&
+    handler?.param !== undefined &&
+    handler.param.type === 'Identifier'
+  ) {
+    excluded.add((handler.param as unknown as AstIdentifier).name);
+  }
+  if (
+    handler?.resetParam !== null &&
+    handler?.resetParam !== undefined &&
+    handler.resetParam.type === 'Identifier'
+  ) {
+    excluded.add((handler.resetParam as unknown as AstIdentifier).name);
+  }
+  const captures = tsrxPolicyCaptures(ctx, boundary, output, excluded);
+  const params: Array<{ prop: string; local: t.Identifier }> = [];
+  if (kind === 'error') {
+    const error = handler?.param === null || handler?.param === undefined
+      ? generatedIdentifier(ctx, 'tsrxError')
+      : cloneEstreeNode(handler.param as unknown as t.Identifier);
+    const retry = handler?.resetParam === null || handler?.resetParam === undefined
+      ? generatedIdentifier(ctx, 'tsrxReset')
+      : cloneEstreeNode(handler.resetParam as unknown as t.Identifier);
+    params.push({ prop: 'error', local: error });
+    params.push({ prop: 'retry', local: retry });
+  }
+  for (const capture of captures) {
+    params.push({
+      prop: capture.prop,
+      local: astFactory.identifier(capture.binding.name),
+    });
+  }
+  const name = generatedComponentIdentifier(
+    ctx,
+    kind === 'pending' ? 'TsrxPending' : 'TsrxCatch',
+  );
+  const declaration = astFactory.functionDeclaration(
+    cloneEstreeNode(name),
+    params.length === 0 ? [] : [objectBindingPattern(params)],
+    astFactory.blockStatement([
+      astFactory.returnStatement(
+        cloneEstreeNode(output, true) as unknown as t.Expression,
+      ),
+    ]),
+  );
+  return {
+    declaration,
+    renderer: {
+      component: name.name,
+      props: captures.map((capture) => ({
+        name: capture.prop,
+        value: astFactory.identifier(capture.binding.name),
+      })),
+    },
+  };
+}
+
+function attachTsrxColorlessPolicy(
+  ctx: Ctx,
+  component: t.JSXElement,
+  sourceProps: readonly ComponentSourceProp[],
+  policy: TransparentPresentationPolicy,
+): void {
+  const policies = ctx.transparentGroupCallPolicies.get(component) ?? new Map();
+  for (const { prop } of sourceProps) policies.set(prop, policy);
+  ctx.transparentGroupCallPolicies.set(component, policies);
+}
+
+function lowerTsrxTryBoundary(
+  ctx: Ctx,
+  node: BaseNode,
+  metadata: TsrxTryMetadata,
+  generatedPolicies: t.FunctionDeclaration[],
+  programPath: {
+    buildCodeFrameError(message: string, at?: t.Node): Error;
+  },
+): BaseNode {
+  if (node.type !== 'JSXFragment') return node;
+  const children = (node as unknown as t.JSXFragment).children.filter(
+    (child) => !astFactory.isJSXText(child) || child.value.trim() !== '',
+  );
+  if (children.length !== 1 || !astFactory.isJSXElement(children[0])) {
+    throw programPath.buildCodeFrameError(
+      'memo-dom: TSRX @try currently requires one direct component output',
+      node as unknown as t.Node,
+    );
+  }
+  const component = children[0];
+  const tag = jsxTagName(component);
+  if (tag === null || !/^[A-Z]/.test(tag)) {
+    throw programPath.buildCodeFrameError(
+      'memo-dom: TSRX @try currently requires one direct component output',
+      component,
+    );
+  }
+  const suspend = suspendDirective(component, programPath);
+  const sourceProps = componentSourceProps(ctx, component);
+  const dependencies = [...new Set(sourceProps.map(({ source }) => source))];
+  if (sourceProps.length === 0) {
+    throw programPath.buildCodeFrameError(
+      `memo-dom: TSRX @try component <${tag}> requires at least one direct colorless-source prop`,
+      component,
+    );
+  }
+  ctx.usesTransparentData = true;
+  if (suspend === null) {
+    if (metadata.handler === null) {
+      throw programPath.buildCodeFrameError(
+        'memo-dom: unsuspended TSRX @try requires @catch so colorless source failures have a local policy',
+        node as unknown as t.Node,
+      );
+    }
+    if (!astFactory.isIdentifier(metadata.handler.param as unknown as t.Node)) {
+      throw programPath.buildCodeFrameError(
+        'memo-dom: TSRX @catch currently requires an identifier error parameter',
+        metadata.handler.param as unknown as t.Node,
+      );
+    }
+    if (!astFactory.isIdentifier(metadata.handler.resetParam as unknown as t.Node)) {
+      throw programPath.buildCodeFrameError(
+        'memo-dom: TSRX @catch currently requires an identifier reset parameter',
+        metadata.handler.resetParam as unknown as t.Node,
+      );
+    }
+    const pendingOutput = metadata.pending ?? astFactory.jsxFragment(
+      astFactory.jsxOpeningFragment(),
+      astFactory.jsxClosingFragment(),
+      [],
+    ) as unknown as BaseNode;
+    const pending = tsrxPolicyComponent(
+      ctx,
+      node,
+      pendingOutput,
+      'pending',
+      null,
+    );
+    const error = tsrxPolicyComponent(
+      ctx,
+      node,
+      metadata.handler.output,
+      'error',
+      metadata.handler,
+    );
+    generatedPolicies.push(pending.declaration, error.declaration);
+    attachTsrxColorlessPolicy(ctx, component, sourceProps, {
+      pending: pending.renderer,
+      error: error.renderer,
+    });
+    return component as unknown as BaseNode;
+  }
+  consumeSuspendDirective(component, suspend);
+  return suspendedTsrxTryOutput(
+    ctx,
+    component,
+    dependencies,
+    metadata,
+    programPath,
+  ) as unknown as BaseNode;
+}
+
 interface TransparentPolicyRenderer {
   renderer: t.Expression;
   args: t.Expression[];
@@ -754,12 +1278,28 @@ export function lowerTransparentGroups(
   ctx: Ctx,
   programPath: {
     node: t.Program;
-    buildCodeFrameError(message: string): Error;
+    buildCodeFrameError(message: string, at?: t.Node): Error;
   },
 ): void {
+  const generatedPolicies: t.FunctionDeclaration[] = [];
   refreshAstAnalysis(ctx, programPath.node);
   walkAst<BaseNode>(programPath.node as unknown as BaseNode, {
     leave(node) {
+        const tryMetadata = tsrxTryMetadata(node);
+        if (tryMetadata !== null) {
+          replaceNode(
+            ctx.astAnalysis!,
+            node,
+            lowerTsrxTryBoundary(
+              ctx,
+              node,
+              tryMetadata,
+              generatedPolicies,
+              programPath,
+            ),
+          );
+          return;
+        }
         if (node.type !== 'JSXElement') return;
         const element = node as unknown as t.JSXElement;
         const tag = jsxTagName(element);
@@ -768,12 +1308,14 @@ export function lowerTransparentGroups(
         if (children.length !== 3) {
           throw programPath.buildCodeFrameError(
             'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
+            element,
           );
         }
         const [pendingElement, errorElement, content] = children;
         if (!astFactory.isJSXElement(pendingElement) || !astFactory.isJSXElement(errorElement)) {
           throw programPath.buildCodeFrameError(
             'memo-dom: Group children one and two must be Pending and Error declarations',
+            element,
           );
         }
         const pending = componentPolicy(
@@ -794,6 +1336,32 @@ export function lowerTransparentGroups(
           node,
           data,
         );
+        if (astFactory.isJSXElement(content)) {
+          const suspend = suspendDirective(content, programPath);
+          if (suspend !== null) {
+            const tag = jsxTagName(content);
+            if (tag === null || !/^[A-Z]/.test(tag)) {
+              throw programPath.buildCodeFrameError(
+                'memo-dom: suspend may only mark a component used as the direct content child of Group',
+                suspend,
+              );
+            }
+            consumeSuspendDirective(content, suspend);
+            replaceNode(
+              ctx.astAnalysis!,
+              node,
+              suspendedGroupOutput(
+                ctx,
+                content,
+                data,
+                pending,
+                error,
+              ) as unknown as BaseNode,
+            );
+            ctx.usesTransparentData = true;
+            return;
+          }
+        }
         annotateGroupComponentCalls(
           ctx,
           content as unknown as BaseNode,
@@ -829,7 +1397,21 @@ export function lowerTransparentGroups(
         );
     },
   });
+  programPath.node.body.push(...generatedPolicies);
   refreshAstAnalysis(ctx, programPath.node);
+  walkAst<BaseNode>(programPath.node as unknown as BaseNode, {
+    enter(node) {
+      if (node.type !== 'JSXElement') return;
+      const element = node as unknown as t.JSXElement;
+      const tag = jsxTagName(element);
+      if (tag === null || !/^[A-Z]/.test(tag)) return;
+      if (suspendDirective(element, programPath) === null) return;
+      throw programPath.buildCodeFrameError(
+        'memo-dom: component suspend requires the component to be the direct content child of Group',
+        element,
+      );
+    },
+  });
 }
 
 /**
@@ -1940,9 +2522,12 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
 
 function policyComponentRenderer(
   ctx: Ctx,
-  component: string,
+  presentation: string | TransparentPresentationComponent,
   kind: 'pending' | 'error',
 ): t.ArrowFunctionExpression {
+  const component = typeof presentation === 'string'
+    ? presentation
+    : presentation.component;
   const id = generatedIdentifier(ctx, 'dataPolicyId');
   const parent = generatedIdentifier(ctx, 'dataPolicyParent');
   const error = generatedIdentifier(ctx, 'dataPolicyError');
@@ -1953,6 +2538,12 @@ function policyComponentRenderer(
         { name: 'retry', value: cloneEstreeNode(retry) as t.Expression },
       ]
     : [];
+  if (typeof presentation !== 'string') {
+    entries.push(...presentation.props.map(({ name, value }) => ({
+      name,
+      value: cloneEstreeNode(value, true),
+    })));
+  }
   const props = orderCallProps(ctx, component, entries);
   return astFactory.arrowFunctionExpression(
     [
@@ -1970,7 +2561,7 @@ function policyComponentRenderer(
 
 function fixedPolicyExpression(
   ctx: Ctx,
-  policy: { pending: string; error: string },
+  policy: TransparentPresentationPolicy,
 ): t.ObjectExpression {
   return astFactory.objectExpression([
     astFactory.objectProperty(

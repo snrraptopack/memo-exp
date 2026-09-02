@@ -12,6 +12,7 @@ import { toIdentifier, walkAst, type BaseNode } from './ast';
 
 export class GeneratedIdentifiers {
   readonly runtimeId: string;
+  readonly hotRuntimeId: string;
   readonly routerId: string;
   readonly dataRuntimeId: string;
   private readonly reserved = new Set<string>();
@@ -20,6 +21,7 @@ export class GeneratedIdentifiers {
   constructor(program: BaseNode) {
     walkIdentifiers(program, (name) => this.reserved.add(name));
     this.runtimeId = this.generate('MD').name;
+    this.hotRuntimeId = this.generate('MDH').name;
     this.routerId = this.generate('MR').name;
     this.dataRuntimeId = this.generate('MDD').name;
   }
@@ -32,6 +34,21 @@ export class GeneratedIdentifiers {
       if (index >= 11) candidate += index - 1;
       else if (index >= 9) candidate += index - 9;
       else if (index >= 1) candidate += index + 1;
+      index++;
+      if (this.reserved.has(candidate)) continue;
+      this.reserved.add(candidate);
+      return astFactory.identifier(candidate);
+    }
+  }
+
+  generateComponent(hint: string): t.Identifier {
+    const identifier = toIdentifier(hint).replace(/^_+/, '').replace(/\d+$/g, '');
+    const name = /^[A-Z]/.test(identifier)
+      ? identifier
+      : `Generated${identifier[0]?.toUpperCase() ?? ''}${identifier.slice(1)}`;
+    let index = 0;
+    for (;;) {
+      const candidate = index === 0 ? name : `${name}${index + 1}`;
       index++;
       if (this.reserved.has(candidate)) continue;
       this.reserved.add(candidate);
@@ -79,6 +96,13 @@ export function generatedIdentifier(
   return requireIdentifiers(owner).generate(hint);
 }
 
+export function generatedComponentIdentifier(
+  owner: IdentifierOwner,
+  hint: string,
+): t.Identifier {
+  return requireIdentifiers(owner).generateComponent(hint);
+}
+
 export function componentId(
   owner: IdentifierOwner,
   component: string,
@@ -88,6 +112,14 @@ export function componentId(
 
 export function md(owner: IdentifierOwner, name: string): t.MemberExpression {
   return requireIdentifiers(owner).runtimeMember(name);
+}
+
+export function mdHot(owner: IdentifierOwner, name: string): t.MemberExpression {
+  const identifiers = requireIdentifiers(owner);
+  return astFactory.memberExpression(
+    astFactory.identifier(identifiers.hotRuntimeId),
+    astFactory.identifier(name),
+  );
 }
 
 export function mr(owner: IdentifierOwner, name: string): t.MemberExpression {

@@ -159,6 +159,20 @@ describe('R30 - dynamic tags', () => {
     expect(code).toContain('.createCondRegion(');
   });
 
+  it('reads finite intrinsic candidates from destructured component prop types', () => {
+    const code = compile(`
+      interface PanelProps { as?: "section" | "article" }
+      export function Panel({ as = "section" }: PanelProps) {
+        const Tag = as;
+        return <Tag id="panel">content</Tag>;
+      }
+    `);
+
+    expect(code).toContain('createElement("section")');
+    expect(code).toContain('createElement("article")');
+    expect(code).toContain('.createCondRegion(');
+  });
+
   it('normalizes a dynamic component nested in a dynamic intrinsic host', () => {
     const code = compile(`
       function Preview() { return <p>preview</p>; }

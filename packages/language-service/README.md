@@ -3,6 +3,9 @@
 TypeScript editor diagnostics and code fixes for memoized-dom. Compiler errors
 come from `@memoized-dom/compiler`'s structured graph diagnostic API, so the
 editor, Vite overlay, and direct compiler report the same restrictions.
+Compiler diagnostics preserve the authored ESTree start/end range, so route
+attributes, invalid writes, and other failures are underlined at their actual
+source node instead of a generic one-character position.
 
 Add the plugin to the application `tsconfig.json`:
 

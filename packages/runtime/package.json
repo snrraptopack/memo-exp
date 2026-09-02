@@ -3,15 +3,42 @@
   "version": "0.0.6",
   "description": "Dependency-free runtime for compiler-analyzed memoized DOM updates",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/server.js"
+  ],
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
+      "browser": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "default": "./dist/index.js"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/server.js",
+      "default": "./dist/server.js"
+    },
+    "./client": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "default": "./dist/server.js"
+    },
+    "./hydrate": {
+      "types": "./dist/hydrate.d.ts",
+      "import": "./dist/hydrate.js",
+      "default": "./dist/hydrate.js"
+    },
+    "./hot": {
+      "types": "./dist/hot.d.ts",
+      "import": "./dist/hot.js",
+      "default": "./dist/hot.js"
     },
     "./testing": {
       "types": "./dist/testing.d.ts",

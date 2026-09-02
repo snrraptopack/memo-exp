@@ -80,7 +80,10 @@ import {
   normalizeDynamicTags,
   scanLocalDynamicComponentCandidates,
 } from './jsx/dynamic-tags';
-import { moduleStateStringCandidates } from './analysis/type-candidates';
+import {
+  lexicalBindingStringCandidates,
+  moduleStateStringCandidates,
+} from './analysis/type-candidates';
 import { foldRenderCallbackSubtreeReads } from './analysis/component-reads';
 import { scanRefProps } from './components/ref-props';
 import { hostJsxEventNames } from './jsx/events';
@@ -1556,6 +1559,9 @@ function collectReads(ctx: Ctx): void {
  */
 export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   refreshAstAnalysis(ctx, programPath.node);
+  ctx.bindingTagCandidates = lexicalBindingStringCandidates(
+    programPath.node as unknown as BaseNode,
+  );
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);

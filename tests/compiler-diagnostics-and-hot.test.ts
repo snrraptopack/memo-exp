@@ -10,13 +10,15 @@ import {
   diagnoseModules,
 } from '@memoized-dom/compiler';
 import {
-  applyHotUpdate,
   register,
-  registerHotComponent,
   registeredIds,
   unregister,
-  type HotComponentFactory,
 } from '@memoized-dom/runtime/testing';
+import {
+  applyHotUpdate,
+  registerHotComponent,
+  type HotComponentFactory,
+} from '@memoized-dom/runtime/hot';
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -48,6 +50,12 @@ describe('compiler-owned diagnostics', () => {
     expect(graph[0]!.message).toContain(
       "cannot update per-instance derivation 'double'",
     );
+    expect(graph[0]).toMatchObject({
+      line: expect.any(Number),
+      column: expect.any(Number),
+      endLine: expect.any(Number),
+      endColumn: expect.any(Number),
+    });
   });
 });
 

@@ -145,6 +145,20 @@ describe('R38 - JSX render functions', () => {
     expect(code).toContain('createElement("s")');
   });
 
+  it('expands inline JSX render IIFEs through the shared render planner', () => {
+    const code = compile(`
+      export function App({ value }) {
+        return <main>{(() => {
+          const label = value.toUpperCase();
+          return <strong>{label}</strong>;
+        })()}</main>;
+      }
+    `);
+
+    expect(code).toContain('createElement("strong")');
+    expect(code).not.toContain('const label');
+  });
+
   it('rejects side-effect statements in a render function body', () => {
     expect(() =>
       compile(`

@@ -212,6 +212,18 @@ const SOURCES: Record<string, string> = {
       </button>;
     }
   `,
+  'r14-tsrx-lazy-prop': `
+    function Label(&{ value }: { value: number }) @{
+      <strong>{value * 2}</strong>
+    }
+    export function App() @{
+      let count = 1;
+      <main>
+        <button onClick={() => count++}>increment</button>
+        <Label value={count} />
+      </main>
+    }
+  `,
 };
 
 describe('R14 - compiled execution', () => {
@@ -220,7 +232,12 @@ describe('R14 - compiled execution', () => {
     for (const [name, source] of Object.entries(SOURCES)) {
       writeFileSync(
         join(outDir, `${name}.compiled.ts`),
-        compile(source, { runtimePath: '@memoized-dom/runtime' }),
+        compile(source, {
+          runtimePath: '@memoized-dom/runtime',
+          ...(name === 'r14-tsrx-lazy-prop'
+            ? { moduleId: './r14-tsrx-lazy-prop.tsrx' }
+            : {}),
+        }),
       );
     }
   });
@@ -316,5 +333,14 @@ describe('R14 - compiled execution', () => {
     expect(button.textContent).toContain('active');
     button.click();
     expect(button.textContent).toContain('done');
+  });
+
+  it('replays a TSRX lazy prop read when the parent updates it', async () => {
+    const { App } = await importCompiled('r14-tsrx-lazy-prop');
+    document.body.appendChild(App('App', null));
+    const label = document.querySelector('strong')!;
+    expect(label.textContent).toBe('2');
+    document.querySelector('button')!.click();
+    expect(label.textContent).toBe('4');
   });
 });

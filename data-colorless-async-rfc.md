@@ -167,8 +167,9 @@ The data design must preserve Memoized DOM's core principles:
 ## 3. Group is a local presentation policy
 
 `Group` supplies pending and error presentation for data-consuming sites under
-it. It is not a loading boundary and it does not choose one branch for its
-whole subtree.
+it. By default it is not a loading boundary and does not choose one branch for
+its whole subtree. A direct component child may explicitly opt into atomic
+initial readiness with the compiler-owned `suspend` directive described below.
 
 Working syntax:
 
@@ -279,7 +280,7 @@ The precise public type for a site depending on several failed inputs remains
 an implementation question. It must not expose compiler source metadata merely
 to solve that case.
 
-### 3.3 Group does not wait for everything in `data`
+### 3.3 Group does not wait for everything in `data` by default
 
 An object passed to `data` declares several values covered by the same local
 presentation policy. It does not create `Promise.all` semantics.
@@ -324,6 +325,31 @@ the behavior is:
 - neither value waits for the other.
 
 The object form exists for convenient policy scope, not reveal coordination.
+
+#### Explicit component suspension
+
+When a component is only useful after all of the Group's initial values exist,
+the author can request coordinated first mount explicitly:
+
+```tsx
+<Group data={{ user, statistics }}>
+  <Pending component={DashboardSkeleton} />
+  <Error component={DashboardError} />
+  <Dashboard suspend user={user} statistics={statistics} />
+</Group>
+```
+
+This is the one supported whole-component readiness form. `Dashboard` must be
+the direct third child, and `suspend` must be a shorthand attribute. The
+compiler consumes it before ordinary component prop analysis. While either
+source lacks its first committed value, the Group renders one pending policy
+and does not mount `Dashboard`. A failure renders one error policy whose retry
+targets the failed prerequisite. After the first successful mount, background
+refresh keeps the committed component visible.
+
+Without `suspend`, the earlier site-local behavior remains unchanged. This
+keeps colorless data as the default and makes the broader coordination cost an
+authored component contract rather than an inference from `Group.data`.
 
 ### 3.4 One value used in several places
 
@@ -889,8 +915,9 @@ No row in this table requires a `loading` check from the author.
 
 ## 11. Explicitly rejected
 
-- A `Ready`, `Loading`, `Suspense`, or equivalent whole-subtree gate.
-- Waiting for every value listed in `Group.data` before mounting content.
+- An implicit `Ready`, `Loading`, `Suspense`, or equivalent whole-subtree gate.
+- Waiting for every value listed in `Group.data` without a direct component
+  explicitly marked `suspend`.
 - Passing `sources`, indexes, canonical keys, or compiler IDs to pending UI.
 - Making authors inspect `available`/`pending` before ordinary value reads.
 - Runtime dependency tracking or an async reactive graph.
@@ -967,10 +994,10 @@ Constraint: ResolvedValue is type-only provenance; native payload objects and ar
 ```
 
 ```text
-Decision: Group supplies presentation independently at exact consumption sites.
+Decision: Group supplies presentation independently at exact consumption sites by default; a direct component child may explicitly opt into atomic initial readiness with shorthand suspend.
 Status: proposed
-Reason: static component content and independently resolved values must render without waiting for a subtree or all grouped data.
-Rejected alternative: whole-branch readiness boundaries and Promise.all-style grouping.
+Reason: static component content and independently resolved values should render without waiting unless the component author declares that partial initial output is not useful.
+Rejected alternative: implicit whole-branch readiness and Promise.all-style grouping inferred merely from Group.data.
 ```
 
 ```text

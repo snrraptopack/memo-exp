@@ -960,8 +960,29 @@ export function Todos() {
 
 `Group` owns the unavailable states for its data sources. Its first child is a
 `Pending` policy, its second child is an `Error` policy, and its final child is
-the resolved UI. The error component receives `{ error, retry }`; retrying is a
-boundary capability, not a method added to the payload.
+the content UI. By default the content mounts immediately: each expression or
+structural site that actually consumes unavailable data receives the matching
+policy independently. The error component receives `{ error, retry }`;
+retrying is a boundary capability, not a method added to the payload.
+
+Put the shorthand compiler directive `suspend` on a direct component content
+child when its first mount must wait for every source named by `Group.data`:
+
+```tsx
+<Group data={{ user, statistics }}>
+  <Pending component={DashboardSkeleton} />
+  <ErrorArm component={DashboardFailure} />
+  <Dashboard suspend user={user} statistics={statistics} />
+</Group>
+```
+
+This form renders one pending policy until both initial values commit, then
+mounts `Dashboard` atomically. A failure renders one error policy and `retry`
+targets the failed source. Later refreshes keep the committed dashboard visible;
+`suspend` controls initial readiness, not background revalidation. The compiler
+consumes `suspend`, so it is neither passed to `Dashboard` nor included in prop
+validation. It is rejected on intrinsic elements, outside this direct Group
+position, or when written as `suspend={...}`.
 
 The compiler carries source dependencies through property reads, derivations,
 conditions, lists, and component props. Render reads wait for the source instead
@@ -1313,7 +1334,7 @@ The renderer helpers build on the public runtime isolation API:
 import {
   createApplicationRuntime,
   runWithApplicationRuntime,
-} from '@memoized-dom/runtime';
+} from '@memoized-dom/runtime/server';
 import { createDataRuntime, runWithDataRuntime } from '@memoized-dom/data';
 import {
   createMemoryRouteHistory,
@@ -1365,17 +1386,15 @@ DOM:
 
 ```ts
 import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
-import { mount } from '@memoized-dom/runtime';
+import { hydrate } from '@memoized-dom/runtime/hydrate';
 import { App } from './App';
 
 setActiveDataRuntime(createDataRuntime());
 
-mount('root', App, {
-  hydration: {
-    recover: true,
-    onRecover(error) {
-      console.error('Hydration recovered:', error.message);
-    },
+hydrate('root', App, {
+  recover: true,
+  onRecover(error) {
+    console.error('Hydration recovered:', error.message);
   },
 });
 ```

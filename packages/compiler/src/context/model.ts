@@ -33,6 +33,8 @@ export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceD
 export interface MemoDomOptions {
   /** Module specifier compiled output imports the runtime from. */
   runtimePath?: string;
+  /** Dev-only runtime subpath used by compiler-emitted HMR ownership. */
+  hotRuntimePath?: string;
   /** Module specifier used by compiler-generated router integration. */
   routerPath?: string;
   /** Runtime helpers used by compiler-transparent async data sources. */
@@ -89,8 +91,16 @@ export interface TransparentAsyncSourceDefinition {
 }
 
 export interface TransparentPresentationPolicy {
-  pending: string;
-  error: string;
+  pending: string | TransparentPresentationComponent;
+  error: string | TransparentPresentationComponent;
+}
+
+export interface TransparentPresentationComponent {
+  component: string;
+  props: ReadonlyArray<{
+    name: string;
+    value: t.Expression;
+  }>;
 }
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */
@@ -315,6 +325,7 @@ export type HelperPath = CompilerPath<
 
 export interface Ctx {
   runtimePath: string;
+  hotRuntimePath: string;
   routerPath: string;
   dataRuntimePath: string;
   transparentAsyncSources: readonly TransparentAsyncSourceDefinition[];
@@ -361,6 +372,8 @@ export interface Ctx {
   /** Finite intrinsic-tag identities proven by state type annotations. */
   stateTagCandidates: Map<string, string[]>;
   functionTagCandidates: Map<string, string[]>;
+  /** Finite string contracts attached to lexical binding identifiers. */
+  bindingTagCandidates: Map<string, string[]>;
   stateComponentCandidates: Map<string, string[]>;
   functionComponentCandidates: Map<string, string[]>;
   linkedDynamicComponentCandidates: Map<
@@ -575,8 +588,10 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
       ([component, props]) => [component, [...props]],
     ),
   );
+  const runtimePath = opts.runtimePath ?? '@memoized-dom/runtime';
   return {
-    runtimePath: opts.runtimePath ?? '@memoized-dom/runtime',
+    runtimePath,
+    hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',
     dataRuntimePath: opts.dataRuntimePath ?? '@memoized-dom/data/internal',
     transparentAsyncSources: opts.transparentAsyncSources ??
@@ -614,6 +629,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     stateKeys,
     stateTagCandidates,
     functionTagCandidates,
+    bindingTagCandidates: new Map(),
     stateComponentCandidates,
     functionComponentCandidates,
     linkedDynamicComponentCandidates,

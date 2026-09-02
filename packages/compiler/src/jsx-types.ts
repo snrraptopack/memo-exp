@@ -43,6 +43,7 @@ declare global {
       if?: boolean;
       'else-if'?: boolean;
       else?: true;
+      suspend?: true;
       route?: RouteValue;
       'route-to'?: RouteValue | RouteToDestination;
     }

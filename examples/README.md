@@ -34,6 +34,11 @@ The experimental `tsrx-todo` application exercises direct TSRX AST lowering
 through the normal shared Vite adapter. Run it with `bun run example:tsrx` and
 visit `/tsrx-todo/`.
 
+The `suspension-lab` application mixes linked `.tsx` and `.tsrx` route modules
+in one graph. It uses staggered in-app Fetch-compatible endpoints to contrast
+site-local colorless fallback, atomic component suspension, source failure,
+and targeted retry.
+
 The Kanban, class-todo, CMS, incident, cart, dashboard, music, todo, and wizard
 applications remain available as additional authored graphs under their
 respective folders.

@@ -31,7 +31,7 @@
 
 import { getActiveEnvironment, unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 import { encodeListKey } from './list-keys';
-import { HydrationMismatchError } from './hydration';
+import { HydrationMismatchError } from './hydration-error';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */

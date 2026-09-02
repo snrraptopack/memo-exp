@@ -302,6 +302,18 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
       astFactory.stringLiteral(ctx.runtimePath),
     ),
   ];
+  if (ctx.hot) {
+    imports.push(
+      astFactory.importDeclaration(
+        [
+          astFactory.importNamespaceSpecifier(
+            astFactory.identifier(requireIdentifiers(ctx).hotRuntimeId),
+          ),
+        ],
+        astFactory.stringLiteral(ctx.hotRuntimePath),
+      ),
+    );
+  }
   if (ctx.usesRouter) {
     imports.push(
       astFactory.importDeclaration(

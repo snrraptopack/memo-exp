@@ -47,13 +47,16 @@ For visual updates local to a leaf component (e.g. toggling `task.completed` mod
 
 ---
 
-## 2. SPA-Only Runtime Bundle Decoupling
+## 2. SPA-Only Runtime Bundle Decoupling (Completed 2026-09-02)
 
-### Current State
-* `@memoized-dom/runtime` is currently ~38.5 kB minified / ~13.5 kB gzipped.
-* It includes the full SSR hydration engine (`src/hydration.ts` — ~20 kB source), hot module reloading (`src/hot.ts`), and keyed list diffing in one monolithic bundle.
+### Implemented Boundaries
+* `@memoized-dom/runtime` and `@memoized-dom/runtime/client` contain the browser compiler surface and creation-only `mount()`.
+* `@memoized-dom/runtime/hydrate` owns marker parsing, DOM adoption, payload restore, and mismatch recovery.
+* `@memoized-dom/runtime/hot` owns dev-only component replacement.
+* `@memoized-dom/runtime/server` installs `AsyncLocalStorage`; browser builds no longer contain Node/Bun detection or `node:async_hooks` loading.
+* The compiler and Vite adapter emit the HMR subpath only for development graphs.
 
-### Future Optimization Target
-1. **Subpath Export for Hydration:** Move `hydration.ts` to `@memoized-dom/runtime/hydrate` so pure client SPAs using `mount('root', App)` do not pay the byte cost of the SSR cursor walker and mismatch recovery engine.
-2. **Dead-Code Elimination for HMR in Production:** Ensure `hot.ts` and dev assertions are completely stripped when `import.meta.env.PROD` or `process.env.NODE_ENV === 'production'`.
-3. **Target SPA Runtime Size:** **~12–16 kB minified / ~4–5.5 kB gzipped**.
+### Measured Result
+The representative production Todo graph moved from **35,012 B raw / 11.51 kB gzip** to **25,793 B raw / 8.96 kB gzip**. That is a 9,219 B raw reduction (26.3%) and approximately 2.55 kB gzip (22.2%). The bundle benchmark now fails on size-budget regressions and on hydration, HMR, or Node host markers leaking into browser output.
+
+The earlier 12–16 kB raw runtime target remains a separate optimization pass over the core registry, access routing, and keyed-list implementation; it is no longer a boundary-decoupling task.

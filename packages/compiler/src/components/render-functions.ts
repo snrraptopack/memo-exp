@@ -31,7 +31,7 @@ type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
 
 interface ResolvedRenderFunction {
   node: RenderFunction;
-  bindingNode: BaseNode;
+  bindingNode: BaseNode | null;
 }
 
 function fields(node: BaseNode): Record<string, unknown> {
@@ -384,7 +384,22 @@ function resolvedRenderFunction(
   call: BaseNode,
 ): ResolvedRenderFunction | null {
   const callee = childNode(call, 'callee');
-  return callee === null ? null : resolvedRenderIdentifier(ctx, callee);
+  if (callee === null) return null;
+  const inlineBody =
+    callee.type === 'FunctionExpression' ||
+    callee.type === 'ArrowFunctionExpression'
+      ? childNode(callee, 'body')
+      : null;
+  if (
+    inlineBody !== null &&
+    nodeHasJsx(inlineBody as unknown as t.Node)
+  ) {
+    return {
+      node: callee as unknown as t.FunctionExpression | t.ArrowFunctionExpression,
+      bindingNode: null,
+    };
+  }
+  return resolvedRenderIdentifier(ctx, callee);
 }
 
 function isMapCall(call: BaseNode): boolean {
@@ -514,7 +529,9 @@ export function normalizeRenderFunctions(ctx: Ctx): void {
         identifier,
         renderCallbackArrow(resolved, componentPath) as unknown as BaseNode,
       );
-      usedBindings.add(resolved.bindingNode);
+      if (resolved.bindingNode !== null) {
+        usedBindings.add(resolved.bindingNode);
+      }
     }
     if (mapArguments.length > 0) refreshAstAnalysis(ctx, program);
 
@@ -531,7 +548,9 @@ export function normalizeRenderFunctions(ctx: Ctx): void {
         const resolved = resolvedRenderFunction(ctx, call);
         if (resolved === null) continue;
         replaceRenderCall(ctx, call, instantiate(resolved, call, componentPath));
-        usedBindings.add(resolved.bindingNode);
+        if (resolved.bindingNode !== null) {
+          usedBindings.add(resolved.bindingNode);
+        }
         changed = true;
       }
       if (changed) refreshAstAnalysis(ctx, program);

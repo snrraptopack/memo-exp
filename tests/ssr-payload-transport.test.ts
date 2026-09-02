@@ -4,7 +4,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { compileModules } from '@memoized-dom/compiler';
 import { renderToResult, renderToResultAsync } from '@memoized-dom/server';
-import { hydrate, registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import { registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import { hydrate } from '@memoized-dom/runtime/hydrate';
 import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
 
 const here = dirname(fileURLToPath(import.meta.url));

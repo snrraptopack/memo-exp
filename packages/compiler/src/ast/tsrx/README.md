@@ -9,6 +9,7 @@ Nothing outside this boundary should need to understand TSRX-specific AST nodes.
 .tsrx source
   -> @tsrx/core parseModule()
   -> extended ESTree + JSX + TSRX nodes
+  -> @tsrx/core analyzeTsrx() target-neutral early errors
   -> lowerTsrxProgram()
   -> ordinary compiler-ready TS-ESTree + JSX
   -> existing Memoized DOM analysis and emission
@@ -45,7 +46,13 @@ The TSRX path is isolated from the standard Yuku parser.
 | Loop-local setup | Map callback block ending in a JSX return |
 | `@empty` | Conditional expression selecting the map or empty template |
 | Root `@switch` | Exhaustive return-oriented `SwitchStatement` consumed by the component return planner |
+| Nested `@switch` | Inline exhaustive render function expanded into the shared conditional planner |
+| `<{expression}>` dynamic tags | A generated component-local selector consumed by the existing finite intrinsic/component candidate planner |
 | Scoped `<style>` | Extracted as CSS and native JSX receives TSRX's stable scoped class hash |
+| Nested `@{ ... }` statement containers | Inline JSX render calls expanded by the shared render-function planner |
+| Pure setup inside `@if`, `@switch`, and `@empty` branches | Inline JSX render calls expanded before shared region planning |
+| Lazy `&{ ... }` / `&[ ... ]` destructuring | Native reactive destructuring replay; direct binding writes are rejected |
+| `@try` / `@pending` / `@catch` | Static colorless-source policy around one direct component; shorthand component `suspend` changes local-site fallback into atomic initial readiness |
 
 
 The direct mappings intentionally reuse existing Memoized DOM conditional and
@@ -59,14 +66,10 @@ nodes or receiving guessed semantics:
 
 | Surface | Reason |
 |---|---|
-| Lazy `&{ ... }` and `&[ ... ]` patterns | Memoized DOM must define their reactive read and write semantics |
-| `@try`, `@pending`, and `@catch` | Need explicit suspense, error-boundary, ownership, and cleanup semantics |
-| Nested `@{ ... }` statement containers | Need a stable render-value lowering accepted by compiler analysis |
-| Setup statements inside `@if`, `@switch`, or `@empty` branches | The current component return planner requires direct branch outputs |
-| Nested `@switch` | Only root exhaustive switches currently map exactly to the return planner |
+| General descendant exception boundaries | The current `@try` profile handles statically associated colorless-source failures, not arbitrary synchronous descendant throws |
 | C-style `@for` and `@for (... in ...)` | Existing optimized list semantics are based on iterable `.map()` regions |
 | Keyed loop fragments or multiple loop roots | Existing keyed list analysis requires one JSX element carrying `key` |
-| `<{expression}>` dynamic tags | Their expression-name shape does not yet match the compiler's TSX dynamic-tag normalizer |
+| Dynamic tags without finite intrinsic or linked-component candidates | Existing compiler semantics require a statically bounded host/component set |
 | Server submodules/imports | Need a client/server graph and serialization contract |
 
 Because TSRX remains beta, `@tsrx/core` is pinned to an exact version. Review its

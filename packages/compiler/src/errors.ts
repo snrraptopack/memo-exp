@@ -3,6 +3,8 @@ import type { BaseNode } from './ast';
 export interface CompilerErrorLocation {
   line: number;
   column: number;
+  endLine?: number;
+  endColumn?: number;
 }
 
 /** Compiler-owned error carrying an authored ESTree source location. */
@@ -16,7 +18,14 @@ export class MemoizedDomCompilerError extends Error {
     this.moduleId = moduleId;
     const start = at?.loc?.start;
     if (start !== undefined) {
-      this.loc = { line: start.line, column: start.column };
+      const end = at?.loc?.end;
+      this.loc = {
+        line: start.line,
+        column: start.column,
+        ...(end === undefined
+          ? {}
+          : { endLine: end.line, endColumn: end.column }),
+      };
     }
   }
 }

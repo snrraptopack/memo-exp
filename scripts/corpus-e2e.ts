@@ -92,6 +92,49 @@ function delay(ms: number): Promise<void> {
   return promise;
 }
 
+async function checkSuspensionLab(page: Page): Promise<void> {
+  await page.click('nav a[href="/colorless-tsx"]');
+  await page.waitForSelector('.dashboard-card .pending-feedback');
+  const colorlessMounted = await page.evaluate(() =>
+    document.querySelector('.dashboard-card') !== null &&
+    document.querySelectorAll('.pending-feedback').length > 1
+  );
+  if (!colorlessMounted) {
+    throw new Error('TSX colorless route did not mount its shell with local fallbacks');
+  }
+  await page.waitForFunction(
+    () => document.querySelectorAll('.pending-feedback').length === 0,
+    { timeout: 6_000 },
+  );
+
+  await page.click('nav a[href="/suspended-tsx"]');
+  await page.waitForSelector('.atomic-skeleton');
+  if (await page.$('.dashboard-card') !== null) {
+    throw new Error('TSX suspended route mounted its dashboard before readiness');
+  }
+  await page.waitForSelector('.dashboard-card', { timeout: 6_000 });
+
+  await page.click('nav a[href="/suspended-tsrx"]');
+  await page.waitForSelector('.atomic-skeleton');
+  if (await page.$('.dashboard-card') !== null) {
+    throw new Error('TSRX suspended route mounted its dashboard before readiness');
+  }
+  await page.waitForSelector('.dashboard-card', { timeout: 6_000 });
+
+  await page.click('nav a[href="/colorless-tsrx"]');
+  await page.waitForSelector('.dashboard-card .pending-feedback');
+  await page.waitForSelector('.dashboard-card .error-feedback', {
+    timeout: 3_000,
+  });
+  await page.click('.dashboard-card .error-feedback');
+  await page.waitForFunction(
+    () =>
+      document.querySelector('.dashboard-card')?.textContent?.includes('Mira Chen') === true &&
+      document.querySelectorAll('.pending-feedback, .error-feedback').length === 0,
+    { timeout: 6_000 },
+  );
+}
+
 async function checkExample(
   browser: Browser,
   server: ViteDevServer,
@@ -131,6 +174,10 @@ async function checkExample(
           `${name}: committed content missing ${JSON.stringify(expectation.contains)}`,
         );
       }
+    }
+
+    if (name === 'suspension-lab') {
+      await checkSuspensionLab(page);
     }
 
     // 3. Zero runtime errors.

@@ -1,11 +1,13 @@
 import { cloneNode } from '../builders';
-import { ESTREE_VISITOR_KEYS } from '../walk';
+import { analyzeScope, extractPatternIdentifiers, type Scope } from '../scope';
+import { ESTREE_VISITOR_KEYS, walkAst } from '../walk';
 import type { BaseNode } from '../types';
 import type {
   JSXCodeBlock,
   JSXForExpression,
   JSXIfExpression,
   JSXSwitchExpression,
+  JSXTryExpression,
 } from './types';
 
 const TEMPLATE_NODES = new Set([
@@ -27,6 +29,15 @@ const TSRX_EXPRESSION_NODES = new Set([
   'JSXForExpression',
   'JSXSwitchExpression',
   'JSXTryExpression',
+]);
+
+const FUNCTION_NODES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
 ]);
 
 function fields(node: BaseNode): Record<string, unknown> {
@@ -73,6 +84,184 @@ function blockStatement(body: BaseNode[]): BaseNode {
 
 function expressionContainer(expression: BaseNode): BaseNode {
   return { type: 'JSXExpressionContainer', expression } as BaseNode;
+}
+
+function dynamicTagDeclaration(name: string, init: BaseNode): BaseNode {
+  return {
+    type: 'VariableDeclaration',
+    kind: 'const',
+    declarations: [{
+      type: 'VariableDeclarator',
+      id: { type: 'Identifier', name },
+      init,
+    }],
+  } as BaseNode;
+}
+
+function collectIdentifierNames(root: BaseNode): Set<string> {
+  const names = new Set<string>();
+  const seen = new WeakSet<object>();
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    if (record.type === 'Identifier' && typeof record.name === 'string') {
+      names.add(record.name);
+    }
+    for (const [key, child] of Object.entries(record)) {
+      if (key !== 'loc' && key !== 'metadata') visit(child);
+    }
+  };
+  visit(root);
+  return names;
+}
+
+/**
+ * Turn TSRX expression tag names into ordinary finite-candidate JSX selectors.
+ * The declaration remains inside the owning component factory, so the normal
+ * compiler dynamic-tag pass owns reactivity, linked components, and errors.
+ */
+function prepareDynamicTags(program: BaseNode): void {
+  const names = collectIdentifierNames(program);
+  let counter = 0;
+  const freshName = (): string => {
+    let name: string;
+    do {
+      name = `TsrxDynamic${counter++}`;
+    } while (names.has(name));
+    names.add(name);
+    return name;
+  };
+  const seen = new WeakSet<object>();
+
+  const rewriteTemplate = (
+    node: BaseNode,
+    declarations: BaseNode[],
+    root: BaseNode,
+  ): void => {
+    if (node !== root && FUNCTION_NODES.has(node.type)) return;
+    if (node.type === 'JSXElement') {
+      const element = fields(node);
+      const opening = element.openingElement;
+      if (isNode(opening)) {
+        const openingFields = fields(opening);
+        const originalName = openingFields.name;
+        if (isNode(originalName) && originalName.type === 'JSXExpressionContainer') {
+          const expression = fields(originalName).expression;
+          if (!isNode(expression) || expression.type === 'JSXEmptyExpression') {
+            fail(originalName, 'dynamic tag requires an expression');
+          }
+          const selector = freshName();
+          declarations.push(dynamicTagDeclaration(selector, cloneNode(expression)));
+          openingFields.name = { type: 'JSXIdentifier', name: selector };
+          delete openingFields.isDynamic;
+          const closing = element.closingElement;
+          if (isNode(closing)) {
+            fields(closing).name = { type: 'JSXIdentifier', name: selector };
+            delete fields(closing).isDynamic;
+          }
+          delete element.isDynamic;
+        }
+      }
+    }
+
+    const keys = ESTREE_VISITOR_KEYS[node.type] ?? Object.keys(node);
+    for (const key of keys) {
+      if (key === 'loc' || key === 'metadata') continue;
+      const value = fields(node)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (isNode(child)) rewriteTemplate(child, declarations, root);
+        }
+      } else if (isNode(value)) {
+        rewriteTemplate(value, declarations, root);
+      }
+    }
+  };
+
+  const visit = (node: BaseNode): void => {
+    if (seen.has(node)) return;
+    seen.add(node);
+    if (FUNCTION_NODES.has(node.type)) {
+      const body = fields(node).body;
+      if (isNode(body) && body.type === 'JSXCodeBlock') {
+        const codeBlock = body as JSXCodeBlock;
+        if (codeBlock.render !== null) {
+          const declarations: BaseNode[] = [];
+          rewriteTemplate(codeBlock.render, declarations, codeBlock.render);
+          codeBlock.body.push(...declarations);
+        }
+      }
+    }
+    const keys = ESTREE_VISITOR_KEYS[node.type] ?? Object.keys(node);
+    for (const key of keys) {
+      if (key === 'loc' || key === 'metadata') continue;
+      const value = fields(node)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) if (isNode(child)) visit(child);
+      } else if (isNode(value)) {
+        visit(value);
+      }
+    }
+  };
+  visit(program);
+}
+
+function lazyBindingIdentifiers(program: BaseNode): Set<BaseNode> {
+  const identifiers = new Set<BaseNode>();
+  walkAst(program, {
+    enter(node) {
+      if (
+        (node.type !== 'ObjectPattern' && node.type !== 'ArrayPattern') ||
+        fields(node).lazy !== true
+      ) {
+        return;
+      }
+      for (const identifier of extractPatternIdentifiers(node)) {
+        identifiers.add(identifier);
+      }
+    },
+  });
+  return identifiers;
+}
+
+function visitScopes(scope: Scope, visit: (scope: Scope) => void): void {
+  visit(scope);
+  for (const child of scope.children) visitScopes(child, visit);
+}
+
+function prepareLazyPatterns(program: BaseNode): void {
+  const identifiers = lazyBindingIdentifiers(program);
+  if (identifiers.size > 0) {
+    const analysis = analyzeScope(program);
+    visitScopes(analysis.rootScope, (scope) => {
+      for (const binding of scope.bindings.values()) {
+        if (!identifiers.has(binding.identifier)) continue;
+        const violation = binding.constantViolations[0];
+        if (violation !== undefined) {
+          fail(
+            violation,
+            `lazy binding '${binding.name}' cannot be assigned directly; write the source property instead`,
+          );
+        }
+      }
+    });
+  }
+  walkAst(program, {
+    enter(node) {
+      if (
+        (node.type === 'ObjectPattern' || node.type === 'ArrayPattern') &&
+        fields(node).lazy === true
+      ) {
+        delete fields(node).lazy;
+      }
+    },
+  });
 }
 
 function fragment(children: BaseNode[]): BaseNode {
@@ -135,13 +324,15 @@ function lowerTemplateSequence(nodes: BaseNode[]): BaseNode {
 
 function lowerTemplateBlockExpression(block: BaseNode): BaseNode {
   const { setup, template } = templateBlockParts(block);
-  if (setup.length > 0) {
-    fail(
-      setup[0]!,
-      'branch-local setup is not supported by the experimental direct lowering yet',
-    );
-  }
-  return lowerTemplateSequence(template);
+  const output = lowerTemplateSequence(template);
+  return setup.length === 0
+    ? output
+    : inlineRenderCall(
+        blockStatement([
+          ...setup.map((statement) => lowerNode(statement)),
+          returnStatement(output),
+        ]),
+      );
 }
 
 function lowerIfExpression(node: JSXIfExpression): BaseNode {
@@ -258,23 +449,65 @@ function lowerTemplateChild(node: BaseNode): BaseNode {
     return expressionContainer(lowerForExpression(node as JSXForExpression));
   }
   if (node.type === 'JSXSwitchExpression') {
-    fail(node, 'nested @switch is not supported yet; use @switch as the component output');
+    return expressionContainer(
+      lowerSwitchExpression(node as JSXSwitchExpression),
+    );
   }
   if (node.type === 'JSXCodeBlock') {
-    fail(node, 'nested statement containers are not supported yet');
+    return expressionContainer(
+      lowerCodeBlockExpression(node as JSXCodeBlock),
+    );
+  }
+  if (node.type === 'JSXTryExpression') {
+    return lowerTryExpression(node as JSXTryExpression);
   }
   return lowerNode(node);
 }
 
 function returningBlock(block: BaseNode): BaseNode {
-  const { setup, template } = templateBlockParts(block);
-  if (setup.length > 0) {
-    fail(
-      setup[0]!,
-      'control-flow branch setup is not supported by the current component return planner',
-    );
-  }
-  return blockStatement([returnStatement(lowerTemplateSequence(template))]);
+  return blockStatement([
+    returnStatement(lowerTemplateBlockExpression(block)),
+  ]);
+}
+
+interface LoweredTsrxCatch {
+  param: BaseNode | null;
+  resetParam: BaseNode | null;
+  output: BaseNode;
+}
+
+interface LoweredTsrxTry {
+  pending: BaseNode | null;
+  handler: LoweredTsrxCatch | null;
+}
+
+function lowerTryExpression(node: JSXTryExpression): BaseNode {
+  const output = lowerTemplateBlockExpression(node.block);
+  const marker = fragment([
+    output.type === 'JSXElement' || output.type === 'JSXFragment'
+      ? output
+      : expressionContainer(output),
+  ]);
+  const handler = node.handler;
+  const handlerFields = handler === null ? null : fields(handler);
+  const metadata: LoweredTsrxTry = {
+    pending: node.pending === null || node.pending === undefined
+      ? null
+      : lowerTemplateBlockExpression(node.pending),
+    handler: handler === null
+      ? null
+      : {
+          param: isNode(handlerFields?.param) ? cloneNode(handlerFields.param) : null,
+          resetParam: isNode(handlerFields?.resetParam)
+            ? cloneNode(handlerFields.resetParam)
+            : null,
+          output: lowerTemplateBlockExpression(
+            isNode(handlerFields?.body) ? handlerFields.body : handler,
+          ),
+        },
+  };
+  fields(marker).__memoDomTsrxTry = metadata;
+  return marker;
 }
 
 function lowerRootIf(node: JSXIfExpression): BaseNode {
@@ -325,12 +558,46 @@ function lowerFunctionCodeBlock(node: JSXCodeBlock): BaseNode {
   return blockStatement([...setup, returnStatement(rendered)]);
 }
 
+/**
+ * Preserve a nested statement container as an inline JSX render function.
+ * The shared compiler pass expands this call and applies the same pure-setup
+ * rules used by an equivalent TSX IIFE.
+ */
+function inlineRenderCall(body: BaseNode): BaseNode {
+  return {
+    type: 'CallExpression',
+    callee: {
+      type: 'ArrowFunctionExpression',
+      params: [],
+      body,
+      generator: false,
+      async: false,
+      expression: false,
+    },
+    arguments: [],
+    optional: false,
+  } as BaseNode;
+}
+
+function lowerSwitchExpression(node: JSXSwitchExpression): BaseNode {
+  return inlineRenderCall(
+    blockStatement([lowerRootSwitch(node)]),
+  );
+}
+
+function lowerCodeBlockExpression(node: JSXCodeBlock): BaseNode {
+  return inlineRenderCall(lowerFunctionCodeBlock(node));
+}
+
 function lowerNode(node: BaseNode): BaseNode {
   if (node.type === 'JSXStyleElement') {
     return literal(null);
   }
   if (node.type === 'JSXTryExpression') {
-    fail(node, '@try/@pending/@catch require Memoized DOM runtime semantics');
+    return lowerTryExpression(node as JSXTryExpression);
+  }
+  if (node.type === 'JSXCodeBlock') {
+    return lowerCodeBlockExpression(node as JSXCodeBlock);
   }
   if (node.type === 'TSModuleDeclaration') {
     fail(node, 'module declarations require a future client/server graph contract');
@@ -338,14 +605,8 @@ function lowerNode(node: BaseNode): BaseNode {
   if (node.type === 'JSXOpeningElement') {
     const name = fields(node).name;
     if (isNode(name) && name.type === 'JSXExpressionContainer') {
-      fail(name, 'dynamic <{expression}> tags are not supported yet');
+      fail(name, 'dynamic tag escaped its owning function lowering');
     }
-  }
-  if (
-    (node.type === 'ObjectPattern' || node.type === 'ArrayPattern') &&
-    fields(node).lazy === true
-  ) {
-    fail(node, 'lazy destructuring requires explicit reactive binding semantics');
   }
   if (node.type === 'JSXIfExpression') {
     return lowerIfExpression(node as JSXIfExpression);
@@ -354,7 +615,7 @@ function lowerNode(node: BaseNode): BaseNode {
     return lowerForExpression(node as JSXForExpression);
   }
   if (node.type === 'JSXSwitchExpression') {
-    fail(node, '@switch is currently supported only as a statement-container function output');
+    return lowerSwitchExpression(node as JSXSwitchExpression);
   }
 
   if (
@@ -408,5 +669,8 @@ export function lowerTsrxProgram(program: BaseNode): BaseNode {
   if (program.type !== 'Program') {
     throw new TypeError(`Expected a TSRX Program, received '${program.type}'`);
   }
-  return lowerNode(cloneNode(program));
+  const output = cloneNode(program);
+  prepareLazyPatterns(output);
+  prepareDynamicTags(output);
+  return lowerNode(output);
 }

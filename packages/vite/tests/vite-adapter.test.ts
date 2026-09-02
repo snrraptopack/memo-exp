@@ -15,6 +15,7 @@ import memoizedDom, { memoizedDomFullstack } from '../src';
 const fixture = resolve(import.meta.dirname, 'fixtures/vite-app');
 const source = resolve(fixture, 'src');
 const runtime = resolve(import.meta.dirname, '../../runtime/src/index.ts');
+const runtimeHot = resolve(import.meta.dirname, '../../runtime/src/hot.ts');
 let server: ViteDevServer | undefined;
 let temporaryFixture: string | undefined;
 
@@ -109,6 +110,7 @@ describe('Vite 8 adapter', () => {
       resolve: {
         alias: {
           '@': temporarySource,
+          '@memoized-dom/runtime/hot': runtimeHot,
           '@memoized-dom/runtime': runtime,
         },
       },
@@ -249,6 +251,7 @@ describe('Vite 8 adapter', () => {
       resolve: {
         alias: {
           '@': temporarySource,
+          '@memoized-dom/runtime/hot': runtimeHot,
           '@memoized-dom/runtime': runtime,
         },
       },
@@ -285,6 +288,7 @@ describe('Vite 8 adapter', () => {
       resolve: {
         alias: {
           '@': temporarySource,
+          '@memoized-dom/runtime/hot': runtimeHot,
           '@memoized-dom/runtime': runtime,
         },
       },

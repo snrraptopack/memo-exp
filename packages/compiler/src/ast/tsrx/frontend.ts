@@ -1,4 +1,4 @@
-import { parseModule } from '@tsrx/core';
+import { analyzeTsrx, parseModule } from '@tsrx/core';
 import type { BaseNode, SourceLocation } from '../types';
 import {
   createExtensionEstreeFrontend,
@@ -79,9 +79,19 @@ export function parseTsrxEstree(
   let css = '';
   if (diagnostics.length === 0) {
     try {
-      const styled = prepareTsrxStyles(parsed);
-      program = lowerTsrxProgram(styled.program);
-      css = styled.css;
+      const semanticErrors: TsrxParserError[] = [];
+      const analysis = analyzeTsrx(parsed, filename, {
+        collect: true,
+        errors: semanticErrors,
+        comments,
+      });
+      diagnostics.push(...analysis.errors.map(diagnostic));
+      program = analysis.ast as BaseNode;
+      if (diagnostics.length === 0) {
+        const styled = prepareTsrxStyles(program);
+        program = lowerTsrxProgram(styled.program);
+        css = styled.css;
+      }
     } catch (error) {
       if (!(error instanceof TsrxLoweringError)) throw error;
       diagnostics.push(loweringDiagnostic(error));

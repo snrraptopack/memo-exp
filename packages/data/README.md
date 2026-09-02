@@ -82,9 +82,26 @@ export function StoriesPanel() {
 }
 ```
 
-- **`Pending`**: Shown while initial network requests are in flight.
+- **`Pending`**: Shown independently at source-consuming sites while their
+  initial requests are in flight.
 - **`Error`**: Injects `{ error, retry }` into the error component when a request fails.
-- **Resolved**: The default child arm rendered when all prerequisites in `Group` are satisfied.
+- **Content**: Mounts immediately by default; each dependent expression or
+  structural site resolves independently.
+
+To make the first mount atomic, the third child may be one direct component
+marked with the shorthand compiler directive `suspend`:
+
+```tsx
+<Group data={{ profile, activity }}>
+  <Pending component={DashboardSkeleton} />
+  <ErrorArm component={ErrorBanner} />
+  <Dashboard suspend profile={profile} activity={activity} />
+</Group>
+```
+
+The pending arm appears once until every named source has its initial value.
+The compiler removes `suspend` before component prop checking and emission.
+Committed content remains visible during later refreshes.
 
 ---
 
@@ -232,7 +249,9 @@ import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
 import { App } from './App';
 
 setActiveDataRuntime(createDataRuntime());
-mount('root', App, { hydration: { recover: true } });
+import { hydrate } from '@memoized-dom/runtime/hydrate';
+
+hydrate('root', App, { recover: true });
 ```
 
 ---

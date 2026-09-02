@@ -8,6 +8,8 @@
  */
 
 import type { DocumentLike } from './environment';
+export { HydrationMismatchError } from './hydration-error';
+import { HydrationMismatchError } from './hydration-error';
 
 export type HydrationMarkerKind = 'r' | 'c' | 'g' | 'l' | 'w' | 'd';
 export type PairedHydrationMarkerKind = 'r' | 'c' | 'g' | 'l';
@@ -48,22 +50,6 @@ export interface ClaimedHydrationRange {
   /** Exclusive end: the pair close, next row marker, or enclosing list close. */
   readonly end: Node;
   readonly cursor: LocalHydrationCursor;
-}
-
-export class HydrationMismatchError extends Error {
-  readonly boundary: string;
-  readonly expected: string;
-  readonly actual: string;
-
-  constructor(boundary: string, expected: string, actual: string) {
-    super(
-      `memoized-dom: hydration mismatch in '${boundary}': expected ${expected}, found ${actual}`,
-    );
-    this.name = 'HydrationMismatchError';
-    this.boundary = boundary;
-    this.expected = expected;
-    this.actual = actual;
-  }
 }
 
 const PAIRED_KINDS: ReadonlySet<HydrationMarkerKind> = new Set([

@@ -159,7 +159,7 @@ export function extractPatternIdentifiers(pattern: BaseNode): Identifier[] {
   return identifiers;
 }
 
-function isReferenceIdentifier(
+export function isReferenceIdentifier(
   parent: BaseNode | null,
   key: string | undefined,
 ): boolean {

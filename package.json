@@ -42,7 +42,7 @@
     "bench:frontends": "node bench/frontends/run.mjs",
     "bench:jsx": "bun run bench/jsx/run.ts",
     "bench:vite": "bun run --cwd packages/vite bench",
-    "bench:size": "bun run bench/package-size/run.ts",
+    "bench:size": "bun run bench/package-size/build.ts && bun run bench/package-size/run.ts",
     "bench:frameworks": "cd bench/frameworks && bun run run",
     "bench:application": "cd bench/frameworks && bun run run:application",
     "bench:application:ui": "cd bench/frameworks && bun run ui:application"
