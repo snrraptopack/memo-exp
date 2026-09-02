@@ -108,6 +108,29 @@ describe('experimental TSRX frontend', () => {
     expect(code).toContain('switch (value)');
   });
 
+  it('maps nested @switch through shared exhaustive render expansion', () => {
+    const code = compile(
+      `
+        export function App({ value }: { value: number }) @{
+          <main>
+            @switch (value) {
+              @case 1: { <strong>One</strong> }
+              @case 2: { <em>Two</em> }
+              @default: { <span>Other</span> }
+            }
+          </main>
+        }
+      `,
+      { moduleId: './NestedSwitch.tsrx' },
+    );
+
+    expect(code).toContain('createElement("main")');
+    expect(code).toContain('createElement("strong")');
+    expect(code).toContain('createElement("em")');
+    expect(code).toContain('createElement("span")');
+    expect(code).toContain('createCondRegion');
+  });
+
   it('supports pure setup local to @if, @switch, and @empty branches', () => {
     const conditional = compile(
       `

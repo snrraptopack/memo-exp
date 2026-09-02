@@ -167,8 +167,29 @@ A root `@switch` is conceptually a return-oriented TypeScript switch:
 }
 ```
 
-Each case is isolated and does not fall through. The current Memoized DOM profile
-supports this form only as a statement-container function's final output.
+Cases do not fall through. The pinned TSRX semantic pass treats their
+declarations as sharing the switch lexical scope, so case-local bindings must
+have distinct names.
+
+Inside markup, the same switch is conceptually an inline render helper:
+
+```tsx
+<main>
+  {(() => {
+    switch (status) {
+      case 'ready': return <Dashboard />;
+      case 'loading': return <Spinner />;
+      default: return <ErrorView />;
+    }
+  })()}
+</main>
+```
+
+The shared render planner expands that exhaustive helper into an ordinary
+conditional region before DOM emission. The IIFE above is explanatory syntax;
+it is not present at runtime. Emitted code uses a branch selector and branch
+factories, mounts only the selected output, and does not create a reactive
+temporary containing JSX or DOM nodes.
 
 ## Dynamic elements and components
 
@@ -232,7 +253,7 @@ not a runtime `<style>` DOM node. Upstream style-expression composition such as
 | Function-owned scoped `<style>` | Supported |
 | Nested `@{ ... }` statement containers with pure setup | Supported |
 | Pure branch-local setup in `@if`, `@switch`, or `@empty` | Supported |
-| Nested or expression-position `@switch` | Not yet supported |
+| Nested or expression-position `@switch` | Supported |
 | Lazy `&{ ... }` / `&[ ... ]` destructuring | Not yet supported |
 | `@try` / `@pending` / `@catch` | Not yet supported |
 | Style expressions and style composition | Not yet supported |

@@ -395,7 +395,9 @@ function lowerTemplateChild(node: BaseNode): BaseNode {
     return expressionContainer(lowerForExpression(node as JSXForExpression));
   }
   if (node.type === 'JSXSwitchExpression') {
-    fail(node, 'nested @switch is not supported yet; use @switch as the component output');
+    return expressionContainer(
+      lowerSwitchExpression(node as JSXSwitchExpression),
+    );
   }
   if (node.type === 'JSXCodeBlock') {
     return expressionContainer(
@@ -480,6 +482,12 @@ function inlineRenderCall(body: BaseNode): BaseNode {
   } as BaseNode;
 }
 
+function lowerSwitchExpression(node: JSXSwitchExpression): BaseNode {
+  return inlineRenderCall(
+    blockStatement([lowerRootSwitch(node)]),
+  );
+}
+
 function lowerCodeBlockExpression(node: JSXCodeBlock): BaseNode {
   return inlineRenderCall(lowerFunctionCodeBlock(node));
 }
@@ -516,7 +524,7 @@ function lowerNode(node: BaseNode): BaseNode {
     return lowerForExpression(node as JSXForExpression);
   }
   if (node.type === 'JSXSwitchExpression') {
-    fail(node, '@switch is currently supported only as a statement-container function output');
+    return lowerSwitchExpression(node as JSXSwitchExpression);
   }
 
   if (
