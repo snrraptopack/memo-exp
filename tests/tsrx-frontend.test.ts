@@ -356,6 +356,54 @@ describe('experimental TSRX frontend', () => {
     expect(code).toContain('Loading dashboard');
   });
 
+  it('preserves module-state provenance through derived @for component props', () => {
+    const output = compileModules({
+      './state.ts': `
+        export const columns = [{
+          id: 'todo',
+          tasks: [{ id: 1, done: false }],
+        }];
+        export function toggle(task: { id: number; done: boolean }) {
+          task.done = !task.done;
+        }
+      `,
+      './App.tsrx': `
+        import { columns } from './state';
+        import { Column } from './Column.tsrx';
+        export function App() @{
+          <main>
+            @for (const column of columns; key column.id) {
+              <Column {column} />
+            }
+          </main>
+        }
+      `,
+      './Column.tsrx': `
+        import { Card } from './Card.tsrx';
+        export function Column({ column }) @{
+          const visible = column.tasks.filter((task) => !task.done);
+          <section>
+            @for (const task of visible; key task.id) {
+              <Card {task} />
+            } @empty {
+              <p>Complete</p>
+            }
+          </section>
+        }
+      `,
+      './Card.tsrx': `
+        import { toggle } from './state';
+        export function Card({ task }) @{
+          <button onClick={() => toggle(task)}>{String(task.done)}</button>
+        }
+      `,
+    });
+
+    expect(output['./Card.tsrx']).toContain('./state.ts#columns');
+    expect(output['./Card.tsrx']).toContain('commitWrites');
+    expect(output['./Card.tsrx']).not.toContain('markDirtySubtree');
+  });
+
   it('extracts scoped styles, annotates JSX class names with hashes, and strips style tags', () => {
     const source = `
       export function Card() @{
