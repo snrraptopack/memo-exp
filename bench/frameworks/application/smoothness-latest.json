@@ -1,0 +1,385 @@
+{
+  "browser": "Chrome/152.0.7977.65",
+  "config": {
+    "count": 1000,
+    "interactionSamples": 12,
+    "sustainedFrames": 180,
+    "warmup": 2
+  },
+  "date": "2026-09-02T21:48:08.980Z",
+  "note": "Machine-local production-browser frame pacing and trusted interaction measurements; compare runs on identical hardware and browser versions.",
+  "platform": "win32 x64",
+  "results": [
+    {
+      "id": "vanilla",
+      "label": "Vanilla DOM",
+      "version": "browser",
+      "bundle": {
+        "gzipBytes": 2663,
+        "rawBytes": 7904
+      },
+      "interactions": [
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 18.899999998509884,
+          "eventToFrameP75Ms": 22.299999997019768,
+          "eventToFrameP95Ms": 24.100000001490116,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 5,
+          "scenario": "triage"
+        },
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 71.30000000447035,
+          "eventToFrameP75Ms": 77.5,
+          "eventToFrameP95Ms": 85,
+          "longTaskDurationMs": 798,
+          "longTasks": 12,
+          "mutationRecordsMedian": 103,
+          "scenario": "bulk-update"
+        }
+      ],
+      "pipeline": {
+        "layoutMs": 4194.089,
+        "recalcStyleMs": 892.9509999999998,
+        "scriptMs": 5727.844,
+        "taskMs": 14621.091000000002
+      },
+      "sustained": {
+        "droppedFrames": 656,
+        "frameBudgetMs": 16.69999999999709,
+        "frameIntervalMedianMs": 66.79999999999927,
+        "frameIntervalP95Ms": 133.09999999999854,
+        "frameIntervalP99Ms": 150,
+        "frames": 180,
+        "goodFramePercent": 0,
+        "heapDeltaBytes": 18728,
+        "longTaskDurationMs": 13474,
+        "longTasks": 179,
+        "maxFrameIntervalMs": 166.70000000000073,
+        "mutationRecords": 18540,
+        "updateWorkMedianMs": 29.299999997019768,
+        "updateWorkP95Ms": 54.100000001490116
+      }
+    },
+    {
+      "id": "memoized-dom",
+      "label": "memoized-dom TSX",
+      "version": "workspace",
+      "bundle": {
+        "gzipBytes": 10675,
+        "rawBytes": 34057
+      },
+      "interactions": [
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 15.099999994039536,
+          "eventToFrameP75Ms": 18.399999998509884,
+          "eventToFrameP95Ms": 19.80000000447035,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 7,
+          "scenario": "triage"
+        },
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 23.799999997019768,
+          "eventToFrameP75Ms": 26,
+          "eventToFrameP95Ms": 29.100000001490116,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 201,
+          "scenario": "bulk-update"
+        }
+      ],
+      "pipeline": {
+        "layoutMs": 2079.755,
+        "recalcStyleMs": 0,
+        "scriptMs": 691.4879999999999,
+        "taskMs": 5289.717
+      },
+      "sustained": {
+        "droppedFrames": 123,
+        "frameBudgetMs": 16.600000000000364,
+        "frameIntervalMedianMs": 33.19999999999982,
+        "frameIntervalP95Ms": 49.600000000000364,
+        "frameIntervalP99Ms": 66.69999999999891,
+        "frames": 180,
+        "goodFramePercent": 40,
+        "heapDeltaBytes": 34276,
+        "longTaskDurationMs": 314,
+        "longTasks": 5,
+        "maxFrameIntervalMs": 67.20000000000073,
+        "mutationRecords": 36240,
+        "updateWorkMedianMs": 3.6999999955296516,
+        "updateWorkP95Ms": 6.899999998509884
+      }
+    },
+    {
+      "id": "solid",
+      "label": "Solid",
+      "version": "1.9.14",
+      "bundle": {
+        "gzipBytes": 8403,
+        "rawBytes": 21814
+      },
+      "interactions": [
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 23.19999999552965,
+          "eventToFrameP75Ms": 24.700000002980232,
+          "eventToFrameP95Ms": 26.100000001490116,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 4,
+          "scenario": "triage"
+        },
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 50.5,
+          "eventToFrameP75Ms": 51.70000000298023,
+          "eventToFrameP95Ms": 53.899999998509884,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 201,
+          "scenario": "bulk-update"
+        }
+      ],
+      "pipeline": {
+        "layoutMs": 4644.7,
+        "recalcStyleMs": 888.3130000000001,
+        "scriptMs": 2320.932,
+        "taskMs": 12015.865999999998
+      },
+      "sustained": {
+        "droppedFrames": 505,
+        "frameBudgetMs": 16.69999999999891,
+        "frameIntervalMedianMs": 50.20000000000073,
+        "frameIntervalP95Ms": 100,
+        "frameIntervalP99Ms": 133.40000000000146,
+        "frames": 180,
+        "goodFramePercent": 0,
+        "heapDeltaBytes": 16945,
+        "longTaskDurationMs": 8524,
+        "longTasks": 127,
+        "maxFrameIntervalMs": 216.70000000000073,
+        "mutationRecords": 36240,
+        "updateWorkMedianMs": 11.299999997019768,
+        "updateWorkP95Ms": 21.700000002980232
+      }
+    },
+    {
+      "id": "svelte",
+      "label": "Svelte",
+      "version": "5.56.8",
+      "bundle": {
+        "gzipBytes": 23575,
+        "rawBytes": 61645
+      },
+      "interactions": [
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 39.79999999701977,
+          "eventToFrameP75Ms": 43.399999998509884,
+          "eventToFrameP95Ms": 50.5,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 7,
+          "scenario": "triage"
+        },
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 55.5,
+          "eventToFrameP75Ms": 60.600000001490116,
+          "eventToFrameP95Ms": 61.899999998509884,
+          "longTaskDurationMs": 286,
+          "longTasks": 5,
+          "mutationRecordsMedian": 201,
+          "scenario": "bulk-update"
+        }
+      ],
+      "pipeline": {
+        "layoutMs": 2281.193,
+        "recalcStyleMs": 0,
+        "scriptMs": 5051.003,
+        "taskMs": 10150.490999999998
+      },
+      "sustained": {
+        "droppedFrames": 408,
+        "frameBudgetMs": 16.600000000000364,
+        "frameIntervalMedianMs": 50,
+        "frameIntervalP95Ms": 66.79999999999927,
+        "frameIntervalP99Ms": 83.39999999999964,
+        "frames": 180,
+        "goodFramePercent": 0,
+        "heapDeltaBytes": 22648,
+        "longTaskDurationMs": 7031,
+        "longTasks": 124,
+        "maxFrameIntervalMs": 116.60000000000036,
+        "mutationRecords": 36240,
+        "updateWorkMedianMs": 27.200000002980232,
+        "updateWorkP95Ms": 35.100000001490116
+      }
+    },
+    {
+      "id": "vue",
+      "label": "Vue",
+      "version": "3.5.40",
+      "bundle": {
+        "gzipBytes": 28177,
+        "rawBytes": 70503
+      },
+      "interactions": [
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 37.599999994039536,
+          "eventToFrameP75Ms": 42.100000001490116,
+          "eventToFrameP95Ms": 44,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 8,
+          "scenario": "triage"
+        },
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 51.899999998509884,
+          "eventToFrameP75Ms": 55.79999999701977,
+          "eventToFrameP95Ms": 60.900000005960464,
+          "longTaskDurationMs": 119,
+          "longTasks": 2,
+          "mutationRecordsMedian": 202,
+          "scenario": "bulk-update"
+        }
+      ],
+      "pipeline": {
+        "layoutMs": 2030.275,
+        "recalcStyleMs": 142.75099999999998,
+        "scriptMs": 760.735,
+        "taskMs": 9900.319
+      },
+      "sustained": {
+        "droppedFrames": 387,
+        "frameBudgetMs": 16.69999999999891,
+        "frameIntervalMedianMs": 50,
+        "frameIntervalP95Ms": 66.79999999999927,
+        "frameIntervalP99Ms": 99.89999999999964,
+        "frames": 180,
+        "goodFramePercent": 0.5555555555555556,
+        "heapDeltaBytes": 48858,
+        "longTaskDurationMs": 5124,
+        "longTasks": 86,
+        "maxFrameIntervalMs": 133.40000000000146,
+        "mutationRecords": 36420,
+        "updateWorkMedianMs": 25.600000001490116,
+        "updateWorkP95Ms": 36.80000000447035
+      }
+    },
+    {
+      "id": "preact",
+      "label": "Preact",
+      "version": "10.29.7",
+      "bundle": {
+        "gzipBytes": 10079,
+        "rawBytes": 26025
+      },
+      "interactions": [
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 20.80000000447035,
+          "eventToFrameP75Ms": 22.69999999552965,
+          "eventToFrameP95Ms": 27.899999998509884,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 7,
+          "scenario": "triage"
+        },
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 31.5,
+          "eventToFrameP75Ms": 34.899999998509884,
+          "eventToFrameP95Ms": 37,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 201,
+          "scenario": "bulk-update"
+        }
+      ],
+      "pipeline": {
+        "layoutMs": 2424.9230000000007,
+        "recalcStyleMs": 36.327,
+        "scriptMs": 85.79100000000001,
+        "taskMs": 7986.373999999998
+      },
+      "sustained": {
+        "droppedFrames": 256,
+        "frameBudgetMs": 16.600000000002183,
+        "frameIntervalMedianMs": 33.39999999999782,
+        "frameIntervalP95Ms": 67.19999999999709,
+        "frameIntervalP99Ms": 100.10000000000218,
+        "frames": 180,
+        "goodFramePercent": 5.555555555555555,
+        "heapDeltaBytes": 22044,
+        "longTaskDurationMs": 1870,
+        "longTasks": 24,
+        "maxFrameIntervalMs": 199.59999999999854,
+        "mutationRecords": 36240,
+        "updateWorkMedianMs": 10.299999997019768,
+        "updateWorkP95Ms": 28.100000001490116
+      }
+    },
+    {
+      "id": "react",
+      "label": "React",
+      "version": "19.2.8",
+      "bundle": {
+        "gzipBytes": 63266,
+        "rawBytes": 199512
+      },
+      "interactions": [
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 19,
+          "eventToFrameP75Ms": 22.799999997019768,
+          "eventToFrameP95Ms": 23.299999997019768,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 9,
+          "scenario": "triage"
+        },
+        {
+          "eventTimingP95Ms": null,
+          "eventToFrameMedianMs": 30.799999997019768,
+          "eventToFrameP75Ms": 32.20000000298023,
+          "eventToFrameP95Ms": 33.79999999701977,
+          "longTaskDurationMs": 0,
+          "longTasks": 0,
+          "mutationRecordsMedian": 203,
+          "scenario": "bulk-update"
+        }
+      ],
+      "pipeline": {
+        "layoutMs": 2393.013999999999,
+        "recalcStyleMs": 40.17100000000018,
+        "scriptMs": 1378.97,
+        "taskMs": 7192.0380000000005
+      },
+      "sustained": {
+        "droppedFrames": 208,
+        "frameBudgetMs": 16.600000000002183,
+        "frameIntervalMedianMs": 33.39999999999782,
+        "frameIntervalP95Ms": 50.099999999998545,
+        "frameIntervalP99Ms": 66.5,
+        "frames": 180,
+        "goodFramePercent": 6.666666666666667,
+        "heapDeltaBytes": 73016,
+        "longTaskDurationMs": 453,
+        "longTasks": 7,
+        "maxFrameIntervalMs": 66.70000000000073,
+        "mutationRecords": 36600,
+        "updateWorkMedianMs": 7.200000002980232,
+        "updateWorkP95Ms": 12.5
+      }
+    }
+  ]
+}

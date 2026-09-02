@@ -45,6 +45,7 @@
     "bench:size": "bun run bench/package-size/build.ts && bun run bench/package-size/run.ts",
     "bench:frameworks": "cd bench/frameworks && bun run run",
     "bench:application": "cd bench/frameworks && bun run run:application",
+    "bench:smoothness": "cd bench/frameworks && bun run run:smoothness",
     "bench:application:ui": "cd bench/frameworks && bun run ui:application"
   },
   "devDependencies": {

@@ -241,7 +241,10 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
       const init = childNode(declaration, 'init');
       const name = identifierName(id);
       if (name === null || init === null) continue;
-      if (ctx.state.get(name) === 'let' || ctx.state.get(name) === 'computed') {
+      // Mutable roots were classified before derivations. Their initializer
+      // may read linked helpers/state, but that never makes writes to their
+      // contents illegal by reclassifying the root as computed.
+      if (ctx.state.has(name)) {
         continue;
       }
       if (
