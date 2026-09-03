@@ -74,6 +74,81 @@ retain only its direct update closure. Instance-local collection sources also
 remain conservative unless their existing keyed-item mutation journal provides
 an exact reason.
 
+#### Current Architecture and Exact Bottleneck
+
+An inline keyed row currently lowers to all of the following:
+
+1. A stable row id (`<owner>/<list>/Row[<key>]`) and a registered render entity.
+2. A row-local update closure containing guarded DOM setters.
+3. An `updateProps` closure that rebinds the current item and optional index.
+4. A `ListEntry` that reports the row id in `entities`, causing removal to run
+   `unregisterSubtree` for every discarded row.
+5. Wildcard access-table readers (`Row[*]`) for module state consumed by the
+   row, so one broad value such as `selected` can schedule every live row.
+
+The entity is not pointless: it currently provides independently addressable
+invalidation, dirty-reason storage, parent/child lifecycle ownership, recursive
+cleanup for nested components and regions, and a destination for row-local
+handler writes. The bottleneck is that simple host-only rows pay all of that
+even when their generated update closure is already the complete unit of work.
+
+The remaining cost now shows up clearly because client row hydration comments
+have been removed:
+
+* **Creation:** every row inserts into the registry, links into the parent's
+  child set, and is tested against live wildcard reader patterns.
+* **Broad row state updates:** a value read by all rows expands to and schedules
+  every row entity separately, including dirty-reason bookkeeping.
+* **Clear/removal:** every row unregisters independently and updates registry
+  and wildcard caches even when its DOM was deleted as one range.
+* **Memory:** each row retains an entity record, child metadata, registry key,
+  and access-resolver membership in addition to its DOM/update closure.
+
+This matches the Chromium contrast: eligible component rows use the
+registry-free ABI, while inline clear of 10k rows measured 55.6–66.4 ms versus
+11.2–15.2 ms for component rows. Inline selection also remained 3.6–3.9 ms
+while the component-row path measured 0.2–0.4 ms.
+
+#### Proposed Compiler Proof, Not a Runtime Guess
+
+The compiler may elide an inline row entity only when the emitted row owns no
+entity-dependent lifecycle. The initial proof should require:
+
+* no nested component, conditional region, keyed region, dynamic component, or
+  transparent data-policy entity;
+* no effect, cleanup registration, ref disposer, volatile pull, or other
+  lifecycle callback that currently attaches to the row id;
+* no parameterized access route that deliberately targets one row entity by
+  key; and
+* a generated direct update closure for every dynamic host value, with index
+  replay retained when the callback consumes the index.
+
+For a proven row, emission can set `entities: []`, disable row-id tracking for
+that list, route shared module reads to the list owner, and use the existing
+row update closure directly for row-local handler writes. The list owner then
+reconciles/replays those closures in one call. This is compile-time ownership
+selection; the keyed topology algorithm and its LIS correctness fallback do
+not change.
+
+Rows failing any gate keep today's entity path. In particular, nested stateful
+trees and precisely key-addressed invalidation must not be made slower or less
+correct merely to improve a bulk benchmark. Event/devtools provenance also
+needs a key-addressed identity that does not require a registry entry before
+the optimization can be considered complete.
+
+#### Acceptance Gates
+
+* Existing keyed identity, event mutation, nested composition, cleanup, ref,
+  conditional, transparent-source, hydration, and HMR tests remain unchanged.
+* Add compiler snapshots for both an eligible host-only row and every rejected
+  ownership category.
+* Measure create, select, partial update, clear, scattered removal, and memory
+  growth for both inline and component rows; no win may rely only on one bulk
+  operation.
+* Preserve the no-method-whitelist rule and add no parser/backend dependency;
+  TSX and TSRX must receive the same decision after ESTree lowering.
+* Keep arbitrary or unlinked effects conservative.
+
 ---
 
 ## 3. SPA-Only Runtime Bundle Decoupling (Completed 2026-09-02)
