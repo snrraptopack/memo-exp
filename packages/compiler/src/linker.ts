@@ -542,11 +542,14 @@ function applicationMounts(
   program: t.Program,
   runtimePath: string,
 ): string[] {
+  // Hydrating clients import `hydrate` from the explicit hydration subpath;
+  // it roots the application graph exactly like a base-runtime `mount`.
+  const mountEntryPaths = new Set([runtimePath, `${runtimePath}/hydrate`]);
   const mountBindings = new Set<string>();
   for (const statement of program.body) {
     if (
       !astFactory.isImportDeclaration(statement) ||
-      statement.source.value !== runtimePath
+      !mountEntryPaths.has(statement.source.value)
     ) {
       continue;
     }
@@ -554,7 +557,9 @@ function applicationMounts(
       if (
         astFactory.isImportSpecifier(specifier) &&
         (astFactory.isIdentifier(specifier.imported, { name: 'mount' }) ||
-          astFactory.isStringLiteral(specifier.imported, { value: 'mount' }))
+          astFactory.isStringLiteral(specifier.imported, { value: 'mount' }) ||
+          astFactory.isIdentifier(specifier.imported, { name: 'hydrate' }) ||
+          astFactory.isStringLiteral(specifier.imported, { value: 'hydrate' }))
       ) {
         mountBindings.add(specifier.local.name);
       }
