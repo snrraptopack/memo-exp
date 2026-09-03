@@ -12,10 +12,13 @@ import {
   abortReason,
   decodeResponse,
   fetchIdentity,
+  normalizeFetchMethod,
+  prepareRequestBody,
   resolveRequestURL,
 } from './request';
 import type {
   FetchCache,
+  FetchMethod,
   FetchOptions,
   FetchResource,
   OptimisticChange,
@@ -29,7 +32,10 @@ import type {
 
 interface FetchDescriptor {
   readonly url: string;
+  readonly method: FetchMethod;
   readonly headers: HeadersInit | undefined;
+  readonly body: BodyInit | undefined;
+  readonly bodyIdentity: string;
   readonly identity: string;
   readonly cache: FetchCache;
   readonly schema: StandardSchemaV1 | undefined;
@@ -61,8 +67,12 @@ function publicSnapshot<T>(snapshot: MutableSnapshot<T>): ResourceSnapshot<T> {
   return Object.freeze({ ...snapshot });
 }
 
-function normalizedCache(cache: FetchCache | undefined): FetchCache {
-  return cache ?? 'active';
+function normalizedCache(
+  cache: FetchCache | undefined,
+  method: FetchMethod,
+): FetchCache {
+  if (cache !== undefined) return cache;
+  return method === 'GET' ? 'active' : false;
 }
 
 function equalCache(left: FetchCache, right: FetchCache): boolean {
@@ -89,7 +99,9 @@ function equalDescriptor(
 ): boolean {
   return left.identity === right.identity &&
     left.url === right.url &&
+    left.method === right.method &&
     equalHeaders(left.headers, right.headers) &&
+    left.bodyIdentity === right.bodyIdentity &&
     equalCache(left.cache, right.cache) &&
     left.schema === right.schema &&
     left.signal === right.signal;
@@ -193,8 +205,9 @@ class FetchEntry {
 
     const request = abortable(
       () => this.store.environment.fetch()(this.descriptor.url, {
-          method: 'GET',
+          method: this.descriptor.method,
           headers: this.descriptor.headers,
+          body: this.descriptor.body,
           signal: controller.signal,
         }),
       controller.signal,
@@ -288,7 +301,7 @@ function serializeEntry(entry: FetchEntry): SerializedSourceRecord | undefined {
   return {
     sourceId: entry.descriptor.identity,
     contractId: `mmd-fetch/v1:${entry.descriptor.schema ? 'validated' : 'raw'}`,
-    requestFingerprint: entry.descriptor.url,
+    requestFingerprint: entry.descriptor.identity,
     snapshot: serialized,
   };
 }
@@ -853,13 +866,20 @@ function fetchDescriptor(
   target: string | URL | null,
   options: FetchOptions & { readonly validate?: StandardSchemaV1 },
 ): { descriptor: FetchDescriptor; paused: boolean } {
+  const method = normalizeFetchMethod(options.method);
   if (target === null) {
     return {
       descriptor: {
         url: '',
+        method,
         headers: options.headers,
+        body: undefined,
+        bodyIdentity: 'none',
         identity: 'paused',
-        cache: normalizedCache(options.cache),
+        cache: normalizedCache(
+          options.cache,
+          method,
+        ),
         schema: options.validate,
         signal: options.signal,
       },
@@ -867,13 +887,27 @@ function fetchDescriptor(
     };
   }
 
+  if ((method === 'GET' || method === 'HEAD') && options.body !== undefined) {
+    throw new TypeError(`$fetch ${method} requests cannot include a body`);
+  }
   const url = resolveRequestURL(target, options.query, environment.baseURL);
   const headers = new Headers(options.headers);
+  const preparedBody = prepareRequestBody(options.body, headers);
   const descriptor: FetchDescriptor = {
     url,
+    method,
     headers,
-    identity: fetchIdentity(url, headers, options.key, options.validate),
-    cache: normalizedCache(options.cache),
+    body: preparedBody.body,
+    bodyIdentity: preparedBody.identity,
+    identity: fetchIdentity(
+      url,
+      method,
+      headers,
+      preparedBody.identity,
+      options.key,
+      options.validate,
+    ),
+    cache: normalizedCache(options.cache, method),
     schema: options.validate,
     signal: options.signal,
   };

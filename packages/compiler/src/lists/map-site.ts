@@ -556,6 +556,107 @@ interface RowDerivation {
   init: t.Expression;
 }
 
+function defaultedRowProjection(
+  projection: t.Expression,
+  fallback: t.Expression,
+): t.Expression {
+  return astFactory.conditionalExpression(
+    astFactory.binaryExpression(
+      '===',
+      cloneEstreeNode(projection, true),
+      astFactory.unaryExpression('void', astFactory.numericLiteral(0)),
+    ),
+    cloneEstreeNode(fallback, true),
+    projection,
+  );
+}
+
+function rowMemberProjection(
+  source: t.Expression,
+  key: t.Expression,
+  computed: boolean,
+): t.Expression {
+  return astFactory.memberExpression(
+    cloneEstreeNode(source, true),
+    cloneEstreeNode(key, true),
+    computed || !astFactory.isIdentifier(key),
+  );
+}
+
+function decomposeRowPattern(
+  pattern: BaseNode,
+  source: t.Expression,
+  output: RowDerivation[],
+  fail: Fail,
+): void {
+  if (astFactory.isIdentifier(pattern)) {
+    output.push({ name: pattern.name, init: source });
+    return;
+  }
+  if (astFactory.isAssignmentPattern(pattern)) {
+    decomposeRowPattern(
+      pattern.left,
+      defaultedRowProjection(source, pattern.right),
+      output,
+      fail,
+    );
+    return;
+  }
+  if (astFactory.isObjectPattern(pattern)) {
+    for (const property of pattern.properties) {
+      if (astFactory.isRestElement(property)) {
+        fail(
+          'memo-dom: object rest in a list const destructuring declaration is not supported; destructure in the callback parameter or read the required properties explicitly — R7 L1',
+        );
+      }
+      if (!astFactory.isObjectProperty(property)) {
+        fail('memo-dom: unsupported list const destructuring property — R7 L1');
+      }
+      decomposeRowPattern(
+        property.value as unknown as BaseNode,
+        rowMemberProjection(source, property.key, property.computed),
+        output,
+        fail,
+      );
+    }
+    return;
+  }
+  if (astFactory.isArrayPattern(pattern)) {
+    for (let index = 0; index < pattern.elements.length; index++) {
+      const element = pattern.elements[index];
+      if (element === null) continue;
+      if (astFactory.isRestElement(element)) {
+        if (!astFactory.isIdentifier(element.argument)) {
+          fail('memo-dom: nested array rest patterns are not supported in list const destructuring — R7 L1');
+        }
+        output.push({
+          name: element.argument.name,
+          init: astFactory.callExpression(
+            astFactory.memberExpression(
+              cloneEstreeNode(source, true),
+              astFactory.identifier('slice'),
+            ),
+            [astFactory.numericLiteral(index)],
+          ),
+        });
+        continue;
+      }
+      decomposeRowPattern(
+        element as unknown as BaseNode,
+        rowMemberProjection(
+          source,
+          astFactory.numericLiteral(index),
+          true,
+        ),
+        output,
+        fail,
+      );
+    }
+    return;
+  }
+  fail('memo-dom: unsupported list const destructuring target — R7 L1');
+}
+
 function collectRowDerivations(
   statements: t.Statement[],
   reserved: ReadonlySet<string>,
@@ -572,17 +673,14 @@ function collectRowDerivations(
     if (
       declaration === undefined ||
       declaration === null ||
-      !astFactory.isIdentifier(declaration.id) ||
+      (!astFactory.isIdentifier(declaration.id) &&
+        !astFactory.isObjectPattern(declaration.id) &&
+        !astFactory.isArrayPattern(declaration.id)) ||
       declaration.init == null ||
       !astFactory.isExpression(declaration.init)
     ) {
       return fail(
-        'memo-dom: list callback statements before return must be single-name const declarations — R7 L1',
-      );
-    }
-    if (reserved.has(declaration.id.name)) {
-      return fail(
-        `memo-dom: list callback derivation '${declaration.id.name}' shadows an item or index binding — R7 L1`,
+        'memo-dom: list callback statements before return must be one const declaration with an identifier, object pattern, or array pattern — R7 L1',
       );
     }
     walkAst(declaration.init as unknown as BaseNode, {
@@ -600,7 +698,21 @@ function collectRowDerivations(
         }
       },
     });
-    derivations.push({ name: declaration.id.name, init: declaration.init });
+    const expanded: RowDerivation[] = [];
+    decomposeRowPattern(
+      declaration.id as unknown as BaseNode,
+      declaration.init,
+      expanded,
+      fail,
+    );
+    for (const derivation of expanded) {
+      if (reserved.has(derivation.name)) {
+        return fail(
+          `memo-dom: list callback derivation '${derivation.name}' shadows an item or index binding — R7 L1`,
+        );
+      }
+      derivations.push(derivation);
+    }
   }
   return derivations;
 }

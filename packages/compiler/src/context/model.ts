@@ -128,6 +128,8 @@ export interface LinkedStateImport {
 
 export interface LinkedFunctionImport {
   type: 'function';
+  /** Calling this imported function creates a compiler-transparent source. */
+  transparentSourceFactory?: boolean;
   /** Finite intrinsic-tag identities declared by the helper return type. */
   tagCandidates?: string[];
   /** Finite component identities declared by helper returns. */
@@ -528,6 +530,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     LinkedDynamicComponentCandidate[]
   >();
   const transparentModuleSources = new Map<string, string>();
+  const transparentSourceFactories = new Set<string>();
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
@@ -550,6 +553,9 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
       }
       importedState.add(local);
     } else if (linked.type === 'function') {
+      if (linked.transparentSourceFactory === true) {
+        transparentSourceFactories.add(local);
+      }
       if (linked.tagCandidates !== undefined) {
         functionTagCandidates.set(local, [...linked.tagCandidates]);
       }
@@ -615,7 +621,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     astAnalysis: null,
     usesRouter: false,
     usesTransparentData: false,
-    transparentSourceFactories: new Set(),
+    transparentSourceFactories,
     transparentTrackFactories: new Set(),
     transparentSourcePassthroughs: new Set(),
     transparentGroups: new Set(),

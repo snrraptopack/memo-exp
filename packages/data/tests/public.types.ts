@@ -32,12 +32,27 @@ interface User {
 }
 
 const user = $fetch<User>('/user', { cache: { scope: 'app' } });
+const savedUser = $fetch<User>('/user', {
+  method: 'PATCH',
+  body: { id: 1, name: 'Grace' },
+});
 const assignableUser: User = user;
 const preservedSource: ResolvedValue<User> = user;
 void assignableUser.name;
 void preservedSource.id;
 void $track(user).pending;
 void $track(user).error;
+void savedUser.name;
+void $track(savedUser).pending;
+
+// @ts-expect-error HTTP methods use the canonical uppercase spelling.
+$fetch('/user', { method: 'post', body: { id: 1 } });
+
+// @ts-expect-error Generated fetch bodies must be transport-safe.
+$fetch('/user', { method: 'POST', body: { callback() {} } });
+
+// @ts-expect-error BigInt requires an explicit application-level encoding.
+$fetch('/user', { method: 'POST', body: { id: 1n } });
 
 // @ts-expect-error The legacy operations facade is no longer public.
 data.$ops(user);

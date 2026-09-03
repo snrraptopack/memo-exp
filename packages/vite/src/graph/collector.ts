@@ -20,6 +20,11 @@ import {
   moduleId,
 } from '../paths';
 import { valueImports, type ParsedProgram } from './imports';
+import {
+  clientServerFunctionSource,
+  isServerFunctionFile,
+  rewriteServerFunctionBarrelImports,
+} from '../server-functions';
 
 export interface ResolvedImport {
   id: string;
@@ -72,8 +77,17 @@ export async function compileGraph(
     context.addWatchFile(cleanFile);
 
     const id = moduleId(root, cleanFile);
-    const source =
+    const authoredSource =
       overrides.get(cleanFile) ?? (await readFile(cleanFile, 'utf8'));
+    const facadeSource = isServerFunctionFile(root, cleanFile, options)
+      ? await clientServerFunctionSource(
+          authoredSource,
+          cleanFile,
+          root,
+          options,
+        )
+      : authoredSource;
+    const source = rewriteServerFunctionBarrelImports(facadeSource);
     sources.set(id, source);
     sourceIds.set(cleanFile, id);
 

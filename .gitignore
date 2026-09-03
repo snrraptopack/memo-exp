@@ -25,6 +25,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # caches
 .eslintcache
 .cache
+
 *.tsbuildinfo
 
 # IntelliJ based IDEs
@@ -34,3 +35,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 .cache/
 tests/dbg-out.txt
+
+# generated framework artifacts (declarations, routes)
+.memoized/

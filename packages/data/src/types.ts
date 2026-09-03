@@ -7,6 +7,41 @@ export type QueryValue =
   | readonly QueryPrimitive[];
 export type Query = Readonly<Record<string, QueryValue>>;
 
+export type FetchMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'HEAD'
+  | 'OPTIONS';
+
+export type JsonPrimitive = string | number | boolean | null;
+export interface JsonObject {
+  readonly [key: string]: JsonValue | undefined;
+}
+export type JsonValue =
+  | JsonPrimitive
+  | JsonObject
+  | readonly JsonValue[];
+
+/**
+ * Replayable request bodies accepted by a colorless fetch source.
+ *
+ * Text, URLSearchParams, JSON, and binary bodies use a bounded content
+ * fingerprint for request identity. Blob bodies use object identity;
+ * FormData string fields use content identity while Blob/File fields use
+ * object identity. Consequently, separately created but equivalent opaque
+ * bodies do not deduplicate unless they reuse the same Blob/File instances.
+ */
+export type FetchBody =
+  | JsonValue
+  | Blob
+  | FormData
+  | URLSearchParams
+  | ArrayBuffer
+  | ArrayBufferView;
+
 export type RequestKeyPart = string | number | boolean | null;
 export type RequestKey = string | readonly RequestKeyPart[];
 
@@ -50,6 +85,13 @@ export interface AppCacheOptions {
 export type FetchCache = false | 'active' | AppCacheOptions;
 
 export interface FetchOptions {
+  /** HTTP method (GET by default). */
+  readonly method?: FetchMethod;
+  /**
+   * Request body. JSON values are serialized and receive an application/json
+   * content type unless one was provided. GET and HEAD requests reject bodies.
+   */
+  readonly body?: FetchBody;
   readonly query?: Query;
   readonly headers?: HeadersInit;
   readonly key?: RequestKey;

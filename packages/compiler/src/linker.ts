@@ -62,6 +62,7 @@ import { normalizeComponentDeclarations } from './components/declarations';
 import { initializeGeneratedIdentifiers } from './identifiers';
 import {
   lowerTransparentGroups,
+  rejectTransparentSourceDestructuring,
   scanAndLowerModuleSourceDeclarations,
   scanTransparentSourceImports,
 } from './data-sources';
@@ -117,6 +118,7 @@ export interface CompiledStateExport {
 
 export interface CompiledFunctionExport {
   exported: string;
+  transparentSourceFactory?: boolean;
   reads: string[];
   writes: string[];
   boundedWrites: string[];
@@ -161,6 +163,7 @@ interface StateExport {
 
 interface FunctionExport {
   type: 'function';
+  transparentSourceFactory?: boolean;
   tagCandidates: string[];
   componentCandidates: string[];
   reads: string[];
@@ -418,6 +421,56 @@ function directFunctionComponentNames(
   return [...output];
 }
 
+function directTransparentSourceFunctions(
+  program: t.Program,
+  factories: ReadonlySet<string>,
+): Set<string> {
+  const result = new Set<string>();
+  const returnsSource = (
+    fn: t.FunctionDeclaration | t.FunctionExpression | t.ArrowFunctionExpression,
+  ): boolean => {
+    const expression = astFactory.isBlockStatement(fn.body)
+      ? fn.body.body.length === 1 && astFactory.isReturnStatement(fn.body.body[0])
+        ? fn.body.body[0].argument
+        : null
+      : fn.body;
+    const current = expression !== null && astFactory.isExpression(expression)
+      ? unwrapTypeExpression(expression)
+      : null;
+    return astFactory.isCallExpression(current) &&
+      astFactory.isIdentifier(current.callee) &&
+      factories.has(current.callee.name);
+  };
+  for (const statement of program.body) {
+    const declaration = astFactory.isExportNamedDeclaration(statement)
+      ? statement.declaration
+      : statement;
+    if (
+      astFactory.isFunctionDeclaration(declaration) &&
+      declaration.id !== null &&
+      returnsSource(declaration)
+    ) {
+      result.add(declaration.id.name);
+      continue;
+    }
+    if (!astFactory.isVariableDeclaration(declaration)) continue;
+    for (const item of declaration.declarations) {
+      if (!astFactory.isIdentifier(item.id) || item.init === null) continue;
+      const init = astFactory.isExpression(item.init)
+        ? unwrapTypeExpression(item.init)
+        : item.init;
+      if (
+        (astFactory.isFunctionExpression(init) ||
+          astFactory.isArrowFunctionExpression(init)) &&
+        returnsSource(init)
+      ) {
+        result.add(item.id.name);
+      }
+    }
+  }
+  return result;
+}
+
 function importRefs(program: t.Program): ImportRef[] {
   const refs: ImportRef[] = [];
   for (const stmt of program.body) {
@@ -550,6 +603,7 @@ function analyzeManifest(
         installLinkedDynamicComponentImports(ctx, compilerPath);
         initializeGeneratedIdentifiers(ctx, compilerPath.node);
         scanTransparentSourceImports(ctx, compilerPath);
+        rejectTransparentSourceDestructuring(ctx, compilerPath);
         lowerTransparentGroups(ctx, compilerPath);
         scanAndLowerModuleSourceDeclarations(ctx, compilerPath);
         analyzeRouterJsx(ctx, compilerPath);
@@ -560,6 +614,10 @@ function analyzeManifest(
         const exports: Record<string, LinkedExport> = {};
         const functionTagCandidates = moduleFunctionStringCandidates(
           compilerPath.node,
+        );
+        const transparentFunctionFactories = directTransparentSourceFunctions(
+          compilerPath.node,
+          ctx.transparentSourceFactories,
         );
         for (const [exported, local] of exportedLocals(compilerPath.node)) {
           if (ctx.comps.has(local)) {
@@ -604,6 +662,9 @@ function analyzeManifest(
           if (summary !== undefined) {
             exports[exported] = {
               type: 'function',
+              ...(transparentFunctionFactories.has(local)
+                ? { transparentSourceFactory: true }
+                : {}),
               tagCandidates: [
                 ...(functionTagCandidates.get(local) ??
                   ctx.functionTagCandidates.get(local) ??
@@ -699,6 +760,10 @@ function discoverManifest(
             }
           }
         }
+        const transparentFunctionFactories = directTransparentSourceFunctions(
+          compilerPath.node,
+          providerFactories,
+        );
         for (const [name, component] of components) {
           locals.set(name, { type: 'component', ...component });
         }
@@ -721,6 +786,9 @@ function discoverManifest(
                 ).map((name) => `${entry.id}#${name}`);
                 locals.set(decl.id.name, {
                   type: 'function',
+                  ...(transparentFunctionFactories.has(decl.id.name)
+                    ? { transparentSourceFactory: true }
+                    : {}),
                   tagCandidates: [
                     ...(functionTagCandidates.get(decl.id.name) ?? []),
                   ],
@@ -783,6 +851,9 @@ function discoverManifest(
             ).map((name) => `${entry.id}#${name}`);
             locals.set(inner.id.name, {
               type: 'function',
+              ...(transparentFunctionFactories.has(inner.id.name)
+                ? { transparentSourceFactory: true }
+                : {}),
               tagCandidates: [
                 ...(functionTagCandidates.get(inner.id.name) ?? []),
               ],
@@ -1036,6 +1107,7 @@ function linkImports(
       if (options.linkFunctionSummaries === false) {
         linked[ref.local] = {
           type: 'function',
+          transparentSourceFactory: targetExport.transparentSourceFactory,
           tagCandidates: [...targetExport.tagCandidates],
           componentCandidates: linkedDynamicCandidates(
             entry,
@@ -1052,6 +1124,7 @@ function linkImports(
       }
       linked[ref.local] = {
         type: 'function',
+        transparentSourceFactory: targetExport.transparentSourceFactory,
         tagCandidates: [...targetExport.tagCandidates],
         componentCandidates: linkedDynamicCandidates(
           entry,
@@ -1252,6 +1325,9 @@ function compileLinkedModules(
         )
         .map(([exported, summary]) => ({
           exported,
+          ...(summary.transparentSourceFactory === true
+            ? { transparentSourceFactory: true }
+            : {}),
           reads: [...summary.reads],
           writes: [...summary.writes],
           boundedWrites: [...summary.boundedWrites],

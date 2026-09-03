@@ -3,6 +3,9 @@
  */
 export { memoizedDom } from './plugin';
 export { memoizedDom as default } from './plugin';
-export type { MemoizedDomViteOptions } from './options';
+export type {
+  MemoizedDomServerFunctionsOptions,
+  MemoizedDomViteOptions,
+} from './options';
 export { memoizedDomFullstack } from './fullstack';
 export type { MemoizedDomFullstackOptions } from './fullstack';

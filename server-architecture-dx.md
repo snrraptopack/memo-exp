@@ -1,6 +1,6 @@
 # Memoized DOM Server Architecture & DX Specification
 
-**Status**: Draft RFC v0.2 — architecture review, no API implemented
+**Status**: Draft RFC v0.3 — architecture review, no API implemented
 
 **Audience**: Framework authors, backend contributors, and application developers
 
@@ -31,8 +31,8 @@ This RFC builds on working lower-level pieces rather than replacing them:
   stream composition, HTML response normalization, and the Node bridge.
 * `@memoized-dom/vite` already loads a Web handler through `ssrLoadModule()` in
   development.
-* `@memoized-dom/data` already supplies request-local `$fetch`/`$action`
-  runtimes, quiescent settling, serialized state, and the compiler-facing
+* `@memoized-dom/data` already supplies the request-local `$fetch` runtime,
+  quiescent settling, serialized state, and the compiler-facing
   `ResolvedValue<T>` contract.
 
 The missing layer is therefore an application-server composition API: route
@@ -113,6 +113,14 @@ export default defineServer({
     },
   },
 
+  // Page render policy (§3.2). Defaults shown; every field is optional.
+  render: {
+    mode: 'resolve',     // 'resolve' settles request-owned data before flush; 'shell' streams the pending tree immediately
+    markers: true,       // emit hydration markers + application/mmd+json payload for `hydrate`
+    timeout: 10_000,     // 'resolve' quiescence budget before falling back to the settled shell
+    delivery: 'stream',  // 'stream' flushes the document prefix while data settles; 'buffer' renders to a string first
+  },
+
   // Default ResponseInit applied to rendered HTML pages (e.g. edge caching headers)
   init: {
     headers: {
@@ -153,7 +161,82 @@ routes: {
 
 The exact surface remains an RFC decision, but the router index must use
 `method + pathname`; treating every handler as an implicit `GET` would leave
-`$action`, forms, and webhook semantics undefined.
+mutating `$fetch` calls, forms, and webhook semantics undefined.
+
+---
+
+## 3.1 Rendering Is a Policy, Not a Router Side Effect
+
+The application server must expose the rendering choices that already exist
+instead of hiding one opinion inside `defineServer`. Route dispatch determines
+*what* handles a request; render policy determines *how* an application page
+is delivered.
+
+The current primitives provide these independent axes:
+
+| Choice | Existing primitive or option | Meaning |
+| :--- | :--- | :--- |
+| Client-only application | `mount('root', App)` | Serve an empty application host and create the UI in the browser. No hydration markers or SSR payload are needed. |
+| Immediate server shell | `mode: 'shell'` | Serialize the initial tree with pending arms immediately. It does not imply a later server-stream replacement protocol. |
+| Resolved server render | `mode: 'resolve'` plus `timeout` | Wait for request-owned data to become quiescent, flush its UI, then serialize the resolved tree and state. |
+| Hydratable HTML | `markers: true` plus `renderToResult*` or `renderToReadableStream` | Emit root/region markers and the `application/mmd+json` payload required by `hydrate`. |
+| Clean/static HTML | `markers: false` plus `renderToString*` | Emit host-consumable HTML without adoption markers. Static generation is a build/deployment use of this output, not a new renderer. |
+| Buffered delivery | `renderToString*` / `renderToResult*` | Materialize the application result before the host constructs its response. |
+| Ordered stream delivery | `renderToReadableStream` | Allow the document prefix to flush while the application render settles; this is not out-of-order suspense streaming. |
+| DOM correctness tier | `renderWithDom*` | Use the LinkeDOM reference renderer when live server nodes or parity testing are required. |
+
+The high-level server API should accept an explicit page policy and delegate to
+these primitives. It must not force every user into resolved SSR, streaming,
+or hydration. Bring-your-own-backend users keep importing the low-level
+renderers directly.
+
+One inconsistency must be resolved before that surface is implemented:
+`RenderOptions` documents `shell` as the default, while
+`renderToReadableStream` currently settles unless `mode` is explicitly
+`'shell'`. The composed server API must require or normalize one explicit
+default rather than exposing different behavior based on delivery format.
+
+### 3.2 The `render` Policy Block
+
+`defineServer` exposes the rendering choices of §3.1 as one optional,
+fully-defaulted `render` block. Every field is optional; omitting the block
+selects the defaults below:
+
+```ts
+render: {
+  mode: 'resolve',     // 'resolve' | 'shell'
+  markers: true,       // boolean
+  timeout: 10_000,     // milliseconds, 'resolve' only
+  delivery: 'stream',  // 'stream' | 'buffer'
+}
+```
+
+| Option | Default | Lowered to | Meaning |
+| :--- | :--- | :--- | :--- |
+| `mode` | `'resolve'` | `RenderOptions.mode` | `'resolve'` waits for request-owned data to become quiescent and flushes the resolved tree plus state payload. `'shell'` serializes the initial tree with pending arms immediately and never waits. |
+| `markers` | `true` | marker + payload emission | `true` emits adoption markers and the `application/mmd+json` payload consumed by `hydrate`. `false` produces clean host-consumable HTML (static-generation and non-hydrating delivery). |
+| `timeout` | `10_000` | `RenderOptions.timeout` | Quiescence budget for `'resolve'`. On expiry the render falls back to the settled shell rather than hanging the request. |
+| `delivery` | `'stream'` | `renderToReadableStream` vs `renderToString*` | `'stream'` flushes the document prefix while the application settles (ordered streaming, not out-of-order suspense). `'buffer'` materializes the full result before the host builds its `Response`. |
+
+Resolved decisions:
+
+* **`defineServer` defaults are explicit, not inherited.** The block lowers to
+  a fully-specified `RenderOptions` object; it never relies on the primitive's
+  implicit default. This closes the `shell`-vs-`resolve` default divergence:
+  the composed API always passes `mode` explicitly, and the `RenderOptions`
+  documentation should be updated to match `'resolve'` as the composed
+  default.
+* **`mode: 'shell'` + `markers: true` is valid** and hydrates a pending
+  shell; the client data runtime then resolves sources in the browser.
+* **`markers: false` disables the payload entirely** — a hydrating client
+  entry combined with `markers: false` is a startup configuration error in
+  the Vite plugin, not a silent runtime mismatch.
+* **`renderWithDom*` stays out of `render`.** The LinkeDOM correctness tier
+  is a testing/parity tool, not a delivery policy; it remains a direct
+  primitive import.
+* **Per-route render policy is deliberately absent in v1.** An application
+  has one page pipeline; mixed static/dynamic delivery can be introduced
+  later as an optional route-level override without breaking this surface.
 
 ---
 
@@ -366,6 +449,28 @@ before an implementation is benchmarked. The portable router should minimize
 work through the following design constraints and publish latency,
 throughput, and allocation measurements against raw host handlers.
 
+The first `createServerRouter` foundation now establishes the behavior below
+without composing SSR or filesystem discovery into it. Exact routes use a
+method-indexed pathname map; dynamic routes use the existing segment trie;
+`HEAD`, automatic `OPTIONS`, `405`/`Allow`, middleware order, route params,
+fallback pages, error normalization, and request-local context reuse are
+covered independently. Prefix middleware is still matched and assembled per
+request in this first version. That remaining work must be measured and, where
+possible, compiled into route pipelines at server construction before the
+performance contract is considered complete.
+
+The foundation is exported from the isolated
+`@memoized-dom/server/router` subpath:
+
+```ts
+import { createServerRouter } from '@memoized-dom/server/router';
+```
+
+It is intentionally not eagerly re-exported by the LinkeDOM renderer entry.
+Keeping those module graphs separate prevents a router-only edge deployment
+from loading renderer code and ensures the server runtime installs its
+request-context storage before renderer/data modules initialize.
+
 ### 1. $O(1)$ Hash Map for Static Routes
 * **The Anti-Pattern**: Iterating an array of 50 regular expression patterns sequentially on every request.
 * **The Invariant**: Static routes are indexed by method and pathname in a
@@ -436,15 +541,21 @@ export const stories = $fetch<Story[]>('/api/stories');
 import { stories } from './data/stories';
 import { Group, Pending, Error } from '@memoized-dom/data';
 
+function StoriesPending() {
+  return <div class="skeleton">Loading stories...</div>;
+}
+
+function StoriesError({ error }: { error: { message: string } }) {
+  return <div class="error">{error.message}</div>;
+}
+
 export function App() {
   return (
     <div>
       <h1>Stories</h1>
-      <Group source={stories}>
-        <Pending>
-          <div class="skeleton">Loading stories...</div>
-        </Pending>
-        <Error>{(err) => <div class="error">{err.message}</div>}</Error>
+      <Group data={stories}>
+        <Pending component={StoriesPending} />
+        <Error component={StoriesError} />
         {stories.map((story) => (
           <article key={story.id}>
             <h2>{story.title}</h2>
@@ -458,15 +569,40 @@ export function App() {
 ```
 
 ### Client Entry (`main.ts`)
-Hydration automatically pairs with the state payload generated by `defineServer`:
+
+Hydration is explicit. The client installs its data runtime first, then imports
+the opt-in hydration entry so the SSR payload is restored before the compiled
+tree adopts the marked DOM:
 
 ```ts
 import { hydrate } from '@memoized-dom/runtime/hydrate';
+import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
 import { App } from './App';
 
-// Automatically extracts <script type="application/mmd+json" data-mmd-root="App">
-// Restores data cache and adopts server DOM without refetching
-hydrate('root', App);
+setActiveDataRuntime(createDataRuntime());
+
+hydrate('root', App, {
+  recover: true,
+  onRecover: (err) => {
+    console.error('[HYDRATION-MISMATCH]', err.message);
+  },
+});
+```
+
+`hydrate` reads the matching `application/mmd+json` payload by default,
+restores the data cache, and adopts the root marker range. `recover: true` is
+an explicit policy: a structural mismatch is reported through `onRecover`,
+the incompatible server DOM is discarded, and the runtime falls back to
+`mount`.
+
+An SPA or client-rendered page imports `mount` from `@memoized-dom/runtime`
+and does not require server markers or a payload:
+
+```ts
+import { mount } from '@memoized-dom/runtime';
+import { App } from './App';
+
+mount('root', App);
 ```
 
 ---
@@ -518,10 +654,10 @@ RPC client, protocol, cache, error channel, or Promise-based invocation model.
    registered as a real HTTP route in `defineServer` under the stable identity
    `/_fn/<module>/<function>`.
 2. **In UI builds**: The implementation and its server-only dependency graph
-   are replaced by a generated facade. `get*` facades use `$fetch`; mutating
-   facades use `$action`. Both therefore keep the data layer's
-   existing client, SSR, hydration, pending, error, retry, and cancellation
-   behavior.
+   are replaced by a generated `$fetch` facade. The HTTP verb becomes the
+   `method`, parameters become `query` or `body`, and every result keeps the
+   data layer's existing `ResolvedValue`/`$track` behavior across client, SSR,
+   hydration, pending, error, retry, and cancellation states.
 3. **HTTP verb prefix**: An exported function begins with `get`, `post`, `put`,
    `patch`, or `delete`. The prefix selects its ordinary HTTP method without a
    second route declaration.
@@ -554,7 +690,7 @@ its generated UI facade.
      $fetch('/_fn/stories/getStory', { query: { id } });
 
    const postVote = (id) =>
-     $action('/_fn/stories/postVote', { method: 'POST' })({ id });
+     $fetch('/_fn/stories/postVote', { method: 'POST', body: { id } });
 
 4. One Existing Data Lifecycle:
    • SSR render: the active data runtime sends the request through serverFetch
@@ -563,6 +699,74 @@ its generated UI facade.
      without a duplicate browser request.
    • Browser navigation/actions: the same facades use standard browser HTTP.
 ```
+
+### Server Functions Export Middleware
+
+Server functions lower to ordinary method-aware HTTP endpoints at
+`/_fn/<module>/<function>`, so they are first-class router citizens: the same
+dispatch pipeline, middleware composition, response normalization, and error
+policy apply to them as to any declared route. Because every generated
+endpoint is publicly addressable by default, middleware is attached through
+exports in the functions module itself rather than by editing a separate
+route table:
+
+```ts
+// server/functions/stories.ts
+
+// Applies to every endpoint registered from this module:
+export const middleware = [requireAuth()];
+
+export async function getStories() { ... }
+export async function deleteStory(id: number) { ... }
+```
+
+* A `middleware` export in a `server/functions/*.ts` module composes in front
+  of each endpoint that module registers. Only async functions with a valid
+  verb prefix become endpoints; the `middleware` export is recognized by
+  name and never treated as a server function.
+* A `server/functions/_middleware.ts` module applies to every `/_fn/*`
+  endpoint, mirroring the file-routing `_middleware.ts` convention of §5.
+* Generated endpoints compose directory middleware first, then module
+  middleware, then the function body, following the onion order of §4.
+* A `/_fn/*` path may not be declared in `routes`; the namespace is
+  reserved, and registering a colliding route is a startup error.
+
+### Generated Artifacts Live Under `.memoized/`
+
+Everything the tooling generates is written under one visible root,
+`.memoized/` (gitignored as regenerable output):
+
+* `.memoized/server-functions.d.ts` — the typed `#server-functions` barrel.
+  One flat module declaring every server function as
+  `ResolvedValue<Awaited<ReturnType<typeof impl.fn>>>` via type-only imports
+  of the real implementations. Exported names must be unique across modules;
+  a collision is a generation error (`[MMD-S012]`) naming both modules.
+* `.memoized/routes.d.ts` — the route table powering `route-to`
+  autocompletion (router specification).
+
+Server functions are imported through the `#server-functions` alias, never
+through real file paths:
+
+```ts
+import { getStory, postVote } from '#server-functions';
+```
+
+The alias resolves in two layers:
+
+* **Types (tsc/IDE)**: tsconfig `paths` maps the specifier to the generated
+  barrel — relative imports cannot be remapped, which is why the alias is
+  mandatory for the colorless types to reach the IDE.
+
+  ```json
+  { "paths": { "#server-functions": ["./.memoized/server-functions.d.ts"] } }
+  ```
+
+* **Runtime (Vite)**: the adapter resolves the same specifier to a generated
+  client barrel that re-exports the in-place facade modules; the server build
+  keeps resolving real implementations through the manifest.
+
+Because client code never imports server-function files by path, moving a
+function between modules never rewrites client imports.
 
 ---
 
@@ -573,10 +777,10 @@ The verb prefix dictates the HTTP method, the argument transport format, caching
 | Prefix | HTTP Method | Argument Serialization | Caching / Idempotency | Client Lowering | Valid Call Sites |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`get*`** | `GET` | URL query | Existing `$fetch` cache policy | `$fetch('/_fn/...', { query })` $\rightarrow$ `ResolvedValue<T>` | Component Render, Module Scope, Event Handlers |
-| **`post*`** | `POST` | JSON body | Mutation | `$action('/_fn/...', { method: 'POST' })(input)` $\rightarrow$ `ActionResult<T>` | Event Handlers, Callbacks Only |
-| **`put*`** | `PUT` | JSON body | Idempotent replacement | `$action('/_fn/...', { method: 'PUT' })(input)` $\rightarrow$ `ActionResult<T>` | Event Handlers, Callbacks Only |
-| **`patch*`** | `PATCH` | JSON body | Partial mutation | `$action('/_fn/...', { method: 'PATCH' })(input)` $\rightarrow$ `ActionResult<T>` | Event Handlers, Callbacks Only |
-| **`delete*`** | `DELETE` | JSON body | Idempotent deletion | `$action('/_fn/...', { method: 'DELETE' })(input)` $\rightarrow$ `ActionResult<T>` | Event Handlers, Callbacks Only |
+| **`post*`** | `POST` | JSON body | Non-cacheable by default | `$fetch('/_fn/...', { method: 'POST', body })` $\rightarrow$ `ResolvedValue<T>` | Event Handlers, Callbacks Only |
+| **`put*`** | `PUT` | JSON body | Non-cacheable by default | `$fetch('/_fn/...', { method: 'PUT', body })` $\rightarrow$ `ResolvedValue<T>` | Event Handlers, Callbacks Only |
+| **`patch*`** | `PATCH` | JSON body | Non-cacheable by default | `$fetch('/_fn/...', { method: 'PATCH', body })` $\rightarrow$ `ResolvedValue<T>` | Event Handlers, Callbacks Only |
+| **`delete*`** | `DELETE` | JSON body | Non-cacheable by default | `$fetch('/_fn/...', { method: 'DELETE', body })` $\rightarrow$ `ResolvedValue<T>` | Event Handlers, Callbacks Only |
 
 The table describes lowering, not a second public API. Developers keep calling
 the imported function. The generated facade maps its serializable parameters
@@ -628,7 +832,7 @@ In UI components, developers import and call functions directly with full TypeSc
 
 ```tsx
 // App.tsx
-import { getStories, getStory, postVote } from '../server/functions/stories';
+import { getStories, getStory, postVote } from '#server-functions';
 
 export function StoriesPage() {
   // get* evaluates to ResolvedValue<Story[]> without await
@@ -665,6 +869,40 @@ export function StoryDetail({ id }: { id: number }) {
 
 ---
 
+### 2.1 Mutation Results Use the Same Colorless Source Model
+
+A mutation returns `ResolvedValue<T>` like every other generated server
+function. `$track` exposes its request lifecycle; the function itself does not
+grow `state`, `data`, or `error` properties:
+
+```tsx
+let voteResult;
+
+<button onClick={() => {
+  voteResult = postVote(story.id);
+}}>
+  {voteResult && $track(voteResult).pending ? 'Voting…' : 'Vote'}
+</button>
+
+{voteResult && $track(voteResult).error && (
+  <p>{$track(voteResult).error.message}</p>
+)}
+```
+
+No `await` is involved. Ignoring the returned source is the concise
+fire-and-forget form; retaining it lets authored UI read the result normally
+and inspect pending/error/refreshing state through `$track`.
+
+This requires `$fetch` itself to accept `method` and `body`, include them in
+request identity, encode JSON bodies consistently, and default non-GET calls
+to `cache: false` so repeated mutations are never swallowed by read caching.
+The compiler must also own event-created sources long enough for bound results
+to update their render readers, then dispose replaced or unreachable sources.
+That is an extension of the existing transparent-source lifecycle, not a new
+mutation state system.
+
+---
+
 ### 3. Compile-Time Diagnostics & Safety Rules
 
 Because the verb prefix is baked into the identifier, the compiler enforces semantic safety without guessing:
@@ -694,7 +932,7 @@ The compiler guides the author:
 ### 4. Code Splitting & Security
 * **UI Build**: The bundler completely removes server function bodies and
   server-only imports (`db`, secrets, file systems). It replaces exports with
-  small `$fetch`/`$action` facades backed by the existing data package.
+  small `$fetch` facades backed by the existing data package.
 * **Server Build**: Real function implementations are auto-registered in `defineServer` at `/_fn/<module>/<function>`.
 * **SSR Render**: When a component calls `getStories()` during SSR, `$fetch`
   routes through the synthesized `serverFetch` and the same middleware/route
@@ -721,12 +959,37 @@ Whenever client code imports from `server/functions/*`:
 * **`get*` functions** return `ResolvedValue<T>`. Because that is assignable
   to `T`, expressions such as `stories.map(...)`, `stories.length`, and
   `story.title` retain autocomplete and participate in colorless lowering.
-* **Mutating functions** return the existing `ActionResult<T>` immediately.
-  Their `state`, `data`, and `error` are the action channel; calling a mutation
+* **Mutating functions** also return `ResolvedValue<T>`. Their lifecycle is
+  observed through `$track`, exactly like a GET source; calling a mutation
   does not require or imply `await`.
-* **Generated mapping** is supplied by the server-function virtual module and
-  its declaration output. The server build keeps the implementation's real
-  TypeScript type; the UI build sees its generated data-facade type.
+* **Generated mapping** is supplied in place, not through a separate module.
+  The compiler's linker marks every exported server function as a
+  `transparentSourceFactory` in the module manifest, so a UI build compiles
+  the same module identity to its `$fetch` facade — no import rewriting of
+  authored relative imports.
+* **`#server-functions` is the client-facing import surface.** Client code
+  never imports the real files; it imports one generated barrel. The Vite
+  adapter resolves `#server-functions` to a re-export barrel over the
+  in-place facade modules, so server builds keep the implementations and
+  client builds ship only `$fetch` facades.
+* **Generated declarations live in `.memoized/`.** The adapter writes
+  `.memoized/server-functions.d.ts` — one flat barrel declaring every
+  endpoint as `export declare function name(...args: Parameters<typeof
+  impl.fn>): ResolvedValue<Awaited<ReturnType<typeof impl.fn>>>` with
+  type-only imports of the real implementations. Client imports therefore
+  type as `ResolvedValue<T>` (readable as `T`, `$track`-able) while the
+  server build keeps the implementation's ordinary async TypeScript types.
+  The project's `tsconfig.json` maps the specifier once:
+  ```json
+  { "compilerOptions": { "paths": {
+    "#server-functions": ["./.memoized/server-functions.d.ts"]
+  } } }
+  ```
+  All generated tooling artifacts share the `.memoized/` root (server
+  functions today, generated route declarations for the typed `route-to`
+  surface alongside). Exported function names must be unique across modules
+  because the barrel is one flat module; duplicates fail generation with
+  `[MMD-S012]` naming both owning modules.
 
 ---
 
@@ -748,8 +1011,8 @@ Function Call AST Node: getStories() or postVote()
   │
   ├── 2. post*, put*, patch*, delete* Functions (HTTP Methods)
   │     ├── Allowed in: JSX Event Props (onClick, onSubmit), Callbacks
-  │     ├── Lowered through: $action('/_fn/<module>/<fn>', { method: '...' })
-  │     ├── Invocation returns: existing ActionResult<T> state/data/error channel
+  │     ├── Lowered to: $fetch('/_fn/<module>/<fn>', { method: '...', body })
+  │     ├── Invocation returns: ResolvedValue<T>; lifecycle remains in $track
   │     └── Compiler Check: Strictly prohibited in component render bodies
   │
   └── 3. Compile-Time Diagnostics (FATAL COMPILE ERRORS)
@@ -783,15 +1046,21 @@ function ProfilePage() {
 * **The Risk**: Server-side modules importing ORMs (`db`), environment secrets (`process.env.API_KEY`), or Node builtins (`node:fs`) accidentally leaking into the client JavaScript bundle.
 * **The Gating Rule**:
   1. The compiler treats `server/functions/*` as a strict **One-Way Boundary**.
-  2. For the client build, the bundler substitutes a generated virtual module;
-     the implementation and its transitive graph are never resolved into the
-     browser build.
-  3. If a client component attempts to import a non-function export:
+  2. For the client build, the Vite adapter compiles the same module in place
+     to its generated `$fetch` facade; the implementation and its transitive
+     graph are never resolved into the browser build.
+  3. The boundary is enforced at the export side first: `analyzeServerFunctionModule`
+     rejects every export that is not a verb-prefixed async function or the
+     `middleware` export (`[MMD-S003]`), so a non-function value such as `db`
+     cannot exist in a `server/functions/*` module at all.
+  4. Defense in depth: because the hard export rule means a non-function
+     export cannot exist, an import such as
      ```ts
      import { db } from '../server/functions/stories';
      ```
-     The compiler emits a fatal compile-time diagnostic:
-     `💥 [MMD-S003]: Only async functions may cross the client boundary from server/functions/. Variable 'db' cannot be imported into client code.`
+     fails at the source module's compile as an export violation. If a name
+     the manifest did not classify ever reaches a UI build anyway, the Vite
+     transform fails closed rather than resolving the implementation module.
 
 ### Guardrail 4: Arguments & Return Value Serializability
 * **The Risk**: Developers passing non-serializable arguments (DOM nodes, functions, WebSocket handles, class instances with private closures) across the client/server boundary.
@@ -799,10 +1068,9 @@ function ProfilePage() {
   1. A `get*` facade maps parameters to the existing `$fetch` `Query` shape:
      strings, numbers, booleans, null, undefined, and arrays of those query
      primitives.
-  2. A mutating facade maps parameters to the existing `$action` JSON body.
-     The generated function form accepts JSON-safe values; developers needing
-     `FormData`, binary bodies, or another explicit transport can use `$action`
-     directly.
+  2. A mutating facade maps parameters to the `$fetch` JSON body. The generated
+     function form accepts JSON-safe values; direct `$fetch` remains available
+     for explicitly authored non-JSON bodies supported by its public type.
   3. Results use the existing response decoder (`application/json`, text, or
      an empty response) and the existing SSR payload serializer. The function
      layer does not add an extended codec for `Date`, `BigInt`, `Set`, `Map`,
@@ -817,18 +1085,19 @@ function ProfilePage() {
      ```
      Passing a non-serializable type (e.g. `(e: MouseEvent) => void`) triggers an instant TypeScript compile error on the call site.
 
-### Guardrail 5: Preserve `$fetch` and `$action` Contracts
+### Guardrail 5: Preserve One `$fetch` Contract
 * **The Invariant**: Generated facades do not invent a universal server-call
   type and do not make colorless values thenable.
-  * A `get*` call has the existing `ResolvedValue<T>` behavior, including
-    compiler reads, pending/error policies, SSR settling, and hydration.
-  * A mutating call has the existing `ActionResult<T>` behavior. Its request
-    lifecycle is observable through action state and errors, even when the
-    developer ignores the returned result.
-  * A generated facade resolves `$fetch`/`$action` against the active data
-    runtime. It must not retain an action created from one SSR request in a
-    process-global module cache. Any descriptor cache must be owned by the
-    request-local data runtime.
+  * Every server-function call has the existing `ResolvedValue<T>` behavior,
+    including compiler reads, `$track`, pending/error policies, SSR settling,
+    and hydration where the call site is permitted during render.
+  * Method and body are request descriptor fields. They must participate in
+    identity and reactive rebinding just like target, query, headers, key, and
+    validation.
+  * Non-GET requests default to non-cacheable execution. An explicit cache
+    override may be supported only where its replay semantics are clear.
+  * A generated facade resolves `$fetch` against the active request-local data
+    runtime and must not retain a source from one SSR request globally.
   * The server implementation may use promises internally as normal server
     code. That implementation detail does not become the UI call contract.
 
@@ -843,14 +1112,14 @@ function ProfilePage() {
   3. Each external request and derived in-memory dispatch has an isolated
      context lifetime. No process-global mutable fallback is permitted.
 
-### Guardrail 7: Destructuring Lowering & Lazy Property Binding
+### Guardrail 7: Destructuring Rejection on Colorless Sources
 
 **The Problem**:
 
 In colorless data semantics, the compiler represents `const data =
 getStories()` through a request-local source descriptor rather than a
-materialized synchronous snapshot. When developers perform object or array
-destructuring at declaration time:
+materialized synchronous snapshot. Destructuring evaluates its member accesses
+immediately when the statement executes, before the source has settled:
 
 ```tsx
 // 💥 Evaluates immediately before resolution:
@@ -860,50 +1129,77 @@ const [firstStory] = getStories();
 
 Native JavaScript engines evaluate destructuring access immediately upon executing the statement. Because the source has not yet settled or is suspended, `length`, `user`, and `firstStory` evaluate to `undefined` (or throw during array iterator unrolling), breaking reactive tracking.
 
-**The Invariant & Transform Rule**:
+**The Decision — Reject, Do Not Lower**:
 
-The compiler intercepts any `VariableDeclarator` whose initializer resolves to a colorless server function call or source and decomposes the destructuring pattern into hoisted identifier bindings backed by lazy accessors.
+The compiler rejects destructuring on colorless sources with a compile-time
+diagnostic. It does not rewrite the pattern into lazy accessors or property
+handles. This is deliberate and uniform:
 
-#### 1. Object Destructuring Lowering
+1. **The runtime already solved laziness.** A colorless source is a live
+   object whose properties fill in when the request settles. Property access
+   on the source (`stories.length`, `stories.map(...)`, `story.title`) is
+   naturally lazy and reactive. Destructuring is the one construct that
+   copies values out eagerly at declaration time; that makes it an authoring
+   error, not a transform opportunity.
+2. **No silent semantic rewrites.** Lowering `const { length } = src` into a
+   live accessor would quietly change authored JavaScript semantics — a
+   `const` whose read changes over time — and would require rewriting every
+   downstream reference (aliases, closure captures, exports) with the same
+   long tail of edge cases the rest of the compiler already fights. This
+   framework diagnoses unanalyzable constructs; it does not redefine `const`
+   bindings under the author.
+3. **One rule, one contract.** Server-function facades lower to `$fetch`
+   calls in UI builds, so both authoring forms share the same contract and
+   the same diagnostic. A colorless source cannot be destructured at
+   declaration time, regardless of whether it came from a server-function
+   facade or a direct `$fetch` call.
+
+#### 1. Rejected Patterns
+
+The diagnostic applies to any destructuring pattern (variable declaration,
+assignment expression, or parameter default) whose initializer resolves to a
+colorless server-function call or `$fetch` source:
 
 ```tsx
-// Source code authored by developer
+// Object destructuring
 const { length, user: currentUser = null } = getStories();
+
+// Array destructuring (including holes and nested patterns)
+const [firstStory, secondStory] = getStories();
+const { profile: { name } } = getMe();
+
+// Rest patterns
+const { a, ...rest } = getStories();
+
+// Assignment destructuring
+({ length } = getStories());
+
+// Destructuring parameter defaults
+function render({ length } = getStories()) { ... }
 ```
 
-*Transformed Client Output:*
+* **Diagnostic Rule**: every rejected pattern above raises the same
+  compile-time error:
+  `💥 [MMD-S004]: Colorless server function and $fetch sources cannot be destructured. Destructuring copies values at declaration time, before the source settles. Bind the source and read properties at the use site, or destructure inside a settled context.`
 
-```ts
-const _src_stories = getStories();
+#### 2. Allowed Forms
 
-// Compiler transforms downstream references to getters, or defines reactive accessor properties:
-const length = _MDD.prop(_src_stories, 'length');
-const currentUser = _MDD.prop(_src_stories, 'user', null);
-```
-
-#### 2. Array Pattern Lowering
-
-Array destructuring is rewritten to index-based property handles to avoid executing `Symbol.iterator` on an unsettled reactive proxy:
+* Plain identifier binding: `const stories = getStories();`
+* Property access at the use site: `stories.length`, `stories.map(...)`,
+  `story.title`.
+* Destructuring a settled plain value, which is the idiomatic path:
 
 ```tsx
-// Source code authored by developer
-const [firstStory, secondStory] = getStories();
+{stories.map((story) => {
+  const { title, votes } = story; // `story` is a settled plain item
+  return <article>{title} — {votes}</article>;
+})}
 ```
 
-*Transformed Client Output:*
-
-```ts
-const _src_stories = getStories();
-const firstStory = _MDD.prop(_src_stories, 0);
-const secondStory = _MDD.prop(_src_stories, 1);
-```
-
-#### 3. Rest Property Diagnostic (`...rest`)
-
-JavaScript rest destructuring (`const { a, ...rest } = getStories()`) requires exhaustive enumeration of object keys (`Object.keys`), which cannot be known statically ahead of resolution.
-
-* **Diagnostic Rule**: If the compiler detects an object rest element (`RestElement`) on an unsettled server function source, it raises a compile-time error:
-  `💥 [MMD-S004]: Rest patterns (...rest) cannot be destructured directly from colorless server function calls. Consume properties individually or pass the source directly to a <Group> or accessor.`
+A future refinement may permit destructuring where the compiler can
+statically prove settlement (for example, inside a JSX child gated by the
+source's `<Group>`). That settlement-proof analysis is deferred until
+diagnostic frequency justifies it; the initial contract is strict rejection.
 
 ---
 
@@ -916,7 +1212,7 @@ JavaScript rest destructuring (`const { a, ...rest } = getStories()`) requires e
 | **Remix** | File routes with `loader` / `action` | Route-bound loader/actions | Global `handleRequest` / Express middleware | Direct loader execution | `useLoaderData()` + window payload |
 | **SvelteKit** | `+server.ts` routes | Form actions (`+page.server.ts`) | Root `hooks.server.ts` + layout servers | Internal `event.fetch()` | Page data store |
 | **Nitro / Nuxt** | `server/routes/`, `server/api/` | Nitro event handlers | `server/middleware/` | `$fetch` with in-memory Nitro dispatch | Payload state hydration |
-| **Memoized DOM** | Unified `routes: {}` or file-based | **Plain named HTTP functions lowered to existing `$fetch` / `$action`** | Hierarchical folder & prefix groups (`*`) | In-memory `serverFetch` over identical routes | Colorless module sources (`$fetch`), zero-hook hydration |
+| **Memoized DOM** | Unified `routes: {}` or file-based | **Plain named HTTP functions lowered to method-aware `$fetch`** | Hierarchical folder & prefix groups (`*`) | In-memory `serverFetch` over identical routes | Colorless module sources (`$fetch`), zero-hook hydration |
 
 ---
 
@@ -924,7 +1220,9 @@ JavaScript rest destructuring (`const { a, ...rest } = getStories()`) requires e
 
 When ready to implement, the restructuring will proceed along modular boundaries:
 
-1. **`packages/server/src/server/router.ts`**: Pure routing trie supporting exact paths, `:param` captures, and `*` prefix groups.
+1. **`packages/server/src/http-router.ts`**: Portable method-aware dispatcher;
+   finish precompiling prefix middleware pipelines and benchmark it against raw
+   host handlers.
 2. **`packages/server/src/server/middleware.ts`**: Middleware composer and pipeline unwinder.
 3. **`packages/server/src/server/document.ts`**: Template loading, `<!--ssr-outlet-->` validation, and streaming concatenation.
 4. **`packages/server/src/server/server-fetch.ts`**: In-memory dispatcher connecting `routes` to SSR `@memoized-dom/data`.
@@ -932,6 +1230,8 @@ When ready to implement, the restructuring will proceed along modular boundaries
 6. **Server-function manifest**: Build-generated route identities, verb and
    parameter metadata, and server-only registration without importing the
    implementation graph into UI builds.
-7. **UI virtual modules**: Typed `$fetch`/`$action` facades that preserve the
+7. **UI facade emission**: in-place method-aware `$fetch` facades, the
+   `#server-functions` runtime barrel, and the generated
+   `.memoized/server-functions.d.ts` declaration barrel that preserve the
    current ESTree compiler and data-runtime contracts.
 8. **Documentation and Showcase Update**: Updating `examples/ssr-showcase/server.ts` to use `defineServer`.

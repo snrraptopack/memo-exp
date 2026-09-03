@@ -26,6 +26,37 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe('transparent resolved values', () => {
+  it('tracks non-GET fetches through the same colorless state channel', async () => {
+    let finish!: (response: Response) => void;
+    let requestInit: RequestInit | undefined;
+    const runtime = createDataRuntime({
+      fetch: ((_input, init) => {
+        requestInit = init;
+        return new Promise<Response>(resolve => {
+          finish = resolve;
+        });
+      }) as typeof fetch,
+    });
+    const resource = runtime.$fetch<User>('/users/1', {
+      method: 'PATCH',
+      body: { name: 'Grace' },
+    });
+    const user = resource as unknown as ResolvedValue<User>;
+    const state = $track(user);
+
+    expect(state.pending).toBe(true);
+    expect(requestInit?.method).toBe('PATCH');
+    expect(requestInit?.body).toBe('{"name":"Grace"}');
+
+    finish(json({ id: 1, name: 'Grace' }));
+    await vi.waitFor(() => expect(state.status).toBe('success'));
+
+    expect(readResolvedValue(user)).toEqual({ id: 1, name: 'Grace' });
+    expect(state.pending).toBe(false);
+    expect(state.error).toBeNull();
+    runtime.clear();
+  });
+
   it('separates transparent value reads from tracked request state', async () => {
     let resolve!: (response: Response) => void;
     const runtime = createDataRuntime({
@@ -125,6 +156,59 @@ describe('transparent resolved values', () => {
     expect(readResolvedValue(users)).toEqual([{ id: 2, name: 'Grace' }]);
 
     disconnect();
+    runtime.clear();
+  });
+
+  it('rebinds method and body as reactive request inputs', async () => {
+    const requests: Array<{
+      method: string | undefined;
+      body: BodyInit | null | undefined;
+      signal: AbortSignal;
+      resolve: (response: Response) => void;
+    }> = [];
+    const runtime = createDataRuntime({
+      fetch: ((_input, init) => new Promise<Response>(resolve => {
+        requests.push({
+          method: init?.method,
+          body: init?.body,
+          signal: init?.signal as AbortSignal,
+          resolve,
+        });
+      })) as typeof fetch,
+    });
+    const resource = runtime.$fetch<User>('/users/1', {
+      method: 'PATCH',
+      body: { name: 'Ada' },
+    });
+    const user = resource as unknown as ResolvedValue<User>;
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    rebindResolvedValue(user, '/users/1', {
+      method: 'PUT',
+      body: { name: 'Grace' },
+    });
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    expect(requests[0]).toMatchObject({ method: 'PATCH', body: '{"name":"Ada"}' });
+    expect(requests[0]?.signal.aborted).toBe(true);
+    expect(requests[1]).toMatchObject({ method: 'PUT', body: '{"name":"Grace"}' });
+
+    requests[1]!.resolve(json({ id: 1, name: 'Grace' }));
+    await vi.waitFor(() => {
+      expect(readResolvedValueForRender(user)).toEqual({ id: 1, name: 'Grace' });
+    });
+
+    rebindResolvedValue(user, '/users/1', {
+      method: 'PUT',
+      body: { name: 'Grace' },
+    });
+    await Promise.resolve();
+    expect(requests).toHaveLength(2);
+
+    requests[0]!.resolve(json({ id: 1, name: 'Ada' }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(readResolvedValue(user)).toEqual({ id: 1, name: 'Grace' });
     runtime.clear();
   });
 

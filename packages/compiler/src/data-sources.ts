@@ -12,6 +12,7 @@ import { cloneNode as cloneEstreeNode } from './ast';
 import {
   astBindingAt,
   refreshAstAnalysis,
+  unwrapTypeExpression,
   type Ctx,
   type TransparentPresentationComponent,
   type TransparentPresentationPolicy,
@@ -41,6 +42,9 @@ import {
   registerStmt,
   type EmitScope,
 } from './emission/scope';
+
+const COLORLESS_DESTRUCTURING_ERROR =
+  'memo-dom: [MMD-S004] Colorless server function and $fetch sources cannot be destructured. Destructuring copies values before the source settles. Bind the source and read properties at the use site, or destructure a settled plain value.';
 
 function fields(node: BaseNode): Record<string, unknown> {
   return node as unknown as Record<string, unknown>;
@@ -111,6 +115,110 @@ export function scanTransparentSourceImports(
       }
     }
   }
+}
+
+function isDestructuringPattern(node: BaseNode | null): node is BaseNode {
+  return node?.type === 'ObjectPattern' || node?.type === 'ArrayPattern';
+}
+
+/**
+ * Reject eager destructuring of compiler-transparent sources before any
+ * source lowering mutates the authored call or its precise source location.
+ */
+export function rejectTransparentSourceDestructuring(
+  ctx: Ctx,
+  programPath: {
+    node: t.Program;
+    buildCodeFrameError(message: string, at?: t.Node): Error;
+  },
+): void {
+  refreshAstAnalysis(ctx, programPath.node);
+  const sourceBindings = new Set<AstBinding>();
+
+  const sourceExpression = (candidate: BaseNode | null): boolean => {
+    if (candidate === null) return false;
+    const expression = unwrapTypeExpression(candidate);
+    if (expression.type === 'Identifier') {
+      const identifier = expression as AstIdentifier;
+      const binding = astBindingAt(ctx, identifier, identifier.name);
+      return binding !== undefined && (
+        sourceBindings.has(binding) ||
+        (binding.kind === 'import' &&
+          ctx.transparentModuleSources.has(identifier.name))
+      );
+    }
+    if (expression.type !== 'CallExpression') return false;
+    const call = expression as unknown as t.CallExpression;
+    return isCallToImported(
+      ctx,
+      expression,
+      call,
+      ctx.transparentSourceFactories,
+    );
+  };
+
+  // Establish direct source declarations first, then propagate through plain
+  // aliases. Binding identity keeps shadowed names independent.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    walkAst(programPath.node as unknown as BaseNode, {
+      enter(node) {
+        if (node.type !== 'VariableDeclarator') return;
+        const id = childNode(node, 'id');
+        const init = childNode(node, 'init');
+        if (id?.type !== 'Identifier' || !sourceExpression(init)) return;
+        const identifier = id as AstIdentifier;
+        const binding = astBindingAt(ctx, identifier, identifier.name);
+        if (binding !== undefined && !sourceBindings.has(binding)) {
+          sourceBindings.add(binding);
+          changed = true;
+        }
+      },
+    });
+  }
+
+  walkAst(programPath.node as unknown as BaseNode, {
+    enter(node) {
+      if (node.type === 'VariableDeclarator') {
+        const pattern = childNode(node, 'id');
+        if (
+          isDestructuringPattern(pattern) &&
+          sourceExpression(childNode(node, 'init'))
+        ) {
+          throw programPath.buildCodeFrameError(
+            COLORLESS_DESTRUCTURING_ERROR,
+            pattern as unknown as t.Node,
+          );
+        }
+        return;
+      }
+      if (node.type === 'AssignmentExpression') {
+        const pattern = childNode(node, 'left');
+        if (
+          isDestructuringPattern(pattern) &&
+          sourceExpression(childNode(node, 'right'))
+        ) {
+          throw programPath.buildCodeFrameError(
+            COLORLESS_DESTRUCTURING_ERROR,
+            pattern as unknown as t.Node,
+          );
+        }
+        return;
+      }
+      if (node.type !== 'AssignmentPattern') return;
+      const pattern = childNode(node, 'left');
+      if (
+        isDestructuringPattern(pattern) &&
+        sourceExpression(childNode(node, 'right'))
+      ) {
+        throw programPath.buildCodeFrameError(
+          COLORLESS_DESTRUCTURING_ERROR,
+          pattern as unknown as t.Node,
+        );
+      }
+    },
+  });
 }
 
 function jsxTagName(element: t.JSXElement): string | null {

@@ -2,7 +2,7 @@
  * Exercises the Vite 8 adapter through Rolldown build and dev transforms.
  */
 import { join, resolve } from 'node:path';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -11,11 +11,15 @@ import {
   type ViteDevServer,
 } from 'vite';
 import memoizedDom, { memoizedDomFullstack } from '../src';
+import { createServerRouter } from '../../server/src/http-router';
 
 const fixture = resolve(import.meta.dirname, 'fixtures/vite-app');
 const source = resolve(fixture, 'src');
 const runtime = resolve(import.meta.dirname, '../../runtime/src/index.ts');
 const runtimeHot = resolve(import.meta.dirname, '../../runtime/src/hot.ts');
+const data = resolve(import.meta.dirname, '../../data/src/index.ts');
+const dataInternal = resolve(import.meta.dirname, '../../data/src/internal.ts');
+const serverRouter = resolve(import.meta.dirname, '../../server/src/http-router.ts');
 let server: ViteDevServer | undefined;
 let temporaryFixture: string | undefined;
 
@@ -139,6 +143,111 @@ describe('Vite 8 adapter', () => {
     expect(css).toContain('color: red');
     expect(code).not.toContain('color: red');
   });
+
+  it('isolates server implementations, lowers client facades, and mounts real middleware routes', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    const functions = resolve(root, 'server/functions');
+    await mkdir(functions, { recursive: true });
+    await writeFile(resolve(functions, '_middleware.ts'), `
+      export const middleware = [async (_context, next) => {
+        const response = await next();
+        response.headers.set('x-directory', 'yes');
+        return response;
+      }];
+    `);
+    await writeFile(resolve(functions, 'stories.ts'), `
+      import { readFile } from 'node:fs/promises';
+      const SERVER_SECRET = 'must-not-enter-client';
+      export const middleware = [async (_context, next) => {
+        const response = await next();
+        response.headers.set('x-module', SERVER_SECRET);
+        return response;
+      }];
+      export async function getStory(id: number) {
+        if (false) await readFile('secret');
+        return { id, title: 'Story ' + id };
+      }
+      export async function postVote(id: number) {
+        return { id, votes: 1 };
+      }
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import { getStory, postVote } from '#server-functions';
+      export function App() {
+        const story = getStory(7);
+        return <main>
+          <h1>{story.title}</h1>
+          <button onClick={() => postVote(story.id)}>Vote</button>
+        </main>;
+      }
+    `);
+
+    const aliases = {
+      '@': temporarySource,
+      '@memoized-dom/runtime/hot': runtimeHot,
+      '@memoized-dom/runtime': runtime,
+      '@memoized-dom/data/internal': dataInternal,
+      '@memoized-dom/data': data,
+      '@memoized-dom/server/router': serverRouter,
+    };
+    const result = await build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: aliases },
+      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    });
+    const builds = Array.isArray(result) ? result : [result];
+    const code = builds
+      .flatMap(item => item.output)
+      .flatMap(output => output.type === 'chunk' ? [output.code] : [])
+      .join('\n');
+
+    expect(code).toContain('/_fn/stories/getStory');
+    expect(code).toContain('/_fn/stories/postVote');
+    expect(code).toContain('readResolvedValuesForRender');
+    expect(code).not.toContain('must-not-enter-client');
+    expect(code).not.toContain('node:fs/promises');
+
+    const declarations = resolve(root, '.memoized', 'server-functions.d.ts');
+    const declarationSource = await readFile(declarations, 'utf8');
+    expect(declarationSource).toContain(
+      'import type { ResolvedValue } from "@memoized-dom/data"',
+    );
+    expect(declarationSource).toContain(
+      'import type * as __mmd_impl_0 from "../server/functions/stories.js"',
+    );
+    expect(declarationSource).toContain(
+      'export declare function getStory(...args: Parameters<typeof __mmd_impl_0.getStory>): ResolvedValue<Awaited<ReturnType<typeof __mmd_impl_0.getStory>>>;',
+    );
+
+    server = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: aliases },
+      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      server: { middlewareMode: true },
+    });
+    const generated = await server.ssrLoadModule(
+      'virtual:memoized-dom/server-functions',
+    ) as { serverFunctionRoutes: Parameters<typeof createServerRouter>[0]['routes'] };
+    const router = createServerRouter({ routes: generated.serverFunctionRoutes });
+    const response = await router.fetch(new Request(
+      'https://app.test/_fn/stories/getStory?id=9',
+    ));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-directory')).toBe('yes');
+    expect(response.headers.get('x-module')).toBe('must-not-enter-client');
+    await expect(response.json()).resolves.toEqual({ id: 9, title: 'Story 9' });
+  }, 30_000);
 
   it('lowers module state into request-owned cells when opted in', async () => {
     const result = await build({

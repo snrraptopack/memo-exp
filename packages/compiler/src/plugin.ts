@@ -57,6 +57,7 @@ import {
 import { normalizeConditionalJsxDirectives } from './jsx/conditional-directives';
 import {
   lowerTransparentGroups,
+  rejectTransparentSourceDestructuring,
   rewriteTransparentDataReads,
   scanAndLowerModuleSourceDeclarations,
   scanTransparentSourceImports,
@@ -266,6 +267,7 @@ function prepareProgram(
   normalizeConditionalJsxDirectives(programPath);
   initializeGeneratedIdentifiers(ctx, programPath.node);
   scanTransparentSourceImports(ctx, programPath);
+  rejectTransparentSourceDestructuring(ctx, programPath);
   lowerTransparentGroups(ctx, programPath);
   scanAndLowerModuleSourceDeclarations(ctx, programPath);
   analyzeRouterJsx(ctx, programPath);
