@@ -288,7 +288,7 @@ export function resolveStaticWrites(
 export function resolveWrites(
   writes: readonly string[],
   _liveIds: readonly EntityId[],
-  payload?: Record<string, any>,
+  payload?: Record<string, unknown>,
 ): EntityId[] | 'root-subtree' {
   if (writes.some(isOpaque)) return 'root-subtree';
 

@@ -1046,6 +1046,20 @@ function collectReads(ctx: Ctx): void {
     const usedPrefixes = new Map<string, number>();
     const usedConds = { count: 0 };
 
+    function registerListSource(
+      site: ReturnType<typeof analyzeMapSite>,
+    ): void {
+      ctx.listSources.add(site.sourceKey);
+      ctx.listComponents.add(name);
+      if (site.sourceLocal) return;
+      let sources = ctx.componentListSources.get(name);
+      if (sources === undefined) {
+        sources = new Set();
+        ctx.componentListSources.set(name, sources);
+      }
+      sources.add(site.sourceKey);
+    }
+
     /**
      * A list nested in a conditional branch is emitted below the conditional
      * entity (`<owner>/whenN/<list>`). The condition owns source/prop replay;
@@ -1068,6 +1082,7 @@ function collectReads(ctx: Ctx): void {
         name,
         branchPrefixes,
       );
+      registerListSource(site);
       const nestedSuffix = `${condSuffix}/${site.suffix}`;
 
       if (site.form === 'component') {
@@ -1198,6 +1213,7 @@ function collectReads(ctx: Ctx): void {
             nestedPrefixes,
             site,
           );
+          registerListSource(nestedSite);
           const nestedSuffix =
             `${containerSuffix}/Row[*]/${nestedSite.suffix}`;
           if (nestedSite.form === 'component') {
@@ -1374,6 +1390,7 @@ function collectReads(ctx: Ctx): void {
           matchRenderCallbackMap(ctx, name, mapCall) !== null)
       ) {
         const site = analyzeMapSite(ctx, mapCall, p, name, usedPrefixes);
+        registerListSource(site);
         registerKeyedListMutationPlan(ctx, name, mapCall, site);
         const targeted = findTargetedListDependencies(
           site,
@@ -1475,11 +1492,14 @@ function collectReads(ctx: Ctx): void {
 
     walkAst<BaseNode>(p.node as unknown as BaseNode, {
       enter(node) {
+        if (node !== p.node && astFactory.isFunction(node)) return false;
         if (node.type === 'JSXAttribute') {
           const attribute = node as unknown as t.JSXAttribute;
           const attributeName = attribute.name;
         if (
-            astFactory.isJSXIdentifier(attributeName, { name: 'ref' }) ||
+            (astFactory.isJSXIdentifier(attributeName) &&
+              (attributeName.name === 'ref' ||
+                /^on[A-Z]/.test(attributeName.name))) ||
             (astFactory.isJSXNamespacedName(attributeName) &&
               attributeName.namespace.name === 'ref')
         ) {

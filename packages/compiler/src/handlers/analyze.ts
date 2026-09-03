@@ -24,6 +24,7 @@ import {
   buildScopeCommit,
   createScopeWrites,
   recordInstanceWrite,
+  recordRoutedWrite,
   type ScopeWrites,
 } from '../handler-commits';
 import { buildEventOriginCommit } from '../handler-origin';
@@ -548,7 +549,7 @@ export function analyzeHandler(
       if (rowCtx?.sourceLocal) {
         scope.rowOwnerLocal = true;
       } else if (rowCtx !== undefined) {
-        scope.writes.add(rowCtx.sourceKey);
+        recordRoutedWrite(scope, rowCtx.sourceKey);
       }
     });
   };
@@ -698,19 +699,19 @@ export function analyzeHandler(
     }
     if (origin.stateKind !== 'store') {
       mutateScope(p, (scope) => {
-        scope.writes.add(origin.root);
+        recordRoutedWrite(scope, origin.root);
       });
       return;
     }
     if (origin.key !== null && origin.key.includes('.')) {
       mutateScope(p, (scope) => {
-        scope.writes.add(origin.key!);
+        recordRoutedWrite(scope, origin.key!);
       });
     } else {
       // A dynamic store path is imprecise, but it is still bounded to the
       // store root. Prefix matching reaches every observer of that store.
       mutateScope(p, (scope) => {
-        scope.writes.add(origin.root);
+        recordRoutedWrite(scope, origin.root);
       });
     }
   };
@@ -767,12 +768,13 @@ export function analyzeHandler(
     // guessing whether a user-defined or third-party method is mutating.
     if (origin.stateKind === 'computed') {
       mutateScope(p, (scope) => {
-        scope.writes.add(origin.root);
+        recordRoutedWrite(scope, origin.root);
       });
       return;
     }
     mutateScope(p, (scope) => {
-      scope.writes.add(origin.key ?? origin.root);
+      const source = origin.key ?? origin.root;
+      recordRoutedWrite(scope, source, ctx.listSources.has(source));
     });
   };
 
@@ -834,6 +836,17 @@ export function analyzeHandler(
       if (plan !== undefined && key !== null) {
         journalTargetedMutation(p, plan, key);
       }
+      return;
+    }
+    const receiverKey = astFactory.isIdentifier(node.object)
+      ? node.object.name
+      : astFactory.isMemberExpression(node.object)
+        ? memberKey(node.object)
+        : null;
+    if (receiverKey !== null && ctx.listSources.has(receiverKey)) {
+      mutateScope(p, (scope) => {
+        recordRoutedWrite(scope, receiverKey, true);
+      });
       return;
     }
     if (
@@ -903,14 +916,14 @@ export function analyzeHandler(
       if (kind !== 'store') {
         // reads of root-keyed vars (let/const): any member write is a write
         // to the variable (items[0] = x, items.length = 0, …)
-        scope.writes.add(rootName);
+        recordRoutedWrite(scope, rootName);
         return;
       }
       const key = memberKey(node);
       if (key !== null && key.includes('.')) {
-        scope.writes.add(key);
+        recordRoutedWrite(scope, key);
       } else {
-        scope.writes.add(rootName);
+        recordRoutedWrite(scope, rootName);
       }
     });
   };
@@ -1007,7 +1020,11 @@ export function analyzeHandler(
           );
         }
         mutateScope(p, (scope) => {
-          scope.writes.add(left.name);
+          recordRoutedWrite(
+            scope,
+            left.name,
+            ctx.listSources.has(left.name),
+          );
         });
       } else if (astFactory.isMemberExpression(left)) {
         noteMemberWrite(p, left);
@@ -1076,7 +1093,7 @@ export function analyzeHandler(
           );
         }
         mutateScope(p, (scope) => {
-          scope.writes.add(arg.name);
+          recordRoutedWrite(scope, arg.name);
         });
       } else if (astFactory.isMemberExpression(arg)) {
         noteMemberWrite(p, arg);
@@ -1130,7 +1147,7 @@ export function analyzeHandler(
                 noteReceiverEffect(p, target);
               } else {
                 mutateScope(p, (scope) => {
-                  for (const key of keys) scope.writes.add(key);
+                  for (const key of keys) recordRoutedWrite(scope, key);
                 });
               }
             } else {
@@ -1285,8 +1302,8 @@ export function analyzeHandler(
         const sum =
           ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
         mutateScope(p, (scope) => {
-          for (const w of sum.writes) scope.writes.add(w);
-          for (const w of sum.boundedWrites) scope.writes.add(w);
+          for (const w of sum.writes) recordRoutedWrite(scope, w);
+          for (const w of sum.boundedWrites) recordRoutedWrite(scope, w);
           // Guard: in an effect callback's direct body (executionAwareRoot=true,
           // call is at the ROOT function scope), calling an unbounded external
           // function is CONSUMPTION — the same reasoning noteBoundedArguments

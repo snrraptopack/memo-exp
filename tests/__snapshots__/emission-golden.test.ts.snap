@@ -366,12 +366,12 @@ export function Feed(_id, _parent, _props) {
 	const _document = _MD.getActiveEnvironment().document;
 	let items = _props[0];
 
-	const _update = () => {
+	const _update = (_reasons = null) => {
 		{
 			items = _props[0];
 		}
 
-		_region.reconcile(items);
+		_region.reconcile(items, _MD.isStructuralListUpdate(_reasons, ""));
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
@@ -426,7 +426,9 @@ export function Feed(_id, _parent, _props) {
 				update: _update2
 			};
 		},
-		(item) => item.id
+		(item) => item.id,
+		true,
+		false
 	);
 
 	_region.reconcile(items);
@@ -770,14 +772,14 @@ export function FilteredList(_id, _parent) {
 	const _document = _MD.getActiveEnvironment().document;
 	let _listView = items.filter((i) => filter === 'all' || i.done);
 
-	const _update = () => {
+	const _update = (_reasons = null) => {
 		{
 			{
 				_listView = items.filter((i) => filter === 'all' || i.done);
 			}
 		}
 
-		_region.reconcile(_listView);
+		_region.reconcile(_listView, _MD.isStructuralListUpdate(_reasons, ""));
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
@@ -831,7 +833,9 @@ export function FilteredList(_id, _parent) {
 				update: _update2
 			};
 		},
-		(item) => item.id
+		(item) => item.id,
+		true,
+		false
 	);
 
 	_region.reconcile(_listView);

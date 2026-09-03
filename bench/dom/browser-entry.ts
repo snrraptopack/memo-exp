@@ -51,6 +51,10 @@ const scenarios: Scenario[] = [
   { name: 'remove row', setup: (a) => (a.click ? a.click('create1k') : a.op!('create1k')), op: (a) => (a.click ? a.click('remove') : a.op!('remove')) },
   { name: 'create 10k rows', setup: (a) => (a.click ? a.click('clear') : a.op!('clear')), op: (a) => (a.click ? a.click('create10k') : a.op!('create10k')) },
   { name: 'append 1k to 10k', setup: (a) => (a.click ? a.click('create10k') : a.op!('create10k')), op: (a) => (a.click ? a.click('append1k') : a.op!('append1k')) },
+  { name: 'prepend 1k to 10k', setup: (a) => (a.click ? a.click('create10k') : a.op!('create10k')), op: (a) => (a.click ? a.click('prepend1k') : a.op!('prepend1k')) },
+  { name: 'pop 1k from 10k', setup: (a) => (a.click ? a.click('create10k') : a.op!('create10k')), op: (a) => (a.click ? a.click('pop1k') : a.op!('pop1k')) },
+  { name: 'reverse 10k', setup: (a) => (a.click ? a.click('create10k') : a.op!('create10k')), op: (a) => (a.click ? a.click('reverse') : a.op!('reverse')) },
+  { name: 'remove 100 scattered', setup: (a) => (a.click ? a.click('create10k') : a.op!('create10k')), op: (a) => (a.click ? a.click('remove100') : a.op!('remove100')) },
   { name: 'clear 10k rows', setup: (a) => (a.click ? a.click('create10k') : a.op!('create10k')), op: (a) => (a.click ? a.click('clear') : a.op!('clear')) },
 ];
 

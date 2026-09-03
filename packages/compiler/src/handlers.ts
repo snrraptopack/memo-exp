@@ -32,6 +32,7 @@ import {
 import {
   buildScopeCommit,
   createScopeWrites,
+  recordRoutedWrite,
 } from './handler-commits';
 import {
   buildEventOriginCommit,
@@ -226,9 +227,9 @@ export function buildHandler(
     const imported = ctx.importedFunctions.get(value.name);
     if (imported !== undefined) {
       const writes = createScopeWrites();
-      for (const write of imported.writes) writes.writes.add(write);
+      for (const write of imported.writes) recordRoutedWrite(writes, write);
       for (const write of imported.boundedWrites) {
-        writes.writes.add(write);
+        recordRoutedWrite(writes, write);
       }
       writes.rootFallback = imported.unbounded;
       return wrapSharedHandlerWithOrigin(
@@ -317,8 +318,10 @@ export function buildHandler(
     const summary = summarizeHelper(ctx, (value as t.Identifier).name);
     if (target.async) {
       const immediate = createScopeWrites();
-      for (const write of summary.writes) immediate.writes.add(write);
-      for (const write of summary.boundedWrites) immediate.writes.add(write);
+      for (const write of summary.writes) recordRoutedWrite(immediate, write);
+      for (const write of summary.boundedWrites) {
+        recordRoutedWrite(immediate, write);
+      }
       immediate.rootFallback = summary.unbounded;
       return wrapSharedHandlerWithOrigin(
         ctx,

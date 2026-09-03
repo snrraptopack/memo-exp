@@ -6,6 +6,7 @@ import {
 } from '../ast';
 import {
   attrExpr,
+  canonicalStateKey,
   keyPathOf,
   nodeHasJsx,
   type Ctx,
@@ -218,6 +219,9 @@ export function emitListRegion(
     if (args.length === 3) args.push(astFactory.identifier('undefined'));
     args.push(astFactory.booleanLiteral(false));
   }
+  if (args.length === 3) args.push(astFactory.identifier('undefined'));
+  if (args.length === 4) args.push(astFactory.booleanLiteral(true));
+  args.push(astFactory.booleanLiteral(site.indexParam !== null));
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
@@ -244,6 +248,9 @@ export function emitListRegion(
     dependency,
     cache: generatedIdentifier(ctx, `${dependency.value}ListKey`).name,
   }));
+  const structuralSource = site.sourceLocal
+    ? ''
+    : canonicalStateKey(ctx, site.sourceKey);
   if (dependencyCaches.length > 0) {
     scope.creation.push(
       astFactory.variableDeclaration(
@@ -258,14 +265,24 @@ export function emitListRegion(
     );
   }
 
-  const reconcile = (): t.Statement =>
+  const reconcile = (update = false): t.Statement =>
     astFactory.expressionStatement(
       astFactory.callExpression(
         astFactory.memberExpression(
           astFactory.identifier(regionVariable),
           astFactory.identifier('reconcile'),
         ),
-        [runtimeListSource(site.sourceExpr, site.optional)],
+        [
+          runtimeListSource(site.sourceExpr, site.optional),
+          ...(update && scope.reasonVar !== null
+            ? [
+                astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
+                  astFactory.identifier(scope.reasonVar),
+                  astFactory.stringLiteral(structuralSource),
+                ]),
+              ]
+            : []),
+        ],
       ),
     );
   scope.creation.push(reconcile());
@@ -273,7 +290,7 @@ export function emitListRegion(
     dependencyCaches.length === 0 && mutation === undefined ||
     scope.reasonVar === null
   ) {
-    scope.updaters.push(reconcile);
+    scope.updaters.push(() => reconcile(true));
   } else {
     scope.updaters.push(() =>
       buildTargetedListUpdate(
@@ -285,6 +302,7 @@ export function emitListRegion(
         site.optional,
         dependencyCaches,
         mutation,
+        structuralSource,
       ),
     );
   }
@@ -345,6 +363,7 @@ function buildTargetedListUpdate(
     cache: string;
   }>,
   mutation: KeyedListMutationPlan | undefined,
+  structuralSource: string,
 ): t.Statement {
   const ownerReasons = ctx.instanceReasonIds.get(componentName);
   if (ownerReasons === undefined) {
@@ -354,7 +373,13 @@ function buildTargetedListUpdate(
           astFactory.identifier(regionVariable),
           astFactory.identifier('reconcile'),
         ),
-        [runtimeListSource(sourceExpr, optional)],
+        [
+          runtimeListSource(sourceExpr, optional),
+          astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
+            astFactory.identifier(reasonVar),
+            astFactory.stringLiteral(structuralSource),
+          ]),
+        ],
       ),
     );
   }
@@ -368,7 +393,13 @@ function buildTargetedListUpdate(
           astFactory.identifier(regionVariable),
           astFactory.identifier('reconcile'),
         ),
-        [runtimeListSource(sourceExpr, optional)],
+        [
+          runtimeListSource(sourceExpr, optional),
+          astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
+            astFactory.identifier(reasonVar),
+            astFactory.stringLiteral(structuralSource),
+          ]),
+        ],
       ),
     );
   }
@@ -380,7 +411,13 @@ function buildTargetedListUpdate(
           astFactory.identifier(regionVariable),
           astFactory.identifier('reconcile'),
         ),
-        [runtimeListSource(sourceExpr, optional)],
+        [
+          runtimeListSource(sourceExpr, optional),
+          astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
+            astFactory.identifier(reasonVar),
+            astFactory.stringLiteral(structuralSource),
+          ]),
+        ],
       ),
     ),
     ...dependencies.map(({ dependency, cache }) =>

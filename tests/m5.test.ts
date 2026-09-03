@@ -37,9 +37,11 @@ function readFixture(name: string): string {
  * a literal dynamic import is resolved by vite at transform time, before
  * beforeAll has written the file.
  */
-function importCompiled(name: string): Promise<any> {
+type CompiledFactory = (id: string, parent: string | null) => HTMLElement;
+
+function importCompiled(name: string): Promise<Record<string, CompiledFactory>> {
   const specifier = `./fixtures/out/${name}.compiled.ts`;
-  return import(specifier);
+  return import(specifier) as Promise<Record<string, CompiledFactory>>;
 }
 
 // ---------------------------------------------------------------------
@@ -129,12 +131,58 @@ describe('M5 compiler — code generation', () => {
     expect(code).toMatchSnapshot();
     expect(code).toMatch(/\.createListRegion\(\s*_ul\d*,\s*_id\d* \+ "\/items"/);
     expect(code).toMatch(/_region\d*\.reconcile\(items\)/);
-    // rows are multi-instance: the click routes through the table
+    // row content writes still route through the ordinary table
     expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
-    // 'items.push' is a local write: the owner re-renders and reconciles
-    expect(code.match(/\.commitWrites\(_WRITES_\d*\)/g)).toHaveLength(2);
+    // Collection receiver writes preserve structure-only intent.
+    expect(code).toMatch(/\.commitStructuralWrites\(_WRITES_\d*\)/);
     // row entities live at the bracket pattern
     expect(code).toContain('"App/items/Row[*]"');
+  });
+
+  it('preserves structural list intent without array-method whitelists', () => {
+    const code = compile(`
+      let items = [{ id: 1, label: 'one' }];
+      let hidden = 0;
+      function make() { hidden++; return { id: hidden + 1, label: 'new' }; }
+      function App() {
+        return <section>
+          <button onClick={() => { items = items.concat(make()); }}>append</button>
+          <button onClick={() => { items.reverse(); }}>reverse</button>
+          <button onClick={() => { items[0].label = 'changed'; }}>content</button>
+          <ul>{items.map(item => <li key={item.id}>{item.label}</li>)}</ul>
+        </section>;
+      }
+    `);
+
+    expect(code).toContain('.commitStructuralWrites(');
+    expect(code).toContain('.commitWrites(');
+    expect(code).toContain('.isStructuralListUpdate(');
+    const tableStart = code.indexOf('.installAccessTable(');
+    const tableEnd = code.indexOf('\n);', tableStart);
+    expect(code.slice(tableStart, tableEnd)).not.toContain('#hidden');
+  });
+
+  it('routes structure to the owning list and independent list readers only', () => {
+    const code = compile(`
+      let first = [{ id: 1 }];
+      let second = [{ id: 2 }];
+      function App() {
+        return <main>
+          {first.map(item => <p key={item.id}>{item.id}</p>)}
+          {second.map(item => <p key={item.id}>{item.id}{first.length}</p>)}
+        </main>;
+      }
+    `);
+
+    const marker = code.indexOf('#first\\u0000memo-dom:list-structure-reader');
+    expect(marker).toBeGreaterThan(-1);
+    const entry = code.slice(
+      code.lastIndexOf('\n', marker),
+      code.indexOf('\n', marker),
+    );
+    expect(entry).toContain('"App"');
+    expect(entry).toContain('"App/second/Row[*]"');
+    expect(entry).not.toContain('"App/first/Row[*]"');
   });
 
   it('accepts destructured and object props as owner-local list sources (R7/R24)', () => {

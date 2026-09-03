@@ -436,6 +436,12 @@ export interface Ctx {
   targetedListDependencies: WeakMap<MapCallExpression, TargetedListDependency[]>;
   /** Components that need dirty reasons for targeted list refreshes. */
   targetedListComponents: Set<string>;
+  /** Reactive source keys rendered by keyed list regions. */
+  listSources: Set<string>;
+  /** Components owning a keyed list updater. */
+  listComponents: Set<string>;
+  /** Component -> non-local collection sources owned by its list updaters. */
+  componentListSources: Map<string, Set<string>>;
   /** Map call -> direct keyed-item mutation journal used by that one list. */
   keyedListMutations: WeakMap<MapCallExpression, KeyedListMutationPlan>;
   /** Component -> source root -> journal plan, for handler write analysis. */
@@ -686,6 +692,9 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     condReads: new Map(),
     targetedListDependencies: new WeakMap(),
     targetedListComponents: new Set(),
+    listSources: new Set(),
+    listComponents: new Set(),
+    componentListSources: new Map(),
     keyedListMutations: new WeakMap(),
     keyedListMutationSources: new Map(),
     disabledKeyedListMutationSources: new Set(),

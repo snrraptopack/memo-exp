@@ -50,7 +50,7 @@ describe('M5.5 — member-path list sources, code generation', () => {
     const code = compile(
       `const store = { todos: [{ id: 1 }] };\nfunction C() { return <div><ul>{store.todos.map((t) => <li key={t.id}>{t.id}</li>)}</ul><button onClick={() => { store.todos.push({ id: 2 }); }}>add</button></div>; }`,
     );
-    expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
+    expect(code).toMatch(/\.commitStructuralWrites\(_WRITES_\d*\)/);
   });
 
   it('inline-row entries carry their update closure', () => {

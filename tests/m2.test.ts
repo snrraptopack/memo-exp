@@ -4,6 +4,8 @@ import {
   resetScheduler,
   unregister,
   _internals,
+  isStructuralListUpdate,
+  listStructureReason,
 } from '@memoized-dom/runtime/testing';
 import { createListRegion, type ListEntry } from '@memoized-dom/runtime/testing';
 import {
@@ -26,6 +28,23 @@ describe('M2 keyed list reconciliation', () => {
     setScheduler((fn) => fn()); // synchronous commit
   });
   afterEach(() => resetScheduler());
+
+  it('scopes structural reasons to their exact list source', () => {
+    const first = listStructureReason('./state.ts#first');
+    const second = listStructureReason('./state.ts#second');
+
+    expect(isStructuralListUpdate(first, './state.ts#first')).toBe(true);
+    expect(isStructuralListUpdate(first, './state.ts#second')).toBe(false);
+    expect(
+      isStructuralListUpdate(
+        new Set([first, second]),
+        './state.ts#first',
+      ),
+    ).toBe(true);
+    expect(
+      isStructuralListUpdate(new Set([first, 1]), './state.ts#first'),
+    ).toBe(false);
+  });
 
   it('mounts rows as entities with hierarchical ids', () => {
     const { root } = TodoList('App/TodoList', null, freshTodos());
@@ -114,6 +133,177 @@ describe('M2 keyed list reconciliation', () => {
     expect(after[3]!.textContent).toContain('todo 10000');
   });
 
+  it('append validation falls back when a retained item key changed', () => {
+    const items = [{ id: 1 }, { id: 2 }];
+    const ul = document.createElement('ul');
+    document.body.appendChild(ul);
+    let created = 0;
+    const region = createListRegion(
+      ul,
+      'App/MutableKey',
+      (item): ListEntry => {
+        created++;
+        const li = document.createElement('li');
+        li.textContent = String(item.id);
+        return { nodes: li, entities: [] };
+      },
+      (item) => item.id,
+    );
+
+    region.reconcile(items);
+    const originalFirst = ul.querySelector('li');
+    items[0]!.id = 10;
+    region.reconcile([...items, { id: 3 }]);
+
+    expect(ul.textContent).toBe('1023');
+    expect(ul.querySelector('li')).not.toBe(originalFirst);
+    expect(created).toBe(4);
+  });
+
+  it('append rejects duplicate tail keys before mounting new rows', () => {
+    const ul = document.createElement('ul');
+    document.body.appendChild(ul);
+    let created = 0;
+    const region = createListRegion(
+      ul,
+      'App/AppendDuplicate',
+      (item): ListEntry => {
+        created++;
+        const li = document.createElement('li');
+        li.textContent = String(item.id);
+        return { nodes: li, entities: [] };
+      },
+      (item) => item.id,
+    );
+    const items = [{ id: 1 }, { id: 2 }];
+
+    region.reconcile(items);
+    expect(() => region.reconcile([...items, { id: 2 }])).toThrow(
+      /duplicate list key/,
+    );
+    expect(created).toBe(2);
+    expect(ul.textContent).toBe('12');
+  });
+
+  it('structure-only updates replay only changed retained identities', () => {
+    const ul = document.createElement('ul');
+    document.body.appendChild(ul);
+    let updates = 0;
+    const region = createListRegion(
+      ul,
+      'App/Structural',
+      (initial): ListEntry => {
+        let item = initial;
+        const li = document.createElement('li');
+        li.textContent = item.label;
+        return {
+          nodes: li,
+          entities: [],
+          updateProps: (next) => {
+            item = next as typeof initial;
+          },
+          update: () => {
+            updates++;
+            li.textContent = item.label;
+          },
+        };
+      },
+      (item) => item.id,
+      false,
+      false,
+    );
+    const first = { id: 1, label: 'one' };
+    const second = { id: 2, label: 'two' };
+    const third = { id: 3, label: 'three' };
+
+    region.reconcile([first, second]);
+    region.reconcile([first, second, third], true);
+    expect(updates).toBe(0);
+
+    const replacement = { id: 2, label: 'TWO' };
+    region.reconcile([first, replacement, third], true);
+    expect(updates).toBe(1);
+    expect(ul.textContent).toBe('oneTWOthree');
+
+    region.reconcile([third, replacement, first], true);
+    expect(updates).toBe(1);
+    expect(ul.textContent).toBe('threeTWOone');
+  });
+
+  it('structure-only reorders replay rows whose rendered index can change', () => {
+    const ul = document.createElement('ul');
+    document.body.appendChild(ul);
+    let updates = 0;
+    const region = createListRegion(
+      ul,
+      'App/IndexedStructural',
+      (item, _rowId, initialIndex): ListEntry => {
+        let index = initialIndex;
+        const li = document.createElement('li');
+        li.textContent = `${index}:${item.id}`;
+        return {
+          nodes: li,
+          entities: [],
+          updateProps: (_next, nextIndex) => {
+            index = nextIndex;
+          },
+          update: () => {
+            updates++;
+            li.textContent = `${index}:${item.id}`;
+          },
+        };
+      },
+      (item) => item.id,
+      false,
+      true,
+    );
+    const items = [{ id: 1 }, { id: 2 }];
+
+    region.reconcile(items);
+    region.reconcile([...items].reverse(), true);
+
+    expect(updates).toBe(2);
+    expect(ul.textContent).toBe('0:21:1');
+  });
+
+  it('truncates a stable suffix as one DOM range', () => {
+    const ul = document.createElement('ul');
+    document.body.appendChild(ul);
+    const originalCreateRange = document.createRange;
+    let rangeDeletes = 0;
+    document.createRange = () => {
+      const range = originalCreateRange.call(document);
+      const originalDelete = range.deleteContents.bind(range);
+      range.deleteContents = () => {
+        rangeDeletes++;
+        originalDelete();
+      };
+      return range;
+    };
+
+    try {
+      const region = createListRegion(
+        ul,
+        'App/Truncate',
+        (item): ListEntry => {
+          const li = document.createElement('li');
+          li.textContent = String(item.id);
+          return { nodes: li, entities: [] };
+        },
+        (item) => item.id,
+      );
+      const items = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+      region.reconcile(items);
+      region.reconcile(items.slice(0, 2));
+
+      expect(ul.textContent).toBe('12');
+      expect(region.size()).toBe(2);
+      expect(rangeDeletes).toBe(1);
+    } finally {
+      document.createRange = originalCreateRange;
+    }
+  });
+
   it('unchanged list reconcile performs ZERO DOM operations', () => {
     const items = freshTodos();
     const { root, setItems } = TodoList('App/TodoList', null, items);
@@ -124,14 +314,20 @@ describe('M2 keyed list reconciliation', () => {
     let removals = 0;
     const origInsert = ul.insertBefore.bind(ul);
     const origRemove = ul.removeChild.bind(ul);
-    (ul as any).insertBefore = (n: Node, ref: Node | null) => {
-      insertions++;
-      return origInsert(n, ref);
-    };
-    (ul as any).removeChild = (n: Node) => {
-      removals++;
-      return origRemove(n);
-    };
+    Object.defineProperty(ul, 'insertBefore', {
+      configurable: true,
+      value: (node: Node, reference: Node | null) => {
+        insertions++;
+        return origInsert(node, reference);
+      },
+    });
+    Object.defineProperty(ul, 'removeChild', {
+      configurable: true,
+      value: (node: Node) => {
+        removals++;
+        return origRemove(node);
+      },
+    });
 
     setItems(items); // same array, same order
     expect(insertions).toBe(0);
@@ -180,6 +376,30 @@ describe('M2 keyed list reconciliation', () => {
     expect(ul.textContent).toBe('ba');
     expect(secondRender[0]).toBe(firstRender[1]); // moved, not recreated
     expect(secondRender[1]).toBe(firstRender[0]);
+  });
+
+  it('does not allocate per-row hydration markers during client creation', () => {
+    const ul = document.createElement('ul');
+    const region = createListRegion(
+      ul,
+      'App/ClientRows',
+      (item: { id: number }): ListEntry => {
+        const li = document.createElement('li');
+        li.textContent = String(item.id);
+        return { nodes: li, entities: [] };
+      },
+      (item) => item.id,
+    );
+
+    region.reconcile([{ id: 1 }, { id: 2 }]);
+
+    const rowMarkers = [...ul.childNodes].filter(
+      (node) =>
+        node.nodeType === Node.COMMENT_NODE &&
+        (node as Comment).data.startsWith('mmd:w:'),
+    );
+    expect(rowMarkers).toEqual([]);
+    region.dispose();
   });
 
   it('duplicate keys throw a clear error', () => {

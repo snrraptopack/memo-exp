@@ -25,6 +25,10 @@ import {
 
 export interface ScopeWrites {
   writes: Set<string>;
+  /** Writes proven to affect a rendered collection's structure only. */
+  structuralWrites: Set<string>;
+  /** Writes whose effect on retained row content is not structurally bounded. */
+  contentWrites: Set<string>;
   rootFallback: boolean;
   /** This scope writes fields observed by one keyed row. */
   rowLocal: boolean;
@@ -41,6 +45,8 @@ export interface ScopeWrites {
 export function createScopeWrites(): ScopeWrites {
   return {
     writes: new Set(),
+    structuralWrites: new Set(),
+    contentWrites: new Set(),
     rootFallback: false,
     rowLocal: false,
     rowOwnerLocal: false,
@@ -48,6 +54,15 @@ export function createScopeWrites(): ScopeWrites {
     instanceWrites: new Set(),
     eventOrigin: null,
   };
+}
+
+export function recordRoutedWrite(
+  scope: ScopeWrites,
+  source: string,
+  structural = false,
+): void {
+  scope.writes.add(source);
+  (structural ? scope.structuralWrites : scope.contentWrites).add(source);
 }
 
 /** Record an exact write to state owned by one component instance. */
@@ -131,13 +146,37 @@ export function buildScopeCommit(
   }
   if (scope.writes.size === 0) return combine(null);
 
-  const writes = [...scope.writes].sort();
+  const overlaps = (left: string, right: string): boolean =>
+    left === right ||
+    left.startsWith(`${right}.`) ||
+    right.startsWith(`${left}.`);
+  const structural = [...scope.structuralWrites].filter(
+    (write) => ![...scope.contentWrites].some((other) => overlaps(write, other)),
+  );
+  const ordinary = [...scope.writes].filter(
+    (write) => !structural.includes(write),
+  );
+  const routed: t.Statement[] = [];
+  if (ordinary.length > 0) {
+    routed.push(
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'commitWrites'), [
+          freshWriteConst(ctx, ordinary.sort()),
+        ]),
+      ),
+    );
+  }
+  if (structural.length > 0) {
+    routed.push(
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'commitStructuralWrites'), [
+          freshWriteConst(ctx, structural.sort()),
+        ]),
+      ),
+    );
+  }
   return combine(
-    astFactory.expressionStatement(
-      astFactory.callExpression(md(ctx, 'commitWrites'), [
-        freshWriteConst(ctx, writes),
-      ]),
-    ),
+    routed.length === 1 ? routed[0]! : astFactory.blockStatement(routed),
   );
 }
 

@@ -253,6 +253,7 @@ export function transformComponent(
   if (
     ctx.selectiveDerivationComponents.has(name) ||
     ctx.targetedListComponents.has(name) ||
+    ctx.listComponents.has(name) ||
     hasLocalEffects
   ) {
     scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;

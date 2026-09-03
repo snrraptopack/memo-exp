@@ -172,51 +172,73 @@ From `runtime.ts` (`reconcileKeyed`, `lis`, `mountItemsLinear`,
 
 (Their harness, their hardware, their fixtures — treat as directional.)
 
-### 2.3 Our current implementation vs theirs
+### 2.3 What the vanilla comparison actually showed
 
-Our `list.ts` already shares real DNA: pooled LIS buffers, a shape fast path
-(identical references ⇒ skip everything), contiguous-range removal, guarded
-row syncs, canonical-keyed commit routing, and zero re-execution (our
-`update_nodeps` equivalent approaches Solid's 0.001ms class because nothing
-re-runs). What they have that we don't:
+The important difference was not a newer alternative to LIS. Hand-written
+vanilla is fast because the operation and row representation are already the
+plan: it appends only new nodes, removes exactly discarded nodes, and stores
+one host element per row. Our earlier runtime had to rediscover topology and,
+more importantly, represented every client-created keyed row with an extra
+hydration comment.
 
-| Technique | Them | Us | Expected win if adopted |
-| --- | --- | --- | --- |
-| Prefix/suffix walks before key-mapping | yes | no — every reconcile hashes every key into a Map | Large for push/pop/shift/unshift/append-heavy workloads; those skip hashing AND LIS entirely |
-| Doubly-linked row blocks | yes — O(1) pointer moves | entries in arrays; moves compute anchors from positions | Moderate-to-large on scattered reorders/removes (their 0.41ms vs react's 0.79 suggests ~2x on that op) |
-| First-fill dispatch bypassing reconcile | yes | our create path does build maps on first fill? (empty old map short-circuits LIS but still builds `next`) | Small-moderate on cold mounts |
-| Transition journal | yes (Suspense restore) | n/a for us yet | Relevant only when we grow async boundaries |
-| `Int32Array` LIS w/ predecessor reconstruction | yes | boolean[] + tails + prev arrays (pooled) | Wash — comparable cost |
-| Batch clear | yes | yes (contiguous range removal) | parity |
+The accepted design now has two layers:
 
-### 2.4 Recommended upgrades for our `list.ts` (ranked)
+1. The ESTree compiler classifies the *write boundary*. Root replacement and
+   collection-receiver writes are structural; nested item-field writes and
+   unresolved external effects remain conservative content writes. This does
+   not enumerate array methods or blessed helper functions.
+2. A source-addressed structural reason reaches the exact list owner and real
+   independent readers through a dedicated access-table channel. The list can
+   then skip retained row replay when identity and index requirements prove it
+   unnecessary. Keys and order are still validated, and LIS remains the
+   general reorder fallback.
 
-1. **Prefix/suffix walks ahead of the Map pass.** Pure win, no semantic
-   change: identical-key prefixes/suffixes update survivors in place and
-   shrink the middle that needs hashing + LIS. Common UI mutations
-   (append/prepend/pop/toggle-at-end) become near-allocation-free.
-2. **Doubly-linked row blocks.** Give each row record `prev/next` pointers
-   and keep head/tail on the region; moves/removes become pointer surgery.
-   Pairs naturally with (1) since the walks traverse the same links.
-3. **First-fill fast path.** When the old map is empty, append linearly and
-   return — skip seq/LIS scaffolding entirely (we partially do this; make it
-   dispatch-direct like theirs).
-4. Later, SSR-coupled: **markerless rows** under proven single-root shapes
-   (Phase 2 elision case, see §1.3 point 4).
+Client-created rows now use the compiler-provided `ListEntry.nodes` extent
+directly. Per-row hydration markers remain only in server output and hydration,
+where they are part of the current adoption contract.
 
-Before/after must be measured with a js-framework-benchmark-shaped suite
-added to `bench/` mirroring their op set (mount_1k, update_nodeps,
-update_deps, swap_half, reverse, clear, remove_scattered) so the comparison
-stops being directional.
+| Technique | Status in memoized-dom | Result |
+| --- | --- | --- |
+| Compiler-proven structural intent | implemented, source-addressed | unchanged retained rows do not replay |
+| Append-only cache-preserving path | implemented, key-validated | mounts only the new tail |
+| Removal-only subsequence path | implemented, key-validated | skips map transfer/LIS; suffix removal uses one range |
+| General reorder | pooled LIS fallback | sparse moves remain minimal |
+| Client row marker elision | implemented for client-create mode | removes one allocation and DOM node per keyed row |
+| Doubly-linked blocks | not adopted | no evidence they beat direct node references here |
 
-### 2.5 Where we should NOT chase them
+### 2.4 Local measurement (Chrome 152, 2026-09-03)
 
-- Their `update_deps` cost (2.2ms) is the price of component re-execution;
-  our model doesn't pay it at all. Chasing their mount numbers by adopting
-  re-render-shaped machinery would be trading away our core advantage.
-- Their universal intrinsic-program tier is a large architectural investment
-  tuned to their compiled-plan model; our emission already bakes structure at
-  compile time, which serves the same purpose differently.
+Seven-sample medians from the checked-in three-way Chromium harness:
+
+| Scenario | Before compiler intent | Current component rows | Current inline rows | Vanilla |
+| --- | ---: | ---: | ---: | ---: |
+| create 10k | 206.4 ms | 141.8 ms | 216.8 ms | 59.1 ms |
+| append 1k to 10k | 36.2 ms | 14.9 ms | 25.5 ms | 6.2 ms |
+| prepend 1k to 10k | 43.9 ms | 16.4 ms | 29.2 ms | 6.2 ms |
+| pop 1k from 10k | 30.6 ms | 6.6 ms | 8.8 ms | 1.5 ms |
+| reverse 10k | 89.4 ms | 54.5 ms | 50.8 ms | 38.8 ms |
+| remove 100 scattered | 13.6 ms | 6.1 ms | 6.2 ms | 0.7 ms |
+| clear 10k | 37.4 ms | 15.2 ms | 55.6 ms | 3.9 ms |
+
+Absolute values are machine-local. A consecutive prior run ranged from
+115.9–141.8 ms for create 10k, 14.9–15.1 ms for append, 5.8–6.6 ms for pop,
+and 39.2–54.5 ms for reverse. The relative reverse result was stable at
+1.31–1.32x vanilla. The remaining inline clear/create gap correlates with one
+registered reactive entity per inline row; eligible component rows already use
+the allocation-free compiler ABI.
+
+The representative Todo production graph is 28,386 B raw / 9,845 B gzip.
+The source-scoped intent protocol added under 1 kB raw over the previously
+accepted topology paths, so the size budget was narrowly raised to 29 kB raw /
+10 kB gzip. This is an explicit performance spend to compensate later.
+
+### 2.5 Next list target
+
+The next compiler-level target is inline-row entity elision: prove when an
+inline row's external reads can route through its list owner and retain only
+the direct row update closure. This attacks row creation, selection and clear
+cost without changing authored TSX/TSRX or teaching the runtime array-method
+semantics. Arbitrary unlinked JavaScript remains conservative.
 
 ## 3. Bonus finding: their React-library strategy is porting, not shimming
 

@@ -81,6 +81,7 @@ export {
 export type { AccessTable } from './access';
 
 export {
+  commitStructuralWrites,
   commitWrites,
   commitWritesWithPayload,
   handle,
@@ -91,6 +92,7 @@ export type { EventRecord } from './events';
 
 export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
+export { isStructuralListUpdate } from './list-update';
 export { rootNodes } from './jsx-dom';
 export { decodeListKey, encodeListKey } from './list-keys';
 export { mount, registerRootFactory } from './mount';

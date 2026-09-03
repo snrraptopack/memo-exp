@@ -81,8 +81,8 @@ describe('Transparent source mutations, delegated events, and routed access reso
     writeFileSync(sessionPath, compiled['./session.ts']!);
     writeFileSync(appPath, compiled['./App.tsx']!);
 
-    // Verify compiler emitted commitWrites for ./session.ts#stories
-    expect(compiled['./App.tsx']).toContain('commitWrites');
+    // The collection receiver write preserves structure-only intent.
+    expect(compiled['./App.tsx']).toContain('commitStructuralWrites');
     expect(compiled['./App.tsx']).toContain('"./session.ts#stories"');
 
     const mockStories = [

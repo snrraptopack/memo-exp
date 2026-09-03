@@ -64,6 +64,22 @@ export function createVanillaApp(): VanillaApp {
       }
       ul.appendChild(frag);
     },
+    prepend1k: () => {
+      const prepended: RowRef[] = [];
+      const frag = document.createDocumentFragment();
+      for (const d of buildData(1000)) {
+        const r = makeRow(d);
+        prepended.push(r);
+        frag.appendChild(r.li);
+      }
+      rows = prepended.concat(rows);
+      ul.insertBefore(frag, ul.firstChild);
+    },
+    pop1k: () => {
+      const start = Math.max(0, rows.length - 1000);
+      for (let i = rows.length - 1; i >= start; i--) rows[i]!.li.remove();
+      rows.length = start;
+    },
     update: () => {
       for (let i = 0; i < rows.length; i += 10) {
         const r = rows[i]!;
@@ -82,11 +98,26 @@ export function createVanillaApp(): VanillaApp {
         rows[998] = a;
       }
     },
+    reverse: () => {
+      rows.reverse();
+      const frag = document.createDocumentFragment();
+      for (const row of rows) frag.appendChild(row.li);
+      ul.appendChild(frag);
+    },
     remove: () => {
       const r = rows[500];
       if (r) {
         r.li.remove();
         rows.splice(500, 1);
+      }
+    },
+    remove100: () => {
+      for (let i = 9900; i >= 0; i -= 100) {
+        const row = rows[i];
+        if (row !== undefined) {
+          row.li.remove();
+          rows.splice(i, 1);
+        }
       }
     },
     clear: () => {

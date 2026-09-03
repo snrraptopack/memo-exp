@@ -32,6 +32,7 @@
 import { getActiveEnvironment, unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 import { encodeListKey } from './list-keys';
 import { HydrationMismatchError } from './hydration-error';
+import { retainedRowNeedsSync } from './list-update';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */
@@ -65,7 +66,7 @@ const identityKey = <T>(item: T): unknown => item;
 
 export interface ListRegion<T> {
   /** Reconcile collection identity, order, and retained row content. */
-  reconcile(items: readonly T[]): void;
+  reconcile(items: readonly T[], structuralOnly?: boolean): void;
   /** Re-sync one retained row through the region's O(1) key cache. */
   refreshKey(key: unknown): void;
   size(): number;
@@ -126,6 +127,7 @@ export function createListRegion<T>(
   create: (item: T, rowId: EntityId, index: number) => ListEntry,
   key: KeyFn<T> = identityKey,
   trackRowIds = true,
+  indexSensitive = true,
 ): ListRegion<T> {
   // Hydration protocol (hydration-markers.md §2/§3): `mmd:l` owns the
   // complete row set. During adoption the existing pair remains the stable
@@ -174,6 +176,7 @@ export function createListRegion<T>(
   let nextMap = new Map<unknown, RowRec>();
   let nextEntries: ListEntry[] = [];
   let nextRowIds: Array<EntityId | null> = [];
+  const nextPositions: number[] = [];
   const seq: number[] = []; // temp LIS sequence, reused
 
   /**
@@ -204,6 +207,42 @@ export function createListRegion<T>(
         undirty(rowId);
       }
     }
+  }
+
+  function cleanupEntry(entry: ListEntry, removeNodes = true): void {
+    if (removeNodes) {
+      const nodes = entry.nodes;
+      if (Array.isArray(nodes)) {
+        for (const node of nodes) node.parentNode?.removeChild(node);
+      } else {
+        (nodes as Node).parentNode?.removeChild(nodes as Node);
+      }
+    }
+    for (const entity of entry.entities) unregisterSubtree(entity);
+  }
+
+  function syncRetained(
+    entry: ListEntry,
+    item: T,
+    rowId: EntityId | null,
+    index: number,
+    previousIndex: number,
+    structuralOnly: boolean,
+  ): void {
+    if (
+      structuralOnly &&
+      !retainedRowNeedsSync(
+        prevItems[previousIndex] as T,
+        item,
+        previousIndex,
+        index,
+        indexSensitive,
+      )
+    ) {
+      if (rowId !== null) undirty(rowId);
+      return;
+    }
+    syncRow(entry, item, rowId, index);
   }
 
   function rowIdFor(k: unknown): EntityId {
@@ -279,7 +318,12 @@ export function createListRegion<T>(
     }
     if (factoryFailed) throw factoryError;
 
-    if (encodedKey !== null) {
+    // Client-created rows already carry their compiler-defined node extent in
+    // ListEntry.nodes, so a per-row hydration marker would only add another
+    // allocation and another moved/removed DOM node. Server output and
+    // hydration retain the marker protocol until markerless adoption is
+    // separately proven end to end.
+    if (encodedKey !== null && environment.mode !== 'client-create') {
       const marker =
         adoptedRow?.open ??
         getActiveEnvironment().document.createComment(
@@ -293,7 +337,10 @@ export function createListRegion<T>(
     return entry!;
   }
 
-  function reconcile(items: readonly T[]): void {
+  function reconcile(
+    items: readonly T[],
+    structuralOnly = false,
+  ): void {
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
     // Same length AND every key identical at every position → no additions,
@@ -306,13 +353,214 @@ export function createListRegion<T>(
       }
       if (same) {
         for (let i = 0; i < items.length; i++) {
-          syncRow(
+          syncRetained(
             prevEntries[i]!,
             items[i] as T,
             trackRowIds ? prevRowIds[i] ?? null : null,
             i,
+            i,
+            structuralOnly,
           );
         }
+        return;
+      }
+    }
+
+    // Append-only fast path. Validate every retained key against its cached
+    // position before mutating anything, so mutable key fields still fall
+    // through to the general reconciler. Once proven, keep the existing map
+    // and ordered buffers in place, sync retained rows, and mount only the new
+    // tail. This avoids transferring the full prefix into a scratch map and
+    // running LIS for a sequence that is already ordered.
+    if (
+      !adoptingFrame &&
+      prevItems.length > 0 &&
+      items.length > prevItems.length &&
+      cache.size === prevItems.length
+    ) {
+      let appendOnly = true;
+      for (let i = 0; i < prevItems.length; i++) {
+        const rec = cache.get(key(items[i] as T, i));
+        if (rec === undefined || rec.pos !== i) {
+          appendOnly = false;
+          break;
+        }
+      }
+      if (appendOnly) {
+        const appendedKeys: unknown[] = [];
+        const seen = new Set<unknown>();
+        for (let i = prevItems.length; i < items.length; i++) {
+          const k = key(items[i] as T, i);
+          if (cache.has(k) || seen.has(k)) {
+            throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
+          }
+          appendedKeys.push(k);
+          seen.add(k);
+        }
+
+        for (let i = 0; i < prevItems.length; i++) {
+          syncRetained(
+            prevEntries[i]!,
+            items[i] as T,
+            trackRowIds ? prevRowIds[i] ?? null : null,
+            i,
+            i,
+            structuralOnly,
+          );
+        }
+
+        const fragment = environment.document.createDocumentFragment();
+        const appended = nextEntries;
+        const appendedIds = nextRowIds;
+        appended.length = 0;
+        appendedIds.length = 0;
+        for (let offset = 0; offset < appendedKeys.length; offset++) {
+          const i = prevItems.length + offset;
+          const item = items[i] as T;
+          const k = appendedKeys[offset];
+          const createId = trackRowIds ? rowIdFor(k) : idPrefix;
+          const entry = createRow(item, k, createId, i, encodeListKey(k));
+          const id = trackRowIds ? createId : null;
+          appended.push(entry);
+          appendedIds.push(id);
+          const nodes = entry.nodes;
+          if (Array.isArray(nodes)) {
+            for (const node of nodes) fragment.appendChild(node);
+          } else {
+            fragment.appendChild(nodes as Node);
+          }
+        }
+        for (let offset = 0; offset < appended.length; offset++) {
+          const pos = prevItems.length + offset;
+          const entry = appended[offset]!;
+          const id = appendedIds[offset] ?? null;
+          cache.set(appendedKeys[offset], { e: entry, id, pos });
+          prevEntries.push(entry);
+          if (trackRowIds) prevRowIds.push(id);
+        }
+        (endAnchor.parentNode ?? parent).insertBefore(fragment, endAnchor);
+        appended.length = 0;
+        appendedIds.length = 0;
+        prevItems = items.slice();
+        return;
+      }
+    }
+
+    // Removal-only fast path. Prove that the next keys are a subsequence of
+    // the prior order; then keep the live cache and skip both map transfer and
+    // LIS. Index-dependent or changed keys naturally fail the proof and use
+    // the general reconciler. A pure suffix is deleted as one DOM range.
+    if (
+      !adoptingFrame &&
+      items.length > 0 &&
+      items.length < prevItems.length &&
+      cache.size === prevItems.length
+    ) {
+      const ordered = nextEntries;
+      const rowIds = nextRowIds;
+      ordered.length = items.length;
+      rowIds.length = trackRowIds ? items.length : 0;
+      nextPositions.length = items.length;
+      seq.length = prevItems.length;
+      seq.fill(-1);
+      let removalOnly = true;
+      let lastOld = -1;
+      let prefixOnly = true;
+      for (let i = 0; i < items.length; i++) {
+        const rec = cache.get(key(items[i] as T, i));
+        if (rec === undefined || rec.pos <= lastOld) {
+          removalOnly = false;
+          break;
+        }
+        lastOld = rec.pos;
+        prefixOnly &&= rec.pos === i;
+        nextPositions[i] = rec.pos;
+        seq[rec.pos] = i;
+        ordered[i] = rec.e;
+        if (trackRowIds) rowIds[i] = rec.id;
+      }
+      if (removalOnly) {
+        for (let i = 0; i < items.length; i++) {
+          syncRetained(
+            ordered[i]!,
+            items[i] as T,
+            trackRowIds ? rowIds[i] ?? null : null,
+            i,
+            nextPositions[i]!,
+            structuralOnly,
+          );
+        }
+
+        if (prefixOnly) {
+          const removedKeys: unknown[] = [];
+          for (let i = items.length; i < prevItems.length; i++) {
+            const k = key(prevItems[i] as T, i);
+            const rec = cache.get(k);
+            if (rec === undefined || rec.pos !== i) {
+              prefixOnly = false;
+              break;
+            }
+            removedKeys.push(k);
+          }
+          if (prefixOnly) {
+            for (let i = items.length; i < prevEntries.length; i++) {
+              prevEntries[i]!.dispose?.();
+            }
+            const firstNodes = prevEntries[items.length]!.nodes;
+            const firstNode = Array.isArray(firstNodes)
+              ? firstNodes[0]
+              : firstNodes as Node;
+            let removedAsRange = false;
+            if (
+              firstNode !== undefined &&
+              firstNode.parentNode === container &&
+              endAnchor.parentNode === container &&
+              environment.document.createRange !== undefined
+            ) {
+              const range = environment.document.createRange!();
+              range.setStartBefore(firstNode);
+              range.setEndBefore(endAnchor);
+              range.deleteContents();
+              removedAsRange = true;
+            }
+            for (let offset = 0; offset < removedKeys.length; offset++) {
+              const i = items.length + offset;
+              const k = removedKeys[offset];
+              const entry = prevEntries[i]!;
+              cleanupEntry(entry, !removedAsRange);
+              syntheticIds.delete(k);
+              cache.delete(k);
+            }
+            prevEntries.length = items.length;
+            if (trackRowIds) prevRowIds.length = items.length;
+            nextEntries.length = 0;
+            nextRowIds.length = 0;
+            prevItems = items.slice();
+            return;
+          }
+        }
+
+        for (const [k, rec] of cache) {
+          const nextIndex = seq[rec.pos]!;
+          if (nextIndex >= 0) {
+            rec.pos = nextIndex;
+            continue;
+          }
+          const entry = rec.e;
+          entry.dispose?.();
+          cleanupEntry(entry);
+          syntheticIds.delete(k);
+          cache.delete(k);
+        }
+        const priorEntries = prevEntries;
+        prevEntries = ordered;
+        nextEntries = priorEntries;
+        const priorRowIds = prevRowIds;
+        prevRowIds = rowIds;
+        nextRowIds = priorRowIds;
+        nextEntries.length = 0;
+        nextRowIds.length = 0;
+        prevItems = items.slice();
         return;
       }
     }
@@ -351,7 +599,7 @@ export function createListRegion<T>(
         if (oldPos <= lastOld) inOrder = false;
         else lastOld = oldPos;
         rec.pos = i;
-        syncRow(rec.e, item, rec.id, i);
+        syncRetained(rec.e, item, rec.id, i, oldPos, structuralOnly);
       } else {
         const createId = trackRowIds ? rowIdFor(k) : idPrefix;
         const encoded = encodeListKey(k);
@@ -407,15 +655,7 @@ export function createListRegion<T>(
       }
 
       for (const [k, rec] of old) {
-        if (!removedAsRange) {
-          const nodes = rec.e.nodes;
-          if (Array.isArray(nodes)) {
-            for (const node of nodes) node.parentNode?.removeChild(node);
-          } else {
-            (nodes as Node).parentNode?.removeChild(nodes as Node);
-          }
-        }
-        for (const eid of rec.e.entities) unregisterSubtree(eid);
+        cleanupEntry(rec.e, !removedAsRange);
         syntheticIds.delete(k);
       }
       old.clear();
@@ -490,13 +730,7 @@ export function createListRegion<T>(
     // ---- removals BEFORE placement (keeps placement math accurate) ----------
     for (const [k, rec] of old) {
       rec.e.dispose?.();
-      const nodes = rec.e.nodes;
-      if (Array.isArray(nodes)) {
-        for (const node of nodes) node.parentNode?.removeChild(node);
-      } else {
-        (nodes as Node).parentNode?.removeChild(nodes as Node);
-      }
-      for (const eid of rec.e.entities) unregisterSubtree(eid);
+      cleanupEntry(rec.e);
       syntheticIds.delete(k);
     }
     // `old` becomes the next reconciliation's scratch map below. Iterating a
@@ -561,13 +795,7 @@ export function createListRegion<T>(
   function dispose(): void {
     for (const [key, rec] of cache) {
       rec.e.dispose?.();
-      const nodes = rec.e.nodes;
-      if (Array.isArray(nodes)) {
-        for (const node of nodes) node.parentNode?.removeChild(node);
-      } else {
-        (nodes as Node).parentNode?.removeChild(nodes as Node);
-      }
-      for (const entity of rec.e.entities) unregisterSubtree(entity);
+      cleanupEntry(rec.e);
       syntheticIds.delete(key);
     }
     cache.clear();

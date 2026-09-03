@@ -5,19 +5,57 @@ import { md } from '../identifiers';
 import { componentPatterns, pathVariants } from './component-graph';
 import { expandRenderSlotPaths } from './slot-paths';
 
+// Compiler/runtime protocol. This key is internal access-table metadata, not
+// an authored state path; ordinary state writes cannot match the NUL suffix.
+const LIST_STRUCTURE_READER_SUFFIX = '\0memo-dom:list-structure-reader';
+
 /** Build and install the module's state-reader access table. */
 export function buildAccessTable(ctx: Ctx): t.Statement | null {
-  const add = (variable: string, patterns: readonly string[]): void => {
+  const canonicalListSources = new Set(
+    [...ctx.listSources].map((source) => canonicalStateKey(ctx, source)),
+  );
+  const componentOwnsListSource = (
+    component: string,
+    variable: string,
+  ): boolean => {
+    const source = canonicalStateKey(ctx, variable);
+    for (const candidate of ctx.componentListSources.get(component) ?? []) {
+      if (canonicalStateKey(ctx, candidate) === source) return true;
+    }
+    return false;
+  };
+  const add = (
+    variable: string,
+    patterns: readonly string[],
+    structuralPatterns: readonly string[] = patterns,
+  ): void => {
     const key = canonicalStateKey(ctx, variable);
     let readers = ctx.readers.get(key);
     if (!readers) ctx.readers.set(key, (readers = new Set()));
     for (const pattern of patterns) readers.add(pattern);
+    if (!canonicalListSources.has(key)) return;
+    const structuralKey = `${key}${LIST_STRUCTURE_READER_SUFFIX}`;
+    let structuralReaders = ctx.readers.get(structuralKey);
+    if (!structuralReaders) {
+      ctx.readers.set(structuralKey, (structuralReaders = new Set()));
+    }
+    for (const pattern of structuralPatterns) structuralReaders.add(pattern);
   };
 
   for (const [component, variables] of ctx.compReads) {
     if (variables.size === 0) continue;
     const patterns = componentPatterns(ctx, component);
-    for (const variable of variables) add(variable, patterns);
+    const ownerPatterns = expandRenderSlotPaths(
+      ctx,
+      pathVariants(ctx, component),
+    );
+    for (const variable of variables) {
+      add(
+        variable,
+        patterns,
+        componentOwnsListSource(component, variable) ? ownerPatterns : patterns,
+      );
+    }
   }
   for (const { owner, suffix, vars } of ctx.rowReads.values()) {
     const patterns = expandRenderSlotPaths(

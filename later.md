@@ -34,7 +34,49 @@ Canonical source invalidation is substantially narrower than invalidating the wh
 
 ---
 
-## 2. SPA-Only Runtime Bundle Decoupling (Completed 2026-09-02)
+## 2. Compiler-Proven List Structure Updates (Completed 2026-09-03)
+
+The compiler now preserves whether a routed collection write is structural or
+may change retained row content. This classification is based on the write
+boundary, not the authored method name: root replacement and writes to the
+collection receiver are structural; nested item-field writes and unresolved
+helper/import effects remain ordinary conservative writes. There is no array
+method or function whitelist.
+
+Structural commits carry a canonical, source-addressed reason through a
+dedicated access-table reader channel. A component owning two lists therefore
+updates the exact affected list owner plus real independent readers, without
+replaying every retained row merely because it is below the same component.
+The runtime still validates keys and identity and retains the general keyed
+reconciler with LIS as its correctness fallback.
+
+Client-created list rows no longer allocate hydration comments per key. Their
+compiler-emitted `ListEntry.nodes` already defines the exact live extent.
+Server output and hydration keep their existing marker protocol; no SSR API or
+contract changed.
+
+### Measured Result
+
+Across two consecutive local Chrome 152 seven-sample median runs,
+component-row append to 10k measured 14.9–15.1 ms after a 36.2 ms baseline,
+prepend 16.4–21.7 ms after 43.9 ms, pop 5.8–6.6 ms after 30.6 ms, reverse
+39.2–54.5 ms after 89.4 ms, and scattered removal 3.7–6.1 ms after 13.6 ms.
+Despite absolute machine noise, reverse held at 1.31–1.32x the hand-written
+vanilla path. The checked-in harness is the reproducible contract.
+
+### Remaining Optimization Target: Inline Row Entity Elision
+
+Inline TSX/TSRX rows still register one reactive entity per item, while an
+eligible component row already uses the allocation-free row ABI. This explains
+the remaining creation, selection, and clear gap. The next compiler pass should
+prove when an inline row can route its external reads through the list owner and
+retain only its direct update closure. Instance-local collection sources also
+remain conservative unless their existing keyed-item mutation journal provides
+an exact reason.
+
+---
+
+## 3. SPA-Only Runtime Bundle Decoupling (Completed 2026-09-02)
 
 ### Implemented Boundaries
 * `@memoized-dom/runtime` and `@memoized-dom/runtime/client` contain the browser compiler surface and creation-only `mount()`.
