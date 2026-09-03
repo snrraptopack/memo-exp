@@ -20,7 +20,7 @@ export const resolvedServerFunctionsClientVirtualId =
 export const serverFunctionImplementationQuery =
   'memo-server-function-implementation';
 
-const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.jsx','.tsxr']);
+const sourceExtensions = new Set(['.ts', '.tsx', '.tsrx', '.js', '.jsx']);
 
 export function serverFunctionsRoot(
   root: string,
@@ -127,22 +127,16 @@ export interface ServerFunctionBarrelEntry {
   readonly specifier: string;
 }
 
-let barrelEntries: readonly ServerFunctionBarrelEntry[] = [];
-
-/** Publish the current barrel ownership for graph-source rewriting. */
-export function setServerFunctionBarrelEntries(
-  entries: readonly ServerFunctionBarrelEntry[],
-): void {
-  barrelEntries = entries;
-}
-
 /**
  * Rewrite `import { x } from '#server-functions'` into per-module facade
  * imports so the compiler links colorless sources directly instead of through
  * an opaque barrel. Unknown names keep the original clause; the runtime
  * barrel virtual module still serves them.
  */
-export function rewriteServerFunctionBarrelImports(source: string): string {
+export function rewriteServerFunctionBarrelImports(
+  source: string,
+  barrelEntries: readonly ServerFunctionBarrelEntry[],
+): string {
   if (!source.includes(serverFunctionsClientVirtualId)) return source;
   return source.replace(
     /import\s*\{([^}]+)\}\s*from\s*(['"])#server-functions\2\s*;?/g,
@@ -288,7 +282,7 @@ export function implementationSpecifier(
 ): string {
   const declarationDir = dirname(serverFunctionsDeclarationFile(root));
   const clean = normalizeFile(moduleId);
-  const withoutExtension = clean.replace(/\.[cm]?[jt]sx?$/i, '');
+  const withoutExtension = clean.replace(/(?:\.[cm]?[jt]sx?|\.tsrx)$/i, '');
   const specifier = relative(declarationDir, `${withoutExtension}.js`)
     .replaceAll('\\', '/');
   return specifier.startsWith('.') ? specifier : `./${specifier}`;

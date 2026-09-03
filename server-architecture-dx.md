@@ -78,7 +78,7 @@ export default defineServer({
   app: App,
 
   // HTML template container — framework loads, validates <!--ssr-outlet-->, and streams
-  document: './index.html',
+  document: new URL('./index.html', import.meta.url),
 
   // Global middleware (runs for all incoming requests: pages, API, webhooks)
   middleware: [
@@ -135,6 +135,17 @@ export default defineServer({
   },
 });
 ```
+
+A bare route handler is an implicit `GET`; use the method-map form when a
+pathname supports another verb or more than one verb. `GET` supplies automatic
+`HEAD`, and the router answers unmatched methods with `405` plus `Allow`.
+Handlers are contextually typed from `createLocals` and `createPlatform`.
+
+The generated server-function table is adapter-owned. In Vite fullstack
+development, `memoizedDomFullstack` installs and hot-replaces that table on a
+`defineServer` handler automatically. Custom production adapters can pass the
+generated table through `serverFunctions`; application code never needs to
+list individual named server functions in `routes`.
 
 ### Handler Return Types
 A route handler can return any of the following; `defineServer` normalizes the response automatically:
@@ -784,7 +795,8 @@ The verb prefix dictates the HTTP method, the argument transport format, caching
 
 The table describes lowering, not a second public API. Developers keep calling
 the imported function. The generated facade maps its serializable parameters
-to the query or action input expected by the existing data runtime.
+to the query or request body expected by the existing method-aware `$fetch`
+runtime.
 
 There is no generated procedure identifier separate from the URL. For example,
 the module/export pair `stories/getStory` becomes the fetch target

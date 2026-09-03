@@ -102,9 +102,11 @@ export function renderToReadableStream(
               };
 
               controller.enqueue(encoder.encode(html));
-              controller.enqueue(
-                encoder.encode(createPayloadScriptTag(rootId, payload)),
-              );
+              if (options.markers === true) {
+                controller.enqueue(
+                  encoder.encode(createPayloadScriptTag(rootId, payload)),
+                );
+              }
               controller.close();
             }),
           ),

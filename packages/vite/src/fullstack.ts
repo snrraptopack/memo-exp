@@ -5,6 +5,7 @@ import {
 import type { WebHandler } from '@memoized-dom/adapters';
 import type { Plugin, ViteDevServer } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { serverFunctionsVirtualId } from './server-functions';
 
 export interface MemoizedDomFullstackOptions {
   /** Vite-root-relative server module exporting `fetch` or a default handler. */
@@ -14,6 +15,14 @@ export interface MemoizedDomFullstackOptions {
 interface FullstackModule {
   readonly default?: unknown;
   readonly fetch?: unknown;
+}
+
+interface InstallableWebHandler extends WebHandler {
+  installServerFunctions?: (routes: readonly unknown[]) => void;
+}
+
+interface GeneratedServerFunctionModule {
+  readonly serverFunctionRoutes?: unknown;
 }
 
 function handlerFromModule(
@@ -26,7 +35,7 @@ function handlerFromModule(
       `memoized-dom: fullstack entry '${entry}' must export a Web handler as 'fetch' or default`,
     );
   }
-  return candidate as WebHandler;
+  return candidate as InstallableWebHandler;
 }
 
 function moduleId(entry: string): string {
@@ -39,8 +48,21 @@ async function dispatch(
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
-  const module = await server.ssrLoadModule(moduleId(entry)) as FullstackModule;
-  const handler = handlerFromModule(module, entry);
+  const module = await server.ssrLoadModule(
+    moduleId(entry),
+  ) as FullstackModule;
+  const handler = handlerFromModule(module, entry) as InstallableWebHandler;
+  if (handler.installServerFunctions !== undefined) {
+    const generated = await server.ssrLoadModule(
+      serverFunctionsVirtualId,
+    ) as GeneratedServerFunctionModule;
+    if (!Array.isArray(generated.serverFunctionRoutes)) {
+      throw new TypeError(
+        'memoized-dom: generated server-function manifest did not export a route array',
+      );
+    }
+    handler.installServerFunctions(generated.serverFunctionRoutes);
+  }
   await sendNodeResponse(await handler(toWebRequest(request)), response);
 }
 

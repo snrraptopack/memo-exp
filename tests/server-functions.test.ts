@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyzeServerFunctionModule,
+  compileModules,
   generateServerFunctionClient,
   generateServerFunctionDeclarations,
   serverFunctionModuleName,
@@ -150,5 +151,34 @@ describe('named HTTP server functions', () => {
     )).toBe('users');
     expect(() => serverFunctionModuleName('/app/client/users.ts'))
       .toThrow(/outside 'server\/functions\/'/);
+  });
+
+  it('rejects non-GET server functions during render but allows handlers', () => {
+    const metadata = analyzeServerFunctionModule(`
+      export async function postVote(id: number) { return { id }; }
+    `, { moduleId: '/app/server/functions/stories.ts' });
+    const facade = generateServerFunctionClient(metadata);
+
+    expect(() => compileModules({
+      './functions.ts': facade,
+      './App.tsx': `
+        import { postVote } from './functions';
+        export function App() {
+          postVote(1);
+          return <main>Stories</main>;
+        }
+      `,
+    })).toThrow(/\[MMD-S010\].*postVote.*HTTP POST.*component rendering/s);
+
+    const output = compileModules({
+      './functions.ts': facade,
+      './App.tsx': `
+        import { postVote } from './functions';
+        export function App() {
+          return <button onClick={() => postVote(1)}>Vote</button>;
+        }
+      `,
+    });
+    expect(output['./functions.ts']).toContain('/_fn/stories/postVote');
   });
 });

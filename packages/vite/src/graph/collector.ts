@@ -24,6 +24,7 @@ import {
   clientServerFunctionSource,
   isServerFunctionFile,
   rewriteServerFunctionBarrelImports,
+  type ServerFunctionBarrelEntry,
 } from '../server-functions';
 
 export interface ResolvedImport {
@@ -64,6 +65,7 @@ export async function compileGraph(
   overrides: ReadonlyMap<string, string>,
   hot: boolean,
   requireMount = true,
+  serverFunctionBarrelEntries: readonly ServerFunctionBarrelEntry[] = [],
 ): Promise<CompiledGraph> {
   const sources = new Map<string, string>();
   const sourceIds = new Map<string, string>();
@@ -79,6 +81,17 @@ export async function compileGraph(
     const id = moduleId(root, cleanFile);
     const authoredSource =
       overrides.get(cleanFile) ?? (await readFile(cleanFile, 'utf8'));
+    const authoredProgram = parseWithEstreeFrontendOrThrow(
+      options.frontend ?? memoizedEstreeFrontend,
+      authoredSource,
+      { filename: id, sourceType: 'module' },
+    ).program as ParsedProgram;
+    const authoredImports = new Map(
+      valueImports(authoredProgram).map(reference => [
+        reference.specifier,
+        reference,
+      ]),
+    );
     const facadeSource = isServerFunctionFile(root, cleanFile, options)
       ? await clientServerFunctionSource(
           authoredSource,
@@ -87,7 +100,10 @@ export async function compileGraph(
           options,
         )
       : authoredSource;
-    const source = rewriteServerFunctionBarrelImports(facadeSource);
+    const source = rewriteServerFunctionBarrelImports(
+      facadeSource,
+      serverFunctionBarrelEntries,
+    );
     sources.set(id, source);
     sourceIds.set(cleanFile, id);
 
@@ -96,13 +112,34 @@ export async function compileGraph(
       source,
       { filename: id, sourceType: 'module' },
     ).program as ParsedProgram;
-    for (const specifier of valueImports(program)) {
+    for (const reference of valueImports(program)) {
+      const { specifier } = reference;
       const resolved = await context.resolve(specifier, cleanFile, {
         skipSelf: true,
       });
       if (resolved === null || resolved.external) continue;
 
       const target = cleanViteId(resolved.id);
+      const authored = authoredImports.get(specifier);
+      if (
+        authored !== undefined &&
+        !isServerFunctionFile(root, cleanFile, options) &&
+        isServerFunctionFile(root, target, options)
+      ) {
+        context.error({
+          message:
+            `memo-dom: [MMD-S003] UI modules cannot import '${specifier}' directly; import named server functions from '#server-functions' so server-only code cannot enter the client graph`,
+          id: cleanFile,
+          ...(authored.line === undefined || authored.column === undefined
+            ? {}
+            : {
+                loc: {
+                  line: authored.line,
+                  column: authored.column,
+                },
+              }),
+        });
+      }
       if (!acceptsSource(root, target, options)) continue;
       resolutions.set(resolutionKey(id, specifier), moduleId(root, target));
       await visit(target);

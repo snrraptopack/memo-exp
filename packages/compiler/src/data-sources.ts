@@ -1680,6 +1680,62 @@ function isCallToImported(
   return importedProgramBinding(ctx, component, call.callee.name) !== undefined;
 }
 
+/**
+ * Non-GET server functions mutate server state and therefore cannot execute
+ * while a component (or module) is being evaluated. Nested callbacks remain
+ * valid event/effect boundaries.
+ */
+export function rejectNonGetServerFunctionRenderCalls(
+  ctx: Ctx,
+  programPath: {
+    node: t.Program;
+    buildCodeFrameError(message: string, at?: t.Node): Error;
+  },
+): void {
+  if (ctx.transparentSourceFactoryMethods.size === 0) return;
+  const componentNodes = new Set(
+    [...ctx.compPaths.values()].map(path => path.node as unknown as BaseNode),
+  );
+  const functionStack: BaseNode[] = [];
+  const functionTypes = new Set([
+    'FunctionDeclaration',
+    'FunctionExpression',
+    'ArrowFunctionExpression',
+  ]);
+
+  walkAst(programPath.node as unknown as BaseNode, {
+    enter(node) {
+      if (functionTypes.has(node.type)) {
+        functionStack.push(node);
+        return;
+      }
+      if (node.type !== 'CallExpression') return;
+      const call = node as unknown as t.CallExpression;
+      if (!astFactory.isIdentifier(call.callee)) return;
+      const method = ctx.transparentSourceFactoryMethods.get(call.callee.name);
+      if (method === undefined || method === 'GET') return;
+      if (!isCallToImported(
+        ctx,
+        node,
+        call,
+        ctx.transparentSourceFactories,
+      )) return;
+
+      const owner = functionStack.at(-1);
+      if (owner !== undefined && !componentNodes.has(owner)) return;
+      throw programPath.buildCodeFrameError(
+        `memo-dom: [MMD-S010] '${call.callee.name}' is an HTTP ${method} server function and cannot be invoked during ${
+          owner === undefined ? 'module evaluation' : 'component rendering'
+        }. Move the call into an event handler, effect, or another deferred callback.`,
+        call,
+      );
+    },
+    leave(node) {
+      if (functionTypes.has(node.type)) functionStack.pop();
+    },
+  });
+}
+
 /** Find direct component-local source declarations and track aliases. */
 export function scanTransparentSourceBindings(ctx: Ctx): void {
   for (const [component, componentPath] of ctx.compPaths) {

@@ -575,3 +575,20 @@ export async function renderToResultAsync(
 }
 
 export { renderToReadableStream, type StreamOptions } from './stream';
+export {
+  composeDocumentStream,
+  loadDocumentTemplate,
+  splitDocumentTemplate,
+  SSR_OUTLET,
+  type DocumentTemplate,
+} from './document';
+export {
+  defineServer,
+  getServerContext,
+  type DefineServerHandler,
+  type DefineServerMethod,
+  type DefineServerMethodValue,
+  type DefineServerOptions,
+  type DefineServerRenderPolicy,
+  type DefineServerRouteValue,
+} from './define-server';

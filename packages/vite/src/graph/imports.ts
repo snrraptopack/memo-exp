@@ -8,7 +8,12 @@ interface ImportSpecifier {
 interface ImportDeclaration {
   type: 'ImportDeclaration';
   importKind?: 'type' | 'value';
-  source: { value?: unknown };
+  source: {
+    value?: unknown;
+    loc?: {
+      start: { line: number; column: number };
+    } | null;
+  };
   specifiers?: readonly ImportSpecifier[];
 }
 
@@ -24,8 +29,14 @@ function isImportDeclaration(node: unknown): node is ImportDeclaration {
   );
 }
 
-export function valueImports(program: Program): string[] {
-  const imports: string[] = [];
+export interface ValueImport {
+  readonly specifier: string;
+  readonly line?: number;
+  readonly column?: number;
+}
+
+export function valueImports(program: Program): ValueImport[] {
+  const imports: ValueImport[] = [];
   for (const node of program.body) {
     if (!isImportDeclaration(node) || node.importKind === 'type') continue;
     const specifiers = node.specifiers ?? [];
@@ -36,7 +47,13 @@ export function valueImports(program: Program): string[] {
       continue;
     }
     if (typeof node.source.value === 'string') {
-      imports.push(node.source.value);
+      const start = node.source.loc?.start;
+      imports.push({
+        specifier: node.source.value,
+        ...(start === undefined
+          ? {}
+          : { line: start.line, column: start.column }),
+      });
     }
   }
   return imports;

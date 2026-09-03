@@ -130,6 +130,8 @@ export interface LinkedFunctionImport {
   type: 'function';
   /** Calling this imported function creates a compiler-transparent source. */
   transparentSourceFactory?: boolean;
+  /** HTTP method carried by a generated server-function source factory. */
+  transparentSourceMethod?: TransparentSourceMethod;
   /** Finite intrinsic-tag identities declared by the helper return type. */
   tagCandidates?: string[];
   /** Finite component identities declared by helper returns. */
@@ -144,6 +146,13 @@ export interface LinkedFunctionImport {
   /** Effects may extend beyond every known root and argument. */
   unbounded: boolean;
 }
+
+export type TransparentSourceMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE';
 
 export interface LinkedComponentImport {
   type: 'component';
@@ -345,6 +354,7 @@ export interface Ctx {
   usesTransparentData: boolean;
   /** Local import bindings classified by provider metadata. */
   transparentSourceFactories: Set<string>;
+  transparentSourceFactoryMethods: Map<string, TransparentSourceMethod>;
   transparentTrackFactories: Set<string>;
   transparentSourcePassthroughs: Set<string>;
   transparentGroups: Set<string>;
@@ -531,6 +541,10 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   >();
   const transparentModuleSources = new Map<string, string>();
   const transparentSourceFactories = new Set<string>();
+  const transparentSourceFactoryMethods = new Map<
+    string,
+    TransparentSourceMethod
+  >();
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
@@ -555,6 +569,12 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     } else if (linked.type === 'function') {
       if (linked.transparentSourceFactory === true) {
         transparentSourceFactories.add(local);
+      }
+      if (linked.transparentSourceMethod !== undefined) {
+        transparentSourceFactoryMethods.set(
+          local,
+          linked.transparentSourceMethod,
+        );
       }
       if (linked.tagCandidates !== undefined) {
         functionTagCandidates.set(local, [...linked.tagCandidates]);
@@ -622,6 +642,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     usesRouter: false,
     usesTransparentData: false,
     transparentSourceFactories,
+    transparentSourceFactoryMethods,
     transparentTrackFactories: new Set(),
     transparentSourcePassthroughs: new Set(),
     transparentGroups: new Set(),

@@ -29,9 +29,9 @@ import {
   isServerFunctionImplementation,
   resolvedServerFunctionsClientVirtualId,
   resolvedServerFunctionsVirtualId,
+  type ServerFunctionBarrelEntry,
   serverFunctionsClientVirtualId,
   serverFunctionsVirtualId,
-  setServerFunctionBarrelEntries,
   writeServerFunctionDeclarations,
 } from './server-functions';
 
@@ -55,6 +55,7 @@ export function memoizedDom(
   let serverFunctionRoutesSource =
     'export const serverFunctionManifest = [];\nexport const serverFunctionRoutes = [];\n';
   let serverFunctionClientBarrelSource = '';
+  let serverFunctionBarrelEntries: readonly ServerFunctionBarrelEntry[] = [];
 
   async function refreshServerFunctions(): Promise<readonly string[]> {
     if (config === undefined) return [];
@@ -64,7 +65,7 @@ export function memoizedDom(
     );
     serverFunctionRoutesSource = generated.source;
     serverFunctionClientBarrelSource = generated.clientBarrelSource;
-    setServerFunctionBarrelEntries(generated.clientBarrelEntries);
+    serverFunctionBarrelEntries = generated.clientBarrelEntries;
     await writeServerFunctionDeclarations(config.root, generated.modules, options);
     return generated.files;
   }
@@ -125,6 +126,8 @@ export function memoizedDom(
         options,
         overrides,
         config.command === 'serve',
+        true,
+        serverFunctionBarrelEntries,
       );
     }
     const compilation = state.compiling;
@@ -158,6 +161,7 @@ export function memoizedDom(
         overrides,
         config.command === 'serve',
         false,
+        serverFunctionBarrelEntries,
       );
     }
     const compilation = state.compiling;
@@ -276,6 +280,7 @@ export function memoizedDom(
         new Map([[file, code]]),
         config.command === 'serve',
         false,
+        serverFunctionBarrelEntries,
       );
     }
     const compilation = lazy.compiling;

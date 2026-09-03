@@ -17,9 +17,11 @@ const fixture = resolve(import.meta.dirname, 'fixtures/vite-app');
 const source = resolve(fixture, 'src');
 const runtime = resolve(import.meta.dirname, '../../runtime/src/index.ts');
 const runtimeHot = resolve(import.meta.dirname, '../../runtime/src/hot.ts');
+const runtimeServer = resolve(import.meta.dirname, '../../runtime/src/server.ts');
 const data = resolve(import.meta.dirname, '../../data/src/index.ts');
 const dataInternal = resolve(import.meta.dirname, '../../data/src/internal.ts');
 const serverRouter = resolve(import.meta.dirname, '../../server/src/http-router.ts');
+const serverIndex = resolve(import.meta.dirname, '../../server/src/index.ts');
 let server: ViteDevServer | undefined;
 let temporaryFixture: string | undefined;
 
@@ -247,6 +249,43 @@ describe('Vite 8 adapter', () => {
     expect(response.headers.get('x-directory')).toBe('yes');
     expect(response.headers.get('x-module')).toBe('must-not-enter-client');
     await expect(response.json()).resolves.toEqual({ id: 9, title: 'Story 9' });
+  }, 30_000);
+
+  it('rejects direct UI imports from server-function implementation files', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    const functions = resolve(root, 'server/functions');
+    await mkdir(functions, { recursive: true });
+    await writeFile(resolve(functions, 'stories.ts'), `
+      export async function getStories() { return []; }
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import { getStories } from '../server/functions/stories';
+      export function App() {
+        const stories = getStories();
+        return <main>{stories.length}</main>;
+      }
+    `);
+
+    await expect(build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@': temporarySource,
+          '@memoized-dom/runtime': runtime,
+          '@memoized-dom/data/internal': dataInternal,
+          '@memoized-dom/data': data,
+        },
+      },
+      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    })).rejects.toThrow(/\[MMD-S003\].*#server-functions/s);
   }, 30_000);
 
   it('lowers module state into request-owned cells when opted in', async () => {
@@ -479,5 +518,58 @@ describe('Vite 8 adapter', () => {
       '<!doctype html><h1>Fullstack</h1>',
     );
   });
+
+  it('auto-installs generated server functions into defineServer during development', async () => {
+    const root = await copyFixture();
+    const functions = resolve(root, 'server/functions');
+    await mkdir(functions, { recursive: true });
+    await writeFile(resolve(functions, 'stories.ts'), `
+      export async function getStory(id: number) {
+        return { id, title: 'Story ' + id };
+      }
+    `);
+    await writeFile(resolve(root, 'src/server.ts'), `
+      import { defineServer } from '@memoized-dom/server';
+      export default defineServer({
+        routes: { '/health': () => ({ ok: true }) },
+      });
+    `);
+
+    server = await createServer({
+      root,
+      configFile: false,
+      appType: 'custom',
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@memoized-dom/server/router': serverRouter,
+          '@memoized-dom/server': serverIndex,
+          '@memoized-dom/runtime/server': runtimeServer,
+          '@memoized-dom/runtime': runtime,
+          '@memoized-dom/data/internal': dataInternal,
+          '@memoized-dom/data': data,
+        },
+      },
+      plugins: [
+        memoizedDom({ entries: 'src/main.ts' }),
+        memoizedDomFullstack({ entry: 'src/server.ts' }),
+      ],
+      server: { host: '127.0.0.1', port: 0 },
+    });
+    await server.listen();
+    const address = server.httpServer?.address();
+    if (address === null || address === undefined || typeof address === 'string') {
+      throw new Error('Expected Vite TCP server address');
+    }
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/_fn/stories/getStory?id=11`,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: 11,
+      title: 'Story 11',
+    });
+  }, 30_000);
 
 });

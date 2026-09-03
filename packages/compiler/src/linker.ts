@@ -54,6 +54,7 @@ import {
   type MemoDomOptions,
   type ParameterWrite,
   type StateKind,
+  type TransparentSourceMethod,
 } from './context';
 import { DEFAULT_TRANSPARENT_ASYNC_SOURCES } from './context/model';
 import { isRenderPropReference } from './components/children';
@@ -62,6 +63,7 @@ import { normalizeComponentDeclarations } from './components/declarations';
 import { initializeGeneratedIdentifiers } from './identifiers';
 import {
   lowerTransparentGroups,
+  rejectNonGetServerFunctionRenderCalls,
   rejectTransparentSourceDestructuring,
   scanAndLowerModuleSourceDeclarations,
   scanTransparentSourceImports,
@@ -119,6 +121,7 @@ export interface CompiledStateExport {
 export interface CompiledFunctionExport {
   exported: string;
   transparentSourceFactory?: boolean;
+  transparentSourceMethod?: TransparentSourceMethod;
   reads: string[];
   writes: string[];
   boundedWrites: string[];
@@ -164,6 +167,7 @@ interface StateExport {
 interface FunctionExport {
   type: 'function';
   transparentSourceFactory?: boolean;
+  transparentSourceMethod?: TransparentSourceMethod;
   tagCandidates: string[];
   componentCandidates: string[];
   reads: string[];
@@ -421,14 +425,48 @@ function directFunctionComponentNames(
   return [...output];
 }
 
+function transparentSourceMethod(
+  call: t.CallExpression,
+  factoryMethods: ReadonlyMap<string, TransparentSourceMethod>,
+): TransparentSourceMethod | null {
+  const options = call.arguments[1];
+  if (!astFactory.isObjectExpression(options)) {
+    return astFactory.isIdentifier(call.callee)
+      ? factoryMethods.get(call.callee.name) ?? 'GET'
+      : 'GET';
+  }
+  for (const property of options.properties) {
+    if (!astFactory.isObjectProperty(property) || property.computed) continue;
+    const key = astFactory.isIdentifier(property.key)
+      ? property.key.name
+      : astFactory.isStringLiteral(property.key)
+        ? property.key.value
+        : null;
+    if (key !== 'method' || !astFactory.isStringLiteral(property.value)) {
+      continue;
+    }
+    const method = property.value.value.toUpperCase();
+    if (
+      method === 'GET' ||
+      method === 'POST' ||
+      method === 'PUT' ||
+      method === 'PATCH' ||
+      method === 'DELETE'
+    ) return method;
+    return null;
+  }
+  return 'GET';
+}
+
 function directTransparentSourceFunctions(
   program: t.Program,
   factories: ReadonlySet<string>,
-): Set<string> {
-  const result = new Set<string>();
+  factoryMethods: ReadonlyMap<string, TransparentSourceMethod> = new Map(),
+): Map<string, TransparentSourceMethod | null> {
+  const result = new Map<string, TransparentSourceMethod | null>();
   const returnsSource = (
     fn: t.FunctionDeclaration | t.FunctionExpression | t.ArrowFunctionExpression,
-  ): boolean => {
+  ): t.CallExpression | null => {
     const expression = astFactory.isBlockStatement(fn.body)
       ? fn.body.body.length === 1 && astFactory.isReturnStatement(fn.body.body[0])
         ? fn.body.body[0].argument
@@ -439,7 +477,9 @@ function directTransparentSourceFunctions(
       : null;
     return astFactory.isCallExpression(current) &&
       astFactory.isIdentifier(current.callee) &&
-      factories.has(current.callee.name);
+      factories.has(current.callee.name)
+      ? current
+      : null;
   };
   for (const statement of program.body) {
     const declaration = astFactory.isExportNamedDeclaration(statement)
@@ -448,9 +488,12 @@ function directTransparentSourceFunctions(
     if (
       astFactory.isFunctionDeclaration(declaration) &&
       declaration.id !== null &&
-      returnsSource(declaration)
+      returnsSource(declaration) !== null
     ) {
-      result.add(declaration.id.name);
+      result.set(
+        declaration.id.name,
+        transparentSourceMethod(returnsSource(declaration)!, factoryMethods),
+      );
       continue;
     }
     if (!astFactory.isVariableDeclaration(declaration)) continue;
@@ -462,9 +505,12 @@ function directTransparentSourceFunctions(
       if (
         (astFactory.isFunctionExpression(init) ||
           astFactory.isArrowFunctionExpression(init)) &&
-        returnsSource(init)
+        returnsSource(init) !== null
       ) {
-        result.add(item.id.name);
+        result.set(
+          item.id.name,
+          transparentSourceMethod(returnsSource(init)!, factoryMethods),
+        );
       }
     }
   }
@@ -608,6 +654,7 @@ function analyzeManifest(
         scanAndLowerModuleSourceDeclarations(ctx, compilerPath);
         analyzeRouterJsx(ctx, compilerPath);
         runAnalysis(ctx, compilerPath);
+        rejectNonGetServerFunctionRenderCalls(ctx, compilerPath);
         // buildAccessTable also materializes ctx.readers. The returned AST is
         // intentionally discarded here; final emission builds its own table.
         buildAccessTable(ctx);
@@ -618,6 +665,7 @@ function analyzeManifest(
         const transparentFunctionFactories = directTransparentSourceFunctions(
           compilerPath.node,
           ctx.transparentSourceFactories,
+          ctx.transparentSourceFactoryMethods,
         );
         for (const [exported, local] of exportedLocals(compilerPath.node)) {
           if (ctx.comps.has(local)) {
@@ -663,7 +711,15 @@ function analyzeManifest(
             exports[exported] = {
               type: 'function',
               ...(transparentFunctionFactories.has(local)
-                ? { transparentSourceFactory: true }
+                ? {
+                    transparentSourceFactory: true,
+                    ...(transparentFunctionFactories.get(local) === null
+                      ? {}
+                      : {
+                          transparentSourceMethod:
+                            transparentFunctionFactories.get(local)!,
+                        }),
+                  }
                 : {}),
               tagCandidates: [
                 ...(functionTagCandidates.get(local) ??
@@ -787,7 +843,15 @@ function discoverManifest(
                 locals.set(decl.id.name, {
                   type: 'function',
                   ...(transparentFunctionFactories.has(decl.id.name)
-                    ? { transparentSourceFactory: true }
+                    ? {
+                        transparentSourceFactory: true,
+                        ...(transparentFunctionFactories.get(decl.id.name) === null
+                          ? {}
+                          : {
+                              transparentSourceMethod:
+                                transparentFunctionFactories.get(decl.id.name)!,
+                            }),
+                      }
                     : {}),
                   tagCandidates: [
                     ...(functionTagCandidates.get(decl.id.name) ?? []),
@@ -852,7 +916,15 @@ function discoverManifest(
             locals.set(inner.id.name, {
               type: 'function',
               ...(transparentFunctionFactories.has(inner.id.name)
-                ? { transparentSourceFactory: true }
+                ? {
+                    transparentSourceFactory: true,
+                    ...(transparentFunctionFactories.get(inner.id.name) === null
+                      ? {}
+                      : {
+                          transparentSourceMethod:
+                            transparentFunctionFactories.get(inner.id.name)!,
+                        }),
+                  }
                 : {}),
               tagCandidates: [
                 ...(functionTagCandidates.get(inner.id.name) ?? []),
@@ -1108,6 +1180,7 @@ function linkImports(
         linked[ref.local] = {
           type: 'function',
           transparentSourceFactory: targetExport.transparentSourceFactory,
+          transparentSourceMethod: targetExport.transparentSourceMethod,
           tagCandidates: [...targetExport.tagCandidates],
           componentCandidates: linkedDynamicCandidates(
             entry,
@@ -1125,6 +1198,7 @@ function linkImports(
       linked[ref.local] = {
         type: 'function',
         transparentSourceFactory: targetExport.transparentSourceFactory,
+        transparentSourceMethod: targetExport.transparentSourceMethod,
         tagCandidates: [...targetExport.tagCandidates],
         componentCandidates: linkedDynamicCandidates(
           entry,
@@ -1328,6 +1402,9 @@ function compileLinkedModules(
           ...(summary.transparentSourceFactory === true
             ? { transparentSourceFactory: true }
             : {}),
+          ...(summary.transparentSourceMethod === undefined
+            ? {}
+            : { transparentSourceMethod: summary.transparentSourceMethod }),
           reads: [...summary.reads],
           writes: [...summary.writes],
           boundedWrites: [...summary.boundedWrites],
