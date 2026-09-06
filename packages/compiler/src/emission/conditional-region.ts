@@ -25,6 +25,20 @@ type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
   ? TPath
   : never;
 
+/** Static path appended to a component factory id by enclosing regions. */
+function ownerPathSuffix(expression: t.Expression): string | null {
+  if (astFactory.isIdentifier(expression)) return '';
+  if (
+    expression.type === 'BinaryExpression' &&
+    expression.operator === '+' &&
+    astFactory.isStringLiteral(expression.right)
+  ) {
+    const parent = ownerPathSuffix(expression.left as t.Expression);
+    return parent === null ? null : `${parent}${expression.right.value}`;
+  }
+  return null;
+}
+
 /** Emit an anchored conditional region owned by a component or row. */
 export function emitConditionalRegion(
   ctx: Ctx,
@@ -50,6 +64,20 @@ export function emitConditionalRegion(
     astFactory.stringLiteral(`/${site.suffix}`),
   );
   const transparentSources = transparentExpressionSources(ctx, expression);
+
+  // Route regions are real runtime owners (`App/route0/...`). Conditional
+  // read analysis runs before emission and starts from the component path, so
+  // record the concrete route prefix once emission has assigned it. Without
+  // this adjustment a module write targets `App/when0` while the live entity
+  // is `App/route0/when0`, leaving the DOM stale until an unrelated broader
+  // invalidation happens.
+  const emittedOwnerSuffix = ownerPathSuffix(ownerId);
+  if (emittedOwnerSuffix?.includes('/route') === true) {
+    const read = ctx.condReads.get(`${componentName}/${site.suffix}`);
+    if (read !== undefined) {
+      read.suffix = `${emittedOwnerSuffix.slice(1)}/${read.suffix}`;
+    }
+  }
 
   const pick = astFactory.arrowFunctionExpression([], cloneEstreeNode(site.pickExpr));
   const branchFactories: t.Expression[] = site.branches.map((jsx) =>

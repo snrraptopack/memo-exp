@@ -450,6 +450,16 @@ export interface Ctx {
   condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Map call → owner-local values whose changes affect only old/new keyed rows. */
   targetedListDependencies: WeakMap<MapCallExpression, TargetedListDependency[]>;
+  /**
+   * Source identity proven during list analysis. Transparent-data lowering may
+   * subsequently expand a local derivation into a conditional/helper result;
+   * emission reuses this proof instead of treating the compiler-authored form
+   * as new user syntax.
+   */
+  analyzedListSources: WeakMap<
+    MapCallExpression,
+    { key: string; local: boolean; suffixBase: string }
+  >;
   /** Components that need dirty reasons for targeted list refreshes. */
   targetedListComponents: Set<string>;
   /** Reactive source keys rendered by keyed list regions. */
@@ -726,6 +736,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     rowReads: new Map(),
     condReads: new Map(),
     targetedListDependencies: new WeakMap(),
+    analyzedListSources: new WeakMap(),
     targetedListComponents: new Set(),
     listSources: new Set(),
     listComponents: new Set(),

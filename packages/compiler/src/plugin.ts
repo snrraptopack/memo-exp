@@ -42,7 +42,7 @@ import { transformComponent } from './emission/component';
 import {
   rejectUnownedCleanup,
   transformProgramCallbacks,
-  transformSharedAsyncHelpers,
+  transformSharedHelperCallbacks,
 } from './lifecycle';
 import {
   rejectUnownedEffects,
@@ -278,7 +278,7 @@ function prepareProgram(
   scanEventSourceAssignments(ctx);
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
-  transformSharedAsyncHelpers(ctx);
+  transformSharedHelperCallbacks(ctx, programPath);
 }
 
 function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {

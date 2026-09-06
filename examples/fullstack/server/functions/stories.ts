@@ -70,9 +70,12 @@ export async function getStory(id: number) {
 export async function postVote(id: number) {
   const { locals } = getServerContext<{ user?: string }>();
   const story = stories.find((candidate) => candidate.id === id)!;
-  story.votes += 1;
 
-   await delay(3000);
+  story.votes += 1;
+  await delay(3000);
+  if(story.votes === 10 || story.votes === 15 || story.votes === 16 || story.votes === 18) {
+    throw new Error('Story has reached the vote limit');
+  }
   return { id: story.id, votes: story.votes, by: locals.user ?? 'anonymous' };
 }
 

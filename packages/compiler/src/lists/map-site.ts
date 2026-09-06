@@ -27,9 +27,9 @@ import {
   transparentListExpression,
 } from './source-shapes';
 
-type Fail = (message: string) => never;
+type Fail = (message: string, at?: t.Node) => never;
 interface ErrorPath {
-  buildCodeFrameError(message: string): Error;
+  buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 interface NodeHolder {
   node: BaseNode;
@@ -98,48 +98,39 @@ interface RowPlan {
 }
 
 function compilerResolvedRoots(ctx: Ctx, expression: t.Expression): string[] {
-  const current = transparentListExpression(expression);
-  if (
-    astFactory.isCallExpression(current) &&
-    astFactory.isMemberExpression(current.callee) &&
-    !current.callee.computed &&
-    astFactory.isIdentifier(current.callee.object, {
-      name: ctx.identifiers?.dataRuntimeId,
-    }) &&
-    astFactory.isIdentifier(current.callee.property)
-  ) {
-    if (
-      current.callee.property.name === 'readResolvedValue' &&
-      astFactory.isIdentifier(current.arguments[0])
-    ) {
-      return [current.arguments[0].name];
-    }
-    if (
-      (current.callee.property.name === 'readResolvedValuesForRender' ||
-        current.callee.property.name === 'deriveResolvedValues') &&
-      astFactory.isArrayExpression(current.arguments[0])
-    ) {
-      return current.arguments[0].elements
-        .filter((element): element is t.Identifier => astFactory.isIdentifier(element))
-        .map((element) => element.name);
-    }
-  }
-  if (
-    astFactory.isCallExpression(current) &&
-    (astFactory.isMemberExpression(current.callee) ||
-      astFactory.isOptionalMemberExpression(current.callee)) &&
-    astFactory.isExpression(current.callee.object)
-  ) {
-    return compilerResolvedRoots(ctx, current.callee.object);
-  }
-  if (
-    (astFactory.isMemberExpression(current) ||
-      astFactory.isOptionalMemberExpression(current)) &&
-    astFactory.isExpression(current.object)
-  ) {
-    return compilerResolvedRoots(ctx, current.object);
-  }
-  return [];
+  const roots = new Set<string>();
+  walkAst(transparentListExpression(expression) as unknown as BaseNode, {
+    enter(node) {
+      if (!astFactory.isCallExpression(node)) return;
+      const callee = node.callee;
+      if (
+        !astFactory.isMemberExpression(callee) ||
+        callee.computed ||
+        !astFactory.isIdentifier(callee.object, {
+          name: ctx.identifiers?.dataRuntimeId,
+        }) ||
+        !astFactory.isIdentifier(callee.property)
+      ) return;
+      if (
+        (callee.property.name === 'readResolvedValue' ||
+          callee.property.name === 'readResolvedValueForRender') &&
+        astFactory.isIdentifier(node.arguments[0])
+      ) {
+        roots.add(node.arguments[0].name);
+        return;
+      }
+      if (
+        (callee.property.name === 'readResolvedValuesForRender' ||
+          callee.property.name === 'deriveResolvedValues') &&
+        astFactory.isArrayExpression(node.arguments[0])
+      ) {
+        for (const element of node.arguments[0].elements) {
+          if (astFactory.isIdentifier(element)) roots.add(element.name);
+        }
+      }
+    },
+  });
+  return [...roots];
 }
 
 /** Is this expression a `.map(...)` call, including optional chains? */
@@ -190,17 +181,29 @@ export function analyzeMapSite(
   usedPrefixes: Map<string, number>,
   parentRow?: ParentRow,
 ): MapSite {
-  const fail: Fail = (message) => {
-    throw errorAt.buildCodeFrameError(message);
+  const fail: Fail = (message, at) => {
+    throw errorAt.buildCodeFrameError(message, at);
   };
   const callee = call.callee as t.MemberExpression | t.OptionalMemberExpression;
-  const source = analyzeSource(
-    ctx,
-    callee.object,
-    ownerName,
-    parentRow,
-    fail,
-  );
+  const analyzedSource = ctx.analyzedListSources.get(call);
+  const source = analyzedSource === undefined
+    ? analyzeSource(ctx, callee.object, ownerName, parentRow, fail)
+    : {
+        expression: astFactory.isExpression(callee.object)
+          ? transparentListExpression(callee.object)
+          : fail(
+              'memo-dom: list source must be an expression',
+              callee.object,
+            ),
+        ...analyzedSource,
+      };
+  if (analyzedSource === undefined) {
+    ctx.analyzedListSources.set(call, {
+      key: source.key,
+      local: source.local,
+      suffixBase: source.suffixBase,
+    });
+  }
   const callback = analyzeCallback(ctx, call, ownerName, fail);
   const row = analyzeRow(ctx, callback, fail);
   const suffix = nextSuffix(source.suffixBase, usedPrefixes);
@@ -334,6 +337,7 @@ function analyzeSource(
   }
   return fail(
     'memo-dom: assign an ordered collection view to reactive state or a local derivation before mapping it',
+    current as t.Node,
   );
 }
 
@@ -909,7 +913,7 @@ function extractKey(
     ) {
       key = attrExpr(attribute.value);
       if (key === null) {
-        return fail('memo-dom: key={...} needs an expression');
+        return fail('memo-dom: key={...} needs an expression', attribute);
       }
     }
   }

@@ -56,6 +56,26 @@ class. Module state is not a special store type.
 14. Put unresolved render reads under `Group`, use `$track(value)` only when
     request status is part of the UI, and use the `Error` arm's `retry`
     callback for retries.
+15. Maintain strict Value vs. Tracker separation: the value (`ResolvedValue<T>`)
+    is 100% colorless plain data; `$track(value)` is an observation lens for
+    request lifecycle (`id`, `status`, `pending`, `refreshing`, `error`,
+    `onSuccess`, `onError`, `refresh`, `abort`). Never add `.mutate()`,
+    `.update()`, or `.then()` to `$track`.
+16. Mutate client data directly in memory (`story.votes++`) for optimistic
+    updates. Do not use pseudo-store dispatchers. For optimistic rollbacks,
+    journal the smallest domain-specific reversible delta keyed by `tracked.id`.
+17. Never destructure a colorless source at declaration time (`const { length }
+    = getStories()` or `const [item] = $fetch(...)` is compile error
+    `[MMD-S004]`). Read properties lazily at use sites (`stories.length`).
+18. Server functions in `server/functions/*.ts` must begin with an HTTP verb
+    prefix (`get*`, `post*`, `put*`, `patch*`, `delete*`). `get*` functions
+    return `ResolvedValue<T>` and may be called in render; non-`get*` functions
+    (`post*`, etc.) must only be invoked in event handlers or callbacks
+    (`[MMD-S010]`).
+19. For server and fullstack applications, use `defineServer` from
+    `@memoized-dom/server` with its explicit `render` policy block (`mode`,
+    `markers`, `timeout`, `delivery`) and in-memory `serverFetch` for
+    zero-network-loopback SSR.
 
 ## Minimal published-package project
 
@@ -75,6 +95,12 @@ Install these public packages when the app uses data loading and routing:
 npm install @memoized-dom/data @memoized-dom/router
 ```
 
+Install the server and adapter packages for fullstack SSR, HTTP serving, and hosting runtime bridges:
+
+```bash
+npm install @memoized-dom/server @memoized-dom/adapters
+```
+
 The compiler is listed explicitly even though the Vite adapter depends on it.
 That makes the published JSX/global type entry directly resolvable in every
 package-manager layout.
@@ -89,6 +115,8 @@ Package roles:
 | `@memoized-dom/data` | Optional transparent `$fetch` values, `$track`, declarative data boundaries, independent action results, validation, caching, and SSR state transfer. |
 | `@memoized-dom/router` | Optional public route state and imperative navigation; compiler routing also emits imports from its generated-code bridge. |
 | `@memoized-dom/language-service` | Optional tsserver diagnostics and fixes for compiler errors and `let` bindings that can safely be `const`. |
+| `@memoized-dom/server` | Composed fullstack application server (`defineServer`), server router, and SSR rendering primitives (`renderToReadableStream`, `renderToString`, `renderWithDom`). |
+| `@memoized-dom/adapters` | Platform runtime bridges (Node.js `createNodeHandler`, Bun `createBunFetch`), stream composition, and HTTP response utilities. |
 
 For editor diagnostics, optionally install the language service and add it to
 `compilerOptions.plugins`:
@@ -152,9 +180,12 @@ React JSX plugin.
     "jsx": "preserve",
     "strict": true,
     "noEmit": true,
-    "types": ["@memoized-dom/compiler/jsx", "vite/client"]
+    "types": ["@memoized-dom/compiler/jsx", "vite/client"],
+    "paths": {
+      "#server-functions": ["./.memoized/server-functions.d.ts"]
+    }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "server"]
 }
 ```
 
@@ -992,7 +1023,49 @@ of evaluating against a fake `null` payload. An imperative read that truly runs
 too early raises `UnresolvedDataReadError`, which identifies the source and read
 site instead of producing a random `null.length` or null-property crash.
 
-Use `$track` when status itself belongs in the UI:
+### Value vs. Tracker separation: the `$track` model
+
+In Memoized DOM, there is a strict architectural separation between **the data payload** and **the request lifecycle**:
+
+| Entity | Role | Type | Primary Usage |
+| :--- | :--- | :--- | :--- |
+| **Transparent Value** (`result`, `stories`) | **The Data Payload** | `ResolvedValue<T>` (assignable to `T`) | Template rendering, expressions, reads (`stories.map(...)`, `story.votes`) |
+| **Tracked Request** (`$track(result)`) | **The Request Lifecycle** | `TrackedValue<T>` | Event handlers, loading indicators, outcome callbacks (`onSuccess`, `onError`) |
+
+#### Key tenets:
+
+1. **The Value Stays 100% Colorless**:
+   `const stories = $fetch<Story[]>('/api/stories')` or `const result = postVote(id)` returns transparent data. In application code, it behaves as a plain TypeScript value. It has no `.then()` method, no Promise wrapper, and requires no `.data` unwrapping.
+2. **`$track(...)` is a Request Lens, Not a Store**:
+   `$track(value)` observes and controls the request associated with a value. It does **not** have `.mutate()` or `.update()`, and never owns or alters the payload data structure.
+3. **No Promise Pollution (`then` / `catch` removed)**:
+   `$track` is **not** a Promise and does not implement `PromiseLike`. Developers are not forced into `async / await` or `.then()` chains. Outcome handling is expressed through explicit `onSuccess` and `onError` lifecycle hooks.
+
+#### The `TrackedValue<T>` interface
+
+```ts
+export interface TrackedValue<T> {
+  /**
+   * Unique execution ID for the current/latest in-flight request cycle.
+   * Changes whenever a new request is triggered (initial fetch, refresh(), or action call).
+   */
+  readonly id: string;
+
+  /** Status indicators */
+  readonly status: 'idle' | 'pending' | 'success' | 'error';
+  readonly pending: boolean;     // Cold initial load in-flight
+  readonly refreshing: boolean;  // Background revalidation in-flight
+  readonly error: RequestError | null;
+
+  /** One-shot outcome callbacks for this exact execution */
+  onSuccess(callback: (data: T, requestId: string) => void): () => void;
+  onError(callback: (error: RequestError, requestId: string) => void): () => void;
+
+  /** Imperative controls */
+  refresh(): Promise<T>;
+  abort(): void;
+}
+```
 
 ```tsx
 import { $track } from '@memoized-dom/data';
@@ -1007,14 +1080,146 @@ export function SyncState() {
 }
 ```
 
-Tracked state is:
+#### Direct client mutation ("Like Our Count App")
+
+In Memoized DOM, state updates operate directly on plain JavaScript objects in memory:
+
+```tsx
+// Ordinary local state:
+let count = 0;
+<button onClick={() => { count++; }}>{count}</button>
+```
+
+Fetched data follows the exact same philosophy. When data arrives on the client, it lives as transparent data in client memory. Developers mutate properties directly:
 
 ```ts
-request.status;     // 'idle' | 'pending' | 'success' | 'error'
-request.pending;    // cold request is in flight
-request.refreshing; // existing data is being revalidated
-request.error;      // RequestError | null
+function upvote(id: number) {
+  const story = stories.find((s) => s.id === id);
+  if (story) {
+    story.votes++; // Direct mutation on transparent data; compiler updates DOM directly
+  }
+}
 ```
+
+There is no need for `setStories(...)`, immutable array copies, or pseudo-store dispatchers like `$track.mutate()`.
+
+#### Single-action optimistic updates and rollbacks
+
+For an isolated action, developers mutate client data directly and register an `onError` inverse operation. The request `id` makes the rollback idempotent:
+
+```ts
+const pendingVotes = new Set<string>();
+
+function handleVote(id: number) {
+  const story = stories.find((s) => s.id === id);
+  if (!story) return;
+
+  // 1. Call the endpoint and capture this exact execution.
+  const tracked = $track(postVote(id));
+  const pending = tracked.id;
+
+  // 2. Direct client mutation (DOM updates immediately).
+  pendingVotes.add(pending);
+  story.votes++;
+
+  // 3. A failure reverses only this operation, not an old whole-object snapshot.
+  tracked.onError((_error, requestId) => {
+    if (pendingVotes.delete(requestId)) story.votes--;
+  });
+
+  // 4. Success confirms the already-visible increment.
+  tracked.onSuccess((_data, requestId) => {
+    pendingVotes.delete(requestId);
+  });
+}
+```
+
+#### Concurrent optimistic mutations & domain journals
+
+In real applications, users may click rapidly, firing multiple concurrent requests (e.g., Request 1 through Request 7):
+- **Out-of-order resolution**: Request 3 might fail due to network congestion or rate limits, while Request 7 succeeds.
+- **Authoritative server state**: Request 7 might return `{ votes: 42 }` (accounting for other concurrent users).
+- **The flaw of manual whole-object rollback**: If Request 3 fails, restoring its previous whole-object snapshot would wipe out the optimistic changes from Requests 4, 5, 6, and 7!
+
+There is no universal optimistic manager. The runtime cannot know whether a write is an increment, replacement, reorder, deletion, or a server-side change to several records. Hidden cloning would also be expensive and break object identity.
+
+Each operation records the smallest reversible change required by its domain. A counter records a delta; a form records changed fields; a reorder records previous indices. The request ID makes each journal entry independent:
+
+```ts
+const pending = new Map<string, { story: Story; delta: number }>();
+
+function handleVote(id: number) {
+  const story = stories.find((s) => s.id === id);
+  if (!story) return;
+
+  const request = $track(postVote(id));
+  pending.set(request.id, { story, delta: 1 });
+  story.votes++;
+
+  request.onSuccess((_result, requestId) => {
+    pending.delete(requestId);
+  });
+
+  request.onError((_error, requestId) => {
+    const operation = pending.get(requestId);
+    if (operation === undefined) return;
+    operation.story.votes -= operation.delta;
+    pending.delete(requestId);
+  });
+}
+```
+
+The framework deliberately does not provide a `createOptimistic` snapshot manager. Whole-object snapshots cannot safely represent overlapping deltas, reorders, deletes, and server-side changes. If absolute server convergence is required, refresh the relevant query after the operation journal drains.
+
+#### The role of the request `id`
+
+Every request cycle generates an incrementing, unique client-runtime `id` (e.g., `"request-1"`, `"request-2"`):
+- When a query is re-fetched via `tracked.refresh()`, `tracked.id` updates to identify the new execution.
+- When an action is invoked, its `$track(actionResult).id` represents that specific network attempt.
+
+`id` is essential for:
+1. **Race Condition Prevention**: Comparing `tracked.id` ensures stale responses cannot overwrite fresher state when responses arrive out of order.
+2. **Snapshot Map Keys**: Unambiguous map key (`new Map<string, Entry>()`) to correlate in-flight mutations with their exact pre-mutation state.
+3. **Telemetry & Devtools**: Client-side correlation key (not an HTTP idempotency key unless explicitly forwarded).
+
+#### Replacement and cancellation
+
+Assigning a newer result to a local binding changes which operation the UI is displaying; it does not cancel older dispatched work. The compiler detaches the old operation from that render site, retains it until its exact `onSuccess`/`onError` outcome is delivered, and then releases it. Only an explicit `abort()` or supplied `AbortSignal` means cancellation.
+
+Non-GET requests are not deduplicated by default. Two identical POST calls may represent two intentional operations. Applications prevent accidental rapid submission by disabling/debouncing controls, and servers that require at-most-once processing use a domain idempotency key.
+
+#### Destructuring rejection on colorless sources (`[MMD-S004]`)
+
+In colorless data semantics, the compiler represents `const data = getStories()` or `const data = $fetch(...)` through a request-local source descriptor rather than a materialized synchronous snapshot. Destructuring evaluates its member accesses immediately when the statement executes, before the source has settled:
+
+```tsx
+// 💥 COMPILE ERROR [MMD-S004]:
+const { length, user } = getStories();
+const [firstStory] = getStories();
+```
+
+Because native JavaScript evaluates destructuring immediately upon executing the statement, properties would evaluate to `undefined` (or throw during array iterator unrolling), breaking reactive tracking.
+
+The compiler rejects destructuring on colorless sources at declaration time with `💥 [MMD-S004]`:
+* **Rejected**: `const { length } = getStories();`, `const [a, b] = $fetch(...);`, `({ length } = getStories());`
+* **Allowed**:
+  * Plain identifier binding: `const stories = getStories();`
+  * Property access at the use site: `stories.length`, `stories.map(...)`, `story.title`
+  * Destructuring a settled item inside a map callback:
+    ```tsx
+    {stories.map((story) => {
+      const { title, votes } = story; // `story` is a settled plain item
+      return <article>{title} — {votes}</article>;
+    })}
+    ```
+
+#### Architectural boundaries (what to avoid)
+
+To keep the codebase modular, clean, and optimized:
+- ❌ **Do NOT add `.mutate()` or `.update()` to `$track`**: `$track` is an observation lens, not a state manager.
+- ❌ **Do NOT add `.then()` / `.catch()` to `$track`**: `$track` should not be a Promise or thenable. Use `onSuccess` and `onError`.
+- ❌ **Do NOT expose compiler `EventSourceSlot` machinery as public API**: event-assigned variables remain ordinary authored locals.
+- ❌ **Do NOT force developers into `effect()` hooks for event logic**: Event handling logic belongs in event handlers, not in reactive synchronization effects.
 
 Request options include query values, headers, identity, sharing, validation,
 and cancellation:
@@ -1061,7 +1266,7 @@ export function UserSearch() {
           search = event.currentTarget.value;
         }}
       />
-      <p if={request.pending}>Searchingâ€¦</p>
+      <p if={request.pending}>Searching…</p>
       <ul>{users.map((user) => <li key={user.id}>{user.name}</li>)}</ul>
     </section>
   );
@@ -1132,32 +1337,370 @@ mount('root', App);
 `clearDataRuntime()` clears the currently active runtime. Server rendering and
 tests can use `runWithDataRuntime(runtime, callback)` for scoped isolation.
 
-### Server rendering and hydration
+## Fullstack Server Architecture & SSR: `@memoized-dom/server` & `@memoized-dom/adapters`
 
-The server package is a set of rendering primitives, not a server framework.
-Each primitive accepts a compiled root component and creates three isolated
-runtimes for that render:
+Memoized DOM provides a unified fullstack application architecture centered around **`defineServer`**, an in-memory **`serverFetch`** bridge, an onion **middleware pipeline**, automatic **document streaming**, and **compiler-named HTTP functions**.
 
-- an `ApplicationRuntime` containing the entity graph, cleanup, state cells,
-  scheduler, and render environment;
-- a memory-history route runtime initialized from `options.url`;
-- a data runtime containing that request's fetch entries, cache, actions, and
-  transferable state.
+### The Unified Backend API: `defineServer`
 
-That isolation is also what makes module code safe on the server. Compiler-
-lowered module state is stored in the active application runtime, and a
-module-scope `$fetch` is only a lazy description until the active request reads
-it. Concurrent requests can evaluate the same imported application modules
-without sharing request state.
+Rather than manually stitching together HTML documents, streams, and ad-hoc HTTP endpoints, developers configure the fullstack application server in a single configuration block (`server.ts`):
 
-The application runtime uses explicit server capabilities. `server-dom` uses
-an injected DOM document, while `server-string` uses the string writer. Server
-scheduling does not run browser animation frames, and effects and refs are
-disabled. String renderers dispose their internal runtimes before returning.
-The DOM renderers return their `ApplicationRuntime` because the caller owns the
-live server DOM and must dispose it.
+```ts
+// server.ts
+import { defineServer, type DefineServerOptions } from '@memoized-dom/server';
+import type { ServerMiddleware } from '@memoized-dom/server/router';
+import { App } from './App';
 
-#### Server rendering primitives
+interface Locals {
+  requestId: string;
+  user?: string;
+}
+
+let sequence = 0;
+
+const logger: ServerMiddleware<Locals> = async (context, next) => {
+  const response = await next();
+  console.log(
+    `[http] ${context.request.method} ${context.url.pathname} → ${response.status}`,
+  );
+  return response;
+};
+
+const session: ServerMiddleware<Locals> = (context, next) => {
+  context.locals.user = context.request.headers.get('x-user') ?? undefined;
+  return next();
+};
+
+const requireAdmin: ServerMiddleware<Locals> = (context, next) => {
+  if (context.request.headers.get('x-admin') !== 'yes') {
+    return new Response('Admins only', { status: 403 });
+  }
+  return next();
+};
+
+const options: DefineServerOptions<Locals> = {
+  // 1. Root compiled UI component
+  app: App,
+
+  // 2. HTML template container — framework loads, validates <!--ssr-outlet-->, and streams
+  document: new URL('./index.html', import.meta.url),
+
+  // 3. Global middleware (runs for all requests: pages, /api/*, /_fn/*)
+  middleware: [logger, session],
+
+  // 4. Request locals factory (isolated per external dispatch and child in-memory dispatch)
+  createLocals: () => ({ requestId: `req-${String(++sequence)}` }),
+
+  // 5. Server endpoints and route-specific middleware
+  routes: {
+    // Bare handler = implicit GET; plain objects/arrays automatically serialize to Response.json()
+    '/api/health': () => ({ ok: true }),
+
+    // Method map: POST only. Other methods answer 405 with an Allow header.
+    '/api/echo': {
+      POST: (context) => ({
+        echoed: context.url.pathname,
+        requestId: context.locals.requestId,
+      }),
+    },
+
+    // Prefix group (*): applies middleware to all nested routes beneath it
+    '/api/admin/*': { middleware: [requireAdmin] },
+    '/api/admin/stats': (context) => ({
+      admin: context.locals.user ?? 'anonymous',
+      requestId: context.locals.requestId,
+    }),
+  },
+
+  // 6. Page render policy
+  render: {
+    mode: 'resolve',     // 'resolve' waits for request-owned data to settle; 'shell' streams immediately
+    markers: true,       // emits hydration markers + application/mmd+json payload for client hydrate
+    timeout: 10_000,     // quiescence budget in ms before falling back to shell
+    delivery: 'stream',  // 'stream' flushes document prefix while data settles; 'buffer' renders string
+  },
+
+  // 7. Default ResponseInit for rendered HTML pages (e.g. edge caching headers)
+  init: {
+    headers: {
+      'cache-control': 'public, max-age=5, stale-while-revalidate=60',
+    },
+  },
+
+  // 8. Centralized error boundary
+  onError: (err, ctx) => {
+    console.error(`[SERVER-ERROR] ${ctx.request.method} ${ctx.request.url}:`, err);
+    return new Response('Internal Server Error', { status: 500 });
+  },
+};
+
+export default defineServer(options);
+```
+
+#### Handler return types normalization
+
+A route handler can return any of the following; `defineServer` normalizes the response automatically:
+* `object` | `array` $\rightarrow$ `Response.json(data)`
+* `string` $\rightarrow$ `new Response(text, { headers: { 'content-type': 'text/plain; charset=utf-8' } })`
+* `Response` $\rightarrow$ Passed through untouched
+* `ReadableStream` $\rightarrow$ `new Response(stream)`
+
+#### The `render` Policy Block
+
+`defineServer` exposes rendering choices as one explicit, fully-defaulted `render` block:
+
+| Option | Default | Lowered to | Meaning |
+| :--- | :--- | :--- | :--- |
+| `mode` | `'resolve'` | `RenderOptions.mode` | `'resolve'` waits for request-owned data to become quiescent and flushes the resolved tree plus state payload. `'shell'` serializes the initial tree with pending arms immediately. |
+| `markers` | `true` | marker + payload emission | `true` emits adoption markers and the `application/mmd+json` payload consumed by `hydrate`. `false` produces clean host-consumable HTML (static/non-hydrating). |
+| `timeout` | `10_000` | `RenderOptions.timeout` | Quiescence budget for `'resolve'`. On expiry, falls back to the settled shell rather than hanging. |
+| `delivery` | `'stream'` | `renderToReadableStream` vs `renderToString*` | `'stream'` flushes the document prefix while the application settles. `'buffer'` materializes the full HTML result before constructing the `Response`. |
+
+### Fullstack HTML Template Configuration (`index.html`)
+
+In fullstack mode, the HTML template container (`examples/fullstack/index.html`) must contain the `<!--ssr-outlet-->` marker inside the target root element:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoized DOM — Fullstack Demo</title>
+  </head>
+  <body>
+    <!-- The server streams its rendered HTML into #root for client hydration -->
+    <div id="root"><!--ssr-outlet--></div>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>
+```
+
+Key lifecycle behavior:
+* When `document: new URL('./index.html', import.meta.url)` is passed to `defineServer`, the framework loads this template and splits it at `<!--ssr-outlet-->`.
+* The **prefix** (everything up to `<div id="root">`) is flushed immediately.
+* The server-rendered application markup and the `<script type="application/mmd+json">` state payload are streamed directly into the outlet.
+* The **suffix** (`</div><script type="module" src="/main.ts"></script>...`) follows immediately.
+* On the browser, `hydrate('root', App)` in `main.ts` targets `<div id="root">`, adopts the server-rendered DOM nodes, and restores state from the payload without issuing duplicate network requests.
+
+### Client Hydration Bootstrap (`main.ts`)
+
+On the client, the data runtime is installed first so `hydrate` can restore the server payload before the compiled tree adopts the marked DOM:
+
+```ts
+// main.ts
+import { hydrate } from '@memoized-dom/runtime/hydrate';
+import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
+import { App } from './App';
+
+// 1. Install data runtime before hydration
+setActiveDataRuntime(createDataRuntime());
+
+// 2. Hydrate adopting server-rendered markup
+hydrate('root', App, {
+  recover: true,
+  onRecover: (err) => {
+    console.error('[HYDRATION-MISMATCH]', err.message);
+  },
+});
+```
+
+Every server function call resolves from the `application/mmd+json` payload on hydration without refetching. Structural mismatches are reported through `onRecover` with automatic fallback to `mount`.
+
+### Compiler-Named HTTP Functions (`server/functions/`)
+
+Server functions live in the **`server/functions/`** directory (e.g. `server/functions/stories.ts`). They are plain async TypeScript functions with strict HTTP verb prefixes that compile into both a server endpoint and a client-side typed facade:
+
+1. **Strict HTTP Verb Prefix**: An exported function must begin with `get`, `post`, `put`, `patch`, or `delete` (e.g. `getStories`, `postVote`, `deleteStory`).
+2. **Automatic Route Registration**: Mounted automatically by `defineServer` at `/_fn/<module>/<function>` (e.g. `/_fn/stories/getStories`).
+3. **Module Middleware Export**: Modules can export a `middleware` array (`export const middleware = [ ... ]`) which composes in front of every endpoint registered in that module.
+4. **Request Context**: Call `getServerContext<Locals>()` to read the active request context (`locals`, `request`, etc.) without process-global singletons.
+
+```ts
+// server/functions/stories.ts
+import { getServerContext } from '@memoized-dom/server';
+import type { ServerMiddleware } from '@memoized-dom/server/router';
+
+function logServerFunction(): ServerMiddleware {
+  return (context, next) => {
+    console.log(`[fn] ${context.request.method} ${context.url.pathname}`);
+    return next();
+  };
+}
+
+// Module-level middleware runs for every endpoint in this file:
+export const middleware = [logServerFunction()];
+
+interface Story {
+  id: number;
+  title: string;
+  votes: number;
+}
+
+const stories: Story[] = [
+  { id: 1, title: 'First Story', votes: 3 },
+  { id: 2, title: 'Second Story', votes: 5 },
+];
+
+// 1. GET function: cacheable read, returns stories
+export async function getStories() {
+  return stories;
+}
+
+// 2. GET function with parameter: mapped to query string (?id=1)
+export async function getStory(id: number) {
+  return stories.find((story) => story.id === id) ?? null;
+}
+
+// 3. POST function: mutation, receives JSON body, reads request context
+export async function postVote(id: number) {
+  const { locals } = getServerContext<{ user?: string }>();
+  const story = stories.find((candidate) => candidate.id === id)!;
+  story.votes += 1;
+  return { id: story.id, votes: story.votes, by: locals.user ?? 'anonymous' };
+}
+
+// 4. DELETE function
+export async function deleteStory(id: number) {
+  const { request } = getServerContext();
+  if (request.headers.get('x-admin') !== 'yes') {
+    throw new Error('deleteStory requires admin privileges');
+  }
+  const index = stories.findIndex((story) => story.id === id);
+  if (index === -1) throw new Error(`Unknown story ${id}`);
+  return stories.splice(index, 1)[0]!;
+}
+```
+
+#### Strict HTTP verb prefix matrix
+
+| Prefix | HTTP Method | Parameter Transport | Client Lowering | Valid Call Sites |
+| :--- | :--- | :--- | :--- | :--- |
+| **`get*`** | `GET` | URL Query | `$fetch('/_fn/...', { query })` $\rightarrow$ `ResolvedValue<T>` | Component Render, Module Scope, Event Handlers |
+| **`post*`** | `POST` | JSON Body | `$fetch('/_fn/...', { method: 'POST', body })` $\rightarrow$ `ResolvedValue<T>` | Event Handlers, Callbacks Only |
+| **`put*`** | `PUT` | JSON Body | `$fetch('/_fn/...', { method: 'PUT', body })` $\rightarrow$ `ResolvedValue<T>` | Event Handlers, Callbacks Only |
+| **`patch*`** | `PATCH` | JSON Body | `$fetch('/_fn/...', { method: 'PATCH', body })` $\rightarrow$ `ResolvedValue<T>` | Event Handlers, Callbacks Only |
+| **`delete*`** | `DELETE` | JSON Body | `$fetch('/_fn/...', { method: 'DELETE', body })` $\rightarrow$ `ResolvedValue<T>` | Event Handlers, Callbacks Only |
+
+#### Consuming server functions in UI (`#server-functions`)
+
+In UI code, import functions directly from the **`#server-functions`** alias (mapped in `tsconfig.json` to `./.memoized/server-functions.d.ts`).
+
+As demonstrated in `examples/fullstack/App.tsx`, calling a `get*` function returns a transparent `ResolvedValue<T>` that can be mapped directly, while calling a mutating function (like `postVote`) inside an event handler returns a source tracked via `$track`:
+
+```tsx
+// App.tsx
+import { getStories, getStory, postVote } from '#server-functions';
+import { $track, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+
+export function App() {
+  let selectedId: number | null = null;
+  let lastVote = null as ReturnType<typeof postVote> | null;
+  const stories = getStories(); // GET source resolves transparently
+
+  function handleVote(id: number) {
+    lastVote = postVote(id); // Mutating call returns source tracked by $track
+    const tracker = $track(lastVote);
+
+    const story = stories.find((s) => s.id === id);
+    if (story) story.votes++;
+
+    tracker.onError(() => {
+      if (story) story.votes--;
+    });
+  }
+
+  return (
+    <main>
+      <ul>
+        {stories.map((story) => (
+          <li key={story.id}>
+            {story.title} — {story.votes} votes
+            <button onClick={() => handleVote(story.id)}>Vote</button>
+          </li>
+        ))}
+      </ul>
+      {lastVote !== null && (
+        <p if={$track(lastVote).pending}>Recording vote…</p>
+      )}
+    </main>
+  );
+}
+```
+
+### Vite Fullstack Configuration
+
+In `vite.config.ts`, wire both the client compiler and the fullstack server loader:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import memoizedDom, { memoizedDomFullstack } from '@memoized-dom/vite';
+
+export default defineConfig({
+  appType: 'custom',
+  plugins: [
+    memoizedDom({ entries: 'main.ts' }),
+    memoizedDomFullstack({ entry: 'server.ts' }),
+  ],
+});
+```
+
+* `memoizedDom` compiles client components and generates the `#server-functions` facade barrel under `.memoized/`.
+* `memoizedDomFullstack` loads `server.ts` through `ssrLoadModule` and auto-installs generated server-function routes per dispatch with hot-module replacement.
+
+### The In-Memory `serverFetch` Bridge ("One Data Source")
+
+When components call `$fetch('/api/stories')` or `getStories()` during SSR:
+1. Dispatch bypasses TCP sockets, localhost loopbacks, and network serialization.
+2. The request enters the pre-compiled route and middleware pipeline **in memory**.
+3. Global middleware, route middleware, response normalization, and error handling run identically to real HTTP requests.
+4. During hydration, settled data is restored from the `application/mmd+json` payload tag with zero network requests.
+5. Subsequent client navigation uses standard browser `fetch()`.
+
+### Middleware Pipeline & Request Context
+
+* **`ServerContext<TLocals>`**: Contains `request` (untouched native `Request`), `params`, `locals`, `url`, and optional `platform`.
+* **`ServerMiddleware<TLocals>`**: `(ctx, next) => Response | Promise<Response>`.
+* **Onion Model**: Global middleware $\rightarrow$ Prefix group middleware (`/api/*`, `/api/admin/*`) $\rightarrow$ Route handler $\rightarrow$ Unwinding.
+* **Short-Circuiting**: Any middleware can return a `Response` immediately (e.g. `401 Unauthorized`, `302 Redirect`). Prefix middleware (like `/admin/*`) can redirect unauthenticated users before SSR renders, saving compute and preventing unauthorized HTML leaks.
+
+### Compiler Guardrails for Server Functions
+
+* **`[MMD-S010]`**: Calling non-`get*` functions as top-level synchronous statements during initial render evaluation triggers a compile error. They must be invoked inside event handlers or action helpers.
+* **`[MMD-S011]`**: Functions exported from `server/functions/*` must begin with `get`, `post`, `put`, `patch`, or `delete`.
+* **`[MMD-S003]`**: Only verb-prefixed async functions and the `middleware` export may cross the client boundary. Non-function values (e.g. database handles, secrets) cannot be exported and are safely prevented from leaking.
+* **`[MMD-E004]`**: `getServerContext()` throws if invoked outside an active request dispatch.
+
+### Platform Adapters & Host Integration: `@memoized-dom/adapters`
+
+Because `defineServer` outputs a standard `(request: Request) => Promise<Response>` function, host integration is straightforward:
+
+#### Bun
+```ts
+import server from './server';
+
+export default {
+  port: 3000,
+  fetch: server, // Bun passes native Request directly
+};
+```
+
+#### Node.js (via `@memoized-dom/adapters/node`)
+```ts
+import { createServer } from 'node:http';
+import { createNodeHandler } from '@memoized-dom/adapters/node';
+import server from './server';
+
+createServer(createNodeHandler(server)).listen(3000);
+```
+
+#### Edge Runtimes (Cloudflare Workers, Deno, Vercel Edge)
+Pass edge bindings (`env`, `waitUntil`) through `ServerContext.platform`. The core router and renderer remain 100% Web Standard and never import Node APIs.
+
+### Low-Level Server Rendering Primitives
+
+For developers bringing a custom backend framework (Hono, Elysia, Express, Fastify) who only need rendering primitives:
 
 | Primitive | Rendering tier | Return value | Data behavior | Ownership |
 | --- | --- | --- | --- | --- |
@@ -1167,124 +1710,17 @@ live server DOM and must dispose it.
 | `renderToStringAsync` | fast string document | HTML string | can settle in `resolve` mode | disposed automatically |
 | `renderToResult` | fast string document | HTML, payload object, payload script | immediate shell | disposed automatically |
 | `renderToResultAsync` | fast string document | HTML, payload object, payload script | can settle in `resolve` mode | disposed automatically |
-| `renderToReadableStream` | fast string document | Web `ReadableStream<Uint8Array>` | shell or ordered settled streaming | disposed when the stream finishes/errors |
-
-All primitives accept the common render options:
+| `renderToReadableStream` | fast string document | Web `ReadableStream<Uint8Array>` | shell or ordered settled streaming | disposed when stream finishes/errors |
 
 ```ts
-interface RenderOptions {
-  mode?: 'shell' | 'resolve';
-  timeout?: number;
-  url?: string;
-  fetch?: typeof globalThis.fetch;
-  markers?: boolean;
-  document?: DocumentLike;
-}
-```
-
-`url` supplies the request-local route location. `fetch` supplies the
-request-local implementation used by `$fetch` and `$action`; relative data
-URLs therefore do not need to be sent through the public network. `document`
-is for the DOM tier when a host already owns a compatible document.
-
-`markers` defaults to `false` and produces clean non-hydratable HTML. Use
-`markers: true` for hydration: the renderer preserves structural region
-comments and wraps the application in its root marker pair.
-
-The data modes are:
-
-- `shell` serializes the current UI immediately. Pending `Group` arms remain
-  in the HTML, and transferred pending sources begin their client request after
-  hydration.
-- `resolve` waits for active fetch entries, up to `timeout` (5000 ms by
-  default), lets their targeted entities update, and then serializes the
-  resulting UI/state.
-
-The synchronous primitives cannot wait and are shell renderers. Use an async
-primitive when `resolve` is required. Streaming is ordered rather than
-out-of-order region replacement: shell mode emits pending HTML immediately;
-resolve mode waits and then emits one resolved application body.
-
-Use the DOM tier when server code needs to inspect or post-process live nodes:
-
-```ts
-import { renderWithDomAsync } from '@memoized-dom/server';
-import { App } from './App';
-
-const rendered = await renderWithDomAsync(App, {
-  url: new URL(request.url).pathname,
-  fetch: fetchData,
-  mode: 'resolve',
-});
-
-try {
-  audit(rendered.nodes);
-  return new Response(rendered.html, {
-    headers: { 'content-type': 'text/html; charset=utf-8' },
-  });
-} finally {
-  rendered.runtime.dispose();
-}
-```
-
-Use the string tier for ordinary HTML output:
-
-```ts
-import { renderToStringAsync } from '@memoized-dom/server';
-
-const html = await renderToStringAsync(App, {
-  url: new URL(request.url).pathname,
-  fetch: fetchData,
-  mode: 'resolve',
-});
-```
-
-That returns HTML only. If the page will hydrate fetched data, use a result or
-stream primitive so the data payload travels with the HTML:
-
-```ts
-import { renderToResultAsync } from '@memoized-dom/server';
-
-const result = await renderToResultAsync(App, {
-  url: new URL(request.url).pathname,
-  fetch: fetchData,
-  mode: 'resolve',
-  markers: true,
-});
-
-const document = `<!doctype html>
-  <html>
-    <body>
-      <div id="root">${result.html}</div>
-      ${result.scriptTag}
-      <script type="module" src="/main.ts"></script>
-    </body>
-  </html>`;
-```
-
-`result.payload` is the structured version and `result.scriptTag` is its
-safe DOM transport:
-`<script type="application/mmd+json" data-mmd-root="App">...</script>`.
-The JSON is escaped for script-tag embedding.
-
-#### Streaming and server hosts
-
-`renderToReadableStream` returns a standard Web stream containing the
-application HTML followed by its payload script. A host can concatenate a
-document prefix, the application stream, and a suffix without buffering:
-
-```ts
-import {
-  createDocumentStream,
-  htmlResponse,
-} from '@memoized-dom/adapters';
 import { renderToReadableStream } from '@memoized-dom/server';
+import { createDocumentStream, htmlResponse } from '@memoized-dom/adapters';
+import { App } from './App';
 
 export function handleRequest(request: Request): Response {
   const url = new URL(request.url);
   const body = renderToReadableStream(App, {
     url: url.pathname + url.search,
-    fetch: fetchData,
     mode: 'resolve',
     markers: true,
     signal: request.signal,
@@ -1293,130 +1729,10 @@ export function handleRequest(request: Request): Response {
   return htmlResponse(createDocumentStream({
     prefix: '<!doctype html><html><body><div id="root">',
     body,
-    suffix:
-      '</div><script type="module" src="/main.ts"></script></body></html>',
+    suffix: '</div><script type="module" src="/main.ts"></script></body></html>',
   }));
 }
 ```
-
-The stream-specific `signal` aborts settling and request-owned data work when
-the client disconnects. `createDocumentStream` propagates cancellation to the
-application stream.
-
-The handler above already uses the Web `Request`/`Response` contract used by
-Bun, Deno, and worker-style hosts. The adapters package also supplies explicit
-Bun and Node bridges:
-
-```ts
-// Bun
-import { createBunFetch } from '@memoized-dom/adapters/bun';
-
-Bun.serve({
-  fetch: createBunFetch(handleRequest),
-});
-```
-
-```ts
-// Node
-import { createServer } from 'node:http';
-import { createNodeHandler } from '@memoized-dom/adapters/node';
-
-createServer(createNodeHandler(handleRequest)).listen(3000);
-```
-
-The Node adapter converts incoming messages to Web requests, preserves abort
-signals, streams Web responses with backpressure, and forwards multiple
-`Set-Cookie` headers.
-
-#### Using the application runtime directly
-
-The renderer helpers build on the public runtime isolation API:
-
-```ts
-import {
-  createApplicationRuntime,
-  runWithApplicationRuntime,
-} from '@memoized-dom/runtime/server';
-import { createDataRuntime, runWithDataRuntime } from '@memoized-dom/data';
-import {
-  createMemoryRouteHistory,
-  createRouteRuntime,
-  runWithRouteRuntime,
-} from '@memoized-dom/router';
-
-const application = createApplicationRuntime('request-42', {
-  mode: 'server-dom',
-  document: serverDocument,
-  schedule: null,
-  effects: 'disabled',
-  refs: 'disabled',
-});
-const route = createRouteRuntime({
-  routeHistory: createMemoryRouteHistory({
-    initialEntries: ['/account?tab=profile'],
-  }),
-});
-const data = createDataRuntime({ fetch: fetchData });
-
-try {
-  runWithApplicationRuntime(application, () =>
-    runWithRouteRuntime(route, () =>
-      runWithDataRuntime(data, () => {
-        // Custom renderer/host work using this request's complete runtime.
-      }),
-    ),
-  );
-} finally {
-  route.dispose();
-  data.clear();
-  application.dispose();
-}
-```
-
-This low-level path is for custom renderer or host integrations. The scoped
-callbacks use the runtime's async-context storage, so async work started inside
-them continues to resolve the correct application, route, and data ownership.
-The `@memoized-dom/server` primitives already assemble and tear down this same
-three-runtime stack, so application servers normally call those rather than
-manually reproducing the lifecycle.
-
-#### Payload restore and hydration
-
-Install the browser data runtime before hydration. Hydration reads the embedded
-payload, restores matching fetch entries, and then adopts the marker-delimited
-DOM:
-
-```ts
-import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
-import { hydrate } from '@memoized-dom/runtime/hydrate';
-import { App } from './App';
-
-setActiveDataRuntime(createDataRuntime());
-
-hydrate('root', App, {
-  recover: true,
-  onRecover(error) {
-    console.error('Hydration recovered:', error.message);
-  },
-});
-```
-
-The payload option defaults to `'auto'`, which finds the
-`application/mmd+json` script by root ID. Pass an explicit payload object when
-the host transports state outside the DOM, or `payload: 'none'` to ignore
-transported state.
-
-Hydration is strict by default. A structural or tag mismatch raises
-`HydrationMismatchError`. With `recover: true`, the mismatch is reported
-through `onRecover`, the server root is removed, and a clean client mount is
-performed.
-
-Transferred fetch state is matched by normalized request identity. Matching
-initial targets and queries adopt committed server data without a duplicate
-browser request. A different initial identity performs its own request. After
-hydration, changing a compiler-reactive query or dynamic target rebinds the same
-transparent value and requests the new identity; stale work from the prior
-identity cannot replace it.
 
 ### Actions and action results
 
@@ -1808,6 +2124,88 @@ above is included to show syntax and lifecycle, not to replace accessible
 focus design.
 
 ## Common mistakes
+
+### Destructuring colorless sources at declaration time
+
+Do not do this:
+
+```tsx
+const { length, user } = getStories(); // 💥 [MMD-S004]
+const [firstItem] = $fetch('/api/items'); // 💥 [MMD-S004]
+```
+
+Native destructuring evaluates properties immediately upon declaration, before the source settles. Keep the source binding and read properties lazily (`stories.length`, `stories.map(...)`), or destructure inside a map callback over settled items.
+
+### Invoking mutations as top-level synchronous statements
+
+Do not execute mutating server functions (`post*`, `put*`, etc.) as bare top-level statements during component initialization:
+
+```tsx
+export function StoryList() {
+  postVote(1); // 💥 [MMD-S010]: would execute HTTP POST immediately during initial render/SSR
+  return <div>...</div>;
+}
+```
+
+Instead, call mutations inside event handlers or action helpers declared in the component, exactly as in `examples/fullstack/App.tsx`:
+
+```tsx
+export function StoryList() {
+  let lastVote = null as ReturnType<typeof postVote> | null;
+
+  function handleVote(id: number) {
+    lastVote = postVote(id); // ✅ Correct: invoked in response to user action
+  }
+
+  return <button onClick={() => handleVote(1)}>Vote</button>;
+}
+```
+
+### Adding store or promise methods to `$track`
+
+Do not call `$track(stories).mutate()` or `$track(stories).then(...)`. `$track` is an observation lens, not a state manager or Promise. Mutate transparent data directly (`story.votes++`) and handle execution outcomes via `onSuccess` and `onError`.
+
+### Expecting one server function to invalidate another automatically
+
+Server functions are independent HTTP resources. From these two calls alone,
+Memoized DOM cannot know that deleting one project changes the collection
+returned by the other:
+
+```ts
+const projects = getProjects();
+const projectsRequest = $track(projects);
+
+function removeProject(id: string) {
+  const index = projects.findIndex(project => project.id === id);
+  if (index === -1) return;
+
+  const removed = projects[index]!;
+  projects.splice(index, 1); // immediate local/optimistic UI
+
+  const deletion = $track(deleteProject(id));
+  deletion.onError(() => {
+    projects.splice(Math.min(index, projects.length), 0, removed);
+  });
+  deletion.onSuccess(() => {
+    // Optional authoritative convergence with the exact affected query.
+    void projectsRequest.refresh();
+  });
+}
+```
+
+Directly changing the transparent collection is the immediate UI path.
+Refreshing its tracker is the authoritative server-convergence path. Keep the
+collection in a shared mounted owner when several routes must observe the same
+optimistic change. Memoized DOM does not guess endpoint relationships or
+globally refetch every GET after a POST, PATCH, PUT, or DELETE.
+
+### Attempting whole-object snapshot rollbacks during concurrent mutations
+
+Do not restore entire previous objects on mutation failure. If multiple actions are in-flight concurrently, an old whole-object snapshot will overwrite fresher optimistic writes. Journal the smallest reversible domain delta (e.g. `delta: 1`) keyed by `request.id`.
+
+### Forgetting HTTP verb prefixes on server functions
+
+Every function in `server/functions/*.ts` must begin with an approved verb: `get*`, `post*`, `put*`, `patch*`, or `delete*`. Non-prefixed functions raise `[MMD-S011]`.
 
 ### Treating `let` as the reactive API
 

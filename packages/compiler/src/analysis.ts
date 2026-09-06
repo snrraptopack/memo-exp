@@ -694,8 +694,8 @@ function scanRenderProps(ctx: Ctx): void {
 function analyzeComponent(ctx: Ctx, name: string): void {
   const p = ctx.compPaths.get(name)!;
   const info = ctx.comps.get(name)!;
-  const fail = (message: string): never => {
-    throw p.buildCodeFrameError(message);
+  const fail = (message: string, at?: t.Node): never => {
+    throw p.buildCodeFrameError(message, at);
   };
   const checkMapCall = (call: BaseNode): boolean => {
     const mapCall = matchMapCall(
@@ -749,6 +749,7 @@ function analyzeComponent(ctx: Ctx, name: string): void {
           if (isRenderCallbackJsxRoot(ctx, node)) continue;
           fail(
             'memo-dom: key={...} is only meaningful on list rows: items.map(item => <Row key={item.id} />)',
+            attr,
           );
         }
       }
@@ -1614,6 +1615,18 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   for (const [name] of ctx.comps) analyzeComponent(ctx, name);
   collectReads(ctx);
   foldRenderCallbackSubtreeReads(ctx);
+  // Every ordinary component participates in the private presentation-policy
+  // channel. This lets a Group policy cross source-less component boundaries
+  // without making policy an authored prop. Listed row factories keep their
+  // specialized ABI; their containing list site already owns presentation.
+  for (const [name] of ctx.comps) {
+    if (
+      ctx.listedSites.has(name) ||
+      ctx.linkedComponentRows.has(name) ||
+      ctx.transparentPolicyParams.has(name)
+    ) continue;
+    ctx.transparentPolicyParams.set(name, generatedIdentifier(ctx, 'dataPolicies'));
+  }
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)
   for (const [name] of ctx.comps) pathVariants(ctx, name);

@@ -49,6 +49,21 @@ async function copyFixture(): Promise<string> {
 }
 
 describe('Vite 8 adapter', () => {
+  it('keeps stateful package subpaths in one browser module graph', async () => {
+    server = await createServer({
+      root: fixture,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: plugins(),
+    });
+
+    expect(server.config.optimizeDeps.exclude).toEqual(expect.arrayContaining([
+      '@memoized-dom/runtime',
+      '@memoized-dom/data',
+      '@memoized-dom/router',
+    ]));
+  });
+
   it('builds an aliased connected graph through Rolldown', async () => {
     const result = await build({
       root: fixture,
@@ -569,6 +584,61 @@ describe('Vite 8 adapter', () => {
     await expect(response.json()).resolves.toEqual({
       id: 11,
       title: 'Story 11',
+    });
+  }, 30_000);
+
+  it('leaves ordinary server implementation modules outside UI compilation', async () => {
+    const root = await copyFixture();
+    const serverDirectory = resolve(root, 'server');
+    await mkdir(serverDirectory, { recursive: true });
+    await writeFile(resolve(serverDirectory, 'db.ts'), `
+      let client: { url: string } | null = null;
+      const store = (() => {
+        client = { url: 'memory://local' };
+        return client;
+      })();
+      export const databaseUrl = store.url;
+    `);
+    await writeFile(resolve(root, 'src/server.ts'), `
+      import { defineServer } from '@memoized-dom/server';
+      import { databaseUrl } from '../server/db';
+      export default defineServer({
+        routes: { '/health': () => ({ ok: true, databaseUrl }) },
+      });
+    `);
+
+    server = await createServer({
+      root,
+      configFile: false,
+      appType: 'custom',
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@memoized-dom/server/router': serverRouter,
+          '@memoized-dom/server': serverIndex,
+          '@memoized-dom/runtime/server': runtimeServer,
+          '@memoized-dom/runtime': runtime,
+          '@memoized-dom/data/internal': dataInternal,
+          '@memoized-dom/data': data,
+        },
+      },
+      plugins: [
+        memoizedDom({ entries: 'src/main.ts' }),
+        memoizedDomFullstack({ entry: 'src/server.ts' }),
+      ],
+      server: { host: '127.0.0.1', port: 0 },
+    });
+    await server.listen();
+    const address = server.httpServer?.address();
+    if (address === null || address === undefined || typeof address === 'string') {
+      throw new Error('Expected Vite TCP server address');
+    }
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      databaseUrl: 'memory://local',
     });
   }, 30_000);
 

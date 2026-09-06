@@ -36,7 +36,11 @@ const source = `
     return (
       <main id="app" class="board">
         <h1>Board</h1>
-        <p if={open > 0} class="hint">{open} open</p>
+        <p
+          if={open > 0}
+          class="hint"
+          style={{ width: open * 10, opacity: 0.5, '--open': open }}
+        >{open} open</p>
         <ul>
           {visible.map((name) => (
             <li key={name}>{name}</li>
@@ -94,6 +98,7 @@ describe('LinkeDOM reference renderer', () => {
     expect(html).toContain('class="board"');
     expect(html).toContain('<h1>Board</h1>');
     expect(html).toContain('3 open');
+    expect(html).toContain('style="width: 30px; opacity: 0.5; --open: 3"');
     expect((html.match(/<li>/g) ?? []).length).toBe(2);
     expect(html).toContain('<li>Alpha</li>');
     expect(html).toContain('<li>Beta</li>');
@@ -124,6 +129,7 @@ describe('LinkeDOM reference renderer', () => {
     const normalize = (html: string): string =>
       html
         .replace(/<!--.*?-->/g, '')
+        .replace(/ style="[^"]*"/g, '')
         .replace(
           /<([a-z][a-z0-9]*)((?:\s+[a-z-]+(?:="[^"]*")?)*)\s*>/g,
           (_match, tag: string, attrs: string) => {

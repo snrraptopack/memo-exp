@@ -385,6 +385,15 @@ export function scanInstanceDerivations(ctx: Ctx): void {
     };
 
     const opaqueUseIsLiveRead = (start: BaseNode): boolean => {
+      const isAnalyzableHelperArgument = (call: BaseNode): boolean => {
+        if (call.type !== 'CallExpression') return false;
+        const calleeName = identifierName(childNode(call, 'callee'));
+        return calleeName !== null && (
+          ctx.helpers.has(calleeName) ||
+          ctx.importedFunctions.has(calleeName) ||
+          localFunction(ctx, component, call, calleeName) !== null
+        );
+      };
       let current = start;
       let climbed = false;
       for (;;) {
@@ -400,8 +409,15 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         }
         break;
       }
-      if (!climbed) return false;
       const user = parentOf(ctx, current);
+      if (
+        user !== null &&
+        childNodes(user, 'arguments').includes(current) &&
+        isAnalyzableHelperArgument(user)
+      ) {
+        return true;
+      }
+      if (!climbed) return false;
       if (user !== null) {
         if (
           (user.type === 'CallExpression' || user.type === 'NewExpression') &&

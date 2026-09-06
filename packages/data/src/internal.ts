@@ -17,6 +17,7 @@ export {
   rebindEventSourceSlot,
   deriveResolvedValues,
   observeResolvedValue,
+  notifyResolvedValueMutation,
   ownResolvedValue,
   rebindResolvedValue,
   rebindResolvedValueFromFactory,

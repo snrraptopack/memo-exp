@@ -36,9 +36,14 @@ import {
 } from './server-functions';
 
 const sourceId = /(?:\.[jt]sx?|\.tsrx)(?:$|[?#])/;
+const statefulRuntimePackages = [
+  '@memoized-dom/runtime',
+  '@memoized-dom/data',
+  '@memoized-dom/router',
+];
 
 interface AdapterTransformContext extends GraphPluginContext {
-  environment: object;
+  environment: { name: string };
 }
 
 export function memoizedDom(
@@ -235,6 +240,16 @@ export function memoizedDom(
     const state = stateFor(context.environment);
     const managed = entries.includes(file) || state.files.has(file);
 
+    // The SSR environment also loads the application's ordinary server
+    // entry and its implementation modules. Plain .ts/.js files outside the
+    // connected browser entry graph are server code, not UI compiler roots.
+    // JSX/TSRX files remain eligible for on-demand SSR compilation.
+    if (
+      context.environment.name === 'ssr' &&
+      !managed &&
+      /\.[jt]s$/.test(file)
+    ) return null;
+
     const cached = managed ? state.output.get(file) : undefined;
     if (cached !== undefined) {
       return { code: cached, map: state.maps.get(file)! };
@@ -299,6 +314,19 @@ export function memoizedDom(
   return {
     name: 'memoized-dom',
     enforce: 'pre',
+    config() {
+      // These packages intentionally share realm/runtime state across public
+      // subpath entries (`runtime` + `runtime/hydrate`, `data` +
+      // `data/internal`, and router internals). Prebundling deep imports as
+      // independent optimized entries duplicates that state and makes a
+      // registered root invisible to hydrate. Let Vite serve their emitted
+      // ESM chunks directly so every subpath converges on one module record.
+      return {
+        optimizeDeps: {
+          exclude: statefulRuntimePackages,
+        },
+      };
+    },
     perEnvironmentWatchChangeDuringDev: true,
     perEnvironmentStartEndDuringDev: true,
     applyToEnvironment(environment) {

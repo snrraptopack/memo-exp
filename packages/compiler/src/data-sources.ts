@@ -604,12 +604,6 @@ function inferredGroupDataNames(
   }
   const origins = groupOrigins(ctx, element as unknown as BaseNode, [...candidates]);
   const used = [...expressionOrigins(ctx, content, origins)].sort();
-  if (used.length === 0) {
-    throw errorAt.buildCodeFrameError(
-      'memo-dom: Group content must read at least one colorless source',
-      content as unknown as t.Node,
-    );
-  }
   return used;
 }
 
@@ -949,6 +943,13 @@ function annotateGroupComponentCalls(
     const tag = jsxTagName(element);
     if (tag === null || !/^[A-Z]/.test(tag)) return;
     let policies = ctx.transparentGroupCallPolicies.get(element);
+    policies ??= new Map();
+    // A source-less component boundary still inherits the Group's nearest
+    // presentation policy. The child may own its own colorless sources or
+    // forward the policy through another component before one is created.
+    if (!policies.has('$default')) {
+      policies.set('$default', { pending, error });
+    }
     for (const attribute of element.openingElement.attributes) {
       if (!astFactory.isJSXAttribute(attribute)) continue;
       const prop = componentPropName(attribute);
@@ -966,13 +967,10 @@ function annotateGroupComponentCalls(
           origins,
         ).size === 0
       ) continue;
-      policies ??= new Map();
       // Inner groups run first (exit traversal) and own the nearest match.
       if (!policies.has(prop)) policies.set(prop, { pending, error });
     }
-    if (policies !== undefined) {
-      ctx.transparentGroupCallPolicies.set(element, policies);
-    }
+    ctx.transparentGroupCallPolicies.set(element, policies);
   };
   walkAst(content, {
     enter(node) {
@@ -1463,12 +1461,25 @@ function sourcePolicy(
 ): t.Expression {
   const parameter = ctx.transparentPolicyParams.get(component);
   const prop = ctx.transparentSourceProps.get(component)?.get(source);
-  if (parameter === undefined || prop === undefined) return astFactory.nullLiteral();
-  return astFactory.optionalMemberExpression(
+  if (parameter === undefined) return astFactory.nullLiteral();
+  const fallback = astFactory.optionalMemberExpression(
     cloneEstreeNode(parameter),
-    isValidEstreeIdentifier(prop) ? astFactory.identifier(prop) : astFactory.stringLiteral(prop),
-    !isValidEstreeIdentifier(prop),
+    astFactory.identifier('$default'),
+    false,
     true,
+  );
+  if (prop === undefined) return fallback;
+  return astFactory.logicalExpression(
+    '??',
+    astFactory.optionalMemberExpression(
+      cloneEstreeNode(parameter),
+      isValidEstreeIdentifier(prop)
+        ? astFactory.identifier(prop)
+        : astFactory.stringLiteral(prop),
+      !isValidEstreeIdentifier(prop),
+      true,
+    ),
+    fallback,
   );
 }
 
@@ -1656,6 +1667,12 @@ export function lowerTransparentGroups(
         );
         if (astFactory.isJSXElement(content)) {
           if (contentSuspend !== null) {
+            if (data.length === 0) {
+              throw programPath.buildCodeFrameError(
+                'memo-dom: suspended Group content must read colorless sources in the current component; descendant-owned sources can use this Group only in colorless mode',
+                contentSuspend,
+              );
+            }
             consumeSuspendDirective(content, contentSuspend);
             replaceNode(
               ctx.astAnalysis!,
@@ -3183,6 +3200,17 @@ export function transparentCallPolicyArgument(
   }
   const inherited = ctx.transparentPolicyParams.get(owner);
   const sourceProps = ctx.transparentSourceProps.get(owner);
+  if (inherited !== undefined && !entries.has('$default')) {
+    entries.set(
+      '$default',
+      astFactory.optionalMemberExpression(
+        cloneEstreeNode(inherited),
+        astFactory.identifier('$default'),
+        false,
+        true,
+      ),
+    );
+  }
   if (inherited !== undefined && sourceProps !== undefined) {
     for (const attribute of element.openingElement.attributes) {
       if (

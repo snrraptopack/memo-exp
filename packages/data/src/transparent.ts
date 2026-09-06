@@ -327,6 +327,18 @@ export function resolvedValueSnapshot<T>(
   return fetchResourceSnapshot(source(value));
 }
 
+/**
+ * Compiler hook: publish an authored in-place payload mutation to every
+ * structural consumer of this source. The mutation itself has already run;
+ * ResourceController.mutate supplies the ordering/notification boundary and
+ * prevents an older in-flight read from overwriting the local write.
+ */
+export function notifyResolvedValueMutation<T>(
+  value: ResolvedValue<T> | ModuleSourceRef,
+): void {
+  source(value).mutate(() => {});
+}
+
 /** Subscribe to transitions without delivering the notifier's initial value. */
 export function observeResolvedValue<T>(
   value: ResolvedValue<T> | ModuleSourceRef,

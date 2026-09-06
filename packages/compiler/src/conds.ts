@@ -12,7 +12,7 @@ import { matchMapCall } from './lists';
 import type { JsxNode } from './jsx/children';
 
 interface ErrorPath {
-  buildCodeFrameError(message: string): Error;
+  buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 
 export interface CondSite {
@@ -44,7 +44,10 @@ function isEmptyBranch(node: t.Node): boolean {
   );
 }
 
-function validateBranchJsx(jsx: JsxNode, fail: (msg: string) => never): void {
+function validateBranchJsx(
+  jsx: JsxNode,
+  fail: (msg: string, at?: t.Node) => never,
+): void {
   const stack: t.Node[] = [jsx];
   while (stack.length > 0) {
     const node = stack.pop()!;
@@ -54,7 +57,7 @@ function validateBranchJsx(jsx: JsxNode, fail: (msg: string) => never): void {
           !astFactory.isJSXSpreadAttribute(attribute) &&
           (attribute.name as t.JSXIdentifier).name === 'key'
         ) {
-          fail('memo-dom: key={...} is only meaningful on list rows');
+          fail('memo-dom: key={...} is only meaningful on list rows', attribute);
         }
       }
       stack.push(...node.children);
@@ -77,8 +80,8 @@ export function analyzeCondSite(
   errorAt: ErrorPath,
   usedConds: { count: number },
 ): CondSite {
-  const fail = (message: string): never => {
-    throw errorAt.buildCodeFrameError(message);
+  const fail = (message: string, at?: t.Node): never => {
+    throw errorAt.buildCodeFrameError(message, at);
   };
 
   let pickExpr: t.Expression;

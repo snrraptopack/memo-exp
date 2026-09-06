@@ -21,6 +21,7 @@ import {
   componentId,
   generatedIdentifier,
   md,
+  mdd,
 } from './identifiers';
 
 export interface ScopeWrites {
@@ -38,6 +39,8 @@ export interface ScopeWrites {
   instanceLocal: boolean;
   /** Exact instance or prop roots written by this scope. */
   instanceWrites: Set<string>;
+  /** Component-local colorless payloads mutated in place by authored code. */
+  transparentWrites: Set<string>;
   /** Scoped event fallback when a handler has no recognized write. */
   eventOrigin: t.Statement | null;
 }
@@ -52,6 +55,7 @@ export function createScopeWrites(): ScopeWrites {
     rowOwnerLocal: false,
     instanceLocal: false,
     instanceWrites: new Set(),
+    transparentWrites: new Set(),
     eventOrigin: null,
   };
 }
@@ -125,6 +129,15 @@ export function buildScopeCommit(
 
   const combine = (routed: t.Statement | null): t.Statement | null => {
     const parts: t.Statement[] = [];
+    for (const source of [...scope.transparentWrites].sort()) {
+      parts.push(
+        astFactory.expressionStatement(
+          astFactory.callExpression(mdd(ctx, 'notifyResolvedValueMutation'), [
+            astFactory.identifier(source),
+          ]),
+        ),
+      );
+    }
     if (scope.eventOrigin !== null) parts.push(scope.eventOrigin);
     if (rowCommit !== null) parts.push(rowCommit);
     if (rowOwnerCommit !== null) parts.push(rowOwnerCommit);
@@ -138,10 +151,12 @@ export function buildScopeCommit(
     // The root subtree contains every more precise destination above. Emitting
     // both forms only schedules the same entity twice and obscures why the
     // conservative fallback was selected.
-    return astFactory.expressionStatement(
-      astFactory.callExpression(md(ctx, 'markDirtySubtree'), [
-        astFactory.stringLiteral(ctx.rootId),
-      ]),
+    return combine(
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'markDirtySubtree'), [
+          astFactory.stringLiteral(ctx.rootId),
+        ]),
+      ),
     );
   }
   if (scope.writes.size === 0) return combine(null);

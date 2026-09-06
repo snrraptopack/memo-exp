@@ -67,6 +67,26 @@ const source = `
     return <span id="cross-leaf">{user.name}</span>;
   }
 
+  function CrossList({ tasks }) {
+    const open = tasks
+      .filter((task) => !task.done)
+      .sort((left, right) => left.id - right.id);
+    return (
+      <ul id="cross-list">
+        {open.map((task) => <li key={task.id}>{task.title}</li>)}
+      </ul>
+    );
+  }
+
+  function OwnedSourceChild() {
+    const tasks = $fetch<Array<{ id: number; title: string }>>('/owned-tasks');
+    return (
+      <ul id="owned-source-list">
+        {tasks.map((task) => <li key={task.id}>{task.title}</li>)}
+      </ul>
+    );
+  }
+
   function CrossProfile({ user }) {
     const greeting = \`Welcome \${user.name}\`;
     return (
@@ -192,6 +212,72 @@ const source = `
           <CrossProfile user={user} />
         </main>
       </Group>
+    );
+  }
+
+  export function CrossCollectionApp() {
+    const tasks = $fetch<Array<{ id: number; title: string; done: boolean }>>('/cross-tasks');
+    return (
+      <Group>
+        <Pending component={InlinePending} />
+        <Error component={InlineError} />
+        <CrossList tasks={tasks} />
+      </Group>
+    );
+  }
+
+  export function DescendantOwnedGroupApp() {
+    return (
+      <Group>
+        <Pending component={DeepPending} />
+        <Error component={DeepError} />
+        <main id="owned-source-shell"><OwnedSourceChild /></main>
+      </Group>
+    );
+  }
+
+  export function SourceMutationApp() {
+    const tasks = $fetch<Array<{ id: string; title: string }>>('/mutable-tasks');
+    const visible = tasks.filter((task) => task.id !== 'hidden');
+    let draggedId: string | null = null;
+    function removeFirst() {
+      tasks.splice(0, 1);
+    }
+    function moveDragged() {
+      if (draggedId === null) return;
+      const task = tasks.find((candidate) => candidate.id === draggedId);
+      draggedId = null;
+      if (task !== undefined) task.title = 'Moved';
+    }
+    return (
+      <main>
+        <button id="remove-source-row" onClick={removeFirst}>Remove</button>
+        <p if={visible.length === 0} id="mutable-source-empty">Empty</p>
+        <ul id="mutable-source-list">
+          {visible.map((task) => (
+            <li
+              key={task.id}
+              class="mutable-source-row"
+              draggable
+              onDragStart={() => {
+                draggedId = task.id;
+              }}
+            >
+              {task.title}
+            </li>
+          ))}
+        </ul>
+        <div
+          id="mutable-source-drop"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            moveDragged();
+          }}
+        >
+          Drop
+        </div>
+      </main>
     );
   }
 
@@ -1089,6 +1175,89 @@ describe('compiler-transparent data values', () => {
         }
       `,
     })).toThrow(/Group child must be <Pending/);
+  });
+
+  it('defers collection methods on a transparent source passed through props', async () => {
+    let resolve!: (response: Response) => void;
+    runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(accept => {
+        resolve = accept;
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(
+      mod.CrossCollectionApp('CrossCollectionApp', null),
+    );
+    expect(document.querySelector('#cross-list .pending')).not.toBeNull();
+
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    resolve(new Response(JSON.stringify([
+      { id: 3, title: 'Closed', done: true },
+      { id: 2, title: 'Second', done: false },
+      { id: 1, title: 'First', done: false },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#cross-list')?.textContent,
+    ).toBe('FirstSecond');
+  });
+
+  it('inherits Group presentation through a descendant-owned source', async () => {
+    let resolve!: (response: Response) => void;
+    runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(accept => {
+        resolve = accept;
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(
+      mod.DescendantOwnedGroupApp('DescendantOwnedGroupApp', null),
+    );
+    expect(document.querySelector('#owned-source-shell')).not.toBeNull();
+    expect(document.querySelector('#owned-source-list .deep-pending')).not.toBeNull();
+
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    resolve(new Response(JSON.stringify([
+      { id: 2, title: 'Second' },
+      { id: 1, title: 'First' },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#owned-source-list')?.textContent,
+    ).toBe('SecondFirst');
+  });
+
+  it('publishes direct source payload mutations to dependent list regions', async () => {
+    runtime = createDataRuntime({
+      fetch: (() => Promise.resolve(new Response(JSON.stringify([
+        { id: 'one', title: 'First' },
+        { id: 'two', title: 'Second' },
+      ]), { headers: { 'content-type': 'application/json' } }))) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(mod.SourceMutationApp('SourceMutationApp', null));
+    await expect.poll(
+      () => document.querySelector('#mutable-source-list')?.textContent,
+    ).toBe('FirstSecond');
+
+    const rows = document.querySelectorAll<HTMLElement>('.mutable-source-row');
+    rows[1]!.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    document.querySelector<HTMLElement>('#mutable-source-drop')!
+      .dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+    expect(document.querySelector('#mutable-source-list')?.textContent)
+      .toBe('FirstMoved');
+
+    document.querySelector<HTMLButtonElement>('#remove-source-row')!.click();
+    expect(document.querySelector('#mutable-source-list')?.textContent)
+      .toBe('Moved');
+    expect(document.querySelector('#mutable-source-empty')).toBeNull();
   });
 
   it('rejects the removed Group data prop', () => {

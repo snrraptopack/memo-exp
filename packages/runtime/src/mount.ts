@@ -28,7 +28,18 @@ export interface MountedApplication {
 }
 
 // Factory definitions are build artifacts — process-wide by nature.
-const rootFactories = new WeakMap<Function, RootFactoryDefinition>();
+const rootFactoriesKey = Symbol.for('memoized-dom:root-factories');
+
+function rootFactoryStore(): WeakMap<Function, RootFactoryDefinition> {
+  const realm = globalThis as unknown as Record<PropertyKey, unknown>;
+  const existing = realm[rootFactoriesKey];
+  if (existing instanceof WeakMap) {
+    return existing as WeakMap<Function, RootFactoryDefinition>;
+  }
+  const created = new WeakMap<Function, RootFactoryDefinition>();
+  realm[rootFactoriesKey] = created;
+  return created;
+}
 
 // Mount bookkeeping is per application runtime: two concurrent server
 // requests may each mount the same compiled root into their own documents.
@@ -48,7 +59,7 @@ export function registerRootFactory(
   component: Function,
   definition: RootFactoryDefinition,
 ): void {
-  rootFactories.set(component, definition);
+  rootFactoryStore().set(component, definition);
 }
 
 export function removeNodes(nodes: readonly Node[]): void {
@@ -73,7 +84,7 @@ export function mount(
   if (mountStore().mountedHosts.has(host)) {
     throw new Error('memoized-dom: mount target already owns an application');
   }
-  const definition = rootFactories.get(component);
+  const definition = rootFactoryStore().get(component);
   if (definition === undefined) {
     throw new Error(
       'memoized-dom: mount received a component that is not a compiled application root',
@@ -135,5 +146,5 @@ export function mount(
 export function rootFactoryFor(
   component: MountableComponent,
 ): RootFactoryDefinition | undefined {
-  return rootFactories.get(component);
+  return rootFactoryStore().get(component);
 }

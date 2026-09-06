@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/data",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Browser-first fetch resources and callable actions for memoized-dom",
   "type": "module",
   "sideEffects": false,

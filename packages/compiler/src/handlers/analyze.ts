@@ -404,6 +404,39 @@ export function analyzeHandler(
     ...(instVars ?? []),
     ...(instDerived ?? []),
   ]);
+  const transparentRoots = compName === null
+    ? new Set<string>()
+    : (ctx.transparentSources.get(compName) ?? new Set<string>());
+  const transparentRootFor = (expression: t.Expression): string | null => {
+    const current = transparentListExpression(expression);
+    if (astFactory.isIdentifier(current)) {
+      return transparentRoots.has(current.name) ? current.name : null;
+    }
+    if (
+      astFactory.isCallExpression(current) &&
+      astFactory.isMemberExpression(current.callee) &&
+      !current.callee.computed &&
+      astFactory.isIdentifier(current.callee.object, {
+        name: ctx.identifiers?.dataRuntimeId,
+      }) &&
+      astFactory.isIdentifier(current.callee.property, {
+        name: 'readResolvedValue',
+      }) &&
+      astFactory.isIdentifier(current.arguments[0]) &&
+      transparentRoots.has(current.arguments[0].name)
+    ) {
+      return current.arguments[0].name;
+    }
+    if (
+      astFactory.isMemberExpression(current) ||
+      astFactory.isOptionalMemberExpression(current)
+    ) {
+      return astFactory.isExpression(current.object)
+        ? transparentRootFor(current.object)
+        : null;
+    }
+    return null;
+  };
   if (compName !== null) {
     for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
       if (astFactory.isVariableDeclaration(stmt)) {
@@ -820,6 +853,11 @@ export function analyzeHandler(
         `memo-dom: cannot mutate '${rootName}' - it is derived from a static source and will never change`,
       );
     }
+    const transparentRoot = transparentRootFor(node);
+    if (transparentRoot !== null) {
+      mutateScope(p, (scope) => scope.transparentWrites.add(transparentRoot));
+      return;
+    }
     if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
       const plan = listMutationPlans?.get(rootName!);
       const key =
@@ -1162,6 +1200,28 @@ export function analyzeHandler(
           : astFactory.isMemberExpression(callee.object)
             ? memberRootName(callee.object)
             : null;
+        const transparentRoot = astFactory.isExpression(callee.object)
+          ? transparentRootFor(callee.object)
+          : null;
+        if (transparentRoot !== null) {
+          mutateScope(p, (scope) => scope.transparentWrites.add(transparentRoot));
+          return;
+        }
+        if (
+          eventBoundary &&
+          p.getFunctionParent()?.node === ROOT &&
+          receiverRoot !== null &&
+          rootParamIndex.get(receiverRoot) === 0
+        ) {
+          // The first parameter of a host-event boundary is browser-owned.
+          // Calling through that value (event.preventDefault(), a custom
+          // event API, DataTransfer, and so on) cannot mutate application
+          // state unless authored reactive values are passed separately.
+          // This is provenance-based deliberately: event and method names
+          // remain open-ended rather than living in a compiler allowlist.
+          noteBoundedArguments(p, p.node.arguments);
+          return;
+        }
         if (
           receiverRoot !== null &&
           instDerived?.has(receiverRoot) &&

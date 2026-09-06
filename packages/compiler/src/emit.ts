@@ -1064,6 +1064,7 @@ function emitElement(
     if (attrName === 'key') {
       throw compPath.buildCodeFrameError(
         'memo-dom: key={...} is only meaningful on list rows: items.map(item => <Row key={item.id} />)',
+        a,
       );
     }
 

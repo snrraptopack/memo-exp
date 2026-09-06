@@ -192,6 +192,7 @@ interface ImportRef {
   local: string;
   imported: string;
   source: string;
+  at: BaseNode;
 }
 
 interface ModuleManifest {
@@ -528,11 +529,26 @@ function importRefs(program: t.Program): ImportRef[] {
         const imported = astFactory.isIdentifier(spec.imported)
           ? spec.imported.name
           : spec.imported.value;
-        refs.push({ local: spec.local.name, imported, source: stmt.source.value });
+        refs.push({
+          local: spec.local.name,
+          imported,
+          source: stmt.source.value,
+          at: spec as unknown as BaseNode,
+        });
       } else if (astFactory.isImportDefaultSpecifier(spec)) {
-        refs.push({ local: spec.local.name, imported: 'default', source: stmt.source.value });
+        refs.push({
+          local: spec.local.name,
+          imported: 'default',
+          source: stmt.source.value,
+          at: spec as unknown as BaseNode,
+        });
       } else {
-        refs.push({ local: spec.local.name, imported: '*', source: stmt.source.value });
+        refs.push({
+          local: spec.local.name,
+          imported: '*',
+          source: stmt.source.value,
+          at: spec as unknown as BaseNode,
+        });
       }
     }
   }
@@ -1443,8 +1459,10 @@ function compileLinkedModules(
         target !== undefined &&
         manifests.get(target.id)?.exports[ref.imported] === undefined
       ) {
-        throw new Error(
+        throw compilerError(
           `memo-dom: '${ref.imported}' is not a linkable state, function, or component export of '${ref.source}'`,
+          entry.id,
+          ref.at,
         );
       }
     }
