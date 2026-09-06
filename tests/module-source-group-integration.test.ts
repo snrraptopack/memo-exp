@@ -77,7 +77,7 @@ const appSource = `
     return (
       <section>
         <span class="pill" class={{ busy: state.refreshing }}>{unread} unread</span>
-        <Group data={notifications}>
+        <Group>
           <Pending component={Skeleton} />
           <ErrorArm component={ErrorRow} />
           <ul class="list">

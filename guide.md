@@ -945,7 +945,7 @@ export function Todos() {
   const open = todos.filter((todo) => !todo.done);
 
   return (
-    <Group data={todos}>
+    <Group>
       <Pending component={TodoSkeleton} />
       <ErrorArm component={TodoFailure} />
       <ul>
@@ -965,11 +965,12 @@ structural site that actually consumes unavailable data receives the matching
 policy independently. The error component receives `{ error, retry }`;
 retrying is a boundary capability, not a method added to the payload.
 
-Put the shorthand compiler directive `suspend` on a direct component content
-child when its first mount must wait for every source named by `Group.data`:
+Put the shorthand compiler directive `suspend` on the direct content element
+when its first mount must wait for every colorless source the compiler infers
+from that content:
 
 ```tsx
-<Group data={{ user, statistics }}>
+<Group>
   <Pending component={DashboardSkeleton} />
   <ErrorArm component={DashboardFailure} />
   <Dashboard suspend user={user} statistics={statistics} />
@@ -981,8 +982,9 @@ mounts `Dashboard` atomically. A failure renders one error policy and `retry`
 targets the failed source. Later refreshes keep the committed dashboard visible;
 `suspend` controls initial readiness, not background revalidation. The compiler
 consumes `suspend`, so it is neither passed to `Dashboard` nor included in prop
-validation. It is rejected on intrinsic elements, outside this direct Group
-position, or when written as `suspend={...}`.
+validation. A direct host element such as `<section suspend>` is also valid.
+The directive is rejected outside this direct Group position or when written
+as `suspend={...}`.
 
 The compiler carries source dependencies through property reads, derivations,
 conditions, lists, and component props. Render reads wait for the source instead
@@ -1095,8 +1097,8 @@ const user = $fetch<User>(userId ? `/api/users/${userId}` : null);
 ```
 
 The target and options belong to that source declaration. The public payload
-does not expose refresh, abort, update, or mutate methods, and there is no
-`$ops` facade. Use ordinary application data writes for local state changes;
+does not expose refresh, abort, update, or mutate methods. Use ordinary
+application data writes for local state changes;
 use an action for server writes.
 
 The generic `$fetch<T>()` is a TypeScript assertion, not runtime validation.
@@ -1755,7 +1757,7 @@ function Home() {
         <button onClick={() => heading?.focus()}>Focus heading</button>
       </div>
 
-      <Group data={posts}>
+      <Group>
         <Pending component={PostsPending} />
         <ErrorArm component={PostsError} />
         <ul>
@@ -1887,8 +1889,7 @@ Before returning a generated Memoized DOM project, verify:
   positions.
 - Refs use `ref={target}` or callback refs, with explicit component forwarding.
 - `$fetch` values are consumed as plain payloads, unresolved reads are covered
-  by `Group`, request state uses `$track`, and no resource methods or `$ops`
-  facade are invented.
+  by `Group`, request state uses `$track`, and no resource methods are invented.
 - `$action` invocations are stored as independent action results and are never
   awaited or given `.settled`/refresh/optimistic call options.
 - Router paths start with `/`, route targets are declared, param keys are exact,

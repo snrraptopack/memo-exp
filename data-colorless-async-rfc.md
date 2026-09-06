@@ -9,8 +9,7 @@ Research input: `solid-2-async-reactivity-research.md`
 
 The first client/compiler vertical slice exists in the working tree:
 
-- public `ResolvedValue<T>`, `$track(value)`, and `$ops(value)` types and
-  runtime intrinsics;
+- public `ResolvedValue<T>` and `$track(value)` types and runtime intrinsics;
 - provider metadata through `transparentAsyncSources`, so compiler recognition
   is not tied to a local identifier literally named `$fetch`;
 - guarded imperative reads and unavailable-safe scalar/attribute reads;
@@ -59,26 +58,12 @@ function Profile() {
 ```
 
 The inferred type is a compiler-aware `ResolvedValue<User>`. It is directly
-usable and assignable as `User`, with no `.value`, while retaining the fetch
-capability needed by `$track`, `Group`, refresh, abort, local updates, and
-optimistic actions.
+usable and assignable as `User`, with no `.value`, while retaining the source
+provenance needed by `$track` and `Group`.
 
 Conceptual public typing:
 
 ```ts
-interface ResolvedOperations<T> {
-  refresh(): Promise<T>;
-  abort(): void;
-  update(change: (current: T | undefined) => T): void;
-  mutate(change: (current: T | undefined) => void): void;
-}
-
-interface ResolvedCollectionOperations<TItem> {
-  append(temporary: TItem): OptimisticChange<TItem>;
-  replace(current: TItem, temporary: TItem): OptimisticChange<TItem>;
-  remove<TResult = unknown>(current: TItem): OptimisticChange<TResult>;
-}
-
 declare const resolvedValue: unique symbol;
 
 type ResolvedValue<T> = T & {
@@ -86,21 +71,12 @@ type ResolvedValue<T> = T & {
   readonly [resolvedValue]: T;
 };
 
-type OperationsFor<T> =
-  & ResolvedOperations<T>
-  & (T extends (infer TItem)[]
-    ? ResolvedCollectionOperations<TItem>
-    : object);
-
 function $fetch<T>(target: string | URL, options?: FetchOptions): ResolvedValue<T>;
-function $ops<T>(value: ResolvedValue<T>): OperationsFor<T>;
 ```
 
 `ResolvedValue<T>` is a provenance type, not a proposal to mutate a native
 array, primitive, or response object by attaching methods at runtime. Ordinary
-reads behave as the original `T`. `$ops(value)` provides the typed imperative
-capabilities and is redirected to the fetch resource associated with that
-value.
+reads and compiler-visible writes behave as the original `T`.
 
 Code that only consumes data can continue accepting the original shape:
 
@@ -110,26 +86,17 @@ function UserList({ users }: { users: User[] }) {
 }
 ```
 
-Code that intentionally exposes fetch operations may state the capability:
+Code that intentionally observes request lifecycle preserves the provenance:
 
 ```tsx
 function UserListControls({ users }: { users: ResolvedValue<User[]> }) {
-  return <button onClick={$ops(users).refresh}>Refresh</button>;
+  return <span class={{ pending: $track(users).pending }}>Users</span>;
 }
 ```
 
-The operation surface is intentionally separate because a payload type may
-legitimately define a field named `refresh`, `update`, `remove`, or `append`.
-`$ops(value)` avoids collisions for every payload shape and still requires no
-`.value` read. `$track(value)` remains a different surface: reactive request
-state rather than imperative resource operations.
-
-`$ops` is compiler-resolved from the value's provenance; it must not search for
-a resource by payload object identity or payload equality at runtime. Two
-sources may resolve to the same primitive or object without sharing operations.
-If code erases `ResolvedValue<T>` to plain `T`, it may still consume the data but
-cannot later recover capabilities with `$ops`. Unsupported uncompiled or
-provenance-erased capability calls are compiler errors.
+`$track` is compiler-resolved from source provenance; it must not search for a
+request by payload object identity or payload equality at runtime. Two sources
+may resolve to the same primitive or object without sharing lifecycle state.
 
 There is no `.data`, no accessor call, no null assertion, and no mandatory
 loading-state branch. The compiler knows that `user` comes from an asynchronous
@@ -190,7 +157,7 @@ function App() {
   const user = $fetch<User>('/api/user');
 
   return (
-    <Group data={user}>
+    <Group>
       <Pending component={UserPending} />
       <Error component={UserFailure} />
       <Profile user={user} />
@@ -209,7 +176,7 @@ When the content contains several siblings, the author uses a fragment as that
 third child:
 
 ```tsx
-<Group data={user}>
+<Group>
   <Pending component={UserPending} />
   <Error component={UserFailure} />
   <>
@@ -240,7 +207,7 @@ function PendingText() {
   return <span>Loading…</span>;
 }
 
-<Group data={user}>
+<Group>
   <Pending component={PendingText} />
   <Error component={LocalFailure} />
   <Profile user={user} />
@@ -291,7 +258,7 @@ function App() {
   const statistics = $fetch<Statistics>('/api/statistics');
 
   return (
-    <Group data={{ user, statistics }}>
+    <Group>
       <Pending component={InlineSkeleton} />
       <Error component={InlineError} />
       <Dashboard user={user} statistics={statistics} />
@@ -332,15 +299,15 @@ When a component is only useful after all of the Group's initial values exist,
 the author can request coordinated first mount explicitly:
 
 ```tsx
-<Group data={{ user, statistics }}>
+<Group>
   <Pending component={DashboardSkeleton} />
   <Error component={DashboardError} />
   <Dashboard suspend user={user} statistics={statistics} />
 </Group>
 ```
 
-This is the one supported whole-component readiness form. `Dashboard` must be
-the direct third child, and `suspend` must be a shorthand attribute. The
+This is the supported atomic readiness form. The suspended component or host
+element must be the direct third child, and `suspend` must be a shorthand attribute. The
 compiler consumes it before ordinary component prop analysis. While either
 source lacks its first committed value, the Group renders one pending policy
 and does not mount `Dashboard`. A failure renders one error policy whose retry
@@ -349,7 +316,8 @@ refresh keeps the committed component visible.
 
 Without `suspend`, the earlier site-local behavior remains unchanged. This
 keeps colorless data as the default and makes the broader coordination cost an
-authored component contract rather than an inference from `Group.data`.
+explicit authored directive. The compiler infers its prerequisites from the
+colorless values read by the content.
 
 ### 3.4 One value used in several places
 
@@ -401,7 +369,7 @@ function App() {
   const user = $fetch<User>('/api/user');
 
   return (
-    <Group data={user}>
+    <Group>
       <Pending component={AvatarSkeleton} />
       <Error component={AvatarError} />
       <Layout>
@@ -429,7 +397,7 @@ function Todos() {
   const count = open.length;
 
   return (
-    <Group data={todos}>
+    <Group>
       <Pending component={InlineSkeleton} />
       <Error component={InlineError} />
       <>
@@ -464,14 +432,14 @@ function Todos() {
   const todos = $fetch<Todo[]>('/api/todos');
 
   return (
-    <Group data={todos}>
+    <Group>
       <Pending component={InlineSkeleton} />
       <Error component={InlineError} />
       <>
         <h1>You have {todos.length} todos</h1>
 
         <ul>
-          <Group data={todos}>
+          <Group>
             <Pending component={TodoRowsSkeleton} />
             <Error component={TodoRowsError} />
             {todos.map((todo) => <li>{todo.title}</li>)}
@@ -598,11 +566,11 @@ function Users() {
   const users = $fetch<User[]>('/api/users');
 
   return (
-    <Group data={users}>
+    <Group>
       <Pending component={UsersSkeleton} />
       <Error component={UsersError} />
       <>
-        <button onClick={$ops(users).refresh}>Refresh</button>
+        <button onClick={() => $track(users).refresh()}>Refresh</button>
         <UserList users={users} />
       </>
     </Group>
@@ -656,10 +624,10 @@ two presentation styles over the same reactive request state:
 `$track` represents the state of `users`; it is not `users`, does not replace
 `users`, and is not the target of data mutations.
 
-Like `$ops`, `$track` is resolved from compiler-preserved source provenance,
-not by looking up the resolved payload at runtime. Keeping the prop or binding
-typed as `ResolvedValue<T>` is therefore required only where request state or
-operations must remain available; ordinary data-only consumers may accept `T`.
+`$track` is resolved from compiler-preserved source provenance, not by looking
+up the resolved payload at runtime. Keeping the prop or binding typed as
+`ResolvedValue<T>` is therefore required only where request state must remain
+available; ordinary data-only consumers may accept `T`.
 
 The first state surface should be based on the existing resource snapshot:
 
@@ -690,65 +658,20 @@ state.statistics.error;
 These fields remain independently reactive. Grouped `$track` does not make the
 requests settle together.
 
-### 5.1 `$ops` targets the fetched value
+### 5.1 Data changes remain ordinary writes
 
-`$track` is observation state, not a resource-management object. `$ops(value)`
-returns the imperative capability view bound to that fetched value/source. It
-is neither request state nor replacement data:
-
-At these operation sites, `todos` has the inferred type
-`ResolvedValue<Todo[]>`, not a physically decorated native array. Its ordinary
-array reads behave as `Todo[]`; `$ops(todos)` addresses the resource associated
-with it.
+`$track` observes and controls request lifecycle; it is not the target of data
+mutations. A transparent collection remains an ordinary collection, and the
+compiler traces writes through its known aliases:
 
 ```tsx
 const todos = $fetch<Todo[]>('/api/todos');
-const operations = $ops(todos);
-
-await operations.refresh();
-operations.abort();
-
-operations.mutate((items) => {
-  items?.push(localTodo);
-});
-
-operations.update((items) => [...(items ?? []), localTodo]);
+const todo = todos.find(item => item.id === id);
+if (todo !== undefined) todo.done = true;
 ```
 
-Actions consume optimistic changes produced by the fetched collection:
-
-```tsx
-const temporary: Todo = {
-  id: `temporary:${crypto.randomUUID()}`,
-  title: input.title,
-};
-
-const created = await createTodo(input, {
-  optimistic: $ops(todos).append(temporary),
-});
-```
-
-The current transaction contract remains:
-
-- `append(temporary)` inserts immediately, removes on failure, and replaces
-  the temporary item with the action result on success;
-- `replace(current, temporary)` restores the old item on failure and commits
-  the action result on success;
-- `remove(current)` reinserts at the remembered position on failure;
-- overlapping operations retain their existing ordered transaction behavior.
-
-An action may also refresh fetched targets directly:
-
-```tsx
-await reorderTodos(input, {
-  refresh: [todos, todoStatistics],
-});
-```
-
-How `$ops` resolves the provenance token internally while ordinary reads remain
-transparent is part of the compiler/runtime design. The public relationship is
-fixed: `$ops(todos)` operates on `todos`; `$track(todos)` only observes the
-reactive state of `todos`.
+The exact supported alias/write boundary must be compiler-defined. Writes that
+escape compiled code cannot silently promise targeted invalidation.
 
 Automatic consumer cleanup must not depend on calling `$track`. The compiler
 and runtime own request attachment and disposal according to structural
@@ -768,7 +691,7 @@ import { currentUser } from './session';
 
 function Header() {
   return (
-    <Group data={currentUser}>
+    <Group>
       <Pending component={AvatarSkeleton} />
       <Error component={SignedOutMark} />
       <>
@@ -916,8 +839,8 @@ No row in this table requires a `loading` check from the author.
 ## 11. Explicitly rejected
 
 - An implicit `Ready`, `Loading`, `Suspense`, or equivalent whole-subtree gate.
-- Waiting for every value listed in `Group.data` without a direct component
-  explicitly marked `suspend`.
+- Waiting for every inferred content dependency without a direct content
+  element explicitly marked `suspend`.
 - Passing `sources`, indexes, canonical keys, or compiler IDs to pending UI.
 - Making authors inspect `available`/`pending` before ordinary value reads.
 - Runtime dependency tracking or an async reactive graph.
@@ -976,9 +899,8 @@ behavior are already frozen or proven.
 7. **Group lowering** — validate exactly three children, consume
    `Pending`/`Error` declarations as local presentation policies, and implement
    nesting plus nearest-match behavior.
-8. **`$ops` and `$track` surfaces** — expose collision-free imperative
-   capabilities through `$ops(value)` and reactive snapshot state through
-   `$track(value)`.
+8. **`$track` surface** — expose request identity, reactive lifecycle state,
+   outcome observation, refresh, and abort without turning it into a data store.
 9. **Ownership and escape diagnostics** — automatic cleanup plus clear errors
    for unsupported imperative/uncompiled escapes.
 10. **SSR contract** — define success snapshots, restore-before-create, and
@@ -994,10 +916,10 @@ Constraint: ResolvedValue is type-only provenance; native payload objects and ar
 ```
 
 ```text
-Decision: Group supplies presentation independently at exact consumption sites by default; a direct component child may explicitly opt into atomic initial readiness with shorthand suspend.
+Decision: Group supplies presentation independently at exact consumption sites by default; a direct component or host child may explicitly opt into atomic initial readiness with shorthand suspend.
 Status: proposed
 Reason: static component content and independently resolved values should render without waiting unless the component author declares that partial initial output is not useful.
-Rejected alternative: implicit whole-branch readiness and Promise.all-style grouping inferred merely from Group.data.
+Rejected alternative: implicit whole-branch readiness and Promise.all-style grouping without an authored suspend directive.
 ```
 
 ```text
@@ -1024,13 +946,7 @@ Open point: representation when several prerequisites of one expression fail.
 Decision: $track returns optional reactive state for authored conditional rendering.
 Status: proposed
 Reason: authors who do not want Group's automatic local insertion need reactive pending/error/status fields for ordinary if/else regions.
-Constraint: $track state is not the fetched value and is not the target of refresh, mutation, or optimistic operations.
-```
-
-```text
-Decision: fetch operations and optimistic changes use $ops(fetchedValue), while action refresh lists may name fetched values directly.
-Status: accepted authoring direction
-Reason: the capability view remains bound to the data target without adding methods to native payloads or colliding with payload fields; $track only describes reactive state.
+Constraint: $track state is not the fetched value and is never the target of payload mutation.
 ```
 
 ```text
@@ -1055,9 +971,6 @@ Reason: a failed source must not leave an unexplained permanent hole; SSR reject
    require an explicit value-resolution API.
 4. The minimum `$track` vocabulary for the first version; semantic staleness
    should not be exposed before reactive request identity exists.
-5. The final public spelling of `$ops`. The architectural separation is fixed:
-   imperative capabilities do not become payload members and do not move onto
-   `$track` state.
 
 ## 16. Proposed design for the remaining compiler/runtime slices
 
@@ -1144,10 +1057,8 @@ The actual representation may be a compact tuple. Its required semantics are:
    An inherited Group policy remains a separate private policy argument; data
    provenance and presentation policy are not one object.
 7. `$track` accepts a compiler-proven projection and reports reactive state
-   aggregated from its base prerequisites. `$ops` accepts only a direct fetched
-   source; calling `$ops` on a derived payload is a compiler diagnostic because
-   there is no single resource whose capabilities that payload can honestly
-   represent.
+   aggregated from its base prerequisites. Controls that require one concrete
+   request are rejected for a derived value with multiple base sources.
 8. Passing a derived value to uncompiled code resolves and passes `T` at that
    execution point. The private projection never escapes the compiled graph.
 
@@ -1165,12 +1076,11 @@ keyed form when the author wants separate state per named value rather than one
 aggregate projection state.
 
 TypeScript method return types do not preserve the `ResolvedValue` phantom
-brand through arbitrary user derivations. Consequently the compiler-aware
-`Group.data` and `$track` declarations must accept ordinary inferred payload
-types and rely on the compiler to require transparent provenance at those call
-sites. `$track({ left, right })` receives a mapped state result. `$ops` remains
-narrowly typed to direct `ResolvedValue<T>` targets as an additional static
-guard. Broad intrinsic typing must not make an unproven `$track(ordinaryValue)`
+brand through arbitrary user derivations. Consequently `$track` declarations
+must accept ordinary inferred payload types and rely on the compiler to require
+transparent provenance at those call sites. Group dependencies come from
+compiler provenance across its content. `$track({ left, right })` receives a mapped state result. Broad intrinsic
+typing must not make an unproven `$track(ordinaryValue)`
 silently work: the compiler emits a provenance diagnostic, and the compile-only
 fallback throws when invoked without transformation.
 
@@ -1270,7 +1180,7 @@ select the browser-default data runtime. Importing the module therefore has no
 request side effect.
 
 Every `DataRuntime` owns a source-instance map. The first read, subscription,
-`$track`, or `$ops` use materializes the description in the currently active
+or `$track` use materializes the description in the currently active
 runtime. The map key is the compiler's canonical source identity. Materialized
 state includes the fetch controller, request/cache identity, last committed
 payload, error/status, generation, and consumer set. Two application runtimes
@@ -1300,9 +1210,9 @@ keeps a committed payload visible while the new request is in flight and uses
 the existing generation rule so the old response cannot win.
 
 Module-level derivations of transparent data are lazy projections too; they
-must not read a payload during ESM evaluation. Module-level `$track` views and
-direct-source `$ops` views, if retained, must be runtime-relative facades over
-the description/projection and must not capture a materialized controller.
+must not read a payload during ESM evaluation. Module-level `$track` views must
+be runtime-relative facades over the description/projection and must not
+capture a materialized controller.
 Otherwise the compiler should require those calls to occur inside a
 runtime-owned execution scope.
 

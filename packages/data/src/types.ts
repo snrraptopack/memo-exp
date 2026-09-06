@@ -148,10 +148,25 @@ export type ResolvedValue<T> = T & {
 
 /** Reactive request state exposed for authored conditional rendering. */
 export interface TrackedValue<T> {
+  /** Identity of the exact request execution currently represented. */
+  readonly id: string;
   readonly status: AsyncStatus;
   readonly pending: boolean;
   readonly refreshing: boolean;
   readonly error: import('./errors').RequestError | null;
+  /** Observe this execution's successful result exactly once. */
+  onSuccess(callback: (data: T, requestId: string) => void): () => void;
+  /** Observe this execution's failure exactly once. */
+  onError(
+    callback: (
+      error: import('./errors').RequestError,
+      requestId: string,
+    ) => void,
+  ): () => void;
+  /** Start a new request execution for this source. Awaiting is optional. */
+  refresh(): Promise<T>;
+  /** Stop the current request execution. */
+  abort(): void;
   /** Type-only connection to the value whose request state is observed. */
   readonly valueType?: (value: T) => T;
 }
@@ -161,7 +176,6 @@ export type DataPolicyComponent<TProps = object> = (
 ) => unknown;
 
 export interface GroupProps {
-  readonly data: ResolvedValue<unknown> | Readonly<Record<string, ResolvedValue<unknown>>>;
   readonly children?: unknown;
 }
 

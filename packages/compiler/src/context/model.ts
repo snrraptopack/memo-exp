@@ -354,6 +354,10 @@ export interface Ctx {
   usesTransparentData: boolean;
   /** Local import bindings classified by provider metadata. */
   transparentSourceFactories: Set<string>;
+  /** Direct provider bindings (for example `$fetch`), whose arguments are request inputs. */
+  transparentProviderFactories: Set<string>;
+  /** Component-local variables assigned colorless sources inside event handlers. */
+  eventSourceSlots: Map<string, Set<string>>;
   transparentSourceFactoryMethods: Map<string, TransparentSourceMethod>;
   transparentTrackFactories: Set<string>;
   transparentSourcePassthroughs: Set<string>;
@@ -541,6 +545,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   >();
   const transparentModuleSources = new Map<string, string>();
   const transparentSourceFactories = new Set<string>();
+  const transparentProviderFactories = new Set<string>();
+  const eventSourceSlots = new Map<string, Set<string>>();
   const transparentSourceFactoryMethods = new Map<
     string,
     TransparentSourceMethod
@@ -642,6 +648,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     usesRouter: false,
     usesTransparentData: false,
     transparentSourceFactories,
+    transparentProviderFactories,
+    eventSourceSlots,
     transparentSourceFactoryMethods,
     transparentTrackFactories: new Set(),
     transparentSourcePassthroughs: new Set(),

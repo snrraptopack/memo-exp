@@ -42,6 +42,12 @@ interface FetchDescriptor {
   readonly signal: AbortSignal | undefined;
 }
 
+let nextRequestId = 1;
+
+function createRequestId(): string {
+  return `request-${nextRequestId++}`;
+}
+
 export interface FetchEnvironment {
   readonly fetch: () => typeof globalThis.fetch;
   readonly baseURL: string | URL | undefined;
@@ -141,6 +147,15 @@ class FetchEntry {
 
   private cancelRequest(reason?: unknown): void {
     if (this.controller === null && this.request === null) return;
+    // A response may notify consumers from its terminal `then` immediately
+    // before the promise finalizer clears these handles. Releasing the final
+    // consumer in that window must not turn a completed request into an
+    // apparent browser-side cancellation.
+    if (!this.snapshot.pending && !this.snapshot.refreshing) {
+      this.controller = null;
+      this.request = null;
+      return;
+    }
     this.generation++;
     this.controller?.abort(reason);
     this.controller = null;
@@ -512,6 +527,7 @@ class ResourceController<T> {
   disposed = false;
   private removeSignalListener: (() => void) | null = null;
   readonly notifier = new SnapshotNotifier(() => publicSnapshot(this.snapshot));
+  operationId = createRequestId();
 
   constructor(
     readonly store: FetchStore,
@@ -561,6 +577,8 @@ class ResourceController<T> {
       equalDescriptor(this.descriptor, descriptor);
     if (unchanged) return;
 
+    this.operationId = createRequestId();
+
     const replaceSharedIdentity =
       !paused &&
       this.descriptor.identity === descriptor.identity &&
@@ -579,6 +597,64 @@ class ResourceController<T> {
       return;
     }
     this.attach(false, replaceSharedIdentity);
+  }
+
+  /**
+   * Move a freshly-created source behind this stable public resource. Imported
+   * colorless factories own their argument-to-request mapping, so compiler
+   * replay adopts their result instead of interpreting those arguments as a
+   * raw fetch URL and options tuple.
+   */
+  adopt(candidate: ResourceController<T>): void {
+    if (candidate === this) return;
+    if (this.disposed || candidate.disposed) {
+      throw new Error('Cannot rebind a disposed fetch resource');
+    }
+    if (candidate.store !== this.store) {
+      candidate.dispose();
+      throw new TypeError('Cannot rebind fetch resources from different data runtimes');
+    }
+
+    const unchanged =
+      this.paused === candidate.paused &&
+      equalDescriptor(this.descriptor, candidate.descriptor);
+    if (unchanged) {
+      candidate.dispose();
+      return;
+    }
+
+    this.operationId = candidate.operationId;
+
+    const previous = this.entry;
+    if (previous !== null) {
+      this.entry = null;
+      previous.remove(this as ResourceController<unknown>);
+    }
+    this.descriptor = candidate.descriptor;
+    this.paused = candidate.paused;
+    this.snapshot = idleSnapshot();
+
+    if (!this.bindSignal(this.descriptor.signal) || this.paused) {
+      candidate.dispose();
+      this.notify();
+      return;
+    }
+
+    const next = candidate.entry;
+    if (next === null) {
+      candidate.dispose();
+      this.notify();
+      return;
+    }
+
+    // Attach the stable consumer before removing the temporary one. This is
+    // essential for cache:false requests: dropping the last consumer aborts
+    // the in-flight request.
+    this.entry = next;
+    next.add(this as ResourceController<unknown>);
+    next.remove(candidate as ResourceController<unknown>);
+    candidate.entry = null;
+    candidate.dispose();
   }
 
   receive(entry: FetchEntry, snapshot: MutableSnapshot<unknown>): void {
@@ -611,7 +687,12 @@ class ResourceController<T> {
     }
     const signal = this.descriptor.signal;
     if (signal?.aborted) return Promise.reject(abortReason(signal));
-    if (this.entry === null) this.attach(true);
+    if (this.entry === null) {
+      this.operationId = createRequestId();
+      this.attach(true);
+    } else if (this.entry.request === null) {
+      this.operationId = createRequestId();
+    }
     const request = this.entry!.start(true) as Promise<T>;
     return signal === undefined
       ? request
@@ -985,10 +1066,25 @@ export function rebindFetchResource<T>(
   controller.rebind(next.descriptor, next.paused);
 }
 
+/** Adopt the active request created by another resource into a stable holder. */
+export function rebindFetchResourceFrom<T>(
+  resource: FetchResource<T>,
+  candidate: FetchResource<T>,
+): void {
+  resourceController(resource).adopt(resourceController(candidate));
+}
+
 export function fetchResourceSnapshot<T>(
   resource: FetchResource<T>,
 ): ResourceSnapshot<T> {
   return publicSnapshot(resourceController(resource).snapshot);
+}
+
+/** Identity of the current execution behind one hidden fetch resource. */
+export function fetchResourceOperationId<T>(
+  resource: FetchResource<T>,
+): string {
+  return resourceController(resource).operationId;
 }
 
 export function createFetchEnvironment(

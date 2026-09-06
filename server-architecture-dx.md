@@ -564,7 +564,7 @@ export function App() {
   return (
     <div>
       <h1>Stories</h1>
-      <Group data={stories}>
+      <Group>
         <Pending component={StoriesPending} />
         <Error component={StoriesError} />
         {stories.map((story) => (

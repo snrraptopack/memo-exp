@@ -11,7 +11,7 @@ export function ColorlessTsxPage() {
   return (
     <section class="page">
       <PageIntro eyebrow="TSX · normal colorless mode" title="The useful shell does not wait." description="Watch the card mount immediately, then replace only the exact fields unlocked by each response." code="<Dashboard profile={profile} ... />" />
-      <Group data={{ profile, metrics, activity }}>
+      <Group>
         <Pending component={LocalPending} />
         <Error component={LocalFailure} />
         <Dashboard profile={profile} metrics={metrics} activity={activity} frontend="TSX" mode="Colorless" />

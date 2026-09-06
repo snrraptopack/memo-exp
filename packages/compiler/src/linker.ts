@@ -63,6 +63,7 @@ import { normalizeComponentDeclarations } from './components/declarations';
 import { initializeGeneratedIdentifiers } from './identifiers';
 import {
   lowerTransparentGroups,
+  scanEventSourceAssignments,
   rejectNonGetServerFunctionRenderCalls,
   rejectTransparentSourceDestructuring,
   scanAndLowerModuleSourceDeclarations,
@@ -660,6 +661,7 @@ function analyzeManifest(
         analyzeRouterJsx(ctx, compilerPath);
         runAnalysis(ctx, compilerPath);
         rejectNonGetServerFunctionRenderCalls(ctx, compilerPath);
+        scanEventSourceAssignments(ctx);
         // buildAccessTable also materializes ctx.readers. The returned AST is
         // intentionally discarded here; final emission builds its own table.
         buildAccessTable(ctx);
@@ -815,7 +817,7 @@ function discoverManifest(
             if (
               astFactory.isImportSpecifier(spec) &&
               astFactory.isIdentifier(spec.imported) &&
-              spec.imported.name === def[1]
+              spec.imported.name === def
             ) {
               providerFactories.add(spec.local.name);
             }

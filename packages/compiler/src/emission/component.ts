@@ -23,6 +23,7 @@ import {
   generatedIdentifier,
   md,
   mdHot,
+  mdd,
   requireIdentifiers,
 } from '../identifiers';
 import { transformComponentLifecycle } from '../lifecycle';
@@ -373,6 +374,52 @@ export function transformComponent(
     );
   }
 
+  const eventSourceDisposals: t.Statement[] = [];
+  const eventSources = ctx.eventSourceSlots.get(name);
+  if (eventSources !== undefined) {
+    for (const sourceName of eventSources) {
+      const slotId = generatedIdentifier(ctx, `${sourceName}EventSourceSlot`).name;
+      scope.prelude.push(
+        astFactory.variableDeclaration('const', [
+          astFactory.variableDeclarator(
+            astFactory.identifier(slotId),
+            astFactory.callExpression(mdd(ctx, 'createEventSourceSlot'), []),
+          ),
+        ]),
+      );
+      scope.updaters.unshift(() =>
+        astFactory.expressionStatement(
+          astFactory.callExpression(mdd(ctx, 'rebindEventSourceSlot'), [
+            astFactory.identifier(slotId),
+            astFactory.arrowFunctionExpression(
+              [],
+              astFactory.identifier(sourceName),
+            ),
+            astFactory.arrowFunctionExpression(
+              [],
+              astFactory.callExpression(md(ctx, 'markDirty'), [
+                astFactory.identifier(factoryId),
+              ]),
+            ),
+          ]),
+        ),
+      );
+      eventSourceDisposals.push(
+        astFactory.expressionStatement(
+          astFactory.callExpression(md(ctx, 'cleanup'), [
+            astFactory.identifier(factoryId),
+            astFactory.arrowFunctionExpression(
+              [],
+              astFactory.callExpression(mdd(ctx, 'disposeEventSourceSlot'), [
+                astFactory.identifier(slotId),
+              ]),
+            ),
+          ]),
+        ),
+      );
+    }
+  }
+
   const body: t.Statement[] = [cacheDecl(scope), ...scope.prelude];
   if (propSlotCount > 0 && !lightweight) {
     const declaration = buildPropDeclaration(
@@ -415,6 +462,7 @@ export function transformComponent(
   body.push(...scope.creation, ...scope.mounts);
   body.push(
     ...transparentSourceMounts(ctx, name, astFactory.identifier(factoryId)),
+    ...eventSourceDisposals,
   );
   if (effects !== undefined) {
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));

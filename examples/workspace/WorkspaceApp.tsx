@@ -24,7 +24,7 @@ function NotificationsPanel() {
         <span class={{ pill: true, busy: state.refreshing }}>{unread} unread</span>
       </div>
 
-      <Group data={notifications}>
+      <Group>
         <Pending component={Skeleton} />
         <ErrorArm component={ErrorRow} />
         <ul class="list">

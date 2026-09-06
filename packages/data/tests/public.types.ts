@@ -7,7 +7,6 @@ import {
   type DataRuntimeOptions,
   type ResolvedValue,
 } from '../src';
-import * as data from '../src';
 
 const options = {
   baseURL: new URL('https://example.test/api/'),
@@ -42,6 +41,17 @@ void assignableUser.name;
 void preservedSource.id;
 void $track(user).pending;
 void $track(user).error;
+void $track(user).id;
+$track(user).onSuccess((data, requestId) => {
+  void data.name;
+  void requestId;
+});
+$track(user).onError((error, requestId) => {
+  void error.message;
+  void requestId;
+});
+void $track(user).refresh();
+$track(user).abort();
 void savedUser.name;
 void $track(savedUser).pending;
 
@@ -53,9 +63,6 @@ $fetch('/user', { method: 'POST', body: { callback() {} } });
 
 // @ts-expect-error BigInt requires an explicit application-level encoding.
 $fetch('/user', { method: 'POST', body: { id: 1n } });
-
-// @ts-expect-error The legacy operations facade is no longer public.
-data.$ops(user);
 
 // @ts-expect-error Operations never collide with or decorate the payload.
 user.refresh();

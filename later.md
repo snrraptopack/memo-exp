@@ -1,166 +1,216 @@
-# Compiler Optimization Roadmap & Technical Notes
+# Architecture Vision: Colorless Data, Request Tracking, and Optimistic State
 
-This document records architectural optimizations, potential performance enhancements, and future compiler passes to be revisited.
+## 1. Core Architectural Principle: Value vs. Tracker Separation
+
+In Memoized DOM, we maintain a strict separation between **the data payload** and **the request lifecycle**:
+
+| Entity | Role | Type | Primary Usage |
+| :--- | :--- | :--- | :--- |
+| **Transparent Value** (`result`, `stories`) | **The Data Payload** | `ResolvedValue<T>` (assignable to `T`) | Template rendering, expressions, reads (`stories.map(...)`, `story.votes`) |
+| **Tracked Request** (`$track(result)`) | **The Request Lifecycle** | `TrackedValue<T>` | Event handlers, loading indicators, outcome callbacks (`onSuccess`, `onError`) |
+
+### Key Tenets:
+1. **The Value Stays 100% Colorless**:
+   `const stories = getStories()` or `const result = vote(id)` returns transparent data.
+   In application code, it behaves as a plain TypeScript value. It has no `.then()` method, no Promise wrapper, and requires no `.data` unwrapping.
+
+2. **`$track(...)` is a Request Lens, Not a Store**:
+   `$track(value)` observes and controls the request associated with a value. It
+   does **not** have `.mutate()` or `.update()`, and never owns or alters the
+   payload data structure.
+
+3. **No Promise Pollution (`then` / `catch` removed)**:
+   `$track` is **not** a Promise and does not implement `PromiseLike`. We do not force developers into `async / await` or `.then()` chains. Outcome handling is expressed through explicit `onSuccess` and `onError` lifecycle hooks.
 
 ---
 
-## 1. Parameter Mutation Provenance (Completed 2026-09-02)
+## 2. The `$track` Interface
 
-When an authored component helper mutates a collection element or nested object through a function parameter (such as in `tsrx-board`):
 ```ts
-const handleToggleTask = (task: Task) => {
-  task.completed = !task.completed;
-};
+export interface TrackedValue<T> {
+  /**
+   * Unique execution ID for the current/latest in-flight request cycle.
+   * Changes whenever a new request is triggered (e.g. initial fetch, refresh(), or action call).
+   */
+  readonly id: string;
 
-const handleRemoveTask = (column: ColumnData, index: number) => {
-  column.tasks.splice(index, 1);
-};
+  /** Status indicators */
+  readonly status: 'idle' | 'pending' | 'success' | 'error';
+  readonly pending: boolean;     // Cold initial load in-flight
+  readonly refreshing: boolean;  // Background revalidation in-flight
+  readonly error: RequestError | null;
+
+  /** One-shot outcome callbacks for this exact execution */
+  onSuccess(callback: (data: T, requestId: string) => void): () => void;
+  onError(
+    callback: (error: RequestError, requestId: string) => void,
+  ): () => void;
+
+  /** Imperative controls */
+  refresh(): Promise<T>; // awaiting is optional
+  abort(): void;
+}
 ```
-the compiler now folds the parameter write back to its canonical reactive source instead of losing the source at a component boundary.
 
-### Implemented Boundaries
+### Usage:
+```ts
+// Observe query state:
+const stories = getStories();
+const trackedStories = $track(stories);
 
-* Local helper calls already fold parameter writes through their call arguments.
-* Cross-file component props now preserve list-item provenance through compiler-generated keyed-list callbacks.
-* The collection can come directly from module state, from a parent prop path such as `column.tasks`, or from a local derivation. A local derivation carries all of its known reactive roots conservatively.
-* The same ESTree analysis serves TSX and TSRX. TSRX `@for` participates because its frontend lowers to the compiler's existing structural list form; this does not introduce a whitelist of arbitrary collection methods.
-* If an origin is unresolved or ambiguous, the compiler deliberately retains `markDirtySubtree` as the correctness fallback.
-
-The `tsrx-board` path that motivated this note now emits canonical `markDirty`/`commitWrites` operations for `BoardColumn` and `TaskCard`, with no root-subtree fallback for their task mutation handlers.
-
-### Remaining Optimization Target: Direct Leaf Row Routing
-
-Canonical source invalidation is substantially narrower than invalidating the whole application subtree, but it may still reconcile a source-backed collection so that in-place object mutations remain observable. A future, separately proven optimization could route a leaf field write directly to the affected row and independently notify aggregate derivations. It must preserve aliasing and in-place mutation semantics; object-identity equality alone is not a safe reason to skip reconciliation.
+// Or observe an action trigger:
+const voteResult = vote(id);
+const trackedVote = $track(voteResult);
+```
 
 ---
 
-## 2. Compiler-Proven List Structure Updates (Completed 2026-09-03)
+## 3. Direct Client Mutation ("Like Our Count App")
 
-The compiler now preserves whether a routed collection write is structural or
-may change retained row content. This classification is based on the write
-boundary, not the authored method name: root replacement and writes to the
-collection receiver are structural; nested item-field writes and unresolved
-helper/import effects remain ordinary conservative writes. There is no array
-method or function whitelist.
+In Memoized DOM, state updates operate directly on plain JavaScript objects in memory:
 
-Structural commits carry a canonical, source-addressed reason through a
-dedicated access-table reader channel. A component owning two lists therefore
-updates the exact affected list owner plus real independent readers, without
-replaying every retained row merely because it is below the same component.
-The runtime still validates keys and identity and retains the general keyed
-reconciler with LIS as its correctness fallback.
+```tsx
+// Ordinary local state:
+let count = 0;
+<button onClick={() => { count++; }}>{count}</button>
+```
 
-Client-created list rows no longer allocate hydration comments per key. Their
-compiler-emitted `ListEntry.nodes` already defines the exact live extent.
-Server output and hydration keep their existing marker protocol; no SSR API or
-contract changed.
+Fetched data follows the exact same philosophy. When data arrives on the client, it lives as transparent data in client memory. Developers mutate properties directly:
 
-### Measured Result
+```ts
+function upvote(id: number) {
+  const story = stories.find(s => s.id === id);
+  if (story) {
+    story.votes++; // Direct mutation on transparent data; compiler updates DOM directly
+  }
+}
+```
 
-Across two consecutive local Chrome 152 seven-sample median runs,
-component-row append to 10k measured 14.9–15.1 ms after a 36.2 ms baseline,
-prepend 16.4–21.7 ms after 43.9 ms, pop 5.8–6.6 ms after 30.6 ms, reverse
-39.2–54.5 ms after 89.4 ms, and scattered removal 3.7–6.1 ms after 13.6 ms.
-Despite absolute machine noise, reverse held at 1.31–1.32x the hand-written
-vanilla path. The checked-in harness is the reproducible contract.
-
-### Remaining Optimization Target: Inline Row Entity Elision
-
-Inline TSX/TSRX rows still register one reactive entity per item, while an
-eligible component row already uses the allocation-free row ABI. This explains
-the remaining creation, selection, and clear gap. The next compiler pass should
-prove when an inline row can route its external reads through the list owner and
-retain only its direct update closure. Instance-local collection sources also
-remain conservative unless their existing keyed-item mutation journal provides
-an exact reason.
-
-#### Current Architecture and Exact Bottleneck
-
-An inline keyed row currently lowers to all of the following:
-
-1. A stable row id (`<owner>/<list>/Row[<key>]`) and a registered render entity.
-2. A row-local update closure containing guarded DOM setters.
-3. An `updateProps` closure that rebinds the current item and optional index.
-4. A `ListEntry` that reports the row id in `entities`, causing removal to run
-   `unregisterSubtree` for every discarded row.
-5. Wildcard access-table readers (`Row[*]`) for module state consumed by the
-   row, so one broad value such as `selected` can schedule every live row.
-
-The entity is not pointless: it currently provides independently addressable
-invalidation, dirty-reason storage, parent/child lifecycle ownership, recursive
-cleanup for nested components and regions, and a destination for row-local
-handler writes. The bottleneck is that simple host-only rows pay all of that
-even when their generated update closure is already the complete unit of work.
-
-The remaining cost now shows up clearly because client row hydration comments
-have been removed:
-
-* **Creation:** every row inserts into the registry, links into the parent's
-  child set, and is tested against live wildcard reader patterns.
-* **Broad row state updates:** a value read by all rows expands to and schedules
-  every row entity separately, including dirty-reason bookkeeping.
-* **Clear/removal:** every row unregisters independently and updates registry
-  and wildcard caches even when its DOM was deleted as one range.
-* **Memory:** each row retains an entity record, child metadata, registry key,
-  and access-resolver membership in addition to its DOM/update closure.
-
-This matches the Chromium contrast: eligible component rows use the
-registry-free ABI, while inline clear of 10k rows measured 55.6–66.4 ms versus
-11.2–15.2 ms for component rows. Inline selection also remained 3.6–3.9 ms
-while the component-row path measured 0.2–0.4 ms.
-
-#### Proposed Compiler Proof, Not a Runtime Guess
-
-The compiler may elide an inline row entity only when the emitted row owns no
-entity-dependent lifecycle. The initial proof should require:
-
-* no nested component, conditional region, keyed region, dynamic component, or
-  transparent data-policy entity;
-* no effect, cleanup registration, ref disposer, volatile pull, or other
-  lifecycle callback that currently attaches to the row id;
-* no parameterized access route that deliberately targets one row entity by
-  key; and
-* a generated direct update closure for every dynamic host value, with index
-  replay retained when the callback consumes the index.
-
-For a proven row, emission can set `entities: []`, disable row-id tracking for
-that list, route shared module reads to the list owner, and use the existing
-row update closure directly for row-local handler writes. The list owner then
-reconciles/replays those closures in one call. This is compile-time ownership
-selection; the keyed topology algorithm and its LIS correctness fallback do
-not change.
-
-Rows failing any gate keep today's entity path. In particular, nested stateful
-trees and precisely key-addressed invalidation must not be made slower or less
-correct merely to improve a bulk benchmark. Event/devtools provenance also
-needs a key-addressed identity that does not require a registry entry before
-the optimization can be considered complete.
-
-#### Acceptance Gates
-
-* Existing keyed identity, event mutation, nested composition, cleanup, ref,
-  conditional, transparent-source, hydration, and HMR tests remain unchanged.
-* Add compiler snapshots for both an eligible host-only row and every rejected
-  ownership category.
-* Measure create, select, partial update, clear, scattered removal, and memory
-  growth for both inline and component rows; no win may rely only on one bulk
-  operation.
-* Preserve the no-method-whitelist rule and add no parser/backend dependency;
-  TSX and TSRX must receive the same decision after ESTree lowering.
-* Keep arbitrary or unlinked effects conservative.
+There is no need for `setStories(...)`, immutable array copies, or pseudo-store dispatchers like `$track.mutate()`.
 
 ---
 
-## 3. SPA-Only Runtime Bundle Decoupling (Completed 2026-09-02)
+## 4. Single-Action Optimistic Updates & Rollbacks
 
-### Implemented Boundaries
-* `@memoized-dom/runtime` and `@memoized-dom/runtime/client` contain the browser compiler surface and creation-only `mount()`.
-* `@memoized-dom/runtime/hydrate` owns marker parsing, DOM adoption, payload restore, and mismatch recovery.
-* `@memoized-dom/runtime/hot` owns dev-only component replacement.
-* `@memoized-dom/runtime/server` installs `AsyncLocalStorage`; browser builds no longer contain Node/Bun detection or `node:async_hooks` loading.
-* The compiler and Vite adapter emit the HMR subpath only for development graphs.
+For an isolated action, developers mutate client data directly and register an
+`onError` inverse operation. The request ID makes the rollback idempotent:
 
-### Measured Result
-The representative production Todo graph moved from **35,012 B raw / 11.51 kB gzip** to **25,793 B raw / 8.96 kB gzip**. That is a 9,219 B raw reduction (26.3%) and approximately 2.55 kB gzip (22.2%). The bundle benchmark now fails on size-budget regressions and on hydration, HMR, or Node host markers leaking into browser output.
+```ts
+const pendingVotes = new Set<string>();
 
-The earlier 12–16 kB raw runtime target remains a separate optimization pass over the core registry, access routing, and keyed-list implementation; it is no longer a boundary-decoupling task.
+function handleVote(id: number) {
+  const story = stories.find(s => s.id === id);
+  if (!story) return;
+
+  // 1. Call the endpoint and capture this exact execution.
+  const tracked = $track(vote(id));
+  const pending = tracked.id;
+
+  // 2. Direct client mutation (DOM updates immediately).
+  pendingVotes.add(pending);
+  story.votes++;
+
+  // 3. A failure reverses only this operation, not an old whole-object snapshot.
+  tracked.onError((_error, requestId) => {
+    if (pendingVotes.delete(requestId)) story.votes--;
+  });
+
+  // 4. Success confirms the already-visible increment.
+  tracked.onSuccess((_data, requestId) => {
+    pendingVotes.delete(requestId);
+  });
+}
+```
+
+---
+
+## 5. Concurrent Optimistic Mutations
+
+### The Problem: Rapid Clicks & Distributed Concurrency
+In real applications, users may click rapidly, firing multiple concurrent requests (e.g., Request 1 through Request 7):
+- **Out-of-order resolution**: Request 3 might fail due to network congestion or rate limits, while Request 7 succeeds.
+- **Authoritative server state**: Request 7 might return `{ votes: 42 }` (which accounts for other concurrent users).
+- **The flaw of manual rollback**: If Request 3 fails, simply restoring its previous local snapshot would wipe out the optimistic changes from Requests 4, 5, 6, and 7!
+
+There is no universal optimistic manager. The runtime cannot know whether a
+write is an increment, replacement, reorder, deletion, or a server-side change
+to several records. Hidden cloning would also be expensive and would break
+object identity.
+
+Each operation records the smallest reversible change required by its domain.
+A counter records a delta; a form may record changed fields; a reorder may
+record previous indices. The request ID makes each journal entry independent:
+
+```ts
+const pending = new Map<string, { story: Story; delta: number }>();
+
+function handleVote(id: number) {
+  const story = stories.find(s => s.id === id);
+  if (!story) return;
+
+  const request = $track(vote(id));
+  pending.set(request.id, { story, delta: 1 });
+  story.votes++;
+
+  request.onSuccess((_result, requestId) => {
+    pending.delete(requestId);
+  });
+
+  request.onError((_error, requestId) => {
+    const operation = pending.get(requestId);
+    if (operation === undefined) return;
+    operation.story.votes -= operation.delta;
+    pending.delete(requestId);
+  });
+}
+```
+
+The framework deliberately does not provide a `createOptimistic` snapshot
+manager. Whole-object snapshots cannot safely represent overlapping deltas,
+reorders, deletes, and server-side changes. If absolute server convergence is
+required, refresh the relevant query after the operation journal drains.
+
+---
+
+## 6. The Role of the Request `id`
+
+Every request cycle generates an incrementing, unique client-runtime `id`
+(e.g. `"request-1"`, `"request-2"`):
+- When a query is re-fetched via `tracked.refresh()`, `tracked.id` updates to identify the new execution.
+- When an action is invoked, its `$track(actionResult).id` represents that specific network attempt.
+
+### Why `id` is Essential:
+1. **Race Condition Prevention**:
+   If a user triggers multiple actions in rapid succession, responses may arrive out of order. Comparing `tracked.id` ensures that stale responses cannot overwrite fresher state.
+2. **Snapshot Map Keys**:
+   Serves as the unambiguous map key for `snapshotMap = new Map<string, Snapshot>()` to correlate in-flight mutations with their exact pre-mutation state.
+3. **Telemetry & Devtools**:
+   Provides a client-side correlation key. It is not an HTTP idempotency key
+   and is not sent to the server unless a future transport contract explicitly
+   adds that behavior.
+
+### Replacement and cancellation
+
+Assigning a newer result to a local binding changes which operation the UI is
+displaying; it does not cancel older dispatched work. The compiler detaches
+the old operation from that render site, retains it until its exact
+`onSuccess`/`onError` outcome is delivered, and then releases it. Only an
+explicit `abort()` or supplied `AbortSignal` means cancellation.
+
+Non-GET requests are not deduplicated by default. Two identical POST calls may
+represent two intentional operations. Applications prevent accidental rapid
+submission by disabling/debouncing controls, and servers that require
+at-most-once processing use a domain idempotency key.
+
+---
+
+## 7. Architectural Boundaries (What to Avoid)
+
+To keep the codebase modular, clean, and optimized:
+- ❌ **Do NOT add `.mutate()` or `.update()` to `$track`**: `$track` is an observation lens, not a state manager.
+- ❌ **Do NOT add `.then()` / `.catch()` to `$track`**: `$track` should not be a Promise or thenable. Use `onSuccess` and `onError`.
+- ❌ **Do NOT expose compiler `EventSourceSlot` machinery as public API**:
+  event-assigned variables remain ordinary authored locals. Private compiler
+  slots may subscribe to the currently displayed request, but replacement
+  must never imply cancellation.
+- ❌ **Do NOT force developers into `effect()` hooks for event logic**: Event handling logic belongs in event handlers, not in reactive synchronization effects.

@@ -57,6 +57,7 @@ import {
 import { normalizeConditionalJsxDirectives } from './jsx/conditional-directives';
 import {
   lowerTransparentGroups,
+  scanEventSourceAssignments,
   rejectNonGetServerFunctionRenderCalls,
   rejectTransparentSourceDestructuring,
   rewriteTransparentDataReads,
@@ -274,6 +275,7 @@ function prepareProgram(
   analyzeRouterJsx(ctx, programPath);
   runAnalysis(ctx, programPath);
   rejectNonGetServerFunctionRenderCalls(ctx, programPath);
+  scanEventSourceAssignments(ctx);
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
   transformSharedAsyncHelpers(ctx);

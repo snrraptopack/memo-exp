@@ -28,7 +28,7 @@ const modules = {
       const user = $fetch('/api/user');
       return (
         <section>
-          <Group data={user}>
+          <Group>
             <Pending component={Skeleton} />
             <ErrorArm component={ErrorView} />
             <h1>{user.name}</h1>

@@ -583,10 +583,25 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           isTransparentFetch && astFactory.isIdentifier(declaration.id);
         const replay = stableFetchTarget && astFactory.isCallExpression(declaration.init)
           ? astFactory.expressionStatement(
-              astFactory.callExpression(mdd(ctx, 'rebindResolvedValue'), [
-                astFactory.identifier((declaration.id as t.Identifier).name),
-                ...declaration.init.arguments.map(cloneNode),
-              ]),
+              ctx.transparentProviderFactories.has(
+                  (declaration.init.callee as t.Identifier).name,
+                )
+                ? astFactory.callExpression(mdd(ctx, 'rebindResolvedValue'), [
+                    astFactory.identifier((declaration.id as t.Identifier).name),
+                    ...declaration.init.arguments.map(cloneNode),
+                  ])
+                : astFactory.callExpression(
+                    mdd(ctx, 'rebindResolvedValueFromFactory'),
+                    [
+                      astFactory.identifier(
+                        (declaration.id as t.Identifier).name,
+                      ),
+                      astFactory.arrowFunctionExpression(
+                        [],
+                        cloneNode(declaration.init),
+                      ),
+                    ],
+                  ),
             )
           : undefined;
         derivations.push({

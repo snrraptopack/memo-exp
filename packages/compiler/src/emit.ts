@@ -84,6 +84,7 @@ import { compileRefValue, emitRefMount } from './jsx/refs';
 import { emitRouteRegion } from './emission/route-region';
 import {
   registerTransparentDataSite,
+  subscribeTransparentStructuralSite,
   transparentCallPolicyArgument,
   transparentExpressionSources,
   transparentPolicyRenderer,
@@ -1294,6 +1295,7 @@ function emitRegion(
     ownerId,
     parentRow,
   );
+  subscribeTransparentStructuralSite(ctx, scope, call, ownerId);
 }
 
 // ---------------------------------------------------------------------

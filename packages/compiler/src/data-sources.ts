@@ -83,6 +83,7 @@ export function scanTransparentSourceImports(
       const name = importedName(specifier);
       if (name === definition.source) {
         ctx.transparentSourceFactories.add(specifier.local.name);
+        ctx.transparentProviderFactories.add(specifier.local.name);
         ctx.importedFunctions.set(specifier.local.name, {
           reads: new Set(),
           writes: new Set(),
@@ -255,11 +256,14 @@ function meaningfulGroupChildren(
 }
 
 function componentPolicy(
+  ctx: Ctx,
   element: t.JSXElement,
   expected: ReadonlySet<string>,
   label: string,
+  kind: 'pending' | 'error',
+  generatedPolicies: t.FunctionDeclaration[],
   errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
-): string {
+): string | TransparentPresentationComponent {
   const tag = jsxTagName(element);
   if (tag === null || !expected.has(tag)) {
     throw errorAt.buildCodeFrameError(
@@ -279,17 +283,114 @@ function componentPolicy(
     ? attribute.name.name
     : null;
   const value = attribute.value;
-  if (
-    name !== 'component' ||
-    !astFactory.isJSXExpressionContainer(value) ||
-    !astFactory.isIdentifier(value.expression)
-  ) {
+  if (name !== 'component' || !astFactory.isJSXExpressionContainer(value)) {
     throw errorAt.buildCodeFrameError(
-      `memo-dom: <${label}> component must reference a component identifier`,
+      `memo-dom: <${label}> component must be a component identifier or inline render callback`,
       attribute,
     );
   }
-  return value.expression.name;
+  const expression = value.expression;
+  if (astFactory.isIdentifier(expression)) return expression.name;
+  if (
+    !astFactory.isArrowFunctionExpression(expression) &&
+    !astFactory.isFunctionExpression(expression)
+  ) {
+    throw errorAt.buildCodeFrameError(
+      `memo-dom: <${label}> component must be a component identifier or inline render callback`,
+      expression,
+    );
+  }
+  if (expression.async || expression.generator) {
+    throw errorAt.buildCodeFrameError(
+      `memo-dom: <${label}> render callbacks must be synchronous`,
+      expression,
+    );
+  }
+  if (expression.params.length > 1) {
+    throw errorAt.buildCodeFrameError(
+      `memo-dom: <${label}> render callbacks accept at most one props parameter`,
+      expression,
+    );
+  }
+  const parameter = expression.params[0];
+  if (kind === 'pending' && parameter !== undefined) {
+    throw errorAt.buildCodeFrameError(
+      'memo-dom: <Pending> render callbacks do not receive props',
+      parameter,
+    );
+  }
+  if (
+    kind === 'error' &&
+    parameter !== undefined &&
+    !astFactory.isObjectPattern(parameter)
+  ) {
+    throw errorAt.buildCodeFrameError(
+      'memo-dom: <Error> render callbacks receive one destructured { error, retry } props object',
+      parameter,
+    );
+  }
+  const captures = tsrxPolicyCaptures(
+    ctx,
+    element as unknown as BaseNode,
+    expression as unknown as BaseNode,
+    new Set(),
+  );
+  const props: Array<{ prop: string; local: t.Identifier }> = [];
+  if (kind === 'error') {
+    const policyLocal = (name: 'error' | 'retry'): t.Identifier => {
+      if (astFactory.isObjectPattern(parameter)) {
+        for (const property of parameter.properties) {
+          if (
+            astFactory.isObjectProperty(property) &&
+            !property.computed &&
+            astFactory.isIdentifier(property.key, { name }) &&
+            astFactory.isIdentifier(property.value)
+          ) {
+            return cloneEstreeNode(property.value);
+          }
+        }
+      }
+      return generatedIdentifier(ctx, name === 'error' ? 'groupError' : 'groupRetry');
+    };
+    const error = policyLocal('error');
+    const retry = policyLocal('retry');
+    props.push({ prop: 'error', local: error });
+    props.push({ prop: 'retry', local: retry });
+  }
+  for (const capture of captures) {
+    props.push({
+      prop: capture.prop,
+      local: astFactory.identifier(capture.binding.name),
+    });
+  }
+  const component = generatedComponentIdentifier(
+    ctx,
+    kind === 'pending' ? 'GroupPending' : 'GroupError',
+  );
+  const callbackBody: t.Statement[] = [];
+  if (astFactory.isBlockStatement(expression.body)) {
+    callbackBody.push(
+      ...expression.body.body.map((statement) => cloneEstreeNode(statement, true)),
+    );
+  } else {
+    callbackBody.push(
+      astFactory.returnStatement(cloneEstreeNode(expression.body, true)),
+    );
+  }
+  generatedPolicies.push(
+    astFactory.functionDeclaration(
+      cloneEstreeNode(component),
+      props.length === 0 ? [] : [objectBindingPattern(props)],
+      astFactory.blockStatement(callbackBody),
+    ),
+  );
+  return {
+    component: component.name,
+    props: captures.map((capture) => ({
+      name: capture.prop,
+      value: astFactory.identifier(capture.binding.name),
+    })),
+  };
 }
 
 function suspendDirective(
@@ -304,7 +405,7 @@ function suspendDirective(
   if (!astFactory.isJSXAttribute(attribute)) return null;
   if (attribute.value !== null) {
     throw errorAt.buildCodeFrameError(
-      "memo-dom: component suspend is a shorthand compiler directive; write 'suspend', not 'suspend={...}'",
+      "memo-dom: suspend is a shorthand compiler directive; write 'suspend' without a value",
       attribute,
     );
   }
@@ -412,47 +513,104 @@ function componentSourceProps(
   return [...sources].map(([prop, source]) => ({ prop, source }));
 }
 
-function groupDataNames(
+function rejectGroupDataAttribute(
   element: t.JSXElement,
   errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
-): string[] {
-  const attributes = element.openingElement.attributes;
-  const data = attributes.find((attribute) =>
+): void {
+  const data = element.openingElement.attributes.find((attribute) =>
     astFactory.isJSXAttribute(attribute) &&
     astFactory.isJSXIdentifier(attribute.name, { name: 'data' }),
   );
-  if (
-    !astFactory.isJSXAttribute(data) ||
-    !astFactory.isJSXExpressionContainer(data.value)
-  ) {
-    throw errorAt.buildCodeFrameError(
-      'memo-dom: <Group> requires data={source} or data={{ source, ... }}',
-      element.openingElement,
-    );
+  if (data === undefined) return;
+  throw errorAt.buildCodeFrameError(
+    'memo-dom: Group infers colorless sources from its content; remove the data prop',
+    data,
+  );
+}
+
+function inferredGroupDataNames(
+  ctx: Ctx,
+  element: t.JSXElement,
+  content: BaseNode,
+  errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
+): string[] {
+  rejectGroupDataAttribute(element, errorAt);
+  const candidates = new Set<string>();
+  let component = ctx.astAnalysis?.parentByNode.get(element as unknown as BaseNode) ?? null;
+  while (component !== null && component.type !== 'FunctionDeclaration') {
+    component = ctx.astAnalysis?.parentByNode.get(component) ?? null;
   }
-  const expression = data.value.expression;
-  if (astFactory.isIdentifier(expression)) return [expression.name];
-  if (!astFactory.isObjectExpression(expression)) {
-    throw errorAt.buildCodeFrameError(
-      'memo-dom: Group.data currently accepts a source identifier or an object of source identifiers',
-      expression,
-    );
-  }
-  const names: string[] = [];
-  for (const property of expression.properties) {
-    if (
-      !astFactory.isObjectProperty(property) ||
-      property.computed ||
-      !astFactory.isIdentifier(property.value)
-    ) {
-      throw errorAt.buildCodeFrameError(
-        'memo-dom: every Group.data object value must be a source identifier',
-        property,
-      );
+  if (component !== null) {
+    const declaration = component as unknown as t.FunctionDeclaration;
+    if (declaration.id !== null) {
+      const linked = ctx.linkedComponentPropSources.get(declaration.id.name);
+      const parameter = declaration.params[0];
+      const transparentProps = new Set<string>();
+      for (const [prop, origin] of linked ?? []) {
+        if (origin.transparent) transparentProps.add(prop);
+      }
+      let program: BaseNode = component;
+      while (ctx.astAnalysis?.parentByNode.get(program) !== null && ctx.astAnalysis?.parentByNode.get(program) !== undefined) {
+        program = ctx.astAnalysis.parentByNode.get(program)!;
+      }
+      walkAst(program, {
+        enter(node) {
+          if (node.type !== 'JSXElement') return;
+          const call = node as unknown as t.JSXElement;
+          if (jsxTagName(call) !== declaration.id!.name) return;
+          for (const attribute of call.openingElement.attributes) {
+            if (
+              !astFactory.isJSXAttribute(attribute) ||
+              !astFactory.isJSXIdentifier(attribute.name) ||
+              !astFactory.isJSXExpressionContainer(attribute.value) ||
+              !astFactory.isIdentifier(attribute.value.expression)
+            ) continue;
+            if (transparentSourceBindingName(ctx, attribute.value.expression) !== null) {
+              transparentProps.add(attribute.name.name);
+            }
+          }
+        },
+      });
+      if (astFactory.isObjectPattern(parameter)) {
+        for (const prop of transparentProps) {
+          for (const property of parameter.properties) {
+            if (
+              astFactory.isObjectProperty(property) &&
+              !property.computed &&
+              astFactory.isIdentifier(property.key, { name: prop }) &&
+              astFactory.isIdentifier(property.value)
+            ) {
+              candidates.add(property.value.name);
+            }
+          }
+        }
+      }
     }
-    names.push(property.value.name);
+    walkAst(component, {
+      enter(node) {
+        if (node !== component && (
+          node.type === 'FunctionDeclaration' ||
+          node.type === 'FunctionExpression' ||
+          node.type === 'ArrowFunctionExpression'
+        )) return false;
+        if (node.type !== 'Identifier') return;
+        const source = transparentSourceBindingName(
+          ctx,
+          node as unknown as t.Identifier,
+        );
+        if (source !== null) candidates.add(source);
+      },
+    });
   }
-  return [...new Set(names)];
+  const origins = groupOrigins(ctx, element as unknown as BaseNode, [...candidates]);
+  const used = [...expressionOrigins(ctx, content, origins)].sort();
+  if (used.length === 0) {
+    throw errorAt.buildCodeFrameError(
+      'memo-dom: Group content must read at least one colorless source',
+      content as unknown as t.Node,
+    );
+  }
+  return used;
 }
 
 function policyElement(name: string, attributes: t.JSXAttribute[]): t.JSXElement {
@@ -463,12 +621,29 @@ function policyElement(name: string, attributes: t.JSXAttribute[]): t.JSXElement
   );
 }
 
+function groupPolicyElement(
+  policy: string | TransparentPresentationComponent,
+  attributes: t.JSXAttribute[],
+): t.JSXElement {
+  if (typeof policy === 'string') return policyElement(policy, attributes);
+  return policyElement(policy.component, [
+    ...attributes,
+    ...policy.props.map(({ name, value }) =>
+      astFactory.jsxAttribute(
+        astFactory.jsxIdentifier(name),
+        astFactory.jsxExpressionContainer(cloneEstreeNode(value, true)),
+      )
+    ),
+  ]);
+}
+
 function sourceArray(names: readonly string[]): t.ArrayExpression {
   return astFactory.arrayExpression(names.map((name) => astFactory.identifier(name)));
 }
 
 type TransparentDataExpression = t.Expression & {
   __memoDomTransparentSources?: readonly string[];
+  __memoDomTransparentSubscriptionExclusions?: readonly string[];
 };
 
 /**
@@ -488,6 +663,23 @@ function annotateTransparentSources(
   (expression as TransparentDataExpression).__memoDomTransparentSources = [
     ...new Set([...current, ...sources]),
   ].sort();
+}
+
+function excludeTransparentSubscriptions(
+  expression: t.Expression,
+  sources: readonly string[],
+): void {
+  if (sources.length === 0) return;
+  walkAst(expression as unknown as BaseNode, {
+    enter(node) {
+      if (!astFactory.isExpression(node as unknown as t.Node)) return;
+      const target = node as unknown as TransparentDataExpression;
+      const current = target.__memoDomTransparentSubscriptionExclusions ?? [];
+      target.__memoDomTransparentSubscriptionExclusions = [
+        ...new Set([...current, ...sources]),
+      ].sort();
+    },
+  });
 }
 
 /** Base source bindings whose transition must update this emitted expression. */
@@ -571,7 +763,11 @@ export function transparentExpressionSources(
     }
   };
   visit(expression);
-  return [...found].sort();
+  const excluded = new Set(
+    (expression as TransparentDataExpression)
+      .__memoDomTransparentSubscriptionExclusions ?? [],
+  );
+  return [...found].filter(source => !excluded.has(source)).sort();
 }
 
 /**
@@ -745,8 +941,8 @@ function annotateGroupComponentCalls(
   ctx: Ctx,
   content: BaseNode,
   origins: ReadonlyMap<AstBinding, ReadonlySet<string>>,
-  pending: string,
-  error: string,
+  pending: string | TransparentPresentationComponent,
+  error: string | TransparentPresentationComponent,
 ): void {
   const note = (node: BaseNode): void => {
     const element = node as unknown as t.JSXElement;
@@ -789,8 +985,8 @@ function wrapGroupSite(
   ctx: Ctx,
   expression: t.Expression,
   dependencies: readonly string[],
-  pending: string,
-  error: string,
+  pending: string | TransparentPresentationComponent,
+  error: string | TransparentPresentationComponent,
 ): void {
   const sources = sourceArray(dependencies);
   const errorRead = (): t.CallExpression =>
@@ -810,7 +1006,7 @@ function wrapGroupSite(
   );
   const conditional = astFactory.conditionalExpression(
     errorRead(),
-    policyElement(error, [
+    groupPolicyElement(error, [
       astFactory.jsxAttribute(
         astFactory.jsxIdentifier('error'),
         astFactory.jsxExpressionContainer(errorRead()),
@@ -824,7 +1020,7 @@ function wrapGroupSite(
       astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
         cloneEstreeNode(sources, true),
       ]),
-      policyElement(pending, []),
+      groupPolicyElement(pending, []),
       committed,
     ),
   );
@@ -843,8 +1039,8 @@ function suspendedGroupOutput(
   ctx: Ctx,
   content: t.JSXElement,
   dependencies: readonly string[],
-  pending: string,
-  error: string,
+  pending: string | TransparentPresentationComponent,
+  error: string | TransparentPresentationComponent,
 ): t.JSXFragment {
   const sources = sourceArray(dependencies);
   const errorRead = (): t.CallExpression =>
@@ -864,7 +1060,7 @@ function suspendedGroupOutput(
   );
   const conditional = astFactory.conditionalExpression(
     errorRead(),
-    policyElement(error, [
+    groupPolicyElement(error, [
       astFactory.jsxAttribute(
         astFactory.jsxIdentifier('error'),
         astFactory.jsxExpressionContainer(errorRead()),
@@ -878,7 +1074,7 @@ function suspendedGroupOutput(
       astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
         cloneEstreeNode(sources, true),
       ]),
-      policyElement(pending, []),
+      groupPolicyElement(pending, []),
       committed,
     ),
   );
@@ -1427,34 +1623,40 @@ export function lowerTransparentGroups(
           );
         }
         const pending = componentPolicy(
+          ctx,
           pendingElement,
           ctx.transparentPendingPolicies,
           'Pending',
+          'pending',
+          generatedPolicies,
           programPath,
         );
         const error = componentPolicy(
+          ctx,
           errorElement,
           ctx.transparentErrorPolicies,
           'Error',
+          'error',
+          generatedPolicies,
           programPath,
         );
-        const data = groupDataNames(element, programPath);
+        const contentSuspend = astFactory.isJSXElement(content)
+          ? suspendDirective(content, programPath)
+          : null;
+        const data = inferredGroupDataNames(
+          ctx,
+          element,
+          content as unknown as BaseNode,
+          programPath,
+        );
         const origins = groupOrigins(
           ctx,
           node,
           data,
         );
         if (astFactory.isJSXElement(content)) {
-          const suspend = suspendDirective(content, programPath);
-          if (suspend !== null) {
-            const tag = jsxTagName(content);
-            if (tag === null || !/^[A-Z]/.test(tag)) {
-              throw programPath.buildCodeFrameError(
-                'memo-dom: suspend may only mark a component used as the direct content child of Group',
-                suspend,
-              );
-            }
-            consumeSuspendDirective(content, suspend);
+          if (contentSuspend !== null) {
+            consumeSuspendDirective(content, contentSuspend);
             replaceNode(
               ctx.astAnalysis!,
               node,
@@ -1515,7 +1717,7 @@ export function lowerTransparentGroups(
       if (tag === null || !/^[A-Z]/.test(tag)) return;
       if (suspendDirective(element, programPath) === null) return;
       throw programPath.buildCodeFrameError(
-        'memo-dom: component suspend requires the component to be the direct content child of Group',
+        'memo-dom: suspend requires the element to be the direct content child of Group',
         element,
       );
     },
@@ -1734,6 +1936,73 @@ export function rejectNonGetServerFunctionRenderCalls(
       if (functionTypes.has(node.type)) functionStack.pop();
     },
   });
+}
+
+/**
+ * Component-local `let` variables assigned colorless sources inside event
+ * handlers do not exist when the component mounts, so render reads through
+ * them (`$track(x)`) need a per-update subscription slot (RFC §2.1).
+ */
+export function scanEventSourceAssignments(ctx: Ctx): void {
+  for (const [component, componentPath] of ctx.compPaths) {
+    const componentNode = componentPath.node as unknown as BaseNode;
+    const names = new Set<string>();
+    walkAst(componentNode, {
+      enter(node) {
+        if (node.type !== 'AssignmentExpression') return;
+        const assignment = node as unknown as t.AssignmentExpression;
+        if (assignment.operator !== '=') return;
+        const left = childNode(node, 'left');
+        const right = childNode(node, 'right');
+        if (left?.type !== 'Identifier') return;
+        if (
+          right === null ||
+          !astFactory.isCallExpression(right as unknown as t.Node)
+        ) return;
+        if (
+          !isCallToImported(
+            ctx,
+            componentNode,
+            right as unknown as t.Expression,
+            ctx.transparentSourceFactories,
+          )
+        ) {
+          return;
+        }
+        const binding = astBindingAt(
+          ctx,
+          left as unknown as AstIdentifier,
+          (left as unknown as AstIdentifier).name,
+        );
+        const name = (left as unknown as AstIdentifier).name;
+        const ownerBinding = astBindingAt(ctx, componentNode, name);
+        if (
+          binding === undefined ||
+          binding.kind === 'import' ||
+          binding !== ownerBinding
+        ) return;
+        if (ctx.instanceState.get(component)?.has(name) !== true) return;
+        names.add(name);
+      },
+    });
+    if (names.size === 0) continue;
+    ctx.eventSourceSlots.set(component, names);
+    let sources = ctx.transparentSources.get(component);
+    if (sources === undefined) {
+      sources = new Set();
+      ctx.transparentSources.set(component, sources);
+    }
+    let roots = ctx.opaqueBindings.get(component);
+    if (roots === undefined) {
+      roots = new Set();
+      ctx.opaqueBindings.set(component, roots);
+    }
+    for (const name of names) {
+      sources.add(name);
+      roots.add(name);
+    }
+    ctx.usesTransparentData = true;
+  }
 }
 
 /** Find direct component-local source declarations and track aliases. */
@@ -1982,6 +2251,57 @@ function sourceBindings(
   return bindings;
 }
 
+/**
+ * Event-created sources are nullable holders before their first assignment.
+ * Writes and existence guards inspect the holder itself; only later property
+ * reads consume its resolved payload.
+ */
+function isEventSourceHolderReference(
+  ctx: Ctx,
+  identifier: BaseNode,
+  eventSources: ReadonlySet<string>,
+): boolean {
+  if (
+    identifier.type !== 'Identifier' ||
+    !eventSources.has((identifier as unknown as AstIdentifier).name)
+  ) return false;
+  const parent = ctx.astAnalysis?.parentByNode.get(identifier) ?? null;
+  if (parent === null) return false;
+  if (
+    parent.type === 'AssignmentExpression' &&
+    childNode(parent, 'left') === identifier
+  ) return true;
+  if (
+    parent.type === 'BinaryExpression' ||
+    parent.type === 'LogicalExpression'
+  ) {
+    const left = childNode(parent, 'left');
+    const right = childNode(parent, 'right');
+    if (
+      parent.type === 'BinaryExpression' &&
+      ['==', '!=', '===', '!=='].includes(
+        (parent as unknown as t.BinaryExpression).operator,
+      )
+    ) {
+      const other = left === identifier ? right : left;
+      if (other !== null && astFactory.isNullLiteral(other as unknown as t.Node)) {
+        return true;
+      }
+    }
+    if (parent.type === 'LogicalExpression' && left === identifier) return true;
+  }
+  if (
+    parent.type === 'UnaryExpression' &&
+    (parent as unknown as t.UnaryExpression).operator === '!' &&
+    childNode(parent, 'argument') === identifier
+  ) return true;
+  if (
+    (parent.type === 'ConditionalExpression' || parent.type === 'IfStatement') &&
+    childNode(parent, 'test') === identifier
+  ) return true;
+  return false;
+}
+
 function sourceDependencies(
   ctx: Ctx,
   root: BaseNode,
@@ -1990,13 +2310,17 @@ function sourceDependencies(
     string,
     { binding: AstBinding; sources: readonly string[]; expression: t.Expression }
   >,
+  eventSources: ReadonlySet<string>,
 ): string[] {
   const found = new Set<string>();
   const note = (identifier: BaseNode): void => {
     const name = (identifier as unknown as AstIdentifier).name;
     const binding = bindings.get(name);
     if (binding !== undefined && isBoundTo(ctx, identifier, binding)) {
-      if (!isPassthroughArgument(ctx, identifier)) {
+      if (
+        !isPassthroughArgument(ctx, identifier) &&
+        !isEventSourceHolderReference(ctx, identifier, eventSources)
+      ) {
         found.add(name);
       }
       return;
@@ -2051,6 +2375,7 @@ function trackDependencies(
   ctx: Ctx,
   root: BaseNode,
   tracks: ReadonlyMap<string, readonly string[]>,
+  bindings: ReadonlyMap<string, AstBinding>,
 ): string[] {
   const found = new Set<string>();
   const note = (identifier: BaseNode): void => {
@@ -2063,7 +2388,24 @@ function trackDependencies(
   };
   walkAst(root, {
     enter(node) {
-      if (node.type === 'Identifier') note(node);
+      if (node.type === 'Identifier') {
+        note(node);
+        return;
+      }
+      if (node.type !== 'CallExpression') return;
+      const call = node as unknown as t.CallExpression;
+      if (
+        !astFactory.isIdentifier(call.callee) ||
+        !ctx.transparentTrackFactories.has(call.callee.name) ||
+        astBindingAt(ctx, node, call.callee.name)?.kind !== 'import'
+      ) return;
+      const argument = call.arguments[0];
+      if (!astFactory.isIdentifier(argument)) return;
+      const binding = bindings.get(argument.name);
+      if (
+        binding !== undefined &&
+        isBoundTo(ctx, argument as unknown as BaseNode, binding)
+      ) found.add(argument.name);
     },
   });
   return [...found].sort();
@@ -2074,6 +2416,7 @@ function replaceSourceReads(
   root: BaseNode,
   bindings: ReadonlyMap<string, AstBinding>,
   replacements: ReadonlyMap<string, t.Identifier>,
+  eventSources: ReadonlySet<string>,
 ): void {
   const found: Array<{ identifier: BaseNode; replacement: t.Identifier }> = [];
   walkAst(root, {
@@ -2084,9 +2427,10 @@ function replaceSourceReads(
       const replacement = replacements.get(name);
     if (
       binding === undefined ||
-      replacement === undefined ||
+        replacement === undefined ||
         !isBoundTo(ctx, node, binding) ||
-        isPassthroughArgument(ctx, node)
+        isPassthroughArgument(ctx, node) ||
+        isEventSourceHolderReference(ctx, node, eventSources)
     ) {
       return;
     }
@@ -2111,6 +2455,7 @@ function replaceSourceReadsWithRenderGates(
   ctx: Ctx,
   root: BaseNode,
   bindings: ReadonlyMap<string, AstBinding>,
+  eventSources: ReadonlySet<string>,
 ): void {
   // Collect first, replace after — the replacement call embeds the same
   // identifier, so replacing during traversal would recurse forever.
@@ -2120,6 +2465,7 @@ function replaceSourceReadsWithRenderGates(
     const binding = bindings.get(name);
     if (binding === undefined || !isBoundTo(ctx, identifier, binding)) return;
     if (isPassthroughArgument(ctx, identifier)) return;
+    if (isEventSourceHolderReference(ctx, identifier, eventSources)) return;
     found.push(identifier);
   };
   walkAst(root, {
@@ -2167,6 +2513,7 @@ function resolvedRenderExpression(
   expression: t.Expression,
   dependencies: readonly string[],
   bindings: ReadonlyMap<string, AstBinding>,
+  eventSources: ReadonlySet<string>,
   helper = 'readResolvedValuesForRender',
 ): t.Expression {
   const replacements = new Map<string, t.Identifier>();
@@ -2180,6 +2527,7 @@ function resolvedRenderExpression(
     expression as unknown as BaseNode,
     bindings,
     replacements,
+    eventSources,
   );
   const callback = astFactory.arrowFunctionExpression(
     parameters,
@@ -2192,6 +2540,68 @@ function resolvedRenderExpression(
     ),
     callback,
   ]);
+}
+
+/**
+ * Gate an effect that consumes an event-created colorless value. The holder
+ * is absent before the first event and pending immediately after assignment;
+ * the slot invalidates the owner again when it settles, at which point the
+ * authored callback runs with honest payloads and may return its cleanup.
+ */
+function gateEventSourceEffects(
+  ctx: Ctx,
+  component: string,
+  bindings: ReadonlyMap<string, AstBinding>,
+  eventSources: ReadonlySet<string>,
+): void {
+  if (eventSources.size === 0) return;
+  const emptyDerived = new Map<
+    string,
+    { binding: AstBinding; sources: readonly string[]; expression: t.Expression }
+  >();
+  for (const site of ctx.effects.get(component) ?? []) {
+    const callback = site.callback;
+    if (
+      !astFactory.isArrowFunctionExpression(callback) &&
+      !astFactory.isFunctionExpression(callback)
+    ) continue;
+    const dependencies = sourceDependencies(
+      ctx,
+      callback as unknown as BaseNode,
+      bindings,
+      emptyDerived,
+      eventSources,
+    );
+    if (!dependencies.some(source => eventSources.has(source))) continue;
+
+    const replacements = new Map<string, t.Identifier>();
+    const parameters = dependencies.map(source => {
+      const parameter = generatedIdentifier(ctx, `${source}EffectValue`);
+      replacements.set(source, parameter);
+      return cloneEstreeNode(parameter);
+    });
+    replaceSourceReads(
+      ctx,
+      callback.body as unknown as BaseNode,
+      bindings,
+      replacements,
+      eventSources,
+    );
+    const run = astFactory.arrowFunctionExpression(
+      parameters,
+      cloneEstreeNode(callback.body, true),
+    );
+    ctx.compilerOwnedCallbacks.add(run);
+    const gated = astFactory.arrowFunctionExpression(
+      [],
+      astFactory.callExpression(mdd(ctx, 'runResolvedValuesEffect'), [
+        sourceArray(dependencies),
+        run,
+      ]),
+    );
+    ctx.compilerOwnedCallbacks.add(gated);
+    site.callback = gated;
+  }
 }
 
 function containsJsx(root: BaseNode): boolean {
@@ -2480,6 +2890,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
     }
     if (localNames.size === 0 && !hasModuleRefs) continue;
     const names = localNames;
+    const eventSources = ctx.eventSourceSlots.get(component) ?? new Set<string>();
     const tracks = ctx.transparentTrackBindings.get(component) ?? new Map();
     const derived = new Map<
       string,
@@ -2522,6 +2933,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         init,
         sources,
         bindings,
+        eventSources,
         'deriveResolvedValues',
       );
       overwriteNode(
@@ -2540,6 +2952,9 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         }
       }
     }
+    refresh();
+
+    gateEventSourceEffects(ctx, component, bindings, eventSources);
     refresh();
 
     walkAst(componentNode, {
@@ -2582,15 +2997,21 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           rawExpression,
           bindings,
           derived,
+          eventSources,
         );
         const stateDependencies = trackDependencies(
           ctx,
           rawExpression,
           tracks,
+          bindings,
         );
         if (dependencies.length === 0) {
           if (stateDependencies.length > 0) {
             annotateTransparentSources(expression, stateDependencies);
+            excludeTransparentSubscriptions(
+              expression,
+              stateDependencies.filter(source => eventSources.has(source)),
+            );
           }
           return undefined;
         }
@@ -2603,13 +3024,19 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           derived,
         );
         refresh();
+        const eventDependencies = allDependencies.filter(source =>
+          eventSources.has(source)
+        );
         if (
           containsJsx(rawExpression) ||
           dependencies.some((source) =>
             ctx.transparentSourceProps.get(component)?.has(source) === true
           )
         ) {
-          if (stateDependencies.length > 0) {
+          if (
+            stateDependencies.length > 0 ||
+            eventDependencies.length > 0
+          ) {
             // Authored control flow driven by request state (RFC §5):
             // the selector and state arms evaluate immediately; payload
             // sinks self-gate per site instead of hiding behind an
@@ -2618,10 +3045,12 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
               ctx,
               rawExpression,
               bindings,
+              eventSources,
             );
             (expression as RenderGatedExpression).__memoDomRenderGated =
               true;
             annotateTransparentSources(expression, allDependencies);
+            excludeTransparentSubscriptions(expression, eventDependencies);
             return false;
           }
           wrapAutomaticSite(ctx, component, expression, dependencies);
@@ -2632,8 +3061,10 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           expression,
           dependencies,
           bindings,
+          eventSources,
         );
         annotateTransparentSources(resolved, allDependencies);
+        excludeTransparentSubscriptions(resolved, eventDependencies);
         overwriteNode(rawExpression, resolved as unknown as BaseNode);
         return false;
       },
@@ -2652,6 +3083,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         ) return;
         if (
           isPassthroughArgument(ctx, sourceIdentifier) ||
+          isEventSourceHolderReference(ctx, sourceIdentifier, eventSources) ||
           isActionRefreshTarget(ctx, sourceIdentifier) ||
           isWithinGroupData(ctx, sourceIdentifier) ||
           isWithinDirectSourceComponentProp(
@@ -2794,8 +3226,11 @@ export function transparentSourceMounts(
   owner: t.Identifier,
 ): t.Statement[] {
   const transported = ctx.transparentSourceProps.get(component);
+  const eventSources = ctx.eventSourceSlots.get(component);
   return [...(ctx.transparentSources.get(component) ?? [])]
-    .filter((source) => transported?.has(source) !== true)
+    .filter((source) =>
+      transported?.has(source) !== true && eventSources?.has(source) !== true
+    )
     .map((source) =>
       astFactory.expressionStatement(
         astFactory.callExpression(md(ctx, 'cleanup'), [

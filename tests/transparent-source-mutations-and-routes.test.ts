@@ -61,7 +61,7 @@ describe('Transparent source mutations, delegated events, and routed access reso
           return (
             <div class="app-root">
               <button class="publish-btn" onClick={handlePublish}>+ Publish</button>
-              <Group data={stories}>
+              <Group>
                 <Pending component={PendingView} />
                 <ErrorArm component={ErrorView} />
                 <ul class="list">
@@ -165,7 +165,7 @@ describe('Transparent source mutations, delegated events, and routed access reso
         function Stories() {
           return (
             <div>
-              <Group data={stories}>
+              <Group>
                 <Pending component={PendingView} />
                 <ErrorArm component={ErrorView} />
                 <ul class="list">

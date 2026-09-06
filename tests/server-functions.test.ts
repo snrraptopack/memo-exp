@@ -155,7 +155,7 @@ describe('named HTTP server functions', () => {
 
   it('rejects non-GET server functions during render but allows handlers', () => {
     const metadata = analyzeServerFunctionModule(`
-      export async function postVote(id: number) { return { id }; }
+      export async function postVote(id: number) { return { id, votes: 4 }; }
     `, { moduleId: '/app/server/functions/stories.ts' });
     const facade = generateServerFunctionClient(metadata);
 
@@ -180,5 +180,55 @@ describe('named HTTP server functions', () => {
       `,
     });
     expect(output['./functions.ts']).toContain('/_fn/stories/postVote');
+  });
+
+  it('replays facade calls through the factory and resolves event-created values', () => {
+    const metadata = analyzeServerFunctionModule(`
+      export async function getStory(id: number) { return { id }; }
+      export async function postVote(id: number) { return { id }; }
+    `, { moduleId: '/app/server/functions/stories.ts' });
+    const facade = generateServerFunctionClient(metadata);
+    const output = compileModules({
+      './functions.ts': facade,
+      './App.tsx': `
+        import { $track } from '@memoized-dom/data';
+        import { getStory, postVote } from './functions';
+
+        export function App() {
+          let selectedId = 1;
+          let lastVote: ReturnType<typeof postVote> | null = null;
+          effect(() => {
+            console.log(lastVote);
+          });
+          return <main>
+            <button onClick={() => { selectedId = 2; }}>Details</button>
+            <button onClick={() => { lastVote = postVote(selectedId); }}>Vote</button>
+            <Story id={selectedId} />
+            {lastVote !== null && (
+              <p>{$track(lastVote).pending ? 'Voting' : lastVote.id}</p>
+            )}
+          </main>;
+        }
+
+        function Story({ id }: { id: number }) {
+          const story = getStory(id);
+          return <h1>{story.id}</h1>;
+        }
+      `,
+    });
+    const compiled = output['./App.tsx']!;
+
+    expect(compiled).toContain(
+      'rebindResolvedValueFromFactory(story, () => getStory(id))',
+    );
+    expect(compiled).not.toContain('rebindResolvedValue(story, id)');
+    expect(compiled).toContain('createEventSourceSlot()');
+    expect(compiled).toContain('runResolvedValuesEffect([lastVote]');
+    expect(compiled).toContain('readResolvedValueForRender(lastVote).id');
+    expect(compiled).not.toContain('connectResolvedValues([lastVote]');
+    expect(compiled).not.toContain(
+      'readResolvedValue(lastVote, "lastVote"',
+    );
+    expect(compiled).not.toContain('lastVote.id');
   });
 });

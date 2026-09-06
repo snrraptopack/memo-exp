@@ -72,7 +72,7 @@ const source = `
     return (
       <article id="cross-profile">
         <span id="cross-greeting">{greeting}</span>
-        <Group data={user}>
+        <Group>
           <Pending component={DeepPending} />
           <Error component={DeepError} />
           <CrossLeaf user={user} />
@@ -114,7 +114,7 @@ const source = `
     const statistics = $fetch<{ count: number }>('/statistics');
 
     return (
-      <Group data={{ user, statistics }}>
+      <Group>
         <Pending component={InlinePending} />
         <Error component={InlineError} />
         <>
@@ -126,12 +126,27 @@ const source = `
     );
   }
 
+  export function InferredInlineGroupApp() {
+    const user = $fetch<User>('/inline-user');
+    const waiting = 'Waiting inline';
+
+    return (
+      <Group>
+        <Pending component={() => <i class="inline-callback-pending">{waiting}</i>} />
+        <Error component={({ error, retry }) => (
+          <button class="inline-callback-error" onClick={retry}>{error.kind}</button>
+        )} />
+        <section suspend id="inline-suspended-content">{user.name}</section>
+      </Group>
+    );
+  }
+
   export function SuspendedGroupApp() {
     const user = $fetch<User>('/suspended-user');
     const statistics = $fetch<{ count: number }>('/suspended-statistics');
 
     return (
-      <Group data={{ user, statistics }}>
+      <Group>
         <Pending component={InlinePending} />
         <Error component={InlineError} />
         <SuspendedDashboard suspend user={user} statistics={statistics} />
@@ -145,7 +160,7 @@ const source = `
     const count = open.length;
 
     return (
-      <Group data={todos}>
+      <Group>
         <Pending component={InlinePending} />
         <Error component={InlineError} />
         <section>
@@ -155,7 +170,7 @@ const source = `
             {count > 0 ? <span>Open work</span> : <span>All done</span>}
           </div>
           <ul id="todo-rows">
-            <Group data={todos}>
+            <Group>
               <Pending component={TodoRowsPending} />
               <Error component={TodoRowsError} />
               {open.map(todo => <li key={todo.id}>{todo.title}</li>)}
@@ -169,7 +184,7 @@ const source = `
   export function CrossComponentApp() {
     const user = $fetch<User>('/cross-user');
     return (
-      <Group data={user}>
+      <Group>
         <Pending component={InlinePending} />
         <Error component={InlineError} />
         <main>
@@ -450,6 +465,43 @@ describe('compiler-transparent data values', () => {
     await expect.poll(
       () => document.querySelector('#group-statistics')?.textContent,
     ).toBe('42');
+  });
+
+  it('infers Group data and supports direct host suspension with inline policies', async () => {
+    const requests: Array<(response: Response) => void> = [];
+    runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(resolve => {
+        requests.push(resolve);
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(
+      mod.InferredInlineGroupApp('InferredInlineGroupApp', null),
+    );
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(document.querySelector('.inline-callback-pending')?.textContent)
+      .toBe('Waiting inline');
+    expect(document.querySelector('#inline-suspended-content')).toBeNull();
+
+    requests[0]!(new Response(JSON.stringify({ message: 'offline' }), {
+      status: 503,
+      headers: { 'content-type': 'application/json' },
+    }));
+    await expect.poll(
+      () => document.querySelector('.inline-callback-error')?.textContent,
+    ).toBe('http');
+
+    document.querySelector<HTMLButtonElement>('.inline-callback-error')!.click();
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    requests[1]!(new Response(JSON.stringify({ id: 1, name: 'Ada' }), {
+      headers: { 'content-type': 'application/json' },
+    }));
+    await expect.poll(
+      () => document.querySelector('#inline-suspended-content')?.textContent,
+    ).toBe('Ada');
   });
 
   it('atomically mounts a suspended Group component after all initial data commits', async () => {
@@ -935,7 +987,7 @@ describe('compiler-transparent data values', () => {
         export function RemoteApp() {
           const user = $fetch('/remote-user');
           return (
-            <Group data={user}>
+            <Group>
               <Pending component={Loading} />
               <Error component={Failed} />
               <RemoteProfile user={user} />
@@ -1007,7 +1059,7 @@ describe('compiler-transparent data values', () => {
         export function InvalidGroup() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group data={user}>
+            <Group>
               <Pending component={Loading} />
               <Error component={Failed} />
               <strong>{user.name}</strong>
@@ -1028,7 +1080,7 @@ describe('compiler-transparent data values', () => {
         export function InvalidGroupOrder() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group data={user}>
+            <Group>
               <Error component={Failed} />
               <Pending component={Loading} />
               <strong>{user.name}</strong>
@@ -1039,7 +1091,27 @@ describe('compiler-transparent data values', () => {
     })).toThrow(/Group child must be <Pending/);
   });
 
-  it('requires component suspend to be a shorthand direct Group child', () => {
+  it('rejects the removed Group data prop', () => {
+    expect(() => compileModules({
+      './invalid-group-data.tsx': `
+        import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+        function Loading() { return <i>Loading</i>; }
+        function Failed() { return <i>Failed</i>; }
+        export function InvalidGroupData() {
+          const user = $fetch<{ name: string }>('/user');
+          return (
+            <Group data={user}>
+              <Pending component={Loading} />
+              <Error component={Failed} />
+              <strong>{user.name}</strong>
+            </Group>
+          );
+        }
+      `,
+    })).toThrow(/Group infers colorless sources from its content; remove the data prop/);
+  });
+
+  it('requires suspend to be a shorthand direct Group child', () => {
     const invalidSuspend = `
         function Dashboard() { return <main>Dashboard</main>; }
         export function App() { return <Dashboard suspend />; }
@@ -1049,7 +1121,7 @@ describe('compiler-transparent data values', () => {
     });
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]?.message).toMatch(
-      /suspend requires the component to be the direct content child of Group/,
+      /suspend requires the element to be the direct content child of Group/,
     );
     expect(diagnostics[0]?.moduleId).toBe('./invalid-suspend.tsx');
     expect(diagnostics[0]?.line).toBe(
@@ -1066,7 +1138,7 @@ describe('compiler-transparent data values', () => {
         export function App() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group data={user}>
+            <Group>
               <Pending component={Loading} />
               <Error component={Failed} />
               <Dashboard suspend={true} />
@@ -1074,6 +1146,6 @@ describe('compiler-transparent data values', () => {
           );
         }
       `,
-    })).toThrow(/suspend is a shorthand compiler directive/);
+    })).toThrow(/write 'suspend' without a value/);
   });
 });

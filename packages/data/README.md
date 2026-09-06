@@ -1,6 +1,6 @@
 # `@memoized-dom/data`
 
-`@memoized-dom/data` is Memoized DOM's data-fetching and state synchronization package. It provides **Colorless Async** transparent values, request deduplication, optimistic mutations, schema validation, declarative pending/error JSX directives, and zero-roundtrip SSR payload transport.
+`@memoized-dom/data` is Memoized DOM's data-fetching and state synchronization package. It provides **Colorless Async** transparent values, safe GET deduplication, schema validation, declarative pending/error JSX directives, request lifecycle tracking, and zero-roundtrip SSR payload transport.
 
 There are no hooks, provider trees, signals, or store wrappers. Fetched data behaves as plain TypeScript values and arrays in your components.
 
@@ -64,9 +64,11 @@ export function StoriesPanel() {
     <section class="panel">
       <h2>Top Stories</h2>
 
-      <Group data={stories}>
-        <Pending component={LoadingSkeleton} />
-        <ErrorArm component={ErrorBanner} />
+      <Group>
+        <Pending component={() => <LoadingSkeleton />} />
+        <ErrorArm component={({ error, retry }) => (
+          <ErrorBanner error={error} retry={retry} />
+        )} />
         {/* Resolved arm: renders automatically once data settles */}
         <ul class="story-list">
           {stories.map(item => (
@@ -87,54 +89,43 @@ export function StoriesPanel() {
 - **`Error`**: Injects `{ error, retry }` into the error component when a request fails.
 - **Content**: Mounts immediately by default; each dependent expression or
   structural site resolves independently.
+- **Dependencies**: The compiler infers exactly which colorless sources are
+  read by the content. `Group` does not need a `data` prop.
+- **Policies**: `component` accepts either a named component or a synchronous
+  inline render callback. Inline callbacks may capture component-local values.
 
-To make the first mount atomic, the third child may be one direct component
-marked with the shorthand compiler directive `suspend`:
+To make the first mount atomic, mark the one direct content element with the
+shorthand compiler directive `suspend`. The element may be a component or a
+host element:
 
 ```tsx
-<Group data={{ profile, activity }}>
+<Group>
   <Pending component={DashboardSkeleton} />
   <ErrorArm component={ErrorBanner} />
-  <Dashboard suspend profile={profile} activity={activity} />
+  <section suspend>
+    <Dashboard profile={profile} activity={activity} />
+  </section>
 </Group>
 ```
 
-The pending arm appears once until every named source has its initial value.
+The pending arm appears once until every inferred source has its initial value.
 The compiler removes `suspend` before component prop checking and emission.
 Committed content remains visible during later refreshes.
 
 ---
 
-## 3. Imperative Operations (`$ops`)
+## 3. Direct Data Changes
 
-Use `$ops(value)` to trigger mutations, refreshes, or manual aborts without polluting your payload types:
+Transparent values remain ordinary application data. Change the property that
+actually changed; the compiler is responsible for routing that write to the
+affected DOM work:
 
 ```tsx
-import { $ops } from '@memoized-dom/data';
 import { stories } from './session';
 
-// 1. In-place optimistic mutation (propagates to all readers immediately):
 function upvote(id: number) {
-  $ops(stories).mutate(items => {
-    for (const item of items ?? []) {
-      if (item.id === id) item.votes++;
-    }
-  });
-}
-
-// 2. Functional replacement:
-function removeStory(id: number) {
-  $ops(stories).update(items => (items ?? []).filter(item => item.id !== id));
-}
-
-// 3. Manual revalidation / refresh:
-async function refreshFeed() {
-  await $ops(stories).refresh();
-}
-
-// 4. Aborting in-flight requests:
-function cancel() {
-  $ops(stories).abort();
+  const story = stories.find(item => item.id === id);
+  if (story !== undefined) story.votes++;
 }
 ```
 
@@ -145,7 +136,7 @@ function cancel() {
 When you need to inspect request status (e.g. showing a spinning sync icon during background refresh):
 
 ```tsx
-import { $track, $ops } from '@memoized-dom/data';
+import { $track } from '@memoized-dom/data';
 import { notifications } from './session';
 
 export function SyncButton() {
@@ -153,10 +144,7 @@ export function SyncButton() {
   const state = $track(notifications);
 
   return (
-    <button
-      class={state.refreshing ? 'spinning' : ''}
-      onClick={() => void $ops(notifications).refresh()}
-    >
+    <button class={state.refreshing ? 'spinning' : ''}>
       {state.refreshing ? 'Syncing…' : 'Refresh'}
     </button>
   );
@@ -164,41 +152,52 @@ export function SyncButton() {
 ```
 
 ### Tracked State Properties:
+- `state.id`: identity of this exact request execution
 - `state.status`: `'idle' | 'pending' | 'success' | 'error'`
 - `state.pending`: `true` during cold initial load
 - `state.refreshing`: `true` during background revalidation (previous data remains visible)
 - `state.error`: `RequestError | null`
+- `state.onSuccess((data, requestId) => ...)`: one-shot success observation
+- `state.onError((error, requestId) => ...)`: one-shot failure observation
+- `state.refresh()`: starts another execution; awaiting is optional
+- `state.abort()`: explicitly cancels the represented request
 
 ---
 
-## 5. Callable Actions (`$action`) & Optimistic Changes
+## 5. Mutations and overlapping requests
 
-`$action` creates lazy, callable endpoints for server mutations (POST / PUT / PATCH / DELETE):
+Server-function facades and direct `$fetch` calls use the same transparent
+result and `$track` lifecycle. Change application data directly, and record
+the smallest inverse operation when optimistic rollback is required:
 
 ```ts
-import { $action } from '@memoized-dom/data';
+const pendingVotes = new Set<string>();
 
-interface Todo { id: number; title: string; done: boolean; }
-interface NewTodoInput { title: string; }
+function vote(story: Story) {
+  const result = postVote(story.id);
+  const request = $track(result);
 
-export const createTodo = $action<Todo, NewTodoInput>('/api/todos', {
-  method: 'POST',
-  onSuccess(created, input) {
-    console.log('Created todo:', created.id);
-  },
-  onError(error, input) {
-    console.error('Failed to create:', error.message);
-  },
-});
+  pendingVotes.add(request.id);
+  story.votes++;
+
+  request.onSuccess((_data, requestId) => {
+    pendingVotes.delete(requestId);
+  });
+  request.onError((_error, requestId) => {
+    if (pendingVotes.delete(requestId)) story.votes--;
+  });
+}
 ```
 
-### Calling with Optimistic List Changes:
-```ts
-// Applies immediately, rolls back if the network fails, or commits from server result
-const result = await createTodo({ title: 'New task' }, {
-  optimistic: todos.append({ id: -1, title: 'New task', done: false }),
-});
-```
+Reassigning a local variable to a newer result changes what the UI displays;
+it does not cancel older dispatched work. Each retained request delivers its
+own callback before cleanup. Only `abort()` or an explicit `AbortSignal`
+requests cancellation.
+
+Non-GET requests are not deduplicated by default: two identical POSTs may be
+two intentional operations. Disable or debounce a control to suppress rapid
+client submissions. Use a domain idempotency key on the server when the
+operation must be processed at most once.
 
 ---
 
