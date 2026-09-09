@@ -53,7 +53,7 @@ describe('M5 compiler — code generation', () => {
     const code = compile(readFixture('counter'), { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatchSnapshot();
     // R1: entity factory + register
-    expect(code).toMatch(/function Counter\(_id\d*, _parent\d*\)/);
+    expect(code).toMatch(/function Counter\(_id\d*, _parent\d*, _dataPolicies\d*\)/);
     expect(code).toContain('.register(');
     // R3/R4 (M5.9 form): inline guarded writes over numbered slot locals
     expect(code).toMatch(/if \(_slot\d* !== \(_value\d* = count\)\)/);
@@ -75,8 +75,8 @@ describe('M5 compiler — code generation', () => {
     expect(code).toContain('installAccessTable');
     expect(code).toContain('"App/Badge"');
     // composition: factories receive (childId, parentId)
-    expect(code).toMatch(/Badge\(_id\d* \+ "\/Badge", _id\d*\)/);
-    expect(code).toMatch(/Editor\(_id\d* \+ "\/Editor", _id\d*\)/);
+    expect(code).toMatch(/Badge\(_id\d* \+ "\/Badge", _id\d*, \{ \$default:/);
+    expect(code).toMatch(/Editor\(_id\d* \+ "\/Editor", _id\d*, \{ \$default:/);
   });
 
   it('compiles repeated children with distinct ids and covering patterns', () => {

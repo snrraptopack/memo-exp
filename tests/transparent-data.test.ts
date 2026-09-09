@@ -215,6 +215,25 @@ const source = `
     );
   }
 
+  export function NestedCallbackGroupApp() {
+    const projects = $fetch<Array<{ id: number; name: string }>>('/nested-projects');
+    const tasks = $fetch<Array<{ id: number; projectId: number }>>('/nested-tasks');
+    const cards = projects.map(project => ({
+      project,
+      count: tasks.filter(task => task.projectId === project.id).length,
+    }));
+
+    return (
+      <Group>
+        <Pending component={InlinePending} />
+        <Error component={InlineError} />
+        <ul id="nested-cards">
+          {cards.map(card => <li key={card.project.id}>{card.project.name}:{card.count}</li>)}
+        </ul>
+      </Group>
+    );
+  }
+
   export function CrossCollectionApp() {
     const tasks = $fetch<Array<{ id: number; title: string; done: boolean }>>('/cross-tasks');
     return (
@@ -430,6 +449,9 @@ describe('compiler-transparent data values', () => {
     expect(compiled).toMatch(/const users = \$fetch\('\/users'/);
     expect(compiled).toContain('rebindResolvedValue(user, `/users/${userId}`');
     expect(compiled).not.toContain('volatile: true');
+    expect(compiled).toContain(
+      'resolvedValuesPending([projects, tasks])',
+    );
     writeFileSync(fixture, compiled);
     writeFileSync(
       tsrxFixture,
@@ -1175,6 +1197,39 @@ describe('compiler-transparent data values', () => {
         }
       `,
     })).toThrow(/Group child must be <Pending/);
+  });
+
+  it('waits for every source read inside an immediate derivation callback', async () => {
+    const requests = new Map<string, (response: Response) => void>();
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) => new Promise<Response>(resolve => {
+        requests.set(String(input), resolve);
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(mod.NestedCallbackGroupApp('NestedCallbackGroupApp', null));
+    await vi.waitFor(() => expect(requests.size).toBe(2));
+    expect(document.querySelector('#nested-cards > .pending')).not.toBeNull();
+    const resolveRequest = (path: string): ((response: Response) => void) =>
+      [...requests].find(([url]) => url.endsWith(path))![1];
+
+    resolveRequest('/nested-projects')(new Response(JSON.stringify([
+      { id: 1, name: 'Compiler' },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(document.querySelector('#nested-cards > .pending')).not.toBeNull();
+
+    resolveRequest('/nested-tasks')(new Response(JSON.stringify([
+      { id: 1, projectId: 1 },
+      { id: 2, projectId: 1 },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#nested-cards')?.textContent,
+    ).toBe('Compiler:2');
   });
 
   it('defers collection methods on a transparent source passed through props', async () => {

@@ -97,6 +97,27 @@ interface RowPlan {
   renderCallback: t.Expression | null;
 }
 
+function emptyListWhileUnresolved(
+  ctx: Ctx,
+  expression: t.Expression,
+): t.Expression {
+  const current = transparentListExpression(expression);
+  if (compilerResolvedRoots(ctx, current).length === 0) return current;
+  if (
+    astFactory.isLogicalExpression(current) &&
+    current.operator === '||' &&
+    astFactory.isArrayExpression(current.right) &&
+    current.right.elements.length === 0
+  ) {
+    return current;
+  }
+  return astFactory.logicalExpression(
+    '||',
+    current,
+    astFactory.arrayExpression([]),
+  );
+}
+
 function compilerResolvedRoots(ctx: Ctx, expression: t.Expression): string[] {
   const roots = new Set<string>();
   walkAst(transparentListExpression(expression) as unknown as BaseNode, {
@@ -190,7 +211,7 @@ export function analyzeMapSite(
     ? analyzeSource(ctx, callee.object, ownerName, parentRow, fail)
     : {
         expression: astFactory.isExpression(callee.object)
-          ? transparentListExpression(callee.object)
+          ? emptyListWhileUnresolved(ctx, callee.object)
           : fail(
               'memo-dom: list source must be an expression',
               callee.object,
@@ -296,7 +317,7 @@ function analyzeSource(
       // Render-gated sources yield no rows while unavailable (§10: no
       // Group → empty local region); the imperative form stays loud.
       expression: renderGated
-        ? astFactory.logicalExpression('||', current, astFactory.arrayExpression([]))
+        ? emptyListWhileUnresolved(ctx, current)
         : current,
       key: source.name,
       local: true,
@@ -309,7 +330,7 @@ function analyzeSource(
   if (astFactory.isExpression(current) && resolvedRoots.length > 0) {
     const key = resolvedRoots.join('$');
     return {
-      expression: current,
+      expression: emptyListWhileUnresolved(ctx, current),
       key,
       local: true,
       suffixBase: key,

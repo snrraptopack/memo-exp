@@ -528,10 +528,11 @@ describe('Vite 8 adapter', () => {
     await expect(health.json()).resolves.toEqual({ ok: true });
 
     const document = await fetch(`http://127.0.0.1:${address.port}/`);
-    expect(document.headers.get('content-type')).toContain('text/html');
-    await expect(document.text()).resolves.toBe(
-      '<!doctype html><h1>Fullstack</h1>',
-    );
+    const documentText = await document.text();
+    expect(document.status, documentText).toBe(200);
+    expect(document.headers.get('content-type'), documentText)
+      .toContain('text/html');
+    expect(documentText).toBe('<!doctype html><h1>Fullstack</h1>');
   });
 
   it('auto-installs generated server functions into defineServer during development', async () => {

@@ -157,6 +157,22 @@ export function emitRouteRegion(
     ]),
   );
 
+  // The branch is a nested update scope. Component-local writes dirty the
+  // component owner, so forward that owner update into the currently mounted
+  // route branch just like an ordinary conditional region does. Without this,
+  // local state rendered beneath `route` changes only after remounting.
+  scope.updaters.push(() =>
+    astFactory.expressionStatement(
+      astFactory.callExpression(
+        astFactory.memberExpression(
+          cloneEstreeNode(region),
+          astFactory.identifier('update'),
+        ),
+        [],
+      ),
+    ),
+  );
+
   if (scope.manualDisposal) {
     scope.disposableCallbacks.push(dispose);
     scope.disposableEntities.push(cloneEstreeNode(regionId));

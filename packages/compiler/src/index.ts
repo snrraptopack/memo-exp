@@ -53,3 +53,4 @@ export {
   type ServerFunctionParameter,
   type ServerFunctionQueryKind,
 } from './server-functions';
+export type { ExternalReactiveSourceDefinition } from './context';

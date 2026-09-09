@@ -25,7 +25,7 @@ const modules = {
     }
 
     export function App() {
-      const user = $fetch('/api/user');
+      const user = $fetch('/api/user', { query: { id: 7 } });
       return (
         <section>
           <Group>

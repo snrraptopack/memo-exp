@@ -142,9 +142,11 @@ export interface RefreshableResource {
  * application reads. ResolvedValue<T> remains assignable to T.
  */
 declare const resolvedValue: unique symbol;
-export type ResolvedValue<T> = T & {
-  readonly [resolvedValue]: T;
-};
+export type ResolvedValue<T> = T extends null | undefined
+  ? T
+  : T & {
+      readonly [resolvedValue]: T;
+    };
 
 /** Reactive request state exposed for authored conditional rendering. */
 export interface TrackedValue<T> {

@@ -5,12 +5,32 @@ export interface StorageShim<T> {
 
 export type StorageFactory = <T>() => StorageShim<T>;
 
-const GLOBAL_STORAGE_KEY = '__MMD_ASYNC_STORAGE__';
-let storageFactory: StorageFactory = createSynchronousStorage;
+const GLOBAL_STORAGE_KEY = '__MMD_ASYNC_STORAGE_V2__';
+
+interface StorageRegistry {
+  factory: StorageFactory;
+  version: number;
+  readonly storages: Map<string, StorageShim<unknown>>;
+}
+
+function getStorageRegistry(): StorageRegistry {
+  const globalRecord = globalThis as unknown as Record<string, unknown>;
+  const existing = globalRecord[GLOBAL_STORAGE_KEY];
+  if (existing !== undefined) return existing as StorageRegistry;
+  const registry: StorageRegistry = {
+    factory: createSynchronousStorage,
+    version: 0,
+    storages: new Map(),
+  };
+  globalRecord[GLOBAL_STORAGE_KEY] = registry;
+  return registry;
+}
 
 /** Configure the host-specific scoped-storage implementation. */
 export function setStorageFactory(factory: StorageFactory): void {
-  storageFactory = factory;
+  const registry = getStorageRegistry();
+  registry.factory = factory;
+  registry.version++;
 }
 
 function createSynchronousStorage<T>(): StorageShim<T> {
@@ -32,10 +52,9 @@ function createSynchronousStorage<T>(): StorageShim<T> {
 }
 
 export function createStorage<T>(name = 'default'): StorageShim<T> {
-  const g = globalThis as unknown as Record<string, unknown>;
-  const globalRegistry = (g[GLOBAL_STORAGE_KEY] ??= new Map<string, StorageShim<unknown>>()) as Map<string, StorageShim<unknown>>;
+  const registry = getStorageRegistry();
 
-  const existing = globalRegistry.get(name);
+  const existing = registry.storages.get(name);
   if (existing !== undefined) {
     return existing as StorageShim<T>;
   }
@@ -43,17 +62,23 @@ export function createStorage<T>(name = 'default'): StorageShim<T> {
   // Resolution is lazy so the explicit server entry can install
   // AsyncLocalStorage after the shared kernel module has initialized.
   let resolved: StorageShim<T> | undefined;
+  let resolvedVersion = -1;
+  const resolve = (): StorageShim<T> => {
+    if (resolved === undefined || resolvedVersion !== registry.version) {
+      resolved = registry.factory<T>();
+      resolvedVersion = registry.version;
+    }
+    return resolved;
+  };
   const storage: StorageShim<T> = {
     getStore() {
-      resolved ??= storageFactory<T>();
-      return resolved.getStore();
+      return resolve().getStore();
     },
     run<R>(store: T, callback: () => R): R {
-      resolved ??= storageFactory<T>();
-      return resolved.run(store, callback);
+      return resolve().run(store, callback);
     },
   };
 
-  globalRegistry.set(name, storage as StorageShim<unknown>);
+  registry.storages.set(name, storage as StorageShim<unknown>);
   return storage;
 }

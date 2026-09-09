@@ -25,7 +25,7 @@ let loggedIn = false;
 
 let count = 0;
 
-export function CondApp(_id, _parent) {
+export function CondApp(_id, _parent, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 

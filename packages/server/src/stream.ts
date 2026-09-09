@@ -1,18 +1,15 @@
 import {
   createApplicationRuntime,
-  setActiveApplicationRuntime,
   runWithApplicationRuntime,
   unregisterSubtree,
 } from '@memoized-dom/runtime/server';
 import {
   createMemoryRouteHistory,
   createRouteRuntime,
-  setActiveRouteRuntime,
   runWithRouteRuntime,
 } from '@memoized-dom/router';
 import {
   createDataRuntime,
-  setActiveDataRuntime,
   runWithDataRuntime,
 } from '@memoized-dom/data';
 import { StringDocument, type StringRenderableNode } from './string-document';
@@ -65,7 +62,6 @@ export function renderToReadableStream(
         effects: 'disabled',
         refs: 'disabled',
       });
-      const previousRuntime = setActiveApplicationRuntime(runtime);
       const routeRuntime = createRouteRuntime({
         routeHistory: createMemoryRouteHistory({
           initialEntries: [options.url ?? '/'],
@@ -74,8 +70,6 @@ export function renderToReadableStream(
       const dataRuntime = createDataRuntime(
         options.fetch === undefined ? {} : { fetch: options.fetch },
       );
-      const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
-      const previousDataRuntime = setActiveDataRuntime(dataRuntime);
       const rootId = 'App';
 
       try {
@@ -115,9 +109,6 @@ export function renderToReadableStream(
         runWithApplicationRuntime(runtime, () => unregisterSubtree(rootId));
         controller.error(error);
       } finally {
-        setActiveApplicationRuntime(previousRuntime);
-        setActiveRouteRuntime(previousRouteRuntime);
-        setActiveDataRuntime(previousDataRuntime);
         routeRuntime.dispose();
         dataRuntime.clear();
         runtime.dispose();

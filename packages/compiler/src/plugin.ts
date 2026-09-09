@@ -64,6 +64,10 @@ import {
   scanAndLowerModuleSourceDeclarations,
   scanTransparentSourceImports,
 } from './data-sources';
+import {
+  externalReactiveImportStatements,
+  scanExternalReactiveImports,
+} from './external-reactivity';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -268,6 +272,7 @@ function prepareProgram(
   installLinkedDynamicComponentImports(ctx, programPath);
   normalizeConditionalJsxDirectives(programPath);
   initializeGeneratedIdentifiers(ctx, programPath.node);
+  scanExternalReactiveImports(ctx, programPath);
   scanTransparentSourceImports(ctx, programPath);
   rejectTransparentSourceDestructuring(ctx, programPath);
   lowerTransparentGroups(ctx, programPath);
@@ -308,6 +313,7 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
       astFactory.stringLiteral(ctx.runtimePath),
     ),
   ];
+  imports.push(...externalReactiveImportStatements(ctx));
   if (ctx.hot) {
     imports.push(
       astFactory.importDeclaration(

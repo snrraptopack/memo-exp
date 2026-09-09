@@ -3,7 +3,7 @@
 exports[`emission golden snapshots (emission-spec.md) > Cleanup — ownership-scoped teardown 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Timer(_id, _parent) {
+export function Timer(_id, _parent, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 
@@ -33,7 +33,7 @@ _MD.installAccessTable({ readers: { "./state.ts#count": ["App", "App/*"] } }, "A
 
 import { count, bump } from './state';
 
-export function App(_id, _parent) {
+export function App(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
@@ -82,7 +82,7 @@ export function bump() {
 exports[`emission golden snapshots (emission-spec.md) > Effects — compiler-owned lifecycle registers deferred entities 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Ticker(_id, _parent) {
+export function Ticker(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let ticks = 0;
@@ -134,7 +134,7 @@ _MD.installAccessTable({ readers: { "./component.tsx#selected": ["App", "App/*"]
 
 export let selected = null;
 
-export function Picker(_id, _parent) {
+export function Picker(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
@@ -170,7 +170,7 @@ export function Picker(_id, _parent) {
 exports[`emission golden snapshots (emission-spec.md) > R1 — components become (id, parent) factories registering an entity 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Counter(_id, _parent) {
+export function Counter(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let count = 0;
@@ -207,7 +207,7 @@ export function Counter(_id, _parent) {
 exports[`emission golden snapshots (emission-spec.md) > R2 — JSX becomes a creation branch with cached nodes 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Card(_id, _parent) {
+export function Card(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	const ready = true;
@@ -218,7 +218,7 @@ export function Card(_id, _parent) {
 
 			_value == null || _value === false
 				? _section.removeAttribute("data-ready")
-				: _section.setAttribute("data-ready", _value === true ? "" : String(_value));
+				: _section.setAttribute("data-ready", _value === true ? "true" : String(_value));
 		}
 	};
 
@@ -238,7 +238,7 @@ export function Card(_id, _parent) {
 
 		_value == null || _value === false
 			? _section.removeAttribute("data-ready")
-			: _section.setAttribute("data-ready", _value === true ? "" : String(_value));
+			: _section.setAttribute("data-ready", _value === true ? "true" : String(_value));
 	}
 
 	_section.appendChild(_h);
@@ -250,7 +250,7 @@ export function Card(_id, _parent) {
 exports[`emission golden snapshots (emission-spec.md) > R4 — update branch writes only dynamic slots, value-cached 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Label(_id, _parent) {
+export function Label(_id, _parent, _dataPolicies) {
 	let _slot, _slot2, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let name = 'a';
@@ -292,7 +292,7 @@ export function Label(_id, _parent) {
 exports[`emission golden snapshots (emission-spec.md) > R5 — component props become a props box with positional binding 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Row(_id, _parent, _props) {
+export function Row(_id, _parent, _props, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let { item, index } = _props[0];
@@ -321,7 +321,7 @@ export function Row(_id, _parent, _props) {
 exports[`emission golden snapshots (emission-spec.md) > R6 — children slots forward rendered content 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Shell(_id, _parent, _props) {
+export function Shell(_id, _parent, _props, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let { header, children } = _props[0];
@@ -361,7 +361,7 @@ function _liCreateTemplate(_document2) {
 	return _li;
 }
 
-export function Feed(_id, _parent, _props) {
+export function Feed(_id, _parent, _props, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let items = _props[0];
@@ -440,7 +440,7 @@ export function Feed(_id, _parent, _props) {
 exports[`emission golden snapshots (emission-spec.md) > R8 — conditional regions anchor branch swaps 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Badge(_id, _parent, _props) {
+export function Badge(_id, _parent, _props, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let loaded = _props[0];
@@ -455,7 +455,7 @@ export function Badge(_id, _parent, _props) {
 
 			_value == null || _value === false
 				? _if.removeAttribute("condition")
-				: _if.setAttribute("condition", _value === true ? "" : String(_value));
+				: _if.setAttribute("condition", _value === true ? "true" : String(_value));
 		}
 	};
 
@@ -470,7 +470,7 @@ export function Badge(_id, _parent, _props) {
 
 		_value == null || _value === false
 			? _if.removeAttribute("condition")
-			: _if.setAttribute("condition", _value === true ? "" : String(_value));
+			: _if.setAttribute("condition", _value === true ? "true" : String(_value));
 	}
 
 	_if.appendChild(_text);
@@ -492,7 +492,7 @@ export function Badge(_id, _parent, _props) {
 exports[`emission golden snapshots (emission-spec.md) > R12/R13 — computeds compile to replaying derivation entities 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Totals(_id, _parent, _props) {
+export function Totals(_id, _parent, _props, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let items = _props[0];
@@ -536,7 +536,7 @@ export function Totals(_id, _parent, _props) {
 exports[`emission golden snapshots (emission-spec.md) > R20 — factory callbacks and explicit cleanup are entity-owned 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function LiveFeed(_id, _parent) {
+export function LiveFeed(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let status = 'idle';
@@ -575,7 +575,7 @@ export function LiveFeed(_id, _parent) {
 exports[`emission golden snapshots (emission-spec.md) > R24 — component props with default values and destructuring 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function Avatar(_id, _parent, _props) {
+export function Avatar(_id, _parent, _props, _dataPolicies) {
 	let _slot, _slot2, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let { user = { name: 'anon' }, size = 32 } = _props[0];
@@ -590,7 +590,7 @@ export function Avatar(_id, _parent, _props) {
 
 			_value == null || _value === false
 				? _img.removeAttribute("alt")
-				: _img.setAttribute("alt", _value === true ? "" : String(_value));
+				: _img.setAttribute("alt", _value === true ? "true" : String(_value));
 		}
 
 		if (_slot2 !== (_value = size)) {
@@ -598,7 +598,7 @@ export function Avatar(_id, _parent, _props) {
 
 			_value == null || _value === false
 				? _img.removeAttribute("width")
-				: _img.setAttribute("width", _value === true ? "" : String(_value));
+				: _img.setAttribute("width", _value === true ? "true" : String(_value));
 		}
 	};
 
@@ -612,7 +612,7 @@ export function Avatar(_id, _parent, _props) {
 
 		_value == null || _value === false
 			? _img.removeAttribute("alt")
-			: _img.setAttribute("alt", _value === true ? "" : String(_value));
+			: _img.setAttribute("alt", _value === true ? "true" : String(_value));
 	}
 
 	if (_slot2 !== (_value = size)) {
@@ -620,7 +620,7 @@ export function Avatar(_id, _parent, _props) {
 
 		_value == null || _value === false
 			? _img.removeAttribute("width")
-			: _img.setAttribute("width", _value === true ? "" : String(_value));
+			: _img.setAttribute("width", _value === true ? "true" : String(_value));
 	}
 
 	return _img;
@@ -630,7 +630,7 @@ export function Avatar(_id, _parent, _props) {
 exports[`emission golden snapshots (emission-spec.md) > R31 — explicit innerHTML is a guarded raw-HTML property 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function RawViewer(_id, _parent, _props) {
+export function RawViewer(_id, _parent, _props, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let htmlContent = _props[0];
@@ -683,7 +683,7 @@ _MD.registerEffect("App/$module-effects/.%2Fcomponent.tsx/0", null, () => {
 
 if (import.meta.hot) import.meta.hot.dispose(() => _MD.unregisterSubtree("App/$module-effects/.%2Fcomponent.tsx/0"));
 
-export function Nav(_id, _parent) {
+export function Nav(_id, _parent, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	const _update = () => {};
@@ -707,7 +707,7 @@ export function Nav(_id, _parent) {
 exports[`emission golden snapshots (emission-spec.md) > R40 — arrow and function-expression components normalize to factories 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function ArrowBadge(_id, _parent, _props) {
+export function ArrowBadge(_id, _parent, _props, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let { label } = _props[0];
@@ -727,7 +727,7 @@ export function ArrowBadge(_id, _parent, _props) {
 	return _span;
 }
 
-export function ExprCard(_id2, _parent2, _props2) {
+export function ExprCard(_id2, _parent2, _props2, _dataPolicies2) {
 	let _value2;
 	const _document2 = _MD.getActiveEnvironment().document;
 	let { title } = _props2[0];
@@ -767,7 +767,7 @@ _MD.installAccessTable({ readers: { "./component.tsx#items": ["App", "App/*"] } 
 let filter = 'all';
 let items = [{ id: 1, text: 'a', done: false }];
 
-export function FilteredList(_id, _parent) {
+export function FilteredList(_id, _parent, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let _listView = items.filter((i) => filter === 'all' || i.done);
@@ -847,7 +847,7 @@ export function FilteredList(_id, _parent) {
 exports[`emission golden snapshots (emission-spec.md) > R44 — DOM refs are compiler-native lifecycle slots 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
-export function CanvasView(_id, _parent) {
+export function CanvasView(_id, _parent, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let canvasEl = null;
@@ -876,7 +876,7 @@ exports[`emission golden snapshots (emission-spec.md) > Transparent data — $fe
 import * as _MDD from "@memoized-dom/data/internal";
 import { $fetch } from '@memoized-dom/data';
 
-export function Profile(_id, _parent) {
+export function Profile(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	const user = $fetch('/api/user');

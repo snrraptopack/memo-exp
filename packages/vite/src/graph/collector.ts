@@ -51,7 +51,11 @@ export interface CompiledGraph {
   output: ReadonlyMap<string, string>;
   maps: ReadonlyMap<string, CompilerSourceMap>;
   css: ReadonlyMap<string, string>;
+  styles: ReadonlySet<string>;
 }
+
+const styleExtension =
+  /\.(?:css|less|sass|scss|styl|stylus|pcss|postcss|sss)(?:$|[?#])/i;
 
 function resolutionKey(importer: string, specifier: string): string {
   return `${importer}\0${specifier}`;
@@ -71,6 +75,7 @@ export async function compileGraph(
   const sourceIds = new Map<string, string>();
   const resolutions = new Map<string, string>();
   const visiting = new Set<string>();
+  const styles = new Set<string>();
 
   async function visit(file: string): Promise<void> {
     const cleanFile = cleanViteId(file);
@@ -120,6 +125,10 @@ export async function compileGraph(
       if (resolved === null || resolved.external) continue;
 
       const target = cleanViteId(resolved.id);
+      if (styleExtension.test(resolved.id)) {
+        styles.add(resolved.id);
+        continue;
+      }
       const authored = authoredImports.get(specifier);
       if (
         authored !== undefined &&
@@ -166,6 +175,7 @@ export async function compileGraph(
       output: new Map(),
       maps: new Map(),
       css: new Map(),
+      styles: new Set(),
     };
   }
   for (const entry of seeds) {
@@ -177,6 +187,21 @@ export async function compileGraph(
     ...(options.runtimePath === undefined
       ? {}
       : { runtimePath: options.runtimePath }),
+    ...(options.hotRuntimePath === undefined
+      ? {}
+      : { hotRuntimePath: options.hotRuntimePath }),
+    ...(options.routerPath === undefined
+      ? {}
+      : { routerPath: options.routerPath }),
+    ...(options.dataRuntimePath === undefined
+      ? {}
+      : { dataRuntimePath: options.dataRuntimePath }),
+    ...(options.transparentAsyncSources === undefined
+      ? {}
+      : { transparentAsyncSources: options.transparentAsyncSources }),
+    ...(options.externalReactiveSources === undefined
+      ? {}
+      : { externalReactiveSources: options.externalReactiveSources }),
     ...(hot ? { hot: true } : {}),
     ...(options.moduleStateCells === undefined
       ? {}
@@ -222,6 +247,7 @@ export async function compileGraph(
     let code = compiled.output[id]!;
     if (compiled.css?.[id]) {
       css.set(file, compiled.css[id]!);
+      styles.add(`${file}?memo-style.css`);
       code = `import ${JSON.stringify(`./${basename(file)}?memo-style.css`)};\n${code}`;
     }
     output.set(
@@ -239,7 +265,7 @@ export async function compileGraph(
     );
     maps.set(file, compiled.maps[id]!);
   }
-  return { files: new Set(sourceIds.keys()), output, maps, css };
+  return { files: new Set(sourceIds.keys()), output, maps, css, styles };
 }
 
 function appendHotBoundary(

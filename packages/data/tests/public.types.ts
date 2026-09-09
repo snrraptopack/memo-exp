@@ -37,8 +37,16 @@ const savedUser = $fetch<User>('/user', {
 });
 const assignableUser: User = user;
 const preservedSource: ResolvedValue<User> = user;
+const nullableUser = $fetch<User | null>('/optional-user');
 void assignableUser.name;
 void preservedSource.id;
+// @ts-expect-error Nullable endpoint results must be narrowed before payload reads.
+void nullableUser.name;
+if (nullableUser !== null) void nullableUser.name;
+void $track(nullableUser).pending;
+$track(nullableUser).onSuccess(data => {
+  if (data !== null) void data.name;
+});
 void $track(user).pending;
 void $track(user).error;
 void $track(user).id;

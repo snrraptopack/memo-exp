@@ -45,6 +45,12 @@ export interface MemoDomOptions {
    * aliases into the analysis.
    */
   transparentAsyncSources?: readonly TransparentAsyncSourceDefinition[];
+  /**
+   * Imported live values whose libraries provide a subscription adapter.
+   * This lets derivations over routers, stores, and other external state use
+   * the same compiler replay path as application-owned state.
+   */
+  externalReactiveSources?: readonly ExternalReactiveSourceDefinition[];
   /** Emit dev-only live-component ownership used by framework HMR adapters. */
   hot?: boolean;
   /**
@@ -74,6 +80,29 @@ export interface MemoDomOptions {
    */
   moduleStateCells?: boolean;
 }
+
+export interface ExternalReactiveSourceDefinition {
+  /** Authored module containing the imported live value. */
+  readonly module: string;
+  /** Named export carrying the live value (`default` is also supported). */
+  readonly source: string;
+  /** Adapter called as `subscribe(value, listener)` and returning a disposer. */
+  readonly subscribe: {
+    readonly module: string;
+    readonly export: string;
+  };
+}
+
+export const DEFAULT_EXTERNAL_REACTIVE_SOURCES: readonly ExternalReactiveSourceDefinition[] = [
+  {
+    module: '@memoized-dom/router',
+    source: 'route',
+    subscribe: {
+      module: '@memoized-dom/router/internal',
+      export: 'subscribeRouteValue',
+    },
+  },
+];
 
 export interface TransparentAsyncSourceDefinition {
   /** Public module from which the authored intrinsics are imported. */
@@ -340,6 +369,7 @@ export interface Ctx {
   routerPath: string;
   dataRuntimePath: string;
   transparentAsyncSources: readonly TransparentAsyncSourceDefinition[];
+  externalReactiveSources: readonly ExternalReactiveSourceDefinition[];
   rootId: string;
   rootComponent: string | null;
   hot: boolean;
@@ -351,6 +381,13 @@ export interface Ctx {
   routeElements: WeakMap<t.JSXElement, CompilerRouteElement>;
   localRoutes: CompilerRouteDefinition[];
   usesRouter: boolean;
+  /** Authored live-value binding -> generated subscription adapter binding. */
+  externalReactiveBindings: Map<string, string>;
+  /** Generated subscription imports, keyed by adapter module and export. */
+  externalReactiveImports: Map<
+    string,
+    { module: string; imported: string; local: string }
+  >;
   usesTransparentData: boolean;
   /** Local import bindings classified by provider metadata. */
   transparentSourceFactories: Set<string>;
@@ -644,6 +681,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     dataRuntimePath: opts.dataRuntimePath ?? '@memoized-dom/data/internal',
     transparentAsyncSources: opts.transparentAsyncSources ??
       DEFAULT_TRANSPARENT_ASYNC_SOURCES,
+    externalReactiveSources: opts.externalReactiveSources ??
+      DEFAULT_EXTERNAL_REACTIVE_SOURCES,
     rootId: opts.rootId ?? 'App',
     rootComponent: opts.rootComponent ?? null,
     hot: opts.hot ?? false,
@@ -656,6 +695,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     localRoutes: [],
     astAnalysis: null,
     usesRouter: false,
+    externalReactiveBindings: new Map(),
+    externalReactiveImports: new Map(),
     usesTransparentData: false,
     transparentSourceFactories,
     transparentProviderFactories,

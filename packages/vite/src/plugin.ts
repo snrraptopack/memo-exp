@@ -23,6 +23,7 @@ import {
   normalizeFile,
 } from './paths';
 import { AdapterState } from './state';
+import { registerClientStyles } from './dev-assets';
 import {
   generateServerFunctionRoutesModule,
   isServerFunctionFile,
@@ -56,6 +57,7 @@ export function memoizedDom(
   // workspace example). Keyed by the requested source file.
   const lazyStates = new Map<object, Map<string, AdapterState>>();
   let config: ResolvedConfig | undefined;
+  let devServer: import('vite').ViteDevServer | undefined;
   let entries: readonly string[] = [];
   let serverFunctionRoutesSource =
     'export const serverFunctionManifest = [];\nexport const serverFunctionRoutes = [];\n';
@@ -138,6 +140,9 @@ export function memoizedDom(
     const compilation = state.compiling;
     try {
       state.replace(await compilation);
+      if (devServer !== undefined) {
+        registerClientStyles(devServer, state, state.styles);
+      }
     } finally {
       if (state.compiling === compilation) {
         state.compiling = undefined;
@@ -172,6 +177,9 @@ export function memoizedDom(
     const compilation = state.compiling;
     try {
       state.replace(await compilation);
+      if (devServer !== undefined) {
+        registerClientStyles(devServer, state, state.styles);
+      }
     } finally {
       if (state.compiling === compilation) {
         state.compiling = undefined;
@@ -301,6 +309,9 @@ export function memoizedDom(
     const compilation = lazy.compiling;
     try {
       lazy.replace(await compilation);
+      if (devServer !== undefined) {
+        registerClientStyles(devServer, lazy, lazy.styles);
+      }
     } finally {
       if (lazy.compiling === compilation) {
         lazy.compiling = undefined;
@@ -335,6 +346,9 @@ export function memoizedDom(
     configResolved(resolved) {
       config = resolved;
       entries = entryFiles(resolved.root, options.entries);
+    },
+    configureServer(server) {
+      devServer = server;
     },
     async buildStart() {
       for (const file of await refreshServerFunctions()) this.addWatchFile(file);

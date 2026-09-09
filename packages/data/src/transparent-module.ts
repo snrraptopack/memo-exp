@@ -32,7 +32,7 @@ export interface ModuleSourceRef {
   readonly key: string;
 }
 
-type SourceFactory = () => ResolvedValue<unknown>;
+type SourceFactory = () => unknown;
 
 interface DescribedSource {
   readonly factory: SourceFactory;
@@ -41,7 +41,7 @@ interface DescribedSource {
 }
 
 interface CachedInstance {
-  readonly instance: ResolvedValue<unknown>;
+  readonly instance: unknown;
   /** Description version this instance was materialized from. */
   version: number;
 }

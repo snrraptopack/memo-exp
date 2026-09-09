@@ -105,8 +105,8 @@ function StoryDetail({ id }: { id: number }) {
 function Details({ story }: { story: ReturnType<typeof getStory> }) {
   return (
     <article>
-      <h2>{story.title ?? 'Unknown story'}</h2>
-      <p>{story.summary ?? 'No summary available.'}</p>
+      <h2>{story?.title ?? 'Unknown story'}</h2>
+      <p>{story?.summary ?? 'No summary available.'}</p>
       <small>
         This detail source rebinds reactively: changing the selected story
         re-issues only this request.

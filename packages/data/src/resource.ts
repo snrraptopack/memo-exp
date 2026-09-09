@@ -417,14 +417,15 @@ export class FetchStore {
       ) {
         const keyUrl = keyParts[1] ?? '';
         const identityUrl = identityParts[1] ?? '';
-        const normKey =
-          keyUrl.startsWith('http://') || keyUrl.startsWith('https://')
-            ? new URL(keyUrl).pathname
-            : keyUrl;
-        const normId =
-          identityUrl.startsWith('http://') || identityUrl.startsWith('https://')
-            ? new URL(identityUrl).pathname
-            : identityUrl;
+        const normalizeCrossEnvironmentUrl = (value: string): string => {
+          if (!value.startsWith('http://') && !value.startsWith('https://')) {
+            return value;
+          }
+          const parsed = new URL(value);
+          return `${parsed.pathname}${parsed.search}`;
+        };
+        const normKey = normalizeCrossEnvironmentUrl(keyUrl);
+        const normId = normalizeCrossEnvironmentUrl(identityUrl);
         if (normKey === normId) {
           this.restoreRecords.delete(key);
           return candidate;

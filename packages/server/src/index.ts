@@ -246,8 +246,6 @@ export async function renderWithDomAsync(
     effects: 'disabled',
     refs: 'disabled',
   });
-  const previousRuntime = setActiveApplicationRuntime(runtime);
-
   const routeHistory = createMemoryRouteHistory({
     initialEntries: [options.url ?? '/'],
   });
@@ -255,40 +253,36 @@ export async function renderWithDomAsync(
   const dataRuntime = createDataRuntime(
     options.fetch === undefined ? {} : { fetch: options.fetch },
   );
-  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
-  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
-
   const rootId = 'App';
-  try {
-    const root = runWithApplicationRuntime(runtime, () =>
-      component(rootId, null),
-    );
-    if (options.mode === 'resolve') {
-      await dataRuntime.settle(options.timeout ?? 5000);
-    }
-    const nodes =
-      root?.nodeType === 11 /* FRAGMENT */
-        ? Array.from(root.childNodes)
-        : [root as Node];
-    for (const node of nodes) syncBooleanAttributes(node);
-    return {
-      document: serverDocument as unknown as Document,
-      html: serialize(nodes, options.markers === true, rootId),
-      nodes,
-      runtime,
-    };
-  } catch (error) {
-    runWithApplicationRuntime(runtime, () => {
-      unregisterSubtree(rootId);
-    });
-    throw error;
-  } finally {
-    setActiveApplicationRuntime(previousRuntime);
-    setActiveRouteRuntime(previousRouteRuntime);
-    setActiveDataRuntime(previousDataRuntime);
-    routeRuntime.dispose();
-    dataRuntime.clear();
-  }
+  return runWithRouteRuntime(routeRuntime, () =>
+    runWithDataRuntime(dataRuntime, () =>
+      runWithApplicationRuntime(runtime, async () => {
+        try {
+          const root = component(rootId, null);
+          if (options.mode === 'resolve') {
+            await dataRuntime.settle(options.timeout ?? 5000);
+          }
+          const nodes =
+            root?.nodeType === 11 /* FRAGMENT */
+              ? Array.from(root.childNodes)
+              : [root as Node];
+          for (const node of nodes) syncBooleanAttributes(node);
+          return {
+            document: serverDocument as unknown as Document,
+            html: serialize(nodes, options.markers === true, rootId),
+            nodes,
+            runtime,
+          };
+        } catch (error) {
+          unregisterSubtree(rootId);
+          throw error;
+        } finally {
+          routeRuntime.dispose();
+          dataRuntime.clear();
+        }
+      }),
+    ),
+  );
 }
 
 export function renderWithDom(
@@ -416,7 +410,6 @@ export async function renderToStringAsync(
     effects: 'disabled',
     refs: 'disabled',
   });
-  const previousRuntime = setActiveApplicationRuntime(runtime);
   const routeHistory = createMemoryRouteHistory({
     initialEntries: [options.url ?? '/'],
   });
@@ -424,8 +417,6 @@ export async function renderToStringAsync(
   const dataRuntime = createDataRuntime(
     options.fetch === undefined ? {} : { fetch: options.fetch },
   );
-  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
-  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
   return runWithRouteRuntime(routeRuntime, () =>
     runWithDataRuntime(dataRuntime, () =>
       runWithApplicationRuntime(runtime, async () => {
@@ -442,9 +433,6 @@ export async function renderToStringAsync(
           unregisterSubtree(rootId);
           throw error;
         } finally {
-          setActiveApplicationRuntime(previousRuntime);
-          setActiveRouteRuntime(previousRouteRuntime);
-          setActiveDataRuntime(previousDataRuntime);
           routeRuntime.dispose();
           dataRuntime.clear();
           runtime.dispose();
@@ -525,7 +513,6 @@ export async function renderToResultAsync(
     effects: 'disabled',
     refs: 'disabled',
   });
-  const previousRuntime = setActiveApplicationRuntime(runtime);
   const routeHistory = createMemoryRouteHistory({
     initialEntries: [options.url ?? '/'],
   });
@@ -533,9 +520,6 @@ export async function renderToResultAsync(
   const dataRuntime = createDataRuntime(
     options.fetch === undefined ? {} : { fetch: options.fetch },
   );
-  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
-  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
-
   return runWithRouteRuntime(routeRuntime, () =>
     runWithDataRuntime(dataRuntime, () =>
       runWithApplicationRuntime(runtime, async () => {
@@ -562,9 +546,6 @@ export async function renderToResultAsync(
           unregisterSubtree(rootId);
           throw error;
         } finally {
-          setActiveApplicationRuntime(previousRuntime);
-          setActiveRouteRuntime(previousRouteRuntime);
-          setActiveDataRuntime(previousDataRuntime);
           routeRuntime.dispose();
           dataRuntime.clear();
           runtime.dispose();

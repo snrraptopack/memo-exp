@@ -543,6 +543,15 @@ function inferredGroupDataNames(
   if (component !== null) {
     const declaration = component as unknown as t.FunctionDeclaration;
     if (declaration.id !== null) {
+      // Source discovery has already proven which component-local bindings are
+      // colorless resources. Seed every one of those bindings here, then let
+      // the origin walk below retain only the sources actually used by this
+      // Group's content. Scanning only top-level references loses sources whose
+      // first read occurs inside an immediately-evaluated callback, such as a
+      // `projects.map(project => tasks.filter(...))` derivation.
+      for (const source of ctx.transparentSources.get(declaration.id.name) ?? []) {
+        candidates.add(source);
+      }
       const linked = ctx.linkedComponentPropSources.get(declaration.id.name);
       const parameter = declaration.params[0];
       const transparentProps = new Set<string>();
@@ -588,11 +597,14 @@ function inferredGroupDataNames(
     }
     walkAst(component, {
       enter(node) {
-        if (node !== component && (
-          node.type === 'FunctionDeclaration' ||
-          node.type === 'FunctionExpression' ||
-          node.type === 'ArrowFunctionExpression'
-        )) return false;
+        // Nested declarations are separate components/helpers. Function and
+        // arrow expressions, however, can be immediately evaluated as part of
+        // a render derivation (`items.map(() => otherSource.filter(...))`).
+        // Keep walking those closures so every proven source is available to
+        // the later content-origin filter.
+        if (node !== component && node.type === 'FunctionDeclaration') {
+          return false;
+        }
         if (node.type !== 'Identifier') return;
         const source = transparentSourceBindingName(
           ctx,

@@ -71,6 +71,32 @@ function hasComponentLocalEffects(effects: readonly EffectSite[] | undefined): b
   ) === true;
 }
 
+function externalSourceBinding(ctx: Ctx, source: string): string | null {
+  const root = source.split('.')[0]!;
+  return ctx.externalReactiveBindings.has(root) ? root : null;
+}
+
+function componentExternalSources(ctx: Ctx, component: string): string[] {
+  if (ctx.externalReactiveBindings.size === 0) return [];
+  const sources = new Set<string>();
+  const note = (source: string): void => {
+    const binding = externalSourceBinding(ctx, source);
+    if (binding !== null) sources.add(binding);
+  };
+  for (const source of ctx.compReads.get(component) ?? []) note(source);
+  for (const derivation of ctx.instanceDerivations.get(component) ?? []) {
+    for (const source of derivation.sources) note(source);
+  }
+  for (const control of ctx.instanceControlFlow.get(component) ?? []) {
+    for (const source of control.sources) note(source);
+  }
+  for (const site of ctx.effects.get(component) ?? []) {
+    for (const source of site.moduleReads) note(source);
+    for (const source of site.conditionModuleReads) note(source);
+  }
+  return [...sources].sort();
+}
+
 function buildComponentRowContext(
   propPlan: ComponentPropsPlan,
   refs: readonly SiteRef[],
@@ -250,6 +276,7 @@ export function transformComponent(
   const localDerivations = ctx.instanceDerivations.get(name);
   const controlFlow = ctx.instanceControlFlow.get(name);
   const effects = ctx.effects.get(name);
+  const externalSources = componentExternalSources(ctx, name);
   const hasLocalEffects = hasComponentLocalEffects(effects);
   if (
     ctx.selectiveDerivationComponents.has(name) ||
@@ -464,6 +491,25 @@ export function transformComponent(
     ...transparentSourceMounts(ctx, name, astFactory.identifier(factoryId)),
     ...eventSourceDisposals,
   );
+  for (const source of externalSources) {
+    const subscribe = ctx.externalReactiveBindings.get(source)!;
+    body.push(
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'cleanup'), [
+          astFactory.identifier(factoryId),
+          astFactory.callExpression(astFactory.identifier(subscribe), [
+            astFactory.identifier(source),
+            astFactory.arrowFunctionExpression(
+              [],
+              astFactory.callExpression(md(ctx, 'markDirty'), [
+                astFactory.identifier(factoryId),
+              ]),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
   if (effects !== undefined) {
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));
   }

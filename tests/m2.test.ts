@@ -133,6 +133,35 @@ describe('M2 keyed list reconciliation', () => {
     expect(after[3]!.textContent).toContain('todo 10000');
   });
 
+  it('inserts a new key at its exact derived-array position', () => {
+    const ul = document.createElement('ul');
+    document.body.appendChild(ul);
+    const region = createListRegion(
+      ul,
+      'App/OrderedInsert',
+      (item: { id: number; position: number }): ListEntry => {
+        const li = document.createElement('li');
+        li.textContent = String(item.id);
+        return { nodes: li, entities: [] };
+      },
+      item => item.id,
+    );
+    const first = { id: 1, position: 10 };
+    const last = { id: 3, position: 30 };
+    region.reconcile([first, last]);
+    const retained = [...ul.querySelectorAll('li')];
+
+    const inserted = { id: 2, position: 20 };
+    region.reconcile([first, inserted, last].sort(
+      (left, right) => left.position - right.position,
+    ));
+
+    const rows = [...ul.querySelectorAll('li')];
+    expect(ul.textContent).toBe('123');
+    expect(rows[0]).toBe(retained[0]);
+    expect(rows[2]).toBe(retained[1]);
+  });
+
   it('append validation falls back when a retained item key changed', () => {
     const items = [{ id: 1 }, { id: 2 }];
     const ul = document.createElement('ul');

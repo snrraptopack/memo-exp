@@ -147,6 +147,56 @@ describe('compiler-owned JSX routing', () => {
     expect(output['./StoryLink.tsx']).not.toContain('route-to');
   });
 
+  it('replays component derivations when URL state changes within one route', () => {
+    const code = compile(`
+      import { route as currentRoute } from '@memoized-dom/router';
+
+      export function App() {
+        const tab = currentRoute.query.get('tab') ?? 'board';
+        return (
+          <main route="/projects/:projectId">
+            <p if={tab === 'board'}>Board</p>
+            <p if={tab === 'activity'}>Activity</p>
+          </main>
+        );
+      }
+    `);
+
+    expect(code).toMatch(/let tab = currentRoute\.query\.get\(['"]tab['"]\) \?\? ['"]board['"]/);
+    expect(code).toContain('subscribeRouteValue as _subscribeExternal');
+    expect(code).toMatch(/tab = currentRoute\.query\.get\(['"]tab['"]\) \?\? ['"]board['"]/);
+    expect(code).toContain('markDirty(_id)');
+    expect(code).toContain('_routeRegion.update()');
+  });
+
+  it('uses the same external-reactivity contract for third-party live values', () => {
+    const code = compile(`
+      import { location as currentLocation } from 'portable-router';
+
+      export function App() {
+        const section = currentLocation.section;
+        return <main><p>{section}</p></main>;
+      }
+    `, {
+      externalReactiveSources: [{
+        module: 'portable-router',
+        source: 'location',
+        subscribe: {
+          module: 'portable-router/memoized-dom',
+          export: 'subscribeLocation',
+        },
+      }],
+    });
+
+    expect(code).toContain(
+      'subscribeLocation as _subscribeExternal',
+    );
+    expect(code).toContain(
+      '_subscribeExternal(currentLocation, () => _MD.markDirty(_id))',
+    );
+    expect(code).toMatch(/section = currentLocation\.section/);
+  });
+
   it('reports the owning module and authored route attribute location', () => {
     const diagnostics = diagnoseModules({
       './App.tsx': `

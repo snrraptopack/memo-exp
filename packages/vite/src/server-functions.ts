@@ -183,7 +183,7 @@ export async function generateServerFunctionRoutesModule(
       functionsRoot: relative(root, directory).replaceAll('\\', '/'),
       ...(options.frontend === undefined ? {} : { frontend: options.frontend }),
     });
-    const middlewareFile = /(?:^|\/)\_middleware\.[^.]+$/.test(file);
+    const middlewareFile = /(?:^|\/)_middleware\.[^.]+$/.test(file);
     if (middlewareFile && !metadata.middlewareExport) {
       throw new Error(
         `memo-dom: server function middleware '${file}' must export a named 'middleware' array`,

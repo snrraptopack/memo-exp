@@ -291,7 +291,7 @@ describe('R24 - authored JSX semantics', () => {
       `,
     });
     expect(output['/App.tsx']).toMatch(
-      /Child\(_id\d* \+ "\/Child", _id\d*, \[\{\s*value: "linked"\s*\}\]\)/,
+      /Child\(_id\d* \+ "\/Child", _id\d*, \[\{\s*value: "linked"\s*\}\], \{ \$default:/,
     );
     const defaultOutput = compileModules({
       '/Child.tsx': `
@@ -305,7 +305,7 @@ describe('R24 - authored JSX semantics', () => {
       `,
     });
     expect(defaultOutput['/App.tsx']).toMatch(
-      /Child\(_id\d* \+ "\/Child", _id\d*, \[undefined\]\)/,
+      /Child\(_id\d* \+ "\/Child", _id\d*, \[undefined\], \{ \$default:/,
     );
     expect(() =>
       compileModules({

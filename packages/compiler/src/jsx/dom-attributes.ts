@@ -32,7 +32,38 @@ const DOM_PROPERTY_ATTRIBUTES = new Set([
 const DOM_ATTRIBUTE_NAMES: Record<string, string> = {
   htmlFor: 'for',
   crossOrigin: 'crossorigin',
+  contentEditable: 'contenteditable',
+  spellCheck: 'spellcheck',
+  autoCapitalize: 'autocapitalize',
 };
+
+const BOOLEAN_ATTRIBUTES = new Set([
+  'allowfullscreen',
+  'async',
+  'autofocus',
+  'autoplay',
+  'checked',
+  'controls',
+  'default',
+  'defer',
+  'disabled',
+  'formnovalidate',
+  'hidden',
+  'inert',
+  'ismap',
+  'itemscope',
+  'loop',
+  'multiple',
+  'muted',
+  'nomodule',
+  'novalidate',
+  'open',
+  'playsinline',
+  'readonly',
+  'required',
+  'reversed',
+  'selected',
+]);
 
 export function domPropertyName(
   name: string,
@@ -110,6 +141,7 @@ export function domAttributeWrite(
 ): t.Statement {
   const element = astFactory.identifier(varName);
   const attribute = DOM_ATTRIBUTE_NAMES[name] ?? name;
+  const trueValue = BOOLEAN_ATTRIBUTES.has(attribute.toLowerCase()) ? '' : 'true';
   if (astFactory.isStringLiteral(value)) {
     return astFactory.expressionStatement(
       astFactory.callExpression(
@@ -143,7 +175,7 @@ export function domAttributeWrite(
               cloneEstreeNode(value),
               astFactory.booleanLiteral(true),
             ),
-            astFactory.stringLiteral(''),
+            astFactory.stringLiteral(trueValue),
             astFactory.callExpression(astFactory.identifier('String'), [cloneEstreeNode(value)]),
           ),
         ],
