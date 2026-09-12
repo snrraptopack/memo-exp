@@ -43,12 +43,9 @@ import {
   resolveLocalHelper,
 } from './handlers';
 import {
-  buildChildrenSlot,
   emitForwardedSlotMount,
-  emitChildrenIntoParent,
   hasComponentChildren,
   isRenderPropReference,
-  type JsxChild,
 } from './components/children';
 import {
   collectDirectChildren,
@@ -91,6 +88,16 @@ import {
   transparentPolicyRenderer,
 } from './data-sources';
 import { emitText } from './emission/text-node';
+import { createAuthoredSlotBuilders } from './emission/authored-slots';
+
+const {
+  buildAuthoredChildrenSlot,
+  buildAuthoredRenderValueSlot,
+} = createAuthoredSlotBuilders({
+  emitNode,
+  emitList: emitRegion,
+  emitCondition: emitCondRegion,
+});
 
 function expressionReadsBinding(node: t.Node, name: string): boolean {
   let found = false;
@@ -269,116 +276,6 @@ function emitDirectChildOperations(
       );
     }
   }
-}
-
-function buildAuthoredChildrenSlot(
-  ctx: Ctx,
-  ownerScope: EmitScope,
-  children: readonly JsxChild[],
-  compName: string,
-  compPath: ComponentPath,
-  nestedIn: 'row' | 'cond' | null,
-  rowCtx: RowCtx | undefined,
-  eventOriginId: t.Expression | undefined,
-  inSvg: boolean,
-  ownerId: t.Expression,
-): t.Identifier {
-  return buildChildrenSlot(
-    ctx,
-    ownerScope,
-    ownerId,
-    (childScope, parentNode, slotOwner) => {
-    emitChildrenIntoParent(
-      childScope,
-      children,
-      parentNode.name,
-      {
-        emitText: (expression) =>
-          emitText(ctx, childScope, expression, slotOwner),
-        emitNode: (node) =>
-          emitNode(
-            ctx,
-            childScope,
-            node,
-            compName,
-            compPath,
-            nestedIn,
-            rowCtx,
-            eventOriginId,
-            inSvg,
-            slotOwner,
-          ),
-        emitList: (call, parentVar) =>
-          emitRegion(
-            ctx,
-            childScope,
-            call,
-            parentVar,
-            compName,
-            compPath,
-            inSvg,
-            slotOwner,
-            rowCtx,
-          ),
-        emitCondition: (expression, parentVar) =>
-          emitCondRegion(
-            ctx,
-            childScope,
-            expression,
-            parentVar,
-            compName,
-            compPath,
-            inSvg,
-            slotOwner,
-            nestedIn !== null,
-          ),
-        isForwarded: (expression) =>
-          isRenderPropReference(ctx, compName, expression),
-        emitForwarded: (expression, parentVar) =>
-          emitForwardedSlotMount(
-            ctx,
-            childScope,
-            expression,
-            parentVar,
-            slotOwner,
-          ),
-        fail: (message) => {
-          throw compPath.buildCodeFrameError(message);
-        },
-      },
-    );
-    },
-  );
-}
-
-function buildAuthoredRenderValueSlot(
-  ctx: Ctx,
-  ownerScope: EmitScope,
-  value: t.Expression,
-  compName: string,
-  compPath: ComponentPath,
-  nestedIn: 'row' | 'cond' | null,
-  rowCtx: RowCtx | undefined,
-  eventOriginId: t.Expression | undefined,
-  inSvg: boolean,
-  ownerId: t.Expression,
-): t.Identifier {
-  const children: JsxChild[] =
-    astFactory.isJSXElement(value) || astFactory.isJSXFragment(value)
-      ? [value]
-      : [astFactory.jsxExpressionContainer(value)];
-  return buildAuthoredChildrenSlot(
-    ctx,
-    ownerScope,
-    children,
-    compName,
-    compPath,
-    nestedIn,
-    rowCtx,
-    eventOriginId,
-    inSvg,
-    ownerId,
-  );
 }
 
 function emitElement(

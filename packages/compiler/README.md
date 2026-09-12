@@ -159,6 +159,8 @@ List emission separates region/row construction from update scheduling:
 
 | Module | Responsibility |
 |---|---|
+| `emission/authored-slots.ts` | Authored children/render-value slot construction through injected node and region emitters |
+| `emission/text-node.ts` | Text normalization, DOM creation, guarded writes, and transparent-source registration |
 | `emission/list-region.ts` | Region setup plus callback, component, and inline row factories |
 | `emission/list-update.ts` | Full reconcile versus targeted keyed refresh decisions and emitted update statements |
 | `emission/text-node.ts` | Static/dynamic text creation, normalization, guarded slots, and transparent-source registration |
