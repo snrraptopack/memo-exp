@@ -163,7 +163,9 @@ List emission separates region/row construction from update scheduling:
 | `emission/component-call.ts` | Nested component props, render slots/callbacks, child identity, and prop replay |
 | `emission/host-element.ts` | Intrinsic element creation, attributes/events/refs, direct children, and dynamic DOM writes |
 | `emission/text-node.ts` | Text normalization, DOM creation, guarded writes, and transparent-source registration |
-| `emission/list-region.ts` | Region setup plus callback, component, and inline row factories |
+| `emission/list-region.ts` | Region setup and selection of callback, component, or inline row strategy |
+| `emission/list-component-row.ts` | Component-row factory ABI, prop projection, and lightweight-row updates |
+| `emission/list-inline-row.ts` | Inline-row scopes, bindings, registration, and update closure construction |
 | `emission/list-update.ts` | Full reconcile versus targeted keyed refresh decisions and emitted update statements |
 | `emission/text-node.ts` | Static/dynamic text creation, normalization, guarded slots, and transparent-source registration |
 | `lists/targeted-refresh.ts` | Analysis-time dependency discovery consumed by list emission |
