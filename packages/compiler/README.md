@@ -126,7 +126,8 @@ components, effects, and callbacks. Mutation analysis is split by concern:
 
 | Module | Responsibility |
 |---|---|
-| `handlers/analyze.ts` | Reactive-origin tracking and write classification for one callback |
+| `handlers/analyze.ts` | Callback cloning, origin setup, AST visitor dispatch, and finalization orchestration |
+| `handlers/write-routing.ts` | Stateful per-handler origin classification and scoped write-routing decisions |
 | `handlers/traversal.ts` | Scope-aware handler paths and visitor dispatch |
 | `handlers/mutation-targets.ts` | Keyed-list mutation keys and cross-list visibility decisions |
 | `handlers/execution-sites.ts` | Execution-aware write guards and final commit insertion |
