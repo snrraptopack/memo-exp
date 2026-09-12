@@ -161,6 +161,7 @@ List emission separates region/row construction from update scheduling:
 |---|---|
 | `emission/list-region.ts` | Region setup plus callback, component, and inline row factories |
 | `emission/list-update.ts` | Full reconcile versus targeted keyed refresh decisions and emitted update statements |
+| `emission/text-node.ts` | Static/dynamic text creation, normalization, guarded slots, and transparent-source registration |
 | `lists/targeted-refresh.ts` | Analysis-time dependency discovery consumed by list emission |
 
 `list-update.ts` is the sole owner of reason matching and keyed refresh
