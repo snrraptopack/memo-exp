@@ -99,6 +99,7 @@ The transparent data-source feature is split by compiler phase:
 | `module-read-lowering.ts` | Materializing reads for imported module source references |
 | `automatic-sites.ts` | Automatic pending/error render-policy sites and renderer metadata |
 | `read-rewriting.ts` | Ordered orchestration of component read lowering |
+| `group-lowering.ts` | Explicit Group/TSRX boundary validation and policy lowering |
 | `index.ts` | Stable public surface for the feature |
 
 The dependency direction is discovery/analysis → transforms → orchestration.

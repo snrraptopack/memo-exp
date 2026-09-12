@@ -23,3 +23,4 @@ export {
 } from './subscriptions';
 export { transparentPolicyRenderer } from './automatic-sites';
 export { rewriteTransparentDataReads } from './read-rewriting';
+export { lowerTransparentGroups } from './group-lowering';
