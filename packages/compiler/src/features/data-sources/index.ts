@@ -16,3 +16,8 @@ export {
   transparentCallPolicyArgument,
   transparentSourceMounts,
 } from './policy-arguments';
+export {
+  registerTransparentDataSite,
+  subscribeTransparentStructuralSite,
+  transparentExpressionSources,
+} from './subscriptions';
