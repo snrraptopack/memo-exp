@@ -18,7 +18,7 @@ The top-level files are orchestration and whole-program passes:
 
 | Path | Responsibility |
 |---|---|
-| `src/analysis.ts` | Analysis orchestration, JSX validation, and read attribution |
+| `src/analysis.ts` | Stable analysis facade and ordered pass orchestration |
 | `src/context.ts` | Stable facade for shared context types and AST utilities |
 | `src/emit.ts` | Host JSX DOM emission and structural-region dispatch |
 | `src/handlers.ts` | Handler resolution and callback instrumentation |
@@ -31,7 +31,7 @@ Domain folders keep related implementation details discoverable:
 
 | Folder | Responsibility |
 |---|---|
-| `src/analysis/` | Computeds, component paths, instance preludes, and access tables |
+| `src/analysis/` | Module discovery, component validation, read attribution, computeds, instance preludes, and access tables |
 | `src/components/` | Prop contracts, content/ref slots, and linker manifests |
 | `src/context/` | Compiler data model/context construction and raw AST helpers |
 | `src/emission/` | Component factories and generated list/conditional/route regions |
@@ -92,6 +92,29 @@ Shared compiler contracts have canonical owners:
 
 Import these contracts through the stable `src/context.ts` facade. Do not
 derive local path aliases from `Ctx` or repeat parent-walking binding helpers.
+
+### Analysis pipeline
+
+`src/analysis.ts` is the shallow coordinator for the first compiler pass. It
+defines ordering because several analyses consume metadata or normalized AST
+produced by earlier stages; it does not own their implementations.
+
+| Module | Responsibility |
+|---|---|
+| `module-scan.ts` | Linked-import validation and discovery of module state, helpers, and components |
+| `render-props.ts` | JSX-carrying component prop discovery, including scalar type exclusions |
+| `component-validation.ts` | Component composition edges and structural JSX diagnostics |
+| `read-collection.ts` | Module-state reads, list/conditional ownership, and helper-read attribution |
+| `computed.ts` | Module computed-state discovery and dependency analysis |
+| `instance.ts` | Component-local state and ordered derivation discovery |
+| `instance-control-flow.ts` | Replay planning for component-local control flow |
+| `component-reads.ts` | Read propagation across render-callback subtrees |
+| `component-graph.ts` | Component path expansion and lightweight-list classification |
+| `access-table.ts` | Final route table from writes to affected component entities |
+
+Keep dependencies directed from focused discovery/validation modules into the
+coordinator. A domain module may record facts on `Ctx`, but pass ordering stays
+in `runAnalysis`; do not create a second partial pipeline in a caller.
 
 ### Transparent data-source model
 
