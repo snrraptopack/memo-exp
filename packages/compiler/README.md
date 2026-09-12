@@ -100,6 +100,7 @@ The transparent data-source feature is split by compiler phase:
 | `automatic-sites.ts` | Automatic pending/error render-policy sites and renderer metadata |
 | `read-rewriting.ts` | Ordered orchestration of component read lowering |
 | `group-analysis.ts` | Shared source origins and component-prop analysis for Group and TSRX |
+| `group-policy-components.ts` | Captured-variable analysis and generated presentation components |
 | `group-lowering.ts` | Explicit Group/TSRX boundary validation and render-policy lowering |
 | `index.ts` | Stable public surface for the feature |
 
