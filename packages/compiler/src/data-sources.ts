@@ -11,7 +11,6 @@ import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   astBindingAt,
-  nodeHasJsx,
   refreshAstAnalysis,
   type Ctx,
   type TransparentPresentationComponent,
@@ -22,9 +21,7 @@ import {
   childNode,
   extractPatternIdentifiers,
   isReferenceIdentifier,
-  isValidIdentifier as isValidEstreeIdentifier,
   nodeFields as fields,
-  overwriteNode,
   replaceNode,
   walkAst,
   type BaseNode,
@@ -37,40 +34,16 @@ import {
   mdd,
 } from './identifiers';
 import { isCallToImported } from './features/data-sources/discovery';
-import { lowerModuleRefReadsEstree } from './features/data-sources/module-read-lowering';
-import {
-  isActionRefreshTarget,
-  isBoundTo,
-  isDirectSourceComponentProp,
-  isEventOrRefContainer,
-  isEventSourceHolderReference,
-  isGeneratedDataCall,
-  isGroupDataContainer,
-  isPassthroughArgument,
-  isWithinDirectSourceComponentProp,
-  isWithinGroupData,
-  sourceBindings,
-  sourceDependencies,
-} from './features/data-sources/read-analysis';
-import {
-  gateEventSourceEffects,
-  isInsideRenderGate,
-  replaceDerivedReads,
-  replaceSourceReadsWithRenderGates,
-  resolvedRenderExpression,
-  trackDependencies,
-} from './features/data-sources/read-transforms';
 import {
   annotateTransparentSources,
-  excludeTransparentSubscriptions,
   sourceArray,
-  type RenderGatedExpression,
 } from './features/data-sources/subscriptions';
 
 export {
   registerTransparentSourceRoots,
   rejectNonGetServerFunctionRenderCalls,
   rejectTransparentSourceDestructuring,
+  rewriteTransparentDataReads,
   scanAndLowerModuleSourceDeclarations,
   scanEventSourceAssignments,
   scanTransparentSourceBindings,
@@ -79,6 +52,7 @@ export {
   subscribeTransparentStructuralSite,
   transparentCallPolicyArgument,
   transparentExpressionSources,
+  transparentPolicyRenderer,
   transparentSourceMounts,
 } from './features/data-sources';
 
@@ -1073,173 +1047,6 @@ function lowerTsrxTryBoundary(
   ) as unknown as BaseNode;
 }
 
-interface TransparentPolicyRenderer {
-  renderer: t.Expression;
-  args: t.Expression[];
-}
-
-type TransparentPolicyElement = t.JSXElement & {
-  __memoDomTransparentPolicyRenderer?: TransparentPolicyRenderer;
-};
-
-function policyRendererElement(
-  renderer: t.Expression,
-  args: t.Expression[],
-): t.JSXElement {
-  const element = astFactory.jsxElement(
-    astFactory.jsxOpeningElement(
-      astFactory.jsxIdentifier('mmd-data-policy-render'),
-      [],
-      true,
-    ),
-    null,
-    [],
-  ) as TransparentPolicyElement;
-  element.__memoDomTransparentPolicyRenderer = { renderer, args };
-  return element;
-}
-
-export function transparentPolicyRenderer(
-  element: t.JSXElement,
-): TransparentPolicyRenderer | null {
-  return (element as TransparentPolicyElement)
-    .__memoDomTransparentPolicyRenderer ?? null;
-}
-
-function sourcePolicy(
-  ctx: Ctx,
-  component: string,
-  source: string,
-): t.Expression {
-  const parameter = ctx.transparentPolicyParams.get(component);
-  const prop = ctx.transparentSourceProps.get(component)?.get(source);
-  if (parameter === undefined) return astFactory.nullLiteral();
-  const fallback = astFactory.optionalMemberExpression(
-    cloneEstreeNode(parameter),
-    astFactory.identifier('$default'),
-    false,
-    true,
-  );
-  if (prop === undefined) return fallback;
-  return astFactory.logicalExpression(
-    '??',
-    astFactory.optionalMemberExpression(
-      cloneEstreeNode(parameter),
-      isValidEstreeIdentifier(prop)
-        ? astFactory.identifier(prop)
-        : astFactory.stringLiteral(prop),
-      !isValidEstreeIdentifier(prop),
-      true,
-    ),
-    fallback,
-  );
-}
-
-function policyForStatus(
-  ctx: Ctx,
-  component: string,
-  dependencies: readonly string[],
-  indexHelper: string,
-): t.Expression {
-  const policies = dependencies.map((source) =>
-    sourcePolicy(ctx, component, source)
-  );
-  const selected = dependencies.length === 1
-    ? policies[0]!
-    : astFactory.memberExpression(
-        astFactory.arrayExpression(policies),
-        astFactory.callExpression(mdd(ctx, indexHelper), [sourceArray(dependencies)]),
-        true,
-      );
-  return selected;
-}
-
-function policyMember(
-  policy: t.Expression,
-  name: 'pending' | 'error',
-): t.Expression {
-  return astFactory.optionalMemberExpression(
-    cloneEstreeNode(policy),
-    astFactory.identifier(name),
-    false,
-    true,
-  );
-}
-
-function fragmentExpression(expression: t.Expression): t.JSXFragment {
-  return astFactory.jsxFragment(
-    astFactory.jsxOpeningFragment(),
-    astFactory.jsxClosingFragment(),
-    [astFactory.jsxExpressionContainer(expression)],
-  );
-}
-
-function wrapAutomaticSite(
-  ctx: Ctx,
-  component: string,
-  expression: t.Expression,
-  dependencies: readonly string[],
-): void {
-  const sources = sourceArray(dependencies);
-  const errorRead = (): t.CallExpression =>
-    astFactory.callExpression(mdd(ctx, 'resolvedValuesError'), [
-      cloneEstreeNode(sources, true),
-    ]);
-  const pendingRead = (): t.CallExpression =>
-    astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
-      cloneEstreeNode(sources, true),
-    ]);
-  const errorPolicy = policyForStatus(
-    ctx,
-    component,
-    dependencies,
-    'resolvedValuesErrorIndex',
-  );
-  const pendingPolicy = policyForStatus(
-    ctx,
-    component,
-    dependencies,
-    'resolvedValuesPendingIndex',
-  );
-  const errorRenderer = policyMember(errorPolicy, 'error');
-  const pendingRenderer = policyMember(pendingPolicy, 'pending');
-  const retry = astFactory.arrowFunctionExpression(
-    [],
-    astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
-      cloneEstreeNode(sources, true),
-    ]),
-  );
-  const conditional = astFactory.conditionalExpression(
-    astFactory.logicalExpression('&&', errorRead(), cloneEstreeNode(errorRenderer)),
-    policyRendererElement(cloneEstreeNode(errorRenderer), [errorRead(), retry]),
-    astFactory.conditionalExpression(
-      errorRead(),
-      fragmentExpression(
-        astFactory.callExpression(mdd(ctx, 'throwResolvedValuesError'), [
-          cloneEstreeNode(sources, true),
-        ]),
-      ),
-      astFactory.conditionalExpression(
-        astFactory.logicalExpression('&&', pendingRead(), cloneEstreeNode(pendingRenderer)),
-        policyRendererElement(cloneEstreeNode(pendingRenderer), []),
-        astFactory.conditionalExpression(
-          pendingRead(),
-          astFactory.jsxFragment(astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(), []),
-          fragmentExpression(cloneEstreeNode(expression, true)),
-        ),
-      ),
-    ),
-  );
-  (conditional as t.ConditionalExpression & {
-    __memoDomTransparentGroup?: boolean;
-  }).__memoDomTransparentGroup = true;
-  annotateTransparentSources(conditional, dependencies);
-  overwriteNode(
-    expression as unknown as BaseNode,
-    conditional as unknown as BaseNode,
-  );
-}
-
 /** Normalize the exact three-child Group form into independent local sites. */
 export function lowerTransparentGroups(
   ctx: Ctx,
@@ -1391,274 +1198,4 @@ export function lowerTransparentGroups(
       );
     },
   });
-}
-
-export function rewriteTransparentDataReads(ctx: Ctx): void {
-  const refresh = (): void => {
-    const root = ctx.astAnalysis?.rootScope.block;
-    if (root !== undefined) refreshAstAnalysis(ctx, root);
-  };
-  // Module-scope sources (RFC §16.4): lower refs to materializing reads
-  // first so plain sites are safe immediately; derivation roots themselves
-  // are skipped by that pass and owned by the derive pass below.
-  for (const [componentName, componentPath] of ctx.compPaths) {
-    lowerModuleRefReadsEstree(
-      ctx,
-      componentName,
-      componentPath.node as unknown as BaseNode,
-      refresh,
-    );
-  }
-  refresh();
-  // Module-scope refs join the same derivation machinery as component-local
-  const moduleBinding = (
-    component: BaseNode,
-    name: string,
-  ): AstBinding | undefined => {
-    if (!ctx.transparentModuleSources.has(name)) return undefined;
-    const binding = astBindingAt(ctx, component, name);
-    return binding?.kind === 'import' ? binding : undefined;
-  };
-
-  for (const [component, componentPath] of ctx.compPaths) {
-    const componentNode = componentPath.node as unknown as BaseNode;
-    const localNames =
-      ctx.transparentSources.get(component) ?? new Set<string>();
-    const bindings = sourceBindings(ctx, componentNode, localNames);
-    // Seed module-scope source bindings so derivation and container passes
-    // treat imported refs like component-local holders (runtime helpers
-    // accept ModuleSourceRef uniformly).
-    let hasModuleRefs = false;
-    for (const name of ctx.transparentModuleSources.keys()) {
-      const binding = moduleBinding(componentNode, name);
-      if (binding === undefined) continue;
-      bindings.set(name, binding);
-      hasModuleRefs = true;
-    }
-    if (localNames.size === 0 && !hasModuleRefs) continue;
-    const names = localNames;
-    const eventSources = ctx.eventSourceSlots.get(component) ?? new Set<string>();
-    const tracks = ctx.transparentTrackBindings.get(component) ?? new Map();
-    const derived = new Map<
-      string,
-      {
-        binding: AstBinding;
-        sources: readonly string[];
-        expression: t.Expression;
-      }
-    >();
-    for (const derivation of ctx.instanceDerivations.get(component) ?? []) {
-      let sources = derivation.sources.filter((source) => names.has(source));
-      // Roots that resolve to imported module-scope sources extend the
-      // dependency set even though they are not component-local holders.
-      const moduleRoots: string[] = [];
-      for (const name of ctx.transparentModuleSources.keys()) {
-        if (bindings.has(name) && derivation.sources.includes(name)) {
-          moduleRoots.push(name);
-        }
-      }
-      sources = [...new Set([...sources, ...moduleRoots])];
-      if (sources.length === 0) continue;
-      const declaration = derivation.declaration;
-      const target = declaration.declarations.find(
-        (candidate) => candidate.init !== null &&
-          extractPatternIdentifiers(candidate.id as unknown as BaseNode).some(
-            (identifier) => derivation.bindings.includes(identifier.name),
-          ),
-      );
-      const init = target?.init;
-      if (init === null || init === undefined || !astFactory.isExpression(init)) continue;
-      replaceDerivedReads(
-        ctx,
-        init as unknown as BaseNode,
-        derived,
-      );
-      refresh();
-      const projection = cloneEstreeNode(init, true);
-      const wrapped = resolvedRenderExpression(
-        ctx,
-        init,
-        sources,
-        bindings,
-        eventSources,
-        'deriveResolvedValues',
-      );
-      overwriteNode(
-        init as unknown as BaseNode,
-        wrapped as unknown as BaseNode,
-      );
-      derivation.source = cloneEstreeNode(wrapped, true);
-      for (const name of derivation.bindings) {
-        const binding = astBindingAt(ctx, componentNode, name);
-        if (binding !== undefined) {
-          derived.set(name, {
-            binding,
-            sources,
-            expression: cloneEstreeNode(projection, true),
-          });
-        }
-      }
-    }
-    refresh();
-
-    gateEventSourceEffects(ctx, component, bindings, eventSources);
-    refresh();
-
-    walkAst(componentNode, {
-      enter(container) {
-        if (container.type !== 'JSXExpressionContainer') return;
-        if (
-          isEventOrRefContainer(ctx, container) ||
-          isGroupDataContainer(ctx, container) ||
-          isDirectSourceComponentProp(
-            ctx,
-            container,
-            bindings,
-          )
-        ) {
-          return false;
-        }
-        const rawExpression = childNode(container, 'expression');
-        if (
-          rawExpression === null ||
-          !astFactory.isExpression(rawExpression as unknown as t.Node)
-        ) return false;
-        const expression = rawExpression as unknown as t.Expression;
-        if (
-          (expression as t.Expression & {
-            __memoDomTransparentGroup?: boolean;
-          }).__memoDomTransparentGroup === true
-        ) {
-          // Group already owns render policy for this whole generated subtree.
-          // Flatten local derivations so the structural entity can update
-          // without replaying the whole component owner.
-          replaceDerivedReads(
-            ctx,
-            rawExpression,
-            derived,
-          );
-          return false;
-        }
-        const dependencies = sourceDependencies(
-          ctx,
-          rawExpression,
-          bindings,
-          derived,
-          eventSources,
-        );
-        const stateDependencies = trackDependencies(
-          ctx,
-          rawExpression,
-          tracks,
-          bindings,
-        );
-        if (dependencies.length === 0) {
-          if (stateDependencies.length > 0) {
-            annotateTransparentSources(expression, stateDependencies);
-            excludeTransparentSubscriptions(
-              expression,
-              stateDependencies.filter(source => eventSources.has(source)),
-            );
-          }
-          return undefined;
-        }
-        const allDependencies = [
-          ...new Set([...dependencies, ...stateDependencies]),
-        ].sort();
-        replaceDerivedReads(
-          ctx,
-          rawExpression,
-          derived,
-        );
-        refresh();
-        const eventDependencies = allDependencies.filter(source =>
-          eventSources.has(source)
-        );
-        if (
-          nodeHasJsx(rawExpression as unknown as t.Node) ||
-          dependencies.some((source) =>
-            ctx.transparentSourceProps.get(component)?.has(source) === true
-          )
-        ) {
-          if (
-            stateDependencies.length > 0 ||
-            eventDependencies.length > 0
-          ) {
-            // Authored control flow driven by request state (RFC §5):
-            // the selector and state arms evaluate immediately; payload
-            // sinks self-gate per site instead of hiding behind an
-            // availability ladder.
-            replaceSourceReadsWithRenderGates(
-              ctx,
-              rawExpression,
-              bindings,
-              eventSources,
-            );
-            (expression as RenderGatedExpression).__memoDomRenderGated =
-              true;
-            annotateTransparentSources(expression, allDependencies);
-            excludeTransparentSubscriptions(expression, eventDependencies);
-            return false;
-          }
-          wrapAutomaticSite(ctx, component, expression, dependencies);
-          return false;
-        }
-        const resolved = resolvedRenderExpression(
-          ctx,
-          expression,
-          dependencies,
-          bindings,
-          eventSources,
-        );
-        annotateTransparentSources(resolved, allDependencies);
-        excludeTransparentSubscriptions(resolved, eventDependencies);
-        overwriteNode(rawExpression, resolved as unknown as BaseNode);
-        return false;
-      },
-    });
-    refresh();
-
-    const imperativeReads: Array<{ identifier: BaseNode; name: string }> = [];
-    walkAst(componentNode, {
-      enter(sourceIdentifier) {
-        if (sourceIdentifier.type !== 'Identifier') return;
-        const name = (sourceIdentifier as unknown as AstIdentifier).name;
-        const binding = bindings.get(name);
-        if (
-          binding === undefined ||
-          !isBoundTo(ctx, sourceIdentifier, binding)
-        ) return;
-        if (
-          isPassthroughArgument(ctx, sourceIdentifier) ||
-          isEventSourceHolderReference(ctx, sourceIdentifier, eventSources) ||
-          isActionRefreshTarget(ctx, sourceIdentifier) ||
-          isWithinGroupData(ctx, sourceIdentifier) ||
-          isWithinDirectSourceComponentProp(
-            ctx,
-            sourceIdentifier,
-            bindings,
-          ) ||
-          isInsideRenderGate(ctx, sourceIdentifier) ||
-          isGeneratedDataCall(ctx, sourceIdentifier)
-        ) {
-          return;
-        }
-        imperativeReads.push({ identifier: sourceIdentifier, name });
-      },
-    });
-    for (const { identifier, name } of imperativeReads) {
-        const site = identifier.loc === null || identifier.loc === undefined
-          ? ctx.moduleId
-          : `${ctx.moduleId}:${identifier.loc.start.line}:${identifier.loc.start.column + 1}`;
-        overwriteNode(
-          identifier,
-          astFactory.callExpression(mdd(ctx, 'readResolvedValue'), [
-            astFactory.identifier(name),
-            astFactory.stringLiteral(name),
-            astFactory.stringLiteral(site),
-          ]) as unknown as BaseNode,
-        );
-    }
-    refresh();
-  }
 }

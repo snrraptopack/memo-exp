@@ -37,10 +37,73 @@ Domain folders keep related implementation details discoverable:
 | `src/emission/` | Component factories and generated list/conditional/route regions |
 | `src/handlers/` | Mutation traversal and commit-routing analysis |
 | `src/jsx/` | Ordered attributes, child classification, refs, and namespaces |
+| `src/features/data-sources/` | Transparent-source discovery, analysis, policy, subscriptions, and read lowering |
 
 The top-level analysis, context, emitter, and handler modules intentionally
 remain stable facades. Cross-domain callers use those facades; implementation
 modules within a domain import their siblings directly.
+
+## Architecture and evolution rules
+
+Model compiler work as an explicit pipeline of domain passes. A pass receives
+the compiler context and AST, performs one named responsibility, and leaves the
+context in a documented state for the next pass. Top-level modules coordinate
+passes and provide stable compatibility exports; they must not grow a second
+implementation of domain behavior.
+
+Use a hybrid functional model:
+
+- Keep AST analysis and rewriting as focused functions with explicit inputs.
+- Use interfaces and named types for stable data exchanged between phases.
+- Use a small class only when an object owns real mutable state and a lifecycle.
+- Do not introduce inheritance merely to group helper functions.
+- Keep policy decisions separate from AST construction when they can vary
+  independently.
+
+Every rule has one owner. Before adding a helper or pass, search the compiler
+for the same operation, AST shape, diagnostic, or runtime-helper construction.
+Extend or move the existing implementation when it already owns that rule.
+Do not copy it into a new domain, facade, frontend, or linker path.
+
+The following are required for current and future development:
+
+- Facades re-export or orchestrate; they do not duplicate implementations.
+- Domain modules may import sibling internals, while external callers use the
+  domain index or an established top-level facade.
+- Shared contracts get one named type instead of repeated inline object shapes.
+- Generic AST access and construction belong in `src/ast/`; do not create local
+  variants of identifier, literal, field-access, or cloning helpers.
+- A new specialized helper stays in its owning domain until a second genuine
+  consumer proves a broader abstraction is needed.
+- When moving code, move its tests and documentation responsibility with it;
+  do not leave a compatibility copy behind.
+- Any architectural change must update this README in the same milestone.
+
+Code review should reject duplicated rules even when both copies currently
+produce the same output. Parallel implementations drift in diagnostics,
+source-location behavior, and runtime semantics.
+
+### Transparent data-source model
+
+The transparent data-source feature is split by compiler phase:
+
+| Module | Responsibility |
+|---|---|
+| `discovery.ts` | Imported API recognition and authored source discovery |
+| `module-sources.ts` | Module-scope source registration and declaration lowering |
+| `component-sources.ts` | Component-local sources, event assignments, and validation |
+| `policy-arguments.ts` | Runtime policy arguments and source mount construction |
+| `subscriptions.ts` | Dependency metadata and emitted invalidation subscriptions |
+| `read-analysis.ts` | Binding identity, site classification, and dependency analysis |
+| `read-transforms.ts` | Reusable AST mutations for resolved-value reads and effects |
+| `module-read-lowering.ts` | Materializing reads for imported module source references |
+| `automatic-sites.ts` | Automatic pending/error render-policy sites and renderer metadata |
+| `read-rewriting.ts` | Ordered orchestration of component read lowering |
+| `index.ts` | Stable public surface for the feature |
+
+The dependency direction is discovery/analysis → transforms → orchestration.
+Emission metadata and policy construction are shared domain services. Avoid
+imports from a lower-level module back into the coordinator or top-level facade.
 
 ## Experimental TSRX frontend
 

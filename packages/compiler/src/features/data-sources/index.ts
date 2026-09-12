@@ -21,3 +21,5 @@ export {
   subscribeTransparentStructuralSite,
   transparentExpressionSources,
 } from './subscriptions';
+export { transparentPolicyRenderer } from './automatic-sites';
+export { rewriteTransparentDataReads } from './read-rewriting';
