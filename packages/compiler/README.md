@@ -39,6 +39,7 @@ Domain folders keep related implementation details discoverable:
 | `src/emission/` | Component factories and generated list/conditional/route regions |
 | `src/handlers/` | Mutation traversal and commit-routing analysis |
 | `src/jsx/` | Ordered attributes, child classification, refs, and namespaces |
+| `src/linking/` | Linker graph contracts, module resolution, and cross-module import metadata |
 | `src/features/data-sources/` | Transparent-source discovery, analysis, policy, subscriptions, and read lowering |
 
 The top-level analysis, context, emitter, and handler modules intentionally
@@ -173,6 +174,18 @@ List emission separates region/row construction from update scheduling:
 `list-update.ts` is the sole owner of reason matching and keyed refresh
 selection. Row factories supply metadata to it; they must not construct a
 second version of targeted-versus-structural update policy.
+
+### Module linking
+
+| Module | Responsibility |
+|---|---|
+| `linking/model.ts` | Canonical internal manifest, export, import, usage, and module-entry contracts |
+| `linking/resolution.ts` | Module ID normalization/resolution and conversion of manifest exports into linked imports |
+| `linker.ts` | Manifest discovery/fixed-point orchestration and final connected compilation |
+
+Keep host resolution and alias behavior in `linking/resolution.ts`. Discovery
+and compilation consume its resolved entries; they must not grow separate
+extension probing or alias matching rules.
 
 ### Transparent data-source model
 
