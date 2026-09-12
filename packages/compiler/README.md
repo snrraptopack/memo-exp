@@ -153,6 +153,20 @@ emission consumes those records. Keep that dependency one-way. Callback
 resolution and intrinsic recognition must not be reimplemented in emitters or
 handler analysis.
 
+### List emission
+
+List emission separates region/row construction from update scheduling:
+
+| Module | Responsibility |
+|---|---|
+| `emission/list-region.ts` | Region setup plus callback, component, and inline row factories |
+| `emission/list-update.ts` | Full reconcile versus targeted keyed refresh decisions and emitted update statements |
+| `lists/targeted-refresh.ts` | Analysis-time dependency discovery consumed by list emission |
+
+`list-update.ts` is the sole owner of reason matching and keyed refresh
+selection. Row factories supply metadata to it; they must not construct a
+second version of targeted-versus-structural update policy.
+
 ### Transparent data-source model
 
 The transparent data-source feature is split by compiler phase:
