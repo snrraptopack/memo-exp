@@ -168,7 +168,8 @@ List emission separates region/row construction from update scheduling:
 | `emission/list-component-row.ts` | Component-row factory ABI, prop projection, and lightweight-row updates |
 | `emission/list-inline-row.ts` | Inline-row scopes, bindings, registration, and update closure construction |
 | `emission/list-update.ts` | Full reconcile versus targeted keyed refresh decisions and emitted update statements |
-| `emission/text-node.ts` | Static/dynamic text creation, normalization, guarded slots, and transparent-source registration |
+| `lists/map-site.ts` | Map source/callback validation and deterministic list-site identity |
+| `lists/row-derivations.ts` | Row-local derivation discovery, shadowing checks, and AST substitution |
 | `lists/targeted-refresh.ts` | Analysis-time dependency discovery consumed by list emission |
 
 `list-update.ts` is the sole owner of reason matching and keyed refresh
