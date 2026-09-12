@@ -116,6 +116,25 @@ Keep dependencies directed from focused discovery/validation modules into the
 coordinator. A domain module may record facts on `Ctx`, but pass ordering stays
 in `runAnalysis`; do not create a second partial pipeline in a caller.
 
+### Handler analysis model
+
+`src/handlers.ts` owns handler discovery and is the stable entry point used by
+components, effects, and callbacks. Mutation analysis is split by concern:
+
+| Module | Responsibility |
+|---|---|
+| `handlers/analyze.ts` | Reactive-origin tracking and write classification for one callback |
+| `handlers/traversal.ts` | Scope-aware handler paths and visitor dispatch |
+| `handlers/mutation-targets.ts` | Keyed-list mutation keys and cross-list visibility decisions |
+| `handlers/execution-sites.ts` | Execution-aware write guards and final commit insertion |
+| `handlers/local-calls.ts` | Reachable local-helper call constraints |
+
+`HandlerPath` is intentionally a class: each path owns its node, parent chain,
+scope lookup, and mutable traversal skip state for one walk. This is the kind
+of lifecycle-bearing object allowed by the hybrid model. Write policy and AST
+rewrites remain functions; do not move them onto the class or create parallel
+path wrappers in handler consumers.
+
 ### Transparent data-source model
 
 The transparent data-source feature is split by compiler phase:

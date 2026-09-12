@@ -2,14 +2,9 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
-  analyzeScope,
   cloneNode,
   extractPatternIdentifiers,
-  overwriteNode,
-  walkAst,
   type BaseNode,
-  type Scope,
-  type ScopeAnalysis,
 } from '../ast';
 import {
   memberKey,
@@ -20,14 +15,11 @@ import {
   type RowCtx,
 } from '../context';
 import {
-  appendScopeCommit,
-  buildScopeCommit,
   createScopeWrites,
   recordInstanceWrite,
   recordRoutedWrite,
   type ScopeWrites,
 } from '../handler-commits';
-import { buildEventOriginCommit } from '../handler-origin';
 import {
   AliasTracker,
   bindingScopeIsProgram,
@@ -44,14 +36,19 @@ import { applyLinkedPropEffect } from '../components/prop-effects';
 import {
   componentPropProjectionOrigins,
 } from '../components/prop-projections';
-import { generatedIdentifier, md } from '../identifiers';
 import { transparentListExpression } from '../lists/source-shapes';
-import { compilerError } from '../errors';
-
-type FunctionNode =
-  | t.ArrowFunctionExpression
-  | t.FunctionExpression
-  | t.FunctionDeclaration;
+import {
+  HandlerPath,
+  walkHandler,
+} from './traversal';
+import {
+  directListItemMutationKey,
+  itemFieldVisibleBeyondList,
+} from './mutation-targets';
+import {
+  finalizeHandlerInstrumentation,
+  type HandlerExecutionSite,
+} from './execution-sites';
 
 function isLinkedImport(ctx: Ctx, name: string): boolean {
   return (
@@ -61,316 +58,6 @@ function isLinkedImport(ctx: Ctx, name: string): boolean {
     ctx.importedComponents.has(name)
   );
 }
-
-class HandlerPath<TNode extends t.Node = t.Node> {
-  public readonly node: TNode;
-  public readonly parentPath: HandlerPath | null;
-  public shouldSkip = false;
-
-  constructor(
-    node: BaseNode,
-    private readonly analysis: ScopeAnalysis,
-    private readonly moduleId: string,
-  ) {
-    this.node = node as unknown as TNode;
-    const parent = analysis.parentByNode.get(node) ?? null;
-    this.parentPath = parent === null
-      ? null
-      : new HandlerPath(parent, analysis, moduleId);
-  }
-
-  public get parent(): t.Node | null {
-    return this.parentPath?.node ?? null;
-  }
-
-  public get scope(): Scope {
-    const scope = this.analysis.nodeToScope.get(
-      this.node as unknown as BaseNode,
-    );
-    if (scope === undefined) {
-      throw new TypeError(`Missing handler scope for ${this.node.type}`);
-    }
-    return scope;
-  }
-
-  public getFunctionParent(): HandlerPath<FunctionNode> | null {
-    let current = this.parentPath;
-    while (current !== null) {
-      if (astFactory.isFunction(current.node)) {
-        return current as HandlerPath<FunctionNode>;
-      }
-      current = current.parentPath;
-    }
-    return null;
-  }
-
-  public isExpression(): this is HandlerPath<t.Expression> {
-    return astFactory.isExpression(this.node);
-  }
-
-  public isVariableDeclarator(): this is HandlerPath<t.VariableDeclarator> {
-    return astFactory.isVariableDeclarator(this.node);
-  }
-
-  public isVariableDeclaration(): this is HandlerPath<t.VariableDeclaration> {
-    return astFactory.isVariableDeclaration(this.node);
-  }
-
-  public isAssignmentExpression(
-    options?: { operator?: string },
-  ): this is HandlerPath<t.AssignmentExpression> {
-    return astFactory.isAssignmentExpression(this.node) &&
-      (options?.operator === undefined || this.node.operator === options.operator);
-  }
-
-  public replaceWith(replacement: t.Node): void {
-    overwriteNode(
-      this.node as unknown as BaseNode,
-      replacement as unknown as BaseNode,
-    );
-  }
-
-  public skip(): void {
-    this.shouldSkip = true;
-  }
-
-  public buildCodeFrameError(message: string): Error {
-    return compilerError(
-      message,
-      this.moduleId,
-      this.node as unknown as BaseNode,
-    );
-  }
-}
-
-interface HandlerVisitor {
-  VariableDeclarator?(path: HandlerPath<t.VariableDeclarator>): void;
-  Function?(path: HandlerPath<FunctionNode>): void;
-  AssignmentExpression?(path: HandlerPath<t.AssignmentExpression>): void;
-  UpdateExpression?(path: HandlerPath<t.UpdateExpression>): void;
-  UnaryExpression?(path: HandlerPath<t.UnaryExpression>): void;
-  CallExpression?(path: HandlerPath<t.CallExpression>): void;
-}
-
-function walkHandler(
-  root: t.Node,
-  visitor: HandlerVisitor,
-  moduleId: string,
-): ScopeAnalysis {
-  const analysis = analyzeScope(root as unknown as BaseNode);
-  walkAst(root as unknown as BaseNode, {
-    enter(node) {
-      const path = new HandlerPath(node, analysis, moduleId);
-      if (node.type === 'VariableDeclarator') {
-        visitor.VariableDeclarator?.(
-          path as HandlerPath<t.VariableDeclarator>,
-        );
-      }
-      if (astFactory.isFunction(node as unknown as t.Node)) {
-        visitor.Function?.(path as HandlerPath<FunctionNode>);
-      }
-      if (node.type === 'AssignmentExpression') {
-        visitor.AssignmentExpression?.(
-          path as HandlerPath<t.AssignmentExpression>,
-        );
-      }
-      if (node.type === 'UpdateExpression') {
-        visitor.UpdateExpression?.(path as HandlerPath<t.UpdateExpression>);
-      }
-      if (node.type === 'UnaryExpression') {
-        visitor.UnaryExpression?.(path as HandlerPath<t.UnaryExpression>);
-      }
-      if (node.type === 'CallExpression') {
-        visitor.CallExpression?.(path as HandlerPath<t.CallExpression>);
-      }
-      return path.shouldSkip ? false : undefined;
-    },
-  });
-  return analysis;
-}
-
-function directListItemMutationKey(
-  node: t.MemberExpression,
-  plan: KeyedListMutationPlan,
-): t.Expression | null {
-  const chain: t.MemberExpression[] = [];
-  let current: t.Expression = node;
-  for (;;) {
-    current = transparentListExpression(current);
-    if (!astFactory.isMemberExpression(current)) break;
-    chain.unshift(current);
-    if (astFactory.isSuper(current.object)) return null;
-    current = current.object;
-  }
-  if (!astFactory.isIdentifier(current, { name: plan.source })) return null;
-  const itemAccess = chain[0];
-  if (
-    itemAccess === undefined ||
-    !itemAccess.computed ||
-    !astFactory.isExpression(itemAccess.property) ||
-    !(
-      astFactory.isIdentifier(itemAccess.property) ||
-      astFactory.isNumericLiteral(itemAccess.property) ||
-      astFactory.isStringLiteral(itemAccess.property)
-    ) ||
-    chain.length < 2
-  ) {
-    return null;
-  }
-
-  const writtenSegments: string[] = [];
-  for (const member of chain.slice(1)) {
-    if (!member.computed && astFactory.isIdentifier(member.property)) {
-      writtenSegments.push(member.property.name);
-    } else if (member.computed && astFactory.isStringLiteral(member.property)) {
-      writtenSegments.push(member.property.value);
-    } else {
-      return null;
-    }
-  }
-  if (writeTouchesKey(writtenSegments, plan.keyPath)) return null;
-
-  let key: t.Expression = cloneEstreeNode(itemAccess, true);
-  for (const segment of plan.keyPath) {
-    key = astFactory.memberExpression(key, astFactory.identifier(segment));
-  }
-  return key;
-}
-
-/** Vars a write-set routes to: components ∪ a pseudo-reader for list rows. */
-function readersOfVar(ctx: Ctx, v: string): Set<string> {
-  const out = new Set<string>();
-  for (const [comp, vars] of ctx.compReads) {
-    if (vars.has(v)) out.add(comp);
-  }
-  for (const site of ctx.rowReads.values()) {
-    if (site.vars.has(v)) out.add('__rows__'); // multi-instance by construction
-  }
-  for (const site of ctx.condReads.values()) {
-    if (site.vars.has(v)) out.add('__regions__'); // region-updated, not owner-updated
-  }
-  return out;
-}
-/**
- * R11.1: can anything OTHER than the row's own list observe item-field
- * mutations? The row-local commit (markDirty/update on the row alone) is
- * sound only when the answer is no. List owners are excluded — their
- * map-source read is inherent to the list pattern and the reconcile
- * resyncs their rows (see spec §11.3 for the residual case of an owner
- * deriving item fields inline, outside a computed).
- */
-function itemFieldVisibleBeyondList(
-  ctx: Ctx,
-  compName: string | null,
-  rowCtx: RowCtx,
-): boolean {
-  if (rowCtx.sourceLocal) return true;
-  const source = rowCtx.sourceKey;
-  if (source === '') return true; // unknown source -> conservative
-  for (const info of ctx.computeds.values()) {
-    if (info.reads.has(source)) return true;
-  }
-  const owners = new Set((ctx.listedSites.get(compName ?? '') ?? []).map((s) => s.owner));
-  if (owners.size === 0 && compName !== null) owners.add(compName); // inline rows
-  for (const reader of readersOfVar(ctx, source)) {
-    if (reader === '__rows__' || reader === '__regions__') return true;
-    if (!owners.has(reader)) return true;
-  }
-  return false;
-}
-
-interface HandlerExecutionSite {
-  path: HandlerPath;
-  writes: ScopeWrites;
-  flag?: t.Identifier;
-  temporaries?: t.Identifier[];
-}
-
-function finalizeHandlerInstrumentation(
-  ctx: Ctx,
-  rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
-  clonedFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
-  root: t.Node,
-  scopes: Map<t.Node, ScopeWrites>,
-  executionSites: ReadonlyMap<t.Node, HandlerExecutionSite>,
-  compName: string | null,
-  rowCtx: RowCtx | undefined,
-  eventBoundary: boolean,
-  eventOriginId: t.Expression | undefined,
-  executionAwareRoot: boolean,
-): void {
-  ctx.handlerHasRootCommit.set(rootFn, scopes.has(root));
-
-  if (eventBoundary && !scopes.has(root)) {
-    const eventScope = createScopeWrites();
-    eventScope.eventOrigin = buildEventOriginCommit(
-      ctx,
-      compName,
-      rowCtx,
-      eventOriginId,
-    );
-    scopes.set(root, eventScope);
-  }
-
-  const guardedRootSites: Array<HandlerExecutionSite & { commit: t.Statement }> = [];
-  if (executionAwareRoot) {
-    for (const site of executionSites.values()) {
-      const commit = buildScopeCommit(ctx, site.writes, compName, rowCtx);
-      if (commit !== null) guardedRootSites.push({ ...site, commit });
-    }
-  }
-  for (const site of guardedRootSites) {
-    site.flag = generatedIdentifier(ctx, 'didWrite');
-  }
-  guardedRootSites
-    .sort((left, right) => pathDepth(right.path) - pathDepth(left.path))
-    .forEach((site) => {
-      site.temporaries = markExecutionSite(ctx, site.path, site.flag!);
-    });
-
-  for (const [fn, writes] of scopes) {
-    const commit =
-      executionAwareRoot && fn === root
-        ? guardedRootSites.length === 0
-          ? null
-          : astFactory.blockStatement(
-              guardedRootSites.map((site) =>
-                astFactory.ifStatement(
-                  cloneEstreeNode(site.flag!),
-                  cloneEstreeNode(site.commit),
-                ),
-              ),
-            )
-        : buildScopeCommit(ctx, writes, compName, rowCtx);
-    if (commit === null) continue;
-    appendScopeCommit(
-      ctx,
-      fn as t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
-      commit,
-    );
-  }
-
-  if (guardedRootSites.length > 0) {
-    if (!astFactory.isBlockStatement(clonedFn.body)) {
-      throw new Error(
-        'memo-dom: execution-aware callback commit did not produce a block body',
-      );
-    }
-    clonedFn.body.body.unshift(
-      astFactory.variableDeclaration(
-        'let',
-        guardedRootSites.flatMap((site) => [
-          astFactory.variableDeclarator(cloneEstreeNode(site.flag!), astFactory.booleanLiteral(false)),
-          ...(site.temporaries ?? []).map((temporary) =>
-            astFactory.variableDeclarator(cloneEstreeNode(temporary)),
-          ),
-        ]),
-      ),
-    );
-  }
-  rootFn.body = clonedFn.body;
-}
-
 export function analyzeHandler(
   ctx: Ctx,
   rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
@@ -1407,117 +1094,4 @@ export function analyzeHandler(
     eventOriginId,
     executionAwareRoot,
   );
-}
-
-function pathDepth(path: HandlerPath): number {
-  let depth = 0;
-  let current: HandlerPath | null = path;
-  while (current.parentPath !== null) {
-    depth++;
-    current = current.parentPath;
-  }
-  return depth;
-}
-
-function markExecutionSite(
-  ctx: Ctx,
-  path: HandlerPath,
-  flag: t.Identifier,
-): t.Identifier[] {
-  if (
-    path.isAssignmentExpression({ operator: '=' }) &&
-    (astFactory.isIdentifier(path.node.left) ||
-      astFactory.isMemberExpression(path.node.left) &&
-      !astFactory.isSuper(path.node.left.object) &&
-      !astFactory.isPrivateName(path.node.left.property))
-  ) {
-    const original = path.node;
-    const previous = generatedIdentifier(ctx, 'previousValue');
-    const result = generatedIdentifier(ctx, 'assignedValue');
-    const temporaries = [previous, result];
-    let before: t.Expression;
-    let assignment: t.AssignmentExpression;
-    let after: t.Expression;
-
-    if (astFactory.isIdentifier(original.left)) {
-      before = astFactory.identifier(original.left.name);
-      assignment = cloneEstreeNode(original, true);
-      after = astFactory.identifier(original.left.name);
-    } else if (astFactory.isMemberExpression(original.left)) {
-      const receiver = generatedIdentifier(ctx, 'assignmentReceiver');
-      const property = generatedIdentifier(ctx, 'assignmentProperty');
-      temporaries.push(receiver, property);
-      const access = (): t.MemberExpression =>
-        astFactory.memberExpression(
-          cloneEstreeNode(receiver),
-          cloneEstreeNode(property),
-          true,
-        );
-      const propertyExpression = original.left.computed
-        ? cloneEstreeNode(original.left.property as t.Expression, true)
-        : astFactory.stringLiteral((original.left.property as t.Identifier).name);
-      before = astFactory.sequenceExpression([
-        astFactory.assignmentExpression(
-          '=',
-          cloneEstreeNode(receiver),
-          cloneEstreeNode(original.left.object as t.Expression, true),
-        ),
-        astFactory.assignmentExpression('=', cloneEstreeNode(property), propertyExpression),
-        access(),
-      ]);
-      assignment = astFactory.assignmentExpression('=', access(), cloneEstreeNode(original.right, true));
-      after = access();
-    } else {
-      return [];
-    }
-
-    path.replaceWith(
-      astFactory.sequenceExpression([
-        astFactory.assignmentExpression('=', cloneEstreeNode(previous), before),
-        astFactory.assignmentExpression('=', cloneEstreeNode(result), assignment),
-        astFactory.assignmentExpression(
-          '=',
-          cloneEstreeNode(flag),
-          astFactory.logicalExpression(
-            '||',
-            cloneEstreeNode(flag),
-            astFactory.callExpression(md(ctx, 'effectAssignmentChanged'), [
-              cloneEstreeNode(previous),
-              after,
-            ]),
-          ),
-        ),
-        cloneEstreeNode(result),
-      ]),
-    );
-    return temporaries;
-  }
-
-  const mark = astFactory.assignmentExpression(
-    '=',
-    cloneEstreeNode(flag),
-    astFactory.booleanLiteral(true),
-  );
-  if (path.isVariableDeclarator()) {
-    const init = path.node.init;
-    if (init === null || !astFactory.isExpression(init)) {
-      throw new Error(
-        'memo-dom: execution-aware variable site has no expression initializer',
-      );
-    }
-    path.node.init = astFactory.sequenceExpression([mark, init]);
-    return [];
-  }
-  if (!path.isExpression()) {
-    throw new Error(
-      `memo-dom: unsupported execution-aware write site '${path.node.type}'`,
-    );
-  }
-  path.replaceWith(
-    astFactory.sequenceExpression([
-      mark,
-      cloneEstreeNode(path.node, true),
-    ]),
-  );
-  return [];
 }
