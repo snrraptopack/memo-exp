@@ -20,6 +20,7 @@ The top-level files are orchestration and whole-program passes:
 |---|---|
 | `src/analysis.ts` | Stable analysis facade and ordered pass orchestration |
 | `src/context.ts` | Stable facade for shared context types and AST utilities |
+| `src/effects.ts` | Stable facade for effect discovery and emission |
 | `src/emit.ts` | Host JSX DOM emission and structural-region dispatch |
 | `src/handlers.ts` | Handler resolution and callback instrumentation |
 | `src/linker.ts` | Connected module-graph compilation |
@@ -34,6 +35,7 @@ Domain folders keep related implementation details discoverable:
 | `src/analysis/` | Module discovery, component validation, read attribution, computeds, instance preludes, and access tables |
 | `src/components/` | Prop contracts, content/ref slots, and linker manifests |
 | `src/context/` | Compiler data model/context construction and raw AST helpers |
+| `src/effects/` | Effect ownership, dependency discovery, invalidation, registration, and rewriting |
 | `src/emission/` | Component factories and generated list/conditional/route regions |
 | `src/handlers/` | Mutation traversal and commit-routing analysis |
 | `src/jsx/` | Ordered attributes, child classification, refs, and namespaces |
@@ -134,6 +136,22 @@ scope lookup, and mutable traversal skip state for one walk. This is the kind
 of lifecycle-bearing object allowed by the hybrid model. Write policy and AST
 rewrites remain functions; do not move them onto the class or create parallel
 path wrappers in handler consumers.
+
+### Effect pipeline
+
+The compiler intrinsic `effect()` crosses analysis and emission, but each rule
+still has one owner:
+
+| Module | Responsibility |
+|---|---|
+| `effects/discovery.ts` | Callback resolution, ownership, dependency reads, and effect-site metadata |
+| `effects/emission.ts` | Local invalidation conditions, runtime registration, module rewriting, and final ownership rejection |
+| `effects.ts` | Compatibility exports only |
+
+Discovery produces `EffectSite` and `ModuleEffectSite` records on `Ctx`;
+emission consumes those records. Keep that dependency one-way. Callback
+resolution and intrinsic recognition must not be reimplemented in emitters or
+handler analysis.
 
 ### Transparent data-source model
 
