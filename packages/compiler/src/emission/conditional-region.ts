@@ -3,6 +3,7 @@ import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   exprReadsInstanceState,
+  type ComponentPath,
   type Ctx,
 } from '../context';
 import { componentId, generatedIdentifier, md } from '../identifiers';
@@ -20,10 +21,6 @@ import {
   subscribeTransparentStructuralSite,
   transparentExpressionSources,
 } from '../data-sources';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 /** Static path appended to a component factory id by enclosing regions. */
 function ownerPathSuffix(expression: t.Expression): string | null {

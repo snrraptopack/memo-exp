@@ -17,6 +17,7 @@ import {
 import {
   astBindingAt,
   nodeHasJsx,
+  type ComponentPath,
   type Ctx,
   type RowCtx,
 } from './context';
@@ -27,10 +28,6 @@ import {
   resolveLocalHelper,
 } from './handlers';
 import { md } from './identifiers';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 interface ProgramContainer {
   node: t.Program;

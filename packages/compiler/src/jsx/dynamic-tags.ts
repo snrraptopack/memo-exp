@@ -25,6 +25,7 @@ import {
   memberRootName,
   nodeHasJsx,
   refreshAstAnalysis,
+  type ComponentPath,
   type Ctx,
 } from '../context';
 import type { ComponentPropsPlan } from '../components/props';
@@ -37,10 +38,6 @@ interface DynamicTagCandidate {
 interface ProgramContainer {
   node: t.Program;
 }
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 function cloneNode<TNode>(value: TNode): TNode {
   return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;

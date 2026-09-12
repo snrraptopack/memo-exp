@@ -359,6 +359,8 @@ export interface CompilerPath<TNode extends t.Node> {
   buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 
+export type ProgramPath = CompilerPath<t.Program>;
+export type ComponentPath = CompilerPath<t.FunctionDeclaration>;
 export type HelperPath = CompilerPath<
   t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
 >;

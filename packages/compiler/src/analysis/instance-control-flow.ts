@@ -8,7 +8,11 @@ import {
   type BaseNode,
   type Binding,
 } from '../ast';
-import { astBindingAt, type Ctx } from '../context';
+import {
+  astBindingAt,
+  variableDeclaratorFor,
+  type Ctx,
+} from '../context';
 import type { ControlFlowDerivation } from '../components/props';
 
 const IMPURE_REPLAY_NODES = new Set([
@@ -168,15 +172,6 @@ function nodeBelongsTo(
     current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
   }
   return false;
-}
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') return current;
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
 }
 
 function identifierIsRead(ctx: Ctx, identifier: BaseNode): boolean {

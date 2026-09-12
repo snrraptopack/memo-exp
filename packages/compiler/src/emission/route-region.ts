@@ -3,17 +3,13 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
-import type { Ctx } from '../context';
+import type { ComponentPath, Ctx } from '../context';
 import { generatedIdentifier, md, mr } from '../identifiers';
 import type { CompilerRouteElement } from '../router';
 import type { EmitScope } from './scope';
 import { registerStmt, renderDocument } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { buildConditionalBranchCreate } from './conditional-region';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 export function emitRouteRegion(
   ctx: Ctx,

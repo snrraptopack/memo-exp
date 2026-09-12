@@ -35,6 +35,21 @@ export function astBindingAt(
   return astScopeAt(ctx, node)?.getBinding(name);
 }
 
+/** Find the variable declarator that owns a lexical binding, when it has one. */
+export function variableDeclaratorFor(
+  ctx: Ctx,
+  binding: AstBinding,
+): (BaseNode & t.VariableDeclarator) | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') {
+      return current as BaseNode & t.VariableDeclarator;
+    }
+    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+  }
+  return null;
+}
+
 /** Whether a binding has a visible rebind or receiver/member mutation site. */
 export function bindingHasVisibleWrite(
   ctx: Ctx,

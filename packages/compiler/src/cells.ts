@@ -17,6 +17,7 @@ import {
   astBindingAt,
   refreshAstAnalysis,
   unwrapTypeExpression,
+  variableDeclaratorFor,
   type Ctx,
 } from './context';
 import { generatedIdentifier, md } from './identifiers';
@@ -122,15 +123,6 @@ function isDeepLiteral(current: BaseNode): boolean {
     );
   }
   return false;
-}
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') return current;
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
 }
 
 function compoundOperator(operator: string): '+' | '-' | '*' | '/' | null {

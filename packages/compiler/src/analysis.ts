@@ -42,7 +42,10 @@ import {
   registerState,
   walkNodes,
   writeTouchesKey,
+  type ComponentPath,
   type Ctx,
+  type HelperPath,
+  type ProgramPath,
 } from './context';
 import { analyzeMapSite, containsJsx, matchMapCall } from './lists';
 import { transparentListExpression } from './lists/source-shapes';
@@ -104,17 +107,6 @@ export {
   isLightweightRowComponent,
 } from './analysis/component-graph';
 export { buildAccessTable } from './analysis/access-table';
-
-interface ProgramPath {
-  node: t.Program;
-  buildCodeFrameError(message: string, at?: t.Node): Error;
-}
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
-type HelperPath = Ctx['helpers'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 /** Whether a JSX expression container is a declared component render slot. */
 function isRenderAttributeContainer(ctx: Ctx, container: BaseNode): boolean {

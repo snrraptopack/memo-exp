@@ -83,6 +83,16 @@ Code review should reject duplicated rules even when both copies currently
 produce the same output. Parallel implementations drift in diagnostics,
 source-location behavior, and runtime semantics.
 
+Shared compiler contracts have canonical owners:
+
+| Contract | Owner |
+|---|---|
+| `CompilerPath`, `ProgramPath`, `ComponentPath`, and `HelperPath` | `src/context/model.ts` |
+| Binding resolution and declaration lookup, including `variableDeclaratorFor` | `src/context/ast.ts` |
+
+Import these contracts through the stable `src/context.ts` facade. Do not
+derive local path aliases from `Ctx` or repeat parent-walking binding helpers.
+
 ### Transparent data-source model
 
 The transparent data-source feature is split by compiler phase:

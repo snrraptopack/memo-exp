@@ -26,6 +26,7 @@ import {
   memberRootName,
   nodeHasJsx,
   refreshAstAnalysis,
+  variableDeclaratorFor,
   type Ctx,
   type EffectSite,
   type ModuleEffectSite,
@@ -82,15 +83,6 @@ interface ResolvedEffectCallback {
   expression: t.Expression;
   node: EffectFunctionNode | null;
   importedReads: Set<string>;
-}
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') return current;
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
 }
 
 function functionNodeFromBinding(

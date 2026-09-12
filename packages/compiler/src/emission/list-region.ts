@@ -9,6 +9,7 @@ import {
   canonicalStateKey,
   keyPathOf,
   nodeHasJsx,
+  type ComponentPath,
   type Ctx,
   type RowCtx,
 } from '../context';
@@ -56,10 +57,6 @@ import type {
   TargetedListDependency,
 } from '../context';
 import { hostJsxEventNames } from '../jsx/events';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 export type AuthoredChildrenSlotBuilder = (
   ctx: Ctx,

@@ -22,6 +22,7 @@ import {
   astBindingAt,
   nodeHasJsx,
   refreshAstAnalysis,
+  type ComponentPath,
   type Ctx,
 } from '../context';
 
@@ -29,10 +30,6 @@ type RenderFunction =
   | t.FunctionDeclaration
   | t.FunctionExpression
   | t.ArrowFunctionExpression;
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 interface ResolvedRenderFunction {
   node: RenderFunction;

@@ -9,6 +9,7 @@ import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import {
   attrExpr,
   keyPathOf,
+  type ComponentPath,
   type Ctx,
   type RowCtx,
 } from '../context';
@@ -22,10 +23,6 @@ import {
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { applyRepeatedDomTemplate } from './dom-template';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 function callbackJsx(
   callback: t.ArrowFunctionExpression | t.FunctionExpression,

@@ -17,6 +17,7 @@ import {
   isConstObjectState,
   isStoreObject,
   memberRootName,
+  variableDeclaratorFor,
   type Ctx,
 } from '../context';
 import {
@@ -47,15 +48,6 @@ function isWithin(ctx: Ctx, current: BaseNode, ancestor: BaseNode): boolean {
     candidate = parentOf(ctx, candidate);
   }
   return false;
-}
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') return current;
-    current = parentOf(ctx, current);
-  }
-  return null;
 }
 
 function localFunction(

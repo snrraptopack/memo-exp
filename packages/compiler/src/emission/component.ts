@@ -12,6 +12,7 @@ import { cloneNode as cloneEstreeNode } from '../ast';
 import { isLightweightListedComponent } from '../analysis';
 import {
   keyPathOf,
+  type ComponentPath,
   type Ctx,
   type EffectSite,
   type LinkedComponentRowUse,
@@ -57,9 +58,6 @@ import { applyRepeatedDomTemplate } from './dom-template';
 import { transparentSourceMounts } from '../data-sources';
 
 type ComponentEmitScope = ReturnType<typeof newEmitScope>;
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 function hasComponentLocalEffects(effects: readonly EffectSite[] | undefined): boolean {
   return effects?.some(

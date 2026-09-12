@@ -21,6 +21,7 @@ import {
   attrExpr,
   exprReadsState,
   nodeHasJsx,
+  type ComponentPath,
   type Ctx,
   type RowCtx,
 } from './context';
@@ -89,10 +90,6 @@ import {
   transparentExpressionSources,
   transparentPolicyRenderer,
 } from './data-sources';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 // ---------------------------------------------------------------------
 // shared statement builders

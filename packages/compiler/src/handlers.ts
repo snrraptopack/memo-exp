@@ -21,11 +21,13 @@
 
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
-import { type BaseNode, type Binding } from './ast';
+import { type BaseNode } from './ast';
 import {
   astBindingAt,
   memberRootName,
+  variableDeclaratorFor,
   walkNodes,
+  type ComponentPath,
   type Ctx,
   type RowCtx,
 } from './context';
@@ -50,21 +52,6 @@ export type HandlerFn =
   | t.ArrowFunctionExpression
   | t.FunctionExpression
   | t.FunctionDeclaration;
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): t.VariableDeclarator | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') {
-      return current as unknown as t.VariableDeclarator;
-    }
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
-}
 
 /** Resolve a component-local helper declared directly in the factory body. */
 export function resolveLocalHelper(

@@ -10,7 +10,12 @@ import {
   type Binding,
   type Identifier,
 } from '../ast';
-import { astBindingAt, astScopeAt, type Ctx } from '../context';
+import {
+  astBindingAt,
+  astScopeAt,
+  variableDeclaratorFor,
+  type Ctx,
+} from '../context';
 
 function bindingIsExternalImport(binding: Binding | undefined): boolean {
   return binding?.kind === 'import';
@@ -27,15 +32,6 @@ function calleeRoot(callee: BaseNode): string | null {
     current = object;
   }
   return identifierName(current);
-}
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') return current;
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
 }
 
 function bindingInitializer(ctx: Ctx, binding: Binding): BaseNode | null {

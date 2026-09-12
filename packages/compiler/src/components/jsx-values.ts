@@ -19,12 +19,9 @@ import {
   astBindingAt,
   nodeHasJsx,
   refreshAstAnalysis,
+  type ComponentPath,
   type Ctx,
 } from '../context';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 interface StructuredCandidate {
   key: t.Expression;
