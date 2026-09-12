@@ -14,6 +14,7 @@ import {
   childNode,
   childNodes,
   nodeFields as fields,
+  stringValue,
   walkAst,
   type BaseNode,
 } from './ast';
@@ -48,12 +49,6 @@ interface ProgramContainer {
 interface DiagnosticNode<TNode> {
   node: TNode;
   buildCodeFrameError(message: string): Error;
-}
-
-function stringValue(value: BaseNode | null): string | null {
-  if (value?.type !== 'StringLiteral' && value?.type !== 'Literal') return null;
-  const literal = fields(value).value;
-  return typeof literal === 'string' ? literal : null;
 }
 
 function attributeNamed(

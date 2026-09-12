@@ -7,6 +7,7 @@ import {
   childNode,
   childNodes,
   cloneNode as cloneAstNode,
+  identifierName,
   nodeFields as fields,
   walkAst,
   type BaseNode,
@@ -34,12 +35,6 @@ interface CellLift {
 interface ProgramContainer {
   node: t.Program;
   buildCodeFrameError(message: string): Error;
-}
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier') return null;
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
 }
 
 function cloneNode<TNode>(value: TNode): TNode {

@@ -2,6 +2,8 @@ import {
   childNode,
   childNodes,
   extractPatternIdentifiers,
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  identifierName,
   nodeFields as fields,
   walkAst,
   type BaseNode,
@@ -9,21 +11,6 @@ import {
   type Identifier,
 } from '../ast';
 import { astBindingAt, astScopeAt, type Ctx } from '../context';
-
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier') return null;
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
-}
 
 function bindingIsExternalImport(binding: Binding | undefined): boolean {
   return binding?.kind === 'import';

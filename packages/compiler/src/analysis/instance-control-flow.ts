@@ -2,6 +2,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   childNode,
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
   nodeFields as fields,
   walkAst,
   type BaseNode,
@@ -9,15 +10,6 @@ import {
 } from '../ast';
 import { astBindingAt, type Ctx } from '../context';
 import type { ControlFlowDerivation } from '../components/props';
-
-const FUNCTION_NODES = new Set([
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ArrowFunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
 
 const IMPURE_REPLAY_NODES = new Set([
   ...FUNCTION_NODES,

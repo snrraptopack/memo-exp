@@ -1,4 +1,5 @@
 import {
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
   isIdentifier,
   isNode,
   nodeFields as fields,
@@ -8,14 +9,6 @@ import {
 } from '../ast';
 
 const EQUALITY_OPERATORS = new Set(['==', '===']);
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
 const NON_SEMANTIC_FIELDS = new Set([
   'loc',
   'range',

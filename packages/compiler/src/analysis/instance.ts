@@ -4,7 +4,8 @@ import {
   childNode,
   childNodes,
   cloneNode as cloneAstNode,
-  nodeFields as fields,
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  identifierName,
   walkAst,
   type BaseNode,
   type Binding,
@@ -31,23 +32,8 @@ interface LocalDerivationHelperSummary {
   reason: string | null;
 }
 
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
-
 function cloneNode<TNode>(value: TNode): TNode {
   return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;
-}
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier') return null;
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
 }
 
 function parentOf(ctx: Ctx, current: BaseNode): BaseNode | null {

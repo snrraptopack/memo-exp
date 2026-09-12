@@ -2,17 +2,11 @@
 
 import {
   asNode as node,
+  jsxIdentifierName,
   nodeFields as fields,
   walkAst,
   type BaseNode,
 } from '../ast';
-
-function jsxIdentifierName(value: unknown): string | null {
-  const identifier = node(value);
-  if (identifier?.type !== 'JSXIdentifier') return null;
-  const name = fields(identifier).name;
-  return typeof name === 'string' ? name : null;
-}
 
 export function hostJsxEventNames(body: BaseNode): string[] {
   const found = new Set<string>();

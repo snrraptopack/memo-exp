@@ -1,5 +1,9 @@
 import { cloneNode } from '../builders';
-import { isNode, nodeFields as fields } from '../access';
+import {
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  isNode,
+  nodeFields as fields,
+} from '../access';
 import { analyzeScope, extractPatternIdentifiers, type Scope } from '../scope';
 import { ESTREE_VISITOR_KEYS, walkAst } from '../walk';
 import type { BaseNode } from '../types';
@@ -30,15 +34,6 @@ const TSRX_EXPRESSION_NODES = new Set([
   'JSXForExpression',
   'JSXSwitchExpression',
   'JSXTryExpression',
-]);
-
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
 ]);
 
 function isIfBranchNode(node: BaseNode | null | undefined): node is JSXIfExpression {

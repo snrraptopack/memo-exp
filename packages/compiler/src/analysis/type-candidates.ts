@@ -1,5 +1,6 @@
 import {
   asNode as node,
+  identifierName,
   nodeArray as nodes,
   nodeFields as fields,
   walkAst,
@@ -12,13 +13,6 @@ interface ProgramLike extends BaseNode {
 }
 
 type TypeAliases = Map<string, BaseNode>;
-
-function identifierName(value: unknown): string | null {
-  const identifier = node(value);
-  if (identifier?.type !== 'Identifier') return null;
-  const name = fields(identifier).name;
-  return typeof name === 'string' ? name : null;
-}
 
 function stringLiteralValue(value: unknown): string | null {
   const literal = node(value);

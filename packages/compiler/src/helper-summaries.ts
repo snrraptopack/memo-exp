@@ -11,6 +11,7 @@ import * as astFactory from './ast/factory';
 import {
   childNode,
   childNodes,
+  identifierName,
   nodeFields as fields,
   walkAst,
   type BaseNode,
@@ -33,12 +34,6 @@ import {
   staticAssignedKeys,
   type ReactiveOrigin,
 } from './mutation-analysis';
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier') return null;
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
-}
 
 function scopeAt(ctx: Ctx, at: BaseNode): Scope {
   let scope = astScopeAt(ctx, at);

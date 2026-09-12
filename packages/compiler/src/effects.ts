@@ -13,6 +13,7 @@ import {
   childNode,
   childNodes,
   cloneNode,
+  identifierName,
   nodeFields as fields,
   walkAst,
   type BaseNode,
@@ -43,12 +44,6 @@ type ProgramPath = DiagnosticPath<BaseNode & { type: 'Program' }>;
 type ComponentPath = DiagnosticPath<
   BaseNode & { type: 'FunctionDeclaration'; body: BaseNode }
 >;
-
-function identifierName(node: BaseNode | null): string | null {
-  if (node?.type !== 'Identifier') return null;
-  const name = fields(node).name;
-  return typeof name === 'string' ? name : null;
-}
 
 function isIntrinsicEffect(
   ctx: Ctx,

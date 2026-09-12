@@ -9,6 +9,7 @@ import {
   childNodes,
   cloneNode as cloneAstNode,
   extractPatternIdentifiers,
+  identifierName,
   nodeFields as fields,
   removeNode,
   replaceNode,
@@ -36,12 +37,6 @@ type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
 interface ResolvedRenderFunction {
   node: RenderFunction;
   bindingNode: BaseNode | null;
-}
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier') return null;
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
 }
 
 function cloneNode<TNode>(value: TNode): TNode {

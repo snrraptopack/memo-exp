@@ -1,6 +1,8 @@
 import {
   childNode,
   childNodes,
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  identifierName,
   nodeField as field,
   walkAst,
   type BaseNode,
@@ -11,15 +13,6 @@ import {
   type Ctx,
 } from '../context';
 import { summarizeHelper } from '../helper-summaries';
-
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
 
 const TYPE_WRAPPERS = new Set([
   'TSAsExpression',
@@ -32,12 +25,6 @@ const TYPE_WRAPPERS = new Set([
 interface ProgramPathLike {
   node: BaseNode;
   buildCodeFrameError(message: string, at?: BaseNode): Error;
-}
-
-function identifierName(node: BaseNode | null): string | null {
-  if (node?.type !== 'Identifier') return null;
-  const name = field(node, 'name');
-  return typeof name === 'string' ? name : null;
 }
 
 function unwrapTypes(node: BaseNode): BaseNode {

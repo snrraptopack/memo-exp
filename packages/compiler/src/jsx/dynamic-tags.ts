@@ -8,9 +8,11 @@ import {
   childNode,
   childNodes,
   cloneNode as cloneAstNode,
+  identifierLikeName as identifierName,
   isValidIdentifier as isValidEstreeIdentifier,
   nodeFields as fields,
   replaceNode,
+  stringValue,
   walkAst,
   type BaseNode,
   type Binding,
@@ -39,20 +41,6 @@ interface ProgramContainer {
 type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
   ? TPath
   : never;
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier' && value?.type !== 'JSXIdentifier') {
-    return null;
-  }
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
-}
-
-function stringValue(value: BaseNode | null): string | null {
-  if (value?.type !== 'StringLiteral' && value?.type !== 'Literal') return null;
-  const literal = fields(value).value;
-  return typeof literal === 'string' ? literal : null;
-}
 
 function cloneNode<TNode>(value: TNode): TNode {
   return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;

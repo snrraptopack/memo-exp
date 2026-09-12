@@ -8,6 +8,7 @@
 
 import {
   asNode as childNode,
+  identifierName,
   nodeArray as childNodes,
   nodeFields as record,
   walkAst,
@@ -25,12 +26,6 @@ export interface DiscoveredFunction {
 export interface UnlinkedValueImport {
   local: string;
   declaration: BaseNode;
-}
-
-function identifierName(node: BaseNode | null): string | null {
-  if (node?.type !== 'Identifier') return null;
-  const name = record(node).name;
-  return typeof name === 'string' ? name : null;
 }
 
 function declarationOf(statement: BaseNode): BaseNode | null {

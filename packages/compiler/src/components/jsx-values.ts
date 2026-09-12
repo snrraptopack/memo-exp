@@ -5,6 +5,7 @@ import * as astFactory from '../ast/factory';
 import {
   childNode,
   cloneNode as cloneAstNode,
+  identifierLikeName as identifierName,
   nodeIsWithin,
   nodeFields as fields,
   removeNode,
@@ -36,14 +37,6 @@ type JsxChild =
   | t.JSXSpreadChild
   | t.JSXElement
   | t.JSXFragment;
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier' && value?.type !== 'JSXIdentifier') {
-    return null;
-  }
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
-}
 
 function cloneNode<TNode>(value: TNode): TNode {
   return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;

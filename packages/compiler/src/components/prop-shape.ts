@@ -1,6 +1,7 @@
 import {
   childNode,
   childNodes,
+  identifierName,
   nodeField as field,
   type BaseNode,
 } from '../ast';
@@ -11,12 +12,6 @@ export interface ComponentPropShape {
   acceptsUnknown: boolean;
   bindings: string[];
   hasWholeDefault: boolean;
-}
-
-function identifierName(node: BaseNode | null): string | null {
-  if (node?.type !== 'Identifier') return null;
-  const name = field(node, 'name');
-  return typeof name === 'string' ? name : null;
 }
 
 function stringKey(node: BaseNode | null): string | null {
