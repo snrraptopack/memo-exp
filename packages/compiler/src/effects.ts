@@ -10,7 +10,10 @@ import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
+  childNode,
+  childNodes,
   cloneNode,
+  nodeFields as fields,
   walkAst,
   type BaseNode,
   type Binding,
@@ -40,27 +43,6 @@ type ProgramPath = DiagnosticPath<BaseNode & { type: 'Program' }>;
 type ComponentPath = DiagnosticPath<
   BaseNode & { type: 'FunctionDeclaration'; body: BaseNode }
 >;
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function childNode(node: BaseNode, key: string): BaseNode | null {
-  const value = fields(node)[key];
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? value as BaseNode
-    : null;
-}
-
-function childNodes(node: BaseNode, key: string): BaseNode[] {
-  const value = fields(node)[key];
-  return Array.isArray(value)
-    ? value.filter(
-        (item): item is BaseNode =>
-          item !== null && typeof item === 'object' && 'type' in item,
-      )
-    : [];
-}
 
 function identifierName(node: BaseNode | null): string | null {
   if (node?.type !== 'Identifier') return null;

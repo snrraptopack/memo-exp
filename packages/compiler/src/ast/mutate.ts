@@ -1,9 +1,6 @@
+import { nodeFields as fields } from './access';
 import type { BaseNode } from './types';
 import type { ScopeAnalysis } from './scope';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
 
 function location(
   analysis: ScopeAnalysis,

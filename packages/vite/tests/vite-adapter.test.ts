@@ -363,7 +363,10 @@ describe('Vite 8 adapter', () => {
     expect(main?.code).not.toContain('import.meta.hot.accept(');
     expect(app?.code).toContain('function App(_id');
     expect(app?.map).not.toBeNull();
-    expect(app?.map?.sources.some((id) => id.endsWith('/src/App.tsx'))).toBe(true);
+    // Vite normalizes the absolute compiler source against map.file. The
+    // resulting basename resolves once against the transformed module path;
+    // project-relative `./src/App.tsx` would duplicate the directory.
+    expect(app?.map?.sources).toEqual(['App.tsx']);
     expect(app?.map?.sourcesContent?.some((content) => content?.includes('function App()'))).toBe(true);
     expect(app?.code).toContain('Label(_id');
     expect(label?.code).toContain('function Label(_id');

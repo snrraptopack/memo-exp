@@ -1,5 +1,10 @@
-import type { BaseNode } from '../ast';
-import { walkAst } from '../ast';
+import {
+  asNode as node,
+  nodeArray as nodes,
+  nodeFields as fields,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 
 interface ProgramLike extends BaseNode {
   type: 'Program';
@@ -7,30 +12,6 @@ interface ProgramLike extends BaseNode {
 }
 
 type TypeAliases = Map<string, BaseNode>;
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  if (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  ) {
-    return value as BaseNode;
-  }
-  return null;
-}
-
-function nodes(value: unknown): BaseNode[] {
-  if (!Array.isArray(value)) return [];
-  const values: readonly unknown[] = value;
-  return values.flatMap((item) => {
-    const child = node(item);
-    return child === null ? [] : [child];
-  });
-}
 
 function identifierName(value: unknown): string | null {
   const identifier = node(value);

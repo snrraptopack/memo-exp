@@ -20,9 +20,11 @@ import {
 import {
   ESTREE_VISITOR_KEYS,
   analyzeScope,
+  childNode,
   extractPatternIdentifiers,
   isReferenceIdentifier,
   isValidIdentifier as isValidEstreeIdentifier,
+  nodeFields as fields,
   overwriteNode,
   replaceNode,
   walkAst,
@@ -31,7 +33,8 @@ import {
   type Identifier as AstIdentifier,
 } from './ast';
 import { orderCallProps } from './components/calls';
-import { localBindingForProp } from './components/props';
+import { materializeTransparentPropBindings } from './components/transparent-props';
+import { jsxAttributeName } from './jsx/attributes';
 import {
   generatedComponentIdentifier,
   generatedIdentifier,
@@ -45,17 +48,6 @@ import {
 
 const COLORLESS_DESTRUCTURING_ERROR =
   'memo-dom: [MMD-S004] Colorless server function and $fetch sources cannot be destructured. Destructuring copies values before the source settles. Bind the source and read properties at the use site, or destructure a settled plain value.';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function childNode(node: BaseNode, key: string): BaseNode | null {
-  const value = fields(node)[key];
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? value as BaseNode
-    : null;
-}
 
 function importedName(specifier: t.ImportSpecifier): string {
   return astFactory.isIdentifier(specifier.imported)
@@ -2094,16 +2086,8 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
         },
       });
     }
-    const plan = ctx.componentProps.get(component);
-    const sourceProps = new Map<string, string>();
-    for (const [prop, origin] of ctx.linkedComponentPropSources.get(component) ?? []) {
-      if (origin.transparent !== true || plan === undefined) continue;
-      const binding = localBindingForProp(plan, prop);
-      if (binding !== null) {
-        sources.add(binding);
-        sourceProps.set(binding, prop);
-      }
-    }
+    const sourceProps = materializeTransparentPropBindings(ctx, component);
+    for (const binding of sourceProps.keys()) sources.add(binding);
     if (sourceProps.size > 0) {
       ctx.transparentSourceProps.set(component, sourceProps);
       ctx.transparentPolicyParams.set(
@@ -2144,17 +2128,12 @@ function isBoundTo(
     resolved.references.includes(astIdentifier);
 }
 
-function jsxAttributeName(attribute: t.JSXAttribute): string {
-  const name = attribute.name;
-  return astFactory.isJSXIdentifier(name)
-    ? name.name
-    : `${name.namespace.name}:${name.name.name}`;
-}
-
 function isEventOrRefContainer(ctx: Ctx, container: BaseNode): boolean {
   const parent = ctx.astAnalysis?.parentByNode.get(container) ?? null;
   if (parent?.type !== 'JSXAttribute') return false;
-  const name = jsxAttributeName(parent as unknown as t.JSXAttribute);
+  const name = jsxAttributeName(
+    (parent as unknown as t.JSXAttribute).name,
+  );
   return name === 'ref' || /^on[A-Z]/.test(name);
 }
 
@@ -2199,7 +2178,7 @@ function isGroupDataContainer(ctx: Ctx, container: BaseNode): boolean {
   const attribute = ctx.astAnalysis?.parentByNode.get(container) ?? null;
   if (
     attribute?.type !== 'JSXAttribute' ||
-    jsxAttributeName(attribute as unknown as t.JSXAttribute) !== 'data'
+    jsxAttributeName((attribute as unknown as t.JSXAttribute).name) !== 'data'
   ) {
     return false;
   }

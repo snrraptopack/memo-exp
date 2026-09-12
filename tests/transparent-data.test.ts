@@ -78,6 +78,19 @@ const source = `
     );
   }
 
+  function GenericPropsView(props) {
+    const open = props.payload.tasks
+      .filter((task) => !task.done)
+      .sort((left, right) => left.id - right.id);
+    const formatted = props.payload.total.toLocaleString();
+    return (
+      <section id="generic-props-view">
+        <output>{formatted}</output>
+        <ul>{open.map((task) => <li key={task.id}>{task.title}</li>)}</ul>
+      </section>
+    );
+  }
+
   function OwnedSourceChild() {
     const tasks = $fetch<Array<{ id: number; title: string }>>('/owned-tasks');
     return (
@@ -243,6 +256,14 @@ const source = `
         <CrossList tasks={tasks} />
       </Group>
     );
+  }
+
+  export function GenericPropsApp() {
+    const payload = $fetch<{
+      total: number;
+      tasks: Array<{ id: number; title: string; done: boolean }>;
+    }>('/generic-props');
+    return <GenericPropsView payload={payload} />;
   }
 
   export function DescendantOwnedGroupApp() {
@@ -1080,9 +1101,14 @@ describe('compiler-transparent data values', () => {
   it('links transparent provenance and Group policy across modules', async () => {
     const modules = compileModules({
       './transparent-cross/profile.tsx': `
-        export function RemoteProfile({ user }) {
-          const label = \`Remote \${user.name}\`;
-          return <h2 id="remote-profile">{label}</h2>;
+        export function RemoteProfile(props) {
+          const label = \`Remote \${props.user.name}\`;
+          const visibleRoles = props.user.roles.filter(role => role.visible);
+          return (
+            <h2 id="remote-profile">
+              {label}:{visibleRoles.map(role => <span key={role.id}>{role.name}</span>)}
+            </h2>
+          );
         }
       `,
       './transparent-cross/app.tsx': `
@@ -1125,12 +1151,18 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('#remote-profile .remote-pending')).not.toBeNull();
 
     await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
-    resolve(new Response(JSON.stringify({ name: 'Linked' }), {
+    resolve(new Response(JSON.stringify({
+      name: 'Linked',
+      roles: [
+        { id: 1, name: 'reader', visible: true },
+        { id: 2, name: 'hidden', visible: false },
+      ],
+    }), {
       headers: { 'content-type': 'application/json' },
     }));
     await expect.poll(
       () => document.querySelector('#remote-profile')?.textContent,
-    ).toBe('Remote Linked');
+    ).toBe('Remote Linked:reader');
   });
 
   it('keeps an ungrouped structural site empty until its source commits', async () => {
@@ -1257,6 +1289,38 @@ describe('compiler-transparent data values', () => {
     await expect.poll(
       () => document.querySelector('#cross-list')?.textContent,
     ).toBe('FirstSecond');
+  });
+
+  it('preserves transparent provenance through a generic props object', async () => {
+    let resolve!: (response: Response) => void;
+    runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(accept => {
+        resolve = accept;
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    expect(() => {
+      document.body.appendChild(
+        mod.GenericPropsApp('GenericPropsApp', null),
+      );
+    }).not.toThrow();
+    expect(document.querySelector('#generic-props-view')?.textContent).toBe('');
+
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    resolve(new Response(JSON.stringify({
+      total: 12345,
+      tasks: [
+        { id: 3, title: 'Closed', done: true },
+        { id: 2, title: 'Second', done: false },
+        { id: 1, title: 'First', done: false },
+      ],
+    }), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#generic-props-view')?.textContent,
+    ).toBe('12,345FirstSecond');
   });
 
   it('inherits Group presentation through a descendant-owned source', async () => {

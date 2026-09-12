@@ -1,4 +1,5 @@
 import { cloneNode } from '../builders';
+import { isNode, nodeFields as fields } from '../access';
 import { analyzeScope, extractPatternIdentifiers, type Scope } from '../scope';
 import { ESTREE_VISITOR_KEYS, walkAst } from '../walk';
 import type { BaseNode } from '../types';
@@ -39,15 +40,6 @@ const FUNCTION_NODES = new Set([
   'ClassMethod',
   'ClassPrivateMethod',
 ]);
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function isNode(value: unknown): value is BaseNode {
-  return value !== null && typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string';
-}
 
 function isIfBranchNode(node: BaseNode | null | undefined): node is JSXIfExpression {
   return node !== null && node !== undefined && (

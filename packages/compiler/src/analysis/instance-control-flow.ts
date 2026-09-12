@@ -1,19 +1,14 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { walkAst, type BaseNode, type Binding } from '../ast';
+import {
+  childNode,
+  nodeFields as fields,
+  walkAst,
+  type BaseNode,
+  type Binding,
+} from '../ast';
 import { astBindingAt, type Ctx } from '../context';
 import type { ControlFlowDerivation } from '../components/props';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function childNode(node: BaseNode, key: string): BaseNode | null {
-  const value = fields(node)[key];
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
 
 const FUNCTION_NODES = new Set([
   'FunctionDeclaration',

@@ -7,7 +7,7 @@
  * have their own execution boundary and are instrumented separately.
  */
 
-import { walkAst, type BaseNode } from '../ast';
+import { nodeFields as fields, walkAst, type BaseNode } from '../ast';
 
 const FUNCTION_NODES = new Set([
   'ArrowFunctionExpression',
@@ -17,10 +17,6 @@ const FUNCTION_NODES = new Set([
   'ClassMethod',
   'ClassPrivateMethod',
 ]);
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
 
 function identifierName(value: unknown): string | null {
   if (

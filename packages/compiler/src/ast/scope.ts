@@ -10,6 +10,7 @@ import type {
   Identifier,
   Program,
 } from './types';
+import { childNode, childNodes, nodeField as field } from './access';
 import { walkAst } from './walk';
 import { isIdentifier } from './builders';
 
@@ -93,28 +94,6 @@ export class Scope {
     if (this.isFunctionScope) return this;
     return this.parent?.getFunctionScope() ?? null;
   }
-}
-
-function field(node: BaseNode, name: string): unknown {
-  return (node as unknown as Record<string, unknown>)[name];
-}
-
-function isNode(value: unknown): value is BaseNode {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  );
-}
-
-function childNode(node: BaseNode, name: string): BaseNode | null {
-  const value = field(node, name);
-  return isNode(value) ? value : null;
-}
-
-function childNodes(node: BaseNode, name: string): BaseNode[] {
-  const value = field(node, name);
-  return Array.isArray(value) ? value.filter(isNode) : [];
 }
 
 function asIdentifier(node: BaseNode | null): Identifier | null {

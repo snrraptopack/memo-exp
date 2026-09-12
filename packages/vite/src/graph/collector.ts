@@ -263,7 +263,16 @@ export async function compileGraph(
           )
         : code,
     );
-    maps.set(file, compiled.maps[id]!);
+    const map = compiled.maps[id]!;
+    // Vite attaches this transform map to the absolute module id. Keeping the
+    // compiler's project-relative source (`./src/View.tsx`) makes Node resolve
+    // it relative to the module directory and produces duplicated stack paths
+    // such as `src/components/src/components/View.tsx` on Windows.
+    maps.set(file, {
+      ...map,
+      file,
+      sources: map.sources.map((source) => source === id ? file : source),
+    });
   }
   return { files: new Set(sourceIds.keys()), output, maps, css, styles };
 }

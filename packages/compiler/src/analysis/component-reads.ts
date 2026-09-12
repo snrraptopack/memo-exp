@@ -1,20 +1,10 @@
-import { walkAst, type BaseNode } from '../ast';
+import {
+  asNode as node,
+  nodeFields as fields,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 import type { Ctx } from '../context';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  if (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  ) {
-    return value as BaseNode;
-  }
-  return null;
-}
 
 function jsxIdentifierName(value: unknown): string | null {
   const identifier = node(value);

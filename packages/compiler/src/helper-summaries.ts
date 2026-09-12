@@ -8,7 +8,14 @@
 
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
-import { walkAst, type BaseNode, type Scope } from './ast';
+import {
+  childNode,
+  childNodes,
+  nodeFields as fields,
+  walkAst,
+  type BaseNode,
+  type Scope,
+} from './ast';
 import {
   astBindingAt,
   astScopeAt,
@@ -26,27 +33,6 @@ import {
   staticAssignedKeys,
   type ReactiveOrigin,
 } from './mutation-analysis';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
-
-function childNodes(parent: BaseNode, key: string): BaseNode[] {
-  const value = fields(parent)[key];
-  return Array.isArray(value)
-    ? value.map(node).filter((item) => item !== null)
-    : [];
-}
 
 function identifierName(value: BaseNode | null): string | null {
   if (value?.type !== 'Identifier') return null;

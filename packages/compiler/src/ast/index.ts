@@ -3,6 +3,7 @@
  */
 
 export * from './types';
+export * from './access';
 export * from './builders';
 export * from './walk';
 export * from './scope';

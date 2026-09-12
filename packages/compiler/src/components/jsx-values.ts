@@ -3,8 +3,10 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
+  childNode,
   cloneNode as cloneAstNode,
   nodeIsWithin,
+  nodeFields as fields,
   removeNode,
   replaceNode,
   walkAst,
@@ -34,20 +36,6 @@ type JsxChild =
   | t.JSXSpreadChild
   | t.JSXElement
   | t.JSXFragment;
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
 
 function identifierName(value: BaseNode | null): string | null {
   if (value?.type !== 'Identifier' && value?.type !== 'JSXIdentifier') {

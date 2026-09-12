@@ -1,7 +1,13 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { cloneNode as cloneEstreeNode } from '../ast';
-import { walkAst, type BaseNode } from '../ast';
+import {
+  childNode,
+  childNodes,
+  cloneNode as cloneEstreeNode,
+  nodeField as field,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 import type { Ctx, MapCallExpression } from '../context';
 import {
   localBindingForProp,
@@ -17,28 +23,6 @@ export interface RenderCallbackInvocation {
 
 interface NodeHolder {
   node: BaseNode;
-}
-
-function field(node: BaseNode, name: string): unknown {
-  return (node as unknown as Record<string, unknown>)[name];
-}
-
-function isNode(value: unknown): value is BaseNode {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  );
-}
-
-function childNode(node: BaseNode, name: string): BaseNode | null {
-  const value = field(node, name);
-  return isNode(value) ? value : null;
-}
-
-function childNodes(node: BaseNode, name: string): BaseNode[] {
-  const value = field(node, name);
-  return Array.isArray(value) ? value.filter(isNode) : [];
 }
 
 /** Is this JSX element the returned root of a declared callback prop value? */

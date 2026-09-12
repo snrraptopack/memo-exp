@@ -1,11 +1,8 @@
 /** Erase TypeScript-only syntax from a transformed TS-ESTree program. */
 
+import { nodeFields as fields } from './access';
 import { transformAst } from './transform';
 import type { BaseNode } from './types';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
 
 function typeOnlyStatement(node: BaseNode): boolean {
   return (

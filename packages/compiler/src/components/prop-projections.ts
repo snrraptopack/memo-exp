@@ -3,9 +3,11 @@
  */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
+import type { BaseNode } from '../ast';
 import {
   memberKey,
   memberRootName,
+  unwrapTypeExpression,
   type Ctx,
 } from '../context';
 import {
@@ -34,19 +36,6 @@ function isProjectionTarget(
     astFactory.isAssignmentPattern(node) ||
     astFactory.isRestElement(node)
   );
-}
-
-function unwrap(node: t.Expression): t.Expression {
-  let current: t.Node = node;
-  while (
-    astFactory.isTSAsExpression(current) ||
-    astFactory.isTSTypeAssertion(current) ||
-    astFactory.isTSNonNullExpression(current) ||
-    astFactory.isTSSatisfiesExpression(current)
-  ) {
-    current = current.expression;
-  }
-  return current as t.Expression;
 }
 
 function bindPattern(
@@ -114,7 +103,9 @@ function sourceOrigin(
   origins: Map<string, ReactiveOrigin>,
   raw: t.Expression,
 ): ReactiveOrigin | null {
-  const expression = unwrap(raw);
+  const expression = unwrapTypeExpression(
+    raw as unknown as BaseNode,
+  ) as unknown as t.Expression;
   const plan = ctx.componentProps.get(component);
   if (plan === undefined) return null;
 

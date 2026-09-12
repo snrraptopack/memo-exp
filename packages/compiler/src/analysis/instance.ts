@@ -1,7 +1,10 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
+  childNode,
+  childNodes,
   cloneNode as cloneAstNode,
+  nodeFields as fields,
   walkAst,
   type BaseNode,
   type Binding,
@@ -37,29 +40,8 @@ const FUNCTION_NODES = new Set([
   'ClassPrivateMethod',
 ]);
 
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
 function cloneNode<TNode>(value: TNode): TNode {
   return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
-
-function childNodes(parent: BaseNode, key: string): BaseNode[] {
-  const value = fields(parent)[key];
-  return Array.isArray(value)
-    ? value.map(node).filter((item) => item !== null)
-    : [];
 }
 
 function identifierName(value: BaseNode | null): string | null {
@@ -357,6 +339,10 @@ export function scanInstanceDerivations(ctx: Ctx): void {
       const binding = ownerBinding(name);
       if (binding) reactiveBindings.set(binding, name);
     }
+    for (const name of ctx.transparentSources.get(componentName) ?? []) {
+      const binding = ownerBinding(name);
+      if (binding) reactiveBindings.set(binding, name);
+    }
     for (const name of ctx.instanceState.get(componentName) ?? []) {
       const binding = ownerBinding(name);
       if (binding) reactiveBindings.set(binding, name);
@@ -597,6 +583,11 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         }
         const stableFetchTarget =
           isTransparentFetch && astFactory.isIdentifier(declaration.id);
+        const transportedSourceTarget =
+          astFactory.isIdentifier(declaration.id) &&
+          ctx.transparentSourceProps
+            ?.get(componentName)
+            ?.has(declaration.id.name) === true;
         const replay = stableFetchTarget && astFactory.isCallExpression(declaration.init)
           ? astFactory.expressionStatement(
               ctx.transparentProviderFactories.has(
@@ -626,9 +617,14 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           source: cloneNode(declaration.init),
           bindings: names,
           sources: [...sources].sort(),
-          ...(stableFetchTarget ? { stableTarget: true, replay } : {}),
+          ...(stableFetchTarget
+            ? { stableTarget: true, replay }
+            : transportedSourceTarget
+              ? { stableTarget: true }
+              : {}),
         });
-        if (stableFetchTarget) continue;
+        if (transportedSourceTarget) statement.kind = 'let';
+        if (stableFetchTarget || transportedSourceTarget) continue;
         for (const name of names) {
           derivedBindings.add(name);
           derivedSources.set(name, new Set(sources));

@@ -10,6 +10,7 @@ import {
   collectStateIds,
   memberKey,
   memberRootName,
+  unwrapTypeExpression,
   walkNodes,
   type Ctx,
 } from '../context';
@@ -31,24 +32,11 @@ export type ComponentPropSourceRefs = Record<
   ComponentPropSourceRef[]
 >;
 
-function unwrapExpression(node: t.Expression): t.Expression {
-  let current: t.Node = node;
-  while (
-    astFactory.isTSAsExpression(current) ||
-    astFactory.isTSTypeAssertion(current) ||
-    astFactory.isTSNonNullExpression(current) ||
-    astFactory.isTSSatisfiesExpression(current)
-  ) {
-    current = current.expression;
-  }
-  return current as t.Expression;
-}
-
 function moduleStateSource(
   ctx: Ctx,
   raw: t.Expression,
 ): string | null {
-  const expression = unwrapExpression(raw);
+  const expression = unwrapTypeExpression(raw as unknown as BaseNode) as unknown as t.Expression;
   if (astFactory.isIdentifier(expression)) {
     if (
       !ctx.state.has(expression.name) ||
@@ -76,7 +64,7 @@ function parentPropSource(
   plan: ComponentPropsPlan,
   raw: t.Expression,
 ): ComponentPropSourceRef | null {
-  const expression = unwrapExpression(raw);
+  const expression = unwrapTypeExpression(raw as unknown as BaseNode) as unknown as t.Expression;
   if (astFactory.isIdentifier(expression)) {
     const name = propNameForBinding(plan, expression.name);
     return name === null
@@ -293,7 +281,9 @@ function sourcesOf(
   tag: string,
   expression: t.Expression,
 ): ComponentPropSourceRef[] {
-  const unwrapped = unwrapExpression(expression);
+  const unwrapped = unwrapTypeExpression(
+    expression as unknown as BaseNode,
+  ) as unknown as t.Expression;
   const listSources = listItemSources(ctx, owner, tag, unwrapped);
   if (listSources !== null) return listSources;
 

@@ -1,11 +1,8 @@
 /** Normalize accepted legacy node spellings to strict ESTree nodes. */
 
+import { nodeFields as fields } from './access';
 import { walkAst } from './walk';
 import type { BaseNode } from './types';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
 
 function literal(
   node: BaseNode,
