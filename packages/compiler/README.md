@@ -101,7 +101,9 @@ The transparent data-source feature is split by compiler phase:
 | `read-rewriting.ts` | Ordered orchestration of component read lowering |
 | `group-analysis.ts` | Shared source origins and component-prop analysis for Group and TSRX |
 | `group-policy-components.ts` | Captured-variable analysis and generated presentation components |
-| `group-lowering.ts` | Explicit Group/TSRX boundary validation and render-policy lowering |
+| `suspend-directive.ts` | Shared validation and consumption of the compiler-owned `suspend` directive |
+| `tsrx-boundaries.ts` | TSRX try/pending/catch metadata and boundary lowering |
+| `group-lowering.ts` | JSX Group validation, render-policy lowering, and pass orchestration |
 | `index.ts` | Stable public surface for the feature |
 
 The dependency direction is discovery/analysis → transforms → orchestration.
