@@ -56,22 +56,24 @@ export type AuthoredChildrenSlotBuilder = (
   ownerId: t.Expression,
 ) => t.Identifier;
 
+export type AuthoredRenderValueSlotBuilder = (
+  ctx: Ctx,
+  ownerScope: EmitScope,
+  value: t.Expression,
+  componentName: string,
+  componentPath: ComponentPath,
+  nestedIn: 'row' | 'cond' | null,
+  rowContext: RowCtx | undefined,
+  eventOriginId: t.Expression | undefined,
+  inSvg: boolean,
+  ownerId: t.Expression,
+) => t.Identifier;
+
 export function createAuthoredSlotBuilders(
   dependencies: AuthoredSlotDependencies,
 ): {
   buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder;
-  buildAuthoredRenderValueSlot: (
-    ctx: Ctx,
-    ownerScope: EmitScope,
-    value: t.Expression,
-    componentName: string,
-    componentPath: ComponentPath,
-    nestedIn: 'row' | 'cond' | null,
-    rowContext: RowCtx | undefined,
-    eventOriginId: t.Expression | undefined,
-    inSvg: boolean,
-    ownerId: t.Expression,
-  ) => t.Identifier;
+  buildAuthoredRenderValueSlot: AuthoredRenderValueSlotBuilder;
 } {
   const buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder = (
     ctx,
