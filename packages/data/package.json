@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/data",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Browser-first fetch resources and callable actions for memoized-dom",
   "type": "module",
   "sideEffects": false,
@@ -28,6 +28,6 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@memoized-dom/runtime": "workspace:*"
+    "@memoized-dom/runtime": "^0.0.8"
   }
 }

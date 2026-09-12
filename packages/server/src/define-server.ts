@@ -27,7 +27,7 @@ import {
   type RenderOptions,
   type ServerComponent,
 } from './index';
-import { renderToReadableStream } from './stream';
+import { prepareRenderToReadableStream } from './stream';
 
 export interface DefineServerRenderPolicy {
   /** Resolve request data before output, or emit the immediate pending shell. */
@@ -353,14 +353,15 @@ async function renderPage<TLocals extends object, TPlatform>(
     return htmlResponse(template.prefix + application + template.suffix, options.init);
   }
 
-  const application = renderToReadableStream(options.app, {
+  const application = prepareRenderToReadableStream(options.app, {
     ...render,
     signal: context.request.signal,
   });
+  await application.ready;
   return htmlResponse(
     composeDocumentStream({
       prefix: template.prefix,
-      body: application,
+      body: application.stream,
       suffix: template.suffix,
     }),
     options.init,

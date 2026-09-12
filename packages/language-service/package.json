@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/language-service",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "TypeScript language-service diagnostics and code fixes for memoized-dom",
   "type": "module",
   "sideEffects": false,
@@ -25,7 +25,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@memoized-dom/compiler": "workspace:*"
+    "@memoized-dom/compiler": "^0.0.7"
   },
   "peerDependencies": {
     "typescript": ">=5.7"

@@ -247,6 +247,36 @@ immediately and hydration continues its colorless work in the browser.
 Streaming, buffering, markers, payload encoding, and document assembly remain
 runtime and adapter mechanics. They are not route configuration.
 
+### Coordinated route transitions
+
+Routing, route code, and colorless data share one compiler-owned transition.
+Applications do not declare a second loader graph beside `$fetch` or generated
+server functions.
+
+The route manifest records the component module for each route and the
+colorless sources discovered beneath that route. On client navigation the
+runtime starts the target route transition, loads its client chunk when it is
+not already present, and starts its discovered data work with the navigation's
+abort signal.
+
+The route's existing mode defines when the visible branch changes:
+
+- `resolve` keeps the current route visible until the target chunk and its
+  request-owned initial data settle, then commits the route once;
+- `shell` commits the target route as soon as its chunk is available, while
+  the target's nearest `Group` policies present pending and failed data at the
+  exact consumption sites.
+
+Superseding navigation aborts only the obsolete transition. Shared requests
+whose identities are still consumed by the new route remain alive. A rejected
+transition never leaves a partially mounted target branch or changes the
+current URL without a corresponding rendered route.
+
+SSR uses the same route manifest and mode. It does not maintain separate
+server loaders, duplicate source declarations, or a second cache identity.
+The production client manifest maps route modules to chunks and preload
+dependencies, so navigation never downloads unrelated route code.
+
 ## 6. Server entry responsibilities
 
 `serverEntry` is the composition root for application-wide server behavior:
@@ -390,6 +420,12 @@ The declarations provide:
 - exact `path` and `params` typing for object-form `route-to`;
 - `RoutePattern` and `RouteParams<Path>` type-only imports from `#routes`.
 
+The language service also reads the owning route ancestry at each component
+site. Inside a component mounted beneath `/story/:storyId`, it completes
+`route.params.storyId` and reports parameter reads that do not exist on that
+route. Runtime `route.params` remains a plain immutable object; contextual
+typing does not require a new route object or a stringly accessor API.
+
 The project template includes `.memoized/**/*.d.ts` and maps `#routes` and
 `#server-functions`. Applications never edit generated files.
 
@@ -447,11 +483,24 @@ API-only and SPA-backend handlers do not require an SSR document provider.
 - SPA page fallback remains under Vite document handling;
 - SSR page fallback renders through `defineServer`;
 - route graph changes regenerate route declarations;
-- compiler errors retain authored file, line, column, and source frame.
+- compiler errors retain authored file, line, column, and source frame;
+- compiler diagnostics appear through the project language service while the
+  developer types, not only after Vite transforms the module;
+- development-only inspection events expose route transitions, colorless
+  request identities, and entity dirty causes without entering production
+  bundles.
 
 Development uses Vite's environment runner rather than making
 `ssrLoadModule()` the application architecture. Server edits invalidate the
 server environment and do not require restarting the development process.
+
+Every page render is request-contained. A component or data error before HTTP
+bytes are committed enters `defineServer.onError` and produces its returned
+response. An error after a streaming response has committed terminates only
+that response, reports the authored stack through Vite, disposes all
+request-owned route/data/render state, and leaves the development server able
+to serve the next request. Vite never exits because one application render
+failed.
 
 ## 11. Production build
 
@@ -591,6 +640,15 @@ The Web handler dispatches:
 5. the matched HTTP handler;
 6. SSR page rendering when no HTTP route matches and `app` is configured.
 
+Generated endpoint names are routing identities, not authorization. Global,
+directory, module, route, and method middleware can authenticate a request and
+populate typed request locals. A server function or API route performs its
+authorization decision from those locals before protected work. Mutating
+cookie-authenticated endpoints apply the application's origin and CSRF policy;
+all external input is validated before reaching domain code. Production
+documentation includes these conventions and does not present a custom header
+as a complete security example.
+
 ## 15. Diagnostics
 
 The application fails early when:
@@ -638,6 +696,14 @@ The Node integration suite:
 17. Asserts that the browser loads built hashed assets only.
 18. Asserts zero hydration mismatches, page errors, unhandled rejections,
     canceled successful operations, Vite development imports, and source URLs.
+19. Throws during initial and settled SSR rendering, verifies the configured
+    error response when headers are uncommitted, and verifies that the same
+    process serves a healthy request afterward.
+20. Navigates rapidly across lazy `resolve` and `shell` routes, verifies stale
+    transitions are aborted without duplicate requests, and verifies that
+    unrelated route chunks are not downloaded.
+21. Exercises authenticated and rejected server functions through the same
+    middleware and request-local contract used in deployment.
 
 The rendering matrix is:
 
@@ -666,6 +732,8 @@ filesystem-free bundle and runtime-specific conditions.
 - Expose linked compiler route metadata to the Vite layer.
 - Generate `.memoized/routes.d.ts` and refresh it atomically.
 - Type `routeRules`, `route`, `route-to`, and `#routes` from one route map.
+- Feed route ancestry to the language service for contextual `route.params`
+  completion and diagnostics.
 - Resolve server functions from `${server}/functions`.
 - Generate file API routes from `${server}/routes`.
 - Compose directory and module middleware.
@@ -676,6 +744,8 @@ filesystem-free bundle and runtime-specific conditions.
 
 - Keep markers and payload encoding internal to SSR hydration.
 - Validate and inherit `shell` or `resolve` route rules.
+- Isolate pre-commit and post-commit render failures per request.
+- Keep Vite alive after streamed render failures and retain authored stacks.
 - Install Vite-transformed documents through the handler-local adapter hook.
 - Preserve `document` and `documentTemplate` for non-Vite use.
 
@@ -687,13 +757,23 @@ filesystem-free bundle and runtime-specific conditions.
 - Run the artifacts through `vite preview` and the Node adapter.
 - Pass the complete Node production browser suite.
 
-### Phase 5: portability
+### Phase 5: coordinated route loading
+
+- Emit route-module and colorless-source transition metadata from the linked
+  compiler graph.
+- Split route component modules through the client manifest without a second
+  application-facing loader API.
+- Apply `resolve` and `shell` consistently to SSR and client navigation.
+- Abort superseded transitions without canceling still-consumed requests.
+- Expose route transition and request-identity inspection in development.
+
+### Phase 6: portability
 
 - Run the production contract on Bun.
 - Emit and test a filesystem-free worker bundle.
 - Verify a custom backend consuming only the Web handler and manifest.
 
-### Phase 6: performance and polish
+### Phase 7: performance and polish
 
 - Measure client assets, route chunks, server bundle size, startup time, and
   first-response latency from production artifacts.

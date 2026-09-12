@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/router",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Compiler-ready URL state, matching, and navigation for memoized-dom",
   "type": "module",
   "sideEffects": false,

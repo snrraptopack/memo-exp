@@ -23,6 +23,12 @@ export interface StreamOptions extends RenderOptions {
   signal?: AbortSignal;
 }
 
+export interface PreparedRenderStream {
+  readonly stream: ReadableStream<Uint8Array>;
+  /** Settles after the complete server render succeeds or rejects. */
+  readonly ready: Promise<void>;
+}
+
 function abortPromise(signal: AbortSignal): Promise<never> {
   const { promise, reject } = Promise.withResolvers<never>();
   const abort = () => reject(signal.reason ?? new Error('Streaming render aborted'));
@@ -40,9 +46,13 @@ function abortPromise(signal: AbortSignal): Promise<never> {
  * body followed by its state envelope. In `shell` mode the pending UI is
  * emitted immediately and no late replacement protocol is implied.
  */
-export function renderToReadableStream(
+function createRenderStream(
   component: ServerComponent,
   options: StreamOptions = {},
+  settled?: {
+    readonly resolve: () => void;
+    readonly reject: (error: unknown) => void;
+  },
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
@@ -50,7 +60,9 @@ export function renderToReadableStream(
     async start(controller) {
       const signal = options.signal;
       if (signal?.aborted) {
-        controller.error(signal.reason ?? new Error('Streaming render aborted'));
+        const reason = signal.reason ?? new Error('Streaming render aborted');
+        controller.error(reason);
+        settled?.reject(reason);
         return;
       }
 
@@ -102,12 +114,14 @@ export function renderToReadableStream(
                 );
               }
               controller.close();
+              settled?.resolve();
             }),
           ),
         );
       } catch (error) {
         runWithApplicationRuntime(runtime, () => unregisterSubtree(rootId));
         controller.error(error);
+        settled?.reject(error);
       } finally {
         routeRuntime.dispose();
         dataRuntime.clear();
@@ -115,4 +129,28 @@ export function renderToReadableStream(
       }
     },
   });
+}
+
+/**
+ * Prepare a stream and expose render completion to composed HTTP servers.
+ *
+ * `defineServer` awaits `ready` before committing response headers so its
+ * request error boundary can normalize both initial and data-settled render
+ * failures. The public stream-only primitive retains its ordinary Web Stream
+ * contract for custom hosts.
+ */
+export function prepareRenderToReadableStream(
+  component: ServerComponent,
+  options: StreamOptions = {},
+): PreparedRenderStream {
+  const settled = Promise.withResolvers<void>();
+  const stream = createRenderStream(component, options, settled);
+  return { stream, ready: settled.promise };
+}
+
+export function renderToReadableStream(
+  component: ServerComponent,
+  options: StreamOptions = {},
+): ReadableStream<Uint8Array> {
+  return createRenderStream(component, options);
 }
