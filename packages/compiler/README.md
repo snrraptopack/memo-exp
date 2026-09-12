@@ -179,9 +179,11 @@ second version of targeted-versus-structural update policy.
 
 | Module | Responsibility |
 |---|---|
-| `linking/model.ts` | Canonical internal manifest, export, import, usage, and module-entry contracts |
+| `linking/model.ts` | Canonical public options plus internal manifest, export, import, usage, and module-entry contracts |
+| `linking/options.ts` | Translation from linker options into per-module compiler options |
+| `linking/discovery.ts` | AST manifest discovery, component usage analysis, and linked re-analysis |
 | `linking/resolution.ts` | Module ID normalization/resolution and conversion of manifest exports into linked imports |
-| `linker.ts` | Manifest discovery/fixed-point orchestration and final connected compilation |
+| `linker.ts` | Fixed-point orchestration, application-root validation, and final connected compilation |
 
 Keep host resolution and alias behavior in `linking/resolution.ts`. Discovery
 and compilation consume its resolved entries; they must not grow separate

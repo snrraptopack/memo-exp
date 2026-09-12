@@ -1,12 +1,29 @@
 import type * as t from '../ast/compiler-types';
-import type { BaseNode } from '../ast';
+import type { BaseNode, EstreeFrontend } from '../ast';
 import type { ComponentGraphNode } from '../component-linker';
 import type { ComponentExportInfo } from '../components/manifest';
 import type {
   ParameterWrite,
+  MemoDomOptions,
   StateKind,
   TransparentSourceMethod,
 } from '../context';
+
+export interface CompileModulesOptions
+  extends Omit<
+    MemoDomOptions,
+    | 'moduleId'
+    | 'linkedImports'
+    | 'linkedComponentPaths'
+    | 'linkedComponentRows'
+    | 'linkedComponentPropSources'
+    | 'linkedComponentRenderProps'
+  > {
+  aliases?: Readonly<Record<string, string>>;
+  resolveImport?: (specifier: string, importer: string) => string | undefined;
+  linkFunctionSummaries?: boolean;
+  frontend?: EstreeFrontend;
+}
 
 export interface StateExport {
   type: 'state';
