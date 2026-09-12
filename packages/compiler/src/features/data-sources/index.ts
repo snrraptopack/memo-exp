@@ -12,3 +12,7 @@ export {
   scanEventSourceAssignments,
   scanTransparentSourceBindings,
 } from './component-sources';
+export {
+  transparentCallPolicyArgument,
+  transparentSourceMounts,
+} from './policy-arguments';

@@ -11,6 +11,7 @@ import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   astBindingAt,
+  nodeHasJsx,
   refreshAstAnalysis,
   type Ctx,
   type TransparentPresentationComponent,
@@ -31,7 +32,6 @@ import {
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
 } from './ast';
-import { orderCallProps } from './components/calls';
 import { jsxAttributeName } from './jsx/attributes';
 import {
   generatedComponentIdentifier,
@@ -53,6 +53,8 @@ export {
   scanEventSourceAssignments,
   scanTransparentSourceBindings,
   scanTransparentSourceImports,
+  transparentCallPolicyArgument,
+  transparentSourceMounts,
 } from './features/data-sources';
 
 function jsxTagName(element: t.JSXElement): string | null {
@@ -2082,20 +2084,6 @@ function gateEventSourceEffects(
   }
 }
 
-function containsJsx(root: BaseNode): boolean {
-  let found = false;
-  walkAst(root, {
-    enter(node) {
-      if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
-        found = true;
-        return false;
-      }
-      return undefined;
-    },
-  });
-  return found;
-}
-
 /**
  * Lower direct scalar/attribute reads, structural sites, transported props,
  * and pure local derivations without evaluating an unavailable source.
@@ -2506,7 +2494,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           eventSources.has(source)
         );
         if (
-          containsJsx(rawExpression) ||
+          nodeHasJsx(rawExpression as unknown as t.Node) ||
           dependencies.some((source) =>
             ctx.transparentSourceProps.get(component)?.has(source) === true
           )
@@ -2592,142 +2580,4 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
     }
     refresh();
   }
-}
-
-function policyComponentRenderer(
-  ctx: Ctx,
-  presentation: string | TransparentPresentationComponent,
-  kind: 'pending' | 'error',
-): t.ArrowFunctionExpression {
-  const component = typeof presentation === 'string'
-    ? presentation
-    : presentation.component;
-  const id = generatedIdentifier(ctx, 'dataPolicyId');
-  const parent = generatedIdentifier(ctx, 'dataPolicyParent');
-  const error = generatedIdentifier(ctx, 'dataPolicyError');
-  const retry = generatedIdentifier(ctx, 'dataPolicyRetry');
-  const entries = kind === 'error'
-    ? [
-        { name: 'error', value: cloneEstreeNode(error) as t.Expression },
-        { name: 'retry', value: cloneEstreeNode(retry) as t.Expression },
-      ]
-    : [];
-  if (typeof presentation !== 'string') {
-    entries.push(...presentation.props.map(({ name, value }) => ({
-      name,
-      value: cloneEstreeNode(value, true),
-    })));
-  }
-  const props = orderCallProps(ctx, component, entries);
-  return astFactory.arrowFunctionExpression(
-    [
-      cloneEstreeNode(id),
-      cloneEstreeNode(parent),
-      ...(kind === 'error' ? [cloneEstreeNode(error), cloneEstreeNode(retry)] : []),
-    ],
-    astFactory.callExpression(astFactory.identifier(component), [
-      cloneEstreeNode(id),
-      cloneEstreeNode(parent),
-      ...(props.length > 0 ? [astFactory.arrayExpression(props)] : []),
-    ]),
-  );
-}
-
-function fixedPolicyExpression(
-  ctx: Ctx,
-  policy: TransparentPresentationPolicy,
-): t.ObjectExpression {
-  return astFactory.objectExpression([
-    astFactory.objectProperty(
-      astFactory.identifier('pending'),
-      policyComponentRenderer(ctx, policy.pending, 'pending'),
-    ),
-    astFactory.objectProperty(
-      astFactory.identifier('error'),
-      policyComponentRenderer(ctx, policy.error, 'error'),
-    ),
-  ]);
-}
-
-/** Private presentation argument supplied to one compiled component call. */
-export function transparentCallPolicyArgument(
-  ctx: Ctx,
-  owner: string,
-  element: t.JSXElement,
-): t.ObjectExpression | null {
-  const entries = new Map<string, t.Expression>();
-  for (const [prop, policy] of ctx.transparentGroupCallPolicies.get(element) ?? []) {
-    entries.set(prop, fixedPolicyExpression(ctx, policy));
-  }
-  const inherited = ctx.transparentPolicyParams.get(owner);
-  const sourceProps = ctx.transparentSourceProps.get(owner);
-  if (inherited !== undefined && !entries.has('$default')) {
-    entries.set(
-      '$default',
-      astFactory.optionalMemberExpression(
-        cloneEstreeNode(inherited),
-        astFactory.identifier('$default'),
-        false,
-        true,
-      ),
-    );
-  }
-  if (inherited !== undefined && sourceProps !== undefined) {
-    for (const attribute of element.openingElement.attributes) {
-      if (
-        !astFactory.isJSXAttribute(attribute) ||
-        !astFactory.isJSXIdentifier(attribute.name) ||
-        !astFactory.isJSXExpressionContainer(attribute.value) ||
-        !astFactory.isIdentifier(attribute.value.expression) ||
-        entries.has(attribute.name.name)
-      ) continue;
-      const ownerProp = sourceProps.get(attribute.value.expression.name);
-      if (ownerProp === undefined) continue;
-      entries.set(
-        attribute.name.name,
-        astFactory.optionalMemberExpression(
-          cloneEstreeNode(inherited),
-          isValidEstreeIdentifier(ownerProp)
-            ? astFactory.identifier(ownerProp)
-            : astFactory.stringLiteral(ownerProp),
-          !isValidEstreeIdentifier(ownerProp),
-          true,
-        ),
-      );
-    }
-  }
-  if (entries.size === 0) return null;
-  return astFactory.objectExpression(
-    [...entries].map(([prop, value]) =>
-      astFactory.objectProperty(
-        isValidEstreeIdentifier(prop) ? astFactory.identifier(prop) : astFactory.stringLiteral(prop),
-        value,
-        !isValidEstreeIdentifier(prop),
-      )
-    ),
-  );
-}
-
-/** Component-mount statements granting disposal only to locally-created sources. */
-export function transparentSourceMounts(
-  ctx: Ctx,
-  component: string,
-  owner: t.Identifier,
-): t.Statement[] {
-  const transported = ctx.transparentSourceProps.get(component);
-  const eventSources = ctx.eventSourceSlots.get(component);
-  return [...(ctx.transparentSources.get(component) ?? [])]
-    .filter((source) =>
-      transported?.has(source) !== true && eventSources?.has(source) !== true
-    )
-    .map((source) =>
-      astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'cleanup'), [
-          cloneEstreeNode(owner),
-          astFactory.callExpression(mdd(ctx, 'ownResolvedValue'), [
-            astFactory.identifier(source),
-          ]),
-        ]),
-      ),
-    );
 }
