@@ -38,7 +38,7 @@ function SessionError({ error, retry: _retry }: { error: { message: string }; re
 
 function SessionBadge() {
   return (
-    <Group data={currentUser}>
+    <Group>
       <Pending component={SessionPending} />
       <ErrorArm component={SessionError} />
       <span class="badge user">
@@ -85,7 +85,7 @@ function Dashboard() {
   return (
     <section class="panel">
       <div class="panel-head"><h2>Dashboard</h2></div>
-      <Group data={stories}>
+      <Group>
         <Pending component={DashboardPending} />
         <ErrorArm component={DashboardError} />
         <div class="stats">
@@ -173,7 +173,7 @@ function Stories() {
           + Publish
         </button>
       </div>
-      <Group data={stories}>
+      <Group>
         <Pending component={StoriesPending} />
         <ErrorArm component={StoriesError} />
         <ul class="list">

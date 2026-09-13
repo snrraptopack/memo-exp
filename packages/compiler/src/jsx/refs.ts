@@ -9,14 +9,10 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { type BaseNode } from '../ast';
-import { astBindingAt, type Ctx } from '../context';
+import { astBindingAt, type ComponentPath, type Ctx } from '../context';
 import { renderPropReferenceName } from '../components/children';
 import { generatedIdentifier, md } from '../identifiers';
 import type { EmitScope } from '../emission/scope';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 /** Compile one source ref into callback/array values understood by mountRef. */
 export function compileRefValue(

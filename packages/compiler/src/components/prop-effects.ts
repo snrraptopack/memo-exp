@@ -4,6 +4,7 @@
 import type { Ctx, RowCtx } from '../context';
 import {
   recordInstanceWrite,
+  recordRoutedWrite,
   type ScopeWrites,
 } from '../handler-commits';
 import type { ReactiveOrigin } from '../mutation-analysis';
@@ -71,6 +72,8 @@ export function applyLinkedPropEffect(
   scope.rootFallback ||= source.rootFallback;
   const suffix =
     access.path.length === 0 ? '' : `.${access.path.join('.')}`;
-  for (const key of source.keys) scope.writes.add(`${key}${suffix}`);
+  for (const key of source.keys) {
+    recordRoutedWrite(scope, `${key}${suffix}`);
+  }
   return true;
 }

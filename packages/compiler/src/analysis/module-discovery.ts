@@ -6,7 +6,14 @@
  * semantic classification depend on a parser-specific path implementation.
  */
 
-import { walkAst, type BaseNode } from '../ast';
+import {
+  asNode as childNode,
+  identifierName,
+  nodeArray as childNodes,
+  nodeFields as record,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 
 export type DiscoveredFunctionKind = 'component' | 'helper' | 'jsx-helper';
 
@@ -19,35 +26,6 @@ export interface DiscoveredFunction {
 export interface UnlinkedValueImport {
   local: string;
   declaration: BaseNode;
-}
-
-function record(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function childNode(value: unknown): BaseNode | null {
-  return value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-    ? value as BaseNode
-    : null;
-}
-
-function childNodes(value: unknown): BaseNode[] {
-  return Array.isArray(value)
-    ? value.filter(
-        (item): item is BaseNode =>
-          item !== null &&
-          typeof item === 'object' &&
-          typeof (item as { type?: unknown }).type === 'string',
-      )
-    : [];
-}
-
-function identifierName(node: BaseNode | null): string | null {
-  if (node?.type !== 'Identifier') return null;
-  const name = record(node).name;
-  return typeof name === 'string' ? name : null;
 }
 
 function declarationOf(statement: BaseNode): BaseNode | null {

@@ -26,6 +26,7 @@
     "example:workspace": "MMD_EXAMPLE=workspace/main.ts vite --config examples/vite.config.ts",
     "example:tsrx": "MMD_EXAMPLE=tsrx-todo/main.ts vite --config examples/vite.config.ts",
     "example:ssr": "vite --config examples/ssr-showcase/vite.config.ts",
+    "example:fullstack": "vite --config examples/fullstack/vite.config.ts",
     "example:build": "bun run build && vite build --config examples/vite.config.ts",
     "example:preview": "vite preview --config examples/vite.config.ts",
     "bench": "bun run bench/dom/build.ts && esbuild bench/dom/browser-entry.ts --bundle --outfile=bench/dom/dist/browser-bundle.js --format=iife && bun run bench/dom/run.ts",
@@ -45,6 +46,7 @@
     "bench:size": "bun run bench/package-size/build.ts && bun run bench/package-size/run.ts",
     "bench:frameworks": "cd bench/frameworks && bun run run",
     "bench:application": "cd bench/frameworks && bun run run:application",
+    "bench:smoothness": "cd bench/frameworks && bun run run:smoothness",
     "bench:application:ui": "cd bench/frameworks && bun run ui:application"
   },
   "devDependencies": {

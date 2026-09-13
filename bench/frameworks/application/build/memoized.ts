@@ -4,7 +4,7 @@ import { compileModules } from '@memoized-dom/compiler';
 
 export function compileMemoizedApplication(root: string): string {
   const sourceId =
-    './bench/frameworks/application/dist/memoized.generated.ts';
+    './bench/frameworks/application/dist/memoized.generated.tsx';
   const modelId = './bench/frameworks/application/model.ts';
   const source = readFileSync(
     resolve(root, 'adapters/memoized.tsx'),
@@ -48,7 +48,7 @@ window.__applicationBench = {
   },
 };
 `;
-  const output = resolve(root, 'dist/memoized.generated.ts');
+  const output = resolve(root, 'dist/memoized.generated.tsx');
   writeFileSync(output, `${compiled}\n${bootstrap}`, 'utf8');
   return output;
 }

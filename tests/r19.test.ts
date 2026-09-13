@@ -208,7 +208,7 @@ describe('R19 - receiver-bounded code generation', () => {
       }
     `);
     expect(code).toMatch(
-      /const inspect = \(\) => \{\s+items\.filter\(Boolean\);\s+_MD\d*\.commitWrites/,
+      /const inspect = \(\) => \{\s+const _returnValue\d* = items\.filter\(Boolean\);\s+_MD\d*\.commitWrites/,
     );
     expect(code).not.toMatch(/markDirty\(_id\d*\)/);
   });
@@ -239,7 +239,7 @@ describe('R19 - receiver-bounded code generation', () => {
         )}</ul>;
       }
     `);
-    expect(code).toMatch(/row\.refresh\(\);\s+_MD\d*\.commitWrites\(_WRITES_\d*\)/);
+    expect(code).toMatch(/const _returnValue\d* = row\.refresh\(\);\s+_MD\d*\.commitWrites\(_WRITES_\d*\)/);
     expect(code).toContain('["./component.tsx#rows"]');
   });
 });

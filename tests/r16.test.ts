@@ -96,7 +96,9 @@ describe('R16 - compiler-wide identifier hygiene', () => {
     const code = compile(source, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/import \* as _MD\d+ from/);
     expect(code).not.toContain('const count = Row(');
-    expect(code).toMatch(/function App\(_id\d+, _parent\d+, _props\d+\)/);
+    expect(code).toMatch(
+      /function App\(_id\d+, _parent\d+, _props\d+, _dataPolicies\d*\)/,
+    );
     expect(code).toMatch(/const _update\d+ = \(\) =>/);
     expect(code).toMatch(/const _region\d+ = _MD\d+\.createListRegion/);
     expect(code).toMatch(/const _when\d+ = _MD\d+\.createCondRegion/);

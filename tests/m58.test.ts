@@ -240,6 +240,8 @@ describe('M5.10 - lightweight listed component rows', () => {
       `function Child(a, b) { return <span>{a}{b}</span>; }\nfunction C() { return <div><Child b={2} a={1} /></div>; }`,
       { runtimePath: '@memoized-dom/runtime' },
     );
-    expect(code).toMatch(/Child\(_id\d* \+ "\/Child", _id\d*, \[1, 2\]\)/);
+    expect(code).toMatch(
+      /Child\(_id\d* \+ "\/Child", _id\d*, \[1, 2\], \{ \$default:/,
+    );
   });
 });

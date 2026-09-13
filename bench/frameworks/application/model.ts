@@ -167,10 +167,22 @@ export function ownerReport(state: ApplicationState): Array<{
   key: string;
   value: number;
 }> {
-  return owners.map((owner) => ({
-    key: owner,
-    value: state.tickets.filter((ticket) => ticket.owner === owner).length,
-  }));
+  let mobile = 0;
+  let payments = 0;
+  let platform = 0;
+  let search = 0;
+  for (const ticket of state.tickets) {
+    if (ticket.owner === 'Mobile') mobile++;
+    else if (ticket.owner === 'Payments') payments++;
+    else if (ticket.owner === 'Platform') platform++;
+    else search++;
+  }
+  return [
+    { key: 'Platform', value: platform },
+    { key: 'Payments', value: payments },
+    { key: 'Search', value: search },
+    { key: 'Mobile', value: mobile },
+  ];
 }
 
 export function expectedApplicationValidation(

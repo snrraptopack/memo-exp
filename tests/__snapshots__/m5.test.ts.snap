@@ -10,7 +10,7 @@ _MD.installAccessTable({ readers: { "./component.tsx#count": ["App", "App/*"] } 
 // Fixture: async commit attribution.
 let count = 0;
 
-export function AsyncCounter(_id, _parent) {
+export function AsyncCounter(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
@@ -43,11 +43,11 @@ export function AsyncCounter(_id, _parent) {
 	const _button = _document.createElement("button");
 
 	_button.onclick = (_event) => {
-		const _returnValue = incLater(_event);
+		const _returnValue2 = incLater(_event);
 
 		_MD.markDirty(_id);
 
-		return _returnValue;
+		return _returnValue2;
 	};
 
 	_button.appendChild(_text);
@@ -56,11 +56,11 @@ export function AsyncCounter(_id, _parent) {
 	const _button2 = _document.createElement("button");
 
 	_button2.onclick = (_event2) => {
-		const _returnValue2 = incTimer(_event2);
+		const _returnValue4 = incTimer(_event2);
 
 		_MD.markDirty(_id);
 
-		return _returnValue2;
+		return _returnValue4;
 	};
 
 	_button2.appendChild(_text2);
@@ -107,6 +107,7 @@ _MD.installAccessTable(
 	{
 		readers: {
 			"./component.tsx#items": ["App", "App/*"],
+			"./component.tsx#items\\u0000memo-dom:list-structure-reader": ["App"],
 			"./component.tsx#selected": ["App", "App/*"]
 		}
 	},
@@ -174,17 +175,17 @@ function Row(item, _id, _onClickBinding) {
 	};
 }
 
-export function CompList(_id2, _parent) {
+export function CompList(_id2, _parent, _dataPolicies) {
 	let _value2;
 	const _document2 = _MD.getActiveEnvironment().document;
 
 	const add = () => {
 		items.push({ id: items.length + 1, label: 'three' });
-		_MD.commitWrites(_WRITES_2);
+		_MD.commitStructuralWrites(_WRITES_2);
 	};
 
-	const _update2 = () => {
-		_region.reconcile(items);
+	const _update2 = (_reasons = null) => {
+		_region.reconcile(items, _MD.isStructuralListUpdate(_reasons, "./component.tsx#items"));
 	};
 
 	_MD.register({ id: _id2, parent: _parent, render: _update2 });
@@ -207,6 +208,7 @@ export function CompList(_id2, _parent) {
 			return _entry;
 		},
 		(item) => item.id,
+		false,
 		false
 	);
 
@@ -248,6 +250,7 @@ _MD.installAccessTable(
 	{
 		readers: {
 			"./component.tsx#items": ["App", "App/*"],
+			"./component.tsx#items\\u0000memo-dom:list-structure-reader": ["App"],
 			"./component.tsx#selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
 		}
 	},
@@ -258,17 +261,17 @@ _MD.installAccessTable(
 let items = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
 let selected = 0;
 
-export function InlineList(_id, _parent) {
+export function InlineList(_id, _parent, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const add = () => {
 		items.push({ id: items.length + 1, label: 'three' });
-		_MD.commitWrites(_WRITES_2);
+		_MD.commitStructuralWrites(_WRITES_2);
 	};
 
-	const _update = () => {
-		_region.reconcile(items);
+	const _update = (_reasons = null) => {
+		_region.reconcile(items, _MD.isStructuralListUpdate(_reasons, "./component.tsx#items"));
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
@@ -338,7 +341,9 @@ export function InlineList(_id, _parent) {
 				update: _update2
 			};
 		},
-		(item) => item.id
+		(item) => item.id,
+		true,
+		false
 	);
 
 	_region.reconcile(items);
@@ -377,7 +382,7 @@ _MD.installAccessTable(
 // entity ids and the table must cover both.
 let label = 'hello';
 
-function Tag(_id, _parent) {
+function Tag(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
@@ -405,7 +410,7 @@ function Tag(_id, _parent) {
 	return _span;
 }
 
-export function App(_id2, _parent2) {
+export function App(_id2, _parent2, _dataPolicies2) {
 	let _value2;
 	const _document2 = _MD.getActiveEnvironment().document;
 
@@ -418,8 +423,8 @@ export function App(_id2, _parent2) {
 
 	_MD.register({ id: _id2, parent: _parent2, render: _update2 });
 
-	const _tag = Tag(_id2 + "/Tag", _id2);
-	const _tag2 = Tag(_id2 + "/Tag[1]", _id2);
+	const _tag = Tag(_id2 + "/Tag", _id2, { $default: _dataPolicies2?.$default });
+	const _tag2 = Tag(_id2 + "/Tag[1]", _id2, { $default: _dataPolicies2?.$default });
 	const _text2 = _document2.createTextNode("swap");
 	const _button = _document2.createElement("button");
 
@@ -455,7 +460,7 @@ _MD.installAccessTable(
 let count = 0;
 let again = 0;
 
-export function Counter(_id, _parent) {
+export function Counter(_id, _parent, _dataPolicies) {
 	let _slot, _slot2, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
@@ -535,7 +540,7 @@ _MD.installAccessTable(
 // to Badge only, never to App or Editor.
 let name = 'Ada';
 
-function Badge(_id, _parent) {
+function Badge(_id, _parent, _dataPolicies) {
 	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
@@ -563,7 +568,7 @@ function Badge(_id, _parent) {
 	return _span;
 }
 
-function Editor(_id2, _parent2) {
+function Editor(_id2, _parent2, _dataPolicies2) {
 	let _value2;
 	const _document2 = _MD.getActiveEnvironment().document;
 
@@ -585,15 +590,15 @@ function Editor(_id2, _parent2) {
 	return _button;
 }
 
-export function App(_id3, _parent3) {
+export function App(_id3, _parent3, _dataPolicies3) {
 	let _value3;
 	const _document3 = _MD.getActiveEnvironment().document;
 	const _update3 = () => {};
 
 	_MD.register({ id: _id3, parent: _parent3, render: _update3 });
 
-	const _badge = Badge(_id3 + "/Badge", _id3);
-	const _editor = Editor(_id3 + "/Editor", _id3);
+	const _badge = Badge(_id3 + "/Badge", _id3, { $default: _dataPolicies3?.$default });
+	const _editor = Editor(_id3 + "/Editor", _id3, { $default: _dataPolicies3?.$default });
 	const _div = _document3.createElement("div");
 
 	_div.appendChild(_badge);

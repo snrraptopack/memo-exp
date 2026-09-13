@@ -8,7 +8,11 @@ import {
 } from '../src';
 import {
   connectResolvedValue,
+  createEventSourceSlot,
+  disposeEventSourceSlot,
+  rebindEventSourceSlot,
   rebindResolvedValue,
+  rebindResolvedValueFromFactory,
   readResolvedValue,
   readResolvedValueForRender,
 } from '../src/internal';
@@ -26,6 +30,37 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe('transparent resolved values', () => {
+  it('tracks non-GET fetches through the same colorless state channel', async () => {
+    let finish!: (response: Response) => void;
+    let requestInit: RequestInit | undefined;
+    const runtime = createDataRuntime({
+      fetch: ((_input, init) => {
+        requestInit = init;
+        return new Promise<Response>(resolve => {
+          finish = resolve;
+        });
+      }) as typeof fetch,
+    });
+    const resource = runtime.$fetch<User>('/users/1', {
+      method: 'PATCH',
+      body: { name: 'Grace' },
+    });
+    const user = resource as unknown as ResolvedValue<User>;
+    const state = $track(user);
+
+    expect(state.pending).toBe(true);
+    expect(requestInit?.method).toBe('PATCH');
+    expect(requestInit?.body).toBe('{"name":"Grace"}');
+
+    finish(json({ id: 1, name: 'Grace' }));
+    await vi.waitFor(() => expect(state.status).toBe('success'));
+
+    expect(readResolvedValue(user)).toEqual({ id: 1, name: 'Grace' });
+    expect(state.pending).toBe(false);
+    expect(state.error).toBeNull();
+    runtime.clear();
+  });
+
   it('separates transparent value reads from tracked request state', async () => {
     let resolve!: (response: Response) => void;
     const runtime = createDataRuntime({
@@ -71,6 +106,111 @@ describe('transparent resolved values', () => {
     await expect(resource.refresh()).rejects.toBeInstanceOf(RequestError);
     expect(() => readResolvedValueForRender(user)).toThrow(RequestError);
     expect(() => readResolvedValue(user)).toThrow(RequestError);
+    runtime.clear();
+  });
+
+  it('correlates concurrent request outcomes with unique execution IDs', async () => {
+    const requests: Array<(response: Response) => void> = [];
+    const runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(resolve => {
+        requests.push(resolve);
+      })) as typeof fetch,
+    });
+    const first = runtime.$fetch<User>('/vote', {
+      method: 'POST',
+      body: { id: 1 },
+    }) as unknown as ResolvedValue<User>;
+    const second = runtime.$fetch<User>('/vote', {
+      method: 'POST',
+      body: { id: 1 },
+    }) as unknown as ResolvedValue<User>;
+    const firstTrack = $track(first);
+    const secondTrack = $track(second);
+    const firstSuccess = vi.fn();
+    const firstError = vi.fn();
+    const secondSuccess = vi.fn();
+    const secondError = vi.fn();
+
+    expect(firstTrack.id).not.toBe(secondTrack.id);
+    const firstId = firstTrack.id;
+    const secondId = secondTrack.id;
+    firstTrack.onSuccess(firstSuccess);
+    firstTrack.onError(firstError);
+    secondTrack.onSuccess(secondSuccess);
+    secondTrack.onError(secondError);
+
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    requests[1]!(json({ id: 1, name: 'second' }));
+    requests[0]!(json({ message: 'first failed' }, 503));
+
+    await vi.waitFor(() => {
+      expect(secondSuccess).toHaveBeenCalledWith(
+        { id: 1, name: 'second' },
+        secondId,
+      );
+      expect(firstError).toHaveBeenCalledWith(
+        expect.any(RequestError),
+        firstId,
+      );
+    });
+    expect(firstSuccess).not.toHaveBeenCalled();
+    expect(secondError).not.toHaveBeenCalled();
+
+    const lateSuccess = vi.fn();
+    secondTrack.onSuccess(lateSuccess);
+    expect(lateSuccess).toHaveBeenCalledTimes(1);
+
+    const settledId = secondTrack.id;
+    const refreshed = secondTrack.refresh();
+    expect(secondTrack.id).not.toBe(settledId);
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    requests[2]!(json({ id: 1, name: 'refreshed' }));
+    await expect(refreshed).resolves.toEqual({ id: 1, name: 'refreshed' });
+    runtime.clear();
+  });
+
+  it('does not abort dispatched event requests when the visible slot is replaced', async () => {
+    const requests: Array<{
+      signal: AbortSignal;
+      resolve: (response: Response) => void;
+    }> = [];
+    const runtime = createDataRuntime({
+      fetch: ((_input: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>(resolve => {
+          requests.push({ signal: init!.signal!, resolve });
+        })) as typeof fetch,
+    });
+    const first = runtime.$fetch<User>('/vote', {
+      method: 'POST',
+      body: { id: 1 },
+    }) as unknown as ResolvedValue<User>;
+    const second = runtime.$fetch<User>('/vote', {
+      method: 'POST',
+      body: { id: 1 },
+    }) as unknown as ResolvedValue<User>;
+    const firstSuccess = vi.fn();
+    const secondSuccess = vi.fn();
+    $track(first).onSuccess(firstSuccess);
+    $track(second).onSuccess(secondSuccess);
+    const slot = createEventSourceSlot();
+    let visible: ResolvedValue<User> | null = first;
+    rebindEventSourceSlot(slot, () => visible, () => {});
+
+    visible = second;
+    rebindEventSourceSlot(slot, () => visible, () => {});
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[0]!.signal.aborted).toBe(false);
+
+    requests[1]!.resolve(json({ id: 1, name: 'second' }));
+    requests[0]!.resolve(json({ id: 1, name: 'first' }));
+    await vi.waitFor(() => {
+      expect(firstSuccess).toHaveBeenCalledOnce();
+      expect(secondSuccess).toHaveBeenCalledOnce();
+    });
+    expect(requests[0]!.signal.aborted).toBe(false);
+    expect(requests[1]!.signal.aborted).toBe(false);
+
+    disposeEventSourceSlot(slot);
     runtime.clear();
   });
 
@@ -125,6 +265,103 @@ describe('transparent resolved values', () => {
     expect(readResolvedValue(users)).toEqual([{ id: 2, name: 'Grace' }]);
 
     disconnect();
+    runtime.clear();
+  });
+
+  it('rebinds through an imported factory without treating its arguments as URLs', async () => {
+    const requests: Array<{
+      url: string;
+      signal: AbortSignal;
+      resolve: (response: Response) => void;
+    }> = [];
+    const runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>(resolve => {
+          requests.push({
+            url: String(input),
+            signal: init!.signal!,
+            resolve,
+          });
+        })) as typeof fetch,
+    });
+    const getStory = (id: number): ResolvedValue<User> =>
+      runtime.$fetch<User>('/_fn/stories/getStory', {
+        query: { id },
+      }) as unknown as ResolvedValue<User>;
+    const story = getStory(1);
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    rebindResolvedValueFromFactory(story, () => getStory(2));
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    expect(requests[0]!.url).toBe('/_fn/stories/getStory?id=1');
+    expect(requests[0]!.signal.aborted).toBe(true);
+    expect(requests[1]!.url).toBe('/_fn/stories/getStory?id=2');
+
+    requests[1]!.resolve(json({ id: 2, name: 'Grace' }));
+    await vi.waitFor(() => {
+      expect(readResolvedValueForRender(story)).toEqual({
+        id: 2,
+        name: 'Grace',
+      });
+    });
+
+    rebindResolvedValueFromFactory(story, () => getStory(2));
+    await Promise.resolve();
+    expect(requests).toHaveLength(2);
+    runtime.clear();
+  });
+
+  it('rebinds method and body as reactive request inputs', async () => {
+    const requests: Array<{
+      method: string | undefined;
+      body: BodyInit | null | undefined;
+      signal: AbortSignal;
+      resolve: (response: Response) => void;
+    }> = [];
+    const runtime = createDataRuntime({
+      fetch: ((_input, init) => new Promise<Response>(resolve => {
+        requests.push({
+          method: init?.method,
+          body: init?.body,
+          signal: init?.signal as AbortSignal,
+          resolve,
+        });
+      })) as typeof fetch,
+    });
+    const resource = runtime.$fetch<User>('/users/1', {
+      method: 'PATCH',
+      body: { name: 'Ada' },
+    });
+    const user = resource as unknown as ResolvedValue<User>;
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    rebindResolvedValue(user, '/users/1', {
+      method: 'PUT',
+      body: { name: 'Grace' },
+    });
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    expect(requests[0]).toMatchObject({ method: 'PATCH', body: '{"name":"Ada"}' });
+    expect(requests[0]?.signal.aborted).toBe(true);
+    expect(requests[1]).toMatchObject({ method: 'PUT', body: '{"name":"Grace"}' });
+
+    requests[1]!.resolve(json({ id: 1, name: 'Grace' }));
+    await vi.waitFor(() => {
+      expect(readResolvedValueForRender(user)).toEqual({ id: 1, name: 'Grace' });
+    });
+
+    rebindResolvedValue(user, '/users/1', {
+      method: 'PUT',
+      body: { name: 'Grace' },
+    });
+    await Promise.resolve();
+    expect(requests).toHaveLength(2);
+
+    requests[0]!.resolve(json({ id: 1, name: 'Ada' }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(readResolvedValue(user)).toEqual({ id: 1, name: 'Grace' });
     runtime.clear();
   });
 

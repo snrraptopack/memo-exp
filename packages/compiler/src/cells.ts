@@ -3,7 +3,12 @@
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import {
+  asNode as node,
+  childNode,
+  childNodes,
   cloneNode as cloneAstNode,
+  identifierName,
+  nodeFields as fields,
   walkAst,
   type BaseNode,
   type Binding,
@@ -12,6 +17,7 @@ import {
   astBindingAt,
   refreshAstAnalysis,
   unwrapTypeExpression,
+  variableDeclaratorFor,
   type Ctx,
 } from './context';
 import { generatedIdentifier, md } from './identifiers';
@@ -30,33 +36,6 @@ interface CellLift {
 interface ProgramContainer {
   node: t.Program;
   buildCodeFrameError(message: string): Error;
-}
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
-
-function childNodes(parent: BaseNode, key: string): BaseNode[] {
-  const value = fields(parent)[key];
-  return Array.isArray(value)
-    ? value.map(node).filter((item) => item !== null)
-    : [];
-}
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier') return null;
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
 }
 
 function cloneNode<TNode>(value: TNode): TNode {
@@ -144,15 +123,6 @@ function isDeepLiteral(current: BaseNode): boolean {
     );
   }
   return false;
-}
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') return current;
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
 }
 
 function compoundOperator(operator: string): '+' | '-' | '*' | '/' | null {

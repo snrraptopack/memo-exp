@@ -3,8 +3,11 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
+  childNode,
   cloneNode as cloneAstNode,
+  identifierLikeName as identifierName,
   nodeIsWithin,
+  nodeFields as fields,
   removeNode,
   replaceNode,
   walkAst,
@@ -16,12 +19,9 @@ import {
   astBindingAt,
   nodeHasJsx,
   refreshAstAnalysis,
+  type ComponentPath,
   type Ctx,
 } from '../context';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 interface StructuredCandidate {
   key: t.Expression;
@@ -34,28 +34,6 @@ type JsxChild =
   | t.JSXSpreadChild
   | t.JSXElement
   | t.JSXFragment;
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier' && value?.type !== 'JSXIdentifier') {
-    return null;
-  }
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
-}
 
 function cloneNode<TNode>(value: TNode): TNode {
   return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;

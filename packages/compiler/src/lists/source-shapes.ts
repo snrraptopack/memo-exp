@@ -1,4 +1,8 @@
-import type { BaseNode } from '../ast';
+import {
+  isNode,
+  nodeField as field,
+  type BaseNode,
+} from '../ast';
 import { unwrapTypeExpression } from '../context';
 
 /** Remove transparent TypeScript wrappers around a collection expression. */
@@ -6,18 +10,6 @@ export function transparentListExpression<TExpression extends BaseNode>(
   expression: TExpression,
 ): TExpression {
   return unwrapTypeExpression(expression);
-}
-
-function field(node: BaseNode, name: string): unknown {
-  return (node as unknown as Record<string, unknown>)[name];
-}
-
-function isNode(value: unknown): value is BaseNode {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  );
 }
 
 function isPrimitiveLiteral(node: BaseNode): boolean {

@@ -1,28 +1,12 @@
 /** Shared host-event shape facts used by analysis, linking, and emission. */
 
-import { walkAst, type BaseNode } from '../ast';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  if (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  ) {
-    return value as BaseNode;
-  }
-  return null;
-}
-
-function jsxIdentifierName(value: unknown): string | null {
-  const identifier = node(value);
-  if (identifier?.type !== 'JSXIdentifier') return null;
-  const name = fields(identifier).name;
-  return typeof name === 'string' ? name : null;
-}
+import {
+  asNode as node,
+  jsxIdentifierName,
+  nodeFields as fields,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 
 export function hostJsxEventNames(body: BaseNode): string[] {
   const found = new Set<string>();

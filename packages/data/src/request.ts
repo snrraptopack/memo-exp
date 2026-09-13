@@ -1,6 +1,7 @@
 import { isAbortError, RequestError } from './errors';
 import { validateValue } from './schema';
 import type {
+  FetchMethod,
   Query,
   RequestKey,
   StandardSchemaV1,
@@ -73,12 +74,156 @@ function explicitKey(key: RequestKey): string {
 
 export function fetchIdentity(
   url: string,
+  method: FetchMethod,
   headers: HeadersInit | undefined,
+  bodyIdentity: string,
   key: RequestKey | undefined,
   schema: StandardSchemaV1 | undefined,
 ): string {
-  if (key !== undefined) return `explicit|${explicitKey(key)}`;
-  return `GET|${url}|${normalizedHeaders(headers)}|schema:${schemaId(schema)}`;
+  if (key !== undefined) {
+    const keyed = `${method}|explicit:${explicitKey(key)}`;
+    return method === 'GET' || method === 'HEAD'
+      ? keyed
+      : `${keyed}|body:${bodyIdentity}`;
+  }
+  return `${method}|${url}|${normalizedHeaders(headers)}|body:${bodyIdentity}|schema:${schemaId(schema)}`;
+}
+
+export function normalizeFetchMethod(method: FetchMethod | undefined): FetchMethod {
+  const normalized = (method ?? 'GET').toUpperCase();
+  if (
+    normalized !== 'GET' &&
+    normalized !== 'POST' &&
+    normalized !== 'PUT' &&
+    normalized !== 'PATCH' &&
+    normalized !== 'DELETE' &&
+    normalized !== 'HEAD' &&
+    normalized !== 'OPTIONS'
+  ) {
+    throw new TypeError(`Unsupported $fetch method '${String(method)}'`);
+  }
+  return normalized;
+}
+
+const opaqueBodyIds = new WeakMap<object, number>();
+let nextOpaqueBodyId = 1;
+
+function opaqueBodyIdentity(body: object): string {
+  let id = opaqueBodyIds.get(body);
+  if (id === undefined) {
+    id = nextOpaqueBodyId++;
+    opaqueBodyIds.set(body, id);
+  }
+  return `opaque:${id}`;
+}
+
+interface IdentityHash {
+  left: number;
+  right: number;
+  length: number;
+}
+
+function createIdentityHash(): IdentityHash {
+  return { left: 0x811c9dc5, right: 0x9e3779b9, length: 0 };
+}
+
+function updateIdentityHash(hash: IdentityHash, value: number): void {
+  hash.left = Math.imul(hash.left ^ value, 0x01000193);
+  hash.right = Math.imul(hash.right ^ value, 0x85ebca6b) + 0xc2b2ae35;
+  hash.length++;
+}
+
+function updateTextHash(hash: IdentityHash, value: string): void {
+  for (let index = 0; index < value.length; index++) {
+    const unit = value.charCodeAt(index);
+    updateIdentityHash(hash, unit & 0xff);
+    updateIdentityHash(hash, unit >>> 8);
+  }
+}
+
+function finishIdentityHash(kind: string, hash: IdentityHash): string {
+  return `${kind}:${hash.length}:${(hash.left >>> 0).toString(36)}:${(hash.right >>> 0).toString(36)}`;
+}
+
+function textIdentity(kind: string, value: string): string {
+  const hash = createIdentityHash();
+  updateTextHash(hash, value);
+  return finishIdentityHash(kind, hash);
+}
+
+function bytesIdentity(bytes: Uint8Array): string {
+  const hash = createIdentityHash();
+  for (const byte of bytes) updateIdentityHash(hash, byte);
+  return finishIdentityHash('bytes', hash);
+}
+
+function cloneFormData(input: FormData): PreparedRequestBody {
+  const body = new FormData();
+  const hash = createIdentityHash();
+  for (const [key, value] of input) {
+    updateTextHash(hash, `${key.length}:`);
+    updateTextHash(hash, key);
+    if (typeof value === 'string') {
+      body.append(key, value);
+      updateTextHash(hash, `=text:${value.length}:`);
+      updateTextHash(hash, value);
+    } else {
+      body.append(key, value, value.name);
+      updateTextHash(hash, `=file:${opaqueBodyIdentity(value)}`);
+    }
+    updateTextHash(hash, ';');
+  }
+  return { body, identity: finishIdentityHash('form', hash) };
+}
+
+export interface PreparedRequestBody {
+  readonly body: BodyInit | undefined;
+  readonly identity: string;
+}
+
+/** Snapshot a replayable body and its synchronous request-key material. */
+export function prepareRequestBody(
+  input: unknown,
+  headers: Headers,
+): PreparedRequestBody {
+  if (input === undefined) return { body: undefined, identity: 'none' };
+  if (typeof input === 'string') {
+    return { body: input, identity: textIdentity('text', input) };
+  }
+  if (input instanceof URLSearchParams) {
+    const body = new URLSearchParams(input);
+    return {
+      body,
+      identity: textIdentity('params', body.toString()),
+    };
+  }
+  if (input instanceof Blob) {
+    return { body: input, identity: opaqueBodyIdentity(input) };
+  }
+  if (input instanceof FormData) {
+    return cloneFormData(input);
+  }
+  if (input instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(input.slice(0));
+    return { body: bytes, identity: bytesIdentity(bytes) };
+  }
+  if (ArrayBuffer.isView(input)) {
+    const body = new Uint8Array(
+      input.buffer,
+      input.byteOffset,
+      input.byteLength,
+    ).slice();
+    return { body, identity: bytesIdentity(body) };
+  }
+
+  const json = JSON.stringify(input);
+  if (json === undefined) {
+    throw new TypeError('Request body must be JSON-serializable');
+  }
+  if (!headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
+  }
+  return { body: json, identity: textIdentity('json', json) };
 }
 
 export async function decodeResponse(
@@ -157,24 +302,9 @@ export function abortable<T>(
   });
 }
 
-export function encodeActionBody(
+export function encodeRequestBody(
   input: unknown,
   headers: Headers,
 ): BodyInit | undefined {
-  if (input === undefined) return undefined;
-  if (
-    typeof input === 'string' ||
-    input instanceof Blob ||
-    input instanceof FormData ||
-    input instanceof URLSearchParams ||
-    input instanceof ArrayBuffer ||
-    ArrayBuffer.isView(input)
-  ) {
-    return input as BodyInit;
-  }
-
-  if (!headers.has('content-type')) {
-    headers.set('content-type', 'application/json');
-  }
-  return JSON.stringify(input);
+  return prepareRequestBody(input, headers).body;
 }

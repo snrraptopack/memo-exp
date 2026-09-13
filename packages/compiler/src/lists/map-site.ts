@@ -6,7 +6,6 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
-  ESTREE_VISITOR_KEYS,
   extractPatternIdentifiers,
   walkAst,
   type BaseNode,
@@ -26,10 +25,15 @@ import {
   isStaticPrimitiveList,
   transparentListExpression,
 } from './source-shapes';
+import {
+  assertNoShadowing,
+  collectRowDerivations,
+  substituteRowDerivations,
+} from './row-derivations';
 
-type Fail = (message: string) => never;
+type Fail = (message: string, at?: t.Node) => never;
 interface ErrorPath {
-  buildCodeFrameError(message: string): Error;
+  buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 interface NodeHolder {
   node: BaseNode;
@@ -97,49 +101,61 @@ interface RowPlan {
   renderCallback: t.Expression | null;
 }
 
-function compilerResolvedRoots(ctx: Ctx, expression: t.Expression): string[] {
+function emptyListWhileUnresolved(
+  ctx: Ctx,
+  expression: t.Expression,
+): t.Expression {
   const current = transparentListExpression(expression);
+  if (compilerResolvedRoots(ctx, current).length === 0) return current;
   if (
-    astFactory.isCallExpression(current) &&
-    astFactory.isMemberExpression(current.callee) &&
-    !current.callee.computed &&
-    astFactory.isIdentifier(current.callee.object, {
-      name: ctx.identifiers?.dataRuntimeId,
-    }) &&
-    astFactory.isIdentifier(current.callee.property)
+    astFactory.isLogicalExpression(current) &&
+    current.operator === '||' &&
+    astFactory.isArrayExpression(current.right) &&
+    current.right.elements.length === 0
   ) {
-    if (
-      current.callee.property.name === 'readResolvedValue' &&
-      astFactory.isIdentifier(current.arguments[0])
-    ) {
-      return [current.arguments[0].name];
-    }
-    if (
-      (current.callee.property.name === 'readResolvedValuesForRender' ||
-        current.callee.property.name === 'deriveResolvedValues') &&
-      astFactory.isArrayExpression(current.arguments[0])
-    ) {
-      return current.arguments[0].elements
-        .filter((element): element is t.Identifier => astFactory.isIdentifier(element))
-        .map((element) => element.name);
-    }
+    return current;
   }
-  if (
-    astFactory.isCallExpression(current) &&
-    (astFactory.isMemberExpression(current.callee) ||
-      astFactory.isOptionalMemberExpression(current.callee)) &&
-    astFactory.isExpression(current.callee.object)
-  ) {
-    return compilerResolvedRoots(ctx, current.callee.object);
-  }
-  if (
-    (astFactory.isMemberExpression(current) ||
-      astFactory.isOptionalMemberExpression(current)) &&
-    astFactory.isExpression(current.object)
-  ) {
-    return compilerResolvedRoots(ctx, current.object);
-  }
-  return [];
+  return astFactory.logicalExpression(
+    '||',
+    current,
+    astFactory.arrayExpression([]),
+  );
+}
+
+function compilerResolvedRoots(ctx: Ctx, expression: t.Expression): string[] {
+  const roots = new Set<string>();
+  walkAst(transparentListExpression(expression) as unknown as BaseNode, {
+    enter(node) {
+      if (!astFactory.isCallExpression(node)) return;
+      const callee = node.callee;
+      if (
+        !astFactory.isMemberExpression(callee) ||
+        callee.computed ||
+        !astFactory.isIdentifier(callee.object, {
+          name: ctx.identifiers?.dataRuntimeId,
+        }) ||
+        !astFactory.isIdentifier(callee.property)
+      ) return;
+      if (
+        (callee.property.name === 'readResolvedValue' ||
+          callee.property.name === 'readResolvedValueForRender') &&
+        astFactory.isIdentifier(node.arguments[0])
+      ) {
+        roots.add(node.arguments[0].name);
+        return;
+      }
+      if (
+        (callee.property.name === 'readResolvedValuesForRender' ||
+          callee.property.name === 'deriveResolvedValues') &&
+        astFactory.isArrayExpression(node.arguments[0])
+      ) {
+        for (const element of node.arguments[0].elements) {
+          if (astFactory.isIdentifier(element)) roots.add(element.name);
+        }
+      }
+    },
+  });
+  return [...roots];
 }
 
 /** Is this expression a `.map(...)` call, including optional chains? */
@@ -190,17 +206,29 @@ export function analyzeMapSite(
   usedPrefixes: Map<string, number>,
   parentRow?: ParentRow,
 ): MapSite {
-  const fail: Fail = (message) => {
-    throw errorAt.buildCodeFrameError(message);
+  const fail: Fail = (message, at) => {
+    throw errorAt.buildCodeFrameError(message, at);
   };
   const callee = call.callee as t.MemberExpression | t.OptionalMemberExpression;
-  const source = analyzeSource(
-    ctx,
-    callee.object,
-    ownerName,
-    parentRow,
-    fail,
-  );
+  const analyzedSource = ctx.analyzedListSources.get(call);
+  const source = analyzedSource === undefined
+    ? analyzeSource(ctx, callee.object, ownerName, parentRow, fail)
+    : {
+        expression: astFactory.isExpression(callee.object)
+          ? emptyListWhileUnresolved(ctx, callee.object)
+          : fail(
+              'memo-dom: list source must be an expression',
+              callee.object,
+            ),
+        ...analyzedSource,
+      };
+  if (analyzedSource === undefined) {
+    ctx.analyzedListSources.set(call, {
+      key: source.key,
+      local: source.local,
+      suffixBase: source.suffixBase,
+    });
+  }
   const callback = analyzeCallback(ctx, call, ownerName, fail);
   const row = analyzeRow(ctx, callback, fail);
   const suffix = nextSuffix(source.suffixBase, usedPrefixes);
@@ -293,7 +321,7 @@ function analyzeSource(
       // Render-gated sources yield no rows while unavailable (§10: no
       // Group → empty local region); the imperative form stays loud.
       expression: renderGated
-        ? astFactory.logicalExpression('||', current, astFactory.arrayExpression([]))
+        ? emptyListWhileUnresolved(ctx, current)
         : current,
       key: source.name,
       local: true,
@@ -306,7 +334,7 @@ function analyzeSource(
   if (astFactory.isExpression(current) && resolvedRoots.length > 0) {
     const key = resolvedRoots.join('$');
     return {
-      expression: current,
+      expression: emptyListWhileUnresolved(ctx, current),
       key,
       local: true,
       suffixBase: key,
@@ -334,6 +362,7 @@ function analyzeSource(
   }
   return fail(
     'memo-dom: assign an ordered collection view to reactive state or a local derivation before mapping it',
+    current as t.Node,
   );
 }
 
@@ -551,175 +580,6 @@ function resolveCallbackJsx(
   return jsx;
 }
 
-interface RowDerivation {
-  name: string;
-  init: t.Expression;
-}
-
-function collectRowDerivations(
-  statements: t.Statement[],
-  reserved: ReadonlySet<string>,
-  fail: Fail,
-): RowDerivation[] {
-  const derivations: RowDerivation[] = [];
-  for (const statement of statements) {
-    const declaration =
-      astFactory.isVariableDeclaration(statement) &&
-      statement.kind === 'const' &&
-      statement.declarations.length === 1
-        ? statement.declarations[0]
-        : null;
-    if (
-      declaration === undefined ||
-      declaration === null ||
-      !astFactory.isIdentifier(declaration.id) ||
-      declaration.init == null ||
-      !astFactory.isExpression(declaration.init)
-    ) {
-      return fail(
-        'memo-dom: list callback statements before return must be single-name const declarations — R7 L1',
-      );
-    }
-    if (reserved.has(declaration.id.name)) {
-      return fail(
-        `memo-dom: list callback derivation '${declaration.id.name}' shadows an item or index binding — R7 L1`,
-      );
-    }
-    walkAst(declaration.init as unknown as BaseNode, {
-      enter(node) {
-        const current = node as unknown as t.Node;
-        if (
-          astFactory.isAssignmentExpression(current) ||
-          astFactory.isUpdateExpression(current) ||
-          astFactory.isAwaitExpression(current) ||
-          astFactory.isYieldExpression(current)
-        ) {
-          fail(
-            'memo-dom: list callback derivations must be pure const expressions — R7 L1',
-          );
-        }
-      },
-    });
-    derivations.push({ name: declaration.id.name, init: declaration.init });
-  }
-  return derivations;
-}
-
-function assertNoShadowing(
-  root: t.Node,
-  names: ReadonlySet<string>,
-  fail: Fail,
-): void {
-  if (names.size === 0) return;
-  const checkParams = (params: readonly t.Node[]): void => {
-    for (const parameter of params) {
-      for (const { name } of extractPatternIdentifiers(
-        parameter as unknown as BaseNode,
-      )) {
-        if (names.has(name)) {
-          fail(
-            `memo-dom: list callback derivation '${name}' is shadowed inside the row JSX — R7 L1`,
-          );
-        }
-      }
-    }
-  };
-  walkAst(root as unknown as BaseNode, {
-    enter(node) {
-      const current = node as unknown as t.Node;
-      if (astFactory.isFunction(current)) {
-        checkParams(current.params);
-      }
-      if (
-        astFactory.isVariableDeclarator(current) &&
-        astFactory.isIdentifier(current.id) &&
-        names.has(current.id.name)
-      ) {
-        fail(
-          `memo-dom: list callback derivation '${current.id.name}' is shadowed inside the row JSX — R7 L1`,
-        );
-      }
-    },
-  });
-}
-
-/**
- * Replace references to resolved derivations throughout an expression.
- * Reference positions are tracked so member property names, object keys,
- * and function parameters keep their identifiers. Every inserted
- * initializer is a fresh deep clone.
- */
-function substituteRowDerivations<T extends t.Node>(
-  node: T,
-  resolved: ReadonlyMap<string, t.Expression>,
-): T {
-  if (resolved.size === 0) return node;
-  return substituteNode(node, resolved, true);
-}
-
-function substituteNode<T extends t.Node>(
-  node: T,
-  resolved: ReadonlyMap<string, t.Expression>,
-  reference: boolean,
-): T {
-  if (astFactory.isIdentifier(node)) {
-    if (reference && resolved.has(node.name)) {
-      return cloneEstreeNode(resolved.get(node.name)!, true) as unknown as T;
-    }
-    return node;
-  }
-  if (astFactory.isMemberExpression(node) || astFactory.isOptionalMemberExpression(node)) {
-    const next = cloneEstreeNode(node, false);
-    next.object = substituteNode(node.object, resolved, true) as typeof next.object;
-    if (node.computed) {
-      next.property = substituteNode(
-        node.property as t.Expression,
-        resolved,
-        true,
-      ) as typeof next.property;
-    }
-    return next;
-  }
-  if (astFactory.isObjectProperty(node) && node.shorthand && astFactory.isIdentifier(node.key)) {
-    const next = cloneEstreeNode(node, false);
-    next.value = substituteNode(
-      node.value as t.Expression,
-      resolved,
-      true,
-    ) as typeof next.value;
-    next.shorthand = false;
-    return next;
-  }
-  if (astFactory.isFunction(node)) {
-    const next = cloneEstreeNode(node, false);
-    next.params = node.params.map((parameter) =>
-      cloneEstreeNode(parameter, true),
-    );
-    next.body = substituteNode(node.body, resolved, true);
-    return next;
-  }
-  const next = cloneEstreeNode(node, false);
-  const source = node as unknown as Record<string, unknown>;
-  const target = next as unknown as Record<string, unknown>;
-  for (const key of ESTREE_VISITOR_KEYS[node.type] ?? []) {
-    const child = source[key];
-    if (Array.isArray(child)) {
-      target[key] = child.map((entry) =>
-        entry === null || typeof entry !== 'object' || !('type' in entry)
-          ? entry
-          : substituteNode(entry as t.Node, resolved, true),
-      );
-    } else if (
-      child !== null &&
-      typeof child === 'object' &&
-      'type' in child
-    ) {
-      target[key] = substituteNode(child as t.Node, resolved, true);
-    }
-  }
-  return next;
-}
-
 function analyzeRow(
   ctx: Ctx,
   callback: CallbackPlan,
@@ -797,7 +657,7 @@ function extractKey(
     ) {
       key = attrExpr(attribute.value);
       if (key === null) {
-        return fail('memo-dom: key={...} needs an expression');
+        return fail('memo-dom: key={...} needs an expression', attribute);
       }
     }
   }

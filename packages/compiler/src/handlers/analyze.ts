@@ -1,36 +1,20 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { cloneNode as cloneEstreeNode } from '../ast';
 import {
-  analyzeScope,
   cloneNode,
   extractPatternIdentifiers,
-  overwriteNode,
-  walkAst,
   type BaseNode,
-  type Scope,
-  type ScopeAnalysis,
 } from '../ast';
 import {
   memberKey,
   memberRootName,
-  writeTouchesKey,
   type Ctx,
-  type KeyedListMutationPlan,
   type RowCtx,
 } from '../context';
-import {
-  appendScopeCommit,
-  buildScopeCommit,
-  createScopeWrites,
-  recordInstanceWrite,
-  type ScopeWrites,
-} from '../handler-commits';
-import { buildEventOriginCommit } from '../handler-origin';
+import { recordRoutedWrite } from '../handler-commits';
 import {
   AliasTracker,
   bindingScopeIsProgram,
-  callArgumentExpressions,
   extendOrigin,
   memberName,
   moduleOrigin,
@@ -39,18 +23,15 @@ import {
 } from '../mutation-analysis';
 import { summarizeHelper } from '../helper-summaries';
 import { isStaticDerivedListConst } from '../lists/static-derived';
-import { applyLinkedPropEffect } from '../components/prop-effects';
 import {
   componentPropProjectionOrigins,
 } from '../components/prop-projections';
-import { generatedIdentifier, md } from '../identifiers';
 import { transparentListExpression } from '../lists/source-shapes';
-import { compilerError } from '../errors';
-
-type FunctionNode =
-  | t.ArrowFunctionExpression
-  | t.FunctionExpression
-  | t.FunctionDeclaration;
+import {
+  walkHandler,
+} from './traversal';
+import { finalizeHandlerInstrumentation } from './execution-sites';
+import { createHandlerWriteRouting } from './write-routing';
 
 function isLinkedImport(ctx: Ctx, name: string): boolean {
   return (
@@ -60,316 +41,6 @@ function isLinkedImport(ctx: Ctx, name: string): boolean {
     ctx.importedComponents.has(name)
   );
 }
-
-class HandlerPath<TNode extends t.Node = t.Node> {
-  public readonly node: TNode;
-  public readonly parentPath: HandlerPath | null;
-  public shouldSkip = false;
-
-  constructor(
-    node: BaseNode,
-    private readonly analysis: ScopeAnalysis,
-    private readonly moduleId: string,
-  ) {
-    this.node = node as unknown as TNode;
-    const parent = analysis.parentByNode.get(node) ?? null;
-    this.parentPath = parent === null
-      ? null
-      : new HandlerPath(parent, analysis, moduleId);
-  }
-
-  public get parent(): t.Node | null {
-    return this.parentPath?.node ?? null;
-  }
-
-  public get scope(): Scope {
-    const scope = this.analysis.nodeToScope.get(
-      this.node as unknown as BaseNode,
-    );
-    if (scope === undefined) {
-      throw new TypeError(`Missing handler scope for ${this.node.type}`);
-    }
-    return scope;
-  }
-
-  public getFunctionParent(): HandlerPath<FunctionNode> | null {
-    let current = this.parentPath;
-    while (current !== null) {
-      if (astFactory.isFunction(current.node)) {
-        return current as HandlerPath<FunctionNode>;
-      }
-      current = current.parentPath;
-    }
-    return null;
-  }
-
-  public isExpression(): this is HandlerPath<t.Expression> {
-    return astFactory.isExpression(this.node);
-  }
-
-  public isVariableDeclarator(): this is HandlerPath<t.VariableDeclarator> {
-    return astFactory.isVariableDeclarator(this.node);
-  }
-
-  public isVariableDeclaration(): this is HandlerPath<t.VariableDeclaration> {
-    return astFactory.isVariableDeclaration(this.node);
-  }
-
-  public isAssignmentExpression(
-    options?: { operator?: string },
-  ): this is HandlerPath<t.AssignmentExpression> {
-    return astFactory.isAssignmentExpression(this.node) &&
-      (options?.operator === undefined || this.node.operator === options.operator);
-  }
-
-  public replaceWith(replacement: t.Node): void {
-    overwriteNode(
-      this.node as unknown as BaseNode,
-      replacement as unknown as BaseNode,
-    );
-  }
-
-  public skip(): void {
-    this.shouldSkip = true;
-  }
-
-  public buildCodeFrameError(message: string): Error {
-    return compilerError(
-      message,
-      this.moduleId,
-      this.node as unknown as BaseNode,
-    );
-  }
-}
-
-interface HandlerVisitor {
-  VariableDeclarator?(path: HandlerPath<t.VariableDeclarator>): void;
-  Function?(path: HandlerPath<FunctionNode>): void;
-  AssignmentExpression?(path: HandlerPath<t.AssignmentExpression>): void;
-  UpdateExpression?(path: HandlerPath<t.UpdateExpression>): void;
-  UnaryExpression?(path: HandlerPath<t.UnaryExpression>): void;
-  CallExpression?(path: HandlerPath<t.CallExpression>): void;
-}
-
-function walkHandler(
-  root: t.Node,
-  visitor: HandlerVisitor,
-  moduleId: string,
-): ScopeAnalysis {
-  const analysis = analyzeScope(root as unknown as BaseNode);
-  walkAst(root as unknown as BaseNode, {
-    enter(node) {
-      const path = new HandlerPath(node, analysis, moduleId);
-      if (node.type === 'VariableDeclarator') {
-        visitor.VariableDeclarator?.(
-          path as HandlerPath<t.VariableDeclarator>,
-        );
-      }
-      if (astFactory.isFunction(node as unknown as t.Node)) {
-        visitor.Function?.(path as HandlerPath<FunctionNode>);
-      }
-      if (node.type === 'AssignmentExpression') {
-        visitor.AssignmentExpression?.(
-          path as HandlerPath<t.AssignmentExpression>,
-        );
-      }
-      if (node.type === 'UpdateExpression') {
-        visitor.UpdateExpression?.(path as HandlerPath<t.UpdateExpression>);
-      }
-      if (node.type === 'UnaryExpression') {
-        visitor.UnaryExpression?.(path as HandlerPath<t.UnaryExpression>);
-      }
-      if (node.type === 'CallExpression') {
-        visitor.CallExpression?.(path as HandlerPath<t.CallExpression>);
-      }
-      return path.shouldSkip ? false : undefined;
-    },
-  });
-  return analysis;
-}
-
-function directListItemMutationKey(
-  node: t.MemberExpression,
-  plan: KeyedListMutationPlan,
-): t.Expression | null {
-  const chain: t.MemberExpression[] = [];
-  let current: t.Expression = node;
-  for (;;) {
-    current = transparentListExpression(current);
-    if (!astFactory.isMemberExpression(current)) break;
-    chain.unshift(current);
-    if (astFactory.isSuper(current.object)) return null;
-    current = current.object;
-  }
-  if (!astFactory.isIdentifier(current, { name: plan.source })) return null;
-  const itemAccess = chain[0];
-  if (
-    itemAccess === undefined ||
-    !itemAccess.computed ||
-    !astFactory.isExpression(itemAccess.property) ||
-    !(
-      astFactory.isIdentifier(itemAccess.property) ||
-      astFactory.isNumericLiteral(itemAccess.property) ||
-      astFactory.isStringLiteral(itemAccess.property)
-    ) ||
-    chain.length < 2
-  ) {
-    return null;
-  }
-
-  const writtenSegments: string[] = [];
-  for (const member of chain.slice(1)) {
-    if (!member.computed && astFactory.isIdentifier(member.property)) {
-      writtenSegments.push(member.property.name);
-    } else if (member.computed && astFactory.isStringLiteral(member.property)) {
-      writtenSegments.push(member.property.value);
-    } else {
-      return null;
-    }
-  }
-  if (writeTouchesKey(writtenSegments, plan.keyPath)) return null;
-
-  let key: t.Expression = cloneEstreeNode(itemAccess, true);
-  for (const segment of plan.keyPath) {
-    key = astFactory.memberExpression(key, astFactory.identifier(segment));
-  }
-  return key;
-}
-
-/** Vars a write-set routes to: components ∪ a pseudo-reader for list rows. */
-function readersOfVar(ctx: Ctx, v: string): Set<string> {
-  const out = new Set<string>();
-  for (const [comp, vars] of ctx.compReads) {
-    if (vars.has(v)) out.add(comp);
-  }
-  for (const site of ctx.rowReads.values()) {
-    if (site.vars.has(v)) out.add('__rows__'); // multi-instance by construction
-  }
-  for (const site of ctx.condReads.values()) {
-    if (site.vars.has(v)) out.add('__regions__'); // region-updated, not owner-updated
-  }
-  return out;
-}
-/**
- * R11.1: can anything OTHER than the row's own list observe item-field
- * mutations? The row-local commit (markDirty/update on the row alone) is
- * sound only when the answer is no. List owners are excluded — their
- * map-source read is inherent to the list pattern and the reconcile
- * resyncs their rows (see spec §11.3 for the residual case of an owner
- * deriving item fields inline, outside a computed).
- */
-function itemFieldVisibleBeyondList(
-  ctx: Ctx,
-  compName: string | null,
-  rowCtx: RowCtx,
-): boolean {
-  if (rowCtx.sourceLocal) return true;
-  const source = rowCtx.sourceKey;
-  if (source === '') return true; // unknown source -> conservative
-  for (const info of ctx.computeds.values()) {
-    if (info.reads.has(source)) return true;
-  }
-  const owners = new Set((ctx.listedSites.get(compName ?? '') ?? []).map((s) => s.owner));
-  if (owners.size === 0 && compName !== null) owners.add(compName); // inline rows
-  for (const reader of readersOfVar(ctx, source)) {
-    if (reader === '__rows__' || reader === '__regions__') return true;
-    if (!owners.has(reader)) return true;
-  }
-  return false;
-}
-
-interface HandlerExecutionSite {
-  path: HandlerPath;
-  writes: ScopeWrites;
-  flag?: t.Identifier;
-  temporaries?: t.Identifier[];
-}
-
-function finalizeHandlerInstrumentation(
-  ctx: Ctx,
-  rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
-  clonedFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
-  root: t.Node,
-  scopes: Map<t.Node, ScopeWrites>,
-  executionSites: ReadonlyMap<t.Node, HandlerExecutionSite>,
-  compName: string | null,
-  rowCtx: RowCtx | undefined,
-  eventBoundary: boolean,
-  eventOriginId: t.Expression | undefined,
-  executionAwareRoot: boolean,
-): void {
-  ctx.handlerHasRootCommit.set(rootFn, scopes.has(root));
-
-  if (eventBoundary && !scopes.has(root)) {
-    const eventScope = createScopeWrites();
-    eventScope.eventOrigin = buildEventOriginCommit(
-      ctx,
-      compName,
-      rowCtx,
-      eventOriginId,
-    );
-    scopes.set(root, eventScope);
-  }
-
-  const guardedRootSites: Array<HandlerExecutionSite & { commit: t.Statement }> = [];
-  if (executionAwareRoot) {
-    for (const site of executionSites.values()) {
-      const commit = buildScopeCommit(ctx, site.writes, compName, rowCtx);
-      if (commit !== null) guardedRootSites.push({ ...site, commit });
-    }
-  }
-  for (const site of guardedRootSites) {
-    site.flag = generatedIdentifier(ctx, 'didWrite');
-  }
-  guardedRootSites
-    .sort((left, right) => pathDepth(right.path) - pathDepth(left.path))
-    .forEach((site) => {
-      site.temporaries = markExecutionSite(ctx, site.path, site.flag!);
-    });
-
-  for (const [fn, writes] of scopes) {
-    const commit =
-      executionAwareRoot && fn === root
-        ? guardedRootSites.length === 0
-          ? null
-          : astFactory.blockStatement(
-              guardedRootSites.map((site) =>
-                astFactory.ifStatement(
-                  cloneEstreeNode(site.flag!),
-                  cloneEstreeNode(site.commit),
-                ),
-              ),
-            )
-        : buildScopeCommit(ctx, writes, compName, rowCtx);
-    if (commit === null) continue;
-    appendScopeCommit(
-      ctx,
-      fn as t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
-      commit,
-    );
-  }
-
-  if (guardedRootSites.length > 0) {
-    if (!astFactory.isBlockStatement(clonedFn.body)) {
-      throw new Error(
-        'memo-dom: execution-aware callback commit did not produce a block body',
-      );
-    }
-    clonedFn.body.body.unshift(
-      astFactory.variableDeclaration(
-        'let',
-        guardedRootSites.flatMap((site) => [
-          astFactory.variableDeclarator(cloneEstreeNode(site.flag!), astFactory.booleanLiteral(false)),
-          ...(site.temporaries ?? []).map((temporary) =>
-            astFactory.variableDeclarator(cloneEstreeNode(temporary)),
-          ),
-        ]),
-      ),
-    );
-  }
-  rootFn.body = clonedFn.body;
-}
-
 export function analyzeHandler(
   ctx: Ctx,
   rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
@@ -403,6 +74,39 @@ export function analyzeHandler(
     ...(instVars ?? []),
     ...(instDerived ?? []),
   ]);
+  const transparentRoots = compName === null
+    ? new Set<string>()
+    : (ctx.transparentSources.get(compName) ?? new Set<string>());
+  const transparentRootFor = (expression: t.Expression): string | null => {
+    const current = transparentListExpression(expression);
+    if (astFactory.isIdentifier(current)) {
+      return transparentRoots.has(current.name) ? current.name : null;
+    }
+    if (
+      astFactory.isCallExpression(current) &&
+      astFactory.isMemberExpression(current.callee) &&
+      !current.callee.computed &&
+      astFactory.isIdentifier(current.callee.object, {
+        name: ctx.identifiers?.dataRuntimeId,
+      }) &&
+      astFactory.isIdentifier(current.callee.property, {
+        name: 'readResolvedValue',
+      }) &&
+      astFactory.isIdentifier(current.arguments[0]) &&
+      transparentRoots.has(current.arguments[0].name)
+    ) {
+      return current.arguments[0].name;
+    }
+    if (
+      astFactory.isMemberExpression(current) ||
+      astFactory.isOptionalMemberExpression(current)
+    ) {
+      return astFactory.isExpression(current.object)
+        ? transparentRootFor(current.object)
+        : null;
+    }
+    return null;
+  };
   if (compName !== null) {
     for (const stmt of ctx.compPaths.get(compName)?.node.body.body ?? []) {
       if (astFactory.isVariableDeclaration(stmt)) {
@@ -440,480 +144,34 @@ export function analyzeHandler(
     const kind = ctx.state.get(name);
     return kind === undefined ? null : moduleOrigin(name, kind);
   });
-  const isComputedOrigin = (origin: ReactiveOrigin): boolean =>
-    origin.stateKind === 'computed' || ctx.state.get(origin.root) === 'computed';
-  const listMutationPlans =
-    compName === null
-      ? undefined
-      : ctx.keyedListMutationSources.get(compName);
-  const recordInstanceMutation = (
-    scope: ScopeWrites,
-    source: string,
-    kind: 'targeted' | 'structural' = 'structural',
-  ): void => {
-    recordInstanceWrite(scope, source);
-    const plan = listMutationPlans?.get(source);
-    if (plan !== undefined) {
-      recordInstanceWrite(
-        scope,
-        kind === 'targeted'
-          ? plan.targetedReason
-          : plan.structuralReason,
-      );
-    }
-  };
-  const journalTargetedMutation = (
-    p: HandlerPath,
-    plan: KeyedListMutationPlan,
-    key: t.Expression,
-  ): void => {
-    if (!p.isExpression()) return;
-    const original = cloneEstreeNode(p.node, true);
-    p.replaceWith(
-      astFactory.sequenceExpression([
-        astFactory.callExpression(
-          astFactory.memberExpression(
-            astFactory.identifier(plan.keysVariable),
-            astFactory.identifier('add'),
-          ),
-          [key],
-        ),
-        original,
-      ]),
-    );
-    p.skip();
-  };
-
-  const locals = new Set<string>();
-  for (const param of clonedFn.params) {
-    if (astFactory.isIdentifier(param)) locals.add(param.name);
-  }
-  // Direct parameters of THIS function. Member writes rooted at them are
-  // effects the function performs on its arguments — recorded so call sites
-  // can route them through their own (possibly row-scoped) context.
-  const rootParamIndex = new Map<string, number>(
-    clonedFn.params.flatMap((param, index) =>
-      astFactory.isIdentifier(param) ? [[param.name, index] as const] : [],
-    ),
-  );
-
-  // pass A: locals declared anywhere inside the handler
-  walkHandler(wrapper, {
-    VariableDeclarator(p) {
-      if (astFactory.isIdentifier(p.node.id)) {
-        locals.add(p.node.id.name);
-        if (p.parentPath?.isVariableDeclaration() === true) {
-          aliases.trackDeclarator(p.scope, p.node);
-        }
-      }
-    },
-    Function(p) {
-      for (const param of p.node.params) {
-        if (astFactory.isIdentifier(param)) locals.add(param.name);
-      }
-    },
-  }, ctx.moduleId);
-
-  // pass B: writes grouped by innermost enclosing function scope
-  const scopes = new Map<t.Node, ScopeWrites>();
-  const executionSites = new Map<t.Node, HandlerExecutionSite>();
-  const scopeOf = (p: HandlerPath): ScopeWrites => {
-    const fn = p.getFunctionParent()?.node ?? ROOT;
-    let s = scopes.get(fn);
-    if (!s) {
-      scopes.set(fn, (s = createScopeWrites()));
-    }
-    return s;
-  };
-  const mutateScope = (
-    p: HandlerPath,
-    mutate: (scope: ScopeWrites) => void,
-  ): void => {
-    mutate(scopeOf(p));
-    if (
-      !executionAwareRoot ||
-      p.getFunctionParent()?.node !== ROOT
-    ) {
-      return;
-    }
-    let site = executionSites.get(p.node);
-    if (site === undefined) {
-      site = { path: p, writes: createScopeWrites() };
-      executionSites.set(p.node, site);
-    }
-    mutate(site.writes);
-  };
-  const noteSourceWrite = (p: HandlerPath): void => {
-    mutateScope(p, (scope) => {
-      if (rowCtx?.sourceLocal) {
-        scope.rowOwnerLocal = true;
-      } else if (rowCtx !== undefined) {
-        scope.writes.add(rowCtx.sourceKey);
-      }
-    });
-  };
-  const rowRelativePath = (originKey: string): string[] | null => {
-    if (rowCtx === undefined) return null;
-    const segments = originKey.split('.').slice(1);
-    if (
-      rowCtx.itemPath.some(
-        (segment, index) => segments[index] !== segment,
-      )
-    ) {
-      return null;
-    }
-    return segments.slice(rowCtx.itemPath.length);
-  };
-  const noteNonItemRowProp = (
-    p: HandlerPath,
-    origin?: ReactiveOrigin,
-  ): void => {
-    mutateScope(p, (scope) => {
-      if (
-        origin !== undefined &&
-        compName !== null &&
-        applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
-      ) {
-        return;
-      }
-      scope.rowLocal = true;
-      scope.rootFallback = true;
-    });
-  };
-  const notePropWrite = (
-    p: HandlerPath,
-    origin: ReactiveOrigin,
-  ): void => {
-    mutateScope(p, (scope) => {
-      if (
-        compName === null ||
-        !applyLinkedPropEffect(ctx, compName, rowCtx, origin, scope)
-      ) {
-        if (rowCtx === undefined) {
-          if (compName !== null) {
-            recordInstanceWrite(scope, origin.root);
-          }
-          scope.rootFallback = true;
-        } else {
-          scope.rowLocal = true;
-          scope.rootFallback = true;
-        }
-      }
-    });
-  };
-
-  // R11: a member write rooted at the row's item param. Non-key fields are
-  // visible ONLY to this row's DOM → the commit is a local markDirty(rowId).
-  // Key-field writes change the row identity → structural fallback: a normal
-  // invalidation of the collection source (full reconcile, re-keys everything).
-  const noteItemWrite = (p: HandlerPath, node: t.MemberExpression): boolean => {
-    if (rowCtx === undefined) return false;
-    if (memberRootName(node) !== rowCtx.itemParam) return false;
-    const key = memberKey(node); // 'todo.done.x' or null when dynamic
-    if (key === null) {
-      // dynamic path on the item (todo[k] = …): may hit the key — fall back
-      if (rowCtx.itemPath.length === 0) {
-        noteSourceWrite(p);
-      } else {
-        noteNonItemRowProp(p);
-      }
-      return true;
-    }
-    const segs = key.split('.').slice(1);
-    if (
-      rowCtx.itemPath.some(
-        (segment, index) => segs[index] !== segment,
-      )
-    ) {
-      return false;
-    }
-    segs.splice(0, rowCtx.itemPath.length);
-    if (writeTouchesKey(segs, rowCtx.keyPath)) {
-      noteSourceWrite(p);
-    } else {
-      mutateScope(p, (scope) => {
-        scope.rowLocal = true;
-      });
-      // R11.1: the row-local shortcut is only sound when NOTHING outside the
-      // row's own list can observe item fields. A computed over the source
-      // array (todos.filter(t => t.done).length) — or any non-owner reader —
-      // sees field mutations too, so the array write must ALSO route through
-      // the table: the computed recomputes, the reader re-renders, and the
-      // resulting reconcile resyncs this row anyway (setter guards absorb
-      // the overlap).
-      if (itemFieldVisibleBeyondList(ctx, compName, rowCtx)) {
-        noteSourceWrite(p);
-      }
-    }
-    return true;
-  };
-
-  const noteOriginWrite = (p: HandlerPath, origin: ReactiveOrigin): void => {
-    if (origin.locality === 'instance') {
-      mutateScope(p, (scope) => {
-        recordInstanceMutation(scope, origin.root);
-      });
-      return;
-    }
-    if (origin.locality === 'row') {
-      if (rowCtx === undefined) {
-        mutateScope(p, (scope) => {
-          scope.rootFallback = true;
-        });
-        return;
-      }
-      if (origin.key === null) {
-        if (rowCtx.itemPath.length === 0) {
-          noteSourceWrite(p);
-        } else {
-          noteNonItemRowProp(p);
-        }
-        return;
-      }
-      const segs = rowRelativePath(origin.key);
-      if (segs === null) {
-        noteNonItemRowProp(p, origin);
-        return;
-      }
-      if (writeTouchesKey(segs, rowCtx.keyPath)) {
-        noteSourceWrite(p);
-      } else {
-        mutateScope(p, (scope) => {
-          scope.rowLocal = true;
-        });
-        if (itemFieldVisibleBeyondList(ctx, compName, rowCtx)) {
-          noteSourceWrite(p);
-        }
-      }
-      return;
-    }
-    if (origin.locality === 'prop') {
-      notePropWrite(p, origin);
-      return;
-    }
-    if (origin.stateKind === 'computed') {
-      throw p.buildCodeFrameError(
-        `memo-dom: cannot mutate computed '${origin.root}' (R13) - it is derived; write its SOURCE state instead`,
-      );
-    }
-    if (origin.stateKind !== 'store') {
-      mutateScope(p, (scope) => {
-        scope.writes.add(origin.root);
-      });
-      return;
-    }
-    if (origin.key !== null && origin.key.includes('.')) {
-      mutateScope(p, (scope) => {
-        scope.writes.add(origin.key!);
-      });
-    } else {
-      // A dynamic store path is imprecise, but it is still bounded to the
-      // store root. Prefix matching reaches every observer of that store.
-      mutateScope(p, (scope) => {
-        scope.writes.add(origin.root);
-      });
-    }
-  };
-
-  const noteReceiverEffect = (
-    p: HandlerPath,
-    origin: ReactiveOrigin,
-  ): void => {
-    if (origin.locality === 'instance') {
-      mutateScope(p, (scope) => {
-        recordInstanceMutation(scope, origin.root);
-      });
-      return;
-    }
-    if (origin.locality === 'row') {
-      if (rowCtx === undefined) {
-        mutateScope(p, (scope) => {
-          scope.rootFallback = true;
-        });
-        return;
-      }
-      if (origin.key === null) {
-        if (rowCtx.itemPath.length === 0) {
-          noteSourceWrite(p);
-        } else {
-          noteNonItemRowProp(p);
-        }
-        return;
-      }
-      const relative = rowRelativePath(origin.key);
-      if (relative === null) {
-        noteNonItemRowProp(p, origin);
-        return;
-      }
-      const receiverIsItem = relative.length === 0;
-      if (
-        receiverIsItem &&
-        (rowCtx.keyPath === null || rowCtx.keyPath.length > 0)
-      ) {
-        // An arbitrary item method can change the key, so re-establish row
-        // identity through collection-view reconciliation.
-        noteSourceWrite(p);
-      } else {
-        noteOriginWrite(p, origin);
-      }
-      return;
-    }
-    if (origin.locality === 'prop') {
-      notePropWrite(p, origin);
-      return;
-    }
-    // A receiver call is an opaque invocation, not a proven assignment to
-    // the derived binding. Conservatively invalidate its readers without
-    // guessing whether a user-defined or third-party method is mutating.
-    if (origin.stateKind === 'computed') {
-      mutateScope(p, (scope) => {
-        scope.writes.add(origin.root);
-      });
-      return;
-    }
-    mutateScope(p, (scope) => {
-      scope.writes.add(origin.key ?? origin.root);
-    });
-  };
-
-  const noteBoundedArguments = (
-    p: HandlerPath,
-    args: t.CallExpression['arguments'],
-  ): void => {
-    if (
-      executionAwareRoot &&
-      p.getFunctionParent()?.node === ROOT
-    ) {
-      // The direct effect body is an external-synchronization boundary.
-      // Passing reactive values to unknown APIs is consumption, not a hidden
-      // reactive mutation; otherwise calls such as console.log(count) would
-      // commit count and subscribe-trigger themselves forever. Visible helper
-      // summaries and direct receiver mutations remain writable paths.
-      return;
-    }
-    for (const expression of callArgumentExpressions(args)) {
-      // A member expression passes its resulting value, not necessarily the
-      // reactive container. Property-value semantics remain author-owned.
-      if (!astFactory.isIdentifier(expression)) continue;
-      const origin = aliases.resolveExpression(p.scope, expression);
-      if (origin === null) continue;
-      // Computeds are read-only derived values. Passing/capturing one through
-      // an arbitrary utility is value consumption, not a visible mutation. If
-      // user code mutates it behind an unanalyzable boundary, that mutation is
-      // intentionally outside the reactive write model and will not propagate.
-      // Direct visible writes/mutators still throw in noteOriginWrite and
-      // noteReceiverEffect.
-      if (isComputedOrigin(origin)) continue;
-      noteReceiverEffect(p, origin);
-    }
-  };
-
-  const noteMemberWrite = (p: HandlerPath, node: t.MemberExpression): void => {
-    const rootName = memberRootName(node);
-    if (
-      rootName !== null &&
-      isStaticDerivedListConst(ctx, rootName, compName)
-    ) {
-      throw p.buildCodeFrameError(
-        `memo-dom: cannot mutate '${rootName}' - it is derived from a static source and will never change`,
-      );
-    }
-    if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
-      const plan = listMutationPlans?.get(rootName!);
-      const key =
-        plan === undefined
-          ? null
-          : directListItemMutationKey(node, plan);
-      mutateScope(p, (scope) => {
-        recordInstanceMutation(
-          scope,
-          rootName!,
-          key === null ? 'structural' : 'targeted',
-        );
-      });
-      if (plan !== undefined && key !== null) {
-        journalTargetedMutation(p, plan, key);
-      }
-      return;
-    }
-    if (
-      rootName !== null &&
-      instDerived?.has(rootName) &&
-      !projectedProps.has(rootName)
-    ) {
-      throw p.buildCodeFrameError(
-        `memo-dom: cannot mutate per-instance derivation '${rootName}' (R14) — write its source instead`,
-      );
-    }
-    if (noteItemWrite(p, node)) return;
-    // Without a row context, a member write rooted at one of this function's
-    // own parameters cannot be committed here (row identifiers do not exist
-    // in this scope). Record it as a parameter effect for call sites to fold.
-    if (
-      rowCtx === undefined &&
-      rootName !== null &&
-      rootParamIndex.has(rootName)
-    ) {
-      const key = memberKey(node);
-      if (key !== null) {
-        const relative = key.split('.').slice(1);
-        const recorded = ctx.localParamEffects.get(rootFn) ?? [];
-        const entry = {
-          index: rootParamIndex.get(rootName)!,
-          path: relative,
-        };
-        if (
-          !recorded.some(
-            (existing) =>
-              existing.index === entry.index &&
-              existing.path.join('.') === entry.path.join('.'),
-          )
-        ) {
-          recorded.push(entry);
-          ctx.localParamEffects.set(rootFn, recorded);
-        }
-      }
-      mutateScope(p, (scope) => {
-        scope.rootFallback = true;
-      });
-      return;
-    }
-    const origin = aliases.resolveExpression(p.scope, node);
-    if (origin !== null) {
-      noteOriginWrite(p, origin);
-      return;
-    }
-    if (rootName !== null && propNames.has(rootName)) {
-      notePropWrite(p, {
-        locality: 'prop',
-        root: rootName,
-        key: memberKey(node),
-      });
-      return;
-    }
-    if (rootName !== null && componentLocals.has(rootName)) return;
-    if (!rootName || !ctx.state.has(rootName)) return;
-    const kind = ctx.state.get(rootName)!;
-    if (kind === 'computed') {
-      throw p.buildCodeFrameError(
-        `memo-dom: cannot mutate computed '${rootName}' (R13) — it is derived; write its SOURCE state instead`,
-      );
-    }
-    mutateScope(p, (scope) => {
-      if (kind !== 'store') {
-        // reads of root-keyed vars (let/const): any member write is a write
-        // to the variable (items[0] = x, items.length = 0, …)
-        scope.writes.add(rootName);
-        return;
-      }
-      const key = memberKey(node);
-      if (key !== null && key.includes('.')) {
-        scope.writes.add(key);
-      } else {
-        scope.writes.add(rootName);
-      }
-    });
-  };
+  const {
+    locals,
+    rootParamIndex,
+    scopes,
+    executionSites,
+    mutateScope,
+    recordInstanceMutation,
+    noteReceiverEffect,
+    noteMemberWrite,
+    noteBoundedArguments,
+    noteOriginWrite,
+    isComputedOrigin,
+  } = createHandlerWriteRouting({
+    ctx,
+    rootFn,
+    clonedFn,
+    root: ROOT,
+    componentName: compName,
+    rowContext: rowCtx,
+    executionAwareRoot,
+    aliases,
+    instanceVariables: instVars,
+    instanceDerivations: instDerived,
+    projectedProps,
+    propNames,
+    componentLocals,
+    transparentRootFor,
+  });
 
   // R12: instance state of the enclosing component — writes are always a
   // bare markDirty(id), never table routing (the closure belongs to one
@@ -1007,7 +265,11 @@ export function analyzeHandler(
           );
         }
         mutateScope(p, (scope) => {
-          scope.writes.add(left.name);
+          recordRoutedWrite(
+            scope,
+            left.name,
+            ctx.listSources.has(left.name),
+          );
         });
       } else if (astFactory.isMemberExpression(left)) {
         noteMemberWrite(p, left);
@@ -1076,7 +338,7 @@ export function analyzeHandler(
           );
         }
         mutateScope(p, (scope) => {
-          scope.writes.add(arg.name);
+          recordRoutedWrite(scope, arg.name);
         });
       } else if (astFactory.isMemberExpression(arg)) {
         noteMemberWrite(p, arg);
@@ -1130,7 +392,7 @@ export function analyzeHandler(
                 noteReceiverEffect(p, target);
               } else {
                 mutateScope(p, (scope) => {
-                  for (const key of keys) scope.writes.add(key);
+                  for (const key of keys) recordRoutedWrite(scope, key);
                 });
               }
             } else {
@@ -1145,6 +407,28 @@ export function analyzeHandler(
           : astFactory.isMemberExpression(callee.object)
             ? memberRootName(callee.object)
             : null;
+        const transparentRoot = astFactory.isExpression(callee.object)
+          ? transparentRootFor(callee.object)
+          : null;
+        if (transparentRoot !== null) {
+          mutateScope(p, (scope) => scope.transparentWrites.add(transparentRoot));
+          return;
+        }
+        if (
+          eventBoundary &&
+          p.getFunctionParent()?.node === ROOT &&
+          receiverRoot !== null &&
+          rootParamIndex.get(receiverRoot) === 0
+        ) {
+          // The first parameter of a host-event boundary is browser-owned.
+          // Calling through that value (event.preventDefault(), a custom
+          // event API, DataTransfer, and so on) cannot mutate application
+          // state unless authored reactive values are passed separately.
+          // This is provenance-based deliberately: event and method names
+          // remain open-ended rather than living in a compiler allowlist.
+          noteBoundedArguments(p, p.node.arguments);
+          return;
+        }
         if (
           receiverRoot !== null &&
           instDerived?.has(receiverRoot) &&
@@ -1285,8 +569,8 @@ export function analyzeHandler(
         const sum =
           ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
         mutateScope(p, (scope) => {
-          for (const w of sum.writes) scope.writes.add(w);
-          for (const w of sum.boundedWrites) scope.writes.add(w);
+          for (const w of sum.writes) recordRoutedWrite(scope, w);
+          for (const w of sum.boundedWrites) recordRoutedWrite(scope, w);
           // Guard: in an effect callback's direct body (executionAwareRoot=true,
           // call is at the ROOT function scope), calling an unbounded external
           // function is CONSUMPTION — the same reasoning noteBoundedArguments
@@ -1330,117 +614,4 @@ export function analyzeHandler(
     eventOriginId,
     executionAwareRoot,
   );
-}
-
-function pathDepth(path: HandlerPath): number {
-  let depth = 0;
-  let current: HandlerPath | null = path;
-  while (current.parentPath !== null) {
-    depth++;
-    current = current.parentPath;
-  }
-  return depth;
-}
-
-function markExecutionSite(
-  ctx: Ctx,
-  path: HandlerPath,
-  flag: t.Identifier,
-): t.Identifier[] {
-  if (
-    path.isAssignmentExpression({ operator: '=' }) &&
-    (astFactory.isIdentifier(path.node.left) ||
-      astFactory.isMemberExpression(path.node.left) &&
-      !astFactory.isSuper(path.node.left.object) &&
-      !astFactory.isPrivateName(path.node.left.property))
-  ) {
-    const original = path.node;
-    const previous = generatedIdentifier(ctx, 'previousValue');
-    const result = generatedIdentifier(ctx, 'assignedValue');
-    const temporaries = [previous, result];
-    let before: t.Expression;
-    let assignment: t.AssignmentExpression;
-    let after: t.Expression;
-
-    if (astFactory.isIdentifier(original.left)) {
-      before = astFactory.identifier(original.left.name);
-      assignment = cloneEstreeNode(original, true);
-      after = astFactory.identifier(original.left.name);
-    } else if (astFactory.isMemberExpression(original.left)) {
-      const receiver = generatedIdentifier(ctx, 'assignmentReceiver');
-      const property = generatedIdentifier(ctx, 'assignmentProperty');
-      temporaries.push(receiver, property);
-      const access = (): t.MemberExpression =>
-        astFactory.memberExpression(
-          cloneEstreeNode(receiver),
-          cloneEstreeNode(property),
-          true,
-        );
-      const propertyExpression = original.left.computed
-        ? cloneEstreeNode(original.left.property as t.Expression, true)
-        : astFactory.stringLiteral((original.left.property as t.Identifier).name);
-      before = astFactory.sequenceExpression([
-        astFactory.assignmentExpression(
-          '=',
-          cloneEstreeNode(receiver),
-          cloneEstreeNode(original.left.object as t.Expression, true),
-        ),
-        astFactory.assignmentExpression('=', cloneEstreeNode(property), propertyExpression),
-        access(),
-      ]);
-      assignment = astFactory.assignmentExpression('=', access(), cloneEstreeNode(original.right, true));
-      after = access();
-    } else {
-      return [];
-    }
-
-    path.replaceWith(
-      astFactory.sequenceExpression([
-        astFactory.assignmentExpression('=', cloneEstreeNode(previous), before),
-        astFactory.assignmentExpression('=', cloneEstreeNode(result), assignment),
-        astFactory.assignmentExpression(
-          '=',
-          cloneEstreeNode(flag),
-          astFactory.logicalExpression(
-            '||',
-            cloneEstreeNode(flag),
-            astFactory.callExpression(md(ctx, 'effectAssignmentChanged'), [
-              cloneEstreeNode(previous),
-              after,
-            ]),
-          ),
-        ),
-        cloneEstreeNode(result),
-      ]),
-    );
-    return temporaries;
-  }
-
-  const mark = astFactory.assignmentExpression(
-    '=',
-    cloneEstreeNode(flag),
-    astFactory.booleanLiteral(true),
-  );
-  if (path.isVariableDeclarator()) {
-    const init = path.node.init;
-    if (init === null || !astFactory.isExpression(init)) {
-      throw new Error(
-        'memo-dom: execution-aware variable site has no expression initializer',
-      );
-    }
-    path.node.init = astFactory.sequenceExpression([mark, init]);
-    return [];
-  }
-  if (!path.isExpression()) {
-    throw new Error(
-      `memo-dom: unsupported execution-aware write site '${path.node.type}'`,
-    );
-  }
-  path.replaceWith(
-    astFactory.sequenceExpression([
-      mark,
-      cloneEstreeNode(path.node, true),
-    ]),
-  );
-  return [];
 }

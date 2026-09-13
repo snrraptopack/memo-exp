@@ -274,7 +274,9 @@ describe('R22 - graph validation', () => {
       },
       { aliases: { '@': './src' } },
     );
-    expect(output['./src/app.tsx']).toContain('Shell(_id + "/Shell", _id, ["ok"])');
+    expect(output['./src/app.tsx']).toContain(
+      'Shell(_id + "/Shell", _id, ["ok"], { $default: _dataPolicies?.$default })',
+    );
   });
 
   it('rejects recursive component edges that cross modules', () => {

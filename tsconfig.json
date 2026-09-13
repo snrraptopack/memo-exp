@@ -17,6 +17,11 @@
 
     // Bundler mode
     "moduleResolution": "bundler",
+    // Generated client facade declarations (written by the Vite adapter's
+    // dev server / build into each example's .memoized/ directory).
+    "paths": {
+      "#server-functions": ["./examples/fullstack/.memoized/server-functions.d.ts"]
+    },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,

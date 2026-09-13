@@ -8,6 +8,11 @@
 
 type ClassRecord = Record<string, unknown>;
 type StyleRecord = Record<string, string | number | null | undefined>;
+type WritableStyle = {
+  cssText: string;
+  removeProperty?: (name: string) => string;
+  setProperty?: (name: string, value: string) => void;
+};
 
 const styleSnapshots = new WeakMap<Element, Map<string, string>>();
 const UNITLESS = new Set([
@@ -53,7 +58,7 @@ export function setClassValue(element: Element, value: unknown): void {
 
 /** Diff a string or object style value against a content snapshot. */
 export function setStyleValue(element: Element, value: unknown): void {
-  const style = (element as HTMLElement).style;
+  const style = (element as HTMLElement).style as WritableStyle | undefined;
   if (style === undefined) return;
 
   if (typeof value === 'string') {
@@ -79,6 +84,16 @@ export function setStyleValue(element: Element, value: unknown): void {
   }
 
   const previous = styleSnapshots.get(element) ?? new Map<string, string>();
+  if (
+    typeof style.removeProperty !== 'function' ||
+    typeof style.setProperty !== 'function'
+  ) {
+    style.cssText = [...next]
+      .map(([name, normalized]) => `${name}: ${normalized}`)
+      .join('; ');
+    styleSnapshots.set(element, next);
+    return;
+  }
   if (previous.has('$cssText')) style.cssText = '';
   for (const name of previous.keys()) {
     if (name !== '$cssText' && !next.has(name)) style.removeProperty(name);

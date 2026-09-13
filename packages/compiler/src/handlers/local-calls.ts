@@ -7,32 +7,13 @@
  * have their own execution boundary and are instrumented separately.
  */
 
-import { walkAst, type BaseNode } from '../ast';
-
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function identifierName(value: unknown): string | null {
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    (value as { type?: unknown }).type !== 'Identifier'
-  ) {
-    return null;
-  }
-  const name = (value as { name?: unknown }).name;
-  return typeof name === 'string' ? name : null;
-}
+import {
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  identifierName,
+  nodeFields as fields,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 
 export function callsOnlyCommittedLocalHelpers(
   root: BaseNode,

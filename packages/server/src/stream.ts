@@ -1,18 +1,15 @@
 import {
   createApplicationRuntime,
-  setActiveApplicationRuntime,
   runWithApplicationRuntime,
   unregisterSubtree,
 } from '@memoized-dom/runtime/server';
 import {
   createMemoryRouteHistory,
   createRouteRuntime,
-  setActiveRouteRuntime,
   runWithRouteRuntime,
 } from '@memoized-dom/router';
 import {
   createDataRuntime,
-  setActiveDataRuntime,
   runWithDataRuntime,
 } from '@memoized-dom/data';
 import { StringDocument, type StringRenderableNode } from './string-document';
@@ -24,6 +21,12 @@ let streamSequence = 0;
 export interface StreamOptions extends RenderOptions {
   /** Abort the render and all request-owned data work. */
   signal?: AbortSignal;
+}
+
+export interface PreparedRenderStream {
+  readonly stream: ReadableStream<Uint8Array>;
+  /** Settles after the complete server render succeeds or rejects. */
+  readonly ready: Promise<void>;
 }
 
 function abortPromise(signal: AbortSignal): Promise<never> {
@@ -43,9 +46,13 @@ function abortPromise(signal: AbortSignal): Promise<never> {
  * body followed by its state envelope. In `shell` mode the pending UI is
  * emitted immediately and no late replacement protocol is implied.
  */
-export function renderToReadableStream(
+function createRenderStream(
   component: ServerComponent,
   options: StreamOptions = {},
+  settled?: {
+    readonly resolve: () => void;
+    readonly reject: (error: unknown) => void;
+  },
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
@@ -53,7 +60,9 @@ export function renderToReadableStream(
     async start(controller) {
       const signal = options.signal;
       if (signal?.aborted) {
-        controller.error(signal.reason ?? new Error('Streaming render aborted'));
+        const reason = signal.reason ?? new Error('Streaming render aborted');
+        controller.error(reason);
+        settled?.reject(reason);
         return;
       }
 
@@ -65,7 +74,6 @@ export function renderToReadableStream(
         effects: 'disabled',
         refs: 'disabled',
       });
-      const previousRuntime = setActiveApplicationRuntime(runtime);
       const routeRuntime = createRouteRuntime({
         routeHistory: createMemoryRouteHistory({
           initialEntries: [options.url ?? '/'],
@@ -74,8 +82,6 @@ export function renderToReadableStream(
       const dataRuntime = createDataRuntime(
         options.fetch === undefined ? {} : { fetch: options.fetch },
       );
-      const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
-      const previousDataRuntime = setActiveDataRuntime(dataRuntime);
       const rootId = 'App';
 
       try {
@@ -102,24 +108,49 @@ export function renderToReadableStream(
               };
 
               controller.enqueue(encoder.encode(html));
-              controller.enqueue(
-                encoder.encode(createPayloadScriptTag(rootId, payload)),
-              );
+              if (options.markers === true) {
+                controller.enqueue(
+                  encoder.encode(createPayloadScriptTag(rootId, payload)),
+                );
+              }
               controller.close();
+              settled?.resolve();
             }),
           ),
         );
       } catch (error) {
         runWithApplicationRuntime(runtime, () => unregisterSubtree(rootId));
         controller.error(error);
+        settled?.reject(error);
       } finally {
-        setActiveApplicationRuntime(previousRuntime);
-        setActiveRouteRuntime(previousRouteRuntime);
-        setActiveDataRuntime(previousDataRuntime);
         routeRuntime.dispose();
         dataRuntime.clear();
         runtime.dispose();
       }
     },
   });
+}
+
+/**
+ * Prepare a stream and expose render completion to composed HTTP servers.
+ *
+ * `defineServer` awaits `ready` before committing response headers so its
+ * request error boundary can normalize both initial and data-settled render
+ * failures. The public stream-only primitive retains its ordinary Web Stream
+ * contract for custom hosts.
+ */
+export function prepareRenderToReadableStream(
+  component: ServerComponent,
+  options: StreamOptions = {},
+): PreparedRenderStream {
+  const settled = Promise.withResolvers<void>();
+  const stream = createRenderStream(component, options, settled);
+  return { stream, ready: settled.promise };
+}
+
+export function renderToReadableStream(
+  component: ServerComponent,
+  options: StreamOptions = {},
+): ReadableStream<Uint8Array> {
+  return createRenderStream(component, options);
 }

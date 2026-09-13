@@ -11,6 +11,10 @@ import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   ESTREE_VISITOR_KEYS,
+  childNode,
+  childNodes,
+  nodeFields as fields,
+  stringValue,
   walkAst,
   type BaseNode,
 } from './ast';
@@ -45,33 +49,6 @@ interface ProgramContainer {
 interface DiagnosticNode<TNode> {
   node: TNode;
   buildCodeFrameError(message: string): Error;
-}
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
-
-function childNodes(parent: BaseNode, key: string): BaseNode[] {
-  const value = fields(parent)[key];
-  return Array.isArray(value)
-    ? value.map(node).filter((item) => item !== null)
-    : [];
-}
-
-function stringValue(value: BaseNode | null): string | null {
-  if (value?.type !== 'StringLiteral' && value?.type !== 'Literal') return null;
-  const literal = fields(value).value;
-  return typeof literal === 'string' ? literal : null;
 }
 
 function attributeNamed(

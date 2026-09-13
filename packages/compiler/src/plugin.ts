@@ -32,35 +32,31 @@ import {
 } from './context';
 import {
   generatedIdentifier,
-  initializeGeneratedIdentifiers,
   md,
   requireIdentifiers,
 } from './identifiers';
-import { buildAccessTable, runAnalysis } from './analysis';
+import { buildAccessTable } from './analysis';
+import { prepareProgramAnalysis } from './analysis/prepare';
 import { liftModuleStateCells } from './cells';
 import { transformComponent } from './emission/component';
 import {
   rejectUnownedCleanup,
   transformProgramCallbacks,
-  transformSharedAsyncHelpers,
+  transformSharedHelperCallbacks,
 } from './lifecycle';
 import {
   rejectUnownedEffects,
   rewriteModuleEffects,
 } from './effects';
-import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
-import { normalizeComponentDeclarations } from './components/declarations';
 import {
-  analyzeRouterJsx,
   routeManifestStatements,
 } from './router';
-import { normalizeConditionalJsxDirectives } from './jsx/conditional-directives';
 import {
-  lowerTransparentGroups,
   rewriteTransparentDataReads,
-  scanAndLowerModuleSourceDeclarations,
-  scanTransparentSourceImports,
 } from './data-sources';
+import {
+  externalReactiveImportStatements,
+} from './external-reactivity';
 
 /**
  * R13: rewrite each computed declaration (`const x = <state derivation>`)
@@ -261,18 +257,10 @@ function prepareProgram(
   ctx: Ctx,
   programPath: ProgramTransformPath,
 ): void {
-  normalizeComponentDeclarations(programPath);
-  installLinkedDynamicComponentImports(ctx, programPath);
-  normalizeConditionalJsxDirectives(programPath);
-  initializeGeneratedIdentifiers(ctx, programPath.node);
-  scanTransparentSourceImports(ctx, programPath);
-  lowerTransparentGroups(ctx, programPath);
-  scanAndLowerModuleSourceDeclarations(ctx, programPath);
-  analyzeRouterJsx(ctx, programPath);
-  runAnalysis(ctx, programPath);
+  prepareProgramAnalysis(ctx, programPath);
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
-  transformSharedAsyncHelpers(ctx);
+  transformSharedHelperCallbacks(ctx, programPath);
 }
 
 function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
@@ -302,6 +290,7 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
       astFactory.stringLiteral(ctx.runtimePath),
     ),
   ];
+  imports.push(...externalReactiveImportStatements(ctx));
   if (ctx.hot) {
     imports.push(
       astFactory.importDeclaration(

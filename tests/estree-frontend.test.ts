@@ -511,8 +511,8 @@ describe('ESTree parser and printer boundary', () => {
     expect(analysis.rootScope.getBinding('top')?.references).toHaveLength(1);
     expect(analysis.rootScope.getBinding('alias')?.references).toHaveLength(1);
     const viewScope = analysis.nodeToScope.get(view!);
-    expect([...viewScope!.bindings.keys()].sort()).toEqual([
-      'inner',
+    expect([...viewScope!.bindings.keys()].sort()).toEqual(['inner']);
+    expect([...viewScope!.parent!.bindings.keys()].sort()).toEqual([
       'local',
       'rest',
     ]);

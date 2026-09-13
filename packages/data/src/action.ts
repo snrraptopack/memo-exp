@@ -3,7 +3,7 @@ import { SnapshotNotifier } from './notifications';
 import {
   abortable,
   decodeResponse,
-  encodeActionBody,
+  encodeRequestBody,
   resolveRequestURL,
 } from './request';
 import type { FetchEnvironment } from './resource';
@@ -152,7 +152,7 @@ async function executeAction<TResult, TInput>(
 
   try {
     const headers = new Headers(options.headers);
-    const body = encodeActionBody(input, headers);
+    const body = encodeRequestBody(input, headers);
     const response = await abortable(
       () => environment.fetch()(url, {
         method: options.method ?? 'POST',

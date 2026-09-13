@@ -7,7 +7,6 @@ import {
   type DataRuntimeOptions,
   type ResolvedValue,
 } from '../src';
-import * as data from '../src';
 
 const options = {
   baseURL: new URL('https://example.test/api/'),
@@ -32,15 +31,46 @@ interface User {
 }
 
 const user = $fetch<User>('/user', { cache: { scope: 'app' } });
+const savedUser = $fetch<User>('/user', {
+  method: 'PATCH',
+  body: { id: 1, name: 'Grace' },
+});
 const assignableUser: User = user;
 const preservedSource: ResolvedValue<User> = user;
+const nullableUser = $fetch<User | null>('/optional-user');
 void assignableUser.name;
 void preservedSource.id;
+// @ts-expect-error Nullable endpoint results must be narrowed before payload reads.
+void nullableUser.name;
+if (nullableUser !== null) void nullableUser.name;
+void $track(nullableUser).pending;
+$track(nullableUser).onSuccess(data => {
+  if (data !== null) void data.name;
+});
 void $track(user).pending;
 void $track(user).error;
+void $track(user).id;
+$track(user).onSuccess((data, requestId) => {
+  void data.name;
+  void requestId;
+});
+$track(user).onError((error, requestId) => {
+  void error.message;
+  void requestId;
+});
+void $track(user).refresh();
+$track(user).abort();
+void savedUser.name;
+void $track(savedUser).pending;
 
-// @ts-expect-error The legacy operations facade is no longer public.
-data.$ops(user);
+// @ts-expect-error HTTP methods use the canonical uppercase spelling.
+$fetch('/user', { method: 'post', body: { id: 1 } });
+
+// @ts-expect-error Generated fetch bodies must be transport-safe.
+$fetch('/user', { method: 'POST', body: { callback() {} } });
+
+// @ts-expect-error BigInt requires an explicit application-level encoding.
+$fetch('/user', { method: 'POST', body: { id: 1n } });
 
 // @ts-expect-error Operations never collide with or decorate the payload.
 user.refresh();

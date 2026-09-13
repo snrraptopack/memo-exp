@@ -1,7 +1,11 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
+  childNode,
+  childNodes,
   cloneNode as cloneAstNode,
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  identifierName,
   walkAst,
   type BaseNode,
   type Binding,
@@ -13,6 +17,7 @@ import {
   isConstObjectState,
   isStoreObject,
   memberRootName,
+  variableDeclaratorFor,
   type Ctx,
 } from '../context';
 import {
@@ -28,44 +33,8 @@ interface LocalDerivationHelperSummary {
   reason: string | null;
 }
 
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
 function cloneNode<TNode>(value: TNode): TNode {
   return cloneAstNode(value as unknown as BaseNode) as unknown as TNode;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
-
-function childNodes(parent: BaseNode, key: string): BaseNode[] {
-  const value = fields(parent)[key];
-  return Array.isArray(value)
-    ? value.map(node).filter((item) => item !== null)
-    : [];
-}
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier') return null;
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
 }
 
 function parentOf(ctx: Ctx, current: BaseNode): BaseNode | null {
@@ -79,15 +48,6 @@ function isWithin(ctx: Ctx, current: BaseNode, ancestor: BaseNode): boolean {
     candidate = parentOf(ctx, candidate);
   }
   return false;
-}
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') return current;
-    current = parentOf(ctx, current);
-  }
-  return null;
 }
 
 function localFunction(
@@ -357,6 +317,10 @@ export function scanInstanceDerivations(ctx: Ctx): void {
       const binding = ownerBinding(name);
       if (binding) reactiveBindings.set(binding, name);
     }
+    for (const name of ctx.transparentSources.get(componentName) ?? []) {
+      const binding = ownerBinding(name);
+      if (binding) reactiveBindings.set(binding, name);
+    }
     for (const name of ctx.instanceState.get(componentName) ?? []) {
       const binding = ownerBinding(name);
       if (binding) reactiveBindings.set(binding, name);
@@ -385,6 +349,15 @@ export function scanInstanceDerivations(ctx: Ctx): void {
     };
 
     const opaqueUseIsLiveRead = (start: BaseNode): boolean => {
+      const isAnalyzableHelperArgument = (call: BaseNode): boolean => {
+        if (call.type !== 'CallExpression') return false;
+        const calleeName = identifierName(childNode(call, 'callee'));
+        return calleeName !== null && (
+          ctx.helpers.has(calleeName) ||
+          ctx.importedFunctions.has(calleeName) ||
+          localFunction(ctx, component, call, calleeName) !== null
+        );
+      };
       let current = start;
       let climbed = false;
       for (;;) {
@@ -400,8 +373,15 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         }
         break;
       }
-      if (!climbed) return false;
       const user = parentOf(ctx, current);
+      if (
+        user !== null &&
+        childNodes(user, 'arguments').includes(current) &&
+        isAnalyzableHelperArgument(user)
+      ) {
+        return true;
+      }
+      if (!climbed) return false;
       if (user !== null) {
         if (
           (user.type === 'CallExpression' || user.type === 'NewExpression') &&
@@ -581,12 +561,32 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         }
         const stableFetchTarget =
           isTransparentFetch && astFactory.isIdentifier(declaration.id);
+        const transportedSourceTarget =
+          astFactory.isIdentifier(declaration.id) &&
+          ctx.transparentSourceProps
+            ?.get(componentName)
+            ?.has(declaration.id.name) === true;
         const replay = stableFetchTarget && astFactory.isCallExpression(declaration.init)
           ? astFactory.expressionStatement(
-              astFactory.callExpression(mdd(ctx, 'rebindResolvedValue'), [
-                astFactory.identifier((declaration.id as t.Identifier).name),
-                ...declaration.init.arguments.map(cloneNode),
-              ]),
+              ctx.transparentProviderFactories.has(
+                  (declaration.init.callee as t.Identifier).name,
+                )
+                ? astFactory.callExpression(mdd(ctx, 'rebindResolvedValue'), [
+                    astFactory.identifier((declaration.id as t.Identifier).name),
+                    ...declaration.init.arguments.map(cloneNode),
+                  ])
+                : astFactory.callExpression(
+                    mdd(ctx, 'rebindResolvedValueFromFactory'),
+                    [
+                      astFactory.identifier(
+                        (declaration.id as t.Identifier).name,
+                      ),
+                      astFactory.arrowFunctionExpression(
+                        [],
+                        cloneNode(declaration.init),
+                      ),
+                    ],
+                  ),
             )
           : undefined;
         derivations.push({
@@ -595,9 +595,14 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           source: cloneNode(declaration.init),
           bindings: names,
           sources: [...sources].sort(),
-          ...(stableFetchTarget ? { stableTarget: true, replay } : {}),
+          ...(stableFetchTarget
+            ? { stableTarget: true, replay }
+            : transportedSourceTarget
+              ? { stableTarget: true }
+              : {}),
         });
-        if (stableFetchTarget) continue;
+        if (transportedSourceTarget) statement.kind = 'let';
+        if (stableFetchTarget || transportedSourceTarget) continue;
         for (const name of names) {
           derivedBindings.add(name);
           derivedSources.set(name, new Set(sources));

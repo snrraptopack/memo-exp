@@ -16,7 +16,16 @@
  */
 
 import { markDirty, markDirtySubtree, type EntityId } from './kernel';
-import { resolveStaticWrites, resolveWrites, getRootId } from './access';
+import {
+  resolveStaticWrites,
+  resolveWrites,
+  getRootId,
+  isOpaque,
+} from './access';
+import {
+  listStructureReaderKey,
+  listStructureReason,
+} from './list-update';
 
 export interface EventRecord {
   origin: EntityId;
@@ -42,19 +51,43 @@ export function clearEventLog(): void {
  * This is THE invalidation entry point — handlers and programmatic sources
  * share it, so there is exactly one routing code path in the runtime.
  */
-export function commitWrites(writes: readonly string[]): void {
+function routeStaticWrites(
+  writes: readonly string[],
+  reason?: number | string,
+): void {
   const resolved = resolveStaticWrites(writes);
   if (resolved === 'root-subtree') {
     markDirtySubtree(getRootId());
     return;
   }
-  for (const id of resolved) markDirty(id);
+  for (const id of resolved) markDirty(id, reason);
+}
+
+export function commitWrites(writes: readonly string[]): void {
+  routeStaticWrites(writes);
+}
+
+/** Route a compiler-proven structure-only collection write. */
+export function commitStructuralWrites(writes: readonly string[]): void {
+  for (const write of writes) {
+    if (isOpaque(write)) {
+      markDirtySubtree(getRootId());
+      continue;
+    }
+    const structural = resolveStaticWrites([listStructureReaderKey(write)]);
+    if (structural === 'root-subtree' || structural.length === 0) {
+      routeStaticWrites([write], listStructureReason(write));
+      continue;
+    }
+    const reason = listStructureReason(write);
+    for (const id of structural) markDirty(id, reason);
+  }
 }
 
 /** Route an L2 payload through parameterized access patterns. */
 export function commitWritesWithPayload(
   writes: readonly string[],
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
 ): void {
   const resolved = resolveWrites(writes, [], payload);
   if (resolved === 'root-subtree') {

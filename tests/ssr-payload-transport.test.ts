@@ -25,10 +25,10 @@ const modules = {
     }
 
     export function App() {
-      const user = $fetch('/api/user');
+      const user = $fetch('/api/user', { query: { id: 7 } });
       return (
         <section>
-          <Group data={user}>
+          <Group>
             <Pending component={Skeleton} />
             <ErrorArm component={ErrorView} />
             <h1>{user.name}</h1>

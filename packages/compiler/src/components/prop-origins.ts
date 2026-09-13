@@ -3,13 +3,14 @@
  */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import type { BaseNode } from '../ast';
+import { extractPatternIdentifiers, type BaseNode } from '../ast';
 import {
   astBindingAt,
   canonicalStateKey,
   collectStateIds,
   memberKey,
   memberRootName,
+  unwrapTypeExpression,
   walkNodes,
   type Ctx,
 } from '../context';
@@ -31,24 +32,11 @@ export type ComponentPropSourceRefs = Record<
   ComponentPropSourceRef[]
 >;
 
-function unwrapExpression(node: t.Expression): t.Expression {
-  let current: t.Node = node;
-  while (
-    astFactory.isTSAsExpression(current) ||
-    astFactory.isTSTypeAssertion(current) ||
-    astFactory.isTSNonNullExpression(current) ||
-    astFactory.isTSSatisfiesExpression(current)
-  ) {
-    current = current.expression;
-  }
-  return current as t.Expression;
-}
-
 function moduleStateSource(
   ctx: Ctx,
   raw: t.Expression,
 ): string | null {
-  const expression = unwrapExpression(raw);
+  const expression = unwrapTypeExpression(raw as unknown as BaseNode) as unknown as t.Expression;
   if (astFactory.isIdentifier(expression)) {
     if (
       !ctx.state.has(expression.name) ||
@@ -76,7 +64,7 @@ function parentPropSource(
   plan: ComponentPropsPlan,
   raw: t.Expression,
 ): ComponentPropSourceRef | null {
-  const expression = unwrapExpression(raw);
+  const expression = unwrapTypeExpression(raw as unknown as BaseNode) as unknown as t.Expression;
   if (astFactory.isIdentifier(expression)) {
     const name = propNameForBinding(plan, expression.name);
     return name === null
@@ -131,23 +119,186 @@ function isIdentityFree(expression: t.Expression): boolean {
   );
 }
 
-function sourceOf(
+function sourceRefForBinding(
   ctx: Ctx,
   owner: string,
-  expression: t.Expression,
+  name: string,
 ): ComponentPropSourceRef {
-  const state = moduleStateSource(ctx, expression);
-  if (state !== null) return { type: 'state', key: state };
-
   const plan = ctx.componentProps.get(owner)!;
+  const expression = astFactory.identifier(name);
   const parentProp = parentPropSource(plan, expression);
   if (parentProp !== null) return parentProp;
 
-  if (astFactory.isIdentifier(expression)) {
+  const ownerNode = ctx.compPaths.get(owner)?.node;
+  const binding =
+    ownerNode === undefined
+      ? undefined
+      : astBindingAt(ctx, ownerNode as unknown as BaseNode, name);
+  if (ctx.state.has(name) && binding?.scope.isProgramScope === true) {
+    return { type: 'state', key: canonicalStateKey(ctx, name) };
+  }
+  return { type: 'root' };
+}
+
+function listCallbackSource(
+  ctx: Ctx,
+  expression: t.Expression,
+): t.Expression | null {
+  if (!astFactory.isIdentifier(expression)) return null;
+  const parents = ctx.astAnalysis?.parentByNode;
+  if (parents === undefined) return null;
+  let current = expression as unknown as BaseNode;
+  for (;;) {
+    const parent = parents.get(current);
+    if (parent === undefined || parent === null) return null;
+    if (
+      parent.type === 'ArrowFunctionExpression' ||
+      parent.type === 'FunctionExpression' ||
+      parent.type === 'FunctionDeclaration'
+    ) {
+      const parameters = (parent as unknown as t.Function).params;
+      const ownsBinding = parameters.some((parameter) =>
+        extractPatternIdentifiers(parameter as unknown as BaseNode)
+          .some(({ name }) => name === expression.name),
+      );
+      if (!ownsBinding) {
+        current = parent;
+        continue;
+      }
+      const call = parents.get(parent);
+      if (
+        call === null ||
+        call?.type !== 'CallExpression' &&
+        call?.type !== 'OptionalCallExpression'
+      ) {
+        return null;
+      }
+      const typedCall = call as unknown as
+        | t.CallExpression
+        | t.OptionalCallExpression;
+      const callee = typedCall.callee;
+      if (
+        (!astFactory.isMemberExpression(callee) &&
+          !astFactory.isOptionalMemberExpression(callee)) ||
+        callee.computed ||
+        !astFactory.isIdentifier(callee.property, { name: 'map' }) ||
+        !astFactory.isExpression(callee.object)
+      ) {
+        return null;
+      }
+      return callee.object;
+    }
+    current = parent;
+  }
+}
+
+function collectionSources(
+  ctx: Ctx,
+  owner: string,
+  expression: t.Expression,
+): ComponentPropSourceRef[] {
+  const state = moduleStateSource(ctx, expression);
+  if (state !== null) return [{ type: 'state', key: state }];
+
+  const plan = ctx.componentProps.get(owner)!;
+  const parentProp = parentPropSource(plan, expression);
+  if (parentProp !== null) return [parentProp];
+  if (!astFactory.isIdentifier(expression)) return [{ type: 'root' }];
+
+  const derivation = (ctx.instanceDerivations.get(owner) ?? []).find(
+    (candidate) => candidate.bindings.includes(expression.name),
+  );
+  if (derivation === undefined) {
+    return [sourceRefForBinding(ctx, owner, expression.name)];
+  }
+  const sources = derivation.sources.map((dependency) =>
+    sourceRefForBinding(ctx, owner, dependency),
+  );
+  return sources.length > 0 ? sources : [{ type: 'root' }];
+}
+
+/**
+ * Recover the origin of a component prop passed from a keyed-list callback.
+ * The callback item itself is not a lexical state binding, but the analyzed
+ * list site still records the collection boundary that supplied it.
+ */
+function listItemSources(
+  ctx: Ctx,
+  owner: string,
+  tag: string,
+  expression: t.Expression,
+): ComponentPropSourceRef[] | null {
+  if (!astFactory.isIdentifier(expression)) return null;
+  const lexicalSource = listCallbackSource(ctx, expression);
+  if (lexicalSource !== null) {
+    return collectionSources(ctx, owner, lexicalSource);
+  }
+  const sites = [
+    ...(ctx.listedSites?.get(tag) ?? []),
+    ...(ctx.rowComponentSites?.get(tag) ?? []),
+  ].filter(
+    (site) =>
+      site.owner === owner &&
+      site.itemParam === expression.name,
+  );
+  if (sites.length === 0) return null;
+
+  const refs: ComponentPropSourceRef[] = [];
+  const add = (ref: ComponentPropSourceRef): void => {
+    const identity = JSON.stringify(ref);
+    if (!refs.some((candidate) => JSON.stringify(candidate) === identity)) {
+      refs.push(ref);
+    }
+  };
+  for (const site of sites) {
+    const source = site.sourceKey;
+    if (source === undefined || source === '') {
+      add({ type: 'root' });
+      continue;
+    }
+    if (site.sourceLocal !== true) {
+      add({ type: 'state', key: canonicalStateKey(ctx, source) });
+      continue;
+    }
+
+    const derivation = (ctx.instanceDerivations.get(owner) ?? []).find(
+      (candidate) => candidate.bindings.includes(source),
+    );
+    if (derivation === undefined) {
+      add(sourceRefForBinding(ctx, owner, source.split('.')[0]!));
+      continue;
+    }
+    for (const dependency of derivation.sources) {
+      add(sourceRefForBinding(ctx, owner, dependency));
+    }
+  }
+  return refs;
+}
+
+function sourcesOf(
+  ctx: Ctx,
+  owner: string,
+  tag: string,
+  expression: t.Expression,
+): ComponentPropSourceRef[] {
+  const unwrapped = unwrapTypeExpression(
+    expression as unknown as BaseNode,
+  ) as unknown as t.Expression;
+  const listSources = listItemSources(ctx, owner, tag, unwrapped);
+  if (listSources !== null) return listSources;
+
+  const state = moduleStateSource(ctx, unwrapped);
+  if (state !== null) return [{ type: 'state', key: state }];
+
+  const plan = ctx.componentProps.get(owner)!;
+  const parentProp = parentPropSource(plan, unwrapped);
+  if (parentProp !== null) return [parentProp];
+
+  if (astFactory.isIdentifier(unwrapped)) {
     const binding = astBindingAt(
       ctx,
-      expression as unknown as BaseNode,
-      expression.name,
+      unwrapped as unknown as BaseNode,
+      unwrapped.name,
     );
     const ownerNode = ctx.compPaths.get(owner)?.node;
     const ownerBinding =
@@ -156,35 +307,37 @@ function sourceOf(
         : astBindingAt(
             ctx,
             ownerNode as unknown as BaseNode,
-            expression.name,
+            unwrapped.name,
           );
     if (
       binding !== undefined &&
       binding === ownerBinding &&
-      ctx.transparentSources.get(owner)?.has(expression.name) === true
+      ctx.transparentSources.get(owner)?.has(unwrapped.name) === true
     ) {
-      return { type: 'transparent' };
+      return [{ type: 'transparent' }];
     }
   }
 
   const root =
-    astFactory.isIdentifier(expression)
-      ? expression.name
-      : astFactory.isMemberExpression(expression)
-        ? memberRootName(expression)
+    astFactory.isIdentifier(unwrapped)
+      ? unwrapped.name
+      : astFactory.isMemberExpression(unwrapped)
+        ? memberRootName(unwrapped)
         : null;
   if (
     (root !== null &&
       (ctx.instanceState.get(owner)?.has(root) === true ||
         ctx.instanceDerivedBindings.get(owner)?.has(root) === true)) ||
-    collectStateIds(ctx, expression).size > 0 ||
-    mentionsParentProp(plan, expression)
+    collectStateIds(ctx, unwrapped).size > 0 ||
+    mentionsParentProp(plan, unwrapped)
   ) {
-    return { type: 'root' };
+    return [{ type: 'root' }];
   }
-  return isIdentityFree(expression)
-    ? { type: 'local' }
-    : { type: 'root' };
+  return [
+    isIdentityFree(unwrapped)
+      ? { type: 'local' }
+      : { type: 'root' },
+  ];
 }
 
 function addSource(
@@ -251,12 +404,14 @@ export function collectComponentPropSources(
         addSource(byTag, name.name, prop, { type: 'local' });
         continue;
       }
-      addSource(
-        byTag,
+      for (const source of sourcesOf(
+        ctx,
+        owner,
         name.name,
-        prop,
-        sourceOf(ctx, owner, value.expression as t.Expression),
-      );
+        value.expression as t.Expression,
+      )) {
+        addSource(byTag, name.name, prop, source);
+      }
     }
   });
   return byTag;

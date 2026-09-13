@@ -223,6 +223,20 @@ describe('fix.md - list callback local derivations', () => {
         </div>;
       }
     `,
+    'fix-row-destructured': `
+      let rows = [{ id: 4, details: { title: 'Ready' }, votes: undefined }];
+      export function App() {
+        return <div>
+          {rows.map((row) => {
+            const { details: { title }, votes = 0 } = row;
+            return <button key={row.id} onClick={() => {
+              row.details.title = 'Updated';
+              row.votes = 1;
+            }}>{title}:{votes}</button>;
+          })}
+        </div>;
+      }
+    `,
   };
 
   beforeAll(() => {
@@ -274,6 +288,16 @@ describe('fix.md - list callback local derivations', () => {
     expect(document.querySelector('span')?.textContent).toBe('score:8');
   });
 
+  it('supports settled object destructuring and defaults inside keyed rows', async () => {
+    const { App } = await importCompiled('fix-row-destructured');
+    document.body.appendChild(App('App', null));
+    const button = document.querySelector<HTMLButtonElement>('button')!;
+
+    expect(button.textContent).toBe('Ready:0');
+    button.click();
+    expect(button.textContent).toBe('Updated:1');
+  });
+
   it('rejects non-const statements before the row return', () => {
     expect(() =>
       compile(`
@@ -287,7 +311,7 @@ describe('fix.md - list callback local derivations', () => {
           </ul>;
         }
       `),
-    ).toThrowError(/single-name const declarations/);
+    ).toThrowError(/one const declaration with an identifier, object pattern, or array pattern/);
   });
 
   it('rejects impure derivation initializers', () => {

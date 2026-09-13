@@ -40,3 +40,17 @@ export {
   toCompilerDiagnostic,
   type CompilerDiagnostic,
 } from './diagnostics';
+export {
+  analyzeServerFunctionModule,
+  generateServerFunctionClient,
+  generateServerFunctionDeclarations,
+  serverFunctionModuleName,
+  type AnalyzeServerFunctionOptions,
+  type ServerFunctionDeclarationOptions,
+  type ServerFunctionDefinition,
+  type ServerFunctionMethod,
+  type ServerFunctionModule,
+  type ServerFunctionParameter,
+  type ServerFunctionQueryKind,
+} from './server-functions';
+export type { ExternalReactiveSourceDefinition } from './context';

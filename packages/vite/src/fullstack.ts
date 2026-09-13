@@ -5,6 +5,8 @@ import {
 import type { WebHandler } from '@memoized-dom/adapters';
 import type { Plugin, ViteDevServer } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { serverFunctionsVirtualId } from './server-functions';
+import { clientStyleUrls } from './dev-assets';
 
 export interface MemoizedDomFullstackOptions {
   /** Vite-root-relative server module exporting `fetch` or a default handler. */
@@ -14,6 +16,14 @@ export interface MemoizedDomFullstackOptions {
 interface FullstackModule {
   readonly default?: unknown;
   readonly fetch?: unknown;
+}
+
+interface InstallableWebHandler extends WebHandler {
+  installServerFunctions?: (routes: readonly unknown[]) => void;
+}
+
+interface GeneratedServerFunctionModule {
+  readonly serverFunctionRoutes?: unknown;
 }
 
 function handlerFromModule(
@@ -26,7 +36,7 @@ function handlerFromModule(
       `memoized-dom: fullstack entry '${entry}' must export a Web handler as 'fetch' or default`,
     );
   }
-  return candidate as WebHandler;
+  return candidate as InstallableWebHandler;
 }
 
 function moduleId(entry: string): string {
@@ -39,9 +49,84 @@ async function dispatch(
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
-  const module = await server.ssrLoadModule(moduleId(entry)) as FullstackModule;
-  const handler = handlerFromModule(module, entry);
-  await sendNodeResponse(await handler(toWebRequest(request)), response);
+  const module = await server.ssrLoadModule(
+    moduleId(entry),
+  ) as FullstackModule;
+  const handler = handlerFromModule(module, entry) as InstallableWebHandler;
+  if (handler.installServerFunctions !== undefined) {
+    const generated = await server.ssrLoadModule(
+      serverFunctionsVirtualId,
+    ) as GeneratedServerFunctionModule;
+    if (!Array.isArray(generated.serverFunctionRoutes)) {
+      throw new TypeError(
+        'memoized-dom: generated server-function manifest did not export a route array',
+      );
+    }
+    handler.installServerFunctions(generated.serverFunctionRoutes);
+  }
+  const handled = await handler(toWebRequest(request));
+  const styles = handled.headers
+    .get('content-type')
+    ?.toLowerCase()
+    .includes('text/html')
+      ? await clientStyleUrls(server)
+      : [];
+  await sendNodeResponse(injectClientStyles(handled, styles), response);
+}
+
+function styleLink(url: string): string {
+  const escaped = url.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+  return `<link rel="stylesheet" href="${escaped}" data-memoized-dom-dev>`;
+}
+
+/** Inject links while buffering only the document head, not the application stream. */
+function injectClientStyles(
+  response: Response,
+  styles: readonly string[],
+): Response {
+  if (
+    styles.length === 0 ||
+    response.body === null ||
+    !response.headers.get('content-type')?.toLowerCase().includes('text/html')
+  ) return response;
+
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let pending = '';
+  let injected = false;
+  const stream = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      const text = decoder.decode(chunk, { stream: true });
+      if (injected) {
+        controller.enqueue(encoder.encode(text));
+        return;
+      }
+      pending += text;
+      const close = /<\/head\s*>/i.exec(pending);
+      if (close === null) return;
+      const links = styles
+        .filter(url => !pending.includes(`href="${url}"`))
+        .map(styleLink)
+        .join('');
+      const index = close.index;
+      controller.enqueue(encoder.encode(
+        `${pending.slice(0, index)}${links}${pending.slice(index)}`,
+      ));
+      pending = '';
+      injected = true;
+    },
+    flush(controller) {
+      pending += decoder.decode();
+      if (pending !== '') controller.enqueue(encoder.encode(pending));
+    },
+  }));
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function middleware(server: ViteDevServer, entry: string) {

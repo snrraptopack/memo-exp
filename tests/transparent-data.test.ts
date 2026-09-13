@@ -67,12 +67,45 @@ const source = `
     return <span id="cross-leaf">{user.name}</span>;
   }
 
+  function CrossList({ tasks }) {
+    const open = tasks
+      .filter((task) => !task.done)
+      .sort((left, right) => left.id - right.id);
+    return (
+      <ul id="cross-list">
+        {open.map((task) => <li key={task.id}>{task.title}</li>)}
+      </ul>
+    );
+  }
+
+  function GenericPropsView(props) {
+    const open = props.payload.tasks
+      .filter((task) => !task.done)
+      .sort((left, right) => left.id - right.id);
+    const formatted = props.payload.total.toLocaleString();
+    return (
+      <section id="generic-props-view">
+        <output>{formatted}</output>
+        <ul>{open.map((task) => <li key={task.id}>{task.title}</li>)}</ul>
+      </section>
+    );
+  }
+
+  function OwnedSourceChild() {
+    const tasks = $fetch<Array<{ id: number; title: string }>>('/owned-tasks');
+    return (
+      <ul id="owned-source-list">
+        {tasks.map((task) => <li key={task.id}>{task.title}</li>)}
+      </ul>
+    );
+  }
+
   function CrossProfile({ user }) {
     const greeting = \`Welcome \${user.name}\`;
     return (
       <article id="cross-profile">
         <span id="cross-greeting">{greeting}</span>
-        <Group data={user}>
+        <Group>
           <Pending component={DeepPending} />
           <Error component={DeepError} />
           <CrossLeaf user={user} />
@@ -114,7 +147,7 @@ const source = `
     const statistics = $fetch<{ count: number }>('/statistics');
 
     return (
-      <Group data={{ user, statistics }}>
+      <Group>
         <Pending component={InlinePending} />
         <Error component={InlineError} />
         <>
@@ -126,12 +159,27 @@ const source = `
     );
   }
 
+  export function InferredInlineGroupApp() {
+    const user = $fetch<User>('/inline-user');
+    const waiting = 'Waiting inline';
+
+    return (
+      <Group>
+        <Pending component={() => <i class="inline-callback-pending">{waiting}</i>} />
+        <Error component={({ error, retry }) => (
+          <button class="inline-callback-error" onClick={retry}>{error.kind}</button>
+        )} />
+        <section suspend id="inline-suspended-content">{user.name}</section>
+      </Group>
+    );
+  }
+
   export function SuspendedGroupApp() {
     const user = $fetch<User>('/suspended-user');
     const statistics = $fetch<{ count: number }>('/suspended-statistics');
 
     return (
-      <Group data={{ user, statistics }}>
+      <Group>
         <Pending component={InlinePending} />
         <Error component={InlineError} />
         <SuspendedDashboard suspend user={user} statistics={statistics} />
@@ -145,7 +193,7 @@ const source = `
     const count = open.length;
 
     return (
-      <Group data={todos}>
+      <Group>
         <Pending component={InlinePending} />
         <Error component={InlineError} />
         <section>
@@ -155,7 +203,7 @@ const source = `
             {count > 0 ? <span>Open work</span> : <span>All done</span>}
           </div>
           <ul id="todo-rows">
-            <Group data={todos}>
+            <Group>
               <Pending component={TodoRowsPending} />
               <Error component={TodoRowsError} />
               {open.map(todo => <li key={todo.id}>{todo.title}</li>)}
@@ -169,7 +217,7 @@ const source = `
   export function CrossComponentApp() {
     const user = $fetch<User>('/cross-user');
     return (
-      <Group data={user}>
+      <Group>
         <Pending component={InlinePending} />
         <Error component={InlineError} />
         <main>
@@ -177,6 +225,99 @@ const source = `
           <CrossProfile user={user} />
         </main>
       </Group>
+    );
+  }
+
+  export function NestedCallbackGroupApp() {
+    const projects = $fetch<Array<{ id: number; name: string }>>('/nested-projects');
+    const tasks = $fetch<Array<{ id: number; projectId: number }>>('/nested-tasks');
+    const cards = projects.map(project => ({
+      project,
+      count: tasks.filter(task => task.projectId === project.id).length,
+    }));
+
+    return (
+      <Group>
+        <Pending component={InlinePending} />
+        <Error component={InlineError} />
+        <ul id="nested-cards">
+          {cards.map(card => <li key={card.project.id}>{card.project.name}:{card.count}</li>)}
+        </ul>
+      </Group>
+    );
+  }
+
+  export function CrossCollectionApp() {
+    const tasks = $fetch<Array<{ id: number; title: string; done: boolean }>>('/cross-tasks');
+    return (
+      <Group>
+        <Pending component={InlinePending} />
+        <Error component={InlineError} />
+        <CrossList tasks={tasks} />
+      </Group>
+    );
+  }
+
+  export function GenericPropsApp() {
+    const payload = $fetch<{
+      total: number;
+      tasks: Array<{ id: number; title: string; done: boolean }>;
+    }>('/generic-props');
+    return <GenericPropsView payload={payload} />;
+  }
+
+  export function DescendantOwnedGroupApp() {
+    return (
+      <Group>
+        <Pending component={DeepPending} />
+        <Error component={DeepError} />
+        <main id="owned-source-shell"><OwnedSourceChild /></main>
+      </Group>
+    );
+  }
+
+  export function SourceMutationApp() {
+    const tasks = $fetch<Array<{ id: string; title: string }>>('/mutable-tasks');
+    const visible = tasks.filter((task) => task.id !== 'hidden');
+    let draggedId: string | null = null;
+    function removeFirst() {
+      tasks.splice(0, 1);
+    }
+    function moveDragged() {
+      if (draggedId === null) return;
+      const task = tasks.find((candidate) => candidate.id === draggedId);
+      draggedId = null;
+      if (task !== undefined) task.title = 'Moved';
+    }
+    return (
+      <main>
+        <button id="remove-source-row" onClick={removeFirst}>Remove</button>
+        <p if={visible.length === 0} id="mutable-source-empty">Empty</p>
+        <ul id="mutable-source-list">
+          {visible.map((task) => (
+            <li
+              key={task.id}
+              class="mutable-source-row"
+              draggable
+              onDragStart={() => {
+                draggedId = task.id;
+              }}
+            >
+              {task.title}
+            </li>
+          ))}
+        </ul>
+        <div
+          id="mutable-source-drop"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            moveDragged();
+          }}
+        >
+          Drop
+        </div>
+      </main>
     );
   }
 
@@ -329,6 +470,9 @@ describe('compiler-transparent data values', () => {
     expect(compiled).toMatch(/const users = \$fetch\('\/users'/);
     expect(compiled).toContain('rebindResolvedValue(user, `/users/${userId}`');
     expect(compiled).not.toContain('volatile: true');
+    expect(compiled).toContain(
+      'resolvedValuesPending([projects, tasks])',
+    );
     writeFileSync(fixture, compiled);
     writeFileSync(
       tsrxFixture,
@@ -450,6 +594,43 @@ describe('compiler-transparent data values', () => {
     await expect.poll(
       () => document.querySelector('#group-statistics')?.textContent,
     ).toBe('42');
+  });
+
+  it('infers Group data and supports direct host suspension with inline policies', async () => {
+    const requests: Array<(response: Response) => void> = [];
+    runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(resolve => {
+        requests.push(resolve);
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(
+      mod.InferredInlineGroupApp('InferredInlineGroupApp', null),
+    );
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(document.querySelector('.inline-callback-pending')?.textContent)
+      .toBe('Waiting inline');
+    expect(document.querySelector('#inline-suspended-content')).toBeNull();
+
+    requests[0]!(new Response(JSON.stringify({ message: 'offline' }), {
+      status: 503,
+      headers: { 'content-type': 'application/json' },
+    }));
+    await expect.poll(
+      () => document.querySelector('.inline-callback-error')?.textContent,
+    ).toBe('http');
+
+    document.querySelector<HTMLButtonElement>('.inline-callback-error')!.click();
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    requests[1]!(new Response(JSON.stringify({ id: 1, name: 'Ada' }), {
+      headers: { 'content-type': 'application/json' },
+    }));
+    await expect.poll(
+      () => document.querySelector('#inline-suspended-content')?.textContent,
+    ).toBe('Ada');
   });
 
   it('atomically mounts a suspended Group component after all initial data commits', async () => {
@@ -920,9 +1101,14 @@ describe('compiler-transparent data values', () => {
   it('links transparent provenance and Group policy across modules', async () => {
     const modules = compileModules({
       './transparent-cross/profile.tsx': `
-        export function RemoteProfile({ user }) {
-          const label = \`Remote \${user.name}\`;
-          return <h2 id="remote-profile">{label}</h2>;
+        export function RemoteProfile(props) {
+          const label = \`Remote \${props.user.name}\`;
+          const visibleRoles = props.user.roles.filter(role => role.visible);
+          return (
+            <h2 id="remote-profile">
+              {label}:{visibleRoles.map(role => <span key={role.id}>{role.name}</span>)}
+            </h2>
+          );
         }
       `,
       './transparent-cross/app.tsx': `
@@ -935,7 +1121,7 @@ describe('compiler-transparent data values', () => {
         export function RemoteApp() {
           const user = $fetch('/remote-user');
           return (
-            <Group data={user}>
+            <Group>
               <Pending component={Loading} />
               <Error component={Failed} />
               <RemoteProfile user={user} />
@@ -965,12 +1151,18 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('#remote-profile .remote-pending')).not.toBeNull();
 
     await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
-    resolve(new Response(JSON.stringify({ name: 'Linked' }), {
+    resolve(new Response(JSON.stringify({
+      name: 'Linked',
+      roles: [
+        { id: 1, name: 'reader', visible: true },
+        { id: 2, name: 'hidden', visible: false },
+      ],
+    }), {
       headers: { 'content-type': 'application/json' },
     }));
     await expect.poll(
       () => document.querySelector('#remote-profile')?.textContent,
-    ).toBe('Remote Linked');
+    ).toBe('Remote Linked:reader');
   });
 
   it('keeps an ungrouped structural site empty until its source commits', async () => {
@@ -1007,7 +1199,7 @@ describe('compiler-transparent data values', () => {
         export function InvalidGroup() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group data={user}>
+            <Group>
               <Pending component={Loading} />
               <Error component={Failed} />
               <strong>{user.name}</strong>
@@ -1028,7 +1220,7 @@ describe('compiler-transparent data values', () => {
         export function InvalidGroupOrder() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group data={user}>
+            <Group>
               <Error component={Failed} />
               <Pending component={Loading} />
               <strong>{user.name}</strong>
@@ -1039,7 +1231,175 @@ describe('compiler-transparent data values', () => {
     })).toThrow(/Group child must be <Pending/);
   });
 
-  it('requires component suspend to be a shorthand direct Group child', () => {
+  it('waits for every source read inside an immediate derivation callback', async () => {
+    const requests = new Map<string, (response: Response) => void>();
+    runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) => new Promise<Response>(resolve => {
+        requests.set(String(input), resolve);
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(mod.NestedCallbackGroupApp('NestedCallbackGroupApp', null));
+    await vi.waitFor(() => expect(requests.size).toBe(2));
+    expect(document.querySelector('#nested-cards > .pending')).not.toBeNull();
+    const resolveRequest = (path: string): ((response: Response) => void) =>
+      [...requests].find(([url]) => url.endsWith(path))![1];
+
+    resolveRequest('/nested-projects')(new Response(JSON.stringify([
+      { id: 1, name: 'Compiler' },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(document.querySelector('#nested-cards > .pending')).not.toBeNull();
+
+    resolveRequest('/nested-tasks')(new Response(JSON.stringify([
+      { id: 1, projectId: 1 },
+      { id: 2, projectId: 1 },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#nested-cards')?.textContent,
+    ).toBe('Compiler:2');
+  });
+
+  it('defers collection methods on a transparent source passed through props', async () => {
+    let resolve!: (response: Response) => void;
+    runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(accept => {
+        resolve = accept;
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(
+      mod.CrossCollectionApp('CrossCollectionApp', null),
+    );
+    expect(document.querySelector('#cross-list .pending')).not.toBeNull();
+
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    resolve(new Response(JSON.stringify([
+      { id: 3, title: 'Closed', done: true },
+      { id: 2, title: 'Second', done: false },
+      { id: 1, title: 'First', done: false },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#cross-list')?.textContent,
+    ).toBe('FirstSecond');
+  });
+
+  it('preserves transparent provenance through a generic props object', async () => {
+    let resolve!: (response: Response) => void;
+    runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(accept => {
+        resolve = accept;
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    expect(() => {
+      document.body.appendChild(
+        mod.GenericPropsApp('GenericPropsApp', null),
+      );
+    }).not.toThrow();
+    expect(document.querySelector('#generic-props-view')?.textContent).toBe('');
+
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    resolve(new Response(JSON.stringify({
+      total: 12345,
+      tasks: [
+        { id: 3, title: 'Closed', done: true },
+        { id: 2, title: 'Second', done: false },
+        { id: 1, title: 'First', done: false },
+      ],
+    }), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#generic-props-view')?.textContent,
+    ).toBe('12,345FirstSecond');
+  });
+
+  it('inherits Group presentation through a descendant-owned source', async () => {
+    let resolve!: (response: Response) => void;
+    runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(accept => {
+        resolve = accept;
+      })) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(
+      mod.DescendantOwnedGroupApp('DescendantOwnedGroupApp', null),
+    );
+    expect(document.querySelector('#owned-source-shell')).not.toBeNull();
+    expect(document.querySelector('#owned-source-list .deep-pending')).not.toBeNull();
+
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    resolve(new Response(JSON.stringify([
+      { id: 2, title: 'Second' },
+      { id: 1, title: 'First' },
+    ]), { headers: { 'content-type': 'application/json' } }));
+    await expect.poll(
+      () => document.querySelector('#owned-source-list')?.textContent,
+    ).toBe('SecondFirst');
+  });
+
+  it('publishes direct source payload mutations to dependent list regions', async () => {
+    runtime = createDataRuntime({
+      fetch: (() => Promise.resolve(new Response(JSON.stringify([
+        { id: 'one', title: 'First' },
+        { id: 'two', title: 'Second' },
+      ]), { headers: { 'content-type': 'application/json' } }))) as typeof fetch,
+    });
+    previous = setActiveDataRuntime(runtime);
+    setScheduler(run => run());
+
+    const mod = await importFixture();
+    document.body.appendChild(mod.SourceMutationApp('SourceMutationApp', null));
+    await expect.poll(
+      () => document.querySelector('#mutable-source-list')?.textContent,
+    ).toBe('FirstSecond');
+
+    const rows = document.querySelectorAll<HTMLElement>('.mutable-source-row');
+    rows[1]!.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    document.querySelector<HTMLElement>('#mutable-source-drop')!
+      .dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+    expect(document.querySelector('#mutable-source-list')?.textContent)
+      .toBe('FirstMoved');
+
+    document.querySelector<HTMLButtonElement>('#remove-source-row')!.click();
+    expect(document.querySelector('#mutable-source-list')?.textContent)
+      .toBe('Moved');
+    expect(document.querySelector('#mutable-source-empty')).toBeNull();
+  });
+
+  it('rejects the removed Group data prop', () => {
+    expect(() => compileModules({
+      './invalid-group-data.tsx': `
+        import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+        function Loading() { return <i>Loading</i>; }
+        function Failed() { return <i>Failed</i>; }
+        export function InvalidGroupData() {
+          const user = $fetch<{ name: string }>('/user');
+          return (
+            <Group data={user}>
+              <Pending component={Loading} />
+              <Error component={Failed} />
+              <strong>{user.name}</strong>
+            </Group>
+          );
+        }
+      `,
+    })).toThrow(/Group infers colorless sources from its content; remove the data prop/);
+  });
+
+  it('requires suspend to be a shorthand direct Group child', () => {
     const invalidSuspend = `
         function Dashboard() { return <main>Dashboard</main>; }
         export function App() { return <Dashboard suspend />; }
@@ -1049,7 +1409,7 @@ describe('compiler-transparent data values', () => {
     });
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]?.message).toMatch(
-      /suspend requires the component to be the direct content child of Group/,
+      /suspend requires the element to be the direct content child of Group/,
     );
     expect(diagnostics[0]?.moduleId).toBe('./invalid-suspend.tsx');
     expect(diagnostics[0]?.line).toBe(
@@ -1066,7 +1426,7 @@ describe('compiler-transparent data values', () => {
         export function App() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group data={user}>
+            <Group>
               <Pending component={Loading} />
               <Error component={Failed} />
               <Dashboard suspend={true} />
@@ -1074,6 +1434,6 @@ describe('compiler-transparent data values', () => {
           );
         }
       `,
-    })).toThrow(/suspend is a shorthand compiler directive/);
+    })).toThrow(/write 'suspend' without a value/);
   });
 });

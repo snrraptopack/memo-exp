@@ -3,17 +3,13 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
-import type { Ctx } from '../context';
+import type { ComponentPath, Ctx } from '../context';
 import { generatedIdentifier, md, mr } from '../identifiers';
 import type { CompilerRouteElement } from '../router';
 import type { EmitScope } from './scope';
 import { registerStmt, renderDocument } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { buildConditionalBranchCreate } from './conditional-region';
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 export function emitRouteRegion(
   ctx: Ctx,
@@ -155,6 +151,22 @@ export function emitRouteRegion(
         ),
       ),
     ]),
+  );
+
+  // The branch is a nested update scope. Component-local writes dirty the
+  // component owner, so forward that owner update into the currently mounted
+  // route branch just like an ordinary conditional region does. Without this,
+  // local state rendered beneath `route` changes only after remounting.
+  scope.updaters.push(() =>
+    astFactory.expressionStatement(
+      astFactory.callExpression(
+        astFactory.memberExpression(
+          cloneEstreeNode(region),
+          astFactory.identifier('update'),
+        ),
+        [],
+      ),
+    ),
   );
 
   if (scope.manualDisposal) {

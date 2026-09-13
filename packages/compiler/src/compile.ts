@@ -53,12 +53,13 @@ function inputProgram(
   moduleId: string,
   frontend: EstreeFrontend,
   ast?: t.File | t.Program,
+  comments: readonly AstComment[] = [],
 ): CompilerInput {
   if (ast !== undefined) {
     const program = ast.type === 'File' ? ast.program : ast;
     return {
       program: cloneNode(program as unknown as BaseNode) as Program,
-      comments: [],
+      comments,
     };
   }
   const parsed = parseWithEstreeFrontendOrThrow(frontend, source, {
@@ -78,9 +79,10 @@ function transform(
   sourceMaps: boolean,
   ast?: t.File | t.Program,
   frontend: EstreeFrontend = memoizedEstreeFrontend,
+  comments: readonly AstComment[] = [],
 ): { code: string; map: CompilerSourceMap | null; css?: string } {
   const moduleId = opts.moduleId ?? './component.tsx';
-  const input = inputProgram(source, moduleId, frontend, ast);
+  const input = inputProgram(source, moduleId, frontend, ast, comments);
   transformEstreeProgram(
     {
       node: input.program,
@@ -124,8 +126,9 @@ export function compileAst(
   source: string,
   opts: InternalMemoDomOptions,
   ast?: t.File | t.Program,
+  comments: readonly AstComment[] = [],
 ): string {
-  return transform(source, opts, false, ast).code;
+  return transform(source, opts, false, ast, memoizedEstreeFrontend, comments).code;
 }
 
 /** Compile source and return a source map back to the authored TSX module. */
@@ -146,8 +149,9 @@ export function compileAstDetailed(
   source: string,
   opts: InternalMemoDomOptions,
   ast?: t.File | t.Program,
+  comments: readonly AstComment[] = [],
 ): CompiledSource {
-  const out = transform(source, opts, true, ast);
+  const out = transform(source, opts, true, ast, memoizedEstreeFrontend, comments);
   if (out.map === null) {
     throw new Error('memo-dom: compilation produced no source map');
   }

@@ -17,7 +17,9 @@ import {
   setScheduler,
   resetScheduler,
   commit,
+  commitStructuralWrites,
   markDirty,
+  listStructureReason,
   _internals,
 } from '@memoized-dom/runtime/testing';
 import {
@@ -32,6 +34,8 @@ describe('M5.6 — cached write resolution', () => {
     _internals().registry.forEach((_, id) => unregister(id));
     resetAccessTable();
   });
+
+  afterEach(() => resetScheduler());
 
   it('repeat resolutions return the cached array', () => {
     register({ id: 'App', parent: null, render: () => {} });
@@ -68,6 +72,40 @@ describe('M5.6 — cached write resolution', () => {
     installAccessTable({ readers: { x: ['App'] }, opaque: ['y'] }, 'App');
     expect(resolveWrites(['y'], ['App'])).toBe('root-subtree');
   });
+
+  it('routes structural writes through their dedicated reader channel', () => {
+    setScheduler((fn) => fn());
+    let ownerReason: unknown;
+    let rowRenders = 0;
+    register({
+      id: 'App',
+      parent: null,
+      render: (reason) => {
+        ownerReason = reason;
+      },
+    });
+    register({
+      id: 'App/items/Row[n:1]',
+      parent: 'App',
+      render: () => {
+        rowRenders++;
+      },
+    });
+    installAccessTable(
+      {
+        readers: {
+          items: ['App', 'App/items/Row[*]'],
+          'items\0memo-dom:list-structure-reader': ['App'],
+        },
+      },
+      'App',
+    );
+
+    commitStructuralWrites(['items']);
+
+    expect(ownerReason).toBe(listStructureReason('items'));
+    expect(rowRenders).toBe(0);
+  });
 });
 
 describe('M5.6 — reconcile fast path', () => {
@@ -76,10 +114,13 @@ describe('M5.6 — reconcile fast path', () => {
     let inserts = 0;
     let removes = 0;
     const origInsert = parent.insertBefore.bind(parent);
-    parent.insertBefore = ((node: any, ref: any) => {
+    parent.insertBefore = function <T extends Node>(
+      node: T,
+      ref: Node | null,
+    ): T {
       inserts++;
       return origInsert(node, ref);
-    }) as any;
+    };
 
     const items = [
       { id: 1, label: 'a' },

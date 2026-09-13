@@ -80,6 +80,9 @@ describe('M1 setter helpers', () => {
     setAttr($, 'b', el, 'hidden', true);
     expect(el.getAttribute('hidden')).toBe('');
 
+    setAttr($, 'c', el, 'draggable', true);
+    expect(el.getAttribute('draggable')).toBe('true');
+
     setAttr($, 'b', el, 'hidden', false);
     expect(el.hasAttribute('hidden')).toBe(false);
 

@@ -1,19 +1,14 @@
 import {
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
   isIdentifier,
+  isNode,
+  nodeFields as fields,
   walkAst,
   type BaseNode,
   type Identifier,
 } from '../ast';
 
 const EQUALITY_OPERATORS = new Set(['==', '===']);
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
 const NON_SEMANTIC_FIELDS = new Set([
   'loc',
   'range',
@@ -30,18 +25,6 @@ interface TargetedListSite {
   keyExpr: BaseNode | null;
   sourceLocal: boolean;
   sourceExpr: BaseNode;
-}
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function isNode(value: unknown): value is BaseNode {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  );
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

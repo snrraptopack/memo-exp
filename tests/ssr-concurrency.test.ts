@@ -25,7 +25,7 @@ const modules = {
       const user = $fetch('/api/user');
       return (
         <section>
-          <Group data={user}>
+          <Group>
             <Pending component={Skeleton} />
             <ErrorArm component={ErrorView} />
             <h1>{user.name}</h1>
@@ -105,7 +105,10 @@ describe('SSR Phase 5: High-Concurrency & Request Isolation (ssr-proposal.md §P
 
     for (const res of results) {
       // 1. Verify HTML contains exact request data and no other request's data
-      expect(res.html).toContain(res.expectedName);
+      expect(res.html, JSON.stringify({
+        index: res.index,
+        payload: res.payload,
+      })).toContain(res.expectedName);
       expect(res.html).not.toContain('class="skeleton"');
       expect(res.html).toContain('<!--mmd:r:App-->');
 

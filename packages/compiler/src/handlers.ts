@@ -21,17 +21,20 @@
 
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
-import { type BaseNode, type Binding } from './ast';
+import { type BaseNode } from './ast';
 import {
   astBindingAt,
   memberRootName,
+  variableDeclaratorFor,
   walkNodes,
+  type ComponentPath,
   type Ctx,
   type RowCtx,
 } from './context';
 import {
   buildScopeCommit,
   createScopeWrites,
+  recordRoutedWrite,
 } from './handler-commits';
 import {
   buildEventOriginCommit,
@@ -49,21 +52,6 @@ export type HandlerFn =
   | t.ArrowFunctionExpression
   | t.FunctionExpression
   | t.FunctionDeclaration;
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): t.VariableDeclarator | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') {
-      return current as unknown as t.VariableDeclarator;
-    }
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
-}
 
 /** Resolve a component-local helper declared directly in the factory body. */
 export function resolveLocalHelper(
@@ -98,8 +86,8 @@ export function resolveLocalHelper(
 
 /**
  * Instrument a callback that executes outside the component's synchronous
- * factory call. The callback owns its normal-exit commit; no event boundary
- * or exception wrapper is introduced.
+ * factory call. The callback owns its normal-completion commit; no event
+ * boundary or generated exception wrapper is introduced.
  */
 export function instrumentComponentCallback(
   ctx: Ctx,
@@ -226,9 +214,9 @@ export function buildHandler(
     const imported = ctx.importedFunctions.get(value.name);
     if (imported !== undefined) {
       const writes = createScopeWrites();
-      for (const write of imported.writes) writes.writes.add(write);
+      for (const write of imported.writes) recordRoutedWrite(writes, write);
       for (const write of imported.boundedWrites) {
-        writes.writes.add(write);
+        recordRoutedWrite(writes, write);
       }
       writes.rootFallback = imported.unbounded;
       return wrapSharedHandlerWithOrigin(
@@ -273,10 +261,10 @@ export function buildHandler(
     );
   }
 
-  // normalize an implicit-return root body to a block so commits can append
+  // Keep the authored return value when normalizing concise event handlers.
   if (!astFactory.isBlockStatement(target.body)) {
     target.body = astFactory.blockStatement([
-      astFactory.expressionStatement(target.body as t.Expression),
+      astFactory.returnStatement(target.body as t.Expression),
     ]);
   }
 
@@ -317,8 +305,10 @@ export function buildHandler(
     const summary = summarizeHelper(ctx, (value as t.Identifier).name);
     if (target.async) {
       const immediate = createScopeWrites();
-      for (const write of summary.writes) immediate.writes.add(write);
-      for (const write of summary.boundedWrites) immediate.writes.add(write);
+      for (const write of summary.writes) recordRoutedWrite(immediate, write);
+      for (const write of summary.boundedWrites) {
+        recordRoutedWrite(immediate, write);
+      }
       immediate.rootFallback = summary.unbounded;
       return wrapSharedHandlerWithOrigin(
         ctx,

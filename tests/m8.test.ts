@@ -134,16 +134,13 @@ describe('R8 — compiled output runs', () => {
     const { CondApp } = await importCompiled('cond');
     document.body.appendChild(CondApp('App', null));
 
-    // region registered as its own entity; vars route to it (the owner is
-    // also matched — handler bodies over-approximate reads, which is safe:
-    // the owner's guarded setters no-op and it never calls the region)
+    // The region is the only render-time reader. Event-handler closures do
+    // not make their component an owner reader of values they only write.
     expect(registeredIds()).toEqual(['App', 'App/when0']);
     expect(resolveWrites(['./component.tsx#loggedIn'], registeredIds())).toEqual([
-      'App',
       'App/when0',
     ]);
     expect(resolveWrites(['./component.tsx#count'], registeredIds())).toEqual([
-      'App',
       'App/when0',
     ]);
 

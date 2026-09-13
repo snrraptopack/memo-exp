@@ -4,22 +4,17 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
-import { walkAst, type BaseNode } from '../ast';
+import {
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 import type { JsxNode } from '../jsx/children';
 
 interface ComponentFunctionContainer {
   node: t.FunctionDeclaration;
   buildCodeFrameError(message: string): Error;
 }
-
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
 
 const HOIST_BARRIERS = new Set([
   'AwaitExpression',

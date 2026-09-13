@@ -25,7 +25,7 @@ const modules = {
       const user = $fetch('/api/user');
       return (
         <main class="streaming-root">
-          <Group data={user}>
+          <Group>
             <Pending component={Skeleton} />
             <ErrorArm component={ErrorView} />
             <h1>{user.name}</h1>

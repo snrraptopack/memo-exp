@@ -2,6 +2,7 @@ import type { RouteRuntime } from './runtime';
 import type {
   RouteNavigationBlocker as Blocker,
   RouteResolver,
+  RouteState,
 } from './types';
 import {
   activeRoute,
@@ -61,3 +62,18 @@ export function blockRouteNavigation(blocker: Blocker): () => void {
 export const subscribeRouteNavigation = activeSubscribeNavigation;
 export const subscribeRoute = activeSubscribe;
 export const subscribeRouteSelected = activeSubscribeSelected;
+
+/** Subscribe to navigation changes without treating subscription setup as one. */
+export function subscribeRouteValue(
+  _value: RouteState,
+  listener: () => void,
+): () => void {
+  let initialized = false;
+  return activeSubscribe(() => {
+    if (!initialized) {
+      initialized = true;
+      return;
+    }
+    listener();
+  });
+}

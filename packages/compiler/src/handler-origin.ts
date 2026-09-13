@@ -9,6 +9,7 @@ import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import type { Ctx, RowCtx } from './context';
+import { appendScopeCommit } from './handler-commits';
 import {
   componentId,
   generatedIdentifier,
@@ -46,18 +47,10 @@ export function wrapSharedHandlerWithOrigin(
   originCommit: t.Statement,
 ): t.ArrowFunctionExpression {
   const event = generatedIdentifier(ctx, 'event');
-  const result = generatedIdentifier(ctx, 'returnValue');
-  return astFactory.arrowFunctionExpression(
+  const wrapper = astFactory.arrowFunctionExpression(
     [event],
-    astFactory.blockStatement([
-      astFactory.variableDeclaration('const', [
-        astFactory.variableDeclarator(
-          result,
-          astFactory.callExpression(cloneEstreeNode(handler), [cloneEstreeNode(event)]),
-        ),
-      ]),
-      originCommit,
-      astFactory.returnStatement(cloneEstreeNode(result)),
-    ]),
+    astFactory.callExpression(cloneEstreeNode(handler), [cloneEstreeNode(event)]),
   );
+  appendScopeCommit(ctx, wrapper, originCommit);
+  return wrapper;
 }

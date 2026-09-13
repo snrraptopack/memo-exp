@@ -48,6 +48,7 @@ describe('CSR-equivalence corpus', () => {
           <form class="panel" style="padding: 4px" data-kind="form">
             <input type="checkbox" disabled checked />
             <button title={label}>{label}</button>
+            <article draggable={true} contentEditable={true}>Drag me</article>
             <span title={'<script>alert(1)</script>'}>{"<b> & </b>"}</span>
           </form>
         );
@@ -59,6 +60,8 @@ describe('CSR-equivalence corpus', () => {
     try {
       expect(result.serverHtml).toContain('disabled');
       expect(result.serverHtml).toContain('checked');
+      expect(result.serverHtml).toContain('draggable="true"');
+      expect(result.serverHtml).toContain('contenteditable="true"');
       expect(result.serverHtml).toContain('&amp;');
       // Text content must be fully escaped - no raw markup may leak as text.
       expect(result.serverHtml).toContain('&lt;b&gt; &amp; &lt;/b&gt;');

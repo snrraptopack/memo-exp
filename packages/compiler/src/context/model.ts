@@ -45,6 +45,12 @@ export interface MemoDomOptions {
    * aliases into the analysis.
    */
   transparentAsyncSources?: readonly TransparentAsyncSourceDefinition[];
+  /**
+   * Imported live values whose libraries provide a subscription adapter.
+   * This lets derivations over routers, stores, and other external state use
+   * the same compiler replay path as application-owned state.
+   */
+  externalReactiveSources?: readonly ExternalReactiveSourceDefinition[];
   /** Emit dev-only live-component ownership used by framework HMR adapters. */
   hot?: boolean;
   /**
@@ -74,6 +80,29 @@ export interface MemoDomOptions {
    */
   moduleStateCells?: boolean;
 }
+
+export interface ExternalReactiveSourceDefinition {
+  /** Authored module containing the imported live value. */
+  readonly module: string;
+  /** Named export carrying the live value (`default` is also supported). */
+  readonly source: string;
+  /** Adapter called as `subscribe(value, listener)` and returning a disposer. */
+  readonly subscribe: {
+    readonly module: string;
+    readonly export: string;
+  };
+}
+
+export const DEFAULT_EXTERNAL_REACTIVE_SOURCES: readonly ExternalReactiveSourceDefinition[] = [
+  {
+    module: '@memoized-dom/router',
+    source: 'route',
+    subscribe: {
+      module: '@memoized-dom/router/internal',
+      export: 'subscribeRouteValue',
+    },
+  },
+];
 
 export interface TransparentAsyncSourceDefinition {
   /** Public module from which the authored intrinsics are imported. */
@@ -128,6 +157,10 @@ export interface LinkedStateImport {
 
 export interface LinkedFunctionImport {
   type: 'function';
+  /** Calling this imported function creates a compiler-transparent source. */
+  transparentSourceFactory?: boolean;
+  /** HTTP method carried by a generated server-function source factory. */
+  transparentSourceMethod?: TransparentSourceMethod;
   /** Finite intrinsic-tag identities declared by the helper return type. */
   tagCandidates?: string[];
   /** Finite component identities declared by helper returns. */
@@ -142,6 +175,13 @@ export interface LinkedFunctionImport {
   /** Effects may extend beyond every known root and argument. */
   unbounded: boolean;
 }
+
+export type TransparentSourceMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE';
 
 export interface LinkedComponentImport {
   type: 'component';
@@ -319,6 +359,8 @@ export interface CompilerPath<TNode extends t.Node> {
   buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 
+export type ProgramPath = CompilerPath<t.Program>;
+export type ComponentPath = CompilerPath<t.FunctionDeclaration>;
 export type HelperPath = CompilerPath<
   t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
 >;
@@ -329,6 +371,7 @@ export interface Ctx {
   routerPath: string;
   dataRuntimePath: string;
   transparentAsyncSources: readonly TransparentAsyncSourceDefinition[];
+  externalReactiveSources: readonly ExternalReactiveSourceDefinition[];
   rootId: string;
   rootComponent: string | null;
   hot: boolean;
@@ -340,9 +383,21 @@ export interface Ctx {
   routeElements: WeakMap<t.JSXElement, CompilerRouteElement>;
   localRoutes: CompilerRouteDefinition[];
   usesRouter: boolean;
+  /** Authored live-value binding -> generated subscription adapter binding. */
+  externalReactiveBindings: Map<string, string>;
+  /** Generated subscription imports, keyed by adapter module and export. */
+  externalReactiveImports: Map<
+    string,
+    { module: string; imported: string; local: string }
+  >;
   usesTransparentData: boolean;
   /** Local import bindings classified by provider metadata. */
   transparentSourceFactories: Set<string>;
+  /** Direct provider bindings (for example `$fetch`), whose arguments are request inputs. */
+  transparentProviderFactories: Set<string>;
+  /** Component-local variables assigned colorless sources inside event handlers. */
+  eventSourceSlots: Map<string, Set<string>>;
+  transparentSourceFactoryMethods: Map<string, TransparentSourceMethod>;
   transparentTrackFactories: Set<string>;
   transparentSourcePassthroughs: Set<string>;
   transparentGroups: Set<string>;
@@ -434,8 +489,24 @@ export interface Ctx {
   condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Map call → owner-local values whose changes affect only old/new keyed rows. */
   targetedListDependencies: WeakMap<MapCallExpression, TargetedListDependency[]>;
+  /**
+   * Source identity proven during list analysis. Transparent-data lowering may
+   * subsequently expand a local derivation into a conditional/helper result;
+   * emission reuses this proof instead of treating the compiler-authored form
+   * as new user syntax.
+   */
+  analyzedListSources: WeakMap<
+    MapCallExpression,
+    { key: string; local: boolean; suffixBase: string }
+  >;
   /** Components that need dirty reasons for targeted list refreshes. */
   targetedListComponents: Set<string>;
+  /** Reactive source keys rendered by keyed list regions. */
+  listSources: Set<string>;
+  /** Components owning a keyed list updater. */
+  listComponents: Set<string>;
+  /** Component -> non-local collection sources owned by its list updaters. */
+  componentListSources: Map<string, Set<string>>;
   /** Map call -> direct keyed-item mutation journal used by that one list. */
   keyedListMutations: WeakMap<MapCallExpression, KeyedListMutationPlan>;
   /** Component -> source root -> journal plan, for handler write analysis. */
@@ -522,6 +593,13 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     LinkedDynamicComponentCandidate[]
   >();
   const transparentModuleSources = new Map<string, string>();
+  const transparentSourceFactories = new Set<string>();
+  const transparentProviderFactories = new Set<string>();
+  const eventSourceSlots = new Map<string, Set<string>>();
+  const transparentSourceFactoryMethods = new Map<
+    string,
+    TransparentSourceMethod
+  >();
   const importedState = new Set<string>();
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
@@ -544,6 +622,15 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
       }
       importedState.add(local);
     } else if (linked.type === 'function') {
+      if (linked.transparentSourceFactory === true) {
+        transparentSourceFactories.add(local);
+      }
+      if (linked.transparentSourceMethod !== undefined) {
+        transparentSourceFactoryMethods.set(
+          local,
+          linked.transparentSourceMethod,
+        );
+      }
       if (linked.tagCandidates !== undefined) {
         functionTagCandidates.set(local, [...linked.tagCandidates]);
       }
@@ -596,6 +683,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     dataRuntimePath: opts.dataRuntimePath ?? '@memoized-dom/data/internal',
     transparentAsyncSources: opts.transparentAsyncSources ??
       DEFAULT_TRANSPARENT_ASYNC_SOURCES,
+    externalReactiveSources: opts.externalReactiveSources ??
+      DEFAULT_EXTERNAL_REACTIVE_SOURCES,
     rootId: opts.rootId ?? 'App',
     rootComponent: opts.rootComponent ?? null,
     hot: opts.hot ?? false,
@@ -608,8 +697,13 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     localRoutes: [],
     astAnalysis: null,
     usesRouter: false,
+    externalReactiveBindings: new Map(),
+    externalReactiveImports: new Map(),
     usesTransparentData: false,
-    transparentSourceFactories: new Set(),
+    transparentSourceFactories,
+    transparentProviderFactories,
+    eventSourceSlots,
+    transparentSourceFactoryMethods,
     transparentTrackFactories: new Set(),
     transparentSourcePassthroughs: new Set(),
     transparentGroups: new Set(),
@@ -685,7 +779,11 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     rowReads: new Map(),
     condReads: new Map(),
     targetedListDependencies: new WeakMap(),
+    analyzedListSources: new WeakMap(),
     targetedListComponents: new Set(),
+    listSources: new Set(),
+    listComponents: new Set(),
+    componentListSources: new Map(),
     keyedListMutations: new WeakMap(),
     keyedListMutationSources: new Map(),
     disabledKeyedListMutationSources: new Set(),

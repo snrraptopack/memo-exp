@@ -20,6 +20,12 @@ import {
   moduleId,
 } from '../paths';
 import { valueImports, type ParsedProgram } from './imports';
+import {
+  clientServerFunctionSource,
+  isServerFunctionFile,
+  rewriteServerFunctionBarrelImports,
+  type ServerFunctionBarrelEntry,
+} from '../server-functions';
 
 export interface ResolvedImport {
   id: string;
@@ -45,7 +51,11 @@ export interface CompiledGraph {
   output: ReadonlyMap<string, string>;
   maps: ReadonlyMap<string, CompilerSourceMap>;
   css: ReadonlyMap<string, string>;
+  styles: ReadonlySet<string>;
 }
+
+const styleExtension =
+  /\.(?:css|less|sass|scss|styl|stylus|pcss|postcss|sss)(?:$|[?#])/i;
 
 function resolutionKey(importer: string, specifier: string): string {
   return `${importer}\0${specifier}`;
@@ -59,11 +69,13 @@ export async function compileGraph(
   overrides: ReadonlyMap<string, string>,
   hot: boolean,
   requireMount = true,
+  serverFunctionBarrelEntries: readonly ServerFunctionBarrelEntry[] = [],
 ): Promise<CompiledGraph> {
   const sources = new Map<string, string>();
   const sourceIds = new Map<string, string>();
   const resolutions = new Map<string, string>();
   const visiting = new Set<string>();
+  const styles = new Set<string>();
 
   async function visit(file: string): Promise<void> {
     const cleanFile = cleanViteId(file);
@@ -72,8 +84,31 @@ export async function compileGraph(
     context.addWatchFile(cleanFile);
 
     const id = moduleId(root, cleanFile);
-    const source =
+    const authoredSource =
       overrides.get(cleanFile) ?? (await readFile(cleanFile, 'utf8'));
+    const authoredProgram = parseWithEstreeFrontendOrThrow(
+      options.frontend ?? memoizedEstreeFrontend,
+      authoredSource,
+      { filename: id, sourceType: 'module' },
+    ).program as ParsedProgram;
+    const authoredImports = new Map(
+      valueImports(authoredProgram).map(reference => [
+        reference.specifier,
+        reference,
+      ]),
+    );
+    const facadeSource = isServerFunctionFile(root, cleanFile, options)
+      ? await clientServerFunctionSource(
+          authoredSource,
+          cleanFile,
+          root,
+          options,
+        )
+      : authoredSource;
+    const source = rewriteServerFunctionBarrelImports(
+      facadeSource,
+      serverFunctionBarrelEntries,
+    );
     sources.set(id, source);
     sourceIds.set(cleanFile, id);
 
@@ -82,13 +117,38 @@ export async function compileGraph(
       source,
       { filename: id, sourceType: 'module' },
     ).program as ParsedProgram;
-    for (const specifier of valueImports(program)) {
+    for (const reference of valueImports(program)) {
+      const { specifier } = reference;
       const resolved = await context.resolve(specifier, cleanFile, {
         skipSelf: true,
       });
       if (resolved === null || resolved.external) continue;
 
       const target = cleanViteId(resolved.id);
+      if (styleExtension.test(resolved.id)) {
+        styles.add(resolved.id);
+        continue;
+      }
+      const authored = authoredImports.get(specifier);
+      if (
+        authored !== undefined &&
+        !isServerFunctionFile(root, cleanFile, options) &&
+        isServerFunctionFile(root, target, options)
+      ) {
+        context.error({
+          message:
+            `memo-dom: [MMD-S003] UI modules cannot import '${specifier}' directly; import named server functions from '#server-functions' so server-only code cannot enter the client graph`,
+          id: cleanFile,
+          ...(authored.line === undefined || authored.column === undefined
+            ? {}
+            : {
+                loc: {
+                  line: authored.line,
+                  column: authored.column,
+                },
+              }),
+        });
+      }
       if (!acceptsSource(root, target, options)) continue;
       resolutions.set(resolutionKey(id, specifier), moduleId(root, target));
       await visit(target);
@@ -115,6 +175,7 @@ export async function compileGraph(
       output: new Map(),
       maps: new Map(),
       css: new Map(),
+      styles: new Set(),
     };
   }
   for (const entry of seeds) {
@@ -126,6 +187,21 @@ export async function compileGraph(
     ...(options.runtimePath === undefined
       ? {}
       : { runtimePath: options.runtimePath }),
+    ...(options.hotRuntimePath === undefined
+      ? {}
+      : { hotRuntimePath: options.hotRuntimePath }),
+    ...(options.routerPath === undefined
+      ? {}
+      : { routerPath: options.routerPath }),
+    ...(options.dataRuntimePath === undefined
+      ? {}
+      : { dataRuntimePath: options.dataRuntimePath }),
+    ...(options.transparentAsyncSources === undefined
+      ? {}
+      : { transparentAsyncSources: options.transparentAsyncSources }),
+    ...(options.externalReactiveSources === undefined
+      ? {}
+      : { externalReactiveSources: options.externalReactiveSources }),
     ...(hot ? { hot: true } : {}),
     ...(options.moduleStateCells === undefined
       ? {}
@@ -171,6 +247,7 @@ export async function compileGraph(
     let code = compiled.output[id]!;
     if (compiled.css?.[id]) {
       css.set(file, compiled.css[id]!);
+      styles.add(`${file}?memo-style.css`);
       code = `import ${JSON.stringify(`./${basename(file)}?memo-style.css`)};\n${code}`;
     }
     output.set(
@@ -186,9 +263,18 @@ export async function compileGraph(
           )
         : code,
     );
-    maps.set(file, compiled.maps[id]!);
+    const map = compiled.maps[id]!;
+    // Vite attaches this transform map to the absolute module id. Keeping the
+    // compiler's project-relative source (`./src/View.tsx`) makes Node resolve
+    // it relative to the module directory and produces duplicated stack paths
+    // such as `src/components/src/components/View.tsx` on Windows.
+    maps.set(file, {
+      ...map,
+      file,
+      sources: map.sources.map((source) => source === id ? file : source),
+    });
   }
-  return { files: new Set(sourceIds.keys()), output, maps, css };
+  return { files: new Set(sourceIds.keys()), output, maps, css, styles };
 }
 
 function appendHotBoundary(

@@ -1,4 +1,10 @@
-import type { BaseNode } from '../ast';
+import {
+  childNode,
+  childNodes,
+  identifierName,
+  nodeField as field,
+  type BaseNode,
+} from '../ast';
 
 export interface ComponentPropShape {
   mode: 'positional' | 'object';
@@ -6,34 +12,6 @@ export interface ComponentPropShape {
   acceptsUnknown: boolean;
   bindings: string[];
   hasWholeDefault: boolean;
-}
-
-function field(node: BaseNode, name: string): unknown {
-  return (node as unknown as Record<string, unknown>)[name];
-}
-
-function isNode(value: unknown): value is BaseNode {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  );
-}
-
-function childNode(node: BaseNode, name: string): BaseNode | null {
-  const value = field(node, name);
-  return isNode(value) ? value : null;
-}
-
-function childNodes(node: BaseNode, name: string): BaseNode[] {
-  const value = field(node, name);
-  return Array.isArray(value) ? value.filter(isNode) : [];
-}
-
-function identifierName(node: BaseNode | null): string | null {
-  if (node?.type !== 'Identifier') return null;
-  const name = field(node, 'name');
-  return typeof name === 'string' ? name : null;
 }
 
 function stringKey(node: BaseNode | null): string | null {

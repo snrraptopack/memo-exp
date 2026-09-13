@@ -159,8 +159,11 @@ Creation and update compute the value with the same expression and guard.
 
 ### R5 — Handlers emit the production form: body + commitWrites
 
-Event handlers compile to a direct closure: the user's body, then a routing
-call with a **hoisted static write-set** (analysis in §4).
+Event handlers compile to a direct closure with a **hoisted static write-set**
+(analysis in §4). Straight-line handlers use the form below. Return expressions
+are evaluated before routing, and early returns lower through a completion label
+so authored finalizers finish first. Exceptional exits keep the normal-exit-only
+R5 contract.
 
 ```tsx
 <button onClick={() => count++}>
@@ -637,13 +640,12 @@ A named function declaration directly inside a component is a legal event
 handler, equivalent to a component-local function expression. Resolution uses
 the compiler-owned lexical binding, never text-only lookup.
 
-Async named helpers have two completion boundaries without generated
-`try/finally`:
+Async named helpers have two completion boundaries:
 
 - the event call site refreshes immediately after invocation, reflecting
   synchronous pre-`await` writes such as `loading = true`;
-- the async helper commits on normal function completion, reflecting writes
-  performed after suspension.
+- the async helper commits on normal completion, reflecting writes performed
+  after suspension.
 
 For module helpers, both commits route the helper's canonical summarized write
 set. For instance helpers, both target the nearest owning entity. Rejection or
@@ -791,7 +793,7 @@ render phase, are deduplicated with the normal dirty set, and run at most once
 for the dependency changes already merged into that pending execution.
 
 Writes made by the direct effect callback use the ordinary local/shared routing,
-but their normal-exit commits are execution-aware. The compiler emits one
+but their normal-completion commits are execution-aware. The compiler emits one
 invocation-local boolean per syntactic write/call site, sets it without changing
 the expression's value when that site executes, and guards only that site's
 static commit:
@@ -806,7 +808,7 @@ A skipped branch emits no write commit. A conditional effect may therefore
 write one of its own dependencies and stabilize; each actual write schedules
 the next render/effect pass. An unconditional or otherwise genuine feedback
 loop still terminates with the normal 100-pass cascade error. Deferred nested
-callbacks retain the ordinary R5/R20 normal-exit behavior because they execute
+callbacks retain the ordinary R5/R20 normal-completion behavior because they execute
 at their own future invalidation boundary.
 
 Passing a reactive value as an argument to an unknown API in the direct effect
@@ -1833,7 +1835,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   packages/compiler/src/lifecycle.ts + packages/runtime/src/cleanup.ts,
   tests/r20-cleanup.test.ts):** direct factory timers,
   listeners, constructors, subscriptions, and visible local helpers receive
-  callback-owned normal-exit commits. `cleanup(disposer)` lowers with the
+  callback-owned normal-completion commits. `cleanup(disposer)` lowers with the
   hygienic entity id and runs on root or keyed-row subtree teardown.
   Module-initialization callbacks table-route canonical state writes.
 - **R19 (receiver-bounded write effects,

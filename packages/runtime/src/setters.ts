@@ -18,6 +18,8 @@
  *   - objects compare by identity -> new reference means "changed"
  */
 
+import { isHtmlBooleanAttribute } from './html-attributes';
+
 export type SlotCache = Record<string, unknown>;
 
 /** Text node data. null/undefined/booleans render as empty string (JSX semantics). */
@@ -72,7 +74,10 @@ export function setAttr(
   if ($[key] === value) return;
   $[key] = value;
   if (value == null || value === false) el.removeAttribute(name);
-  else if (value === true) el.setAttribute(name, '');
+  else if (value === true) {
+    const html = el.namespaceURI !== 'http://www.w3.org/2000/svg';
+    el.setAttribute(name, html && isHtmlBooleanAttribute(name) ? '' : 'true');
+  }
   else el.setAttribute(name, String(value));
 }
 

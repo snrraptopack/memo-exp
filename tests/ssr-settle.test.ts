@@ -25,7 +25,7 @@ const modules = {
       const user = $fetch('/api/user');
       return (
         <section>
-          <Group data={user}>
+          <Group>
             <Pending component={Skeleton} />
             <ErrorArm component={ErrorView} />
             <h1>{user.name}</h1>
@@ -33,11 +33,30 @@ const modules = {
         </section>
       );
     }
+
+    function TaskList({ tasks }) {
+      const open = tasks
+        .filter((task) => !task.done)
+        .sort((left, right) => left.id - right.id);
+      return <ul>{open.map(task => <li key={task.id}>{task.title}</li>)}</ul>;
+    }
+
+    export function PropCollectionApp() {
+      const tasks = $fetch('/api/tasks');
+      return (
+        <Group>
+          <Pending component={Skeleton} />
+          <ErrorArm component={ErrorView} />
+          <TaskList tasks={tasks} />
+        </Group>
+      );
+    }
   `,
 };
 
 interface CompiledApp {
   App(id: string, parent: null): Node;
+  PropCollectionApp(id: string, parent: null): Node;
 }
 
 mkdirSync(outDir, { recursive: true });
@@ -83,6 +102,26 @@ describe('SSR Settle Coordinator (RFC §16.5)', () => {
     });
 
     expect(html).toContain('Ada Lovelace');
+    expect(html).not.toContain('class="skeleton"');
+  });
+
+  it('settles collection derivations transported through component props', async () => {
+    const app = await importCompiled();
+    const fetch = mockFetch([
+      { id: 3, title: 'Closed', done: true },
+      { id: 2, title: 'Second', done: false },
+      { id: 1, title: 'First', done: false },
+    ]);
+
+    const html = await renderToStringAsync(app.PropCollectionApp, {
+      mode: 'resolve',
+      fetch,
+      markers: true,
+    });
+
+    expect(html).toContain('<li>First</li>');
+    expect(html).toContain('<li>Second</li>');
+    expect(html).not.toContain('Closed');
     expect(html).not.toContain('class="skeleton"');
   });
 });

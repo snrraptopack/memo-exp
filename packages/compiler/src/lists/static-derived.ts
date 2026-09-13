@@ -9,34 +9,17 @@
  * Because the value never changes, the rule applies at module scope as well
  * as component scope.
  */
-import type { BaseNode } from '../ast';
+import {
+  childNode,
+  childNodes,
+  nodeField as field,
+  type BaseNode,
+} from '../ast';
 import type { Ctx } from '../context';
 import {
   isStaticListExpression,
   transparentListExpression,
 } from './source-shapes';
-
-function field(node: BaseNode, name: string): unknown {
-  return (node as unknown as Record<string, unknown>)[name];
-}
-
-function isNode(value: unknown): value is BaseNode {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string'
-  );
-}
-
-function childNode(node: BaseNode, name: string): BaseNode | null {
-  const value = field(node, name);
-  return isNode(value) ? value : null;
-}
-
-function childNodes(node: BaseNode, name: string): BaseNode[] {
-  const value = field(node, name);
-  return Array.isArray(value) ? value.filter(isNode) : [];
-}
 
 /**
  * Find the initializer of a binding declared at module scope or in the

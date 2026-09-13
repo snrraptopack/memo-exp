@@ -23,11 +23,28 @@ import {
   normalizeFile,
 } from './paths';
 import { AdapterState } from './state';
+import { registerClientStyles } from './dev-assets';
+import {
+  generateServerFunctionRoutesModule,
+  isServerFunctionFile,
+  isServerFunctionImplementation,
+  resolvedServerFunctionsClientVirtualId,
+  resolvedServerFunctionsVirtualId,
+  type ServerFunctionBarrelEntry,
+  serverFunctionsClientVirtualId,
+  serverFunctionsVirtualId,
+  writeServerFunctionDeclarations,
+} from './server-functions';
 
 const sourceId = /(?:\.[jt]sx?|\.tsrx)(?:$|[?#])/;
+const statefulRuntimePackages = [
+  '@memoized-dom/runtime',
+  '@memoized-dom/data',
+  '@memoized-dom/router',
+];
 
 interface AdapterTransformContext extends GraphPluginContext {
-  environment: object;
+  environment: { name: string };
 }
 
 export function memoizedDom(
@@ -40,7 +57,25 @@ export function memoizedDom(
   // workspace example). Keyed by the requested source file.
   const lazyStates = new Map<object, Map<string, AdapterState>>();
   let config: ResolvedConfig | undefined;
+  let devServer: import('vite').ViteDevServer | undefined;
   let entries: readonly string[] = [];
+  let serverFunctionRoutesSource =
+    'export const serverFunctionManifest = [];\nexport const serverFunctionRoutes = [];\n';
+  let serverFunctionClientBarrelSource = '';
+  let serverFunctionBarrelEntries: readonly ServerFunctionBarrelEntry[] = [];
+
+  async function refreshServerFunctions(): Promise<readonly string[]> {
+    if (config === undefined) return [];
+    const generated = await generateServerFunctionRoutesModule(
+      config.root,
+      options,
+    );
+    serverFunctionRoutesSource = generated.source;
+    serverFunctionClientBarrelSource = generated.clientBarrelSource;
+    serverFunctionBarrelEntries = generated.clientBarrelEntries;
+    await writeServerFunctionDeclarations(config.root, generated.modules, options);
+    return generated.files;
+  }
 
   function stateFor(environment: object): AdapterState {
     let state = states.get(environment);
@@ -98,11 +133,16 @@ export function memoizedDom(
         options,
         overrides,
         config.command === 'serve',
+        true,
+        serverFunctionBarrelEntries,
       );
     }
     const compilation = state.compiling;
     try {
       state.replace(await compilation);
+      if (devServer !== undefined) {
+        registerClientStyles(devServer, state, state.styles);
+      }
     } finally {
       if (state.compiling === compilation) {
         state.compiling = undefined;
@@ -131,11 +171,15 @@ export function memoizedDom(
         overrides,
         config.command === 'serve',
         false,
+        serverFunctionBarrelEntries,
       );
     }
     const compilation = state.compiling;
     try {
       state.replace(await compilation);
+      if (devServer !== undefined) {
+        registerClientStyles(devServer, state, state.styles);
+      }
     } finally {
       if (state.compiling === compilation) {
         state.compiling = undefined;
@@ -194,10 +238,25 @@ export function memoizedDom(
     code: string,
     id: string,
   ): Promise<{ code: string; map: CompilerSourceMap } | null> {
-    if (config === undefined || !sourceId.test(id) || id.includes('?memo-style.css')) return null;
+    if (
+      config === undefined ||
+      !sourceId.test(id) ||
+      id.includes('?memo-style.css') ||
+      isServerFunctionImplementation(id)
+    ) return null;
     const file = cleanViteId(id);
     const state = stateFor(context.environment);
     const managed = entries.includes(file) || state.files.has(file);
+
+    // The SSR environment also loads the application's ordinary server
+    // entry and its implementation modules. Plain .ts/.js files outside the
+    // connected browser entry graph are server code, not UI compiler roots.
+    // JSX/TSRX files remain eligible for on-demand SSR compilation.
+    if (
+      context.environment.name === 'ssr' &&
+      !managed &&
+      /\.[jt]s$/.test(file)
+    ) return null;
 
     const cached = managed ? state.output.get(file) : undefined;
     if (cached !== undefined) {
@@ -244,11 +303,15 @@ export function memoizedDom(
         new Map([[file, code]]),
         config.command === 'serve',
         false,
+        serverFunctionBarrelEntries,
       );
     }
     const compilation = lazy.compiling;
     try {
       lazy.replace(await compilation);
+      if (devServer !== undefined) {
+        registerClientStyles(devServer, lazy, lazy.styles);
+      }
     } finally {
       if (lazy.compiling === compilation) {
         lazy.compiling = undefined;
@@ -262,6 +325,19 @@ export function memoizedDom(
   return {
     name: 'memoized-dom',
     enforce: 'pre',
+    config() {
+      // These packages intentionally share realm/runtime state across public
+      // subpath entries (`runtime` + `runtime/hydrate`, `data` +
+      // `data/internal`, and router internals). Prebundling deep imports as
+      // independent optimized entries duplicates that state and makes a
+      // registered root invisible to hydrate. Let Vite serve their emitted
+      // ESM chunks directly so every subpath converges on one module record.
+      return {
+        optimizeDeps: {
+          exclude: statefulRuntimePackages,
+        },
+      };
+    },
     perEnvironmentWatchChangeDuringDev: true,
     perEnvironmentStartEndDuringDev: true,
     applyToEnvironment(environment) {
@@ -271,13 +347,24 @@ export function memoizedDom(
       config = resolved;
       entries = entryFiles(resolved.root, options.entries);
     },
+    configureServer(server) {
+      devServer = server;
+    },
     async buildStart() {
+      for (const file of await refreshServerFunctions()) this.addWatchFile(file);
       await refreshGraph(
         this as AdapterTransformContext,
         stateFor(this.environment),
       );
     },
     resolveId(id, importer) {
+      if (id === serverFunctionsVirtualId) {
+        return resolvedServerFunctionsVirtualId;
+      }
+      if (id === serverFunctionsClientVirtualId) {
+        return resolvedServerFunctionsClientVirtualId;
+      }
+      if (isServerFunctionImplementation(id)) return id;
       if (id.includes('?memo-style.css')) {
         if (importer) {
           const queryIndex = id.indexOf('?');
@@ -295,6 +382,17 @@ export function memoizedDom(
       return null;
     },
     load(id) {
+      if (id === resolvedServerFunctionsVirtualId) {
+        if (this.environment.name === 'client') {
+          this.error(
+            'memoized-dom: virtual:memoized-dom/server-functions is server-only and cannot be imported by the client graph',
+          );
+        }
+        return { code: serverFunctionRoutesSource, map: { mappings: '' } };
+      }
+      if (id === resolvedServerFunctionsClientVirtualId) {
+        return { code: serverFunctionClientBarrelSource, map: { mappings: '' } };
+      }
       if (id.includes('?memo-style.css')) {
         const clean = normalizeFile(cleanViteId(id));
         const state = hotStateFor(this.environment, clean);
@@ -313,10 +411,37 @@ export function memoizedDom(
     },
     async hotUpdate(update) {
       const file = normalizeFile(update.file);
+      const serverFunctionChanged =
+        config !== undefined && isServerFunctionFile(config.root, file, options);
+      let virtualModule = serverFunctionChanged
+        ? this.environment.moduleGraph.getModuleById(
+            resolvedServerFunctionsVirtualId,
+          )
+        : undefined;
+      const clientBarrelModule = serverFunctionChanged
+        ? this.environment.moduleGraph.getModuleById(
+            resolvedServerFunctionsClientVirtualId,
+          )
+        : undefined;
+      if (serverFunctionChanged) {
+        await refreshServerFunctions();
+        for (const module of [virtualModule, clientBarrelModule]) {
+          if (module !== undefined) {
+            this.environment.moduleGraph.invalidateModule(
+              module,
+              new Set(),
+              update.timestamp,
+              true,
+            );
+          }
+        }
+      }
       const primary = states.get(this.environment);
       const isPrimary = primary?.files.has(file) === true;
       const state = hotStateFor(this.environment, file);
-      if (state === undefined) return;
+      if (state === undefined) {
+        return virtualModule === undefined ? undefined : [virtualModule];
+      }
       const previous = new Map(state.output);
       const previousCss = new Map(state.css);
       const overrides =
@@ -359,11 +484,15 @@ export function memoizedDom(
         changed.add(file);
         state.hotUpdateFailed = false;
       }
-      return invalidateManagedModules(
+      const modules = invalidateManagedModules(
         this.environment,
         changed,
         update.timestamp,
       );
+      if (virtualModule !== undefined && !modules.includes(virtualModule)) {
+        modules.push(virtualModule);
+      }
+      return modules;
     },
   };
 }

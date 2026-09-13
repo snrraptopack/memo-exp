@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoized DOM — Fullstack Demo</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+      li { margin: 0.4rem 0; }
+      button { margin-left: 0.5rem; }
+      .status { color: #0a7d33; }
+      .hint { color: #555; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <!-- The server streams its rendered HTML into #root for client hydration. -->
+    <div id="root"><!--ssr-outlet--></div>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

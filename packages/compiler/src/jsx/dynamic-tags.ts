@@ -5,9 +5,14 @@ import * as astFactory from '../ast/factory';
 import { lexicalBindingKey } from '../analysis/type-candidates';
 import {
   analyzeScope,
+  childNode,
+  childNodes,
   cloneNode as cloneAstNode,
+  identifierLikeName as identifierName,
   isValidIdentifier as isValidEstreeIdentifier,
+  nodeFields as fields,
   replaceNode,
+  stringValue,
   walkAst,
   type BaseNode,
   type Binding,
@@ -20,6 +25,7 @@ import {
   memberRootName,
   nodeHasJsx,
   refreshAstAnalysis,
+  type ComponentPath,
   type Ctx,
 } from '../context';
 import type { ComponentPropsPlan } from '../components/props';
@@ -31,45 +37,6 @@ interface DynamicTagCandidate {
 
 interface ProgramContainer {
   node: t.Program;
-}
-
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
-
-function childNodes(parent: BaseNode, key: string): BaseNode[] {
-  const value = fields(parent)[key];
-  return Array.isArray(value)
-    ? value.map(node).filter((item) => item !== null)
-    : [];
-}
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier' && value?.type !== 'JSXIdentifier') {
-    return null;
-  }
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
-}
-
-function stringValue(value: BaseNode | null): string | null {
-  if (value?.type !== 'StringLiteral' && value?.type !== 'Literal') return null;
-  const literal = fields(value).value;
-  return typeof literal === 'string' ? literal : null;
 }
 
 function cloneNode<TNode>(value: TNode): TNode {

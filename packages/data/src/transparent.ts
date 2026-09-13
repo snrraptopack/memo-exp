@@ -1,8 +1,10 @@
 import { RequestError } from './errors';
 import {
   disposeFetchResource,
+  fetchResourceOperationId,
   fetchResourceSnapshot,
   rebindFetchResource,
+  rebindFetchResourceFrom,
   subscribeFetchResource,
 } from './resource';
 import type {
@@ -76,10 +78,86 @@ function source<T>(value: ResolvedValue<T> | ModuleSourceRef): FetchResource<T> 
   return resolveTarget(value);
 }
 
+const trackedValues = new WeakMap<object, TrackedValue<unknown>>();
+
+function observeTrackedOutcome<T>(
+  resource: FetchResource<T>,
+  outcome: 'success' | 'error',
+  callback: (value: T | RequestError, requestId: string) => void,
+): () => void {
+  const requestId = fetchResourceOperationId(resource);
+  let active = true;
+  let unsubscribe: () => void = () => {};
+  const stop = (): void => {
+    if (!active) return;
+    active = false;
+    unsubscribe();
+  };
+  const listener = (snapshot: ResourceSnapshot<T>): void => {
+    if (!active) return;
+    if (fetchResourceOperationId(resource) !== requestId) {
+      stop();
+      return;
+    }
+    if (
+      outcome === 'success' &&
+      snapshot.status === 'success' &&
+      !snapshot.pending &&
+      !snapshot.refreshing &&
+      snapshot.error === null
+    ) {
+      active = false;
+      callback(snapshot.data as T, requestId);
+      unsubscribe();
+      return;
+    }
+    if (
+      outcome === 'error' &&
+      !snapshot.pending &&
+      !snapshot.refreshing &&
+      snapshot.error !== null
+    ) {
+      active = false;
+      callback(snapshot.error, requestId);
+      unsubscribe();
+    }
+  };
+  unsubscribe = subscribeFetchResource(resource, listener);
+  if (!active) unsubscribe();
+  return stop;
+}
+
 export function trackResolvedValue<T>(
   value: ResolvedValue<T> | ModuleSourceRef,
 ): TrackedValue<T> {
-  return source(value) as unknown as TrackedValue<T>;
+  const resource = source(value);
+  const existing = trackedValues.get(resource);
+  if (existing !== undefined) return existing as TrackedValue<T>;
+  const tracked: TrackedValue<T> = Object.freeze({
+    get id() { return fetchResourceOperationId(resource); },
+    get status() { return resource.status; },
+    get pending() { return resource.pending; },
+    get refreshing() { return resource.refreshing; },
+    get error() { return resource.error; },
+    onSuccess(callback: (data: T, requestId: string) => void) {
+      return observeTrackedOutcome(
+        resource,
+        'success',
+        (value, requestId) => callback(value as T, requestId),
+      );
+    },
+    onError(callback: (error: RequestError, requestId: string) => void) {
+      return observeTrackedOutcome(
+        resource,
+        'error',
+        (value, requestId) => callback(value as RequestError, requestId),
+      );
+    },
+    refresh: () => resource.refresh(),
+    abort: () => resource.abort(),
+  });
+  trackedValues.set(resource, tracked as TrackedValue<unknown>);
+  return tracked;
 }
 
 /** Compiler hook: update the request behind a stable transparent binding. */
@@ -89,6 +167,21 @@ export function rebindResolvedValue<T>(
   options: import('./types').FetchOptions = {},
 ): void {
   rebindFetchResource(source(value), target, options);
+}
+
+/**
+ * Compiler hook for imported colorless factories. The factory remains the
+ * authority on how authored arguments become a request; its newly-created
+ * source is transferred into the stable binding used by rendered sites.
+ */
+export function rebindResolvedValueFromFactory<T>(
+  value: ResolvedValue<T> | ModuleSourceRef,
+  factory: () => ResolvedValue<T>,
+): void {
+  if (isModuleSourceRef(value)) {
+    throw new TypeError('Module source references cannot adopt a local source');
+  }
+  rebindFetchResourceFrom(source(value), source(factory()));
 }
 
 /** Resolve an honest payload for an imperative/derived read. */
@@ -111,8 +204,9 @@ export function readResolvedValue<T>(
  * Pending/Error policy over this primitive.
  */
 export function readResolvedValueForRender<T>(
-  value: ResolvedValue<T>,
+  value: ResolvedValue<T> | null | undefined,
 ): T | undefined {
+  if (value === null || value === undefined) return undefined;
   const snapshot = fetchResourceSnapshot(source(value));
   if (snapshot.status === 'success') return snapshot.data as T;
   if (snapshot.status === 'error' && snapshot.error !== null) {
@@ -123,11 +217,16 @@ export function readResolvedValueForRender<T>(
 
 /** Execute a render/derivation expression only when every input is honest. */
 export function readResolvedValuesForRender<TResult>(
-  values: readonly ResolvedValue<unknown>[],
+  values: readonly (
+    | ResolvedValue<unknown>
+    | null
+    | undefined
+  )[],
   compute: (...resolved: unknown[]) => TResult,
 ): TResult | undefined {
   const resolved: unknown[] = [];
   for (const value of values) {
+    if (value === null || value === undefined) return undefined;
     const snapshot = fetchResourceSnapshot(source(value));
     if (snapshot.status === 'error' && snapshot.error !== null) {
       throw snapshot.error;
@@ -136,6 +235,18 @@ export function readResolvedValuesForRender<TResult>(
     resolved.push(snapshot.data);
   }
   return compute(...resolved);
+}
+
+/** Run a compiled effect only after every event-created source has settled. */
+export function runResolvedValuesEffect<TResult>(
+  values: readonly (
+    | ResolvedValue<unknown>
+    | null
+    | undefined
+  )[],
+  run: (...resolved: unknown[]) => TResult,
+): TResult | undefined {
+  return readResolvedValuesForRender(values, run);
 }
 
 /**
@@ -216,6 +327,18 @@ export function resolvedValueSnapshot<T>(
   return fetchResourceSnapshot(source(value));
 }
 
+/**
+ * Compiler hook: publish an authored in-place payload mutation to every
+ * structural consumer of this source. The mutation itself has already run;
+ * ResourceController.mutate supplies the ordering/notification boundary and
+ * prevents an older in-flight read from overwriting the local write.
+ */
+export function notifyResolvedValueMutation<T>(
+  value: ResolvedValue<T> | ModuleSourceRef,
+): void {
+  source(value).mutate(() => {});
+}
+
 /** Subscribe to transitions without delivering the notifier's initial value. */
 export function observeResolvedValue<T>(
   value: ResolvedValue<T> | ModuleSourceRef,
@@ -268,6 +391,81 @@ export function ownResolvedValue<T>(
   // Module sources are disposed with their ApplicationRuntime.
   if (isModuleSourceRef(value)) return () => {};
   return () => disposeFetchResource(source(value));
+}
+
+/** Per-instance slot holding whichever source an event-assigned variable currently references. */
+export interface EventSourceSlot {
+  value: unknown;
+  disconnect?: () => void;
+  retired: Set<RetiredEventSource>;
+}
+
+interface RetiredEventSource {
+  readonly value: ResolvedValue<unknown>;
+  disconnect: () => void;
+}
+
+/** Create the slot state for one event-assigned colorless source variable. */
+export function createEventSourceSlot(): EventSourceSlot {
+  return { value: null, disconnect: undefined, retired: new Set() };
+}
+
+function retireEventSource(
+  slot: EventSourceSlot,
+  value: ResolvedValue<unknown>,
+): void {
+  const resource = source(value);
+  const snapshot = fetchResourceSnapshot(resource);
+  if (!snapshot.pending && !snapshot.refreshing) {
+    disposeFetchResource(resource);
+    return;
+  }
+  const retired: RetiredEventSource = {
+    value,
+    disconnect: () => {},
+  };
+  slot.retired.add(retired);
+  retired.disconnect = subscribeFetchResource(resource, settled => {
+    if (settled.pending || settled.refreshing) return;
+    retired.disconnect();
+    slot.retired.delete(retired);
+    disposeFetchResource(resource);
+  });
+}
+
+/**
+ * Keep one compiler entity subscribed to the request state of whichever
+ * source the slot currently holds. Event-created sources do not exist when
+ * the component mounts, so the compiler re-runs this on every entity update:
+ * identity comparison makes it a no-op until a new source is assigned, and a
+ * replaced source is disposed with the slot taking over disposal authority.
+ */
+export function rebindEventSourceSlot(
+  slot: EventSourceSlot,
+  get: () => ResolvedValue<unknown> | null | undefined,
+  invalidate: () => void,
+): void {
+  const value = get();
+  if (value === slot.value) return;
+  slot.disconnect?.();
+  if (slot.value !== null && slot.value !== undefined) {
+    retireEventSource(slot, slot.value as ResolvedValue<unknown>);
+  }
+  slot.value = value;
+  slot.disconnect =
+    value === null || value === undefined
+      ? undefined
+      : connectResolvedValue(value, invalidate, false);
+}
+
+/** Detach one slot while allowing already-dispatched work to settle honestly. */
+export function disposeEventSourceSlot(slot: EventSourceSlot): void {
+  slot.disconnect?.();
+  slot.disconnect = undefined;
+  if (slot.value !== null && slot.value !== undefined) {
+    retireEventSource(slot, slot.value as ResolvedValue<unknown>);
+  }
+  slot.value = null;
 }
 
 export function isInitialDataFailure(error: unknown): error is RequestError {

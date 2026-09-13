@@ -75,6 +75,49 @@ Timings are machine-local medians, not universal framework rankings. This
 suite does not claim to reproduce every production concern such as network
 latency, hydration, accessibility behavior, or user think time.
 
+## Production smoothness
+
+The smoothness runner uses the same validated production applications but
+measures rendering quality rather than only operation completion:
+
+```sh
+cd bench/frameworks
+bun run run:smoothness
+```
+
+It dispatches trusted Chromium clicks for narrow triage and broad bulk-update
+interactions, reporting event-to-frame p50/p75/p95 latency and Event Timing
+duration when Chromium exposes it. It then drives broad 1,000-ticket updates
+on consecutive animation frames and reports the calibrated frame budget,
+frame-time p50/p95/p99, estimated dropped frames, long tasks, DOM mutation
+records, retained heap, and Chromium script/style/layout/task durations.
+
+Results are written to `smoothness-latest.json`. They are machine-local: use
+the same hardware, Chrome build, power mode, and headless/headed configuration
+for regression comparisons. `BENCH_SMOOTHNESS_FRAMEWORKS`,
+`BENCH_SMOOTHNESS_COUNT`, `BENCH_SMOOTHNESS_SAMPLES`, and
+`BENCH_SMOOTHNESS_FRAMES` control the run without changing source.
+`BENCH_SMOOTHNESS_OUTPUT` writes an isolated run to a different file so the
+checked-in baseline does not need to be replaced during comparisons.
+
+“Good frames” are intervals no greater than 1.5 times the idle refresh period
+measured immediately before the trace. “Dropped frames” estimate missed
+refresh opportunities from each observed interval. The sustained workload is
+intentionally severe: it changes 100 visible rows on every frame for 180
+frames. These values describe that stress profile, not every application.
+
+First Chrome 152 baseline on 2026-09-02, 1,000 tickets:
+
+| Adapter | Good frames | Frame p95 | Estimated drops | Triage p95 | Bulk p95 | Long tasks |
+|---|---:|---:|---:|---:|---:|---:|
+| Vanilla DOM | 0.0% | 133.1 ms | 656 | 24.1 ms | 85.0 ms | 179 |
+| memoized-dom | 40.0% | 49.6 ms | 123 | 19.8 ms | 29.1 ms | 5 |
+| Solid | 0.0% | 100.0 ms | 505 | 26.1 ms | 53.9 ms | 127 |
+| Svelte | 0.0% | 66.8 ms | 408 | 50.5 ms | 61.9 ms | 124 |
+| Vue | 0.6% | 66.8 ms | 387 | 44.0 ms | 60.9 ms | 86 |
+| Preact | 5.6% | 67.2 ms | 256 | 27.9 ms | 37.0 ms | 24 |
+| React | 6.7% | 50.1 ms | 208 | 23.3 ms | 33.8 ms | 7 |
+
 ## First Baseline
 
 Median milliseconds for 1,000 tickets on 2026-07-30 in Chrome 150; lower is

@@ -2,7 +2,7 @@
  * Exercises the Vite 8 adapter through Rolldown build and dev transforms.
  */
 import { join, resolve } from 'node:path';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -11,11 +11,17 @@ import {
   type ViteDevServer,
 } from 'vite';
 import memoizedDom, { memoizedDomFullstack } from '../src';
+import { createServerRouter } from '../../server/src/http-router';
 
 const fixture = resolve(import.meta.dirname, 'fixtures/vite-app');
 const source = resolve(fixture, 'src');
 const runtime = resolve(import.meta.dirname, '../../runtime/src/index.ts');
 const runtimeHot = resolve(import.meta.dirname, '../../runtime/src/hot.ts');
+const runtimeServer = resolve(import.meta.dirname, '../../runtime/src/server.ts');
+const data = resolve(import.meta.dirname, '../../data/src/index.ts');
+const dataInternal = resolve(import.meta.dirname, '../../data/src/internal.ts');
+const serverRouter = resolve(import.meta.dirname, '../../server/src/http-router.ts');
+const serverIndex = resolve(import.meta.dirname, '../../server/src/index.ts');
 let server: ViteDevServer | undefined;
 let temporaryFixture: string | undefined;
 
@@ -43,6 +49,21 @@ async function copyFixture(): Promise<string> {
 }
 
 describe('Vite 8 adapter', () => {
+  it('keeps stateful package subpaths in one browser module graph', async () => {
+    server = await createServer({
+      root: fixture,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: plugins(),
+    });
+
+    expect(server.config.optimizeDeps.exclude).toEqual(expect.arrayContaining([
+      '@memoized-dom/runtime',
+      '@memoized-dom/data',
+      '@memoized-dom/router',
+    ]));
+  });
+
   it('builds an aliased connected graph through Rolldown', async () => {
     const result = await build({
       root: fixture,
@@ -140,6 +161,148 @@ describe('Vite 8 adapter', () => {
     expect(code).not.toContain('color: red');
   });
 
+  it('isolates server implementations, lowers client facades, and mounts real middleware routes', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    const functions = resolve(root, 'server/functions');
+    await mkdir(functions, { recursive: true });
+    await writeFile(resolve(functions, '_middleware.ts'), `
+      export const middleware = [async (_context, next) => {
+        const response = await next();
+        response.headers.set('x-directory', 'yes');
+        return response;
+      }];
+    `);
+    await writeFile(resolve(functions, 'stories.ts'), `
+      import { readFile } from 'node:fs/promises';
+      const SERVER_SECRET = 'must-not-enter-client';
+      export const middleware = [async (_context, next) => {
+        const response = await next();
+        response.headers.set('x-module', SERVER_SECRET);
+        return response;
+      }];
+      export async function getStory(id: number) {
+        if (false) await readFile('secret');
+        return { id, title: 'Story ' + id };
+      }
+      export async function postVote(id: number) {
+        return { id, votes: 1 };
+      }
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import { getStory, postVote } from '#server-functions';
+      export function App() {
+        const story = getStory(7);
+        return <main>
+          <h1>{story.title}</h1>
+          <button onClick={() => postVote(story.id)}>Vote</button>
+        </main>;
+      }
+    `);
+
+    const aliases = {
+      '@': temporarySource,
+      '@memoized-dom/runtime/hot': runtimeHot,
+      '@memoized-dom/runtime': runtime,
+      '@memoized-dom/data/internal': dataInternal,
+      '@memoized-dom/data': data,
+      '@memoized-dom/server/router': serverRouter,
+    };
+    const result = await build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: aliases },
+      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    });
+    const builds = Array.isArray(result) ? result : [result];
+    const code = builds
+      .flatMap(item => item.output)
+      .flatMap(output => output.type === 'chunk' ? [output.code] : [])
+      .join('\n');
+
+    expect(code).toContain('/_fn/stories/getStory');
+    expect(code).toContain('/_fn/stories/postVote');
+    expect(code).toContain('readResolvedValuesForRender');
+    expect(code).not.toContain('must-not-enter-client');
+    expect(code).not.toContain('node:fs/promises');
+
+    const declarations = resolve(root, '.memoized', 'server-functions.d.ts');
+    const declarationSource = await readFile(declarations, 'utf8');
+    expect(declarationSource).toContain(
+      'import type { ResolvedValue } from "@memoized-dom/data"',
+    );
+    expect(declarationSource).toContain(
+      'import type * as __mmd_impl_0 from "../server/functions/stories.js"',
+    );
+    expect(declarationSource).toContain(
+      'export declare function getStory(...args: Parameters<typeof __mmd_impl_0.getStory>): ResolvedValue<Awaited<ReturnType<typeof __mmd_impl_0.getStory>>>;',
+    );
+
+    server = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: aliases },
+      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      server: { middlewareMode: true },
+    });
+    const generated = await server.ssrLoadModule(
+      'virtual:memoized-dom/server-functions',
+    ) as { serverFunctionRoutes: Parameters<typeof createServerRouter>[0]['routes'] };
+    const router = createServerRouter({ routes: generated.serverFunctionRoutes });
+    const response = await router.fetch(new Request(
+      'https://app.test/_fn/stories/getStory?id=9',
+    ));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-directory')).toBe('yes');
+    expect(response.headers.get('x-module')).toBe('must-not-enter-client');
+    await expect(response.json()).resolves.toEqual({ id: 9, title: 'Story 9' });
+  }, 30_000);
+
+  it('rejects direct UI imports from server-function implementation files', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    const functions = resolve(root, 'server/functions');
+    await mkdir(functions, { recursive: true });
+    await writeFile(resolve(functions, 'stories.ts'), `
+      export async function getStories() { return []; }
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import { getStories } from '../server/functions/stories';
+      export function App() {
+        const stories = getStories();
+        return <main>{stories.length}</main>;
+      }
+    `);
+
+    await expect(build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@': temporarySource,
+          '@memoized-dom/runtime': runtime,
+          '@memoized-dom/data/internal': dataInternal,
+          '@memoized-dom/data': data,
+        },
+      },
+      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    })).rejects.toThrow(/\[MMD-S003\].*#server-functions/s);
+  }, 30_000);
+
   it('lowers module state into request-owned cells when opted in', async () => {
     const result = await build({
       root: fixture,
@@ -200,7 +363,10 @@ describe('Vite 8 adapter', () => {
     expect(main?.code).not.toContain('import.meta.hot.accept(');
     expect(app?.code).toContain('function App(_id');
     expect(app?.map).not.toBeNull();
-    expect(app?.map?.sources.some((id) => id.endsWith('/src/App.tsx'))).toBe(true);
+    // Vite normalizes the absolute compiler source against map.file. The
+    // resulting basename resolves once against the transformed module path;
+    // project-relative `./src/App.tsx` would duplicate the directory.
+    expect(app?.map?.sources).toEqual(['App.tsx']);
     expect(app?.map?.sourcesContent?.some((content) => content?.includes('function App()'))).toBe(true);
     expect(app?.code).toContain('Label(_id');
     expect(label?.code).toContain('function Label(_id');
@@ -365,10 +531,119 @@ describe('Vite 8 adapter', () => {
     await expect(health.json()).resolves.toEqual({ ok: true });
 
     const document = await fetch(`http://127.0.0.1:${address.port}/`);
-    expect(document.headers.get('content-type')).toContain('text/html');
-    await expect(document.text()).resolves.toBe(
-      '<!doctype html><h1>Fullstack</h1>',
-    );
+    const documentText = await document.text();
+    expect(document.status, documentText).toBe(200);
+    expect(document.headers.get('content-type'), documentText)
+      .toContain('text/html');
+    expect(documentText).toBe('<!doctype html><h1>Fullstack</h1>');
   });
+
+  it('auto-installs generated server functions into defineServer during development', async () => {
+    const root = await copyFixture();
+    const functions = resolve(root, 'server/functions');
+    await mkdir(functions, { recursive: true });
+    await writeFile(resolve(functions, 'stories.ts'), `
+      export async function getStory(id: number) {
+        return { id, title: 'Story ' + id };
+      }
+    `);
+    await writeFile(resolve(root, 'src/server.ts'), `
+      import { defineServer } from '@memoized-dom/server';
+      export default defineServer({
+        routes: { '/health': () => ({ ok: true }) },
+      });
+    `);
+
+    server = await createServer({
+      root,
+      configFile: false,
+      appType: 'custom',
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@memoized-dom/server/router': serverRouter,
+          '@memoized-dom/server': serverIndex,
+          '@memoized-dom/runtime/server': runtimeServer,
+          '@memoized-dom/runtime': runtime,
+          '@memoized-dom/data/internal': dataInternal,
+          '@memoized-dom/data': data,
+        },
+      },
+      plugins: [
+        memoizedDom({ entries: 'src/main.ts' }),
+        memoizedDomFullstack({ entry: 'src/server.ts' }),
+      ],
+      server: { host: '127.0.0.1', port: 0 },
+    });
+    await server.listen();
+    const address = server.httpServer?.address();
+    if (address === null || address === undefined || typeof address === 'string') {
+      throw new Error('Expected Vite TCP server address');
+    }
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/_fn/stories/getStory?id=11`,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: 11,
+      title: 'Story 11',
+    });
+  }, 30_000);
+
+  it('leaves ordinary server implementation modules outside UI compilation', async () => {
+    const root = await copyFixture();
+    const serverDirectory = resolve(root, 'server');
+    await mkdir(serverDirectory, { recursive: true });
+    await writeFile(resolve(serverDirectory, 'db.ts'), `
+      let client: { url: string } | null = null;
+      const store = (() => {
+        client = { url: 'memory://local' };
+        return client;
+      })();
+      export const databaseUrl = store.url;
+    `);
+    await writeFile(resolve(root, 'src/server.ts'), `
+      import { defineServer } from '@memoized-dom/server';
+      import { databaseUrl } from '../server/db';
+      export default defineServer({
+        routes: { '/health': () => ({ ok: true, databaseUrl }) },
+      });
+    `);
+
+    server = await createServer({
+      root,
+      configFile: false,
+      appType: 'custom',
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@memoized-dom/server/router': serverRouter,
+          '@memoized-dom/server': serverIndex,
+          '@memoized-dom/runtime/server': runtimeServer,
+          '@memoized-dom/runtime': runtime,
+          '@memoized-dom/data/internal': dataInternal,
+          '@memoized-dom/data': data,
+        },
+      },
+      plugins: [
+        memoizedDom({ entries: 'src/main.ts' }),
+        memoizedDomFullstack({ entry: 'src/server.ts' }),
+      ],
+      server: { host: '127.0.0.1', port: 0 },
+    });
+    await server.listen();
+    const address = server.httpServer?.address();
+    if (address === null || address === undefined || typeof address === 'string') {
+      throw new Error('Expected Vite TCP server address');
+    }
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      databaseUrl: 'memory://local',
+    });
+  }, 30_000);
 
 });

@@ -4,18 +4,10 @@ import {
   renderStylesheets,
 } from '@tsrx/core';
 import { cloneNode } from '../builders';
+import { isNode, nodeFields as fields } from '../access';
 import { ESTREE_VISITOR_KEYS } from '../walk';
 import type { BaseNode } from '../types';
 import { TsrxLoweringError } from './lower';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function isNode(value: unknown): value is BaseNode {
-  return value !== null && typeof value === 'object' &&
-    typeof (value as { type?: unknown }).type === 'string';
-}
 
 function isFunction(node: BaseNode): boolean {
   return node.type === 'FunctionDeclaration' ||

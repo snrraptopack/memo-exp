@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { compile } from '@memoized-dom/compiler';
+import { compile, compileModules } from '@memoized-dom/compiler';
 import {
   unregister,
   setScheduler,
@@ -49,6 +49,25 @@ describe('M5.4 - mutable const roots, code generation', () => {
     );
     expect(code).toContain('.createListRegion(');
     expect(code).toMatch(/_region\d*\.reconcile\(items\)/);
+  });
+
+  it('keeps a const object mutable when its initializer calls a linked helper', () => {
+    const output = compileModules({
+      './model.ts': `
+        export function createState() { return { count: 0 }; }
+      `,
+      './app.tsx': `
+        import { createState } from './model';
+        const store = { state: createState() };
+        export function App() {
+          return <button onClick={() => { store.state = createState(); }}>
+            {store.state.count}
+          </button>;
+        }
+      `,
+    });
+
+    expect(output['./app.tsx']).toContain('.commitWrites(');
   });
 
   it('rebinding a mutable const root is a compile error, not a runtime TypeError', () => {

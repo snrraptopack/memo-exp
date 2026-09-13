@@ -68,8 +68,11 @@ const browser = measure(
   browserAssets('bench/package-size/dist/assets'),
 );
 
-const MAX_BROWSER_RAW = 28_000;
-const MAX_BROWSER_GZIP = 9_500;
+// Accepted list-performance spend: source-scoped structural commits and the
+// topology fast paths add under 1 kB raw to the previous measured graph. Keep
+// the ceiling narrow so a later compensation pass remains measurable.
+const MAX_BROWSER_RAW = 29_000;
+const MAX_BROWSER_GZIP = 10_000;
 if (browser.raw > MAX_BROWSER_RAW || browser.gzip > MAX_BROWSER_GZIP) {
   throw new Error(
     `todo browser bundle exceeds its budget: ${browser.raw} B raw / ${browser.gzip} B gzip ` +

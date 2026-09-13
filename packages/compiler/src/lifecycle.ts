@@ -9,10 +9,15 @@
 
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
-import { walkAst, type BaseNode } from './ast';
+import {
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  walkAst,
+  type BaseNode,
+} from './ast';
 import {
   astBindingAt,
   nodeHasJsx,
+  type ComponentPath,
   type Ctx,
   type RowCtx,
 } from './context';
@@ -24,23 +29,10 @@ import {
 } from './handlers';
 import { md } from './identifiers';
 
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
-
 interface ProgramContainer {
   node: t.Program;
   buildCodeFrameError(message: string): Error;
 }
-
-const FUNCTION_NODES = new Set([
-  'ArrowFunctionExpression',
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
 
 function declarationIntroduces(
   declaration: t.VariableDeclaration,
@@ -179,6 +171,17 @@ export function transformComponentLifecycle(
   const derivedBindings = ctx.instanceDerivedBindings.get(compName) ?? new Set();
   walkAst<BaseNode>(compPath.node.body, {
     enter(node) {
+      if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+        // JSX is synchronous render input, not component-setup lifecycle.
+        // Structural expressions, native handlers, and component callback
+        // props are each lowered by their dedicated emitters. Walking into
+        // the tree here can mistake a read-only callback in a compiler-
+        // expanded condition/list (for example `items.filter(...)`) for a
+        // retained setup callback and publish a false mutation on every
+        // render. Keep this boundary syntax-driven: no event or method-name
+        // allowlist is involved.
+        return false;
+      }
       if (
         node.type === 'VariableDeclaration' &&
         declarationIntroduces(
@@ -320,14 +323,49 @@ export function transformProgramCallbacks(
 }
 
 /**
- * Async module helpers own their normal-completion commit because callers
- * cannot represent writes that occur after the returned promise suspends.
- * Event call sites may additionally commit the summary immediately to expose
- * synchronous pre-await writes.
+ * Instrument work that escapes a module helper's synchronous call.
+ *
+ * Async helpers own their normal-completion commit because callers cannot
+ * represent writes after an `await`. Synchronous helpers remain caller-
+ * committed, but function arguments created in their direct body can be
+ * retained by any API and must publish their own later writes. This is based
+ * on callback syntax and lexical ownership, never an API-name allowlist.
  */
-export function transformSharedAsyncHelpers(ctx: Ctx): void {
+export function transformSharedHelperCallbacks(
+  ctx: Ctx,
+  programPath: ProgramContainer,
+): void {
   for (const helper of ctx.helpers.values()) {
-    if (helper.node.async) instrumentSharedCallback(ctx, helper.node);
+    if (helper.node.async) {
+      instrumentSharedCallback(ctx, helper.node);
+      continue;
+    }
+
+    let functionDepth = 0;
+    walkAst<BaseNode>(helper.node.body, {
+      enter(node) {
+        if (FUNCTION_NODES.has(node.type)) {
+          functionDepth++;
+          return;
+        }
+        if (node.type === 'CallExpression' && functionDepth === 0) {
+          const call = node as unknown as t.CallExpression;
+          for (const argument of call.arguments) {
+            instrumentSharedArgument(ctx, programPath, argument);
+          }
+          return;
+        }
+        if (node.type === 'NewExpression' && functionDepth === 0) {
+          const call = node as unknown as t.NewExpression;
+          for (const argument of call.arguments) {
+            instrumentSharedArgument(ctx, programPath, argument);
+          }
+        }
+      },
+      leave(node) {
+        if (FUNCTION_NODES.has(node.type)) functionDepth--;
+      },
+    });
   }
 }
 

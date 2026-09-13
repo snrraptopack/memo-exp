@@ -12,10 +12,13 @@ import {
   abortReason,
   decodeResponse,
   fetchIdentity,
+  normalizeFetchMethod,
+  prepareRequestBody,
   resolveRequestURL,
 } from './request';
 import type {
   FetchCache,
+  FetchMethod,
   FetchOptions,
   FetchResource,
   OptimisticChange,
@@ -29,11 +32,20 @@ import type {
 
 interface FetchDescriptor {
   readonly url: string;
+  readonly method: FetchMethod;
   readonly headers: HeadersInit | undefined;
+  readonly body: BodyInit | undefined;
+  readonly bodyIdentity: string;
   readonly identity: string;
   readonly cache: FetchCache;
   readonly schema: StandardSchemaV1 | undefined;
   readonly signal: AbortSignal | undefined;
+}
+
+let nextRequestId = 1;
+
+function createRequestId(): string {
+  return `request-${nextRequestId++}`;
 }
 
 export interface FetchEnvironment {
@@ -61,8 +73,12 @@ function publicSnapshot<T>(snapshot: MutableSnapshot<T>): ResourceSnapshot<T> {
   return Object.freeze({ ...snapshot });
 }
 
-function normalizedCache(cache: FetchCache | undefined): FetchCache {
-  return cache ?? 'active';
+function normalizedCache(
+  cache: FetchCache | undefined,
+  method: FetchMethod,
+): FetchCache {
+  if (cache !== undefined) return cache;
+  return method === 'GET' ? 'active' : false;
 }
 
 function equalCache(left: FetchCache, right: FetchCache): boolean {
@@ -89,7 +105,9 @@ function equalDescriptor(
 ): boolean {
   return left.identity === right.identity &&
     left.url === right.url &&
+    left.method === right.method &&
     equalHeaders(left.headers, right.headers) &&
+    left.bodyIdentity === right.bodyIdentity &&
     equalCache(left.cache, right.cache) &&
     left.schema === right.schema &&
     left.signal === right.signal;
@@ -129,6 +147,15 @@ class FetchEntry {
 
   private cancelRequest(reason?: unknown): void {
     if (this.controller === null && this.request === null) return;
+    // A response may notify consumers from its terminal `then` immediately
+    // before the promise finalizer clears these handles. Releasing the final
+    // consumer in that window must not turn a completed request into an
+    // apparent browser-side cancellation.
+    if (!this.snapshot.pending && !this.snapshot.refreshing) {
+      this.controller = null;
+      this.request = null;
+      return;
+    }
     this.generation++;
     this.controller?.abort(reason);
     this.controller = null;
@@ -193,8 +220,9 @@ class FetchEntry {
 
     const request = abortable(
       () => this.store.environment.fetch()(this.descriptor.url, {
-          method: 'GET',
+          method: this.descriptor.method,
           headers: this.descriptor.headers,
+          body: this.descriptor.body,
           signal: controller.signal,
         }),
       controller.signal,
@@ -288,7 +316,7 @@ function serializeEntry(entry: FetchEntry): SerializedSourceRecord | undefined {
   return {
     sourceId: entry.descriptor.identity,
     contractId: `mmd-fetch/v1:${entry.descriptor.schema ? 'validated' : 'raw'}`,
-    requestFingerprint: entry.descriptor.url,
+    requestFingerprint: entry.descriptor.identity,
     snapshot: serialized,
   };
 }
@@ -389,14 +417,15 @@ export class FetchStore {
       ) {
         const keyUrl = keyParts[1] ?? '';
         const identityUrl = identityParts[1] ?? '';
-        const normKey =
-          keyUrl.startsWith('http://') || keyUrl.startsWith('https://')
-            ? new URL(keyUrl).pathname
-            : keyUrl;
-        const normId =
-          identityUrl.startsWith('http://') || identityUrl.startsWith('https://')
-            ? new URL(identityUrl).pathname
-            : identityUrl;
+        const normalizeCrossEnvironmentUrl = (value: string): string => {
+          if (!value.startsWith('http://') && !value.startsWith('https://')) {
+            return value;
+          }
+          const parsed = new URL(value);
+          return `${parsed.pathname}${parsed.search}`;
+        };
+        const normKey = normalizeCrossEnvironmentUrl(keyUrl);
+        const normId = normalizeCrossEnvironmentUrl(identityUrl);
         if (normKey === normId) {
           this.restoreRecords.delete(key);
           return candidate;
@@ -499,6 +528,7 @@ class ResourceController<T> {
   disposed = false;
   private removeSignalListener: (() => void) | null = null;
   readonly notifier = new SnapshotNotifier(() => publicSnapshot(this.snapshot));
+  operationId = createRequestId();
 
   constructor(
     readonly store: FetchStore,
@@ -548,6 +578,8 @@ class ResourceController<T> {
       equalDescriptor(this.descriptor, descriptor);
     if (unchanged) return;
 
+    this.operationId = createRequestId();
+
     const replaceSharedIdentity =
       !paused &&
       this.descriptor.identity === descriptor.identity &&
@@ -566,6 +598,64 @@ class ResourceController<T> {
       return;
     }
     this.attach(false, replaceSharedIdentity);
+  }
+
+  /**
+   * Move a freshly-created source behind this stable public resource. Imported
+   * colorless factories own their argument-to-request mapping, so compiler
+   * replay adopts their result instead of interpreting those arguments as a
+   * raw fetch URL and options tuple.
+   */
+  adopt(candidate: ResourceController<T>): void {
+    if (candidate === this) return;
+    if (this.disposed || candidate.disposed) {
+      throw new Error('Cannot rebind a disposed fetch resource');
+    }
+    if (candidate.store !== this.store) {
+      candidate.dispose();
+      throw new TypeError('Cannot rebind fetch resources from different data runtimes');
+    }
+
+    const unchanged =
+      this.paused === candidate.paused &&
+      equalDescriptor(this.descriptor, candidate.descriptor);
+    if (unchanged) {
+      candidate.dispose();
+      return;
+    }
+
+    this.operationId = candidate.operationId;
+
+    const previous = this.entry;
+    if (previous !== null) {
+      this.entry = null;
+      previous.remove(this as ResourceController<unknown>);
+    }
+    this.descriptor = candidate.descriptor;
+    this.paused = candidate.paused;
+    this.snapshot = idleSnapshot();
+
+    if (!this.bindSignal(this.descriptor.signal) || this.paused) {
+      candidate.dispose();
+      this.notify();
+      return;
+    }
+
+    const next = candidate.entry;
+    if (next === null) {
+      candidate.dispose();
+      this.notify();
+      return;
+    }
+
+    // Attach the stable consumer before removing the temporary one. This is
+    // essential for cache:false requests: dropping the last consumer aborts
+    // the in-flight request.
+    this.entry = next;
+    next.add(this as ResourceController<unknown>);
+    next.remove(candidate as ResourceController<unknown>);
+    candidate.entry = null;
+    candidate.dispose();
   }
 
   receive(entry: FetchEntry, snapshot: MutableSnapshot<unknown>): void {
@@ -598,7 +688,12 @@ class ResourceController<T> {
     }
     const signal = this.descriptor.signal;
     if (signal?.aborted) return Promise.reject(abortReason(signal));
-    if (this.entry === null) this.attach(true);
+    if (this.entry === null) {
+      this.operationId = createRequestId();
+      this.attach(true);
+    } else if (this.entry.request === null) {
+      this.operationId = createRequestId();
+    }
     const request = this.entry!.start(true) as Promise<T>;
     return signal === undefined
       ? request
@@ -853,13 +948,20 @@ function fetchDescriptor(
   target: string | URL | null,
   options: FetchOptions & { readonly validate?: StandardSchemaV1 },
 ): { descriptor: FetchDescriptor; paused: boolean } {
+  const method = normalizeFetchMethod(options.method);
   if (target === null) {
     return {
       descriptor: {
         url: '',
+        method,
         headers: options.headers,
+        body: undefined,
+        bodyIdentity: 'none',
         identity: 'paused',
-        cache: normalizedCache(options.cache),
+        cache: normalizedCache(
+          options.cache,
+          method,
+        ),
         schema: options.validate,
         signal: options.signal,
       },
@@ -867,13 +969,27 @@ function fetchDescriptor(
     };
   }
 
+  if ((method === 'GET' || method === 'HEAD') && options.body !== undefined) {
+    throw new TypeError(`$fetch ${method} requests cannot include a body`);
+  }
   const url = resolveRequestURL(target, options.query, environment.baseURL);
   const headers = new Headers(options.headers);
+  const preparedBody = prepareRequestBody(options.body, headers);
   const descriptor: FetchDescriptor = {
     url,
+    method,
     headers,
-    identity: fetchIdentity(url, headers, options.key, options.validate),
-    cache: normalizedCache(options.cache),
+    body: preparedBody.body,
+    bodyIdentity: preparedBody.identity,
+    identity: fetchIdentity(
+      url,
+      method,
+      headers,
+      preparedBody.identity,
+      options.key,
+      options.validate,
+    ),
+    cache: normalizedCache(options.cache, method),
     schema: options.validate,
     signal: options.signal,
   };
@@ -951,10 +1067,25 @@ export function rebindFetchResource<T>(
   controller.rebind(next.descriptor, next.paused);
 }
 
+/** Adopt the active request created by another resource into a stable holder. */
+export function rebindFetchResourceFrom<T>(
+  resource: FetchResource<T>,
+  candidate: FetchResource<T>,
+): void {
+  resourceController(resource).adopt(resourceController(candidate));
+}
+
 export function fetchResourceSnapshot<T>(
   resource: FetchResource<T>,
 ): ResourceSnapshot<T> {
   return publicSnapshot(resourceController(resource).snapshot);
+}
+
+/** Identity of the current execution behind one hidden fetch resource. */
+export function fetchResourceOperationId<T>(
+  resource: FetchResource<T>,
+): string {
+  return resourceController(resource).operationId;
 }
 
 export function createFetchEnvironment(

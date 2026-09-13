@@ -9,6 +9,7 @@
 
 import { markDirtySubtree } from './kernel';
 import { classValue, setClassValue, setStyleValue } from './dom-values';
+import { isHtmlBooleanAttribute } from './html-attributes';
 
 interface EventRecord {
   source: EventListener;
@@ -233,7 +234,10 @@ function setScalarDomValue(
   if (value == null || value === false) {
     element.removeAttribute(attrName);
   } else if (value === true) {
-    element.setAttribute(attrName, '');
+    element.setAttribute(
+      attrName,
+      html && isHtmlBooleanAttribute(attrName) ? '' : 'true',
+    );
   } else if (!html && name === 'xlinkHref') {
     element.setAttributeNS(
       'http://www.w3.org/1999/xlink',

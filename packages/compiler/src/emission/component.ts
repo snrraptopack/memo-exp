@@ -12,6 +12,7 @@ import { cloneNode as cloneEstreeNode } from '../ast';
 import { isLightweightListedComponent } from '../analysis';
 import {
   keyPathOf,
+  type ComponentPath,
   type Ctx,
   type EffectSite,
   type LinkedComponentRowUse,
@@ -23,6 +24,7 @@ import {
   generatedIdentifier,
   md,
   mdHot,
+  mdd,
   requireIdentifiers,
 } from '../identifiers';
 import { transformComponentLifecycle } from '../lifecycle';
@@ -56,9 +58,6 @@ import { applyRepeatedDomTemplate } from './dom-template';
 import { transparentSourceMounts } from '../data-sources';
 
 type ComponentEmitScope = ReturnType<typeof newEmitScope>;
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
 
 function hasComponentLocalEffects(effects: readonly EffectSite[] | undefined): boolean {
   return effects?.some(
@@ -68,6 +67,32 @@ function hasComponentLocalEffects(effects: readonly EffectSite[] | undefined): b
       site.conditionLocalReads.size > 0 ||
       site.conditionLocalDerivationReads.size > 0,
   ) === true;
+}
+
+function externalSourceBinding(ctx: Ctx, source: string): string | null {
+  const root = source.split('.')[0]!;
+  return ctx.externalReactiveBindings.has(root) ? root : null;
+}
+
+function componentExternalSources(ctx: Ctx, component: string): string[] {
+  if (ctx.externalReactiveBindings.size === 0) return [];
+  const sources = new Set<string>();
+  const note = (source: string): void => {
+    const binding = externalSourceBinding(ctx, source);
+    if (binding !== null) sources.add(binding);
+  };
+  for (const source of ctx.compReads.get(component) ?? []) note(source);
+  for (const derivation of ctx.instanceDerivations.get(component) ?? []) {
+    for (const source of derivation.sources) note(source);
+  }
+  for (const control of ctx.instanceControlFlow.get(component) ?? []) {
+    for (const source of control.sources) note(source);
+  }
+  for (const site of ctx.effects.get(component) ?? []) {
+    for (const source of site.moduleReads) note(source);
+    for (const source of site.conditionModuleReads) note(source);
+  }
+  return [...sources].sort();
 }
 
 function buildComponentRowContext(
@@ -249,10 +274,12 @@ export function transformComponent(
   const localDerivations = ctx.instanceDerivations.get(name);
   const controlFlow = ctx.instanceControlFlow.get(name);
   const effects = ctx.effects.get(name);
+  const externalSources = componentExternalSources(ctx, name);
   const hasLocalEffects = hasComponentLocalEffects(effects);
   if (
     ctx.selectiveDerivationComponents.has(name) ||
     ctx.targetedListComponents.has(name) ||
+    ctx.listComponents.has(name) ||
     hasLocalEffects
   ) {
     scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
@@ -372,6 +399,52 @@ export function transformComponent(
     );
   }
 
+  const eventSourceDisposals: t.Statement[] = [];
+  const eventSources = ctx.eventSourceSlots.get(name);
+  if (eventSources !== undefined) {
+    for (const sourceName of eventSources) {
+      const slotId = generatedIdentifier(ctx, `${sourceName}EventSourceSlot`).name;
+      scope.prelude.push(
+        astFactory.variableDeclaration('const', [
+          astFactory.variableDeclarator(
+            astFactory.identifier(slotId),
+            astFactory.callExpression(mdd(ctx, 'createEventSourceSlot'), []),
+          ),
+        ]),
+      );
+      scope.updaters.unshift(() =>
+        astFactory.expressionStatement(
+          astFactory.callExpression(mdd(ctx, 'rebindEventSourceSlot'), [
+            astFactory.identifier(slotId),
+            astFactory.arrowFunctionExpression(
+              [],
+              astFactory.identifier(sourceName),
+            ),
+            astFactory.arrowFunctionExpression(
+              [],
+              astFactory.callExpression(md(ctx, 'markDirty'), [
+                astFactory.identifier(factoryId),
+              ]),
+            ),
+          ]),
+        ),
+      );
+      eventSourceDisposals.push(
+        astFactory.expressionStatement(
+          astFactory.callExpression(md(ctx, 'cleanup'), [
+            astFactory.identifier(factoryId),
+            astFactory.arrowFunctionExpression(
+              [],
+              astFactory.callExpression(mdd(ctx, 'disposeEventSourceSlot'), [
+                astFactory.identifier(slotId),
+              ]),
+            ),
+          ]),
+        ),
+      );
+    }
+  }
+
   const body: t.Statement[] = [cacheDecl(scope), ...scope.prelude];
   if (propSlotCount > 0 && !lightweight) {
     const declaration = buildPropDeclaration(
@@ -414,7 +487,27 @@ export function transformComponent(
   body.push(...scope.creation, ...scope.mounts);
   body.push(
     ...transparentSourceMounts(ctx, name, astFactory.identifier(factoryId)),
+    ...eventSourceDisposals,
   );
+  for (const source of externalSources) {
+    const subscribe = ctx.externalReactiveBindings.get(source)!;
+    body.push(
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'cleanup'), [
+          astFactory.identifier(factoryId),
+          astFactory.callExpression(astFactory.identifier(subscribe), [
+            astFactory.identifier(source),
+            astFactory.arrowFunctionExpression(
+              [],
+              astFactory.callExpression(md(ctx, 'markDirty'), [
+                astFactory.identifier(factoryId),
+              ]),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
   if (effects !== undefined) {
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));
   }

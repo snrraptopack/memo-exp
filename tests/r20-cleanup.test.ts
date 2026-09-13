@@ -30,6 +30,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
+const sharedTimerFixture = './fixtures/out/r20-shared-timer.compiled.ts';
 
 const SOURCES: Record<string, string> = {
   'r20-timer': `
@@ -86,6 +87,23 @@ const SOURCES: Record<string, string> = {
       </main>;
     }
   `,
+  'r20-shared-timer': `
+    const toasts = [{ id: 'initial' }];
+    function dismissToast(id) {
+      const index = toasts.findIndex((toast) => toast.id === id);
+      if (index !== -1) toasts.splice(index, 1);
+    }
+    function addToast(id) {
+      toasts.push({ id });
+      setTimeout(() => dismissToast(id), 5);
+    }
+    export function App() {
+      return <main>
+        <button onClick={() => addToast('later')}>add</button>
+        <output id="toast-count">{toasts.length}</output>
+      </main>;
+    }
+  `,
 };
 
 const IMPORTS: Record<string, () => Promise<any>> = {
@@ -94,6 +112,8 @@ const IMPORTS: Record<string, () => Promise<any>> = {
     import('./fixtures/out/r20-subscription.compiled.ts'),
   'r20-listener': () => import('./fixtures/out/r20-listener.compiled.ts'),
   'r20-rows': () => import('./fixtures/out/r20-rows.compiled.ts'),
+  'r20-shared-timer': () =>
+    import(/* @vite-ignore */ sharedTimerFixture),
 };
 
 function importCompiled(name: string): Promise<any> {
@@ -176,6 +196,17 @@ describe('R20 - cleanup compiler contract', () => {
     );
     expect(interval).toMatch(/timer\+\+[\s\S]*\.commitWrites\(_WRITES_\d*\)/);
     expect(interval).not.toMatch(/\.markDirty\(_id\d*\)/);
+  });
+
+  it('commits a retained callback created by a synchronous module helper', () => {
+    const code = compile(SOURCES['r20-shared-timer']!);
+    const timer = code.slice(
+      code.indexOf('setTimeout'),
+      code.indexOf(', 5)'),
+    );
+    expect(timer).toMatch(
+      /dismissToast\(id\)[\s\S]*\.commitWrites\(_WRITES_\d*\)/,
+    );
   });
 
   it('leaves JSX-producing list callbacks to row/event emission', () => {
@@ -299,5 +330,18 @@ describe('R20 - compiled lifecycle execution', () => {
 
     expect(has('App/rows/Row[n:2]')).toBe(false);
     expect(mod.disposed).toBe(1);
+  });
+
+  it('publishes a toast removal retained by a module helper timer', async () => {
+    const mod = await importCompiled('r20-shared-timer');
+    document.body.appendChild(mod.App('App', null));
+    const output = document.querySelector('#toast-count')!;
+
+    expect(output.textContent).toBe('1');
+    document.querySelector('button')!.click();
+    expect(output.textContent).toBe('2');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(output.textContent).toBe('1');
   });
 });

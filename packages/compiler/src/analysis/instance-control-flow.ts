@@ -1,28 +1,19 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { walkAst, type BaseNode, type Binding } from '../ast';
-import { astBindingAt, type Ctx } from '../context';
+import {
+  childNode,
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  nodeFields as fields,
+  walkAst,
+  type BaseNode,
+  type Binding,
+} from '../ast';
+import {
+  astBindingAt,
+  variableDeclaratorFor,
+  type Ctx,
+} from '../context';
 import type { ControlFlowDerivation } from '../components/props';
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function childNode(node: BaseNode, key: string): BaseNode | null {
-  const value = fields(node)[key];
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-const FUNCTION_NODES = new Set([
-  'FunctionDeclaration',
-  'FunctionExpression',
-  'ArrowFunctionExpression',
-  'ObjectMethod',
-  'ClassMethod',
-  'ClassPrivateMethod',
-]);
 
 const IMPURE_REPLAY_NODES = new Set([
   ...FUNCTION_NODES,
@@ -181,15 +172,6 @@ function nodeBelongsTo(
     current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
   }
   return false;
-}
-
-function variableDeclaratorFor(ctx: Ctx, binding: Binding): BaseNode | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') return current;
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
 }
 
 function identifierIsRead(ctx: Ctx, identifier: BaseNode): boolean {

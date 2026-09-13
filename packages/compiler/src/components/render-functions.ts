@@ -4,8 +4,13 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   ESTREE_VISITOR_KEYS,
+  asNode as node,
+  childNode,
+  childNodes,
   cloneNode as cloneAstNode,
   extractPatternIdentifiers,
+  identifierName,
+  nodeFields as fields,
   removeNode,
   replaceNode,
   walkAst,
@@ -17,6 +22,7 @@ import {
   astBindingAt,
   nodeHasJsx,
   refreshAstAnalysis,
+  type ComponentPath,
   type Ctx,
 } from '../context';
 
@@ -25,40 +31,9 @@ type RenderFunction =
   | t.FunctionExpression
   | t.ArrowFunctionExpression;
 
-type ComponentPath = Ctx['compPaths'] extends Map<string, infer TPath>
-  ? TPath
-  : never;
-
 interface ResolvedRenderFunction {
   node: RenderFunction;
   bindingNode: BaseNode | null;
-}
-
-function fields(node: BaseNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
-}
-
-function node(value: unknown): BaseNode | null {
-  return value !== null && typeof value === 'object' && 'type' in value
-    ? (value as BaseNode)
-    : null;
-}
-
-function childNode(parent: BaseNode, key: string): BaseNode | null {
-  return node(fields(parent)[key]);
-}
-
-function childNodes(parent: BaseNode, key: string): BaseNode[] {
-  const value = fields(parent)[key];
-  return Array.isArray(value)
-    ? value.map(node).filter((item) => item !== null)
-    : [];
-}
-
-function identifierName(value: BaseNode | null): string | null {
-  if (value?.type !== 'Identifier') return null;
-  const name = fields(value).name;
-  return typeof name === 'string' ? name : null;
 }
 
 function cloneNode<TNode>(value: TNode): TNode {

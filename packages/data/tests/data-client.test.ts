@@ -93,6 +93,154 @@ describe('$fetch', () => {
     );
   });
 
+  it('sends method-aware JSON bodies through the colorless resource path', async () => {
+    const calls: RequestInit[] = [];
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return json({ votes: 43 });
+    });
+    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const input = { id: 1 };
+
+    const vote = client.$fetch<{ votes: number }>('/api/vote', {
+      method: 'POST',
+      body: input,
+    });
+    input.id = 2;
+
+    await settled(vote);
+    expect(vote.data).toEqual({ votes: 43 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.method).toBe('POST');
+    expect(calls[0]?.body).toBe('{"id":1}');
+    expect(new Headers(calls[0]?.headers).get('content-type'))
+      .toBe('application/json');
+  });
+
+  it('does not cache non-GET requests unless caching is explicit', async () => {
+    const fetcher = vi.fn(async () => json({ ok: true }));
+    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+
+    const first = client.$fetch('/api/vote', {
+      method: 'POST',
+      body: { id: 1 },
+    });
+    const second = client.$fetch('/api/vote', {
+      method: 'POST',
+      body: { id: 1 },
+    });
+    await settled(first);
+    await settled(second);
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses method and body in explicitly cached request identity', async () => {
+    const fetcher = vi.fn(async () => json({ ok: true }));
+    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const cache = { scope: 'app' as const };
+
+    const first = client.$fetch('/api/value', {
+      method: 'POST',
+      body: { id: 1 },
+      cache,
+    });
+    const shared = client.$fetch('/api/value', {
+      method: 'POST',
+      body: { id: 1 },
+      cache,
+    });
+    const otherBody = client.$fetch('/api/value', {
+      method: 'POST',
+      body: { id: 2 },
+      cache,
+    });
+    const otherMethod = client.$fetch('/api/value', {
+      method: 'PUT',
+      body: { id: 1 },
+      cache,
+    });
+    await Promise.all([
+      settled(first),
+      settled(shared),
+      settled(otherBody),
+      settled(otherMethod),
+    ]);
+
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not let an explicit key erase non-GET body identity', async () => {
+    const fetcher = vi.fn(async () => json({ ok: true }));
+    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const options = {
+      method: 'POST' as const,
+      key: 'vote',
+      cache: { scope: 'app' as const },
+    };
+
+    const first = client.$fetch('/api/vote', {
+      ...options,
+      body: { id: 1 },
+    });
+    const shared = client.$fetch('/api/vote', {
+      ...options,
+      body: { id: 1 },
+    });
+    const other = client.$fetch('/api/vote', {
+      ...options,
+      body: { id: 2 },
+    });
+    await Promise.all([settled(first), settled(shared), settled(other)]);
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps large body fingerprints bounded in serialized state', async () => {
+    const fetcher = vi.fn(async () => json({ ok: true }));
+    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const largeValue = 'x'.repeat(1024 * 1024);
+    const request = client.$fetch('/api/upload', {
+      method: 'POST',
+      body: { largeValue },
+    });
+
+    await settled(request);
+    const [record] = client.serializeState().sources;
+
+    expect(record?.sourceId.length).toBeLessThan(256);
+    expect(record?.requestFingerprint.length).toBeLessThan(256);
+    expect(record?.requestFingerprint).not.toContain(largeValue.slice(0, 100));
+  });
+
+  it('does not cache HEAD or OPTIONS requests by default', async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+
+    const requests = [
+      client.$fetch('/api/status', { method: 'HEAD' }),
+      client.$fetch('/api/status', { method: 'HEAD' }),
+      client.$fetch('/api/status', { method: 'OPTIONS' }),
+      client.$fetch('/api/status', { method: 'OPTIONS' }),
+    ];
+    await Promise.all(requests.map(settled));
+
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it('rejects bodies on GET and HEAD requests', () => {
+    const client = createDataRuntime({
+      fetch: (async () => json({ ok: true })) as typeof fetch,
+    });
+
+    expect(() => client.$fetch('/api/read', { body: { id: 1 } }))
+      .toThrow('$fetch GET requests cannot include a body');
+    expect(() => client.$fetch('/api/read', {
+      method: 'HEAD',
+      body: { id: 1 },
+    })).toThrow('$fetch HEAD requests cannot include a body');
+  });
+
   it('retains application cache after the last active resource is disposed', async () => {
     const fetcher = vi.fn(async () => json(['Ada']));
     const client = createDataRuntime({ fetch: fetcher as typeof fetch });
