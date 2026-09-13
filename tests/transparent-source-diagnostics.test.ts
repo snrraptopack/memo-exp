@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { diagnose, diagnoseModules } from '@memoized-dom/compiler';
+import { compile, diagnose, diagnoseModules } from '@memoized-dom/compiler';
 
 describe('colorless source diagnostics', () => {
   it.each([
-    ['object declaration', 'const { name } = $fetch("/user");'],
-    ['array declaration', 'const [first] = $fetch("/users");'],
     [
       'assignment',
       'let name; ({ name } = $fetch("/user"));',
@@ -13,10 +11,7 @@ describe('colorless source diagnostics', () => {
       'parameter default',
       'function read({ name } = $fetch("/user")) { return name; } read();',
     ],
-    [
-      'source alias',
-      'const source = $fetch("/user"); const alias = source; const { name } = alias;',
-    ],
+    ['object rest', 'const { name, ...rest } = $fetch("/user");'],
   ])('rejects %s at its authored pattern', (_label, declaration) => {
     const source = [
       'import { $fetch } from "@memoized-dom/data";',
@@ -38,10 +33,35 @@ describe('colorless source diagnostics', () => {
       severity: 'error',
     });
     expect(diagnostic?.message).toContain('[MMD-S004]');
-    expect(diagnostic?.message).toContain('cannot be destructured');
+    expect(diagnostic?.message).toMatch(
+      /cannot be destructured|cannot be kept reactive/,
+    );
   });
 
-  it('rejects a linked imported colorless module source', () => {
+  it('lowers function-local source destructuring to live member derivations', () => {
+    const code = compile(`
+      import { $fetch } from '@memoized-dom/data';
+      function App() {
+        const source = $fetch('/user');
+        const alias = source;
+        const {
+          name: displayName,
+          address: { city },
+          tags: [firstTag, ...otherTags],
+          missing = 'fallback',
+        } = alias;
+        return <main>{displayName}:{city}:{firstTag}:{otherTags.length}:{missing}</main>;
+      }
+    `);
+
+    expect(code).not.toContain('const {');
+    expect(code).toMatch(/_sourceValue\d*\.name/);
+    expect(code).toMatch(/_sourceValue\d*\.address\.city/);
+    expect(code).toMatch(/_sourceValue\d*\.tags\[0\]/);
+    expect(code).toMatch(/_sourceValue\d*\.tags\.slice\(1\)/);
+  });
+
+  it('supports a linked imported colorless module source', () => {
     const diagnostics = diagnoseModules({
       './data.ts': `
         import { $fetch } from '@memoized-dom/data';
@@ -56,12 +76,25 @@ describe('colorless source diagnostics', () => {
       `,
     });
 
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('rejects direct source destructuring in a non-component helper', () => {
+    const diagnostics = diagnose(`
+      import { $fetch } from '@memoized-dom/data';
+      function readUser() {
+        const source = $fetch('/user');
+        const { name } = source;
+        return name;
+      }
+      function App() {
+        return <button onClick={readUser}>Read</button>;
+      }
+    `);
+
     expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]).toMatchObject({
-      moduleId: './App.tsx',
-      line: 4,
-    });
     expect(diagnostics[0]?.message).toContain('[MMD-S004]');
+    expect(diagnostics[0]?.message).toContain('cannot be destructured');
   });
 
   it('allows destructuring a settled plain item inside a list callback', () => {

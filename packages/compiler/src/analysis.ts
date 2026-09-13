@@ -47,6 +47,7 @@ import { analyzeComponent } from './analysis/component-validation';
 import { scanRefProps } from './components/ref-props';
 import { generatedIdentifier } from './identifiers';
 import {
+  normalizeTransparentSourceDestructuring,
   registerTransparentSourceRoots,
   scanTransparentSourceBindings,
 } from './data-sources';
@@ -73,6 +74,7 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  normalizeTransparentSourceDestructuring(ctx, programPath);
   scanTransparentSourceBindings(ctx);
   scanRefProps(ctx);
   scanRenderCallbacks(ctx);

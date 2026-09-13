@@ -1,6 +1,6 @@
 /** Public compiler-pass surface for the transparent data-source feature. */
 export {
-  rejectTransparentSourceDestructuring,
+  normalizeTransparentSourceDestructuring,
   scanTransparentSourceImports,
 } from './discovery';
 export {
