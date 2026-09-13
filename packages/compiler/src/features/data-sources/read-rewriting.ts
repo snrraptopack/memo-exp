@@ -97,6 +97,12 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
     const tracks = ctx.transparentTrackBindings.get(component) ?? new Map();
     const derived = new Map<string, TransparentDerivation>();
     for (const derivation of ctx.instanceDerivations.get(component) ?? []) {
+      // `$track(source)` returns a stable request-state facade whose getters
+      // and methods must be usable before the source's first payload commits.
+      // Treating that declaration as a payload derivation initializes it to
+      // `undefined` and makes controls such as `track.refresh()` crash while
+      // the request is pending.
+      if (derivation.bindings.some(binding => tracks.has(binding))) continue;
       let sources = derivation.sources.filter((source) => names.has(source));
       // Roots that resolve to imported module-scope sources extend the
       // dependency set even though they are not component-local holders.

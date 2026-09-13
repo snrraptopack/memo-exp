@@ -15,6 +15,7 @@ import {
   rebindResolvedValueFromFactory,
   readResolvedValue,
   readResolvedValueForRender,
+  retryResolvedValues,
 } from '../src/internal';
 
 interface User {
@@ -30,6 +31,44 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe('transparent resolved values', () => {
+  it('retries all failed values represented by a shared boundary', async () => {
+    const requests: Array<{
+      url: string;
+      resolve(response: Response): void;
+    }> = [];
+    const runtime = createDataRuntime({
+      fetch: ((input: string | URL | Request) =>
+        new Promise<Response>(resolve => {
+          requests.push({ url: String(input), resolve });
+        })) as typeof fetch,
+    });
+    const leftResource = runtime.$fetch<User>('/left');
+    const rightResource = runtime.$fetch<User>('/right');
+    const left = leftResource as unknown as ResolvedValue<User>;
+    const right = rightResource as unknown as ResolvedValue<User>;
+
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    requests[0]!.resolve(json({ message: 'left failed' }, 501));
+    requests[1]!.resolve(json({ message: 'right failed' }, 502));
+    await vi.waitFor(() => {
+      expect($track(left).error?.status).toBe(501);
+      expect($track(right).error?.status).toBe(502);
+    });
+
+    const retry = retryResolvedValues([left, right]);
+    await vi.waitFor(() => expect(requests).toHaveLength(4));
+    expect(requests[2]!.url).toBe('/left');
+    expect(requests[3]!.url).toBe('/right');
+    requests[2]!.resolve(json({ id: 1, name: 'Left' }));
+    requests[3]!.resolve(json({ id: 2, name: 'Right' }));
+
+    await expect(retry).resolves.toEqual([
+      { id: 1, name: 'Left' },
+      { id: 2, name: 'Right' },
+    ]);
+    runtime.clear();
+  });
+
   it('tracks non-GET fetches through the same colorless state channel', async () => {
     let finish!: (response: Response) => void;
     let requestInit: RequestInit | undefined;

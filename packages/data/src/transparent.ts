@@ -310,15 +310,17 @@ export function throwResolvedValuesError(
   throw new UnresolvedDataReadError();
 }
 
-/** Retry the failed prerequisite selected for one local error site. */
+/** Retry every failed prerequisite represented by one local error site. */
 export function retryResolvedValues(
   values: readonly ResolvedValue<unknown>[],
 ): Promise<unknown> {
+  const retries: Promise<unknown>[] = [];
   for (const value of values) {
     const snapshot = fetchResourceSnapshot(source(value));
-    if (snapshot.error !== null) return source(value).refresh();
+    if (snapshot.error !== null) retries.push(source(value).refresh());
   }
-  return Promise.resolve();
+  if (retries.length === 0) return Promise.resolve();
+  return Promise.all(retries);
 }
 
 export function resolvedValueSnapshot<T>(
