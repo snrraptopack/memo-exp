@@ -53,6 +53,29 @@ export type HandlerFn =
   | t.FunctionExpression
   | t.FunctionDeclaration;
 
+/** Does a root write site have a path on which it may not execute? */
+function hasConditionalRootExecution(target: HandlerFn): boolean {
+  let conditional = false;
+  walkNodes(target.body, (node) => {
+    if (node !== target.body && astFactory.isFunction(node)) return false;
+    if (
+      node.type === 'IfStatement' ||
+      node.type === 'SwitchStatement' ||
+      node.type === 'ConditionalExpression' ||
+      node.type === 'LogicalExpression' ||
+      node.type === 'ForStatement' ||
+      node.type === 'ForInStatement' ||
+      node.type === 'ForOfStatement' ||
+      node.type === 'WhileStatement' ||
+      node.type === 'DoWhileStatement'
+    ) {
+      conditional = true;
+      return false;
+    }
+  });
+  return conditional;
+}
+
 /** Resolve a component-local helper declared directly in the factory body. */
 export function resolveLocalHelper(
   ctx: Ctx,
@@ -159,7 +182,15 @@ function instrumentReachableLocalHelpers(
     // does not exist there. Row-relative item writes from helpers therefore
     // cannot be row-routed; analyzing without the row context keeps the
     // emitted commits sound (instance/module writes are unaffected).
-    analyzeHandler(ctx, helper, compName, rowCtx?.refreshVar !== undefined ? rowCtx : undefined, false);
+    analyzeHandler(
+      ctx,
+      helper,
+      compName,
+      rowCtx?.refreshVar !== undefined ? rowCtx : undefined,
+      false,
+      undefined,
+      hasConditionalRootExecution(helper),
+    );
   }
 }
 
@@ -290,15 +321,19 @@ export function buildHandler(
     // commit identifiers are never valid inside it — analyze it without the
     // row context even when the reference site is a row.
     const nameResolved = astFactory.isIdentifier(value) && !forceTable && rowCtx?.refreshVar === undefined;
+    const directEventBoundary =
+      !forceTable &&
+      !target.async &&
+      (!astFactory.isIdentifier(value) || target.params.length > 0) &&
+      !committedLocalDelegation;
     analyzeHandler(
       ctx,
       target,
       forceTable ? null : compName,
       nameResolved ? undefined : rowCtx,
-      !forceTable &&
-        !astFactory.isIdentifier(value) &&
-        !committedLocalDelegation,
+      directEventBoundary,
       eventOriginId,
+      !forceTable && hasConditionalRootExecution(target),
     );
   }
   if (forceTable) {

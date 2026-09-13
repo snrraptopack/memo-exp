@@ -91,6 +91,7 @@ export function emitConditionalRegion(
           false,
           scope.usedConds,
           transparentSources,
+          scope.reasonVar !== null,
         )
       : astFactory.nullLiteral(),
   );
@@ -143,7 +144,9 @@ export function emitConditionalRegion(
             astFactory.identifier(regionVariable),
             astFactory.identifier('update'),
           ),
-          [],
+          scope.reasonVar === null
+            ? []
+            : [astFactory.identifier(scope.reasonVar)],
         ),
       ),
     );
@@ -165,8 +168,12 @@ export function buildConditionalBranchCreate(
   allowConditions = false,
   usedConditions?: { count: number },
   coveredTransparentSources: readonly string[] = [],
+  forwardReasons = false,
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx, true);
+  if (forwardReasons) {
+    branchScope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
+  }
   for (const source of coveredTransparentSources) {
     branchScope.coveredTransparentSources.add(source);
   }

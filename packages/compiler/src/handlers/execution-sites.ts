@@ -75,7 +75,7 @@ export function finalizeHandlerInstrumentation(
     const commit =
       executionAwareRoot && fn === root
         ? guardedRootSites.length === 0
-          ? null
+          ? buildScopeCommit(ctx, writes, compName, rowCtx)
           : astFactory.blockStatement(
               guardedRootSites.map((site) =>
                 astFactory.ifStatement(

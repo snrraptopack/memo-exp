@@ -193,6 +193,7 @@ function registerKeyedListMutationPlan(
   ctx.keyedListMutations.set(call, plan);
   ctx.targetedListComponents.add(component);
   addInstanceReasons(ctx, component, [
+    ...(ctx.instanceState.get(component) ?? []),
     source,
     plan.targetedReason,
     plan.structuralReason,
@@ -228,6 +229,27 @@ export function collectReads(ctx: Ctx): void {
       sources.add(site.sourceKey);
     }
 
+    function registerTargetedListPlan(
+      call: t.CallExpression | t.OptionalCallExpression,
+      site: ReturnType<typeof analyzeMapSite>,
+    ): void {
+      registerKeyedListMutationPlan(ctx, name, call, site);
+      const targeted = findTargetedListDependencies(
+        site,
+        ctx.instanceState.get(name) ?? new Set(),
+      );
+      if (targeted.length === 0 || !astFactory.isIdentifier(site.sourceExpr)) {
+        return;
+      }
+      const source = site.sourceExpr.name;
+      ctx.targetedListDependencies.set(
+        call,
+        targeted.map((value) => ({ source, value })),
+      );
+      ctx.targetedListComponents.add(name);
+      addInstanceReasons(ctx, name, [source, ...targeted]);
+    }
+
     /**
      * A list nested in a conditional branch is emitted below the conditional
      * entity (`<owner>/whenN/<list>`). The condition owns source/prop replay;
@@ -251,6 +273,7 @@ export function collectReads(ctx: Ctx): void {
         branchPrefixes,
       );
       registerListSource(site);
+      registerTargetedListPlan(mapCall, site);
       const nestedSuffix = `${condSuffix}/${site.suffix}`;
 
       if (site.form === 'component') {
@@ -559,23 +582,7 @@ export function collectReads(ctx: Ctx): void {
       ) {
         const site = analyzeMapSite(ctx, mapCall, p, name, usedPrefixes);
         registerListSource(site);
-        registerKeyedListMutationPlan(ctx, name, mapCall, site);
-        const targeted = findTargetedListDependencies(
-          site,
-          ctx.instanceState.get(name) ?? new Set(),
-        );
-        if (targeted.length > 0 && astFactory.isIdentifier(site.sourceExpr)) {
-          const source = site.sourceExpr.name;
-          ctx.targetedListDependencies.set(
-            mapCall,
-            targeted.map((value) => ({
-              source,
-              value,
-            })),
-          );
-          ctx.targetedListComponents.add(name);
-          addInstanceReasons(ctx, name, [source, ...targeted]);
-        }
+        registerTargetedListPlan(mapCall, site);
         if (!site.sourceLocal) reads.add(site.sourceKey);
         if (site.form === 'component') {
           // R10: row-prop reads are OWNER reads — the owner re-pushes row

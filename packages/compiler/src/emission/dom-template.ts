@@ -116,60 +116,86 @@ export function applyRepeatedDomTemplate(
     ),
   );
 
-  const initializeTemplate = astFactory.callExpression(
+  const initializeTemplate = (): t.CallExpression => astFactory.callExpression(
     cloneEstreeNode(createTemplate),
-    [astFactory.identifier(scope.documentVar)],
+    [astFactory.identifier(scope.documentVar!)],
   );
   // Hydrate mode must not clone: row factories claim their server nodes
   // through the document, and cloning a template built from the first claim
-  // would recreate every subsequent row. Three-way emission: rebuild+cache
-  // when allowed and stale; reuse when allowed and fresh; build fresh
-  // WITHOUT caching in hydrate mode. The clone applies only when allowed.
-  const canReuse = astFactory.callExpression(md(ctx, 'canReuseTemplate'), []);
-  const getTemplate = astFactory.conditionalExpression(
+  // would recreate every subsequent row. Cache the capability result once so
+  // generated row factories do not repeat the runtime query or duplicate the
+  // template-selection expression.
+  const canReuse = generatedIdentifier(ctx, 'canReuseTemplate');
+  const initializeCachedTemplate = astFactory.ifStatement(
     astFactory.logicalExpression(
-      '&&',
-      cloneEstreeNode(canReuse),
-      astFactory.logicalExpression(
-        '||',
-        astFactory.binaryExpression(
-          '===',
-          cloneEstreeNode(template),
-          astFactory.unaryExpression('void', astFactory.numericLiteral(0)),
-        ),
-        astFactory.binaryExpression(
-          '!==',
+      '||',
+      astFactory.binaryExpression(
+        '===',
+        cloneEstreeNode(template),
+        astFactory.unaryExpression('void', astFactory.numericLiteral(0)),
+      ),
+      astFactory.binaryExpression(
+        '!==',
+        cloneEstreeNode(templateDocument),
+        astFactory.identifier(scope.documentVar),
+      ),
+    ),
+    astFactory.blockStatement([
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
+          '=',
           cloneEstreeNode(templateDocument),
           astFactory.identifier(scope.documentVar),
         ),
       ),
-    ),
-    astFactory.sequenceExpression([
-      astFactory.assignmentExpression(
-        '=',
-        cloneEstreeNode(templateDocument),
-        astFactory.identifier(scope.documentVar),
-      ),
-      astFactory.assignmentExpression(
-        '=',
-        cloneEstreeNode(template),
-        initializeTemplate,
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
+          '=',
+          cloneEstreeNode(template),
+          initializeTemplate(),
+        ),
       ),
     ]),
-    astFactory.conditionalExpression(
+  );
+  const rootBinding: t.Statement[] = [
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        cloneEstreeNode(canReuse),
+        astFactory.callExpression(md(ctx, 'canReuseTemplate'), []),
+      ),
+    ]),
+    astFactory.variableDeclaration('let', [
+      astFactory.variableDeclarator(astFactory.identifier(rootVar)),
+    ]),
+    astFactory.ifStatement(
       cloneEstreeNode(canReuse),
-      cloneEstreeNode(template),
-      initializeTemplate,
+      astFactory.blockStatement([
+        initializeCachedTemplate,
+        astFactory.expressionStatement(
+          astFactory.assignmentExpression(
+            '=',
+            astFactory.identifier(rootVar),
+            astFactory.callExpression(
+              astFactory.memberExpression(
+                cloneEstreeNode(template),
+                astFactory.identifier('cloneNode'),
+              ),
+              [astFactory.booleanLiteral(true)],
+            ),
+          ),
+        ),
+      ]),
+      astFactory.blockStatement([
+        astFactory.expressionStatement(
+          astFactory.assignmentExpression(
+            '=',
+            astFactory.identifier(rootVar),
+            initializeTemplate(),
+          ),
+        ),
+      ]),
     ),
-  );
-  const rootClone = astFactory.conditionalExpression(
-    cloneEstreeNode(canReuse),
-    astFactory.callExpression(
-      astFactory.memberExpression(getTemplate, astFactory.identifier('cloneNode')),
-      [astFactory.booleanLiteral(true)],
-    ),
-    getTemplate,
-  );
+  ];
 
   const referencedNodes = new Set<string>([rootVar]);
   for (const statement of retained) {
@@ -188,21 +214,20 @@ export function applyRepeatedDomTemplate(
     )
     .map(({ name }) => {
       const path = paths.get(name)!;
-      let value: t.Expression;
       if (name === rootVar) {
-        value = cloneEstreeNode(rootClone, true);
-      } else {
-        let base = bound[0]!;
-        for (const candidate of bound) {
-          if (
-            candidate.path.length > base.path.length &&
-            isPathPrefix(candidate.path, path)
-          ) {
-            base = candidate;
-          }
-        }
-        value = nodeAtPath(base.name, path.slice(base.path.length));
+        bound.push({ name, path });
+        return null;
       }
+      let base = bound[0]!;
+      for (const candidate of bound) {
+        if (
+          candidate.path.length > base.path.length &&
+          isPathPrefix(candidate.path, path)
+        ) {
+          base = candidate;
+        }
+      }
+      const value = nodeAtPath(base.name, path.slice(base.path.length));
       bound.push({ name, path });
       return astFactory.variableDeclaration('const', [
         astFactory.variableDeclarator(
@@ -210,9 +235,10 @@ export function applyRepeatedDomTemplate(
           value,
         ),
       ]);
-    });
+    })
+    .filter((statement): statement is t.VariableDeclaration => statement !== null);
 
-  scope.creation = [...bindings, ...retained];
+  scope.creation = [...rootBinding, ...bindings, ...retained];
   return true;
 }
 

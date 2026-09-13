@@ -402,19 +402,19 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 
 			_MD.register({ id: _rowId, parent: _id, render: _update2 });
 
-			const _li = _MD.canReuseTemplate()
-				? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
-					? (
-						_liTemplateDocument = _document2,
-						_liTemplate = _liCreateTemplate(_document2)
-					)
-					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true)
-				: _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
-					? (
-						_liTemplateDocument = _document2,
-						_liTemplate = _liCreateTemplate(_document2)
-					)
-					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
+			const _canReuseTemplate = _MD.canReuseTemplate();
+			let _li;
+
+			if (_canReuseTemplate) {
+				if (_liTemplate === void 0 || _liTemplateDocument !== _document2) {
+					_liTemplateDocument = _document2;
+					_liTemplate = _liCreateTemplate(_document2);
+				}
+
+				_li = _liTemplate.cloneNode(true);
+			} else {
+				_li = _liCreateTemplate(_document2);
+			}
 
 			const _text = _li.firstChild;
 
@@ -809,19 +809,19 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 
 			_MD.register({ id: _rowId, parent: _id, render: _update2 });
 
-			const _li = _MD.canReuseTemplate()
-				? (_MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
-					? (
-						_liTemplateDocument = _document2,
-						_liTemplate = _liCreateTemplate(_document2)
-					)
-					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2)).cloneNode(true)
-				: _MD.canReuseTemplate() && (_liTemplate === void 0 || _liTemplateDocument !== _document2)
-					? (
-						_liTemplateDocument = _document2,
-						_liTemplate = _liCreateTemplate(_document2)
-					)
-					: _MD.canReuseTemplate() ? _liTemplate : _liCreateTemplate(_document2);
+			const _canReuseTemplate = _MD.canReuseTemplate();
+			let _li;
+
+			if (_canReuseTemplate) {
+				if (_liTemplate === void 0 || _liTemplateDocument !== _document2) {
+					_liTemplateDocument = _document2;
+					_liTemplate = _liCreateTemplate(_document2);
+				}
+
+				_li = _liTemplate.cloneNode(true);
+			} else {
+				_li = _liCreateTemplate(_document2);
+			}
 
 			const _text = _li.firstChild;
 

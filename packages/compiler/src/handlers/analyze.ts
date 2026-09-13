@@ -41,6 +41,36 @@ function isLinkedImport(ctx: Ctx, name: string): boolean {
     ctx.importedComponents.has(name)
   );
 }
+
+/** A method cannot mutate a primitive receiver, regardless of its name. */
+function hasPrimitiveReceiver(
+  ctx: Ctx,
+  component: string | null,
+  callee: t.MemberExpression,
+): boolean {
+  if (component === null || !astFactory.isIdentifier(callee.object)) {
+    return false;
+  }
+  const componentNode = ctx.compPaths.get(component)?.node;
+  if (componentNode === undefined) return false;
+  for (const statement of componentNode.body.body) {
+    if (!astFactory.isVariableDeclaration(statement)) continue;
+    for (const declaration of statement.declarations) {
+      if (
+        !astFactory.isIdentifier(declaration.id, { name: callee.object.name }) ||
+        declaration.init === null
+      ) {
+        continue;
+      }
+      return astFactory.isStringLiteral(declaration.init) ||
+        astFactory.isNumericLiteral(declaration.init) ||
+        astFactory.isBooleanLiteral(declaration.init) ||
+        astFactory.isBigIntLiteral(declaration.init);
+    }
+  }
+  return false;
+}
+
 export function analyzeHandler(
   ctx: Ctx,
   rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
@@ -354,6 +384,17 @@ export function analyzeHandler(
     },
     CallExpression(p) {
       const callee = p.node.callee;
+
+      if (
+        astFactory.isMemberExpression(callee) &&
+        hasPrimitiveReceiver(ctx, compName, callee)
+      ) {
+        // This is provenance-based, not a method allowlist: future methods on
+        // primitive values inherit the same rule, while object/array methods
+        // remain opaque and conservatively invalidating.
+        noteBoundedArguments(p, p.node.arguments);
+        return;
+      }
 
       // A method call on a static-derived const is a mutation attempt on a
       // frozen value (push/splice/shift/...) - always an error.

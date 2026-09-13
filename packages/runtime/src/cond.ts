@@ -17,12 +17,13 @@
  */
 
 import { getActiveEnvironment, type EntityId } from './kernel';
+import type { DirtyReasons } from './dirty-reasons';
 
 export interface CondEntry {
   /** Root nodes of the mounted branch (elements or fragment children). */
   nodes: Node[];
   /** The branch's guarded update closure. */
-  update: () => void;
+  update: (reasons?: DirtyReasons) => void;
   /** Drain structural regions retained by this branch before replacement. */
   dispose?: () => void;
 }
@@ -31,7 +32,7 @@ export type CondBranchFactory = () => CondEntry;
 
 export interface CondRegion {
   /** Re-pick and re-render: same branch → guarded update; swap → rebuild. */
-  update(): void;
+  update(reasons?: DirtyReasons): void;
   /** Currently mounted branch index. */
   index(): number;
   /** Drain the mounted branch and remove the stable anchor. */
@@ -66,10 +67,10 @@ export function createCondRegion(
   let current = -1;
   let entry: CondEntry | null = null;
 
-  function update(): void {
+  function update(reasons: DirtyReasons = null): void {
     const idx = pick();
     if (idx === current) {
-      entry?.update();
+      entry?.update(reasons);
       return;
     }
     if (entry !== null) {
