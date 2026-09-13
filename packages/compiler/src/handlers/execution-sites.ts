@@ -14,6 +14,7 @@ import {
 import { buildEventOriginCommit } from '../handler-origin';
 import { generatedIdentifier, md } from '../identifiers';
 import { HandlerPath } from './traversal';
+import { isPlainDataAssignment } from './member-assignment';
 
 export interface HandlerExecutionSite {
   path: HandlerPath;
@@ -51,6 +52,12 @@ export function finalizeHandlerInstrumentation(
   const guardedRootSites: Array<HandlerExecutionSite & { commit: t.Statement }> = [];
   if (executionAwareRoot) {
     for (const site of executionSites.values()) {
+      if (site.path.isAssignmentExpression() &&
+          astFactory.isMemberExpression(site.path.node.left) &&
+          !isPlainDataAssignment(ctx, rootFn, site.path.node.left)) {
+        // A setter/proxy can mutate state beyond the apparent receiver.
+        site.writes.rootFallback = true;
+      }
       const commit = buildScopeCommit(ctx, site.writes, compName, rowCtx);
       if (commit !== null) guardedRootSites.push({ ...site, commit });
     }
@@ -61,7 +68,7 @@ export function finalizeHandlerInstrumentation(
   guardedRootSites
     .sort((left, right) => pathDepth(right.path) - pathDepth(left.path))
     .forEach((site) => {
-      site.temporaries = markExecutionSite(ctx, site.path, site.flag!);
+      site.temporaries = markExecutionSite(ctx, rootFn, site.path, site.flag!);
     });
 
   for (const [fn, writes] of scopes) {
@@ -119,6 +126,7 @@ function pathDepth(path: HandlerPath): number {
 
 function markExecutionSite(
   ctx: Ctx,
+  rootFn: t.Node,
   path: HandlerPath,
   flag: t.Identifier,
 ): t.Identifier[] {
@@ -127,7 +135,8 @@ function markExecutionSite(
     (astFactory.isIdentifier(path.node.left) ||
       astFactory.isMemberExpression(path.node.left) &&
       !astFactory.isSuper(path.node.left.object) &&
-      !astFactory.isPrivateName(path.node.left.property))
+      !astFactory.isPrivateName(path.node.left.property) &&
+      isPlainDataAssignment(ctx, rootFn, path.node.left))
   ) {
     const original = path.node;
     const previous = generatedIdentifier(ctx, 'previousValue');
@@ -196,6 +205,13 @@ function markExecutionSite(
     cloneEstreeNode(flag),
     astFactory.booleanLiteral(true),
   );
+  if (path.isAssignmentExpression() &&
+      ['&&=', '||=', '??='].includes(path.node.operator)) {
+    // Logical assignments can evaluate the receiver without executing a write.
+    // Keep the native reference and key coercion; only mark the taken RHS.
+    path.node.right = astFactory.sequenceExpression([mark, path.node.right]);
+    return [];
+  }
   if (path.isVariableDeclarator()) {
     const init = path.node.init;
     if (init === null || !astFactory.isExpression(init)) {

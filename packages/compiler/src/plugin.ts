@@ -32,11 +32,11 @@ import {
 } from './context';
 import {
   generatedIdentifier,
-  initializeGeneratedIdentifiers,
   md,
   requireIdentifiers,
 } from './identifiers';
-import { buildAccessTable, runAnalysis } from './analysis';
+import { buildAccessTable } from './analysis';
+import { prepareProgramAnalysis } from './analysis/prepare';
 import { liftModuleStateCells } from './cells';
 import { transformComponent } from './emission/component';
 import {
@@ -48,25 +48,14 @@ import {
   rejectUnownedEffects,
   rewriteModuleEffects,
 } from './effects';
-import { installLinkedDynamicComponentImports } from './jsx/dynamic-tags';
-import { normalizeComponentDeclarations } from './components/declarations';
 import {
-  analyzeRouterJsx,
   routeManifestStatements,
 } from './router';
-import { normalizeConditionalJsxDirectives } from './jsx/conditional-directives';
 import {
-  lowerTransparentGroups,
-  scanEventSourceAssignments,
-  rejectNonGetServerFunctionRenderCalls,
-  rejectTransparentSourceDestructuring,
   rewriteTransparentDataReads,
-  scanAndLowerModuleSourceDeclarations,
-  scanTransparentSourceImports,
 } from './data-sources';
 import {
   externalReactiveImportStatements,
-  scanExternalReactiveImports,
 } from './external-reactivity';
 
 /**
@@ -268,19 +257,7 @@ function prepareProgram(
   ctx: Ctx,
   programPath: ProgramTransformPath,
 ): void {
-  normalizeComponentDeclarations(programPath);
-  installLinkedDynamicComponentImports(ctx, programPath);
-  normalizeConditionalJsxDirectives(programPath);
-  initializeGeneratedIdentifiers(ctx, programPath.node);
-  scanExternalReactiveImports(ctx, programPath);
-  scanTransparentSourceImports(ctx, programPath);
-  rejectTransparentSourceDestructuring(ctx, programPath);
-  lowerTransparentGroups(ctx, programPath);
-  scanAndLowerModuleSourceDeclarations(ctx, programPath);
-  analyzeRouterJsx(ctx, programPath);
-  runAnalysis(ctx, programPath);
-  rejectNonGetServerFunctionRenderCalls(ctx, programPath);
-  scanEventSourceAssignments(ctx);
+  prepareProgramAnalysis(ctx, programPath);
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
   transformSharedHelperCallbacks(ctx, programPath);

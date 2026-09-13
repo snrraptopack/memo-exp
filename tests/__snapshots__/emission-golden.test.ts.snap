@@ -157,8 +157,11 @@ export function Picker(_id, _parent, _dataPolicies) {
 	const _button = _document.createElement("button");
 
 	_button.onclick = () => {
-		selected = 'a';
+		const _returnValue = selected = 'a';
+
 		_MD.commitWrites(_WRITES_);
+
+		return _returnValue;
 	};
 
 	_button.appendChild(_text);
@@ -194,8 +197,11 @@ export function Counter(_id, _parent, _dataPolicies) {
 	const _button = _document.createElement("button");
 
 	_button.onclick = () => {
-		count++;
+		const _returnValue = count++;
+
 		_MD.markDirty(_id);
+
+		return _returnValue;
 	};
 
 	_button.appendChild(_text);

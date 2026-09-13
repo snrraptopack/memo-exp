@@ -10,6 +10,7 @@ import type * as t from './ast/compiler-types';
 import {
   parseWithEstreeFrontendOrThrow,
   type EstreeFrontend,
+  type AstComment,
   memoizedEstreeFrontend,
 } from './ast';
 import {
@@ -105,13 +106,14 @@ function parseModule(
   id: string,
   source: string,
   frontend: EstreeFrontend,
-): { ast: t.Program; css?: string } {
+): { ast: t.Program; comments: readonly AstComment[]; css?: string } {
   const parsed = parseWithEstreeFrontendOrThrow(frontend, source, {
     filename: id,
     sourceType: 'module',
   });
   return {
     ast: parsed.program as unknown as t.Program,
+    comments: parsed.comments,
     css: parsed.css,
   };
 }
@@ -194,8 +196,8 @@ function linkManifestWorklist(
   const maximumAnalyses = Math.max(16, entries.size * entries.size * 4);
   let analyses = 0;
 
-  while (pending.length > 0) {
-    const id = pending.shift()!;
+  for (let cursor = 0; cursor < pending.length; cursor++) {
+    const id = pending[cursor]!;
     queued.delete(id);
     const entry = entries.get(id)!;
     const previous = manifests.get(id)!;
@@ -245,6 +247,7 @@ function compileLinkedModules(
       id,
       source,
       ast: parsed.ast,
+      comments: parsed.comments,
       css: parsed.css,
     });
   }
@@ -448,13 +451,13 @@ function compileLinkedModules(
         : {}),
     };
     if (sourceMaps) {
-      const compiled = compileAstDetailed(entry.source, compileOptions, entry.ast);
+      const compiled = compileAstDetailed(entry.source, compileOptions, entry.ast, entry.comments);
       output[entry.originalId] = compiled.code;
       maps[entry.originalId] = compiled.map;
       const cssOut = compiled.css ?? entry.css;
       if (cssOut) css[entry.originalId] = cssOut;
     } else {
-      output[entry.originalId] = compileAst(entry.source, compileOptions, entry.ast);
+      output[entry.originalId] = compileAst(entry.source, compileOptions, entry.ast, entry.comments);
       if (entry.css) css[entry.originalId] = entry.css;
     }
   }

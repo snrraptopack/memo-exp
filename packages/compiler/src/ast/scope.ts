@@ -61,6 +61,10 @@ export class Scope {
     identifier: Identifier,
     declarationNode: BaseNode,
   ): Binding {
+    const existing = this.bindings.get(name);
+    // Repeated var declarations (including a parameter's var redeclaration)
+    // denote one binding, not a replacement declaration with a new identity.
+    if (kind === 'var' && existing !== undefined) return existing;
     const binding: Binding = {
       name,
       kind,
@@ -153,7 +157,7 @@ export function isReferenceIdentifier(
     ((parent.type === 'Property' || parent.type === 'ObjectProperty') &&
       key === 'key' &&
       field(parent, 'computed') === false) ||
-    (parent.type === 'MethodDefinition' &&
+    ((parent.type === 'MethodDefinition' || parent.type === 'PropertyDefinition') &&
       key === 'key' &&
       field(parent, 'computed') === false) ||
     (parent.type === 'LabeledStatement' && key === 'label') ||
@@ -215,13 +219,19 @@ export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
   const parentByNode = new Map<BaseNode, BaseNode | null>();
   const keyByNode = new Map<BaseNode, string | undefined>();
   const indexByNode = new Map<BaseNode, number | undefined>();
-  const scopeOwners = new Map<BaseNode, Scope>();
   const bindingIdentifiers = new Set<Identifier>();
   let currentScope = rootScope;
   nodeToScope.set(root, rootScope);
 
   walkAst(root, {
     enter(node, parent, key, index) {
+      currentScope = parent === null
+        ? rootScope
+        : nodeToScope.get(parent)!;
+      // The discriminant runs before the switch's case-block environment.
+      if (parent?.type === 'SwitchStatement' && key === 'discriminant') {
+        currentScope = currentScope.parent!;
+      }
       parentByNode.set(node, parent);
       keyByNode.set(node, key);
       indexByNode.set(node, index);
@@ -249,6 +259,26 @@ export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
         }
       }
 
+      if (node.type === 'ClassDeclaration' || node.type === 'ClassExpression') {
+        const classScope = new Scope(node, currentScope);
+        currentScope = classScope;
+        nodeToScope.set(node, classScope);
+        const id = asIdentifier(childNode(node, 'id'));
+        if (id !== null) {
+          classScope.registerBinding(id.name, 'class', id, node);
+          bindingIdentifiers.add(id);
+        }
+        return;
+      }
+
+      if (node.type === 'StaticBlock') {
+        // Static blocks own var declarations as well as lexical declarations.
+        const staticScope = new Scope(node, currentScope, true);
+        currentScope = staticScope;
+        nodeToScope.set(node, staticScope);
+        return;
+      }
+
       // Function boundaries create function scopes.
       if (
         node.type === 'FunctionDeclaration' ||
@@ -256,7 +286,6 @@ export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
         node.type === 'ArrowFunctionExpression'
       ) {
         const fnScope = new Scope(node, currentScope, true);
-        scopeOwners.set(node, fnScope);
         currentScope = fnScope;
         nodeToScope.set(node, fnScope);
 
@@ -288,12 +317,32 @@ export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
             parent.type === 'FunctionExpression' ||
             parent.type === 'ArrowFunctionExpression');
         if (isFnBody) {
+          let hasParameterExpressions = false;
+          for (const parameter of childNodes(parent, 'params')) {
+            walkAst(parameter, {
+              enter(part) {
+                if (part.type === 'AssignmentPattern' ||
+                    part.type === 'Property' && field(part, 'computed') === true) {
+                  hasParameterExpressions = true;
+                  return false;
+                }
+              },
+            });
+          }
+          if (hasParameterExpressions) {
+            // Defaults cannot see body declarations, including var/function.
+            // Keep the function as block identity for compiler ownership tests.
+            const bodyScope = new Scope(parent, currentScope, true);
+            currentScope = bodyScope;
+            // Compiler clients query the function node for body-local helpers.
+            // Parameter nodes already retain their distinct parameter scope.
+            nodeToScope.set(parent, bodyScope);
+          }
           nodeToScope.set(node, currentScope);
           return;
         }
 
         const blockScope = new Scope(node, currentScope, false);
-        scopeOwners.set(node, blockScope);
         nodeToScope.set(node, blockScope);
         currentScope = blockScope;
         return;
@@ -307,7 +356,6 @@ export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
         node.type === 'CatchClause'
       ) {
         const lexicalScope = new Scope(node, currentScope, false);
-        scopeOwners.set(node, lexicalScope);
         currentScope = lexicalScope;
         nodeToScope.set(node, lexicalScope);
         if (node.type === 'CatchClause') {
@@ -353,24 +401,16 @@ export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
       }
     },
 
-    leave(node) {
-      if (scopeOwners.get(node) === currentScope && currentScope.parent !== null) {
-        currentScope = currentScope.parent;
-      }
-    },
   });
 
-  currentScope = rootScope;
   walkAst(root, {
     enter(node, parent, key) {
-      const ownedScope = scopeOwners.get(node);
-      if (ownedScope !== undefined) currentScope = ownedScope;
       if (
         isIdentifier(node) &&
         !bindingIdentifiers.has(node) &&
         isReferenceIdentifier(parent, key)
       ) {
-        const binding = currentScope.getBinding(node.name);
+        const binding = nodeToScope.get(node)!.getBinding(node.name);
         if (binding !== undefined) {
           binding.references.push(node);
           const violation = bindingViolation(node, parentByNode, keyByNode);
@@ -381,11 +421,6 @@ export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
             binding.constantViolations.push(violation);
           }
         }
-      }
-    },
-    leave(node) {
-      if (scopeOwners.get(node) === currentScope && currentScope.parent !== null) {
-        currentScope = currentScope.parent;
       }
     },
   });

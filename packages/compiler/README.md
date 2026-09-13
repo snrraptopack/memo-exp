@@ -19,6 +19,7 @@ The top-level files are orchestration and whole-program passes:
 | Path | Responsibility |
 |---|---|
 | `src/analysis.ts` | Stable analysis facade and ordered pass orchestration |
+| `src/analysis/prepare.ts` | Shared normalization and analysis preparation for manifests and final emission |
 | `src/context.ts` | Stable facade for shared context types and AST utilities |
 | `src/effects.ts` | Stable facade for effect discovery and emission |
 | `src/emit.ts` | Host JSX DOM emission and structural-region dispatch |
@@ -118,6 +119,35 @@ produced by earlier stages; it does not own their implementations.
 Keep dependencies directed from focused discovery/validation modules into the
 coordinator. A domain module may record facts on `Ctx`, but pass ordering stays
 in `runAnalysis`; do not create a second partial pipeline in a caller.
+
+Both linker manifest analysis and final emission call `prepareProgramAnalysis`
+before consuming analysis facts. Conditional directives and external reactive
+imports must therefore be normalized identically in metadata and generated code.
+Cached module inputs retain comments alongside the AST, source, and extracted CSS.
+
+### JavaScript semantics and regression coverage
+
+Successful compilation emits JavaScript, including when TypeScript assertions
+are nested. Ambient declarations are erased. Runtime namespaces, enums, import
+assignments, export assignments, and constructor parameter properties require
+lowering that is not currently implemented and receive explicit diagnostics.
+The same applies to runtime decorators and TypeScript auto-accessor properties.
+
+Instrumented callbacks retain a straight-line `write; notify` hot path. Return
+expressions are evaluated into a hygienic temporary before notification. More
+complex early returns lower through a compiler-generated completion label so
+authored `finally` blocks finish before notification without wrapping callbacks
+in exception-handling control flow. As elsewhere in the R5 contract, an
+exceptional exit does not notify.
+Direct effect writes retain per-site execution flags. Equality checks may read
+only plain bindings or proven, non-escaping object literals' own data properties;
+unknown member assignments preserve setter/proxy behavior and conservatively
+invalidate the root because setters may mutate other state.
+
+`tests/compiler-semantic-regressions.test.ts` executes emitted JavaScript without
+a TypeScript loader and checks completion order, lexical scopes, accessors,
+proxies, comments, and metadata parity. Extend semantic tests alongside codegen
+snapshots when adding a new lowering or optimization.
 
 ### Handler analysis model
 

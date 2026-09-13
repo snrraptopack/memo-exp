@@ -74,7 +74,7 @@ describe('R18 - scoped event-boundary invalidation', () => {
   it('emits receiver-bounded rather than root-subtree invalidation', () => {
     const code = compile(source);
     expect(code).toMatch(
-      /values\.filter\(Boolean\);\s+_MD\d*\.commitWrites\(_WRITES_\d*\)/,
+      /const _returnValue\d* = values\.filter\(Boolean\);\s+_MD\d*\.commitWrites\(_WRITES_\d*\)/,
     );
     expect(code).not.toContain('markDirtySubtree');
   });
@@ -88,7 +88,7 @@ describe('R18 - scoped event-boundary invalidation', () => {
         )}</ul>;
       }
     `);
-    expect(code).toMatch(/value\.id;\s+_MD\d*\.markDirty\(_rowId\d*\)/);
+    expect(code).toMatch(/const _returnValue\d* = value\.id;\s+_MD\d*\.markDirty\(_rowId\d*\)/);
   });
 
   it('starts conditional-branch events from the region entity', () => {
@@ -101,7 +101,7 @@ describe('R18 - scoped event-boundary invalidation', () => {
       }
     `);
     expect(code).toMatch(
-      /Math\.random\(\);\s+_MD\d*\.markDirty\(_id\d* \+ "\/when0"\)/,
+      /const _returnValue\d* = Math\.random\(\);\s+_MD\d*\.markDirty\(_id\d* \+ "\/when0"\)/,
     );
   });
 
@@ -117,10 +117,10 @@ describe('R18 - scoped event-boundary invalidation', () => {
       }
     `);
     expect(code).toMatch(
-      /inspect\(_event\d*\);\s+_MD\d*\.markDirty\(_id\d*\)/,
+      /const _returnValue\d* = inspect\(_event\d*\);\s+_MD\d*\.markDirty\(_id\d*\)/,
     );
     expect(code).toMatch(
-      /inspect\(_event\d*\);\s+_MD\d*\.markDirty\(_id\d* \+ "\/when0"\)/,
+      /const _returnValue\d* = inspect\(_event\d*\);\s+_MD\d*\.markDirty\(_id\d* \+ "\/when0"\)/,
     );
   });
 });

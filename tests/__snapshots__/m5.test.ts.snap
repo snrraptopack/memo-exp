@@ -43,11 +43,11 @@ export function AsyncCounter(_id, _parent, _dataPolicies) {
 	const _button = _document.createElement("button");
 
 	_button.onclick = (_event) => {
-		const _returnValue = incLater(_event);
+		const _returnValue2 = incLater(_event);
 
 		_MD.markDirty(_id);
 
-		return _returnValue;
+		return _returnValue2;
 	};
 
 	_button.appendChild(_text);
@@ -56,11 +56,11 @@ export function AsyncCounter(_id, _parent, _dataPolicies) {
 	const _button2 = _document.createElement("button");
 
 	_button2.onclick = (_event2) => {
-		const _returnValue2 = incTimer(_event2);
+		const _returnValue4 = incTimer(_event2);
 
 		_MD.markDirty(_id);
 
-		return _returnValue2;
+		return _returnValue4;
 	};
 
 	_button2.appendChild(_text2);

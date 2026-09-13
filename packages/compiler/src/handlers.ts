@@ -86,8 +86,8 @@ export function resolveLocalHelper(
 
 /**
  * Instrument a callback that executes outside the component's synchronous
- * factory call. The callback owns its normal-exit commit; no event boundary
- * or exception wrapper is introduced.
+ * factory call. The callback owns its normal-completion commit; no event
+ * boundary or generated exception wrapper is introduced.
  */
 export function instrumentComponentCallback(
   ctx: Ctx,
@@ -261,10 +261,10 @@ export function buildHandler(
     );
   }
 
-  // normalize an implicit-return root body to a block so commits can append
+  // Keep the authored return value when normalizing concise event handlers.
   if (!astFactory.isBlockStatement(target.body)) {
     target.body = astFactory.blockStatement([
-      astFactory.expressionStatement(target.body as t.Expression),
+      astFactory.returnStatement(target.body as t.Expression),
     ]);
   }
 

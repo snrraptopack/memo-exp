@@ -1,5 +1,5 @@
 import type * as t from '../ast/compiler-types';
-import type { BaseNode, EstreeFrontend } from '../ast';
+import type { AstComment, BaseNode, EstreeFrontend } from '../ast';
 import type { ComponentGraphNode } from '../component-linker';
 import type { ComponentExportInfo } from '../components/manifest';
 import type {
@@ -91,6 +91,7 @@ export interface ModuleEntry {
   id: string;
   source: string;
   ast: t.Program;
+  comments?: readonly AstComment[];
   css?: string;
 }
 

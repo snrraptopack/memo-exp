@@ -6,7 +6,8 @@ import {
   walkAst,
   type BaseNode,
 } from '../ast';
-import { buildAccessTable, runAnalysis } from '../analysis';
+import { buildAccessTable } from '../analysis';
+import { prepareProgramAnalysis } from '../analysis/prepare';
 import {
   analyzedComponentDeclarations,
   analyzedComponentExport,
@@ -17,7 +18,6 @@ import {
   moduleFunctionStringCandidates,
   moduleStateStringCandidates,
 } from '../analysis/type-candidates';
-import { analyzeRouterJsx } from '../router';
 import {
   canonicalStateKey,
   createCtx,
@@ -31,17 +31,7 @@ import {
 } from '../context';
 import { DEFAULT_TRANSPARENT_ASYNC_SOURCES } from '../context/model';
 import { isRenderPropReference } from '../components/children';
-import { installLinkedDynamicComponentImports } from '../jsx/dynamic-tags';
 import { normalizeComponentDeclarations } from '../components/declarations';
-import { initializeGeneratedIdentifiers } from '../identifiers';
-import {
-  lowerTransparentGroups,
-  scanEventSourceAssignments,
-  rejectNonGetServerFunctionRenderCalls,
-  rejectTransparentSourceDestructuring,
-  scanAndLowerModuleSourceDeclarations,
-  scanTransparentSourceImports,
-} from '../data-sources';
 import { compilerError } from '../errors';
 import type { CompilerRouteDefinition } from '../router';
 import { compilerOptions } from './options';
@@ -447,7 +437,6 @@ export function analyzeManifest(
       return compilerError(message, entry.id, at as unknown as BaseNode);
     },
   };
-        normalizeComponentDeclarations(compilerPath);
         const authoredImports = importRefs(compilerPath.node);
         const ctx = createCtx({
           ...compilerOptions(options, rootId),
@@ -455,16 +444,7 @@ export function analyzeManifest(
           linkedImports,
           linkedRoutes,
         });
-        installLinkedDynamicComponentImports(ctx, compilerPath);
-        initializeGeneratedIdentifiers(ctx, compilerPath.node);
-        scanTransparentSourceImports(ctx, compilerPath);
-        rejectTransparentSourceDestructuring(ctx, compilerPath);
-        lowerTransparentGroups(ctx, compilerPath);
-        scanAndLowerModuleSourceDeclarations(ctx, compilerPath);
-        analyzeRouterJsx(ctx, compilerPath);
-        runAnalysis(ctx, compilerPath);
-        rejectNonGetServerFunctionRenderCalls(ctx, compilerPath);
-        scanEventSourceAssignments(ctx);
+        prepareProgramAnalysis(ctx, compilerPath);
         // buildAccessTable also materializes ctx.readers. The returned AST is
         // intentionally discarded here; final emission builds its own table.
         buildAccessTable(ctx);

@@ -38,23 +38,21 @@ function importCompiled(name: string): Promise<any> {
 // ---------------------------------------------------------------------
 
 describe('M5.3 fixes — code generation', () => {
-  it('early return: the commit is inserted before every return of the scope', () => {
+  it('early return: completion lowering commits after evaluating the return', () => {
     const code = compile(
       `let n = 0;\nfunction C() { return <button onClick={() => { n++; if (n > 5) return; }}>{n}</button>; }`,
     );
     const handler = code.slice(code.indexOf('onclick'));
-    expect(handler.indexOf('.commitWrites(')).toBeLessThan(
-      handler.indexOf('return;'),
-    );
+    expect(handler).toContain('break _completion');
+    expect(handler.indexOf('.commitWrites(')).toBeGreaterThan(handler.indexOf('break _completion'));
 
-    // trailing return: commit before it, not dead code after
+    // A trailing return also reaches the finalizer exactly once.
     const code2 = compile(
       `let n = 0;\nfunction C() { return <button onClick={() => { n++; return; }}>{n}</button>; }`,
     );
     const handler2 = code2.slice(code2.indexOf('onclick'));
-    expect(handler2.indexOf('.commitWrites(')).toBeLessThan(
-      handler2.indexOf('return;'),
-    );
+    expect(handler2).toContain('break _completion');
+    expect(handler2.indexOf('.commitWrites(')).toBeGreaterThan(handler2.indexOf('break _completion'));
   });
 
   it('member-chain mutators commit the static dotted path', () => {

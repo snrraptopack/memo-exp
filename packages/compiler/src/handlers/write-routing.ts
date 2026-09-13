@@ -28,6 +28,7 @@ import {
 } from './mutation-targets';
 import { HandlerPath, walkHandler, type FunctionNode } from './traversal';
 import type { HandlerExecutionSite } from './execution-sites';
+import { hasKnownAccessor } from './member-assignment';
 
 export interface HandlerWriteRouting {
   locals: Set<string>;
@@ -457,6 +458,9 @@ export function createHandlerWriteRouting({
   };
 
   const noteMemberWrite = (p: HandlerPath, node: t.MemberExpression): void => {
+    if (hasKnownAccessor(ctx, rootFn, node)) {
+      mutateScope(p, scope => { scope.rootFallback = true; });
+    }
     const rootName = memberRootName(node);
     if (
       rootName !== null &&
