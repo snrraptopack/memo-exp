@@ -27,7 +27,7 @@ export const $fetch = ((
   target: string | URL | null,
   options?: FetchOptions,
 ) => getActiveDataRuntime().$fetch(target, options)) as unknown as TransparentFetchFunction;
-export const $track = (<T>(value: ResolvedValue<T>) =>
+export const $track = (<T>(value: ResolvedValue<T> | PromiseLike<T>) =>
   trackResolvedValue(value)) as typeof trackResolvedValue;
 export { Group, Pending, Error };
 export const $action = ((

@@ -152,6 +152,8 @@ export type ResolvedValue<T> = T extends null | undefined
 export interface TrackedValue<T> {
   /** Identity of the exact request execution currently represented. */
   readonly id: string;
+  /** The fulfilled value, or undefined while no value is available. */
+  readonly value: T | undefined;
   readonly status: AsyncStatus;
   readonly pending: boolean;
   readonly refreshing: boolean;

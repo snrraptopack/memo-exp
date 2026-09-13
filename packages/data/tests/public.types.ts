@@ -48,6 +48,7 @@ $track(nullableUser).onSuccess(data => {
   if (data !== null) void data.name;
 });
 void $track(user).pending;
+void $track(user).value?.name;
 void $track(user).error;
 void $track(user).id;
 $track(user).onSuccess((data, requestId) => {
@@ -62,6 +63,11 @@ void $track(user).refresh();
 $track(user).abort();
 void savedUser.name;
 void $track(savedUser).pending;
+
+const promisedUser = Promise.resolve<User>({ id: 1, name: 'Ada' });
+void $track(promisedUser).pending;
+void $track(promisedUser).value?.name;
+$track(promisedUser).onSuccess(value => void value.name);
 
 // @ts-expect-error HTTP methods use the canonical uppercase spelling.
 $fetch('/user', { method: 'post', body: { id: 1 } });

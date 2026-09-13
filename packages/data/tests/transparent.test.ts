@@ -31,6 +31,57 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe('transparent resolved values', () => {
+  it('tracks a promise through the same state and value surface', async () => {
+    let resolve!: (user: User) => void;
+    const promise = new Promise<User>(accept => {
+      resolve = accept;
+    });
+    const state = $track(promise);
+    const success = vi.fn();
+    const unsubscribe = state.onSuccess(success);
+
+    expect($track(promise)).toBe(state);
+    expect(state.status).toBe('pending');
+    expect(state.pending).toBe(true);
+    expect(state.refreshing).toBe(false);
+    expect(state.value).toBeUndefined();
+    expect(state.error).toBeNull();
+
+    resolve({ id: 1, name: 'Ada' });
+    await expect(state.refresh()).resolves.toEqual({ id: 1, name: 'Ada' });
+
+    expect(state.status).toBe('success');
+    expect(state.pending).toBe(false);
+    expect(state.value).toEqual({ id: 1, name: 'Ada' });
+    expect(success).toHaveBeenCalledWith(state.value, state.id);
+    expect(state.onSuccess(vi.fn())).toBeTypeOf('function');
+    expect(() => state.abort()).not.toThrow();
+    unsubscribe();
+  });
+
+  it('exposes promise rejection through the normal tracked error surface', async () => {
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<User>((_resolve, fail) => {
+      reject = fail;
+    });
+    const state = $track(promise);
+    const failure = vi.fn();
+    state.onError(failure);
+
+    reject(new Error('offline'));
+    await expect(state.refresh()).rejects.toMatchObject({
+      name: 'RequestError',
+      kind: 'network',
+      message: 'offline',
+    });
+
+    expect(state.status).toBe('error');
+    expect(state.pending).toBe(false);
+    expect(state.value).toBeUndefined();
+    expect(state.error).toBeInstanceOf(RequestError);
+    expect(failure).toHaveBeenCalledWith(state.error, state.id);
+  });
+
   it('retries all failed values represented by a shared boundary', async () => {
     const requests: Array<{
       url: string;
@@ -125,10 +176,12 @@ describe('transparent resolved values', () => {
     expect(readResolvedValue(user)).toEqual({ id: 1, name: 'Ada' });
     expect(state.status).toBe('success');
     expect(state.pending).toBe(false);
+    expect(state.value).toEqual({ id: 1, name: 'Ada' });
     expect(transitions).toBe(1);
 
     resource.update(current => ({ ...current!, name: 'Grace' }));
     expect(readResolvedValue(user).name).toBe('Grace');
+    expect(state.value?.name).toBe('Grace');
     expect(transitions).toBe(2);
 
     disconnect();

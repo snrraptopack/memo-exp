@@ -1,4 +1,4 @@
-import { RequestError } from './errors';
+import { RequestError, toRequestError } from './errors';
 import {
   disposeFetchResource,
   fetchResourceOperationId,
@@ -79,6 +79,113 @@ function source<T>(value: ResolvedValue<T> | ModuleSourceRef): FetchResource<T> 
 }
 
 const trackedValues = new WeakMap<object, TrackedValue<unknown>>();
+const trackedPromises = new WeakMap<object, TrackedValue<unknown>>();
+let nextTrackedPromiseId = 1;
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === 'object' && value !== null) ||
+    typeof value === 'function'
+  ) && typeof (value as PromiseLike<unknown>).then === 'function';
+}
+
+function notifyTrackedPromiseListeners<T>(
+  listeners: readonly ((value: T, requestId: string) => void)[],
+  value: T,
+  requestId: string,
+): void {
+  const failures: unknown[] = [];
+  for (const listener of listeners) {
+    try {
+      listener(value, requestId);
+    } catch (failure) {
+      failures.push(failure);
+    }
+  }
+  if (failures.length === 0) return;
+  const failure = failures.length === 1
+    ? failures[0]
+    : new AggregateError(failures, 'Tracked promise listeners failed');
+  try {
+    (globalThis as typeof globalThis & {
+      reportError?: (error: unknown) => void;
+    }).reportError?.(failure);
+  } catch {
+    // Reporting must not turn a fulfilled promise into a failed refresh.
+  }
+}
+
+function trackPromise<T>(promise: PromiseLike<T>): TrackedValue<T> {
+  const key = promise as object;
+  const existing = trackedPromises.get(key);
+  if (existing !== undefined) return existing as TrackedValue<T>;
+
+  const id = `promise-${nextTrackedPromiseId++}`;
+  let value: T | undefined;
+  let status: TrackedValue<T>['status'] = 'pending';
+  let error: RequestError | null = null;
+  const successListeners = new Set<(data: T, requestId: string) => void>();
+  const errorListeners = new Set<(
+    failure: RequestError,
+    requestId: string,
+  ) => void>();
+  const settled = Promise.resolve(promise).then(
+    result => {
+      value = result;
+      status = 'success';
+      const listeners = [...successListeners];
+      successListeners.clear();
+      errorListeners.clear();
+      notifyTrackedPromiseListeners(listeners, result, id);
+      return result;
+    },
+    reason => {
+      error = toRequestError(reason);
+      status = 'error';
+      const listeners = [...errorListeners];
+      successListeners.clear();
+      errorListeners.clear();
+      notifyTrackedPromiseListeners(listeners, error, id);
+      throw error;
+    },
+  );
+  // Tracking observes rejection through state/callbacks. Keep that observation
+  // from creating a second, unhandled rejection when callers do not refresh().
+  void settled.catch(() => {});
+
+  const tracked: TrackedValue<T> = Object.freeze({
+    id,
+    get value() { return value; },
+    get status() { return status; },
+    get pending() { return status === 'pending'; },
+    refreshing: false,
+    get error() { return error; },
+    onSuccess(callback: (data: T, requestId: string) => void) {
+      if (status === 'success') {
+        callback(value as T, id);
+        return () => {};
+      }
+      if (status !== 'pending') return () => {};
+      successListeners.add(callback);
+      return () => successListeners.delete(callback);
+    },
+    onError(callback: (failure: RequestError, requestId: string) => void) {
+      if (status === 'error') {
+        callback(error as RequestError, id);
+        return () => {};
+      }
+      if (status !== 'pending') return () => {};
+      errorListeners.add(callback);
+      return () => errorListeners.delete(callback);
+    },
+    // A promise represents one execution, so refresh awaits that same work.
+    refresh: () => settled,
+    // Arbitrary promises have no cancellation protocol.
+    abort: () => {},
+  });
+  trackedPromises.set(key, tracked as TrackedValue<unknown>);
+  return tracked;
+}
 
 function observeTrackedOutcome<T>(
   resource: FetchResource<T>,
@@ -127,14 +234,23 @@ function observeTrackedOutcome<T>(
   return stop;
 }
 
+export function trackResolvedValue<T>(value: PromiseLike<T>): TrackedValue<T>;
 export function trackResolvedValue<T>(
   value: ResolvedValue<T> | ModuleSourceRef,
+): TrackedValue<T>;
+export function trackResolvedValue<T>(
+  value: ResolvedValue<T> | ModuleSourceRef | PromiseLike<T>,
+): TrackedValue<T>;
+export function trackResolvedValue<T>(
+  value: ResolvedValue<T> | ModuleSourceRef | PromiseLike<T>,
 ): TrackedValue<T> {
+  if (isPromiseLike(value)) return trackPromise(value as PromiseLike<T>);
   const resource = source(value);
   const existing = trackedValues.get(resource);
   if (existing !== undefined) return existing as TrackedValue<T>;
   const tracked: TrackedValue<T> = Object.freeze({
     get id() { return fetchResourceOperationId(resource); },
+    get value() { return resource.data; },
     get status() { return resource.status; },
     get pending() { return resource.pending; },
     get refreshing() { return resource.refreshing; },
