@@ -141,6 +141,39 @@ export function emitListRegion(
         ),
       ),
     );
+  } else if (site.keyExpr !== null && site.keyFromSpread) {
+    // The key may come from a spread attribute; destructure the raw item so
+    // a nullish merged key falls back to item identity like an absent key.
+    const keyItem = generatedIdentifier(ctx, 'keyItem');
+    const keyIndex = generatedIdentifier(ctx, 'keyIndex');
+    args.push(
+      astFactory.arrowFunctionExpression(
+        [keyItem, keyIndex],
+        astFactory.blockStatement([
+          astFactory.variableDeclaration('const', [
+            astFactory.variableDeclarator(
+              cloneEstreeNode(site.itemPattern, true),
+              cloneEstreeNode(keyItem),
+            ),
+            ...(site.indexParam === null
+              ? []
+              : [
+                  astFactory.variableDeclarator(
+                    astFactory.identifier(site.indexParam),
+                    cloneEstreeNode(keyIndex),
+                  ),
+                ]),
+          ]),
+          astFactory.returnStatement(
+            astFactory.logicalExpression(
+              '??',
+              cloneEstreeNode(site.keyExpr),
+              cloneEstreeNode(keyItem),
+            ),
+          ),
+        ]),
+      ),
+    );
   } else if (site.keyExpr !== null) {
     args.push(
       astFactory.arrowFunctionExpression(

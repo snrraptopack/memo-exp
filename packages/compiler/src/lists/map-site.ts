@@ -64,6 +64,8 @@ export interface MapSite {
   indexParam: string | null;
   /** Key expression if key={...} was given, else null. */
   keyExpr: t.Expression | null;
+  /** The key merges spread attributes; nullish falls back to item identity. */
+  keyFromSpread: boolean;
   /** Row JSX element, absent for a delegated render callback. */
   jsx: t.JSXElement | null;
   /** Component/host JSX or a caller-owned delegated row factory. */
@@ -231,6 +233,7 @@ export function analyzeMapSite(
   }
   const callback = analyzeCallback(ctx, call, ownerName, fail);
   const row = analyzeRow(ctx, callback, fail);
+  const keyPlan = extractKey(callback.jsx?.openingElement ?? null, fail);
   const suffix = nextSuffix(source.suffixBase, usedPrefixes);
   const calleeShape = callee as unknown as { type: string; optional?: boolean };
 
@@ -246,7 +249,8 @@ export function analyzeMapSite(
     itemPattern: callback.itemPattern,
     itemParam: callback.itemParam,
     indexParam: callback.indexParam,
-    keyExpr: extractKey(callback.jsx?.openingElement ?? null, fail),
+    keyExpr: keyPlan.expr,
+    keyFromSpread: keyPlan.fromSpread,
     jsx: callback.jsx,
     form: row.form,
     rowComp: row.rowComp,
@@ -648,9 +652,20 @@ function validateRenderInvocation(
 function extractKey(
   opening: t.JSXOpeningElement | null,
   fail: Fail,
-): t.Expression | null {
+): { expr: t.Expression | null; fromSpread: boolean } {
   let key: t.Expression | null = null;
+  let sawSpread = false;
+  const merged: Array<t.ObjectProperty | t.SpreadElement> = [];
   for (const attribute of opening?.attributes ?? []) {
+    if (astFactory.isJSXSpreadAttribute(attribute)) {
+      sawSpread = true;
+      merged.push(
+        astFactory.spreadElement(
+          cloneEstreeNode(attribute.argument, true),
+        ),
+      );
+      continue;
+    }
     if (
       astFactory.isJSXAttribute(attribute) &&
       astFactory.isJSXIdentifier(attribute.name, { name: 'key' })
@@ -659,9 +674,22 @@ function extractKey(
       if (key === null) {
         return fail('memo-dom: key={...} needs an expression', attribute);
       }
+      merged.push(
+        astFactory.objectProperty(astFactory.identifier('key'), key),
+      );
     }
   }
-  return key;
+  // `key` may arrive through a spread attribute; merge attributes in authored
+  // order so last-wins applies across spreads and explicit key={...} alike.
+  // The runtime falls back to item identity when the merged key is nullish.
+  if (!sawSpread) return { expr: key, fromSpread: false };
+  return {
+    expr: astFactory.memberExpression(
+      astFactory.objectExpression(merged),
+      astFactory.identifier('key'),
+    ),
+    fromSpread: true,
+  };
 }
 
 /**

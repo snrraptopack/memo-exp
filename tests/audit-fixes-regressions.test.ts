@@ -87,6 +87,21 @@ describe('audit fix: list-region suffix allocation', () => {
     // named `when0` must escape the reserved pattern rather than collide.
     expect(suffixes).toContain('/when0x');
   });
+
+  it('extracts key from spread attributes with an item-identity fallback', () => {
+    const code = compile(`
+      function Row(p) { return <p>{p.label}</p>; }
+      export function App() {
+        let items = [{ id: 'a', label: 'A' }];
+        return <main>{items.map((it) => {
+          const props = { key: it.id, p: it };
+          return <Row {...props} />;
+        })}</main>;
+      }
+    `);
+    // The merged key may be nullish; the fallback keeps item identity.
+    expect(code).toMatch(/\(\{ \.\.\.\{ key: it\.id, p: it \} \}\)\.key \?\? _keyItem/);
+  });
 });
 
 describe('audit fix: switch return-plan forms', () => {
@@ -595,6 +610,64 @@ describe('audit fix: dynamic-tag selector evaluation', () => {
   });
 });
 
+describe('audit check: non-store-shaped const objects', () => {
+  it('commits member writes on module const objects through helpers', () => {
+    const code = compile(`
+      export const cfg = { n: 0 };
+      export function bump() { cfg.n++; }
+      export function App() {
+        return <button onClick={() => bump()}>{cfg.n}</button>;
+      }
+    `);
+    expect(code).toContain('"./component.tsx#cfg.n"');
+    expect(code).toContain('commitWrites');
+  });
+
+  it('commits member writes on module const objects directly in handlers', () => {
+    const code = compile(`
+      export const cfg = { n: 0 };
+      export function App() {
+        return <button onClick={() => cfg.n++}>{cfg.n}</button>;
+      }
+    `);
+    expect(code).toContain('commitWrites');
+  });
+
+  it('commits const array mutation so list sources re-sync', () => {
+    const code = compile(`
+      export const items = ['a'];
+      export function App() {
+        return <div>
+          <button onClick={() => items.push('x')}>add</button>
+          <ul>{items.map((it) => <li key={it}>{it}</li>)}</ul>
+        </div>;
+      }
+    `);
+    expect(code).toContain('"./component.tsx#items"');
+  });
+
+  it('marks the component dirty for member writes on local const objects', () => {
+    const code = compile(`
+      export function App() {
+        const cfg = { n: 0 };
+        return <button onClick={() => cfg.n++}>{cfg.n}</button>;
+      }
+    `);
+    expect(code).toContain('markDirty');
+  });
+
+  it('rejects reassignment of a const store binding with a clear diagnostic', () => {
+    expect(() =>
+      compile(`
+        export const cfg = { n: 0 };
+        export function App() {
+          return <button onClick={() => cfg = { n: 9 }}>{cfg.n}</button>;
+        }
+      `),
+    ).toThrow(/cannot reassign store 'cfg'/);
+  });
+});
+
 const SOURCES: Record<string, string> = {
   'audit-row-owner-cond': `
     let items = [{ id: 1 }, { id: 2 }, { id: 3 }];
@@ -633,6 +706,30 @@ const SOURCES: Record<string, string> = {
         default:
           return <article id="end">end</article>;
       }
+    }
+  `,
+  'audit-spread-key': `
+    function Row(p) { return <p class="srow">{p.label}</p>; }
+    export function App() {
+      let items = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }];
+      return <div>
+        <button id="rev" onClick={() => items = [...items].reverse()}>rev</button>
+        <button id="recreate" onClick={() => items = items.map(it => ({ ...it }))}>recreate</button>
+        <main>{items.map((it) => {
+          const props = { key: it.id, p: it };
+          return <Row {...props} />;
+        })}</main>
+      </div>;
+    }
+  `,
+  'audit-spread-no-key': `
+    export function App() {
+      let items = [{ id: 'a' }, { id: 'b' }];
+      const attrs = { class: 'krow' };
+      return <div>
+        <button id="rev" onClick={() => items = [...items].reverse()}>rev</button>
+        <ul>{items.map((it) => <li {...attrs}>{it.id}</li>)}</ul>
+      </div>;
     }
   `,
   'audit-cond-assignment-reactive': `
@@ -755,5 +852,34 @@ describe('audit fixes: compiled runtime behavior', () => {
     expect(output.textContent).toBe('yes');
     document.querySelector<HTMLButtonElement>('#xmod-toggle')!.click();
     expect(output.textContent).toBe('no');
+  });
+
+  it('retains rows keyed by a spread attribute across identity changes and reorder', async () => {
+    const { App } = await importCompiled('audit-spread-key');
+    document.body.appendChild(App('App', null));
+    const texts = () =>
+      [...document.querySelectorAll('.srow')].map((n) => n.textContent);
+    expect(texts()).toEqual(['A', 'B']);
+    const first = document.querySelector('.srow')!;
+
+    // Recreated items have fresh identities — only the spread key retains rows.
+    document.querySelector<HTMLButtonElement>('#recreate')!.click();
+    expect(texts()).toEqual(['A', 'B']);
+    expect(document.querySelector('.srow')).toBe(first);
+
+    document.querySelector<HTMLButtonElement>('#rev')!.click();
+    expect(texts()).toEqual(['B', 'A']);
+    expect(document.querySelectorAll('.srow')[1]).toBe(first);
+  });
+
+  it('falls back to item identity when no spread attribute provides key', async () => {
+    const { App } = await importCompiled('audit-spread-no-key');
+    document.body.appendChild(App('App', null));
+    const texts = () =>
+      [...document.querySelectorAll('.krow')].map((n) => n.textContent);
+    expect(texts()).toEqual(['a', 'b']);
+
+    document.querySelector<HTMLButtonElement>('#rev')!.click();
+    expect(texts()).toEqual(['b', 'a']);
   });
 });
