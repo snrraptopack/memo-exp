@@ -101,6 +101,16 @@ function normalizedVariableStatement(
     const expression = componentExpression(declarator);
     let statement: t.Statement;
     if (expression === null) {
+      if (
+        astFactory.isIdentifier(declarator.id) &&
+        /^[A-Z]/.test(declarator.id.name) &&
+        declarator.init != null &&
+        nodeHasJsx(declarator.init)
+      ) {
+        throw at.buildCodeFrameError(
+          `memo-dom: '${declarator.id.name}' contains JSX but is not a plain function; declare components as 'function ${declarator.id.name}() { ... }' — wrappers like memo() are not supported`,
+        );
+      }
       statement = astFactory.variableDeclaration('const', [
         cloneEstreeNode(declarator, true),
       ]);

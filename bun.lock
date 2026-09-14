@@ -16,7 +16,7 @@
         "@memoized-dom/runtime": "workspace:*",
         "@memoized-dom/vite": "workspace:*",
         "@types/bun": "latest",
-        "@types/node": "^26.0.0",
+        "@types/node": "^26.5.1",
         "esbuild": "^0.28.1",
         "happy-dom": "^20.11.0",
         "oxlint": "^1.79.0",
@@ -50,7 +50,7 @@
     },
     "packages/compiler": {
       "name": "@memoized-dom/compiler",
-      "version": "0.0.5",
+      "version": "0.0.7",
       "dependencies": {
         "@tsrx/core": "0.1.63",
         "esrap": "^2.3.6",
@@ -59,14 +59,14 @@
     },
     "packages/data": {
       "name": "@memoized-dom/data",
-      "version": "0.0.1",
+      "version": "0.0.3",
       "peerDependencies": {
         "@memoized-dom/runtime": "workspace:*",
       },
     },
     "packages/language-service": {
       "name": "@memoized-dom/language-service",
-      "version": "0.0.2",
+      "version": "0.0.4",
       "dependencies": {
         "@memoized-dom/compiler": "workspace:*",
       },
@@ -76,15 +76,15 @@
     },
     "packages/router": {
       "name": "@memoized-dom/router",
-      "version": "0.0.1",
+      "version": "0.0.3",
     },
     "packages/runtime": {
       "name": "@memoized-dom/runtime",
-      "version": "0.0.6",
+      "version": "0.0.8",
     },
     "packages/server": {
       "name": "@memoized-dom/server",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@memoized-dom/data": "workspace:*",
         "@memoized-dom/router": "workspace:*",
@@ -98,10 +98,10 @@
     },
     "packages/vite": {
       "name": "@memoized-dom/vite",
-      "version": "0.0.6",
+      "version": "0.0.8",
       "dependencies": {
-        "@memoized-dom/adapters": "workspace:*",
-        "@memoized-dom/compiler": "^0.0.5",
+        "@memoized-dom/adapters": "^0.0.1",
+        "@memoized-dom/compiler": "^0.0.7",
       },
       "peerDependencies": {
         "@memoized-dom/runtime": "^0.0.6",
@@ -326,7 +326,7 @@
 
     "@types/estree-jsx": ["@types/estree-jsx@1.0.5", "", { "dependencies": { "@types/estree": "*" } }, "sha512-52CcUVNFyfb1A2ALocQw/Dd1BQFNmSdkuC3BkZ6iqhdMfQz7JWOFRuJFloOzjk+6WijU56m9oKXFAXc7o3Towg=="],
 
-    "@types/node": ["@types/node@26.1.1", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw=="],
+    "@types/node": ["@types/node@26.5.1", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-CzNm2FezW4VR/LjG6yUdiEgLE/rAQ9Slj5gCu/C2VrdcW7I0ahNZ8DRbHT7zOZ6r3ONgd/bsQIeSaoDGrd1C6g=="],
 
     "@types/whatwg-mimetype": ["@types/whatwg-mimetype@3.0.2", "", {}, "sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA=="],
 
@@ -578,7 +578,7 @@
 
     "uhyphen": ["uhyphen@0.2.0", "", {}, "sha512-qz3o9CHXmJJPGBdqzab7qAYuW8kQGKNEuoHFYrBwV6hWIMcpAmxDLXojcHfFr9US1Pe6zUswEIJIbLI610fuqA=="],
 
-    "undici-types": ["undici-types@8.3.0", "", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
+    "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
     "vite": ["vite@8.2.2", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.5", "postcss": "^8.5.26", "rolldown": "~1.2.4", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.4.0 || ^0.5.0", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-cFKLV/PRgAUlIRm5WjMjJ86jrftzpqcgH+Us+DS8mI3CDNiH30Whrz8uHL3+MOLPAgqbMBAqWdAHAphOAM+z/Q=="],
 

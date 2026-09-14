@@ -57,7 +57,7 @@
     "@memoized-dom/runtime": "workspace:*",
     "@memoized-dom/vite": "workspace:*",
     "@types/bun": "latest",
-    "@types/node": "^26.0.0",
+    "@types/node": "^26.5.1",
     "esbuild": "^0.28.1",
     "happy-dom": "^20.11.0",
     "oxlint": "^1.79.0",

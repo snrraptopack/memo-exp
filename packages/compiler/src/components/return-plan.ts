@@ -150,7 +150,9 @@ function expressionCanHoist(expression: t.Expression): boolean {
     enter(node) {
       if (
         HOIST_BARRIERS.has(node.type) ||
-        node.type === 'AssignmentExpression'
+        node.type === 'AssignmentExpression' ||
+        (node.type === 'UnaryExpression' &&
+          (node as unknown as { operator?: string }).operator === 'delete')
       ) {
         safe = false;
       }
@@ -159,16 +161,77 @@ function expressionCanHoist(expression: t.Expression): boolean {
   return safe;
 }
 
-function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
+function switchPlan(
+  statement: t.SwitchStatement,
+  returns: t.ReturnStatement[],
+): ComponentReturnPlan | null {
   if (!statement.cases.some((item) => item.test == null)) return null;
+  // Every function-level return must live inside the switch — a stray return
+  // elsewhere would bypass the region pick entirely.
+  const switchReturns = new Set<t.ReturnStatement>();
+  walkAst<BaseNode>(statement as unknown as BaseNode, {
+    enter(node) {
+      if (FUNCTION_NODES.has(node.type)) return false;
+      if (node.type === 'ReturnStatement') {
+        switchReturns.add(node as unknown as t.ReturnStatement);
+      }
+    },
+  });
+  if (!returns.every((returned) => switchReturns.has(returned))) return null;
   const branches: (JsxNode | null)[] = [];
   const cases: t.SwitchCase[] = [];
+  // The emitted pick keeps the authored switch shape, so the discriminant and
+  // case tests re-evaluate with authored laziness on every region update —
+  // the same reactivity semantics as JSX `{cond ? <A/> : <B/>}` sites.
+  // Empty-consequent cases share the next non-empty case's branch
+  // (fallthrough); a `break` exits the pick switch after its return.
+  const pending: t.SwitchCase[] = [];
+  const flushPending = (): void => {
+    for (const pendingCase of pending) {
+      cases.push(
+        astFactory.switchCase(
+          pendingCase.test == null
+            ? null
+            : cloneEstreeNode(pendingCase.test),
+          [],
+        ),
+      );
+    }
+    pending.length = 0;
+  };
   for (const item of statement.cases) {
-    if (item.consequent.length !== 1) return null;
-    const returned = branchReturn(item.consequent[0]!);
+    // Statements after a `break` are unreachable; only code before the first
+    // break participates in the case.
+    const breakAt = item.consequent.findIndex((part) =>
+      astFactory.isBreakStatement(part),
+    );
+    const body =
+      breakAt === -1 ? item.consequent : item.consequent.slice(0, breakAt);
+    if (body.length === 0) {
+      if (item.consequent.length === 0) {
+        // Truly empty case: falls through to the next non-empty case.
+        pending.push(item);
+        continue;
+      }
+      // `case x: break` exits the switch — authored flow reaches the end of
+      // the function and returns undefined: an empty branch.
+      flushPending();
+      const index = branches.length;
+      branches.push(null);
+      cases.push(
+        astFactory.switchCase(
+          item.test == null ? null : cloneEstreeNode(item.test),
+          [astFactory.returnStatement(astFactory.numericLiteral(index))],
+        ),
+      );
+      continue;
+    }
+    if (body.length !== 1) return null;
+    const returned = soleBranchReturn(body[0]!);
     if (returned === null) return null;
     const index = branches.length;
     branches.push(returned.jsx);
+    flushPending();
     cases.push(
       astFactory.switchCase(
         item.test == null ? null : cloneEstreeNode(item.test),
@@ -176,11 +239,33 @@ function switchPlan(statement: t.SwitchStatement): ComponentReturnPlan | null {
       ),
     );
   }
+  // Trailing empty cases fall off the switch — an empty (null) branch.
+  if (pending.length > 0) {
+    const index = branches.length;
+    branches.push(null);
+    for (const pendingCase of pending) {
+      cases.push(
+        astFactory.switchCase(
+          pendingCase.test == null
+            ? null
+            : cloneEstreeNode(pendingCase.test),
+          pendingCase === pending.at(-1)
+            ? [astFactory.returnStatement(astFactory.numericLiteral(index))]
+            : [],
+        ),
+      );
+    }
+    pending.length = 0;
+  }
+  if (branches.every((branch) => branch === null)) return null;
   return {
     pick: astFactory.arrowFunctionExpression(
       [],
       astFactory.blockStatement([
-        astFactory.switchStatement(cloneEstreeNode(statement.discriminant), cases),
+        astFactory.switchStatement(
+          cloneEstreeNode(statement.discriminant),
+          cases,
+        ),
       ]),
     ),
     branches,
@@ -235,8 +320,8 @@ export function analyzeComponentReturns(
   }
 
   if (final && astFactory.isSwitchStatement(final)) {
-    const plan = switchPlan(final);
-    if (plan !== null && plan.branches.length === returns.length) return plan;
+    const plan = switchPlan(final, returns);
+    if (plan !== null) return plan;
   }
 
   const fallback = final === undefined ? null : branchReturn(final);

@@ -563,6 +563,8 @@ export interface Ctx {
   reasonConstCounter: number;
   /** Dedupe table for hoisted multi-reason arrays. */
   reasonConsts: Map<string, string>;
+  /** Shared scratch binding for once-evaluated dynamic-tag selectors. */
+  dynamicTagSelector: string | null;
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
   /** Pure callbacks synthesized and owned by compiler derivation/read helpers. */
@@ -805,6 +807,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     writeConsts: new Map(),
     reasonConstCounter: 0,
     reasonConsts: new Map(),
+    dynamicTagSelector: null,
     analyzedFunctions: new WeakSet(),
     compilerOwnedCallbacks: new WeakSet(),
     handlerHasRootCommit: new WeakMap(),

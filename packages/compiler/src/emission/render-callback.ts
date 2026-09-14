@@ -13,7 +13,7 @@ import {
   type Ctx,
   type RowCtx,
 } from '../context';
-import { generatedIdentifier, md } from '../identifiers';
+import { componentId, generatedIdentifier, md } from '../identifiers';
 import {
   cacheDecl,
   newEmitScope,
@@ -133,7 +133,9 @@ export function buildRenderCallbackAdapter(
     keyPath: keyPathOf(keyExpression, itemParam),
     sourceKey: '$render-callback',
     sourceLocal: true,
-    ...(astFactory.isIdentifier(ownerId) ? { ownerIdVar: ownerId.name } : {}),
+    ownerIdVar: astFactory.isIdentifier(ownerId)
+      ? ownerId.name
+      : componentId(ctx, componentName).name,
   };
   const root = emitNode(
     ctx,

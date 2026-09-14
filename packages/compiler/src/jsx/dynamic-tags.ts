@@ -29,6 +29,7 @@ import {
   type Ctx,
 } from '../context';
 import type { ComponentPropsPlan } from '../components/props';
+import { generatedIdentifier } from '../identifiers';
 
 interface DynamicTagCandidate {
   compare: t.Expression;
@@ -563,17 +564,41 @@ function cloneWithTag(
 }
 
 function finiteSelection(
+  ctx: Ctx,
   selector: t.Expression,
   element: t.JSXElement,
   candidates: DynamicTagCandidate[],
 ): t.Expression {
+  // The selection becomes a cond-region pick that re-evaluates on every
+  // update. Evaluate the selector once per pick through a shared scratch
+  // binding instead of re-running it inside every candidate comparison.
+  const scratch =
+    ctx.dynamicTagSelector ??
+    (ctx.dynamicTagSelector = generatedIdentifier(
+      ctx,
+      'dynamicTagSelector',
+    ).name);
+  if (ctx.header.every((node) => !isDynamicTagScratchDecl(node, scratch))) {
+    ctx.header.push(
+      astFactory.variableDeclaration('let', [
+        astFactory.variableDeclarator(astFactory.identifier(scratch)),
+      ]),
+    );
+  }
   let selection: t.Expression = astFactory.nullLiteral();
   for (let index = candidates.length - 1; index >= 0; index--) {
     const candidate = candidates[index]!;
+    const selected = astFactory.identifier(scratch);
     selection = astFactory.conditionalExpression(
       astFactory.binaryExpression(
         '===',
-        cloneNode(selector),
+        index === 0
+          ? astFactory.assignmentExpression(
+              '=',
+              selected,
+              cloneNode(selector),
+            )
+          : selected,
         cloneNode(candidate.compare),
       ),
       cloneWithTag(element, candidate.tag),
@@ -581,6 +606,17 @@ function finiteSelection(
     );
   }
   return selection;
+}
+
+function isDynamicTagScratchDecl(node: t.Statement, name: string): boolean {
+  return (
+    astFactory.isVariableDeclaration(node) &&
+    node.declarations.some(
+      (declaration) =>
+        astFactory.isIdentifier(declaration.id) &&
+        declaration.id.name === name,
+    )
+  );
 }
 
 function selectorName(selector: t.Expression): string {
@@ -678,7 +714,7 @@ export function normalizeDynamicTags(ctx: Ctx): void {
               astFactory.jsxClosingFragment(),
               [
                 astFactory.jsxExpressionContainer(
-                  finiteSelection(selector, element, unique),
+                  finiteSelection(ctx, selector, element, unique),
                 ),
               ],
             );

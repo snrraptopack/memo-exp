@@ -325,13 +325,13 @@ export function transformComponent(
   const effectStatements = new Set<t.Statement>(
     effects?.map((site) => site.statement) ?? [],
   );
+  const removedByPlan =
+    'jsx' in returns
+      ? (statement: t.Statement) => statement === returns.statement
+      : (statement: t.Statement) => returns.statements.has(statement);
   const kept = node.body.body.filter(
     (statement) =>
-      !(
-        'jsx' in returns
-          ? statement === returns.statement
-          : returns.statements.has(statement)
-      ) && !effectStatements.has(statement),
+      !removedByPlan(statement) && !effectStatements.has(statement),
   );
   const rootVar =
     'jsx' in returns

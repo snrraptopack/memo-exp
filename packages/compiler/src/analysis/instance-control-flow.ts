@@ -3,6 +3,7 @@ import * as astFactory from '../ast/factory';
 import {
   childNode,
   FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  identifierName,
   nodeFields as fields,
   walkAst,
   type BaseNode,
@@ -14,39 +15,35 @@ import {
   type Ctx,
 } from '../context';
 import type { ControlFlowDerivation } from '../components/props';
+import { summarizeHelper } from '../helper-summaries';
 
 const IMPURE_REPLAY_NODES = new Set([
-  ...FUNCTION_NODES,
   'AssignmentExpression',
   'AwaitExpression',
-  'NewExpression',
-  'TaggedTemplateExpression',
   'UpdateExpression',
   'YieldExpression',
 ]);
 
+/**
+ * Whether an expression can be re-executed on every derivation replay.
+ * Calls (including `new`, tagged templates, and optional calls) replay like
+ * any other expression — there is no method whitelist. Writes embedded in a
+ * test (assignment, update, delete) are barriers only because their targets
+ * are not tracked bindings of the derivation; await/yield cannot run inside
+ * the synchronous replay closure.
+ */
 function replayExpressionIsPure(expression: t.Expression): boolean {
   let pure = true;
   walkAst<BaseNode>(expression as unknown as BaseNode, {
     enter(node) {
-      if (IMPURE_REPLAY_NODES.has(node.type)) {
+      if (
+        IMPURE_REPLAY_NODES.has(node.type) ||
+        (node.type === 'UnaryExpression' &&
+          fields(node).operator === 'delete')
+      ) {
         pure = false;
         return false;
       }
-      if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
-        return;
-      }
-      const callee = childNode(node, 'callee');
-      const object = callee === null ? null : childNode(callee, 'object');
-      const property = callee === null ? null : childNode(callee, 'property');
-      pure =
-        pure &&
-        callee?.type === 'MemberExpression' &&
-        fields(callee).computed === false &&
-        object?.type === 'Identifier' &&
-        fields(object).name === 'Math' &&
-        property?.type === 'Identifier';
-      return pure ? undefined : false;
     },
   });
   return pure;
@@ -79,6 +76,7 @@ interface ReplayControlShape {
 
 function replayBindingsForStatement(
   statement: t.Statement,
+  ignoreTestPurity = false,
 ): ReplayControlShape | null {
   if (astFactory.isExpressionStatement(statement)) {
     const target = replayAssignmentTarget(statement);
@@ -90,7 +88,7 @@ function replayBindingsForStatement(
     const bindings = new Set<string>();
     const partial = new Set<string>();
     for (const child of statement.body) {
-      const childShape = replayBindingsForStatement(child);
+      const childShape = replayBindingsForStatement(child, ignoreTestPurity);
       if (childShape === null) return null;
       for (const binding of childShape.bindings) {
         if (bindings.has(binding)) return null;
@@ -101,8 +99,16 @@ function replayBindingsForStatement(
     return bindings.size === 0 ? null : { bindings, partial };
   }
   if (astFactory.isIfStatement(statement)) {
-    if (!replayExpressionIsPure(statement.test)) return null;
-    const consequent = replayBindingsForStatement(statement.consequent);
+    if (
+      !ignoreTestPurity &&
+      !replayExpressionIsPure(statement.test)
+    ) {
+      return null;
+    }
+    const consequent = replayBindingsForStatement(
+      statement.consequent,
+      ignoreTestPurity,
+    );
     if (consequent === null) return null;
     if (statement.alternate == null) {
       return {
@@ -113,7 +119,10 @@ function replayBindingsForStatement(
         ]),
       };
     }
-    const alternate = replayBindingsForStatement(statement.alternate);
+    const alternate = replayBindingsForStatement(
+      statement.alternate,
+      ignoreTestPurity,
+    );
     if (
       alternate === null ||
       !sameBindings(consequent.bindings, alternate.bindings)
@@ -130,12 +139,19 @@ function replayBindingsForStatement(
 
 function replayBindingsForSwitch(
   statement: t.SwitchStatement,
+  ignoreTestPurity = false,
 ): ReplayControlShape | null {
-  if (!replayExpressionIsPure(statement.discriminant)) return null;
+  if (
+    !ignoreTestPurity &&
+    !replayExpressionIsPure(statement.discriminant)
+  ) {
+    return null;
+  }
   let common: ReplayControlShape | null = null;
   for (const switchCase of statement.cases) {
     if (
       switchCase.test != null &&
+      !ignoreTestPurity &&
       !replayExpressionIsPure(switchCase.test)
     ) {
       return null;
@@ -143,7 +159,10 @@ function replayBindingsForSwitch(
     const body = [...switchCase.consequent];
     if (body.at(-1) && astFactory.isBreakStatement(body.at(-1)!)) body.pop();
     if (body.some((child) => astFactory.isBreakStatement(child))) return null;
-    const shape = replayBindingsForStatement(astFactory.blockStatement(body));
+    const shape = replayBindingsForStatement(
+      astFactory.blockStatement(body),
+      ignoreTestPurity,
+    );
     if (shape === null) return null;
     if (common === null) {
       common = shape;
@@ -190,15 +209,152 @@ function identifierIsRead(ctx: Ctx, identifier: BaseNode): boolean {
   return true;
 }
 
+interface ReactiveReadFlags {
+  /** A call in the statement performs writes or cannot be summarized. */
+  unsafeCall: boolean;
+}
+
+/** Resolve a callee binding to its local function node, if it has one. */
+function localFunctionFor(
+  ctx: Ctx,
+  binding: Binding,
+):
+  | t.FunctionDeclaration
+  | t.ArrowFunctionExpression
+  | t.FunctionExpression
+  | null {
+  if (binding.declarationNode?.type === 'FunctionDeclaration') {
+    return binding.declarationNode as t.FunctionDeclaration;
+  }
+  const declarator = variableDeclaratorFor(ctx, binding);
+  if (declarator === null) return null;
+  let init = childNode(
+    declarator as unknown as BaseNode,
+    'init',
+  ) as t.Node | null;
+  while (init !== null && astFactory.isTransparentExpression(init)) {
+    init = childNode(
+      init as unknown as BaseNode,
+      'expression',
+    ) as t.Node | null;
+  }
+  if (
+    init !== null &&
+    (astFactory.isArrowFunctionExpression(init) ||
+      astFactory.isFunctionExpression(init))
+  ) {
+    return init;
+  }
+  return null;
+}
+
+/**
+ * A replayed call re-executes its body on every derivation update, so a local
+ * closure that writes reactive state would silently mutate on replay. Flag
+ * the write so the caller can diagnose instead of replaying.
+ */
+function flagLocalWrites(
+  ctx: Ctx,
+  fn: t.Node,
+  reactiveBindings: ReadonlyMap<Binding, string>,
+  flags: ReactiveReadFlags,
+): void {
+  const body = childNode(fn as unknown as BaseNode, 'body') ?? fn;
+  walkAst<BaseNode>(body as unknown as BaseNode, {
+    enter(node) {
+      if (node !== body && FUNCTION_NODES.has(node.type)) return false;
+      const target =
+        node.type === 'AssignmentExpression'
+          ? childNode(node, 'left')
+          : node.type === 'UpdateExpression'
+            ? childNode(node, 'argument')
+            : node.type === 'UnaryExpression' &&
+                fields(node).operator === 'delete'
+              ? childNode(node, 'argument')
+              : null;
+      if (target === null || target === undefined) return;
+      let base = target;
+      while (
+        base.type === 'MemberExpression' ||
+        base.type === 'OptionalMemberExpression'
+      ) {
+        const object = childNode(base, 'object');
+        if (object === null) return;
+        base = object;
+      }
+      const name = identifierName(base);
+      if (name === null) return;
+      const targetBinding = astBindingAt(ctx, target, name);
+      if (targetBinding !== undefined && reactiveBindings.has(targetBinding)) {
+        flags.unsafeCall = true;
+      }
+    },
+  });
+}
+
 function noteReactiveReads(
   ctx: Ctx,
   root: BaseNode,
   reactiveBindings: ReadonlyMap<Binding, string>,
   reads: Set<string>,
+  flags?: ReactiveReadFlags,
+  visited: Set<t.Node> = new Set(),
 ): void {
   walkAst<BaseNode>(root, {
     enter(node) {
       if (node !== root && FUNCTION_NODES.has(node.type)) return false;
+      if (
+        node.type === 'CallExpression' ||
+        node.type === 'OptionalCallExpression'
+      ) {
+        // Calls re-execute on every replay. When the callee is a summarized
+        // local helper or linked import, fold its reads so the derivation
+        // re-runs when the call's actual dependencies change — no method
+        // whitelist; unknown callees simply contribute their argument reads.
+        const callee = childNode(node, 'callee');
+        const calleeName =
+          callee === null ? null : identifierName(callee);
+        if (calleeName === null) return;
+        const binding = astBindingAt(ctx, callee!, calleeName);
+        if (binding === undefined) return;
+        if (binding.scope.isProgramScope === true) {
+          const summary =
+            ctx.importedFunctions.get(calleeName) ??
+            (ctx.helpers.has(calleeName)
+              ? summarizeHelper(ctx, calleeName)
+              : undefined);
+          if (summary === undefined) return;
+          for (const read of summary.reads) reads.add(read);
+          if (
+            flags !== undefined &&
+            (summary.writes.size > 0 ||
+              summary.boundedWrites.size > 0 ||
+              summary.unbounded)
+          ) {
+            flags.unsafeCall = true;
+          }
+          return;
+        }
+        // A component-local function closes over reactive state without a
+        // summary. Fold its body's free reads — its params resolve to local
+        // bindings and are ignored — and flag writes it performs, since the
+        // call re-executes on every replay.
+        const fn = localFunctionFor(ctx, binding);
+        if (fn === null || visited.has(fn)) return;
+        visited.add(fn);
+        if (flags !== undefined) {
+          flagLocalWrites(ctx, fn, reactiveBindings, flags);
+        }
+        noteReactiveReads(
+          ctx,
+          childNode(fn as unknown as BaseNode, 'body') ?? fn,
+          reactiveBindings,
+          reads,
+          flags,
+          visited,
+        );
+        return;
+      }
       if (node.type !== 'Identifier' || !identifierIsRead(ctx, node)) return;
       const name = fields(node).name;
       if (typeof name !== 'string') return;
@@ -262,7 +418,26 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
       const shape = astFactory.isIfStatement(statement)
         ? replayBindingsForStatement(statement)
         : replayBindingsForSwitch(statement);
-      if (shape === null) continue;
+      if (shape === null) {
+        // If only test/discriminant purity blocked an otherwise well-formed
+        // derivation and the statement reads reactive state, it would
+        // silently remain one-time setup — a stale binding with no signal.
+        const relaxed = astFactory.isIfStatement(statement)
+          ? replayBindingsForStatement(statement, true)
+          : replayBindingsForSwitch(statement, true);
+        if (relaxed === null) continue;
+        const silentReads = new Set<string>();
+        noteReactiveReads(
+          ctx,
+          statement as unknown as BaseNode,
+          reactiveBindings,
+          silentReads,
+        );
+        if (silentReads.size === 0) continue;
+        throw componentPath.buildCodeFrameError(
+          `memo-dom: control flow in component '${componentName}' reads reactive state but its test is not replayable (it contains an assignment, update, delete, await, or yield); hoist the value into a const first`,
+        );
+      }
 
       let eligible = true;
       const resets: ControlFlowDerivation['resets'] = [];
@@ -308,21 +483,30 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
       if (!eligible) continue;
 
       const reads = new Set<string>();
+      const readFlags: ReactiveReadFlags = { unsafeCall: false };
       noteReactiveReads(
         ctx,
         statement as unknown as BaseNode,
         reactiveBindings,
         reads,
+        readFlags,
       );
+
       for (const resetExpression of resetExpressions) {
         noteReactiveReads(
           ctx,
           resetExpression as unknown as BaseNode,
           reactiveBindings,
           reads,
+          readFlags,
         );
       }
       if (reads.size === 0) continue;
+      if (readFlags.unsafeCall) {
+        throw componentPath.buildCodeFrameError(
+          `memo-dom: control flow in component '${componentName}' replays a call that writes state or cannot be summarized; hoist the call result into a const or move the write into a handler`,
+        );
+      }
       for (const name of shape.bindings) {
         if (reads.has(name)) {
           throw componentPath.buildCodeFrameError(

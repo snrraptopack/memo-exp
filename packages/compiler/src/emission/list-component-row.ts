@@ -262,8 +262,12 @@ export function buildComponentRowCreate(
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
     sourceKey: site.sourceKey,
     sourceLocal: site.sourceLocal,
-    ...(site.sourceLocal && astFactory.isIdentifier(ownerId)
-      ? { ownerIdVar: ownerId.name }
+    ...(site.sourceLocal
+      ? {
+          ownerIdVar: astFactory.isIdentifier(ownerId)
+            ? ownerId.name
+            : componentId(ctx, componentName).name,
+        }
       : {}),
   };
   const attributes = site.jsx!.openingElement.attributes.filter(

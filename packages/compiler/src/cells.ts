@@ -53,14 +53,6 @@ function callExpression(
   } as t.CallExpression;
 }
 
-function binaryExpression(
-  operator: t.BinaryExpression['operator'],
-  left: t.Expression,
-  right: t.Expression,
-): t.BinaryExpression {
-  return { type: 'BinaryExpression', operator, left, right } as t.BinaryExpression;
-}
-
 function returnStatement(argument: t.Expression): t.ReturnStatement {
   return { type: 'ReturnStatement', argument } as t.ReturnStatement;
 }
@@ -125,18 +117,81 @@ function isDeepLiteral(current: BaseNode): boolean {
   return false;
 }
 
-function compoundOperator(operator: string): '+' | '-' | '*' | '/' | null {
-  switch (operator) {
-    case '+=':
-      return '+';
-    case '-=':
-      return '-';
-    case '*=':
-      return '*';
-    case '/=':
-      return '/';
-    default:
-      return null;
+/**
+ * Whether the value produced by a write expression is consumed. Writes lower
+ * to void runtime calls, so value-producing positions must be rejected. The
+ * check climbs through comma sequences: only the last element's value
+ * propagates to the sequence's own parent.
+ */
+function writeProducesValue(
+  ctx: Ctx,
+  node: BaseNode,
+  parent: BaseNode,
+): boolean {
+  let current: BaseNode = node;
+  let owner: BaseNode = parent;
+  for (;;) {
+    if (owner.type === 'ExpressionStatement') return false;
+    if (owner.type === 'ForStatement') {
+      return !(
+        childNode(owner, 'init') === current ||
+        childNode(owner, 'update') === current
+      );
+    }
+    if (owner.type !== 'SequenceExpression') return true;
+    const elements = fields(owner).expressions;
+    if (Array.isArray(elements) && elements[elements.length - 1] !== current) {
+      return false;
+    }
+    const ancestor = ctx.astAnalysis?.parentByNode.get(owner);
+    if (ancestor === undefined || ancestor === null) return true;
+    current = owner;
+    owner = ancestor;
+  }
+}
+
+/**
+ * Whether the identifier sits inside a destructuring pattern used as a write
+ * target (`({a} = obj)`, `[a] = arr`, `for ({a} of xs)`). Pattern leaves are
+ * binding positions, not reads — replacing them with call expressions would
+ * emit invalid syntax.
+ */
+function insidePatternWriteTarget(
+  ctx: Ctx,
+  node: BaseNode,
+  parent: BaseNode,
+  key: string,
+): boolean {
+  let current: BaseNode = node;
+  let owner: BaseNode = parent;
+  let ownerKey: string | undefined = key;
+  let climbed = false;
+  for (;;) {
+    if (
+      owner.type === 'ObjectPattern' ||
+      owner.type === 'ArrayPattern' ||
+      owner.type === 'AssignmentPattern' ||
+      owner.type === 'RestElement' ||
+      ((owner.type === 'ObjectProperty' || owner.type === 'Property') &&
+        ownerKey === 'value')
+    ) {
+      const next = ctx.astAnalysis?.parentByNode.get(owner);
+      if (next === undefined || next === null) return false;
+      current = owner;
+      owner = next;
+      ownerKey = undefined;
+      climbed = true;
+      continue;
+    }
+    // A bare identifier directly in the write position is not a pattern.
+    if (!climbed) return false;
+    if (owner.type === 'AssignmentExpression') {
+      return childNode(owner, 'left') === current;
+    }
+    if (owner.type === 'ForOfStatement' || owner.type === 'ForInStatement') {
+      return childNode(owner, 'left') === current;
+    }
+    return false;
   }
 }
 
@@ -284,16 +339,29 @@ export function liftModuleStateCells(
       }
       const lift = matchesLift(current);
       if (lift === undefined || typeDepth > 0) return;
+      if (insidePatternWriteTarget(ctx, current, parent, key)) {
+        throw programPath.buildCodeFrameError(
+          `memo-dom: destructuring writes to module state '${lift.local}' are not supported in server builds; assign '${lift.local}' directly`,
+        );
+      }
       if (
         (parent.type === 'VariableDeclarator' && key === 'id') ||
         ((parent.type === 'MemberExpression' ||
           parent.type === 'OptionalMemberExpression') &&
           key === 'property' &&
           fields(parent).computed !== true) ||
+        (key === 'key' && fields(parent).computed !== true) ||
         parent.type === 'ExportSpecifier' ||
         parent.type.startsWith('Import') ||
         ((parent.type === 'AssignmentExpression' && key === 'left') ||
-          (parent.type === 'UpdateExpression' && key === 'argument'))
+          (parent.type === 'UpdateExpression' && key === 'argument')) ||
+        ((parent.type === 'ForOfStatement' ||
+          parent.type === 'ForInStatement') &&
+          key === 'left') ||
+        ((parent.type === 'LabeledStatement' ||
+          parent.type === 'BreakStatement' ||
+          parent.type === 'ContinueStatement') &&
+          key === 'label')
       ) {
         return;
       }
@@ -306,13 +374,6 @@ export function liftModuleStateCells(
         fields(parent).value = readCall(lift);
         return;
       }
-      if (
-        (parent.type === 'ObjectProperty' || parent.type === 'Property') &&
-        key === 'key' &&
-        fields(parent).computed !== true
-      ) {
-        return;
-      }
       replaceAt(parent, key, index, readCall(lift) as unknown as BaseNode);
     },
     leave(current) {
@@ -322,51 +383,164 @@ export function liftModuleStateCells(
 
   refreshAstAnalysis(ctx, program);
 
+  const cellById = new Map<string, CellLift>();
+  for (const lift of lifts.values()) cellById.set(lift.cellId, lift);
+  const isCellRead = (value: BaseNode): CellLift | undefined => {
+    if (value.type !== 'CallExpression') return undefined;
+    const callee = childNode(value, 'callee');
+    const args = childNodes(value, 'arguments');
+    if (
+      callee?.type !== 'MemberExpression' ||
+      identifierName(childNode(callee, 'property')) !== 'readCell' ||
+      args.length !== 1 ||
+      args[0]!.type !== 'Identifier'
+    ) {
+      return undefined;
+    }
+    return cellById.get(identifierName(args[0])!);
+  };
+  /**
+   * Pass 1 already rewrote a member root (`store.x` → `readCell(_c_store).x`),
+   * so a write target's member chain bottoms out at the readCell call for the
+   * lifted binding.
+   */
+  const cellReadAtMemberRoot = (
+    target: BaseNode,
+  ): { lift: CellLift; call: BaseNode } | null => {
+    let current = target;
+    for (;;) {
+      const lift = isCellRead(current);
+      if (lift !== undefined) return { lift, call: current };
+      if (
+        current.type === 'MemberExpression' ||
+        current.type === 'OptionalMemberExpression'
+      ) {
+        const object = childNode(current, 'object');
+        if (object === null) return null;
+        current = object;
+        continue;
+      }
+      if (current.type.startsWith('TS')) {
+        const inner = childNode(current, 'expression');
+        if (inner === null) return null;
+        current = inner;
+        continue;
+      }
+      return null;
+    }
+  };
+  const replaceCellRead = (
+    root: BaseNode,
+    lift: CellLift,
+    replacement: t.Identifier,
+  ): void => {
+    walkAst<BaseNode>(root, {
+      enter(value, valueParent, valueKey, valueIndex) {
+        if (valueParent === null || valueKey === undefined) return;
+        if (isCellRead(value)?.cellId === lift.cellId) {
+          replaceAt(
+            valueParent,
+            valueKey,
+            valueIndex,
+            replacement as unknown as BaseNode,
+          );
+          return false;
+        }
+      },
+    });
+  };
+
   const writeCall = (
     lift: CellLift,
     current: BaseNode,
   ): t.CallExpression => {
-    if (current.type === 'AssignmentExpression') {
-      const right = childNode(current, 'right')! as unknown as t.Expression;
-      const operator = fields(current).operator;
-      if (operator === '=') {
-        return callExpression(md(ctx, 'setCell'), [
-          astFactory.identifier(lift.cellId),
-          cloneNode(right),
-        ]);
-      }
-      const compound =
-        typeof operator === 'string' ? compoundOperator(operator) : null;
-      if (compound === null) {
-        throw new Error(
-          `memo-dom: unsupported compound write '${String(operator)}' on module state '${lift.local}'`,
-        );
-      }
+    const operator = fields(current).operator;
+    if (current.type === 'UpdateExpression') {
       return callExpression(md(ctx, 'updateCell'), [
         astFactory.identifier(lift.cellId),
         astFactory.arrowFunctionExpression(
           [astFactory.identifier('c')],
-          binaryExpression(compound, astFactory.identifier('c'), cloneNode(right)),
+          astFactory.sequenceExpression([
+            astFactory.updateExpression(
+              operator as t.UpdateExpression['operator'],
+              astFactory.identifier('c'),
+              true,
+            ),
+            astFactory.identifier('c'),
+          ]),
         ),
       ]);
     }
-    const delta = fields(current).operator === '--' ? '-' : '+';
+    const right = childNode(current, 'right')! as unknown as t.Expression;
+    if (operator === '=') {
+      return callExpression(md(ctx, 'setCell'), [
+        astFactory.identifier(lift.cellId),
+        cloneNode(right),
+      ]);
+    }
+    // `updateCell` commits through the access table. `(c <op>= right, c)`
+    // applies any compound operator — including `??=`, `**=`, `%=`, … — and
+    // returns the updated value so the slot stays consistent.
     return callExpression(md(ctx, 'updateCell'), [
       astFactory.identifier(lift.cellId),
       astFactory.arrowFunctionExpression(
         [astFactory.identifier('c')],
-        binaryExpression(delta, astFactory.identifier('c'), astFactory.numericLiteral(1)),
+        astFactory.sequenceExpression([
+          astFactory.assignmentExpression(
+            operator as t.AssignmentExpression['operator'],
+            astFactory.identifier('c'),
+            cloneNode(right),
+          ),
+          astFactory.identifier('c'),
+        ]),
       ),
     ]);
   };
 
   walkAst<BaseNode>(program, {
     enter(current, parent, key, index) {
+      if (parent === null || key === undefined) return;
+
+      // `for (x of …)` / `for (x in …)` with a module-state loop target: the
+      // binding itself is rewritten, so lower the loop to assign through the
+      // cell on every iteration.
       if (
-        (current.type !== 'AssignmentExpression' &&
-          current.type !== 'UpdateExpression') ||
-        parent === null ||
-        key === undefined
+        current.type === 'ForOfStatement' ||
+        current.type === 'ForInStatement'
+      ) {
+        const left = childNode(current, 'left');
+        if (left?.type !== 'Identifier') return;
+        const lift = matchesLift(left);
+        if (lift === undefined) return;
+        const loopValue = generatedIdentifier(ctx, 'forValue');
+        const body = childNode(current, 'body');
+        const setStatement = astFactory.expressionStatement(
+          callExpression(md(ctx, 'setCell'), [
+            astFactory.identifier(lift.cellId),
+            astFactory.identifier(loopValue.name),
+          ]),
+        );
+        fields(current).left = astFactory.variableDeclaration('const', [
+          astFactory.variableDeclarator(astFactory.identifier(loopValue.name)),
+        ]);
+        fields(current).body = astFactory.blockStatement([
+          setStatement,
+          ...(body !== null && body.type === 'BlockStatement'
+            ? childNodes(body, 'body')
+            : body === null
+              ? []
+              : [body]),
+        ] as t.Statement[]);
+        return;
+      }
+
+      const isDelete =
+        current.type === 'UnaryExpression' &&
+        fields(current).operator === 'delete';
+      if (
+        current.type !== 'AssignmentExpression' &&
+        current.type !== 'UpdateExpression' &&
+        !isDelete
       ) {
         return;
       }
@@ -374,17 +548,72 @@ export function liftModuleStateCells(
         current,
         current.type === 'AssignmentExpression' ? 'left' : 'argument',
       );
-      if (target?.type !== 'Identifier') return;
-      const lift = matchesLift(target);
-      if (lift === undefined) return;
-      if (parent.type !== 'ExpressionStatement') {
+      if (target === null) return;
+
+      if (target.type === 'Identifier') {
+        const lift = matchesLift(target);
+        if (lift === undefined) return;
+        if (isDelete) {
+          // `delete x` on a bare binding is rejected by strict-mode parsers;
+          // nothing to lower.
+          return;
+        }
+        if (writeProducesValue(ctx, current, parent)) {
+          throw programPath.buildCodeFrameError(
+            current.type === 'AssignmentExpression'
+              ? `memo-dom: module-state write '${lift.local}' cannot produce a value; state cells only support statement-position writes`
+              : `memo-dom: module-state update '${lift.local}' cannot produce a value; state cells only support statement-position updates`,
+          );
+        }
+        replaceAt(parent, key, index, writeCall(lift, current) as unknown as BaseNode);
+        return false;
+      }
+
+      // Member/delete targets rooted at a cell read: `readCell(c).x = v`.
+      // Lower to `updateCell(c, (slot) => (slot.x = v, slot))` so the mutation
+      // still routes invalidation through the access table.
+      const member = cellReadAtMemberRoot(target);
+      if (member === null) return;
+      if (writeProducesValue(ctx, current, parent)) {
         throw programPath.buildCodeFrameError(
-          current.type === 'AssignmentExpression'
-            ? `memo-dom: module-state write '${lift.local}' must be a statement; value-producing assignments cannot lower to state cells`
-            : `memo-dom: module-state update '${lift.local}' must be a statement; its produced value cannot lower to state cells`,
+          `memo-dom: module-state write to '${member.lift.local}' cannot produce a value; state cells only support statement-position writes`,
         );
       }
-      replaceAt(parent, key, index, writeCall(lift, current) as unknown as BaseNode);
+      const loweredTarget = cloneNode(target) as unknown as t.Expression;
+      replaceCellRead(
+        loweredTarget as unknown as BaseNode,
+        member.lift,
+        astFactory.identifier('c'),
+      );
+      const applied: t.Expression =
+        current.type === 'AssignmentExpression'
+          ? astFactory.assignmentExpression(
+              fields(current).operator as t.AssignmentExpression['operator'],
+              loweredTarget as t.MemberExpression,
+              cloneNode(childNode(current, 'right')! as unknown as t.Expression),
+            )
+          : isDelete
+            ? astFactory.unaryExpression('delete', loweredTarget, true)
+            : astFactory.updateExpression(
+                fields(current).operator as t.UpdateExpression['operator'],
+                loweredTarget,
+                fields(current).prefix === true,
+              );
+      replaceAt(
+        parent,
+        key,
+        index,
+        callExpression(md(ctx, 'updateCell'), [
+          astFactory.identifier(member.lift.cellId),
+          astFactory.arrowFunctionExpression(
+            [astFactory.identifier('c')],
+            astFactory.sequenceExpression([
+              applied,
+              astFactory.identifier('c'),
+            ]),
+          ),
+        ]) as unknown as BaseNode,
+      );
       return false;
     },
   });

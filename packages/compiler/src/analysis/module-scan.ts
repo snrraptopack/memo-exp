@@ -1,7 +1,12 @@
 /** Populates module state, helper, and component declarations. */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import type { BaseNode } from '../ast';
+import {
+  extractPatternIdentifiers,
+  FUNCTION_NODE_TYPES as FUNCTION_NODES,
+  walkAst,
+  type BaseNode,
+} from '../ast';
 import {
   astBindingAt,
   bindingHasVisibleWrite,
@@ -39,12 +44,19 @@ export function validateLinkedImports(ctx: Ctx, programPath: ProgramPath): void 
 }
 export function scanModuleState(ctx: Ctx, programPath: ProgramPath): void {
   const tagCandidates = moduleStateStringCandidates(programPath.node);
+  const destructured: {
+    declaration: t.VariableDeclarator;
+    kind: string;
+  }[] = [];
   for (const stmt of programPath.node.body) {
     // M5.5: exported state is still state — unwrap the export wrapper
     const inner = astFactory.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
     if (!astFactory.isVariableDeclaration(inner)) continue;
     for (const decl of inner.declarations) {
-      if (!astFactory.isIdentifier(decl.id)) continue;
+      if (!astFactory.isIdentifier(decl.id)) {
+        destructured.push({ declaration: decl, kind: inner.kind });
+        continue;
+      }
       if (inner.kind === 'let' || inner.kind === 'var') {
         const binding = astBindingAt(
           ctx,
@@ -71,6 +83,57 @@ export function scanModuleState(ctx: Ctx, programPath: ProgramPath): void {
           ctx.stateTagCandidates.set(decl.id.name, [...candidates]);
         }
       }
+    }
+  }
+  // Destructured bindings never enter the state table, so writes to them and
+  // snapshot reads of reactive roots would go stale with no signal. Reject
+  // the two observable cases; inert patterns compile unchanged.
+  for (const { declaration, kind } of destructured) {
+    for (const { name } of extractPatternIdentifiers(
+      declaration.id as unknown as BaseNode,
+    )) {
+      const binding = astBindingAt(
+        ctx,
+        declaration as unknown as BaseNode,
+        name,
+      );
+      if (
+        (kind === 'let' || kind === 'var') &&
+        bindingHasVisibleWrite(ctx, binding)
+      ) {
+        throw programPath.buildCodeFrameError(
+          `memo-dom: destructured module binding '${name}' is written but cannot be tracked; declare it as a plain '${kind}' binding instead`,
+          declaration as unknown as t.Node,
+        );
+      }
+    }
+    const init = declaration.init;
+    if (init === null || init === undefined) continue;
+    let snapshotRoot: string | null = null;
+    walkAst(init as unknown as BaseNode, {
+      enter(node) {
+        if (snapshotRoot !== null) return false;
+        // Reads inside nested functions are deferred to call time, not
+        // snapshots frozen at module evaluation.
+        if (FUNCTION_NODES.has(node.type)) return false;
+        if (node.type !== 'Identifier') return;
+        const name = (node as unknown as { name?: string }).name;
+        if (typeof name !== 'string') return;
+        const binding = astBindingAt(ctx, node, name);
+        if (
+          binding !== undefined &&
+          binding.scope.isProgramScope === true &&
+          ctx.state.has(name)
+        ) {
+          snapshotRoot = name;
+        }
+      },
+    });
+    if (snapshotRoot !== null) {
+      throw programPath.buildCodeFrameError(
+        `memo-dom: destructuring '${snapshotRoot}' snapshots reactive state that cannot be tracked; assign the value directly or destructure inside a component`,
+        declaration as unknown as t.Node,
+      );
     }
   }
 }
