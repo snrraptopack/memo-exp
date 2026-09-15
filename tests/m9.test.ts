@@ -89,9 +89,9 @@ describe('R10 — props flow down', () => {
 
     expect(document.querySelector('span')!.textContent).toBe('2'); // n*2 re-synced (count=1)
     expect(appRenders()).toBe(1);
-    // same commit, not next frame — the exact 'App/Badge' channel is now
-    // the only reader entry; no covering pattern fans out to the child
-    expect(badgeRenders()).toBeGreaterThanOrEqual(1);
+    // same commit, not next frame — and exactly once: the child is reached
+    // only through the parent's setProps push, no covering pattern fans out
+    expect(badgeRenders()).toBe(1);
   });
 
   it('shallow-equal re-push does NOT dirty the child (unit)', () => {
