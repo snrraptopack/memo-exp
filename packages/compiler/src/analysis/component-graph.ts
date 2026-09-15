@@ -76,7 +76,7 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
   if (linked !== undefined) {
     return expandRenderSlotPaths(
       ctx,
-      linked.flatMap((path) => [path, `${path}/*`]),
+      [...linked],
     );
   }
   const sites = ctx.listedSites.get(name);
@@ -88,26 +88,20 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
         const container =
           containerEnd < 0 ? '' : `/${site.suffix.slice(0, containerEnd)}`;
         for (const variant of pathVariants(ctx, site.owner)) {
-          patterns.push(
-            `${variant}${container}`,
-            `${variant}${container}/*`,
-          );
+          patterns.push(`${variant}${container}`);
         }
       }
       return expandRenderSlotPaths(ctx, patterns);
     }
     for (const site of sites) {
       for (const variant of pathVariants(ctx, site.owner)) {
-        patterns.push(
-          `${variant}/${site.suffix}/Row[*]`,
-          `${variant}/${site.suffix}/Row[*]/*`,
-        );
+        patterns.push(`${variant}/${site.suffix}/Row[*]`);
       }
     }
     return expandRenderSlotPaths(ctx, patterns);
   }
   for (const variant of pathVariants(ctx, name)) {
-    patterns.push(variant, `${variant}/*`);
+    patterns.push(variant);
   }
   return expandRenderSlotPaths(ctx, patterns);
 }

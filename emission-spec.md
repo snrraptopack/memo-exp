@@ -295,8 +295,8 @@ Semantics:
 
 - The region entity is registered as a child of the owner. **All** state
   reads inside the conditional — condition AND both branches — are attributed
-  to the region's patterns (`<ownerPath>/when<n>`, `<ownerPath>/when<n>/*`),
-  so any write to them dirties the region, not the owner. Branch handlers
+  to the region's exact reader id (`<ownerPath>/when<n>`), so any write to
+  them dirties the region, not the owner. Branch handlers
   therefore always route through the table (never `markDirty(id)` — the
   owner's update does not touch the region). Instance state, props, and local
   derivations have no access-table identity, so an owner update explicitly
@@ -2010,8 +2010,13 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   is now a bounded drain loop so pushed children render in the SAME commit.
   Component rows re-push + force-dirty on every retaining reconcile (the
   box can hold a same-reference object whose fields mutated — the M5.5
-  case). Note: the `Owner/*` covering pattern may still render children on
-  unrelated parent writes (§11.3 over-approximation, safe direction).
+  case). Reader entries are exact ids only: the former `Owner/*` covering
+  pattern (which also dirtied every direct child on any owner-read write) was
+  removed once every child had its own channel — module-state readers under
+  their own id, cond/route regions under `<owner>/when<n>`, prop-fed children
+  via `setProps` from the parent's update. Consequence: a compiled root must
+  be mounted at its emitted id (what `mount()` does); a component mounted by
+  hand at an unrelated id is not reached by module-state writes.
 - **M5.6 (constant-factor sprint, packages/runtime/src/access.ts +
   packages/runtime/src/kernel.ts + packages/runtime/src/list.ts,
   tests/m56.test.ts):** per-commit routing cost eliminated — `resolveWrites`

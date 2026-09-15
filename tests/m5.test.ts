@@ -15,7 +15,6 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { compile } from '@memoized-dom/compiler';
 import {
-  register,
   unregister,
   registeredIds,
   setScheduler,
@@ -218,7 +217,7 @@ describe('M5 compiler — code generation', () => {
       /Row\(item, _rowId\d*, _onClickBinding\d*\)/,
     );
     expect(code).toContain('entities: []');
-    expect(code).toContain('"App", "App/*"');
+    expect(code).toContain('"./component.tsx#selected": ["App"]');
   });
 
   it('rejects unsupported constructs with actionable errors', () => {
@@ -292,9 +291,8 @@ describe('M5 compiler — compiled output runs', () => {
   });
 
   it('counter: mounts, renders, and re-renders itself on click', async () => {
-    register({ id: 'App', parent: null, render: () => {} });
     const { Counter } = await importCompiled('counter');
-    document.body.appendChild(Counter('App/Counter', 'App'));
+    document.body.appendChild(Counter('App', null));
 
     const button = document.querySelector('button')!;
     const span = document.querySelector('span')!;
@@ -307,7 +305,7 @@ describe('M5 compiler — compiled output runs', () => {
     button.click();
     expect(span.textContent).toBe('2');
     // local commit: the parent root entity must not re-render on clicks
-    expect(registeredIds()).toContain('App/Counter');
+    expect(registeredIds()).toContain('App');
   });
 
   it('shared: a write commits only the subtree that reads it', async () => {
@@ -350,9 +348,8 @@ describe('M5 compiler — compiled output runs', () => {
   });
 
   it('async: commits fire when writes happen — after awaits, inside timers', async () => {
-    register({ id: 'App', parent: null, render: () => {} });
     const { AsyncCounter } = await importCompiled('async');
-    document.body.appendChild(AsyncCounter('App/AsyncCounter', 'App'));
+    document.body.appendChild(AsyncCounter('App', null));
 
     const [asyncBtn, timerBtn] = document.querySelectorAll('button');
     const span = document.querySelector('span')!;

@@ -9,8 +9,8 @@ const _WRITES_2 = ["./component.tsx#count"];
 _MD.installAccessTable(
 	{
 		readers: {
-			"./component.tsx#count": ["App/when0", "App/when0/*"],
-			"./component.tsx#loggedIn": ["App/when0", "App/when0/*"]
+			"./component.tsx#count": ["App/when0"],
+			"./component.tsx#loggedIn": ["App/when0"]
 		}
 	},
 	"App",

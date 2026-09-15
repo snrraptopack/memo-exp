@@ -102,7 +102,7 @@ describe('M5.10 - lightweight listed component rows', () => {
     );
     expect(code).toMatch(/\.createListRegion\([\s\S]*?,\s*false\s*\)/);
     expect(code).toContain('entities: []');
-    expect(code).toContain('"./component.tsx#selected": ["App", "App/*"]');
+    expect(code).toContain('"./component.tsx#selected": ["App"]');
   });
 
   it('keeps lightweight rows out of the registry and refreshes them through the owner', async () => {

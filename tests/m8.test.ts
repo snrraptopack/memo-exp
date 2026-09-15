@@ -48,7 +48,6 @@ describe('R8 — code generation', () => {
     expect(code).toMatch(/render: \(\) => _when\d*\.update\(\)/);
     // region vars route to the region, not the owner
     expect(code).toContain('"App/when0"');
-    expect(code).toContain('"App/when0/*"');
     // branch handlers never markDirty(id) — the owner's update doesn't
     // touch the region; commits route through the table
     expect(code.match(/\.commitWrites\(_WRITES_\d*\)/g)).toHaveLength(2);

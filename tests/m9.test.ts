@@ -89,15 +89,15 @@ describe('R10 — props flow down', () => {
 
     expect(document.querySelector('span')!.textContent).toBe('2'); // n*2 re-synced (count=1)
     expect(appRenders()).toBe(1);
-    // same commit, not next frame (may be 2: the 'App/*' covering pattern
-    // also hits the child — documented over-approximation, §11.3)
+    // same commit, not next frame — the exact 'App/Badge' channel is now
+    // the only reader entry; no covering pattern fans out to the child
     expect(badgeRenders()).toBeGreaterThanOrEqual(1);
   });
 
   it('shallow-equal re-push does NOT dirty the child (unit)', () => {
     // pure props.ts semantics: equal values → no mark; changed → mark.
-    // (At the compiled level the 'App/*' covering pattern may still render
-    // the child on parent writes — over-approximation, safe direction.)
+    // (Compiled readers are exact channels only — a parent write reaches the
+    // child solely through its own entry, never a covering pattern.)
     let renders = 0;
     register({
       id: 'P',

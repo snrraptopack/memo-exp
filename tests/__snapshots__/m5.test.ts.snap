@@ -5,7 +5,7 @@ exports[`M5 compiler — code generation > attributes commits to the scope that 
 
 const _WRITES_ = ["./component.tsx#count"];
 
-_MD.installAccessTable({ readers: { "./component.tsx#count": ["App", "App/*"] } }, "App", "./component.tsx");
+_MD.installAccessTable({ readers: { "./component.tsx#count": ["App"] } }, "App", "./component.tsx");
 
 // Fixture: async commit attribution.
 let count = 0;
@@ -106,9 +106,9 @@ const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable(
 	{
 		readers: {
-			"./component.tsx#items": ["App", "App/*"],
+			"./component.tsx#items": ["App"],
 			"./component.tsx#items\\u0000memo-dom:list-structure-reader": ["App"],
-			"./component.tsx#selected": ["App", "App/*"]
+			"./component.tsx#selected": ["App"]
 		}
 	},
 	"App",
@@ -249,9 +249,9 @@ const _WRITES_2 = ["./component.tsx#items"];
 _MD.installAccessTable(
 	{
 		readers: {
-			"./component.tsx#items": ["App", "App/*"],
+			"./component.tsx#items": ["App"],
 			"./component.tsx#items\\u0000memo-dom:list-structure-reader": ["App"],
-			"./component.tsx#selected": ["App/items/Row[*]", "App/items/Row[*]/*"]
+			"./component.tsx#selected": ["App/items/Row[*]"]
 		}
 	},
 	"App",
@@ -370,9 +370,7 @@ const _WRITES_ = ["./component.tsx#label"];
 
 _MD.installAccessTable(
 	{
-		readers: {
-			"./component.tsx#label": ["App/Tag", "App/Tag/*", "App/Tag[*]", "App/Tag[*]/*"]
-		}
+		readers: { "./component.tsx#label": ["App/Tag", "App/Tag[*]"] }
 	},
 	"App",
 	"./component.tsx"
@@ -449,8 +447,8 @@ const _WRITES_ = ["./component.tsx#again", "./component.tsx#count"];
 _MD.installAccessTable(
 	{
 		readers: {
-			"./component.tsx#again": ["App", "App/*"],
-			"./component.tsx#count": ["App", "App/*"]
+			"./component.tsx#again": ["App"],
+			"./component.tsx#count": ["App"]
 		}
 	},
 	"App",
@@ -528,13 +526,7 @@ exports[`M5 compiler — code generation > compiles the shared-state fixture wit
 
 const _WRITES_ = ["./component.tsx#name"];
 
-_MD.installAccessTable(
-	{
-		readers: { "./component.tsx#name": ["App/Badge", "App/Badge/*"] }
-	},
-	"App",
-	"./component.tsx"
-);
+_MD.installAccessTable({ readers: { "./component.tsx#name": ["App/Badge"] } }, "App", "./component.tsx");
 
 // shared.tsx — two siblings sharing module state; the write must route
 // to Badge only, never to App or Editor.

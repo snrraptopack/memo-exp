@@ -29,7 +29,7 @@ exports[`emission golden snapshots (emission-spec.md) > Cross-module — importe
 
 const _WRITES_ = ["./state.ts#count"];
 
-_MD.installAccessTable({ readers: { "./state.ts#count": ["App", "App/*"] } }, "App", "./app.tsx");
+_MD.installAccessTable({ readers: { "./state.ts#count": ["App"] } }, "App", "./app.tsx");
 
 import { count, bump } from './state';
 
@@ -130,7 +130,7 @@ exports[`emission golden snapshots (emission-spec.md) > Module state — module-
 
 const _WRITES_ = ["./component.tsx#selected"];
 
-_MD.installAccessTable({ readers: { "./component.tsx#selected": ["App", "App/*"] } }, "App", "./component.tsx");
+_MD.installAccessTable({ readers: { "./component.tsx#selected": ["App"] } }, "App", "./component.tsx");
 
 export let selected = null;
 
@@ -768,7 +768,7 @@ function _liCreateTemplate(_document2) {
 	return _li;
 }
 
-_MD.installAccessTable({ readers: { "./component.tsx#items": ["App", "App/*"] } }, "App", "./component.tsx");
+_MD.installAccessTable({ readers: { "./component.tsx#items": ["App"] } }, "App", "./component.tsx");
 
 let filter = 'all';
 let items = [{ id: 1, text: 'a', done: false }];

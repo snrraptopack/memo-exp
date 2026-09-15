@@ -264,7 +264,7 @@ describe('linked analysis parity', () => {
     }] };
     const linked = compileModulesDetailed({ './a.tsx': source }, options);
     expect(linked.output['./a.tsx']).toBe(compile(source, { ...options, moduleId: './a.tsx' }));
-    expect(linked.metadata['./a.tsx']!.readers['./a.tsx#location']).toEqual(['App', 'App/*']);
+    expect(linked.metadata['./a.tsx']!.readers['./a.tsx#location']).toEqual(['App']);
   });
 
   it('reports the same conditional-region reader routes that it emits', () => {

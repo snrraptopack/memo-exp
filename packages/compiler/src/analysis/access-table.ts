@@ -62,7 +62,6 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
       ctx,
       pathVariants(ctx, owner).flatMap((variant) => [
         `${variant}/${suffix}/Row[*]`,
-        `${variant}/${suffix}/Row[*]/*`,
       ]),
     );
     for (const variable of vars) add(variable, patterns);
@@ -72,15 +71,12 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
       ctx,
       pathVariants(ctx, owner).flatMap((variant) => [
         `${variant}/${suffix}`,
-        `${variant}/${suffix}/*`,
       ]),
     );
     for (const variable of vars) add(variable, patterns);
   }
   for (const [component, sites] of ctx.effects) {
-    const ownerPatterns = componentPatterns(ctx, component).filter(
-      (pattern) => !pattern.endsWith('/*'),
-    );
+    const ownerPatterns = componentPatterns(ctx, component);
     for (const site of sites) {
       const basePatterns = ownerPatterns.map(
         (pattern) => `${pattern}/$effects/${site.index}`,
