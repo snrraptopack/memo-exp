@@ -36,6 +36,7 @@ import {
   runtimeParameter,
   simpleObjectPropBindings,
   type ComponentPropsPlan,
+  propReasonArguments,
   type SimpleObjectPropBinding,
 } from '../components/props';
 import { buildRenderPreludeReplay } from '../components/render-prelude';
@@ -501,6 +502,9 @@ export function transformComponent(
         astFactory.callExpression(md(ctx, 'registerProps'), [
           astFactory.identifier(factoryId),
           astFactory.identifier(propsBox!),
+          ...(reasonIds === undefined
+            ? []
+            : propReasonArguments(propPlan, reasonIds) ?? []),
         ]),
       ),
     );

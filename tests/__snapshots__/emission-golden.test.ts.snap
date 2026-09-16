@@ -312,7 +312,7 @@ export function Row(_id, _parent, _props, _dataPolicies) {
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
-	_MD.registerProps(_id, _props);
+	_MD.registerProps(_id, _props, { "item": 1, "index": 0 });
 
 	const _text = _document.createTextNode(" at ");
 	const _li = _document.createElement("li");
@@ -341,7 +341,7 @@ export function Shell(_id, _parent, _props, _dataPolicies) {
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
-	_MD.registerProps(_id, _props);
+	_MD.registerProps(_id, _props, { "header": 1, "children": 0 });
 
 	const _header = _document.createElement("header");
 	const _slotDispose = header == null ? null : header(_header, _id, "0");
@@ -615,7 +615,7 @@ export function Avatar(_id, _parent, _props, _dataPolicies) {
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
-	_MD.registerProps(_id, _props);
+	_MD.registerProps(_id, _props, { "user": 1, "size": 0 });
 
 	const _img = _document.createElement("img");
 

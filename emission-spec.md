@@ -349,9 +349,19 @@ yet). The box is registered per entity (`registerProps(id, __p)`).
 inside its own update closure: `MD.setProps(childId, [expr...])` — the full
 array (static positions recompute to equal values and cost one `Object.is`).
 Prop-expression reads count as parent reads, so the parent updates exactly
-when a pushed value can change. `setProps` shallow-compares per index;
-unchanged → no dirty, zero work. Changed → mutate box in place +
-`markDirty(childId)`.
+when a pushed value can change. Positional arrays shallow-compare per index;
+unchanged → no dirty, zero work.
+
+**Object envelopes.** The single-object form JSX call sites emit
+(`[{ a, b }]`) is diffed per key: identical primitives are unchanged,
+anything else — objects, functions, added or removed keys — counts as
+changed (an identical object may have been mutated in place). A child with
+dirty-reason ids registers a key→reason map at `registerProps(id, __p, keys,
+rest)` (rest covers undeclared keys caught by `...rest`/`props`); the push
+then dirties the child with exactly the changed keys' reasons so its update
+skips slots that read other props. A changed key with no reason falls back
+to a full update. Changed → mutate box in place + `markDirty(childId,
+reasons)`; unchanged → no dirty, zero work.
 
 **Child update.** The child's update closure first re-syncs its locals
 (`item = __p[0]; …`), then runs its guarded setters — so a retained child

@@ -263,6 +263,53 @@ export function propNameForBinding(
   return null;
 }
 
+/**
+ * Extra `registerProps` arguments mapping each declared prop key to the dirty
+ * reasons of the bindings it introduces, plus the reason for undeclared keys
+ * (object rest / whole `props` binding). Null when the envelope shape gives
+ * the runtime nothing exact to attribute, so it falls back to a full update.
+ */
+export function propReasonArguments(
+  plan: ComponentPropsPlan,
+  reasonIds: ReadonlyMap<string, number>,
+): t.Expression[] | null {
+  if (plan.mode !== 'object' || plan.params.length !== 1) return null;
+  const target = parameterTarget(plan.params[0]!);
+  const reasonsOf = (pattern: t.Node): t.Expression | null => {
+    const reasons = bindingNames(pattern as t.LVal).map((name) =>
+      reasonIds.get(name),
+    );
+    if (reasons.some((reason) => reason === undefined)) return null;
+    if (reasons.length === 1) return astFactory.numericLiteral(reasons[0]!);
+    return astFactory.arrayExpression(
+      (reasons as number[]).map((reason) => astFactory.numericLiteral(reason)),
+    );
+  };
+  if (astFactory.isIdentifier(target)) {
+    const rest = reasonsOf(target);
+    return rest === null ? null : [astFactory.objectExpression([]), rest];
+  }
+  if (!astFactory.isObjectPattern(target)) return null;
+  const keys: t.ObjectProperty[] = [];
+  let rest: t.Expression | null = null;
+  for (const property of target.properties) {
+    if (astFactory.isRestElement(property)) {
+      rest = reasonsOf(property.argument);
+      if (rest === null) return null;
+      continue;
+    }
+    if (!isObjectProperty(property) || property.computed) return null;
+    const name = propertyName(property.key);
+    const reasons = reasonsOf(property.value);
+    if (name === null || reasons === null) return null;
+    keys.push(astFactory.objectProperty(astFactory.stringLiteral(name), reasons));
+  }
+  return [
+    astFactory.objectExpression(keys),
+    ...(rest === null ? [] : [rest]),
+  ];
+}
+
 function parameterTarget(param: ComponentParam): PropTarget {
   if (astFactory.isRestElement(param)) {
     throw new Error('rest component parameters are not supported');
