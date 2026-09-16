@@ -34,9 +34,9 @@ function hasReason(reasonVar: string, reason: number): t.Expression {
       astFactory.logicalExpression(
         '&&',
         astFactory.binaryExpression(
-          '!==',
+          '===',
           astFactory.unaryExpression('typeof', current()),
-          astFactory.stringLiteral('number'),
+          astFactory.stringLiteral('object'),
         ),
         astFactory.callExpression(
           astFactory.memberExpression(current(), astFactory.identifier('has')),

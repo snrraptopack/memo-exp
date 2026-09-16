@@ -9,6 +9,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
+import { reasonCondition } from '../components/local-derived';
 
 export interface EmitScope {
   slots: string[];
@@ -16,6 +17,10 @@ export interface EmitScope {
   updateVar: string;
   /** Optional dependency reasons accepted by the owner updater. */
   reasonVar: string | null;
+  /** Exact reason ids for a slot expression, or null when it must always run. */
+  slotReasons: ((expression: t.Expression) => (number | string)[] | null) | null;
+  /** Reasons that gate an updater; absent entries run on every update. */
+  updaterReasons: Map<() => t.Statement, (number | string)[]>;
   /** Event name to compiler-private prebound list/event binding. */
   delegatedEventBindings: Map<string, string>;
   /** Active renderer document, resolved once when this factory creates DOM. */
@@ -54,6 +59,8 @@ export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
     tempVar: generatedIdentifier(ctx, 'value').name,
     updateVar: generatedIdentifier(ctx, 'update').name,
     reasonVar: null,
+    slotReasons: null,
+    updaterReasons: new Map(),
     delegatedEventBindings: new Map(),
     documentVar: null,
     prelude: [],
@@ -139,6 +146,62 @@ export function slotGuard(
   );
 }
 
+/** Queue a slot updater, gated by the expression's exact reasons when known. */
+export function pushSlotUpdater(
+  scope: EmitScope,
+  updater: () => t.Statement,
+  expression: t.Expression,
+): void {
+  const reasons = scope.slotReasons?.(expression) ?? null;
+  if (reasons !== null && reasons.length > 0) {
+    scope.updaterReasons.set(updater, reasons);
+  }
+  scope.updaters.push(updater);
+}
+
+/**
+ * Adjacent updaters with equal reasons share one `if` so a partial update
+ * skips whole runs of slots; ungated updaters run unconditionally.
+ */
+function updateBody(scope: EmitScope): t.Statement[] {
+  if (scope.reasonVar === null || scope.updaterReasons.size === 0) {
+    return scope.updaters.map((updater) => updater());
+  }
+  const body: t.Statement[] = [];
+  let group: {
+    key: string;
+    reasons: (number | string)[];
+    statements: t.Statement[];
+  } | null = null;
+  const flush = (): void => {
+    if (group !== null) {
+      body.push(
+        astFactory.ifStatement(
+          reasonCondition(scope.reasonVar!, group.reasons),
+          astFactory.blockStatement(group.statements),
+        ),
+      );
+      group = null;
+    }
+  };
+  for (const updater of scope.updaters) {
+    const reasons = scope.updaterReasons.get(updater);
+    if (reasons === undefined) {
+      flush();
+      body.push(updater());
+      continue;
+    }
+    const key = reasons.join(' ');
+    if (group === null || group.key !== key) {
+      flush();
+      group = { key, reasons, statements: [] };
+    }
+    group.statements.push(updater());
+  }
+  flush();
+  return body;
+}
+
 export function updateDecl(scope: EmitScope): t.Statement {
   return astFactory.variableDeclaration('const', [
     astFactory.variableDeclarator(
@@ -152,7 +215,7 @@ export function updateDecl(scope: EmitScope): t.Statement {
                 astFactory.nullLiteral(),
               ),
             ],
-        astFactory.blockStatement(scope.updaters.map((updater) => updater())),
+        astFactory.blockStatement(updateBody(scope)),
       ),
     ),
   ]);

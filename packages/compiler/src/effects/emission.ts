@@ -59,19 +59,21 @@ function localEffectCondition(
       ),
     ),
   );
-  return astFactory.logicalExpression(
-    '||',
+  // A bare structural-write string is neither a number nor a Set: it names a
+  // module list, never a local read, so it must not reach `.has`.
+  return or([
     astFactory.binaryExpression('===', current(), astFactory.nullLiteral()),
-    astFactory.conditionalExpression(
+    numberMatch,
+    astFactory.logicalExpression(
+      '&&',
       astFactory.binaryExpression(
         '===',
         astFactory.unaryExpression('typeof', current()),
-        astFactory.stringLiteral('number'),
+        astFactory.stringLiteral('object'),
       ),
-      numberMatch,
       setMatch,
     ),
-  );
+  ]);
 }
 
 /** A pull-only frame is not evidence that any effect dependency was written. */

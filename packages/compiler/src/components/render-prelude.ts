@@ -15,7 +15,7 @@ import {
   type ControlFlowDerivation,
   type LocalDerivation,
 } from './props';
-import { reasonCondition } from './local-derived';
+import { reasonCondition, structuralReasonsFor } from './local-derived';
 
 interface PreludeStep {
   order: number;
@@ -25,7 +25,7 @@ interface PreludeStep {
 }
 
 interface PreludeGroup {
-  reasons: number[] | null;
+  reasons: (number | string)[] | null;
   statements: t.Statement[];
 }
 
@@ -78,10 +78,10 @@ export function buildRenderPreludeReplay(
             .map((source) => reasonIds.get(source))
             .filter((reason): reason is number => reason !== undefined)
             .sort((left, right) => left - right);
-    const exact =
-      reasons === null || reasons.length === step.sources.length
-        ? reasons
-        : null;
+    const exact: (number | string)[] | null =
+      reasons === null || reasons.length !== step.sources.length
+        ? null
+        : [...reasons, ...structuralReasonsFor(ctx, step.sources)];
     const key = exact?.join(' ') ?? '*';
     const previous = groups.at(-1);
     const previousKey = previous?.reasons?.join(' ') ?? '*';

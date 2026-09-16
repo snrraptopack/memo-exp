@@ -17,6 +17,7 @@ import { componentId, generatedIdentifier, md } from '../identifiers';
 import {
   freshNodeName,
   freshSlot,
+  pushSlotUpdater,
   renderDocument,
   slotGuard,
   type EmitScope,
@@ -432,7 +433,7 @@ if (hasSpread) {
       ownerId,
       setStyle(),
     );
-    scope.updaters.push(setStyle);
+    pushSlotUpdater(scope, setStyle, v);
     continue;
   }
   const key = freshSlot(ctx, scope);
@@ -489,7 +490,7 @@ if (hasSpread) {
     ownerId,
     makeCall(),
   );
-  scope.updaters.push(makeCall);
+  pushSlotUpdater(scope, makeCall, v);
 }
 }
 

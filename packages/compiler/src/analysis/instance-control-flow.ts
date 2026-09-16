@@ -544,7 +544,22 @@ export function finalizeInstancePreludes(ctx: Ctx): void {
   for (const [componentName] of ctx.compPaths) {
     const locals = ctx.instanceDerivations.get(componentName) ?? [];
     const controls = ctx.instanceControlFlow.get(componentName) ?? [];
-    if (locals.length === 0 && controls.length === 0) continue;
+    const exactSources = new Set<string>([
+      ...(ctx.instanceState.get(componentName) ?? []),
+      ...(ctx.componentProps.get(componentName)?.bindings ?? []),
+    ]);
+    if (locals.length === 0 && controls.length === 0) {
+      // No prelude to gate, but JSX slots still split by source: a write to
+      // one exact source can skip slots that read only the others.
+      if (exactSources.size < 2) continue;
+      ctx.instanceReasonIds.set(
+        componentName,
+        new Map(
+          [...exactSources].sort().map((source, index) => [source, index]),
+        ),
+      );
+      continue;
+    }
 
     const graph = new Map<string, Set<string>>();
     for (const derivation of locals) {
@@ -587,14 +602,12 @@ export function finalizeInstancePreludes(ctx: Ctx): void {
       ].sort();
     }
 
-    const exactSources = new Set<string>([
-      ...(ctx.instanceState.get(componentName) ?? []),
-      ...(ctx.componentProps.get(componentName)?.bindings ?? []),
-    ]);
     const work = [...locals, ...controls];
-    const selective = [...exactSources].some((source) =>
-      work.some((derivation) => !derivation.sources.includes(source)),
-    );
+    const selective =
+      exactSources.size >= 2 ||
+      [...exactSources].some((source) =>
+        work.some((derivation) => !derivation.sources.includes(source)),
+      );
     ctx.selectiveDerivationComponents.delete(componentName);
     ctx.instanceReasonIds.delete(componentName);
     if (!selective) continue;

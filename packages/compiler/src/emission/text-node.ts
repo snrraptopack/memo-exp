@@ -5,6 +5,7 @@ import { type Ctx } from '../context';
 import { generatedIdentifier } from '../identifiers';
 import {
   freshSlot,
+  pushSlotUpdater,
   renderDocument,
   slotGuard,
   type EmitScope,
@@ -121,6 +122,6 @@ export function emitText(
     ownerId,
     setter(),
   );
-  scope.updaters.push(setter);
+  pushSlotUpdater(scope, setter, expr);
   return varName;
 }

@@ -39,6 +39,8 @@ import {
   type SimpleObjectPropBinding,
 } from '../components/props';
 import { buildRenderPreludeReplay } from '../components/render-prelude';
+import { slotReasonSources } from '../components/slot-reasons';
+import { structuralReasonsFor } from '../components/local-derived';
 import {
   analyzeComponentReturns,
   type ComponentReturnPlan,
@@ -276,13 +278,32 @@ export function transformComponent(
   const effects = ctx.effects.get(name);
   const externalSources = componentExternalSources(ctx, name);
   const hasLocalEffects = hasComponentLocalEffects(effects);
+  const reasonIds = ctx.instanceReasonIds.get(name);
   if (
-    ctx.selectiveDerivationComponents.has(name) ||
+    reasonIds !== undefined ||
     ctx.targetedListComponents.has(name) ||
     ctx.listComponents.has(name) ||
     hasLocalEffects
   ) {
     scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
+  }
+  if (reasonIds !== undefined && !lightweight) {
+    scope.slotReasons = (expression) => {
+      const sources = slotReasonSources(ctx, name, expression);
+      if (sources === null) return null;
+      const reasons: number[] = [];
+      for (const source of sources) {
+        const reason = reasonIds.get(source);
+        if (reason === undefined) return null;
+        reasons.push(reason);
+      }
+      // A derivation rooted in a module list replays on the structural
+      // string reason; the slot that renders it must open on it too.
+      return [
+        ...reasons.sort((left, right) => left - right),
+        ...structuralReasonsFor(ctx, sources),
+      ];
+    };
   }
   const factoryId = generatedIdentifier(ctx, 'id').name;
   const factoryParent = lightweight
