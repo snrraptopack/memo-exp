@@ -88,13 +88,15 @@ export function Ticker(_id, _parent, _dataPolicies) {
 	let ticks = 0;
 
 	const _update = (_reasons = null) => {
-		if (_slot !== (_value = ticks)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+		if (_reasons === null || _reasons === -1 || _reasons === 0 || typeof _reasons === "object" && (_reasons.has(-1) || _reasons.has(0))) {
+			if (_slot !== (_value = ticks)) {
+				_slot = _value;
+				_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
+			}
 		}
 
 		{
-			if (!(_reasons === -1 || _reasons !== null && typeof _reasons !== "number" && (_reasons.size === 1 && _reasons.has(-1)))) if (_reasons === null || (typeof _reasons === "number" ? _reasons === 0 : _reasons.has(0))) _MD.markDirty(_id + "/$effects/0");
+			if (!(_reasons === -1 || _reasons !== null && typeof _reasons !== "number" && (_reasons.size === 1 && _reasons.has(-1)))) if (_reasons === null || _reasons === 0 || typeof _reasons === "object" && _reasons.has(0)) _MD.markDirty(_id + "/$effects/0");
 		}
 	};
 
@@ -303,7 +305,7 @@ export function Row(_id, _parent, _props, _dataPolicies) {
 	const _document = _MD.getActiveEnvironment().document;
 	let { item, index } = _props[0];
 
-	const _update = () => {
+	const _update = (_reasons = null) => {
 		{
 			({ item, index } = _props[0]);
 		}
@@ -332,7 +334,7 @@ export function Shell(_id, _parent, _props, _dataPolicies) {
 	const _document = _MD.getActiveEnvironment().document;
 	let { header, children } = _props[0];
 
-	const _update = () => {
+	const _update = (_reasons = null) => {
 		{
 			({ header, children } = _props[0]);
 		}
@@ -586,25 +588,29 @@ export function Avatar(_id, _parent, _props, _dataPolicies) {
 	const _document = _MD.getActiveEnvironment().document;
 	let { user = { name: 'anon' }, size = 32 } = _props[0];
 
-	const _update = () => {
+	const _update = (_reasons = null) => {
 		{
 			({ user = { name: 'anon' }, size = 32 } = _props[0]);
 		}
 
-		if (_slot !== (_value = user.name)) {
-			_slot = _value;
+		if (_reasons === null || _reasons === -1 || _reasons === 1 || typeof _reasons === "object" && (_reasons.has(-1) || _reasons.has(1))) {
+			if (_slot !== (_value = user.name)) {
+				_slot = _value;
 
-			_value == null || _value === false
-				? _img.removeAttribute("alt")
-				: _img.setAttribute("alt", _value === true ? "true" : String(_value));
+				_value == null || _value === false
+					? _img.removeAttribute("alt")
+					: _img.setAttribute("alt", _value === true ? "true" : String(_value));
+			}
 		}
 
-		if (_slot2 !== (_value = size)) {
-			_slot2 = _value;
+		if (_reasons === null || _reasons === -1 || _reasons === 0 || typeof _reasons === "object" && (_reasons.has(-1) || _reasons.has(0))) {
+			if (_slot2 !== (_value = size)) {
+				_slot2 = _value;
 
-			_value == null || _value === false
-				? _img.removeAttribute("width")
-				: _img.setAttribute("width", _value === true ? "true" : String(_value));
+				_value == null || _value === false
+					? _img.removeAttribute("width")
+					: _img.setAttribute("width", _value === true ? "true" : String(_value));
+			}
 		}
 	};
 

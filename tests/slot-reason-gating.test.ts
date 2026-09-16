@@ -72,18 +72,16 @@ const SOURCES: Record<string, string> = {
     }
   `,
   'slot-gating-counted': `
+    const evals = globalThis.__slotEvals;
+    function probeA(x) { evals.a++; return x; }
+    function probeB(x) { evals.b++; return x; }
     export function App() {
       let a = 0;
       let b = 0;
-      let evalA = 0;
-      let evalB = 0;
-      const probeA = () => { evalA++; return a; };
-      const probeB = () => { evalB++; return b; };
       return (
         <div>
-          <span class="a">{probeA()}</span>
-          <span class="b">{probeB()}</span>
-          <span class="counts">{evalA}/{evalB}</span>
+          <span class="a">{probeA(a)}</span>
+          <span class="b">{probeB(b)}</span>
           <button class="inc-a" onClick={() => { a++; }} />
           <button class="inc-b" onClick={() => { b++; }} />
         </div>
@@ -233,23 +231,20 @@ describe('slot reason gating — compiled runtime behavior', () => {
   });
 
   it('re-evaluates only the slots whose source was written', async () => {
+    const evals = { a: 0, b: 0 };
+    (globalThis as any).__slotEvals = evals;
     const { App } = await load('slot-gating-counted');
     document.body.appendChild(App('App', null));
-    // creation evaluated each probe once; the counts slot rendered before
-    // both probes ran through creation order, so read the probes directly.
-    expect(text('.a')).toBe('0');
-    expect(text('.b')).toBe('0');
+    expect(evals).toEqual({ a: 1, b: 1 });
 
     click('.inc-a');
     expect(text('.a')).toBe('1');
+    expect(evals).toEqual({ a: 2, b: 1 });
     click('.inc-a');
     expect(text('.a')).toBe('2');
+    expect(evals).toEqual({ a: 3, b: 1 });
     click('.inc-b');
     expect(text('.b')).toBe('1');
-    // After three local writes: probeA ran at creation + 2 (a writes),
-    // probeB ran at creation + 1 (b write). The counts slot is rendered on
-    // every one of those updates because evalA/evalB are themselves sources
-    // written by the probes — so it reflects the totals.
-    expect(text('.counts')).toBe('3/2');
+    expect(evals).toEqual({ a: 3, b: 2 });
   });
 });
