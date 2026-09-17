@@ -265,7 +265,25 @@ export function emitListRegion(
     dependencyCaches.length === 0 && mutation === undefined ||
     scope.reasonVar === null
   ) {
-    scope.updaters.push(() => reconcile(true));
+    scope.updaters.push(() => {
+      if (scope.reasonVar === null || site.sourceLocal ||
+          !astFactory.isIdentifier(site.sourceExpr) || !ctx.moduleListTargets.has(site.sourceExpr.name)) {
+        return reconcile(true);
+      }
+      const indices = generatedIdentifier(ctx, 'rowIndices');
+      return astFactory.blockStatement([
+        astFactory.variableDeclaration('const', [astFactory.variableDeclarator(indices,
+          astFactory.callExpression(md(ctx, 'listItemIndices'), [
+            astFactory.identifier(scope.reasonVar), astFactory.stringLiteral(structuralSource),
+          ]))]),
+        astFactory.ifStatement(astFactory.binaryExpression('===', indices, astFactory.nullLiteral()),
+          reconcile(true),
+          astFactory.expressionStatement(astFactory.callExpression(
+            astFactory.memberExpression(astFactory.identifier(regionVariable), astFactory.identifier('refreshIndices')),
+            [runtimeListSource(site.sourceExpr, site.optional), indices, astFactory.booleanLiteral(true)],
+          ))),
+      ]);
+    });
   } else {
     scope.updaters.push(() =>
       buildTargetedListUpdate(

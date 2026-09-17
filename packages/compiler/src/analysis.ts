@@ -66,6 +66,8 @@ export {
 } from './analysis/component-graph';
 export { buildAccessTable } from './analysis/access-table';
 
+import { analyzeModuleListTargets } from './analysis/module-list-targets';
+
 export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   refreshAstAnalysis(ctx, programPath.node);
   ctx.bindingTagCandidates = lexicalBindingStringCandidates(
@@ -140,4 +142,5 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
     }
   }
   refreshAstAnalysis(ctx, programPath.node);
+  analyzeModuleListTargets(ctx);
 }

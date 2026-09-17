@@ -97,6 +97,25 @@ Shared compiler contracts have canonical owners:
 Import these contracts through the stable `src/context.ts` facade. Do not
 derive local path aliases from `Ctx` or repeat parent-walking binding helpers.
 
+Module-list content targeting preserves static item indices through the access
+table into each reader's pending dirty reasons. Direct list readers can replay
+only those rows; an ordinary/full reason or a different source forces ordinary
+reconciliation. Reasons are not a shared consumable mutation set, and generic
+object-prop equality is unchanged.
+
+The proof currently requires a non-exported, unreassigned module array literal
+of flat scalar records, non-escaping item references, and immutable scalar-field
+or identity keys. Structural operations, dynamic indices, nested/aliased objects,
+unknown consumers, async handlers, and execution-aware effect writes retain
+conservative routing. Authored assignments are neither wrapped nor evaluated
+again. After initial reconciliation, compiler-proven content updates pass the
+fixed-position guarantee to `refreshIndices`, avoiding a collection-wide identity
+scan: list refresh reads only the targeted positions. Initial mounting, hydration,
+and length mismatches still reconcile. Calls without the guarantee retain the
+O(n) identity check; passing it requires unchanged item identities, positions, and
+keys. This bounds the list refresh itself by the number of targets, not the total
+application commit cost or the work performed inside each row.
+
 ### Analysis pipeline
 
 `src/analysis.ts` is the shallow coordinator for the first compiler pass. It
@@ -109,6 +128,7 @@ produced by earlier stages; it does not own their implementations.
 | `render-props.ts` | JSX-carrying component prop discovery, including scalar type exclusions |
 | `component-validation.ts` | Component composition edges and structural JSX diagnostics |
 | `read-collection.ts` | Module-state reads, list/conditional ownership, and helper-read attribution |
+| `module-list-targets.ts` | Closed module-array proof for static-index content invalidation |
 | `computed.ts` | Module computed-state discovery and dependency analysis |
 | `instance.ts` | Component-local state and ordered derivation discovery |
 | `instance-control-flow.ts` | Replay planning for component-local control flow |

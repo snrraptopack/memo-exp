@@ -10,6 +10,7 @@ import * as astFactory from './ast/factory';
 import { ESTREE_VISITOR_KEYS } from './ast';
 import {
   freshReasonConst,
+  canonicalStateKey,
   freshWriteConst,
   type Ctx,
   type RowCtx,
@@ -27,6 +28,8 @@ export interface ScopeWrites {
   structuralWrites: Set<string>;
   /** Writes whose effect on retained row content is not structurally bounded. */
   contentWrites: Set<string>;
+  /** Static destinations; ordinary writes to the same source dominate. */
+  listItemWrites: Map<string, Set<number>>;
   rootFallback: boolean;
   /** This scope writes fields observed by one keyed row. */
   rowLocal: boolean;
@@ -47,6 +50,7 @@ export function createScopeWrites(): ScopeWrites {
     writes: new Set(),
     structuralWrites: new Set(),
     contentWrites: new Set(),
+    listItemWrites: new Map(),
     rootFallback: false,
     rowLocal: false,
     rowOwnerLocal: false,
@@ -126,6 +130,16 @@ export function buildScopeCommit(
 
   const combine = (routed: t.Statement | null): t.Statement | null => {
     const parts: t.Statement[] = [];
+    if (!scope.rootFallback) {
+      for (const [source, indices] of scope.listItemWrites) {
+        if (scope.writes.has(source)) continue;
+        parts.push(astFactory.expressionStatement(astFactory.callExpression(
+          md(ctx, 'commitListItemWrites'),
+          [astFactory.stringLiteral(canonicalStateKey(ctx, source)),
+            astFactory.arrayExpression([...indices].map(index => astFactory.numericLiteral(index)))],
+        )));
+      }
+    }
     for (const source of [...scope.transparentWrites].sort()) {
       parts.push(
         astFactory.expressionStatement(

@@ -547,6 +547,24 @@ export function createHandlerWriteRouting({
       return;
     }
     const origin = aliases.resolveExpression(p.scope, node);
+    if (origin?.locality === 'module' && rootName !== null &&
+        !executionAwareRoot && !rootFn.async && !componentLocals.has(rootName)) {
+      const plan = ctx.moduleListTargets.get(rootName);
+      const access = node.object;
+      if (plan !== undefined && !node.computed && astFactory.isIdentifier(node.property) &&
+          plan.fields.has(node.property.name) && astFactory.isMemberExpression(access) &&
+          astFactory.isIdentifier(access.object, { name: rootName }) && access.computed &&
+          astFactory.isNumericLiteral(access.property) &&
+          Number.isInteger(access.property.value) && access.property.value >= 0 && access.property.value < plan.length) {
+        const index = access.property.value;
+        mutateScope(p, scope => {
+          let indices = scope.listItemWrites.get(rootName);
+          if (indices === undefined) scope.listItemWrites.set(rootName, indices = new Set());
+          indices.add(index);
+        });
+        return;
+      }
+    }
     if (origin !== null) {
       noteOriginWrite(p, origin);
       return;

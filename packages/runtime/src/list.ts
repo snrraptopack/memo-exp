@@ -69,6 +69,8 @@ export interface ListRegion<T> {
   reconcile(items: readonly T[], structuralOnly?: boolean): void;
   /** Re-sync one retained row through the region's O(1) key cache. */
   refreshKey(key: unknown): void;
+  /** fixedPositions requires compiler proof of unchanged item identities, positions, and keys. */
+  refreshIndices(items: readonly T[], indices: readonly number[], fixedPositions?: boolean): void;
   size(): number;
   /** Remove retained nodes and unregister every entity owned by the region. */
   dispose(): void;
@@ -792,6 +794,20 @@ export function createListRegion<T>(
     syncRow(rec.e, prevItems[rec.pos] as T, rec.id, rec.pos);
   }
 
+  function refreshIndices(items: readonly T[], indices: readonly number[], fixedPositions = false): void {
+    // Initial/unmounted regions still reconcile. Unproven callers also validate
+    // retained identities; the compiler alone can waive that O(n) scan.
+    if (adopting || items.length !== prevItems.length ||
+        !fixedPositions && items.some((item, index) => item !== prevItems[index])) {
+      reconcile(items);
+      return;
+    }
+    for (const index of indices) {
+      const entry = prevEntries[index];
+      if (entry !== undefined) syncRow(entry, items[index] as T, prevRowIds[index] ?? null, index);
+    }
+  }
+
   function dispose(): void {
     for (const [key, rec] of cache) {
       rec.e.dispose?.();
@@ -812,6 +828,7 @@ export function createListRegion<T>(
   return {
     reconcile,
     refreshKey,
+    refreshIndices,
     size: () => cache.size,
     dispose,
   };

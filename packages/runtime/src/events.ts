@@ -16,6 +16,7 @@
  */
 
 import { markDirty, markDirtySubtree, type EntityId } from './kernel';
+import type { DirtyReasonInput } from './dirty-reasons';
 import {
   resolveStaticWrites,
   resolveWrites,
@@ -23,6 +24,7 @@ import {
   isOpaque,
 } from './access';
 import {
+  listItemReason,
   listStructureReaderKey,
   listStructureReason,
 } from './list-update';
@@ -53,7 +55,7 @@ export function clearEventLog(): void {
  */
 function routeStaticWrites(
   writes: readonly string[],
-  reason?: number | string,
+  reason?: DirtyReasonInput,
 ): void {
   const resolved = resolveStaticWrites(writes);
   if (resolved === 'root-subtree') {
@@ -65,6 +67,12 @@ function routeStaticWrites(
 
 export function commitWrites(writes: readonly string[]): void {
   routeStaticWrites(writes);
+}
+
+/** Compiler-proven content destinations; full invalidations still dominate. */
+export function commitListItemWrites(source: string, indices: readonly number[]): void {
+  if (indices.length === 0) return;
+  routeStaticWrites([source], indices.map(index => listItemReason(source, index)));
 }
 
 /** Route a compiler-proven structure-only collection write. */
