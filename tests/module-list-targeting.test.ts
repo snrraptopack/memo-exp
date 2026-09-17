@@ -44,6 +44,14 @@ beforeAll(() => {
   writeFileSync(join(outDir, 'module-list-append-content.compiled.ts'),
     compile(source.replace("items[1].label = 'B';", "items.push({ id: 3, label: 'c' });"),
       { runtimePath: '@memoized-dom/runtime' }));
+  writeFileSync(join(outDir, 'module-list-swap.compiled.ts'),
+    compile(source.replace("items[0].label = 'A';", `
+      if (items.length > 1) {
+        const first = items[0];
+        items[0] = items[1];
+        items[1] = first;
+      }`).replace("items[1].label = 'B';", 'items = [];'),
+      { runtimePath: '@memoized-dom/runtime' }));
 });
 
 afterEach(() => {
@@ -220,4 +228,25 @@ it('targets existing content after append and reconciles mixed append/content ba
     'A!', 'b!', 'c!', 'A!', 'b!', 'c!',
   ]);
   expect(syncs.sort()).toEqual([1, 1]);
+});
+
+it('refreshes each row once after a synchronous swap and skips untaken writes', async () => {
+  setScheduler(callback => callback());
+  const syncs: number[] = [];
+  probe.__moduleListSyncs = syncs;
+  // beforeAll creates this module; it cannot be statically imported.
+  const specifier = './fixtures/out/module-list-swap.compiled.ts';
+  const { App } = await import(specifier);
+  document.body.append(App('App', null));
+  const retained = [...document.querySelectorAll('ul li')];
+  syncs.length = 0;
+  (document.querySelector('#first') as HTMLButtonElement).click();
+  expect([...document.querySelectorAll('ul li')]).toEqual([retained[1], retained[0]]);
+  expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual(['b!', 'a!', 'b!', 'a!']);
+  expect(syncs.sort()).toEqual([1, 1, 2, 2]);
+  (document.querySelector('#second') as HTMLButtonElement).click();
+  syncs.length = 0;
+  (document.querySelector('#first') as HTMLButtonElement).click();
+  expect(document.querySelectorAll('li')).toHaveLength(0);
+  expect(syncs).toEqual([]);
 });

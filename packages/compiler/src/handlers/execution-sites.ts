@@ -71,19 +71,36 @@ export function finalizeHandlerInstrumentation(
       site.temporaries = markExecutionSite(ctx, rootFn, site.path, site.flag!);
     });
 
+  // Several executed writes can request the same conservative refresh. With a
+  // synchronous scheduler, emitting it per site renders the subtree repeatedly.
+  // Only merge adjacent pure root refreshes. Other commits remain ordering
+  // barriers: notifications or row-local work can have observable effects.
+  const guardedCommits: t.Statement[] = [];
+  let pendingRootRefresh: t.IfStatement | null = null;
+  for (const site of guardedRootSites) {
+    const writes = site.writes;
+    const pureRootRefresh = writes.rootFallback &&
+      writes.transparentWrites.size === 0 && writes.eventOrigin === null &&
+      !writes.rowLocal && !writes.rowOwnerLocal && !writes.instanceLocal;
+    if (pureRootRefresh && pendingRootRefresh !== null) {
+      pendingRootRefresh.test = astFactory.logicalExpression(
+        '||', pendingRootRefresh.test, cloneEstreeNode(site.flag!),
+      );
+      continue;
+    }
+    const guarded = astFactory.ifStatement(
+      cloneEstreeNode(site.flag!), cloneEstreeNode(site.commit),
+    );
+    guardedCommits.push(guarded);
+    pendingRootRefresh = pureRootRefresh ? guarded : null;
+  }
+
   for (const [fn, writes] of scopes) {
     const commit =
       executionAwareRoot && fn === root
         ? guardedRootSites.length === 0
           ? buildScopeCommit(ctx, writes, compName, rowCtx)
-          : astFactory.blockStatement(
-              guardedRootSites.map((site) =>
-                astFactory.ifStatement(
-                  cloneEstreeNode(site.flag!),
-                  cloneEstreeNode(site.commit),
-                ),
-              ),
-            )
+          : astFactory.blockStatement(guardedCommits)
         : buildScopeCommit(ctx, writes, compName, rowCtx);
     if (commit === null) continue;
     appendScopeCommit(
