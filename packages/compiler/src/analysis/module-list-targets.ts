@@ -1,6 +1,7 @@
 import { childNode, childNodes, identifierName, jsxIdentifierName, nodeField, walkAst, type BaseNode, type Binding } from '../ast';
 import { variableDeclaratorFor, type Ctx } from '../context';
 import type { MapCallExpression } from '../lists';
+import { LIST_METHOD_OPTIMIZATIONS } from '../lists/mutation-shapes';
 
 /** Closed flat records only. No extra receiver/key evaluations are emitted. */
 export function analyzeModuleListTargets(ctx: Ctx): void {
@@ -27,9 +28,24 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     if (statement && parents.get(statement)?.type === 'ExportNamedDeclaration') continue;
     const elements = nodeField(array, 'elements');
     if (!Array.isArray(elements) || elements.length === 0) continue;
+    // Include every append payload in the same plain-record proof. Names only
+    // select candidates; arbitrary arguments and escaping receivers still fail.
+    const records = [...elements];
+    const appends = new Set<BaseNode>();
+    for (const reference of binding.references) {
+      const access = parents.get(reference);
+      if (access?.type !== 'MemberExpression' || childNode(access, 'object') !== reference) continue;
+      const method = property(access);
+      if (method === null || !Object.hasOwn(LIST_METHOD_OPTIMIZATIONS, method) ||
+          LIST_METHOD_OPTIMIZATIONS[method] !== 'append') continue;
+      const call = parents.get(access);
+      if (call?.type !== 'CallExpression' || childNode(call, 'callee') !== access) continue;
+      records.push(...childNodes(call, 'arguments'));
+      appends.add(access);
+    }
     const fields = new Set<string>();
     let valid = true;
-    for (const element of elements) {
+    for (const element of records) {
       if (!element || element.type !== 'ObjectExpression') { valid = false; break; }
       const own = new Set<string>();
       for (const entry of childNodes(element, 'properties')) {
@@ -93,7 +109,10 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     for (const reference of binding.references) {
       const access = parents.get(reference);
       if (access?.type !== 'MemberExpression' || childNode(access, 'object') !== reference) { valid = false; break; }
-      if (property(access) === 'map' && nodeField(access, 'computed') !== true) {
+      if (appends.has(access)) continue;
+      const method = property(access);
+      if (method !== null && Object.hasOwn(LIST_METHOD_OPTIMIZATIONS, method) &&
+          LIST_METHOD_OPTIMIZATIONS[method] === 'render' && nodeField(access, 'computed') !== true) {
         const call = parents.get(access);
         const callback = call && childNodes(call, 'arguments')[0];
         const param = callback && childNodes(callback, 'params')[0];
@@ -137,8 +156,12 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
         valid = false; break;
       }
     }
-    if (valid && written.size > 0 && ![...written].some(name => keys.has(name))) {
-      ctx.moduleListTargets.set(source, { length: elements.length, fields: written });
+    if (valid && appends.size > 0 && written.size === 0) {
+      ctx.moduleListTargets.set(source, { length: elements.length, fields: written, appendOnly: true });
+    } else if (valid && ![...written].some(name => keys.has(name))) {
+      // Appends preserve existing positions, so proven content writes stay
+      // targeted even when the same array is also appended elsewhere.
+      ctx.moduleListTargets.set(source, { length: elements.length, fields: written, appendOnly: appends.size > 0 });
     }
   }
 }

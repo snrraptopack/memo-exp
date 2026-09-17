@@ -65,8 +65,8 @@ export type KeyFn<T> = (item: T, index: number) => unknown;
 const identityKey = <T>(item: T): unknown => item;
 
 export interface ListRegion<T> {
-  /** Reconcile collection identity, order, and retained row content. */
-  reconcile(items: readonly T[], structuralOnly?: boolean): void;
+  /** appendOnly requires unchanged retained identities, positions, keys, and content; broad reasons still replay. */
+  reconcile(items: readonly T[], structuralOnly?: boolean, appendOnly?: boolean): void;
   /** Re-sync one retained row through the region's O(1) key cache. */
   refreshKey(key: unknown): void;
   /** fixedPositions requires compiler proof of unchanged item identities, positions, and keys. */
@@ -170,7 +170,7 @@ export function createListRegion<T>(
   // prevItems[i]) instead of calling the key fn per row per step — same
   // refs in the same order imply same keys; any mismatch falls through to
   // the structural path, which recomputes keys (and re-snapshots).
-  let prevItems: readonly T[] = [];
+  let prevItems: T[] = [];
   let prevEntries: ListEntry[] = [];
   let prevRowIds: Array<EntityId | null> = [];
   // M5.8: scratch buffers for the structural path, swapped with the live
@@ -342,9 +342,15 @@ export function createListRegion<T>(
   function reconcile(
     items: readonly T[],
     structuralOnly = false,
+    appendOnly = false,
   ): void {
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
+    // The compiler may prove that only fresh records are appended. Broad
+    // reasons still replay retained rows; unproven callers keep validation.
+    const provenAppend = appendOnly && structuralOnly && !adoptingFrame &&
+      cache.size === prevItems.length;
+    if (provenAppend && items.length === prevItems.length) return;
     // Same length AND every key identical at every position → no additions,
     // no removals, no reorder is possible: skip ALL map building and LIS.
     // This is the steady state of every list that only sees content edits.
@@ -376,12 +382,12 @@ export function createListRegion<T>(
     // running LIS for a sequence that is already ordered.
     if (
       !adoptingFrame &&
-      prevItems.length > 0 &&
+      (provenAppend || prevItems.length > 0) &&
       items.length > prevItems.length &&
       cache.size === prevItems.length
     ) {
       let appendOnly = true;
-      for (let i = 0; i < prevItems.length; i++) {
+      for (let i = 0; !provenAppend && i < prevItems.length; i++) {
         const rec = cache.get(key(items[i] as T, i));
         if (rec === undefined || rec.pos !== i) {
           appendOnly = false;
@@ -400,7 +406,7 @@ export function createListRegion<T>(
           seen.add(k);
         }
 
-        for (let i = 0; i < prevItems.length; i++) {
+        for (let i = 0; !provenAppend && i < prevItems.length; i++) {
           syncRetained(
             prevEntries[i]!,
             items[i] as T,
@@ -443,7 +449,11 @@ export function createListRegion<T>(
         (endAnchor.parentNode ?? parent).insertBefore(fragment, endAnchor);
         appended.length = 0;
         appendedIds.length = 0;
-        prevItems = items.slice();
+        if (provenAppend) {
+          for (let i = prevItems.length; i < items.length; i++) prevItems.push(items[i] as T);
+        } else {
+          prevItems = items.slice();
+        }
         return;
       }
     }

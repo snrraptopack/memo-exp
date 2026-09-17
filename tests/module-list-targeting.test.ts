@@ -37,6 +37,13 @@ beforeAll(() => {
     compile(source.replace('let suffix', 'function rowKey(id) { return id; }\n  let suffix')
       .replace('key={item.id}', 'key={rowKey(item.id)}'),
       { runtimePath: '@memoized-dom/runtime' }));
+  writeFileSync(join(outDir, 'module-list-append.compiled.ts'),
+    compile(source.replace("items[0].label = 'A';", "items.push({ id: 3, label: 'c' });")
+      .replace("items[1].label = 'B';", "items.push({ id: 4, label: 'd' });"),
+      { runtimePath: '@memoized-dom/runtime' }));
+  writeFileSync(join(outDir, 'module-list-append-content.compiled.ts'),
+    compile(source.replace("items[1].label = 'B';", "items.push({ id: 3, label: 'c' });"),
+      { runtimePath: '@memoized-dom/runtime' }));
 });
 
 afterEach(() => {
@@ -121,4 +128,96 @@ it('reads only targeted positions when fixed positions are proven, and validates
   region.refreshIndices(items, [0]);
   expect([...host.querySelectorAll('li')].slice(0, 2).map(node => node.textContent)).toEqual(['1', '0']);
   region.dispose();
+});
+
+it('appends only new rows in shared readers and replays retained rows for broad updates', async () => {
+  const scheduled: Array<() => void> = [];
+  setScheduler(callback => scheduled.push(callback));
+  const syncs: number[] = [];
+  probe.__moduleListSyncs = syncs;
+  // beforeAll generates the module; static import would run before generation.
+  const specifier = './fixtures/out/module-list-append.compiled.ts';
+  const { App } = await import(specifier);
+  document.body.append(App('App', null));
+  const retained = [...document.querySelectorAll('li')];
+  syncs.length = 0;
+  (document.querySelector('#first') as HTMLButtonElement).click();
+  (document.querySelector('#second') as HTMLButtonElement).click();
+  while (scheduled.length) scheduled.shift()!();
+  expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual([
+    'a!', 'b!', 'c!', 'd!', 'a!', 'b!', 'c!', 'd!',
+  ]);
+  expect(syncs.sort()).toEqual([3, 3, 4, 4]);
+  expect(document.querySelector('ul li')).toBe(retained[0]);
+  syncs.length = 0;
+  (document.querySelector('#suffix') as HTMLButtonElement).click();
+  while (scheduled.length) scheduled.shift()!();
+  expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual([
+    'a?', 'b?', 'c?', 'd?', 'a?', 'b?', 'c?', 'd?',
+  ]);
+  expect(syncs.sort()).toEqual([1, 1, 2, 2, 3, 3, 4, 4]);
+});
+
+it('does not read retained positions during proven append and rejects duplicate keys before mounting', () => {
+  const records = Array.from({ length: 64 }, (_, id) => ({ id, label: String(id) }));
+  const reads: number[] = [];
+  const items = new Proxy(records, {
+    get(target, key, receiver) {
+      if (typeof key === 'string' && /^\d+$/.test(key)) reads.push(Number(key));
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const host = document.createElement('ul');
+  const region = createListRegion(host, 'append-proof', item => {
+    const node = document.createElement('li');
+    node.textContent = item.label;
+    return { nodes: node, entities: [], update: () => { node.textContent = item.label; } };
+  }, item => item.id, false);
+  region.reconcile(items);
+  const first = host.querySelector('li');
+  records.push({ id: 64, label: 'new' });
+  reads.length = 0;
+  region.reconcile(items, true, true);
+  expect(reads.filter(index => index < 64)).toEqual([]);
+  expect(reads.length).toBeLessThanOrEqual(3);
+  expect(host.querySelector('li')).toBe(first);
+  expect(host.querySelector('li:last-of-type')!.textContent).toBe('new');
+  records.push({ id: 65, label: 'valid' }, { id: 64, label: 'duplicate' });
+  expect(() => region.reconcile(items, true, true)).toThrow(/duplicate list key/);
+  expect(host.querySelectorAll('li')).toHaveLength(65);
+  records.splice(65);
+  records[0]!.label = 'broad';
+  records.push({ id: 65, label: 'next' });
+  region.reconcile(items, false, true);
+  expect(first!.textContent).toBe('broad');
+  expect(host.querySelector('li:last-of-type')!.textContent).toBe('next');
+  region.dispose();
+});
+
+it('targets existing content after append and reconciles mixed append/content batches', async () => {
+  const scheduled: Array<() => void> = [];
+  setScheduler(callback => scheduled.push(callback));
+  const syncs: number[] = [];
+  probe.__moduleListSyncs = syncs;
+  // beforeAll creates this compiled module, so static import is not possible.
+  const specifier = './fixtures/out/module-list-append-content.compiled.ts';
+  const { App } = await import(specifier);
+  document.body.append(App('App', null));
+  syncs.length = 0;
+  (document.querySelector('#first') as HTMLButtonElement).click();
+  (document.querySelector('#second') as HTMLButtonElement).click();
+  while (scheduled.length) scheduled.shift()!();
+  expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual([
+    'A!', 'b!', 'c!', 'A!', 'b!', 'c!',
+  ]);
+  expect(syncs.sort()).toEqual([1, 1, 2, 2, 3, 3]);
+  const retained = document.querySelector('ul li');
+  syncs.length = 0;
+  (document.querySelector('#first') as HTMLButtonElement).click();
+  while (scheduled.length) scheduled.shift()!();
+  expect(document.querySelector('ul li')).toBe(retained);
+  expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual([
+    'A!', 'b!', 'c!', 'A!', 'b!', 'c!',
+  ]);
+  expect(syncs.sort()).toEqual([1, 1]);
 });

@@ -116,6 +116,37 @@ O(n) identity check; passing it requires unchanged item identities, positions, a
 keys. This bounds the list refresh itself by the number of targets, not the total
 application commit cost or the work performed inside each row.
 
+### List-method optimization candidates
+
+`src/lists/mutation-shapes.ts` centralizes method names considered for list
+optimization: `map`, `push`, `pop`, `unshift`, `shift`, `splice`, `reverse`,
+`sort`, `fill`, and `copyWithin`. **This is not a whitelist of supported
+JavaScript methods.** An absent name does not produce an unsupported-method
+error; it retains existing conservative receiver-effect routing. Existing
+independent language restrictions, such as writes to read-only state, still apply.
+
+The list analysis imports this table for compiler-owned JSX `map` and proven
+append-only `push` calls. The append proof requires a non-exported, unreassigned,
+non-escaping module array with a nonempty plain-record initializer. Every push
+argument must also be a fresh flat scalar record; keys must remain stable and
+retained records must not be written. Unknown calls, aliases, spreads, arbitrary
+payload expressions, and other structural operations disable this proof.
+
+For a structure-only update, proven append bypasses retained-prefix scans,
+retained-row replay, and whole-array snapshot copying. It validates new keys,
+mounts the new tail, and extends the snapshot. Work in this list path is
+proportional to appended items. Batched appends are observed independently by
+each reader. Broad dirty reasons use ordinary reconciliation; mounting and
+hydration retain their existing paths. This is not a general benchmark speedup
+claim or an optimization of every `push` call.
+
+Other structural labels remain candidates, not implemented specializations.
+Adding a name alone cannot authorize an optimization. Receiver provenance,
+overrides, callbacks, argument effects, and mixed writes must be proven safe.
+Names are neither purity guarantees nor permission to skip invalidation.
+Unknown calls can mutate retained content; the table introduces no new errors
+and does not change the existing fallback implementation.
+
 ### Analysis pipeline
 
 `src/analysis.ts` is the shallow coordinator for the first compiler pass. It
