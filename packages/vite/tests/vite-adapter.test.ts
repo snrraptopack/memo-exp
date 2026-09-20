@@ -330,9 +330,9 @@ describe('Vite 8 adapter', () => {
     // identity without one; compound writes lower to functional updates.
     // (Rolldown renames bundled runtime identifiers, so anchor on the
     // canonical keys and value shapes, not _MD member names.)
-    expect(code).toContain('./src/state.ts#count", 0)');
+    expect(code).toMatch(/\.\/src\/state\.ts#count",[\s\S]*?\n\s*0\s*\n\)/);
     expect(code).toContain('./src/state.ts#count")');
-    expect(code).toContain('(c) => c + 1');
+    expect(code).toContain('(c) => (++c, c)');
     expect(code).not.toMatch(/_value = count\b/);
   });
 
@@ -379,7 +379,10 @@ describe('Vite 8 adapter', () => {
     expect(panel?.code).toContain('commitWrites');
     expect(panel?.code).not.toContain('markDirtySubtree');
     expect(app?.code).toContain('registerHotComponent');
-    expect(app?.code).toContain('import.meta.hot.accept(');
+    expect(app?.code).toContain('import.meta.hot.acceptExports(["App"]');
+    expect(state?.code).toContain('import.meta.hot.accept(');
+    expect(state?.code).toContain('import.meta.hot.invalidate(');
+    expect(state?.code).not.toContain('__memoized_dom_apply_hot_update__([]');
   });
 
   it('serves one coherent lazy graph when the configured seed is missing', async () => {
@@ -404,7 +407,7 @@ describe('Vite 8 adapter', () => {
     expect(main?.code).toMatch(/mount\(["']root["'], App\)/);
     expect(app?.code).toContain('function App(_id');
     expect(app?.code).toContain('registerHotComponent');
-    expect(app?.code).toContain('import.meta.hot.accept(');
+    expect(app?.code).toContain('import.meta.hot.acceptExports(["App"]');
   });
 
   it('recompiles edits and emits an HMR update without a page reload', async () => {

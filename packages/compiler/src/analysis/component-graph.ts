@@ -111,6 +111,10 @@ export function isLightweightListedComponent(
   ctx: Ctx,
   name: string,
 ): boolean {
+  // HMR replaces live component factories by their entity identity. Keep the
+  // normal component ABI in dev so even otherwise-lightweight row candidates
+  // can register an instance and be swapped without remounting the page.
+  if (ctx.hot) return false;
   const imported = ctx.importedComponents.get(name);
   if (imported !== undefined) return imported.listLightweight;
 

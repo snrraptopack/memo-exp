@@ -43,6 +43,13 @@ function forget(record: HotComponentRecord): void {
   if (records?.size === 0) recordsByFactory.delete(record.factory);
 }
 
+function remember(record: HotComponentRecord): void {
+  recordsById.set(record.id, record);
+  const records = recordsByFactory.get(record.factory) ?? new Set();
+  records.add(record);
+  recordsByFactory.set(record.factory, records);
+}
+
 function ensureDisposeHook(): void {
   if (disposeHookInstalled) return;
   disposeHookInstalled = true;
@@ -63,10 +70,7 @@ export function registerHotComponent(
   const previous = recordsById.get(id);
   if (previous !== undefined) forget(previous);
   const record = { factory, id, parent, nodes, props };
-  recordsById.set(id, record);
-  const records = recordsByFactory.get(factory) ?? new Set();
-  records.add(record);
-  recordsByFactory.set(factory, records);
+  remember(record);
 }
 
 function replaceRecord(
@@ -88,7 +92,6 @@ function replaceRecord(
   }
 
   unregisterSubtree(record.id);
-  for (const node of record.nodes) node.parentNode?.removeChild(node);
   try {
     const root =
       record.props === null
@@ -97,12 +100,22 @@ function replaceRecord(
     const nextNodes = rootNodes(root);
     if (anchor?.parentNode !== null && anchor?.parentNode !== undefined) {
       const anchorParent = anchor.parentNode;
+      for (const node of record.nodes) node.parentNode?.removeChild(node);
       for (const node of nextNodes) anchorParent.insertBefore(node, anchor);
       anchorParent.removeChild(anchor);
     }
-  } catch {
+  } catch (error) {
+    // A factory can register its replacement before a later expression
+    // throws. Tear that partial instance down, retain the last good DOM, and
+    // keep the old record so the next successful edit can retry replacement.
+    const partial = recordsById.get(record.id);
+    if (partial !== undefined && partial !== record) {
+      unregisterSubtree(partial.id);
+      for (const node of partial.nodes) node.parentNode?.removeChild(node);
+    }
+    remember(record);
     anchor?.parentNode?.removeChild(anchor);
-    remountRoots();
+    throw error;
   }
 }
 

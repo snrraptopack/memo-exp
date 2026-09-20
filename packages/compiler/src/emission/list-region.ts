@@ -255,9 +255,6 @@ export function emitListRegion(
                   astFactory.identifier(scope.reasonVar),
                   astFactory.stringLiteral(structuralSource),
                 ]),
-                ...(astFactory.isIdentifier(site.sourceExpr) && !site.sourceLocal &&
-                    ctx.moduleListTargets.get(site.sourceExpr.name)?.appendOnly === true
-                  ? [astFactory.booleanLiteral(true)] : []),
               ]
             : []),
         ],

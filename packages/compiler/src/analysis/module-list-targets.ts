@@ -156,12 +156,12 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
         valid = false; break;
       }
     }
-    if (valid && appends.size > 0 && written.size === 0) {
-      ctx.moduleListTargets.set(source, { length: elements.length, fields: written, appendOnly: true });
-    } else if (valid && ![...written].some(name => keys.has(name))) {
+    if (valid && ![...written].some(name => keys.has(name))) {
       // Appends preserve existing positions, so proven content writes stay
-      // targeted even when the same array is also appended elsewhere.
-      ctx.moduleListTargets.set(source, { length: elements.length, fields: written, appendOnly: appends.size > 0 });
+      // targeted even when the same array is also appended elsewhere. Calls
+      // themselves remain content-safe: a property name cannot prove native
+      // Array.prototype semantics in JavaScript.
+      ctx.moduleListTargets.set(source, { length: elements.length, fields: written });
     }
   }
 }

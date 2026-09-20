@@ -97,7 +97,7 @@ export function createHandlerWriteRouting({
   const recordInstanceMutation = (
     scope: ScopeWrites,
     source: string,
-    kind: 'targeted' | 'structural' = 'structural',
+    kind: 'targeted' | 'structural' | 'content' = 'structural',
   ): void => {
     recordInstanceWrite(scope, source);
     const plan = listMutationPlans?.get(source);
@@ -106,6 +106,9 @@ export function createHandlerWriteRouting({
         scope,
         kind === 'targeted'
           ? plan.targetedReason
+          // Both structural and opaque-content effects require the list's
+          // full-reconcile branch. This is an instance-local numeric reason,
+          // not the runtime's module-list structure-only reason.
           : plan.structuralReason,
       );
     }
@@ -369,7 +372,10 @@ export function createHandlerWriteRouting({
   ): void => {
     if (origin.locality === 'instance') {
       mutateScope(p, (scope) => {
-        recordInstanceMutation(scope, origin.root);
+        // An opaque receiver call may mutate retained row content without
+        // changing collection shape. Do not label it structure-only merely
+        // because the receiver backs a rendered list.
+        recordInstanceMutation(scope, origin.root, 'content');
       });
       return;
     }
@@ -421,7 +427,7 @@ export function createHandlerWriteRouting({
     }
     mutateScope(p, (scope) => {
       const source = origin.key ?? origin.root;
-      recordRoutedWrite(scope, source, ctx.listSources.has(source));
+      recordRoutedWrite(scope, source, false);
     });
   };
 
@@ -485,7 +491,11 @@ export function createHandlerWriteRouting({
         recordInstanceMutation(
           scope,
           rootName!,
-          key === null ? 'structural' : 'targeted',
+          // A non-targeted member write may invoke an accessor/proxy or
+          // replace content as well as shape. The source reason still forces
+          // reconciliation; omitting the structural-only reason keeps row
+          // replay conservative.
+          key === null ? 'content' : 'targeted',
         );
       });
       if (plan !== undefined && key !== null) {
@@ -500,7 +510,10 @@ export function createHandlerWriteRouting({
         : null;
     if (receiverKey !== null && ctx.listSources.has(receiverKey)) {
       mutateScope(p, (scope) => {
-        recordRoutedWrite(scope, receiverKey, true);
+        // Even a direct property write can hit a user-defined/proxy setter.
+        // Full reconciliation is the semantic fallback until the exact index
+        // or length operation has a dedicated proof.
+        recordRoutedWrite(scope, receiverKey);
       });
       return;
     }

@@ -111,10 +111,10 @@ conservative routing. Authored assignments are neither wrapped nor evaluated
 again. After initial reconciliation, compiler-proven content updates pass the
 fixed-position guarantee to `refreshIndices`, avoiding a collection-wide identity
 scan: list refresh reads only the targeted positions. Initial mounting, hydration,
-and length mismatches still reconcile. Calls without the guarantee retain the
-O(n) identity check; passing it requires unchanged item identities, positions, and
-keys. This bounds the list refresh itself by the number of targets, not the total
-application commit cost or the work performed inside each row.
+and length mismatches still reconcile. Calls retain content-safe reconciliation:
+a method property name cannot prove that retained rows were not mutated. This
+bounds a targeted list refresh by the number of targets without turning method
+recognition into a language or purity whitelist.
 
 ### List-method optimization candidates
 
@@ -125,22 +125,14 @@ JavaScript methods.** An absent name does not produce an unsupported-method
 error; it retains existing conservative receiver-effect routing. Existing
 independent language restrictions, such as writes to read-only state, still apply.
 
-The list analysis imports this table for compiler-owned JSX `map` and proven
-append-only `push` calls. The append proof requires a non-exported, unreassigned,
-non-escaping module array with a nonempty plain-record initializer. Every push
-argument must also be a fresh flat scalar record; keys must remain stable and
-retained records must not be written. Unknown calls, aliases, spreads, arbitrary
-payload expressions, and other structural operations disable this proof.
+The list analysis imports this table for compiler-owned JSX `map` and for
+recognizing `push` candidates while proving that targeted writes remain valid
+after fresh flat records are appended. A recognized call is still routed as a
+content-capable receiver effect. JavaScript permits an own or inherited method
+to replace `Array.prototype.push`, so spelling alone cannot authorize skipping
+retained-prefix validation or row replay.
 
-For a structure-only update, proven append bypasses retained-prefix scans,
-retained-row replay, and whole-array snapshot copying. It validates new keys,
-mounts the new tail, and extends the snapshot. Work in this list path is
-proportional to appended items. Batched appends are observed independently by
-each reader. Broad dirty reasons use ordinary reconciliation; mounting and
-hydration retain their existing paths. This is not a general benchmark speedup
-claim or an optimization of every `push` call.
-
-Other structural labels remain candidates, not implemented specializations.
+Structural labels remain candidates, not implemented specializations.
 Adding a name alone cannot authorize an optimization. Receiver provenance,
 overrides, callbacks, argument effects, and mixed writes must be proven safe.
 Names are neither purity guarantees nor permission to skip invalidation.

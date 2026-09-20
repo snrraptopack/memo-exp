@@ -129,6 +129,18 @@ const SOURCES: Record<string, string> = {
       );
     }
   `,
+  'slot-gating-member-call': `
+    export function App({ reader }) {
+      let tick = 0;
+      return (
+        <div>
+          <span class="value">{reader.read()}</span>
+          <span class="tick">{tick}</span>
+          <button onClick={() => { tick++; }} />
+        </div>
+      );
+    }
+  `,
 };
 
 /** Reason gates in the App update: `[gated slot expression] -> gate text`. */
@@ -287,6 +299,20 @@ describe('slot reason gating — compiled runtime behavior', () => {
     click('.inc-b');
     expect(text('.b')).toBe('1');
     expect(evals).toEqual({ a: 3, b: 2 });
+  });
+
+  it('keeps an unsummarized member call unconditional', async () => {
+    let calls = 0;
+    const reader = { read: () => String(++calls) };
+    const { App } = await load('slot-gating-member-call');
+    document.body.appendChild(App('App', null, [{ reader }]));
+    expect(text('.value')).toBe('1');
+
+    click('button');
+
+    expect(text('.tick')).toBe('1');
+    expect(text('.value')).toBe('2');
+    expect(calls).toBe(2);
   });
 
   it('pushes props with the reason of the changed key only, and skips unchanged pushes', async () => {

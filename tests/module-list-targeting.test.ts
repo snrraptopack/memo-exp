@@ -52,6 +52,20 @@ beforeAll(() => {
         items[1] = first;
       }`).replace("items[1].label = 'B';", 'items = [];'),
       { runtimePath: '@memoized-dom/runtime' }));
+  writeFileSync(join(outDir, 'module-list-unknown-call.compiled.ts'),
+    compile(source
+      .replace("let suffix = '!'", `
+        items.touch = () => { items[0].label = 'touched'; };
+        let suffix = '!'`)
+      .replace("items[0].label = 'A';", 'items.touch();'),
+      { runtimePath: '@memoized-dom/runtime' }));
+  writeFileSync(join(outDir, 'module-list-overridden-push.compiled.ts'),
+    compile(source
+      .replace("let suffix = '!'", `
+        items.push = () => { items[0].label = 'overridden'; return items.length; };
+        let suffix = '!'`)
+      .replace("items[0].label = 'A';", "items.push({ id: 3, label: 'c' });"),
+      { runtimePath: '@memoized-dom/runtime' }));
 });
 
 afterEach(() => {
@@ -138,7 +152,7 @@ it('reads only targeted positions when fixed positions are proven, and validates
   region.dispose();
 });
 
-it('appends only new rows in shared readers and replays retained rows for broad updates', async () => {
+it('preserves appended rows and replays retained content when push semantics are not intrinsic-proven', async () => {
   const scheduled: Array<() => void> = [];
   setScheduler(callback => scheduled.push(callback));
   const syncs: number[] = [];
@@ -155,7 +169,7 @@ it('appends only new rows in shared readers and replays retained rows for broad 
   expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual([
     'a!', 'b!', 'c!', 'd!', 'a!', 'b!', 'c!', 'd!',
   ]);
-  expect(syncs.sort()).toEqual([3, 3, 4, 4]);
+  expect(syncs.sort()).toEqual([1, 1, 2, 2, 3, 3, 4, 4]);
   expect(document.querySelector('ul li')).toBe(retained[0]);
   syncs.length = 0;
   (document.querySelector('#suffix') as HTMLButtonElement).click();
@@ -164,6 +178,45 @@ it('appends only new rows in shared readers and replays retained rows for broad 
     'a?', 'b?', 'c?', 'd?', 'a?', 'b?', 'c?', 'd?',
   ]);
   expect(syncs.sort()).toEqual([1, 1, 2, 2, 3, 3, 4, 4]);
+});
+
+it('replays retained rows after an unknown list method mutates content in place', async () => {
+  const scheduled: Array<() => void> = [];
+  setScheduler(callback => scheduled.push(callback));
+  const syncs: number[] = [];
+  probe.__moduleListSyncs = syncs;
+  // beforeAll creates this module; keep the specifier dynamic for Vite.
+  const specifier = './fixtures/out/module-list-unknown-call.compiled.ts';
+  const { App } = await import(specifier);
+  document.body.append(App('App', null));
+  syncs.length = 0;
+
+  (document.querySelector('#first') as HTMLButtonElement).click();
+  while (scheduled.length) scheduled.shift()!();
+
+  expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual([
+    'touched!', 'b!', 'touched!', 'b!',
+  ]);
+  expect(syncs.sort()).toEqual([1, 1, 2, 2]);
+});
+
+it('does not infer append semantics from an overridden push property', async () => {
+  const scheduled: Array<() => void> = [];
+  setScheduler(callback => scheduled.push(callback));
+  const syncs: number[] = [];
+  probe.__moduleListSyncs = syncs;
+  const specifier = './fixtures/out/module-list-overridden-push.compiled.ts';
+  const { App } = await import(specifier);
+  document.body.append(App('App', null));
+  syncs.length = 0;
+
+  (document.querySelector('#first') as HTMLButtonElement).click();
+  while (scheduled.length) scheduled.shift()!();
+
+  expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual([
+    'overridden!', 'b!', 'overridden!', 'b!',
+  ]);
+  expect(syncs.sort()).toEqual([1, 1, 2, 2]);
 });
 
 it('does not read retained positions during proven append and rejects duplicate keys before mounting', () => {

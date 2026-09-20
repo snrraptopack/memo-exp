@@ -287,19 +287,29 @@ function appendHotBoundary(
   const components = new Map(
     metadata.componentExports.map((component) => [component.local, component]),
   );
+  if (components.size === 0) {
+    return `${code}\nimport { disposeHotModule as __memoized_dom_dispose_hot_module__ } from ${JSON.stringify(
+      runtimePath,
+    )};\nif (import.meta.hot) {\n  import.meta.hot.dispose(() => __memoized_dom_dispose_hot_module__(${JSON.stringify(
+      moduleId,
+    )}, ${JSON.stringify(rootId)}));\n  import.meta.hot.accept((updatedModule) => {\n    if (!updatedModule) return;\n    import.meta.hot.invalidate(${JSON.stringify(
+      'memoized-dom: propagate a non-component module update',
+    )});\n  });\n}`;
+  }
   const updates = [...components.values()]
     .map(
       (component) =>
-        `[${component.local}, updatedModule[${JSON.stringify(component.exported)}], ${
-          component.listLightweight
-        }]`,
+        `[${component.local}, updatedModule[${JSON.stringify(component.exported)}], false]`,
     )
     .join(', ');
+  const acceptedExports = JSON.stringify(
+    [...components.values()].map((component) => component.exported),
+  );
   return `${code}\nimport { applyHotUpdate as __memoized_dom_apply_hot_update__, disposeHotModule as __memoized_dom_dispose_hot_module__ } from ${JSON.stringify(
     runtimePath,
   )};\nif (import.meta.hot) {\n  import.meta.hot.dispose(() => __memoized_dom_dispose_hot_module__(${JSON.stringify(
     moduleId,
-  )}, ${JSON.stringify(rootId)}));\n  import.meta.hot.accept((updatedModule) => {\n    if (updatedModule) __memoized_dom_apply_hot_update__([${updates}], ${JSON.stringify(
-      rootId,
-    )});\n  });\n}`;
+  )}, ${JSON.stringify(rootId)}));\n  import.meta.hot.acceptExports(${acceptedExports}, (updatedModule) => {\n    if (!updatedModule) return;\n    const updates = [${updates}];\n    if (updates.some(([, next]) => next === undefined)) {\n      import.meta.hot.invalidate(${JSON.stringify(
+        'memoized-dom: a component export was removed',
+      )});\n      return;\n    }\n    __memoized_dom_apply_hot_update__(updates, ${JSON.stringify(rootId)});\n  });\n}`;
 }

@@ -48,7 +48,11 @@ export function slotReasonSources(
       case 'CallExpression':
       case 'OptionalCallExpression': {
         const callee = (node as t.CallExpression).callee;
-        if (astFactory.isIdentifier(callee) && !calleeIsPure(ctx, callee)) {
+        // A call is attributable only when its callee is visible to the
+        // helper summarizer, or is rooted in an unbound global. In particular,
+        // `obj.method()` must not inherit `obj`'s reason: the opaque method may
+        // read state that is unrelated to the receiver.
+        if (!calleeIsPure(ctx, callee)) {
           return bail();
         }
         return undefined;
@@ -126,11 +130,22 @@ function isValueReference(node: t.Identifier, parent: t.Node | null): boolean {
  * no reads or effects, or a global with no lexical binding at all (String,
  * Math.*, …). Component-local closures and unindexed nodes are not.
  */
-function calleeIsPure(ctx: Ctx, callee: t.Identifier): boolean {
-  const name = callee.name;
+function calleeIsPure(ctx: Ctx, callee: t.Node): boolean {
+  let root: t.Node = callee;
+  while (
+    astFactory.isMemberExpression(root) ||
+    astFactory.isOptionalMemberExpression(root)
+  ) {
+    if (astFactory.isSuper(root.object)) return false;
+    root = root.object;
+  }
+  if (!astFactory.isIdentifier(root)) return false;
+  const name = root.name;
   const summary =
-    ctx.importedFunctions.get(name) ??
-    (ctx.helpers.has(name) ? summarizeHelper(ctx, name) : undefined);
+    astFactory.isIdentifier(callee)
+      ? ctx.importedFunctions.get(name) ??
+        (ctx.helpers.has(name) ? summarizeHelper(ctx, name) : undefined)
+      : undefined;
   if (summary !== undefined) {
     return (
       summary.reads.size === 0 &&
@@ -140,7 +155,7 @@ function calleeIsPure(ctx: Ctx, callee: t.Identifier): boolean {
       !summary.unbounded
     );
   }
-  const node = callee as unknown as BaseNode;
+  const node = root as unknown as BaseNode;
   if (astScopeAt(ctx, node) === undefined) return false;
   return astBindingAt(ctx, node, name) === undefined;
 }

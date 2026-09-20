@@ -83,4 +83,29 @@ describe('live component replacement', () => {
     expect(document.body.textContent).toBe('after:two');
     expect(registeredIds()).toContain('App/Child');
   });
+
+  it('keeps the last good DOM and retries after a replacement throws', () => {
+    const previous = factory('before');
+    const broken: HotComponentFactory = (id, parent, props) => {
+      const element = document.createElement('button');
+      element.textContent = 'partial';
+      register({ id, parent, render() {} });
+      registerHotComponent(broken, id, parent, [element], props ?? null);
+      throw new Error('render failed');
+    };
+    const fixed = factory('after');
+    document.body.append(previous('App/Child', 'App', ['value']));
+
+    expect(() => applyHotUpdate([[previous, broken, false]], 'App')).toThrow(
+      'render failed',
+    );
+    expect(document.body.textContent).toBe('before:value');
+    expect(document.body.childNodes).toHaveLength(1);
+
+    applyHotUpdate([[previous, fixed, false]], 'App');
+
+    expect(document.body.textContent).toBe('after:value');
+    expect(document.body.childNodes).toHaveLength(1);
+    expect(registeredIds()).toContain('App/Child');
+  });
 });
