@@ -5,12 +5,11 @@ import { join, resolve } from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type ViteDevServer } from 'vite';
-import memoizedDom, { memoizedDomFullstack } from '../src';
+import memoizedDom from '../src';
 
 const repository = resolve(import.meta.dirname, '../../..');
 const runtime = resolve(repository, 'packages/runtime/src/index.ts');
 const runtimeHot = resolve(repository, 'packages/runtime/src/hot.ts');
-const runtimeHydrate = resolve(repository, 'packages/runtime/src/hydrate.ts');
 const runtimeServer = resolve(repository, 'packages/runtime/src/server.ts');
 const data = resolve(repository, 'packages/data/src/index.ts');
 const dataInternal = resolve(repository, 'packages/data/src/internal.ts');
@@ -150,24 +149,17 @@ describe('fullstack browser integration', () => {
       }
     `);
     await writeFile(resolve(fixture, 'main.ts'), `
-      import { hydrate } from '@memoized-dom/runtime/hydrate';
-      import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
+      import { mount } from '@memoized-dom/runtime';
       import { App } from './App';
       import './styles.css';
-      setActiveDataRuntime(createDataRuntime());
-      hydrate('root', App, {
-        recover: true,
-        onRecover(error) { throw error; },
-      });
+      mount('root', App);
     `);
     await writeFile(resolve(fixture, 'server.ts'), `
-      import { defineServer } from '@memoized-dom/server';
+      import { serve } from '@memoized-dom/server';
       import { App } from './App';
-      export default defineServer({
-        app: App,
-        document: new URL('./index.html', import.meta.url),
-        render: { mode: 'resolve', markers: true },
-      });
+      const app = serve();
+      app.ssr(App);
+      export default app;
     `);
 
     vite = await createServer({
@@ -177,7 +169,6 @@ describe('fullstack browser integration', () => {
       logLevel: 'silent',
       resolve: {
         alias: [
-          { find: '@memoized-dom/runtime/hydrate', replacement: runtimeHydrate },
           { find: '@memoized-dom/runtime/server', replacement: runtimeServer },
           { find: '@memoized-dom/runtime/hot', replacement: runtimeHot },
           { find: '@memoized-dom/runtime', replacement: runtime },
@@ -189,10 +180,11 @@ describe('fullstack browser integration', () => {
           { find: '@memoized-dom/server', replacement: serverIndex },
         ],
       },
-      plugins: [
-        memoizedDom({ entries: 'main.ts' }),
-        memoizedDomFullstack({ entry: 'server.ts' }),
-      ],
+      plugins: [memoizedDom({
+        clientEntry: 'main.ts',
+        serverEntry: 'server.ts',
+        server: 'server',
+      })],
       server: { host: '127.0.0.1', port: 0 },
     });
     await vite.listen();

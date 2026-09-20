@@ -25,7 +25,7 @@ const server = await createServer({
   resolve: { alias: { '@': resolve(fixtureRoot, 'src') } },
   plugins: [
     memoizedDom({
-      entries: 'src/main.ts',
+      clientEntry: 'src/main.ts',
     }),
   ],
 });

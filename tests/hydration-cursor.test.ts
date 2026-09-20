@@ -5,7 +5,7 @@ import {
   HydrationMarkerIndex,
   HydrationNodePlan,
   parseHydrationMarker,
-} from '@memoized-dom/runtime/hydrate';
+} from '../packages/runtime/src/hydration';
 
 function hostWith(html: string): HTMLElement {
   const host = document.createElement('div');

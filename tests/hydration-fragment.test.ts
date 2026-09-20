@@ -13,14 +13,11 @@ import { compile } from '@memoized-dom/compiler';
 import { renderToString } from '@memoized-dom/server';
 import {
   registerRootFactory,
+  mount,
   resetScheduler,
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
-import {
-  hydrate,
-  HydrationMismatchError,
-} from '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -90,7 +87,7 @@ describe('Phase 3 fragment and multi-root hydrate integration', () => {
     const createTextNode = vi.spyOn(document, 'createTextNode');
     const createComment = vi.spyOn(document, 'createComment');
 
-    mounted = hydrate('root', app.App);
+    mounted = mount('root', app.App);
 
     expect(mounted.nodes).toEqual([header, main, footer]);
     expect(host.querySelector('header')).toBe(header);
@@ -113,7 +110,7 @@ describe('Phase 3 fragment and multi-root hydrate integration', () => {
     });
     const host = renderServerHost(app);
 
-    mounted = hydrate('root', app.App);
+    mounted = mount('root', app.App);
     expect(host.children.length).toBe(3);
 
     mounted.unmount();
@@ -121,7 +118,7 @@ describe('Phase 3 fragment and multi-root hydrate integration', () => {
     mounted = undefined;
   });
 
-  it('rejects a fragment root when a server sibling tag is skewed', async () => {
+  it('recovers a fragment root when a server sibling tag is skewed', async () => {
     const app = await importCompiled();
     registerRootFactory(app.App, {
       id: 'App',
@@ -137,11 +134,8 @@ describe('Phase 3 fragment and multi-root hydrate integration', () => {
       '<!--/mmd-->';
     document.body.appendChild(host);
 
-    expect(() => hydrate('root', app.App)).toThrowError(
-      HydrationMismatchError,
-    );
-    expect(() => hydrate('root', app.App)).toThrow(
-      'expected element <main>, found element <article>',
-    );
+    mounted = mount('root', app.App);
+    expect(host.querySelector('main')).not.toBeNull();
+    expect(host.querySelector('article')).toBeNull();
   });
 });

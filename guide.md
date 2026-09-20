@@ -72,10 +72,9 @@ class. Module state is not a special store type.
     return `ResolvedValue<T>` and may be called in render; non-`get*` functions
     (`post*`, etc.) must only be invoked in event handlers or callbacks
     (`[MMD-S010]`).
-19. For server and fullstack applications, use `defineServer` from
-    `@memoized-dom/server` with its explicit `render` policy block (`mode`,
-    `markers`, `timeout`, `delivery`) and in-memory `serverFetch` for
-    zero-network-loopback SSR.
+19. For server and fullstack applications, use `serve()` from
+    `@memoized-dom/server`, compose middleware/routes/SSR on the returned app,
+    and let Vite supply the client/server boundary and SSR document.
 
 ## Minimal published-package project
 
@@ -115,7 +114,7 @@ Package roles:
 | `@memoized-dom/data` | Optional transparent `$fetch` values, `$track`, declarative data boundaries, independent action results, validation, caching, and SSR state transfer. |
 | `@memoized-dom/router` | Optional public route state and imperative navigation; compiler routing also emits imports from its generated-code bridge. |
 | `@memoized-dom/language-service` | Optional tsserver diagnostics and fixes for compiler errors and `let` bindings that can safely be `const`. |
-| `@memoized-dom/server` | Composed fullstack application server (`defineServer`), server router, and SSR rendering primitives (`renderToReadableStream`, `renderToString`, `renderWithDom`). |
+| `@memoized-dom/server` | Composed fullstack application server (`serve()`), server router, and SSR rendering primitives (`renderToReadableStream`, `renderToString`, `renderWithDom`). |
 | `@memoized-dom/adapters` | Platform runtime bridges (Node.js `createNodeHandler`, Bun `createBunFetch`), stream composition, and HTTP response utilities. |
 
 For editor diagnostics, optionally install the language service and add it to
@@ -201,7 +200,7 @@ import memoizedDom from '@memoized-dom/vite';
 export default defineConfig({
   plugins: [
     memoizedDom({
-      entries: 'src/main.ts',
+      clientEntry: 'src/main.ts',
     }),
   ],
 });
@@ -1489,20 +1488,11 @@ On the client, the data runtime is installed first so `hydrate` can restore the 
 
 ```ts
 // main.ts
-import { hydrate } from '@memoized-dom/runtime/hydrate';
-import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
+import { mount } from '@memoized-dom/runtime';
 import { App } from './App';
 
-// 1. Install data runtime before hydration
-setActiveDataRuntime(createDataRuntime());
-
-// 2. Hydrate adopting server-rendered markup
-hydrate('root', App, {
-  recover: true,
-  onRecover: (err) => {
-    console.error('[HYDRATION-MISMATCH]', err.message);
-  },
-});
+// mount restores SSR data and adopts compatible server-rendered markup.
+mount('root', App);
 ```
 
 Every server function call resolves from the `application/mmd+json` payload on hydration without refetching. Structural mismatches are reported through `onRecover` with automatic fallback to `mount`.

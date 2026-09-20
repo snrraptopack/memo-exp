@@ -83,7 +83,7 @@ describe('browser HMR', () => {
           { find: '@memoized-dom/runtime', replacement: runtime },
         ],
       },
-      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
       server: { host: '127.0.0.1', port: 0 },
     });
     await server.listen();

@@ -1,340 +1,586 @@
-# Memoized DOM fullstack application contract
+# Memoized DOM fullstack DX
 
-This document defines the final developer experience for Memoized DOM
-applications built with Vite. Where the current implementation differs, the
-implementation must move toward this contract.
+This document defines the intended fullstack application surface for
+Memoized DOM. It replaces the earlier configuration-first proposal.
 
-The application model supports two page-delivery forms:
+The central idea is simple:
 
-- SPA: the browser mounts the application.
-- SSR: the server renders the application and the browser hydrates it.
+- Vite declares the client and server module boundaries.
+- `serve()` creates the application server and returns the object used to
+  compose middleware, HTTP routes, and SSR.
+- `mount()` is the only browser bootstrap API. It creates a new application
+  or adopts server-rendered output automatically.
+- Server functions remain ordinary functions in authored application code.
+- Filesystem routes and middleware remain ordinary modules. They do not need
+  generated per-file wrappers.
 
-SSR supports two colorless-data modes:
+This is a target contract and a clean replacement of the current public
+surface. `defineServer()`, `memoizedDomFullstack()`, and direct `hydrate()` are
+removed rather than deprecated. Their lower-level router, rendering, and DOM
+adoption machinery may be reused internally, but the old exports and
+compatibility signatures do not remain public.
 
-- `resolve`: wait for request-owned data before completing the page.
-- `shell`: send the immediate pending UI and continue data work in the
-  browser.
+## 1. Design goals
 
-There are no additional application-facing page-delivery profiles, hydration
-switches, marker switches, or delivery switches. SSR always hydrates. SPA
-never hydrates server-rendered application HTML because none is produced.
+The fullstack layer should feel like composing an application, not filling in
+a framework configuration object.
 
-## 1. Runtime boundary
+The design should provide:
 
-Memoized DOM has one application model with two optional environments:
+- one visible client/server boundary in Vite;
+- one server composition root;
+- one browser mounting operation;
+- Web-standard `Request` and `Response` at the server boundary;
+- plain middleware functions;
+- plain server functions with colorless calls;
+- literal-path inference for programmatic routes;
+- compiler-aware parameter inference for filesystem routes;
+- request-local state shared by pages, API routes, and server functions;
+- reliable development replacement and error recovery.
 
-```text
-client environment -> browser application
-server environment -> Web-standard application handler
-```
+The initial API should not expose deployment targets, route-delivery rule
+tables, hydration switches, marker switches, document assembly, or separate
+page builders. Those are implementation or adapter concerns.
 
-The server entry always exports this portable contract:
+## 2. Vite owns the environment boundary
+
+Vite must know which graph is allowed to contain browser code, which graph is
+allowed to contain server code, and which directory contains discoverable
+server modules. That information belongs in the Vite plugin because it
+affects module resolution and bundling.
 
 ```ts
-(request: Request) => Response | Promise<Response>
-```
-
-Node, Bun, worker runtimes, serverless platforms, and custom backends consume
-the same handler. Changing the host does not change application components,
-routes, middleware, server functions, or `$fetch` calls.
-
-## 2. One Vite plugin
-
-Memoized DOM exposes one Vite plugin for development, builds, and preview:
-
-```ts
+// vite.config.ts
 import { defineConfig } from 'vite';
 import memoizedDom from '@memoized-dom/vite';
 
-export default defineConfig({
-  plugins: [memoizedDom()],
-});
-```
-
-The plugin configures `appType`, compiler environments, HMR, server-module
-discovery, development dispatch, production output, and production preview.
-Applications never add `memoizedDomFullstack()`.
-
-## 3. Project convention
-
-```text
-index.html
-src/
-  entry.client.ts
-  entry.server.ts
-  App.tsx
-  server/
-    functions/
-    routes/
-```
-
-The options are:
-
-| Option | Default | Responsibility |
-| :--- | :--- | :--- |
-| `clientEntry` | The single module script in `index.html`, otherwise `src/entry.client.ts` | Browser bootstrap. |
-| `serverEntry` | `src/entry.server.ts` when present | Server composition root and Web handler. |
-| `server` | `src/server` | Convention root for server functions and file API routes. |
-| `target` | `'node'` when a server entry exists | Production server build target. |
-| `routeRules` | `{}` | Per-route SSR mode overrides. |
-
-Projects can override the paths:
-
-```ts
 export default defineConfig({
   plugins: [
     memoizedDom({
       clientEntry: 'src/entry.client.ts',
       serverEntry: 'src/entry.server.ts',
       server: 'src/server',
-      target: 'node',
-      routeRules: {
-        '/reports': { mode: 'shell' },
-        '/dashboard/*': { mode: 'shell' },
-      },
     }),
   ],
 });
 ```
 
-`routeRules` keys come from the compiler-generated route graph. Omitted routes
-use `resolve`. A parent rule is inherited by nested routes; a nested rule can
-override it with its own mode.
+These options describe module ownership, not application behavior:
 
-If `index.html` contains multiple application module scripts, `clientEntry` is
-required. The plugin never guesses between multiple entries.
+| Option | Meaning |
+| --- | --- |
+| `clientEntry` | Browser bootstrap and root of the client graph. |
+| `serverEntry` | Server composition root and root of the server graph. |
+| `server` | Server-only convention root for functions and file routes. |
 
-`serverEntry` and `server` are intentionally different. `serverEntry` executes
-the application server. `server` is a directory inspected for generated
-server modules.
+Conventional defaults may allow `memoizedDom()` when those exact files are
+present, but the resolved boundary must still be explicit internally. The
+plugin must never infer server safety from an import happening not to execute
+in the browser.
 
-## 4. SPA applications
+There is no `target` option in this application contract. Node, Bun, workers,
+and other hosts consume the built Web handler through adapters. Selecting a
+host must not change routes, middleware, SSR declarations, or server
+functions.
 
-A project without `serverEntry` is a pure SPA. Its client entry mounts the
-compiled application:
+There is also no `routeRules` option. Page behavior is composed by the server
+application rather than split between application code and Vite config.
 
-```ts
-import { mount } from '@memoized-dom/runtime';
-import { App } from './App';
+### Boundary enforcement
 
-mount('root', App);
+The plugin owns three related checks:
+
+1. Modules beneath `server`, and modules reachable only from `serverEntry`,
+   may use server capabilities.
+2. The client graph may not import server implementations directly.
+3. `#server-functions` resolves to a generated client facade in the client
+   graph and to the real implementation or in-memory dispatch in the server
+   graph.
+
+Shared application modules can be compiled in both environments. A server
+module accidentally entering the client graph is a build error with an import
+trace, not a runtime failure or a silently included secret.
+
+## 3. Project shape
+
+```text
+index.html
+src/
+  App.tsx
+  entry.client.ts
+  entry.server.ts
+  server/
+    config/
+      index.ts
+    functions/
+      _middleware.ts
+      stories.ts
+    routes/
+      _middleware.ts
+      api/
+        _middleware.ts
+        health.ts
+        stories/
+          [id].ts
 ```
 
-Vite builds only the client environment and produces browser assets.
+Only `entry.client.ts` and `entry.server.ts` are required by the fullstack
+model. The contents of the server directory are discovered when present.
 
-A project can also use SPA page delivery while retaining a server for APIs and
-server functions. Its `serverEntry` exports `defineServer()` without `app`:
+`server/config` is the application-wide server contract. It gives server code
+one stable place for types and server-only application infrastructure without
+turning `serve()` or Vite into a large configuration object.
+
+The only conventionally interpreted export is `ServerTypes` from
+`server/config/index.ts`:
 
 ```ts
-export default defineServer({
-  middleware: [logger, session],
-  routes: {
-    '/api/health': () => ({ ok: true }),
+// src/server/config/index.ts
+export interface ServerTypes {
+  locals: {
+    requestId: string;
+    user: User | undefined;
+  };
+
+  // Optional host bindings. Omit this when the host supplies none.
+  platform?: CloudflareEnv;
+
+  // Application-scoped runtime dependencies.
+  services: ApplicationServices;
+}
+```
+
+`locals` describes the mutable, request-owned object created by
+`serve({ createLocals })`. `platform` describes host-provided bindings, such
+as a worker environment, execution context, or deployment adapter values. It
+does not select a deployment target. `services` describes application-scoped
+runtime dependencies created once per `serve()` application instance.
+
+The Vite integration discovers the config entry and registers `ServerTypes`
+with the normal `@memoized-dom/server` package types. Application files then
+use package imports without a relative import back to the config directory:
+
+```ts
+import type {
+  ServerContext,
+  ServerMiddleware,
+} from '@memoized-dom/server';
+```
+
+With the registration present, `ServerContext['locals']`,
+`ServerMiddleware`, `serve()`, and `getServerContext()` all use the configured
+`locals` and `platform` types by default. No call-site generic is required.
+
+```ts
+// src/server/functions/update-profile.ts
+import { getServerContext } from '@memoized-dom/server';
+
+export function postUpdateProfile(input: ProfilePatch) {
+  const { locals, platform, services } = getServerContext();
+
+  locals.requestId; // string
+  locals.user;      // User | undefined
+  platform?.DB;     // typed from CloudflareEnv
+  services.database; // typed application service
+
+  return updateProfile(input, locals.user);
+}
+```
+
+TypeScript cannot discover an application-local type through a package import
+on its own. The integration therefore emits one project-wide declaration,
+`.memoized/server-config.d.ts`, conceptually shaped like this:
+
+```ts
+import type { ServerTypes } from '../src/server/config/index.js';
+
+declare module '@memoized-dom/server/router' {
+  interface ServerTypeRegistry {
+    application: ServerTypes;
+  }
+}
+```
+
+The generated bridge targets the module that owns `ServerTypeRegistry`;
+application code still imports every public type and function from
+`@memoized-dom/server`. This is one invisible application-wide bridge, not a
+generated module that every route must import. It updates atomically when the
+config contract changes.
+
+The bridge is generated during project preparation, Vite startup, and builds;
+the language service consumes the same contract. The project template includes
+`.memoized/**/*.d.ts`, so ordinary `tsc --noEmit` sees it after preparation.
+When `server/config/index.ts` is absent, the package falls back to empty locals
+and an unknown platform. Multiple server config entries in one application
+are an error rather than declaration-merging into an ambiguous contract.
+
+If an editor was already open when the bridge was first created, the language
+service must be notified of the new declaration. Project templates and the
+Memoized DOM language service handle this; a manually configured TypeScript
+project must include `.memoized/**/*.d.ts`. Seeing
+`Record<string, never>` for `getServerContext().locals` means the bridge is not
+part of that TypeScript project, not that the route should add a generic.
+
+### What belongs in `server/config`
+
+The folder may hold application-owned server infrastructure in ordinary
+modules. For example:
+
+```text
+src/server/config/
+  index.ts       # ServerTypes only: the framework-recognized contract
+  env.ts         # read and validate environment values
+  constants.ts   # server-only application constants
+  auth.ts        # session/cookie names and authentication policy
+  errors.ts      # application error types and response mapping
+  services.ts    # typed service or repository construction
+```
+
+These are normal application modules and are imported through the server-root
+alias instead of deep relative paths:
+
+```ts
+import { env } from '#server/config/env';
+import { sessionCookie } from '#server/config/auth';
+```
+
+Vite resolves this alias from the plugin's `server` option and rejects it in
+the client graph. Plain `tsc` also needs the equivalent project mapping; the
+project template writes it from the same server root:
+
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "#server/*": ["./src/server/*"],
+      "#server-functions": ["./.memoized/server-functions.d.ts"]
+    }
   },
-});
+  "include": ["src", ".memoized/**/*.d.ts"]
+}
 ```
 
-The adapter serves the Vite document as the page fallback. API routes and
-server functions still enter the Web handler. The client entry continues to
-use `mount()`.
+Useful responsibilities include:
 
-SPA delivery is selected once for the application. It is not repeated in
-`routeRules`.
+- the `ServerTypes` locals and platform contract;
+- typed environment parsing at the server boundary;
+- server-only constants and feature policy;
+- authentication/session policy shared by middleware and server functions;
+- application error classes and error-to-response mapping;
+- typed factories for databases, repositories, queues, caches, and mailers;
+- host binding types and small helpers that adapt them to application APIs.
 
-## 5. SSR applications
+The folder is not a second composition root. Routes, middleware ordering, SSR
+registration, and request handlers remain in `entry.server.ts` or their
+conventional server modules. Secrets should be read at runtime in server-only
+modules, not written into `ServerTypes`, and `index.ts` should preferably stay
+type-only so registering the contract has no runtime side effects.
 
-An SSR server entry passes the compiled application to `defineServer`:
+The three import surfaces remain deliberately different:
+
+- `@memoized-dom/server` is the framework API, defaulted from the registered
+  application types;
+- `#server/*` is application-owned server code and is rejected from the client
+  graph;
+- `#server-functions` is the generated boundary-safe facade that preserves
+  function parameters and colorless result types in both environments.
+
+A browser module may use an erased `import type` from a server module, but it
+may not import a runtime value from `#server/*`. Types, schemas, and DTOs that
+are intentionally owned by both environments should normally live in a
+neutral `src/contracts` or `src/shared` directory. Exposing a server operation
+to browser code is explicit: export a verb-named function beneath
+`server/functions` and import it from `#server-functions`. The framework never
+turns arbitrary database or service exports into public client capabilities.
+
+### Runtime services
+
+Long-lived dependencies should not be put in request locals. Define their
+type in `ServerTypes`, create them in an ordinary config module, and pass the
+factory to `serve()`:
+
+```ts
+// src/server/config/services.ts
+export interface ApplicationServices {
+  database: Database;
+  stories: StoryRepository;
+  queue: JobQueue;
+}
+
+export async function createServices(): Promise<ApplicationServices> {
+  const database = await connectDatabase(readDatabaseUrl());
+  return {
+    database,
+    stories: createStoryRepository(database),
+    queue: createJobQueue(),
+  };
+}
+```
 
 ```ts
 // src/entry.server.ts
-import { defineServer } from '@memoized-dom/server';
-import type { ServerMiddleware } from '@memoized-dom/server/router';
+import { serve } from '@memoized-dom/server';
+import { createServices } from '#server/config/services';
+
+const app = serve({ createServices });
+```
+
+`createServices` is lazy and runs once for an application instance, including
+when multiple first requests arrive concurrently. Every middleware, route,
+SSR request, nested in-memory server-function dispatch, and
+`getServerContext()` call sees the same typed `context.services` object. A
+fresh application evaluation during development creates a fresh service
+scope. Request-specific identity, authorization results, and mutable scratch
+state still belong in `context.locals`.
+
+## 4. `serve()` is the server composition root
+
+`serve()` performs the small amount of application-wide initialization that
+must happen before routes are registered. It returns an application object
+with methods for composition.
+
+```ts
+// src/entry.server.ts
+import { serve } from '@memoized-dom/server';
 import { App } from './App';
 
-interface Locals {
-  requestId: string;
-  user?: string;
-}
+const app = serve({
+  createServices,
+  createLocals() {
+    return {
+      requestId: crypto.randomUUID(),
+      user: undefined,
+    };
+  },
 
-const logger: ServerMiddleware<Locals> = async (context, next) => {
+  onError(error, context) {
+    console.error(context.request.method, context.url.pathname, error);
+    return new Response('Internal Server Error', { status: 500 });
+  },
+});
+
+app.use(logger, session);
+
+app.route('GET', '/api/health', () => ({ ok: true }));
+
+app.ssr(App);
+
+export default app;
+```
+
+The returned application exposes a Web-standard request handler. Adapters and
+the Vite development server dispatch through `app.fetch(request)`. The
+default export is recognized as the application, so normal application code
+does not need an extra handler wrapper.
+
+The initial `serve()` options are intentionally limited to request-lifecycle
+concerns:
+
+```ts
+interface ServeOptions {
+  createServices?: () => RegisteredServices | Promise<RegisteredServices>;
+  createLocals?: (request: Request) => RegisteredLocals;
+  createPlatform?: (request: Request) => RegisteredPlatform | undefined;
+  onError?: (
+    error: unknown,
+    context: ServerContext,
+  ) => Response | Promise<Response>;
+}
+```
+
+Rendering, routes, and middleware are methods because they compose behavior.
+They are not nested fields in a large options object.
+
+## 5. Middleware is just a function
+
+Middleware uses the existing request/response shape:
+
+```ts
+type ServerMiddleware = (
+  context: ServerContext,
+  next: () => Promise<Response>,
+) => Response | Promise<Response>;
+```
+
+It does not require `middleware()`, `provide()`, a class, or a registration
+object.
+
+```ts
+// src/entry.server.ts
+import type { ServerMiddleware } from '@memoized-dom/server';
+
+const logger: ServerMiddleware = async (context, next) => {
+  const started = performance.now();
   const response = await next();
-  console.log(
-    context.request.method,
-    context.url.pathname,
-    response.status,
-  );
+
+  console.log({
+    method: context.request.method,
+    path: context.url.pathname,
+    status: response.status,
+    duration: performance.now() - started,
+  });
+
   return response;
 };
 
-const session: ServerMiddleware<Locals> = (context, next) => {
-  context.locals.user = context.request.headers.get('x-user') ?? undefined;
+const session: ServerMiddleware = async (context, next) => {
+  const token = context.request.headers.get('authorization');
+  context.locals.user = token === null
+    ? undefined
+    : await readSession(token);
   return next();
 };
 
-export default defineServer<Locals>({
-  app: App,
-  middleware: [logger, session],
-  createLocals: () => ({ requestId: crypto.randomUUID() }),
-  routes: {
-    '/api/health': () => ({ ok: true }),
-    '/api/stories/:id': {
-      GET: ({ params }) => ({ id: params.id }),
-      POST: ({ params }) => ({ updated: params.id }),
-    },
-  },
-});
+app.use(logger, session);
 ```
 
-No render block is required. SSR defaults to `resolve`.
-
-The client entry hydrates the server document:
+`context` contains:
 
 ```ts
-import { hydrate } from '@memoized-dom/runtime/hydrate';
-import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
-import { App } from './App';
-
-setActiveDataRuntime(createDataRuntime());
-
-hydrate('root', App, {
-  recover: true,
-  onRecover(error) {
-    console.error('[HYDRATION-MISMATCH]', error.message);
-  },
-});
-```
-
-SSR always emits the structural markers and serialized colorless-data payload
-needed by `hydrate()`. These are runtime transport details, not application
-configuration.
-
-### SSR mode
-
-The complete application can select shell mode in `defineServer`:
-
-```ts
-export default defineServer({
-  app: App,
-  render: {
-    mode: 'shell',
-  },
-});
-```
-
-Specific routes can override the application default in the Vite config:
-
-```ts
-memoizedDom({
-  routeRules: {
-    '/reports': { mode: 'shell' },
-    '/reports/:reportId': { mode: 'resolve' },
-  },
-});
-```
-
-The only route rule is:
-
-```ts
-interface RouteRule {
-  mode: 'shell' | 'resolve';
+interface ServerContext {
+  readonly request: Request;
+  readonly url: URL;
+  readonly params: Readonly<Record<string, string>>;
+  readonly locals: RegisteredLocals;
+  readonly platform: RegisteredPlatform | undefined;
+  readonly services: RegisteredServices;
 }
 ```
 
-`resolve` waits for request-owned colorless sources to settle. It uses the
-server timeout owned by the runtime. `shell` returns the pending tree
-immediately and hydration continues its colorless work in the browser.
+The context object is request-owned. `locals` is deliberately mutable and is
+the one shared request state seen by downstream middleware, API handlers, SSR,
+and server functions.
 
-Streaming, buffering, markers, payload encoding, and document assembly remain
-runtime and adapter mechanics. They are not route configuration.
+### Middleware scopes
 
-### Coordinated route transitions
+There are four useful scopes without introducing four middleware APIs.
 
-Routing, route code, and colorless data share one compiler-owned transition.
-Applications do not declare a second loader graph beside `$fetch` or generated
-server functions.
+Global middleware applies to every request entering the application:
 
-The route manifest records the component module for each route and the
-colorless sources discovered beneath that route. On client navigation the
-runtime starts the target route transition, loads its client chunk when it is
-not already present, and starts its discovered data work with the navigation's
-abort signal.
-
-The route's existing mode defines when the visible branch changes:
-
-- `resolve` keeps the current route visible until the target chunk and its
-  request-owned initial data settle, then commits the route once;
-- `shell` commits the target route as soon as its chunk is available, while
-  the target's nearest `Group` policies present pending and failed data at the
-  exact consumption sites.
-
-Superseding navigation aborts only the obsolete transition. Shared requests
-whose identities are still consumed by the new route remain alive. A rejected
-transition never leaves a partially mounted target branch or changes the
-current URL without a corresponding rendered route.
-
-SSR uses the same route manifest and mode. It does not maintain separate
-server loaders, duplicate source declarations, or a second cache identity.
-The production client manifest maps route modules to chunks and preload
-dependencies, so navigation never downloads unrelated route code.
-
-## 6. Server entry responsibilities
-
-`serverEntry` is the composition root for application-wide server behavior:
-
-- `app` selects SSR page delivery; omitting it selects SPA page delivery.
-- `middleware` runs globally for pages, manual APIs, file APIs, and server
-  functions.
-- `routes` contains manual HTTP routes and prefix middleware groups.
-- `render.mode` selects the default SSR data mode.
-- `createLocals`, `createPlatform`, `fetch`, and `onError` configure the common
-  request lifecycle.
-
-Vite configuration never accepts middleware or route handlers. Vite locates,
-compiles, and packages code; `defineServer` composes its server behavior.
-
-## 7. Server directory
-
-The `server` option identifies the convention root:
-
-```text
-src/server/
-  functions/
-    _middleware.ts
-    stories.ts
-  routes/
-    _middleware.ts
-    api/
-      health.ts
-      stories/
-        [id].ts
+```ts
+app.use(logger, session);
 ```
 
-### Server functions
+Path middleware applies to a subtree:
 
-Files under `server/functions` expose named server functions. Names and
-arguments lower to HTTP endpoints under `/_fn/*`. Client imports use the
-generated `#server-functions` facade; implementations never enter the client
-bundle.
+```ts
+app.use('/api/*', apiLogger);
+```
 
-Middleware composition is:
+Route-local middleware is placed before the final handler:
 
-1. `defineServer.middleware`;
-2. ancestor `functions/_middleware.ts` files from shallow to deep;
-3. module-level `middleware`;
-4. the server-function handler.
+```ts
+app.route(
+  'PATCH',
+  '/api/stories/:id',
+  requireUser,
+  updateStoryRoute,
+);
+```
 
-Server functions use the same `$fetch` resources and `$track` lifecycle as
-ordinary requests. They do not introduce a separate RPC state system.
+Filesystem middleware is exported from `_middleware.ts` or from an endpoint
+module:
 
-### File API routes
+```ts
+// src/server/routes/api/_middleware.ts
+import type { ServerMiddleware } from '@memoized-dom/server';
+import { apiLogger, requireApiKey } from '../../middleware';
 
-Files under `server/routes` map their path to an HTTP pathname:
+export const middleware = [
+  apiLogger,
+  requireApiKey,
+] satisfies readonly ServerMiddleware[];
+```
+
+For a selected endpoint, middleware runs in this order:
+
+1. global `app.use(...)` middleware;
+2. matching path-scoped `app.use(path, ...)` middleware;
+3. directory `_middleware.ts` files, shallowest first;
+4. endpoint-module middleware;
+5. route-local middleware;
+6. the endpoint handler.
+
+The response unwinds through the same stack in reverse. Calling `next()` more
+than once is an error. Returning a response without calling `next()` stops the
+chain.
+
+### What middleware typing can and cannot promise
+
+The registered `ServerTypes` contract gives all middleware and handlers one
+consistent request-state type. It does not pretend that TypeScript can prove
+an arbitrary runtime middleware executed before an independently compiled
+file.
+
+Fields populated by middleware should therefore be optional in the shared
+`Locals` type unless `createLocals()` always initializes them. A protected
+handler performs or calls a runtime assertion before using an optional value:
+
+```ts
+export function requireUser(context: ServerContext): User {
+  if (context.locals.user === undefined) {
+    throw new HttpError(401, 'Authentication required');
+  }
+  return context.locals.user;
+}
+```
+
+This is more honest than a provider abstraction that claims cross-module
+narrowing which the runtime cannot guarantee.
+
+## 6. Programmatic HTTP routes
+
+Small applications and application-level endpoints can be registered from the
+server entry:
+
+```ts
+app.route('GET', '/api/health', () => ({ ok: true }));
+
+app.route('GET', '/api/stories/:id', ({ params }) => {
+  return readStory(params.id);
+});
+
+app.route(
+  'PATCH',
+  '/api/stories/:id',
+  requireUserMiddleware,
+  async ({ params, request }) => {
+    const input: unknown = await request.json();
+    return updateStory(params.id, parseStoryPatch(input));
+  },
+);
+```
+
+The literal route pattern drives normal TypeScript inference. For
+`/api/stories/:id`, `params` is `{ readonly id: string }`. Optional, repeated,
+and catch-all segments must use the same grammar as the Memoized DOM router
+and produce their corresponding parameter types.
+
+The final function is the handler; preceding functions are middleware. Route
+patterns and method/path collisions are validated when the application is
+composed and again during the production build.
+
+Handler results normalize consistently:
+
+- `Response` is returned unchanged;
+- `ReadableStream` becomes a streaming response;
+- `string` becomes a text response;
+- `undefined` becomes `204 No Content`;
+- other serializable values become JSON responses.
+
+Request input is not automatically trustworthy. `request.json()` is
+`unknown` until application code validates or parses it. Compile-time types
+must not claim to validate data received from the network.
+
+## 7. Filesystem API routes
+
+Larger route sets live beneath `server/routes`:
 
 ```text
-src/server/routes/api/health.ts          -> /api/health
-src/server/routes/api/stories/[id].ts    -> /api/stories/:id
-src/server/routes/index.ts               -> /
-src/server/routes/files/[...path].ts     -> /files/*
+src/server/routes/index.ts                 -> /
+src/server/routes/api/health.ts            -> /api/health
+src/server/routes/api/stories/[id].ts      -> /api/stories/:id
+src/server/routes/files/[...path].ts       -> /files/*
 ```
 
 A default export is an implicit GET handler:
@@ -346,464 +592,384 @@ export default function health() {
 }
 ```
 
-Named uppercase exports define explicit methods:
+Uppercase named exports declare methods:
 
 ```ts
 // src/server/routes/api/stories/[id].ts
-export function GET({ params }: ServerContext) {
-  return readStory(params.id);
+import type { ServerContext } from '@memoized-dom/server';
+
+export function GET(context: ServerContext) {
+  return readStory(context.params.id);
 }
 
-export function PATCH({ params, request }: ServerContext) {
-  return updateStory(params.id, request);
-}
-```
+export async function PATCH(context: ServerContext) {
+  const user = requireUser(context);
+  const input: unknown = await context.request.json();
 
-A file cannot combine a default handler with a named `GET`. A module can
-export `middleware` for its handlers. A directory `_middleware.ts` exports
-middleware for descendant route files.
-
-Manual routes, file routes, and server functions enter the same portable
-router. Duplicate method-and-path registrations are build errors. No source
-silently overrides another.
-
-## 8. Generated route declarations
-
-The compiler already knows every route pattern, parent relationship, source
-module, and parameter segment. The Vite integration writes this graph to
-`.memoized/routes.d.ts` alongside
-`.memoized/server-functions.d.ts`.
-
-For routes `/`, `/docs/:slug`, and `/story/:storyId`, the generated file has
-this shape:
-
-```ts
-// .memoized/routes.d.ts
-export {};
-
-declare module '@memoized-dom/vite' {
-  interface MemoizedDomRouteMap {
-    '/': { params: Record<string, never> };
-    '/docs/:slug': { params: { slug: string } };
-    '/story/:storyId': { params: { storyId: string } };
-  }
-}
-
-declare module '#routes' {
-  export type RoutePattern =
-    keyof import('@memoized-dom/vite').MemoizedDomRouteMap;
-
-  export type RouteParams<Path extends RoutePattern> =
-    import('@memoized-dom/vite').MemoizedDomRouteMap[Path]['params'];
-}
-
-declare global {
-  namespace JSX {
-    interface RouteRegistry {
-      '/': { params: Record<string, never> };
-      '/docs/:slug': { params: { slug: string } };
-      '/story/:storyId': { params: { storyId: string } };
-    }
-  }
+  return updateStory(
+    context.params.id,
+    parseStoryPatch(input),
+    user,
+  );
 }
 ```
 
-`@memoized-dom/vite` exports the empty merge target
-`MemoizedDomRouteMap`. `routeRules` derives its keys from this interface. The
-compiler JSX types derive `route` and `route-to` from `JSX.RouteRegistry`.
-
-The declarations provide:
-
-- completion and stale-key errors in `routeRules`;
-- completion for `route` patterns;
-- parameterless destination completion for string `route-to`;
-- exact `path` and `params` typing for object-form `route-to`;
-- `RoutePattern` and `RouteParams<Path>` type-only imports from `#routes`.
-
-The language service also reads the owning route ancestry at each component
-site. Inside a component mounted beneath `/story/:storyId`, it completes
-`route.params.storyId` and reports parameter reads that do not exist on that
-route. Runtime `route.params` remains a plain immutable object; contextual
-typing does not require a new route object or a stringly accessor API.
-
-The project template includes `.memoized/**/*.d.ts` and maps `#routes` and
-`#server-functions`. Applications never edit generated files.
-
-Route declarations regenerate atomically during startup, build, and route
-graph HMR. The language service consumes the same route manifest for precise
-diagnostics while TypeScript reloads the declaration file.
-
-Only declarations and build metadata live in `.memoized`; routing does not
-read this directory at runtime.
-
-## 9. Document ownership
-
-Vite owns the application document in a Vite application.
-
-For SPA delivery, Vite serves its transformed document and the client entry
-mounts the application.
-
-For SSR delivery, the Memoized DOM plugin runs Vite's HTML transforms and
-provides the transformed document to the server handler. The handler renders
-the application into its outlet. This preserves the Vite client, HMR, other
-HTML plugin transforms, and development asset URLs.
-
-During production, the client environment builds first. The server environment
-receives the built document and client manifest through generated virtual
-modules. The server never loads the source `index.html` and never emits stale
-source asset paths.
-
-`defineServer` receives an adapter-installed document provider through a
-handler-local internal hook. The Vite development integration and generated
-production server entry install it before handling requests. No process-global
-document state is used.
-
-A Vite SSR entry therefore omits `document`:
+An endpoint module may also export a middleware array:
 
 ```ts
-export default defineServer({
-  app: App,
-  middleware,
-  routes,
+export const middleware = [requireUserMiddleware];
+```
+
+A file cannot export both a default handler and a named `GET`. Duplicate
+method/path registrations across programmatic routes and filesystem routes
+are build errors; no source silently replaces another.
+
+### No generated `+types` modules
+
+Routes do not import `route` from `./+types/[id]`, and handlers do not need a
+`route(...).handle(...)` wrapper. Those APIs repeat information already owned
+by the filesystem and make every ordinary handler depend on generated
+neighbor files.
+
+There is a real TypeScript limitation: TypeScript alone cannot infer a
+function parameter from the name of the file containing it. Memoized DOM
+handles that limitation at the layer which does know the filename:
+
+- the compiler derives the route pattern and exact parameter names;
+- the language service supplies route-aware completion and diagnostics;
+- the build rejects reads of parameters that do not exist for that file;
+- the runtime still passes a plain `ServerContext` object.
+
+An editor using only unextended `tsc` sees the base
+`Readonly<Record<string, string>>` parameter type for a file route. Achieving
+filename-specific inference in plain `tsc` would require either repeating the
+path in source or importing a generated per-file type. This design chooses the
+compiler/language-service behavior and keeps authored route modules plain.
+
+Programmatic `app.route()` does not have this limitation because its route
+pattern is a literal in the same TypeScript expression.
+
+## 8. Server functions stay colorless
+
+Server functions are named exports beneath `server/functions`. They are
+ordinary functions, not values created by a `serverFunction()` wrapper.
+
+```ts
+// src/server/functions/stories.ts
+import { getServerContext } from '@memoized-dom/server';
+
+export async function getStory(id: number) {
+  return database.stories.find(id);
+}
+
+export async function patchStory(
+  id: number,
+  patch: StoryPatch,
+) {
+  const { locals } = getServerContext();
+  const user = locals.user;
+  if (user === undefined) {
+    throw new HttpError(401, 'Authentication required');
+  }
+  return database.stories.update(id, patch, user.id);
+}
+```
+
+The implementation may perform asynchronous work. Application code still
+calls it as a plain colorless function:
+
+```ts
+import {
+  getStory,
+  patchStory,
+} from '#server-functions';
+
+const story = getStory(42);
+
+patchStory(42, {
+  title: 'New title',
 });
 ```
 
-Direct non-Vite users continue to provide `document` or `documentTemplate`.
-API-only and SPA-backend handlers do not require an SSR document provider.
-
-## 10. Development behavior
-
-`vite` starts the complete application:
-
-- the client graph runs in the browser environment;
-- the server graph runs in Vite's server environment when present;
-- Vite owns module transformation, CSS, browser assets, and HMR;
-- generated server-function and file-route manifests install automatically;
-- remaining HTTP requests enter the server Web handler;
-- SPA page fallback remains under Vite document handling;
-- SSR page fallback renders through `defineServer`;
-- route graph changes regenerate route declarations;
-- compiler errors retain authored file, line, column, and source frame;
-- compiler diagnostics appear through the project language service while the
-  developer types, not only after Vite transforms the module;
-- development-only inspection events expose route transitions, colorless
-  request identities, and entity dirty causes without entering production
-  bundles.
-
-Development uses Vite's environment runner rather than making
-`ssrLoadModule()` the application architecture. Server edits invalidate the
-server environment and do not require restarting the development process.
-
-Every page render is request-contained. A component or data error before HTTP
-bytes are committed enters `defineServer.onError` and produces its returned
-response. An error after a streaming response has committed terminates only
-that response, reports the authored stack through Vite, disposes all
-request-owned route/data/render state, and leaves the development server able
-to serve the next request. Vite never exits because one application render
-failed.
-
-## 11. Production build
-
-`vite build` builds the complete Memoized DOM application. The plugin
-configures Vite's application builder internally; users do not run separate
-client and SSR build commands.
-
-For an SPA, the result contains only `dist/client`.
-
-For a fullstack SPA or SSR application, the build order is:
-
-1. Compile the connected route and server-module manifests.
-2. Generate route and server-function declarations.
-3. Build the client environment and asset manifest.
-4. Build the server environment against the built document and client
-   manifest.
-5. Let the selected target package the Web handler and client assets.
-6. Write the Memoized DOM deployment manifest.
-
-The default Node output is:
-
-```text
-dist/
-  client/
-    index.html
-    assets/
-  server/
-    entry.js
-  memoized-dom.json
-```
-
-`dist/server/entry.js` exports the application Web handler as its default
-export. It is importable without Vite and contains no development runtime.
-
-The deployment manifest contains deployment facts without duplicating Vite's
-asset manifest:
+There is no authored `await` at the application call site. The generated
+facade preserves the implementation parameters and exposes its result as a
+`ResolvedValue`:
 
 ```ts
-interface MemoizedDomBuildManifest {
-  version: 1;
-  kind: 'spa' | 'fullstack-spa' | 'ssr';
-  target: 'node' | 'bun' | 'worker';
-  clientDirectory: string;
-  clientDocument: string;
-  serverEntry?: string;
-  serverFunctionCount: number;
-  fileRouteCount: number;
-}
+declare function getStory(
+  ...args: Parameters<typeof implementation.getStory>
+): ResolvedValue<Awaited<ReturnType<typeof implementation.getStory>>>;
 ```
 
-The build summary is:
-
-```text
-memoized-dom build
-  client           dist/client
-  server           dist/server/entry.js
-  target           node
-  server-functions 6
-  api-routes       4
-```
-
-## 12. Production preview
-
-`vite preview` runs the built application locally through the selected
-adapter. It serves `dist/client`, imports `dist/server/entry.js` when present,
-and uses the same request precedence as deployment.
-
-Preview never falls back to Vite development transforms or
-`ssrLoadModule()`. It is a production-artifact verification tool, not the
-recommended public production server.
-
-## 13. Adapter contract
-
-Adapters own platform integration, not application semantics.
-
-An adapter provides:
-
-- Vite environment conditions and build target;
-- packaging of the server Web handler;
-- host request/response conversion;
-- stream backpressure and abort propagation;
-- safe browser-asset and public-file serving;
-- the production-preview launcher;
-- deployment metadata required by its platform.
-
-An adapter never redefines routing, middleware, server functions, `$fetch`, or
-SSR modes.
-
-### Node
-
-Node is the first and default fullstack target. Its adapter converts Node HTTP
-to Web `Request` and `Response`, preserves streaming behavior, serves built
-browser assets, and exposes the handler for custom servers:
+Consequently these remain TypeScript errors:
 
 ```ts
-import { createServer } from 'node:http';
-import app from './dist/server/entry.js';
-import { createNodeHandler } from '@memoized-dom/adapters/node';
-
-createServer(createNodeHandler(app)).listen(3000);
+getStory('42');
+patchStory(42, { unknown: true });
 ```
 
-A reverse proxy or CDN can serve `dist/client` and forward the remaining
-requests to the same handler.
+`Awaited` in the declaration only extracts the implementation's result type.
+It does not require application code to await the call.
 
-### Bun
+The current verb convention can continue to select transport semantics:
 
-Bun consumes the Web handler directly and packages the same client artifacts
-and manifest for `Bun.serve`.
+- read-prefixed functions such as `get*` use the read path;
+- mutation-prefixed functions such as `post*`, `put*`, `patch*`, and
+  `delete*` use mutation paths;
+- the compiler rejects unsupported exports and non-transportable arguments.
 
-### Worker runtimes
+Server-function middleware uses the same plain middleware contract as every
+other request:
 
-The worker target emits a filesystem-free server bundle. Documents and route
-manifests are embedded build artifacts. Node built-ins are rejected during
-compilation.
+```ts
+// src/server/functions/_middleware.ts
+import type { ServerMiddleware } from '@memoized-dom/server';
+import { auditServerFunction } from '../middleware';
 
-### Custom backends
-
-A custom backend imports `dist/server/entry.js` and mounts its Web handler in
-its own lifecycle. The official launcher is never required.
-
-## 14. Request flow
-
-The deployment adapter handles requests in this order:
-
-1. fingerprinted client assets;
-2. public files;
-3. application Web handler;
-4. SPA document fallback when `defineServer` has no `app`.
-
-The Web handler dispatches:
-
-1. `defineServer.middleware`;
-2. matching manual prefix middleware;
-3. file-route or server-function directory middleware;
-4. module and method middleware;
-5. the matched HTTP handler;
-6. SSR page rendering when no HTTP route matches and `app` is configured.
-
-Generated endpoint names are routing identities, not authorization. Global,
-directory, module, route, and method middleware can authenticate a request and
-populate typed request locals. A server function or API route performs its
-authorization decision from those locals before protected work. Mutating
-cookie-authenticated endpoints apply the application's origin and CSRF policy;
-all external input is validated before reaching domain code. Production
-documentation includes these conventions and does not present a custom header
-as a complete security example.
-
-## 15. Diagnostics
-
-The application fails early when:
-
-- a configured entry or server directory does not exist;
-- the HTML document contains ambiguous client entries;
-- a server implementation enters the client graph;
-- a server entry does not export a Web handler;
-- a file route exports conflicting handlers;
-- manual and discovered routes collide by method and path;
-- client and server builds discover different server-function manifests;
-- `routeRules` names a route absent from the compiler graph;
-- an SSR mode is not `shell` or `resolve`;
-- a Vite SSR handler has no installed transformed document;
-- a server build references an untransformed source document;
-- an adapter target imports unsupported platform modules;
-- client and server outputs overwrite the same artifact.
-
-Every diagnostic includes the responsible config field or authored file,
-line, column, and source frame whenever source location exists.
-
-## 16. Production validation
-
-The production contract is tested with package-owned temporary fixtures.
-Tests never depend on examples.
-
-The Node integration suite:
-
-1. Creates SPA, fullstack-SPA, and SSR fixtures.
-2. Builds them with `vite build`.
-3. Inspects client output for server-only imports and secrets.
-4. Inspects server entries and deployment manifests.
-5. Imports the emitted server handler without Vite.
-6. Starts a real `node:http` process through the Node adapter.
-7. Opens the built application in a real browser.
-8. Verifies SPA mounting.
-9. Verifies resolved SSR before hydration.
-10. Verifies shell SSR and browser continuation.
-11. Hydrates and updates reactive state.
-12. Navigates parameterized and nested routes without document navigation.
-13. Executes GET and POST server functions over real HTTP.
-14. Exercises manual and file API routes.
-15. Verifies middleware order, locals, errors, and method handling.
-16. Verifies rapid overlapping mutations and request identity behavior.
-17. Asserts that the browser loads built hashed assets only.
-18. Asserts zero hydration mismatches, page errors, unhandled rejections,
-    canceled successful operations, Vite development imports, and source URLs.
-19. Throws during initial and settled SSR rendering, verifies the configured
-    error response when headers are uncommitted, and verifies that the same
-    process serves a healthy request afterward.
-20. Navigates rapidly across lazy `resolve` and `shell` routes, verifies stale
-    transitions are aborted without duplicate requests, and verifies that
-    unrelated route chunks are not downloaded.
-21. Exercises authenticated and rejected server functions through the same
-    middleware and request-local contract used in deployment.
-
-The rendering matrix is:
-
-| Application | Mode | Assertion |
-| :--- | :--- | :--- |
-| SPA | Not applicable | Browser mounts into the Vite document. |
-| Fullstack SPA | Not applicable | APIs use the server handler and pages mount in the browser. |
-| SSR | Resolve | Server returns settled UI and hydration payload. |
-| SSR | Shell | Server returns pending UI and the browser continues colorless work. |
-
-After Node passes, the same behavior runs on Bun. The worker suite verifies a
-filesystem-free bundle and runtime-specific conditions.
-
-## 17. Implementation sequence
-
-### Phase 1: application configuration
-
-- Rename `entries` to `clientEntry`.
-- Add `serverEntry`, `server`, `target`, and typed `routeRules`.
-- Fold fullstack development into `memoizedDom()`.
-- Remove `memoizedDomFullstack()` before the next public release.
-- Detect SPA, fullstack SPA, and SSR from the server entry contract.
-
-### Phase 2: route declarations and server discovery
-
-- Expose linked compiler route metadata to the Vite layer.
-- Generate `.memoized/routes.d.ts` and refresh it atomically.
-- Type `routeRules`, `route`, `route-to`, and `#routes` from one route map.
-- Feed route ancestry to the language service for contextual `route.params`
-  completion and diagnostics.
-- Resolve server functions from `${server}/functions`.
-- Generate file API routes from `${server}/routes`.
-- Compose directory and module middleware.
-- Merge generated routes with manual `defineServer.routes`.
-- reject route and method collisions.
-
-### Phase 3: document and SSR mode
-
-- Keep markers and payload encoding internal to SSR hydration.
-- Validate and inherit `shell` or `resolve` route rules.
-- Isolate pre-commit and post-commit render failures per request.
-- Keep Vite alive after streamed render failures and retain authored stacks.
-- Install Vite-transformed documents through the handler-local adapter hook.
-- Preserve `document` and `documentTemplate` for non-Vite use.
-
-### Phase 4: Node production build
-
-- Configure Vite's client and server application environments.
-- Build the client before the server.
-- Emit the importable Node Web handler and deployment manifest.
-- Run the artifacts through `vite preview` and the Node adapter.
-- Pass the complete Node production browser suite.
-
-### Phase 5: coordinated route loading
-
-- Emit route-module and colorless-source transition metadata from the linked
-  compiler graph.
-- Split route component modules through the client manifest without a second
-  application-facing loader API.
-- Apply `resolve` and `shell` consistently to SSR and client navigation.
-- Abort superseded transitions without canceling still-consumed requests.
-- Expose route transition and request-identity inspection in development.
-
-### Phase 6: portability
-
-- Run the production contract on Bun.
-- Emit and test a filesystem-free worker bundle.
-- Verify a custom backend consuming only the Web handler and manifest.
-
-### Phase 7: performance and polish
-
-- Measure client assets, route chunks, server bundle size, startup time, and
-  first-response latency from production artifacts.
-- Generate preload directives from the client manifest and rendered route
-  modules.
-- Keep route navigation from loading unrelated client chunks.
-- Document SPA-to-SSR migration as adding `app: App` to the server entry and
-  replacing `mount()` with `hydrate()` in the client entry.
-
-## 18. Resulting developer experience
-
-The workflow is:
-
-```text
-vite          -> client/server development with HMR
-vite build    -> client assets, optional server handler, deployment manifest
-vite preview  -> real built artifacts through the selected adapter
+export const middleware = [
+  auditServerFunction,
+] satisfies readonly ServerMiddleware[];
 ```
 
-Application authors use:
+Composition is global middleware, matching path middleware, ancestor function
+middleware, module middleware, then the function implementation. During SSR,
+server-function calls dispatch in memory through the same request context.
+In the browser they use the generated transport facade. Both paths share
+locals, error normalization, and authorization behavior.
 
-- component-local and nested `route` declarations;
-- typed `routeRules` only for SSR routes that use non-default data readiness;
-- `$fetch` and generated `#server-functions` imports for unified data access;
-- `defineServer` for global middleware, manual APIs, SSR selection, and
-  request context;
-- `server/functions` for named server functions;
-- `server/routes` for filesystem API routes;
-- one Vite plugin for development, build, and preview;
-- one portable Web handler for every deployment target.
+`#server-functions` is justified because it protects the server boundary and
+changes the implementation into a colorless client call. That is different
+from generating a wrapper import for every filesystem route, which would add
+no boundary or runtime capability.
 
-The application does not maintain separate development and production
-architectures.
+## 9. SSR is an application capability
+
+SSR is selected from the server composition root:
+
+```ts
+app.ssr(App);
+```
+
+This makes `App` the SSR fallback for application page requests. API routes
+and server functions are matched first and never fall through to the page
+renderer.
+
+An application can restrict SSR to a path:
+
+```ts
+app.ssr('/reports/*', App);
+```
+
+It can register distinct page roots when that is genuinely useful:
+
+```ts
+app.ssr('/admin/*', AdminApp);
+app.ssr('/reports/*', ReportsApp);
+```
+
+SSR path matching is deterministic and independent of registration order:
+static paths are more specific than parameters, parameters are more specific
+than wildcards, and ambiguous registrations are errors. A path-specific SSR
+registration wins over an unscoped `app.ssr(App)` fallback.
+
+This API does not create a second page router. Components continue to use the
+Memoized DOM router. The path on `app.ssr(path, App)` only decides whether and
+which application root the server renders for the incoming document request.
+
+The first public surface has one SSR behavior. It does not expose
+`pages.resolve()`, `pages.shell()`, Vite `routeRules`, marker flags, or stream
+assembly. Colorless-data settling, payload serialization, structural markers,
+and streaming are coordinated by the renderer. Additional policy should only
+become public after a concrete application-level need cannot be represented by
+data boundaries.
+
+For a request that matches neither an HTTP endpoint nor an SSR registration,
+the Vite integration serves the transformed SPA document when a client entry
+exists. A server-only deployment returns 404.
+
+## 10. One browser API: `mount()`
+
+Client code always mounts the application in the same way:
+
+```ts
+// src/entry.client.ts
+import { mount } from '@memoized-dom/runtime';
+import { App } from './App';
+
+mount('root', App);
+```
+
+There is no application-facing `hydrate()` choice. `mount()` inspects the
+target for a compatible Memoized DOM root marker and payload:
+
+- when no server root is present, it creates the application;
+- when a compatible server root is present, it adopts that DOM and restores
+  its colorless-data payload;
+- when adoption detects a mismatch, it disposes partial adoption state,
+  clears only that application's owned range, and mounts once from scratch.
+
+Recovery must never leave both the old server tree and a newly mounted tree
+in the host. In development it reports the authored mismatch and recovery
+path. In production it recovers without exposing compiler internals.
+
+The runtime owns data-runtime initialization and payload restoration before
+the compiled root begins reading colorless values. An application should not
+need a different bootstrap sequence merely because SSR was enabled on the
+server.
+
+## 11. Request routing and ownership
+
+The request pipeline has one unambiguous precedence:
+
+1. Vite or the production asset server handles framework and static assets.
+2. Server-function endpoints match their reserved namespace.
+3. Programmatic and filesystem HTTP routes are matched.
+4. A matching SSR registration renders a page.
+5. The client document fallback or a 404 handles the remaining request.
+
+Every stage after asset handling uses the same application request context
+and global middleware. Internal SSR dispatch of a server function reuses the
+current request's locals and platform instead of creating a second unrelated
+request context.
+
+The default export remains portable:
+
+```ts
+const response = await app.fetch(request);
+```
+
+Node, Bun, workers, tests, and Vite adapters translate their host request into
+a Web `Request` and consume the Web `Response`. Host integration does not
+leak into application composition.
+
+## 12. Type-safety contract
+
+The design aims for strong types where the information truly exists and
+explicit runtime validation where it does not.
+
+### Guaranteed by TypeScript
+
+- `server/config` registers locals and platform types once for the whole
+  application;
+- `serve()`, `ServerContext`, `ServerMiddleware`, and `getServerContext()` use
+  that registered contract through normal `@memoized-dom/server` imports;
+- literal `app.route()` paths infer their parameter object;
+- middleware and handler context types agree;
+- server-function calls preserve exact parameter and return types;
+- `#server-functions` exposes colorless `ResolvedValue<T>` results;
+- wrong methods, malformed route literals, and incompatible handlers fail
+  during type checking where they can be represented statically.
+
+### Guaranteed by the Memoized DOM compiler and language service
+
+- filesystem path segments determine available route parameters;
+- server-only implementations cannot enter the client graph;
+- method/path collisions are reported across all route sources;
+- invalid file-route exports are reported at their authored locations;
+- server-function exports and transportable arguments are validated;
+- middleware files are attached only to their intended descendants.
+
+### Guaranteed only at runtime
+
+- authentication and authorization;
+- the shape of request bodies, headers, cookies, and external responses;
+- middleware actually calling `next()`;
+- failures from databases, networks, and user code.
+
+The framework should not add a validation dependency. Applications may use
+manual parsers or their chosen Standard Schema-compatible library. Memoized
+DOM can preserve the inferred output type once a validator is supplied, but
+it must not pretend an unvalidated value is safe.
+
+## 13. Development behavior with Vite
+
+The fullstack Vite integration is one plugin and one development process. It
+owns the browser environment, server environment, generated server-function
+facade, route discovery, and document transforms.
+
+Client edits must follow these rules:
+
+- a successful compatible edit replaces the existing compiled definition;
+- text-only edits invalidate the affected entity and update the mounted DOM;
+- a replacement never mounts a second application beside the first;
+- an incompatible edit remounts exactly once after disposing the old root;
+- a transform error keeps the last successful module active and shows the
+  Vite error overlay;
+- the next successful edit clears the error and retries replacement without a
+  page reload when Vite can safely do so.
+
+Server edits must follow these rules:
+
+- the server environment invalidates the edited module and its affected
+  composition graph;
+- re-evaluating `entry.server.ts` creates a fresh `serve()` application, so
+  routes and middleware are not appended to an old instance;
+- route and server-function manifests update atomically;
+- a failed server evaluation affects the current request but does not kill
+  the development server;
+- after a fixing edit, the next request uses the new application without a
+  manual restart.
+
+Generated declarations and manifests are written only when their content
+changes. Failed generation must not replace a valid artifact with a partial
+file.
+
+## 14. Production build
+
+`vite build` builds the client environment and, when `serverEntry` is present,
+the server environment. The plugin coordinates their manifests so the server
+uses the built client document and asset URLs.
+
+The application does not select a deployment target in `memoizedDom()` or
+`serve()`. The result is a client artifact plus a portable Web handler.
+Adapters may package those artifacts for a host, but they do not redefine
+application routes, middleware, SSR, or server functions.
+
+The production server must not read the source `index.html`. It consumes the
+document after Vite HTML transforms and uses the client manifest for emitted
+assets. Development and production therefore share document ownership rather
+than maintaining separate hand-authored templates.
+
+## 15. Implementation sequence
+
+The public API changes as a clean break. The implementation can still retain
+and refactor the working router, renderer, and server-function pipeline where
+they already satisfy the new contract.
+
+1. Add the open `ServerTypeRegistry` to `@memoized-dom/server` and generate the
+   single application registration from `server/config/index.ts`.
+2. Implement `serve()` as a composition facade over the current server
+   router and rendering machinery.
+3. Let `app.use()`, `app.route()`, and `app.ssr()` produce the internal route,
+   middleware, and fallback definitions already consumed by the router.
+4. Merge the current compiler plugin and fullstack development plugin behind
+   `memoizedDom({ clientEntry, serverEntry, server })`, then remove the
+   `memoizedDomFullstack()` export.
+5. Teach `mount()` to select creation or adoption, keep any hydration
+   implementation as a private runtime detail, and remove the public
+   `hydrate()` export.
+6. Add filesystem API-route discovery using the same manifest mechanism that
+   already discovers server functions.
+7. Add compiler and language-service diagnostics for filename-derived route
+   parameters without generating per-route imports.
+8. Remove `defineServer()` and its public option types after `serve()` covers
+   the required behavior. Delete old examples, tests, documentation, and
+   compatibility shims in the same change.
+
+There is no deprecation period or legacy mode. Once a replacement is complete,
+the previous public API stops exporting. Tests and examples must exercise only
+the new contract so unused paths cannot survive accidentally.
+
+The migration should preserve the parts that are already correct:
+
+- the Web `Request`/`Response` router;
+- request-local `locals` and platform state;
+- ordered middleware with guarded `next()`;
+- generated `#server-functions` declarations;
+- colorless `ResolvedValue<T>` calls;
+- in-memory server-function dispatch during SSR;
+- Vite-owned transformation and asset handling.
+
+The purpose of the redesign is not to replace those foundations. It is to
+make them feel like one coherent application model instead of several layers
+of configuration.

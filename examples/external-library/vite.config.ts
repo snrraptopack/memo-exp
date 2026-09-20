@@ -5,7 +5,7 @@ export default defineConfig({
   root: import.meta.dirname,
   plugins: [
     memoizedDom({
-      entries: 'entry.ts',
+      clientEntry: 'entry.ts',
     }),
   ],
   build: {

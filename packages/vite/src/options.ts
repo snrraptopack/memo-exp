@@ -3,19 +3,12 @@
  */
 import type { CompileModulesOptions } from '@memoized-dom/compiler';
 
-export interface MemoizedDomServerFunctionsOptions {
-  /** Vite-root-relative directory containing named HTTP functions. */
-  readonly directory?: string;
-}
-
 export interface MemoizedDomViteOptions
   extends Omit<CompileModulesOptions, 'aliases' | 'resolveImport' | 'hot'> {
-  /**
-   * Ordinary TypeScript browser entries, relative to Vite's project root.
-   * Each connected graph must contain one top-level mount(target, Component)
-   * call; local dependencies are compiled as one linked application graph.
-   */
-  entries: string | readonly string[];
+  /** Browser bootstrap and connected compiler-graph entry. */
+  clientEntry: string;
+  /** Server composition root. Omit for browser-only applications. */
+  serverEntry?: string;
   /**
    * Additional source paths allowed outside the Vite project root.
    */
@@ -25,24 +18,22 @@ export interface MemoizedDomViteOptions
    */
   exclude?: RegExp | readonly RegExp[];
   /**
-   * Named HTTP function discovery. Enabled at server/functions by default;
-   * use false to disable it or provide a different directory.
+   * Server-only convention root. Its config/index.ts registers application
+   * server types and its functions directory contains server functions.
    */
-  serverFunctions?: false | string | MemoizedDomServerFunctionsOptions;
+  server?: string;
 }
 
 export interface ResolvedAdapterOptions
-  extends Omit<MemoizedDomViteOptions, 'entries'> {
+  extends Omit<MemoizedDomViteOptions, 'clientEntry'> {
   entries: readonly string[];
 }
 
 export function resolveAdapterOptions(
   options: MemoizedDomViteOptions,
 ): ResolvedAdapterOptions {
-  const entries =
-    typeof options.entries === 'string' ? [options.entries] : options.entries;
-  if (entries.length === 0) {
-    throw new Error('memoized-dom: Vite adapter requires at least one entry');
+  if (options.clientEntry.trim() === '') {
+    throw new Error('memoized-dom: clientEntry must not be empty');
   }
-  return { ...options, entries: [...entries] };
+  return { ...options, entries: [options.clientEntry] };
 }

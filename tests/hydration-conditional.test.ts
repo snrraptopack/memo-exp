@@ -11,14 +11,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { compile } from '@memoized-dom/compiler';
 import {
   registerRootFactory,
+  mount,
   resetScheduler,
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
-import {
-  hydrate,
-  HydrationMismatchError,
-} from '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -89,7 +86,7 @@ describe('Phase 3 conditional hydration', () => {
     const button = host.querySelector('button')!;
     const serverBranch = host.querySelector('p')!;
 
-    mounted = hydrate('root', app.App);
+    mounted = mount('root', app.App);
 
     expect(host.querySelector('p')).toBe(serverBranch);
     expect(serverBranch.className).toBe('no');
@@ -102,20 +99,17 @@ describe('Phase 3 conditional hydration', () => {
     expect(serverBranch.isConnected).toBe(false);
   });
 
-  it('reports branch tag skew at the conditional owner', async () => {
+  it('recovers branch tag skew at the conditional owner', async () => {
     const app = await importCompiled();
     app.setVisible(false);
     registerRootFactory(app.App, {
       id: 'App',
       create: () => app.App('App', null),
     });
-    serverHost('<div class="no">no</div>');
+    const host = serverHost('<div class="no">no</div>');
 
-    expect(() => hydrate('root', app.App)).toThrowError(
-      HydrationMismatchError,
-    );
-    expect(() => hydrate('root', app.App)).toThrow(
-      "in 'App/when0': expected element <p>, found element <div>",
-    );
+    mounted = mount('root', app.App);
+    expect(host.querySelector('p.no')?.textContent).toBe('no');
+    expect(host.querySelector('div.no')).toBeNull();
   });
 });

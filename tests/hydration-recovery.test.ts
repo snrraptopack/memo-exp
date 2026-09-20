@@ -13,14 +13,11 @@ import { compile } from '@memoized-dom/compiler';
 import { renderToString } from '@memoized-dom/server';
 import {
   registerRootFactory,
+  mount,
   resetScheduler,
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
-import {
-  hydrate,
-  HydrationMismatchError,
-} from '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -86,7 +83,7 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
     const heading = host.querySelector('h1')!;
     const button = host.querySelector('button')!;
 
-    mounted = hydrate('root', app.App);
+    mounted = mount('root', app.App);
 
     expect(host.querySelector('section')).toBe(section);
     expect(host.querySelector('h1')).toBe(heading);
@@ -97,7 +94,7 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
     expect(button.textContent).toBe('1');
   });
 
-  it('Level 3: root structural mismatch recovers to clean client mount in recover mode', async () => {
+  it('Level 3: root structural mismatch recovers to one clean client mount', async () => {
     const app = await importCompiled();
     app.resetState();
     registerRootFactory(app.App, {
@@ -113,16 +110,7 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
       '<!--/mmd-->';
     document.body.appendChild(host);
 
-    const recoveredErrors: HydrationMismatchError[] = [];
-    mounted = hydrate('root', app.App, {
-      recover: true,
-      onRecover: (err) => recoveredErrors.push(err),
-    });
-
-    expect(recoveredErrors).toHaveLength(1);
-    expect(recoveredErrors[0]!.message).toContain(
-      'expected element <section>, found element <article>',
-    );
+    mounted = mount('root', app.App);
 
     // Host now successfully contains client-created <section> and working button
     expect(host.querySelector('section')).not.toBeNull();
@@ -131,24 +119,4 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
     expect(button.textContent).toBe('1');
   });
 
-  it('Level 3: root structural mismatch throws in default strict mode', async () => {
-    const app = await importCompiled();
-    app.resetState();
-    registerRootFactory(app.App, {
-      id: 'App',
-      create: () => app.App('App', null),
-    });
-
-    const host = document.createElement('div');
-    host.id = 'root';
-    host.innerHTML =
-      '<!--mmd:r:App-->' +
-      '<article><h1>Ada</h1><button>0</button></article>' +
-      '<!--/mmd-->';
-    document.body.appendChild(host);
-
-    expect(() => hydrate('root', app.App)).toThrowError(
-      HydrationMismatchError,
-    );
-  });
 });

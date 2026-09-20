@@ -13,14 +13,11 @@ import { compile } from '@memoized-dom/compiler';
 import { renderToString } from '@memoized-dom/server';
 import {
   registerRootFactory,
+  mount,
   resetScheduler,
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
-import {
-  hydrate,
-  HydrationMismatchError,
-} from '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -122,7 +119,7 @@ describe('Phase 3 keyed-list hydrate integration', () => {
     const createFragment = vi.spyOn(document, 'createDocumentFragment');
     const insertBefore = vi.spyOn(list, 'insertBefore');
 
-    mounted = hydrate('root', app.App);
+    mounted = mount('root', app.App);
 
     expect([...host.querySelectorAll('li')]).toEqual([first, second]);
     expect(createElement).not.toHaveBeenCalled();
@@ -147,7 +144,7 @@ describe('Phase 3 keyed-list hydrate integration', () => {
     });
     const host = renderServerHost(app);
 
-    mounted = hydrate('root', app.App);
+    mounted = mount('root', app.App);
     expect(host.querySelectorAll('li')).toHaveLength(0);
 
     host.querySelector<HTMLButtonElement>('.fill')!.click();
@@ -155,38 +152,31 @@ describe('Phase 3 keyed-list hydrate integration', () => {
       .toEqual(['one', 'two']);
   });
 
-  it('rejects a client row key missing from the server marker stream', async () => {
+  it('recovers when a client row key is missing from the server marker stream', async () => {
     const app = await importCompiled();
     app.resetItems();
     registerRootFactory(app.App, {
       id: 'App',
       create: () => app.App('App', null),
     });
-    serverHost('n:9');
+    const host = serverHost('n:9');
 
-    let thrown: unknown;
-    try {
-      hydrate('root', app.App);
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(HydrationMismatchError);
-    expect((thrown as Error).message).toContain(
-      'no matching marker in the server stream',
-    );
+    mounted = mount('root', app.App);
+    expect([...host.querySelectorAll('li')].map(row => row.textContent))
+      .toEqual(['one', 'two']);
   });
 
-  it('rejects server rows whose markers are out of client key order', async () => {
+  it('recovers when server row markers are out of client key order', async () => {
     const app = await importCompiled();
     app.resetItems();
     registerRootFactory(app.App, {
       id: 'App',
       create: () => app.App('App', null),
     });
-    serverHost('n:2', 'n:1');
+    const host = serverHost('n:2', 'n:1');
 
-    expect(() => hydrate('root', app.App)).toThrow(
-      'in client key order',
-    );
+    mounted = mount('root', app.App);
+    expect([...host.querySelectorAll('li')].map(row => row.textContent))
+      .toEqual(['one', 'two']);
   });
 });

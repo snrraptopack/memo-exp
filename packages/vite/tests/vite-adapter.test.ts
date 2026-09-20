@@ -10,7 +10,7 @@ import {
   createServer,
   type ViteDevServer,
 } from 'vite';
-import memoizedDom, { memoizedDomFullstack } from '../src';
+import memoizedDom from '../src';
 import { createServerRouter } from '../../server/src/http-router';
 
 const fixture = resolve(import.meta.dirname, 'fixtures/vite-app');
@@ -28,7 +28,7 @@ let temporaryFixture: string | undefined;
 function plugins() {
   return [
     memoizedDom({
-      entries: 'src/main.ts',
+      clientEntry: 'src/main.ts',
     }),
   ];
 }
@@ -135,7 +135,7 @@ describe('Vite 8 adapter', () => {
           '@memoized-dom/runtime': runtime,
         },
       },
-      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
       build: {
         write: false,
         minify: false,
@@ -213,7 +213,7 @@ describe('Vite 8 adapter', () => {
       configFile: false,
       logLevel: 'silent',
       resolve: { alias: aliases },
-      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
       build: {
         write: false,
         minify: false,
@@ -249,7 +249,7 @@ describe('Vite 8 adapter', () => {
       configFile: false,
       logLevel: 'silent',
       resolve: { alias: aliases },
-      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
       server: { middlewareMode: true },
     });
     const generated = await server.ssrLoadModule(
@@ -294,13 +294,54 @@ describe('Vite 8 adapter', () => {
           '@memoized-dom/data': data,
         },
       },
-      plugins: [memoizedDom({ entries: 'src/main.ts' })],
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
       build: {
         write: false,
         minify: false,
         rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
       },
     })).rejects.toThrow(/\[MMD-S003\].*#server-functions/s);
+  }, 30_000);
+
+  it('rejects runtime #server imports from the client graph', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    const serverDirectory = resolve(root, 'server');
+    await mkdir(serverDirectory, { recursive: true });
+    await writeFile(resolve(serverDirectory, 'database.ts'), `
+      export const database = { secret: 'must-not-enter-client' };
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import { database } from '#server/database';
+      export function App() {
+        return <main>{database.secret}</main>;
+      }
+    `);
+
+    await expect(build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: {
+        alias: {
+          '@': temporarySource,
+          '@memoized-dom/runtime': runtime,
+          '@memoized-dom/data/internal': dataInternal,
+          '@memoized-dom/data': data,
+        },
+      },
+      plugins: [memoizedDom({
+        clientEntry: 'src/main.ts',
+        server: 'server',
+      })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    })).rejects.toThrow(
+      /server-only module '#server\/database' cannot be imported by the client graph/,
+    );
   }, 30_000);
 
   it('lowers module state into request-owned cells when opted in', async () => {
@@ -310,7 +351,7 @@ describe('Vite 8 adapter', () => {
       logLevel: 'silent',
       resolve: { alias: { '@': source } },
       plugins: [
-        memoizedDom({ entries: 'src/main.ts', moduleStateCells: true }),
+        memoizedDom({ clientEntry: 'src/main.ts', moduleStateCells: true }),
       ],
       build: {
         write: false,
@@ -391,7 +432,7 @@ describe('Vite 8 adapter', () => {
       configFile: false,
       logLevel: 'silent',
       resolve: { alias: { '@': source } },
-      plugins: [memoizedDom({ entries: 'src/missing.ts' })],
+      plugins: [memoizedDom({ clientEntry: 'src/missing.ts' })],
       server: { middlewareMode: true },
     });
 
@@ -514,10 +555,10 @@ describe('Vite 8 adapter', () => {
       configFile: false,
       appType: 'custom',
       logLevel: 'silent',
-      plugins: [
-        ...plugins(),
-        memoizedDomFullstack({ entry: 'src/server.ts' }),
-      ],
+      plugins: [memoizedDom({
+        clientEntry: 'src/main.ts',
+        serverEntry: 'src/server.ts',
+      })],
       server: {
         host: '127.0.0.1',
         port: 0,
@@ -541,7 +582,7 @@ describe('Vite 8 adapter', () => {
     expect(documentText).toBe('<!doctype html><h1>Fullstack</h1>');
   });
 
-  it('auto-installs generated server functions into defineServer during development', async () => {
+  it('auto-installs generated server functions into serve during development', async () => {
     const root = await copyFixture();
     const functions = resolve(root, 'server/functions');
     await mkdir(functions, { recursive: true });
@@ -551,10 +592,10 @@ describe('Vite 8 adapter', () => {
       }
     `);
     await writeFile(resolve(root, 'src/server.ts'), `
-      import { defineServer } from '@memoized-dom/server';
-      export default defineServer({
-        routes: { '/health': () => ({ ok: true }) },
-      });
+      import { serve } from '@memoized-dom/server';
+      const app = serve();
+      app.route('GET', '/health', () => ({ ok: true }));
+      export default app;
     `);
 
     server = await createServer({
@@ -572,10 +613,10 @@ describe('Vite 8 adapter', () => {
           '@memoized-dom/data': data,
         },
       },
-      plugins: [
-        memoizedDom({ entries: 'src/main.ts' }),
-        memoizedDomFullstack({ entry: 'src/server.ts' }),
-      ],
+      plugins: [memoizedDom({
+        clientEntry: 'src/main.ts',
+        serverEntry: 'src/server.ts',
+      })],
       server: { host: '127.0.0.1', port: 0 },
     });
     await server.listen();
@@ -607,11 +648,11 @@ describe('Vite 8 adapter', () => {
       export const databaseUrl = store.url;
     `);
     await writeFile(resolve(root, 'src/server.ts'), `
-      import { defineServer } from '@memoized-dom/server';
-      import { databaseUrl } from '../server/db';
-      export default defineServer({
-        routes: { '/health': () => ({ ok: true, databaseUrl }) },
-      });
+      import { serve } from '@memoized-dom/server';
+      import { databaseUrl } from '#server/db';
+      const app = serve();
+      app.route('GET', '/health', () => ({ ok: true, databaseUrl }));
+      export default app;
     `);
 
     server = await createServer({
@@ -629,10 +670,10 @@ describe('Vite 8 adapter', () => {
           '@memoized-dom/data': data,
         },
       },
-      plugins: [
-        memoizedDom({ entries: 'src/main.ts' }),
-        memoizedDomFullstack({ entry: 'src/server.ts' }),
-      ],
+      plugins: [memoizedDom({
+        clientEntry: 'src/main.ts',
+        serverEntry: 'src/server.ts',
+      })],
       server: { host: '127.0.0.1', port: 0 },
     });
     await server.listen();

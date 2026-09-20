@@ -1,19 +1,18 @@
 /**
  * Fullstack demo — Vite config.
  *
- * - `memoizedDom` compiles the client graph and generates the
- *   `#server-functions` facade barrel plus `.memoized/` artifacts.
- * - `memoizedDomFullstack` loads `server.ts` through ssrLoadModule and
- *   installs the generated server-function routes per dispatch (HMR-safe).
+ * One plugin owns the client graph, server graph, generated server-function
+ * facade, and HMR-safe request dispatch.
  */
 import { defineConfig } from 'vite';
-import memoizedDom, { memoizedDomFullstack } from '@memoized-dom/vite';
+import memoizedDom from '@memoized-dom/vite';
 
 export default defineConfig({
   root: import.meta.dirname,
   appType: 'custom',
-  plugins: [
-    memoizedDom({ entries: 'main.ts' }),
-    memoizedDomFullstack({ entry: 'server.ts' }),
-  ],
+  plugins: [memoizedDom({
+    clientEntry: 'main.ts',
+    serverEntry: 'server.ts',
+    server: 'server',
+  })],
 });

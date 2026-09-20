@@ -1,9 +1,10 @@
-export function fetch(request: Request): Response {
-  const url = new URL(request.url);
-  if (url.pathname === '/health') {
-    return Response.json({ ok: true });
-  }
+import { serve } from '@memoized-dom/server';
 
+const app = serve();
+
+app.route('GET', '/health', () => ({ ok: true }));
+
+app.route('GET', '/', () => {
   const encoder = new TextEncoder();
   return new Response(new ReadableStream<Uint8Array>({
     start(controller) {
@@ -14,4 +15,6 @@ export function fetch(request: Request): Response {
   }), {
     headers: { 'content-type': 'text/html; charset=utf-8' },
   });
-}
+});
+
+export default app;

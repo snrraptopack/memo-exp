@@ -12,12 +12,12 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { compile } from '@memoized-dom/compiler';
 import {
   getActiveEnvironment,
+  mount,
   registerRootFactory,
   resetScheduler,
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
-import { hydrate } from '@memoized-dom/runtime/hydrate';
 import { renderToString } from '@memoized-dom/server';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -88,7 +88,7 @@ describe('Adjacent text node merging in SSR and hydration', () => {
     const createElement = vi.spyOn(document, 'createElement');
     const createTextNode = vi.spyOn(document, 'createTextNode');
 
-    mounted = hydrate('root', app.App);
+    mounted = mount('root', app.App);
 
     expect(createElement).not.toHaveBeenCalled();
     expect(createTextNode).not.toHaveBeenCalled();

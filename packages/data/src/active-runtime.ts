@@ -10,26 +10,44 @@
 import { createStorage } from '@memoized-dom/runtime';
 import { getExtensionStore } from '@memoized-dom/runtime';
 import { createDataRuntime } from './client';
-import type { DataRuntime } from './types';
+import type { DataRuntime, SerializedDataState } from './types';
 
-const defaultDataRuntime = createDataRuntime();
-
-function syncActiveStore(runtime: DataRuntime): void {
-  const store = getExtensionStore<{ restoreState?(s: unknown): void }>(
-    'mmd:data-runtime-active',
-    () => ({}),
-  );
-  store.restoreState = (s) => runtime.restoreState(s as import('./types').SerializedDataState);
+interface ActiveDataRuntimeBridge {
+  restoreState?(state: unknown): void;
+  pendingState?: unknown;
 }
-
-syncActiveStore(defaultDataRuntime);
 
 const asyncLocalStorage = createStorage<DataRuntime>('data');
 let activeOverride: DataRuntime | null = null;
+let defaultDataRuntime: DataRuntime | undefined;
+const activeStore = getExtensionStore<ActiveDataRuntimeBridge>(
+  'mmd:data-runtime-active',
+  () => ({}),
+);
+let pendingState = activeStore.pendingState;
+delete activeStore.pendingState;
+
+function defaultRuntime(): DataRuntime {
+  defaultDataRuntime ??= createDataRuntime();
+  return defaultDataRuntime;
+}
 
 export function getActiveDataRuntime(): DataRuntime {
-  return asyncLocalStorage.getStore() ?? activeOverride ?? defaultDataRuntime;
+  const runtime = asyncLocalStorage.getStore() ?? activeOverride ?? defaultRuntime();
+  if (pendingState !== undefined) {
+    const state = pendingState;
+    pendingState = undefined;
+    runtime.restoreState(state as SerializedDataState);
+  }
+  return runtime;
 }
+
+// Register the bridge without constructing the default runtime. mount() can
+// restore immediately after the module graph finishes evaluating, avoiding
+// eager-init cycles in optimized browser bundles.
+activeStore.restoreState = state => {
+  getActiveDataRuntime().restoreState(state as SerializedDataState);
+};
 
 export function runWithDataRuntime<T>(runtime: DataRuntime, fn: () => T): T {
   return asyncLocalStorage.run(runtime, fn);
@@ -41,6 +59,5 @@ export function setActiveDataRuntime(
 ): DataRuntime {
   const previous = getActiveDataRuntime();
   activeOverride = runtime;
-  syncActiveStore(getActiveDataRuntime());
   return previous;
 }

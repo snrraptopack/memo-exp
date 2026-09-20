@@ -242,21 +242,17 @@ Server Stream:
                   </script>
 ```
 
-### Client Hydration:
-1. `hydrate()` extracts the state envelope from the embedded script tag before rendering.
+### Client adoption:
+1. `mount()` detects the server root and extracts its state envelope before rendering.
 2. It restores the dormant records into the client's `DataRuntime`.
 3. Client components adopt the server DOM with **zero duplicate network fetches and zero loading flash**.
 
 ```ts
 // main.ts (Client Bootstrap)
 import { mount } from '@memoized-dom/runtime';
-import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
 import { App } from './App';
 
-setActiveDataRuntime(createDataRuntime());
-import { hydrate } from '@memoized-dom/runtime/hydrate';
-
-hydrate('root', App, { recover: true });
+mount('root', App);
 ```
 
 ---

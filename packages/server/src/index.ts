@@ -564,12 +564,23 @@ export {
   type DocumentTemplate,
 } from './document';
 export {
-  defineServer,
+  serve,
   getServerContext,
-  type DefineServerHandler,
-  type DefineServerMethod,
-  type DefineServerMethodValue,
-  type DefineServerOptions,
-  type DefineServerRenderPolicy,
-  type DefineServerRouteValue,
-} from './define-server';
+  type ServeOptions,
+  type ServerApplication,
+  type ServerMethod,
+  type ServerRouteContext,
+  type ServerRouteHandler,
+  type ServerRouteParams,
+} from './serve';
+export type {
+  RegisteredServerLocals,
+  RegisteredServerPlatform,
+  RegisteredServerServices,
+  ServerContext,
+  ServerHandler,
+  ServerHandlerResult,
+  ServerMiddleware,
+  ServerRoute,
+  ServerTypeRegistry,
+} from './http-router';

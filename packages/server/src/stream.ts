@@ -134,7 +134,7 @@ function createRenderStream(
 /**
  * Prepare a stream and expose render completion to composed HTTP servers.
  *
- * `defineServer` awaits `ready` before committing response headers so its
+ * `serve()` awaits `ready` before committing response headers so its
  * request error boundary can normalize both initial and data-settled render
  * failures. The public stream-only primitive retains its ordinary Web Stream
  * contract for custom hosts.

@@ -2,7 +2,7 @@
  * Server functions — named HTTP endpoints generated from this module.
  *
  * Every verb-prefixed async export becomes a real HTTP route mounted at
- * `/_fn/stories/<name>` by `defineServer`, and a typed `$fetch` facade that
+ * `/_fn/stories/<name>` by `serve()`, and a typed `$fetch` facade that
  * client code imports from `#server-functions`. This module's `middleware`
  * export composes in front of every endpoint it registers (RFC §11):
  * here it logs each server-function invocation.
@@ -12,7 +12,7 @@
  * the request arrived over HTTP or through in-memory SSR dispatch.
  */
 import { getServerContext } from '@memoized-dom/server';
-import type { ServerMiddleware } from '@memoized-dom/server/router';
+import type { ServerMiddleware } from '@memoized-dom/server';
 
 
 function logServerFunction(): ServerMiddleware {
@@ -68,7 +68,7 @@ export async function getStory(id: number) {
 }
 
 export async function postVote(id: number) {
-  const { locals } = getServerContext<{ user?: string }>();
+  const { locals } = getServerContext();
   const story = stories.find((candidate) => candidate.id === id)!;
 
   story.votes += 1;

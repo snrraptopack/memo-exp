@@ -30,11 +30,6 @@
       "import": "./dist/server.js",
       "default": "./dist/server.js"
     },
-    "./hydrate": {
-      "types": "./dist/hydrate.d.ts",
-      "import": "./dist/hydrate.js",
-      "default": "./dist/hydrate.js"
-    },
     "./hot": {
       "types": "./dist/hot.d.ts",
       "import": "./dist/hot.js",

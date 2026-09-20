@@ -10,6 +10,7 @@ import {
 } from '@memoized-dom/compiler';
 import type { ResolvedAdapterOptions } from './options';
 import { normalizeFile } from './paths';
+import { serverRoot } from './server-config';
 
 export const serverFunctionsVirtualId = 'virtual:memoized-dom/server-functions';
 export const resolvedServerFunctionsVirtualId =
@@ -26,13 +27,7 @@ export function serverFunctionsRoot(
   root: string,
   options: ResolvedAdapterOptions,
 ): string | null {
-  if (options.serverFunctions === false) return null;
-  const configured = typeof options.serverFunctions === 'string'
-    ? options.serverFunctions
-    : options.serverFunctions?.directory ?? 'server/functions';
-  return normalizeFile(isAbsolute(configured)
-    ? configured
-    : resolve(root, configured));
+  return normalizeFile(resolve(serverRoot(root, options), 'functions'));
 }
 
 export function isServerFunctionFile(

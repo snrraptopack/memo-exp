@@ -1,20 +1,18 @@
 /**
  * SSR showcase — fullstack Vite config.
  *
- * Two plugins, each owning one half of the stack:
- * - `memoizedDom` compiles the client graph (module sources, HMR).
- * - `memoizedDomFullstack` installs the post-Vite Web-handler boundary so
- *   document requests are server-rendered by `server.ts` while Vite keeps
- *   serving modules, CSS, and hot updates untouched.
+ * One plugin owns the client graph, server graph, SSR request boundary, and
+ * HMR while Vite continues serving modules and CSS.
  */
 import { defineConfig } from 'vite';
-import memoizedDom, { memoizedDomFullstack } from '@memoized-dom/vite';
+import memoizedDom from '@memoized-dom/vite';
 
 export default defineConfig({
   root: import.meta.dirname,
   appType: 'custom',
-  plugins: [
-    memoizedDom({ entries: 'main.ts' }),
-    memoizedDomFullstack({ entry: 'server.ts' }),
-  ],
+  plugins: [memoizedDom({
+    clientEntry: 'main.ts',
+    serverEntry: 'server.ts',
+    server: 'server',
+  })],
 });

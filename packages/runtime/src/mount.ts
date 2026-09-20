@@ -1,9 +1,16 @@
 import {
   getActiveEnvironment,
   getExtensionStore,
+  runWithRenderEnvironment,
   unregisterSubtree,
 } from './kernel';
 import { rootNodes } from './jsx-dom';
+import {
+  createHydrationCursor,
+  HydrationDocument,
+  HydrationMismatchError,
+  parseHydrationMarker,
+} from './hydration';
 
 /** Authored zero-argument component reference accepted by the browser entry. */
 export type MountableComponent = () => unknown;
@@ -25,6 +32,16 @@ export interface MountedApplication {
   readonly nodes: readonly Node[];
   readonly mounted: boolean;
   unmount(): void;
+}
+
+interface HydrationPayloadDelivery {
+  readonly version: 1;
+  readonly state?: unknown;
+}
+
+interface DataRuntimeBridge {
+  restoreState?(state: unknown): void;
+  pendingState?: unknown;
 }
 
 // Factory definitions are build artifacts — process-wide by nature.
@@ -75,31 +92,64 @@ export function resolveHost(target: MountTarget): Element {
   return host;
 }
 
-/** Mount one compiled application root into an ordinary DOM host. */
-export function mount(
-  target: MountTarget,
-  component: MountableComponent,
-): MountedApplication {
-  const host = resolveHost(target);
-  if (mountStore().mountedHosts.has(host)) {
+function validateMount(
+  host: Element,
+  definition: RootFactoryDefinition,
+): MountStore {
+  const store = mountStore();
+  if (store.mountedHosts.has(host)) {
     throw new Error('memoized-dom: mount target already owns an application');
   }
-  const definition = rootFactoryStore().get(component);
-  if (definition === undefined) {
-    throw new Error(
-      'memoized-dom: mount received a component that is not a compiled application root',
-    );
-  }
-  if (mountStore().mountedRoots.has(definition.id)) {
+  if (store.mountedRoots.has(definition.id)) {
     throw new Error(
       `memoized-dom: root entity '${definition.id}' is already mounted`,
     );
   }
-  if (mountStore().mountedRoots.size > 0) {
+  if (store.mountedRoots.size > 0) {
     throw new Error(
       'memoized-dom: the runtime currently supports one mounted application',
     );
   }
+  return store;
+}
+
+function createMountedApplication(
+  host: Element,
+  definition: RootFactoryDefinition,
+  nodes: readonly Node[],
+  disposeMarkers?: () => void,
+): MountedApplication {
+  const store = mountStore();
+  let live = true;
+  const application: MountedApplication = {
+    host,
+    rootId: definition.id,
+    nodes,
+    get mounted() {
+      return live;
+    },
+    unmount() {
+      if (!live) return;
+      live = false;
+      store.mountedHosts.delete(host);
+      store.mountedRoots.delete(definition.id);
+      try {
+        unregisterSubtree(definition.id);
+      } finally {
+        removeNodes(nodes);
+        disposeMarkers?.();
+      }
+    },
+  };
+  store.mountedHosts.set(host, application);
+  store.mountedRoots.set(definition.id, application);
+  return application;
+}
+
+function createApplication(
+  host: Element,
+  definition: RootFactoryDefinition,
+): MountedApplication {
 
   let root: Node;
   try {
@@ -117,34 +167,108 @@ export function mount(
     throw error;
   }
 
-  let live = true;
-  const application: MountedApplication = {
-    host,
-    rootId: definition.id,
-    nodes,
-    get mounted() {
-      return live;
-    },
-    unmount() {
-      if (!live) return;
-      live = false;
-      mountStore().mountedHosts.delete(host);
-      mountStore().mountedRoots.delete(definition.id);
-      try {
-        unregisterSubtree(definition.id);
-      } finally {
-        removeNodes(nodes);
-      }
-    },
-  };
-  mountStore().mountedHosts.set(host, application);
-  mountStore().mountedRoots.set(definition.id, application);
-  return application;
+  return createMountedApplication(host, definition, nodes);
 }
 
-/** Hydration entry support; intentionally absent from the public client barrel. */
-export function rootFactoryFor(
+function hasHydrationRoot(host: Element, rootId: string): boolean {
+  for (let node = host.firstChild; node !== null; node = node.nextSibling) {
+    if (node.nodeType !== 8) continue;
+    const marker = parseHydrationMarker((node as Comment).data);
+    if (
+      marker?.type === 'open' &&
+      marker.kind === 'r' &&
+      marker.identity === rootId
+    ) return true;
+  }
+  return false;
+}
+
+function restorePayload(rootId: string, host: Element): void {
+  const document = host.ownerDocument;
+  const script = document.querySelector(
+    `script[type="application/mmd+json"][data-mmd-root="${rootId}"]`,
+  );
+  if (!script?.textContent) return;
+  let payload: HydrationPayloadDelivery;
+  try {
+    payload = JSON.parse(script.textContent) as HydrationPayloadDelivery;
+  } catch {
+    return;
+  }
+  if (payload.state === undefined) return;
+  const data = getExtensionStore<DataRuntimeBridge>(
+    'mmd:data-runtime-active',
+    () => ({}),
+  );
+  if (data.restoreState !== undefined) {
+    data.restoreState(payload.state);
+  } else {
+    // Preserve an early payload until the optional data package registers its
+    // default runtime. Browser bootstrap never has to install one manually.
+    data.pendingState = payload.state;
+  }
+}
+
+function adoptApplication(
+  host: Element,
+  definition: RootFactoryDefinition,
+): MountedApplication {
+  restorePayload(definition.id, host);
+  const range = createHydrationCursor(host, definition.id);
+  const hydrationDocument = new HydrationDocument(
+    getActiveEnvironment().document,
+    range,
+  );
+  let root: Node;
+  try {
+    root = runWithRenderEnvironment(
+      {
+        mode: 'hydrate',
+        document: hydrationDocument,
+        hydration: hydrationDocument,
+      },
+      () => definition.create({ mode: 'hydrate', host }),
+    );
+    hydrationDocument.expectDone();
+  } catch (error) {
+    unregisterSubtree(definition.id);
+    throw error;
+  }
+  return createMountedApplication(
+    host,
+    definition,
+    rootNodes(root),
+    () => {
+      range.open.parentNode?.removeChild(range.open);
+      range.end.parentNode?.removeChild(range.end);
+    },
+  );
+}
+
+/**
+ * Mount one compiled application root. A matching SSR root is adopted
+ * automatically; a structural mismatch is discarded and mounted once.
+ */
+export function mount(
+  target: MountTarget,
   component: MountableComponent,
-): RootFactoryDefinition | undefined {
-  return rootFactoryStore().get(component);
+): MountedApplication {
+  const host = resolveHost(target);
+  const definition = rootFactoryStore().get(component);
+  if (definition === undefined) {
+    throw new Error(
+      'memoized-dom: mount received a component that is not a compiled application root',
+    );
+  }
+  validateMount(host, definition);
+  if (!hasHydrationRoot(host, definition.id)) {
+    return createApplication(host, definition);
+  }
+  try {
+    return adoptApplication(host, definition);
+  } catch (error) {
+    if (!(error instanceof HydrationMismatchError)) throw error;
+    host.innerHTML = '';
+    return createApplication(host, definition);
+  }
 }

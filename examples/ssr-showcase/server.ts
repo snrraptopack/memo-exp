@@ -1,26 +1,9 @@
-/**
- * Server entry — the composed application server (`defineServer`).
- *
- * The fullstack Vite plugin loads this module and serves every request the
- * dev server does not handle as an asset. One declarative block owns the
- * whole backend:
- *
- *   /api/*   → JSON endpoints. The same routes serve browser requests and
- *              in-memory SSR dispatch (no loopback, no mock duplication).
- *   *        → page fallthrough: prefix middleware, then SSR of `App` with
- *              the render policy (resolved SSR + hydration markers).
- *
- * The SSR data path: colorless module sources (`./session`) call `$fetch`
- * during render, `defineServer` dispatches those calls in-process through
- * this same route table and middleware, and the resolved state travels to
- * the client in the `application/mmd+json` payload.
- */
-import { defineServer } from '@memoized-dom/server';
+/** Server entry composed with the public serve() application API. */
+import {
+  serve,
+  type ServerMiddleware,
+} from '@memoized-dom/server';
 import { App } from './App';
-
-// ---------------------------------------------------------------------------
-// Data — the single source both SSR and the browser read.
-// ---------------------------------------------------------------------------
 
 const SESSION = { name: 'Ada Lovelace', role: 'admin', avatar: 'A' };
 
@@ -59,64 +42,38 @@ const STORIES = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Middleware — cross-cutting concerns live once (RFC §4).
-// ---------------------------------------------------------------------------
-
-/** Simulate network latency per pathname so SSR latency stays observable. */
 function devDelay(
-  map: Record<string, number>,
-): (context: { request: Request }, next: () => Promise<Response>) => Promise<Response> {
+  delays: Record<string, number>,
+): ServerMiddleware {
   return async (context, next) => {
-    const ms = map[new URL(context.request.url).pathname];
-    if (ms !== undefined) {
-      await new Promise((resolve) => setTimeout(resolve, ms));
+    const duration = delays[context.url.pathname];
+    if (duration !== undefined) {
+      await new Promise(resolve => setTimeout(resolve, duration));
     }
     return next();
   };
 }
 
-// ---------------------------------------------------------------------------
-// The whole backend in one declarative block.
-// ---------------------------------------------------------------------------
+const pageCache: ServerMiddleware = async (_context, next) => {
+  const response = await next();
+  if (response.headers.get('content-type')?.includes('text/html')) {
+    response.headers.set(
+      'cache-control',
+      'public, max-age=5, stale-while-revalidate=60',
+    );
+  }
+  return response;
+};
 
-export default defineServer({
-  // The root compiled UI component — rendered for every page fallthrough.
-  app: App,
+const app = serve();
 
-  // Page template: loaded, validated for <!--ssr-outlet-->, and split once
-  // at definition time.
-  document: new URL('./index.html', import.meta.url),
+app.use(pageCache);
+app.use('/api/*', devDelay({
+  '/api/session': 40,
+  '/api/stories': 80,
+}));
+app.route('GET', '/api/session', () => SESSION);
+app.route('GET', '/api/stories', () => STORIES);
+app.ssr(App);
 
-  // Prefix group middleware — applies to /api/* endpoints AND to in-memory
-  // SSR dispatch of those endpoints, so server rendering observes the same
-  // latency a real browser request would.
-  routes: {
-    '/api/*': {
-      middleware: [
-        devDelay({ '/api/session': 40, '/api/stories': 80 }),
-      ],
-    },
-
-    // A bare handler is GET; object/array responses serialize to JSON.
-    '/api/session': () => SESSION,
-    '/api/stories': () => STORIES,
-  },
-
-  // Default ResponseInit applied to rendered HTML pages — lets an upstream
-  // CDN serve the document while stale-while-revalidate refreshes it.
-  init: {
-    headers: {
-      'cache-control': 'public, max-age=5, stale-while-revalidate=60',
-    },
-  },
-
-  // Rendering policy (defaults shown): resolve request data before flush,
-  // emit hydration markers plus the application/mmd+json payload, and
-  // stream the ordered document.
-  render: {
-    mode: 'resolve',
-    markers: true,
-    delivery: 'stream',
-  },
-});
+export default app;

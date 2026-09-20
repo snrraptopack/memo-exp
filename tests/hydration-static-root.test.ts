@@ -12,12 +12,12 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { compile } from '@memoized-dom/compiler';
 import {
   getActiveEnvironment,
+  mount,
   registerRootFactory,
   resetScheduler,
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
-import { hydrate } from '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -89,7 +89,7 @@ describe('Phase 3 static-root hydrate integration', () => {
     const createElement = vi.spyOn(document, 'createElement');
     const createTextNode = vi.spyOn(document, 'createTextNode');
 
-    mounted = hydrate('root', app.App);
+    mounted = mount('root', app.App);
 
     expect(host.querySelector('section')).toBe(section);
     expect(host.querySelector('button')).toBe(button);
@@ -114,9 +114,9 @@ describe('Phase 3 static-root hydrate integration', () => {
         '<!--/mmd-->',
     );
 
-    expect(() => hydrate('root', app.App)).toThrow(
-      'expected element <section>, found element <article>',
-    );
+    mounted = mount('root', app.App);
+    expect(document.querySelector('#root > section')).not.toBeNull();
+    expect(document.querySelector('#root > article')).toBeNull();
     expect(getActiveEnvironment().mode).toBe('client-create');
   });
 
@@ -134,8 +134,8 @@ describe('Phase 3 static-root hydrate integration', () => {
         '<!--/mmd-->',
     );
 
-    expect(() => hydrate('root', app.App)).toThrow(
-      'expected every structural range claimed, found 1 unclaimed structural range(s)',
-    );
+    mounted = mount('root', app.App);
+    expect(document.querySelector('#root > section')).not.toBeNull();
+    expect(document.querySelector('#root p')).toBeNull();
   });
 });

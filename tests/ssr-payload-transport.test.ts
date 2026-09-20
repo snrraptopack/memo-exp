@@ -1,12 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { compileModules } from '@memoized-dom/compiler';
 import { renderToResult, renderToResultAsync } from '@memoized-dom/server';
-import { registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
-import { hydrate } from '@memoized-dom/runtime/hydrate';
-import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
+import { mount, registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -51,6 +49,10 @@ async function importCompiled(): Promise<CompiledApp> {
   return import(/* @vite-ignore */ pathToFileURL(output).href);
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 function mockFetch(data: unknown): typeof fetch {
   return (() =>
     Promise.resolve(
@@ -61,7 +63,7 @@ function mockFetch(data: unknown): typeof fetch {
 }
 
 describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
-  it('delivers state envelope via <script type="application/mmd+json"> tag and auto-restores during hydrate()', async () => {
+  it('delivers state envelope via <script type="application/mmd+json"> tag and auto-restores during mount()', async () => {
     const app = await importCompiled();
     const fetch = mockFetch({ name: 'Ada Lovelace' });
 
@@ -87,13 +89,11 @@ describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
     scriptEl.innerHTML = result.scriptTag;
     document.body.appendChild(scriptEl.firstElementChild!);
 
-    // Client data runtime has NO network fetch installed (will throw if it tries to issue a request)
-    const clientDataRuntime = createDataRuntime({
-      fetch: (() => {
-        throw new Error('Client should not issue fetch — state must restore from payload channel');
-      }) as typeof fetch,
-    });
-    setActiveDataRuntime(clientDataRuntime);
+    // No client runtime setup is required. The default runtime is automatic,
+    // and any network request proves payload restoration failed.
+    vi.stubGlobal('fetch', vi.fn(() => {
+      throw new Error('Client should not issue fetch — state must restore from payload channel');
+    }));
 
     registerRootFactory(app.App, {
       id: 'App',
@@ -101,7 +101,7 @@ describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
     });
 
     // 3. Hydrate with default payload: 'auto'
-    const mounted = hydrate('root', app.App);
+    const mounted = mount('root', app.App);
     expect(host.querySelector('h1')?.textContent).toBe('Ada Lovelace');
 
     mounted.unmount();

@@ -24,6 +24,7 @@ import {
 } from './paths';
 import { AdapterState } from './state';
 import { registerClientStyles } from './dev-assets';
+import { configureFullstackServer } from './fullstack';
 import {
   generateServerFunctionRoutesModule,
   isServerFunctionFile,
@@ -35,6 +36,11 @@ import {
   serverFunctionsVirtualId,
   writeServerFunctionDeclarations,
 } from './server-functions';
+import {
+  isServerConfigFile,
+  resolveServerAlias,
+  writeServerConfigDeclaration,
+} from './server-config';
 
 const sourceId = /(?:\.[jt]sx?|\.tsrx)(?:$|[?#])/;
 const statefulRuntimePackages = [
@@ -75,6 +81,11 @@ export function memoizedDom(
     serverFunctionBarrelEntries = generated.clientBarrelEntries;
     await writeServerFunctionDeclarations(config.root, generated.modules, options);
     return generated.files;
+  }
+
+  async function refreshServerConfig(): Promise<string | null> {
+    if (config === undefined) return null;
+    return writeServerConfigDeclaration(config.root, options);
   }
 
   function stateFor(environment: object): AdapterState {
@@ -327,12 +338,12 @@ export function memoizedDom(
     enforce: 'pre',
     config() {
       // These packages intentionally share realm/runtime state across public
-      // subpath entries (`runtime` + `runtime/hydrate`, `data` +
-      // `data/internal`, and router internals). Prebundling deep imports as
-      // independent optimized entries duplicates that state and makes a
-      // registered root invisible to hydrate. Let Vite serve their emitted
+      // subpath entries (`data` + `data/internal`, and router internals).
+      // Prebundling deep imports as independent optimized entries duplicates
+      // that state and can hide a registered root from mount(). Let Vite serve their emitted
       // ESM chunks directly so every subpath converges on one module record.
       return {
+        ...(options.serverEntry === undefined ? {} : { appType: 'custom' as const }),
         optimizeDeps: {
           exclude: statefulRuntimePackages,
         },
@@ -349,20 +360,37 @@ export function memoizedDom(
     },
     configureServer(server) {
       devServer = server;
+      return options.serverEntry === undefined
+        ? undefined
+        : configureFullstackServer(server, options.serverEntry);
     },
     async buildStart() {
       for (const file of await refreshServerFunctions()) this.addWatchFile(file);
+      const serverConfig = await refreshServerConfig();
+      if (serverConfig !== null) this.addWatchFile(serverConfig);
       await refreshGraph(
         this as AdapterTransformContext,
         stateFor(this.environment),
       );
     },
-    resolveId(id, importer) {
+    async resolveId(id, importer) {
       if (id === serverFunctionsVirtualId) {
         return resolvedServerFunctionsVirtualId;
       }
       if (id === serverFunctionsClientVirtualId) {
         return resolvedServerFunctionsClientVirtualId;
+      }
+      if (id.startsWith('#server/')) {
+        if (this.environment.name === 'client') {
+          this.error(
+            `memoized-dom: server-only module '${id}' cannot be imported by the client graph`,
+          );
+        }
+        if (config === undefined) {
+          this.error('memoized-dom: #server resolution started before config');
+        }
+        const candidate = resolveServerAlias(config.root, id, options);
+        return this.resolve(candidate, importer, { skipSelf: true });
       }
       if (isServerFunctionImplementation(id)) return id;
       if (id.includes('?memo-style.css')) {
@@ -413,6 +441,9 @@ export function memoizedDom(
       const file = normalizeFile(update.file);
       const serverFunctionChanged =
         config !== undefined && isServerFunctionFile(config.root, file, options);
+      const serverConfigChanged = config !== undefined &&
+        isServerConfigFile(config.root, file, options);
+      if (serverConfigChanged) await refreshServerConfig();
       let virtualModule = serverFunctionChanged
         ? this.environment.moduleGraph.getModuleById(
             resolvedServerFunctionsVirtualId,

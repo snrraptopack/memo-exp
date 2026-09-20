@@ -3,7 +3,6 @@ import { defineConfig } from 'rolldown';
 export default defineConfig({
   input: {
     index: './src/index.ts',
-    hydrate: './src/hydrate.ts',
     hot: './src/hot.ts',
     server: './src/server.ts',
     testing: './src/testing.ts',

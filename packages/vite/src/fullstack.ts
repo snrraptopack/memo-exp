@@ -3,23 +3,21 @@ import {
   toWebRequest,
 } from '@memoized-dom/adapters/node';
 import type { WebHandler } from '@memoized-dom/adapters';
-import type { Plugin, ViteDevServer } from 'vite';
+import type { ViteDevServer } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { serverFunctionsVirtualId } from './server-functions';
 import { clientStyleUrls } from './dev-assets';
 
-export interface MemoizedDomFullstackOptions {
-  /** Vite-root-relative server module exporting `fetch` or a default handler. */
-  readonly entry: string;
-}
-
 interface FullstackModule {
   readonly default?: unknown;
-  readonly fetch?: unknown;
 }
 
-interface InstallableWebHandler extends WebHandler {
+interface InstallableApplication {
+  fetch: WebHandler;
   installServerFunctions?: (routes: readonly unknown[]) => void;
+  installDocumentTemplate?: (template: string) => void;
 }
 
 interface GeneratedServerFunctionModule {
@@ -29,14 +27,14 @@ interface GeneratedServerFunctionModule {
 function handlerFromModule(
   module: FullstackModule,
   entry: string,
-): WebHandler {
-  const candidate = module.fetch ?? module.default;
-  if (typeof candidate !== 'function') {
+): InstallableApplication {
+  const candidate = module.default as Partial<InstallableApplication> | undefined;
+  if (candidate === undefined || typeof candidate.fetch !== 'function') {
     throw new TypeError(
-      `memoized-dom: fullstack entry '${entry}' must export a Web handler as 'fetch' or default`,
+      `memoized-dom: fullstack entry '${entry}' must default-export the application returned by serve()`,
     );
   }
-  return candidate as InstallableWebHandler;
+  return candidate as InstallableApplication;
 }
 
 function moduleId(entry: string): string {
@@ -52,8 +50,8 @@ async function dispatch(
   const module = await server.ssrLoadModule(
     moduleId(entry),
   ) as FullstackModule;
-  const handler = handlerFromModule(module, entry) as InstallableWebHandler;
-  if (handler.installServerFunctions !== undefined) {
+  const application = handlerFromModule(module, entry);
+  if (application.installServerFunctions !== undefined) {
     const generated = await server.ssrLoadModule(
       serverFunctionsVirtualId,
     ) as GeneratedServerFunctionModule;
@@ -62,9 +60,21 @@ async function dispatch(
         'memoized-dom: generated server-function manifest did not export a route array',
       );
     }
-    handler.installServerFunctions(generated.serverFunctionRoutes);
+    application.installServerFunctions(generated.serverFunctionRoutes);
   }
-  const handled = await handler(toWebRequest(request));
+  if (application.installDocumentTemplate !== undefined) {
+    const source = await readFile(
+      resolve(server.config.root, 'index.html'),
+      'utf8',
+    ).catch(() => undefined);
+    if (source !== undefined) {
+      const path = request.url ?? '/';
+      application.installDocumentTemplate(
+        await server.transformIndexHtml(path, source),
+      );
+    }
+  }
+  const handled = await application.fetch(toWebRequest(request));
   const styles = handled.headers
     .get('content-type')
     ?.toLowerCase()
@@ -130,7 +140,7 @@ function injectClientStyles(
 }
 
 function middleware(server: ViteDevServer, entry: string) {
-  return async function memoizedDomFullstackMiddleware(
+  return async function memoizedDomServerMiddleware(
     request: IncomingMessage,
     response: ServerResponse,
     next: (error?: unknown) => void,
@@ -151,16 +161,11 @@ function middleware(server: ViteDevServer, entry: string) {
  * Node HTTP to the Web Request/Response contract and dispatched through the
  * application server entry loaded by `ssrLoadModule`.
  */
-export function memoizedDomFullstack(
-  options: MemoizedDomFullstackOptions,
-): Plugin {
-  return {
-    name: 'memoized-dom-fullstack',
-    apply: 'serve',
-    configureServer(server) {
-      return () => {
-        server.middlewares.use(middleware(server, options.entry));
-      };
-    },
+export function configureFullstackServer(
+  server: ViteDevServer,
+  entry: string,
+): () => void {
+  return () => {
+    server.middlewares.use(middleware(server, entry));
   };
 }

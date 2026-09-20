@@ -9,41 +9,76 @@ import {
 
 export type ServerHandlerResult = unknown;
 
+/**
+ * Application-owned server types merge into this interface through the
+ * generated project declaration. Framework packages must leave it empty.
+ */
+export interface ServerTypeRegistry {}
+
+type RegisteredApplication = ServerTypeRegistry extends {
+  application: infer TApplication;
+}
+  ? TApplication
+  : Record<string, never>;
+
+export type RegisteredServerLocals = RegisteredApplication extends {
+  locals: infer TLocals extends object;
+}
+  ? TLocals
+  : Record<string, never>;
+
+export type RegisteredServerPlatform = RegisteredApplication extends {
+  platform?: infer TPlatform;
+}
+  ? TPlatform
+  : unknown;
+
+export type RegisteredServerServices = RegisteredApplication extends {
+  services: infer TServices extends object;
+}
+  ? TServices
+  : Record<string, never>;
+
 export interface ServerContext<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > {
   readonly request: Request;
   readonly url: URL;
   readonly params: Readonly<Record<string, string>>;
   readonly locals: TLocals;
   readonly platform: TPlatform | undefined;
+  readonly services: TServices;
 }
 
 export type ServerHandler<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > = (
-  context: ServerContext<TLocals, TPlatform>,
+  context: ServerContext<TLocals, TPlatform, TServices>,
 ) => ServerHandlerResult | Promise<ServerHandlerResult>;
 
 export type ServerMiddleware<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > = (
-  context: ServerContext<TLocals, TPlatform>,
+  context: ServerContext<TLocals, TPlatform, TServices>,
   next: () => Promise<Response>,
 ) => Response | Promise<Response>;
 
 export interface ServerRoute<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > {
   readonly id?: string;
   readonly method: string | readonly string[];
   readonly path: string;
-  readonly middleware?: readonly ServerMiddleware<TLocals, TPlatform>[];
-  readonly handler: ServerHandler<TLocals, TPlatform>;
+  readonly middleware?: readonly ServerMiddleware<TLocals, TPlatform, TServices>[];
+  readonly handler: ServerHandler<TLocals, TPlatform, TServices>;
 }
 
 export type ServerFunctionQueryKind =
@@ -61,86 +96,93 @@ export interface ServerFunctionRouteParameter {
 }
 
 export interface ServerFunctionRouteDefinition<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > {
   readonly id: string;
   readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly path: `/_fn/${string}`;
   readonly parameters: readonly ServerFunctionRouteParameter[];
-  readonly middleware?: readonly ServerMiddleware<TLocals, TPlatform>[];
+  readonly middleware?: readonly ServerMiddleware<TLocals, TPlatform, TServices>[];
   readonly handler: (...args: unknown[]) => ServerHandlerResult | Promise<ServerHandlerResult>;
 }
 
 export interface ServerMiddlewareGroup<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > {
   readonly path: string;
-  readonly middleware: readonly ServerMiddleware<TLocals, TPlatform>[];
+  readonly middleware: readonly ServerMiddleware<TLocals, TPlatform, TServices>[];
 }
 
 export interface ServerDispatchOptions<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > {
   /** Reuse request-owned locals for a derived in-memory dispatch. */
   readonly locals?: TLocals;
   readonly platform?: TPlatform;
+  readonly services?: TServices;
 }
 
 export interface ServerRouterOptions<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > {
-  readonly routes: readonly ServerRoute<TLocals, TPlatform>[];
-  readonly middleware?: readonly ServerMiddleware<TLocals, TPlatform>[];
-  readonly groups?: readonly ServerMiddlewareGroup<TLocals, TPlatform>[];
+  readonly routes: readonly ServerRoute<TLocals, TPlatform, TServices>[];
+  readonly middleware?: readonly ServerMiddleware<TLocals, TPlatform, TServices>[];
+  readonly groups?: readonly ServerMiddlewareGroup<TLocals, TPlatform, TServices>[];
   readonly createLocals?: (request: Request) => TLocals;
   readonly createPlatform?: (request: Request) => TPlatform | undefined;
-  /** Handles paths that have no HTTP route. A future defineServer uses this for pages. */
-  readonly fallback?: ServerHandler<TLocals, TPlatform>;
+  readonly services?: TServices;
+  /** Handles paths that have no HTTP route, such as an application page fallback. */
+  readonly fallback?: ServerHandler<TLocals, TPlatform, TServices>;
   readonly onError?: (
     error: unknown,
-    context: ServerContext<TLocals, TPlatform>,
+    context: ServerContext<TLocals, TPlatform, TServices>,
   ) => Response | Promise<Response>;
 }
 
 export interface ServerRouter<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 > {
   readonly fetch: (request: Request) => Promise<Response>;
   dispatch(
     request: Request,
-    options?: ServerDispatchOptions<TLocals, TPlatform>,
+    options?: ServerDispatchOptions<TLocals, TPlatform, TServices>,
   ): Promise<Response>;
   matches(pathname: string, method: string): boolean;
   allowedMethods(pathname: string): readonly string[];
 }
 
-interface PreparedRoute<TLocals extends object, TPlatform> {
+interface PreparedRoute<TLocals extends object, TPlatform, TServices extends object> {
   readonly id: string;
   readonly method: string;
   readonly path: string;
-  readonly middleware: readonly ServerMiddleware<TLocals, TPlatform>[];
-  readonly handler: ServerHandler<TLocals, TPlatform>;
+  readonly middleware: readonly ServerMiddleware<TLocals, TPlatform, TServices>[];
+  readonly handler: ServerHandler<TLocals, TPlatform, TServices>;
 }
 
-interface PreparedGroup<TLocals extends object, TPlatform> {
+interface PreparedGroup<TLocals extends object, TPlatform, TServices extends object> {
   readonly path: string;
   readonly depth: number;
   readonly order: number;
-  readonly middleware: readonly ServerMiddleware<TLocals, TPlatform>[];
+  readonly middleware: readonly ServerMiddleware<TLocals, TPlatform, TServices>[];
 }
 
-interface RouteSelection<TLocals extends object, TPlatform> {
-  readonly route: PreparedRoute<TLocals, TPlatform>;
+interface RouteSelection<TLocals extends object, TPlatform, TServices extends object> {
+  readonly route: PreparedRoute<TLocals, TPlatform, TServices>;
   readonly params: Readonly<Record<string, string>>;
 }
 
-interface MethodMatch<TLocals extends object, TPlatform> {
-  readonly route: PreparedRoute<TLocals, TPlatform>;
+interface MethodMatch<TLocals extends object, TPlatform, TServices extends object> {
+  readonly route: PreparedRoute<TLocals, TPlatform, TServices>;
   readonly params: Readonly<Record<string, string>>;
 }
 
@@ -163,8 +205,8 @@ const DEFAULT_METHOD_ORDER = [
  */
 const SERVER_FUNCTION_ROUTE_KEY = '__memoDomServerFunctionRoute';
 
-type InternalServerFunctionRoute<TLocals extends object, TPlatform> =
-  ServerRoute<TLocals, TPlatform> & {
+type InternalServerFunctionRoute<TLocals extends object, TPlatform, TServices extends object> =
+  ServerRoute<TLocals, TPlatform, TServices> & {
     readonly [SERVER_FUNCTION_ROUTE_KEY]?: true;
   };
 
@@ -277,18 +319,19 @@ function serverFunctionError(error: ServerFunctionInputError): Response {
 
 /** Convert discovered named HTTP functions into ordinary router definitions. */
 export function createServerFunctionRoutes<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 >(
-  definitions: readonly ServerFunctionRouteDefinition<TLocals, TPlatform>[],
-): readonly ServerRoute<TLocals, TPlatform>[] {
+  definitions: readonly ServerFunctionRouteDefinition<TLocals, TPlatform, TServices>[],
+): readonly ServerRoute<TLocals, TPlatform, TServices>[] {
   return definitions.map((definition) => {
     if (!definition.path.startsWith('/_fn/')) {
       throw new TypeError(
         `Server function '${definition.id}' must use the reserved /_fn/ namespace`,
       );
     }
-    const route: InternalServerFunctionRoute<TLocals, TPlatform> = {
+    const route: InternalServerFunctionRoute<TLocals, TPlatform, TServices> = {
       [SERVER_FUNCTION_ROUTE_KEY]: true,
       id: definition.id,
       method: definition.method,
@@ -347,10 +390,16 @@ function normalizeHandlerResult(value: unknown): Response {
   return Response.json(value);
 }
 
-async function runMiddleware<TLocals extends object, TPlatform>(
-  middleware: readonly ServerMiddleware<TLocals, TPlatform>[],
-  terminal: (context: ServerContext<TLocals, TPlatform>) => Promise<Response>,
-  context: ServerContext<TLocals, TPlatform>,
+async function runMiddleware<
+  TLocals extends object,
+  TPlatform,
+  TServices extends object,
+>(
+  middleware: readonly ServerMiddleware<TLocals, TPlatform, TServices>[],
+  terminal: (
+    context: ServerContext<TLocals, TPlatform, TServices>,
+  ) => Promise<Response>,
+  context: ServerContext<TLocals, TPlatform, TServices>,
 ): Promise<Response> {
   let activeIndex = -1;
   const run = async (index: number): Promise<Response> => {
@@ -388,18 +437,29 @@ function withoutBody(response: Response): Response {
  * Rendering and filesystem discovery deliberately live above this layer.
  */
 export function createServerRouter<
-  TLocals extends object = Record<string, never>,
-  TPlatform = unknown,
+  TLocals extends object = RegisteredServerLocals,
+  TPlatform = RegisteredServerPlatform,
+  TServices extends object = RegisteredServerServices,
 >(
-  options: ServerRouterOptions<TLocals, TPlatform>,
-): ServerRouter<TLocals, TPlatform> {
-  const routesByMethod = new Map<string, PreparedRoute<TLocals, TPlatform>[]>();
-  const routesById = new Map<string, PreparedRoute<TLocals, TPlatform>>();
+  options: ServerRouterOptions<TLocals, TPlatform, TServices>,
+): ServerRouter<TLocals, TPlatform, TServices> {
+  const routesByMethod = new Map<
+    string,
+    PreparedRoute<TLocals, TPlatform, TServices>[]
+  >();
+  const routesById = new Map<
+    string,
+    PreparedRoute<TLocals, TPlatform, TServices>
+  >();
 
   for (let routeIndex = 0; routeIndex < options.routes.length; routeIndex++) {
     const declared = options.routes[routeIndex]!;
     const path = validateRoutePattern(declared.path);
-    const internal = declared as InternalServerFunctionRoute<TLocals, TPlatform>;
+    const internal = declared as InternalServerFunctionRoute<
+      TLocals,
+      TPlatform,
+      TServices
+    >;
     if (
       (path === '/_fn' || path.startsWith('/_fn/')) &&
       internal[SERVER_FUNCTION_ROUTE_KEY] !== true
@@ -411,7 +471,7 @@ export function createServerRouter<
     const routeMethods = methodsFor(declared);
     for (const method of routeMethods) {
       const id = `${routeIndex}:${method}:${declared.id ?? path}`;
-      const route: PreparedRoute<TLocals, TPlatform> = Object.freeze({
+      const route: PreparedRoute<TLocals, TPlatform, TServices> = Object.freeze({
         id,
         method,
         path,
@@ -428,7 +488,10 @@ export function createServerRouter<
     }
   }
 
-  const staticRoutes = new Map<string, Map<string, PreparedRoute<TLocals, TPlatform>>>();
+  const staticRoutes = new Map<
+    string,
+    Map<string, PreparedRoute<TLocals, TPlatform, TServices>>
+  >();
   const dynamicMatchers = new Map<string, RouteTableMatcher>();
   for (const [method, routes] of routesByMethod) {
     const definitions = routes.map(route => ({
@@ -440,7 +503,10 @@ export function createServerRouter<
     } catch (error) {
       throw new TypeError(`Invalid ${method} route table`, { cause: error });
     }
-    const staticMethodRoutes = new Map<string, PreparedRoute<TLocals, TPlatform>>();
+    const staticMethodRoutes = new Map<
+      string,
+      PreparedRoute<TLocals, TPlatform, TServices>
+    >();
     const dynamicDefinitions: typeof definitions = [];
     for (let index = 0; index < routes.length; index++) {
       const route = routes[index]!;
@@ -456,7 +522,7 @@ export function createServerRouter<
     }
   }
 
-  const groups: readonly PreparedGroup<TLocals, TPlatform>[] = Object.freeze(
+  const groups: readonly PreparedGroup<TLocals, TPlatform, TServices>[] = Object.freeze(
     (options.groups ?? [])
       .map((group, order) => {
         const path = validateRoutePattern(group.path);
@@ -474,7 +540,7 @@ export function createServerRouter<
   function matchMethod(
     pathname: string,
     method: string,
-  ): MethodMatch<TLocals, TPlatform> | null {
+  ): MethodMatch<TLocals, TPlatform, TServices> | null {
     const staticRoute = staticRoutes.get(method)?.get(pathname);
     if (staticRoute !== undefined) {
       return { route: staticRoute, params: EMPTY_PARAMS };
@@ -485,7 +551,10 @@ export function createServerRouter<
       : { route: routesById.get(dynamic.id)!, params: dynamic.params };
   }
 
-  function select(pathname: string, method: string): RouteSelection<TLocals, TPlatform> | null {
+  function select(
+    pathname: string,
+    method: string,
+  ): RouteSelection<TLocals, TPlatform, TServices> | null {
     const normalizedMethod = normalizeMethod(method);
     const direct = matchMethod(pathname, normalizedMethod);
     if (direct !== null) {
@@ -518,7 +587,7 @@ export function createServerRouter<
   function matchingGroups(
     pathname: string,
   ): {
-    readonly middleware: readonly ServerMiddleware<TLocals, TPlatform>[];
+    readonly middleware: readonly ServerMiddleware<TLocals, TPlatform, TServices>[];
     readonly params: Readonly<Record<string, string>>;
   } {
     if (groups.length === 0) {
@@ -544,7 +613,7 @@ export function createServerRouter<
 
   async function dispatch(
     request: Request,
-    dispatchOptions: ServerDispatchOptions<TLocals, TPlatform> = {},
+    dispatchOptions: ServerDispatchOptions<TLocals, TPlatform, TServices> = {},
   ): Promise<Response> {
     const url = new URL(request.url);
     const pathname = normalizeRoutePath(url.pathname);
@@ -558,15 +627,20 @@ export function createServerRouter<
     const locals = dispatchOptions.locals ?? options.createLocals?.(request) ??
       (Object.create(null) as TLocals);
     const platform = dispatchOptions.platform ?? options.createPlatform?.(request);
-    const context: ServerContext<TLocals, TPlatform> = Object.freeze({
+    const services = dispatchOptions.services ?? options.services ??
+      (Object.create(null) as TServices);
+    const context: ServerContext<TLocals, TPlatform, TServices> = Object.freeze({
       request,
       url,
       params,
       locals,
       platform,
+      services,
     });
 
-    let terminal: (value: ServerContext<TLocals, TPlatform>) => Promise<Response>;
+    let terminal: (
+      value: ServerContext<TLocals, TPlatform, TServices>,
+    ) => Promise<Response>;
     let middleware = groupMatch.middleware;
     if (selection !== null) {
       middleware = [...middleware, ...selection.route.middleware];

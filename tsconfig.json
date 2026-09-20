@@ -20,6 +20,7 @@
     // Generated client facade declarations (written by the Vite adapter's
     // dev server / build into each example's .memoized/ directory).
     "paths": {
+      "#server/*": ["./examples/fullstack/server/*"],
       "#server-functions": ["./examples/fullstack/.memoized/server-functions.d.ts"]
     },
     "allowImportingTsExtensions": true,
@@ -43,7 +44,13 @@
     "tsBuildInfoFile": "./.cache/tsconfig.tsbuildinfo"
   },
 
-  "include": ["packages/*/src", "examples", "bench/router", "globals.d.ts"],
+  "include": [
+    "packages/*/src",
+    "examples",
+    "examples/fullstack/.memoized/**/*.d.ts",
+    "bench/router",
+    "globals.d.ts"
+  ],
   "exclude": [
     "**/dist",
     "**/generated",

@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     memoizedDom({
-      entries: 'src/main.ts',
+      clientEntry: 'src/main.ts',
     }),
   ],
 });

@@ -1,6 +1,6 @@
 # Fullstack demo
 
-One small application exercising the whole `defineServer` layer: middleware,
+One small application exercising the `serve()` application layer: middleware,
 API routes with method dispatch and prefix-group protection, server functions
 with their own middleware, and colorless SSR data through the in-memory
 dispatch bridge.
@@ -17,6 +17,8 @@ Then open http://localhost:5173/.
 
 | Concern | Where |
 | :--- | :--- |
+| Application-wide locals contract | `server/config/index.ts` |
+| Lazy app-scoped database/service setup | `server/config/services.ts` |
 | Global + typed middleware, request locals | `server.ts` (`logger`, `session`, `createLocals`) |
 | Bare route (implicit GET, JSON normalization) | `server.ts` → `/api/health` |
 | Method-map route (POST-only, 405 otherwise) | `server.ts` → `/api/echo` |

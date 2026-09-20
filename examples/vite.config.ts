@@ -15,7 +15,7 @@ export default defineConfig({
       //   MMD_EXAMPLE=workspace/main.ts bun run example:workspace
       // Defaults to the workspace example; each example also serves its own
       // graph when visited directly (e.g. /hacker-news/).
-      entries: process.env.MMD_EXAMPLE ?? 'workspace/main.ts',
+      clientEntry: process.env.MMD_EXAMPLE ?? 'workspace/main.ts',
     }),
   ],
 });
