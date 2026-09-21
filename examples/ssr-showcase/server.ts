@@ -72,8 +72,8 @@ app.use('/api/*', devDelay({
   '/api/session': 40,
   '/api/stories': 80,
 }));
-app.route('GET', '/api/session', () => SESSION);
-app.route('GET', '/api/stories', () => STORIES);
+app.get('/api/session', () => SESSION);
+app.get('/api/stories', () => STORIES);
 app.ssr(App);
 
 export default app;

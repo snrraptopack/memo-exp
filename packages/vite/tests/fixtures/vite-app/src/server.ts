@@ -2,9 +2,9 @@ import { serve } from '@memoized-dom/server';
 
 const app = serve();
 
-app.route('GET', '/health', () => ({ ok: true }));
+app.get('/health', () => ({ ok: true }));
 
-app.route('GET', '/', () => {
+app.get('/', () => {
   const encoder = new TextEncoder();
   return new Response(new ReadableStream<Uint8Array>({
     start(controller) {

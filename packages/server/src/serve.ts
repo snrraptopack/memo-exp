@@ -21,7 +21,7 @@ import type {
 } from './http-router';
 import type { ServerComponent } from './index';
 
-export type ServerMethod =
+type ServerMethod =
   | 'GET'
   | 'POST'
   | 'PUT'
@@ -90,8 +90,49 @@ export interface ServerApplication<
     ...middleware: readonly ServerMiddleware<TLocals, TPlatform, TServices>[]
   ): this;
 
-  route<TPath extends string>(
-    method: ServerMethod,
+  get<TPath extends string>(
+    path: TPath,
+    ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]
+  ): this;
+  post<TPath extends string>(
+    path: TPath,
+    ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]
+  ): this;
+  put<TPath extends string>(
+    path: TPath,
+    ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]
+  ): this;
+  patch<TPath extends string>(
+    path: TPath,
+    ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]
+  ): this;
+  delete<TPath extends string>(
+    path: TPath,
+    ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]
+  ): this;
+  head<TPath extends string>(
+    path: TPath,
+    ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]
+  ): this;
+  options<TPath extends string>(
     path: TPath,
     ...pipeline: readonly [
       ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
@@ -118,22 +159,6 @@ interface InstallableServerApplication<
     routes: readonly ServerRoute<TLocals, TPlatform, TServices>[],
   ): void;
   installDocumentTemplate(template: string): void;
-}
-
-function method(value: string): ServerMethod {
-  const normalized = value.toUpperCase();
-  switch (normalized) {
-    case 'GET':
-    case 'POST':
-    case 'PUT':
-    case 'PATCH':
-    case 'DELETE':
-    case 'HEAD':
-    case 'OPTIONS':
-      return normalized;
-    default:
-      throw new TypeError(`memo-dom: unsupported HTTP method '${value}'`);
-  }
 }
 
 /**
@@ -227,6 +252,36 @@ export function serve<
     return current;
   };
 
+  const registerRoute = <TPath extends string>(
+    routeMethod: ServerMethod,
+    path: TPath,
+    pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ],
+  ): void => {
+    if (pipeline.length === 0) {
+      throw new TypeError(
+        `memo-dom: ${routeMethod} route '${path}' requires a handler`,
+      );
+    }
+    const routeMiddleware = pipeline.slice(0, -1) as
+      ServerMiddleware<TLocals, TPlatform, TServices>[];
+    const routeHandler = pipeline[pipeline.length - 1]! as
+      ServerRouteHandler<TPath, TLocals, TPlatform, TServices>;
+    routes.push({
+      method: routeMethod,
+      path: validateRoutePattern(path),
+      middleware: Object.freeze(routeMiddleware),
+      handler: routeHandler as ServerRoute<
+        TLocals,
+        TPlatform,
+        TServices
+      >['handler'],
+    });
+    invalidate();
+  };
+
   const application: InstallableServerApplication<
     TLocals,
     TPlatform,
@@ -257,34 +312,62 @@ export function serve<
       return application;
     },
 
-    route<TPath extends string>(
-      rawMethod: ServerMethod,
+    get<TPath extends string>(
       path: TPath,
       ...pipeline: readonly [
         ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
         handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
       ]
     ) {
-      if (pipeline.length === 0) {
-        throw new TypeError(
-          `memo-dom: route '${path}' requires a handler`,
-        );
-      }
-      const routeMiddleware = pipeline.slice(0, -1) as
-        ServerMiddleware<TLocals, TPlatform, TServices>[];
-      const routeHandler = pipeline[pipeline.length - 1]! as
-        ServerRouteHandler<TPath, TLocals, TPlatform, TServices>;
-      routes.push({
-        method: method(rawMethod),
-        path: validateRoutePattern(path),
-        middleware: Object.freeze(routeMiddleware),
-        handler: routeHandler as ServerRoute<
-          TLocals,
-          TPlatform,
-          TServices
-        >['handler'],
-      });
-      invalidate();
+      registerRoute('GET', path, pipeline);
+      return application;
+    },
+
+    post<TPath extends string>(path: TPath, ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]) {
+      registerRoute('POST', path, pipeline);
+      return application;
+    },
+
+    put<TPath extends string>(path: TPath, ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]) {
+      registerRoute('PUT', path, pipeline);
+      return application;
+    },
+
+    patch<TPath extends string>(path: TPath, ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]) {
+      registerRoute('PATCH', path, pipeline);
+      return application;
+    },
+
+    delete<TPath extends string>(path: TPath, ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]) {
+      registerRoute('DELETE', path, pipeline);
+      return application;
+    },
+
+    head<TPath extends string>(path: TPath, ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]) {
+      registerRoute('HEAD', path, pipeline);
+      return application;
+    },
+
+    options<TPath extends string>(path: TPath, ...pipeline: readonly [
+      ...middleware: ServerMiddleware<TLocals, TPlatform, TServices>[],
+      handler: ServerRouteHandler<TPath, TLocals, TPlatform, TServices>,
+    ]) {
+      registerRoute('OPTIONS', path, pipeline);
       return application;
     },
 

@@ -361,7 +361,7 @@ const app = serve({
 
 app.use(logger, session);
 
-app.route('GET', '/api/health', () => ({ ok: true }));
+app.get('/api/health', () => ({ ok: true }));
 
 app.ssr(App);
 
@@ -470,8 +470,7 @@ app.use('/api/*', apiLogger);
 Route-local middleware is placed before the final handler:
 
 ```ts
-app.route(
-  'PATCH',
+app.patch(
   '/api/stories/:id',
   requireUser,
   updateStoryRoute,
@@ -534,14 +533,13 @@ Small applications and application-level endpoints can be registered from the
 server entry:
 
 ```ts
-app.route('GET', '/api/health', () => ({ ok: true }));
+app.get('/api/health', () => ({ ok: true }));
 
-app.route('GET', '/api/stories/:id', ({ params }) => {
+app.get('/api/stories/:id', ({ params }) => {
   return readStory(params.id);
 });
 
-app.route(
-  'PATCH',
+app.patch(
   '/api/stories/:id',
   requireUserMiddleware,
   async ({ params, request }) => {
@@ -646,8 +644,9 @@ filename-specific inference in plain `tsc` would require either repeating the
 path in source or importing a generated per-file type. This design chooses the
 compiler/language-service behavior and keeps authored route modules plain.
 
-Programmatic `app.route()` does not have this limitation because its route
-pattern is a literal in the same TypeScript expression.
+Programmatic `app.get()`, `app.post()`, and other verb methods do not have this
+limitation because their route pattern is a literal in the same TypeScript
+expression.
 
 ## 8. Server functions stay colorless
 
@@ -853,7 +852,8 @@ explicit runtime validation where it does not.
   application;
 - `serve()`, `ServerContext`, `ServerMiddleware`, and `getServerContext()` use
   that registered contract through normal `@memoized-dom/server` imports;
-- literal `app.route()` paths infer their parameter object;
+- literal `app.get()`, `app.post()`, and other verb-method paths infer their
+  parameter object;
 - middleware and handler context types agree;
 - server-function calls preserve exact parameter and return types;
 - `#server-functions` exposes colorless `ResolvedValue<T>` results;
@@ -940,8 +940,8 @@ they already satisfy the new contract.
    single application registration from `server/config/index.ts`.
 2. Implement `serve()` as a composition facade over the current server
    router and rendering machinery.
-3. Let `app.use()`, `app.route()`, and `app.ssr()` produce the internal route,
-   middleware, and fallback definitions already consumed by the router.
+3. Let `app.use()`, the HTTP verb methods, and `app.ssr()` produce the internal
+   route, middleware, and fallback definitions already consumed by the router.
 4. Merge the current compiler plugin and fullstack development plugin behind
    `memoizedDom({ clientEntry, serverEntry, server })`, then remove the
    `memoizedDomFullstack()` export.

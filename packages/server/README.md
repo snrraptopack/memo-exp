@@ -46,8 +46,8 @@ const app = serve({
 app.use(logger);
 app.use('/api/*', apiMiddleware);
 
-app.route('GET', '/api/health', () => ({ ok: true }));
-app.route('GET', '/api/stories/:id', ({ params }) => {
+app.get('/api/health', () => ({ ok: true }));
+app.get('/api/stories/:id', ({ params }) => {
   return readStory(params.id);
 });
 
@@ -61,6 +61,11 @@ export default app;
 development; other adapters can expose it through Bun, Node, or a worker host.
 The fullstack Vite integration supplies the transformed HTML document used by
 registered SSR roots.
+
+HTTP endpoints use `app.get()`, `app.post()`, `app.put()`, `app.patch()`,
+`app.delete()`, `app.head()`, and `app.options()`. Literal paths preserve exact
+parameter inference, and middleware may precede the final handler on every
+verb method.
 
 ### Middleware
 
@@ -78,7 +83,7 @@ Global middleware uses `app.use(middleware)`. Path middleware uses
 handler:
 
 ```ts
-app.route('PATCH', '/api/stories/:id', requireUser, async (context) => {
+app.patch('/api/stories/:id', requireUser, async (context) => {
   const input: unknown = await context.request.json();
   return updateStory(context.params.id, parseStoryPatch(input));
 });

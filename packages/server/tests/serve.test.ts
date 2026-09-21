@@ -61,7 +61,7 @@ describe('serve', () => {
     });
     app.use(logger);
     app.use('/api/*', api);
-    app.route('GET', '/api/stories/:id', local, (context) => {
+    app.get('/api/stories/:id', local, (context) => {
       return {
         id: context.params.id,
         requestId: context.locals.requestId,
@@ -86,6 +86,33 @@ describe('serve', () => {
       'api:after',
       'global:after:200',
     ]);
+  });
+
+  it('registers every supported HTTP verb through its named method', async () => {
+    const app = serve();
+
+    expect(app.get('/verbs', () => 'GET')).toBe(app);
+    expect(app.post('/verbs', () => 'POST')).toBe(app);
+    expect(app.put('/verbs', () => 'PUT')).toBe(app);
+    expect(app.patch('/verbs', () => 'PATCH')).toBe(app);
+    expect(app.delete('/verbs', () => 'DELETE')).toBe(app);
+    expect(app.head('/verbs', () => new Response(null, {
+      headers: { 'x-route-method': 'HEAD' },
+    }))).toBe(app);
+    expect(app.options('/verbs', () => 'OPTIONS')).toBe(app);
+
+    for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+      const response = await app.fetch(new Request('https://app.test/verbs', {
+        method,
+      }));
+      expect(await response.text()).toBe(method);
+    }
+
+    const head = await app.fetch(new Request('https://app.test/verbs', {
+      method: 'HEAD',
+    }));
+    expect(head.headers.get('x-route-method')).toBe('HEAD');
+    expect(await head.text()).toBe('');
   });
 
   it('installs generated server functions into the same request pipeline', async () => {
@@ -128,7 +155,7 @@ describe('serve', () => {
       createLocals: () => ({ requestId: crypto.randomUUID() }),
       createServices,
     });
-    app.route('GET', '/api/service', context => ({
+    app.get('/api/service', context => ({
       database: context.services.database.name,
       activeDatabase: getServerContext<Locals, unknown, Services>()
         .services.database.name,

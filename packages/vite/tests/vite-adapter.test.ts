@@ -594,7 +594,7 @@ describe('Vite 8 adapter', () => {
     await writeFile(resolve(root, 'src/server.ts'), `
       import { serve } from '@memoized-dom/server';
       const app = serve();
-      app.route('GET', '/health', () => ({ ok: true }));
+      app.get('/health', () => ({ ok: true }));
       export default app;
     `);
 
@@ -651,7 +651,7 @@ describe('Vite 8 adapter', () => {
       import { serve } from '@memoized-dom/server';
       import { databaseUrl } from '#server/db';
       const app = serve();
-      app.route('GET', '/health', () => ({ ok: true, databaseUrl }));
+      app.get('/health', () => ({ ok: true, databaseUrl }));
       export default app;
     `);
 

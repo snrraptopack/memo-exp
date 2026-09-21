@@ -39,7 +39,7 @@ const app = serve({
   createLocals: () => ({ requestId: crypto.randomUUID() }),
 });
 
-app.route('GET', '/api/health', () => ({ ok: true }));
+app.get('/api/health', () => ({ ok: true }));
 app.ssr(App);
 
 export default app;

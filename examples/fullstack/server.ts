@@ -36,15 +36,15 @@ const app = serve({
 app.use(logger, session);
 app.use('/api/admin/*', requireAdmin);
 
-app.route('GET', '/api/health', context => ({
+app.get('/api/health', context => ({
   ok: context.services.database.status() === 'ready',
   database: context.services.database.name,
 }));
-app.route('POST', '/api/echo', context => ({
+app.post('/api/echo', context => ({
   echoed: context.url.pathname,
   requestId: context.locals.requestId,
 }));
-app.route('GET', '/api/admin/stats', context => ({
+app.get('/api/admin/stats', context => ({
   admin: context.locals.user ?? 'anonymous',
   requestId: context.locals.requestId,
 }));

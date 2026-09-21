@@ -20,8 +20,8 @@ Then open http://localhost:5173/.
 | Application-wide locals contract | `server/config/index.ts` |
 | Lazy app-scoped database/service setup | `server/config/services.ts` |
 | Global + typed middleware, request locals | `server.ts` (`logger`, `session`, `createLocals`) |
-| Bare route (implicit GET, JSON normalization) | `server.ts` → `/api/health` |
-| Method-map route (POST-only, 405 otherwise) | `server.ts` → `/api/echo` |
+| Typed GET route with JSON normalization | `server.ts` → `/api/health` |
+| Typed POST route (405 for other methods) | `server.ts` → `/api/echo` |
 | Prefix-group protection | `server.ts` → `/api/admin/*` |
 | Server functions + module middleware + `getServerContext()` | `server/functions/stories.ts` |
 | Colorless module source (SSR-settled, payload-hydrated) | `App.tsx` → `stories` |

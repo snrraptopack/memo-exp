@@ -568,7 +568,6 @@ export {
   getServerContext,
   type ServeOptions,
   type ServerApplication,
-  type ServerMethod,
   type ServerRouteContext,
   type ServerRouteHandler,
   type ServerRouteParams,
