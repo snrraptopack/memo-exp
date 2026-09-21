@@ -1,3 +1,4 @@
+import { $routed } from '../src';
 import { createRouteRuntime } from '../src/internal';
 
 const runtime = createRouteRuntime();
@@ -28,3 +29,18 @@ runtime.navigate('/users/:userId', {
 runtime.navigate('/docs/*');
 
 runtime.dispose();
+
+const prepared = $routed(({ state, params, url, query, request, signal }) => {
+  void params.reportId;
+  void url.pathname;
+  void query.get('tab');
+  void request.method;
+  void signal.aborted;
+
+  // @ts-expect-error Cache state is not a second route context.
+  void state.params;
+
+  return Promise.resolve({ title: 'Prepared report' });
+});
+
+void prepared.title;

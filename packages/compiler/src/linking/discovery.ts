@@ -34,6 +34,7 @@ import { isRenderPropReference } from '../components/children';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { compilerError } from '../errors';
 import type { CompilerRouteDefinition } from '../router';
+import { analyzeRoutedPreparations } from '../routed';
 import { compilerOptions } from './options';
 import type {
   CompileModulesOptions,
@@ -550,6 +551,7 @@ export function analyzeManifest(
           ),
           components: analyzedComponentDeclarations(entry.id, ctx),
           componentUsages: analyzedComponentUsages(ctx),
+          routedPreparations: analyzeRoutedPreparations(ctx, compilerPath),
           readers: Object.fromEntries(
             [...ctx.readers.entries()]
               .sort(([left], [right]) => left.localeCompare(right))
@@ -742,6 +744,7 @@ export function discoverManifest(
           ),
           components: [],
           componentUsages: [],
+          routedPreparations: [],
           readers: {},
         };
   if (manifest === undefined) {

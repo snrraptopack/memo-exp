@@ -51,6 +51,7 @@ import {
 import {
   routeManifestStatements,
 } from './router';
+import { analyzeRoutedPreparations } from './routed';
 import {
   rewriteTransparentDataReads,
 } from './data-sources';
@@ -258,6 +259,7 @@ function prepareProgram(
   programPath: ProgramTransformPath,
 ): void {
   prepareProgramAnalysis(ctx, programPath);
+  analyzeRoutedPreparations(ctx, programPath);
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
   transformSharedHelperCallbacks(ctx, programPath);

@@ -2,6 +2,7 @@ import type * as t from '../ast/compiler-types';
 import type { AstComment, BaseNode, EstreeFrontend } from '../ast';
 import type { ComponentGraphNode } from '../component-linker';
 import type { ComponentExportInfo } from '../components/manifest';
+import type { CompilerRoutedPreparation } from '../routed';
 import type {
   ParameterWrite,
   MemoDomOptions,
@@ -83,6 +84,7 @@ export interface ModuleManifest {
   mounts: string[];
   components: ComponentGraphNode[];
   componentUsages: ComponentPropUsage[];
+  routedPreparations: CompilerRoutedPreparation[];
   readers: Record<string, string[]>;
 }
 

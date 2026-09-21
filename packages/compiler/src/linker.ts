@@ -34,6 +34,7 @@ import {
   validateCompilerRouteGraph,
   type CompilerRouteDefinition,
 } from './router';
+import type { CompilerRoutedPreparation } from './routed';
 import { compilerError } from './errors';
 import type {
   CompileModulesOptions,
@@ -82,6 +83,8 @@ export interface CompiledModuleMetadata {
   stateExports: CompiledStateExport[];
   /** Fixed-point function summaries exposed for evaluation and tooling. */
   functionExports: CompiledFunctionExport[];
+  /** Compiler-extracted route preparation sites owned by this module. */
+  routedPreparations: CompilerRoutedPreparation[];
   /** Canonical read key -> statically selected runtime entity patterns. */
   readers: Record<string, string[]>;
 }
@@ -361,6 +364,10 @@ function compileLinkedModules(
           unbounded: summary.unbounded,
         }))
         .sort((left, right) => left.exported.localeCompare(right.exported)),
+      routedPreparations: manifest.routedPreparations.map((preparation) => ({
+        ...preparation,
+        contextFields: [...preparation.contextFields],
+      })),
       readers: Object.fromEntries(
         Object.entries(manifest.readers).map(([key, patterns]) => [
           key,

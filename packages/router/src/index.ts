@@ -1,8 +1,10 @@
 import type {
   NavigateArguments,
   RelativeNavigateArguments,
+  RouteRedirect,
   RouteNavigationBlocker,
   RouteNavigationListener,
+  RoutedPreparation,
 } from './types';
 import {
   activeRoute,
@@ -12,6 +14,23 @@ import {
 } from './active-runtime';
 
 export const route = activeRoute;
+
+/**
+ * Compiler-owned route preparation intrinsic.
+ *
+ * Authored calls are extracted before client emission. Reaching this fallback
+ * means the source was executed without Memoized DOM route preparation
+ * lowering; executing the callback here would run server-capable code in the
+ * wrong phase and after navigation commitment.
+ */
+export function $routed<TResult>(
+  _preparation: RoutedPreparation<TResult>,
+): Exclude<Awaited<TResult>, RouteRedirect> {
+  throw new Error(
+    'memo-dom: $routed() requires compiler route-preparation lowering',
+  );
+}
+
 export function navigate<Path extends string>(
   pattern: Path,
   ...arguments_: NavigateArguments<Path>
@@ -102,6 +121,13 @@ export type {
   RouteQueryValue,
   RouteSnapshot,
   RouteState,
+  RoutedCacheState,
+  RoutedContext,
+  RoutedPreparation,
+  RoutedTypeRegistry,
+  RegisteredRoutedLocals,
+  RegisteredRoutedPlatform,
+  RegisteredRoutedServices,
   RouteResolver,
   RouteSelectionEquality,
   RouteSelectionListener,

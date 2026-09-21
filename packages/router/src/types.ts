@@ -103,6 +103,80 @@ export interface RouteState {
   readonly signal: AbortSignal;
 }
 
+/**
+ * Application-owned server types available to extracted `$routed`
+ * preparations. The Vite integration augments this registry from the
+ * application's server config without making the router depend on the server
+ * package.
+ */
+export interface RoutedTypeRegistry {}
+
+type RegisteredRoutedApplication = RoutedTypeRegistry extends {
+  application: infer TApplication;
+}
+  ? TApplication
+  : Record<string, never>;
+
+export type RegisteredRoutedLocals = RegisteredRoutedApplication extends {
+  locals: infer TLocals extends object;
+}
+  ? TLocals
+  : Record<string, never>;
+
+export type RegisteredRoutedPlatform = RegisteredRoutedApplication extends {
+  platform?: infer TPlatform;
+}
+  ? TPlatform
+  : unknown;
+
+export type RegisteredRoutedServices = RegisteredRoutedApplication extends {
+  services: infer TServices extends object;
+}
+  ? TServices
+  : Record<string, never>;
+
+/**
+ * Route-data cache state reserved for `$routed` preparation.
+ *
+ * Its operations are deliberately not public yet. Adding cache members here
+ * must follow the route cache identity/freshness design; this object is not a
+ * second route context.
+ */
+export interface RoutedCacheState {}
+
+/** Context supplied to a compiler-extracted `$routed` preparation. */
+export interface RoutedContext<
+  TParams extends Readonly<Record<string, string>> = Readonly<
+    Record<string, string>
+  >,
+  TLocals extends object = RegisteredRoutedLocals,
+  TPlatform = RegisteredRoutedPlatform,
+  TServices extends object = RegisteredRoutedServices,
+> {
+  /** Route-level data cache state; URL and server fields are its siblings. */
+  readonly state: RoutedCacheState;
+  readonly params: TParams;
+  readonly url: URL;
+  readonly query: RouteQuery;
+  readonly request: Request;
+  readonly locals: TLocals;
+  readonly platform: TPlatform | undefined;
+  readonly services: TServices;
+  readonly signal: AbortSignal;
+}
+
+export type RoutedPreparation<
+  TResult,
+  TParams extends Readonly<Record<string, string>> = Readonly<
+    Record<string, string>
+  >,
+  TLocals extends object = RegisteredRoutedLocals,
+  TPlatform = RegisteredRoutedPlatform,
+  TServices extends object = RegisteredRoutedServices,
+> = (
+  context: RoutedContext<TParams, TLocals, TPlatform, TServices>,
+) => TResult;
+
 export interface NavigateOptions<Path extends string = string> {
   readonly params?: RouteParams<Path>;
   readonly query?: RouteQueryInput;

@@ -53,4 +53,5 @@ export {
   type ServerFunctionParameter,
   type ServerFunctionQueryKind,
 } from './server-functions';
+export type { CompilerRoutedPreparation } from './routed';
 export type { ExternalReactiveSourceDefinition } from './context';
