@@ -33,6 +33,13 @@ import {
   runWithRouteRuntime,
 } from '@memoized-dom/router';
 import {
+  prepareInitialRoutedRuntime,
+  RoutedPreparationRedirectError,
+  serializeRoutedPreparationState,
+  type RoutedServerContext,
+  type SerializedRoutedPreparationState,
+} from '@memoized-dom/router/internal';
+import {
   createDataRuntime,
   setActiveDataRuntime,
   runWithDataRuntime,
@@ -42,6 +49,7 @@ import type { SerializedDataState } from '@memoized-dom/data';
 export interface RenderPayload {
   version: 1;
   state?: SerializedDataState;
+  routed?: SerializedRoutedPreparationState;
 }
 
 export interface RenderResult {
@@ -76,6 +84,8 @@ export interface RenderOptions {
    * implementation for tests.
    */
   fetch?: typeof globalThis.fetch;
+  /** Request-owned capabilities supplied by the full-stack application. */
+  routedContext?: RoutedServerContext;
   /**
    * Serialize runtime structural anchors (conditional `when:`, list `list:`,
    * and future hydration markers) into the output HTML. These comment
@@ -102,6 +112,32 @@ export interface RenderedDom {
 }
 
 let renderSequence = 0;
+
+async function prepareInitialRoute(
+  routeRuntime: ReturnType<typeof createRouteRuntime>,
+  options: RenderOptions,
+): Promise<void> {
+  const outcome = await prepareInitialRoutedRuntime(
+    routeRuntime,
+    options.routedContext,
+  );
+  if (outcome.kind === 'redirect') {
+    throw new RoutedPreparationRedirectError(outcome.redirect);
+  }
+}
+
+function renderPayload(
+  dataRuntime: ReturnType<typeof createDataRuntime>,
+  routeRuntime: ReturnType<typeof createRouteRuntime>,
+): RenderPayload {
+  const state = dataRuntime.serializeState();
+  const routed = serializeRoutedPreparationState(routeRuntime);
+  return {
+    version: 1,
+    ...(state.sources.length > 0 ? { state } : {}),
+    ...(routed === undefined ? {} : { routed }),
+  };
+}
 
 function parseServerDocument(
   injected?: DocumentLike,
@@ -258,6 +294,7 @@ export async function renderWithDomAsync(
     runWithDataRuntime(dataRuntime, () =>
       runWithApplicationRuntime(runtime, async () => {
         try {
+          await prepareInitialRoute(routeRuntime, options);
           const root = component(rootId, null);
           if (options.mode === 'resolve') {
             await dataRuntime.settle(options.timeout ?? 5000);
@@ -399,9 +436,6 @@ export async function renderToStringAsync(
   component: ServerComponent,
   options: RenderOptions = {},
 ): Promise<string> {
-  if (options.mode !== 'resolve') {
-    return renderToString(component, options);
-  }
   const stringDoc = new StringDocument();
   const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
     mode: 'server-string',
@@ -422,8 +456,11 @@ export async function renderToStringAsync(
       runWithApplicationRuntime(runtime, async () => {
         const rootId = 'App';
         try {
+          await prepareInitialRoute(routeRuntime, options);
           const root = component(rootId, null) as unknown as StringRenderableNode;
-          await dataRuntime.settle(options.timeout ?? 5000);
+          if (options.mode === 'resolve') {
+            await dataRuntime.settle(options.timeout ?? 5000);
+          }
           let body = root.toString(options.markers === true);
           if (options.markers === true) {
             body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
@@ -525,6 +562,7 @@ export async function renderToResultAsync(
       runWithApplicationRuntime(runtime, async () => {
         const rootId = 'App';
         try {
+          await prepareInitialRoute(routeRuntime, options);
           const root = component(rootId, null) as unknown as StringRenderableNode;
 
           if (options.mode === 'resolve') {
@@ -532,8 +570,7 @@ export async function renderToResultAsync(
           }
 
           let body = root.toString(options.markers === true);
-          const state = dataRuntime.serializeState();
-          const payload: RenderPayload = { version: 1, ...(state.sources.length > 0 ? { state } : {}) };
+          const payload = renderPayload(dataRuntime, routeRuntime);
           if (options.markers === true) {
             body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
           }

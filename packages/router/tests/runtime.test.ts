@@ -5,6 +5,8 @@ import {
   redirectRoute,
   supportsNavigationAPI,
   registerRoutedPreparation,
+  restoreRoutedPreparationState,
+  serializeRoutedPreparationState,
 } from '../src/internal';
 import type {
   NavigationController,
@@ -98,6 +100,89 @@ describe('route runtime', () => {
     runtime.dispose();
   });
 
+  it('retains the plain routed state object across visits and transport', async () => {
+    const visits: number[] = [];
+    registerRoutedPreparation({
+      id: 'persistent-route-state',
+      server: false,
+      prepare: context => {
+        const next = Number(context.state.visits ?? 0) + 1;
+        context.state.visits = next;
+        context.state.localOnly = () => 'not transported';
+        visits.push(next);
+        return { visits: next };
+      },
+    });
+    const routes = [
+      {
+        id: 'stateful',
+        pattern: '/stateful',
+        metadata: { preparations: ['persistent-route-state'] },
+      },
+      { id: 'elsewhere', pattern: '/elsewhere' },
+    ] as const;
+    const runtime = createRouteRuntime({ environment: {}, routes });
+
+    const first = runtime.navigate('/stateful');
+    if (first.status !== 'preparing') throw new Error('expected preparation');
+    await first.finished;
+    runtime.navigate('/elsewhere');
+    const second = runtime.navigate('/stateful');
+    if (second.status !== 'preparing') throw new Error('expected preparation');
+    await second.finished;
+
+    expect(visits).toEqual([1, 2]);
+    const serialized = serializeRoutedPreparationState(runtime)!;
+    expect(serialized.entries[0]).toMatchObject({
+      data: { visits: 2 },
+      state: { visits: 2 },
+    });
+    expect(serialized.entries[0]!.state).not.toHaveProperty('localOnly');
+
+    const adopted = createRouteRuntime({ environment: {}, routes });
+    restoreRoutedPreparationState(adopted, serialized);
+    expect(serializeRoutedPreparationState(adopted)).toEqual(serialized);
+    runtime.dispose();
+    adopted.dispose();
+  });
+
+  it('publishes retry through the existing error navigation event', async () => {
+    registerRoutedPreparation({
+      id: 'retry-route-data',
+      server: false,
+      prepare: context => {
+        const attempts = Number(context.state.attempts ?? 0) + 1;
+        context.state.attempts = attempts;
+        if (attempts === 1) throw new Error('temporary failure');
+        return { attempts };
+      },
+    });
+    const runtime = createRouteRuntime({
+      environment: {},
+      routes: [{
+        id: 'retry',
+        pattern: '/retry',
+        metadata: { preparations: ['retry-route-data'] },
+      }],
+    });
+    let retry: (() => ReturnType<typeof runtime.navigate>) | undefined;
+    runtime.subscribeNavigation(event => {
+      if (event.phase === 'error') retry = event.retry;
+    });
+
+    const failed = runtime.navigate('/retry');
+    if (failed.status !== 'preparing') throw new Error('expected preparation');
+    await expect(failed.finished).rejects.toThrow('temporary failure');
+    expect(runtime.route.pathname).toBe('/');
+    expect(retry).toBeTypeOf('function');
+
+    const retried = retry!();
+    if (retried.status !== 'preparing') throw new Error('expected preparation');
+    await expect(retried.finished).resolves.toMatchObject({ status: 'completed' });
+    expect(runtime.route.pathname).toBe('/retry');
+    runtime.dispose();
+  });
+
   it('uses the Navigation API as the primary navigation boundary', () => {
     let listener: EventListener | null = null;
     const intercept = vi.fn();
@@ -181,6 +266,56 @@ describe('route runtime', () => {
 
     expect(runtime.route.pathname).toBe('/from-anchor');
     expect(intercept).toHaveBeenCalledOnce();
+    runtime.dispose();
+  });
+
+  it('prepares direct Navigation API destinations before internal commitment', async () => {
+    let listener: EventListener | null = null;
+    let release!: () => void;
+    registerRoutedPreparation({
+      id: 'navigation-api-data',
+      server: false,
+      prepare: () => new Promise<void>(resolve => { release = resolve; }),
+    });
+    const navigation: NavigationController = {
+      addEventListener: (_type, next) => { listener = next; },
+      removeEventListener: () => { listener = null; },
+      navigate: vi.fn(),
+      back: vi.fn(),
+      forward: vi.fn(),
+    };
+    const runtime = createRouteRuntime({
+      environment: {
+        location: window.location,
+        history: window.history,
+        navigation,
+      },
+      routes: [{
+        id: 'prepared',
+        pattern: '/prepared',
+        metadata: { preparations: ['navigation-api-data'] },
+      }],
+    });
+    runtime.connect();
+    const event = Object.assign(new Event('navigate', { cancelable: true }), {
+      canIntercept: true,
+      destination: { url: 'http://localhost:3000/prepared' },
+      downloadRequest: null,
+      hashChange: false,
+      navigationType: 'push',
+      intercept: vi.fn(),
+    }) as NavigationEventLike;
+
+    (listener as EventListener | null)?.(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(runtime.route.pathname).toBe('/');
+
+    release();
+    await vi.waitFor(() => expect(runtime.route.pathname).toBe('/prepared'));
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      'http://localhost:3000/prepared',
+      { history: 'push', state: null },
+    );
     runtime.dispose();
   });
 
@@ -784,6 +919,41 @@ describe('route runtime', () => {
     expect(runtime.back()?.status).toBe('completed');
     expect(runtime.route.pathname).toBe('/first');
     expect(history.location.index).toBe(0);
+    runtime.dispose();
+    history.destroy();
+  });
+
+  it('prepares memory-history traversal before changing its active entry', async () => {
+    let release!: () => void;
+    registerRoutedPreparation({
+      id: 'history-route-data',
+      server: false,
+      prepare: () => new Promise<void>(resolve => { release = resolve; }),
+    });
+    const history = createMemoryRouteHistory({
+      initialEntries: ['/prepared-history', '/current'],
+    });
+    const runtime = createRouteRuntime({
+      routeHistory: history,
+      routes: [
+        {
+          id: 'prepared-history',
+          pattern: '/prepared-history',
+          metadata: { preparations: ['history-route-data'] },
+        },
+        { id: 'current', pattern: '/current' },
+      ],
+    });
+
+    const result = runtime.back();
+    expect(result?.status).toBe('preparing');
+    expect(history.location.index).toBe(1);
+    expect(runtime.route.pathname).toBe('/current');
+    release();
+    if (result?.status !== 'preparing') throw new Error('expected preparation');
+    await result.finished;
+    expect(history.location.index).toBe(0);
+    expect(runtime.route.pathname).toBe('/prepared-history');
     runtime.dispose();
     history.destroy();
   });

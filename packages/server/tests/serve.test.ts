@@ -203,6 +203,59 @@ describe('serve', () => {
     expect(await reportsResponse.text()).toContain('<h1>Reports</h1>');
   });
 
+  it('prepares routed data with request locals and application services before SSR', async () => {
+    type Locals = { user: string | null };
+    type Services = {
+      reports: { find(id: string): { title: string } };
+    };
+    const fixture = await compileFixture('serve-routed', `
+      import { $routed, redirectRoute } from '@memoized-dom/router';
+
+      export function Reports() {
+        const page = $routed(({ state, params, locals, services }) => {
+          if (!locals.user) return redirectRoute('/login');
+          state.visits = Number(state.visits ?? 0) + 1;
+          const report = services.reports.find(params.id);
+          return { title: report.title, user: locals.user, visits: state.visits };
+        });
+        return (
+          <main route="/reports/:id">
+            <h1>{page.title}</h1>
+            <p>{page.user}: {page.visits}</p>
+          </main>
+        );
+      }
+    `, { routedEnvironment: 'server' });
+    const app = serve<Locals, unknown, Services>({
+      createLocals: request => ({
+        user: request.headers.get('authorization'),
+      }),
+      createServices: () => ({
+        reports: { find: id => ({ title: `Report ${id}` }) },
+      }),
+    });
+    app.ssr(fixture.serverModule.Reports);
+    internals(app).installDocumentTemplate(
+      '<!doctype html><body><!--ssr-outlet--></body>',
+    );
+
+    const response = await app.fetch(new Request(
+      'https://app.test/reports/42',
+      { headers: { authorization: 'Ada' } },
+    ));
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).toContain('<h1>Report 42</h1>');
+    expect(html).toContain('<p>Ada: 1</p>');
+    expect(html).toContain('"state":{"visits":1}');
+
+    const redirected = await app.fetch(
+      new Request('https://app.test/reports/42'),
+    );
+    expect(redirected.status).toBe(302);
+    expect(redirected.headers.get('location')).toBe('https://app.test/login');
+  });
+
   it('rejects duplicate SSR fallbacks and ambiguous scoped registrations', () => {
     const app = serve();
     const component = vi.fn();

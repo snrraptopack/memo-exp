@@ -5,6 +5,7 @@
  * same-origin in-memory `$fetch` bridge behind serve().
  */
 import { createStorage } from '@memoized-dom/runtime/server';
+import { RoutedPreparationRedirectError } from '@memoized-dom/router/internal';
 import {
   createServerRouter,
   type RegisteredServerLocals,
@@ -203,7 +204,7 @@ function renderOptions<
   options: ApplicationHandlerOptions<TLocals, TPlatform, TServices>,
   router: ServerRouter<TLocals, TPlatform, TServices>,
 ): Required<Pick<RenderOptions, 'mode' | 'markers' | 'timeout'>> &
-Pick<RenderOptions, 'url' | 'fetch'> {
+Pick<RenderOptions, 'url' | 'fetch' | 'routedContext'> {
   const policy = options.render ?? {};
   return {
     mode: policy.mode ?? 'resolve',
@@ -215,6 +216,7 @@ Pick<RenderOptions, 'url' | 'fetch'> {
       context,
       options.fetch ?? globalThis.fetch,
     ),
+    routedContext: context,
   };
 }
 
@@ -240,28 +242,36 @@ async function renderPage<
   }
 
   const render = renderOptions(context, options, router);
-  if ((options.render?.delivery ?? 'stream') === 'buffer') {
-    const application = render.markers
-      ? await renderToResultAsync(app, render).then(
-          result => result.html + result.scriptTag,
-        )
-      : await renderToStringAsync(app, render);
-    return htmlResponse(template.prefix + application + template.suffix, options.init);
-  }
+  try {
+    if ((options.render?.delivery ?? 'stream') === 'buffer') {
+      const application = render.markers
+        ? await renderToResultAsync(app, render).then(
+            result => result.html + result.scriptTag,
+          )
+        : await renderToStringAsync(app, render);
+      return htmlResponse(template.prefix + application + template.suffix, options.init);
+    }
 
-  const application = prepareRenderToReadableStream(app, {
-    ...render,
-    signal: context.request.signal,
-  });
-  await application.ready;
-  return htmlResponse(
-    composeDocumentStream({
-      prefix: template.prefix,
-      body: application.stream,
-      suffix: template.suffix,
-    }),
-    options.init,
-  );
+    const application = prepareRenderToReadableStream(app, {
+      ...render,
+      signal: context.request.signal,
+    });
+    await application.ready;
+    return htmlResponse(
+      composeDocumentStream({
+        prefix: template.prefix,
+        body: application.stream,
+        suffix: template.suffix,
+      }),
+      options.init,
+    );
+  } catch (error) {
+    if (!(error instanceof RoutedPreparationRedirectError)) throw error;
+    return Response.redirect(
+      new URL(error.redirect.to, context.url),
+      302,
+    );
+  }
 }
 
 /** Build the Web handler from serve()'s normalized application declarations. */

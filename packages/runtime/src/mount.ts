@@ -37,11 +37,32 @@ export interface MountedApplication {
 interface HydrationPayloadDelivery {
   readonly version: 1;
   readonly state?: unknown;
+  readonly routed?: unknown;
 }
 
 interface DataRuntimeBridge {
   restoreState?(state: unknown): void;
   pendingState?: unknown;
+}
+
+interface RouterRuntimeBridge {
+  restoreState?(state: unknown): void;
+  pendingState?: unknown;
+}
+
+const routerRuntimeBridgeKey = Symbol.for(
+  'memoized-dom:router-runtime-bridge',
+);
+
+function routerRuntimeBridge(): RouterRuntimeBridge {
+  const realm = globalThis as unknown as Record<PropertyKey, unknown>;
+  const existing = realm[routerRuntimeBridgeKey];
+  if (typeof existing === 'object' && existing !== null) {
+    return existing as RouterRuntimeBridge;
+  }
+  const created: RouterRuntimeBridge = {};
+  realm[routerRuntimeBridgeKey] = created;
+  return created;
 }
 
 // Factory definitions are build artifacts — process-wide by nature.
@@ -195,17 +216,26 @@ function restorePayload(rootId: string, host: Element): void {
   } catch {
     return;
   }
-  if (payload.state === undefined) return;
-  const data = getExtensionStore<DataRuntimeBridge>(
-    'mmd:data-runtime-active',
-    () => ({}),
-  );
-  if (data.restoreState !== undefined) {
-    data.restoreState(payload.state);
-  } else {
-    // Preserve an early payload until the optional data package registers its
-    // default runtime. Browser bootstrap never has to install one manually.
-    data.pendingState = payload.state;
+  if (payload.state !== undefined) {
+    const data = getExtensionStore<DataRuntimeBridge>(
+      'mmd:data-runtime-active',
+      () => ({}),
+    );
+    if (data.restoreState !== undefined) {
+      data.restoreState(payload.state);
+    } else {
+      // Preserve an early payload until the optional data package registers its
+      // default runtime. Browser bootstrap never has to install one manually.
+      data.pendingState = payload.state;
+    }
+  }
+  if (payload.routed !== undefined) {
+    const router = routerRuntimeBridge();
+    if (router.restoreState !== undefined) {
+      router.restoreState(payload.routed);
+    } else {
+      router.pendingState = payload.routed;
+    }
   }
 }
 

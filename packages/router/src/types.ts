@@ -135,14 +135,10 @@ export type RegisteredRoutedServices = RegisteredRoutedApplication extends {
   ? TServices
   : Record<string, never>;
 
-/**
- * Route-data cache state reserved for `$routed` preparation.
- *
- * Its operations are deliberately not public yet. Adding cache members here
- * must follow the route cache identity/freshness design; this object is not a
- * second route context.
- */
-export interface RoutedCacheState {}
+/** Mutable application-owned bag retained for one `$routed` preparation. */
+export interface RoutedCacheState {
+  [key: string]: unknown;
+}
 
 /** Context supplied to a compiler-extracted `$routed` preparation. */
 export interface RoutedContext<
@@ -260,6 +256,8 @@ export interface RouteNavigationEvent {
   readonly navigation: RouteNavigation;
   readonly redirect?: RouteRedirect;
   readonly error?: unknown;
+  /** Re-run the failed destination preparation. Present only for `error`. */
+  readonly retry?: () => RouteNavigationResult;
 }
 
 export type RouteNavigationListener = (event: RouteNavigationEvent) => void;

@@ -323,15 +323,14 @@ export function ReportPage() {
     services,
     signal,
   }) => {
-    // `state` is the dedicated route-level data cache state. It does not own
-    // params, request context, services, or navigation information.
     if (!locals.user) return redirect('/login');
-
-    return services.reports.loadPage(
+    state.reports ??= {};
+    state.reports[params.reportId] ??= services.reports.loadPage(
       params.reportId,
       locals.user.id,
       { signal },
     );
+    return state.reports[params.reportId];
   });
 
   return (
@@ -364,10 +363,12 @@ $routed(({
 });
 ```
 
-`state` must not grow into a second route context or a bag of unrelated
-framework capabilities. It is also not the navigation transition status
-object; preparing, pending, failure, and supersession belong to the router
-transition. In particular, these are incorrect:
+`state` is a mutable application-owned object retained for that deterministic
+`$routed` preparation ID. The framework does not add cache methods, infer keys,
+or create a different object for each parameter value. Applications can use
+ordinary properties and index by parameters when that is useful. It is not a
+second route context or the navigation transition status. In particular, these
+are incorrect:
 
 ```tsx
 $routed(({ state }) => {
@@ -397,11 +398,11 @@ destination even while the currently committed component tree still observes
 the previous `route` facade. Every preparation context must be isolated across
 SSR requests and concurrent or superseded client transitions.
 
-The exact cache operations exposed by `state` are intentionally not specified
-yet. Cache keys, freshness, invalidation, reuse, revalidation, and persistence
-must be designed together. Until then, examples and implementation must not
-invent members such as `state.params` or treat `state` as generic component or
-history state.
+The same object is reused on later visits within the route runtime. SSR gets a
+request-isolated object. Serializable keys are adopted by the browser during
+hydration; non-serializable keys remain local to the runtime that created them.
+The framework does not invent operations such as `state.key()`,
+`state.freshFor()`, or `state.invalidate()`.
 
 ### Generated route-server-function boundary
 
@@ -756,19 +757,18 @@ These points still require focused design before their implementation phase:
 
 1. The exact semantic route-instance ID encoding.
 2. The hidden context representation passed into reusable route components.
-3. The public transition state shape and whether `completed` becomes
-   `committed`.
+3. Whether the existing navigation result/event surface needs any additional
+   phase after route-module loading is implemented; no `route.transition`
+   object is planned.
 4. The generic availability-boundary syntax and package ownership.
 5. Default pending UI when no boundary is authored.
 6. Whether code prefetch is automatic on intent or explicitly requested.
 7. Contextual parameter typing for components reused under different parameter
    contracts.
 8. The first streaming policy for route-module pending regions.
-9. The exact cache API represented by the `$routed` `state` parameter,
-   including identity, freshness, invalidation, reuse, and revalidation.
-10. Parent/child `$routed` gate ordering and the point at which independent
+9. Parent/child `$routed` gate ordering and the point at which independent
     preparations may begin concurrently.
-11. The public transition result for routed redirect, not-found, preparation
+10. The public transition result for routed redirect, not-found, preparation
     error, retry, and supersession.
 
 ## Implementation order
@@ -784,7 +784,7 @@ These points still require focused design before their implementation phase:
    functions and generate their browser facades.
 9. Add prepare-before-commit transitions for controlled navigation, including
    redirect, not-found, failure, retry, cancellation, and traversal fallback.
-10. Design and implement the route-data cache behind `$routed` `state`.
+10. Retain and transport the plain application-owned `$routed` `state` object.
 11. Add the shared availability-boundary protocol.
 12. Make scroll restoration readiness-aware.
 13. Coordinate SSR loading, payload delivery, module preload, and client

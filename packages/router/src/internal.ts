@@ -17,10 +17,44 @@ import {
 } from './active-runtime';
 import {
   invokeServerRoutedPreparation,
+  prepareInitialRoutedRuntime,
   readRoutedPreparation as readPreparedValue,
   registerRoutedPreparation,
+  restoreRoutedPreparationState,
+  RoutedPreparationRedirectError,
+  serializeRoutedPreparationState,
 } from './preparation';
-export type { RoutedServerContext } from './preparation';
+import type { SerializedRoutedPreparationState } from './preparation';
+export type {
+  RoutedServerContext,
+  SerializedRoutedPreparationState,
+} from './preparation';
+
+interface RouterRuntimeBridge {
+  restoreState?(state: unknown): void;
+  pendingState?: unknown;
+}
+
+const routerRuntimeBridgeKey = Symbol.for(
+  'memoized-dom:router-runtime-bridge',
+);
+const routedBridgeRealm = globalThis as unknown as Record<PropertyKey, unknown>;
+const routedBridgeExisting = routedBridgeRealm[routerRuntimeBridgeKey];
+const routedBridge =
+  typeof routedBridgeExisting === 'object' && routedBridgeExisting !== null
+    ? routedBridgeExisting as RouterRuntimeBridge
+    : {};
+routedBridgeRealm[routerRuntimeBridgeKey] = routedBridge;
+routedBridge.restoreState = state => {
+  restoreRoutedPreparationState(
+    getActiveRouteRuntime(),
+    state as SerializedRoutedPreparationState,
+  );
+};
+if (routedBridge.pendingState !== undefined) {
+  routedBridge.restoreState(routedBridge.pendingState);
+  routedBridge.pendingState = undefined;
+}
 
 export const route = activeRoute;
 export const navigateRoute = activeNavigate;
@@ -69,7 +103,14 @@ export function blockRouteNavigation(blocker: Blocker): () => void {
 export const subscribeRouteNavigation = activeSubscribeNavigation;
 export const subscribeRoute = activeSubscribe;
 export const subscribeRouteSelected = activeSubscribeSelected;
-export { invokeServerRoutedPreparation, registerRoutedPreparation };
+export {
+  invokeServerRoutedPreparation,
+  prepareInitialRoutedRuntime,
+  registerRoutedPreparation,
+  restoreRoutedPreparationState,
+  RoutedPreparationRedirectError,
+  serializeRoutedPreparationState,
+};
 export function readRoutedPreparation(id: string): unknown {
   return readPreparedValue(getActiveRouteRuntime(), id);
 }

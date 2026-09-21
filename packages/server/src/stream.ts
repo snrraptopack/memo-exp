@@ -9,6 +9,11 @@ import {
   runWithRouteRuntime,
 } from '@memoized-dom/router';
 import {
+  prepareInitialRoutedRuntime,
+  RoutedPreparationRedirectError,
+  serializeRoutedPreparationState,
+} from '@memoized-dom/router/internal';
+import {
   createDataRuntime,
   runWithDataRuntime,
 } from '@memoized-dom/data';
@@ -88,6 +93,13 @@ function createRenderStream(
         await runWithRouteRuntime(routeRuntime, () =>
           runWithDataRuntime(dataRuntime, () =>
             runWithApplicationRuntime(runtime, async () => {
+              const preparation = await prepareInitialRoutedRuntime(
+                routeRuntime,
+                options.routedContext,
+              );
+              if (preparation.kind === 'redirect') {
+                throw new RoutedPreparationRedirectError(preparation.redirect);
+              }
               const root = component(rootId, null) as unknown as StringRenderableNode;
 
               if (options.mode !== 'shell') {
@@ -102,9 +114,11 @@ function createRenderStream(
               }
 
               const state = dataRuntime.serializeState();
+              const routed = serializeRoutedPreparationState(routeRuntime);
               const payload: RenderPayload = {
                 version: 1,
                 ...(state.sources.length > 0 ? { state } : {}),
+                ...(routed === undefined ? {} : { routed }),
               };
 
               controller.enqueue(encoder.encode(html));

@@ -19,6 +19,8 @@ describe('server HTTP router', () => {
       prepare: context => {
         const services = context.services as { report: string };
         const locals = context.locals as { user: string };
+        context.state.visits = Number(context.state.visits ?? 0) + 1;
+        context.state.serverOnly = () => 'not transported';
         return {
           report: services.report,
           user: locals.user,
@@ -31,6 +33,7 @@ describe('server HTTP router', () => {
       id: 'server-report-preparation',
       href: 'https://app.test/reports/42',
       params: { reportId: '42' },
+      state: { visits: 2 },
     }, {
       request: new Request('https://app.test/_memoized/routed', {
         method: 'POST',
@@ -47,6 +50,7 @@ describe('server HTTP router', () => {
         id: '42',
         method: 'POST',
       },
+      state: { visits: 3 },
     });
   });
 

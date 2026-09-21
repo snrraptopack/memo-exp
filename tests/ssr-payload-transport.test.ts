@@ -13,6 +13,7 @@ const output = join(outDir, 'ssr-payload-transport.compiled.ts');
 const modules = {
   './app.tsx': `
     import { $fetch, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+    import { $routed } from '@memoized-dom/router';
 
     function Skeleton() {
       return <div class="skeleton">Loading...</div>;
@@ -24,8 +25,13 @@ const modules = {
 
     export function App() {
       const user = $fetch('/api/user', { query: { id: 7 } });
+      const page = $routed(({ state }) => {
+        state.visits = Number(state.visits ?? 0) + 1;
+        return { title: 'Prepared route', visits: state.visits };
+      });
       return (
-        <section>
+        <section route="/">
+          <h2>{page.title}: {page.visits}</h2>
           <Group>
             <Pending component={Skeleton} />
             <ErrorArm component={ErrorView} />
@@ -78,6 +84,13 @@ describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
     expect(result.scriptTag).toContain('<script type="application/mmd+json" data-mmd-root="App">');
     expect(result.payload.version).toBe(1);
     expect(result.payload.state).toBeDefined();
+    expect(result.payload.routed).toEqual({
+      version: 1,
+      entries: [expect.objectContaining({
+        data: { title: 'Prepared route', visits: 1 },
+        state: { visits: 1 },
+      })],
+    });
 
     // 2. Client host document contains both the rendered HTML and the embedded JSON channel
     const host = document.createElement('div');
@@ -103,6 +116,7 @@ describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
     // 3. Hydrate with default payload: 'auto'
     const mounted = mount('root', app.App);
     expect(host.querySelector('h1')?.textContent).toBe('Ada Lovelace');
+    expect(host.querySelector('h2')?.textContent).toBe('Prepared route: 1');
 
     mounted.unmount();
     host.remove();

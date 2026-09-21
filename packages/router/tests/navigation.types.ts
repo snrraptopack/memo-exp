@@ -37,8 +37,8 @@ const prepared = $routed(({ state, params, url, query, request, signal }) => {
   void request.method;
   void signal.aborted;
 
-  // @ts-expect-error Cache state is not a second route context.
-  void state.params;
+  state.lastReportId = params.reportId;
+  void state.lastReportId;
 
   return Promise.resolve({ title: 'Prepared report' });
 });

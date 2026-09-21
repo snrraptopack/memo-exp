@@ -867,12 +867,96 @@ export function createRouteRuntime(
       }
       if (prepared.next.href !== destination.href) {
         navigationEvent.preventDefault();
-        commitNavigation(prepared.next, prepared.options);
+        const result = executePreparedNavigation(prepared);
+        if (result.status === 'preparing') void result.finished.catch(() => {});
+        return;
+      }
+      const probe = new AbortController();
+      const destinationMatches = resolveDestination(
+        destination,
+        type,
+        destinationState,
+        probe.signal,
+      );
+      if (hasRoutedPreparations(destinationMatches.matches)) {
+        if (type !== 'pop') {
+          navigationEvent.preventDefault();
+          const result = executePreparedNavigation(prepared);
+          if (result.status === 'preparing') void result.finished.catch(() => {});
+          return;
+        }
+
+        if (activePreparation !== null) {
+          const superseded = activePreparation;
+          activePreparation = null;
+          superseded.abort(
+            new DOMException('Route preparation was superseded', 'AbortError'),
+          );
+        }
+        activePreparation = probe;
         emitNavigation(Object.freeze({
-          phase: 'complete',
+          phase: 'prepare',
           navigation: prepared.navigation,
         }));
+        const traversal = prepareRoutedMatches(runtime, destinationMatches.matches, {
+          href: destination.href,
+          params: destinationMatches.params,
+          signal: probe.signal,
+        }).then(outcome => {
+          if (activePreparation !== probe || probe.signal.aborted) {
+            throw probe.signal.reason ?? new DOMException(
+              'Route preparation was superseded',
+              'AbortError',
+            );
+          }
+          activePreparation = null;
+          if (outcome.kind === 'redirect') {
+            const redirected = outcome.redirect.to instanceof URL
+              ? outcome.redirect.to
+              : applicationURL(resolveRoutePath(
+                  prepared.navigation.to.pathname,
+                  outcome.redirect.to,
+                ));
+            const result = navigateToURL(redirected, {
+              replace: outcome.redirect.replace ?? true,
+              state: outcome.redirect.state ?? null,
+            });
+            return result.status === 'preparing' ? result.finished : result;
+          }
+          setLocation(destination, 'pop', destinationState);
+          emitNavigation(Object.freeze({
+            phase: 'complete',
+            navigation: prepared.navigation,
+          }));
+        }).catch(error => {
+          if (activePreparation === probe) activePreparation = null;
+          if (!probe.signal.aborted) {
+            emitNavigation(Object.freeze({
+              phase: 'error',
+              navigation: prepared.navigation,
+              error,
+              retry: () => navigateToURL(destination, {
+                replace: true,
+                state: destinationState,
+              }),
+            }));
+          }
+          throw error;
+        });
+        navigationEvent.intercept({
+          scroll: 'after-transition',
+          async handler() {
+            await traversal;
+          },
+        });
         return;
+      }
+      if (activePreparation !== null) {
+        const superseded = activePreparation;
+        activePreparation = null;
+        superseded.abort(
+          new DOMException('Route preparation was superseded', 'AbortError'),
+        );
       }
       setLocation(destination, type, destinationState);
       emitNavigation(Object.freeze({
@@ -1202,16 +1286,9 @@ export function createRouteRuntime(
     );
   }
 
-  function navigateToURL(
-    requested: URL,
-    requestedOptions: Pick<NavigateOptions, 'replace' | 'state'>,
+  function executePreparedNavigation(
+    prepared: Extract<ReturnType<typeof prepareNavigation>, { status: 'ready' }>,
   ): RouteNavigationResult {
-    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
-    if (resolving || blocking) {
-      throw new Error('Route resolvers and blockers must not mutate router state');
-    }
-    const prepared = prepareNavigation(requested, requestedOptions);
-    if (prepared.status === 'blocked') return prepared;
     const {
       next,
       options,
@@ -1284,6 +1361,7 @@ export function createRouteRuntime(
             phase: 'error',
             navigation: routeNavigation,
             error,
+            retry: () => navigateToURL(next, options),
           }));
         }
         throw error;
@@ -1304,6 +1382,20 @@ export function createRouteRuntime(
     });
   }
 
+  function navigateToURL(
+    requested: URL,
+    requestedOptions: Pick<NavigateOptions, 'replace' | 'state'>,
+  ): RouteNavigationResult {
+    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
+    if (resolving || blocking) {
+      throw new Error('Route resolvers and blockers must not mutate router state');
+    }
+    const prepared = prepareNavigation(requested, requestedOptions);
+    return prepared.status === 'blocked'
+      ? prepared
+      : executePreparedNavigation(prepared);
+  }
+
   function traverseRouteHistory(delta: -1 | 1): RouteNavigationResult | null {
     if (routeHistory === undefined) return null;
     const target = routeHistory.peek(delta);
@@ -1314,6 +1406,85 @@ export function createRouteRuntime(
       state: target.state,
     }, 'pop');
     if (prepared.status === 'blocked') return prepared;
+
+    const preparation = new AbortController();
+    const destinationMatches = resolveDestination(
+      prepared.next,
+      'pop',
+      target.state,
+      preparation.signal,
+    );
+    if (hasRoutedPreparations(destinationMatches.matches)) {
+      if (activePreparation !== null) {
+        const superseded = activePreparation;
+        activePreparation = null;
+        superseded.abort(
+          new DOMException('Route preparation was superseded', 'AbortError'),
+        );
+      }
+      activePreparation = preparation;
+      emitNavigation(Object.freeze({
+        phase: 'prepare',
+        navigation: prepared.navigation,
+      }));
+      const finished: Promise<RouteNavigationSettledResult> = prepareRoutedMatches(
+        runtime,
+        destinationMatches.matches,
+        {
+          href: prepared.next.href,
+          params: destinationMatches.params,
+          signal: preparation.signal,
+        },
+      ).then(async outcome => {
+        if (activePreparation !== preparation || preparation.signal.aborted) {
+          throw preparation.signal.reason ?? new DOMException(
+            'Route preparation was superseded',
+            'AbortError',
+          );
+        }
+        activePreparation = null;
+        if (outcome.kind === 'redirect') {
+          const redirected = outcome.redirect.to instanceof URL
+            ? outcome.redirect.to
+            : applicationURL(resolveRoutePath(
+                prepared.navigation.to.pathname,
+                outcome.redirect.to,
+              ));
+          const result = navigateToURL(redirected, {
+            replace: outcome.redirect.replace ?? true,
+            state: outcome.redirect.state ?? null,
+          });
+          return result.status === 'preparing' ? await result.finished : result;
+        }
+        routeHistory.go(delta);
+        emitNavigation(Object.freeze({
+          phase: 'complete',
+          navigation: prepared.navigation,
+        }));
+        return Object.freeze({
+          status: 'completed' as const,
+          navigation: prepared.navigation,
+          redirects: prepared.redirects,
+        });
+      }).catch(error => {
+        if (activePreparation === preparation) activePreparation = null;
+        if (!preparation.signal.aborted) {
+          emitNavigation(Object.freeze({
+            phase: 'error',
+            navigation: prepared.navigation,
+            error,
+            retry: () => traverseRouteHistory(delta)!,
+          }));
+        }
+        throw error;
+      });
+      return Object.freeze({
+        status: 'preparing',
+        navigation: prepared.navigation,
+        redirects: prepared.redirects,
+        finished,
+      });
+    }
 
     if (
       prepared.navigation.type === 'pop' &&

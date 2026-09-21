@@ -17,6 +17,7 @@ export function invokeRoutedPreparation(
     readonly id: string;
     readonly href: string;
     readonly params: Readonly<Record<string, string>>;
+    readonly state?: Readonly<Record<string, unknown>>;
   },
   context: RoutedServerContext,
 ): Promise<unknown> {

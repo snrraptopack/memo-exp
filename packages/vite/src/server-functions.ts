@@ -267,7 +267,9 @@ export const serverFunctionRoutes = [...__mmd_function_routes, {
       typeof input !== 'object' || input === null ||
       typeof input.id !== 'string' ||
       typeof input.href !== 'string' ||
-      typeof input.params !== 'object' || input.params === null
+      typeof input.params !== 'object' || input.params === null ||
+      (input.state !== undefined &&
+        (typeof input.state !== 'object' || input.state === null))
     ) {
       return Response.json({ error: 'invalid_routed_preparation_input' }, { status: 400 });
     }
