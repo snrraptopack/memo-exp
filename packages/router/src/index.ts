@@ -112,6 +112,7 @@ export type {
   RouteNavigationLocation,
   RouteNavigationPhase,
   RouteNavigationResult,
+  RouteNavigationSettledResult,
   RouteRedirect,
   RouteParamValue,
   RouteParams,

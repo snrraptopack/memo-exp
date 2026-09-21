@@ -228,6 +228,55 @@ function linkManifestWorklist(
   return manifests;
 }
 
+function routeComponentKey(
+  route: CompilerRouteDefinition,
+  entries: ReadonlyMap<string, ModuleEntry>,
+  manifests: ReadonlyMap<string, ModuleManifest>,
+  options: CompileModulesOptions,
+): string | undefined {
+  if (route.component === undefined) return undefined;
+  const manifest = manifests.get(route.moduleId);
+  const local = manifest?.components.find(
+    component => component.local === route.component,
+  );
+  if (local !== undefined) return local.key;
+  const reference = manifest?.imports.find(ref => ref.local === route.component);
+  if (reference === undefined) return undefined;
+  const target = resolveModule(route.moduleId, reference.source, entries, options);
+  const exported = target === undefined
+    ? undefined
+    : manifests.get(target.id)?.exports[reference.imported];
+  return exported?.type === 'component' ? exported.key : undefined;
+}
+
+function attachRoutedPreparations(
+  routes: readonly CompilerRouteDefinition[],
+  entries: ReadonlyMap<string, ModuleEntry>,
+  manifests: ReadonlyMap<string, ModuleManifest>,
+  options: CompileModulesOptions,
+): CompilerRouteDefinition[] {
+  const preparations = new Map<string, string[]>();
+  for (const [moduleId, manifest] of manifests) {
+    for (const preparation of manifest.routedPreparations) {
+      const key = `${moduleId}#${preparation.component}`;
+      const ids = preparations.get(key) ?? [];
+      ids.push(preparation.id);
+      preparations.set(key, ids);
+    }
+  }
+  return routes.map(route => {
+    const componentKey = routeComponentKey(route, entries, manifests, options);
+    const ids = componentKey === undefined ? undefined : preparations.get(componentKey);
+    return {
+      ...route,
+      ...(componentKey === undefined ? {} : { componentKey }),
+      ...(ids === undefined || ids.length === 0
+        ? {}
+        : { preparations: Object.freeze([...ids]) }),
+    };
+  });
+}
+
 /**
  * Compile a connected set of TS/TSX modules with canonical cross-file state
  * keys. Record keys are source module ids; returned keys are preserved.
@@ -255,7 +304,7 @@ function compileLinkedModules(
     });
   }
 
-  const linkedRoutes = [...entries.values()].flatMap((entry) => {
+  const collectedRoutes = [...entries.values()].flatMap((entry) => {
     try {
       return collectCompilerRoutes(entry.ast, entry.id);
     } catch (error) {
@@ -263,7 +312,7 @@ function compileLinkedModules(
     }
   });
   try {
-    validateCompilerRouteGraph(linkedRoutes);
+    validateCompilerRouteGraph(collectedRoutes);
   } catch (error) {
     throw new Error(`memo-dom: ${(error as Error).message}`);
   }
@@ -279,7 +328,13 @@ function compileLinkedModules(
     discovered,
     options,
     rootId,
-    linkedRoutes,
+    collectedRoutes,
+  );
+  const linkedRoutes = attachRoutedPreparations(
+    collectedRoutes,
+    entries,
+    manifests,
+    options,
   );
   const applicationRoot = resolveApplicationRoot(entries, manifests, options);
   const routeManifestModule =

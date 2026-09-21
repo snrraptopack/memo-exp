@@ -249,19 +249,22 @@ export type RouteNavigationBlocker = (
 
 export type RouteNavigationPhase =
   | 'start'
+  | 'prepare'
   | 'redirect'
   | 'blocked'
+  | 'error'
   | 'complete';
 
 export interface RouteNavigationEvent {
   readonly phase: RouteNavigationPhase;
   readonly navigation: RouteNavigation;
   readonly redirect?: RouteRedirect;
+  readonly error?: unknown;
 }
 
 export type RouteNavigationListener = (event: RouteNavigationEvent) => void;
 
-export type RouteNavigationResult =
+export type RouteNavigationSettledResult =
   | {
       readonly status: 'completed';
       readonly navigation: RouteNavigation;
@@ -271,6 +274,16 @@ export type RouteNavigationResult =
       readonly status: 'blocked';
       readonly navigation: RouteNavigation;
       readonly redirects: number;
+    };
+
+export type RouteNavigationResult =
+  | RouteNavigationSettledResult
+  | {
+      /** Synchronous blockers passed; route preparation is running pre-commit. */
+      readonly status: 'preparing';
+      readonly navigation: RouteNavigation;
+      readonly redirects: number;
+      readonly finished: Promise<RouteNavigationSettledResult>;
     };
 
 export function redirectRoute(

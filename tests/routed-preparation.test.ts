@@ -106,4 +106,114 @@ describe('$routed preparation discovery', () => {
       `,
     })).toThrow(/context does not support a rest binding/);
   });
+
+  it('lowers the component read and omits server callback bodies from client output', () => {
+    const client = compileModules({
+      './App.tsx': `
+        import { $routed } from '@memoized-dom/router';
+
+        export function AdminPage() {
+          const page = $routed(({ params, services }) =>
+            services.admin.load(params.section)
+          );
+          return <h1>{page.title}</h1>;
+        }
+
+        function App() {
+          return <AdminPage route="/admin/:section" />;
+        }
+
+      `,
+    }, { routedEnvironment: 'client' })['./App.tsx']!;
+
+    expect(client).toContain('registerRoutedPreparation');
+    expect(client).toContain('readRoutedPreparation');
+    expect(client).toContain('preparations: ["./App.tsx#routed:AdminPage:0"]');
+    expect(client).not.toContain('services.admin.load');
+
+    const server = compileModules({
+      './App.tsx': `
+        import { $routed } from '@memoized-dom/router';
+        export function AdminPage() {
+          const page = $routed(({ params, services }) =>
+            services.admin.load(params.section)
+          );
+          return <h1>{page.title}</h1>;
+        }
+        function App() { return <AdminPage route="/admin/:section" />; }
+      `,
+    }, { routedEnvironment: 'server' })['./App.tsx']!;
+
+    expect(server).toContain('services.admin.load');
+  });
+
+  it('rejects component-instance captures before hoisting preparation', () => {
+    expect(() => compileModules({
+      './Page.tsx': `
+        import { $routed } from '@memoized-dom/router';
+        export function Page(props: { tenant: string }) {
+          const page = $routed(({ params }) => props.tenant + params.id);
+          return <p>{page}</p>;
+        }
+      `,
+    })).toThrow(/cannot capture component-instance binding 'props'/);
+  });
+
+  it('classifies callback-confined #server imports and erases them from client output', () => {
+    const compiled = compileModulesDetailed({
+      './Page.tsx': `
+        import { $routed } from '@memoized-dom/router';
+        import { reports } from '#server/reports';
+        export function Page() {
+          const page = $routed(({ params }) => reports.load(params.id));
+          return <p>{page.title}</p>;
+        }
+      `,
+    }, { routedEnvironment: 'client' });
+
+    expect(
+      compiled.metadata['./Page.tsx']!.routedPreparations[0],
+    ).toMatchObject({ server: true, contextFields: ['params'] });
+    expect(compiled.output['./Page.tsx']).not.toContain('#server/reports');
+    expect(compiled.output['./Page.tsx']).not.toContain('reports.load');
+  });
+
+  it('attaches preparation IDs through an imported route component callsite', () => {
+    const compiled = compileModules({
+      './App.tsx': `
+        import { ReportPage } from './ReportPage';
+        export function App() {
+          return <ReportPage route="/reports/:reportId" />;
+        }
+      `,
+      './ReportPage.tsx': `
+        import { $routed } from '@memoized-dom/router';
+        export function ReportPage() {
+          const page = $routed(({ params }) => ({ id: params.reportId }));
+          return <p>{page.id}</p>;
+        }
+      `,
+    });
+
+    expect(compiled['./App.tsx']).toContain(
+      'preparations: ["./ReportPage.tsx#routed:ReportPage:0"]',
+    );
+  });
+
+  it('emits the existing data-resource settler for colorless preparation results', () => {
+    const compiled = compileModules({
+      './Page.tsx': `
+        import { $routed } from '@memoized-dom/router';
+        import { $fetch } from '@memoized-dom/data';
+        export function Page() {
+          const page = $routed(({ params }) =>
+            $fetch('/api/reports/' + params.id)
+          );
+          return <p>{page.title}</p>;
+        }
+      `,
+    })['./Page.tsx']!;
+
+    expect(compiled).toContain('settle: _MDD.settleRoutedValue');
+  });
 });

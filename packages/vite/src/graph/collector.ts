@@ -70,6 +70,7 @@ export async function compileGraph(
   hot: boolean,
   requireMount = true,
   serverFunctionBarrelEntries: readonly ServerFunctionBarrelEntry[] = [],
+  routedEnvironment: 'client' | 'server' = 'client',
 ): Promise<CompiledGraph> {
   const sources = new Map<string, string>();
   const sourceIds = new Map<string, string>();
@@ -119,6 +120,12 @@ export async function compileGraph(
     ).program as ParsedProgram;
     for (const reference of valueImports(program)) {
       const { specifier } = reference;
+      // The compiler extracts callback-confined server imports before client
+      // emission. Escaping imports remain in output and are rejected by the
+      // plugin's normal client `#server/*` boundary.
+      if (routedEnvironment === 'client' && specifier.startsWith('#server/')) {
+        continue;
+      }
       const resolved = await context.resolve(specifier, cleanFile, {
         skipSelf: true,
       });
@@ -206,6 +213,7 @@ export async function compileGraph(
     ...(options.moduleStateCells === undefined
       ? {}
       : { moduleStateCells: options.moduleStateCells }),
+    routedEnvironment,
     resolveImport(specifier: string, importer: string) {
       return resolutions.get(resolutionKey(importer, specifier));
     },

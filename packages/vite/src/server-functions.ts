@@ -188,7 +188,7 @@ export async function generateServerFunctionRoutesModule(
   }
 
   const imports = [
-    `import { createServerFunctionRoutes as __mmd_create_routes } from ${JSON.stringify('@memoized-dom/server/router')};`,
+    `import { createServerFunctionRoutes as __mmd_create_routes, invokeRoutedPreparation as __mmd_invoke_routed } from ${JSON.stringify('@memoized-dom/server/router')};`,
   ];
   const aliases = new Map<string, string>();
   discovered.forEach((module, index) => {
@@ -254,9 +254,26 @@ export async function generateServerFunctionRoutesModule(
   return {
     source: `${imports.join('\n')}
 export const serverFunctionManifest = ${JSON.stringify(manifest)};
-export const serverFunctionRoutes = __mmd_create_routes([
+const __mmd_function_routes = __mmd_create_routes([
 ${definitions.join(',\n')}
 ]);
+export const serverFunctionRoutes = [...__mmd_function_routes, {
+  method: 'POST',
+  path: '/_memoized/routed',
+  middleware: [],
+  async handler(context) {
+    const input = await context.request.json();
+    if (
+      typeof input !== 'object' || input === null ||
+      typeof input.id !== 'string' ||
+      typeof input.href !== 'string' ||
+      typeof input.params !== 'object' || input.params === null
+    ) {
+      return Response.json({ error: 'invalid_routed_preparation_input' }, { status: 400 });
+    }
+    return __mmd_invoke_routed(input, context);
+  }
+}];
 `,
     files: discovered.map(module => module.file),
     modules: discovered.map(module => module.metadata),

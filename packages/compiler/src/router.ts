@@ -30,6 +30,11 @@ export interface CompilerRouteDefinition {
   readonly pattern: string;
   readonly fullPattern: string;
   readonly parentId?: string;
+  /** Authored local component associated with this route-bearing region. */
+  readonly component?: string;
+  /** Linker-resolved component identity used to attach route preparation. */
+  readonly componentKey?: string;
+  readonly preparations?: readonly string[];
   readonly line?: number;
   readonly column?: number;
 }
@@ -150,7 +155,31 @@ function collectDefinitionsFromNode(
   const visit = (
     currentNode: BaseNode,
     ancestor: CompilerRouteDefinition | null,
+    ownerComponent: string | null,
   ): void => {
+    let owner = ownerComponent;
+    if (currentNode.type === 'FunctionDeclaration') {
+      const id = childNode(currentNode, 'id');
+      if (
+        id !== null &&
+        astFactory.isIdentifier(id) &&
+        /^[A-Z]/.test(id.name)
+      ) owner = id.name;
+    }
+    if (currentNode.type === 'VariableDeclarator') {
+      const id = childNode(currentNode, 'id');
+      const init = childNode(currentNode, 'init');
+      if (
+        id !== null &&
+        astFactory.isIdentifier(id) &&
+        /^[A-Z]/.test(id.name) &&
+        init !== null &&
+        astFactory.isFunction(init)
+      ) {
+        visit(init, ancestor, id.name);
+        return;
+      }
+    }
     if (currentNode.type === 'JSXElement') {
       const element = currentNode as unknown as t.JSXElement;
       let current = ancestor;
@@ -178,6 +207,10 @@ function collectDefinitionsFromNode(
             pattern,
             fullPattern,
             ...(ancestor === null ? {} : { parentId: ancestor.id }),
+            ...(astFactory.isJSXIdentifier(element.openingElement.name) &&
+              /^[A-Z]/.test(element.openingElement.name.name)
+              ? { component: element.openingElement.name.name }
+              : owner === null ? {} : { component: owner }),
             ...(element.openingElement.loc?.start.line === undefined
               ? {}
               : { line: element.openingElement.loc.start.line }),
@@ -192,16 +225,16 @@ function collectDefinitionsFromNode(
       // and lexical nearest-ancestor routing must agree with this graph-only
       // collection pass used by compileModules/diagnostics.
       for (const attribute of element.openingElement.attributes) {
-        visit(attribute as unknown as BaseNode, current);
+        visit(attribute as unknown as BaseNode, current, owner);
       }
       for (const child of element.children) {
-        visit(child as unknown as BaseNode, current);
+        visit(child as unknown as BaseNode, current, owner);
       }
       return;
     }
     if (currentNode.type === 'JSXFragment') {
       for (const child of childNodes(currentNode, 'children')) {
-        visit(child, ancestor);
+        visit(child, ancestor, owner);
       }
       return;
     }
@@ -210,16 +243,16 @@ function collectDefinitionsFromNode(
       if (Array.isArray(value)) {
         for (const child of value) {
           if (child !== null && typeof child === 'object' && 'type' in child) {
-            visit(child as BaseNode, ancestor);
+            visit(child as BaseNode, ancestor, owner);
           }
         }
       } else if (value !== null && typeof value === 'object' && 'type' in value) {
-        visit(value as BaseNode, ancestor);
+        visit(value as BaseNode, ancestor, owner);
       }
     }
   };
 
-  visit(root, null);
+  visit(root, null, null);
   return definitions;
 }
 
@@ -670,6 +703,23 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
                       astFactory.objectProperty(
                         astFactory.identifier('parentId'),
                         astFactory.stringLiteral(definition.parentId),
+                      ),
+                    ]),
+                ...(definition.preparations === undefined ||
+                  definition.preparations.length === 0
+                  ? []
+                  : [
+                      astFactory.objectProperty(
+                        astFactory.identifier('metadata'),
+                        astFactory.objectExpression([
+                          astFactory.objectProperty(
+                            astFactory.identifier('preparations'),
+                            astFactory.arrayExpression(
+                              definition.preparations.map(id =>
+                                astFactory.stringLiteral(id)),
+                            ),
+                          ),
+                        ]),
                       ),
                     ]),
               ]),

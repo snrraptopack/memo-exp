@@ -58,6 +58,8 @@ export interface MemoDomOptions {
    * Module-state keys are always `<moduleId>#<binding>[.<path>]`.
    */
   moduleId?: string;
+  /** Compiler-owned `$routed` emission target supplied by the host bundler. */
+  routedEnvironment?: 'universal' | 'client' | 'server';
   /**
    * Resolved import metadata supplied by compileModules(). This is public for
    * bundler integrations that perform their own graph/link pass.
@@ -378,6 +380,7 @@ export interface Ctx {
   /** SSR Phase 1.3 lowering: lower reactive module state into request cells. */
   moduleStateCells: boolean;
   moduleId: string;
+  routedEnvironment: 'universal' | 'client' | 'server';
   linkedRoutes: readonly CompilerRouteDefinition[] | null;
   emitRouteManifest: boolean;
   routeElements: WeakMap<t.JSXElement, CompilerRouteElement>;
@@ -694,6 +697,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     hot: opts.hot ?? false,
     moduleStateCells: opts.moduleStateCells ?? false,
     moduleId,
+    routedEnvironment: opts.routedEnvironment ?? 'universal',
     linkedRoutes: opts.linkedRoutes ?? null,
     emitRouteManifest:
       opts.emitRouteManifest ?? opts.linkedRoutes === undefined,

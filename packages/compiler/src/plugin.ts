@@ -259,7 +259,7 @@ function prepareProgram(
   programPath: ProgramTransformPath,
 ): void {
   prepareProgramAnalysis(ctx, programPath);
-  analyzeRoutedPreparations(ctx, programPath);
+  analyzeRoutedPreparations(ctx, programPath, true);
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
   transformSharedHelperCallbacks(ctx, programPath);

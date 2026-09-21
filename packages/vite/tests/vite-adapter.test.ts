@@ -264,6 +264,19 @@ describe('Vite 8 adapter', () => {
     expect(response.headers.get('x-directory')).toBe('yes');
     expect(response.headers.get('x-module')).toBe('must-not-enter-client');
     await expect(response.json()).resolves.toEqual({ id: 9, title: 'Story 9' });
+
+    const invalidPreparation = await router.fetch(new Request(
+      'https://app.test/_memoized/routed',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      },
+    ));
+    expect(invalidPreparation.status).toBe(400);
+    await expect(invalidPreparation.json()).resolves.toEqual({
+      error: 'invalid_routed_preparation_input',
+    });
   }, 30_000);
 
   it('rejects direct UI imports from server-function implementation files', async () => {

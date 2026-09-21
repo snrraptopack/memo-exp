@@ -1041,6 +1041,11 @@ function resourceController<T>(
   return controller as ResourceController<T>;
 }
 
+/** Internal capability check used by cross-runtime availability adapters. */
+export function isFetchResource(value: unknown): value is FetchResource<unknown> {
+  return typeof value === 'object' && value !== null && controllers.has(value);
+}
+
 export function subscribeFetchResource<T>(
   resource: FetchResource<T>,
   listener: ResourceListener<T>,

@@ -2,14 +2,54 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createServerFunctionRoutes,
   createServerRouter,
+  invokeRoutedPreparation,
   type ServerMiddleware,
 } from '../src/http-router';
+import { registerRoutedPreparation } from '@memoized-dom/router/internal';
 
 async function json(response: Response): Promise<unknown> {
   return response.json();
 }
 
 describe('server HTTP router', () => {
+  it('attaches request-owned server capabilities to routed preparation', async () => {
+    registerRoutedPreparation({
+      id: 'server-report-preparation',
+      server: true,
+      prepare: context => {
+        const services = context.services as { report: string };
+        const locals = context.locals as { user: string };
+        return {
+          report: services.report,
+          user: locals.user,
+          id: context.params.reportId,
+          method: context.request.method,
+        };
+      },
+    });
+    const outcome = await invokeRoutedPreparation({
+      id: 'server-report-preparation',
+      href: 'https://app.test/reports/42',
+      params: { reportId: '42' },
+    }, {
+      request: new Request('https://app.test/_memoized/routed', {
+        method: 'POST',
+      }),
+      locals: { user: 'Ada' },
+      services: { report: 'Quarterly' },
+    });
+
+    expect(outcome).toEqual({
+      kind: 'data',
+      data: {
+        report: 'Quarterly',
+        user: 'Ada',
+        id: '42',
+        method: 'POST',
+      },
+    });
+  });
+
   it('mounts named HTTP functions as strict middleware-aware routes', async () => {
     const calls: unknown[][] = [];
     const routeMiddleware = vi.fn(async (_context, next) => {

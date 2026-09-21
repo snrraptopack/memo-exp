@@ -130,6 +130,7 @@ export function memoizedDom(
     context: GraphPluginContext,
     state: AdapterState,
     overrides: ReadonlyMap<string, string> = new Map(),
+    environmentName = 'client',
   ): Promise<void> {
     if (config === undefined) {
       throw new Error(
@@ -146,6 +147,7 @@ export function memoizedDom(
         config.command === 'serve',
         true,
         serverFunctionBarrelEntries,
+        environmentName === 'ssr' ? 'server' : 'client',
       );
     }
     const compilation = state.compiling;
@@ -166,6 +168,7 @@ export function memoizedDom(
     state: AdapterState,
     file: string,
     overrides: ReadonlyMap<string, string> = new Map(),
+    environmentName = 'client',
   ): Promise<void> {
     if (config === undefined) {
       throw new Error(
@@ -183,6 +186,7 @@ export function memoizedDom(
         config.command === 'serve',
         false,
         serverFunctionBarrelEntries,
+        environmentName === 'ssr' ? 'server' : 'client',
       );
     }
     const compilation = state.compiling;
@@ -276,9 +280,14 @@ export function memoizedDom(
 
     if (managed) {
       if (state.compiling === undefined) {
-        await refreshGraph(context, state, new Map([[file, code]]));
+        await refreshGraph(
+          context,
+          state,
+          new Map([[file, code]]),
+          context.environment.name,
+        );
       } else {
-        await refreshGraph(context, state);
+        await refreshGraph(context, state, new Map(), context.environment.name);
       }
       const compiled = state.output.get(file);
       if (compiled === undefined) {
@@ -315,6 +324,7 @@ export function memoizedDom(
         config.command === 'serve',
         false,
         serverFunctionBarrelEntries,
+        context.environment.name === 'ssr' ? 'server' : 'client',
       );
     }
     const compilation = lazy.compiling;
@@ -371,6 +381,8 @@ export function memoizedDom(
       await refreshGraph(
         this as AdapterTransformContext,
         stateFor(this.environment),
+        new Map(),
+        this.environment.name,
       );
     },
     async resolveId(id, importer) {
@@ -483,9 +495,15 @@ export function memoizedDom(
       await finishPendingCompilation(state);
       try {
         if (isPrimary) {
-          await refreshGraph(context, state, overrides);
+          await refreshGraph(context, state, overrides, this.environment.name);
         } else {
-          await refreshLazyGraph(context, state, file, overrides);
+          await refreshLazyGraph(
+            context,
+            state,
+            file,
+            overrides,
+            this.environment.name,
+          );
         }
       } catch (error) {
         state.hotUpdateFailed = true;

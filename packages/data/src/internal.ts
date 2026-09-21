@@ -30,6 +30,7 @@ export {
   resolvedValuesPendingIndex,
   retryResolvedValues,
   runResolvedValuesEffect,
+  settleRoutedValue,
   resolvedValueSnapshot,
   trackResolvedValue,
   throwResolvedValuesError,

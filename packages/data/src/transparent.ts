@@ -3,6 +3,7 @@ import {
   disposeFetchResource,
   fetchResourceOperationId,
   fetchResourceSnapshot,
+  isFetchResource,
   rebindFetchResource,
   rebindFetchResourceFrom,
   subscribeFetchResource,
@@ -437,6 +438,41 @@ export function retryResolvedValues(
   }
   if (retries.length === 0) return Promise.resolve();
   return Promise.all(retries);
+}
+
+/** Settle a compiler-recognized colorless value for route preparation. */
+export function settleRoutedValue(
+  value: unknown,
+  signal: AbortSignal,
+): Promise<unknown> | undefined {
+  if (!isFetchResource(value)) return undefined;
+  const snapshot = fetchResourceSnapshot(value);
+  if (snapshot.status === 'success' && !snapshot.pending && !snapshot.refreshing) {
+    return Promise.resolve(snapshot.data);
+  }
+  if (snapshot.status === 'error' && snapshot.error !== null) {
+    return Promise.reject(snapshot.error);
+  }
+  return new Promise((resolve, reject) => {
+    let unsubscribe = () => {};
+    const onAbort = (): void => {
+      unsubscribe();
+      reject(signal.reason ?? new DOMException('Route preparation aborted', 'AbortError'));
+    };
+    unsubscribe = subscribeFetchResource(value, next => {
+      if (next.status === 'success' && !next.pending && !next.refreshing) {
+        signal.removeEventListener('abort', onAbort);
+        unsubscribe();
+        resolve(next.data);
+      } else if (next.status === 'error' && next.error !== null) {
+        signal.removeEventListener('abort', onAbort);
+        unsubscribe();
+        reject(next.error);
+      }
+    });
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 export function resolvedValueSnapshot<T>(

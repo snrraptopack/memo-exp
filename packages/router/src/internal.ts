@@ -15,6 +15,12 @@ import {
   subscribeNavigation as activeSubscribeNavigation,
   subscribeSelected as activeSubscribeSelected,
 } from './active-runtime';
+import {
+  invokeServerRoutedPreparation,
+  readRoutedPreparation as readPreparedValue,
+  registerRoutedPreparation,
+} from './preparation';
+export type { RoutedServerContext } from './preparation';
 
 export const route = activeRoute;
 export const navigateRoute = activeNavigate;
@@ -36,6 +42,7 @@ export type {
   RouteNavigationEvent,
   RouteNavigationListener,
   RouteNavigationResult,
+  RouteNavigationSettledResult,
   RouteResolver,
 } from './types';
 export { createMemoryRouteHistory } from './history';
@@ -62,6 +69,10 @@ export function blockRouteNavigation(blocker: Blocker): () => void {
 export const subscribeRouteNavigation = activeSubscribeNavigation;
 export const subscribeRoute = activeSubscribe;
 export const subscribeRouteSelected = activeSubscribeSelected;
+export { invokeServerRoutedPreparation, registerRoutedPreparation };
+export function readRoutedPreparation(id: string): unknown {
+  return readPreparedValue(getActiveRouteRuntime(), id);
+}
 
 /** Subscribe to navigation changes without treating subscription setup as one. */
 export function subscribeRouteValue(

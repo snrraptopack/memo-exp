@@ -6,6 +6,22 @@ import {
   validateRoutePatterns,
   type RouteTableMatcher,
 } from '@memoized-dom/router';
+import {
+  invokeServerRoutedPreparation,
+  type RoutedServerContext,
+} from '@memoized-dom/router/internal';
+
+/** Framework route used by compiler-extracted server-backed `$routed` work. */
+export function invokeRoutedPreparation(
+  input: {
+    readonly id: string;
+    readonly href: string;
+    readonly params: Readonly<Record<string, string>>;
+  },
+  context: RoutedServerContext,
+): Promise<unknown> {
+  return invokeServerRoutedPreparation(input, context);
+}
 
 export type ServerHandlerResult = unknown;
 

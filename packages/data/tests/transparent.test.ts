@@ -16,6 +16,7 @@ import {
   readResolvedValue,
   readResolvedValueForRender,
   retryResolvedValues,
+  settleRoutedValue,
 } from '../src/internal';
 
 interface User {
@@ -31,6 +32,23 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe('transparent resolved values', () => {
+  it('settles a colorless value into an honest routed payload', async () => {
+    let finish!: (response: Response) => void;
+    const runtime = createDataRuntime({
+      fetch: (() => new Promise<Response>(resolve => { finish = resolve; })) as typeof fetch,
+    });
+    const resource = runtime.$fetch<User>('/user');
+    const controller = new AbortController();
+    const settled = settleRoutedValue(resource, controller.signal);
+
+    expect(settled).toBeInstanceOf(Promise);
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    finish(json({ id: 1, name: 'Ada' }));
+    await expect(settled).resolves.toEqual({ id: 1, name: 'Ada' });
+    expect(settleRoutedValue({ plain: true }, controller.signal)).toBeUndefined();
+    runtime.clear();
+  });
+
   it('tracks a promise through the same state and value surface', async () => {
     let resolve!: (user: User) => void;
     const promise = new Promise<User>(accept => {

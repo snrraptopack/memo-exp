@@ -4,6 +4,7 @@ import {
   createMemoryRouteHistory,
   redirectRoute,
   supportsNavigationAPI,
+  registerRoutedPreparation,
 } from '../src/internal';
 import type {
   NavigationController,
@@ -28,6 +29,75 @@ beforeEach(() => {
 });
 
 describe('route runtime', () => {
+  it('prepares routed data before committing a controlled navigation', async () => {
+    let release!: (value: { title: string }) => void;
+    const prepared = new Promise<{ title: string }>(resolve => {
+      release = resolve;
+    });
+    registerRoutedPreparation({
+      id: 'report-data',
+      server: false,
+      prepare: context => {
+        expect(context.params).toEqual({ reportId: '42' });
+        expect(context.url.pathname).toBe('/reports/42');
+        return prepared;
+      },
+    });
+    const runtime = createRouteRuntime({
+      environment: {},
+      routes: [{
+        id: 'report',
+        pattern: '/reports/:reportId',
+        metadata: { preparations: ['report-data'] },
+      }],
+    });
+    const phases: string[] = [];
+    runtime.subscribeNavigation(event => phases.push(event.phase));
+
+    const result = runtime.navigate('/reports/:reportId', {
+      params: { reportId: 42 },
+    });
+    expect(result.status).toBe('preparing');
+    expect(runtime.route.pathname).toBe('/');
+    expect(phases).toEqual(['start', 'prepare']);
+
+    release({ title: 'Prepared' });
+    if (result.status !== 'preparing') throw new Error('expected preparation');
+    await expect(result.finished).resolves.toMatchObject({ status: 'completed' });
+    expect(runtime.route.pathname).toBe('/reports/42');
+    expect(phases).toEqual(['start', 'prepare', 'complete']);
+    runtime.dispose();
+  });
+
+  it('does not let a superseded preparation commit over newer navigation', async () => {
+    let release!: () => void;
+    registerRoutedPreparation({
+      id: 'slow-route-data',
+      server: false,
+      prepare: () => new Promise<void>(resolve => { release = resolve; }),
+    });
+    const runtime = createRouteRuntime({
+      environment: {},
+      routes: [
+        {
+          id: 'slow',
+          pattern: '/slow',
+          metadata: { preparations: ['slow-route-data'] },
+        },
+        { id: 'newer', pattern: '/newer' },
+      ],
+    });
+
+    const slow = runtime.navigate('/slow');
+    expect(slow.status).toBe('preparing');
+    expect(runtime.navigate('/newer').status).toBe('completed');
+    release();
+    if (slow.status !== 'preparing') throw new Error('expected preparation');
+    await expect(slow.finished).rejects.toMatchObject({ name: 'AbortError' });
+    expect(runtime.route.pathname).toBe('/newer');
+    runtime.dispose();
+  });
+
   it('uses the Navigation API as the primary navigation boundary', () => {
     let listener: EventListener | null = null;
     const intercept = vi.fn();
