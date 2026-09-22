@@ -3,7 +3,7 @@ import {
   serve,
   type ServerMiddleware,
 } from '@memoized-dom/server';
-import { App } from './App';
+import { Main } from './src/Main.tsx';
 import { createServices } from '#server/config/services';
 
 let sequence = 0;
@@ -49,6 +49,6 @@ app.get('/api/admin/stats', context => ({
   requestId: context.locals.requestId,
 }));
 
-app.ssr(App);
+app.ssr(Main);
 
 export default app;

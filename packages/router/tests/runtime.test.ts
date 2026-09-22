@@ -146,6 +146,60 @@ describe('route runtime', () => {
     adopted.dispose();
   });
 
+  it('sends only JSON-safe state keys to server-backed preparation', async () => {
+    registerRoutedPreparation({
+      id: 'state-transport-boundary',
+      server: false,
+      prepare: context => {
+        context.state.visits = 1;
+        context.state.circular = context.state;
+        return { initialized: true };
+      },
+    });
+    const runtime = createRouteRuntime({
+      environment: {},
+      routes: [
+        {
+          id: 'remote',
+          pattern: '/remote',
+          metadata: { preparations: ['state-transport-boundary'] },
+        },
+        { id: 'elsewhere', pattern: '/elsewhere' },
+      ],
+    });
+    const initialized = runtime.navigate('/remote');
+    if (initialized.status !== 'preparing') {
+      throw new Error('expected preparation');
+    }
+    await initialized.finished;
+    runtime.navigate('/elsewhere');
+
+    registerRoutedPreparation({
+      id: 'state-transport-boundary',
+      server: true,
+    });
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async (_input, init) => {
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          state: { visits: 1 },
+        });
+        return Response.json({
+          kind: 'data',
+          data: { initialized: true },
+          state: { visits: 2 },
+        });
+      },
+    );
+
+    const remote = runtime.navigate('/remote');
+    if (remote.status !== 'preparing') throw new Error('expected preparation');
+    await remote.finished;
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(serializeRoutedPreparationState(runtime)?.entries[0]?.state)
+      .toEqual({ visits: 2 });
+    runtime.dispose();
+  });
+
   it('publishes retry through the existing error navigation event', async () => {
     registerRoutedPreparation({
       id: 'retry-route-data',

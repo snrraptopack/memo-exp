@@ -39,6 +39,8 @@ The repository is a Bun workspace with independent packages:
 |---|---|
 | `@memoized-dom/data` | Standalone browser-first fetch resources, active sharing, actions, validation, and optimistic transactions |
 | `@memoized-dom/runtime` | Dependency-free client registry, regions, lifecycle, and DOM updates; hydration, HMR, and server hosts use explicit subpaths |
+| `@memoized-dom/router` | Compiler-owned route regions, typed navigation, synchronous guards, and pre-commit `$routed` preparation |
+| `@memoized-dom/server` | Typed `serve()` applications, middleware, API routes, services, SSR, streaming, and request isolation |
 | `@memoized-dom/compiler` | Parser-neutral ESTree analysis/linking with swappable Yuku and TSRX frontends |
 | `@memoized-dom/vite` | Vite 8 graph collection, linked transforms, compiler feedback, and component HMR |
 
@@ -106,6 +108,9 @@ export default defineConfig({
 ```
 
 See `packages/vite/README.md` for the adapter and HMR contract.
+See `packages/router/README.md` for route declarations, navigation, and
+`$routed` preparation. See `packages/server/README.md` for the `serve()` and
+SSR contracts.
 
 Run the multi-module todo application through that adapter:
 

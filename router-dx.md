@@ -313,7 +313,7 @@ on the destination route instance, so consuming that result does not require a
 data `Group`.
 
 ```tsx
-import { $routed, redirect } from '@memoized-dom/router';
+import { $routed, redirectRoute } from '@memoized-dom/router';
 
 export function ReportPage() {
   const page = $routed(({
@@ -323,14 +323,13 @@ export function ReportPage() {
     services,
     signal,
   }) => {
-    if (!locals.user) return redirect('/login');
-    state.reports ??= {};
-    state.reports[params.reportId] ??= services.reports.loadPage(
+    if (!locals.user) return redirectRoute('/login');
+    state.lastReportId = params.reportId;
+    return services.reports.loadPage(
       params.reportId,
       locals.user.id,
       { signal },
     );
-    return state.reports[params.reportId];
   });
 
   return (
@@ -424,11 +423,11 @@ This permits co-located route preparation without sending raw server objects
 to the browser:
 
 ```tsx
-import { $routed, redirect } from '@memoized-dom/router';
+import { $routed, redirectRoute } from '@memoized-dom/router';
 
 export function ReportPage() {
   const page = $routed(({ state, params, locals, services }) => {
-    if (!locals.user) return redirect('/login');
+    if (!locals.user) return redirectRoute('/login');
 
     return services.reports.loadPage(params.reportId, locals.user.id);
   });

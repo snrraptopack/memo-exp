@@ -19,6 +19,7 @@
 import { parseHTML } from 'linkedom';
 import {
   createApplicationRuntime,
+  rootFactoryStore,
   runWithApplicationRuntime,
   setActiveApplicationRuntime,
   unregisterSubtree,
@@ -60,6 +61,16 @@ export interface RenderResult {
 
 /** A compiled application root factory: `function App(_id, _parent)`. */
 export type ServerComponent = (id: string, parent: null) => Node;
+
+/**
+ * The hydration root id stamped into markers and the payload channel must match
+ * the client-side root factory id, which the compiler derives from the mount
+ * callee (`mount('root', Main)` → `'Main'`). Registered factories record that
+ * id at module evaluation; unregistered components keep the legacy 'App' id.
+ */
+export function serverRootId(component: ServerComponent): string {
+  return rootFactoryStore().get(component)?.id ?? 'App';
+}
 
 export interface RenderOptions {
   /**
@@ -289,7 +300,7 @@ export async function renderWithDomAsync(
   const dataRuntime = createDataRuntime(
     options.fetch === undefined ? {} : { fetch: options.fetch },
   );
-  const rootId = 'App';
+  const rootId = serverRootId(component);
   return runWithRouteRuntime(routeRuntime, () =>
     runWithDataRuntime(dataRuntime, () =>
       runWithApplicationRuntime(runtime, async () => {
@@ -347,7 +358,7 @@ export function renderWithDom(
   const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
   const previousDataRuntime = setActiveDataRuntime(dataRuntime);
 
-  const rootId = 'App';
+  const rootId = serverRootId(component);
   try {
     const root = runWithApplicationRuntime(runtime, () =>
       component(rootId, null),
@@ -403,7 +414,7 @@ export function renderToString(
   const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
   const previousDataRuntime = setActiveDataRuntime(dataRuntime);
 
-  const rootId = 'App';
+  const rootId = serverRootId(component);
   try {
     const root = runWithApplicationRuntime(runtime, () =>
       component(rootId, null),
@@ -454,7 +465,7 @@ export async function renderToStringAsync(
   return runWithRouteRuntime(routeRuntime, () =>
     runWithDataRuntime(dataRuntime, () =>
       runWithApplicationRuntime(runtime, async () => {
-        const rootId = 'App';
+        const rootId = serverRootId(component);
         try {
           await prepareInitialRoute(routeRuntime, options);
           const root = component(rootId, null) as unknown as StringRenderableNode;
@@ -506,7 +517,7 @@ export function renderToResult(
   const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
   const previousDataRuntime = setActiveDataRuntime(dataRuntime);
 
-  const rootId = 'App';
+  const rootId = serverRootId(component);
   try {
     const root = runWithApplicationRuntime(runtime, () =>
       component(rootId, null),
@@ -560,7 +571,7 @@ export async function renderToResultAsync(
   return runWithRouteRuntime(routeRuntime, () =>
     runWithDataRuntime(dataRuntime, () =>
       runWithApplicationRuntime(runtime, async () => {
-        const rootId = 'App';
+        const rootId = serverRootId(component);
         try {
           await prepareInitialRoute(routeRuntime, options);
           const root = component(rootId, null) as unknown as StringRenderableNode;

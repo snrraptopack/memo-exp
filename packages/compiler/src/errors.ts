@@ -7,12 +7,24 @@ export interface CompilerErrorLocation {
   endColumn?: number;
 }
 
+/** Anything carrying an authored ESTree source location, including synthetic anchors. */
+export interface CompilerErrorAnchor {
+  readonly loc?: {
+    readonly start?: { readonly line: number; readonly column: number };
+    readonly end?: { readonly line: number; readonly column: number };
+  } | null;
+}
+
 /** Compiler-owned error carrying an authored ESTree source location. */
 export class MemoizedDomCompilerError extends Error {
   readonly moduleId?: string;
   readonly loc?: CompilerErrorLocation;
 
-  constructor(message: string, moduleId?: string, at?: BaseNode | null) {
+  constructor(
+    message: string,
+    moduleId?: string,
+    at?: BaseNode | CompilerErrorAnchor | null,
+  ) {
     super(message);
     this.name = 'MemoizedDomCompilerError';
     this.moduleId = moduleId;
@@ -33,7 +45,7 @@ export class MemoizedDomCompilerError extends Error {
 export function compilerError(
   message: string,
   moduleId?: string,
-  at?: BaseNode | null,
+  at?: BaseNode | CompilerErrorAnchor | null,
 ): MemoizedDomCompilerError {
   return new MemoizedDomCompilerError(message, moduleId, at);
 }

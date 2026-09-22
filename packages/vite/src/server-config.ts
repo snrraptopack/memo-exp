@@ -96,6 +96,12 @@ declare module '@memoized-dom/server/router' {
   }
 }
 
+declare module '@memoized-dom/router' {
+  interface RoutedTypeRegistry {
+    application: __MemoizedDomServerTypes;
+  }
+}
+
 export {};
 `;
   const previous = await readFile(output, 'utf8').catch(() => undefined);

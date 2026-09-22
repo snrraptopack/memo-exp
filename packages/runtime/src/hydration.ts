@@ -586,6 +586,8 @@ export class HydrationDocument
   readonly #fallback: DocumentLike;
   readonly #index: HydrationMarkerIndex;
   readonly #plans: HydrationNodePlan[];
+  #hydrating = true;
+  readonly #patchedElements: Element[] = [];
 
   constructor(fallback: DocumentLike, range: ClaimedHydrationRange) {
     this.#fallback = fallback;
@@ -617,18 +619,22 @@ export class HydrationDocument
   }
 
   createElement(tagName: string): Element {
-    return this.#activePlan().claimNode({
-      nodeType: 1,
-      tagName,
-    }) as Element;
+    return this.#adoptElement(
+      this.#activePlan().claimNode({
+        nodeType: 1,
+        tagName,
+      }) as Element,
+    );
   }
 
   createElementNS(namespaceURI: string, qualifiedName: string): Element {
-    return this.#activePlan().claimNode({
-      nodeType: 1,
-      tagName: qualifiedName,
-      namespaceURI,
-    }) as Element;
+    return this.#adoptElement(
+      this.#activePlan().claimNode({
+        nodeType: 1,
+        tagName: qualifiedName,
+        namespaceURI,
+      }) as Element,
+    );
   }
 
   createTextNode(_data: string): Text {
@@ -682,6 +688,44 @@ export class HydrationDocument
         `${this.#index.unclaimed} unclaimed structural range(s)`,
       );
     }
+  }
+
+  /**
+   * Adoption is complete — restore native DOM mutation on claimed elements so
+   * post-hydration reconciliation (cond swaps, list row moves) works.
+   */
+  finishHydration(): void {
+    this.#hydrating = false;
+    for (const element of this.#patchedElements) {
+      Reflect.deleteProperty(element, 'appendChild');
+      Reflect.deleteProperty(element, 'insertBefore');
+    }
+    this.#patchedElements.length = 0;
+  }
+
+  /**
+   * Claimed children already sit in authored DOM order — the node plan
+   * validated that sequence. Re-appending them during adoption would rotate
+   * each child to the end of its parent (structural region fragments insert
+   * nothing in hydrate mode), so parent-child links are treated as already
+   * established until finishHydration() runs.
+   */
+  #adoptElement<T extends Element>(element: T): T {
+    const appendChild = element.appendChild;
+    const insertBefore = element.insertBefore;
+    this.#patchedElements.push(element);
+    element.appendChild = <C extends Node>(node: C): C => {
+      if (this.#hydrating && node.parentNode === element) return node;
+      return appendChild.call(element, node) as C;
+    };
+    element.insertBefore = <C extends Node>(
+      node: C,
+      ref: Node | null,
+    ): C => {
+      if (this.#hydrating && node.parentNode === element) return node;
+      return insertBefore.call(element, node, ref) as C;
+    };
+    return element;
   }
 
   #activePlan(): HydrationNodePlan {

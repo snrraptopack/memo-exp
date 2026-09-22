@@ -16,7 +16,6 @@ import type { ServerMiddleware } from '@memoized-dom/server';
 
 
 function logServerFunction(): ServerMiddleware {
-  const { services } = getServerContext()
   return (context, next) => {
     console.log(`[fn] ${context.request.method} ${context.url.pathname}`);
     return next();

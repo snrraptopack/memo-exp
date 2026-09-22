@@ -144,7 +144,7 @@ async function invokeBrowserServerPreparation(
       id,
       href: input.href,
       params: input.params,
-      state: stateFor(runtime, id),
+      state: transportState(stateFor(runtime, id)),
     }),
     signal: input.signal,
   });

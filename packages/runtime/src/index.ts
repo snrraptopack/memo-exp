@@ -96,7 +96,7 @@ export type { ListRegion, ListEntry, KeyFn } from './list';
 export { isStructuralListUpdate, listItemIndices } from './list-update';
 export { rootNodes } from './jsx-dom';
 export { decodeListKey, encodeListKey } from './list-keys';
-export { mount, registerRootFactory } from './mount';
+export { mount, registerRootFactory, rootFactoryStore } from './mount';
 export type {
   MountableComponent,
   MountTarget,

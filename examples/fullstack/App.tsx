@@ -16,13 +16,21 @@
 import { getStories, getStory, postVote } from '#server-functions';
 import { Error, Group, Pending, $track } from '@memoized-dom/data';
 import type { ErrorPolicyComponentProps } from '@memoized-dom/data';
+import { $routed } from "@memoized-dom/router"
+
 
 export function App() {
   let selectedId: number | null = null;
   let lastVote = null as ReturnType<typeof postVote> | null;
   const stories = getStories();
 
-  const pendingItem = new Map<string,number>
+  const pendingItem = new Map<string, number>
+
+  const data = $routed(({ services }) => {
+    console.log(services)
+   console.log("hello")
+   return 1
+  })
 
   function handleAddVote(id: number) {
     lastVote = postVote(id);

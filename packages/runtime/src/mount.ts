@@ -68,7 +68,7 @@ function routerRuntimeBridge(): RouterRuntimeBridge {
 // Factory definitions are build artifacts — process-wide by nature.
 const rootFactoriesKey = Symbol.for('memoized-dom:root-factories');
 
-function rootFactoryStore(): WeakMap<Function, RootFactoryDefinition> {
+export function rootFactoryStore(): WeakMap<Function, RootFactoryDefinition> {
   const realm = globalThis as unknown as Record<PropertyKey, unknown>;
   const existing = realm[rootFactoriesKey];
   if (existing instanceof WeakMap) {
@@ -263,6 +263,8 @@ function adoptApplication(
   } catch (error) {
     unregisterSubtree(definition.id);
     throw error;
+  } finally {
+    hydrationDocument.finishHydration();
   }
   return createMountedApplication(
     host,

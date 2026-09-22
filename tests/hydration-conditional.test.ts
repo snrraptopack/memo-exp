@@ -99,6 +99,23 @@ describe('Phase 3 conditional hydration', () => {
     expect(serverBranch.isConnected).toBe(false);
   });
 
+  it('keeps static siblings around an adopted conditional in authored order', async () => {
+    const app = await importCompiled();
+    app.setVisible(true);
+    registerRootFactory(app.App, {
+      id: 'App',
+      create: () => app.App('App', null),
+    });
+    const host = serverHost('<p class="yes">yes</p>');
+
+    mounted = mount('root', app.App);
+
+    const section = host.querySelector('section')!;
+    expect(
+      Array.from(section.children).map((el) => el.localName),
+    ).toEqual(['button', 'p']);
+  });
+
   it('recovers branch tag skew at the conditional owner', async () => {
     const app = await importCompiled();
     app.setVisible(false);

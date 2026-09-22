@@ -200,6 +200,36 @@ describe('$routed preparation discovery', () => {
     );
   });
 
+  it('rejects preparations whose component is not attached to a route in an application graph', () => {
+    expect(() => compileModules({
+      './main.ts': `
+        import { mount } from '@memoized-dom/runtime';
+        import { App } from './App';
+        mount('root', App);
+      `,
+      './App.tsx': `
+        import { $routed } from '@memoized-dom/router';
+        export function App() {
+          const page = $routed(({ services }) => services.reports.load());
+          return <main>{page.title}</main>;
+        }
+      `,
+    })).toThrow(/\$routed in component 'App' is never prepared/);
+  });
+
+  it('still compiles unattached preparations in standalone module graphs without a mount', () => {
+    const compiled = compileModulesDetailed({
+      './Page.tsx': `
+        import { $routed } from '@memoized-dom/router';
+        export function Page() {
+          const page = $routed(({ params }) => params.id);
+          return <p>{page}</p>;
+        }
+      `,
+    });
+    expect(compiled.metadata['./Page.tsx']!.routedPreparations).toHaveLength(1);
+  });
+
   it('emits the existing data-resource settler for colorless preparation results', () => {
     const compiled = compileModules({
       './Page.tsx': `

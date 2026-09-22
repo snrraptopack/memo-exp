@@ -18,7 +18,7 @@ import {
   runWithDataRuntime,
 } from '@memoized-dom/data';
 import { StringDocument, type StringRenderableNode } from './string-document';
-import { createPayloadScriptTag } from './index';
+import { createPayloadScriptTag, serverRootId } from './index';
 import type { ServerComponent, RenderOptions, RenderPayload } from './index';
 
 let streamSequence = 0;
@@ -87,7 +87,7 @@ function createRenderStream(
       const dataRuntime = createDataRuntime(
         options.fetch === undefined ? {} : { fetch: options.fetch },
       );
-      const rootId = 'App';
+      const rootId = serverRootId(component);
 
       try {
         await runWithRouteRuntime(routeRuntime, () =>

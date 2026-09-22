@@ -50,6 +50,10 @@ describe('server config type registration', () => {
     expect(declaration).toContain(
       'application: __MemoizedDomServerTypes',
     );
+    expect(declaration).toContain(
+      "declare module '@memoized-dom/router'",
+    );
+    expect(declaration).toContain('interface RoutedTypeRegistry');
     expect(isServerConfigFile(fixture, configFile, options)).toBe(true);
   });
 

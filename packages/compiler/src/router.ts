@@ -265,9 +265,9 @@ export function collectCompilerRoutes(
 }
 
 function routeSignature(pattern: string): string {
-  return pathSegments(pattern)
+  return `/${pathSegments(pattern)
     .map((segment) => segment === '*' ? '*' : segment.startsWith(':') ? ':param' : segment)
-    .join('/');
+    .join('/')}`;
 }
 
 function isRouteAncestor(

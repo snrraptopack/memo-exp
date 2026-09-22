@@ -6,6 +6,6 @@
  * SSR data without manual runtime setup or refetching.
  */
 import { mount } from '@memoized-dom/runtime';
-import { App } from './App';
+import { Main } from "./src/Main.tsx"
 
-mount('root', App);
+mount('root', Main);

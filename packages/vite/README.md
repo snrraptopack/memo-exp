@@ -150,6 +150,47 @@ Shared DTOs and schemas should live in a neutral application directory; a
 browser-visible operation must be an explicit server function imported from
 `#server-functions`.
 
+## `$routed` compilation and transport
+
+`$routed` is the router's authored route-preparation intrinsic. The same Vite
+plugin produces its client and server forms; there is no route-loader plugin or
+endpoint configuration to add.
+
+```tsx
+import { $routed, redirectRoute } from '@memoized-dom/router';
+import { reports } from '#server/repositories/reports';
+
+export function ReportPage() {
+  const page = $routed(({ params, locals, signal }) => {
+    if (!locals.user) return redirectRoute('/login');
+    return reports.loadPage(params.reportId, locals.user.id, { signal });
+  });
+
+  return <h1>{page.report.title}</h1>;
+}
+```
+
+For a server-backed preparation, the plugin:
+
+1. keeps the callback and its `#server/*` dependencies in the server graph;
+2. erases that callback body and those server imports from client output;
+3. registers the extracted preparation with the generated server application;
+4. installs the internal `/_memoized/routed` transport beside generated
+   server-function routes; and
+5. forwards only the preparation ID, destination URL/params, and JSON-safe
+   application-owned `state` values from the browser.
+
+The server attaches the real request, typed locals, platform, and services at
+dispatch time. Those capabilities never enter the client bundle or transport
+payload. Universal preparations that use only fields such as `params`,
+`query`, `signal`, and `state` retain their callback in both environments and
+do not generate a server round trip.
+
+The callback must remain inline, synchronous, and assigned to a
+component-local `const`. Return a service or server-function result directly;
+the router settles it before navigation commits. See
+`packages/router/README.md` for the complete authored and navigation contract.
+
 ## Development replacement
 
 The adapter compiles connected module graphs and caches output per Vite

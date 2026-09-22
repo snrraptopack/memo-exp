@@ -131,6 +131,43 @@ repositories, queues, or caches. It runs lazily once per application instance,
 and the result is exposed as typed `context.services` everywhere in the
 request pipeline. Request-specific data remains in `context.locals`.
 
+### Route preparation during SSR
+
+Components use `$routed` when authentication, redirects, or route-owned data
+must be ready before the destination renders:
+
+```tsx
+import { $routed, redirectRoute } from '@memoized-dom/router';
+
+export function ReportPage() {
+  const page = $routed(({ params, locals, services, signal }) => {
+    if (!locals.user) return redirectRoute('/login');
+
+    return services.reports.loadPage(params.reportId, locals.user.id, {
+      signal,
+    });
+  });
+
+  return <h1>{page.report.title}</h1>;
+}
+```
+
+`serve()` supplies the same request-owned `request`, `locals`, `platform`, and
+application `services` used by middleware and HTTP handlers. The callback
+therefore should not call `getServerContext()` again. A routed redirect becomes
+an HTTP redirect before any destination HTML is streamed.
+
+The application handler uses the asynchronous renderers, which prepare the
+initial route before creating its component tree. Successful routed results
+and the JSON-safe keys of the preparation's plain `state` object are included
+in the SSR payload. The browser's normal `mount()` call restores them before
+hydration; application code does not initialize a route-data runtime manually.
+
+Direct callers rendering an application that contains `$routed` must use
+`renderToStringAsync()`, `renderToResultAsync()`, `renderWithDomAsync()`, or
+`renderToReadableStream()`. The synchronous renderers do not have an
+asynchronous preparation phase.
+
 ## Renderers
 
 Renderers accept a compiled root component and `RenderOptions`:
@@ -168,8 +205,9 @@ result.payload;
 result.scriptTag;
 ```
 
-`markers: true` preserves runtime anchors and emits the serialized data
-payload used by `mount()` when it adopts server-rendered output.
+`markers: true` preserves runtime anchors and emits the serialized data and
+routed-preparation payload used by `mount()` when it adopts server-rendered
+output.
 
 ## Document composition
 

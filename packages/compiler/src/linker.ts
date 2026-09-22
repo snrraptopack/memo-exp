@@ -254,27 +254,52 @@ function attachRoutedPreparations(
   entries: ReadonlyMap<string, ModuleEntry>,
   manifests: ReadonlyMap<string, ModuleManifest>,
   options: CompileModulesOptions,
+  requireAttachment: boolean,
 ): CompilerRouteDefinition[] {
-  const preparations = new Map<string, string[]>();
+  const preparations = new Map<string, CompilerRoutedPreparation[]>();
   for (const [moduleId, manifest] of manifests) {
     for (const preparation of manifest.routedPreparations) {
       const key = `${moduleId}#${preparation.component}`;
-      const ids = preparations.get(key) ?? [];
-      ids.push(preparation.id);
-      preparations.set(key, ids);
+      const list = preparations.get(key) ?? [];
+      list.push(preparation);
+      preparations.set(key, list);
     }
   }
-  return routes.map(route => {
+  const consumed = new Set<string>();
+  const linked = routes.map(route => {
     const componentKey = routeComponentKey(route, entries, manifests, options);
-    const ids = componentKey === undefined ? undefined : preparations.get(componentKey);
+    const list =
+      componentKey === undefined ? undefined : preparations.get(componentKey);
+    if (list !== undefined) consumed.add(componentKey!);
     return {
       ...route,
       ...(componentKey === undefined ? {} : { componentKey }),
-      ...(ids === undefined || ids.length === 0
+      ...(list === undefined || list.length === 0
         ? {}
-        : { preparations: Object.freeze([...ids]) }),
+        : { preparations: Object.freeze(list.map(preparation => preparation.id)) }),
     };
   });
+  if (requireAttachment) {
+    for (const [key, list] of preparations) {
+      if (consumed.has(key)) continue;
+      const orphan = list[0]!;
+      throw compilerError(
+        `memo-dom: $routed in component '${orphan.component}' is never prepared because the component is not attached to a route; declare its route region with the route attribute (for example <${orphan.component} route="/path" />) or remove the preparation`,
+        orphan.moduleId,
+        orphan.line === undefined
+          ? null
+          : {
+              loc: {
+                start: {
+                  line: orphan.line,
+                  column: orphan.column ?? 0,
+                },
+              },
+            },
+      );
+    }
+  }
+  return linked;
 }
 
 /**
@@ -335,6 +360,7 @@ function compileLinkedModules(
     entries,
     manifests,
     options,
+    discoveredRoot !== undefined,
   );
   const applicationRoot = resolveApplicationRoot(entries, manifests, options);
   const routeManifestModule =
