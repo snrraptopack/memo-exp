@@ -21,10 +21,10 @@ export function Something(){
 
 export function Something1(){
 
-  const currentRoute = $routed(({ url }) => {
-      console.log("hello")
-        return url.pathname
-    })
+  const currentRoute = $routed(({ url,request }) => {
+    console.log("hello")
+    return url.pathname
+  })
 
     return (
         <>

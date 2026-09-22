@@ -76,7 +76,7 @@ Four more fields classify the whole callback as **server-backed**:
 
 ```tsx
 export function Story() {
-  const story = $routed(async ({ params, services, locals }) => {
+  const story = $routed(({ params, services, locals }) => {
     return services.database.stories.findFor(params.id, locals.user);
   });
 
@@ -124,6 +124,27 @@ Same tracker shape as everywhere else — `id`, `status`, `onSuccess`,
 `onError`, `abort`. Server-backed or not makes no difference to the
 tracker; it just sees the source.
 
+### Prepared data is transparent
+
+The value a `$routed` binding holds looks like plain JSON, but it behaves
+like `$fetch` data — **writes propagate**. `page.expedition.notes.push(x)`
+or `page.count = n` re-renders dependent UI, and mutations made during an
+optimistic update or an `onSuccess` reconcile appear immediately:
+
+```ts
+tracker.onSuccess((saved) => {
+  page.expedition.notes.splice(index, 1, saved);   // UI updates
+});
+```
+
+That's the boundary worth knowing: values coming *out of* `$routed`,
+`$fetch`, or server functions are transparent — reads and writes are both
+tracked. A plain object literal you create yourself is ordinary reactive
+state under the normal `const`/`let` rules — same outcome, different
+origin. The distinction matters mostly when you assume a fetched payload
+is frozen/immutable: it isn't — mutating it is the sanctioned way to
+reconcile server results locally.
+
 ## Redirecting instead of rendering
 
 Return `redirectRoute(...)` and the navigation reroutes — the component
@@ -139,6 +160,21 @@ const data = $routed(({ locals }) => {
 ## Rules
 
 - **Attach it to a route** — orphan `$routed` is a compile error.
+- **No authored `async`/`await`** — return the value or a service/server-function
+  promise directly; the preparation runtime settles it before the component
+  mounts. An `async` callback is a compile error. To branch on an async
+  result (like a not-found check), use `.then()`:
+
+  ```ts
+  const page = $routed(({ params, services }) =>
+    services.reports.find(params.id).then(report =>
+      report === null ? redirectRoute('/') : { report },
+    ),
+  );
+  ```
+
+  Only the *returned* promise is settled — a promise nested inside a
+  returned object is not awaited and won't transport.
 - **Return serializable data** — the result crosses HTTP/SSR boundaries.
   Return `url.pathname`, not the `URL` object; entities, not db handles.
 - **Use server fields freely** — the compiler decides per callback where

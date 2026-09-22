@@ -122,6 +122,30 @@ export function App() {
 const story = getStory(selectedId);   // refetches when selectedId changes
 ```
 
+## Mutations return the data — reconcile, don't refetch
+
+A mutation's return value is the server's truth for what it changed.
+`postNote` returns the created note, `postVote` returns the new vote count
+— use that to patch local state in `onSuccess`, not a second `get*` call:
+
+```ts
+const optimistic = { id: 'pending', text, by: 'you' };
+notes.push(optimistic);                       // instant UI
+
+lastPost = postNote(expeditionId, text);
+$track(lastPost).onSuccess((saved) => {
+  notes.splice(notes.indexOf(optimistic), 1, saved);   // swap in the real row
+});
+$track(lastPost).onError(() => {
+  notes.splice(notes.indexOf(optimistic), 1);          // roll back
+});
+```
+
+Refetching after every mutation would waste a round trip for data you
+already have. `refresh()` is for the rarer case — a write that changes
+state owned by a *different* source (a count, an aggregate) whose inputs
+you can't reconcile locally.
+
 ## Tracking a call
 
 Because a server-function call returns the same kind of value `$fetch`

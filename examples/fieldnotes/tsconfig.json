@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "strict": true,
+    "noEmit": true,
+    "types": ["@memoized-dom/compiler/jsx"],
+    "paths": {
+      "#server/*": ["./server/*"],
+      "#server-functions": ["./.memoized/server-functions.d.ts"]
+    }
+  },
+  "include": ["*.ts", "*.tsx", "src", "server", ".memoized/**/*.d.ts"]
+}

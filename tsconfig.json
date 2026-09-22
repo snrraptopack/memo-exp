@@ -55,6 +55,7 @@
     "**/dist",
     "**/generated",
     "tests/fixtures/**",
-    "bench/frameworks"
+    "bench/frameworks",
+    "examples/fieldnotes"
   ]
 }
