@@ -32,6 +32,7 @@ import {
 import {
   collectCompilerRoutes,
   validateCompilerRouteGraph,
+  validateCompilerRoutePattern,
   type CompilerRouteDefinition,
 } from './router';
 import type { CompilerRoutedPreparation } from './routed';
@@ -256,6 +257,91 @@ function routeComponentKey(
   return exported?.type === 'component' ? exported.key : undefined;
 }
 
+function joinRoutePatterns(parent: string, child: string): string {
+  if (parent.endsWith('/*')) {
+    throw new TypeError(`catch-all route '${parent}' cannot have child routes`);
+  }
+  return validateCompilerRoutePattern(child === '/'
+    ? parent
+    : parent === '/' ? child : `${parent}${child}`);
+}
+
+function instantiateRouteSubtrees(
+  templates: readonly CompilerRouteDefinition[],
+  root: CompiledApplicationRoot | undefined,
+  entries: ReadonlyMap<string, ModuleEntry>,
+  manifests: ReadonlyMap<string, ModuleManifest>,
+  options: CompileModulesOptions,
+): CompilerRouteDefinition[] {
+  const byOwner = new Map<string, CompilerRouteDefinition[]>();
+  const calledOwners = new Set<string>();
+  for (const template of templates) {
+    if (template.ownerComponent !== undefined) {
+      const key = `${template.moduleId}#${template.ownerComponent}`;
+      const owned = byOwner.get(key) ?? [];
+      owned.push(template);
+      byOwner.set(key, owned);
+    }
+    if (template.calleeComponent !== undefined) {
+      const callee = routeComponentKey(
+        { ...template, component: template.calleeComponent },
+        entries, manifests, options,
+      );
+      if (callee !== undefined) calledOwners.add(callee);
+    }
+  }
+
+  const instances: CompilerRouteDefinition[] = [];
+  const expand = (
+    ownerKey: string,
+    callsite: CompilerRouteDefinition | null,
+    chain: ReadonlySet<string>,
+  ): void => {
+    if (chain.has(ownerKey)) {
+      throw new TypeError(`recursive route component subtree '${ownerKey}'`);
+    }
+    const nextChain = new Set(chain);
+    nextChain.add(ownerKey);
+    const local = new Map<string, CompilerRouteDefinition>();
+    for (const template of byOwner.get(ownerKey) ?? []) {
+      const id = callsite === null
+        ? template.id
+        : `${callsite.id}>>${template.id}`;
+      const parentId = template.parentId === undefined
+        ? callsite?.id
+        : local.get(template.parentId)?.id;
+      const instance: CompilerRouteDefinition = {
+        ...template,
+        id,
+        fullPattern: callsite === null
+          ? template.fullPattern
+          : joinRoutePatterns(callsite.fullPattern, template.fullPattern),
+        ...(parentId === undefined ? {} : { parentId }),
+      };
+      local.set(template.id, instance);
+      instances.push(instance);
+      if (template.calleeComponent === undefined) continue;
+      const callee = routeComponentKey(
+        { ...template, component: template.calleeComponent },
+        entries, manifests, options,
+      );
+      if (callee !== undefined) expand(callee, instance, nextChain);
+    }
+  };
+
+  if (root !== undefined) expand(root.key, null, new Set());
+  else {
+    for (const owner of byOwner.keys()) {
+      if (!calledOwners.has(owner)) expand(owner, null, new Set());
+    }
+    for (const template of templates) {
+      if (template.ownerComponent === undefined) instances.push(template);
+    }
+  }
+  validateCompilerRouteGraph(instances);
+  return instances;
+}
+
 function attachRoutedPreparations(
   routes: readonly CompilerRouteDefinition[],
   entries: ReadonlyMap<string, ModuleEntry>,
@@ -343,27 +429,25 @@ function compileLinkedModules(
       throw new Error(`${entry.id}: memo-dom: ${(error as Error).message}`);
     }
   });
-  try {
-    validateCompilerRouteGraph(collectedRoutes);
-  } catch (error) {
-    throw new Error(`memo-dom: ${(error as Error).message}`);
-  }
 
   const discovered = new Map<string, ModuleManifest>();
   for (const entry of entries.values()) {
     discovered.set(entry.id, discoverManifest(entry, options));
   }
   const discoveredRoot = resolveApplicationRoot(entries, discovered, options);
+  const routeInstances = instantiateRouteSubtrees(
+    collectedRoutes, discoveredRoot, entries, discovered, options,
+  );
   const rootId = discoveredRoot?.rootId ?? 'App';
   const manifests = linkManifestWorklist(
     entries,
     discovered,
     options,
     rootId,
-    collectedRoutes,
+    routeInstances,
   );
   const linkedRoutes = attachRoutedPreparations(
-    collectedRoutes,
+    routeInstances,
     entries,
     manifests,
     options,

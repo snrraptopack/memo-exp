@@ -39,6 +39,7 @@ export function emitRouteRegion(
   // original subtree is important: nested elements retain their WeakMap route
   // metadata and therefore become their own independently anchored regions.
   ctx.routeElements.delete(element);
+  ctx.routeCallsiteIds.set(element, route.id);
   let branch: t.ArrowFunctionExpression;
   try {
     branch = buildConditionalBranchCreate(
@@ -55,7 +56,21 @@ export function emitRouteRegion(
     );
   } finally {
     ctx.routeElements.set(element, route);
+    ctx.routeCallsiteIds.delete(element);
   }
+  const contextName = ctx.routeContextParams.get(componentName);
+  const context = contextName === undefined
+    ? astFactory.identifier('undefined')
+    : astFactory.identifier(contextName);
+  const instanceId = astFactory.conditionalExpression(
+    cloneEstreeNode(context),
+    astFactory.binaryExpression(
+      '+',
+      cloneEstreeNode(context),
+      astFactory.stringLiteral(`>>${route.id}`),
+    ),
+    astFactory.stringLiteral(route.id),
+  );
   const selected = astFactory.arrowFunctionExpression(
     [cloneEstreeNode(currentRoute)],
     astFactory.callExpression(
@@ -72,7 +87,7 @@ export function emitRouteRegion(
           astFactory.binaryExpression(
             '===',
             astFactory.memberExpression(cloneEstreeNode(match), astFactory.identifier('id')),
-            astFactory.stringLiteral(route.id),
+            instanceId,
           ),
         ),
       ],

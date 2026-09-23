@@ -146,6 +146,33 @@ describe('route runtime', () => {
     adopted.dispose();
   });
 
+  it('keeps preparation state separate for two route instances of one component', async () => {
+    const visits: string[] = [];
+    registerRoutedPreparation({
+      id: 'shared-report-preparation',
+      server: false,
+      prepare: ({ state, url }) => {
+        state.visits = Number(state.visits ?? 0) + 1;
+        visits.push(`${url.pathname}:${state.visits}`);
+        return state.visits;
+      },
+    });
+    const runtime = createRouteRuntime({
+      environment: {},
+      routes: [
+        { id: 'reports', pattern: '/reports', metadata: { preparations: ['shared-report-preparation'] } },
+        { id: 'admin-reports', pattern: '/admin/reports', metadata: { preparations: ['shared-report-preparation'] } },
+      ],
+    });
+    for (const path of ['/reports', '/admin/reports', '/reports']) {
+      const result = runtime.navigate(path);
+      if (result.status !== 'preparing') throw new Error('expected preparation');
+      await result.finished;
+    }
+    expect(visits).toEqual(['/reports:1', '/admin/reports:1', '/reports:2']);
+    runtime.dispose();
+  });
+
   it('sends only JSON-safe state keys to server-backed preparation', async () => {
     registerRoutedPreparation({
       id: 'state-transport-boundary',

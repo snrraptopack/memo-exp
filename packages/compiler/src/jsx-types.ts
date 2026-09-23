@@ -44,7 +44,6 @@ declare global {
     interface RouteToDestinationBase {
       query?: RouteQueryInput;
       hash?: string;
-      replace?: boolean;
     }
 
     interface RouteToDestination extends RouteToDestinationBase {

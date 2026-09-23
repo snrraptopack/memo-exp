@@ -32,6 +32,10 @@ export interface CompilerRouteDefinition {
   readonly parentId?: string;
   /** Authored local component associated with this route-bearing region. */
   readonly component?: string;
+  /** Component whose body declares this route template. */
+  readonly ownerComponent?: string;
+  /** Component mounted by a route-bearing JSX callsite. */
+  readonly calleeComponent?: string;
   /** Linker-resolved component identity used to attach route preparation. */
   readonly componentKey?: string;
   readonly preparations?: readonly string[];
@@ -77,14 +81,17 @@ function staticAttributeString(attribute: t.JSXAttribute): string | null {
 
 function routeId(
   moduleId: string,
-  node: t.JSXElement,
-  fallback: number,
+  owner: string | null,
+  ancestor: CompilerRouteDefinition | null,
+  tag: string,
+  pattern: string,
+  occurrences: Map<string, number>,
 ): string {
-  const line = node.openingElement.loc?.start.line;
-  const column = node.openingElement.loc?.start.column;
-  return line === undefined || column === undefined
-    ? `${moduleId}#route:${fallback}`
-    : `${moduleId}#route:${line}:${column}`;
+  const base = ancestor?.id ?? `${moduleId}#route:${owner ?? '$module'}`;
+  const key = `${base}/${encodeURIComponent(tag)}:${encodeURIComponent(pattern)}`;
+  const occurrence = occurrences.get(key) ?? 0;
+  occurrences.set(key, occurrence + 1);
+  return occurrence === 0 ? key : `${key}[${occurrence}]`;
 }
 
 function pathSegments(pattern: string): string[] {
@@ -150,7 +157,7 @@ function collectDefinitionsFromNode(
   moduleId: string,
 ): CompilerRouteDefinition[] {
   const definitions: CompilerRouteDefinition[] = [];
-  let fallback = 0;
+  const occurrences = new Map<string, number>();
 
   const visit = (
     currentNode: BaseNode,
@@ -202,10 +209,23 @@ function collectDefinitionsFromNode(
             }
           }
           current = {
-            id: routeId(moduleId, element, fallback++),
+            id: routeId(
+              moduleId,
+              owner,
+              ancestor,
+              astFactory.isJSXIdentifier(element.openingElement.name)
+                ? element.openingElement.name.name : '$element',
+              pattern,
+              occurrences,
+            ),
             moduleId,
             pattern,
             fullPattern,
+            ...(owner === null ? {} : { ownerComponent: owner }),
+            ...(astFactory.isJSXIdentifier(element.openingElement.name) &&
+              /^[A-Z]/.test(element.openingElement.name.name)
+              ? { calleeComponent: element.openingElement.name.name }
+              : {}),
             ...(ancestor === null ? {} : { parentId: ancestor.id }),
             ...(astFactory.isJSXIdentifier(element.openingElement.name) &&
               /^[A-Z]/.test(element.openingElement.name.name)
@@ -356,7 +376,7 @@ function routeToTarget(
       }
       entries.set(name, property);
     }
-    const allowed = new Set(['path', 'params', 'query', 'hash', 'replace']);
+    const allowed = new Set(['path', 'params', 'query', 'hash']);
     for (const name of entries.keys()) {
       if (!allowed.has(name)) {
         throw attributePath.buildCodeFrameError(
@@ -469,13 +489,6 @@ function buildRouteHref(ctx: Ctx, target: RouteToTarget): t.Expression {
   ]);
 }
 
-function navigateExpression(ctx: Ctx, target: RouteToTarget): t.CallExpression {
-  return astFactory.callExpression(mr(ctx, 'navigateRoute'), [
-    astFactory.stringLiteral(target.path),
-    ...(target.options === null ? [] : [cloneEstreeNode(target.options, true)]),
-  ]);
-}
-
 function installRouteTo(
   ctx: Ctx,
   element: t.JSXElement,
@@ -494,77 +507,29 @@ function installRouteTo(
       'memo-dom: route-to currently targets intrinsic elements; put it on the interactive host rendered by this component',
     );
   }
+  if (tag !== 'a') {
+    throw attributePath.buildCodeFrameError(
+      'memo-dom: route-to requires an anchor; use <a route-to="/path"> for navigation or call navigate() from an action handler',
+    );
+  }
   if (opening.attributes.some((attribute) => astFactory.isJSXSpreadAttribute(attribute))) {
     throw attributePath.buildCodeFrameError(
       'memo-dom: route-to cannot be combined with JSX prop spreads because navigation ownership must be static',
     );
   }
 
-  if (tag === 'a') {
-    if (attributeNamed(element, 'href') !== undefined) {
-      throw attributePath.buildCodeFrameError(
-        'memo-dom: an anchor using route-to must not also declare href',
-      );
-    }
-    const href = buildRouteHref(ctx, target);
-    opening.attributes.push(
-      astFactory.jsxAttribute(
-        astFactory.jsxIdentifier('href'),
-        astFactory.isStringLiteral(href)
-          ? href
-          : astFactory.jsxExpressionContainer(href),
-      ),
+  if (attributeNamed(element, 'href') !== undefined) {
+    throw attributePath.buildCodeFrameError(
+      'memo-dom: an anchor using route-to must not also declare href',
     );
-    return;
   }
-
-  const click = attributeNamed(element, 'onClick');
-  const event = generatedIdentifier(ctx, 'routeEvent');
-  const statements: t.Statement[] = [];
-  let result: t.Identifier | null = null;
-  if (click !== undefined) {
-    let handler: t.Expression | null = null;
-    if (
-      astFactory.isJSXExpressionContainer(click.value) &&
-      astFactory.isExpression(click.value.expression)
-    ) {
-      handler = click.value.expression;
-    }
-    if (handler === null) {
-      throw attributePath.buildCodeFrameError(
-        'memo-dom: onClick used with route-to must contain a handler expression',
-      );
-    }
-    result = generatedIdentifier(ctx, 'routeClickResult');
-    statements.push(
-      astFactory.variableDeclaration('const', [
-        astFactory.variableDeclarator(
-          cloneEstreeNode(result),
-          astFactory.callExpression(cloneEstreeNode(handler, true), [cloneEstreeNode(event)]),
-        ),
-      ]),
-    );
-    opening.attributes = opening.attributes.filter((attribute) => attribute !== click);
-  }
-  statements.push(
-    astFactory.ifStatement(
-      astFactory.unaryExpression(
-        '!',
-        astFactory.memberExpression(cloneEstreeNode(event), astFactory.identifier('defaultPrevented')),
-      ),
-      astFactory.expressionStatement(navigateExpression(ctx, target)),
-    ),
-  );
-  if (result !== null) statements.push(astFactory.returnStatement(cloneEstreeNode(result)));
+  const href = buildRouteHref(ctx, target);
   opening.attributes.push(
     astFactory.jsxAttribute(
-      astFactory.jsxIdentifier('onClick'),
-      astFactory.jsxExpressionContainer(
-        astFactory.arrowFunctionExpression(
-          [cloneEstreeNode(event)],
-          astFactory.blockStatement(statements),
-        ),
-      ),
+      astFactory.jsxIdentifier('href'),
+      astFactory.isStringLiteral(href)
+        ? href
+        : astFactory.jsxExpressionContainer(href),
     ),
   );
 }
@@ -575,9 +540,9 @@ export function analyzeRouterJsx(
   programPath: ProgramContainer,
 ): void {
   const localDefinitions: CompilerRouteDefinition[] = [];
-  let fallback = 0;
   const routeAncestors: Array<CompilerRouteElement | null> = [];
   const program = programPath.node as unknown as BaseNode;
+  const sourceDefinitions = collectCompilerRoutes(programPath.node, ctx.moduleId);
   walkAst<BaseNode>(program, {
     enter(current) {
       if (current.type !== 'JSXElement') return;
@@ -625,19 +590,11 @@ export function analyzeRouterJsx(
           );
         }
       }
-      const definition: CompilerRouteElement = {
-        id: routeId(ctx.moduleId, element, fallback++),
-        moduleId: ctx.moduleId,
-        pattern,
-        fullPattern,
-        ...(parent === null ? {} : { parentId: parent.id }),
-        ...(element.openingElement.loc?.start.line === undefined
-          ? {}
-          : { line: element.openingElement.loc.start.line }),
-        ...(element.openingElement.loc?.start.column === undefined
-          ? {}
-          : { column: element.openingElement.loc.start.column }),
-      };
+       const source = sourceDefinitions[localDefinitions.length];
+       if (source === undefined || source.pattern !== pattern || source.fullPattern !== fullPattern) {
+         throw diagnostic.buildCodeFrameError('memo-dom: route collection order changed during compilation');
+       }
+       const definition: CompilerRouteElement = source;
       ctx.routeElements.set(element, definition);
       localDefinitions.push(definition);
       ctx.localRoutes.push(definition);

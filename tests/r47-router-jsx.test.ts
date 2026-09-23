@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compile,
   compileModules,
+  compileModulesDetailed,
   diagnoseModules,
 } from '@memoized-dom/compiler';
 
@@ -30,9 +31,8 @@ describe('compiler-owned JSX routing', () => {
     expect(code).not.toContain('setAttribute("route"');
   });
 
-  it('lowers route-to into hrefs and composed click navigation', () => {
+  it('lowers route-to into anchor hrefs', () => {
     const code = compile(`
-      let clicked = 0;
       function App() {
         const projectId = 'compiler';
         return (
@@ -40,14 +40,13 @@ describe('compiler-owned JSX routing', () => {
             <section route="/projects">
               <article route="/:projectId">Project</article>
               <a route-to="/projects">Projects</a>
-              <button
-                onClick={() => clicked++}
+              <a
                 route-to={{
                   path: '/projects/:projectId',
                   params: { projectId },
                   query: { tab: 'activity' },
                 }}
-              >Open</button>
+              >Open</a>
             </section>
           </main>
         );
@@ -55,8 +54,7 @@ describe('compiler-owned JSX routing', () => {
     `);
 
     expect(code).toContain('href');
-    expect(code).toContain('navigateRoute("/projects/:projectId"');
-    expect(code).toContain('defaultPrevented');
+    expect(code).toContain('buildRoutePath("/projects/:projectId"');
     expect(code).not.toContain('route-to');
   });
 
@@ -69,34 +67,41 @@ describe('compiler-owned JSX routing', () => {
 
     expect(() => compile(`
       function App() {
-        return <main route="/"><p route="/:id" /><button route-to={{ path: '/:id' }} /></main>;
+        return <main route="/"><p route="/:id" /><a route-to={{ path: '/:id' }} /></main>;
       }
     `)).toThrow('requires params { id }');
 
     expect(() => compile(`
       function App() {
-        return <main route="/"><p route="/:id" /><button route-to={{ path: '/:id', params: { wrong: 1 } }} /></main>;
+        return <main route="/"><p route="/:id" /><a route-to={{ path: '/:id', params: { wrong: 1 } }} /></main>;
       }
     `)).toThrow('missing id; unknown wrong');
 
     expect(() => compile(`
       function App() {
-        return <main route="/"><p route="/:id" /><button route-to={{ path: '/:id', params: { id: 1, id: 2 } }} /></main>;
+        return <main route="/"><p route="/:id" /><a route-to={{ path: '/:id', params: { id: 1, id: 2 } }} /></main>;
       }
     `)).toThrow("duplicate 'id'");
 
     expect(() => compile(`
       function App() {
-        return <main route="/"><p route="/*" /><button route-to={{ path: '/*', params: {} }} /></main>;
+        return <main route="/"><p route="/*" /><a route-to={{ path: '/*', params: {} }} /></main>;
       }
     `)).toThrow('missing *');
 
     expect(compile(`
       function App() {
         const rest = 'docs/setup';
-        return <main route="/"><p route="/*" /><button route-to={{ path: '/*', params: { '*': rest } }} /></main>;
+        return <main route="/"><p route="/*" /><a route-to={{ path: '/*', params: { '*': rest } }} /></main>;
       }
     `)).toContain("'*': rest");
+  });
+
+  it('rejects route-to on non-anchor elements', () => {
+    expect(() => compile(`function App() { return <main route="/"><button route-to="/" /></main>; }`))
+      .toThrow('route-to requires an anchor');
+    expect(() => compile(`function App() { return <main route="/"><a route-to={{ path: '/', replace: true }} /></main>; }`))
+      .toThrow("does not support 'replace'");
   });
 
   it('requires canonical slashes, terminal catch-alls, and private history state', () => {
@@ -125,6 +130,55 @@ describe('compiler-owned JSX routing', () => {
 
     expect(output['./App.tsx']).toContain('createRouteManifest');
     expect(output['./App.tsx']).toContain('subscribeRouteSelected');
+  });
+
+  it('instantiates an imported route subtree at each route-bearing callsite', () => {
+    const compiled = compileModulesDetailed({
+      './App.tsx': `
+        import { Reports } from './Reports';
+        export function App() {
+          return <main route="/"><Reports route="/reports" /><Reports route="/admin/reports" /></main>;
+        }
+      `,
+      './Reports.tsx': `
+        export function Reports() {
+          return <section><h1 route="/">Index</h1><p route="/:id">Detail</p></section>;
+        }
+      `,
+    });
+    const manifest = compiled.output['./App.tsx']!;
+    expect(compiled.routes.map(route => route.pattern)).toEqual([
+      '/', '/admin/reports', '/admin/reports/:id', '/reports', '/reports/:id',
+    ]);
+    expect(manifest).toContain('>>');
+    expect(compiled.output['./Reports.tsx']).toContain('routeContext');
+  });
+
+  it('keeps semantic route IDs stable when source lines move', () => {
+    const source = `function App() { return <main route="/"><p route="/reports" /></main>; }`;
+    const first = compile(source, { moduleId: './App.tsx' });
+    const shifted = compile(`\n\n${source}`, { moduleId: './App.tsx' });
+    expect([...first.matchAll(/id: "([^"]+)"/g)].map(match => match[1]))
+      .toEqual([...shifted.matchAll(/id: "([^"]+)"/g)].map(match => match[1]));
+  });
+
+  it('composes route subtrees through more than one imported component', () => {
+    const compiled = compileModulesDetailed({
+      './App.tsx': `
+        import { Reports } from './Reports';
+        export function App() { return <Reports route="/reports" />; }
+      `,
+      './Reports.tsx': `
+        import { ReportPage } from './ReportPage';
+        export function Reports() { return <ReportPage route="/:id" />; }
+      `,
+      './ReportPage.tsx': `
+        export function ReportPage() { return <p route="/details">Details</p>; }
+      `,
+    });
+    expect(compiled.routes.map(route => route.pattern)).toEqual([
+      '/reports', '/reports/:id', '/reports/:id/details',
+    ]);
   });
 
   it('validates navigation in one module against routes declared in another', () => {

@@ -384,6 +384,8 @@ export interface Ctx {
   linkedRoutes: readonly CompilerRouteDefinition[] | null;
   emitRouteManifest: boolean;
   routeElements: WeakMap<t.JSXElement, CompilerRouteElement>;
+  routeCallsiteIds: WeakMap<t.JSXElement, string>;
+  routeContextParams: Map<string, string>;
   localRoutes: CompilerRouteDefinition[];
   usesRouter: boolean;
   /** Authored live-value binding -> generated subscription adapter binding. */
@@ -702,6 +704,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     emitRouteManifest:
       opts.emitRouteManifest ?? opts.linkedRoutes === undefined,
     routeElements: new WeakMap(),
+    routeCallsiteIds: new WeakMap(),
+    routeContextParams: new Map(),
     localRoutes: [],
     astAnalysis: null,
     usesRouter: false,

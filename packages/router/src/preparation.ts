@@ -76,15 +76,20 @@ const cacheStateByRuntime = new WeakMap<
   Map<string, RoutedCacheState>
 >();
 
-function preparationIds(matches: readonly RouteMatch[]): string[] {
-  const ids: string[] = [];
+function preparationKey(routeId: string, id: string): string {
+  return JSON.stringify([routeId, id]);
+}
+
+function preparationIds(matches: readonly RouteMatch[]): Array<{ id: string; key: string }> {
+  const ids: Array<{ id: string; key: string }> = [];
   const seen = new Set<string>();
   for (const match of matches) {
     const metadata = match.metadata as RoutedPreparationMetadata | undefined;
     for (const id of metadata?.preparations ?? []) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      ids.push(id);
+      const key = preparationKey(match.id, id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ids.push({ id, key });
     }
   }
   return ids;
@@ -135,6 +140,7 @@ function browserContext(
 async function invokeBrowserServerPreparation(
   runtime: RouteRuntime,
   id: string,
+  key: string,
   input: RoutedPreparationInput,
 ): Promise<RoutedPreparationOutcome> {
   const response = await fetch(ROUTED_ENDPOINT, {
@@ -144,7 +150,7 @@ async function invokeBrowserServerPreparation(
       id,
       href: input.href,
       params: input.params,
-      state: transportState(stateFor(runtime, id)),
+      state: transportState(stateFor(runtime, key)),
     }),
     signal: input.signal,
   });
@@ -177,7 +183,7 @@ export async function prepareRoutedMatches(
   input: RoutedPreparationInput,
 ): Promise<RoutedPreparationOutcome> {
   const pending = new Map<string, unknown>();
-  for (const id of preparationIds(matches)) {
+  for (const { id, key } of preparationIds(matches)) {
     if (input.signal.aborted) throw input.signal.reason;
     const definition = definitions.get(id);
     if (definition === undefined) {
@@ -193,18 +199,18 @@ export async function prepareRoutedMatches(
       );
     }
     const outcome: RoutedPreparationOutcome = definition.prepare === undefined
-      ? await invokeBrowserServerPreparation(runtime, id, input)
+      ? await invokeBrowserServerPreparation(runtime, id, key, input)
       : await (async () => {
-          const value = await definition.prepare!(browserContext(runtime, id, input));
+          const value = await definition.prepare!(browserContext(runtime, key, input));
           return definition.settle?.(value, input.signal) ?? value;
         })().then(data => isRedirect(data)
           ? { kind: 'redirect', redirect: data } as const
           : { kind: 'data', data } as const);
     if (outcome.kind === 'redirect') return outcome;
     if (outcome.state !== undefined) {
-      Object.assign(stateFor(runtime, id), outcome.state);
+      Object.assign(stateFor(runtime, key), outcome.state);
     }
-    pending.set(id, outcome.data);
+    pending.set(key, outcome.data);
   }
   let prepared = preparedByRuntime.get(runtime);
   if (prepared === undefined) {
@@ -313,12 +319,16 @@ export function readRoutedPreparation(
   id: string,
 ): unknown {
   const values = preparedByRuntime.get(runtime);
-  if (values?.has(id) !== true) {
+  const match = [...runtime.route.matches].reverse().find(candidate =>
+    ((candidate.metadata as RoutedPreparationMetadata | undefined)?.preparations ?? [])
+      .includes(id));
+  const key = match === undefined ? id : preparationKey(match.id, id);
+  if (values?.has(key) !== true) {
     throw new Error(
       `memo-dom: routed preparation '${id}' was read before it became ready`,
     );
   }
-  return values.get(id);
+  return values.get(key);
 }
 
 /** Server endpoint dispatch. Server-only context is attached here, never serialized. */

@@ -83,7 +83,7 @@ subscribeNavigation(event => {
 
 ## 3. Compiler JSX Directives (`route` & `route-to`)
 
-The compiler owns `route` and `route-to` as universal JSX attributes. They are erased from DOM attributes and component props during build time.
+The compiler owns `route` on JSX elements and `route-to` on anchors. They are erased from DOM attributes and component props during build time.
 
 ### Declaring Route Regions (`route`)
 ```tsx
@@ -106,19 +106,18 @@ export function App() {
 ```
 
 ### Declarative Links (`route-to`)
-`route-to` on an `<a>` tag compiles to a real `href` with client-side pushState navigation:
+`route-to` on an `<a>` tag compiles to a real `href` with client-side pushState navigation. The compiler rejects it on other elements; use an anchor for a destination or a button with `navigate()` for an action.
 
 ```tsx
 {/* Static route link */}
 <a route-to="/stories">Stories</a>
 
-{/* Object destination with params, query, hash, and replace */}
+{/* Object destination with params, query, and hash */}
 <a route-to={{
   path: '/item/:storyId',
   params: { storyId: story.id },
   query: { comments: 'all' },
   hash: 'reply-form',
-  replace: false,
 }}>
   {story.title}
 </a>

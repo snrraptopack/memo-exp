@@ -1,7 +1,7 @@
 # Router DX and Route Loading Design
 
-Status: proposed architecture. Decisions that remain open are listed at the
-end; they must not be silently chosen during implementation.
+Status: partially implemented architecture. Decisions that remain open are
+listed at the end; they must not be silently chosen during implementation.
 
 This document is the current router design discussion. It corrects assumptions
 in the older `router-autocompletion-spec.md`, particularly around arbitrary
@@ -46,7 +46,10 @@ The compiler currently:
 
 - collects `route` declarations from every module in the connected static
   import graph;
-- composes paths through lexical JSX ancestry;
+- composes paths through lexical JSX ancestry and route-bearing component
+  callsites, including callsites in another module;
+- assigns route-instance IDs from the component, callsite, tag, pattern, and
+  same-key occurrence rather than source line and column;
 - validates ambiguity, parameters, catch-alls, and static `route-to` targets;
 - emits one manifest in the application root;
 - lowers each route to an independently selected conditional DOM region.
@@ -99,7 +102,7 @@ Lexical nesting works today:
 </section>
 ```
 
-Component ownership should describe the same route tree:
+Component ownership now describes the same route tree:
 
 ```tsx
 // App.tsx
@@ -121,7 +124,7 @@ The expected paths are `/reports` and `/reports/:reportId`. The rule is:
 > A route-bearing component callsite instantiates the route subtree owned by
 > that component beneath the callsite route.
 
-The compiler therefore needs two concepts:
+The compiler uses two concepts:
 
 - a route-subtree template discovered inside the component definition;
 - a route instance created when that component is rendered at a route-bearing
@@ -131,15 +134,17 @@ If the same component is rendered beneath `/reports` and `/admin/reports`, the
 manifest receives two route-instance subtrees. They share component code but
 have distinct route identities and full paths.
 
-Cloning manifest definitions is not sufficient. The compiled component body is
-emitted once, so its conditional route regions must receive hidden contextual
-instance identity from the callsite. Specializing and duplicating the complete
-component for every callsite is not the intended model.
+The compiled component body is emitted once. A hidden factory argument carries
+its route-instance prefix from each route-bearing callsite, so the same body can
+select a different instance of its internal route regions.
 
 ### Route identity requirements
 
-Current IDs contain source line and column numbers. Those are unsuitable as the
-long-term identity contract because unrelated edits can move a route.
+Route IDs previously contained source line and column numbers. The current
+encoding uses a module and owning-component key, then a chain of route tag and
+pattern keys. Repeated identical keys receive a local occurrence suffix. An
+instantiated component subtree prefixes its template IDs with its callsite ID.
+Unrelated line edits therefore leave route IDs intact.
 
 A route-instance ID must be:
 
@@ -150,9 +155,7 @@ A route-instance ID must be:
 - replaceable coherently during HMR;
 - independent of chunk loading order.
 
-The final encoding is an implementation detail, but it should derive from the
-semantic component/callsite chain and a stable local route key, not raw source
-coordinates alone.
+The encoding remains an internal contract and can evolve coherently during HMR.
 
 ## Structural manifest and lazy modules
 
@@ -566,7 +569,7 @@ semantics, copying, middle-click, context menus, opening in a new tab, SEO, and
 progressive enhancement. The router intercepts eligible same-origin navigation
 without removing those native behaviors.
 
-The compiler should reject `route-to` on non-anchor elements with guidance:
+The compiler rejects `route-to` on non-anchor elements with guidance:
 
 ```tsx
 // Navigation: use a semantic link.
@@ -754,26 +757,24 @@ The current proposed architecture accepts these decisions:
 
 These points still require focused design before their implementation phase:
 
-1. The exact semantic route-instance ID encoding.
-2. The hidden context representation passed into reusable route components.
-3. Whether the existing navigation result/event surface needs any additional
+1. Whether the existing navigation result/event surface needs any additional
    phase after route-module loading is implemented; no `route.transition`
    object is planned.
-4. The generic availability-boundary syntax and package ownership.
-5. Default pending UI when no boundary is authored.
-6. Whether code prefetch is automatic on intent or explicitly requested.
-7. Contextual parameter typing for components reused under different parameter
+2. The generic availability-boundary syntax and package ownership.
+3. Default pending UI when no boundary is authored.
+4. Whether code prefetch is automatic on intent or explicitly requested.
+5. Contextual parameter typing for components reused under different parameter
    contracts.
-8. The first streaming policy for route-module pending regions.
-9. Parent/child `$routed` gate ordering and the point at which independent
+6. The first streaming policy for route-module pending regions.
+7. Parent/child `$routed` gate ordering and the point at which independent
     preparations may begin concurrently.
-10. The public transition result for routed redirect, not-found, preparation
+8. The public transition result for routed redirect, not-found, preparation
     error, retry, and supersession.
 
 ## Implementation order
 
-1. Expand component-owned route templates at route-bearing callsites.
-2. Introduce semantic instance IDs and hidden component route context.
+1. Completed: expand component-owned route templates at route-bearing callsites.
+2. Completed: introduce semantic instance IDs and hidden component route context.
 3. Generate the application route registry and language-service integration.
 4. Emit selector subscriptions for static route-state reads.
 5. Add module ownership and loader metadata to the complete manifest.

@@ -385,6 +385,26 @@ export function emitComponentCall(
     componentName,
     element,
   );
+  const contextName = ctx.routeContextParams.get(componentName);
+  const callsiteRouteId = ctx.routeCallsiteIds.get(element);
+  const calleeKey = ctx.importedComponents.get(tag)?.key ?? `${ctx.moduleId}#${tag}`;
+  const calleeOwnsRoutes = (ctx.linkedRoutes ?? ctx.localRoutes).some(route =>
+    route.ownerComponent !== undefined &&
+    `${route.moduleId}#${route.ownerComponent}` === calleeKey);
+  const inheritedContext = contextName === undefined
+    ? astFactory.identifier('undefined')
+    : astFactory.identifier(contextName);
+  const childRouteContext = callsiteRouteId === undefined
+    ? inheritedContext
+    : astFactory.conditionalExpression(
+        cloneEstreeNode(inheritedContext),
+        astFactory.binaryExpression(
+          '+',
+          cloneEstreeNode(inheritedContext),
+          astFactory.stringLiteral(`>>${callsiteRouteId}`),
+        ),
+        astFactory.stringLiteral(callsiteRouteId),
+      );
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
@@ -394,6 +414,7 @@ export function emitComponentCall(
           cloneEstreeNode(ownerId),
           ...(props.length > 0 ? [astFactory.arrayExpression(props)] : []),
           ...(dataPolicies === null ? [] : [dataPolicies]),
+          ...(calleeOwnsRoutes ? [childRouteContext] : []),
         ]),
       ),
     ]),

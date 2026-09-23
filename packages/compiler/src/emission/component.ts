@@ -223,6 +223,7 @@ function buildFactoryParameters(
   eventBindings: ReadonlyMap<string, string>,
   propsBox: string | null,
   dataPolicies: t.Identifier | null,
+  routeContext: t.Identifier | null,
 ): t.FunctionDeclaration['params'] {
   if (lightweight) {
     return [
@@ -240,11 +241,13 @@ function buildFactoryParameters(
         astFactory.identifier(factoryParent!),
         astFactory.identifier(propsBox!),
         ...(dataPolicies === null ? [] : [cloneEstreeNode(dataPolicies)]),
+        ...(routeContext === null ? [] : [cloneEstreeNode(routeContext)]),
       ]
     : [
         astFactory.identifier(factoryId),
         astFactory.identifier(factoryParent!),
         ...(dataPolicies === null ? [] : [cloneEstreeNode(dataPolicies)]),
+        ...(routeContext === null ? [] : [cloneEstreeNode(routeContext)]),
       ];
 }
 
@@ -263,9 +266,11 @@ export function transformComponent(
     refs.some((ref) => ref.sourceLocal === true) ||
     linkedRefs.some((ref) => ref.sourceLocal);
   const dataPolicies = ctx.transparentPolicyParams.get(name) ?? null;
+  const ownsRoutes = ctx.localRoutes.some(route => route.ownerComponent === name);
   const lightweight =
     dataPolicies === null &&
     !ctx.transparentSources.has(name) &&
+    !ownsRoutes &&
     isLightweightListedComponent(ctx, name);
   const positionalObjectProps =
     lightweight && linkedRefs.length === 0
@@ -307,6 +312,8 @@ export function transformComponent(
     };
   }
   const factoryId = generatedIdentifier(ctx, 'id').name;
+  const routeContext = ownsRoutes ? generatedIdentifier(ctx, 'routeContext') : null;
+  if (routeContext !== null) ctx.routeContextParams.set(name, routeContext.name);
   const factoryParent = lightweight
     ? null
     : generatedIdentifier(ctx, 'parent').name;
@@ -574,6 +581,7 @@ export function transformComponent(
     factoryEventBindings,
     propsBox,
     dataPolicies,
+    routeContext,
   );
   node.body = astFactory.blockStatement(body);
 }
