@@ -52,6 +52,19 @@ export interface CompiledGraph {
   maps: ReadonlyMap<string, CompilerSourceMap>;
   css: ReadonlyMap<string, string>;
   styles: ReadonlySet<string>;
+  /** Styles needed before any lazy route module is loaded. */
+  eagerStyles: ReadonlySet<string>;
+  /** Additional styles needed for each lazy route's URL pattern. */
+  routeStyles: readonly {
+    readonly id: string;
+    readonly pattern: string;
+    readonly styles: ReadonlySet<string>;
+  }[];
+  routeTree: readonly {
+    readonly id: string;
+    readonly pattern: string;
+    readonly parentId?: string;
+  }[];
   /** Expanded route patterns seen by this compile. */
   routes: readonly string[];
 }
@@ -79,6 +92,17 @@ export async function compileGraph(
   const resolutions = new Map<string, string>();
   const visiting = new Set<string>();
   const styles = new Set<string>();
+  const directStyles = new Map<string, Set<string>>();
+
+  function recordStyle(id: string, style: string): void {
+    styles.add(style);
+    let owned = directStyles.get(id);
+    if (owned === undefined) {
+      owned = new Set();
+      directStyles.set(id, owned);
+    }
+    owned.add(style);
+  }
 
   async function visit(file: string): Promise<void> {
     const cleanFile = cleanViteId(file);
@@ -135,7 +159,7 @@ export async function compileGraph(
 
       const target = cleanViteId(resolved.id);
       if (styleExtension.test(resolved.id)) {
-        styles.add(resolved.id);
+        recordStyle(id, resolved.id);
         continue;
       }
       const authored = authoredImports.get(specifier);
@@ -185,6 +209,9 @@ export async function compileGraph(
       maps: new Map(),
       css: new Map(),
       styles: new Set(),
+      eagerStyles: new Set(),
+      routeStyles: [],
+      routeTree: [],
       routes: [],
     };
   }
@@ -252,6 +279,47 @@ export async function compileGraph(
   }
   const rootId = compiled.applicationRoot?.rootId ?? 'App';
   const mountModuleId = compiled.applicationRoot?.mountModuleId;
+  for (const [file, id] of sourceIds) {
+    if (compiled.css?.[id]) recordStyle(id, `${file}?memo-style.css`);
+  }
+  const staticDependencies = new Map<string, Set<string>>();
+  for (const [id, code] of Object.entries(compiled.output)) {
+    const program = parseWithEstreeFrontendOrThrow(
+      options.frontend ?? memoizedEstreeFrontend,
+      code,
+      { filename: id, sourceType: 'module' },
+    ).program as ParsedProgram;
+    const dependencies = new Set<string>();
+    for (const reference of valueImports(program)) {
+      const target = resolutions.get(resolutionKey(id, reference.specifier));
+      if (target !== undefined) dependencies.add(target);
+    }
+    staticDependencies.set(id, dependencies);
+  }
+  function reachableStyles(seeds: readonly string[]): Set<string> {
+    const reached = new Set<string>();
+    const result = new Set<string>();
+    const pending = [...seeds];
+    while (pending.length > 0) {
+      const id = pending.pop()!;
+      if (reached.has(id)) continue;
+      reached.add(id);
+      for (const style of directStyles.get(id) ?? []) result.add(style);
+      for (const dependency of staticDependencies.get(id) ?? []) pending.push(dependency);
+    }
+    return result;
+  }
+  const eagerStyles = reachableStyles(mountModuleId === undefined
+    ? [...sourceIds.values()]
+    : [mountModuleId]);
+  const routeStyles = compiled.routeDefinitions
+    .filter(route => route.lazy && route.loaderModuleId !== undefined)
+    .map(route => ({
+      id: route.id,
+      pattern: route.pattern,
+      styles: new Set([...reachableStyles([route.loaderModuleId!])]
+        .filter(style => !eagerStyles.has(style))),
+    }));
   const output = new Map<string, string>();
   const maps = new Map<string, CompilerSourceMap>();
   const css = new Map<string, string>();
@@ -296,6 +364,13 @@ export async function compileGraph(
     maps,
     css,
     styles,
+    eagerStyles,
+    routeStyles,
+    routeTree: compiled.routeDefinitions.map(route => ({
+      id: route.id,
+      pattern: route.pattern,
+      ...(route.parentId === undefined ? {} : { parentId: route.parentId }),
+    })),
     routes: compiled.routes.map(route => route.pattern),
   };
 }

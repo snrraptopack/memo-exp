@@ -79,7 +79,7 @@ async function dispatch(
     .get('content-type')
     ?.toLowerCase()
     .includes('text/html')
-      ? await clientStyleUrls(server)
+      ? await clientStyleUrls(server, request.url ?? '/')
       : [];
   await sendNodeResponse(injectClientStyles(handled, styles), response);
 }

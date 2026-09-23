@@ -116,6 +116,8 @@ export interface CompiledRouteDefinition extends CompiledRoutePattern {
   readonly componentKey?: string;
   readonly parentId?: string;
   readonly lazy?: boolean;
+  /** Module imported by this route's dynamic loader (may re-export the component). */
+  readonly loaderModuleId?: string;
 }
 
 export interface CompiledModules {
@@ -340,6 +342,37 @@ function routeImportSpecifier(importer: string, target: string): string {
   return relative.startsWith('.') ? relative : `./${relative}`;
 }
 
+/** A dynamic route edge cannot make a module lazy when another static path reaches it. */
+function eagerModules(
+  rootModuleId: string,
+  entries: ReadonlyMap<string, ModuleEntry>,
+  options: CompileModulesOptions,
+  lazyImportsByModule: ReadonlyMap<string, Readonly<Record<string, LazyRouteImport>>>,
+): Set<string> {
+  const eager = new Set<string>();
+  const pending = [rootModuleId];
+  while (pending.length > 0) {
+    const id = pending.pop()!;
+    if (eager.has(id)) continue;
+    eager.add(id);
+    const entry = entries.get(id);
+    if (entry === undefined) continue;
+    for (const statement of entry.ast.body) {
+      if (statement.type !== 'ImportDeclaration' ||
+        statement.importKind === 'type' || statement.importKind === 'typeof') continue;
+      const target = resolveModule(id, statement.source.value, entries, options);
+      if (target === undefined) continue;
+      const runtimeSpecifiers = statement.specifiers.filter(specifier =>
+        specifier.type !== 'ImportSpecifier' ||
+        (specifier.importKind !== 'type' && specifier.importKind !== 'typeof'));
+      const lazy = runtimeSpecifiers.length > 0 && runtimeSpecifiers.every(specifier =>
+        lazyImportsByModule.get(id)?.[specifier.local.name]?.moduleId === target.id);
+      if (!lazy) pending.push(target.id);
+    }
+  }
+  return eager;
+}
+
 function joinRoutePatterns(parent: string, child: string): string {
   if (parent.endsWith('/*')) {
     throw new TypeError(`catch-all route '${parent}' cannot have child routes`);
@@ -545,6 +578,17 @@ function compileLinkedModules(
       lazyImportsByModule.set(entry.id, lazyRouteImports(
         entry, manifests.get(entry.id)!, linkedRoutes, entries, options,
       ));
+    }
+    const eager = eagerModules(
+      applicationRoot?.mountModuleId ?? routeManifestModule,
+      entries,
+      options,
+      lazyImportsByModule,
+    );
+    for (const imports of lazyImportsByModule.values()) {
+      for (const [local, imported] of Object.entries(imports)) {
+        if (eager.has(imported.moduleId)) delete imports[local];
+      }
     }
     linkedRoutes = linkedRoutes.map(route => {
       const imported = route.component === undefined
@@ -763,7 +807,10 @@ function compileLinkedModules(
         componentKey: route.componentKey,
         componentModuleId: route.componentKey.slice(0, route.componentKey.lastIndexOf('#')),
       }),
-      ...(route.lazyComponent === undefined ? {} : { lazy: true }),
+      ...(route.lazyComponent === undefined ? {} : {
+        lazy: true,
+        loaderModuleId: route.lazyComponent.moduleId,
+      }),
     })).sort((left, right) =>
       left.pattern.localeCompare(right.pattern) || left.id.localeCompare(right.id)),
     ...(Object.keys(css).length > 0 ? { css } : {}),

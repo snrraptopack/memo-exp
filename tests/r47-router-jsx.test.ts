@@ -208,6 +208,28 @@ describe('compiler-owned JSX routing', () => {
     }));
   });
 
+  it('keeps a route import eager when another static path reaches its module', () => {
+    const compiled = compileModulesDetailed({
+      './App.tsx': `
+        import { Detail } from './Detail';
+        import { Toolbar } from './Toolbar';
+        export function App() { return <main route="/"><Toolbar /><Detail route="/detail" /></main>; }
+      `,
+      './Toolbar.tsx': `
+        import { badge } from './Detail';
+        export function Toolbar() { return <header>{badge}</header>; }
+      `,
+      './Detail.tsx': `
+        export const badge = 'ready';
+        export function Detail() { return <p>Detail</p>; }
+      `,
+    }, { routedEnvironment: 'client' });
+    expect(compiled.output['./App.tsx']).toContain('import { Detail } from');
+    expect(compiled.output['./App.tsx']).not.toContain('prepareInitialRouteModules');
+    expect(compiled.routeDefinitions.find(route => route.pattern === '/detail')?.lazy)
+      .toBeUndefined();
+  });
+
   it('keeps semantic route IDs stable when source lines move', () => {
     const source = `function App() { return <main route="/"><p route="/reports" /></main>; }`;
     const first = compile(source, { moduleId: './App.tsx' });

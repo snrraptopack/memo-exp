@@ -156,8 +156,8 @@ export function memoizedDom(
       const graph = await compilation;
       state.replace(graph);
       await writeRoutesDeclaration(config.root, graph.routes);
-      if (devServer !== undefined) {
-        registerClientStyles(devServer, state, state.styles);
+      if (devServer !== undefined && environmentName !== 'ssr') {
+        registerClientStyles(devServer, state, state.eagerStyles, state.routeStyles, state.routeTree);
       }
     } finally {
       if (state.compiling === compilation) {
@@ -195,8 +195,8 @@ export function memoizedDom(
     const compilation = state.compiling;
     try {
       state.replace(await compilation);
-      if (devServer !== undefined) {
-        registerClientStyles(devServer, state, state.styles);
+      if (devServer !== undefined && environmentName !== 'ssr') {
+        registerClientStyles(devServer, state, state.eagerStyles, state.routeStyles, state.routeTree);
       }
     } finally {
       if (state.compiling === compilation) {
@@ -333,8 +333,8 @@ export function memoizedDom(
     const compilation = lazy.compiling;
     try {
       lazy.replace(await compilation);
-      if (devServer !== undefined) {
-        registerClientStyles(devServer, lazy, lazy.styles);
+      if (devServer !== undefined && context.environment.name !== 'ssr') {
+        registerClientStyles(devServer, lazy, lazy.eagerStyles, lazy.routeStyles, lazy.routeTree);
       }
     } finally {
       if (lazy.compiling === compilation) {
@@ -373,6 +373,11 @@ export function memoizedDom(
     },
     configureServer(server) {
       devServer = server;
+      for (const [environment, state] of states) {
+        if ((environment as { name?: string }).name === 'client') {
+          registerClientStyles(server, state, state.eagerStyles, state.routeStyles, state.routeTree);
+        }
+      }
       return options.serverEntry === undefined
         ? undefined
         : configureFullstackServer(server, options.serverEntry);

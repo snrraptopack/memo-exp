@@ -11,6 +11,7 @@ import {
   type ViteDevServer,
 } from 'vite';
 import memoizedDom from '../src';
+import { clientStyleUrls } from '../src/dev-assets';
 import { createServerRouter } from '../../server/src/http-router';
 
 const fixture = resolve(import.meta.dirname, 'fixtures/vite-app');
@@ -455,7 +456,11 @@ describe('Vite 8 adapter', () => {
       }
     `);
     await writeFile(resolve(temporarySource, 'Detail.tsx'), `
+      import './Detail.css';
       export function Detail() { return <p>route-only-detail-marker</p>; }
+    `);
+    await writeFile(resolve(temporarySource, 'Detail.css'), `
+      p { color: rgb(42, 51, 62); }
     `);
 
     const result = await build({
@@ -483,6 +488,155 @@ describe('Vite 8 adapter', () => {
     expect(detail?.fileName).not.toBe(entry?.fileName);
     expect(entry?.code).not.toContain('route-only-detail-marker');
     expect(entry?.dynamicImports).toContain(detail?.fileName);
+    const routeCss = (Array.isArray(result) ? result : [result])
+      .flatMap(item => item.output)
+      .filter(output => output.type === 'asset' &&
+        output.fileName.endsWith('.css'));
+    expect(routeCss).toHaveLength(1);
+    expect(detail?.viteMetadata?.importedCss).toContain(routeCss[0]?.fileName);
+    expect(entry?.viteMetadata?.importedCss).not.toContain(routeCss[0]?.fileName);
+  });
+
+  it('does not emit a lazy route edge into an already eager module', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    await writeFile(resolve(temporarySource, 'main.ts'), `
+      import { mount } from '@memoized-dom/runtime';
+      import { App } from './App';
+      mount('root', App);
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import { Detail, Badge } from './Detail';
+      export function App() {
+        return <main route="/"><Badge /><Detail route="/detail" /></main>;
+      }
+    `);
+    await writeFile(resolve(temporarySource, 'Detail.tsx'), `
+      export function Badge() { return <span>badge-marker</span>; }
+      export function Detail() { return <p>shared-module-detail-marker</p>; }
+    `);
+
+    const result = await build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: {
+        '@memoized-dom/runtime': runtime,
+        '@memoized-dom/router/internal': routerInternal,
+      } },
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    });
+    const chunks = (Array.isArray(result) ? result : [result])
+      .flatMap(item => item.output)
+      .filter(output => output.type === 'chunk');
+    const entry = chunks.find(chunk => chunk.isEntry);
+    expect(entry?.code).toContain('shared-module-detail-marker');
+    expect(entry?.dynamicImports).toEqual([]);
+  });
+
+  it('keeps compiler-extracted route CSS with a lazy TSRX chunk', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    await writeFile(resolve(temporarySource, 'main.ts'), `
+      import { mount } from '@memoized-dom/runtime';
+      import { App } from './App';
+      mount('root', App);
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import { Detail } from './Detail.tsrx';
+      export function App() { return <main route="/"><Detail route="/detail" /></main>; }
+    `);
+    await writeFile(resolve(temporarySource, 'Detail.tsrx'), `
+      export function Detail() @{
+        <section class="detail-route">
+          <style>.detail-route { color: rgb(7, 8, 9); }</style>
+          Lazy detail
+        </section>
+      }
+    `);
+    const result = await build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: {
+        '@memoized-dom/runtime': runtime,
+        '@memoized-dom/router/internal': routerInternal,
+      } },
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    });
+    const outputs = (Array.isArray(result) ? result : [result])
+      .flatMap(item => item.output);
+    const chunks = outputs.filter(output => output.type === 'chunk');
+    const entry = chunks.find(chunk => chunk.isEntry);
+    const detail = chunks.find(chunk => chunk.code.includes('Lazy detail'));
+    const css = outputs.filter(output => output.type === 'asset' &&
+      output.fileName.endsWith('.css'));
+    expect(detail).toBeDefined();
+    expect(css).toHaveLength(1);
+    expect(detail?.viteMetadata?.importedCss).toContain(css[0]?.fileName);
+    expect(entry?.viteMetadata?.importedCss).not.toContain(css[0]?.fileName);
+  });
+
+  it('injects only eager and matched-route CSS into dev HTML', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    let configuredServer: ViteDevServer | undefined;
+    await writeFile(resolve(temporarySource, 'main.ts'), `
+      import { mount } from '@memoized-dom/runtime';
+      import { App } from './App';
+      mount('root', App);
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import './base.css';
+      import { Home } from './Home';
+      import { Detail } from './Detail';
+      export function App() { return <main><Home route="/" /><Detail route="/detail" /></main>; }
+    `);
+    await writeFile(resolve(temporarySource, 'Home.tsx'), `
+      import './Home.css';
+      export function Home() { return <p>Home</p>; }
+    `);
+    await writeFile(resolve(temporarySource, 'Detail.tsx'), `
+      import './Detail.css';
+      export function Detail() { return <p>Detail</p>; }
+    `);
+    await writeFile(resolve(temporarySource, 'base.css'), `main { color: black; }`);
+    await writeFile(resolve(temporarySource, 'Home.css'), `p { color: blue; }`);
+    await writeFile(resolve(temporarySource, 'Detail.css'), `p { color: red; }`);
+    server = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: {
+        '@memoized-dom/runtime': runtime,
+        '@memoized-dom/router/internal': routerInternal,
+      } },
+      plugins: [
+        memoizedDom({ clientEntry: 'src/main.ts' }),
+        { name: 'capture-style-server', configureServer(vite) { configuredServer = vite; } },
+      ],
+      server: { host: '127.0.0.1', port: 0 },
+    });
+    await server.listen();
+    await server.environments.client.transformRequest('/src/main.ts');
+    if (configuredServer === undefined) throw new Error('Missing configured Vite server');
+    const home = await clientStyleUrls(configuredServer, '/');
+    const detail = await clientStyleUrls(configuredServer, '/detail');
+    expect(home).toEqual(expect.arrayContaining(['/src/base.css']));
+    expect(home).toContain('/src/Home.css');
+    expect(home).not.toContain('/src/Detail.css');
+    expect(detail).toEqual(expect.arrayContaining(['/src/base.css', '/src/Detail.css']));
+    expect(detail).not.toContain('/src/Home.css');
   });
 
   it('serves one coherent lazy graph when the configured seed is missing', async () => {

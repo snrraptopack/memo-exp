@@ -10,6 +10,17 @@ export class AdapterState {
   readonly maps = new Map<string, CompilerSourceMap>();
   readonly css = new Map<string, string>();
   readonly styles = new Set<string>();
+  readonly eagerStyles = new Set<string>();
+  routeStyles: readonly {
+    readonly id: string;
+    readonly pattern: string;
+    readonly styles: ReadonlySet<string>;
+  }[] = [];
+  routeTree: readonly {
+    readonly id: string;
+    readonly pattern: string;
+    readonly parentId?: string;
+  }[] = [];
   entry?: string;
   compiling: Promise<CompiledGraph> | undefined;
   hotUpdateFailed = false;
@@ -24,5 +35,9 @@ export class AdapterState {
     for (const [file, style] of graph.css) this.css.set(file, style);
     this.styles.clear();
     for (const file of graph.styles) this.styles.add(file);
+    this.eagerStyles.clear();
+    for (const file of graph.eagerStyles) this.eagerStyles.add(file);
+    this.routeStyles = graph.routeStyles;
+    this.routeTree = graph.routeTree;
   }
 }

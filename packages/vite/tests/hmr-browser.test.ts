@@ -10,6 +10,8 @@ import memoizedDom from '../src';
 const repository = resolve(import.meta.dirname, '../../..');
 const runtime = resolve(repository, 'packages/runtime/src/index.ts');
 const runtimeHot = resolve(repository, 'packages/runtime/src/hot.ts');
+const router = resolve(repository, 'packages/router/src/index.ts');
+const routerInternal = resolve(repository, 'packages/router/src/internal.ts');
 
 function chromeExecutable(): string | null {
   const candidates = [
@@ -128,4 +130,74 @@ describe('browser HMR', () => {
       text: document.querySelector('main')?.textContent,
     }))).toEqual({ loads: '1', mains: 1, text: 'aftersecond' });
   }, 45_000);
+
+  it('updates a lazy route and reuses its new factory after leaving and returning', async context => {
+    const executablePath = chromeExecutable();
+    if (executablePath === null) {
+      context.skip('Chrome is unavailable; set MMD_CHROME_PATH to run this test');
+      return;
+    }
+    fixture = await mkdtemp(join(tmpdir(), 'memoized-dom-lazy-hmr-'));
+    const source = resolve(fixture, 'src');
+    await mkdir(source, { recursive: true });
+    await writeFile(resolve(fixture, 'index.html'), `
+      <div id="root"></div><script type="module" src="/src/main.ts"></script>
+    `);
+    await writeFile(resolve(source, 'main.ts'), `
+      import { mount } from '@memoized-dom/runtime';
+      import { App } from './App';
+      sessionStorage.setItem('loads', String(Number(sessionStorage.getItem('loads') ?? 0) + 1));
+      mount('root', App);
+    `);
+    await writeFile(resolve(source, 'App.tsx'), `
+      import { Detail } from './Detail';
+      export function App() { return <main route="/">
+        <a route-to="/">Home</a>
+        <a route-to="/detail">Detail</a>
+        <Detail route="/detail" />
+      </main>; }
+    `);
+    const detailFile = resolve(source, 'Detail.tsx');
+    await writeFile(detailFile, `export function Detail() { return <p data-detail>version one</p>; }`);
+    server = await createServer({
+      root: fixture,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: [
+        { find: '@memoized-dom/runtime/hot', replacement: runtimeHot },
+        { find: '@memoized-dom/runtime', replacement: runtime },
+        { find: '@memoized-dom/router/internal', replacement: routerInternal },
+        { find: '@memoized-dom/router', replacement: router },
+      ] },
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
+      server: { host: '127.0.0.1', port: 0 },
+    });
+    await server.listen();
+    const address = server.httpServer?.address();
+    if (address === null || address === undefined || typeof address === 'string') {
+      throw new Error('Vite did not expose a TCP address');
+    }
+    const hot = server.environments.client.hot;
+    const sendHot = hot.send.bind(hot);
+    const send = vi.spyOn(hot, 'send').mockImplementation((payload, client) =>
+      sendHot(payload, client));
+    browser = await puppeteer.launch({ headless: true, executablePath });
+    const page = await browser.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: 'networkidle0' });
+    await page.click('a[href="/detail"]');
+    await page.waitForFunction(() => document.querySelector('[data-detail]')?.textContent === 'version one');
+
+    await writeFile(detailFile, `export function Detail() { return <p data-detail>version two</p>; }`);
+    await page.waitForFunction(() => document.querySelector('[data-detail]')?.textContent === 'version two');
+    await page.click('a[href="/"]');
+    await page.waitForFunction(() => document.querySelector('[data-detail]') === null);
+    await page.click('a[href="/detail"]');
+    await page.waitForFunction(() => document.querySelector('[data-detail]')?.textContent === 'version two');
+    expect(await page.$$('[data-detail]')).toHaveLength(1);
+    expect(await page.evaluate(() => sessionStorage.getItem('loads'))).toBe('1');
+    expect(errors).toEqual([]);
+    expect(send.mock.calls.some(([payload]) => payload.type === 'full-reload')).toBe(false);
+  }, 60_000);
 });
