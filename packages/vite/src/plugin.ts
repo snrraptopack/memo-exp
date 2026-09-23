@@ -11,6 +11,7 @@ import type {
 } from 'vite';
 import type { GraphPluginContext } from './graph/collector';
 import { compileGraph } from './graph/collector';
+import { writeRoutesDeclaration } from './routes';
 import { invalidateManagedModules } from './hmr';
 import {
   resolveAdapterOptions,
@@ -152,7 +153,9 @@ export function memoizedDom(
     }
     const compilation = state.compiling;
     try {
-      state.replace(await compilation);
+      const graph = await compilation;
+      state.replace(graph);
+      await writeRoutesDeclaration(config.root, graph.routes);
       if (devServer !== undefined) {
         registerClientStyles(devServer, state, state.styles);
       }

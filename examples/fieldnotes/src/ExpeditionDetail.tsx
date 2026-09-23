@@ -6,13 +6,11 @@ export function ExpeditionDetail() {
   // Server-backed preparation: services never ships to the browser — the
   // compiler strips this body and the server runs it. The returned page is
   // what the component reads.
-  const page = $routed(({ params, services, locals }) =>
-    services.expeditions.find(params.id).then(expedition =>
-      expedition === null
-        ? redirectRoute('/expeditions')
-        : { expedition, viewer: locals.visitor },
-    ),
-  );
+  const page = $routed(async ({ params, services, locals }) => {
+    const expedition = await services.expeditions.find(params.id);
+    if (expedition === null) return redirectRoute('/expeditions');
+    return { expedition, viewer: locals.visitor };
+  });
 
   const nodes = { noteInput: null as HTMLInputElement | null };
   let lastPost = null as ReturnType<typeof postNote> | null;

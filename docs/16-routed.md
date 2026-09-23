@@ -160,21 +160,38 @@ const data = $routed(({ locals }) => {
 ## Rules
 
 - **Attach it to a route** — orphan `$routed` is a compile error.
-- **No authored `async`/`await`** — return the value or a service/server-function
-  promise directly; the preparation runtime settles it before the component
-  mounts. An `async` callback is a compile error. To branch on an async
-  result (like a not-found check), use `.then()`:
+- **`async`/`await` is fine** — the preparation runtime awaits the returned
+  value before the component mounts, so branching on async work reads
+  naturally:
 
   ```ts
-  const page = $routed(({ params, services }) =>
-    services.reports.find(params.id).then(report =>
-      report === null ? redirectRoute('/') : { report },
-    ),
-  );
+  const page = $routed(async ({ params, services }) => {
+    const report = await services.reports.find(params.id);
+    if (report === null) return redirectRoute('/');
+    return { report };
+  });
   ```
 
-  Only the *returned* promise is settled — a promise nested inside a
-  returned object is not awaited and won't transport.
+  Only the *returned* value is settled — a promise nested inside a
+  returned object (`{ report: services.reports.find(id) }`) is not
+  awaited and won't transport; `await` it first.
+- **Server functions work inside `$routed`** — return the call directly
+  and the preparation settles the returned source to plain data before
+  transport:
+
+  ```ts
+  const page = $routed(({ params }) => getReportPage(params.id));
+  // page is the settled payload, not a source
+  ```
+
+  The settle step sees the returned source, waits for it, and stores its
+  data — so a server function can be the whole preparation. You can't
+  *inspect* the result inside the callback (it's still in flight there)
+  — when you need to branch on loaded data, like a not-found redirect,
+  go through `services` and `await` instead. In a server-backed callback
+  the call dispatches in-memory on the server; in a universal one it
+  goes through the normal `/_fn/*` request — either way the component
+  just sees data.
 - **Return serializable data** — the result crosses HTTP/SSR boundaries.
   Return `url.pathname`, not the `URL` object; entities, not db handles.
 - **Use server fields freely** — the compiler decides per callback where

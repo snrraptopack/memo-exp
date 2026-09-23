@@ -84,7 +84,10 @@ describe('$routed preparation discovery', () => {
       `,
     })).toThrow(/assign \$routed directly to a component-local const binding/);
 
-    expect(() => compileModules({
+  });
+
+  it('allows authored async preparation callbacks', () => {
+    const client = compileModules({
       './AsyncPage.tsx': `
         import { $routed } from '@memoized-dom/router';
         export function AsyncPage() {
@@ -92,7 +95,10 @@ describe('$routed preparation discovery', () => {
           return <p>{page}</p>;
         }
       `,
-    })).toThrow(/return service or server-function work without authoring async\/await/);
+    }, { routedEnvironment: 'client' })['./AsyncPage.tsx']!;
+
+    expect(client).toContain('registerRoutedPreparation');
+    expect(client).toMatch(/prepare:\s*async\s*\(/);
   });
 
   it('rejects context rest bindings because they hide server capability use', () => {

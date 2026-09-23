@@ -20,6 +20,7 @@ import { createStorage } from '@memoized-dom/runtime';
 import { defaultRouteRuntime } from './default-runtime';
 import type { RouteRuntime } from './runtime';
 import type {
+  ApplicationRoutePath,
   NavigateArguments,
   RelativeNavigateArguments,
   RouteListener,
@@ -119,14 +120,14 @@ export const activeRoute: RouteState = Object.freeze({
   },
 });
 
-export function navigate<Path extends string>(
+export function navigate<Path extends ApplicationRoutePath>(
   pattern: Path,
   ...arguments_: NavigateArguments<Path>
 ) {
   return getActiveRouteRuntime().navigate(pattern, ...arguments_);
 }
 
-export function navigateRelative<Path extends string>(
+export function navigateRelative<Path extends ApplicationRoutePath>(
   pattern: Path,
   ...arguments_: RelativeNavigateArguments<Path>
 ) {

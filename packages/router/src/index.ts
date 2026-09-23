@@ -1,4 +1,5 @@
 import type {
+  ApplicationRoutePath,
   NavigateArguments,
   RelativeNavigateArguments,
   RouteRedirect,
@@ -31,13 +32,13 @@ export function $routed<TResult>(
   );
 }
 
-export function navigate<Path extends string>(
+export function navigate<Path extends ApplicationRoutePath>(
   pattern: Path,
   ...arguments_: NavigateArguments<Path>
 ) {
   return getActiveRouteRuntime().navigate(pattern, ...arguments_);
 }
-export function navigateRelative<Path extends string>(
+export function navigateRelative<Path extends ApplicationRoutePath>(
   pattern: Path,
   ...arguments_: RelativeNavigateArguments<Path>
 ) {
@@ -91,6 +92,7 @@ export {
 } from './path';
 
 export type {
+  ApplicationRoutePath,
   MatchPatternOptions,
   NavigateArguments,
   NavigateOptions,
@@ -133,5 +135,6 @@ export type {
   RouteSelectionEquality,
   RouteSelectionListener,
   RouteSelector,
+  RouteTable,
   RouteTableMatcher,
 } from './types';

@@ -52,6 +52,8 @@ export interface CompiledGraph {
   maps: ReadonlyMap<string, CompilerSourceMap>;
   css: ReadonlyMap<string, string>;
   styles: ReadonlySet<string>;
+  /** Expanded route patterns seen by this compile. */
+  routes: readonly string[];
 }
 
 const styleExtension =
@@ -183,6 +185,7 @@ export async function compileGraph(
       maps: new Map(),
       css: new Map(),
       styles: new Set(),
+      routes: [],
     };
   }
   for (const entry of seeds) {
@@ -282,7 +285,14 @@ export async function compileGraph(
       sources: map.sources.map((source) => source === id ? file : source),
     });
   }
-  return { files: new Set(sourceIds.keys()), output, maps, css, styles };
+  return {
+    files: new Set(sourceIds.keys()),
+    output,
+    maps,
+    css,
+    styles,
+    routes: compiled.routes.map(route => route.pattern),
+  };
 }
 
 function appendHotBoundary(

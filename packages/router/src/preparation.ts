@@ -194,9 +194,9 @@ export async function prepareRoutedMatches(
     }
     const outcome: RoutedPreparationOutcome = definition.prepare === undefined
       ? await invokeBrowserServerPreparation(runtime, id, input)
-      : await (() => {
-          const value = definition.prepare!(browserContext(runtime, id, input));
-          return definition.settle?.(value, input.signal) ?? Promise.resolve(value);
+      : await (async () => {
+          const value = await definition.prepare!(browserContext(runtime, id, input));
+          return definition.settle?.(value, input.signal) ?? value;
         })().then(data => isRedirect(data)
           ? { kind: 'redirect', redirect: data } as const
           : { kind: 'data', data } as const);
@@ -337,7 +337,7 @@ export async function invokeServerRoutedPreparation(
   }
   const url = new URL(input.href, context.request.url);
   const state: RoutedCacheState = { ...input.state };
-  const returned = definition.prepare(Object.freeze({
+  const returned = await definition.prepare(Object.freeze({
     state,
     params: Object.freeze({ ...input.params }),
     url,
@@ -350,7 +350,7 @@ export async function invokeServerRoutedPreparation(
   }));
   const value = await (
     definition.settle?.(returned, context.request.signal) ??
-    Promise.resolve(returned)
+    returned
   );
   return isRedirect(value)
     ? {

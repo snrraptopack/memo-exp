@@ -97,10 +97,17 @@ export interface CompiledApplicationRoot {
   rootId: string;
 }
 
+export interface CompiledRoutePattern {
+  /** Expanded application path pattern (e.g. '/reports/:reportId'). */
+  readonly pattern: string;
+}
+
 export interface CompiledModules {
   output: Record<string, string>;
   maps: Record<string, CompilerSourceMap>;
   metadata: Record<string, CompiledModuleMetadata>;
+  /** Expanded route patterns seen by this compile, deduplicated. */
+  routes: readonly CompiledRoutePattern[];
   css?: Record<string, string>;
   applicationRoot?: CompiledApplicationRoot;
 }
@@ -553,6 +560,9 @@ function compileLinkedModules(
     output,
     maps,
     metadata,
+    routes: [...new Set(linkedRoutes.map(route => route.fullPattern))]
+      .sort()
+      .map(pattern => ({ pattern })),
     ...(Object.keys(css).length > 0 ? { css } : {}),
     ...(applicationRoot === undefined ? {} : { applicationRoot }),
   };

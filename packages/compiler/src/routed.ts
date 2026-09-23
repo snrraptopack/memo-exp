@@ -226,12 +226,6 @@ export function analyzeRoutedPreparations(
           argument ?? node,
         );
       }
-      if (argument.async) {
-        throw programPath.buildCodeFrameError(
-          'memo-dom: $routed preparation is colorless at the callsite; return service or server-function work without authoring async/await here',
-          argument,
-        );
-      }
       if (argument.generator) {
         throw programPath.buildCodeFrameError(
           'memo-dom: $routed preparation cannot be a generator',

@@ -307,6 +307,24 @@ export interface MatchPatternOptions {
   readonly end?: boolean;
 }
 
+/**
+ * Open application route registry. The Vite plugin's generated
+ * `.memoized/routes.d.ts` augments this interface with the application's
+ * expanded route patterns; outside an application (or before generation)
+ * it stays empty so path types fall back to `string` instead of `never`.
+ */
+export interface RouteTable {}
+
+/**
+ * Path accepted by `navigate()`/`navigateRelative()`. When the generated
+ * registry is present this unions the application's route patterns (for
+ * autocomplete) with `string` so runtime-computed destinations still
+ * compile; parameter checking still comes from the literal pattern.
+ */
+export type ApplicationRoutePath = [keyof RouteTable] extends [never]
+  ? string
+  : Extract<keyof RouteTable, string> | (string & {});
+
 export interface RouteTableMatcher {
   match(pathname: string): RouteMatch | null;
   resolve(location: RouteLocationSnapshot): readonly RouteMatch[];
