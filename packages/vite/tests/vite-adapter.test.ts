@@ -18,6 +18,7 @@ const source = resolve(fixture, 'src');
 const runtime = resolve(import.meta.dirname, '../../runtime/src/index.ts');
 const runtimeHot = resolve(import.meta.dirname, '../../runtime/src/hot.ts');
 const runtimeServer = resolve(import.meta.dirname, '../../runtime/src/server.ts');
+const routerInternal = resolve(import.meta.dirname, '../../router/src/internal.ts');
 const data = resolve(import.meta.dirname, '../../data/src/index.ts');
 const dataInternal = resolve(import.meta.dirname, '../../data/src/internal.ts');
 const serverRouter = resolve(import.meta.dirname, '../../server/src/http-router.ts');
@@ -437,6 +438,51 @@ describe('Vite 8 adapter', () => {
     expect(state?.code).toContain('import.meta.hot.accept(');
     expect(state?.code).toContain('import.meta.hot.invalidate(');
     expect(state?.code).not.toContain('__memoized_dom_apply_hot_update__([]');
+  });
+
+  it('keeps a route-only component out of the entry chunk', async () => {
+    const root = await copyFixture();
+    const temporarySource = resolve(root, 'src');
+    await writeFile(resolve(temporarySource, 'main.ts'), `
+      import { mount } from '@memoized-dom/runtime';
+      import { App } from './App';
+      mount('root', App);
+    `);
+    await writeFile(resolve(temporarySource, 'App.tsx'), `
+      import { Detail } from './Detail';
+      export function App() {
+        return <main route="/"><Detail route="/detail" /></main>;
+      }
+    `);
+    await writeFile(resolve(temporarySource, 'Detail.tsx'), `
+      export function Detail() { return <p>route-only-detail-marker</p>; }
+    `);
+
+    const result = await build({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: {
+        '@memoized-dom/runtime': runtime,
+        '@memoized-dom/router/internal': routerInternal,
+      } },
+      plugins: [memoizedDom({ clientEntry: 'src/main.ts' })],
+      build: {
+        write: false,
+        minify: false,
+        rolldownOptions: { input: resolve(temporarySource, 'main.ts') },
+      },
+    });
+    const chunks = (Array.isArray(result) ? result : [result])
+      .flatMap(item => item.output)
+      .filter(output => output.type === 'chunk');
+    const entry = chunks.find(chunk => chunk.isEntry);
+    const detail = chunks.find(chunk => chunk.code.includes('route-only-detail-marker'));
+    expect(entry).toBeDefined();
+    expect(detail).toBeDefined();
+    expect(detail?.fileName).not.toBe(entry?.fileName);
+    expect(entry?.code).not.toContain('route-only-detail-marker');
+    expect(entry?.dynamicImports).toContain(detail?.fileName);
   });
 
   it('serves one coherent lazy graph when the configured seed is missing', async () => {

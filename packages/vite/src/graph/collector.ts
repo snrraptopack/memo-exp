@@ -255,6 +255,9 @@ export async function compileGraph(
   const output = new Map<string, string>();
   const maps = new Map<string, CompilerSourceMap>();
   const css = new Map<string, string>();
+  const lazyComponentKeys = new Set(compiled.routeDefinitions
+    .filter(route => route.lazy && route.componentKey !== undefined)
+    .map(route => route.componentKey!));
   for (const [file, id] of sourceIds) {
     let code = compiled.output[id]!;
     if (compiled.css?.[id]) {
@@ -272,6 +275,7 @@ export async function compileGraph(
             options.hotRuntimePath ??
               `${options.runtimePath ?? '@memoized-dom/runtime'}/hot`,
             rootId,
+            lazyComponentKeys,
           )
         : code,
     );
@@ -302,6 +306,7 @@ function appendHotBoundary(
   moduleId: string,
   runtimePath: string,
   rootId: string,
+  lazyComponentKeys: ReadonlySet<string>,
 ): string {
   const components = new Map(
     metadata.componentExports.map((component) => [component.local, component]),
@@ -324,11 +329,16 @@ function appendHotBoundary(
   const acceptedExports = JSON.stringify(
     [...components.values()].map((component) => component.exported),
   );
+  const lazyUpdates = [...components.values()]
+    .filter(component => lazyComponentKeys.has(`${moduleId}#${component.local}`))
+    .map(component =>
+      `__memoized_dom_register_route_component__(${JSON.stringify(`${moduleId}#${component.local}`)}, updatedModule[${JSON.stringify(component.exported)}]);`)
+    .join('\n    ');
   return `${code}\nimport { applyHotUpdate as __memoized_dom_apply_hot_update__, disposeHotModule as __memoized_dom_dispose_hot_module__ } from ${JSON.stringify(
     runtimePath,
-  )};\nif (import.meta.hot) {\n  import.meta.hot.dispose(() => __memoized_dom_dispose_hot_module__(${JSON.stringify(
+  )};${lazyUpdates === '' ? '' : '\nimport { registerRouteComponent as __memoized_dom_register_route_component__ } from "@memoized-dom/router/internal";'}\nif (import.meta.hot) {\n  import.meta.hot.dispose(() => __memoized_dom_dispose_hot_module__(${JSON.stringify(
     moduleId,
   )}, ${JSON.stringify(rootId)}));\n  import.meta.hot.acceptExports(${acceptedExports}, (updatedModule) => {\n    if (!updatedModule) return;\n    const updates = [${updates}];\n    if (updates.some(([, next]) => next === undefined)) {\n      import.meta.hot.invalidate(${JSON.stringify(
         'memoized-dom: a component export was removed',
-      )});\n      return;\n    }\n    __memoized_dom_apply_hot_update__(updates, ${JSON.stringify(rootId)});\n  });\n}`;
+      )});\n      return;\n    }\n    ${lazyUpdates}\n    __memoized_dom_apply_hot_update__(updates, ${JSON.stringify(rootId)});\n  });\n}`;
 }

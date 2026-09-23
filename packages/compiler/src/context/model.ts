@@ -142,6 +142,8 @@ export interface InternalMemoDomOptions extends MemoDomOptions {
   linkedRoutes?: readonly CompilerRouteDefinition[];
   /** Emit and install the application manifest from this module. */
   emitRouteManifest?: boolean;
+  /** Route-exclusive imported binding -> canonical component key. */
+  lazyRouteImports?: Readonly<Record<string, string>>;
 }
 
 export interface LinkedStateImport {
@@ -383,6 +385,7 @@ export interface Ctx {
   routedEnvironment: 'universal' | 'client' | 'server';
   linkedRoutes: readonly CompilerRouteDefinition[] | null;
   emitRouteManifest: boolean;
+  lazyRouteImports: Readonly<Record<string, string>>;
   routeElements: WeakMap<t.JSXElement, CompilerRouteElement>;
   routeCallsiteIds: WeakMap<t.JSXElement, string>;
   routeContextParams: Map<string, string>;
@@ -705,6 +708,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     linkedRoutes: opts.linkedRoutes ?? null,
     emitRouteManifest:
       opts.emitRouteManifest ?? opts.linkedRoutes === undefined,
+    lazyRouteImports: opts.lazyRouteImports ?? {},
     routeElements: new WeakMap(),
     routeCallsiteIds: new WeakMap(),
     routeContextParams: new Map(),

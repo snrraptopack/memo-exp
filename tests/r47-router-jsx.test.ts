@@ -151,7 +151,61 @@ describe('compiler-owned JSX routing', () => {
       '/', '/admin/reports', '/admin/reports/:id', '/reports', '/reports/:id',
     ]);
     expect(manifest).toContain('>>');
+    expect(compiled.routeDefinitions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        pattern: '/reports',
+        moduleId: './App.tsx',
+        componentModuleId: './Reports.tsx',
+        componentKey: './Reports.tsx#Reports',
+      }),
+    ]));
+    expect(compiled.routeDefinitions.find(route => route.pattern === '/reports/:id'))
+      .toEqual(expect.objectContaining({ moduleId: './Reports.tsx' }));
+    expect(manifest).toContain('componentModuleId: "./Reports.tsx"');
     expect(compiled.output['./Reports.tsx']).toContain('routeContext');
+  });
+
+  it('splits route-exclusive imports only in client output', () => {
+    const modules = {
+      './App.tsx': `
+        import { Detail } from './Detail';
+        export function App() { return <main route="/"><Detail route="/detail" /></main>; }
+      `,
+      './Detail.tsx': `export function Detail() { return <p>Detail</p>; }`,
+    };
+    const client = compileModulesDetailed(modules, { routedEnvironment: 'client' });
+    const server = compileModulesDetailed(modules, { routedEnvironment: 'server' });
+    expect(client.output['./App.tsx']).not.toContain('import { Detail } from');
+    expect(client.output['./App.tsx']).toContain('import("./Detail.tsx")');
+    expect(client.output['./App.tsx']).toContain('readRouteComponent');
+    expect(client.output['./App.tsx']).toContain('prepareInitialRouteModules');
+    expect(server.output['./App.tsx']).toContain('import { Detail } from');
+    expect(server.output['./App.tsx']).not.toContain('prepareInitialRouteModules');
+
+    const eager = compileModulesDetailed({
+      ...modules,
+      './App.tsx': `
+        import { Detail } from './Detail';
+        export function App() { return <main route="/"><Detail route="/detail" /><Detail /></main>; }
+      `,
+    }, { routedEnvironment: 'client' });
+    expect(eager.output['./App.tsx']).toContain('import { Detail } from');
+    expect(eager.output['./App.tsx']).not.toContain('prepareInitialRouteModules');
+  });
+
+  it('loads aliased route component imports by their exported name', () => {
+    const compiled = compileModulesDetailed({
+      './App.tsx': `
+        import { Detail as Report } from './Detail';
+        export function App() { return <Report route="/report" />; }
+      `,
+      './Detail.tsx': `export function Detail() { return <p>Detail</p>; }`,
+    }, { routedEnvironment: 'client' });
+    expect(compiled.output['./App.tsx']).toContain('import("./Detail.tsx")');
+    expect(compiled.output['./App.tsx']).toContain('module["Detail"]');
+    expect(compiled.routeDefinitions[0]).toEqual(expect.objectContaining({
+      componentModuleId: './Detail.tsx',
+    }));
   });
 
   it('keeps semantic route IDs stable when source lines move', () => {

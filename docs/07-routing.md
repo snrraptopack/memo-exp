@@ -80,6 +80,12 @@ things like scroll position and local state inside it survive navigation.
 At `/settings` exactly, the `route="/"` child shows — a child pattern of `/`
 means "the parent's own path".
 
+In a client build, an imported component used only at `route` callsites (such
+as `Profile` above) loads as a separate chunk. The first matching chunk is
+loaded before `mount()` hydrates or renders; later navigation loads it before
+the route commits. A component declared locally or also used outside a route
+stays in the eager bundle. Server rendering keeps the ordinary static import.
+
 Rules for nesting:
 
 - Child pattern + parent pattern = the full path. `route-to` targets the

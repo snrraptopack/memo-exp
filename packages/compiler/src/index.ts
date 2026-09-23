@@ -29,6 +29,8 @@ export {
   type CompiledFunctionExport,
   type CompiledModuleMetadata,
   type CompiledModules,
+  type CompiledRouteDefinition,
+  type CompiledRoutePattern,
   type CompiledStateExport,
   type CompileModulesOptions,
 } from './linker';

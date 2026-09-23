@@ -7,8 +7,11 @@
  * untouched for the host bundler.
  */
 import type * as t from './ast/compiler-types';
+import { posix } from 'node:path';
 import {
   parseWithEstreeFrontendOrThrow,
+  walkAst,
+  type BaseNode,
   type EstreeFrontend,
   type AstComment,
   memoizedEstreeFrontend,
@@ -103,12 +106,26 @@ export interface CompiledRoutePattern {
   readonly pattern: string;
 }
 
+export interface CompiledRouteDefinition extends CompiledRoutePattern {
+  /** Stable identity of this expanded route instance. */
+  readonly id: string;
+  /** Module containing the JSX route declaration. */
+  readonly moduleId: string;
+  /** Module containing the component mounted at this route, when present. */
+  readonly componentModuleId?: string;
+  readonly componentKey?: string;
+  readonly parentId?: string;
+  readonly lazy?: boolean;
+}
+
 export interface CompiledModules {
   output: Record<string, string>;
   maps: Record<string, CompilerSourceMap>;
   metadata: Record<string, CompiledModuleMetadata>;
   /** Expanded route patterns seen by this compile, deduplicated. */
   routes: readonly CompiledRoutePattern[];
+  /** Every route instance, including same-path parent/child regions. */
+  routeDefinitions: readonly CompiledRouteDefinition[];
   css?: Record<string, string>;
   applicationRoot?: CompiledApplicationRoot;
 }
@@ -255,6 +272,72 @@ function routeComponentKey(
     ? undefined
     : manifests.get(target.id)?.exports[reference.imported];
   return exported?.type === 'component' ? exported.key : undefined;
+}
+
+interface LazyRouteImport {
+  readonly key: string;
+  readonly moduleId: string;
+  readonly exportName: string;
+}
+
+/** Only an import used exclusively as a route-bearing JSX tag may be split. */
+function lazyRouteImports(
+  entry: ModuleEntry,
+  manifest: ModuleManifest,
+  routes: readonly CompilerRouteDefinition[],
+  entries: ReadonlyMap<string, ModuleEntry>,
+  options: CompileModulesOptions,
+): Record<string, LazyRouteImport> {
+  const candidates = new Map<string, LazyRouteImport>();
+  for (const route of routes) {
+    if (route.moduleId !== entry.id || route.componentKey === undefined) continue;
+    const ref = manifest.imports.find(candidate => candidate.local === route.component);
+    if (ref === undefined || ref.imported === '*') continue;
+    const target = resolveModule(entry.id, ref.source, entries, options);
+    if (target === undefined) continue;
+    candidates.set(ref.local, {
+      key: route.componentKey,
+      moduleId: target.id,
+      exportName: ref.imported,
+    });
+  }
+  if (candidates.size === 0) return {};
+
+  const allowed = new WeakSet<object>();
+  walkAst<BaseNode>(entry.ast as unknown as BaseNode, {
+    enter(node) {
+      if (node.type === 'ImportDeclaration') {
+        for (const specifier of (node as unknown as t.ImportDeclaration).specifiers) {
+          allowed.add(specifier.local);
+          if (specifier.type === 'ImportSpecifier') allowed.add(specifier.imported);
+        }
+      }
+      if (node.type !== 'JSXElement') return;
+      const element = node as unknown as t.JSXElement;
+      if (element.openingElement.name.type !== 'JSXIdentifier') return;
+      if (!candidates.has(element.openingElement.name.name)) return;
+      if (!element.openingElement.attributes.some(attribute =>
+        attribute.type === 'JSXAttribute' &&
+        attribute.name.type === 'JSXIdentifier' &&
+        attribute.name.name === 'route')) return;
+      allowed.add(element.openingElement.name);
+      if (element.closingElement !== null) allowed.add(element.closingElement.name);
+    },
+  });
+  walkAst<BaseNode>(entry.ast as unknown as BaseNode, {
+    enter(node) {
+      if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') &&
+        candidates.has((node as t.Identifier).name) && !allowed.has(node)) {
+        candidates.delete((node as t.Identifier).name);
+      }
+    },
+  });
+  return Object.fromEntries(candidates);
+}
+
+function routeImportSpecifier(importer: string, target: string): string {
+  const relative = posix.relative(posix.dirname(importer), target);
+  return relative.startsWith('.') ? relative : `./${relative}`;
 }
 
 function joinRoutePatterns(parent: string, child: string): string {
@@ -446,7 +529,7 @@ function compileLinkedModules(
     rootId,
     routeInstances,
   );
-  const linkedRoutes = attachRoutedPreparations(
+  let linkedRoutes = attachRoutedPreparations(
     routeInstances,
     entries,
     manifests,
@@ -456,6 +539,27 @@ function compileLinkedModules(
   const applicationRoot = resolveApplicationRoot(entries, manifests, options);
   const routeManifestModule =
     applicationRoot?.moduleId ?? entries.values().next().value?.id;
+  const lazyImportsByModule = new Map<string, Record<string, LazyRouteImport>>();
+  if (options.routedEnvironment === 'client' && routeManifestModule !== undefined) {
+    for (const entry of entries.values()) {
+      lazyImportsByModule.set(entry.id, lazyRouteImports(
+        entry, manifests.get(entry.id)!, linkedRoutes, entries, options,
+      ));
+    }
+    linkedRoutes = linkedRoutes.map(route => {
+      const imported = route.component === undefined
+        ? undefined
+        : lazyImportsByModule.get(route.moduleId)?.[route.component];
+      return imported === undefined ? route : {
+        ...route,
+        lazyComponent: {
+          moduleId: imported.moduleId,
+          exportName: imported.exportName,
+          specifier: routeImportSpecifier(routeManifestModule, imported.moduleId),
+        },
+      };
+    });
+  }
 
   const renderUsage = new Map<string, RenderUsage>();
   for (const manifest of manifests.values()) {
@@ -624,6 +728,9 @@ function compileLinkedModules(
       linkedComponentPropSources,
       linkedComponentRenderProps,
       linkedRoutes,
+      lazyRouteImports: Object.fromEntries(Object.entries(
+        lazyImportsByModule.get(entry.id) ?? {},
+      ).map(([local, imported]) => [local, imported.key])),
       emitRouteManifest: entry.id === routeManifestModule,
       ...(applicationRoot?.moduleId === entry.id
         ? { rootComponent: applicationRoot.local }
@@ -647,6 +754,18 @@ function compileLinkedModules(
     routes: [...new Set(linkedRoutes.map(route => route.fullPattern))]
       .sort()
       .map(pattern => ({ pattern })),
+    routeDefinitions: linkedRoutes.map(route => ({
+      id: route.id,
+      pattern: route.fullPattern,
+      moduleId: route.moduleId,
+      ...(route.parentId === undefined ? {} : { parentId: route.parentId }),
+      ...(route.componentKey === undefined ? {} : {
+        componentKey: route.componentKey,
+        componentModuleId: route.componentKey.slice(0, route.componentKey.lastIndexOf('#')),
+      }),
+      ...(route.lazyComponent === undefined ? {} : { lazy: true }),
+    })).sort((left, right) =>
+      left.pattern.localeCompare(right.pattern) || left.id.localeCompare(right.id)),
     ...(Object.keys(css).length > 0 ? { css } : {}),
     ...(applicationRoot === undefined ? {} : { applicationRoot }),
   };

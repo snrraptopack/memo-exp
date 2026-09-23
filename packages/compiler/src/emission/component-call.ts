@@ -9,7 +9,7 @@ import {
   type Ctx,
   type RowCtx,
 } from '../context';
-import { generatedIdentifier, md } from '../identifiers';
+import { generatedIdentifier, md, mr } from '../identifiers';
 import type { EmitScope } from './scope';
 import {
   hasComponentChildren,
@@ -388,6 +388,8 @@ export function emitComponentCall(
   const contextName = ctx.routeContextParams.get(componentName);
   const callsiteRouteId = ctx.routeCallsiteIds.get(element);
   const calleeKey = ctx.importedComponents.get(tag)?.key ?? `${ctx.moduleId}#${tag}`;
+  const lazyKey = ctx.lazyRouteImports[tag];
+  if (lazyKey !== undefined) ctx.usesRouter = true;
   const calleeOwnsRoutes = (ctx.linkedRoutes ?? ctx.localRoutes).some(route =>
     route.ownerComponent !== undefined &&
     `${route.moduleId}#${route.ownerComponent}` === calleeKey);
@@ -409,7 +411,11 @@ export function emitComponentCall(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
         astFactory.identifier(varName),
-        astFactory.callExpression(astFactory.identifier(tag), [
+        astFactory.callExpression(lazyKey === undefined
+          ? astFactory.identifier(tag)
+          : astFactory.callExpression(mr(ctx, 'readRouteComponent'), [
+              astFactory.stringLiteral(lazyKey),
+            ]), [
           childId,
           cloneEstreeNode(ownerId),
           ...(props.length > 0 ? [astFactory.arrayExpression(props)] : []),

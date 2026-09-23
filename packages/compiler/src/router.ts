@@ -38,6 +38,12 @@ export interface CompilerRouteDefinition {
   readonly calleeComponent?: string;
   /** Linker-resolved component identity used to attach route preparation. */
   readonly componentKey?: string;
+  /** Imported route-only component, resolved by the linker for client chunks. */
+  readonly lazyComponent?: {
+    readonly moduleId: string;
+    readonly exportName: string;
+    readonly specifier: string;
+  };
   readonly preparations?: readonly string[];
   readonly line?: number;
   readonly column?: number;
@@ -644,6 +650,7 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
   if (definitions.length === 0) return [];
   ctx.usesRouter = true;
   const manifest = generatedIdentifier(ctx, 'routeManifest');
+  const hasLazyRoutes = definitions.some(definition => definition.lazyComponent !== undefined);
   return [
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
@@ -662,20 +669,62 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
                         astFactory.stringLiteral(definition.parentId),
                       ),
                     ]),
-                ...(definition.preparations === undefined ||
-                  definition.preparations.length === 0
+                ...((definition.preparations === undefined ||
+                  definition.preparations.length === 0) &&
+                  definition.componentKey === undefined &&
+                  definition.lazyComponent === undefined
                   ? []
                   : [
                       astFactory.objectProperty(
                         astFactory.identifier('metadata'),
                         astFactory.objectExpression([
-                          astFactory.objectProperty(
-                            astFactory.identifier('preparations'),
-                            astFactory.arrayExpression(
-                              definition.preparations.map(id =>
-                                astFactory.stringLiteral(id)),
-                            ),
-                          ),
+                          ...(definition.preparations === undefined ||
+                            definition.preparations.length === 0
+                            ? []
+                            : [astFactory.objectProperty(
+                                astFactory.identifier('preparations'),
+                                astFactory.arrayExpression(
+                                  definition.preparations.map(id =>
+                                    astFactory.stringLiteral(id)),
+                                ),
+                              )]),
+                          ...(definition.componentKey === undefined
+                            ? []
+                            : [astFactory.objectProperty(
+                                astFactory.identifier('componentKey'),
+                                astFactory.stringLiteral(definition.componentKey),
+                              ),
+                              astFactory.objectProperty(
+                                astFactory.identifier('componentModuleId'),
+                                astFactory.stringLiteral(definition.componentKey.slice(
+                                  0, definition.componentKey.lastIndexOf('#'),
+                                )),
+                              )]),
+                          ...(definition.lazyComponent === undefined
+                            ? []
+                            : [astFactory.objectProperty(
+                                astFactory.identifier('moduleLoader'),
+                                astFactory.arrowFunctionExpression([], astFactory.callExpression(
+                                  astFactory.memberExpression(
+                                    {
+                                      type: 'ImportExpression',
+                                      source: astFactory.stringLiteral(definition.lazyComponent.specifier),
+                                    },
+                                    astFactory.identifier('then'),
+                                  ),
+                                  [astFactory.arrowFunctionExpression(
+                                    [astFactory.identifier('module')],
+                                    astFactory.callExpression(mr(ctx, 'registerRouteComponent'), [
+                                      astFactory.stringLiteral(definition.componentKey!),
+                                      astFactory.memberExpression(
+                                        astFactory.identifier('module'),
+                                        astFactory.stringLiteral(definition.lazyComponent.exportName),
+                                        true,
+                                      ),
+                                    ]),
+                                  )],
+                                )),
+                              )]),
                         ]),
                       ),
                     ]),
@@ -691,5 +740,11 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
       ]),
     ),
     astFactory.expressionStatement(astFactory.callExpression(mr(ctx, 'ensureRouterConnected'), [])),
+    ...(hasLazyRoutes && ctx.routedEnvironment === 'client'
+      ? [astFactory.expressionStatement({
+          type: 'AwaitExpression',
+          argument: astFactory.callExpression(mr(ctx, 'prepareInitialRouteModules'), []),
+        })]
+      : []),
   ];
 }

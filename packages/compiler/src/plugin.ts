@@ -282,6 +282,15 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
   }
   if (table) ctx.header.push(table);
 
+  if (Object.keys(ctx.lazyRouteImports).length > 0) {
+    programPath.node.body = programPath.node.body.filter(statement => {
+      if (!astFactory.isImportDeclaration(statement)) return true;
+      statement.specifiers = statement.specifiers.filter(specifier =>
+        ctx.lazyRouteImports[specifier.local.name] === undefined);
+      return statement.specifiers.length > 0 || statement.importKind === 'type';
+    });
+  }
+
   const imports = [
     astFactory.importDeclaration(
       [

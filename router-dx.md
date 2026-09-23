@@ -62,9 +62,12 @@ The router currently:
 - exposes a request-local runtime during SSR;
 - owns cancellation, scroll restoration, and navigation observation.
 
-DOM creation is already conditional: an unmatched route does not create its
-branch. JavaScript is not lazy: route components are still static imports in
-the eager Vite graph.
+DOM creation is conditional: an unmatched route does not create its branch.
+Client builds now split an imported component used only at `route` callsites
+into a dynamic chunk. The complete manifest remains eager; direct visits load
+matched chunks before `mount()`, and controlled navigation loads them before
+commit. Local components and imports also used by ordinary UI remain eager.
+Server builds retain static imports for synchronous SSR rendering.
 
 Static route-state reads now subscribe to their selected values. A component
 reading `route.query.get('tab')` is not notified when an unrelated query key or
@@ -776,8 +779,10 @@ These points still require focused design before their implementation phase:
 2. Completed: introduce semantic instance IDs and hidden component route context.
 3. Generate the application route registry and language-service integration.
 4. Completed: emit selector subscriptions for static route-state reads.
-5. Add module ownership and loader metadata to the complete manifest.
-6. Teach the Vite graph to emit actual route chunks and route-owned CSS.
+5. Completed: add module ownership and loader metadata to the complete manifest.
+6. Initial slice completed: route-exclusive client imports emit dynamic chunks;
+   Vite carries their CSS with the chunk. Validate HMR invalidation and shared
+   eager-import edges before considering this item fully closed.
 7. Add route-module loading, ready, error, retry, and superseded states.
 8. Extract `$routed` preparations into deterministic route-scoped server
    functions and generate their browser facades.

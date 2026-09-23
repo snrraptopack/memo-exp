@@ -28,6 +28,8 @@ export interface RoutedPreparationDefinition {
 
 export interface RoutedPreparationMetadata {
   readonly preparations?: readonly string[];
+  readonly componentKey?: string;
+  readonly moduleLoader?: () => Promise<unknown>;
 }
 
 export interface RoutedPreparationInput {
@@ -70,6 +72,8 @@ export class RoutedPreparationRedirectError extends Error {
 }
 
 const definitions = new Map<string, RoutedPreparationDefinition>();
+const routeComponents = new Map<string, unknown>();
+const loadingComponents = new Map<string, Promise<unknown>>();
 const preparedByRuntime = new WeakMap<RouteRuntime, Map<string, unknown>>();
 const cacheStateByRuntime = new WeakMap<
   RouteRuntime,
@@ -173,7 +177,55 @@ export function registerRoutedPreparation(
 }
 
 export function hasRoutedPreparations(matches: readonly RouteMatch[]): boolean {
-  return preparationIds(matches).length > 0;
+  return preparationIds(matches).length > 0 || matches.some(match =>
+    typeof (match.metadata as RoutedPreparationMetadata | undefined)?.moduleLoader === 'function');
+}
+
+/** Compiler-owned route module cache. Re-registration replaces an HMR predecessor. */
+export function registerRouteComponent(key: string, component: unknown): unknown {
+  if (typeof component !== 'function') {
+    throw new TypeError(`memo-dom: lazy route component '${key}' is not a function export`);
+  }
+  routeComponents.set(key, component);
+  return component;
+}
+
+export function readRouteComponent(key: string): (...args: unknown[]) => unknown {
+  const component = routeComponents.get(key);
+  if (typeof component !== 'function') {
+    throw new Error(`memo-dom: lazy route component '${key}' was mounted before loading`);
+  }
+  return component as (...args: unknown[]) => unknown;
+}
+
+async function prepareRouteModules(
+  matches: readonly RouteMatch[],
+  signal: AbortSignal,
+): Promise<void> {
+  for (const match of matches) {
+    const metadata = match.metadata as RoutedPreparationMetadata | undefined;
+    const key = metadata?.componentKey;
+    const loader = metadata?.moduleLoader;
+    if (key === undefined || loader === undefined || routeComponents.has(key)) continue;
+    if (signal.aborted) throw signal.reason;
+    let loading = loadingComponents.get(key);
+    if (loading === undefined) {
+      loading = loader();
+      loadingComponents.set(key, loading);
+      void loading.finally(() => {
+        if (loadingComponents.get(key) === loading) loadingComponents.delete(key);
+      }).catch(() => {});
+    }
+    await loading;
+    if (signal.aborted) throw signal.reason;
+    if (!routeComponents.has(key)) {
+      throw new Error(`memo-dom: lazy route component '${key}' did not register`);
+    }
+  }
+}
+
+export async function prepareInitialRouteModules(runtime: RouteRuntime): Promise<void> {
+  await prepareRouteModules(runtime.route.matches, runtime.route.signal);
 }
 
 /** Run matched preparations in parent-to-child declaration order. */
@@ -183,34 +235,38 @@ export async function prepareRoutedMatches(
   input: RoutedPreparationInput,
 ): Promise<RoutedPreparationOutcome> {
   const pending = new Map<string, unknown>();
-  for (const { id, key } of preparationIds(matches)) {
-    if (input.signal.aborted) throw input.signal.reason;
-    const definition = definitions.get(id);
-    if (definition === undefined) {
-      throw new Error(`memo-dom: missing routed preparation '${id}'`);
+  for (const match of matches) {
+    // A parent gate may redirect or reject before child code is even fetched.
+    await prepareRouteModules([match], input.signal);
+    for (const { id, key } of preparationIds([match])) {
+      if (input.signal.aborted) throw input.signal.reason;
+      const definition = definitions.get(id);
+      if (definition === undefined) {
+        throw new Error(`memo-dom: missing routed preparation '${id}'`);
+      }
+      if (
+        definition.server &&
+        input.serverContext === undefined &&
+        definition.prepare !== undefined
+      ) {
+        throw new Error(
+          `memo-dom: server routed preparation '${id}' requires an active server request context`,
+        );
+      }
+      const outcome: RoutedPreparationOutcome = definition.prepare === undefined
+        ? await invokeBrowserServerPreparation(runtime, id, key, input)
+        : await (async () => {
+            const value = await definition.prepare!(browserContext(runtime, key, input));
+            return definition.settle?.(value, input.signal) ?? value;
+          })().then(data => isRedirect(data)
+            ? { kind: 'redirect', redirect: data } as const
+            : { kind: 'data', data } as const);
+      if (outcome.kind === 'redirect') return outcome;
+      if (outcome.state !== undefined) {
+        Object.assign(stateFor(runtime, key), outcome.state);
+      }
+      pending.set(key, outcome.data);
     }
-    if (
-      definition.server &&
-      input.serverContext === undefined &&
-      definition.prepare !== undefined
-    ) {
-      throw new Error(
-        `memo-dom: server routed preparation '${id}' requires an active server request context`,
-      );
-    }
-    const outcome: RoutedPreparationOutcome = definition.prepare === undefined
-      ? await invokeBrowserServerPreparation(runtime, id, key, input)
-      : await (async () => {
-          const value = await definition.prepare!(browserContext(runtime, key, input));
-          return definition.settle?.(value, input.signal) ?? value;
-        })().then(data => isRedirect(data)
-          ? { kind: 'redirect', redirect: data } as const
-          : { kind: 'data', data } as const);
-    if (outcome.kind === 'redirect') return outcome;
-    if (outcome.state !== undefined) {
-      Object.assign(stateFor(runtime, key), outcome.state);
-    }
-    pending.set(key, outcome.data);
   }
   let prepared = preparedByRuntime.get(runtime);
   if (prepared === undefined) {
