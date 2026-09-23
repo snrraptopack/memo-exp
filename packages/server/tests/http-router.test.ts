@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+// @vitest-environment node
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { json as respondJson, type JsonResponse } from '../src';
 import {
   createServerFunctionRoutes,
   createServerRouter,
@@ -12,6 +14,77 @@ async function json(response: Response): Promise<unknown> {
 }
 
 describe('server HTTP router', () => {
+  it('passes through native Response status, headers, and body from server functions', async () => {
+    const result = respondJson({ userId: '42' }, {
+      status: 201,
+      headers: { 'set-cookie': 'session=abc; HttpOnly; Path=/' },
+    });
+    expectTypeOf(result).toEqualTypeOf<JsonResponse<{ userId: string }>>();
+    expect(result).toBeInstanceOf(Response);
+    const router = createServerRouter({
+      routes: createServerFunctionRoutes([{
+        id: 'auth/postLogin',
+        method: 'POST',
+        path: '/_fn/auth/postLogin',
+        parameters: [],
+        handler: () => result,
+      }]),
+    });
+    const response = await router.fetch(new Request(
+      'https://app.test/_fn/auth/postLogin',
+      { method: 'POST' },
+    ));
+
+    expect(response.status).toBe(201);
+    expect(response.headers.get('set-cookie')).toBe('session=abc; HttpOnly; Path=/');
+    expect(await response.json()).toEqual({ userId: '42' });
+  });
+
+  it('uses the same JSON helper in ordinary routes and middleware', async () => {
+    const router = createServerRouter({
+      routes: [{
+        method: 'GET',
+        path: '/health',
+        handler: () => respondJson({ ok: true }, { status: 202 }),
+      }, {
+        method: 'GET',
+        path: '/protected',
+        middleware: [() => respondJson({ error: 'forbidden' }, { status: 403 })],
+        handler: () => respondJson({ secret: true }),
+      }],
+    });
+
+    const health = await router.fetch(new Request('https://app.test/health'));
+    expect(health.status).toBe(202);
+    expect(await health.json()).toEqual({ ok: true });
+
+    const denied = await router.fetch(new Request('https://app.test/protected'));
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ error: 'forbidden' });
+  });
+
+  it('uses a returned non-2xx Response instead of the generic error handler', async () => {
+    const onError = vi.fn(() => new Response('Internal error', { status: 500 }));
+    const router = createServerRouter({
+      routes: createServerFunctionRoutes([{
+        id: 'auth/postLogin',
+        method: 'POST',
+        path: '/_fn/auth/postLogin',
+        parameters: [],
+        handler: () => Response.json({ error: 'invalid_credentials' }, { status: 401 }),
+      }]),
+      onError,
+    });
+
+    const response = await router.fetch(new Request(
+      'https://app.test/_fn/auth/postLogin',
+      { method: 'POST' },
+    ));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'invalid_credentials' });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it('attaches request-owned server capabilities to routed preparation', async () => {
     registerRoutedPreparation({
       id: 'server-report-preparation',

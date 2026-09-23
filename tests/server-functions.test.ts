@@ -86,22 +86,28 @@ describe('named HTTP server functions', () => {
       'import type { ResolvedValue } from "@memoized-dom/data"',
     );
     expect(declarations).toContain(
+      'import type { JsonResponse } from \'@memoized-dom/server\'',
+    );
+    expect(declarations).toContain(
+      'type __mmdClientValue<T> = T extends JsonResponse<infer U> ? U : T extends Response ? unknown : T;',
+    );
+    expect(declarations).toContain(
       'import type * as __mmd_impl_0 from "../server/functions/stories.js"',
     );
     expect(declarations).toContain(
       'import type * as __mmd_impl_1 from "../server/functions/me.js"',
     );
     expect(declarations).toContain(
-      'export declare function getStories(...args: Parameters<typeof __mmd_impl_0.getStories>): ResolvedValue<Awaited<ReturnType<typeof __mmd_impl_0.getStories>>>;',
+      'export declare function getStories(...args: Parameters<typeof __mmd_impl_0.getStories>): ResolvedValue<__mmdClientValue<Awaited<ReturnType<typeof __mmd_impl_0.getStories>>>>;',
     );
     expect(declarations).toContain(
-      'export declare function getStory(...args: Parameters<typeof __mmd_impl_0.getStory>): ResolvedValue<Awaited<ReturnType<typeof __mmd_impl_0.getStory>>>;',
+      'export declare function getStory(...args: Parameters<typeof __mmd_impl_0.getStory>): ResolvedValue<__mmdClientValue<Awaited<ReturnType<typeof __mmd_impl_0.getStory>>>>;',
     );
     expect(declarations).toContain(
-      'export declare function postVote(...args: Parameters<typeof __mmd_impl_0.postVote>): ResolvedValue<Awaited<ReturnType<typeof __mmd_impl_0.postVote>>>;',
+      'export declare function postVote(...args: Parameters<typeof __mmd_impl_0.postVote>): ResolvedValue<__mmdClientValue<Awaited<ReturnType<typeof __mmd_impl_0.postVote>>>>;',
     );
     expect(declarations).toContain(
-      'export declare function getMe(...args: Parameters<typeof __mmd_impl_1.getMe>): ResolvedValue<Awaited<ReturnType<typeof __mmd_impl_1.getMe>>>;',
+      'export declare function getMe(...args: Parameters<typeof __mmd_impl_1.getMe>): ResolvedValue<__mmdClientValue<Awaited<ReturnType<typeof __mmd_impl_1.getMe>>>>;',
     );
     expect(declarations).not.toContain('middleware');
   });

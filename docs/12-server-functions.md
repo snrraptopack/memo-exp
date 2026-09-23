@@ -118,9 +118,47 @@ export function App() {
   the compiler rejects it (`[MMD-S010]`); call them from event handlers,
   effects, or deferred callbacks.
 
+Mutation arguments are sent as a JSON object keyed by parameter name, not a
+positional array: `postVote(7)` sends `{"id":7}`.
+
 ```tsx
 const story = getStory(selectedId);   // refetches when selectedId changes
 ```
+
+## Status, cookies, and errors
+
+A server function can return a normal Web `Response`, just like an HTTP route.
+The optional `json()` helper is a short, typed way to create one:
+
+```ts
+import { json } from '@memoized-dom/server';
+
+export async function postLogin(email: string, password: string) {
+  const session = await authenticate(email, password);
+  if (session === null) {
+    return json({ error: 'invalid_credentials' }, { status: 401 });
+  }
+  return json({ user: session.user }, {
+    status: 201,
+    headers: { 'set-cookie': session.cookie },
+  });
+}
+```
+
+`json()` returns a native `Response`; it has no special server-function
+behavior. Its only extra benefit is TypeScript inference of the JSON body
+on generated client calls. It works identically in ordinary routes
+(`app.get('/health', () => json({ ok: true }))`) and middleware. Raw
+`Response.json()` works too.
+
+The server sends the response unchanged. The browser handles `Set-Cookie`;
+the client facade decodes the body as it does for other `$fetch` calls. With
+`json()`, the client value retains the JSON body's TypeScript type. With a raw
+`Response`, the client value is typed `unknown` because TypeScript cannot
+infer its body shape. On a non-2xx response, `$track(call).error` is a
+`RequestError` with `status` and
+the decoded body in `data`. Unexpected thrown exceptions still go through
+`serve({ onError })` rather than exposing their details to clients.
 
 ## Mutations return the data — reconcile, don't refetch
 

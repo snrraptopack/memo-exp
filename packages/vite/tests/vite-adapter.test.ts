@@ -241,7 +241,7 @@ describe('Vite 8 adapter', () => {
       'import type * as __mmd_impl_0 from "../server/functions/stories.js"',
     );
     expect(declarationSource).toContain(
-      'export declare function getStory(...args: Parameters<typeof __mmd_impl_0.getStory>): ResolvedValue<Awaited<ReturnType<typeof __mmd_impl_0.getStory>>>;',
+      'export declare function getStory(...args: Parameters<typeof __mmd_impl_0.getStory>): ResolvedValue<__mmdClientValue<Awaited<ReturnType<typeof __mmd_impl_0.getStory>>>>;',
     );
 
     server = await createServer({

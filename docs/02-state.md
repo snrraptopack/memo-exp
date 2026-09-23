@@ -129,6 +129,67 @@ export function Cart() {
 - Pure helper calls inside derivations are fine.
 - **Never write to a derived value** — `total++` is invalid; update `coupon`.
 
+## `if` and `switch` are reactive too
+
+Control flow that reads reactive state replays when that state changes —
+and the read doesn't have to be direct. A condition on a derived `const`,
+a prop, or an imported module value tracks the original source
+transitively.
+
+Branching that picks a **value** stays an ordinary statement — the
+compiler replays it inside the update prelude before DOM writes:
+
+```tsx
+export function Badge() {
+  let score = 0;
+  let tier;
+  if (score > 100) { tier = 'gold'; } else { tier = 'standard'; }
+
+  return <span onClick={() => score += 50}>{tier}</span>;
+}
+```
+
+`score += 50` marks the component dirty; the `if` replays, `tier` updates,
+and the text node sees the new value. A `switch` assigning the same
+targets on every case works identically.
+
+Branching that picks **markup** becomes a region that mounts and disposes
+whole branches:
+
+```tsx
+export function Panel() {
+  let expanded = false;
+  if (expanded) return <article>details…</article>;
+  return <button onClick={() => expanded = true}>expand</button>;
+}
+```
+
+When `expanded` flips, the button subtree is disposed and the article
+mounts — the component body itself still ran only once. `if`/`else`
+chains, early-return sequences, and exhaustive `switch` returns all lower
+to the same anchored region, and each branch may contain its own
+components, lists, and nested conditionals.
+
+At module scope the same lowering produces a shared computed, so this
+stays in sync for every component that reads `accent`:
+
+```ts
+let theme = 'dark';
+let accent;
+if (theme === 'dark') { accent = '#8af'; } else { accent = '#06c'; }
+```
+
+Two boundaries worth knowing:
+
+- **Branches must be pure.** An `if` containing calls or resource work
+  isn't replayed — move that logic into `effect()`. The supported
+  conditional form is `if (enabled) effect(fn)`, which runs the effect
+  only while `enabled` holds (see
+  [03 — Effects & cleanup](./03-effects-and-cleanup.md)).
+- **JSX-returning control flow must be exhaustive** — every path through
+  the terminal `if`/`else` or `switch` must produce the branch, because
+  the compiler lowers it to one region with a fixed set of alternatives.
+
 ## Rendering collections
 
 Map arrays directly; give rows a stable `key`:

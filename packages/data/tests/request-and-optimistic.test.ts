@@ -14,6 +14,20 @@ async function settled<T>(resource: FetchResource<T>): Promise<void> {
 }
 
 describe('request identity and errors', () => {
+  it('retains the status and JSON body of a non-2xx response', async () => {
+    const runtime = createDataRuntime({
+      fetch: (async () => json({ error: 'invalid_credentials' }, 401)) as typeof fetch,
+    });
+    const resource = runtime.$fetch('/_fn/auth/postLogin');
+    await settled(resource);
+
+    expect(resource.error).toMatchObject({
+      kind: 'http',
+      status: 401,
+      data: { error: 'invalid_credentials' },
+    });
+  });
+
   it('classifies a malformed non-success body as an HTTP failure', async () => {
     const runtime = createDataRuntime({
       fetch: (async () => new Response('{broken', {

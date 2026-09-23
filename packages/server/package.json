@@ -1,6 +1,6 @@
 {
   "name": "@memoized-dom/server",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Server rendering reference for memoized-dom (LinkeDOM tier)",
   "type": "module",
   "sideEffects": false,
@@ -25,13 +25,13 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@memoized-dom/data": "^0.0.3",
-    "@memoized-dom/router": "^0.0.3",
-    "@memoized-dom/runtime": "^0.0.8",
+    "@memoized-dom/data": "^0.0.4",
+    "@memoized-dom/router": "^0.0.4",
+    "@memoized-dom/runtime": "^0.0.9",
     "linkedom": "^0.18.0"
   },
   "devDependencies": {
-    "@memoized-dom/compiler": "^0.0.7",
+    "@memoized-dom/compiler": "^0.0.8",
     "@types/bun": "latest"
   },
   "publishConfig": {

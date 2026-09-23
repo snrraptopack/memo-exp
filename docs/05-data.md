@@ -191,6 +191,23 @@ What `request` gives you:
 Two rules: `$track` is **not a store** (no `.mutate`/`.update` — mutate the
 value itself) and **not a promise** (no `.then` — use `onSuccess`/`onError`).
 
+`$track` also accepts a **bare promise** — you don't need `$fetch` to get a
+tracked request:
+
+```tsx
+const save = $track(saveDraft(draft));
+
+save.onSuccess(() => toast('saved'));
+save.onError((e) => toast(e.message));
+```
+
+A promise is exactly one execution, so the tracker is a subset of the
+fetch-backed one: `pending`, `error`, `onSuccess`, and `onError` all work —
+including retroactively if the promise already settled — while `refresh()`
+just awaits the same work (there is nothing to re-request), `refreshing`
+stays `false`, and `abort()` is a no-op since a promise has no cancellation
+protocol. Tracking the same promise twice returns the same tracker.
+
 ## Optimistic updates — the real pattern
 
 This is where the value/tracker split pays off. Mutate the value directly
