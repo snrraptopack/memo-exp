@@ -83,7 +83,9 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
     const heading = host.querySelector('h1')!;
     const button = host.querySelector('button')!;
 
-    mounted = mount('root', app.App);
+    const onHydrateError = vi.fn();
+    mounted = mount('root', app.App, { onHydrateError });
+    expect(onHydrateError).not.toHaveBeenCalled();
 
     expect(host.querySelector('section')).toBe(section);
     expect(host.querySelector('h1')).toBe(heading);
@@ -110,13 +112,46 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
       '<!--/mmd-->';
     document.body.appendChild(host);
 
-    mounted = mount('root', app.App);
+    const onHydrateError = vi.fn();
+    mounted = mount('root', app.App, { onHydrateError });
+
+    expect(onHydrateError).toHaveBeenCalledOnce();
+    expect(onHydrateError.mock.calls[0]?.[0]).toMatchObject({
+      name: 'HydrationMismatchError',
+      boundary: 'App',
+    });
 
     // Host now successfully contains client-created <section> and working button
     expect(host.querySelector('section')).not.toBeNull();
     const button = host.querySelector('button')!;
     button.click();
     expect(button.textContent).toBe('1');
+  });
+
+  it('reports a different server root before replacing its markup', async () => {
+    const app = await importCompiled();
+    app.resetState();
+    registerRootFactory(app.App, {
+      id: 'App',
+      create: () => app.App('App', null),
+    });
+
+    const host = document.createElement('div');
+    host.id = 'root';
+    host.innerHTML = '<!--mmd:r:OldApp--><article>Old</article><!--/mmd-->';
+    document.body.appendChild(host);
+
+    const onHydrateError = vi.fn();
+    mounted = mount('root', app.App, { onHydrateError });
+
+    expect(onHydrateError).toHaveBeenCalledOnce();
+    expect(onHydrateError.mock.calls[0]?.[0]).toMatchObject({
+      boundary: 'App',
+      expected: '<!--mmd:r:App-->',
+      actual: '<!--mmd:r:OldApp-->',
+    });
+    expect(host.querySelectorAll('section')).toHaveLength(1);
+    expect(host.querySelector('article')).toBeNull();
   });
 
 });

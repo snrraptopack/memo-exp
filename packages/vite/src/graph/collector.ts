@@ -213,9 +213,10 @@ export async function compileGraph(
       ? {}
       : { externalReactiveSources: options.externalReactiveSources }),
     ...(hot ? { hot: true } : {}),
-    ...(options.moduleStateCells === undefined
-      ? {}
-      : { moduleStateCells: options.moduleStateCells }),
+    // Browser module state lives in one application runtime. Server modules
+    // are reused across requests, so authored state must be request-owned by
+    // default or a render can leak one request's writes into the next.
+    moduleStateCells: options.moduleStateCells ?? routedEnvironment === 'server',
     routedEnvironment,
     resolveImport(specifier: string, importer: string) {
       return resolutions.get(resolutionKey(importer, specifier));

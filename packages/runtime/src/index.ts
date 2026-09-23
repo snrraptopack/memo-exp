@@ -96,9 +96,11 @@ export type { ListRegion, ListEntry, KeyFn } from './list';
 export { isStructuralListUpdate, listItemIndices } from './list-update';
 export { rootNodes } from './jsx-dom';
 export { decodeListKey, encodeListKey } from './list-keys';
+export { HydrationMismatchError } from './hydration-error';
 export { mount, registerRootFactory, rootFactoryStore } from './mount';
 export type {
   MountableComponent,
+  MountOptions,
   MountTarget,
   MountedApplication,
   RootMountContext,

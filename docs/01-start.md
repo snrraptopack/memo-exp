@@ -125,6 +125,7 @@ export function App() {
 `Element` works too), creates the app inside it, and returns a handle with
 `unmount()`. If the element already contains server-rendered markup it
 hydrates instead of rebuilding — covered in [09 — SSR](./09-ssr.md).
+An optional third argument can report hydration mismatches.
 
 ## Rules that bite on day one
 

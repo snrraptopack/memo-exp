@@ -23,6 +23,9 @@ import * as MD from '@memoized-dom/runtime';
 `mount()` resolves string targets with `document.getElementById()`, owns only
 the nodes produced by the compiled root, returns an idempotent `unmount()`
 handle, and keeps the compiler's private factory ABI out of authored code.
+Pass `{ onHydrateError(error) { /* log mismatch */ } }` as a third argument
+to observe a hydration mismatch before `mount()` replaces server markup with
+a fresh client render.
 
 The package is independently buildable:
 

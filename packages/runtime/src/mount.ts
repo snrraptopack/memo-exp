@@ -16,6 +16,11 @@ import {
 export type MountableComponent = () => unknown;
 export type MountTarget = string | Element;
 
+export interface MountOptions {
+  /** Called before a hydration mismatch is recovered with a fresh client mount. */
+  onHydrateError?: (error: HydrationMismatchError) => void;
+}
+
 export interface RootMountContext {
   readonly mode: 'create' | 'hydrate';
   readonly host: Element;
@@ -191,17 +196,16 @@ function createApplication(
   return createMountedApplication(host, definition, nodes);
 }
 
-function hasHydrationRoot(host: Element, rootId: string): boolean {
+function hydrationRootId(host: Element): string | null {
   for (let node = host.firstChild; node !== null; node = node.nextSibling) {
     if (node.nodeType !== 8) continue;
     const marker = parseHydrationMarker((node as Comment).data);
     if (
       marker?.type === 'open' &&
-      marker.kind === 'r' &&
-      marker.identity === rootId
-    ) return true;
+      marker.kind === 'r'
+    ) return marker.identity;
   }
-  return false;
+  return null;
 }
 
 function restorePayload(rootId: string, host: Element): void {
@@ -284,6 +288,7 @@ function adoptApplication(
 export function mount(
   target: MountTarget,
   component: MountableComponent,
+  options: MountOptions = {},
 ): MountedApplication {
   const host = resolveHost(target);
   const definition = rootFactoryStore().get(component);
@@ -293,13 +298,22 @@ export function mount(
     );
   }
   validateMount(host, definition);
-  if (!hasHydrationRoot(host, definition.id)) {
+  const serverRootId = hydrationRootId(host);
+  if (serverRootId === null) {
     return createApplication(host, definition);
   }
   try {
+    if (serverRootId !== definition.id) {
+      throw new HydrationMismatchError(
+        definition.id,
+        `<!--mmd:r:${definition.id}-->`,
+        `<!--mmd:r:${serverRootId}-->`,
+      );
+    }
     return adoptApplication(host, definition);
   } catch (error) {
     if (!(error instanceof HydrationMismatchError)) throw error;
+    options.onHydrateError?.(error);
     host.innerHTML = '';
     return createApplication(host, definition);
   }

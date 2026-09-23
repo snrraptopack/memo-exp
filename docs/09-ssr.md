@@ -25,6 +25,19 @@ export default defineConfig({
 a `serve()` application. The plugin switches Vite to `appType: 'custom'`
 itself; this one option is the whole wiring.
 
+SSR also needs an outlet in `index.html`, inside the element passed to
+`mount`:
+
+```html
+<div id="root"><!--ssr-outlet--></div>
+<script type="module" src="/src/main.ts"></script>
+```
+
+The server replaces the single `<!--ssr-outlet-->` marker with rendered
+markup. The browser-only starter template in [01 — Start](./01-start.md)
+does not need it; add it when enabling SSR. A missing or duplicate marker
+is a template error.
+
 ## Minimal server
 
 ```ts
@@ -68,16 +81,32 @@ You can mix: `app.ssr(App)` as the catch-all plus targeted entries.
 
 ## What `mount` does with server markup
 
-`mount(target, component)` — two arguments only. Its three paths:
+`mount(target, component, options?)` has three paths:
 
 1. **Server markup present** (the `data-mmd-root` marker matches the
    component) → **hydrate**: adopt existing nodes, attach handlers,
    restore the embedded payload. Nothing is rebuilt.
 2. **No server markup** → plain client mount, same as always.
-3. **Markup doesn't match** what the component renders → the server DOM is
+3. **Markup doesn't match** what the component renders (including a different
+   compiled root) → the server DOM is
    discarded (`host.innerHTML = ''`) and the app mounts fresh client-side.
    It doesn't crash — but you paid a double render and lost the SSR paint,
    so treat mismatches as bugs to fix, not a fallback to rely on.
+
+To see mismatches that would otherwise recover silently, pass a callback:
+
+```ts
+mount('root', App, {
+  onHydrateError(error) {
+    console.error('[HYDRATION-MISMATCH]', error.message);
+  },
+});
+```
+
+The callback receives a `HydrationMismatchError` before recovery, with
+`boundary`, `expected`, and `actual` fields. It is not called for an ordinary
+client mount or successful hydration. Other rendering errors still throw;
+`onHydrateError` is a diagnostic hook, not a general error boundary.
 
 `mount` returns `{ host, rootId, nodes, mounted, unmount() }`.
 
@@ -93,5 +122,15 @@ You can mix: `app.ssr(App)` as the catch-all plus targeted entries.
   kicked off by `fetch` in the component body is not awaited — put
   must-render data behind the preparation/data layer, not a fire-and-forget
   call.
+- **Request-owned authored state** — the Vite adapter lowers compiler-tracked
+  module state into per-request cells for server renders by default. This
+  prevents a write in one render from persisting into the next, including
+  writes made through imported helpers. Initial values must be lowerable
+  literals; the compiler rejects unsupported initializers. Do not set
+  `moduleStateCells: false` for an SSR app with mutable module state.
+- **Ordinary server module globals are still process-wide.** Module caches,
+  third-party singletons, and server-function implementation variables are
+  not automatically per-request. Keep user/session data in request locals,
+  route preparation, or component-owned data, not a mutable server singleton.
 
 Next: [10 — `serve()` configuration](./10-serve.md)
