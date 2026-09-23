@@ -34,6 +34,25 @@ function calleeRoot(callee: BaseNode): string | null {
   return identifierName(current);
 }
 
+function isRouteQueryRead(callee: BaseNode, root: string): boolean {
+  if (
+    callee.type !== 'MemberExpression' ||
+    fields(callee).computed === true
+  ) return false;
+  const method = identifierName(childNode(callee, 'property'));
+  if (
+    method !== 'get' &&
+    method !== 'getAll' &&
+    method !== 'has' &&
+    method !== 'toString'
+  ) return false;
+  const query = childNode(callee, 'object');
+  return query?.type === 'MemberExpression' &&
+    fields(query).computed !== true &&
+    identifierName(childNode(query, 'property')) === 'query' &&
+    identifierName(childNode(query, 'object')) === root;
+}
+
 function bindingInitializer(ctx: Ctx, binding: Binding): BaseNode | null {
   const declaration = variableDeclaratorFor(ctx, binding);
   return declaration === null ? null : childNode(declaration, 'init');
@@ -88,7 +107,12 @@ function isOpaqueInvocation(
   const summary = ctx.importedFunctions.get(root);
   if (summary !== undefined) return summary.unbounded;
   const binding = astBindingAt(ctx, invocation, root);
-  if (bindingIsExternalImport(binding)) return true;
+  if (bindingIsExternalImport(binding)) {
+    return !(
+      ctx.routeReactiveBindings.has(root) &&
+      isRouteQueryRead(callee, root)
+    );
+  }
   if (owner === undefined || invocation.type !== 'CallExpression') return false;
 
   const fn = binding === undefined ? null : bindingFunction(ctx, binding);

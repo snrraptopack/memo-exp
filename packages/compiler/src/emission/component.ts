@@ -59,6 +59,11 @@ import {
 } from './scope';
 import { applyRepeatedDomTemplate } from './dom-template';
 import { transparentSourceMounts } from '../data-sources';
+import { selectedRouteSubscriptionBinding } from '../external-reactivity';
+import {
+  componentRouteSelectors,
+  routeSelectorExpression,
+} from './route-selectors';
 
 type ComponentEmitScope = ReturnType<typeof newEmitScope>;
 
@@ -283,6 +288,11 @@ export function transformComponent(
   const controlFlow = ctx.instanceControlFlow.get(name);
   const effects = ctx.effects.get(name);
   const externalSources = componentExternalSources(ctx, name);
+  const routeSelectors = new Map(
+    externalSources
+      .filter(source => ctx.routeReactiveBindings.has(source))
+      .map(source => [source, componentRouteSelectors(ctx, node, source)]),
+  );
   const hasLocalEffects = hasComponentLocalEffects(effects);
   const reasonIds = ctx.instanceReasonIds.get(name);
   if (
@@ -523,22 +533,44 @@ export function transformComponent(
   );
   for (const source of externalSources) {
     const subscribe = ctx.externalReactiveBindings.get(source)!;
-    body.push(
-      astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'cleanup'), [
-          astFactory.identifier(factoryId),
-          astFactory.callExpression(astFactory.identifier(subscribe), [
-            astFactory.identifier(source),
+    const selectors = routeSelectors.get(source);
+    const subscriptions = selectors === undefined || selectors === null
+      ? [astFactory.callExpression(astFactory.identifier(subscribe), [
+          astFactory.identifier(source),
+          astFactory.arrowFunctionExpression(
+            [],
+            astFactory.callExpression(md(ctx, 'markDirty'), [
+              astFactory.identifier(factoryId),
+            ]),
+          ),
+        ])]
+      : selectors.map(selector => {
+          const selectedRoute = generatedIdentifier(ctx, 'selectedRoute');
+          return astFactory.callExpression(astFactory.identifier(
+            selectedRouteSubscriptionBinding(ctx),
+          ), [
+            astFactory.arrowFunctionExpression(
+              [selectedRoute],
+              routeSelectorExpression(selector, selectedRoute),
+            ),
             astFactory.arrowFunctionExpression(
               [],
               astFactory.callExpression(md(ctx, 'markDirty'), [
                 astFactory.identifier(factoryId),
               ]),
             ),
+          ]);
+        });
+    for (const subscription of subscriptions) {
+      body.push(
+        astFactory.expressionStatement(
+          astFactory.callExpression(md(ctx, 'cleanup'), [
+            astFactory.identifier(factoryId),
+            subscription,
           ]),
-        ]),
-      ),
-    );
+        ),
+      );
+    }
   }
   if (effects !== undefined) {
     body.push(...buildEffectRegistrations(ctx, factoryId, effects));

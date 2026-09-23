@@ -58,6 +58,14 @@ export function scanExternalReactiveImports(
 
       const local = specifier.local.name;
       ctx.externalReactiveBindings.set(local, adapter.local);
+      if (
+        definition.module === '@memoized-dom/router' &&
+        definition.source === 'route' &&
+        definition.subscribe.module === '@memoized-dom/router/internal' &&
+        definition.subscribe.export === 'subscribeRouteValue'
+      ) {
+        ctx.routeReactiveBindings.add(local);
+      }
       ctx.importedState.add(local);
       // `computed` keeps this imported facade out of SSR state-cell lifting.
       // The adapter supplies invalidation; the value itself remains read-only.
@@ -79,4 +87,19 @@ export function externalReactiveImportStatements(ctx: Ctx): t.ImportDeclaration[
       astFactory.stringLiteral(adapter.module),
     ),
   );
+}
+
+/** Import the selector adapter only in modules that emit selected route reads. */
+export function selectedRouteSubscriptionBinding(ctx: Ctx): string {
+  const key = '@memoized-dom/router/internal\0subscribeRouteSelectedValue';
+  let adapter = ctx.externalReactiveImports.get(key);
+  if (adapter === undefined) {
+    adapter = {
+      module: '@memoized-dom/router/internal',
+      imported: 'subscribeRouteSelectedValue',
+      local: generatedIdentifier(ctx, 'subscribeRouteSelectedValue').name,
+    };
+    ctx.externalReactiveImports.set(key, adapter);
+  }
+  return adapter.local;
 }

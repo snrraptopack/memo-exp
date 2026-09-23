@@ -390,6 +390,8 @@ export interface Ctx {
   usesRouter: boolean;
   /** Authored live-value binding -> generated subscription adapter binding. */
   externalReactiveBindings: Map<string, string>;
+  /** Imported router `route` bindings eligible for selected subscriptions. */
+  routeReactiveBindings: Set<string>;
   /** Generated subscription imports, keyed by adapter module and export. */
   externalReactiveImports: Map<
     string,
@@ -710,6 +712,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     astAnalysis: null,
     usesRouter: false,
     externalReactiveBindings: new Map(),
+    routeReactiveBindings: new Set(),
     externalReactiveImports: new Map(),
     usesTransparentData: false,
     transparentSourceFactories,

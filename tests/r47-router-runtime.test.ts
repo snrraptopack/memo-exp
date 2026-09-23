@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { compile, compileModules } from '@memoized-dom/compiler';
-import { resolveStaticWrites } from '@memoized-dom/runtime';
-import { unregister } from '@memoized-dom/runtime/testing';
+import { resolveStaticWrites, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import { _internals, unregister } from '@memoized-dom/runtime/testing';
 import { navigateRoute } from '@memoized-dom/router/internal';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,6 +54,8 @@ describe('compiled router DOM integration', () => {
     unregister('App');
     unregister('CrossFileApp');
     unregister('PreparedApp');
+    unregister('SelectedRouteApp');
+    resetScheduler();
     document.body.replaceChildren();
   });
 
@@ -89,6 +91,50 @@ describe('compiled router DOM integration', () => {
     navigateRoute('/reports');
     expect(document.querySelectorAll('[data-index]')).toHaveLength(1);
     expect(document.querySelector('[data-detail]')).toBeNull();
+  });
+
+  it('updates static route reads only when their selected values change', async () => {
+    const source = `
+      import { route } from '@memoized-dom/router';
+      export function SelectedRouteApp() {
+        const id = route.params.id;
+        const tab = route.query.get('tab');
+        return <main route="/projects/:id"><p id="selection">{id}:{tab}</p></main>;
+      }
+    `;
+    const file = join(outDir, 'SelectedRouteApp.compiled.ts');
+    writeFileSync(file, compile(source, { moduleId: './SelectedRouteApp.tsx' }));
+    const { SelectedRouteApp } = await import(
+      /* @vite-ignore */ pathToFileURL(file).href
+    );
+    setScheduler(run => run());
+    navigateRoute('/projects/one', {
+      replace: true,
+      query: { tab: 'board' },
+    });
+    document.body.append(SelectedRouteApp('SelectedRouteApp', null));
+    const entity = _internals().registry.get('SelectedRouteApp')!;
+    const originalRender = entity.render;
+    let renders = 0;
+    entity.render = reasons => {
+      renders++;
+      originalRender(reasons);
+    };
+
+    navigateRoute('/projects/one', { query: { tab: 'board', page: 2 } });
+    navigateRoute('/projects/one', {
+      query: { tab: 'board', page: 2 },
+      hash: 'notes',
+    });
+    expect(renders).toBe(0);
+
+    navigateRoute('/projects/one', { query: { tab: 'activity', page: 2 } });
+    expect(renders).toBe(1);
+    expect(document.querySelector('#selection')?.textContent).toBe('one:activity');
+
+    navigateRoute('/projects/two', { query: { tab: 'activity', page: 2 } });
+    expect(renders).toBe(2);
+    expect(document.querySelector('#selection')?.textContent).toBe('two:activity');
   });
 
   it('keeps compiled $routed reads isolated across reused route callsites', async () => {

@@ -223,6 +223,48 @@ describe('compiler-owned JSX routing', () => {
     expect(code).toContain('_routeRegion.update()');
   });
 
+  it('selects static route fields and literal query keys', () => {
+    const code = compile(`
+      import { route as currentRoute } from '@memoized-dom/router';
+      export function App() {
+        const id = currentRoute.params.id;
+        const tab = currentRoute.query.get('tab');
+        const path = currentRoute.pathname;
+        return <main><p>{id}:{tab}:{path}</p></main>;
+      }
+    `);
+
+    expect(code).toContain('subscribeRouteSelectedValue');
+    expect(code).toMatch(/selectedRoute\["params"\]\["id"\]/);
+    expect(code).toMatch(/selectedRoute\d*\.query\.get\("tab"\)/);
+    expect(code).toMatch(/selectedRoute\d*\["pathname"\]/);
+    expect(code).not.toMatch(/_subscribeExternal\(currentRoute,/);
+    expect(code).not.toContain('volatile: true');
+  });
+
+  it('keeps the whole-route subscription for dynamic route reads', () => {
+    const code = compile(`
+      import { route } from '@memoized-dom/router';
+      export function App() {
+        const field = 'id';
+        return <main>{route.params[field]}</main>;
+      }
+    `);
+
+    expect(code).toMatch(/_subscribeExternal\(route,/);
+    expect(code).not.toContain('subscribeRouteSelectedValue');
+
+    const dynamicQuery = compile(`
+      import { route } from '@memoized-dom/router';
+      export function App() {
+        const key = 'tab';
+        return <main>{route.query.get(key)}</main>;
+      }
+    `);
+    expect(dynamicQuery).toMatch(/_subscribeExternal\(route,/);
+    expect(dynamicQuery).not.toContain('subscribeRouteSelectedValue');
+  });
+
   it('uses the same external-reactivity contract for third-party live values', () => {
     const code = compile(`
       import { location as currentLocation } from 'portable-router';

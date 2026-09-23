@@ -3,6 +3,7 @@ import type {
   RouteNavigationBlocker as Blocker,
   RouteResolver,
   RouteState,
+  RouteSelector,
 } from './types';
 import {
   activeRoute,
@@ -122,6 +123,21 @@ export function subscribeRouteValue(
 ): () => void {
   let initialized = false;
   return activeSubscribe(() => {
+    if (!initialized) {
+      initialized = true;
+      return;
+    }
+    listener();
+  });
+}
+
+/** Selected component reads skip the subscription's initial notification. */
+export function subscribeRouteSelectedValue<Value>(
+  selector: RouteSelector<Value>,
+  listener: () => void,
+): () => void {
+  let initialized = false;
+  return activeSubscribeSelected(selector, () => {
     if (!initialized) {
       initialized = true;
       return;
