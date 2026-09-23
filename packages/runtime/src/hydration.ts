@@ -36,6 +36,7 @@ export interface HydrationController {
   claimRow(listId: string, encodedKey: string): ClaimedHydrationRange;
   pushRange(range: ClaimedHydrationRange): void;
   popRange(): void;
+  recordFragmentRange(parent: Node, range: ClaimedHydrationRange): void;
 }
 export interface HydrationNodeExpectation {
   readonly nodeType: number;
@@ -616,6 +617,24 @@ export class HydrationDocument
     }
     this.#plans.at(-1)!.expectDone();
     this.#plans.pop();
+  }
+
+  recordFragmentRange(parent: Node, range: ClaimedHydrationRange): void {
+    if (parent.nodeType !== 11) return;
+    // Hydration fragments only record adopted children; they never move them.
+    const children = (parent as DocumentFragment & {
+      __mmdAdoptedChildren?: Node[];
+    }).__mmdAdoptedChildren;
+    if (children === undefined) return;
+    for (let node: Node | null = range.open; node !== null; node = node.nextSibling) {
+      children.push(node);
+      if (node === range.end) return;
+    }
+    throw new HydrationMismatchError(
+      range.identity,
+      'the adopted range close',
+      'the end of the parent fragment',
+    );
   }
 
   createElement(tagName: string): Element {

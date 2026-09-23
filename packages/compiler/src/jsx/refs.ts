@@ -44,10 +44,10 @@ export function compileRefValue(
     return cloneEstreeNode(expression, true);
   }
   if (isMutableIdentifier(ctx, componentPath, expression)) {
-    return mutableAdapter(ctx, expression);
+    return assignAdapter(ctx, expression);
   }
   if (astFactory.isMemberExpression(expression)) {
-    return mutableAdapter(ctx, expression);
+    return assignAdapter(ctx, expression);
   }
   return cloneEstreeNode(expression, true);
 }
@@ -130,6 +130,20 @@ function isMutableIdentifier(
     }
   }
   return binding.kind !== 'param';
+}
+
+/**
+ * Assignable-target adapters are pure writes, so emitted code marks them
+ * through `refAssign` — the runtime runs them at creation while authored
+ * callbacks defer until the node is connected in a settled document.
+ */
+function assignAdapter(
+  ctx: Ctx,
+  target: t.Identifier | t.MemberExpression,
+): t.CallExpression {
+  return astFactory.callExpression(md(ctx, 'refAssign'), [
+    mutableAdapter(ctx, target),
+  ]);
 }
 
 function mutableAdapter(

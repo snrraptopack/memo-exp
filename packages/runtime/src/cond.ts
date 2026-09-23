@@ -61,11 +61,25 @@ export function createCondRegion(
   if (adoptedRange === undefined) {
     parent.appendChild(openAnchor);
     parent.appendChild(anchor);
+  } else {
+    controller!.recordFragmentRange(parent, adoptedRange);
   }
   let adopting = adoptedRange !== undefined;
 
   let current = -1;
   let entry: CondEntry | null = null;
+
+  // A child region can insert nodes after this branch's initial node snapshot.
+  // The anchors, not entry.nodes, define everything this region owns.
+  function clearContent(): void {
+    const parent = anchor.parentNode;
+    if (parent === null || openAnchor.parentNode !== parent) return;
+    for (let node = openAnchor.nextSibling; node !== null && node !== anchor;) {
+      const next = node.nextSibling;
+      parent.removeChild(node);
+      node = next;
+    }
+  }
 
   function update(reasons: DirtyReasons = null): void {
     const idx = pick();
@@ -75,7 +89,7 @@ export function createCondRegion(
     }
     if (entry !== null) {
       entry.dispose?.();
-      for (const node of entry.nodes) node.parentNode?.removeChild(node);
+      clearContent();
       entry = null;
     }
     const factory = branches[idx] ?? null;
@@ -114,7 +128,7 @@ export function createCondRegion(
   function dispose(): void {
     if (entry !== null) {
       entry.dispose?.();
-      for (const node of entry.nodes) node.parentNode?.removeChild(node);
+      clearContent();
       entry = null;
     }
     openAnchor.parentNode?.removeChild(openAnchor);

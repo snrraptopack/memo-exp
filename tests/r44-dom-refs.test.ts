@@ -149,6 +149,7 @@ describe('R44 - DOM refs', () => {
 
   it('mounts arrays in order, tears down in reverse, and rolls back failures', () => {
     const node = document.createElement('div');
+    document.body.appendChild(node);
     const order: string[] = [];
     const dispose = mountRef(node, [
       () => {
@@ -184,6 +185,35 @@ describe('R44 - DOM refs', () => {
     expect(order.at(-1)).toBe('cleanup:rollback');
   });
 
+  it('defers authored callbacks until the node is connected', async () => {
+    const node = document.createElement('div');
+    const order: string[] = [];
+    mountRef(node, [() => void order.push('callback')]);
+    expect(order).toEqual([]);
+
+    document.body.appendChild(node);
+    await Promise.resolve();
+    expect(order).toEqual(['callback']);
+  });
+
+  it('cancels deferred callbacks when disposed before connection', async () => {
+    const node = document.createElement('div');
+    const order: string[] = [];
+    const dispose = mountRef(node, () => void order.push('callback'));
+    dispose();
+    document.body.appendChild(node);
+    await Promise.resolve();
+    expect(order).toEqual([]);
+  });
+
+  it('runs connection-dependent work like focus once the node is live', async () => {
+    const input = document.createElement('input');
+    mountRef(input, node => (node as HTMLInputElement).focus());
+    document.body.appendChild(input);
+    await Promise.resolve();
+    expect(document.activeElement).toBe(input);
+  });
+
   it('lowers assignable sinks and carries ref metadata across modules', () => {
     const code = compile(SOURCE);
     expect(code).toContain('.mountRef(');
@@ -216,6 +246,7 @@ describe('R44 - DOM refs', () => {
   it('assigns direct/member refs and forwards through explicit and rest props', async () => {
     const mod = await importFixture('./fixtures/out/r44-dom-refs.compiled.ts');
     document.body.appendChild(mod.App('App', null));
+    await Promise.resolve();
     const check = document.querySelector<HTMLButtonElement>('#check')!;
     check.click();
     expect(mod.getEvents().at(-1)).toBe(
@@ -250,6 +281,7 @@ describe('R44 - DOM refs', () => {
   it('cleans refs immediately when conditional branches and keyed rows leave', async () => {
     const mod = await importFixture('./fixtures/out/r44-dom-refs.compiled.ts');
     document.body.appendChild(mod.App('App', null));
+    await Promise.resolve();
     mod.getEvents().length = 0;
 
     document.querySelector<HTMLButtonElement>('#toggle')!.click();

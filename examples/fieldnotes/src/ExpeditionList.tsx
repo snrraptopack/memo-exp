@@ -22,7 +22,7 @@ export function ExpeditionList() {
     <Group>
       <Pending component={Loading} />
       <Error component={Failed} />
-      <div>
+      <div suspend>
         <ul class="plain">
           {expeditions.map(e => (
             <li key={e.id} class="expedition">

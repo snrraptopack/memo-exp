@@ -869,13 +869,13 @@ export function CanvasView(_id, _parent, _dataPolicies) {
 
 	const _canvas = _document.createElement("canvas");
 
-	const _refDispose = _MD.mountRef(_canvas, (_refNode) => {
+	const _refDispose = _MD.mountRef(_canvas, _MD.refAssign((_refNode) => {
 		canvasEl = _refNode;
 
 		return () => {
 			if (canvasEl === _refNode) canvasEl = undefined;
 		};
-	});
+	}));
 
 	_MD.cleanup(_id, _refDispose);
 

@@ -52,7 +52,7 @@ export {
 export type { StateCell } from './state-cells';
 export { cleanup } from './cleanup';
 export type { CleanupDisposer } from './cleanup';
-export { mountRef } from './refs';
+export { mountRef, refAssign } from './refs';
 export type { RefCallback, RefValue } from './refs';
 export { registerConditionalEffect, registerEffect } from './effect';
 export type { EffectCallback, EffectCondition } from './effect';

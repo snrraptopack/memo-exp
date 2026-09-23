@@ -146,6 +146,8 @@ export function createListRegion<T>(
   if (adoptedRange === undefined) {
     parent.appendChild(openAnchor);
     parent.appendChild(endAnchor);
+  } else {
+    controller!.recordFragmentRange(parent, adoptedRange);
   }
   let adopting = adoptedRange !== undefined;
   let nextAdoptedRow: Node | null =
