@@ -20,8 +20,10 @@ import {
   invokeServerRoutedPreparation,
   prepareInitialRoutedRuntime,
   prepareInitialRouteModules as prepareInitialModules,
+  readRouteModuleState,
   readRouteComponent,
   registerRouteComponent,
+  subscribeRouteModuleState,
   readRoutedPreparation as readPreparedValue,
   registerRoutedPreparation,
   restoreRoutedPreparationState,
@@ -30,6 +32,8 @@ import {
 } from './preparation';
 import type { SerializedRoutedPreparationState } from './preparation';
 export type {
+  RouteModuleListener,
+  RouteModuleState,
   RoutedServerContext,
   SerializedRoutedPreparationState,
 } from './preparation';
@@ -107,7 +111,12 @@ export function blockRouteNavigation(blocker: Blocker): () => void {
 export const subscribeRouteNavigation = activeSubscribeNavigation;
 export const subscribeRoute = activeSubscribe;
 export const subscribeRouteSelected = activeSubscribeSelected;
-export { readRouteComponent, registerRouteComponent };
+export {
+  readRouteComponent,
+  readRouteModuleState,
+  registerRouteComponent,
+  subscribeRouteModuleState,
+};
 export function prepareInitialRouteModules(): Promise<void> {
   return prepareInitialModules(getActiveRouteRuntime());
 }

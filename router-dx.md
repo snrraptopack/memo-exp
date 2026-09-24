@@ -277,9 +277,15 @@ A route module has an internal lifecycle:
 
 ```text
 idle -> loading -> ready
-                 -> error -> retry
-       loading -> superseded
+                 -> error -> retry -> loading
+navigation wait -> superseded (module import continues)
 ```
+
+The internal module resource now reports idle, loading, ready, and error;
+failed imports can retry on the next navigation. Supersession cancels the
+navigation's wait immediately, while the shared dynamic import continues and
+may warm the cache for a later visit. It is therefore a transition outcome,
+not a terminal state of the shared module cache.
 
 Module loading and data loading remain different resource implementations:
 
@@ -783,7 +789,8 @@ These points still require focused design before their implementation phase:
 6. Initial slice completed: route-exclusive client imports emit dynamic chunks;
    Vite carries their CSS with the chunk. Validate HMR invalidation and shared
    eager-import edges before considering this item fully closed.
-7. Add route-module loading, ready, error, retry, and superseded states.
+7. Internal slice completed: route-module loading, ready, error, retry, and
+   prompt supersession. Authored availability presentation remains open.
 8. Extract `$routed` preparations into deterministic route-scoped server
    functions and generate their browser facades.
 9. Add prepare-before-commit transitions for controlled navigation, including
