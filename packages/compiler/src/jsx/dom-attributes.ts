@@ -79,6 +79,10 @@ export function isMappedDomAttribute(
   return !elementIsSvg && name in DOM_ATTRIBUTE_NAMES;
 }
 
+function isAriaAttribute(name: string): boolean {
+  return name.toLowerCase().startsWith('aria-');
+}
+
 export function domPropertyWrite(
   varName: string,
   name: string,
@@ -151,13 +155,21 @@ export function domAttributeWrite(
     );
   }
 
-  return astFactory.expressionStatement(
-    astFactory.conditionalExpression(
-      astFactory.logicalExpression(
+  const removeCondition = isAriaAttribute(attribute)
+    ? astFactory.binaryExpression('==', cloneEstreeNode(value), astFactory.nullLiteral())
+    : astFactory.logicalExpression(
         '||',
         astFactory.binaryExpression('==', cloneEstreeNode(value), astFactory.nullLiteral()),
-        astFactory.binaryExpression('===', cloneEstreeNode(value), astFactory.booleanLiteral(false)),
-      ),
+        astFactory.binaryExpression(
+          '===',
+          cloneEstreeNode(value),
+          astFactory.booleanLiteral(false),
+        ),
+      );
+
+  return astFactory.expressionStatement(
+    astFactory.conditionalExpression(
+      removeCondition,
       astFactory.callExpression(
         astFactory.memberExpression(
           cloneEstreeNode(element),

@@ -238,14 +238,14 @@ During SSR, `@memoized-dom/data` coordinates request settling and serializes the
 Server Stream:
   HTML Markup:   <!--mmd:r:App--><div class="user">Ada</div><!--/mmd-->
   State Envelope: <script type="application/mmd+json" data-mmd-root="App">
-                    {"version":1,"state":{"sources":[{"sourceId":"GET|/api/session","snapshot":{...}}]}}
+                    {"version":1,"state":{"sources":[{"sourceId":"transfer:...","snapshot":{...}}]}}
                   </script>
 ```
 
 ### Client adoption:
 1. `mount()` detects the server root and extracts its state envelope before rendering.
 2. It restores the dormant records into the client's `DataRuntime`.
-3. Client components adopt the server DOM with **zero duplicate network fetches and zero loading flash**.
+3. Eligible sources adopt the server data without a duplicate initial fetch.
 
 ```ts
 // main.ts (Client Bootstrap)
@@ -256,6 +256,12 @@ mount('root', App);
 ```
 
 ---
+
+Header-free GET/HEAD requests without a query, body, or custom cache key transfer
+by method and path. Requests with headers, query values, credentials, bodies,
+or custom keys are omitted
+from SSR transfer and fetched after hydration. Private request inputs are never
+copied or hashed into the HTML payload.
 
 ## 8. Isolated Request Runtimes
 

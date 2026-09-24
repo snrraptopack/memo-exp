@@ -1,33 +1,24 @@
 export { css, style, vars, keyframes } from './api';
-export { compileProgram, getCssText, clearRegistry, mountStyles } from './registry';
+export { getCssText, clearRegistry, mountStyles, registerProgram, registerRaw, programSignature } from './registry';
 
-// compiler-facing: IR nodes, markers, analysis, and the classify/emit pipeline
-export { bind, cond, when, isMarker, WHEN_KEY } from './grammar';
+// Compiler-facing pieces that are implemented today. The analyzer and binding
+// helpers described in design.md are not public until they exist.
+export { param, cond, isMarker } from './grammar';
 export { classify } from './classify';
 export { emitProgram, emitKeyframes } from './emit';
 export { hashString, stableStringify } from './hash';
-export { analyzeStyleFn, CssAnalysisError } from './analyze';
 export type {
-  AnalyzeOptions,
-  CssAnalysis,
-  CssBinding,
-  CssVariant,
-  EstreeNode,
-  FragmentResolver,
-  ResolvedFragment,
-  FragmentResolver,
-  ResolvedFragment,
-} from './analyze';
-export type {
-  Binding,
   Block,
+  CondMarker,
   Decl,
   MapSlot,
+  Marker,
+  ParamBinding,
+  ParamMarker,
   Prelude,
   StyleProgram,
   ValueExpr,
   VariantClass,
-  WhenGroup,
 } from './grammar';
 
 export type {

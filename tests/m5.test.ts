@@ -132,13 +132,13 @@ describe('M5 compiler — code generation', () => {
     expect(code).toMatch(/_region\d*\.reconcile\(items\)/);
     // row content writes still route through the ordinary table
     expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
-    // Collection receiver writes preserve structure-only intent.
-    expect(code).toMatch(/\.commitStructuralWrites\(_WRITES_\d*\)/);
+    // An opaque receiver call may also mutate retained row content.
+    expect(code).not.toContain('.commitStructuralWrites(');
     // row entities live at the bracket pattern
     expect(code).toContain('"App/items/Row[*]"');
   });
 
-  it('preserves structural list intent without array-method whitelists', () => {
+  it('conservatively reconciles array receiver writes without method whitelists', () => {
     const code = compile(`
       let items = [{ id: 1, label: 'one' }];
       let hidden = 0;
@@ -153,7 +153,7 @@ describe('M5 compiler — code generation', () => {
       }
     `);
 
-    expect(code).toContain('.commitStructuralWrites(');
+    expect(code).not.toContain('.commitStructuralWrites(');
     expect(code).toContain('.commitWrites(');
     expect(code).toContain('.isStructuralListUpdate(');
     const tableStart = code.indexOf('.installAccessTable(');
@@ -218,6 +218,19 @@ describe('M5 compiler — code generation', () => {
     );
     expect(code).toContain('entities: []');
     expect(code).toContain('"./component.tsx#selected": ["App"]');
+  });
+
+  it('preserves false ARIA attributes as string values', () => {
+    const code = compile(`
+      function App() {
+        let hidden = false;
+        return <div aria-hidden={hidden} />;
+      }
+    `);
+
+    expect(code).toContain('setAttribute("aria-hidden"');
+    expect(code).toContain('removeAttribute("aria-hidden")');
+    expect(code).not.toMatch(/_value\\d* === false/);
   });
 
   it('rejects unsupported constructs with actionable errors', () => {

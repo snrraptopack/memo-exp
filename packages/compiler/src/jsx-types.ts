@@ -1,7 +1,5 @@
 import type { RouteTable } from '@memoized-dom/router';
 
-export {};
-
 declare global {
   /**
    * Register synchronous teardown owned by the current compiled component.

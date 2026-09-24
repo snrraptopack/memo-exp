@@ -152,6 +152,7 @@ function resolveApplicationRoot(
   entries: ReadonlyMap<string, ModuleEntry>,
   manifests: ReadonlyMap<string, ModuleManifest>,
   options: CompileModulesOptions,
+  requireUnique = true,
 ): CompiledApplicationRoot | undefined {
   const roots: CompiledApplicationRoot[] = [];
   for (const entry of entries.values()) {
@@ -184,9 +185,12 @@ function resolveApplicationRoot(
     }
   }
   if (roots.length > 1) {
-    throw new Error(
-      'memo-dom: one connected application graph may contain only one top-level mount() call',
-    );
+    if (requireUnique) {
+      throw new Error(
+        'memo-dom: one connected application graph may contain only one top-level mount() call',
+      );
+    }
+    return undefined;
   }
   return roots[0];
 }
@@ -550,7 +554,13 @@ function compileLinkedModules(
   for (const entry of entries.values()) {
     discovered.set(entry.id, discoverManifest(entry, options));
   }
-  const discoveredRoot = resolveApplicationRoot(entries, discovered, options);
+  const enforceSingleApplicationRoot = options.enforceSingleApplicationRoot !== false;
+  const discoveredRoot = resolveApplicationRoot(
+    entries,
+    discovered,
+    options,
+    enforceSingleApplicationRoot,
+  );
   const routeInstances = instantiateRouteSubtrees(
     collectedRoutes, discoveredRoot, entries, discovered, options,
   );
@@ -569,7 +579,12 @@ function compileLinkedModules(
     options,
     discoveredRoot !== undefined,
   );
-  const applicationRoot = resolveApplicationRoot(entries, manifests, options);
+  const applicationRoot = resolveApplicationRoot(
+    entries,
+    manifests,
+    options,
+    enforceSingleApplicationRoot,
+  );
   const routeManifestModule =
     applicationRoot?.moduleId ?? entries.values().next().value?.id;
   const lazyImportsByModule = new Map<string, Record<string, LazyRouteImport>>();

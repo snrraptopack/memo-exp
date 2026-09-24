@@ -196,7 +196,7 @@ describe('$fetch', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps large body fingerprints bounded in serialized state', async () => {
+  it('does not transfer request bodies without an explicit public identity', async () => {
     const fetcher = vi.fn(async () => json({ ok: true }));
     const client = createDataRuntime({ fetch: fetcher as typeof fetch });
     const largeValue = 'x'.repeat(1024 * 1024);
@@ -206,11 +206,86 @@ describe('$fetch', () => {
     });
 
     await settled(request);
-    const [record] = client.serializeState().sources;
+    expect(client.serializeState().sources).toHaveLength(0);
+  });
 
-    expect(record?.sourceId.length).toBeLessThan(256);
-    expect(record?.requestFingerprint.length).toBeLessThan(256);
-    expect(record?.requestFingerprint).not.toContain(largeValue.slice(0, 100));
+  it('omits private or application-keyed requests from SSR transfer', async () => {
+    const client = createDataRuntime({
+      fetch: (async () => json({ ok: true })) as typeof fetch,
+    });
+    const requests = [
+      client.$fetch('/api/search', { query: { token: 'private' } }),
+      client.$fetch('/api/private', {
+        headers: { authorization: 'Bearer private' },
+      }),
+      client.$fetch('/api/write', {
+        method: 'POST',
+        body: { value: 'private' },
+      }),
+      client.$fetch('/api/keyed', { key: 'session-specific' }),
+    ];
+
+    await Promise.all(requests.map(settled));
+    expect(client.serializeState().sources).toHaveLength(0);
+  });
+
+  it('does not transfer values changed by JSON serialization', async () => {
+    const schema: StandardSchemaV1<unknown, { created: Date }> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate() {
+          return { value: { created: new Date('2026-01-01T00:00:00.000Z') } };
+        },
+      },
+    };
+    const client = createDataRuntime({
+      fetch: (async () => json({ created: '2026-01-01' })) as typeof fetch,
+    });
+    const request = client.$fetch('/api/date', { validate: schema });
+    await settled(request);
+
+    expect(request.data?.created).toBeInstanceOf(Date);
+    expect(client.serializeState().sources).toHaveLength(0);
+  });
+
+  it('rejects restored data when the schema contract changes', async () => {
+    const serverSchema: StandardSchemaV1 = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate(value) {
+          return { value };
+        },
+      },
+    };
+    const clientSchema: StandardSchemaV1 = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate(input) {
+          return { value: input };
+        },
+      },
+    };
+    const server = createDataRuntime({
+      fetch: (async () => json({ value: 'server' })) as typeof fetch,
+    });
+    const serverRequest = server.$fetch('/api/value', {
+      validate: serverSchema,
+    });
+    await settled(serverRequest);
+
+    const fetcher = vi.fn(async () => json({ value: 'client' }));
+    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    client.restoreState(server.serializeState());
+    const clientRequest = client.$fetch('/api/value', {
+      validate: clientSchema,
+    });
+    await settled(clientRequest);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(clientRequest.data).toEqual({ value: 'client' });
   });
 
   it('does not cache HEAD or OPTIONS requests by default', async () => {
@@ -348,8 +423,8 @@ describe('$action', () => {
 
     responses[0]!(json({ id: '1', title: 'First' }));
     await actionSettled(first);
-    expect(first.data.id).toBe('1');
-    expect(second.data.id).toBe('2');
+    expect(first.data).toMatchObject({ id: '1' });
+    expect(second.data).toMatchObject({ id: '2' });
   });
 
   it('stores a request failure on the returned result', async () => {

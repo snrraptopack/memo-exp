@@ -9,11 +9,17 @@
 
 import { createStorage } from '@memoized-dom/runtime';
 import { getExtensionStore } from '@memoized-dom/runtime';
-import { createDataRuntime } from './client';
+import {
+  cancelDataHydration,
+  createDataRuntime,
+  resumeDataHydration,
+} from './client';
 import type { DataRuntime, SerializedDataState } from './types';
 
 interface ActiveDataRuntimeBridge {
   restoreState?(state: unknown): void;
+  completeHydration?(): void;
+  cancelHydration?(): void;
   pendingState?: unknown;
 }
 
@@ -47,6 +53,14 @@ export function getActiveDataRuntime(): DataRuntime {
 // eager-init cycles in optimized browser bundles.
 activeStore.restoreState = state => {
   getActiveDataRuntime().restoreState(state as SerializedDataState);
+};
+activeStore.completeHydration = () => {
+  resumeDataHydration(getActiveDataRuntime());
+};
+activeStore.cancelHydration = () => {
+  const runtime = getActiveDataRuntime();
+  cancelDataHydration(runtime);
+  runtime.clear();
 };
 
 export function runWithDataRuntime<T>(runtime: DataRuntime, fn: () => T): T {

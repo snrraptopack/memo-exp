@@ -18,6 +18,21 @@ import type {
   StandardSchemaV1,
 } from './types';
 
+interface HydrationControls {
+  resume(): void;
+  cancel(): void;
+}
+
+const hydrationControls = new WeakMap<DataRuntime, HydrationControls>();
+
+export function resumeDataHydration(runtime: DataRuntime): void {
+  hydrationControls.get(runtime)?.resume();
+}
+
+export function cancelDataHydration(runtime: DataRuntime): void {
+  hydrationControls.get(runtime)?.cancel();
+}
+
 /** Create an isolated request/cache/action ownership boundary. */
 export function createDataRuntime(
   options: DataRuntimeOptions = {},
@@ -65,5 +80,9 @@ export function createDataRuntime(
       store.installRestoreRecords(state);
     },
   };
+  hydrationControls.set(runtime, {
+    resume: () => store.resumeHydration(),
+    cancel: () => store.cancelHydration(),
+  });
   return runtime;
 }

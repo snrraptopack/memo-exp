@@ -235,21 +235,24 @@ export function serve<
   };
 
   const handler = async (): Promise<ApplicationHandler> => {
-    if (!dirty && current !== undefined) return current;
-    const services = await resolveServices();
-    current = createApplicationHandler({
-      ...(documentTemplate === undefined ? {} : { documentTemplate }),
-      ...(fallback === undefined && ssr.length === 0 ? {} : { resolveApp }),
-      middleware,
-      groups,
-      routes: [...installedServerFunctions, ...routes],
-      createLocals: options.createLocals,
-      createPlatform: options.createPlatform,
-      services,
-      onError: options.onError,
-    });
-    dirty = false;
-    return current;
+    while (dirty || current === undefined) {
+      dirty = false;
+      const services = await resolveServices();
+      if (dirty) continue;
+      current = createApplicationHandler({
+        ...(documentTemplate === undefined ? {} : { documentTemplate }),
+        ...(fallback === undefined && ssr.length === 0 ? {} : { resolveApp }),
+        middleware,
+        groups,
+        routes: [...installedServerFunctions, ...routes],
+        createLocals: options.createLocals,
+        createPlatform: options.createPlatform,
+        services,
+        onError: options.onError,
+      });
+      return current;
+    }
+    return current!;
   };
 
   const registerRoute = <TPath extends string>(

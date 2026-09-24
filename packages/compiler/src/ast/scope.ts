@@ -164,10 +164,18 @@ export function isReferenceIdentifier(
     ((parent.type === 'BreakStatement' || parent.type === 'ContinueStatement') &&
       key === 'label') ||
     (parent.type === 'ExportSpecifier' && key === 'exported') ||
-    parent.type === 'MetaProperty' ||
-    parent.type.startsWith('TS')
+    parent.type === 'MetaProperty'
   ) {
     return false;
+  }
+  if (parent.type.startsWith('TS')) {
+    return key === 'expression' && (
+      parent.type === 'TSAsExpression' ||
+      parent.type === 'TSTypeAssertion' ||
+      parent.type === 'TSNonNullExpression' ||
+      parent.type === 'TSSatisfiesExpression' ||
+      parent.type === 'TSInstantiationExpression'
+    );
   }
   return !parent.type.startsWith('Import');
 }

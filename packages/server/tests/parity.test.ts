@@ -11,7 +11,7 @@
  * Route regions and async data states need request-local router/data
  * wiring and are covered in their own slice.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resetScheduler,
   setScheduler,
@@ -424,9 +424,14 @@ describe('CSR-equivalence corpus', () => {
       expect(tiers.serverModule.refRuns).toBe(0);
       expect(tiers.serverModule.cleanups).toBe(0);
 
-      // Client tier runs them exactly once each.
+      // Effects run on creation; callback refs wait until their nodes are
+      // connected to a settled document.
       expect(tiers.clientModule.effectRuns).toBe(1);
-      expect(tiers.clientModule.refRuns).toBeGreaterThanOrEqual(1);
+      expect(tiers.clientModule.refRuns).toBe(0);
+      result.clientRoot.ownerDocument.body.appendChild(result.clientRoot);
+      await vi.waitFor(() => {
+        expect(tiers.clientModule.refRuns).toBeGreaterThanOrEqual(1);
+      });
 
       // Cleanup disposers drain at unmount, not at creation - tear down the
       // client root explicitly and confirm both cleanup() and the effect
@@ -434,6 +439,7 @@ describe('CSR-equivalence corpus', () => {
       unregister('AppClient');
       expect(tiers.clientModule.cleanups).toBeGreaterThanOrEqual(1);
     } finally {
+      result.clientRoot.remove();
       result.serverRuntime.dispose();
     }
   });

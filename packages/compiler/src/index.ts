@@ -10,6 +10,7 @@ export {
 } from './compile';
 export {
   createExtensionEstreeFrontend,
+  EstreeParseError,
   parseWithEstreeFrontend,
   parseWithEstreeFrontendOrThrow,
   yukuEstreeFrontend,
@@ -55,5 +56,11 @@ export {
   type ServerFunctionParameter,
   type ServerFunctionQueryKind,
 } from './server-functions';
+export {
+  compilerError,
+  MemoizedDomCompilerError,
+  type CompilerErrorAnchor,
+  type CompilerErrorLocation,
+} from './errors';
 export type { CompilerRoutedPreparation } from './routed';
 export type { ExternalReactiveSourceDefinition } from './context';

@@ -344,6 +344,7 @@ export async function compileGraph(
               `${options.runtimePath ?? '@memoized-dom/runtime'}/hot`,
             rootId,
             lazyComponentKeys,
+            options.routerPath ?? '@memoized-dom/router/internal',
           )
         : code,
     );
@@ -382,6 +383,7 @@ function appendHotBoundary(
   runtimePath: string,
   rootId: string,
   lazyComponentKeys: ReadonlySet<string>,
+  routerPath: string,
 ): string {
   const components = new Map(
     metadata.componentExports.map((component) => [component.local, component]),
@@ -409,9 +411,10 @@ function appendHotBoundary(
     .map(component =>
       `__memoized_dom_register_route_component__(${JSON.stringify(`${moduleId}#${component.local}`)}, updatedModule[${JSON.stringify(component.exported)}]);`)
     .join('\n    ');
+  const routerImport = `\nimport { registerRouteComponent as __memoized_dom_register_route_component__ } from ${JSON.stringify(routerPath)};`;
   return `${code}\nimport { applyHotUpdate as __memoized_dom_apply_hot_update__, disposeHotModule as __memoized_dom_dispose_hot_module__ } from ${JSON.stringify(
     runtimePath,
-  )};${lazyUpdates === '' ? '' : '\nimport { registerRouteComponent as __memoized_dom_register_route_component__ } from "@memoized-dom/router/internal";'}\nif (import.meta.hot) {\n  import.meta.hot.dispose(() => __memoized_dom_dispose_hot_module__(${JSON.stringify(
+  )};${lazyUpdates === '' ? '' : routerImport}\nif (import.meta.hot) {\n  import.meta.hot.dispose(() => __memoized_dom_dispose_hot_module__(${JSON.stringify(
     moduleId,
   )}, ${JSON.stringify(rootId)}));\n  import.meta.hot.acceptExports(${acceptedExports}, (updatedModule) => {\n    if (!updatedModule) return;\n    const updates = [${updates}];\n    if (updates.some(([, next]) => next === undefined)) {\n      import.meta.hot.invalidate(${JSON.stringify(
         'memoized-dom: a component export was removed',

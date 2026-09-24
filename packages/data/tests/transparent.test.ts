@@ -475,11 +475,11 @@ describe('transparent resolved values', () => {
     runtime.clear();
   });
 
-  it('claims SSR state for the initial query and fetches after a rebind', async () => {
+  it('claims SSR state for an initial request and fetches after a query rebind', async () => {
     const server = createDataRuntime({
       fetch: (async () => json([{ id: 1, name: 'Ada' }])) as typeof fetch,
     });
-    server.$fetch<User[]>('/users', { query: { search: 'Ada' } });
+    server.$fetch<User[]>('/users');
     expect(await server.settle()).toBe(true);
     const state = server.serializeState();
 
@@ -491,15 +491,15 @@ describe('transparent resolved values', () => {
       }) as typeof fetch,
     });
     client.restoreState(state);
-    const resource = client.$fetch<User[]>('/users', {
-      query: { search: 'Ada' },
-    });
+    const resource = client.$fetch<User[]>('/users');
     const users = resource as unknown as ResolvedValue<User[]>;
 
     expect(readResolvedValue(users)).toEqual([{ id: 1, name: 'Ada' }]);
     expect(requests).toHaveLength(0);
 
-    rebindResolvedValue(users, '/users', { query: { search: 'Grace' } });
+    rebindResolvedValue(users, '/users', {
+      query: { search: 'Grace' },
+    });
     await vi.waitFor(() => expect(requests).toEqual(['/users?search=Grace']));
     await vi.waitFor(() => {
       expect(readResolvedValueForRender(users)).toEqual([

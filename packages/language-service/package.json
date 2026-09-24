@@ -25,7 +25,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@memoized-dom/compiler": "^0.0.8"
+    "@memoized-dom/compiler": "workspace:*"
   },
   "peerDependencies": {
     "typescript": ">=5.7"

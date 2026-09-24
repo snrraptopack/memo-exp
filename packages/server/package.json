@@ -25,13 +25,13 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@memoized-dom/data": "^0.0.4",
-    "@memoized-dom/router": "^0.0.4",
-    "@memoized-dom/runtime": "^0.0.9",
+    "@memoized-dom/data": "workspace:*",
+    "@memoized-dom/router": "workspace:*",
+    "@memoized-dom/runtime": "workspace:*",
     "linkedom": "^0.18.0"
   },
   "devDependencies": {
-    "@memoized-dom/compiler": "^0.0.8",
+    "@memoized-dom/compiler": "workspace:*",
     "@types/bun": "latest"
   },
   "publishConfig": {

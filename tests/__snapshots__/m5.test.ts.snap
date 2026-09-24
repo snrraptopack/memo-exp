@@ -181,7 +181,7 @@ export function CompList(_id2, _parent, _dataPolicies) {
 
 	const add = () => {
 		items.push({ id: items.length + 1, label: 'three' });
-		_MD.commitStructuralWrites(_WRITES_2);
+		_MD.commitWrites(_WRITES_2);
 	};
 
 	const _update2 = (_reasons = null) => {
@@ -267,7 +267,7 @@ export function InlineList(_id, _parent, _dataPolicies) {
 
 	const add = () => {
 		items.push({ id: items.length + 1, label: 'three' });
-		_MD.commitStructuralWrites(_WRITES_2);
+		_MD.commitWrites(_WRITES_2);
 	};
 
 	const _update = (_reasons = null) => {

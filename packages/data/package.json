@@ -28,6 +28,6 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@memoized-dom/runtime": "^0.0.9"
+    "@memoized-dom/runtime": "workspace:*"
   }
 }

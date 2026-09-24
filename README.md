@@ -4,17 +4,13 @@ Analyzed, memoized real-DOM rendering for plain TypeScript + JSX.
 
 Start with:
 
+- `guide.md` for the published-package application contract.
 - `memoized-dom-paradigm.md` for the product and architecture constraints.
 - `emission-spec.md` for the normative compiler contract.
 - `ref-design.md` for compiler-native DOM refs, forwarding, and teardown.
-- `data-loading-api.md` for the proposed type-safe `$fetch` and `$action` API.
-- `solid-2-async-reactivity-research.md` for the Solid 2 RC async-model research
-  that informs, but does not prescribe, Memoized DOM's data-layer design.
-- `data-layer-improvement-plan.md` for the researched implementation priorities
-  connecting async reactivity, cache policy, ownership, and server transport.
+- `data-colorless-async-rfc.md` for transparent data and SSR transfer design.
 - `architecture-review.md` for current implementation status and priorities.
-- `tsrx.md` for the optional TSRX frontend, conceptual TSX equivalents, and the
-  exact Memoized DOM host-profile support matrix.
+- `tsrx.md` for the optional TSRX frontend and host-profile support matrix.
 - `bench/README.md` for benchmark suites and their latest measurements.
 
 Prerequisites: Node.js 24.11 or newer and Bun.
@@ -29,7 +25,7 @@ Run tests:
 
 ```bash
 bun run build
-bun run test
+bun run test:root
 bun run typecheck
 ```
 

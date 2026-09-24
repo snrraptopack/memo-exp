@@ -24,6 +24,7 @@
     "build": "bun run ./scripts/clean.ts && rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json"
   },
   "dependencies": {
+    "@memoized-dom/router": "workspace:*",
     "@tsrx/core": "0.1.63",
     "esrap": "^2.3.6",
     "yuku-parser": "^0.9.3"

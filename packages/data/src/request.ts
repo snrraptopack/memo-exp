@@ -89,6 +89,51 @@ export function fetchIdentity(
   return `${method}|${url}|${normalizedHeaders(headers)}|body:${bodyIdentity}|schema:${schemaId(schema)}`;
 }
 
+export function fetchTransferContract(schema: StandardSchemaV1 | undefined): string {
+  if (schema === undefined) return 'mmd-fetch/v1:raw';
+  const standard = schema['~standard'];
+  const validator = textIdentity('schema', standard.validate.toString());
+  return `mmd-fetch/v1:validated:${standard.vendor}:${validator}`;
+}
+
+function transferableTarget(target: string | URL, url: string): string | null {
+  try {
+    const parsed = new URL(url, 'http://memoized-dom.invalid');
+    if (parsed.username !== '' || parsed.password !== '') return null;
+    // Query parameter names cannot establish that their values are public.
+    // A caller with a safe application-level identity can opt in explicitly.
+    if (parsed.search !== '') return null;
+    const path = parsed.pathname === '' ? '/' : parsed.pathname;
+    const absolute = target instanceof URL || /^[A-Za-z][A-Za-z\d+.-]*:/.test(target);
+    return absolute ? `${parsed.origin}${path}` : path;
+  } catch {
+    return null;
+  }
+}
+
+export function fetchTransferIdentity(
+  target: string | URL,
+  url: string,
+  method: FetchMethod,
+  headers: Headers,
+  bodyIdentity: string,
+  key: RequestKey | undefined,
+  schema: StandardSchemaV1 | undefined,
+): string | null {
+  const contract = fetchTransferContract(schema);
+  if (
+    key !== undefined ||
+    (method !== 'GET' && method !== 'HEAD') ||
+    [...headers].length > 0 ||
+    bodyIdentity !== 'none'
+  ) return null;
+  const transferTarget = transferableTarget(target, url);
+  return transferTarget === null ? null : textIdentity(
+    'transfer',
+    `${method}|target:${transferTarget}|${contract}`,
+  );
+}
+
 export function normalizeFetchMethod(method: FetchMethod | undefined): FetchMethod {
   const normalized = (method ?? 'GET').toUpperCase();
   if (
@@ -157,6 +202,11 @@ function bytesIdentity(bytes: Uint8Array): string {
   return finishIdentityHash('bytes', hash);
 }
 
+export interface PreparedRequestBody {
+  readonly body: BodyInit | undefined;
+  readonly identity: string;
+}
+
 function cloneFormData(input: FormData): PreparedRequestBody {
   const body = new FormData();
   const hash = createIdentityHash();
@@ -173,12 +223,8 @@ function cloneFormData(input: FormData): PreparedRequestBody {
     }
     updateTextHash(hash, ';');
   }
-  return { body, identity: finishIdentityHash('form', hash) };
-}
-
-export interface PreparedRequestBody {
-  readonly body: BodyInit | undefined;
-  readonly identity: string;
+  const identity = finishIdentityHash('form', hash);
+  return { body, identity };
 }
 
 /** Snapshot a replayable body and its synchronous request-key material. */
@@ -186,16 +232,17 @@ export function prepareRequestBody(
   input: unknown,
   headers: Headers,
 ): PreparedRequestBody {
-  if (input === undefined) return { body: undefined, identity: 'none' };
+  if (input === undefined) {
+    return { body: undefined, identity: 'none' };
+  }
   if (typeof input === 'string') {
-    return { body: input, identity: textIdentity('text', input) };
+    const identity = textIdentity('text', input);
+    return { body: input, identity };
   }
   if (input instanceof URLSearchParams) {
     const body = new URLSearchParams(input);
-    return {
-      body,
-      identity: textIdentity('params', body.toString()),
-    };
+    const identity = textIdentity('params', body.toString());
+    return { body, identity };
   }
   if (input instanceof Blob) {
     return { body: input, identity: opaqueBodyIdentity(input) };
@@ -205,7 +252,8 @@ export function prepareRequestBody(
   }
   if (input instanceof ArrayBuffer) {
     const bytes = new Uint8Array(input.slice(0));
-    return { body: bytes, identity: bytesIdentity(bytes) };
+    const identity = bytesIdentity(bytes);
+    return { body: bytes, identity };
   }
   if (ArrayBuffer.isView(input)) {
     const body = new Uint8Array(
@@ -213,7 +261,8 @@ export function prepareRequestBody(
       input.byteOffset,
       input.byteLength,
     ).slice();
-    return { body, identity: bytesIdentity(body) };
+    const identity = bytesIdentity(body);
+    return { body, identity };
   }
 
   const json = JSON.stringify(input);
@@ -223,7 +272,8 @@ export function prepareRequestBody(
   if (!headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
-  return { body: json, identity: textIdentity('json', json) };
+  const identity = textIdentity('json', json);
+  return { body: json, identity };
 }
 
 export async function decodeResponse(

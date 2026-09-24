@@ -34,12 +34,24 @@ export interface PreparedRenderStream {
   readonly ready: Promise<void>;
 }
 
-function abortPromise(signal: AbortSignal): Promise<never> {
-  const { promise, reject } = Promise.withResolvers<never>();
-  const abort = () => reject(signal.reason ?? new Error('Streaming render aborted'));
-  if (signal.aborted) abort();
-  else signal.addEventListener('abort', abort, { once: true });
-  return promise;
+async function waitWithSignal<T>(
+  operation: PromiseLike<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  if (signal === undefined) return operation;
+  if (signal.aborted) {
+    throw signal.reason ?? new Error('Streaming render aborted');
+  }
+  let abort = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason ?? new Error('Streaming render aborted'));
+    signal.addEventListener('abort', abort, { once: true });
+  });
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    signal.removeEventListener('abort', abort);
+  }
 }
 
 /**
@@ -102,10 +114,11 @@ function createRenderStream(
               }
               const root = component(rootId, null) as unknown as StringRenderableNode;
 
-              if (options.mode !== 'shell') {
-                const settle = dataRuntime.settle(options.timeout ?? 5000);
-                if (signal === undefined) await settle;
-                else await Promise.race([settle, abortPromise(signal)]);
+              if (options.mode === 'resolve') {
+                await waitWithSignal(
+                  dataRuntime.settle(options.timeout ?? 5000),
+                  signal,
+                );
               }
 
               let html = root.toString(options.markers === true);

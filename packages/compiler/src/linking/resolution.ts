@@ -59,10 +59,12 @@ export function resolveModule(
     `${base}.tsx`,
     `${base}.js`,
     `${base}.jsx`,
+    `${base}.tsrx`,
     `${base}/index.ts`,
     `${base}/index.tsx`,
     `${base}/index.js`,
     `${base}/index.jsx`,
+    `${base}/index.tsrx`,
   ];
   for (const candidate of candidates) {
     const found = entries.get(candidate);

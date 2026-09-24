@@ -25,14 +25,12 @@ The first client/compiler vertical slice exists in the working tree:
   no Group is present;
 - no volatile frame polling for recognized transparent sources.
 
-The slice currently invalidates the owning component subtree. Exact
-consumption entities, compiler-proven pending DOM-legality diagnostics,
-runtime-owned module source materialization, derived payload transport as a
-component prop, and SSR snapshot/hydration integration remain implementation
-work. Section 16 now gives the concrete proposed design for every item in that
-list except DOM-legality diagnostics. This status is intentionally explicit so
-examples below are not mistaken for claiming that every RFC case already
-compiles.
+The slice currently invalidates the owning component subtree. Runtime-owned
+module source materialization and SSR snapshot/hydration integration are
+implemented. Requests with headers, bodies, URL credentials, or query values
+are omitted from SSR transfer and fetched after hydration. Exact derived payload
+transport as a component prop and compiler-proven pending DOM-legality
+diagnostics remain implementation work.
 
 This RFC deliberately does not adopt Solid's async runtime graph, suspension
 protocol, loading-boundary behavior, or public API. The useful inspiration is
@@ -1295,9 +1293,9 @@ Rules:
    data.
 3. `requestFingerprint` is derived from the non-secret portion of normalized
    request identity and never embeds or hashes a URL credential, secret header
-   value, cookie, or bearer token. If removing those inputs makes compatibility
-   ambiguous, the source is non-transferable by default unless the host
-   supplies an explicit public transfer key and inclusion policy.
+   value, cookie, bearer token, or potentially private body/query value. If
+   removing those inputs makes compatibility ambiguous, the source is not
+   transferred and runs normally after hydration.
 4. Only JSON-safe validated payloads transfer in version one. Custom values
    require an explicit serializer/validator pair; closures, promises, signals,
    DOM nodes, symbols, and active request handles never transfer.

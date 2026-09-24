@@ -47,6 +47,8 @@ interface HydrationPayloadDelivery {
 
 interface DataRuntimeBridge {
   restoreState?(state: unknown): void;
+  completeHydration?(): void;
+  cancelHydration?(): void;
   pendingState?: unknown;
 }
 
@@ -208,25 +210,41 @@ function hydrationRootId(host: Element): string | null {
   return null;
 }
 
-function restorePayload(rootId: string, host: Element): void {
+function restorePayload(
+  rootId: string,
+  host: Element,
+): { script?: Element; data: DataRuntimeBridge } | undefined {
   const document = host.ownerDocument;
-  const script = document.querySelector(
-    `script[type="application/mmd+json"][data-mmd-root="${rootId}"]`,
+  const data = getExtensionStore<DataRuntimeBridge>(
+    'mmd:data-runtime-active',
+    () => ({}),
   );
-  if (!script?.textContent) return;
-  let payload: HydrationPayloadDelivery;
+  const script = [...document.querySelectorAll(
+    'script[type="application/mmd+json"][data-mmd-root]',
+  )].find(candidate => candidate.getAttribute('data-mmd-root') === rootId);
+  if (!script?.textContent) return { data };
+  let parsed: unknown;
   try {
-    payload = JSON.parse(script.textContent) as HydrationPayloadDelivery;
+    parsed = JSON.parse(script.textContent);
   } catch {
-    return;
+    return { script, data };
   }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    (parsed as { version?: unknown }).version !== 1
+  ) {
+    return { script, data };
+  }
+  const payload = parsed as HydrationPayloadDelivery;
   if (payload.state !== undefined) {
-    const data = getExtensionStore<DataRuntimeBridge>(
-      'mmd:data-runtime-active',
-      () => ({}),
-    );
     if (data.restoreState !== undefined) {
-      data.restoreState(payload.state);
+      try {
+        data.restoreState(payload.state);
+      } catch {
+        // A malformed or incompatible data envelope must not prevent the
+        // application from mounting. Its sources can fetch normally.
+      }
     } else {
       // Preserve an early payload until the optional data package registers its
       // default runtime. Browser bootstrap never has to install one manually.
@@ -241,13 +259,14 @@ function restorePayload(rootId: string, host: Element): void {
       router.pendingState = payload.routed;
     }
   }
+  return { script, data };
 }
 
 function adoptApplication(
   host: Element,
   definition: RootFactoryDefinition,
 ): MountedApplication {
-  restorePayload(definition.id, host);
+  const restoration = restorePayload(definition.id, host);
   const range = createHydrationCursor(host, definition.id);
   const hydrationDocument = new HydrationDocument(
     getActiveEnvironment().document,
@@ -266,11 +285,17 @@ function adoptApplication(
     hydrationDocument.expectDone();
   } catch (error) {
     unregisterSubtree(definition.id);
+    if (error instanceof HydrationMismatchError) {
+      restoration?.data?.completeHydration?.();
+    } else {
+      restoration?.data?.cancelHydration?.();
+    }
+    restoration?.script?.remove();
     throw error;
   } finally {
     hydrationDocument.finishHydration();
   }
-  return createMountedApplication(
+  const mounted = createMountedApplication(
     host,
     definition,
     rootNodes(root),
@@ -279,6 +304,9 @@ function adoptApplication(
       range.end.parentNode?.removeChild(range.end);
     },
   );
+  restoration?.data?.completeHydration?.();
+  restoration?.script?.remove();
+  return mounted;
 }
 
 /**

@@ -199,7 +199,8 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
       expect(resource.status).toBe('success');
     });
     const envelope = runtime.serializeState();
-    expect(envelope.sources).toHaveLength(1);
-    expect(envelope.sources[0]?.sourceId).toContain('/api/ok');
+     expect(envelope.sources).toHaveLength(1);
+     expect(envelope.sources[0]?.sourceId).toMatch(/^transfer:/);
+     expect(envelope.sources[0]?.sourceId).not.toContain('/api/ok');
   });
 });

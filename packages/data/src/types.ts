@@ -251,8 +251,8 @@ export interface TransparentFetchFunction {
 export interface ActionResult<TResult> {
   readonly id: string;
   readonly state: AsyncStatus;
-  readonly data: TResult;
-  readonly error: import('./errors').RequestError;
+  readonly data: TResult | undefined;
+  readonly error: import('./errors').RequestError | null;
 }
 
 type ActionCall<TResult, TInput> = [TInput] extends [void]
@@ -315,10 +315,11 @@ export type SerializedSourceSnapshot =
   | { readonly status: 'pending' };
 
 export interface SerializedSourceRecord {
-  /** Deterministic request identity (method|url|headers|schema contract). */
+  /** Stable public transfer identity. */
   readonly sourceId: string;
-  /** Provider + decoder contract, independent from the payload value. */
+  /** Provider, payload format, and schema contract. */
   readonly contractId: string;
+  /** Safe digest used to reject a different evaluated request. */
   readonly requestFingerprint: string;
   readonly snapshot: SerializedSourceSnapshot;
 }

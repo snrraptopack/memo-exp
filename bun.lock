@@ -50,23 +50,28 @@
     },
     "packages/compiler": {
       "name": "@memoized-dom/compiler",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
+        "@memoized-dom/router": "workspace:*",
         "@tsrx/core": "0.1.63",
         "esrap": "^2.3.6",
         "yuku-parser": "^0.9.3",
       },
     },
+    "packages/css": {
+      "name": "@memoized-dom/css",
+      "version": "0.0.1",
+    },
     "packages/data": {
       "name": "@memoized-dom/data",
-      "version": "0.0.3",
+      "version": "0.0.5",
       "peerDependencies": {
         "@memoized-dom/runtime": "workspace:*",
       },
     },
     "packages/language-service": {
       "name": "@memoized-dom/language-service",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "dependencies": {
         "@memoized-dom/compiler": "workspace:*",
       },
@@ -76,15 +81,15 @@
     },
     "packages/router": {
       "name": "@memoized-dom/router",
-      "version": "0.0.3",
+      "version": "0.0.4",
     },
     "packages/runtime": {
       "name": "@memoized-dom/runtime",
-      "version": "0.0.8",
+      "version": "0.0.9",
     },
     "packages/server": {
       "name": "@memoized-dom/server",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@memoized-dom/data": "workspace:*",
         "@memoized-dom/router": "workspace:*",
@@ -98,7 +103,7 @@
     },
     "packages/vite": {
       "name": "@memoized-dom/vite",
-      "version": "0.0.8",
+      "version": "0.0.9",
       "dependencies": {
         "@memoized-dom/adapters": "^0.0.1",
         "@memoized-dom/compiler": "^0.0.7",
@@ -181,6 +186,8 @@
     "@memoized-dom/adapters": ["@memoized-dom/adapters@workspace:packages/adapters"],
 
     "@memoized-dom/compiler": ["@memoized-dom/compiler@workspace:packages/compiler"],
+
+    "@memoized-dom/css": ["@memoized-dom/css@workspace:packages/css"],
 
     "@memoized-dom/data": ["@memoized-dom/data@workspace:packages/data"],
 
@@ -608,7 +615,7 @@
 
     "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
-    "@memoized-dom/server/@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
+    "@memoized-dom/server/@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
 
     "@tailwindcss/node/lightningcss": ["lightningcss@1.32.0", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.32.0", "lightningcss-darwin-arm64": "1.32.0", "lightningcss-darwin-x64": "1.32.0", "lightningcss-freebsd-x64": "1.32.0", "lightningcss-linux-arm-gnueabihf": "1.32.0", "lightningcss-linux-arm64-gnu": "1.32.0", "lightningcss-linux-arm64-musl": "1.32.0", "lightningcss-linux-x64-gnu": "1.32.0", "lightningcss-linux-x64-musl": "1.32.0", "lightningcss-win32-arm64-msvc": "1.32.0", "lightningcss-win32-x64-msvc": "1.32.0" } }, "sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ=="],
 
@@ -638,7 +645,7 @@
 
     "vitest/vite": ["vite@8.1.5", "", { "dependencies": { "lightningcss": "^1.32.0", "picomatch": "^4.0.5", "postcss": "^8.5.17", "rolldown": "~1.1.5", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.3.0", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-7ULLwsCdYx/nRyrpiEwvqb5TFHrMVZyBt+rg/OAXT7rgj/z+DtTDyKFeLAdDkubDVDKD8jOsndmy7m55XcfUsw=="],
 
-    "@memoized-dom/server/@types/bun/bun-types": ["bun-types@1.4.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
+    "@memoized-dom/server/@types/bun/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
     "@tailwindcss/node/lightningcss/lightningcss-android-arm64": ["lightningcss-android-arm64@1.32.0", "", { "os": "android", "cpu": "arm64" }, "sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg=="],
 

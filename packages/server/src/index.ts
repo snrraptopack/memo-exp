@@ -190,7 +190,12 @@ export function escapeJsonForScriptTag(json: string): string {
 
 export function createPayloadScriptTag(rootId: string, payload: RenderPayload): string {
   const safeJson = escapeJsonForScriptTag(JSON.stringify(payload));
-  return `<script type="application/mmd+json" data-mmd-root="${rootId}">${safeJson}</script>`;
+  const safeRootId = rootId
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return `<script type="application/mmd+json" data-mmd-root="${safeRootId}">${safeJson}</script>`;
 }
 
 function serialize(
@@ -216,7 +221,7 @@ function serialize(
     }
     const html = (node as Element).outerHTML;
     if (html !== undefined) {
-      return markers ? html : stripComments(html);
+      return markers ? html : stripComments(node);
     }
     return node.textContent ?? '';
   };
@@ -232,10 +237,19 @@ function serialize(
   return html;
 }
 
-/** Remove top-level and nested comments from serialized element HTML. */
-function stripComments(html: string): string {
-  if (!html.includes('<!--')) return html;
-  return html.replace(/<!--[\s\S]*?-->/g, '');
+function stripComments(node: Node): string {
+  const clone = node.cloneNode(true);
+  const visit = (parent: Node): void => {
+    for (const child of [...parent.childNodes]) {
+      if (child.nodeType === 8) {
+        parent.removeChild(child);
+      } else if (child.nodeType === 1 || child.nodeType === 11) {
+        visit(child);
+      }
+    }
+  };
+  visit(clone);
+  return (clone as Element).outerHTML ?? clone.textContent ?? '';
 }
 
 /**
@@ -267,10 +281,11 @@ export function syncBooleanAttributes(root: Node): void {
   ) {
     for (const [prop, attribute] of BOOLEAN_PROPS) {
       const value = (element as unknown as Record<string, unknown>)[prop];
-      if (value === true && !element.hasAttribute(attribute)) {
-        element.setAttribute(attribute, '');
+      if (value === true) {
+        if (!element.hasAttribute(attribute)) element.setAttribute(attribute, '');
+      } else if (value === false) {
+        element.removeAttribute(attribute);
       }
-      // A false property with an absent attribute already encodes false.
     }
   }
 }
@@ -289,7 +304,7 @@ export async function renderWithDomAsync(
   const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
     mode: 'server-dom',
     document: serverDocument,
-    schedule: (fn) => fn(), // Synchronous execution during server settle iterations
+    schedule: null,
     effects: 'disabled',
     refs: 'disabled',
   });
@@ -323,6 +338,7 @@ export async function renderWithDomAsync(
           };
         } catch (error) {
           unregisterSubtree(rootId);
+          runtime.dispose();
           throw error;
         } finally {
           routeRuntime.dispose();
@@ -378,6 +394,7 @@ export function renderWithDom(
     runWithApplicationRuntime(runtime, () => {
       unregisterSubtree(rootId);
     });
+    runtime.dispose();
     throw error;
   } finally {
     setActiveApplicationRuntime(previousRuntime);

@@ -23,11 +23,11 @@
     "bench": "bun run ./bench/run.ts"
   },
   "dependencies": {
-    "@memoized-dom/adapters": "^0.0.1",
-    "@memoized-dom/compiler": "^0.0.8"
+    "@memoized-dom/adapters": "workspace:*",
+    "@memoized-dom/compiler": "workspace:*"
   },
   "peerDependencies": {
-    "@memoized-dom/runtime": "^0.0.9",
+    "@memoized-dom/runtime": "workspace:*",
     "vite": "^8.0.0"
   },
   "publishConfig": {

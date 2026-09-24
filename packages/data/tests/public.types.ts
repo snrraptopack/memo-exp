@@ -85,8 +85,8 @@ const createUser = $action<User, { name: string }>('/users');
 const creation = createUser({ name: 'Grace' });
 void creation.id;
 void creation.state;
-void creation.data.name;
-void creation.error.message;
+void creation.data?.name;
+void creation.error?.message;
 
 // @ts-expect-error Action invocation results are not promises.
 creation.then(() => {});

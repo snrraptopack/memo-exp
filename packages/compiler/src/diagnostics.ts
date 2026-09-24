@@ -37,7 +37,10 @@ function stripAnsi(value: string): string {
 }
 
 function normalizedId(id: string): string {
-  return id.replaceAll('\\', '/').replace(/^\.\//, '');
+  return id
+    .replaceAll('\\', '/')
+    .replace(/^\.\//, '')
+    .replace(/:\s*$/, '');
 }
 
 function moduleFromPrefix(
@@ -59,7 +62,13 @@ export function toCompilerDiagnostic(
   const raw = stripAnsi(
     typeof error?.message === 'string' ? error.message : String(value),
   );
-  const marker = raw.indexOf(': memo-dom:');
+  const prefixedMarker = raw.indexOf(': memo-dom:');
+  const marker = prefixedMarker === -1
+    ? raw.startsWith('memo-dom:') ? 0 : -1
+    : prefixedMarker;
+  const messageStart = marker === -1
+    ? -1
+    : marker === 0 ? 'memo-dom:'.length : ': memo-dom:'.length;
   const parseLocation = raw.match(/\((\d+):(\d+)\)/);
   const loc = error?.loc;
   const line =
@@ -76,12 +85,12 @@ export function toCompilerDiagnostic(
         : Number(parseLocation[2]);
   const endLine = typeof loc?.endLine === 'number' ? loc.endLine : undefined;
   const endColumn = typeof loc?.endColumn === 'number' ? loc.endColumn : undefined;
-  const prefix = marker === -1 ? '' : raw.slice(0, marker);
+  const prefix = marker <= 0 ? '' : raw.slice(0, marker);
   const moduleId =
     (typeof error?.moduleId === 'string' ? error.moduleId : undefined) ??
     moduleFromPrefix(prefix, moduleIds) ??
     (moduleIds.length === 1 ? moduleIds[0] : undefined);
-  const message = marker === -1 ? raw : raw.slice(marker + 2);
+  const message = messageStart === -1 ? raw : raw.slice(messageStart);
   return {
     code: compilerDiagnosticCode,
     source: compilerDiagnosticSource,

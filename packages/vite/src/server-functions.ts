@@ -134,24 +134,42 @@ export function rewriteServerFunctionBarrelImports(
 ): string {
   if (!source.includes(serverFunctionsClientVirtualId)) return source;
   return source.replace(
-    /import\s*\{([^}]+)\}\s*from\s*(['"])#server-functions\2\s*;?/g,
-    (match, namesText: string) => {
+    /import\s+(type\s+)?\{([^}]*)\}\s*from\s*(['"])#server-functions\3\s*;?/g,
+    (match, typeOnly: string | undefined, namesText: string) => {
+      if (typeOnly !== undefined) return match;
       const groups = new Map<string, string[]>();
+      const typeNames: string[] = [];
+      const unresolved: string[] = [];
       for (const raw of namesText.split(',')) {
         const name = raw.trim();
         if (name === '') continue;
+        const inlineType = /^type\s+(?!as(?:\s|,|$))(.+)$/.exec(name);
+        if (inlineType !== null) {
+          typeNames.push(inlineType[1]!);
+          continue;
+        }
         const local = name.split(/\s+as\s+/)[0]!.trim();
         const owner = barrelEntries.find(entry => entry.exported === local);
-        if (owner === undefined) return match;
+        if (owner === undefined) {
+          unresolved.push(name);
+          continue;
+        }
         const names = groups.get(owner.specifier) ?? [];
         names.push(name);
         groups.set(owner.specifier, names);
       }
       if (groups.size === 0) return match;
-      return [...groups]
-        .map(([specifier, names]) =>
-          `import { ${names.join(', ')} } from ${JSON.stringify(specifier)};`)
-        .join('\n');
+      const output: string[] = [];
+      if (typeNames.length > 0) {
+        output.push(`import type { ${typeNames.join(', ')} } from "#server-functions";`);
+      }
+      if (unresolved.length > 0) {
+        output.push(`import { ${unresolved.join(', ')} } from "#server-functions";`);
+      }
+      for (const [specifier, names] of groups) {
+        output.push(`import { ${names.join(', ')} } from ${JSON.stringify(specifier)};`);
+      }
+      return output.join('\n');
     },
   );
 }

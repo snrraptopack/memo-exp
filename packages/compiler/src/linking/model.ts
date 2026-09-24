@@ -23,6 +23,8 @@ export interface CompileModulesOptions
   aliases?: Readonly<Record<string, string>>;
   resolveImport?: (specifier: string, importer: string) => string | undefined;
   linkFunctionSummaries?: boolean;
+  /** Keep build graphs strict; editor-wide diagnostics can inspect multiple roots. */
+  enforceSingleApplicationRoot?: boolean;
   frontend?: EstreeFrontend;
 }
 

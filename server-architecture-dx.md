@@ -1,6 +1,6 @@
 # Memoized DOM Server Architecture & DX Specification
 
-**Status**: Draft RFC v0.3 — architecture review, no API implemented
+**Status**: Superseded by `fullstack-vite-dx.md`; retained as historical design context
 
 **Audience**: Framework authors, backend contributors, and application developers
 

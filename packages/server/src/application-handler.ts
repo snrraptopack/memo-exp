@@ -154,14 +154,25 @@ function createServerFetch<
       input instanceof Request ? input.url : String(input),
       parent.url,
     );
+    const signals = [
+      parent.request.signal,
+      input instanceof Request ? input.signal : undefined,
+      init?.signal ?? undefined,
+    ].filter((signal): signal is AbortSignal => signal !== undefined);
+    const signal = signals.length < 2
+      ? signals[0]
+      : AbortSignal.any(signals);
+    const requestInit: RequestInit = {
+      ...init,
+      ...(signal === undefined ? {} : { signal }),
+    };
     const request = input instanceof Request
-      ? new Request(input, init)
-      : new Request(url, init);
+      ? new Request(input, requestInit)
+      : new Request(url, requestInit);
     const sameOriginRoute = url.origin === parent.url.origin &&
       (router.matches(url.pathname, request.method) ||
         router.allowedMethods(url.pathname).length > 0);
     if (!sameOriginRoute) return hostFetch(request);
-
     const current = activeServerContext.getStore();
     const dispatchDepth = (current?.dispatchDepth ?? 0) + 1;
     if (dispatchDepth > MAX_DISPATCH_DEPTH) {

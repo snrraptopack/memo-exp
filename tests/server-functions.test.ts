@@ -60,6 +60,7 @@ describe('named HTTP server functions', () => {
     expect(client).toContain('return __mmd_fetch("/_fn/stories/getStories")');
     expect(client).toContain('query: { id }');
     expect(client).toContain('method: "DELETE", body: { id }');
+    expect(client).not.toContain('transferKey');
     expect(client).not.toContain('return [];');
   });
 
@@ -142,6 +143,11 @@ describe('named HTTP server functions', () => {
       'export async function postStory({ title }: { title: string }) {}',
       { moduleId: '/app/server/functions/stories.ts' },
     )).toThrow(/\[MMD-S013\].*named identifiers/);
+
+    expect(() => analyzeServerFunctionModule(
+      'export async function getValue(value: string | number) { return value; }',
+      { moduleId: '/app/server/functions/values.ts' },
+    )).toThrow(/\[MMD-S003\].*parameter 'value'.*query type/s);
 
     expect(() => analyzeServerFunctionModule(
       `import { database } from '../../database';

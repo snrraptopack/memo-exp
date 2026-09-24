@@ -92,10 +92,12 @@ describe('route runtime', () => {
 
     const slow = runtime.navigate('/slow');
     expect(slow.status).toBe('preparing');
+    if (slow.status !== 'preparing') throw new Error('expected preparation');
+    const completion = expect(slow.finished).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     expect(runtime.navigate('/newer').status).toBe('completed');
     release();
-    if (slow.status !== 'preparing') throw new Error('expected preparation');
-    await expect(slow.finished).rejects.toMatchObject({ name: 'AbortError' });
+    await completion;
     expect(runtime.route.pathname).toBe('/newer');
     runtime.dispose();
   });
@@ -391,6 +393,7 @@ describe('route runtime', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(runtime.route.pathname).toBe('/');
 
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     release();
     await vi.waitFor(() => expect(runtime.route.pathname).toBe('/prepared'));
     expect(navigation.navigate).toHaveBeenCalledWith(
@@ -1030,6 +1033,7 @@ describe('route runtime', () => {
     expect(result?.status).toBe('preparing');
     expect(history.location.index).toBe(1);
     expect(runtime.route.pathname).toBe('/current');
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     release();
     if (result?.status !== 'preparing') throw new Error('expected preparation');
     await result.finished;

@@ -18,7 +18,7 @@
  *   - objects compare by identity -> new reference means "changed"
  */
 
-import { isHtmlBooleanAttribute } from './html-attributes';
+import { isAriaAttribute, isHtmlBooleanAttribute } from './html-attributes';
 
 export type SlotCache = Record<string, unknown>;
 
@@ -73,9 +73,10 @@ export function setAttr(
 ): void {
   if ($[key] === value) return;
   $[key] = value;
-  if (value == null || value === false) el.removeAttribute(name);
+  const html = el.namespaceURI !== 'http://www.w3.org/2000/svg';
+  const omitFalse = value === false && !isAriaAttribute(name);
+  if (value == null || omitFalse) el.removeAttribute(name);
   else if (value === true) {
-    const html = el.namespaceURI !== 'http://www.w3.org/2000/svg';
     el.setAttribute(name, html && isHtmlBooleanAttribute(name) ? '' : 'true');
   }
   else el.setAttribute(name, String(value));

@@ -38,7 +38,10 @@ describe('workspace package boundaries', () => {
   it('keeps compiler source independent from runtime source', () => {
     const compiler = manifest('compiler');
     expect(compiler.dependencies).not.toHaveProperty('@memoized-dom/runtime');
-    expect(compiler.dependencies).not.toHaveProperty('@memoized-dom/router');
+    expect(compiler.dependencies).toHaveProperty(
+      '@memoized-dom/router',
+      'workspace:*',
+    );
 
     for (const file of typeScriptSources(
       resolve(root, 'packages/compiler/src'),

@@ -112,7 +112,8 @@ function collectCompilerDiagnostics(
     (sourceFile) =>
       !sourceFile.isDeclarationFile &&
       !normalizePath(sourceFile.fileName).includes('/node_modules/') &&
-      /\.[jt]sx?$/.test(sourceFile.fileName),
+      (/\.[jt]sx?$/.test(sourceFile.fileName) ||
+        sourceFile.fileName.endsWith('.tsrx')),
   );
   const modules = Object.fromEntries(
     sourceFiles.map((sourceFile) => [
@@ -121,6 +122,7 @@ function collectCompilerDiagnostics(
     ]),
   );
   const diagnostics = diagnoseModules(modules, {
+    enforceSingleApplicationRoot: false,
     resolveImport(specifier, importer) {
       const resolution = typescript.resolveModuleName(
         specifier,

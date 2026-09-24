@@ -1,10 +1,13 @@
 import { Readable } from 'node:stream';
-import { once } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { WebHandler } from './index';
 
-function requestOrigin(request: IncomingMessage): string {
-  const forwarded = request.headers['x-forwarded-proto'];
+export interface NodeAdapterOptions {
+  trustProxy?: boolean;
+}
+
+function requestOrigin(request: IncomingMessage, trustProxy: boolean): string {
+  const forwarded = trustProxy ? request.headers['x-forwarded-proto'] : undefined;
   const protocol = Array.isArray(forwarded)
     ? forwarded[0]
     : forwarded?.split(',')[0]?.trim();
@@ -14,9 +17,27 @@ function requestOrigin(request: IncomingMessage): string {
   return `${scheme}://${host}`;
 }
 
+function waitForDrainOrClose(target: ServerResponse): Promise<void> {
+  if (target.destroyed || target.writableEnded) return Promise.resolve();
+  return new Promise(resolve => {
+    const finish = (): void => {
+      target.off('drain', finish);
+      target.off('close', finish);
+      target.off('error', finish);
+      resolve();
+    };
+    target.once('drain', finish);
+    target.once('close', finish);
+    target.once('error', finish);
+  });
+}
+
 /** Convert a Node IncomingMessage into a Web Request with abort propagation. */
-export function toWebRequest(request: IncomingMessage): Request {
-  const url = new URL(request.url ?? '/', requestOrigin(request));
+export function toWebRequest(
+  request: IncomingMessage,
+  options: NodeAdapterOptions = {},
+): Request {
+  const url = new URL(request.url ?? '/', requestOrigin(request, options.trustProxy === true));
   const headers = new Headers();
   for (const [name, value] of Object.entries(request.headers)) {
     if (value === undefined) continue;
@@ -73,7 +94,10 @@ export async function sendNodeResponse(
     while (true) {
       const result = await reader.read();
       if (result.done) break;
-      if (!target.write(result.value)) await once(target, 'drain');
+      if (!target.write(result.value)) {
+        await waitForDrainOrClose(target);
+        if (target.destroyed || target.writableEnded) return;
+      }
     }
     target.end();
   } finally {
@@ -83,12 +107,15 @@ export async function sendNodeResponse(
 }
 
 /** Adapt a Web handler to Node request/response callbacks. */
-export function createNodeHandler(handler: WebHandler) {
+export function createNodeHandler(
+  handler: WebHandler,
+  options: NodeAdapterOptions = {},
+) {
   return async (
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> => {
-    const result = await handler(toWebRequest(request));
+    const result = await handler(toWebRequest(request, options));
     await sendNodeResponse(result, response);
   };
 }

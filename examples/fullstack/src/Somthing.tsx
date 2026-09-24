@@ -21,7 +21,7 @@ export function Something(){
 
 export function Something1(){
 
-  const currentRoute = $routed(({ url,request }) => {
+  const currentRoute = $routed(({ url }) => {
     console.log("hello")
     return url.pathname
   })

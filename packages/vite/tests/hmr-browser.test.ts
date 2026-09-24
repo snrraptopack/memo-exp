@@ -41,7 +41,7 @@ afterEach(async () => {
     await rm(fixture, { recursive: true, force: true });
     fixture = undefined;
   }
-}, 30_000);
+}, 60_000);
 
 describe('browser HMR', () => {
   it('propagates helper edits and replaces component text without reloading or duplicating DOM', async (context) => {

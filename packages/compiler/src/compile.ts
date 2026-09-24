@@ -86,7 +86,7 @@ function transform(
   transformEstreeProgram(
     {
       node: input.program,
-      buildCodeFrameError(message, at = input.program) {
+      buildCodeFrameError(message: string, at = input.program) {
         return compilerError(
           message,
           moduleId,

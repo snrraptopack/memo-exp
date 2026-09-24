@@ -1,3 +1,4 @@
+import { getActiveEnvironment } from '@memoized-dom/runtime';
 import { getGlobalControllers } from './global-controllers';
 import {
   isAbortError,
@@ -12,6 +13,8 @@ import {
   abortReason,
   decodeResponse,
   fetchIdentity,
+  fetchTransferContract,
+  fetchTransferIdentity,
   normalizeFetchMethod,
   prepareRequestBody,
   resolveRequestURL,
@@ -37,6 +40,7 @@ interface FetchDescriptor {
   readonly body: BodyInit | undefined;
   readonly bodyIdentity: string;
   readonly identity: string;
+  readonly transferIdentity: string | null;
   readonly cache: FetchCache;
   readonly schema: StandardSchemaV1 | undefined;
   readonly signal: AbortSignal | undefined;
@@ -108,6 +112,7 @@ function equalDescriptor(
     left.method === right.method &&
     equalHeaders(left.headers, right.headers) &&
     left.bodyIdentity === right.bodyIdentity &&
+    left.transferIdentity === right.transferIdentity &&
     equalCache(left.cache, right.cache) &&
     left.schema === right.schema &&
     left.signal === right.signal;
@@ -120,6 +125,8 @@ class FetchEntry {
   cache: Exclude<FetchCache, false>;
   request: Promise<unknown> | null = null;
   controller: AbortController | null = null;
+  operationId = createRequestId();
+  private pendingOperationId: string | null = null;
   private generation = 0;
 
   constructor(
@@ -146,6 +153,7 @@ class FetchEntry {
   }
 
   private cancelRequest(reason?: unknown): void {
+    this.cancelDeferredStart();
     if (this.controller === null && this.request === null) return;
     // A response may notify consumers from its terminal `then` immediately
     // before the promise finalizer clears these handles. Releasing the final
@@ -203,6 +211,19 @@ class FetchEntry {
     this.emit();
   }
 
+  deferStart(): void {
+    if (this.pendingOperationId === null) {
+      this.pendingOperationId = createRequestId();
+      this.operationId = this.pendingOperationId;
+      this.emit();
+    }
+  }
+
+  cancelDeferredStart(): void {
+    this.store.deferredStarts.delete(this);
+    this.pendingOperationId = null;
+  }
+
   start(force = false): Promise<unknown> {
     if (this.request !== null) return this.request;
     if (!force && this.hasData) {
@@ -210,6 +231,9 @@ class FetchEntry {
     }
 
     const generation = ++this.generation;
+    this.store.deferredStarts.delete(this);
+    this.operationId = this.pendingOperationId ?? createRequestId();
+    this.pendingOperationId = null;
     const controller = new AbortController();
     this.controller = controller;
     this.snapshot.error = null;
@@ -287,11 +311,48 @@ class FetchEntry {
  * Map one live entry to its transfer record, or undefined when the entry
  * carries no transferable state (idle) or a non-JSON payload (RFC §16.6.4).
  */
+function isJsonTransferValue(
+  value: unknown,
+  ancestors = new Set<object>(),
+  depth = 0,
+): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value !== 'object' || depth > 100 || ancestors.has(value)) return false;
+  try {
+    const array = Array.isArray(value);
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== null && prototype !== (array ? Array.prototype : Object.prototype)) {
+      return false;
+    }
+    const keys = Reflect.ownKeys(value);
+    if (array && (
+      keys.length !== value.length + 1 ||
+      keys.some((key, index) => index < value.length && key !== String(index))
+    )) return false;
+    ancestors.add(value);
+    for (const key of keys) {
+      if (array && key === 'length') continue;
+      if (typeof key !== 'string') return false;
+      const property = Object.getOwnPropertyDescriptor(value, key);
+      if (property === undefined || !('value' in property) ||
+        !isJsonTransferValue(property.value, ancestors, depth + 1)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
 function serializeEntry(entry: FetchEntry): SerializedSourceRecord | undefined {
+  const transferIdentity = entry.descriptor.transferIdentity;
+  if (transferIdentity === null) return undefined;
   const { snapshot } = entry;
   let serialized: SerializedSourceSnapshot;
   if (snapshot.status === 'success') {
-    if (JSON.stringify(snapshot.data) === undefined) return undefined;
+    if (!isJsonTransferValue(snapshot.data)) return undefined;
     serialized = {
       status: 'success',
       data: snapshot.data,
@@ -305,7 +366,7 @@ function serializeEntry(entry: FetchEntry): SerializedSourceRecord | undefined {
         kind: error?.kind ?? 'network',
         status: error?.status ?? null,
         statusText: error?.statusText ?? null,
-        message: error?.message ?? 'Request failed',
+        message: 'Request failed',
       },
     };
   } else if (snapshot.pending) {
@@ -314,9 +375,9 @@ function serializeEntry(entry: FetchEntry): SerializedSourceRecord | undefined {
     return undefined;
   }
   return {
-    sourceId: entry.descriptor.identity,
-    contractId: `mmd-fetch/v1:${entry.descriptor.schema ? 'validated' : 'raw'}`,
-    requestFingerprint: entry.descriptor.identity,
+    sourceId: transferIdentity,
+    contractId: fetchTransferContract(entry.descriptor.schema),
+    requestFingerprint: transferIdentity,
     snapshot: serialized,
   };
 }
@@ -366,6 +427,41 @@ function seedEntryFromRecord(
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const TRANSFER_ERROR_KINDS = new Set<RequestErrorKind>([
+  'network',
+  'http',
+  'decode',
+  'validation',
+]);
+
+function isSerializedSnapshot(value: unknown): value is SerializedSourceSnapshot {
+  if (!isRecord(value)) return false;
+  if (value.status === 'pending') return true;
+  if (value.status === 'success') {
+    return typeof value.revalidate === 'boolean' && Object.hasOwn(value, 'data');
+  }
+  if (value.status !== 'error' || !isRecord(value.error)) return false;
+  return typeof value.error.kind === 'string' &&
+    TRANSFER_ERROR_KINDS.has(value.error.kind as RequestErrorKind) &&
+    (value.error.status === null || typeof value.error.status === 'number') &&
+    (value.error.statusText === null || typeof value.error.statusText === 'string') &&
+    typeof value.error.message === 'string';
+}
+
+function isSerializedSourceRecord(value: unknown): value is SerializedSourceRecord {
+  if (!isRecord(value)) return false;
+  return typeof value.sourceId === 'string' &&
+    value.sourceId.length > 0 &&
+    typeof value.contractId === 'string' &&
+    value.contractId.startsWith('mmd-fetch/v1:') &&
+    value.requestFingerprint === value.sourceId &&
+    isSerializedSnapshot(value.snapshot);
+}
+
 export class FetchStore {
   readonly entries = new Map<string, FetchEntry>();
   readonly allEntries = new Set<FetchEntry>();
@@ -375,18 +471,29 @@ export class FetchStore {
    * issuing a duplicate network request.
    */
   private restoreRecords = new Map<string, SerializedSourceRecord>();
+  private hydrationBlocked = false;
+  readonly deferredStarts = new Set<FetchEntry>();
 
   constructor(readonly environment: FetchEnvironment) {}
 
   installRestoreRecords(state: SerializedDataState): void {
+    if (!isRecord(state)) {
+      throw new TypeError('Serialized data state must be an object');
+    }
     const version: unknown = state.formatVersion;
     if (version !== 1) {
       throw new TypeError(
         `Unsupported serialized data state format: ${String(version)}`,
       );
     }
-    for (const record of state.sources) {
-      this.restoreRecords.set(record.sourceId, record);
+    const sources: unknown = state.sources;
+    if (!Array.isArray(sources)) {
+      throw new TypeError('Serialized data state sources must be an array');
+    }
+    for (const record of sources) {
+      if (isSerializedSourceRecord(record)) {
+        this.restoreRecords.set(record.sourceId, record);
+      }
     }
   }
 
@@ -395,44 +502,19 @@ export class FetchStore {
       this.entries.delete(entry.descriptor.identity);
     }
     this.allEntries.delete(entry);
+    this.deferredStarts.delete(entry);
     entry.dispose(false, reason);
   }
 
-  private takeRestoreRecord(identity: string): SerializedSourceRecord | undefined {
+  private takeRestoreRecord(
+    identity: string | null,
+    contractId: string,
+  ): SerializedSourceRecord | undefined {
+    if (identity === null) return undefined;
     const record = this.restoreRecords.get(identity);
-    if (record !== undefined) {
-      this.restoreRecords.delete(identity);
-      return record;
-    }
-    // Cross-environment / SSR relative-path normalization (RFC §16.6):
-    // A server render serializes relative target "/api/session" as "GET|/api/session||schema:none",
-    // while a browser client resolves it against location.origin as "GET|http://host:port/api/session||schema:none".
-    for (const [key, candidate] of this.restoreRecords) {
-      if (key === identity) continue;
-      const keyParts = key.split('|');
-      const identityParts = identity.split('|');
-      if (
-        keyParts[0] === identityParts[0] &&
-        keyParts.slice(2).join('|') === identityParts.slice(2).join('|')
-      ) {
-        const keyUrl = keyParts[1] ?? '';
-        const identityUrl = identityParts[1] ?? '';
-        const normalizeCrossEnvironmentUrl = (value: string): string => {
-          if (!value.startsWith('http://') && !value.startsWith('https://')) {
-            return value;
-          }
-          const parsed = new URL(value);
-          return `${parsed.pathname}${parsed.search}`;
-        };
-        const normKey = normalizeCrossEnvironmentUrl(keyUrl);
-        const normId = normalizeCrossEnvironmentUrl(identityUrl);
-        if (normKey === normId) {
-          this.restoreRecords.delete(key);
-          return candidate;
-        }
-      }
-    }
-    return undefined;
+    if (record === undefined || record.contractId !== contractId) return undefined;
+    this.restoreRecords.delete(identity);
+    return record;
   }
 
   acquire(
@@ -460,7 +542,10 @@ export class FetchStore {
     }
 
     entry.add(consumer);
-    const restored = this.takeRestoreRecord(descriptor.identity);
+    const restored = this.takeRestoreRecord(
+      descriptor.transferIdentity,
+      fetchTransferContract(descriptor.schema),
+    );
     if (restored !== undefined) {
       seedEntryFromRecord(entry, restored);
       entry.emit();
@@ -475,9 +560,35 @@ export class FetchStore {
       (restored === undefined &&
         (entry.snapshot.status === 'idle' ||
           entry.snapshot.status === 'error')) ||
-      (restored !== undefined && restored.snapshot.status === 'pending');
-    if (shouldStart) entry.start(force).catch(() => {});
+      (restored !== undefined &&
+        (restored.snapshot.status === 'pending' ||
+          (restored.snapshot.status === 'success' && restored.snapshot.revalidate)));
+    if (getActiveEnvironment().mode === 'hydrate') {
+      this.hydrationBlocked = true;
+      if (shouldStart) {
+        entry.deferStart();
+        this.deferredStarts.add(entry);
+      }
+    } else if (shouldStart) {
+      entry.start(force).catch(() => {});
+    }
     return entry;
+  }
+
+  resumeHydration(): void {
+    if (!this.hydrationBlocked) return;
+    this.hydrationBlocked = false;
+    for (const entry of [...this.deferredStarts]) {
+      this.deferredStarts.delete(entry);
+      if (entry.request === null) entry.start(true).catch(() => {});
+    }
+  }
+
+  cancelHydration(): void {
+    this.hydrationBlocked = false;
+    for (const entry of [...this.deferredStarts]) {
+      entry.cancelDeferredStart();
+    }
   }
 
   async settle(timeoutMs = 5000): Promise<boolean> {
@@ -519,6 +630,9 @@ export class FetchStore {
     for (const entry of [...this.allEntries]) entry.dispose(true);
     this.entries.clear();
     this.allEntries.clear();
+    this.restoreRecords.clear();
+    this.deferredStarts.clear();
+    this.hydrationBlocked = false;
   }
 }
 
@@ -660,6 +774,7 @@ class ResourceController<T> {
 
   receive(entry: FetchEntry, snapshot: MutableSnapshot<unknown>): void {
     if (this.entry !== null && this.entry !== entry) return;
+    this.operationId = entry.operationId;
     this.snapshot = { ...snapshot } as MutableSnapshot<T>;
     this.notify();
   }
@@ -958,6 +1073,7 @@ function fetchDescriptor(
         body: undefined,
         bodyIdentity: 'none',
         identity: 'paused',
+        transferIdentity: null,
         cache: normalizedCache(
           options.cache,
           method,
@@ -982,6 +1098,15 @@ function fetchDescriptor(
     body: preparedBody.body,
     bodyIdentity: preparedBody.identity,
     identity: fetchIdentity(
+      url,
+      method,
+      headers,
+      preparedBody.identity,
+      options.key,
+      options.validate,
+    ),
+    transferIdentity: fetchTransferIdentity(
+      target,
       url,
       method,
       headers,

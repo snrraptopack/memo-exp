@@ -9,7 +9,7 @@
 
 import { markDirtySubtree } from './kernel';
 import { classValue, setClassValue, setStyleValue } from './dom-values';
-import { isHtmlBooleanAttribute } from './html-attributes';
+import { isAriaAttribute, isHtmlBooleanAttribute } from './html-attributes';
 
 interface EventRecord {
   source: EventListener;
@@ -231,7 +231,8 @@ function setScalarDomValue(
   const attrName = html
     ? ATTRIBUTE_NAMES[name] ?? name
     : SVG_ATTRIBUTE_NAMES[name] ?? ATTRIBUTE_NAMES[name] ?? name;
-  if (value == null || value === false) {
+  const omitFalse = value === false && !isAriaAttribute(attrName);
+  if (value == null || omitFalse) {
     element.removeAttribute(attrName);
   } else if (value === true) {
     element.setAttribute(

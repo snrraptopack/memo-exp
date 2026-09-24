@@ -67,4 +67,27 @@ describe('runtime adapters', () => {
     expect(response.headers.get('x-adapter')).toBe('node');
     expect(await response.text()).toBe('accepted');
   });
+
+  it('ignores forwarded protocol unless proxy trust is enabled', async () => {
+    const echo = async (request: Request) => new Response(request.url);
+    const untrusted = createNodeHandler(echo);
+    const trusted = createNodeHandler(echo, { trustProxy: true });
+    const server = createServer((request, response) => {
+      void (request.url === '/trusted' ? trusted : untrusted)(request, response);
+    });
+    servers.push(server);
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('Expected TCP server address');
+    }
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { 'x-forwarded-proto': 'https' };
+
+    expect(await (await fetch(`${base}/untrusted`, { headers })).text())
+      .toBe(`${base}/untrusted`);
+    expect(await (await fetch(`${base}/trusted`, { headers })).text())
+      .toBe(`https://127.0.0.1:${address.port}/trusted`);
+  });
 });

@@ -17,7 +17,26 @@ function escapeHtml(text: string): string {
 function escapeAttribute(value: string): string {
   return value
     .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+const INVALID_ATTRIBUTE_NAME = /[\0-\x20\x7F"'`/<> =]/u;
+const INVALID_ELEMENT_NAME = /[\0-\x20\x7F"'`/<> =]/u;
+
+function assertElementName(name: string): string {
+  if (name.length === 0 || INVALID_ELEMENT_NAME.test(name)) {
+    throw new DOMException(`Invalid element name: ${JSON.stringify(name)}`, 'InvalidCharacterError');
+  }
+  return name;
+}
+
+function assertAttributeName(name: string): string {
+  if (name.length === 0 || INVALID_ATTRIBUTE_NAME.test(name)) {
+    throw new DOMException(`Invalid attribute name: ${JSON.stringify(name)}`, 'InvalidCharacterError');
+  }
+  return name;
 }
 
 const VOID_TAGS = new Set([
@@ -77,7 +96,7 @@ export class StringComment implements StringRenderableNode {
   }
 
   toString(markers: boolean): string {
-    if (!markers) return '';
+    if (!markers || this.data.includes('-->') || this.data.endsWith('-')) return '';
     return `<!--${this.data}-->`;
   }
 }
@@ -142,7 +161,9 @@ export class StringElement implements StringRenderableNode {
   style: Record<string, string> & { cssText?: string } = {};
   innerHTML?: string;
 
-  constructor(public readonly tagName: string, public readonly namespaceURI: string = 'http://www.w3.org/1999/xhtml') {}
+  constructor(public readonly tagName: string, public readonly namespaceURI: string = 'http://www.w3.org/1999/xhtml') {
+    assertElementName(tagName);
+  }
 
   get textContent(): string {
     return this.childNodes.map((c) => c.textContent ?? '').join('');
@@ -156,18 +177,25 @@ export class StringElement implements StringRenderableNode {
   }
 
   setAttribute(name: string, value: string): void {
-    this.attributes.set(name.toLowerCase(), String(value));
+    this.attributes.set(assertAttributeName(name).toLowerCase(), String(value));
+  }
+
+  setAttributeNS(_namespace: string | null, qualifiedName: string, value: string): void {
+    this.setAttribute(qualifiedName, value);
   }
 
   getAttribute(name: string): string | null {
+    if (name.length === 0 || INVALID_ATTRIBUTE_NAME.test(name)) return null;
     return this.attributes.get(name.toLowerCase()) ?? null;
   }
 
   removeAttribute(name: string): void {
+    if (name.length === 0 || INVALID_ATTRIBUTE_NAME.test(name)) return;
     this.attributes.delete(name.toLowerCase());
   }
 
   hasAttribute(name: string): boolean {
+    if (name.length === 0 || INVALID_ATTRIBUTE_NAME.test(name)) return false;
     return this.attributes.has(name.toLowerCase());
   }
 
@@ -180,7 +208,13 @@ export class StringElement implements StringRenderableNode {
         this.appendChild(fc);
       }
       fragment.childNodes.length = 0;
+      fragment.firstChild = null;
       return child;
+    }
+    if (child.parentNode === this) {
+      this.removeChild(child);
+    } else if (child.parentNode !== null) {
+      child.parentNode.removeChild(child);
     }
     child.parentNode = this;
     if (this.childNodes.length > 0) {
@@ -200,7 +234,14 @@ export class StringElement implements StringRenderableNode {
         this.insertBefore(fc, refNode);
       }
       fragment.childNodes.length = 0;
+      fragment.firstChild = null;
       return newNode;
+    }
+    if (newNode === refNode) return newNode;
+    if (newNode.parentNode === this) {
+      this.removeChild(newNode);
+    } else if (newNode.parentNode !== null) {
+      newNode.parentNode.removeChild(newNode);
     }
     const idx = this.childNodes.indexOf(refNode);
     if (idx < 0) return this.appendChild(newNode);
@@ -288,23 +329,48 @@ export class StringFragment implements StringRenderableNode {
   readonly childNodes: StringRenderableNode[] = [];
 
   appendChild(child: StringRenderableNode): StringRenderableNode {
-    child.parentNode = this;
-    if (this.childNodes.length > 0) {
-      this.childNodes.at(-1)!.nextSibling = child;
-    } else {
-      this.firstChild = child;
+    if (child.nodeType === 11 /* FRAGMENT */) {
+      const fragment = child as StringFragment;
+      for (const nested of [...fragment.childNodes]) {
+        this.appendChild(nested);
+      }
+      fragment.childNodes.length = 0;
+      fragment.relinkSiblings();
+      return child;
     }
+    if (child.parentNode === this) {
+      this.removeChild(child);
+    } else if (child.parentNode !== null) {
+      child.parentNode.removeChild(child);
+    }
+    child.parentNode = this;
     this.childNodes.push(child);
+    this.relinkSiblings();
     return child;
   }
 
   insertBefore(newNode: StringRenderableNode, refNode: StringRenderableNode | null): StringRenderableNode {
     if (refNode === null) return this.appendChild(newNode);
+    if (newNode.nodeType === 11 /* FRAGMENT */) {
+      const fragment = newNode as StringFragment;
+      for (const nested of [...fragment.childNodes]) {
+        this.insertBefore(nested, refNode);
+      }
+      fragment.childNodes.length = 0;
+      fragment.relinkSiblings();
+      return newNode;
+    }
+    if (newNode === refNode) return newNode;
+    if (newNode.parentNode === this) {
+      this.removeChild(newNode);
+    } else if (newNode.parentNode !== null) {
+      newNode.parentNode.removeChild(newNode);
+    }
     const idx = this.childNodes.indexOf(refNode);
     if (idx < 0) return this.appendChild(newNode);
     newNode.parentNode = this;
     this.childNodes.splice(idx, 0, newNode);
-    this.firstChild = this.childNodes[0] ?? null;
+    this.relinkSiblings();
     return newNode;
   }
 
@@ -313,9 +379,16 @@ export class StringFragment implements StringRenderableNode {
     if (idx >= 0) {
       this.childNodes.splice(idx, 1);
       child.parentNode = null;
-      this.firstChild = this.childNodes[0] ?? null;
+      this.relinkSiblings();
     }
     return child;
+  }
+
+  private relinkSiblings(): void {
+    this.firstChild = this.childNodes[0] ?? null;
+    for (let index = 0; index < this.childNodes.length; index++) {
+      this.childNodes[index]!.nextSibling = this.childNodes[index + 1] ?? null;
+    }
   }
 
   cloneNode(deep = false): StringRenderableNode {

@@ -30,3 +30,7 @@ const BOOLEAN_ATTRIBUTES = new Set([
 export function isHtmlBooleanAttribute(name: string): boolean {
   return BOOLEAN_ATTRIBUTES.has(name.toLowerCase());
 }
+
+export function isAriaAttribute(name: string): boolean {
+  return name.toLowerCase().startsWith('aria-');
+}

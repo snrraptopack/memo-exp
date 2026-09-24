@@ -286,9 +286,17 @@ function parametersFor(
     const optional = defaulted ||
       record(parameter as unknown as BaseNode).optional === true;
     if (method !== 'GET') return { name: parameter.name, optional };
-    const queryKind = queryKindFromType(typeNode(parameter)) ??
-      (defaulted ? inferredDefaultKind(rawParameter.right) : null) ??
-      'string';
+    const annotation = typeNode(parameter);
+    const queryKind = annotation === null
+      ? (defaulted ? inferredDefaultKind(rawParameter.right) : null) ?? 'string'
+      : queryKindFromType(annotation);
+    if (queryKind === null) {
+      throw compilerError(
+        `memo-dom: [MMD-S003] GET server function parameter '${parameter.name}' must use one string, number, or boolean query type; received '${annotation?.type ?? 'unknown'}'`,
+        moduleId,
+        parameter as unknown as BaseNode,
+      );
+    }
     return { name: parameter.name, optional, queryKind };
   });
 }
