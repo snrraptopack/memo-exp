@@ -309,13 +309,13 @@ value counts as zero, while `null` in a child array counts as one. Unknown expre
 diagnose at the call site. This establishes the caller-to-package flow.
 
 The next slice handles `Children.map(children, (child, index) => <JSX />)`
-when the callback returns an intrinsic JSX wrapper, inserts the child once,
-and reads no package-local values. The linker expands that wrapper for each
-known caller child and passes the result through MMD's existing render-prop
-slot. The caller retains lexical ownership, so child state and events update.
-This finite case needs no new MMD primitive. Dynamic child streams and map
-callbacks that read callee-local values need a parameterized content-slot
-contract before they can lower without moving captures across owners.
+when the callback returns a JSX wrapper and inserts the child once. The linker
+passes each known caller child as an individual MMD render slot and expands
+the wrappers in the package component to the largest known caller arity.
+Child state and events stay caller-owned; wrapper components, props, and state
+stay package-owned. A missing child slot skips its wrapper. This finite case
+needs no new MMD primitive. An unknown-length child stream still needs an
+enumerable content-slot model rather than static unrolling and diagnoses now.
 General element values, `cloneElement`, and `isValidElement` remain open.
 
 ### 6.3 Custom hooks are linker-visible templates

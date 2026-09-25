@@ -33,14 +33,29 @@ it('maps finite React children into caller-owned MMD render content', async () =
     .toEqual(['1', 'fixed', 'other', '', 'tail', 'XY', 'MN']);
 });
 
-it('diagnoses a map wrapper that reads package-local values', () => {
+it('maps through a package-owned component with reactive state and props', async () => {
   const appFile = join(fixtureRoot, 'row-capture-app.tsx');
-  expect(() => compileFixture({ entries: [appFile], packages: ['row-capture-kit'] }))
-    .toThrow('cannot move a map wrapper capture into the caller');
+  const compiled = compileFixture({ entries: [appFile], packages: ['row-capture-kit'] });
+  const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+  document.body.appendChild(app.App('App', null));
+  expect(document.querySelector('li')?.className).toBe('row');
+  const [appButton, packageButton] = [...document.querySelectorAll('button')];
+  packageButton!.click();
+  expect(document.querySelector('li')?.className).toBe('active');
+  packageButton!.click();
+  expect(document.querySelector('li')?.className).toBe('row');
+  appButton!.click();
+  expect(document.querySelector('li')?.className).toBe('selected');
 });
 
 it('diagnoses a mapped child whose shape is not known at the caller', () => {
   const appFile = join(fixtureRoot, 'row-dynamic-app.tsx');
   expect(() => compileFixture({ entries: [appFile], packages: ['row-kit'] }))
     .toThrow('requires a finite JSX child sequence');
+});
+
+it('diagnoses a second raw render of the mapped child slot', () => {
+  const appFile = join(fixtureRoot, 'row-dual-app.tsx');
+  expect(() => compileFixture({ entries: [appFile], packages: ['row-dual-kit'] }))
+    .toThrow('cannot render raw children alongside a mapped child sequence');
 });

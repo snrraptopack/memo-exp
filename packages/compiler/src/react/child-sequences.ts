@@ -1,7 +1,7 @@
 /**
  * Finite React child sequences are analyzed at the caller, before MMD turns
- * children into a lazy mount slot. The first supported observation is count.
- * Its result travels as a scalar prop; the actual children stay caller-owned.
+ * children into lazy mount slots. Counts travel as scalar props; mapped
+ * children travel as individual caller-owned slots to callee-owned wrappers.
  */
 import type * as t from '../ast/compiler-types';
 import * as ast from '../ast/factory';
@@ -21,7 +21,7 @@ interface ChildTemplate {
 
 type ChildOperation =
   | { kind: 'count'; call: t.CallExpression; prop: string }
-  | { kind: 'map'; call: t.CallExpression; prop: string;
+  | { kind: 'map'; call: t.CallExpression; slots: string[];
       wrapper: t.JSXElement | t.JSXFragment; parameter: string;
       indexParameter?: string };
 
@@ -92,7 +92,7 @@ function planChildren(entry: ModuleEntry, children: t.JSXElement['children']): C
 
 function mapOperation(
   entry: ModuleEntry, analysis: ReturnType<typeof analyzeScope>,
-  call: t.CallExpression, prop: string,
+  call: t.CallExpression,
 ): ChildOperation {
   const callback = call.arguments[1];
   if (call.arguments.length !== 2 || !ast.isArrowFunctionExpression(callback) || callback.async ||
@@ -131,54 +131,51 @@ function mapOperation(
     fail(entry, 'requires Children.map directly in rendered JSX', call);
   }
   walkAst(returned as BaseNode, { enter(node, parentNode, key) {
-    if (node.type === 'JSXOpeningElement' &&
-        (!ast.isJSXIdentifier((node as t.JSXOpeningElement).name) ||
-          /^[A-Z]/.test(((node as t.JSXOpeningElement).name as t.JSXIdentifier).name))) {
-      fail(entry, 'requires intrinsic tags in the map wrapper', node);
-    }
-    if (node.type === 'ThisExpression' || node.type === 'Super' || node.type === 'MetaProperty') {
-      fail(entry, 'cannot move map callback context into the caller', node);
-    }
-    if (ast.isIdentifier(node) && isReferenceIdentifier(parentNode, key) && node !== reference &&
-        (indexBinding === undefined ||
-          analysis.nodeToScope.get(node)?.getBinding(node.name) !== indexBinding)) {
-      fail(entry, 'cannot move a map wrapper capture into the caller', node);
+    if (!ast.isIdentifier(node) || !isReferenceIdentifier(parentNode, key)) return;
+    if (node.name !== parameter && node.name !== indexParameter) return;
+    const resolved = analysis.nodeToScope.get(node)?.getBinding(node.name);
+    if (resolved !== (node.name === parameter ? binding : indexBinding)) {
+      fail(entry, 'cannot shadow a map callback parameter inside its JSX wrapper', node);
     }
   } });
-  return { kind: 'map', call, prop, wrapper: returned, parameter, indexParameter };
+  return { kind: 'map', call, slots: [], wrapper: returned, parameter, indexParameter };
 }
 
-function mappedChildren(
-  sequence: ChildSequence,
+function childSlotValue(value: RenderValue): t.JSXFragment {
+  const source = cloneNode(value.source as BaseNode, true);
+  const child = ast.isJSXText(source) || ast.isJSXElement(source) || ast.isJSXFragment(source)
+    ? source : ast.jsxExpressionContainer(source as t.Expression);
+  return ast.jsxFragment(ast.jsxOpeningFragment(), ast.jsxClosingFragment(), [child]);
+}
+
+function mappedWrapper(
   operation: Extract<ChildOperation, { kind: 'map' }>,
-): t.JSXFragment {
-  const children: Array<t.JSXElement | t.JSXFragment> = [];
-  if (sequence.rootEmpty) {
-    return ast.jsxFragment(ast.jsxOpeningFragment(), ast.jsxClosingFragment(), children);
-  }
-  for (const [position, value] of sequence.values.entries()) {
-    const wrapper = cloneNode(operation.wrapper as BaseNode, true) as t.JSXElement | t.JSXFragment;
-    walkAst(wrapper as BaseNode, { enter(node, parent, key, index) {
-      if (operation.indexParameter !== undefined && ast.isIdentifier(node) &&
-          node.name === operation.indexParameter && isReferenceIdentifier(parent, key) &&
-          parent !== null && key !== undefined) {
-        const fields = parent as unknown as Record<string, unknown>;
-        const field = fields[key];
-        if (index === undefined) fields[key] = ast.numericLiteral(position);
-        else if (Array.isArray(field)) field[index] = ast.numericLiteral(position);
-        return false;
-      }
-      if (!ast.isJSXExpressionContainer(node) || !ast.isIdentifier(node.expression) ||
-          node.expression.name !== operation.parameter) return;
-      if (parent === null || key !== 'children' || index === undefined) return;
-      const source = cloneNode(value.source as BaseNode, true);
-      const child = ast.isJSXText(source) || ast.isJSXElement(source) || ast.isJSXFragment(source)
-        ? source : ast.jsxExpressionContainer(source as t.Expression);
-      (parent as t.JSXElement | t.JSXFragment).children[index] = child;
+  slot: string, position: number,
+): t.JSXElement | t.JSXFragment {
+  const wrapper = cloneNode(operation.wrapper as BaseNode, true) as t.JSXElement | t.JSXFragment;
+  walkAst(wrapper as BaseNode, { enter(node, parent, key, index) {
+    if (operation.indexParameter !== undefined && ast.isIdentifier(node) &&
+        node.name === operation.indexParameter && isReferenceIdentifier(parent, key) &&
+        parent !== null && key !== undefined) {
+      const fields = parent as unknown as Record<string, unknown>;
+      const field = fields[key];
+      if (index === undefined) fields[key] = ast.numericLiteral(position);
+      else if (Array.isArray(field)) field[index] = ast.numericLiteral(position);
       return false;
-    } });
-    children.push(wrapper);
-  }
+    }
+    if (ast.isJSXExpressionContainer(node) && ast.isIdentifier(node.expression) &&
+        node.expression.name === operation.parameter) {
+      node.expression = ast.identifier(slot);
+      return false;
+    }
+  } });
+  return wrapper;
+}
+
+function mappedOutput(operation: Extract<ChildOperation, { kind: 'map' }>): t.JSXFragment {
+  const children = operation.slots.map((slot, position) =>
+    ast.jsxExpressionContainer(ast.logicalExpression('&&', ast.identifier(slot),
+      mappedWrapper(operation, slot, position))));
   return ast.jsxFragment(ast.jsxOpeningFragment(), ast.jsxClosingFragment(), children);
 }
 
@@ -195,7 +192,7 @@ export function specializeLinkedReactChildSequences(
     } });
   }
   let serial = 0;
-  function fresh(kind: 'Count' | 'Map'): string {
+  function fresh(kind: 'Count' | 'MapSlot'): string {
     let name: string;
     do { name = `__mmdReactChild${kind}${serial++}`; } while (occupied.has(name));
     occupied.add(name);
@@ -249,10 +246,9 @@ export function specializeLinkedReactChildSequences(
               owner: use.owner, operations: [] };
             templates.set(key, template);
           }
-          const prop = fresh(use.kind === 'count' ? 'Count' : 'Map');
           template.operations.push(use.kind === 'count'
-            ? { kind: 'count', call: use.call, prop }
-            : mapOperation(entry, analysis, use.call, prop));
+            ? { kind: 'count', call: use.call, prop: fresh('Count') }
+            : mapOperation(entry, analysis, use.call));
         }
         statement.specifiers = statement.specifiers.filter(item => item !== specifier);
         consumedImports.add(statement);
@@ -260,6 +256,18 @@ export function specializeLinkedReactChildSequences(
     }
   }
   if (templates.size === 0) return;
+  for (const template of templates.values()) {
+    if (!template.operations.some(operation => operation.kind === 'map')) continue;
+    const analysis = analyzeScope(template.entry.ast);
+    const parameter = childParameter(template.owner)!;
+    const binding = analysis.nodeToScope.get(parameter)?.getBinding(parameter.name);
+    const observations = new Set(template.operations.map(operation => operation.call.arguments[0]));
+    for (const reference of binding?.references ?? []) {
+      if (!observations.has(reference)) {
+        fail(template.entry, 'cannot render raw children alongside a mapped child sequence', reference);
+      }
+    }
+  }
 
   function resolveTemplate(entry: ModuleEntry, exported: string, seen = new Set<string>()): ChildTemplate | undefined {
     const key = `${entry.id}#${exported}`;
@@ -310,7 +318,8 @@ export function specializeLinkedReactChildSequences(
       if (template === undefined) return;
       if (node.openingElement.attributes.some(attribute =>
         ast.isJSXSpreadAttribute(attribute) || ast.isJSXAttribute(attribute) &&
-        ast.isJSXIdentifier(attribute.name) && template.operations.some(op => op.prop === attribute.name.name))) {
+        ast.isJSXIdentifier(attribute.name) && template.operations.some(op =>
+          op.kind === 'count' && op.prop === attribute.name.name))) {
         fail(entry, 'cannot specialize a spread or reserved child-sequence prop', node.openingElement);
       }
       const sequence = planChildren(entry, node.children);
@@ -322,39 +331,72 @@ export function specializeLinkedReactChildSequences(
     if (!reached.has(template)) {
       fail(template.entry, `component '${template.name}' has no finite linked caller`, template.owner);
     }
+    const callers = injections.filter(injection => injection.template === template);
+    for (const operation of template.operations) {
+      if (operation.kind !== 'map') continue;
+      const length = callers.reduce((max, { sequence }) =>
+        Math.max(max, sequence.rootEmpty ? 0 : sequence.values.length), 0);
+      operation.slots = Array.from({ length }, () => fresh('MapSlot'));
+    }
   }
 
   for (const { element, template, sequence } of injections) {
     for (const operation of template.operations) {
-      const value = operation.kind === 'count'
-        ? ast.jsxExpressionContainer(ast.numericLiteral(sequence.rootEmpty ? 0 : sequence.values.length))
-        : ast.jsxExpressionContainer(mappedChildren(sequence, operation));
-      element.openingElement.attributes.push(ast.jsxAttribute(ast.jsxIdentifier(operation.prop), value));
+      if (operation.kind === 'count') {
+        element.openingElement.attributes.push(ast.jsxAttribute(ast.jsxIdentifier(operation.prop),
+          ast.jsxExpressionContainer(ast.numericLiteral(sequence.rootEmpty ? 0 : sequence.values.length))));
+      } else if (!sequence.rootEmpty) {
+        for (const [position, value] of sequence.values.entries()) {
+          element.openingElement.attributes.push(ast.jsxAttribute(ast.jsxIdentifier(operation.slots[position]!),
+            ast.jsxExpressionContainer(childSlotValue(value))));
+        }
+      }
     }
+    if (template.operations.some(operation => operation.kind === 'map')) element.children = [];
   }
   for (const template of templates.values()) {
     const param = template.owner.params[0] as t.ObjectPattern;
     for (const operation of template.operations) {
-      param.properties.push(ast.objectProperty(ast.identifier(operation.prop),
-        ast.identifier(operation.prop), false, true));
+      const props = operation.kind === 'count' ? [operation.prop] : operation.slots;
+      for (const prop of props) {
+        param.properties.push(ast.objectProperty(ast.identifier(prop),
+          ast.identifier(prop), false, true));
+      }
     }
   }
   for (const entry of entries.values()) {
-    const replacements = new Map<BaseNode, string>();
+    const replacements = new Map<BaseNode, t.Expression>();
+    const mapped = new Map<BaseNode, t.JSXFragment['children']>();
     for (const template of templates.values()) {
       if (template.entry !== entry) continue;
-      for (const operation of template.operations) replacements.set(operation.call, operation.prop);
+      for (const operation of template.operations) {
+        if (operation.kind === 'count') replacements.set(operation.call, ast.identifier(operation.prop));
+        else mapped.set(operation.call, mappedOutput(operation).children);
+      }
+    }
+    const splices: Array<{ parent: t.JSXElement | t.JSXFragment; index: number;
+      children: t.JSXFragment['children'] }> = [];
+    if (mapped.size > 0) {
+      walkAst(entry.ast as BaseNode, { enter(node, parent, key, index) {
+        if (!ast.isJSXExpressionContainer(node) || parent === null || key !== 'children' ||
+            index === undefined || (!ast.isJSXElement(parent) && !ast.isJSXFragment(parent))) return;
+        const children = mapped.get(node.expression);
+        if (children !== undefined) splices.push({ parent, index, children });
+      } });
+      for (const splice of splices.reverse()) {
+        splice.parent.children.splice(splice.index, 1, ...splice.children);
+      }
     }
     if (replacements.size === 0) continue;
     walkAst(entry.ast as BaseNode, { enter(node, parent, key, index) {
-      const prop = replacements.get(node);
-      if (prop === undefined || parent === null || key === undefined) return;
+      const replacement = replacements.get(node);
+      if (replacement === undefined || parent === null || key === undefined) return;
       const fields = parent as unknown as Record<string, unknown>;
       const field = fields[key];
       if (index === undefined) {
-        fields[key] = ast.identifier(prop);
+        fields[key] = replacement;
       } else if (Array.isArray(field)) {
-        field[index] = ast.identifier(prop);
+        field[index] = replacement;
       }
       return false;
     } });
