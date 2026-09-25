@@ -773,6 +773,7 @@ describe('ESTree parser and printer boundary', () => {
       importedState: new Map(),
       importedComponents: new Map(),
       importedFunctions: new Map(),
+      stableValueImports: new Set(),
       state: new Map(),
       instanceState: new Map(),
       instanceDerivedBindings: new Map(),
