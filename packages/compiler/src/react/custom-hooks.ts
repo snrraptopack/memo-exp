@@ -1,5 +1,5 @@
 /**
- * Specialize exported React hooks while the source graph is still available.
+ * Specialize React hooks while the source graph is still available.
  * The expanded statements enter the ordinary React-to-MMD operation planner;
  * hook definitions and imports have no runtime representation.
  */
@@ -13,7 +13,8 @@ import { resolveModule } from '../linking/resolution';
 
 interface HookTemplate {
   entry: ModuleEntry;
-  exportStatement: t.ExportNamedDeclaration;
+  statement: t.Statement;
+  exported: boolean;
   declaration: t.FunctionDeclaration;
   reactImports: Map<string, string>;
   resultNames: string[];
@@ -21,8 +22,8 @@ interface HookTemplate {
 
 interface HookUse {
   template: HookTemplate;
-  importStatement: t.ImportDeclaration;
-  importSpecifier: t.ImportSpecifier;
+  importStatement?: t.ImportDeclaration;
+  importSpecifier?: t.ImportSpecifier;
   statement: t.VariableDeclaration;
   call: t.CallExpression;
   resultNames: string[];
@@ -61,7 +62,7 @@ function componentOwner(
 }
 
 function templateFor(
-  entry: ModuleEntry, statement: t.ExportNamedDeclaration,
+  entry: ModuleEntry, statement: t.Statement, exported: boolean,
   declaration: t.FunctionDeclaration,
   analysis: ReturnType<typeof analyzeScope>,
 ): HookTemplate | null {
@@ -118,7 +119,41 @@ function templateFor(
       fail(entry, ` '${declaration.id.name}' must return its own top-level bindings`, element as BaseNode);
     }
   }
-  return { entry, exportStatement: statement, declaration, reactImports, resultNames };
+  return { entry, statement, exported, declaration, reactImports, resultNames };
+}
+
+function recordUse(
+  entry: ModuleEntry,
+  analysis: ReturnType<typeof analyzeScope>,
+  template: HookTemplate,
+  reference: t.Identifier,
+  usesByEntry: Map<ModuleEntry, HookUse[]>,
+  importStatement?: t.ImportDeclaration,
+  importSpecifier?: t.ImportSpecifier,
+): void {
+  const call = analysis.parentByNode.get(reference);
+  if (!ast.isCallExpression(call) || call.callee !== reference || call.optional) {
+    fail(entry, ` '${reference.name}' needs a direct call`, reference);
+  }
+  const declarator = analysis.parentByNode.get(call);
+  const declaration = declarator && analysis.parentByNode.get(declarator);
+  const owner = componentOwner(analysis, call);
+  if (owner === null || !ast.isVariableDeclarator(declarator) ||
+      declarator.init !== call || !ast.isVariableDeclaration(declaration) ||
+      declaration.declarations.length !== 1 ||
+      analysis.parentByNode.get(declaration) !== owner.body ||
+      !ast.isArrayPattern(declarator.id) ||
+      declarator.id.elements.length !== template.resultNames.length ||
+      declarator.id.elements.some(element => !ast.isIdentifier(element)) ||
+      call.arguments.length !== template.declaration.params.length ||
+      call.arguments.some(argument => !ast.isExpression(argument))) {
+    fail(entry, ` '${reference.name}' needs a direct top-level tuple declaration in a component`, reference);
+  }
+  const resultNames = declarator.id.elements.map(element => (element as t.Identifier).name);
+  const uses = usesByEntry.get(entry) ?? [];
+  uses.push({ template, importStatement, importSpecifier,
+    statement: declaration, call, resultNames });
+  usesByEntry.set(entry, uses);
 }
 
 function uniqueName(occupied: Set<string>, label: string): string {
@@ -153,9 +188,11 @@ function expand(use: HookUse, occupied: Set<string>): {
   for (const [local, imported] of template.reactImports) {
     const alias = uniqueName(occupied, imported);
     aliases.set(local, alias);
-    imports.push(ast.importDeclaration([
+    const declaration = ast.importDeclaration([
       ast.importSpecifier(ast.identifier(alias), ast.identifier(imported)),
-    ], ast.stringLiteral('react')));
+    ], ast.stringLiteral('react'));
+    (declaration as t.ImportDeclaration & { __mmdLinkedHookImport: boolean }).__mmdLinkedHookImport = true;
+    imports.push(declaration);
   }
   walkAst(fn.body as BaseNode, { enter(node, parent, key) {
     if (!ast.isIdentifier(node) || !isReferenceIdentifier(parent, key)) return;
@@ -193,35 +230,74 @@ export function specializeLinkedReactHooks(
     if (!isReactPackageModule(entry.id, packages)) continue;
     const analysis = analyzeScope(entry.ast);
     for (const statement of entry.ast.body) {
-      if (!ast.isExportNamedDeclaration(statement) ||
-          !ast.isFunctionDeclaration(statement.declaration) ||
-          statement.declaration.id == null) continue;
-      const template = templateFor(entry, statement, statement.declaration, analysis);
-      if (template !== null) {
-        const name = template.declaration.id!.name;
-        const references = analysis.rootScope.bindings.get(name)?.references ?? [];
-        if (references.length > 0) {
-          fail(entry, ` '${name}' has a local call; local specialization is not implemented`, references[0]!);
-        }
-        templates.set(`${entry.id}#${name}`, template);
-      }
+      const exported = ast.isExportNamedDeclaration(statement);
+      const declaration = exported ? statement.declaration : statement;
+      if (!ast.isFunctionDeclaration(declaration) || declaration.id == null) continue;
+      const template = templateFor(entry, statement, exported, declaration, analysis);
+      if (template !== null) templates.set(`${entry.id}#${declaration.id.name}`, template);
     }
   }
   if (templates.size === 0) return;
 
+  function resolveTemplate(
+    entry: ModuleEntry, exportedName: string, visited = new Set<string>(),
+  ): HookTemplate | undefined {
+    const key = `${entry.id}#${exportedName}`;
+    if (visited.has(key)) return undefined;
+    visited.add(key);
+    const direct = templates.get(key);
+    if (direct?.exported === true) return direct;
+    for (const statement of entry.ast.body) {
+      if (!ast.isExportNamedDeclaration(statement)) continue;
+      for (const specifier of statement.specifiers) {
+        if (!ast.isExportSpecifier(specifier) || !ast.isIdentifier(specifier.exported) ||
+            specifier.exported.name !== exportedName || !ast.isIdentifier(specifier.local)) continue;
+        if (statement.source != null && ast.isStringLiteral(statement.source)) {
+          const target = resolveModule(entry.id, String(statement.source.value), entries, options);
+          if (target !== undefined) {
+            const resolved = resolveTemplate(target, specifier.local.name, visited);
+            if (resolved !== undefined) return resolved;
+          }
+        }
+      }
+    }
+    return undefined;
+  }
+
+  function hasHookExports(entry: ModuleEntry): boolean {
+    if ([...templates.values()].some(template => template.entry === entry && template.exported)) return true;
+    return entry.ast.body.some(statement => {
+      if (!ast.isExportNamedDeclaration(statement) || statement.source == null ||
+          !ast.isStringLiteral(statement.source)) return false;
+      const target = resolveModule(entry.id, String(statement.source.value), entries, options);
+      return target !== undefined && statement.specifiers.some(specifier =>
+        ast.isExportSpecifier(specifier) && ast.isIdentifier(specifier.local) &&
+        resolveTemplate(target, specifier.local.name) !== undefined);
+    });
+  }
+
   const usesByEntry = new Map<ModuleEntry, HookUse[]>();
   for (const entry of entries.values()) {
     const analysis = analyzeScope(entry.ast);
+    for (const template of templates.values()) {
+      if (template.entry !== entry) continue;
+      const name = template.declaration.id!.name;
+      const binding = analysis.rootScope.bindings.get(name);
+      if (binding === undefined) continue;
+      if (binding.constantViolations.length > 0) {
+        fail(entry, ` '${name}' cannot be reassigned`, binding.constantViolations[0]!);
+      }
+      for (const reference of binding.references) {
+        recordUse(entry, analysis, template, reference, usesByEntry);
+      }
+    }
     for (const statement of entry.ast.body) {
       if ((ast.isExportNamedDeclaration(statement) || statement.type === 'ExportAllDeclaration') &&
           statement.source != null && ast.isStringLiteral(statement.source)) {
         const target = resolveModule(entry.id, String(statement.source.value), entries, options);
-        if (target !== undefined && [...templates.keys()].some(key => key.startsWith(`${target.id}#`))) {
-          if (statement.type === 'ExportAllDeclaration' || statement.specifiers.some(specifier =>
-              ast.isExportSpecifier(specifier) && ast.isIdentifier(specifier.local) &&
-              templates.has(`${target.id}#${specifier.local.name}`))) {
-            fail(entry, ` re-export needs a linked hook template`, statement);
-          }
+        if (statement.type === 'ExportAllDeclaration' && target !== undefined &&
+            hasHookExports(target)) {
+          fail(entry, ` wildcard re-export of a custom hook is not specialized`, statement);
         }
       }
       if (!ast.isImportDeclaration(statement) || !ast.isStringLiteral(statement.source)) continue;
@@ -229,48 +305,46 @@ export function specializeLinkedReactHooks(
       if (target === undefined) continue;
       for (const specifier of statement.specifiers) {
         if (specifier.type === 'ImportNamespaceSpecifier' &&
-            [...templates.keys()].some(key => key.startsWith(`${target.id}#`)) &&
+            hasHookExports(target) &&
             (analysis.rootScope.bindings.get(specifier.local.name)?.references.length ?? 0) > 0) {
           fail(entry, ` namespace access to a custom hook is not specialized`, specifier);
         }
         if (!ast.isImportSpecifier(specifier) || !ast.isIdentifier(specifier.imported)) continue;
-        const template = templates.get(`${target.id}#${specifier.imported.name}`);
+        const template = resolveTemplate(target, specifier.imported.name);
         if (template === undefined) continue;
         const binding = analysis.rootScope.bindings.get(specifier.local.name);
         if (binding === undefined) continue;
         if (binding.constantViolations.length > 0) {
           fail(entry, ` '${specifier.local.name}' cannot be reassigned`, binding.constantViolations[0]!);
         }
-        if (!isReactPackageModule(entry.id, packages) && binding.references.length > 0) {
-          fail(entry, ` '${specifier.local.name}' needs a caller in an opted-in React package`, binding.references[0]!);
-        }
         for (const reference of binding.references) {
-          const call = analysis.parentByNode.get(reference);
-          if (!ast.isCallExpression(call) || call.callee !== reference || call.optional) {
-            fail(entry, ` '${specifier.local.name}' needs a direct call`, reference);
-          }
-          const declarator = analysis.parentByNode.get(call);
-          const declaration = declarator && analysis.parentByNode.get(declarator);
-          const owner = componentOwner(analysis, call);
-          if (owner === null || !ast.isVariableDeclarator(declarator) ||
-              declarator.init !== call || !ast.isVariableDeclaration(declaration) ||
-              declaration.declarations.length !== 1 ||
-              analysis.parentByNode.get(declaration) !== owner.body ||
-              !ast.isArrayPattern(declarator.id) ||
-              declarator.id.elements.length !== template.resultNames.length ||
-              declarator.id.elements.some(element => !ast.isIdentifier(element)) ||
-              call.arguments.length !== template.declaration.params.length ||
-              call.arguments.some(argument => !ast.isExpression(argument))) {
-            fail(entry, ` '${specifier.local.name}' needs a direct top-level tuple declaration in a component`, reference);
-          }
-          const resultNames = declarator.id.elements.map(element => (element as t.Identifier).name);
-          const uses = usesByEntry.get(entry) ?? [];
-          uses.push({ template, importStatement: statement, importSpecifier: specifier,
-            statement: declaration, call, resultNames });
-          usesByEntry.set(entry, uses);
+          recordUse(entry, analysis, template, reference, usesByEntry, statement, specifier);
         }
       }
     }
+  }
+
+  const reexportReplacements = new Map<ModuleEntry, Map<t.Statement, t.Statement>>();
+  for (const entry of entries.values()) {
+    for (const statement of entry.ast.body) {
+      if (!ast.isExportNamedDeclaration(statement) || statement.source == null ||
+          !ast.isStringLiteral(statement.source)) continue;
+      const target = resolveModule(entry.id, String(statement.source.value), entries, options);
+      if (target === undefined) continue;
+      const remaining = statement.specifiers.filter(specifier =>
+        !ast.isExportSpecifier(specifier) || !ast.isIdentifier(specifier.local) ||
+        resolveTemplate(target, specifier.local.name) === undefined);
+      if (remaining.length === statement.specifiers.length) continue;
+      const replacement = remaining.length === 0
+        ? ast.importDeclaration([], copy(statement.source))
+        : { ...statement, specifiers: remaining };
+      const replacements = reexportReplacements.get(entry) ?? new Map<t.Statement, t.Statement>();
+      replacements.set(statement, replacement);
+      reexportReplacements.set(entry, replacements);
+    }
+  }
+  for (const [entry, replacements] of reexportReplacements) {
+    entry.ast.body = entry.ast.body.map(statement => replacements.get(statement) ?? statement);
   }
 
   for (const [entry, uses] of usesByEntry) {
@@ -282,8 +356,10 @@ export function specializeLinkedReactHooks(
       const expanded = expand(use, occupied);
       replacements.set(use.statement, expanded.statements);
       imports.push(...expanded.imports);
-      use.importStatement.specifiers = use.importStatement.specifiers.filter(
-        specifier => specifier !== use.importSpecifier);
+      if (use.importStatement !== undefined) {
+        use.importStatement.specifiers = use.importStatement.specifiers.filter(
+          specifier => specifier !== use.importSpecifier);
+      }
     }
     walkAst(entry.ast as BaseNode, { enter(node) {
       if (!ast.isFunctionDeclaration(node)) return;
@@ -296,6 +372,6 @@ export function specializeLinkedReactHooks(
   }
   for (const template of templates.values()) {
     template.entry.ast.body = template.entry.ast.body.filter(
-      statement => statement !== template.exportStatement);
+      statement => statement !== template.statement);
   }
 }

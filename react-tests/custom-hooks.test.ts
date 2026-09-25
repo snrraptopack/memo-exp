@@ -43,9 +43,44 @@ describe('linked custom hooks', () => {
       .toThrow("captures module binding 'moduleInitial'");
   });
 
-  it('diagnoses a local hook call before deleting its definition', () => {
+  it('specializes a local hook through the same owner plan', async () => {
     const entry = join(fixtureRoot, 'hook-local-app.tsx');
-    expect(() => compileFixture({ entries: [entry], packages: ['hook-local-kit'] }))
-      .toThrow('local specialization is not implemented');
+    const local = compileFixture({ entries: [entry], packages: ['hook-local-kit'],
+      outDir: 'out/local-hooks' });
+    expect(local.output['hook-local-kit/index.tsx']).not.toMatch(/\buseCounter\s*\(/);
+    const { App } = await import(/* @vite-ignore */ pathToFileURL(local.emitted.get(entry)!).href);
+    document.body.appendChild(App('LocalHookApp', null));
+    const button = document.querySelector('button')!;
+    expect(button.textContent).toBe('1');
+    button.click();
+    expect(button.textContent).toBe('2');
+  });
+
+  it('resolves a named hook reexport and removes its runtime export', async () => {
+    const entry = join(fixtureRoot, 'hook-barrel-app.tsx');
+    const barrel = compileFixture({ entries: [entry], packages: ['hook-barrel-kit'],
+      outDir: 'out/barrel-hooks' });
+    expect(barrel.output['hook-barrel-kit/hooks.ts']).not.toMatch(/export.*useCounter/);
+    expect(barrel.output['hook-barrel-kit/hook-public.ts']).not.toMatch(/export.*useCounter/);
+    expect(barrel.output['hook-barrel-kit/index.tsx']).not.toMatch(/\buseCounter\s*\(/);
+    const { App } = await import(/* @vite-ignore */ pathToFileURL(barrel.emitted.get(entry)!).href);
+    document.body.appendChild(App('BarrelHookApp', null));
+    const button = document.querySelector('button')!;
+    expect(button.textContent).toBe('3');
+    button.click();
+    expect(button.textContent).toBe('4');
+  });
+
+  it('lets an MMD application component own a linked package hook', async () => {
+    const entry = join(fixtureRoot, 'hook-direct-app.tsx');
+    const direct = compileFixture({ entries: [entry], packages: ['hook-kit'],
+      outDir: 'out/direct-hooks' });
+    expect(direct.output[entry]).not.toMatch(/\buseCounter\s*\(|from ['"]react['"]/);
+    const { App } = await import(/* @vite-ignore */ pathToFileURL(direct.emitted.get(entry)!).href);
+    document.body.appendChild(App('DirectHookApp', null));
+    const button = document.querySelector('button')!;
+    expect(button.textContent).toBe('10');
+    button.click();
+    expect(button.textContent).toBe('12');
   });
 });

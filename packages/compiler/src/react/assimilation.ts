@@ -30,6 +30,7 @@ interface ImportUse {
   readonly source: string;
   readonly binding: ReturnType<typeof analyzeScope>['rootScope']['bindings'] extends Map<string, infer B> ? B : never;
   readonly namespace: boolean;
+  readonly linkedHook: boolean;
 }
 
 function copy<T>(node: T): T {
@@ -120,7 +121,10 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
         ? '*'
         : ast.isIdentifier(specifier.imported) ? specifier.imported.name
         : ast.isStringLiteral(specifier.imported) ? String(specifier.imported.value) : '';
-      uses.push({ name, source: String(declaration.source.value), binding, namespace });
+      const linkedHook = (declaration as t.ImportDeclaration & {
+        __mmdLinkedHookImport?: boolean;
+      }).__mmdLinkedHookImport === true;
+      uses.push({ name, source: String(declaration.source.value), binding, namespace, linkedHook });
     }
   }
 
@@ -156,12 +160,14 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
 
   if (!ctx.reactDialect) {
     for (const use of uses) {
-      if (use.binding.references.length > 0) {
+      if (!use.linkedHook && use.binding.references.length > 0) {
         fail(`'${use.source}.${use.name}' requires an opted-in React package`, use.binding.references[0]!);
       }
     }
-    program.body = program.body.filter((statement) => !imports.includes(statement as t.ImportDeclaration));
-    return;
+    if (!uses.some(use => use.linkedHook && use.binding.references.length > 0)) {
+      program.body = program.body.filter((statement) => !imports.includes(statement as t.ImportDeclaration));
+      return;
+    }
   }
 
   for (const use of uses) {
