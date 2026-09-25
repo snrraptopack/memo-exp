@@ -11,11 +11,16 @@ import { compilerError } from '../errors';
 import type { CompileModulesOptions, ModuleEntry } from '../linking/model';
 import { resolveModule } from '../linking/resolution';
 
+type HookFunction = t.FunctionDeclaration |
+  (t.ArrowFunctionExpression & { body: t.BlockStatement }) |
+  (t.FunctionExpression & { body: t.BlockStatement });
+
 interface HookTemplate {
   entry: ModuleEntry;
   statement: t.Statement;
   exported: boolean;
-  declaration: t.FunctionDeclaration;
+  name: string;
+  declaration: HookFunction;
   reactImports: Map<string, string>;
   resultNames: string[];
 }
@@ -63,10 +68,10 @@ function componentOwner(
 
 function templateFor(
   entry: ModuleEntry, statement: t.Statement, exported: boolean,
-  declaration: t.FunctionDeclaration,
+  declaration: HookFunction, name: string,
   analysis: ReturnType<typeof analyzeScope>,
 ): HookTemplate | null {
-  if (declaration.id == null || !/^use[A-Z]/.test(declaration.id.name)) return null;
+  if (!/^use[A-Z]/.test(name)) return null;
   const reactImports = new Map<string, string>();
   let hasReactUse = false;
   walkAst(declaration.body as BaseNode, { enter(node, parent, key) {
@@ -77,19 +82,23 @@ function templateFor(
   } });
   if (!hasReactUse) return null;
   walkAst(declaration.body as BaseNode, { enter(node, parent, key) {
+    if (node.type === 'ThisExpression' || node.type === 'Super' || node.type === 'MetaProperty' ||
+        ast.isIdentifier(node) && node.name === 'arguments' && isReferenceIdentifier(parent, key)) {
+      fail(entry, ` '${name}' uses function context that cannot move into a component`, node);
+    }
     if (!ast.isIdentifier(node) || !isReferenceIdentifier(parent, key)) return;
     const binding = analysis.nodeToScope.get(node)?.getBinding(node.name);
     if (binding?.scope.isProgramScope !== true) return;
     if (binding.kind !== 'import' || !ast.isImportDeclaration(binding.declarationNode) ||
         binding.declarationNode.source.value !== 'react') {
-      fail(entry, ` '${declaration.id!.name}' captures module binding '${node.name}'`, node);
+      fail(entry, ` '${name}' captures module binding '${node.name}'`, node);
     }
     const specifier = binding.declarationNode.specifiers.find(item => item.local.name === node.name);
     if (!ast.isImportSpecifier(specifier) || !ast.isIdentifier(specifier.imported)) {
-      fail(entry, ` '${declaration.id!.name}' requires a named React API import`, node);
+      fail(entry, ` '${name}' requires a named React API import`, node);
     }
     if (!ast.isCallExpression(parent) || parent.callee !== node || parent.optional) {
-      fail(entry, ` '${declaration.id!.name}' uses '${node.name}' outside a direct call`, node);
+      fail(entry, ` '${name}' uses '${node.name}' outside a direct call`, node);
     }
     reactImports.set(node.name, specifier.imported.name);
   } });
@@ -98,28 +107,29 @@ function templateFor(
   if (!ast.isReturnStatement(last) || !ast.isArrayExpression(last.argument) ||
       last.argument.elements.length === 0 ||
       last.argument.elements.some(element => !ast.isIdentifier(element))) {
-    fail(entry, ` '${declaration.id.name}' must return a fixed tuple of local identifiers`, declaration);
+    fail(entry, ` '${name}' must return a fixed tuple of local identifiers`, declaration);
   }
-  if (declaration.async || declaration.generator ||
+  if (declaration.async || declaration.type !== 'ArrowFunctionExpression' && declaration.generator ||
+      declaration.type === 'FunctionExpression' && declaration.id !== null ||
       declaration.params.some(param => !ast.isIdentifier(param))) {
-    fail(entry, ` '${declaration.id.name}' needs plain positional parameters`, declaration);
+    fail(entry, ` '${name}' needs plain positional parameters`, declaration);
   }
   if (body.slice(0, -1).some(item =>
     !ast.isVariableDeclaration(item) && !ast.isExpressionStatement(item))) {
-    fail(entry, ` '${declaration.id.name}' needs top-level declarations and hook calls`, declaration);
+    fail(entry, ` '${name}' needs top-level declarations and hook calls`, declaration);
   }
   const resultNames = (last.argument as t.ArrayExpression).elements.map(element =>
     (element as t.Identifier).name);
   if (new Set(resultNames).size !== resultNames.length) {
-    fail(entry, ` '${declaration.id.name}' cannot return the same binding twice`, last);
+    fail(entry, ` '${name}' cannot return the same binding twice`, last);
   }
   for (const element of last.argument.elements) {
     const binding = analysis.nodeToScope.get(element as BaseNode)?.getBinding((element as t.Identifier).name);
     if (binding === undefined || binding.scope.block !== declaration || binding.kind === 'param') {
-      fail(entry, ` '${declaration.id.name}' must return its own top-level bindings`, element as BaseNode);
+      fail(entry, ` '${name}' must return its own top-level bindings`, element as BaseNode);
     }
   }
-  return { entry, statement, exported, declaration, reactImports, resultNames };
+  return { entry, statement, exported, name, declaration, reactImports, resultNames };
 }
 
 function recordUse(
@@ -232,9 +242,21 @@ export function specializeLinkedReactHooks(
     for (const statement of entry.ast.body) {
       const exported = ast.isExportNamedDeclaration(statement);
       const declaration = exported ? statement.declaration : statement;
-      if (!ast.isFunctionDeclaration(declaration) || declaration.id == null) continue;
-      const template = templateFor(entry, statement, exported, declaration, analysis);
-      if (template !== null) templates.set(`${entry.id}#${declaration.id.name}`, template);
+      let fn: HookFunction;
+      let name: string;
+      if (ast.isFunctionDeclaration(declaration) && declaration.id !== null) {
+        fn = declaration;
+        name = declaration.id.name;
+      } else if (ast.isVariableDeclaration(declaration) && declaration.declarations.length === 1 &&
+          ast.isIdentifier(declaration.declarations[0]!.id) &&
+          (ast.isArrowFunctionExpression(declaration.declarations[0]!.init) ||
+            ast.isFunctionExpression(declaration.declarations[0]!.init)) &&
+          ast.isBlockStatement(declaration.declarations[0]!.init.body)) {
+        fn = declaration.declarations[0]!.init as HookFunction;
+        name = (declaration.declarations[0]!.id as t.Identifier).name;
+      } else continue;
+      const template = templateFor(entry, statement, exported, fn, name, analysis);
+      if (template !== null) templates.set(`${entry.id}#${name}`, template);
     }
   }
   if (templates.size === 0) return;
@@ -281,7 +303,7 @@ export function specializeLinkedReactHooks(
     const analysis = analyzeScope(entry.ast);
     for (const template of templates.values()) {
       if (template.entry !== entry) continue;
-      const name = template.declaration.id!.name;
+      const name = template.name;
       const binding = analysis.rootScope.bindings.get(name);
       if (binding === undefined) continue;
       if (binding.constantViolations.length > 0) {

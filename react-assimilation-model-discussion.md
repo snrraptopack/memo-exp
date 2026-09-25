@@ -395,9 +395,11 @@ its other top-level effects keep their ESM meaning. Local hook calls and named
 barrel reexports use the same template path. An MMD application component can
 own a hook imported from an opted-in package without enabling authored React
 imports in that application. A source-module capture or unsupported call
-shape gets a diagnostic rather than a runtime stub. This initial template form
-requires named React API imports, plain positional parameters, and a final
-tuple of local bindings. Captures with canonical source identity, general
+shape gets a diagnostic rather than a runtime stub. Function declarations,
+arrow-function variables, and anonymous function-expression variables share
+the template path. This initial template form requires named React API
+imports, plain positional parameters, and a final tuple of local bindings.
+Captures with canonical source identity, general
 return flow, and wildcard reexports still need a linker contract.
 
 The independent [React test suite](react-tests/README.md) compiles authored

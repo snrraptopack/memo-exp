@@ -1,9 +1,9 @@
 import { useState } from 'react';
 
-export function useCounter() {
+export const useCounter = function () {
   const [count, setCount] = useState(1);
   return [count, setCount];
-}
+};
 
 export function Counter() {
   const [count, setCount] = useCounter();
