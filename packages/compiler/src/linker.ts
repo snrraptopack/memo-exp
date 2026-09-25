@@ -57,6 +57,7 @@ import {
 } from './linking/resolution';
 import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest } from './linking/discovery';
+import { specializeLinkedReactHooks } from './react/custom-hooks';
 
 export interface CompiledComponentExport {
   exported: string;
@@ -558,6 +559,8 @@ function compileLinkedModules(
       css: parsed.css,
     });
   }
+
+  specializeLinkedReactHooks(entries, options);
 
   const collectedRoutes = [...entries.values()].flatMap((entry) => {
     try {

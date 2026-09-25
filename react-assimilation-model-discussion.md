@@ -385,11 +385,25 @@ subscribing to close the mount-time gap, compares with `Object.is`, and disposes
 the returned subscription with the owner. Its third server-snapshot argument
 is diagnosed until an SSR target operation is specified.
 
+The linker now specializes a bounded exported custom hook across package files
+before manifest discovery. Its direct, top-level tuple call becomes statements
+owned by the caller component; fresh lexical names prevent collisions when a
+component calls the hook twice. The ordinary React operation plan then lowers
+those statements to MMD. The hook definition and import disappear from emitted
+JavaScript. A bare module import still evaluates the hook's source module so
+its other top-level effects keep their ESM meaning. A source-module capture,
+local call, reexport, or unsupported call
+shape gets a diagnostic rather than a runtime stub. This initial template form
+requires named React API imports, plain positional parameters, and a final
+tuple of local bindings. Captures with canonical source identity, general
+return flow, and MMD application callers still need a linker contract.
+
 The independent [React test suite](react-tests/README.md) compiles authored
 package files through the linker and exercises DOM updates, separate instances,
-effect cleanup, reducer dispatch, external notifications, and subscription
-disposal. Named package reexports now link through the shared compiler. The
-current proof covers those source shapes, not a whole installed library.
-Custom hooks crossing modules, render-value inspection/escape, general
-context, and host DOM protocol translation remain open. The first-slice cases
-above remain the acceptance target for the broader rewrite.
+effect cleanup, reducer dispatch, external notifications, subscription
+disposal, and linked custom-hook specialization. Named package reexports now
+link through the shared compiler for ordinary exports. The current proof
+covers those source shapes, not a whole installed library. Render-value
+inspection/escape, general context, and host DOM protocol translation remain
+open. The first-slice cases above remain the acceptance target for the broader
+rewrite.
