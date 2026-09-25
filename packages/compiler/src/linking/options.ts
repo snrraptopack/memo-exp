@@ -6,6 +6,7 @@ export function compilerOptions(
   rootId = 'App',
 ): InternalMemoDomOptions {
   return {
+    ...(options.react === undefined ? {} : { react: options.react }),
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
     ...(options.hotRuntimePath === undefined ? {} : { hotRuntimePath: options.hotRuntimePath }),
     ...(options.routerPath === undefined ? {} : { routerPath: options.routerPath }),

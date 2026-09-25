@@ -7,6 +7,7 @@ import { normalizeConditionalJsxDirectives } from '../jsx/conditional-directives
 import { initializeGeneratedIdentifiers } from '../identifiers';
 import { scanExternalReactiveImports } from '../external-reactivity';
 import { analyzeRouterJsx } from '../router';
+import { assimilateReactSource } from '../react/assimilation';
 import {
   scanTransparentSourceImports,
   lowerTransparentGroups,
@@ -17,6 +18,7 @@ import {
 
 export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   normalizeComponentDeclarations(programPath);
+  assimilateReactSource(ctx, programPath);
   installLinkedDynamicComponentImports(ctx, programPath);
   normalizeConditionalJsxDirectives(programPath);
   initializeGeneratedIdentifiers(ctx, programPath.node);
