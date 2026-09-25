@@ -1,7 +1,6 @@
 /**
- * Finite React child sequences are analyzed at the caller, before MMD turns
- * children into lazy mount slots. Counts travel as scalar props; mapped
- * children travel as individual caller-owned slots to callee-owned wrappers.
+ * React child sequences are analyzed at the caller before MMD turns children
+ * into owned mount slots or keyed list rows.
  */
 import type * as t from '../ast/compiler-types';
 import * as ast from '../ast/factory';
@@ -23,7 +22,9 @@ type ChildOperation =
   | { kind: 'count'; call: t.CallExpression; prop: string }
   | { kind: 'map'; call: t.CallExpression; slots: string[];
       wrapper: t.JSXElement | t.JSXFragment; parameter: string;
-      indexParameter?: string };
+      indexParameter?: string; intrinsic: boolean; captures: string[];
+      dynamicProps?: { items: string; renderItem: string; item: string; index: string;
+        context: string } };
 
 type RenderValue =
   | { kind: 'element'; source: t.JSXElement }
@@ -35,6 +36,8 @@ interface ChildSequence {
   owner: ModuleEntry;
   values: RenderValue[];
   rootEmpty: boolean;
+  dynamic?: { source: t.Identifier; jsx: t.JSXElement;
+    item: t.Identifier; index?: t.Identifier };
 }
 
 function fail(entry: ModuleEntry, message: string, node: BaseNode): never {
@@ -60,6 +63,26 @@ function childParameter(owner: t.FunctionDeclaration): t.Identifier | null {
 }
 
 function planChildren(entry: ModuleEntry, children: t.JSXElement['children']): ChildSequence {
+  const meaningful = children.filter(child => !ast.isJSXText(child) || child.value.trim() !== '');
+  if (meaningful.length === 1 && ast.isJSXExpressionContainer(meaningful[0])) {
+    const expression = meaningful[0].expression;
+    if (ast.isCallExpression(expression) && ast.isMemberExpression(expression.callee) &&
+        !expression.callee.computed && ast.isIdentifier(expression.callee.property, { name: 'map' }) &&
+        ast.isIdentifier(expression.callee.object) && expression.arguments.length === 1 &&
+        ast.isArrowFunctionExpression(expression.arguments[0])) {
+      const callback = expression.arguments[0];
+      const returned = ast.isBlockStatement(callback.body) && callback.body.body.length === 1 &&
+        ast.isReturnStatement(callback.body.body[0]) ? callback.body.body[0].argument : callback.body;
+      if (callback.params.length < 1 || callback.params.length > 2 ||
+          callback.params.some(param => !ast.isIdentifier(param)) || !ast.isJSXElement(returned)) {
+        fail(entry, 'requires an inline list map callback returning one JSX element', expression);
+      }
+      const params = callback.params as t.Identifier[];
+      return { owner: entry, values: [], rootEmpty: false,
+        dynamic: { source: expression.callee.object, jsx: returned,
+          item: params[0]!, index: params[1] } };
+    }
+  }
   const values: RenderValue[] = [];
   for (const child of children) {
     if (ast.isJSXText(child)) {
@@ -138,7 +161,30 @@ function mapOperation(
       fail(entry, 'cannot shadow a map callback parameter inside its JSX wrapper', node);
     }
   } });
-  return { kind: 'map', call, slots: [], wrapper: returned, parameter, indexParameter };
+  let intrinsic = true;
+  const captures = new Set<string>();
+  const wrapperNodes = new Set<BaseNode>();
+  walkAst(returned as BaseNode, { enter(node) { wrapperNodes.add(node); } });
+  walkAst(returned as BaseNode, { enter(node, parentNode, key) {
+    if (ast.isJSXElement(node) && (!ast.isJSXIdentifier(node.openingElement.name) ||
+        /^[A-Z]/.test(node.openingElement.name.name))) intrinsic = false;
+    if (!ast.isIdentifier(node) || !isReferenceIdentifier(parentNode, key)) return;
+    const resolved = analysis.nodeToScope.get(node)?.getBinding(node.name);
+    if (resolved !== binding && resolved !== indexBinding &&
+        (resolved === undefined || !wrapperNodes.has(resolved.declarationNode))) {
+      captures.add(node.name);
+    }
+  } });
+  walkAst(returned as BaseNode, { enter(node, parentNode, key) {
+    if (!ast.isIdentifier(node) || !isReferenceIdentifier(parentNode, key) ||
+        !captures.has(node.name)) return;
+    const resolved = analysis.nodeToScope.get(node)?.getBinding(node.name);
+    if (resolved !== undefined && wrapperNodes.has(resolved.declarationNode)) {
+      fail(entry, 'cannot shadow a captured value inside a dynamic map wrapper', node);
+    }
+  } });
+  return { kind: 'map', call, slots: [], wrapper: returned, parameter, indexParameter,
+    intrinsic, captures: [...captures] };
 }
 
 function childSlotValue(value: RenderValue): t.JSXFragment {
@@ -179,6 +225,60 @@ function mappedOutput(operation: Extract<ChildOperation, { kind: 'map' }>): t.JS
   return ast.jsxFragment(ast.jsxOpeningFragment(), ast.jsxClosingFragment(), children);
 }
 
+function dynamicWrapper(
+  operation: Extract<ChildOperation, { kind: 'map' }>,
+  sequence: NonNullable<ChildSequence['dynamic']>, index: string, context: string,
+): t.JSXElement {
+  const wrapper = cloneNode(operation.wrapper as BaseNode, true) as t.JSXElement;
+  const inner = cloneNode(sequence.jsx as BaseNode, true) as t.JSXElement;
+  const key = inner.openingElement.attributes.find(attribute =>
+    ast.isJSXAttribute(attribute) && ast.isJSXIdentifier(attribute.name) && attribute.name.name === 'key');
+  if (key !== undefined) {
+    wrapper.openingElement.attributes.push(cloneNode(key as BaseNode, true) as t.JSXAttribute);
+    inner.openingElement.attributes = inner.openingElement.attributes.filter(attribute => attribute !== key);
+  }
+  walkAst(wrapper as BaseNode, { enter(node, parent, field, position) {
+    if (ast.isIdentifier(node) && operation.captures.includes(node.name) &&
+        isReferenceIdentifier(parent, field) && parent !== null && field !== undefined) {
+      const fields = parent as unknown as Record<string, unknown>;
+      const value = fields[field];
+      const captured = ast.memberExpression(ast.callExpression(ast.identifier(context), []),
+        ast.identifier(node.name));
+      if (position === undefined) fields[field] = captured;
+      else if (Array.isArray(value)) value[position] = captured;
+      return false;
+    }
+    if (operation.indexParameter !== undefined && ast.isIdentifier(node) &&
+        node.name === operation.indexParameter && isReferenceIdentifier(parent, field) &&
+        parent !== null && field !== undefined) {
+      const fields = parent as unknown as Record<string, unknown>;
+      const value = fields[field];
+      if (position === undefined) fields[field] = ast.identifier(index);
+      else if (Array.isArray(value)) value[position] = ast.identifier(index);
+      return false;
+    }
+    if (!ast.isJSXExpressionContainer(node) || !ast.isIdentifier(node.expression) ||
+        node.expression.name !== operation.parameter || parent === null ||
+        field !== 'children' || position === undefined) return;
+    (parent as t.JSXElement | t.JSXFragment).children[position] = inner;
+    return false;
+  } });
+  return wrapper;
+}
+
+function dynamicMapCall(operation: Extract<ChildOperation, { kind: 'map' }>): t.JSXExpressionContainer {
+  const props = operation.dynamicProps!;
+  const context = ast.arrowFunctionExpression([], ast.objectExpression(operation.captures.map(name =>
+    ast.objectProperty(ast.identifier(name), ast.identifier(name), false, true))));
+  return ast.jsxExpressionContainer(ast.callExpression(
+    ast.memberExpression(ast.identifier(props.items), ast.identifier('map')),
+    [ast.arrowFunctionExpression([ast.identifier(props.item), ast.identifier(props.index)],
+      ast.callExpression(ast.identifier(props.renderItem),
+        [ast.identifier(props.item), ast.identifier(props.index),
+          ...(operation.captures.length === 0 ? [] : [context])]))],
+  ));
+}
+
 export function specializeLinkedReactChildSequences(
   entries: ReadonlyMap<string, ModuleEntry>, options: CompileModulesOptions,
 ): void {
@@ -192,7 +292,7 @@ export function specializeLinkedReactChildSequences(
     } });
   }
   let serial = 0;
-  function fresh(kind: 'Count' | 'MapSlot'): string {
+  function fresh(kind: 'Count' | 'MapSlot' | 'Items' | 'RenderItem' | 'Item' | 'Index' | 'Context'): string {
     let name: string;
     do { name = `__mmdReactChild${kind}${serial++}`; } while (occupied.has(name));
     occupied.add(name);
@@ -329,11 +429,32 @@ export function specializeLinkedReactChildSequences(
   }
   for (const template of templates.values()) {
     if (!reached.has(template)) {
-      fail(template.entry, `component '${template.name}' has no finite linked caller`, template.owner);
+      fail(template.entry, `component '${template.name}' has no linked caller`, template.owner);
     }
     const callers = injections.filter(injection => injection.template === template);
+    const hasDynamic = callers.some(({ sequence }) => sequence.dynamic !== undefined);
+    if (hasDynamic && template.operations.some(operation => operation.kind === 'map') &&
+        callers.some(({ sequence }) => sequence.dynamic === undefined)) {
+      fail(template.entry, 'cannot mix finite and dynamic mapped callers yet', template.owner);
+    }
     for (const operation of template.operations) {
       if (operation.kind !== 'map') continue;
+      if (hasDynamic) {
+        if (!operation.intrinsic || !ast.isJSXElement(operation.wrapper)) {
+          fail(template.entry, 'dynamic map wrapper needs an intrinsic JSX element', operation.call);
+        }
+        if (operation.wrapper.openingElement.attributes.some(attribute =>
+          ast.isJSXAttribute(attribute) && ast.isJSXIdentifier(attribute.name) &&
+          attribute.name.name === 'key') && callers.some(({ sequence }) =>
+            sequence.dynamic?.jsx.openingElement.attributes.some(attribute =>
+              ast.isJSXAttribute(attribute) && ast.isJSXIdentifier(attribute.name) &&
+              attribute.name.name === 'key'))) {
+          fail(template.entry, 'cannot combine package and caller row keys', operation.call);
+        }
+        operation.dynamicProps = { items: fresh('Items'), renderItem: fresh('RenderItem'),
+          item: fresh('Item'), index: fresh('Index'), context: fresh('Context') };
+        continue;
+      }
       const length = callers.reduce((max, { sequence }) =>
         Math.max(max, sequence.rootEmpty ? 0 : sequence.values.length), 0);
       operation.slots = Array.from({ length }, () => fresh('MapSlot'));
@@ -343,8 +464,25 @@ export function specializeLinkedReactChildSequences(
   for (const { element, template, sequence } of injections) {
     for (const operation of template.operations) {
       if (operation.kind === 'count') {
+        const count = sequence.dynamic === undefined
+          ? ast.numericLiteral(sequence.rootEmpty ? 0 : sequence.values.length)
+          : ast.memberExpression(cloneNode(sequence.dynamic.source as BaseNode, true) as t.Identifier,
+            ast.identifier('length'));
         element.openingElement.attributes.push(ast.jsxAttribute(ast.jsxIdentifier(operation.prop),
-          ast.jsxExpressionContainer(ast.numericLiteral(sequence.rootEmpty ? 0 : sequence.values.length))));
+          ast.jsxExpressionContainer(count)));
+      } else if (operation.dynamicProps !== undefined && sequence.dynamic !== undefined) {
+        const index = sequence.dynamic.index?.name ?? fresh('Index');
+        const params = [cloneNode(sequence.dynamic.item as BaseNode, true) as t.Identifier,
+          ast.identifier(index),
+          ...(operation.captures.length === 0 ? [] : [ast.identifier(operation.dynamicProps.context)])];
+        element.openingElement.attributes.push(
+          ast.jsxAttribute(ast.jsxIdentifier(operation.dynamicProps.items),
+            ast.jsxExpressionContainer(cloneNode(sequence.dynamic.source as BaseNode, true) as t.Identifier)),
+          ast.jsxAttribute(ast.jsxIdentifier(operation.dynamicProps.renderItem),
+            ast.jsxExpressionContainer(ast.arrowFunctionExpression(
+              params, dynamicWrapper(operation, sequence.dynamic, index, operation.dynamicProps.context),
+            ))),
+        );
       } else if (!sequence.rootEmpty) {
         for (const [position, value] of sequence.values.entries()) {
           element.openingElement.attributes.push(ast.jsxAttribute(ast.jsxIdentifier(operation.slots[position]!),
@@ -357,7 +495,8 @@ export function specializeLinkedReactChildSequences(
   for (const template of templates.values()) {
     const param = template.owner.params[0] as t.ObjectPattern;
     for (const operation of template.operations) {
-      const props = operation.kind === 'count' ? [operation.prop] : operation.slots;
+      const props = operation.kind === 'count' ? [operation.prop] : operation.dynamicProps === undefined
+        ? operation.slots : [operation.dynamicProps.items, operation.dynamicProps.renderItem];
       for (const prop of props) {
         param.properties.push(ast.objectProperty(ast.identifier(prop),
           ast.identifier(prop), false, true));
@@ -371,7 +510,8 @@ export function specializeLinkedReactChildSequences(
       if (template.entry !== entry) continue;
       for (const operation of template.operations) {
         if (operation.kind === 'count') replacements.set(operation.call, ast.identifier(operation.prop));
-        else mapped.set(operation.call, mappedOutput(operation).children);
+        else mapped.set(operation.call, operation.dynamicProps === undefined
+          ? mappedOutput(operation).children : [dynamicMapCall(operation)]);
       }
     }
     const splices: Array<{ parent: t.JSXElement | t.JSXFragment; index: number;

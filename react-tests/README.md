@@ -29,4 +29,10 @@ at the caller.
 The row fixtures compile package `Children.map` wrappers around individual
 caller-owned render slots. Tests cover stateful child content, fragments,
 component children, empty nodes, callback indexes, a package wrapper
-component, package state, and changing props. Unknown child shapes diagnose.
+component, package state, and changing props. A single caller-owned
+`items.map(item => <JSX />)` child also lowers through MMD's keyed list and
+render callback path. The dynamic fixtures grow and shrink the caller list,
+check retained DOM identity, and update a package-owned wrapper through state
+and props. The dynamic callback must return one JSX element; its collection
+source is currently an identifier, and the package wrapper must have an
+intrinsic JSX root. Other unknown child shapes diagnose.

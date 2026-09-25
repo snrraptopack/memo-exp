@@ -314,8 +314,14 @@ passes each known caller child as an individual MMD render slot and expands
 the wrappers in the package component to the largest known caller arity.
 Child state and events stay caller-owned; wrapper components, props, and state
 stay package-owned. A missing child slot skips its wrapper. This finite case
-needs no new MMD primitive. An unknown-length child stream still needs an
-enumerable content-slot model rather than static unrolling and diagnoses now.
+needs no new MMD primitive. A caller expression shaped as a single
+`items.map(item => <JSX />)` child now uses MMD's keyed list region and
+caller-owned render callback adapter. The package owns the mapped wrapper and
+passes a live context getter to the adapter for its captured values. This
+required an optional third context argument in MMD's native cross-component
+render callback contract. The wrapper currently needs an intrinsic JSX root,
+and finite and dynamic callers cannot share one specialized package component.
+Other unknown child shapes still diagnose.
 General element values, `cloneElement`, and `isValidElement` remain open.
 
 ### 6.3 Custom hooks are linker-visible templates

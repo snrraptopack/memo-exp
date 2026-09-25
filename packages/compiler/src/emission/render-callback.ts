@@ -69,17 +69,19 @@ export function buildRenderCallbackAdapter(
   const jsx = callbackJsx(source);
   const first = source.params[0];
   const second = source.params[1];
+  const third = source.params[2];
   if (
     jsx === null ||
     source.params.length < 1 ||
-    source.params.length > 2 ||
+    source.params.length > 3 ||
     (!astFactory.isIdentifier(first) &&
       !astFactory.isObjectPattern(first) &&
       !astFactory.isArrayPattern(first)) ||
-    (second !== undefined && !astFactory.isIdentifier(second))
+    (second !== undefined && !astFactory.isIdentifier(second)) ||
+    (third !== undefined && !astFactory.isIdentifier(third))
   ) {
     throw componentPath.buildCodeFrameError(
-      'memo-dom: render callbacks take an item binding pattern and optional index, then return one JSX element',
+      'memo-dom: render callbacks take an item binding pattern, optional index and context, then return one JSX element',
     );
   }
 
@@ -96,6 +98,7 @@ export function buildRenderCallbackAdapter(
     ? itemPattern.name
     : itemBindings[0]!;
   const indexParam = second === undefined ? null : second.name;
+  const contextParam = third === undefined ? null : third.name;
 
   let keyExpression: t.Expression | null = null;
   jsx.openingElement.attributes = jsx.openingElement.attributes.filter(
@@ -197,6 +200,7 @@ export function buildRenderCallbackAdapter(
       cloneEstreeNode(itemPattern, true),
       cloneEstreeNode(rowId),
       ...(indexParam === null ? [] : [astFactory.identifier(indexParam)]),
+      ...(contextParam === null ? [] : [astFactory.identifier(contextParam)]),
     ],
     astFactory.blockStatement([
       cacheDecl(rowScope),
@@ -282,6 +286,7 @@ export function buildRenderCallbackAdapter(
           [
             cloneEstreeNode(itemPattern, true),
             ...(indexParam === null ? [] : [astFactory.identifier(indexParam)]),
+            ...(contextParam === null ? [] : [astFactory.identifier(contextParam)]),
           ],
           cloneEstreeNode(keyExpression),
         );

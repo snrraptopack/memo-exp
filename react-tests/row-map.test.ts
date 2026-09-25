@@ -59,3 +59,41 @@ it('diagnoses a second raw render of the mapped child slot', () => {
   expect(() => compileFixture({ entries: [appFile], packages: ['row-dual-kit'] }))
     .toThrow('cannot render raw children alongside a mapped child sequence');
 });
+
+it('maps a caller-owned list as it grows and shrinks', async () => {
+  const appFile = join(fixtureRoot, 'row-dynamic-list-app.tsx');
+  const compiled = compileFixture({ entries: [appFile], packages: ['row-kit'], outDir: 'out/row-dynamic' });
+  const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+  document.body.appendChild(app.App('App', null));
+  const labels = () => [...document.querySelectorAll('li.row')].map(node => node.textContent);
+  const counts = () => [...document.querySelectorAll('output')].map(node => node.textContent);
+  expect(labels()).toEqual(['A', 'B']);
+  expect(counts()).toEqual(['2']);
+  const retainedB = document.querySelectorAll('li.row')[1];
+  document.querySelector<HTMLButtonElement>('#add')!.click();
+  expect(labels()).toEqual(['A', 'B', 'C']);
+  expect(counts()).toEqual(['3']);
+  document.querySelector<HTMLButtonElement>('#remove')!.click();
+  expect(labels()).toEqual(['B', 'C']);
+  expect(counts()).toEqual(['2']);
+  expect(document.querySelectorAll('li.row')[0]).toBe(retainedB);
+});
+
+it('keeps package values live around a growing caller list', async () => {
+  const appFile = join(fixtureRoot, 'row-dynamic-capture-app.tsx');
+  const compiled = compileFixture({ entries: [appFile], packages: ['row-dynamic-capture-kit'],
+    outDir: 'out/row-dynamic-capture' });
+  const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+  document.body.appendChild(app.App('App', null));
+  const rows = () => [...document.querySelectorAll('li')].map(node => [node.textContent, node.className]);
+  expect(rows()).toEqual([['A', 'row'], ['B', 'row']]);
+  document.querySelector<HTMLButtonElement>('#package-toggle')!.click();
+  expect(rows()).toEqual([['A', 'active'], ['B', 'active']]);
+  document.querySelector<HTMLButtonElement>('#add')!.click();
+  expect(rows()).toEqual([['A', 'active'], ['B', 'active'], ['C', 'active']]);
+  document.querySelector<HTMLButtonElement>('#package-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('#app-toggle')!.click();
+  expect(rows()).toEqual([['A', 'selected'], ['B', 'selected'], ['C', 'selected']]);
+  document.querySelector<HTMLButtonElement>('#remove')!.click();
+  expect(rows()).toEqual([['B', 'selected'], ['C', 'selected']]);
+});

@@ -74,6 +74,8 @@ export interface MapSite {
   rowComp: string | null;
   /** Callback prop invoked when form === 'callback'. */
   renderCallback: t.Expression | null;
+  /** Callee-owned context passed to a caller-owned callback row. */
+  renderContext: t.Expression | null;
   /** Owning component name. */
   owner: string;
   /** Source key or source key plus a source-order occurrence suffix. */
@@ -101,6 +103,7 @@ interface RowPlan {
   form: MapSite['form'];
   rowComp: string | null;
   renderCallback: t.Expression | null;
+  renderContext: t.Expression | null;
 }
 
 function emptyListWhileUnresolved(
@@ -255,6 +258,7 @@ export function analyzeMapSite(
     form: row.form,
     rowComp: row.rowComp,
     renderCallback: row.renderCallback,
+    renderContext: row.renderContext,
     owner: ownerName,
     suffix,
     prefix: `${ownerName}/${suffix}`,
@@ -606,6 +610,8 @@ function analyzeRow(
         callback.renderInvocation.target,
         true,
       ),
+      renderContext: callback.renderInvocation.arguments.length === 3
+        ? cloneEstreeNode(callback.renderInvocation.arguments[2]!, true) : null,
     };
   }
   if (tag !== null && /^[A-Z]/.test(tag)) {
@@ -616,12 +622,14 @@ function analyzeRow(
       form: 'component',
       rowComp: tag,
       renderCallback: null,
+      renderContext: null,
     };
   }
   return {
     form: 'inline',
     rowComp: null,
     renderCallback: null,
+    renderContext: null,
   };
 }
 
@@ -633,11 +641,11 @@ function validateRenderInvocation(
   if (
     !astFactory.isIdentifier(callback.itemPattern) ||
     invocation.arguments.length < 1 ||
-    invocation.arguments.length > 2 ||
+    invocation.arguments.length > 3 ||
     !astFactory.isIdentifier(invocation.arguments[0], {
       name: callback.itemPattern.name,
     }) ||
-    (invocation.arguments.length === 2 &&
+    (invocation.arguments.length >= 2 &&
       (callback.indexParam === null ||
         !astFactory.isIdentifier(invocation.arguments[1], {
           name: callback.indexParam,

@@ -209,6 +209,32 @@ export function List() {
 `todos.push(...)`, `splice`, index writes — all reactive. Don't accumulate
 JSX in a mutable array; map the data.
 
+A component can own the collection while its caller owns each row's markup.
+Pass an inline `renderItem` callback and invoke it directly from the list map:
+
+```tsx
+function List({ items, renderItem }) {
+  let selected = false;
+  const className = selected ? 'selected' : 'row';
+  return <section>
+    <button onClick={() => selected = !selected}>toggle</button>
+    <ul>{items.map((item, index) =>
+      renderItem(item, index, () => ({ className })))}</ul>
+  </section>;
+}
+
+export function App() {
+  let items = [{ id: 1, label: 'one' }];
+  return <List items={items} renderItem={(item, index, context) =>
+    <li key={item.id} class={context().className}>{item.label}:{index}</li>} />;
+}
+```
+
+The optional third argument supplies a getter for values owned by `List`.
+The callback reads it during row updates, so changes to those values reach
+existing rows. The callback must return one JSX element; stable row keys stay
+with that element.
+
 ## The mental model
 
 Think of the whole app as a spreadsheet:

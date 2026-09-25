@@ -137,6 +137,7 @@ export function emitListRegion(
             ...(site.indexParam === null
               ? []
               : [astFactory.identifier(site.indexParam)]),
+            ...(site.renderContext === null ? [] : [cloneEstreeNode(site.renderContext, true)]),
           ]),
         ),
       ),
@@ -325,6 +326,7 @@ function buildCallbackRowCreate(
         ...(site.indexParam === null
           ? []
           : [astFactory.identifier(site.indexParam)]),
+        ...(site.renderContext === null ? [] : [cloneEstreeNode(site.renderContext, true)]),
       ],
     ),
   );
