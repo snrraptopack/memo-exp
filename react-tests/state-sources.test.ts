@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compile } from '../packages/compiler/src/compile';
@@ -21,12 +21,20 @@ beforeEach(() => {
   resetAccessTable();
   setScheduler((run) => run());
 });
-afterEach(() => resetScheduler());
+afterEach(() => {
+  resetScheduler();
+  vi.restoreAllMocks();
+});
 
 describe('instance state operations', () => {
   it('lowers useReducer into independent MMD state and dispatch writes', async () => {
     const { App } = await import(/* @vite-ignore */ pathToFileURL(reducer.emitted.get(reducerApp)!).href);
+    const evaluation = vi.spyOn(console, 'log').mockImplementation(() => {});
     document.body.appendChild(App('ReducerApp', null));
+    expect(evaluation.mock.calls.map(([name]) => name)).toEqual([
+      'reducer', 'initial argument', 'initializer',
+      'reducer', 'initial argument', 'initializer',
+    ]);
     const [first, second] = [...document.querySelectorAll('button')];
     expect([first?.textContent, second?.textContent]).toEqual(['4', '4']);
     first!.click();

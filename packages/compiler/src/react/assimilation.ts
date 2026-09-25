@@ -278,8 +278,11 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
   for (const operation of operations) {
     if (operation.kind === 'state' || operation.kind === 'reducer') {
       const initial = argument(operation.call, operation.kind === 'state' ? 0 : 1);
-      const stateInit = operation.kind === 'reducer' && operation.call.arguments.length === 3
-        ? ast.callExpression(copy(argument(operation.call, 2)!), [copy(initial!)])
+      const hasReducerInit = operation.kind === 'reducer' && operation.call.arguments.length === 3;
+      const initialArg = hasReducerInit ? fresh('InitialArg') : null;
+      const initializer = hasReducerInit ? fresh('Initializer') : null;
+      const stateInit = initialArg !== null && initializer !== null
+        ? ast.callExpression(ast.identifier(initializer), [ast.identifier(initialArg)])
         : initial === null ? ast.unaryExpression('void', ast.numericLiteral(0))
         : operation.kind === 'state' &&
           (ast.isArrowFunctionExpression(initial) || ast.isFunctionExpression(initial))
@@ -300,6 +303,12 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
         ...(reducer === null ? [] : [ast.variableDeclaration('const', [
           ast.variableDeclarator(ast.identifier(reducer), copy(argument(operation.call, 0)!)),
         ])]),
+        ...(initialArg === null || initializer === null ? [] : [
+          ast.variableDeclaration('const', [ast.variableDeclarator(
+            ast.identifier(initialArg), copy(initial!))]),
+          ast.variableDeclaration('const', [ast.variableDeclarator(
+            ast.identifier(initializer), copy(argument(operation.call, 2)!))]),
+        ]),
         ast.variableDeclaration('let', [ast.variableDeclarator(ast.identifier(operation.state), stateInit)]),
         ast.variableDeclaration('const', [ast.variableDeclarator(ast.identifier(operation.setter), setter)]),
       ];
