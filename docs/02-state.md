@@ -209,8 +209,9 @@ export function List() {
 `todos.push(...)`, `splice`, index writes — all reactive. Don't accumulate
 JSX in a mutable array; map the data.
 
-A component can own the collection while its caller owns each row's markup.
-Pass an inline `renderItem` callback and invoke it directly from the list map:
+A component can own a collection while its caller defines the markup for each
+row. In this example, `App` implements `renderItem` in the prop passed to
+`List`. `List` calls that function once for each item:
 
 ```tsx
 function List({ items, renderItem }) {
@@ -224,16 +225,23 @@ function List({ items, renderItem }) {
 }
 
 export function App() {
-  let items = [{ id: 1, label: 'one' }];
-  return <List items={items} renderItem={(item, index, context) =>
-    <li key={item.id} class={context().className}>{item.label}:{index}</li>} />;
+  const items = [{ id: 1, label: 'one' }];
+  return <List
+    items={items}
+    renderItem={(item, index, getListState) => {
+      return <li key={item.id} class={getListState().className}>
+        {item.label}:{index}
+      </li>;
+    }}
+  />;
 }
 ```
 
-The optional third argument supplies a getter for values owned by `List`.
-The callback reads it during row updates, so changes to those values reach
-existing rows. The callback must return one JSX element; stable row keys stay
-with that element.
+`renderItem` is an ordinary callback prop authored by `App`: its first two
+arguments are the current item and index. `List` supplies the optional third
+argument, `getListState`, which returns its current `className`. When the
+button changes `selected`, existing rows read the new class name without
+losing their keyed DOM nodes. The callback must return one JSX element.
 
 ## The mental model
 
