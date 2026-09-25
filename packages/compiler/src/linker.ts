@@ -58,6 +58,7 @@ import {
 import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest } from './linking/discovery';
 import { specializeLinkedReactHooks } from './react/custom-hooks';
+import { specializeLinkedReactChildSequences } from './react/child-sequences';
 
 export interface CompiledComponentExport {
   exported: string;
@@ -561,6 +562,7 @@ function compileLinkedModules(
   }
 
   specializeLinkedReactHooks(entries, options);
+  specializeLinkedReactChildSequences(entries, options);
 
   const collectedRoutes = [...entries.values()].flatMap((entry) => {
     try {

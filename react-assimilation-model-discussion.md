@@ -301,6 +301,15 @@ Finite dynamic tag candidates can use MMD's existing dynamic-tag regions;
 unbounded targets diagnose. This is a deliberate package-coverage limit. It
 also replaces the `isValidElement` DOM-node shortcut with a source-level rule.
 
+The first implemented child-sequence slice is `Children.count(children)` for
+statically known JSX callers. The React package component observes a scalar
+count while its children remain caller-owned MMD mount slots. A fragment is
+one source child even if it mounts several DOM nodes; an explicit `null` child
+also contributes to the count while mounting nothing. Unknown expressions
+diagnose at the call site. This establishes the caller-to-package flow, but
+does not yet construct general element values or support `Children.map`,
+`cloneElement`, and `isValidElement`.
+
 ### 6.3 Custom hooks are linker-visible templates
 
 Analyze a custom hook once as a template of local state, derivations, owned
