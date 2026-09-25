@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 
 describe('linker identifier lifecycle', () => {
+  it('links named component reexports through a barrel and erases type-only reexports', () => {
+    const output = compileModules({
+      './Inner.tsx': `export function Badge({ label }) { return <span>{label}</span>; }`,
+      './types.ts': `export interface BadgeOptions { label: string }`,
+      './barrel.ts': `export { Badge as Label } from './Inner';
+        export type { BadgeOptions } from './types';`,
+      './App.tsx': `import { Label } from './barrel';
+        export function App() { return <div><Label label="ready" /></div>; }`,
+    });
+    expect(output['./App.tsx']).toContain('Label(');
+    expect(output['./barrel.ts']).not.toContain('BadgeOptions');
+    expect(output['./barrel.ts']).toContain('export { __mmdReexport0 as Label }');
+  });
+
   it('initializes generated identifiers before manifest analysis', () => {
     const output = compileModules(
       {

@@ -225,7 +225,24 @@ function linkManifestWorklist(
 ): Map<string, ModuleManifest> {
   const manifests = new Map(initial);
   const importers = reverseModuleDependencies(entries, manifests, options);
-  const pending = [...entries.keys()];
+  // Analyze defining modules before their importers. An exported import may
+  // acquire its component shape from another module, so an importer cannot
+  // validate JSX against the initial discovery placeholder.
+  const pending: string[] = [];
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const visit = (id: string): void => {
+    if (visited.has(id) || visiting.has(id)) return;
+    visiting.add(id);
+    for (const ref of manifests.get(id)!.imports) {
+      const dependency = resolveModule(id, ref.source, entries, options);
+      if (dependency !== undefined) visit(dependency.id);
+    }
+    visiting.delete(id);
+    visited.add(id);
+    pending.push(id);
+  };
+  for (const id of entries.keys()) visit(id);
   const queued = new Set(pending);
   const maximumAnalyses = Math.max(16, entries.size * entries.size * 4);
   let analyses = 0;

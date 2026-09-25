@@ -54,6 +54,7 @@ export const importNamespaceSpecifier =
   estree.importNamespaceSpecifier;
 export const exportNamedDeclaration =
   estree.exportNamedDeclaration;
+export const exportSpecifier = estree.exportSpecifier;
 export const jsxIdentifier = estree.jsxIdentifier;
 export const jsxAttribute = estree.jsxAttribute;
 export const jsxExpressionContainer =

@@ -8,6 +8,7 @@ import { initializeGeneratedIdentifiers } from '../identifiers';
 import { scanExternalReactiveImports } from '../external-reactivity';
 import { analyzeRouterJsx } from '../router';
 import { assimilateReactSource } from '../react/assimilation';
+import { normalizeNamedReexports } from '../linking/reexports';
 import {
   scanTransparentSourceImports,
   lowerTransparentGroups,
@@ -17,6 +18,7 @@ import {
 } from '../data-sources';
 
 export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void {
+  normalizeNamedReexports(programPath.node);
   normalizeComponentDeclarations(programPath);
   assimilateReactSource(ctx, programPath);
   installLinkedDynamicComponentImports(ctx, programPath);

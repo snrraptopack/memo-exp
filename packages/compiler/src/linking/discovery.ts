@@ -36,6 +36,7 @@ import { compilerError } from '../errors';
 import type { CompilerRouteDefinition } from '../router';
 import { analyzeRoutedPreparations } from '../routed';
 import { compilerOptions } from './options';
+import { normalizeNamedReexports } from './reexports';
 import type {
   CompileModulesOptions,
   ComponentPropUsage,
@@ -438,6 +439,7 @@ export function analyzeManifest(
       return compilerError(message, entry.id, at as unknown as BaseNode);
     },
   };
+        normalizeNamedReexports(compilerPath.node);
         const authoredImports = importRefs(compilerPath.node);
         const ctx = createCtx({
           ...compilerOptions(options, rootId),
@@ -463,6 +465,24 @@ export function analyzeManifest(
             exports[exported] = {
               type: 'component',
               ...analyzedComponentExport(ctx, entry.id, local),
+            };
+            continue;
+          }
+          const importedComponent = ctx.importedComponents.get(local);
+          if (importedComponent !== undefined) {
+            exports[exported] = {
+              type: 'component',
+              key: importedComponent.key,
+              props: [...importedComponent.props],
+              objectProps: importedComponent.objectProps,
+              acceptsUnknownProps: importedComponent.acceptsUnknownProps,
+              hasWholeDefault: importedComponent.hasWholeDefault,
+              listLightweight: importedComponent.listLightweight,
+              delegatedEvents: [...(importedComponent.delegatedEvents ?? [])],
+              renderProps: [...(importedComponent.renderProps ?? [])],
+              renderCallbacks: [...(importedComponent.renderCallbacks ?? [])],
+              refProps: [...(importedComponent.refProps ?? [])],
+              subtreeReads: [...(importedComponent.subtreeReads ?? [])],
             };
             continue;
           }
@@ -579,6 +599,7 @@ export function discoverManifest(
       return compilerError(message, entry.id, at as unknown as BaseNode);
     },
   };
+        normalizeNamedReexports(compilerPath.node);
         normalizeComponentDeclarations(compilerPath);
         const locals = new Map<string, LinkedExport>();
         const tagCandidates = moduleStateStringCandidates(compilerPath.node);

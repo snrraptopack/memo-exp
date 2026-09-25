@@ -8,14 +8,18 @@ import * as ast from '../ast/factory';
 import { analyzeScope, cloneNode, walkAst, type BaseNode } from '../ast';
 import { nodeHasJsx, type Ctx, type ProgramPath } from '../context';
 
-type HookName = 'useState' | 'useMemo' | 'useCallback' | 'useEffect';
+type HookName = 'useState' | 'useReducer' | 'useMemo' | 'useCallback' |
+  'useEffect' | 'useSyncExternalStore';
 function isReactSpecifier(source: string): boolean {
   return source === 'react' || source.startsWith('react/') ||
     source === 'react-dom' || source.startsWith('react-dom/');
 }
 type Operation =
-  | { kind: 'state'; statement: t.VariableDeclaration; call: t.CallExpression;
+  | { kind: 'state' | 'reducer'; statement: t.VariableDeclaration; call: t.CallExpression;
       state: string; setter: string; owner: t.FunctionDeclaration }
+  | { kind: 'external-store'; statement: t.VariableDeclaration;
+      owner: t.FunctionDeclaration; state: string; subscribe: t.Expression;
+      getSnapshot: t.Expression }
   | { kind: 'memo'; declarator: t.VariableDeclarator; value: t.Expression }
   | { kind: 'callback'; declarator: t.VariableDeclarator;
       value: t.Expression }
@@ -121,7 +125,10 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
   }
 
   const operations: Operation[] = [];
-  const accepted = new Set<HookName>(['useState', 'useMemo', 'useCallback', 'useEffect']);
+  const accepted = new Set<HookName>([
+    'useState', 'useReducer', 'useMemo', 'useCallback', 'useEffect',
+    'useSyncExternalStore',
+  ]);
   const seenCalls = new Set<t.CallExpression>();
   function fail(message: string, node: BaseNode): never {
     throw programPath.buildCodeFrameError(`memo-dom: React assimilation ${message}`, node as t.Node);
@@ -176,14 +183,14 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
         fail(`requires '${name}' in a top-level JSX component; custom hook and nested call ownership is not implemented`, call);
       }
       const parent = analysis.parentByNode.get(call as BaseNode);
-      if (name === 'useState') {
+      if (name === 'useState' || name === 'useReducer') {
         const declarator = ast.isVariableDeclarator(parent) && parent.init === call ? parent : null;
         const statement = declarator === null ? null : analysis.parentByNode.get(declarator as BaseNode);
         if (declarator === null || !ast.isArrayPattern(declarator.id) ||
             !ast.isVariableDeclaration(statement) || statement.declarations.length !== 1 ||
             analysis.parentByNode.get(statement as BaseNode) !== owner.body ||
-            call.arguments.length > 1) {
-          fail(`requires a direct component declaration: const [value, setValue] = useState(initial)`, call);
+            call.arguments.length > (name === 'useState' ? 1 : 3)) {
+          fail(`requires a direct component declaration: const [value, setValue] = ${name}(...)`, call);
         }
         const elements = declarator.id.elements;
         if (elements.length !== 2 || !ast.isIdentifier(elements[0]) || !ast.isIdentifier(elements[1])) {
@@ -191,13 +198,37 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
         }
         const [state, setter] = elements as [t.Identifier, t.Identifier];
         if (state.name === setter.name) fail(`requires distinct state and setter names`, call);
-        const initial = argument(call, 0);
-        if (call.arguments.length === 1 && initial === null) fail(`requires an expression initializer`, call);
-        if (initial !== null && (ast.isArrowFunctionExpression(initial) || ast.isFunctionExpression(initial)) &&
-            returnedExpression(initial) === null) {
-          fail(`requires a synchronous zero-argument lazy initializer with one returned expression`, initial);
+        if (name === 'useState') {
+          const initial = argument(call, 0);
+          if (call.arguments.length === 1 && initial === null) fail(`requires an expression initializer`, call);
+          if (initial !== null && (ast.isArrowFunctionExpression(initial) || ast.isFunctionExpression(initial)) &&
+              returnedExpression(initial) === null) {
+            fail(`requires a synchronous zero-argument lazy initializer with one returned expression`, initial);
+          }
+        } else if (call.arguments.length < 2 || argument(call, 0) === null ||
+            argument(call, 1) === null ||
+            (call.arguments.length === 3 && argument(call, 2) === null)) {
+          fail(`requires useReducer(reducer, initialArg, optionalInit)`, call);
         }
-        operations.push({ kind: 'state', statement, call, state: state.name, setter: setter.name, owner });
+        operations.push({ kind: name === 'useState' ? 'state' : 'reducer',
+          statement, call, state: state.name, setter: setter.name, owner });
+      } else if (name === 'useSyncExternalStore') {
+        const declarator = ast.isVariableDeclarator(parent) && parent.init === call ? parent : null;
+        const statement = declarator === null ? null : analysis.parentByNode.get(declarator as BaseNode);
+        if (declarator === null || !ast.isIdentifier(declarator.id) ||
+            !ast.isVariableDeclaration(statement) || statement.declarations.length !== 1 ||
+            analysis.parentByNode.get(statement as BaseNode) !== owner.body ||
+            call.arguments.length !== 2 || argument(call, 0) === null ||
+            argument(call, 1) === null) {
+          fail(`requires a direct useSyncExternalStore(subscribe, getSnapshot) binding; the server snapshot needs a defined MMD target`, call);
+        }
+        if (analysis.nodeToScope.get(call as BaseNode)?.getBinding('effect') !== undefined ||
+            analysis.nodeToScope.get(call as BaseNode)?.getBinding('Object') !== undefined) {
+          fail(`cannot lower useSyncExternalStore while 'effect' or 'Object' is shadowed`, call);
+        }
+        operations.push({ kind: 'external-store', statement, owner,
+          state: declarator.id.name,
+          subscribe: argument(call, 0)!, getSnapshot: argument(call, 1)! });
       } else if (name === 'useMemo' || name === 'useCallback') {
         const declarator = ast.isVariableDeclarator(parent) && parent.init === call ? parent : null;
         const statement = declarator === null ? null : analysis.parentByNode.get(declarator as BaseNode);
@@ -245,29 +276,73 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
     return name;
   };
   for (const operation of operations) {
-    if (operation.kind === 'state') {
-      const initial = argument(operation.call, 0);
-      const stateInit = initial === null ? ast.unaryExpression('void', ast.numericLiteral(0))
-        : ast.isArrowFunctionExpression(initial) || ast.isFunctionExpression(initial)
+    if (operation.kind === 'state' || operation.kind === 'reducer') {
+      const initial = argument(operation.call, operation.kind === 'state' ? 0 : 1);
+      const stateInit = operation.kind === 'reducer' && operation.call.arguments.length === 3
+        ? ast.callExpression(copy(argument(operation.call, 2)!), [copy(initial!)])
+        : initial === null ? ast.unaryExpression('void', ast.numericLiteral(0))
+        : operation.kind === 'state' &&
+          (ast.isArrowFunctionExpression(initial) || ast.isFunctionExpression(initial))
           ? ast.callExpression(copy(initial), []) : copy(initial);
       const next = fresh('Next');
+      const reducer = operation.kind === 'reducer' ? fresh('Reducer') : null;
       const setter = ast.arrowFunctionExpression([ast.identifier(next)], ast.blockStatement([
         ast.expressionStatement(ast.assignmentExpression('=', ast.identifier(operation.state),
-          ast.conditionalExpression(
+          reducer !== null
+          ? ast.callExpression(ast.identifier(reducer), [ast.identifier(operation.state), ast.identifier(next)])
+          : ast.conditionalExpression(
             ast.binaryExpression('===', ast.unaryExpression('typeof', ast.identifier(next)), ast.stringLiteral('function')),
             ast.callExpression(ast.identifier(next), [ast.identifier(operation.state)]),
             ast.identifier(next),
           ))),
       ]));
       const replacements = [
+        ...(reducer === null ? [] : [ast.variableDeclaration('const', [
+          ast.variableDeclarator(ast.identifier(reducer), copy(argument(operation.call, 0)!)),
+        ])]),
         ast.variableDeclaration('let', [ast.variableDeclarator(ast.identifier(operation.state), stateInit)]),
         ast.variableDeclaration('const', [ast.variableDeclarator(ast.identifier(operation.setter), setter)]),
       ];
       const index = operation.owner.body.body.indexOf(operation.statement);
       operation.owner.body.body.splice(index, 1, ...replacements);
+    } else if (operation.kind === 'external-store') {
+      const subscribe = fresh('Subscribe');
+      const getSnapshot = fresh('GetSnapshot');
+      const next = fresh('Snapshot');
+      const onChange = fresh('OnChange');
+      const unsubscribe = fresh('Unsubscribe');
+      const update = ast.arrowFunctionExpression([], ast.blockStatement([
+        ast.variableDeclaration('const', [ast.variableDeclarator(ast.identifier(next),
+          ast.callExpression(ast.identifier(getSnapshot), []))]),
+        ast.ifStatement(ast.unaryExpression('!', ast.callExpression(
+          ast.memberExpression(ast.identifier('Object'), ast.identifier('is')),
+          [ast.identifier(operation.state), ast.identifier(next)],
+        )), ast.blockStatement([
+          ast.expressionStatement(ast.assignmentExpression('=', ast.identifier(operation.state),
+            ast.identifier(next))),
+        ])),
+      ]));
+      const effect = ast.callExpression(ast.identifier('effect'), [
+        ast.arrowFunctionExpression([], ast.blockStatement([
+          ast.variableDeclaration('const', [ast.variableDeclarator(ast.identifier(onChange), update)]),
+          ast.variableDeclaration('const', [ast.variableDeclarator(ast.identifier(unsubscribe),
+            ast.callExpression(ast.identifier(subscribe), [ast.identifier(onChange)]))]),
+          ast.expressionStatement(ast.callExpression(ast.identifier(onChange), [])),
+          ast.returnStatement(ast.identifier(unsubscribe)),
+        ])),
+      ]);
+      const replacements = [
+        ast.variableDeclaration('const', [ast.variableDeclarator(ast.identifier(subscribe), copy(operation.subscribe))]),
+        ast.variableDeclaration('const', [ast.variableDeclarator(ast.identifier(getSnapshot), copy(operation.getSnapshot))]),
+        ast.variableDeclaration('let', [ast.variableDeclarator(ast.identifier(operation.state),
+          ast.callExpression(ast.identifier(getSnapshot), []))]),
+        ast.expressionStatement(effect),
+      ];
+      const index = operation.owner.body.body.indexOf(operation.statement);
+      operation.owner.body.body.splice(index, 1, ...replacements);
     } else if (operation.kind === 'memo' || operation.kind === 'callback') {
       operation.declarator.init = copy(operation.value);
-    } else {
+    } else if (operation.kind === 'effect') {
       operation.call.callee = ast.identifier('effect');
       operation.call.arguments = [copy(operation.callback)];
     }

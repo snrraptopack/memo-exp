@@ -372,3 +372,24 @@ each, record the plan, lower once, and test the generated MMD behavior. These
 cases exercise all three hard representations without adding another
 API-specific preparatory pass. Once they hold, extend the API table by target
 operation rather than by package name.
+
+## 7. Rewrite checkpoint
+
+The rewrite now selects React source by opted-in package identity and validates
+one translation plan before changing a module AST. The instance category covers
+direct `useState` and `useReducer` bindings. Derived values and stable closures
+cover direct `useMemo` and `useCallback`; an owned process covers direct
+`useEffect`. `useSyncExternalStore(subscribe, getSnapshot)` uses one MMD
+instance binding and owned subscription. It reads the snapshot again after
+subscribing to close the mount-time gap, compares with `Object.is`, and disposes
+the returned subscription with the owner. Its third server-snapshot argument
+is diagnosed until an SSR target operation is specified.
+
+The independent [React test suite](react-tests/README.md) compiles authored
+package files through the linker and exercises DOM updates, separate instances,
+effect cleanup, reducer dispatch, external notifications, and subscription
+disposal. Named package reexports now link through the shared compiler. The
+current proof covers those source shapes, not a whole installed library.
+Custom hooks crossing modules, render-value inspection/escape, general
+context, and host DOM protocol translation remain open. The first-slice cases
+above remain the acceptance target for the broader rewrite.

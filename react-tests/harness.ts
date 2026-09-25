@@ -54,7 +54,14 @@ export class FixtureGraph {
     if (reactSpecifier(specifier)) return undefined;
     if (specifier.startsWith('.') || isAbsolute(specifier)) {
       const importerFile = this.virtualFiles.get(importer) ?? importer;
-      return this.localFile(resolve(dirname(importerFile), specifier));
+      const file = this.localFile(resolve(dirname(importerFile), specifier));
+      if (file === undefined) return undefined;
+      const localId = relative(fixtureRoot, file).replaceAll('\\', '/');
+      if (this.packages.some((name) => localId.startsWith(`${name}/`))) {
+        this.virtualFiles.set(localId, file);
+        return localId;
+      }
+      return file;
     }
     if (this.packages.some((name) => specifier === name || specifier.startsWith(`${name}/`))) {
       const local = this.localFile(join(fixtureRoot, specifier));
