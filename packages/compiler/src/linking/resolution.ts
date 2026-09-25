@@ -194,6 +194,7 @@ export function linkImports(
     } else if (targetExport.type === 'value') {
       linked[ref.local] = {
         type: 'value',
+        stable: targetExport.stable,
       };
       continue;
     } else {

@@ -37,6 +37,7 @@ import type { CompilerRouteDefinition } from '../router';
 import { analyzeRoutedPreparations } from '../routed';
 import { compilerOptions } from './options';
 import { normalizeNamedReexports } from './reexports';
+import { isStablePrimitiveBinding } from './stable-values';
 import type {
   CompileModulesOptions,
   ComponentPropUsage,
@@ -560,7 +561,11 @@ export function analyzeManifest(
             };
             continue;
           }
-          exports[exported] = { type: 'value' };
+          exports[exported] = {
+            type: 'value',
+            stable: ctx.stableValueImports.has(local) ||
+              isStablePrimitiveBinding(ctx.astAnalysis?.rootScope.bindings.get(local), local),
+          };
         }
         manifest = {
           exports,

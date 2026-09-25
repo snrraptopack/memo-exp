@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
-const initial = 3;
+const moduleInitial = 1;
 
 export function useCounter() {
-  const [count, setCount] = useState(initial);
+  const [count, setCount] = useState(moduleInitial);
   return [count, setCount];
 }

@@ -1,13 +1,7 @@
-import { useState } from 'react';
-
-const moduleInitial = 1;
-
-export function useCounter() {
-  const [count, setCount] = useState(moduleInitial);
-  return [count, setCount];
-}
+import { useCounter } from './useCounter';
 
 export function Counter() {
+  const moduleInitial = 99;
   const [count, setCount] = useCounter();
-  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+  return <button title={String(moduleInitial)} onClick={() => setCount(count + 1)}>{count}</button>;
 }

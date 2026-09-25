@@ -389,18 +389,22 @@ The linker now specializes a bounded exported custom hook across package files
 before manifest discovery. Its direct, top-level tuple call becomes statements
 owned by the caller component; fresh lexical names prevent collisions when a
 component calls the hook twice. The ordinary React operation plan then lowers
-those statements to MMD. The hook definition and import disappear from emitted
-JavaScript. A bare module import still evaluates the hook's source module so
-its other top-level effects keep their ESM meaning. Local hook calls and named
+those statements to MMD. The callable hook binding and call disappear from
+emitted JavaScript. Its source module still evaluates so other top-level
+effects keep their ESM meaning. A captured primitive `const` keeps its source
+module identity through a compiler-generated ESM export and import, including
+named barrels. The linker proves that value stable, so a lowered `useMemo`
+expression participates in MMD's ordinary per-instance derivation replay.
+Local hook calls and named
 barrel reexports use the same template path. An MMD application component can
 own a hook imported from an opted-in package without enabling authored React
-imports in that application. A source-module capture or unsupported call
-shape gets a diagnostic rather than a runtime stub. Function declarations,
+imports in that application. Other source-module captures and unsupported call
+shapes get diagnostics rather than runtime stubs. Function declarations,
 arrow-function variables, and anonymous function-expression variables share
 the template path. This initial template form requires named React API
 imports, plain positional parameters, and a final tuple of local bindings.
-Captures with canonical source identity, general
-return flow, and wildcard reexports still need a linker contract.
+Mutable, object, function, and imported captures, general return flow, and
+wildcard reexports still need a linker contract.
 
 The independent [React test suite](react-tests/README.md) compiles authored
 package files through the linker and exercises DOM updates, separate instances,

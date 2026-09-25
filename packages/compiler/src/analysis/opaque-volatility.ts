@@ -324,7 +324,8 @@ export function scanOpaqueVolatility(ctx: Ctx): void {
   const opaqueImports = [...programBindings]
     .filter(([name, binding]) => {
       if (!bindingIsExternalImport(binding)) return false;
-      if (ctx.importedState.has(name) || ctx.importedComponents.has(name)) {
+      if (ctx.importedState.has(name) || ctx.importedComponents.has(name) ||
+          ctx.stableValueImports.has(name)) {
         return false;
       }
       const summary = ctx.importedFunctions.get(name);

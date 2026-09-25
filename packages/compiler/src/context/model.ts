@@ -252,6 +252,8 @@ export interface LinkedComponentPropSource {
 
 export interface LinkedValueImport {
   type: 'value';
+  /** A primitive const with no runtime writes in its source module. */
+  stable?: boolean;
 }
 
 export type LinkedImport =
@@ -465,6 +467,7 @@ export interface Ctx {
   importedFunctions: Map<string, FnSummary>;
   importedComponents: Map<string, LinkedComponentImport>;
   importedValues: Set<string>;
+  stableValueImports: Set<string>;
   linkedComponentPaths: Map<string, string[]>;
   /** Graph-linked keyed-row modes for declarations in this module. */
   linkedComponentRows: Map<string, LinkedComponentRowUse[]>;
@@ -632,6 +635,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   const importedFunctions = new Map<string, FnSummary>();
   const importedComponents = new Map<string, LinkedComponentImport>();
   const importedValues = new Set<string>();
+  const stableValueImports = new Set<string>();
   for (const [local, linked] of Object.entries(opts.linkedImports ?? {})) {
     if (linked.type === 'state') {
       state.set(local, linked.kind);
@@ -680,6 +684,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
       });
     } else if (linked.type === 'value') {
       importedValues.add(local);
+      if (linked.stable === true) stableValueImports.add(local);
     } else {
       importedComponents.set(local, linked);
     }
@@ -749,6 +754,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     importedFunctions,
     importedComponents,
     importedValues,
+    stableValueImports,
     transparentModuleSources,
     transparentSourceProps: new Map(),
     transparentPolicyParams: new Map(),

@@ -23,7 +23,7 @@ describe('linked custom hooks', () => {
     const emitted = result.output['hook-kit/index.tsx']!;
     const source = result.output['hook-kit/useCounter.ts']!;
     expect(emitted).not.toMatch(/\buseCounter\s*\(|from ['"]react['"]/);
-    expect(emitted).toMatch(/import ['"]\.\/useCounter['"]/);
+    expect(emitted).toMatch(/from ['"]\.\/useCounter['"]/);
     expect(source).not.toMatch(/useCounter|from ['"]react['"]/);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { App } = await import(/* @vite-ignore */ pathToFileURL(result.emitted.get(app)!).href);
@@ -37,10 +37,23 @@ describe('linked custom hooks', () => {
     expect([first?.textContent, second?.textContent]).toEqual(['4:22', '4:22']);
   });
 
-  it('diagnoses a source-module capture before deleting the hook export', () => {
+  it('preserves a source-module capture when the caller shadows its name', async () => {
     const entry = join(fixtureRoot, 'hook-capture-app.tsx');
-    expect(() => compileFixture({ entries: [entry], packages: ['hook-capture-kit'] }))
-      .toThrow("captures module binding 'moduleInitial'");
+    const captured = compileFixture({ entries: [entry], packages: ['hook-capture-kit'],
+      outDir: 'out/captured-hooks' });
+    const { App } = await import(/* @vite-ignore */ pathToFileURL(captured.emitted.get(entry)!).href);
+    document.body.appendChild(App('CaptureHookApp', null));
+    const button = document.querySelector('button')!;
+    expect(button.title).toBe('99');
+    expect(button.textContent).toBe('1');
+    button.click();
+    expect(button.textContent).toBe('2');
+  });
+
+  it('diagnoses a capture whose update behavior is not proven', () => {
+    const entry = join(fixtureRoot, 'hook-object-capture-app.tsx');
+    expect(() => compileFixture({ entries: [entry], packages: ['hook-object-capture-kit'] }))
+      .toThrow("capture 'settings' needs a stable primitive const");
   });
 
   it('specializes a local hook through the same owner plan', async () => {
@@ -60,8 +73,8 @@ describe('linked custom hooks', () => {
     const entry = join(fixtureRoot, 'hook-barrel-app.tsx');
     const barrel = compileFixture({ entries: [entry], packages: ['hook-barrel-kit'],
       outDir: 'out/barrel-hooks' });
-    expect(barrel.output['hook-barrel-kit/hooks.ts']).not.toMatch(/export.*useCounter/);
-    expect(barrel.output['hook-barrel-kit/hook-public.ts']).not.toMatch(/export.*useCounter/);
+    expect(barrel.output['hook-barrel-kit/hooks.ts']).not.toMatch(/\bexport\s*\{[^}]*\buseCounter\b/);
+    expect(barrel.output['hook-barrel-kit/hook-public.ts']).not.toMatch(/\bexport\s*\{[^}]*\buseCounter\b/);
     expect(barrel.output['hook-barrel-kit/index.tsx']).not.toMatch(/\buseCounter\s*\(/);
     const { App } = await import(/* @vite-ignore */ pathToFileURL(barrel.emitted.get(entry)!).href);
     document.body.appendChild(App('BarrelHookApp', null));

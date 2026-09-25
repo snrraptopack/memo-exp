@@ -54,7 +54,7 @@ export interface ComponentExport extends ComponentExportInfo {
   type: 'component';
 }
 
-export interface ValueExport { type: 'value' }
+export interface ValueExport { type: 'value'; stable?: boolean }
 
 export type LinkedExport =
   | StateExport
