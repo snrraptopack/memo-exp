@@ -24,7 +24,7 @@ it('specializes a package compound component with its caller-owned child sequenc
   const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
   document.body.appendChild(app.App('App', null));
   expect([...document.querySelectorAll('output')].map(node => node.textContent))
-    .toEqual(['2', '0', '1', '1']);
+    .toEqual(['2', '0', '1', '0']);
   expect([...document.querySelectorAll('section div span')].map(node => node.textContent))
     .toEqual(['A', 'B', 'C', 'D']);
 });

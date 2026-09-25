@@ -22,5 +22,11 @@ The compound child fixture exercises the first bounded child-sequence
 observation: `Children.count(children)` in a package component. The linker
 reads each known caller's JSX children, passes the count as a scalar component
 input, and leaves the actual children in MMD's caller-owned mount slot.
-Fragments count as one child and explicit empty expressions still count as
-React child nodes. An unknown child expression is diagnosed at the caller.
+Fragments count as one child. A sole `null` children value counts as zero;
+`null` in a child array counts as one. An unknown child expression is diagnosed
+at the caller.
+
+The row fixture compiles a package `Children.map` wrapper into a caller-owned
+JSX render prop. Its tests mount stateful child content, fragments, component
+children, empty nodes, and a callback index. Unknown child shapes and callback
+captures produce diagnostics.
