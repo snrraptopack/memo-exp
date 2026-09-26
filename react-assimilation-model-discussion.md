@@ -319,14 +319,16 @@ needs no new MMD primitive. A caller expression shaped as a single
 caller-owned render callback adapter. The package owns the mapped wrapper and
 passes a live context getter to the adapter for its captured values. This
 required an optional third context argument in MMD's native cross-component
-render callback contract. The wrapper can use an intrinsic root or a top-level
-package component root exposed through named exports or unambiguous star
-exports. The linker forwards explicit exports for that component along the
-chain, along with a compiler-only wrapper alias. Ambiguous star paths
-diagnose. MMD mounts the caller's child in its render slot and updates the wrapper's
-props from the live context. Nested package components remain outside this
-bounded shape, and finite and dynamic callers cannot share one
-specialized component. Other unknown child shapes still diagnose.
+render callback contract. The wrapper can use an intrinsic root, a top-level
+package component root, or top-level package components nested under intrinsic
+elements. The linker exposes those package functions through compiler-only
+exports, forwards them along named or unambiguous star-export chains, and
+imports caller-side aliases for the render callback. Each keyed row mounts
+its own package component instance, so local state survives row and prop
+updates. Ambiguous star paths diagnose. MMD mounts the caller's child in its
+render slot and updates wrapper props from the live context. Finite and dynamic
+callers cannot share one specialized component. Other unknown child shapes
+still diagnose.
 General element values, `cloneElement`, and `isValidElement` remain open.
 
 ### 6.3 Custom hooks are linker-visible templates

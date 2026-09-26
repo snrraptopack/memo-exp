@@ -39,4 +39,9 @@ root or a top-level package component root exposed through a named export.
 Both `export { Name } from './module'` and unambiguous
 `export * from './module'` barrels work. The component keeps its children slot
 and live props.
+
+An intrinsic wrapper can also contain a top-level package component. Each
+dynamic row mounts its own component instance, retains its state across keyed
+list updates, and receives live package props.
+
 Other unknown child shapes diagnose.

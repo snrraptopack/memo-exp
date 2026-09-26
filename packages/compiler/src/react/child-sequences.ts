@@ -22,9 +22,8 @@ type ChildOperation =
   | { kind: 'count'; call: t.CallExpression; prop: string }
   | { kind: 'map'; call: t.CallExpression; slots: string[];
       wrapper: t.JSXElement | t.JSXFragment; parameter: string;
-      indexParameter?: string; intrinsic: boolean; componentRoot?: string;
-      nestedComponent: boolean; captures: string[];
-      dynamicComponent?: { local: string; exported: string };
+      indexParameter?: string; componentTags: string[]; unsupportedTags: boolean;
+      captures: string[]; dynamicComponents?: Map<string, string>;
       dynamicProps?: { items: string; renderItem: string; item: string; index: string;
         context: string } };
 
@@ -163,18 +162,17 @@ function mapOperation(
       fail(entry, 'cannot shadow a map callback parameter inside its JSX wrapper', node);
     }
   } });
-  let intrinsic = true;
-  let nestedComponent = false;
-  const componentRoot = ast.isJSXElement(returned) && ast.isJSXIdentifier(returned.openingElement.name) &&
-    /^[A-Z]/.test(returned.openingElement.name.name) ? returned.openingElement.name.name : undefined;
+  let unsupportedTags = false;
+  const componentTags = new Set<string>();
   const captures = new Set<string>();
   const wrapperNodes = new Set<BaseNode>();
   walkAst(returned as BaseNode, { enter(node) { wrapperNodes.add(node); } });
   walkAst(returned as BaseNode, { enter(node, parentNode, key) {
-    if (ast.isJSXElement(node) && (!ast.isJSXIdentifier(node.openingElement.name) ||
-        /^[A-Z]/.test(node.openingElement.name.name))) {
-      intrinsic = false;
-      if (node !== returned) nestedComponent = true;
+    if (ast.isJSXElement(node)) {
+      if (!ast.isJSXIdentifier(node.openingElement.name)) unsupportedTags = true;
+      else if (/^[A-Z]/.test(node.openingElement.name.name)) {
+        componentTags.add(node.openingElement.name.name);
+      }
     }
     if (!ast.isIdentifier(node) || !isReferenceIdentifier(parentNode, key)) return;
     const resolved = analysis.nodeToScope.get(node)?.getBinding(node.name);
@@ -192,7 +190,7 @@ function mapOperation(
     }
   } });
   return { kind: 'map', call, slots: [], wrapper: returned, parameter, indexParameter,
-    intrinsic, componentRoot, nestedComponent, captures: [...captures] };
+    componentTags: [...componentTags], unsupportedTags, captures: [...captures] };
 }
 
 function childSlotValue(value: RenderValue): t.JSXFragment {
@@ -236,13 +234,16 @@ function mappedOutput(operation: Extract<ChildOperation, { kind: 'map' }>): t.JS
 function dynamicWrapper(
   operation: Extract<ChildOperation, { kind: 'map' }>,
   sequence: NonNullable<ChildSequence['dynamic']>, index: string, context: string,
-  componentAlias: string | undefined,
+  componentAliases: ReadonlyMap<string, string>,
 ): t.JSXElement {
   const wrapper = cloneNode(operation.wrapper as BaseNode, true) as t.JSXElement;
-  if (componentAlias !== undefined) {
-    wrapper.openingElement.name = ast.jsxIdentifier(componentAlias);
-    if (wrapper.closingElement !== null) wrapper.closingElement.name = ast.jsxIdentifier(componentAlias);
-  }
+  walkAst(wrapper as BaseNode, { enter(node) {
+    if (!ast.isJSXElement(node) || !ast.isJSXIdentifier(node.openingElement.name)) return;
+    const alias = componentAliases.get(node.openingElement.name.name);
+    if (alias === undefined) return;
+    node.openingElement.name = ast.jsxIdentifier(alias);
+    if (node.closingElement !== null) node.closingElement.name = ast.jsxIdentifier(alias);
+  } });
   const inner = cloneNode(sequence.jsx as BaseNode, true) as t.JSXElement;
   const key = inner.openingElement.attributes.find(attribute =>
     ast.isJSXAttribute(attribute) && ast.isJSXIdentifier(attribute.name) && attribute.name.name === 'key');
@@ -473,29 +474,36 @@ export function specializeLinkedReactChildSequences(
     for (const operation of template.operations) {
       if (operation.kind !== 'map') continue;
       if (hasDynamic) {
-        if (!ast.isJSXElement(operation.wrapper) || operation.nestedComponent ||
-            (!operation.intrinsic && operation.componentRoot === undefined)) {
-          fail(template.entry, 'dynamic map wrapper needs an intrinsic or linked component JSX root',
+        if (!ast.isJSXElement(operation.wrapper) || operation.unsupportedTags) {
+          fail(template.entry, 'dynamic map wrapper needs JSX identifier tags',
             operation.call);
         }
-        if (operation.componentRoot !== undefined) {
+        if (operation.componentTags.length > 0) {
           const analysis = analyzeScope(template.entry.ast);
-          const component = analysis.nodeToScope.get(operation.wrapper)?.getBinding(operation.componentRoot);
-          if (component?.scope.isProgramScope !== true || component.kind !== 'function' ||
-              !ast.isFunctionDeclaration(component.declarationNode)) {
-            fail(template.entry, 'dynamic map wrapper component must be a top-level package function',
-              operation.call);
+          operation.dynamicComponents = new Map();
+          walkAst(operation.wrapper as BaseNode, { enter(node) {
+            if (!ast.isJSXElement(node) || !ast.isJSXIdentifier(node.openingElement.name) ||
+                !/^[A-Z]/.test(node.openingElement.name.name)) return;
+            const local = node.openingElement.name.name;
+            const component = analysis.nodeToScope.get(node)?.getBinding(local);
+            if (component?.scope.isProgramScope !== true || component.kind !== 'function' ||
+                !ast.isFunctionDeclaration(component.declarationNode)) {
+              fail(template.entry, 'dynamic map wrapper component must be a top-level package function',
+                node);
+            }
+          } });
+          for (const local of operation.componentTags) {
+            const key = `${template.entry.id}#${local}`;
+            let exported = componentExports.get(key);
+            if (exported === undefined) {
+              exported = fresh('WrapperExport');
+              componentExports.set(key, exported);
+              template.entry.ast.body.push(ast.exportNamedDeclaration(null, [
+                ast.exportSpecifier(ast.identifier(local), ast.identifier(exported)),
+              ]));
+            }
+            operation.dynamicComponents.set(local, exported);
           }
-          const key = `${template.entry.id}#${operation.componentRoot}`;
-          let exported = componentExports.get(key);
-          if (exported === undefined) {
-            exported = fresh('WrapperExport');
-            componentExports.set(key, exported);
-            template.entry.ast.body.push(ast.exportNamedDeclaration(null, [
-              ast.exportSpecifier(ast.identifier(operation.componentRoot), ast.identifier(exported)),
-            ]));
-          }
-          operation.dynamicComponent = { local: operation.componentRoot, exported };
         }
         if (operation.wrapper.openingElement.attributes.some(attribute =>
           ast.isJSXAttribute(attribute) && ast.isJSXIdentifier(attribute.name) &&
@@ -571,28 +579,29 @@ export function specializeLinkedReactChildSequences(
         element.openingElement.attributes.push(ast.jsxAttribute(ast.jsxIdentifier(operation.prop),
           ast.jsxExpressionContainer(count)));
       } else if (operation.dynamicProps !== undefined && sequence.dynamic !== undefined) {
-        let componentAlias: string | undefined;
-        if (operation.dynamicComponent !== undefined) {
-          componentAlias = operation.dynamicComponent.local;
+        const componentAliases = new Map<string, string>();
+        for (const [local, exported] of operation.dynamicComponents ?? []) {
+          let alias = local;
           if (entry !== template.entry) {
             const importedEntry = sourceImport === undefined ? undefined :
               resolveModule(entry.id, sourceImport.source.value, entries, options);
             if (sourceImport === undefined || importedEntry === undefined || importedName === undefined ||
-                !forwardWrapperExport(importedEntry, importedName, template.entry,
-                  operation.dynamicComponent.exported)) {
+                !forwardWrapperExport(importedEntry, importedName, template.entry, exported)) {
               fail(entry, 'dynamic package wrapper needs a linked named export path', element);
             }
             const imported = componentImports.get(sourceImport) ?? new Map<string, string>();
             componentImports.set(sourceImport, imported);
-            let alias = imported.get(operation.dynamicComponent.exported);
-            if (alias === undefined) {
+            const existing = imported.get(exported);
+            if (existing === undefined) {
               alias = fresh('WrapperImport');
-              imported.set(operation.dynamicComponent.exported, alias);
+              imported.set(exported, alias);
               sourceImport.specifiers.push(ast.importSpecifier(ast.identifier(alias),
-                ast.identifier(operation.dynamicComponent.exported)));
+                ast.identifier(exported)));
+            } else {
+              alias = existing;
             }
-            componentAlias = alias;
           }
+          componentAliases.set(local, alias);
         }
         const index = sequence.dynamic.index?.name ?? fresh('Index');
         const params = [cloneNode(sequence.dynamic.item as BaseNode, true) as t.Identifier,
@@ -604,7 +613,7 @@ export function specializeLinkedReactChildSequences(
           ast.jsxAttribute(ast.jsxIdentifier(operation.dynamicProps.renderItem),
             ast.jsxExpressionContainer(ast.arrowFunctionExpression(
               params, dynamicWrapper(operation, sequence.dynamic, index,
-                operation.dynamicProps.context, componentAlias),
+                operation.dynamicProps.context, componentAliases),
             ))),
         );
       } else if (!sequence.rootEmpty) {

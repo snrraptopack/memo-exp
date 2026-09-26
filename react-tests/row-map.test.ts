@@ -159,3 +159,34 @@ it('diagnoses an ambiguous star-exported child component', () => {
   expect(() => compileFixture({ entries: [appFile], packages: ['row-star-ambiguous-kit'] }))
     .toThrow("ambiguous star export 'CapturedRows'");
 });
+
+it('preserves a package component nested inside each dynamic wrapper', async () => {
+  const appFile = join(fixtureRoot, 'row-nested-app.tsx');
+  const compiled = compileFixture({ entries: [appFile], packages: ['row-nested-kit'],
+    outDir: 'out/row-nested' });
+  const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+  document.body.appendChild(app.App('App', null));
+  const labels = () => [...document.querySelectorAll('li span')].map(node => node.textContent);
+  const tones = () => [...document.querySelectorAll('li button')].map(node => node.className);
+  expect(labels()).toEqual(['A', 'B']);
+  expect(tones()).toEqual(['row', 'row']);
+  const removed = document.querySelectorAll('li')[0];
+  const retained = document.querySelectorAll('li')[1];
+  const marker = retained!.querySelector('button')!;
+  marker.click();
+  expect(marker.textContent).toBe('1');
+  document.querySelector<HTMLButtonElement>('#add')!.click();
+  document.querySelector<HTMLButtonElement>('#package-toggle')!.click();
+  expect(labels()).toEqual(['A', 'B', 'C']);
+  expect(tones()).toEqual(['active', 'active', 'active']);
+  document.querySelector<HTMLButtonElement>('#package-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('#app-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('#remove')!.click();
+  expect(labels()).toEqual(['B', 'C']);
+  expect(tones()).toEqual(['selected', 'selected']);
+  expect([...document.querySelectorAll('li')].map(node => node.className)).toEqual(['selected', 'selected']);
+  expect(removed!.isConnected).toBe(false);
+  expect(document.querySelector('li')).toBe(retained);
+  expect(retained!.querySelector('button')).toBe(marker);
+  expect(marker.textContent).toBe('1');
+});
