@@ -401,13 +401,26 @@ export function specializeLinkedReactChildSequences(
         } else if (ast.isStringLiteral(statement.source)) {
           const target = resolveModule(entry.id, statement.source.value, entries, options);
           if (target !== undefined) {
-            const found = resolveTemplate(target, specifier.local.name, seen);
+            const found = resolveTemplate(target, specifier.local.name, new Set(seen));
             if (found !== undefined) return found;
           }
         }
       }
     }
-    return undefined;
+    let found: ChildTemplate | undefined;
+    for (const statement of entry.ast.body) {
+      if (statement.type !== 'ExportAllDeclaration' || statement.exported !== null ||
+          !ast.isStringLiteral(statement.source)) continue;
+      const target = resolveModule(entry.id, statement.source.value, entries, options);
+      const candidate = target === undefined ? undefined :
+        resolveTemplate(target, exported, new Set(seen));
+      if (candidate === undefined) continue;
+      if (found !== undefined && found !== candidate) {
+        fail(entry, `ambiguous star export '${exported}'`, statement);
+      }
+      found = candidate;
+    }
+    return found;
   }
 
   // Validate all callers before changing any component body.
@@ -512,6 +525,21 @@ export function specializeLinkedReactChildSequences(
     if (seen.has(key)) return false;
     seen.add(key);
     for (const statement of entry.ast.body) {
+      if (statement.type === 'ExportAllDeclaration' && statement.exported === null &&
+          ast.isStringLiteral(statement.source)) {
+        const next = resolveModule(entry.id, statement.source.value, entries, options);
+        if (next !== undefined && forwardWrapperExport(next, componentName, defining, exported, seen)) {
+          const forwardedKey = `${entry.id}#${exported}`;
+          if (!forwardedWrapperExports.has(forwardedKey)) {
+            forwardedWrapperExports.add(forwardedKey);
+            entry.ast.body.push(ast.exportNamedDeclaration(null, [
+              ast.exportSpecifier(ast.identifier(componentName)),
+              ast.exportSpecifier(ast.identifier(exported)),
+            ], cloneNode(statement.source as BaseNode, true) as t.StringLiteral));
+          }
+          return true;
+        }
+      }
       if (!ast.isExportNamedDeclaration(statement) || !ast.isStringLiteral(statement.source)) continue;
       const next = resolveModule(entry.id, statement.source.value, entries, options);
       if (next === undefined) continue;

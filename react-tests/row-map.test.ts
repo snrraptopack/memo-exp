@@ -136,3 +136,26 @@ it('links a dynamic wrapper component through a package barrel', async () => {
   expect(rows()).toEqual([['B', 'selected'], ['C', 'selected']]);
   expect(document.querySelector('li')).toBe(retained);
 });
+
+it('links a dynamic wrapper component through star-export barrels', async () => {
+  const appFile = join(fixtureRoot, 'row-star-app.tsx');
+  const compiled = compileFixture({ entries: [appFile], packages: ['row-star-kit'],
+    outDir: 'out/row-star' });
+  const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+  document.body.appendChild(app.App('App', null));
+  const rows = () => [...document.querySelectorAll('li')].map(node => [node.textContent, node.className]);
+  expect(rows()).toEqual([['A', 'row'], ['B', 'row']]);
+  const retained = document.querySelectorAll('li')[1];
+  document.querySelector<HTMLButtonElement>('#package-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('#add')!.click();
+  expect(rows()).toEqual([['A', 'active'], ['B', 'active'], ['C', 'active']]);
+  document.querySelector<HTMLButtonElement>('#remove')!.click();
+  expect(rows()).toEqual([['B', 'active'], ['C', 'active']]);
+  expect(document.querySelector('li')).toBe(retained);
+});
+
+it('diagnoses an ambiguous star-exported child component', () => {
+  const appFile = join(fixtureRoot, 'row-star-ambiguous-app.tsx');
+  expect(() => compileFixture({ entries: [appFile], packages: ['row-star-ambiguous-kit'] }))
+    .toThrow("ambiguous star export 'CapturedRows'");
+});

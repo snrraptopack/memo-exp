@@ -320,14 +320,13 @@ caller-owned render callback adapter. The package owns the mapped wrapper and
 passes a live context getter to the adapter for its captured values. This
 required an optional third context argument in MMD's native cross-component
 render callback contract. The wrapper can use an intrinsic root or a top-level
-package component root exposed through a named export or an
-`export { Name } from './module'` chain.
-The linker forwards a compiler-only export for that component along the chain;
-MMD mounts the caller's child in its render slot and updates the wrapper's
-props from the live context. Nested package components and star exports remain
-outside this bounded shape, and finite and dynamic callers cannot share one
-specialized component.
-Other unknown child shapes still diagnose.
+package component root exposed through named exports or unambiguous star
+exports. The linker forwards explicit exports for that component along the
+chain, along with a compiler-only wrapper alias. Ambiguous star paths
+diagnose. MMD mounts the caller's child in its render slot and updates the wrapper's
+props from the live context. Nested package components remain outside this
+bounded shape, and finite and dynamic callers cannot share one
+specialized component. Other unknown child shapes still diagnose.
 General element values, `cloneElement`, and `isValidElement` remain open.
 
 ### 6.3 Custom hooks are linker-visible templates
