@@ -63,6 +63,15 @@ export interface Entity {
 export interface RenderPreparationOwner {
   attach(entity: Entity): void;
   deferRef(activate: () => void): () => void;
+  /** @internal Only explicit render-read scopes participate in readiness. */
+  consume(dependency: PreparationDependency): void;
+}
+
+/** @internal Resource adapter; the kernel never imports a data implementation. */
+export interface PreparationDependency {
+  readonly key: object;
+  snapshot(): { status: 'pending' | 'ready' | 'error'; error?: unknown };
+  subscribe(invalidate: () => void): () => void;
 }
 
 // ---------------------------------------------------------------------------
