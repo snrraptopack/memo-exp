@@ -2,8 +2,8 @@
 
 JSX gives you the tree; refs hand you the actual `Element` when you need to
 do something JSX can't express — focus, measure, scroll, pass the node to a
-library. There's no `useRef` or ref object; a ref is just a slot the runtime
-fills with the node, and there are a few different ways to declare one.
+library. A ref is a slot the compiler fills with the node. A mutable variable,
+object member, or stable `{ current }` box can provide that slot.
 
 ## The mutable ref — assign into a variable
 
@@ -34,6 +34,26 @@ export function Editor() {
 - Ref assignments don't trigger reactive updates — `let input` is a
   lifecycle slot, not UI state. Don't render `{input}` expecting it to fill
   in; read it in code.
+
+## A stable `current` box
+
+A `const` box with a `current` field is another assignable ref sink:
+
+```tsx
+export function Editor() {
+  const input = { current: undefined as HTMLInputElement | undefined };
+  return <>
+    <input ref={input} />
+    <button onClick={() => input.current?.focus()}>Focus</button>
+  </>;
+}
+```
+
+The box keeps its identity for the component instance. MMD assigns
+`input.current` when the element mounts and clears it to `undefined` when its
+region is removed. This also works when the box is passed to a component prop
+that forwards it to a DOM `ref` sink. A recognized React `useRef(initial)` call
+lowers to this same box.
 
 ## The callback ref — run code per node
 
@@ -106,6 +126,7 @@ passes through. Combine with arrays to grab it locally *and* forward it:
 | Need | Reach for |
 |---|---|
 | Read/focus/measure a node from handlers | mutable ref (`let` / member) |
+| Keep a stable ref object or migrate `useRef` | `const box = { current: undefined }` |
 | Per-node setup with teardown (observers, libraries) | callback ref |
 | Several things want the same node | `ref={[a, b, c]}` |
 | Parent needs a child's node | forward `ref` as a prop |

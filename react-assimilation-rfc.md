@@ -29,6 +29,19 @@ import { Dialog } from '@radix-ui/react-dialog';
 
 No wrapper, no island, no separate React root.
 
+Migration keeps MMD's explicit browser entry:
+
+```ts
+import { mount } from '@memoized-dom/runtime';
+import { App } from './App';
+
+mount('root', App);
+```
+
+The application component and its dependencies may still contain supported
+React imports. `createRoot` is not translated because `mount` establishes the
+application root identity used by MMD compilation.
+
 ## Non-goals
 
 - **A separate React runtime mode.** Recognized React APIs can appear beside

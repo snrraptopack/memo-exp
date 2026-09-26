@@ -129,8 +129,10 @@ An optional third argument can report hydration mismatches.
 
 ## Rules that bite on day one
 
-- **No React, no hooks, no signals.** Plain TypeScript + JSX. Components are
-  uppercase functions returning JSX.
+- **MMD is the runtime.** Plain TypeScript + JSX and uppercase component
+  functions are the native authoring model. Supported React imports can also
+  appear in compiled modules and lower into MMD operations; the browser entry
+  still calls `mount`.
 - **Everything must be reachable by static import** from `clientEntry` — the
   compiler only sees the connected graph. A file nobody imports isn't
   compiled into the app.

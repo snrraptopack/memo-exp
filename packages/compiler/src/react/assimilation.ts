@@ -8,7 +8,7 @@ import * as ast from '../ast/factory';
 import { analyzeScope, cloneNode, walkAst, type BaseNode } from '../ast';
 import { nodeHasJsx, type ProgramPath } from '../context';
 
-type HookName = 'useState' | 'useReducer' | 'useMemo' | 'useCallback' |
+type HookName = 'useState' | 'useReducer' | 'useRef' | 'useMemo' | 'useCallback' |
   'useEffect' | 'useSyncExternalStore';
 function isReactSpecifier(source: string): boolean {
   return source === 'react' || source.startsWith('react/') ||
@@ -20,6 +20,7 @@ type Operation =
   | { kind: 'external-store'; statement: t.VariableDeclaration;
       owner: t.FunctionDeclaration; state: string; subscribe: t.Expression;
       getSnapshot: t.Expression }
+  | { kind: 'ref'; declarator: t.VariableDeclarator; call: t.CallExpression }
   | { kind: 'memo'; declarator: t.VariableDeclarator; value: t.Expression }
   | { kind: 'callback'; declarator: t.VariableDeclarator;
       value: t.Expression }
@@ -126,7 +127,7 @@ export function assimilateReactSource(programPath: ProgramPath): void {
 
   const operations: Operation[] = [];
   const accepted = new Set<HookName>([
-    'useState', 'useReducer', 'useMemo', 'useCallback', 'useEffect',
+    'useState', 'useReducer', 'useRef', 'useMemo', 'useCallback', 'useEffect',
     'useSyncExternalStore',
   ]);
   const seenCalls = new Set<t.CallExpression>();
@@ -202,6 +203,17 @@ export function assimilateReactSource(programPath: ProgramPath): void {
         }
         operations.push({ kind: name === 'useState' ? 'state' : 'reducer',
           statement, call, state: state.name, setter: setter.name, owner });
+      } else if (name === 'useRef') {
+        const declarator = ast.isVariableDeclarator(parent) && parent.init === call ? parent : null;
+        const statement = declarator === null ? null : analysis.parentByNode.get(declarator as BaseNode);
+        if (declarator === null || !ast.isIdentifier(declarator.id) ||
+            !ast.isVariableDeclaration(statement) || statement.declarations.length !== 1 ||
+            analysis.parentByNode.get(statement as BaseNode) !== owner.body ||
+            call.arguments.length > 1 ||
+            (call.arguments.length === 1 && argument(call, 0) === null)) {
+          fail(`requires a direct component binding: const ref = useRef(initial)`, call);
+        }
+        operations.push({ kind: 'ref', declarator, call });
       } else if (name === 'useSyncExternalStore') {
         const declarator = ast.isVariableDeclarator(parent) && parent.init === call ? parent : null;
         const statement = declarator === null ? null : analysis.parentByNode.get(declarator as BaseNode);
@@ -304,6 +316,12 @@ export function assimilateReactSource(programPath: ProgramPath): void {
       ];
       const index = operation.owner.body.body.indexOf(operation.statement);
       operation.owner.body.body.splice(index, 1, ...replacements);
+    } else if (operation.kind === 'ref') {
+      const initial = argument(operation.call, 0);
+      operation.declarator.init = ast.objectExpression([
+        ast.objectProperty(ast.identifier('current'), initial === null
+          ? ast.unaryExpression('void', ast.numericLiteral(0)) : copy(initial)),
+      ]);
     } else if (operation.kind === 'external-store') {
       const subscribe = fresh('Subscribe');
       const getSnapshot = fresh('GetSnapshot');

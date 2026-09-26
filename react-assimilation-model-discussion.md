@@ -138,7 +138,7 @@ not a claim that every package use of the API works.
 | **Route and request scope** | React packages that read URL/navigation state, load code or data on navigation, or rely on request-local caches | MMD has reactive `route`, compile-time `route` regions, pre-mount `$routed` preparation, and request-owned SSR state. | There is no generic translation from arbitrary package navigation/request conventions. The linker must prove the host boundary before treating these as MMD route work. |
 | **Scheduling priority and visibility** | `useTransition`, `startTransition`, `useDeferredValue`, `Activity`, `ViewTransition`, `addTransitionType`, `flushSync` | MMD may execute ordinary writes and commit; a pending/deferred/hidden state requires an explicit MMD scheduler or region contract. | Transition callbacks run synchronously and deferred values become their input. This is an intentional MMD translation only where a package does not rely on pending/deferred behavior. `Activity`/view transitions are absent. `commit()` is MMD's sync flush primitive. |
 | **Identity, diagnostics, tooling** | `useId`, `useDebugValue`, `Profiler`, `StrictMode`, `act`, `captureOwnerStack` | Stable MMD entity-derived ID, or development/test metadata with no production DOM operation. | `useId` marker and `useDebugValue` erasure exist. Remaining APIs should be classified as tooling-only or rejected according to whether a package observes their results. |
-| **Renderer/host entry** | `createRoot`, `hydrateRoot`, `renderTo*`, `prerender*`, portals, resource preload APIs | Root mount/hydration/SSR belongs to the MMD host. Portal needs an owned DOM relocation target. Preload calls belong to host/resource policy. | React root/server renderer calls are diagnosed. Portal/preload contracts are absent. An assimilated component library normally should not invoke a React root. |
+| **Renderer/host entry** | `createRoot`, `hydrateRoot`, `renderTo*`, `prerender*`, portals, resource preload APIs | Root mount/hydration/SSR belongs to the MMD host. Portal needs an owned DOM relocation target. Preload calls belong to host/resource policy. | App migration uses MMD's explicit `mount(target, App)` entry so the compiler owns root identity. React root/server renderer calls remain diagnostics. Portal/preload contracts are absent. |
 | **Host DOM protocol** | `onChange`, capture events, controlled `value`/`checked`, `defaultValue`, `dangerouslySetInnerHTML`, form `action`, refs | Translate props/events into MMD's host DOM setters, events, and lifecycle. | Some generic JSX handling exists; a React DOM prop/event inventory and source-specific normalization are still needed. This is distinct from hook support. |
 
 The official references list [hooks](https://react.dev/reference/react/hooks),
@@ -419,6 +419,14 @@ instance binding and owned subscription. It reads the snapshot again after
 subscribing to close the mount-time gap, compares with `Object.is`, and disposes
 the returned subscription with the owner. Its third server-snapshot argument
 is diagnosed until an SSR target operation is specified.
+
+Direct `const ref = useRef(initial)` becomes an instance-local `{ current:
+initial }` box. MMD's native ref compiler recognizes a stable box at a JSX
+ref sink and assigns its `current` member. This also works through a component
+prop that forwards to a ref sink. MMD owns structural cleanup; after cleanup
+the member is `undefined` under MMD's ref contract. Other uses of
+`ref.current` remain ordinary MMD reads and writes. Dynamic ref-object
+factories and values crossing an unknown component boundary remain unproven.
 
 The linker now specializes a bounded exported custom hook across package files
 before manifest discovery. Its direct, top-level tuple call becomes statements

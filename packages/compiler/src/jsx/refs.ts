@@ -1,8 +1,8 @@
 /**
  * jsx/refs.ts - compile DOM ref values and mount them with structural cleanup.
  *
- * Assignable source expressions are sinks, not reads. They become ordinary
- * callback adapters so forwarding needs no public ref wrapper or special key.
+ * Assignable source expressions and stable { current } boxes are sinks, not
+ * reads. They become callback adapters without a runtime ref wrapper.
  */
 
 import type * as t from '../ast/compiler-types';
@@ -43,6 +43,10 @@ export function compileRefValue(
   if (isForwardedRef(ctx, componentName, expression)) {
     return cloneEstreeNode(expression, true);
   }
+  if (isObjectRefIdentifier(ctx, componentPath, expression)) {
+    return assignAdapter(ctx, astFactory.memberExpression(
+      cloneEstreeNode(expression), astFactory.identifier('current')));
+  }
   if (isMutableIdentifier(ctx, componentPath, expression)) {
     return assignAdapter(ctx, expression);
   }
@@ -50,6 +54,22 @@ export function compileRefValue(
     return assignAdapter(ctx, expression);
   }
   return cloneEstreeNode(expression, true);
+}
+
+function isObjectRefIdentifier(
+  ctx: Ctx,
+  componentPath: ComponentPath,
+  expression: t.Expression,
+): expression is t.Identifier {
+  if (!astFactory.isIdentifier(expression)) return false;
+  const binding = astBindingAt(ctx, componentPath.node as unknown as BaseNode, expression.name);
+  if (binding?.kind !== 'const') return false;
+  const declarator = ctx.astAnalysis?.parentByNode.get(binding.identifier);
+  if (declarator?.type !== 'VariableDeclarator') return false;
+  const init = (declarator as t.VariableDeclarator).init;
+  return astFactory.isObjectExpression(init) && init.properties.some(property =>
+    astFactory.isObjectProperty(property) && !property.computed &&
+    astFactory.isIdentifier(property.key, { name: 'current' }));
 }
 
 /** Emit one mount operation and attach its disposer to this scope's policy. */

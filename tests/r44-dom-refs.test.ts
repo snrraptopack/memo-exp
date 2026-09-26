@@ -80,6 +80,7 @@ const SOURCE = `
     let named;
     let restForwarded;
     let dualNamed;
+    const objectBox = { current: null };
     const holder = {};
     let show = true;
     let rows = [{ id: 1 }, { id: 2 }];
@@ -100,10 +101,11 @@ const SOURCE = `
       <Input id="forwarded" ref={forwarded} />
       <Field id="named" inputRef={named} />
       <DualInput id="dual" inputRef={dualNamed} />
+      <Field id="object-box" inputRef={objectBox} />
       <ForwardAll id="rest" ref={restForwarded} />
       <div {...{ id: "spread", ref: logRef("spread") }} />
       <button id="check" onClick={() => record(
-        [direct, holder.node, forwarded, named, restForwarded, dualNamed]
+        [direct, holder.node, forwarded, named, restForwarded, dualNamed, objectBox.current]
           .map(node => node?.id)
           .join(",")
       )}>check</button>
@@ -250,7 +252,7 @@ describe('R44 - DOM refs', () => {
     const check = document.querySelector<HTMLButtonElement>('#check')!;
     check.click();
     expect(mod.getEvents().at(-1)).toBe(
-      'direct,member,forwarded,named,rest,dual',
+      'direct,member,forwarded,named,rest,dual,object-box',
     );
     expect(mod.moduleNode).toBe(document.querySelector('#module'));
     expect(document.querySelector('#spread')!.hasAttribute('ref')).toBe(false);
@@ -264,7 +266,7 @@ describe('R44 - DOM refs', () => {
     unregister('App');
     expect(mod.moduleNode).toBeUndefined();
     check.click();
-    expect(mod.getEvents().at(-1)).toBe(',,,,,');
+    expect(mod.getEvents().at(-1)).toBe(',,,,,,');
     expect(mod.getEvents()).toContain('cleanup:spread:spread');
     expect(
       mod

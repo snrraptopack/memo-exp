@@ -13,6 +13,11 @@ mix React imports with ordinary MMD constructs in the same module. A
 selected installed npm package can use the same `packages` list; its files resolve from
 `node_modules`.
 
+The browser entry remains an authored MMD `mount(target, App)` call. React root
+APIs are outside the migration source subset. The ref fixture lowers
+`useRef` into an instance box. MMD's DOM ref compiler accepts the box for
+direct and component-forwarded sinks, including conditional cleanup and remount.
+
 Assert the emitted translation and the chosen **MMD behavior**. DOM tests
 should cover updates, independent instances, cleanup, and ownership where the
 package needs them. A package passing source recognition alone is not a claim
