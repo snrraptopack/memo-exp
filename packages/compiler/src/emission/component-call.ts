@@ -278,7 +278,9 @@ export function emitComponentCall(
       !inlineCallback &&
       (exprReadsState(ctx, v, componentName) ||
         (rowContext !== undefined &&
-          expressionReadsBinding(v, rowContext.itemParam)))
+          (expressionReadsBinding(v, rowContext.itemParam) ||
+            rowContext.contextParam !== undefined &&
+            expressionReadsBinding(v, rowContext.contextParam))))
     ) {
       needsPush = true;
     }

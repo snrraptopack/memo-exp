@@ -136,6 +136,7 @@ export function buildRenderCallbackAdapter(
     keyPath: keyPathOf(keyExpression, itemParam),
     sourceKey: '$render-callback',
     sourceLocal: true,
+    ...(contextParam === null ? {} : { contextParam }),
     ownerIdVar: astFactory.isIdentifier(ownerId)
       ? ownerId.name
       : componentId(ctx, componentName).name,

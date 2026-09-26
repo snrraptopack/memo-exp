@@ -91,6 +91,30 @@ const CONTEXT_SOURCE = `
     </main>;
   }
 `;
+const CONTEXT_COMPONENT_SOURCE = `
+  function Row({ children, className }) {
+    return <li class={className}>{children}</li>;
+  }
+  export { Row as PublicRow };
+  function List({ items, renderItem }) {
+    let active = false;
+    const className = active ? 'active' : 'row';
+    return <section>
+      <button onClick={() => active = !active}>toggle</button>
+      <ul>{items.map((item, index) => renderItem(item, index, () => ({ className })))}</ul>
+    </section>;
+  }
+  export function App() {
+    let items = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }];
+    return <main>
+      <button id="remove" onClick={() => items = items.slice(1)}>remove</button>
+      <List items={items} renderItem={(item, index, context) =>
+        <Row key={item.id} className={context().className}>
+          <span>{item.label}:{index}</span>
+        </Row>} />
+    </main>;
+  }
+`;
 
 function importFixture(specifier: string): Promise<any> {
   return import(specifier);
@@ -110,6 +134,10 @@ describe('R41 - cross-component render callbacks', () => {
     writeFileSync(
       join(outDir, 'r41-render-callbacks-context.compiled.ts'),
       compile(CONTEXT_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
+    );
+    writeFileSync(
+      join(outDir, 'r41-render-callbacks-context-component.compiled.ts'),
+      compile(CONTEXT_COMPONENT_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
   });
 
@@ -202,6 +230,19 @@ describe('R41 - cross-component render callbacks', () => {
 
   it('reads live callee context in caller-owned keyed rows', async () => {
     const { App } = await importFixture('./fixtures/out/r41-render-callbacks-context.compiled.ts');
+    document.body.appendChild(App('App', null));
+    const rows = () => [...document.querySelectorAll('li')].map(node => [node.textContent, node.className]);
+    expect(rows()).toEqual([['A:0', 'row'], ['B:1', 'row']]);
+    const retained = document.querySelectorAll('li')[1];
+    document.querySelector('section button')!.dispatchEvent(new MouseEvent('click'));
+    expect(rows()).toEqual([['A:0', 'active'], ['B:1', 'active']]);
+    document.querySelector<HTMLButtonElement>('#remove')!.click();
+    expect(rows()).toEqual([['B:0', 'active']]);
+    expect(document.querySelector('li')).toBe(retained);
+  });
+
+  it('updates component props and mounts children in callback rows exported by specifier', async () => {
+    const { App } = await importFixture('./fixtures/out/r41-render-callbacks-context-component.compiled.ts');
     document.body.appendChild(App('App', null));
     const rows = () => [...document.querySelectorAll('li')].map(node => [node.textContent, node.className]);
     expect(rows()).toEqual([['A:0', 'row'], ['B:1', 'row']]);

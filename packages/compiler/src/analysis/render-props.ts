@@ -232,6 +232,7 @@ function expressionCarriesJsx(
 export function scanRenderProps(ctx: Ctx): void {
   const program = ctx.astAnalysis?.rootScope.block;
   if (program?.type !== 'Program') return;
+  const sourceProgram = program as unknown as t.Program;
   const potential = new Map<string, Set<string>>();
   for (const [name, componentPath] of ctx.compPaths) {
     const candidates = new Set<string>();
@@ -263,9 +264,13 @@ export function scanRenderProps(ctx: Ctx): void {
     const componentParent = ctx.astAnalysis?.parentByNode.get(
       componentPath.node as unknown as BaseNode,
     ) ?? null;
+    const exportedBySpecifier = sourceProgram.body.some((statement) =>
+      astFactory.isExportNamedDeclaration(statement) && statement.source === null &&
+      statement.specifiers.some((specifier) => astFactory.isExportSpecifier(specifier) &&
+        astFactory.isIdentifier(specifier.local, { name })));
     if (
       (componentParent?.type === 'ExportNamedDeclaration' ||
-        componentParent?.type === 'ExportDefaultDeclaration') &&
+        componentParent?.type === 'ExportDefaultDeclaration' || exportedBySpecifier) &&
       !ctx.linkedComponentRenderProps.has(name)
     ) {
       const plan = ctx.componentProps.get(name)!;

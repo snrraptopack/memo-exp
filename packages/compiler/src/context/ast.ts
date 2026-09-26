@@ -240,6 +240,8 @@ export interface RowCtx {
   sourceKey: string;
   sourceLocal?: boolean;
   ownerIdVar?: string;
+  /** Live context supplied by the component that owns a callback list. */
+  contextParam?: string;
 }
 
 /** Extract a row key path relative to its item parameter. */

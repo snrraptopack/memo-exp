@@ -319,8 +319,12 @@ needs no new MMD primitive. A caller expression shaped as a single
 caller-owned render callback adapter. The package owns the mapped wrapper and
 passes a live context getter to the adapter for its captured values. This
 required an optional third context argument in MMD's native cross-component
-render callback contract. The wrapper currently needs an intrinsic JSX root,
-and finite and dynamic callers cannot share one specialized package component.
+render callback contract. The wrapper can use an intrinsic root or a top-level
+package component root that the caller imports directly. The linker exposes a
+compiler-only export for that component; MMD mounts the caller's child in its
+render slot and updates the wrapper's props from the live context. Nested
+package components and re-exported wrapper paths remain outside this bounded
+shape, and finite and dynamic callers cannot share one specialized component.
 Other unknown child shapes still diagnose.
 General element values, `cloneElement`, and `isValidElement` remain open.
 

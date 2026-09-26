@@ -97,3 +97,23 @@ it('keeps package values live around a growing caller list', async () => {
   document.querySelector<HTMLButtonElement>('#remove')!.click();
   expect(rows()).toEqual([['B', 'selected'], ['C', 'selected']]);
 });
+
+it('keeps a package-owned wrapper component around each dynamic caller row', async () => {
+  const appFile = join(fixtureRoot, 'row-dynamic-component-app.tsx');
+  const compiled = compileFixture({ entries: [appFile], packages: ['row-capture-kit'],
+    outDir: 'out/row-dynamic-component' });
+  const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+  document.body.appendChild(app.App('App', null));
+  const rows = () => [...document.querySelectorAll('li')].map(node => [node.textContent, node.className]);
+  expect(rows()).toEqual([['A', 'row'], ['B', 'row']]);
+  const retained = document.querySelectorAll('li')[1];
+  document.querySelector<HTMLButtonElement>('#add')!.click();
+  document.querySelector<HTMLButtonElement>('div button')!.click();
+  expect(rows()).toEqual([['A', 'active'], ['B', 'active'], ['C', 'active']]);
+  document.querySelector<HTMLButtonElement>('div button')!.click();
+  document.querySelector<HTMLButtonElement>('#app-toggle')!.click();
+  expect(rows()).toEqual([['A', 'selected'], ['B', 'selected'], ['C', 'selected']]);
+  document.querySelector<HTMLButtonElement>('#remove')!.click();
+  expect(rows()).toEqual([['B', 'selected'], ['C', 'selected']]);
+  expect(document.querySelector('li')).toBe(retained);
+});
