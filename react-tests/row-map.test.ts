@@ -79,6 +79,26 @@ it('maps a caller-owned list as it grows and shrinks', async () => {
   expect(document.querySelectorAll('li.row')[0]).toBe(retainedB);
 });
 
+it('preserves native MMD list sources across a React Children.map package boundary', async () => {
+  const appFile = join(fixtureRoot, 'row-member-list-app.tsx');
+  const compiled = compileFixture({ entries: [appFile], packages: ['row-kit'],
+    outDir: 'out/row-member-list' });
+  const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+  document.body.appendChild(app.App('App', null));
+  const labels = () => [...document.querySelectorAll('li.row')].map(node => node.textContent);
+  const count = () => document.querySelector('output')!.textContent;
+  expect(labels()).toEqual(['A', 'B']);
+  expect(count()).toBe('2');
+  const retained = document.querySelectorAll('li.row')[1];
+  document.querySelector<HTMLButtonElement>('#add')!.click();
+  expect(labels()).toEqual(['A', 'B', 'C']);
+  expect(count()).toBe('3');
+  document.querySelector<HTMLButtonElement>('#remove')!.click();
+  expect(labels()).toEqual(['B', 'C']);
+  expect(count()).toBe('2');
+  expect(document.querySelector('li.row')).toBe(retained);
+});
+
 it('keeps package values live around a growing caller list', async () => {
   const appFile = join(fixtureRoot, 'row-dynamic-capture-app.tsx');
   const compiled = compileFixture({ entries: [appFile], packages: ['row-dynamic-capture-kit'],

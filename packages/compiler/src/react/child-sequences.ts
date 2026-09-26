@@ -7,6 +7,7 @@ import * as ast from '../ast/factory';
 import { analyzeScope, cloneNode, isReferenceIdentifier, walkAst, type BaseNode } from '../ast';
 import { isReactPackageModule } from '../context';
 import { compilerError } from '../errors';
+import { matchMapCall } from '../lists/map-site';
 import type { CompileModulesOptions, ModuleEntry } from '../linking/model';
 import { resolveModule } from '../linking/resolution';
 
@@ -37,7 +38,7 @@ interface ChildSequence {
   owner: ModuleEntry;
   values: RenderValue[];
   rootEmpty: boolean;
-  dynamic?: { source: t.Identifier; jsx: t.JSXElement;
+  dynamic?: { source: t.Expression; jsx: t.JSXElement;
     item: t.Identifier; index?: t.Identifier };
 }
 
@@ -67,20 +68,20 @@ function planChildren(entry: ModuleEntry, children: t.JSXElement['children']): C
   const meaningful = children.filter(child => !ast.isJSXText(child) || child.value.trim() !== '');
   if (meaningful.length === 1 && ast.isJSXExpressionContainer(meaningful[0])) {
     const expression = meaningful[0].expression;
-    if (ast.isCallExpression(expression) && ast.isMemberExpression(expression.callee) &&
-        !expression.callee.computed && ast.isIdentifier(expression.callee.property, { name: 'map' }) &&
-        ast.isIdentifier(expression.callee.object) && expression.arguments.length === 1 &&
-        ast.isArrowFunctionExpression(expression.arguments[0])) {
-      const callback = expression.arguments[0];
+    const mapCall = matchMapCall(expression);
+    if (ast.isCallExpression(mapCall) && ast.isMemberExpression(mapCall.callee) &&
+        !mapCall.callee.optional && ast.isExpression(mapCall.callee.object) &&
+        mapCall.arguments.length === 1 && ast.isArrowFunctionExpression(mapCall.arguments[0])) {
+      const callback = mapCall.arguments[0];
       const returned = ast.isBlockStatement(callback.body) && callback.body.body.length === 1 &&
         ast.isReturnStatement(callback.body.body[0]) ? callback.body.body[0].argument : callback.body;
       if (callback.params.length < 1 || callback.params.length > 2 ||
           callback.params.some(param => !ast.isIdentifier(param)) || !ast.isJSXElement(returned)) {
-        fail(entry, 'requires an inline list map callback returning one JSX element', expression);
+        fail(entry, 'requires an inline list map callback returning one JSX element', mapCall);
       }
       const params = callback.params as t.Identifier[];
       return { owner: entry, values: [], rootEmpty: false,
-        dynamic: { source: expression.callee.object, jsx: returned,
+        dynamic: { source: mapCall.callee.object, jsx: returned,
           item: params[0]!, index: params[1] } };
     }
   }
@@ -574,7 +575,7 @@ export function specializeLinkedReactChildSequences(
       if (operation.kind === 'count') {
         const count = sequence.dynamic === undefined
           ? ast.numericLiteral(sequence.rootEmpty ? 0 : sequence.values.length)
-          : ast.memberExpression(cloneNode(sequence.dynamic.source as BaseNode, true) as t.Identifier,
+          : ast.memberExpression(cloneNode(sequence.dynamic.source as BaseNode, true) as t.Expression,
             ast.identifier('length'));
         element.openingElement.attributes.push(ast.jsxAttribute(ast.jsxIdentifier(operation.prop),
           ast.jsxExpressionContainer(count)));
@@ -609,7 +610,7 @@ export function specializeLinkedReactChildSequences(
           ...(operation.captures.length === 0 ? [] : [ast.identifier(operation.dynamicProps.context)])];
         element.openingElement.attributes.push(
           ast.jsxAttribute(ast.jsxIdentifier(operation.dynamicProps.items),
-            ast.jsxExpressionContainer(cloneNode(sequence.dynamic.source as BaseNode, true) as t.Identifier)),
+            ast.jsxExpressionContainer(cloneNode(sequence.dynamic.source as BaseNode, true) as t.Expression)),
           ast.jsxAttribute(ast.jsxIdentifier(operation.dynamicProps.renderItem),
             ast.jsxExpressionContainer(ast.arrowFunctionExpression(
               params, dynamicWrapper(operation, sequence.dynamic, index,

@@ -316,8 +316,11 @@ Child state and events stay caller-owned; wrapper components, props, and state
 stay package-owned. A missing child slot skips its wrapper. This finite case
 needs no new MMD primitive. A caller expression shaped as a single
 `items.map(item => <JSX />)` child now uses MMD's keyed list region and
-caller-owned render callback adapter. The package owns the mapped wrapper and
-passes a live context getter to the adapter for its captured values. This
+caller-owned render callback adapter. The React pass recognizes the native
+list call without a separate collection-source grammar. Its source becomes
+an ordinary reactive MMD component input, and the package list region uses
+the native MMD list compiler. The package owns the mapped wrapper and passes
+a live context getter to the adapter for its captured values. This
 required an optional third context argument in MMD's native cross-component
 render callback contract. The wrapper can use an intrinsic root, a top-level
 package component root, or top-level package components nested under intrinsic

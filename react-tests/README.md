@@ -33,9 +33,11 @@ component, package state, and changing props. A single caller-owned
 `items.map(item => <JSX />)` child also lowers through MMD's keyed list and
 render callback path. The dynamic fixtures grow and shrink the caller list,
 check retained DOM identity, and update a package-owned wrapper through state
-and props. The dynamic callback must return one JSX element; its collection
-source is currently an identifier. The package wrapper may have an intrinsic
-root or a top-level package component root exposed through a named export.
+and props. The dynamic callback must return one JSX element. Its collection
+source remains an ordinary MMD reactive input, including property paths such
+as `state.items`. The React pass only adapts `Children.map` around the
+caller-owned row. The package wrapper may have an intrinsic root or a
+top-level package component root exposed through a named export.
 Both `export { Name } from './module'` and unambiguous
 `export * from './module'` barrels work. The component keeps its children slot
 and live props.
