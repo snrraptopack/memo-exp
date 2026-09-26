@@ -5,7 +5,8 @@
  * server rendering without allocating heavyweight DOM element trees.
  */
 
-import type { DocumentLike } from '@memoized-dom/runtime';
+import type { DocumentLike, MarkupChild } from '@memoized-dom/runtime';
+import { parseMarkup } from '@memoized-dom/runtime';
 
 function escapeHtml(text: string): string {
   return text
@@ -427,6 +428,38 @@ export class StringDocument implements DocumentLike {
 
   createDocumentFragment(): DocumentFragment {
     return new StringFragment() as unknown as DocumentFragment;
+  }
+
+  /**
+   * Interpret compiler-generated markup through StringNode factories so
+   * emitted markup segments serialize identically to imperative creation.
+   * Returns nodes in compiler creation order (post-order; root last).
+   */
+  materializeMarkup(markup: string): Node[] {
+    const output: Node[] = [];
+    const build = (node: MarkupChild): Node => {
+      if (node.type === 'text') {
+        const text = this.createTextNode(node.text) as unknown as Node;
+        output.push(text);
+        return text;
+      }
+      const element =
+        node.ns === 'http://www.w3.org/1999/xhtml'
+          ? this.createElement(node.tag)
+          : this.createElementNS(node.ns, node.tag);
+      for (const [name, value] of node.attrs) {
+        element.setAttribute(name, value);
+      }
+      for (const child of node.children) {
+        element.appendChild(build(child));
+      }
+      output.push(element as unknown as Node);
+      return element as unknown as Node;
+    };
+    for (const child of parseMarkup(markup)) {
+      build(child);
+    }
+    return output;
   }
 
   getElementById(): Element | null {

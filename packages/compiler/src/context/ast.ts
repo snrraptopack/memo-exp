@@ -209,6 +209,26 @@ export function freshReasonConst(
   return id;
 }
 
+/** Hoist and dedupe a static-markup string const. */
+export function freshMarkupConst(
+  ctx: Ctx,
+  markup: string,
+): t.Identifier {
+  const existing = ctx.markupConsts.get(markup);
+  if (existing !== undefined) return astFactory.identifier(existing);
+  const id = generatedIdentifier(
+    ctx,
+    `HTML_${ctx.markupConstCounter++}`,
+  );
+  ctx.markupConsts.set(markup, id.name);
+  ctx.header.push(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(id, astFactory.stringLiteral(markup)),
+    ]),
+  );
+  return id;
+}
+
 type MemberLike = t.MemberExpression | t.OptionalMemberExpression;
 
 function isMemberLike(node: t.Node): node is MemberLike {

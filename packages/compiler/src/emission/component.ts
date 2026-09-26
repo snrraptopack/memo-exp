@@ -58,6 +58,7 @@ import {
   updateDecl,
 } from './scope';
 import { applyRepeatedDomTemplate } from './dom-template';
+import { applyStaticMarkup } from './markup';
 import { transparentSourceMounts } from '../data-sources';
 import { selectedRouteSubscriptionBinding } from '../external-reactivity';
 import {
@@ -484,6 +485,22 @@ export function transformComponent(
     }
   }
 
+  const sourceMounts = transparentSourceMounts(
+    ctx,
+    name,
+    astFactory.identifier(factoryId),
+  );
+  // Materialize the updater fn before markup rewrites creation so the
+  // pass can see every late reference to member nodes and the document
+  // local (dynamic writes inside updaters bind nodes too).
+  const updateStatement = updateDecl(ctx, scope);
+  applyStaticMarkup(ctx, scope, rootVar, [
+    ...scope.mounts,
+    ...sourceMounts,
+    ...eventSourceDisposals,
+    updateStatement,
+  ]);
+
   const body: t.Statement[] = [cacheDecl(scope), ...scope.prelude];
   if (propSlotCount > 0 && !lightweight) {
     const declaration = buildPropDeclaration(
@@ -500,7 +517,7 @@ export function transformComponent(
   }
   body.push(
     ...kept,
-    updateDecl(ctx, scope),
+    updateStatement,
     ...(lightweight
       ? []
       : [
@@ -527,10 +544,7 @@ export function transformComponent(
     );
   }
   body.push(...scope.creation, ...scope.mounts);
-  body.push(
-    ...transparentSourceMounts(ctx, name, astFactory.identifier(factoryId)),
-    ...eventSourceDisposals,
-  );
+  body.push(...sourceMounts, ...eventSourceDisposals);
   for (const source of externalSources) {
     const subscribe = ctx.externalReactiveBindings.get(source)!;
     const selectors = routeSelectors.get(source);

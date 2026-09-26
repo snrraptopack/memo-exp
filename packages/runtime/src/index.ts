@@ -58,6 +58,10 @@ export type { RefCallback, RefValue } from './refs';
 export { registerConditionalEffect, registerEffect } from './effect';
 export type { EffectCallback, EffectCondition } from './effect';
 
+export { materializeMarkup } from './markup';
+export { parseMarkup } from './markup-parse';
+export type { MarkupChild, MarkupElement } from './markup-parse';
+
 export {
   setText,
   setTextData,

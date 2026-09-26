@@ -10,6 +10,19 @@ function execute(code: string, runtime: object = {}, onGet = () => {}) {
       const next = value == null || typeof value === 'boolean' ? '' : String(value);
       if (node.data !== next) node.data = next;
     },
+    materializeMarkup(markup: string): Node[] {
+      const template = document.createElement('template');
+      template.innerHTML = markup;
+      const nodes: Node[] = [];
+      const collect = (node: Node | null): void => {
+        for (let n = node; n !== null; n = n.nextSibling) {
+          collect(n.firstChild);
+          nodes.push(n);
+        }
+      };
+      collect(template.content.firstChild);
+      return nodes;
+    },
   };
   return new Function('_MD', 'onGet', code
     .replace(/^import \* as _MD from .*;$/m, '')

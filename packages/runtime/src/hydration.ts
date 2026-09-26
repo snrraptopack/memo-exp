@@ -12,6 +12,7 @@ import {
   getActiveEnvironment,
   runWithRenderEnvironment,
 } from './kernel';
+import { parseMarkup, type MarkupChild } from './markup-parse';
 import type { RootFactoryDefinition } from './mount';
 export { HydrationMismatchError } from './hydration-error';
 import { HydrationMismatchError } from './hydration-error';
@@ -42,6 +43,13 @@ export interface HydrationController {
   pushRange(range: ClaimedHydrationRange): void;
   popRange(): void;
   recordFragmentRange(parent: Node, range: ClaimedHydrationRange): void;
+  /**
+   * Claim every node of a compiler-generated static markup subtree against
+   * the active creation plan. Returns the claimed nodes in compiler
+   * creation order (post-order — the markup root is last). Equivalent
+   * validation to sequential createElement/createTextNode claims.
+   */
+  claimMarkup(markup: string): Node[];
 }
 export interface HydrationNodeExpectation {
   readonly nodeType: number;
@@ -663,6 +671,41 @@ export class HydrationDocument
 
   createTextNode(_data: string): Text {
     return this.#activePlan().claimNode({ nodeType: 3 }) as Text;
+  }
+
+  /**
+   * Markup adoption: parse the compiler's static subtree, then claim each
+   * parsed node through the active creation plan in creation order. This is
+   * the hydration counterpart of materializeMarkup() — the claim sequence
+   * and validation are identical to the imperative factory calls the markup
+   * replaced, without constructing any real DOM. Claimed elements receive
+   * the same append/insert patching as createElement claims so later
+   * imperative appends stay correct.
+   */
+  claimMarkup(markup: string): Node[] {
+    const expectations: HydrationNodeExpectation[] = [];
+    const collect = (children: MarkupChild[]): void => {
+      for (const child of children) {
+        if (child.type === 'text') {
+          expectations.push({ nodeType: 3 });
+          continue;
+        }
+        collect(child.children);
+        expectations.push({
+          nodeType: 1,
+          tagName: child.tag,
+          namespaceURI: child.ns,
+        });
+      }
+    };
+    collect(parseMarkup(markup));
+    const plan = this.#activePlan();
+    return expectations.map((expectation) => {
+      const claimed = plan.claimNode(expectation);
+      return expectation.nodeType === 1
+        ? this.#adoptElement(claimed as Element)
+        : claimed;
+    });
   }
 
   createComment(data: string): Comment {
