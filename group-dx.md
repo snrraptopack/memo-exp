@@ -28,6 +28,14 @@ this does not discover descendant-owned resources. Group-level suspend is
 diagnosed until that broader readiness contract is implemented.
 Route-shell integration below is not implemented yet.
 
+The next internal slice adds runtime-owned detached activation generations:
+ordinary preparation renders can update detached output while assignable refs,
+authored refs, and mounted effects remain held. Nested generations cannot
+release lifecycle work through a pending parent; cancellation drains registered
+owners and queued refs. The helper currently has testing-only exposure.
+Compiler/resource discovery and automatic readiness/DOM publication are not
+wired to it yet, so this does not change the authored suspend support above.
+
 The first code slice hardens existing router behavior: native history
 traversal now prepares `$routed` before entry, tracked failed/blocked pops
 recover by traversal rather than extra pushes, stale retries are guarded,

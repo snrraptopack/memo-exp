@@ -55,6 +55,14 @@ export interface Entity {
   phase?: 'render' | 'effect';
   depth?: number;
   children?: Set<EntityId>;
+  /** @internal Detached activation owner, propagated through child creation. */
+  preparation?: RenderPreparationOwner;
+}
+
+/** @internal Lifecycle interception used by detached subtree preparation. */
+export interface RenderPreparationOwner {
+  attach(entity: Entity): void;
+  deferRef(activate: () => void): () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +129,8 @@ interface KernelState {
   readonly extensions: Map<string, unknown>;
   /** Capability descriptor selecting browser/server behavior. */
   environment: RenderEnvironment;
+  /** @internal Preparation context for synchronous creation/update work. */
+  preparation?: RenderPreparationOwner;
 }
 
 function createKernelState(
@@ -173,24 +183,36 @@ export function createApplicationRuntime(
     id,
     state,
     dispose() {
-      const ids = [...state.registry.keys()];
-      for (const id of ids) unregisterSubtreeInState(state, id);
-      state.dirty.clear();
-      state.dirtyReasons.clear();
-      state.cells.clear();
-      state.volatile.clear();
-      state.idsCache = null;
-      state.scheduled = false;
-      state.inCommit = false;
-      state.renderingEntity = null;
-      state.renderCounts = null;
-      state.markedBy = null;
-      state.extensions.clear();
+      const errors: unknown[] = [];
+      // Disposal hooks resolve their stores through the active runtime. A
+      // detached generation may be abandoned outside its original render
+      // call, so teardown must explicitly reactivate the owning runtime.
+      runWithApplicationRuntime(runtime, () => {
+        const ids = [...state.registry.keys()];
+        for (const id of ids) {
+          try { unregisterSubtreeInState(state, id); }
+          catch (error) { errors.push(error); }
+        }
+        state.dirty.clear();
+        state.dirtyReasons.clear();
+        state.cells.clear();
+        state.volatile.clear();
+        state.idsCache = null;
+        state.scheduled = false;
+        state.inCommit = false;
+        state.renderingEntity = null;
+        state.renderCounts = null;
+        state.markedBy = null;
+        state.preparation = undefined;
+        state.extensions.clear();
+      });
       if (activeRuntime === runtime) {
         // Re-activating the default keeps ambient semantics predictable
         // after a server request disposes its runtime mid-flight.
         activeRuntime = defaultRuntime;
       }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, '[memo-dom] runtime disposal failed');
     },
   };
   for (const listener of runtimeCreatedListeners) listener(runtime);
@@ -386,6 +408,8 @@ export function register(entity: Entity): void {
   const k = getActiveApplicationRuntime().state;
   const parent =
     entity.parent !== null ? k.registry.get(entity.parent) : undefined;
+  const preparation = k.preparation ?? parent?.preparation;
+  preparation?.attach(entity);
   // any reader renders); else derive from the parent — string scan fallback
   entity.depth =
     entity.depth ??

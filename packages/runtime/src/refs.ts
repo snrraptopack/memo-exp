@@ -17,7 +17,7 @@
  * processing.
  */
 
-import { getActiveEnvironment } from './kernel';
+import { getActiveApplicationRuntime, getActiveEnvironment } from './kernel';
 
 export type RefCallback<T extends Node = Node> = (
   node: T,
@@ -54,6 +54,21 @@ export function mountRef<T extends Node>(
   // disabled.
   if (getActiveEnvironment().refs !== 'run') {
     return () => {};
+  }
+
+  const preparation = getActiveApplicationRuntime().state.preparation;
+  if (preparation !== undefined) {
+    let active = true;
+    let dispose: (() => void) | undefined;
+    const cancel = preparation.deferRef(() => {
+      if (active) dispose = mountRef(node, value);
+    });
+    return () => {
+      if (!active) return;
+      active = false;
+      cancel();
+      dispose?.();
+    };
   }
 
   const eager: RefValue<T>[] = [];

@@ -9,3 +9,4 @@ export * from './index';
 export { _internals } from './kernel';
 export { _propsBox } from './props';
 export { listStructureReason } from './list-update';
+export { createRenderPreparation } from './preparation';
