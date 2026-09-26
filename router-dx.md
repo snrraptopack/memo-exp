@@ -313,7 +313,34 @@ The boundary policy must eventually define:
 - retry without changing the current URL;
 - behavior when a transition is superseded.
 
-The exact authored boundary syntax remains open.
+The proposed authored policy is now specified in `group-dx.md`:
+
+```tsx
+<Group pending={ReportSkeleton} error={ReportError}>
+  <ReportDetail route="/reports/:id" suspend />
+</Group>
+```
+
+An effective, independently available `pending` policy at the route region
+or any ancestor shows a loading shell in the changing route slot during
+lazy module loading and required `$routed` preparation. Without that policy,
+retain the previous page until preparation succeeds. Empty/error-only Groups
+do not enable a shell unless they inherit a pending policy.
+
+`$routed` still blocks destination entry: the shell does not mount protected
+destination components or start their child work. `suspend` governs atomic
+ordinary-resource activation after entry; without it, static destination UI
+and per-read pending placeholders render progressively after entry. Shared
+parent layouts remain mounted.
+
+The nearest available Group `error` policy presents a failed import or
+`$routed` request at that route slot using the same `{ error, retry }` contract.
+Navigation owns pre-entry retry; Group owns post-entry resource/render
+recovery. Without an available error policy, retain the current page and
+report through navigation events. Error/shell UI must be available outside
+the destination's unloaded chunk. URL/history timing for shell and failure
+presentation remains to be specified; these are proposed semantics, not a
+claim of current implementation.
 
 ## Route preparation with `$routed`
 

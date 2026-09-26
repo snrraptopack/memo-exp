@@ -6,6 +6,37 @@ declaration. One `Group` at the root covers the whole app; a nested `Group`
 restyles a section; `suspend` is an opt-in atomic boundary any element can
 raise — no positional relationship to `Group` required.
 
+This document describes proposed DX, not a claim that these semantics are
+already implemented. `$routed` always blocks destination entry, but an
+available Group pending policy can show a safe route loading shell during
+module loading and preparation. Without that policy, navigation is deferred.
+Group also governs ordinary resource availability after entry.
+
+### Implementation status
+
+The new Group API and route-shell integration below are not implemented yet.
+The first code slice hardens existing router behavior: native history
+traversal now prepares `$routed` before entry, tracked failed/blocked pops
+recover by traversal rather than extra pushes, stale retries are guarded,
+and history-entry scroll identity is preserved. Scroll work is cancellable,
+late hash targets are observed, and the internal coordinator accepts a
+renderer-readiness promise. Wiring that promise to real atomic boundary
+commits is still pending; it is not a public developer option.
+Legacy/external browser history entries without a tracked index cannot be
+reversed reliably through the fallback History API. Their failure is reported
+while committed UI is retained; a stronger untracked-entry recovery policy
+is still required. `bun run test:router:browser` exercises real-browser
+back/forward scroll positions, pending preparation, failure recovery/retry,
+late hash targets, and superseded scroll work. It uses an installed browser
+(or `MMD_BROWSER_PATH`) rather than downloading one. Unit tests additionally
+exercise readiness promises, malformed hashes, stale retries, and disposal.
+
+Detached subtree preparation, transactional crash recovery, slotless-read
+promotion, fallback chunk ownership, unified route shells/errors, and the
+new shell/error URL-publication rules still require implementation and
+integration tests. Existing pre-entry failures currently report through
+navigation events; the Group error replacement described below is proposed.
+
 ## The API
 
 ```tsx
@@ -17,14 +48,16 @@ raise — no positional relationship to `Group` required.
 - `pending` — a component (or inline render callback) shown while a covered
   source is pending.
 - `error` — a component receiving `{ error, retry }`, shown when a covered
-  source fails **or the subtree crashes**. `error.kind` is `'request'` or
-  `'crash'`; `error.message` is the human-readable cause either way.
+  source fails **or the subtree crashes**. Proposed `error.kind` is
+  `'request'`, `'module'`, or `'crash'`; `error.message` is the
+  human-readable cause in each case.
   Request failures additionally carry `status`, `statusText`, `data`,
-  `issues`; a crash exposes the thrown value as `error.cause`. `retry`
-  does the right restoration for each (refire the request vs. remount the
-  failed unit fresh).
+  `issues` when available; module failures and crashes expose the cause as
+  `error.cause`. Retry refires a failed request, retries a recoverable
+  module load, or remounts a failed render unit fresh.
 - Children — anything. `Group` itself renders nothing: it's a compile-time
-  scope marker, erased before emit, no DOM node, no runtime entity.
+  scope marker with no wrapper DOM. Plain policy scopes can be erased;
+  atomic suspension and crash recovery still need runtime ownership.
 - Both props are optional and independently inherited — more below.
 
 ## One Group at the root
@@ -91,13 +124,15 @@ export function Page() {
 }
 ```
 
-- The boundary claims **every read beneath it, unconditionally** — its
+- The boundary claims **every read in the active subtree being prepared** — its
   own reads and sources descendants create. `<Parent suspend>` waits for
   a child's own `$fetch`, and nothing inside can narrow the wait set:
   `suspend` dominates, the whole subtree stays withheld until all of it
   is ready.
-- `suspend` still controls only the **first mount** — later refreshes keep
-  the committed UI on screen.
+- `suspend` controls the first activation of a region, including a new
+  destination identity. Refreshing that same destination keeps committed
+  UI on screen. Reusing a component instance does not by itself make a
+  different route-parameter destination a refresh.
 - While suspended, the `Skeleton` occupies the exact spot where the
   element will mount.
 
@@ -139,8 +174,12 @@ per-site placeholders under the inner scope's policy. Under a suspended
 ancestor it does *not* narrow the boundary's wait set — `suspend`
 dominates absolutely — but it still owns which policy that subtree's
 placeholders and refresh states use once mounted. The full claim order
-from any read: nearest `suspend` ancestor claims it unconditionally;
-else nearest `Group` handles it per-site; else the built-in default.
+from any read: the outermost still-uncommitted `suspend` ancestor owns
+atomic replacement and uses the policy resolved at that boundary;
+nested boundaries contribute readiness, not separate first-mount UI.
+Otherwise the nearest independently activating `suspend` claims it;
+else the nearest `Group` handles it per-site; else the built-in default.
+An inner error policy does not split an outer uncommitted atomic region.
 
 ## `<Group suspend>` — the shorthand
 
@@ -154,6 +193,138 @@ suspend-on-the-content-child pattern:
   <Comments />
 </Group>
 ```
+
+## Routes — `$routed` controls entry, Group controls availability
+
+Required `$routed` preparation must complete successfully before the
+destination activates. An effective, independently available Group
+`pending` policy selects loading-shell presentation; without it the previous
+page remains visible until preparation succeeds. The policy can come from
+a Group at the route region itself or any ancestor level. Neither Group
+nor `suspend` bypasses the entry gate.
+Redirects and authorization resolve before destination components start.
+Shared parent layouts stay mounted across successful child navigation.
+
+```tsx
+<Group pending={ReportSkeleton} error={ReportError}>
+  <ReportDetail route="/reports/:id" suspend />
+</Group>
+```
+
+While the lazy module or `$routed` loads, `ReportSkeleton` occupies the
+changing route slot, without mounting ReportDetail or starting its protected
+child work. On successful entry, `suspend` keeps the region atomic while
+ordinary descendant resources prepare. Without `suspend`, the same route
+shell covers entry preparation; after entry the destination's static UI
+appears and ordinary pending reads use local placeholders.
+
+| Effective available pending policy | During module / `$routed` preparation |
+|---|---|
+| Present, with or without `suspend` | Show the destination route-slot shell; preserve shared layouts |
+| Absent | Retain the previous page until required preparation succeeds |
+
+This does not make every destination fetch blocking. Put genuinely
+entry-critical work in `$routed`; ordinary component resources can load
+after entry under the Group policy:
+
+```tsx
+const report = $routed(({ params }) => getReport(params.id));
+
+// Inside the destination, after entry:
+const comments = client.$fetch('/comments');
+```
+
+| Ordinary resources after destination entry | Presentation while pending |
+|---|---|
+| `suspend` with an effective pending policy | Show the marked region's fallback, then reveal it atomically |
+| No `suspend`, with an effective pending policy | Render static content immediately; show pending UI at individual reads ("colorless" / progressive mode) |
+| No effective pending policy | Use built-in empty pending defaults; `suspend` still controls atomic activation |
+
+The policy may be declared by a Group at the region itself or inherited
+from any ancestor. An error-only Group can inherit an outer `pending`;
+without one it does not create a loading shell or opt navigation out of
+previous-page retention. An error policy may still present a route failure.
+An empty Group is a passthrough, not an instant-navigation opt-in.
+In progressive mode each read's slot updates coherently, but the whole
+region does not wait for all reads together. Place `suspend` on the
+changing child region rather than a layout that must remain visible.
+
+Putting all page data in `$routed` makes all that work block entry.
+Already-ready preparation has no meaningful wait; the exact cache and
+revalidation rules remain a separate contract. No separate `<Route>`
+loading wrapper is introduced here.
+
+### Lazy code and independently available shells
+
+Group's effective pending policy is also the navigation shell policy.
+There is no separate `<Route>` wrapper or additional opt-in merely for
+lazy loading. Scope presence alone is insufficient: an available pending
+component or callback must resolve at the changing route activation slot.
+
+A Group declared only inside an unloaded module cannot cover that module's
+download. The shell/fallback and its dependencies must be available
+independently of the destination chunk. Static UI inside that chunk cannot
+render before it arrives. If no available outer pending policy exists,
+entry preparation remains deferred; once the module activates, its own
+Group declarations can govern ordinary internal resources.
+
+### Safety and identity
+
+- A `$routed` function can authorize, redirect, and fetch in one operation.
+  All required preparation blocks entry; no compiler inference of a safe
+  partially completed gate is needed. Protected child work must not start
+  through an unresolved parent gate.
+- Prepared state is published only for the successful destination.
+  Navigation supersession must prevent an old attempt from committing or
+  updating the new destination.
+- A new matched route or changed path parameters activates a destination;
+  a refresh of the same destination retains committed UI. Query-only
+  changes need a precise identity/revalidation rule before implementation.
+- History commit, navigation completion, and DOM/scroll readiness are
+  separate milestones. An instant shell is not "destination ready".
+
+### Initial visits and retries
+
+On client-only initial visits there is no old page to retain. An available
+Group pending policy shows the route shell while entry prepares; without
+one, use the empty bootstrap default. A Group hidden inside the destination
+chunk cannot supply pre-entry UI. After entry, ordinary resources use the
+policy above. Fully resolved SSR preserves server-rendered DOM
+while client chunks download and restores server-prepared data rather
+than repeating initial `$routed` work. Streaming SSR is a separate future
+capability, not implied by this proposal.
+
+A `$routed` or route-module import failure uses the nearest independently
+available Group `error` policy at the failed route slot. It can replace a
+pending shell or the previous child with destination error UI, even when
+no pending policy was supplied. Shared layouts remain mounted; protected
+destination components do not mount merely to display the failure.
+Without an available error policy, retain the current page and report via
+navigation events; on an initial visit, bootstrap handling reports it.
+
+Retry repeats failed navigation preparation, showing the effective pending
+shell when available, and activates the destination only after success.
+Request preparation failures use `error.kind: 'request'`; import failures
+use `'module'`. Displaying a destination error is a separate failure
+presentation milestone, not successful entry. URL/history timing for that
+milestone remains an explicit open decision below.
+
+After entry, ordinary resource failures use the effective Group error
+policy. Request retry refires that operation; render-crash retry recreates
+the failed unit. Unaffected siblings and shared layout state are preserved.
+
+Retry is operation-specific, not a whole-app remount. A deleted deployment
+chunk or a cached module-evaluation failure may require a reload rather
+than another identical import; ordinary retry cannot guarantee recovery.
+
+### Automated SSR chunk handoff
+
+The compiler identifies route modules; Vite maps them to emitted JS/CSS
+and shared dependencies; SSR uses the rendered route chain to emit
+deduplicated preload/style links and module identity in the existing
+hydration payload. Developers never author hashed chunk URLs or transfer
+keys for this coordination. Preloading improves delivery, not readiness
+or error-boundary semantics.
 
 ## Crashes land in the same arm
 
@@ -177,15 +348,20 @@ function Failure({ error, retry }) {
     // error.status / error.data / error.issues available too
     return <p>{error.message} <button onClick={retry}>Retry</button></p>;
   }
+  // Module loading failures are distinct from render crashes.
+  if (error.kind === 'module') {
+    return <p>Could not load this section. <button onClick={retry}>Retry</button></p>;
+  }
   // error.kind === 'crash'; error.cause is the thrown value
   return <p>{error.message} <button onClick={retry}>Reload section</button></p>;
 }
 ```
 
 - `retry` is polymorphic by kind: `request` → refire the request (mounted
-  UI stays); `crash` → tear down and remount the failed unit fresh —
+  UI stays where possible); `module` → retry the recoverable loader;
+  `crash` → tear down and remount the failed unit fresh —
   dead state can't resume.
-- A request error no scope claims is thrown render-side and lands in the
+- An ordinary resource request error no scope claims is thrown render-side and lands in the
   same arm — it arrives normalized with `kind: 'request'`, so transport
   failure stays distinguishable from code failure.
 - Crashes inside the `error` arm itself propagate to the next outer scope.
@@ -219,7 +395,7 @@ permission.
 - **Per-key inheritance** — inner Groups merge over outer (`pending`
   override keeps outer `error`), not replace.
 - **`suspend` dominates** — a suspended element waits for every source
-  beneath it, including descendant-created ones; inner `Group`s and
+  in its actively prepared subtree, including descendant-created ones; inner `Group`s and
   `suspend`s cannot narrow the wait set. The only opt-out is structural:
   move the section out from under the suspended element, or don't
   suspend. Claiming descendant sources is the one part of this model
@@ -228,19 +404,32 @@ permission.
 - **Inner `Group`s rule non-suspended space** — per-site placeholders,
   per-key policy inheritance, and post-commit/refresh handling.
 - **`error` is the one failure arm** — `error.kind` is `'request'` for a
-  failed `$fetch` / server function / `$routed`, `'crash'` for a render
-  failure; `error.message` reads naturally for both. `retry` is
+  failed ordinary `$fetch` / server-function resource or `$routed` request,
+  `'module'` for route import failure, and `'crash'` for a render failure.
+  Route failures use the available Group error UI, but navigation retains
+  lifecycle ownership; retry reattempts failed entry rather than mounting
+  the destination prematurely.
+  `error.message` reads naturally across kinds. `retry` is
   polymorphic: refire for requests, teardown + fresh remount for
   crashes. Crashes claim at the smallest enclosing unit inside the
   nearest `error`-carrying scope — narrower than React's whole-boundary
   replacement. Needs kernel support: a `render()` throwing mid-commit
   must route to the boundary instead of killing the drain.
-- **Erased scope** — `Group` emits no runtime entity; policy travels as
-  the existing hidden `dataPolicies` component argument.
-- **Refresh is not re-suspend** — boundaries govern first mount only;
+- **No wrapper DOM** — plain Group policy declarations can be erased;
+  policy travels as the existing hidden `dataPolicies` component argument.
+  Atomic boundaries and crash recovery require runtime ownership.
+- **Refresh is not re-suspend** — boundaries govern destination activation;
   `refreshing` keeps committed UI and per-site placeholders apply.
+- **Entry preparation is separate from presentation** — required `$routed`
+  work blocks entry regardless of Group or `suspend`. An available effective
+  pending policy shows a route shell; otherwise retain the previous page.
+  Group also governs ordinary resources after entry. Empty/error-only
+  Groups do not enable shells unless they inherit a pending policy.
 
-## Questions to resolve before implementation
+## Six implementation questions — proposed answers
+
+The following are recommendations for review, not approved implementation
+decisions. They specify the missing contracts without adding public syntax.
 
 1. **How does an atomic `suspend` discover its complete wait set?** A child
    may create a source only while preparing or mounting. Which work may run
@@ -254,7 +443,164 @@ permission.
    A text expression has a visible location, but an attribute or host property
    read may not. Which enclosing element or region owns its pending and error
    UI, and how do we keep the resulting DOM valid?
-4. **Whose error policy handles an initial failure beneath an ancestor
-   `suspend` and a nested `Group`?** The ancestor owns the atomic first mount,
-   while the nested Group supplies a nearer policy. Which one renders the
-   failure before the boundary commits, and does that change after commit?
+4. **How is fallback availability guaranteed?** Define compiler/Vite
+   ownership rules so shell and error dependencies stay loadable outside
+   the destination chunk, and define escalation when a fallback itself fails.
+5. **What is the recovery scope for navigation retry?** Define which parent
+   preparation results remain valid and which failed/superseded child work
+   reruns, without bypassing gates or repeating successful side effects.
+6. **What is destination identity and when does navigation commit?** Pin
+   query-only changes, URL/history timing, failure after shell commit,
+   back/forward behavior, cancellation, and readiness-aware scrolling.
+
+### 1. Discover readiness through staged preparation
+
+Give each activating atomic boundary a preparation generation. Components
+in its active subtree initialize against that generation and register the
+resources their reads actually consume. Prepare detached output or staged
+render descriptions; do not publish live DOM, assign public refs, run
+mounted effects, or attach live event handlers before commit.
+
+When a consumed resource settles, resume/re-evaluate the affected work.
+It may reveal a conditional child and another resource. The boundary is
+ready only when the active render has completed, no consumed resource is
+pending, and no discovery/render work remains queued. An empty wait set
+alone is not proof of readiness if some child has not been prepared yet.
+Inactive branches and future user interactions are not part of this set.
+
+Source identity must survive preparation passes: cache creation by owning
+instance and compiler read/source site, with its request inputs. Abandoning
+a branch releases its registration; abandoning a generation disposes its
+staged instances and subscriptions. Cancel owned requests where possible;
+shared requests/imports may finish but cannot publish into an obsolete slot.
+
+Resources created only by mounted effects cannot block that first mount:
+running those effects early would violate their lifecycle. Such resources
+are post-commit work. If first-mount readiness needs them, move their
+declaration into preparation-visible component work. A render that creates
+new requests forever must surface a diagnostic rather than silently loop.
+
+### 2. Recover an owned slot, with transactional cleanup
+
+The recovery unit is an independently owned component slot or explicit
+atomic host/Group boundary. Before its first commit, failure disposes all
+staged DOM, child instances, subscriptions, and queued effects. After commit,
+a render crash tears down that unit and its descendants, runs registered
+cleanup, clears owned refs, and puts error UI in the same slot. Siblings and
+shared ancestors retain their instances and state.
+
+An uncommitted outer atomic boundary owns a descendant failure as a whole;
+otherwise use the smallest independently recoverable slot. Do not attempt
+to resume half-mutated component state. Retry creates a fresh generation
+and fresh local state for that failed unit, while shared external resource
+caches follow their own invalidation rules.
+
+Fallbacks have their own instances, but their failure must skip the policy
+that produced them and escalate to the next available outer error policy.
+If none exists, report a terminal failure rather than recursively rendering
+the same fallback. Kernel writes need ownership/cleanup bookkeeping before
+this guarantee can be implemented. Arbitrary side effects performed by
+user code during render cannot be rolled back; render must remain free of
+such effects. Event/async/effect exceptions remain outside render recovery.
+
+### 3. Promote slotless reads to the smallest valid owner
+
+Text/child expressions use their own replaceable slots. A pending value in
+an attribute, host property, component prop, or structural condition cannot
+render a component in that value position. Promote readiness to its smallest
+valid owner: the host element, receiving component slot, or conditional
+region. Multiple such reads share that owner's wait set. This is local
+atomic promotion, not suspension of the entire page.
+
+Do not commit an element with fabricated attributes, broken event handlers,
+or stale security-sensitive values. On initial activation, withhold that
+owner and put its fallback in the owner's parent slot. During refresh,
+retain committed output under the existing refresh policy.
+
+Fallback output must be valid for the insertion context (for example, table
+rows, select options, and SVG). Diagnose statically provable invalid shapes;
+validate dynamic fallback output before insertion and report a boundary
+error rather than letting the browser silently rearrange DOM. Recommend
+moving Group/suspend to a larger valid region when the supplied fallback
+cannot fit. Do not add arbitrary wrapper elements to repair the markup.
+
+### 4. Compile shell dependencies outside destination ownership
+
+The compiler records the pending/error policy effective at each route
+activation site. The Vite integration treats those fallback components and
+their dependencies as available shell dependencies, not route-exclusive
+imports eligible for placement only in the destination chunk. Shared chunks
+are fine; their dependency closure must be loaded with the owning shell.
+This need not eagerly import every fallback for every unrelated route.
+
+Policies declared only inside a lazy module become available after that
+module loads; before then, use an already available outer policy or defer.
+Do not speculate that an unavailable inner Group can cover its own import.
+SSR resolves the same dependency graph for preload/style links and payload
+identity. A fallback that suspends cannot wait on the resource it is meant
+to cover; use an available outer pending policy or the empty default. A
+fallback that crashes escalates as described above.
+
+### 5. Retry the failed attempt, not the whole application
+
+Bind retry to the destination and failed operation's attempt token.
+Deduplicate repeated clicks while that retry is in flight. A retry belonging
+to a superseded destination is inert; it must not navigate back unexpectedly.
+Reuse successfully loaded module code, evict a failed loader entry where
+recoverable, and start a fresh preparation attempt for the failed route.
+
+Keep unchanged, successfully committed parent layouts mounted. Reuse parent
+preparation only when its route/request inputs and explicit validity rules
+still match. Do not treat a cached parent result as permanent authorization:
+rerun required guards/auth checks unless their validity contract permits
+reuse. Run child preparation only after those checks succeed. Never publish
+partially successful child data from a failed attempt.
+
+There is no general exactly-once guarantee for arbitrary `$routed` side
+effects. Recommend read-oriented/idempotent preparation, with mutations in
+explicit actions. Retry must not automatically replay an entire successful
+chain merely because one child failed; when a failed operation itself may
+have produced a side effect, application idempotency is still necessary.
+Stale deployment chunks or cached module-evaluation failures may require a
+reload; do not add unbounded automatic retry or URL cache-busting loops.
+
+### 6. Separate URL presentation, entry, and DOM readiness
+
+Use the semantic matched route-instance chain plus path parameters as region
+identity. Query changes produce a new navigation/preparation attempt with
+fresh inputs, but retain the same region instance by default rather than
+automatically remounting local state. Query-dependent preparation must be
+revalidated; unrelated changes may reuse results only under a proven
+dependency/cache contract. Hash-only changes do not rerun route preparation.
+
+For controlled push/replace navigation, resolve synchronous blockers first.
+If an available pending policy lets the router publish a shell, update
+URL/history when publishing it. Otherwise keep the old URL and page until
+successful destination publication. Showing an available destination error
+also publishes that destination URL, even after deferred preparation. If no
+error policy can show it, retain the previous page and URL. These are proposed
+failure/presentation rules, not claims that entry succeeded.
+
+Retry stays on the same attempted URL and creates no extra history entry.
+If preparation redirects after a shell URL was published, replace that
+provisional history entry with the redirect destination; without a published
+shell, publish only the final destination. A redirect is a control result,
+not an error fallback.
+
+Back/forward already changes the browser URL: do not push a new entry to
+mirror it. Prepare the selected history destination and use its shell or
+retain old content while waiting. Unhandled failure must be visibly reported
+as a failed history navigation, not silently treated as successful entry.
+The policy for restoring the prior history entry after a blocked/failed pop
+needs a focused history implementation/test; never approximate it with an
+extra push. Supersession invalidates old commits and retries; it must not
+undo history belonging to a newer navigation.
+
+Keep separate internal milestones: shell/error publication, successful
+entry preparation, and committed DOM readiness. Navigation completion must
+not mean merely that a skeleton appeared. Scroll restoration waits for the
+new region's first committed output; an atomic region's pending shell is
+not that output. Progressive output may commit before all local reads settle;
+hash targets inside pending slots need an explicit later target-ready signal,
+not a fixed number of animation frames. Cancel scheduled scroll/focus work
+when a newer navigation supersedes it.

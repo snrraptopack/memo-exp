@@ -31,6 +31,278 @@ beforeEach(() => {
 });
 
 describe('route runtime', () => {
+  function trackedBrowser() {
+    const entries: Array<{ href: string; state: unknown }> = [{ href: 'http://localhost/', state: null }];
+    let index = 0;
+    const listeners = new Map<string, EventListener>();
+    const go = vi.fn();
+    const history = {
+      get state() { return entries[index]!.state; },
+      scrollRestoration: 'auto',
+      replaceState: vi.fn((state: unknown, _title: string, href: string | URL) => {
+        entries[index] = { href: new URL(href, entries[index]!.href).href, state };
+      }),
+      pushState: vi.fn((state: unknown, _title: string, href: string | URL) => {
+        const entry = { href: new URL(href, entries[index]!.href).href, state };
+        entries.splice(++index, entries.length, entry);
+      }),
+      go,
+    } as unknown as History;
+    const location = { get href() { return entries[index]!.href; } } as Location;
+    const environment: RouteEnvironment = {
+      history, location,
+      addEventListener: (type, listener) => { listeners.set(type, listener); },
+      removeEventListener: type => { listeners.delete(type); },
+    };
+    return {
+      environment, history, entries, go,
+      get index() { return index; },
+      pop(to: number) {
+        index = to;
+        listeners.get('popstate')?.(new Event('popstate'));
+      },
+    };
+  }
+
+  it('prepares native back/forward before publishing the selected page', async () => {
+    const browser = trackedBrowser();
+    let release!: () => void;
+    let gated = false;
+    registerRoutedPreparation({
+      id: 'native-pop-gate', server: false,
+      prepare: () => gated ? new Promise<void>(resolve => { release = resolve; }) : undefined,
+    });
+    const runtime = createRouteRuntime({ environment: browser.environment, routes: [
+      { id: 'first', pattern: '/first', metadata: { preparations: ['native-pop-gate'] } },
+      { id: 'second', pattern: '/second' },
+    ] });
+    runtime.connect();
+    const first = runtime.navigate('/first');
+    if (first.status === 'preparing') await first.finished;
+    runtime.navigate('/second');
+    gated = true;
+    browser.pop(1);
+    expect(runtime.route.pathname).toBe('/second');
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    release();
+    await vi.waitFor(() => expect(runtime.route.pathname).toBe('/first'));
+    expect(browser.history.pushState).toHaveBeenCalledTimes(2);
+    runtime.dispose();
+  });
+
+  it('recovers a blocked native pop by traversal, without inserting a duplicate entry', () => {
+    const browser = trackedBrowser();
+    const runtime = createRouteRuntime({ environment: browser.environment });
+    runtime.connect();
+    runtime.navigate('/first');
+    runtime.navigate('/second');
+    runtime.blockNavigation(() => false);
+    browser.pop(1);
+    expect(runtime.route.pathname).toBe('/second');
+    expect(browser.go).toHaveBeenLastCalledWith(1);
+    browser.pop(2); // Recovery pop is acknowledged without running blockers again.
+    expect(runtime.route.pathname).toBe('/second');
+    expect(browser.history.pushState).toHaveBeenCalledTimes(2);
+    runtime.dispose();
+  });
+
+  it('recovers failed native preparation and retries the same history entry', async () => {
+    const browser = trackedBrowser();
+    let fail = false;
+    registerRoutedPreparation({
+      id: 'native-failure', server: false,
+      prepare: () => { if (fail) throw new Error('offline'); return 'ready'; },
+    });
+    const runtime = createRouteRuntime({ environment: browser.environment, routes: [
+      { id: 'first', pattern: '/first', metadata: { preparations: ['native-failure'] } },
+      { id: 'second', pattern: '/second' },
+    ] });
+    runtime.connect();
+    const first = runtime.navigate('/first');
+    if (first.status === 'preparing') await first.finished;
+    runtime.navigate('/second');
+    let retry: (() => ReturnType<typeof runtime.navigate>) | undefined;
+    runtime.subscribeNavigation(event => { if (event.phase === 'error') retry = event.retry; });
+    fail = true;
+    browser.pop(1);
+    await vi.waitFor(() => expect(retry).toBeTypeOf('function'));
+    expect(browser.go).toHaveBeenLastCalledWith(1);
+    expect(runtime.route.pathname).toBe('/second');
+    browser.pop(2);
+    fail = false;
+    const result = retry!();
+    expect(result.status).toBe('preparing');
+    expect(retry!()).toBe(result);
+    expect(browser.go).toHaveBeenLastCalledWith(-1);
+    browser.pop(1);
+    if (result.status === 'preparing') await result.finished;
+    expect(runtime.route.pathname).toBe('/first');
+    expect(browser.history.pushState).toHaveBeenCalledTimes(2);
+    runtime.dispose();
+  });
+
+  it('queues retry until an in-flight history recovery has returned to the committed entry', async () => {
+    const browser = trackedBrowser();
+    let fail = false;
+    registerRoutedPreparation({ id: 'immediate-pop-retry', server: false,
+      prepare: () => { if (fail) throw new Error('offline'); return 'ready'; } });
+    const runtime = createRouteRuntime({ environment: browser.environment, routes: [
+      { id: 'first', pattern: '/first', metadata: { preparations: ['immediate-pop-retry'] } },
+      { id: 'second', pattern: '/second' },
+    ] });
+    runtime.connect();
+    const first = runtime.navigate('/first');
+    if (first.status === 'preparing') await first.finished;
+    runtime.navigate('/second');
+    let retried: ReturnType<typeof runtime.navigate> | undefined;
+    runtime.subscribeNavigation(event => {
+      if (event.phase !== 'error') return;
+      fail = false;
+      retried = event.retry!();
+    });
+    fail = true;
+    browser.pop(1);
+    await vi.waitFor(() => expect(retried?.status).toBe('preparing'));
+    expect(browser.go).toHaveBeenCalledTimes(1);
+    expect(browser.go).toHaveBeenLastCalledWith(1);
+    browser.pop(2);
+    expect(browser.go).toHaveBeenLastCalledWith(-1);
+    browser.pop(1);
+    if (retried?.status === 'preparing') await retried.finished;
+    expect(runtime.route.pathname).toBe('/first');
+    runtime.dispose();
+  });
+
+  it('keeps tracked indexes consistent when pushing after a recovered pop', () => {
+    const browser = trackedBrowser();
+    const runtime = createRouteRuntime({ environment: browser.environment });
+    runtime.connect();
+    runtime.navigate('/first');
+    runtime.navigate('/second');
+    const unblock = runtime.blockNavigation(() => false);
+    browser.pop(1);
+    browser.pop(2);
+    unblock();
+    runtime.navigate('/third');
+    expect(browser.index).toBe(3);
+    expect(browser.history.state.__mmd_index).toBe(3);
+    runtime.dispose();
+  });
+
+  it('does not let a slow native pop overwrite a newer controlled navigation', async () => {
+    const browser = trackedBrowser();
+    let gated = false;
+    let release!: () => void;
+    registerRoutedPreparation({
+      id: 'superseded-native-pop', server: false,
+      prepare: () => gated ? new Promise<void>(resolve => { release = resolve; }) : undefined,
+    });
+    const runtime = createRouteRuntime({ environment: browser.environment, routes: [
+      { id: 'first', pattern: '/first', metadata: { preparations: ['superseded-native-pop'] } },
+      { id: 'second', pattern: '/second' },
+      { id: 'third', pattern: '/third' },
+    ] });
+    runtime.connect();
+    const first = runtime.navigate('/first');
+    if (first.status === 'preparing') await first.finished;
+    runtime.navigate('/second');
+    gated = true;
+    browser.pop(1);
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    runtime.navigate('/third');
+    release();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(runtime.route.pathname).toBe('/third');
+    expect(browser.go).not.toHaveBeenCalled();
+    runtime.dispose();
+  });
+
+  it('does not rerun routed preparation for a hash-only navigation', async () => {
+    const prepare = vi.fn(() => 'ready');
+    registerRoutedPreparation({ id: 'hash-only', server: false, prepare });
+    const runtime = createRouteRuntime({ environment: {}, routes: [
+      { id: 'docs', pattern: '/docs', metadata: { preparations: ['hash-only'] } },
+    ] });
+    const first = runtime.navigate('/docs');
+    if (first.status === 'preparing') await first.finished;
+    expect(runtime.navigateRelative('#section').status).toBe('completed');
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(runtime.route.hash).toBe('#section');
+    runtime.dispose();
+  });
+
+  it('reruns preparation when a hash navigation also changes route state', async () => {
+    const prepare = vi.fn(() => 'ready');
+    registerRoutedPreparation({ id: 'hash-state', server: false, prepare });
+    const runtime = createRouteRuntime({ environment: {}, routes: [
+      { id: 'docs', pattern: '/docs', metadata: { preparations: ['hash-state'] } },
+    ] });
+    const first = runtime.navigate('/docs');
+    if (first.status === 'preparing') await first.finished;
+    const changed = runtime.navigateRelative('#section', { state: 42 });
+    expect(changed.status).toBe('preparing');
+    if (changed.status === 'preparing') await changed.finished;
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(runtime.route.state).toBe(42);
+    runtime.dispose();
+  });
+
+  it('redirects a prepared memory-history pop to the blocker destination', async () => {
+    const prepare = vi.fn(() => 'authorized');
+    registerRoutedPreparation({ id: 'history-redirect', server: false, prepare });
+    const history = createMemoryRouteHistory({ initialEntries: ['/private', '/current'] });
+    const runtime = createRouteRuntime({ environment: {}, routeHistory: history, routes: [
+      { id: 'private', pattern: '/private' }, { id: 'current', pattern: '/current' },
+      { id: 'login', pattern: '/login', metadata: { preparations: ['history-redirect'] } },
+    ] });
+    runtime.blockNavigation(navigation => navigation.to.pathname === '/private' ? redirectRoute('/login') : true);
+    const result = runtime.back();
+    if (result?.status !== 'preparing') throw new Error('expected login preparation');
+    await result.finished;
+    expect(runtime.route.pathname).toBe('/login');
+    expect(history.location.href).toContain('/login');
+    expect(prepare).toHaveBeenCalledOnce();
+    runtime.dispose();
+    history.destroy();
+  });
+
+  it('makes a stale navigation retry inert after another destination wins', async () => {
+    registerRoutedPreparation({ id: 'stale-retry', server: false, prepare: () => { throw new Error('offline'); } });
+    const runtime = createRouteRuntime({ environment: {}, routes: [
+      { id: 'bad', pattern: '/bad', metadata: { preparations: ['stale-retry'] } },
+      { id: 'good', pattern: '/good' },
+    ] });
+    let retry!: () => ReturnType<typeof runtime.navigate>;
+    runtime.subscribeNavigation(event => { if (event.phase === 'error') retry = event.retry!; });
+    const result = runtime.navigate('/bad');
+    if (result.status === 'preparing') await expect(result.finished).rejects.toThrow('offline');
+    runtime.navigate('/good');
+    expect(retry().status).toBe('blocked');
+    expect(runtime.route.pathname).toBe('/good');
+    runtime.dispose();
+  });
+
+  it('supersedes memory traversal even when the newer traversal needs no preparation', async () => {
+    let release!: () => void;
+    registerRoutedPreparation({ id: 'slow-back', server: false,
+      prepare: () => new Promise<void>(resolve => { release = resolve; }) });
+    const history = createMemoryRouteHistory({ initialEntries: ['/slow', '/current', '/forward'], initialIndex: 1 });
+    const runtime = createRouteRuntime({ routeHistory: history, environment: {}, routes: [
+      { id: 'slow', pattern: '/slow', metadata: { preparations: ['slow-back'] } },
+      { id: 'current', pattern: '/current' }, { id: 'forward', pattern: '/forward' },
+    ] });
+    const slow = runtime.back();
+    if (slow?.status !== 'preparing') throw new Error('expected preparation');
+    const rejected = expect(slow.finished).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    expect(runtime.forward()?.status).toBe('completed');
+    release();
+    await rejected;
+    expect(runtime.route.pathname).toBe('/forward');
+    expect(history.location.index).toBe(2);
+    runtime.dispose();
+    history.destroy();
+  });
   it('prepares routed data before committing a controlled navigation', async () => {
     let release!: (value: { title: string }) => void;
     const prepared = new Promise<{ title: string }>(resolve => {
@@ -313,7 +585,7 @@ describe('route runtime', () => {
     expect(runtime.route.state).toEqual({ via: 'navigation-api' });
     expect(intercept).toHaveBeenCalledOnce();
     expect(intercept).toHaveBeenCalledWith(expect.objectContaining({
-      scroll: 'after-transition',
+      scroll: 'manual',
     }));
     expect(historyPush).not.toHaveBeenCalled();
 
@@ -403,7 +675,7 @@ describe('route runtime', () => {
     runtime.dispose();
   });
 
-  it('does not intercept ineligible Navigation API events and handles hashes natively', () => {
+  it('does not intercept ineligible Navigation API events and owns eligible hash scrolling', () => {
     let listener: EventListener | null = null;
     const intercept = vi.fn();
     const navigation: NavigationController = {
@@ -442,7 +714,7 @@ describe('route runtime', () => {
       hashChange: true,
     });
     expect(runtime.route.hash).toBe('#section');
-    expect(intercept).not.toHaveBeenCalled();
+    expect(intercept).toHaveBeenCalledWith(expect.objectContaining({ scroll: 'manual' }));
     runtime.dispose();
   });
 

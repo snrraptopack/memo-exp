@@ -58,6 +58,7 @@ export interface RouteEnvironment {
 
 export interface NavigationDestinationLike {
   readonly url: string;
+  readonly key?: string;
   getState?(): unknown;
 }
 
@@ -75,6 +76,7 @@ export interface NavigationEventLike extends Event {
 }
 
 export interface NavigationController {
+  readonly currentEntry?: { readonly key: string };
   addEventListener(type: 'navigate', listener: EventListener): void;
   removeEventListener(type: 'navigate', listener: EventListener): void;
   navigate(
@@ -281,26 +283,25 @@ function sameMatches(
       keys.every(key => match.params[key] === other.params[key]);
   });
 }
-function wrapHistoryState(userState: unknown, key: string): unknown {
-  if (userState !== null && typeof userState === 'object' && !Array.isArray(userState)) {
-    return { ...userState, __mmd_key: key };
-  }
-  return { __mmd_val: userState, __mmd_key: key };
+function wrapHistoryState(userState: unknown, key: string, index: number): unknown {
+  return { __mmd_val: userState, __mmd_key: key, __mmd_index: index };
 }
 
-function unwrapHistoryState(storedState: unknown): { userState: unknown; key: string | null } {
+function unwrapHistoryState(storedState: unknown): { userState: unknown; key: string | null; index: number | null } {
   if (storedState !== null && typeof storedState === 'object') {
     const obj = storedState as Record<string, unknown>;
     const key = typeof obj.__mmd_key === 'string' ? obj.__mmd_key : null;
-    if ('__mmd_val' in obj) {
-      return { userState: obj.__mmd_val, key };
+    const index = key !== null && Number.isInteger(obj.__mmd_index)
+      ? obj.__mmd_index as number : null;
+    if (key !== null && '__mmd_val' in obj) {
+      return { userState: obj.__mmd_val, key, index };
     }
     if (key !== null) {
-      const { __mmd_key, ...rest } = obj;
-      return { userState: rest, key };
+      const { __mmd_key, __mmd_index, ...rest } = obj;
+      return { userState: rest, key, index };
     }
   }
-  return { userState: storedState, key: null };
+  return { userState: storedState, key: null, index: null };
 }
 
 function generateHistoryKey(): string {
@@ -360,11 +361,13 @@ export function createRouteRuntime(
     );
   }
   let pathname: string = initialPathname;
-  const initialUnwrapped = unwrapHistoryState(
-    routeHistory?.location.state ?? environment.history?.state ?? null,
-  );
+  const initialUnwrapped = routeHistory === undefined
+    ? unwrapHistoryState(environment.history?.state ?? null)
+    : { userState: routeHistory.location.state, key: routeHistory.location.key, index: routeHistory.location.index };
   let state: unknown = initialUnwrapped.userState;
-  let currentHistoryKey: string = initialUnwrapped.key ?? generateHistoryKey();
+  let currentHistoryKey: string = routeHistory?.location.key ?? environment.navigation?.currentEntry?.key ?? initialUnwrapped.key ?? generateHistoryKey();
+  let currentHistoryIndex = routeHistory?.location.index ?? initialUnwrapped.index ?? 0;
+  let browserHistoryIndex = currentHistoryIndex;
   const scrollCoordinator = createScrollCoordinator({
     window: typeof window === 'undefined' ? undefined : window,
     document: typeof document === 'undefined' ? undefined : document,
@@ -392,6 +395,29 @@ export function createRouteRuntime(
   let navigationId = 0;
   let committingNavigation = 0;
   let activePreparation: AbortController | null = null;
+  let pendingBrowserHref: string | null = null;
+  let browserRetry: {
+    readonly href: string;
+    readonly index: number;
+    readonly result: Extract<RouteNavigationResult, { status: 'preparing' }>;
+    resolve(result: RouteNavigationSettledResult): void;
+    reject(error: unknown): void;
+  } | null = null;
+
+  function supersedePreparation(): void {
+    const previous = activePreparation;
+    activePreparation = null;
+    previous?.abort(new DOMException('Route preparation was superseded', 'AbortError'));
+    browserRetry?.reject(new DOMException('History retry was superseded', 'AbortError'));
+    browserRetry = null;
+    pendingBrowserHref = null;
+    scrollCoordinator.cancel();
+  }
+
+  function isHashOnlyDestination(next: URL, nextState: unknown): boolean {
+    return next.pathname === url.pathname && next.search === url.search &&
+      next.hash !== url.hash && Object.is(nextState, state);
+  }
   let emitting = false;
   let emissionPending = false;
   const listeners = new Set<RouteListener>();
@@ -624,7 +650,20 @@ export function createRouteRuntime(
 
   if (routeHistory !== undefined) {
     unsubscribeRouteHistory = routeHistory.subscribe(update => {
-      setLocation(update.location.href, update.action, update.location.state, true);
+      scrollCoordinator.capture(currentHistoryKey);
+      const previousKey = currentHistoryKey;
+      const previousIndex = currentHistoryIndex;
+      currentHistoryKey = update.location.key;
+      currentHistoryIndex = update.location.index;
+      try {
+        setLocation(update.location.href, update.action, update.location.state, true);
+      } catch (error) {
+        if (!(error instanceof RouteHistoryCommittedUpdateError)) {
+          currentHistoryKey = previousKey;
+          currentHistoryIndex = previousIndex;
+        }
+        throw error;
+      }
     });
   }
 
@@ -771,15 +810,150 @@ export function createRouteRuntime(
     }
   }
 
+  let rollbackHistoryHref: string | null = null;
+
+  function recoverBrowserTraversal(previousIndex: number, targetIndex: number | null): void {
+    if (targetIndex === null || targetIndex === previousIndex) return;
+    rollbackHistoryHref = url.href;
+    environment.history?.go(previousIndex - targetIndex);
+  }
+
+  function prepareBrowserTraversal(destination: URL, userState: unknown, key: string | null, index: number | null): RouteNavigationResult {
+    const previousIndex = currentHistoryIndex;
+    scrollCoordinator.capture(currentHistoryKey);
+    supersedePreparation();
+    const prepared = prepareNavigation(destination, { replace: true, state: userState }, 'pop');
+    if (prepared.status === 'blocked') {
+      recoverBrowserTraversal(previousIndex, index);
+      return prepared;
+    }
+    const preparation = new AbortController();
+    activePreparation = preparation;
+    pendingBrowserHref = destination.href;
+    const destinationMatches = resolveDestination(
+      prepared.next, 'pop', userState, preparation.signal,
+    );
+    let entryCommitted = false;
+    const publish = () => {
+      pendingBrowserHref = null;
+      const previousKey = currentHistoryKey;
+      if (key !== null) currentHistoryKey = key;
+      if (index !== null) currentHistoryIndex = index;
+      const before = locationRevision;
+      try {
+        setLocation(prepared.next, 'pop', userState);
+      } catch (error) {
+        if (before === locationRevision) {
+          currentHistoryKey = previousKey;
+          currentHistoryIndex = previousIndex;
+        }
+        throw error;
+      } finally {
+        entryCommitted = before !== locationRevision || url.href === prepared.next.href;
+      }
+      emitNavigation(Object.freeze({ phase: 'complete', navigation: prepared.navigation }));
+      return Object.freeze({ status: 'completed' as const, navigation: prepared.navigation, redirects: prepared.redirects });
+    };
+    const redirect = (to: URL, options: Pick<NavigateOptions, 'replace' | 'state'>) => {
+      pendingBrowserHref = null;
+      if (index !== null) currentHistoryIndex = index;
+      if (key !== null) currentHistoryKey = key;
+      return navigateToURL(to, options);
+    };
+    if (prepared.next.href !== destination.href) {
+      activePreparation = null;
+      return redirect(prepared.next, prepared.options);
+    }
+    if (isHashOnlyDestination(destination, userState) || !hasRoutedPreparations(destinationMatches.matches)) {
+      activePreparation = null;
+      return publish();
+    }
+    emitNavigation(Object.freeze({ phase: 'prepare', navigation: prepared.navigation }));
+    const finished: Promise<RouteNavigationSettledResult> = prepareRoutedMatches(runtime, destinationMatches.matches, {
+      href: prepared.next.href, params: destinationMatches.params, signal: preparation.signal,
+    }).then(async outcome => {
+      if (activePreparation !== preparation || preparation.signal.aborted) {
+        throw preparation.signal.reason ?? new DOMException('Route preparation was superseded', 'AbortError');
+      }
+      activePreparation = null;
+      if (outcome.kind === 'redirect') {
+        const result = redirect(outcome.redirect.to instanceof URL ? outcome.redirect.to : applicationURL(
+          resolveRoutePath(prepared.navigation.to.pathname, outcome.redirect.to),
+        ), { replace: true, state: outcome.redirect.state ?? null });
+        return result.status === 'preparing' ? await result.finished : result;
+      }
+      return publish();
+    }).catch(error => {
+      if (preparation.signal.aborted || disposed) throw error;
+      if (entryCommitted) throw error;
+      if (navigationId !== prepared.navigation.id) throw error;
+      if (activePreparation === preparation) activePreparation = null;
+      pendingBrowserHref = null;
+      recoverBrowserTraversal(previousIndex, index);
+      emitNavigation(Object.freeze({
+        phase: 'error', navigation: prepared.navigation, error,
+        retry: () => {
+          if (disposed || navigationId !== prepared.navigation.id) {
+            return Object.freeze({ status: 'blocked', navigation: prepared.navigation, redirects: prepared.redirects });
+          }
+          // Restore the tracked history entry rather than inserting a duplicate.
+          if (index !== null && index !== currentHistoryIndex) {
+            if (browserRetry?.href === destination.href) return browserRetry.result;
+            let resolve!: (result: RouteNavigationSettledResult) => void;
+            let reject!: (error: unknown) => void;
+            const finished = new Promise<RouteNavigationSettledResult>((yes, no) => {
+              resolve = yes;
+              reject = no;
+            });
+            const result = Object.freeze({
+              status: 'preparing' as const, navigation: prepared.navigation,
+              redirects: prepared.redirects, finished,
+            });
+            browserRetry = { href: destination.href, index, result, resolve, reject };
+            if (rollbackHistoryHref === null) environment.history?.go(index - browserHistoryIndex);
+            return result;
+          }
+          return navigateToURL(destination, { replace: true, state: userState });
+        },
+      }));
+      throw error;
+    });
+    return Object.freeze({ status: 'preparing', navigation: prepared.navigation, redirects: prepared.redirects, finished });
+  }
+
   const onPopState: EventListener = () => {
     const location = environment.location;
     if (
       location !== undefined &&
       applicationPathname(new URL(location.href).pathname) !== null
     ) {
-      const { userState, key } = unwrapHistoryState(environment.history?.state ?? null);
-      if (key !== null) currentHistoryKey = key;
-      setLocation(location.href, 'pop', userState);
+      const { userState, key, index } = unwrapHistoryState(environment.history?.state ?? null);
+      if (index !== null) browserHistoryIndex = index;
+      if (rollbackHistoryHref === location.href) {
+        rollbackHistoryHref = null;
+        if (browserRetry !== null) environment.history?.go(browserRetry.index - browserHistoryIndex);
+        return;
+      }
+      rollbackHistoryHref = null;
+      const retry = browserRetry?.href === location.href ? browserRetry : null;
+      if (retry !== null) browserRetry = null;
+      try {
+        const result = prepareBrowserTraversal(new URL(location.href), userState, key, index);
+        if (result.status === 'preparing') {
+          void result.finished.then(value => retry?.resolve(value), error => retry?.reject(error));
+        } else retry?.resolve(result);
+      } catch (error) {
+        retry?.reject(error);
+        if (url.href === location.href) throw error;
+        supersedePreparation();
+        recoverBrowserTraversal(currentHistoryIndex, index);
+        emitNavigation(Object.freeze({
+          phase: 'error', error,
+          navigation: navigationRecord(navigationId, navigationLocation(url, state), new URL(location.href), {
+            replace: true, state: userState,
+          }, 'pop'),
+        }));
+      }
     }
   };
 
@@ -788,9 +962,13 @@ export function createRouteRuntime(
     if (
       location !== undefined &&
       location.href !== url.href &&
+      location.href !== pendingBrowserHref &&
       applicationPathname(new URL(location.href).pathname) !== null
     ) {
-      setLocation(location.href, 'pop', environment.history?.state ?? null);
+      const { userState, key, index } = unwrapHistoryState(environment.history?.state ?? null);
+      if (index !== null) browserHistoryIndex = index;
+      const result = prepareBrowserTraversal(new URL(location.href), userState, key, index);
+      if (result.status === 'preparing') void result.finished.catch(() => {});
     }
   };
 
@@ -878,7 +1056,7 @@ export function createRouteRuntime(
         destinationState,
         probe.signal,
       );
-      if (hasRoutedPreparations(destinationMatches.matches)) {
+      if (!isHashOnlyDestination(destination, destinationState) && hasRoutedPreparations(destinationMatches.matches)) {
         if (type !== 'pop') {
           navigationEvent.preventDefault();
           const result = executePreparedNavigation(prepared);
@@ -886,13 +1064,8 @@ export function createRouteRuntime(
           return;
         }
 
-        if (activePreparation !== null) {
-          const superseded = activePreparation;
-          activePreparation = null;
-          superseded.abort(
-            new DOMException('Route preparation was superseded', 'AbortError'),
-          );
-        }
+        scrollCoordinator.capture(currentHistoryKey);
+        supersedePreparation();
         activePreparation = probe;
         emitNavigation(Object.freeze({
           phase: 'prepare',
@@ -923,6 +1096,7 @@ export function createRouteRuntime(
             });
             return result.status === 'preparing' ? result.finished : result;
           }
+          currentHistoryKey = navigationEvent.destination.key ?? currentHistoryKey;
           setLocation(destination, 'pop', destinationState);
           emitNavigation(Object.freeze({
             phase: 'complete',
@@ -944,48 +1118,38 @@ export function createRouteRuntime(
           throw error;
         });
         navigationEvent.intercept({
-          scroll: 'after-transition',
+          scroll: 'manual',
           async handler() {
             await traversal;
           },
         });
         return;
       }
-      if (activePreparation !== null) {
-        const superseded = activePreparation;
-        activePreparation = null;
-        superseded.abort(
-          new DOMException('Route preparation was superseded', 'AbortError'),
-        );
-      }
+      scrollCoordinator.capture(currentHistoryKey);
+      supersedePreparation();
+      currentHistoryKey = navigationEvent.destination.key ?? currentHistoryKey;
       setLocation(destination, type, destinationState);
       emitNavigation(Object.freeze({
         phase: 'complete',
         navigation: prepared.navigation,
       }));
-      if (!navigationEvent.hashChange) {
-        navigationEvent.intercept({
-          scroll: 'after-transition',
-          async handler() {
-            await Promise.resolve();
-          },
-        });
-      }
+      navigationEvent.intercept({
+        scroll: 'manual',
+        async handler() {
+          await Promise.resolve();
+        },
+      });
       return;
     }
 
-    if (navigationEvent.hashChange) {
-      setLocation(destination, type, destinationState);
-      return;
-    }
-
+    currentHistoryKey = navigationEvent.destination.key ?? currentHistoryKey;
     setLocation(destination, type, destinationState);
     navigationEvent.intercept({
-      scroll: 'after-transition',
+      scroll: 'manual',
       async handler() {
         // Route subscribers render from the synchronous location update.
         // Yielding here lets their microtask commit settle before navigation
-        // success and the browser's post-navigation behavior run.
+        // success. Our coordinator, not the browser, owns scroll restoration.
         await Promise.resolve();
       },
     });
@@ -1038,6 +1202,12 @@ export function createRouteRuntime(
             userState,
           );
         }
+        if (routeHistory === undefined && !supportsNavigationAPI(environment) && environment.history !== undefined) {
+          environment.history.replaceState(
+            wrapHistoryState(state, currentHistoryKey, currentHistoryIndex), '', url,
+          );
+        }
+        scrollCoordinator.restore(url, 'load', currentHistoryKey);
       }
     } catch (error) {
       disconnect();
@@ -1227,8 +1397,10 @@ export function createRouteRuntime(
     options: Pick<NavigateOptions, 'replace' | 'state'>,
   ): void {
     scrollCoordinator.capture(currentHistoryKey);
-    if (!options.replace) {
-      currentHistoryKey = generateHistoryKey();
+    if (routeHistory === undefined) {
+      if (!options.replace) currentHistoryKey = generateHistoryKey();
+      currentHistoryIndex = options.replace ? browserHistoryIndex : browserHistoryIndex + 1;
+      browserHistoryIndex = currentHistoryIndex;
     }
     if (routeHistory !== undefined) {
       const beforeNavigation = locationRevision;
@@ -1275,7 +1447,7 @@ export function createRouteRuntime(
     }
     const history = environment.history;
     if (history !== undefined) {
-      const wrapped = wrapHistoryState(options.state ?? null, currentHistoryKey);
+      const wrapped = wrapHistoryState(options.state ?? null, currentHistoryKey, currentHistoryIndex);
       if (options.replace) history.replaceState(wrapped, '', next);
       else history.pushState(wrapped, '', next);
     }
@@ -1295,13 +1467,7 @@ export function createRouteRuntime(
       navigation: routeNavigation,
       redirects,
     } = prepared;
-    if (activePreparation !== null) {
-      const superseded = activePreparation;
-      activePreparation = null;
-      superseded.abort(
-        new DOMException('Route preparation was superseded', 'AbortError'),
-      );
-    }
+    supersedePreparation();
     const preparation = new AbortController();
     const destinationMatches = resolveDestination(
       next,
@@ -1309,7 +1475,7 @@ export function createRouteRuntime(
       options.state ?? null,
       preparation.signal,
     );
-    if (hasRoutedPreparations(destinationMatches.matches)) {
+    if (!isHashOnlyDestination(next, options.state ?? null) && hasRoutedPreparations(destinationMatches.matches)) {
       activePreparation = preparation;
       emitNavigation(Object.freeze({
         phase: 'prepare',
@@ -1361,7 +1527,12 @@ export function createRouteRuntime(
             phase: 'error',
             navigation: routeNavigation,
             error,
-            retry: () => navigateToURL(next, options),
+            retry: () => {
+              if (disposed || navigationId !== routeNavigation.id) {
+                return Object.freeze({ status: 'blocked', navigation: routeNavigation, redirects });
+              }
+              return navigateToURL(next, options);
+            },
           }));
         }
         throw error;
@@ -1407,6 +1578,9 @@ export function createRouteRuntime(
     }, 'pop');
     if (prepared.status === 'blocked') return prepared;
 
+    supersedePreparation();
+    if (prepared.next.href !== destination.href) return executePreparedNavigation(prepared);
+
     const preparation = new AbortController();
     const destinationMatches = resolveDestination(
       prepared.next,
@@ -1414,14 +1588,7 @@ export function createRouteRuntime(
       target.state,
       preparation.signal,
     );
-    if (hasRoutedPreparations(destinationMatches.matches)) {
-      if (activePreparation !== null) {
-        const superseded = activePreparation;
-        activePreparation = null;
-        superseded.abort(
-          new DOMException('Route preparation was superseded', 'AbortError'),
-        );
-      }
+    if (!isHashOnlyDestination(prepared.next, target.state) && hasRoutedPreparations(destinationMatches.matches)) {
       activePreparation = preparation;
       emitNavigation(Object.freeze({
         phase: 'prepare',
@@ -1473,7 +1640,17 @@ export function createRouteRuntime(
             phase: 'error',
             navigation: prepared.navigation,
             error,
-            retry: () => traverseRouteHistory(delta)!,
+            retry: () => {
+              if (
+                disposed || navigationId !== prepared.navigation.id ||
+                routeHistory.peek(delta)?.key !== target.key
+              ) {
+                return Object.freeze({
+                  status: 'blocked', navigation: prepared.navigation, redirects: prepared.redirects,
+                });
+              }
+              return traverseRouteHistory(delta)!;
+            },
           }));
         }
         throw error;
@@ -1543,6 +1720,8 @@ export function createRouteRuntime(
       new DOMException('Route runtime was disposed', 'AbortError'),
     );
     activePreparation = null;
+    browserRetry?.reject(new DOMException('Route runtime was disposed', 'AbortError'));
+    browserRetry = null;
     controller.abort();
     listeners.clear();
     selectedListeners.clear();

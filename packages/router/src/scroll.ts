@@ -23,26 +23,29 @@ export interface ScrollCoordinatorOptions {
 export interface ScrollCoordinator {
   /** Capture current viewport scroll offset for the specified history key. */
   capture(key?: string | null): void;
-  /** Restore or update viewport scroll offset for the destination URL and key. */
+  /** Restore after optional renderer readiness; obsolete work is cancelled. */
   restore(
     url: URL,
     type: 'load' | 'push' | 'replace' | 'pop',
     key?: string | null,
+    ready?: PromiseLike<void>,
   ): void;
+  /** Cancel work belonging to an obsolete destination. */
+  cancel(): void;
   /** Connect global scroll and navigation listeners. Returns a disconnect callback. */
   connect(): () => void;
   /** Clear in-memory snapshots and release listeners. */
   dispose(): void;
 }
 
-function readSessionStorage(key: string): ScrollPosition | undefined {
+function readSessionStorage(storage: Storage | undefined, key: string): ScrollPosition | undefined {
   try {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const raw = sessionStorage.getItem(`${SESSION_STORAGE_PREFIX}${key}`);
+    if (storage === undefined) return undefined;
+    const raw = storage.getItem(`${SESSION_STORAGE_PREFIX}${key}`);
     if (raw === null) return undefined;
     const parsed = JSON.parse(raw) as Partial<ScrollPosition>;
-    if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-      return { x: parsed.x, y: parsed.y };
+    if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) {
+      return { x: parsed.x!, y: parsed.y! };
     }
   } catch {
     // Storage access may throw in restricted iframe / security environments.
@@ -50,10 +53,10 @@ function readSessionStorage(key: string): ScrollPosition | undefined {
   return undefined;
 }
 
-function writeSessionStorage(key: string, position: ScrollPosition): void {
+function writeSessionStorage(storage: Storage | undefined, key: string, position: ScrollPosition): void {
   try {
-    if (typeof sessionStorage === 'undefined') return;
-    sessionStorage.setItem(
+    if (storage === undefined) return;
+    storage.setItem(
       `${SESSION_STORAGE_PREFIX}${key}`,
       JSON.stringify(position),
     );
@@ -65,10 +68,12 @@ function writeSessionStorage(key: string, position: ScrollPosition): void {
 function findHashElement(doc: Document, hash: string): Element | null {
   if (hash === '' || hash === '#') return null;
   const rawId = hash.startsWith('#') ? hash.slice(1) : hash;
-  const decodedId = decodeURIComponent(rawId);
+  let decodedId: string;
+  try { decodedId = decodeURIComponent(rawId); }
+  catch { decodedId = rawId; }
   return (
     doc.getElementById(decodedId) ??
-    doc.querySelector(`[name="${CSS.escape(decodedId)}"]`)
+    doc.getElementsByName(decodedId)[0] ?? null
   );
 }
 
@@ -76,14 +81,49 @@ export function createScrollCoordinator(
   options: ScrollCoordinatorOptions = {},
 ): ScrollCoordinator {
   const win = options.window ?? (typeof window === 'undefined' ? undefined : window);
-  const doc = options.document ?? (typeof document === 'undefined' ? undefined : document);
-  const history = options.history ?? (typeof window === 'undefined' ? undefined : window.history);
+  const doc = options.document ?? win?.document;
+  const history = options.history ?? win?.history;
+  let storage: Storage | undefined;
+  try { storage = win?.sessionStorage; } catch { /* Restricted storage. */ }
 
   const memoryPositions = new Map<string, ScrollPosition>();
   let activeKey: string | null = null;
   let previousScrollRestoration: ScrollRestoration | undefined;
   let pendingFrame: number | null = null;
   let connected = false;
+  let disposed = false;
+  let awaitingRestoration = false;
+  let generation = 0;
+  const restoreFrames = new Map<number, boolean>();
+  let hashObserver: MutationObserver | null = null;
+  let disconnectListeners: (() => void) | null = null;
+
+  function cancelRestore(): void {
+    generation++;
+    awaitingRestoration = false;
+    for (const [handle, animationFrame] of restoreFrames) {
+      if (animationFrame) win?.cancelAnimationFrame?.(handle);
+      else clearTimeout(handle);
+    }
+    restoreFrames.clear();
+    hashObserver?.disconnect();
+    hashObserver = null;
+  }
+
+  function schedule(fn: () => void, token: number): void {
+    if (win === undefined || disposed || token !== generation) return;
+    let ran = false;
+    let handle = 0;
+    const run = () => {
+      ran = true;
+      restoreFrames.delete(handle);
+      if (!disposed && token === generation) fn();
+    };
+    const animationFrame = typeof win.requestAnimationFrame === 'function';
+    handle = animationFrame ? win.requestAnimationFrame(run) : setTimeout(run, 0) as unknown as number;
+    // Test adapters may run synchronously; do not retain a completed handle.
+    if (!ran) restoreFrames.set(handle, animationFrame);
+  }
 
   function currentPosition(): ScrollPosition {
     if (win === undefined) return { x: 0, y: 0 };
@@ -94,18 +134,18 @@ export function createScrollCoordinator(
   }
 
   function savePosition(key: string, pos: ScrollPosition): void {
-    if (memoryPositions.size >= MAX_SAVED_POSITIONS) {
+    if (!memoryPositions.has(key) && memoryPositions.size >= MAX_SAVED_POSITIONS) {
       const oldestKey = memoryPositions.keys().next().value;
       if (oldestKey !== undefined) memoryPositions.delete(oldestKey);
     }
     memoryPositions.set(key, pos);
-    writeSessionStorage(key, pos);
+    writeSessionStorage(storage, key, pos);
   }
 
   function getPosition(key: string): ScrollPosition | undefined {
     const memory = memoryPositions.get(key);
     if (memory !== undefined) return memory;
-    const session = readSessionStorage(key);
+    const session = readSessionStorage(storage, key);
     if (session !== undefined) {
       memoryPositions.set(key, session);
       return session;
@@ -114,83 +154,116 @@ export function createScrollCoordinator(
   }
 
   function onScroll(): void {
+    if (awaitingRestoration || disposed) return;
     if (activeKey === null) return;
     if (pendingFrame !== null) return;
-    pendingFrame = (win?.requestAnimationFrame ?? setTimeout)(() => {
+    const key = activeKey;
+    const token = generation;
+    let ran = false;
+    const run = () => {
+      ran = true;
       pendingFrame = null;
-      if (activeKey !== null) {
-        savePosition(activeKey, currentPosition());
+      if (!disposed && key === activeKey && token === generation) {
+        savePosition(key, currentPosition());
       }
-    }) as unknown as number;
+    };
+    const handle = win?.requestAnimationFrame !== undefined
+      ? win.requestAnimationFrame(run)
+      : setTimeout(run, 0) as unknown as number;
+    if (!ran) pendingFrame = handle;
   }
 
   function onBeforeUnload(): void {
-    if (activeKey !== null) {
+    if (activeKey !== null && !awaitingRestoration) {
       savePosition(activeKey, currentPosition());
+    }
+  }
+
+  function onScrollIntent(event: Event): void {
+    const key = (event as KeyboardEvent).key;
+    if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(key)) {
+      cancelRestore();
     }
   }
 
   return {
     capture(key) {
+      if (disposed) return;
       const targetKey = key ?? activeKey;
+      if (awaitingRestoration && targetKey === activeKey) return;
       if (targetKey !== null && targetKey !== undefined) {
         savePosition(targetKey, currentPosition());
       }
     },
 
-    restore(url, type, key) {
+    cancel: cancelRestore,
+
+    restore(url, type, key, ready) {
+      if (disposed) return;
+      cancelRestore();
+      const token = generation;
       activeKey = key ?? null;
       if (win === undefined) return;
-
-      const schedule = (fn: () => void) => {
-        if (typeof win.requestAnimationFrame === 'function') {
-          win.requestAnimationFrame(fn);
-        } else {
-          setTimeout(fn, 0);
-        }
-      };
-
-      // 1. Hash target has precedence when present (e.g. /docs#setup)
-      if (url.hash !== '' && url.hash !== '#' && doc !== undefined) {
-        schedule(() => {
-          const element = findHashElement(doc, url.hash);
-          if (element !== null) {
-            element.scrollIntoView({ block: 'start' });
-          } else {
-            // Data or route component may finish mounting on next frame
-            schedule(() => {
-              findHashElement(doc, url.hash)?.scrollIntoView({ block: 'start' });
-            });
-          }
-        });
-        return;
-      }
-
-      // 2. Pop navigation (Back / Forward): restore saved scroll offset
-      if (type === 'pop') {
-        const saved = key === null || key === undefined ? undefined : getPosition(key);
-        schedule(() => {
-          if (saved !== undefined) {
+      awaitingRestoration = true;
+      const apply = () => {
+        if (disposed || token !== generation) return;
+        // A saved history offset takes precedence over the entry's hash.
+        const saved = type === 'pop' && key != null ? getPosition(key) : undefined;
+        if (saved !== undefined) {
+          schedule(() => {
+            awaitingRestoration = false;
             win.scrollTo(saved.x, saved.y);
-          } else {
+          }, token);
+          return;
+        }
+
+        // Hash targets may be created by a later resource commit. Observe DOM
+        // readiness instead of assuming they appear within two animation frames.
+        if (url.hash !== '' && url.hash !== '#' && doc !== undefined) {
+          const tryHash = () => {
+            if (disposed || token !== generation) return true;
+            const element = findHashElement(doc, url.hash);
+            if (element === null) return false;
+            hashObserver?.disconnect();
+            hashObserver = null;
+            awaitingRestoration = false;
+            element.scrollIntoView({ block: 'start' });
+            return true;
+          };
+          schedule(() => {
+            if (tryHash()) return;
+            const Observer = (win as unknown as { MutationObserver?: typeof MutationObserver }).MutationObserver;
+            if (Observer !== undefined && doc.documentElement != null) {
+              hashObserver = new Observer(() => { tryHash(); });
+              hashObserver.observe(doc.documentElement, {
+                childList: true, subtree: true, attributes: true,
+                attributeFilter: ['id', 'name'],
+              });
+            } else awaitingRestoration = false;
+          }, token);
+          return;
+        }
+
+        // New pages reset; history traversals without a snapshot fall back to top.
+        if (type === 'push' || type === 'pop') {
+          schedule(() => {
+            awaitingRestoration = false;
             win.scrollTo(0, 0);
-          }
-        });
-        return;
-      }
+          }, token);
+          return;
+        }
 
-      // 3. Push navigation (new page): reset to top
-      if (type === 'push') {
-        schedule(() => {
-          win.scrollTo(0, 0);
-        });
-        return;
-      }
-
-      // 4. Replace: retain current scroll position unless hash target is provided
+        // Load/replace retain current position when no hash target is provided.
+        awaitingRestoration = false;
+      };
+      if (ready === undefined) apply();
+      else void Promise.resolve(ready).then(apply, () => {
+        if (token === generation) cancelRestore();
+      });
     },
 
     connect() {
+      if (disposed) throw new Error('Cannot connect a disposed scroll coordinator');
       if (connected) return () => {};
       connected = true;
 
@@ -206,14 +279,20 @@ export function createScrollCoordinator(
       if (win !== undefined) {
         win.addEventListener('scroll', onScroll, { passive: true });
         win.addEventListener('beforeunload', onBeforeUnload, { passive: true });
+        // User intent takes precedence over a target appearing much later.
+        win.addEventListener('wheel', cancelRestore, { passive: true });
+        win.addEventListener('touchstart', cancelRestore, { passive: true });
+        win.addEventListener('keydown', onScrollIntent);
       }
 
-      return () => {
+      disconnectListeners = () => {
         if (!connected) return;
         connected = false;
+        cancelRestore();
 
         if (pendingFrame !== null && win !== undefined) {
-          (win.cancelAnimationFrame ?? clearTimeout)(pendingFrame);
+          if (win.cancelAnimationFrame !== undefined) win.cancelAnimationFrame(pendingFrame);
+          else clearTimeout(pendingFrame);
           pendingFrame = null;
         }
 
@@ -232,15 +311,24 @@ export function createScrollCoordinator(
         if (win !== undefined) {
           win.removeEventListener('scroll', onScroll);
           win.removeEventListener('beforeunload', onBeforeUnload);
+          win.removeEventListener('wheel', cancelRestore);
+          win.removeEventListener('touchstart', cancelRestore);
+          win.removeEventListener('keydown', onScrollIntent);
         }
       };
+      return disconnectListeners;
     },
 
     dispose() {
+      if (disposed) return;
+      disconnectListeners?.();
+      disposed = true;
+      cancelRestore();
       memoryPositions.clear();
       activeKey = null;
       if (pendingFrame !== null && win !== undefined) {
-        (win.cancelAnimationFrame ?? clearTimeout)(pendingFrame);
+        if (win.cancelAnimationFrame !== undefined) win.cancelAnimationFrame(pendingFrame);
+        else clearTimeout(pendingFrame);
         pendingFrame = null;
       }
     },
