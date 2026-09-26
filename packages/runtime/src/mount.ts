@@ -5,8 +5,8 @@ import {
 } from './kernel';
 import { rootNodes } from './jsx-dom';
 import { HydrationMismatchError } from './hydration-error';
-import { parseHydrationMarker } from './hydration';
 import type { HydratedApplicationRoot } from './hydration';
+import { parseHydrationMarker } from './hydration';
 
 /** Authored zero-argument component reference accepted by the browser entry. */
 export type MountableComponent = () => unknown;
@@ -35,44 +35,12 @@ export interface MountedApplication {
   unmount(): void;
 }
 
-interface HydrationPayloadDelivery {
-  readonly version: 1;
-  readonly state?: unknown;
-  readonly routed?: unknown;
-}
-
-interface DataRuntimeBridge {
-  restoreState?(state: unknown): void;
-  completeHydration?(): void;
-  cancelHydration?(): void;
-  pendingState?: unknown;
-}
-
-interface RouterRuntimeBridge {
-  restoreState?(state: unknown): void;
-  pendingState?: unknown;
-}
-
-const routerRuntimeBridgeKey = Symbol.for(
-  'memoized-dom:router-runtime-bridge',
-);
-
-function routerRuntimeBridge(): RouterRuntimeBridge {
-  const realm = globalThis as unknown as Record<PropertyKey, unknown>;
-  const existing = realm[routerRuntimeBridgeKey];
-  if (typeof existing === 'object' && existing !== null) {
-    return existing as RouterRuntimeBridge;
-  }
-  const created: RouterRuntimeBridge = {};
-  realm[routerRuntimeBridgeKey] = created;
-  return created;
-}
-
 interface HydrationRuntimeBridge {
   hydrate?(
     host: Element,
     definition: RootFactoryDefinition,
-  ): HydratedApplicationRoot;
+    adopt: (adopted: HydratedApplicationRoot) => MountedApplication,
+  ): MountedApplication;
 }
 
 const hydrationRuntimeBridgeKey = Symbol.for(
@@ -239,86 +207,19 @@ function hydrationRootId(host: Element): string | null {
   return null;
 }
 
-function restorePayload(
-  rootId: string,
-  host: Element,
-): { script?: Element; data: DataRuntimeBridge } | undefined {
-  const document = host.ownerDocument;
-  const data = getExtensionStore<DataRuntimeBridge>(
-    'mmd:data-runtime-active',
-    () => ({}),
-  );
-  const script = [...document.querySelectorAll(
-    'script[type="application/mmd+json"][data-mmd-root]',
-  )].find(candidate => candidate.getAttribute('data-mmd-root') === rootId);
-  if (!script?.textContent) return { data };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(script.textContent);
-  } catch {
-    return { script, data };
-  }
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    (parsed as { version?: unknown }).version !== 1
-  ) {
-    return { script, data };
-  }
-  const payload = parsed as HydrationPayloadDelivery;
-  if (payload.state !== undefined) {
-    if (data.restoreState !== undefined) {
-      try {
-        data.restoreState(payload.state);
-      } catch {
-        // A malformed or incompatible data envelope must not prevent the
-        // application from mounting. Its sources can fetch normally.
-      }
-    } else {
-      // Preserve an early payload until the optional data package registers its
-      // default runtime. Browser bootstrap never has to install one manually.
-      data.pendingState = payload.state;
-    }
-  }
-  if (payload.routed !== undefined) {
-    const router = routerRuntimeBridge();
-    if (router.restoreState !== undefined) {
-      router.restoreState(payload.routed);
-    } else {
-      router.pendingState = payload.routed;
-    }
-  }
-  return { script, data };
-}
-
 function adoptApplication(
   host: Element,
   definition: RootFactoryDefinition,
   hydrate: NonNullable<HydrationRuntimeBridge['hydrate']>,
 ): MountedApplication {
-  const restoration = restorePayload(definition.id, host);
-  let adopted: HydratedApplicationRoot;
-  try {
-    adopted = hydrate(host, definition);
-  } catch (error) {
-    unregisterSubtree(definition.id);
-    if (error instanceof HydrationMismatchError) {
-      restoration?.data?.completeHydration?.();
-    } else {
-      restoration?.data?.cancelHydration?.();
-    }
-    restoration?.script?.remove();
-    throw error;
-  }
-  const mounted = createMountedApplication(
-    host,
-    definition,
-    rootNodes(adopted.root),
-    adopted.disposeMarkers,
+  return hydrate(host, definition, adopted =>
+    createMountedApplication(
+      host,
+      definition,
+      rootNodes(adopted.root),
+      adopted.disposeMarkers,
+    ),
   );
-  restoration?.data?.completeHydration?.();
-  restoration?.script?.remove();
-  return mounted;
 }
 
 /**
