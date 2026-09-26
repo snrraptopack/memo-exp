@@ -9,6 +9,7 @@ import {
   registerRootFactory,
   type MountedApplication,
 } from '@memoized-dom/runtime';
+import '@memoized-dom/runtime/hydrate';
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'out');
 const output = join(outDir, 'ssr-query-fallback.compiled.ts');

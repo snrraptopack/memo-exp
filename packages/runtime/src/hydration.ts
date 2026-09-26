@@ -8,6 +8,11 @@
  */
 
 import type { DocumentLike } from './environment';
+import {
+  getActiveEnvironment,
+  runWithRenderEnvironment,
+} from './kernel';
+import type { RootFactoryDefinition } from './mount';
 export { HydrationMismatchError } from './hydration-error';
 import { HydrationMismatchError } from './hydration-error';
 
@@ -749,5 +754,47 @@ export class HydrationDocument
 
   #activePlan(): HydrationNodePlan {
     return this.#plans.at(-1)!;
+  }
+}
+
+/** Server-adopted application root: the claimed top node plus marker cleanup. */
+export interface HydratedApplicationRoot {
+  readonly root: Node;
+  disposeMarkers(): void;
+}
+
+/**
+ * Adopt one server-rendered application root under a hydrate-mode document.
+ * Installed into mount() by the optional '@memoized-dom/runtime/hydrate'
+ * entry so applications without server markup never bundle this module.
+ */
+export function hydrateApplicationRoot(
+  host: Element,
+  definition: RootFactoryDefinition,
+): HydratedApplicationRoot {
+  const range = createHydrationCursor(host, definition.id);
+  const hydrationDocument = new HydrationDocument(
+    getActiveEnvironment().document,
+    range,
+  );
+  try {
+    const root = runWithRenderEnvironment(
+      {
+        mode: 'hydrate',
+        document: hydrationDocument,
+        hydration: hydrationDocument,
+      },
+      () => definition.create({ mode: 'hydrate', host }),
+    );
+    hydrationDocument.expectDone();
+    return {
+      root,
+      disposeMarkers() {
+        range.open.parentNode?.removeChild(range.open);
+        range.end.parentNode?.removeChild(range.end);
+      },
+    };
+  } finally {
+    hydrationDocument.finishHydration();
   }
 }

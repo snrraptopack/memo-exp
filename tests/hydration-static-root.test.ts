@@ -18,6 +18,7 @@ import {
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
+import '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');

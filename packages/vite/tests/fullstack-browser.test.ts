@@ -10,6 +10,7 @@ import memoizedDom from '../src';
 const repository = resolve(import.meta.dirname, '../../..');
 const runtime = resolve(repository, 'packages/runtime/src/index.ts');
 const runtimeHot = resolve(repository, 'packages/runtime/src/hot.ts');
+const runtimeHydrate = resolve(repository, 'packages/runtime/src/hydrate.ts');
 const runtimeServer = resolve(repository, 'packages/runtime/src/server.ts');
 const data = resolve(repository, 'packages/data/src/index.ts');
 const dataInternal = resolve(repository, 'packages/data/src/internal.ts');
@@ -171,6 +172,7 @@ describe('fullstack browser integration', () => {
         alias: [
           { find: '@memoized-dom/runtime/server', replacement: runtimeServer },
           { find: '@memoized-dom/runtime/hot', replacement: runtimeHot },
+          { find: '@memoized-dom/runtime/hydrate', replacement: runtimeHydrate },
           { find: '@memoized-dom/runtime', replacement: runtime },
           { find: '@memoized-dom/data/internal', replacement: dataInternal },
           { find: '@memoized-dom/data', replacement: data },

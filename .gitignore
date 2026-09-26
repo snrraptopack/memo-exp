@@ -38,3 +38,4 @@ tests/dbg-out.txt
 
 # generated framework artifacts (declarations, routes)
 .memoized/
+.tmp-bundle/

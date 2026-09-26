@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { compileModules } from '@memoized-dom/compiler';
 import { renderToResult, renderToResultAsync } from '@memoized-dom/server';
 import { mount, registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');

@@ -251,6 +251,22 @@ export function memoizedDom(
     return perFile;
   }
 
+  function clientEntryCode(
+    file: string,
+    code: string,
+    environmentName: string,
+  ): string {
+    if (
+      options.serverEntry === undefined ||
+      environmentName === 'ssr' ||
+      !entries.includes(file)
+    ) return code;
+    // Fullstack entries mount over server markup: append the side-effect
+    // import that installs the hydration runtime. Appending after the
+    // compiled body keeps existing sourcemap lines exact.
+    return `${code}\nimport '@memoized-dom/runtime/hydrate';\n`;
+  }
+
   async function transformModule(
     context: AdapterTransformContext,
     code: string,
@@ -278,7 +294,10 @@ export function memoizedDom(
 
     const cached = managed ? state.output.get(file) : undefined;
     if (cached !== undefined) {
-      return { code: cached, map: state.maps.get(file)! };
+      return {
+        code: clientEntryCode(file, cached, context.environment.name),
+        map: state.maps.get(file)!,
+      };
     }
 
     if (managed) {
@@ -299,7 +318,10 @@ export function memoizedDom(
           `memoized-dom: linked Vite graph omitted managed module ${file}`,
         );
       }
-      return { code: compiled, map: state.maps.get(file)! };
+      return {
+        code: clientEntryCode(file, compiled, context.environment.name),
+        map: state.maps.get(file)!,
+      };
     }
 
     // Outside the primary graph: compile a mount-less graph rooted at the
