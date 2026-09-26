@@ -143,14 +143,21 @@ const SOURCES: Record<string, string> = {
   `,
 };
 
-/** Reason gates in the App update: `[gated slot expression] -> gate text`. */
+/** Reason gates in the App update: `[gated slot expression] -> reasonsHit args`. */
 function gatesOf(code: string, updateVar: string): Map<string, string> {
   const start = code.indexOf(`const ${updateVar} = (`);
   const end = code.indexOf('_MD.register(', start);
   const body = code.slice(start, end);
   const gates = new Map<string, string>();
+  // Gated updaters emit `if (_MD.reasonsHit(_reasonsN, ARGS)) { … }`; the
+  // inner write is either an inline slot guard (attributes) or setTextData.
   for (const match of body.matchAll(
-    /if \(((?:_reasons\d*) === null[^\n]*)\) \{\s*if \(_slot\d* !== \(_value\d* = ([^\n]*?)\)\) \{/g,
+    /if \(_MD\.reasonsHit\(_reasons\d*, ([^\n]*?)\)\) \{\s*if \(_slot\d* !== \(_value\d* = ([^\n]*?)\)\) \{/g,
+  )) {
+    gates.set(match[2]!, match[1]!);
+  }
+  for (const match of body.matchAll(
+    /if \(_MD\.reasonsHit\(_reasons\d*, ([^\n]*?)\)\) \{\s*_MD\.setTextData\(_text\d*, ([^\n]*)\);/g,
   )) {
     gates.set(match[2]!, match[1]!);
   }
@@ -172,22 +179,20 @@ describe('slot reason gating — emission', () => {
   it('gates each slot on exactly the sources it reads', () => {
     const gates = gatesOf(code, '_update2');
     // a=0 b=1 items=2 (sorted source names)
-    expect(gates.get('a')).toMatch(/=== 0 \|\| typeof/);
-    expect(gates.get('a')).not.toMatch(/=== 1/);
-    expect(gates.get('ab')).toMatch(/=== 0 \|\| _reasons2 === 1/);
-    expect(gates.get('fmt(b)')).toMatch(/=== 1 \|\| typeof/);
-    expect(gates.get('String(a)')).toMatch(/=== 0 \|\| typeof/);
+    expect(gates.get('a')).toBe('0');
+    expect(gates.get('ab')).toBe('[0, 1]');
+    expect(gates.get('fmt(b)')).toBe('1');
+    expect(gates.get('String(a)')).toBe('0');
     // derivation rooted in a module list: numeric root + structural string
-    expect(gates.get('done')).toContain('=== 2');
+    expect(gates.get('done')).toContain('2');
     expect(gates.get('done')).toContain(`"${STRUCTURAL}"`);
-    expect(gates.get('done')).toContain(`.has("${STRUCTURAL}")`);
   });
 
   it('leaves module-state slots unconditional', () => {
     const gates = gatesOf(code, '_update2');
     expect(gates.has('items.length')).toBe(false);
     expect(gates.has('name.toUpperCase()')).toBe(false);
-    expect(code).toMatch(/\n\s*if \(_slot\d* !== \(_value\d* = items\.length\)\)/);
+    expect(code).toMatch(/_MD\.setTextData\(_text\d*, items\.length\)/);
   });
 
   it('never dereferences .has on a non-object reason', () => {
@@ -201,10 +206,8 @@ describe('slot reason gating — emission', () => {
   it('gates the prop-driven class attribute on the prop it reads only', () => {
     const gates = gatesOf(code, '_update');
     // Child sources: local=0 v=1 w=2
-    expect(gates.get("_MD.classValue(v > 1 ? 'big' : 'small')")).toMatch(
-      /_reasons === null \|\| _reasons === -1 \|\| _reasons === 1 \|\| typeof/,
-    );
-    expect(gates.get('v + ":" + w + ":" + local')).toMatch(/=== 0 \|\| _reasons === 1 \|\| _reasons === 2/);
+    expect(gates.get("_MD.classValue(v > 1 ? 'big' : 'small')")).toBe('1');
+    expect(gates.get('v + ":" + w + ":" + local')).toBe('[0, 1, 2]');
   });
 });
 

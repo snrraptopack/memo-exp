@@ -34,24 +34,18 @@ _MD.installAccessTable({ readers: { "./state.ts#count": ["App"] } }, "App", "./a
 import { count, bump } from './state';
 
 export function App(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
-		if (_slot !== (_value = count)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, count);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = count)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, count);
 
 	const _button = _document.createElement("button");
 
@@ -83,16 +77,13 @@ exports[`emission golden snapshots (emission-spec.md) > Effects — compiler-own
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Ticker(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let ticks = 0;
 
 	const _update = (_reasons = null) => {
-		if (_reasons === null || _reasons === -1 || _reasons === 0 || typeof _reasons === "object" && (_reasons.has(-1) || _reasons.has(0))) {
-			if (_slot !== (_value = ticks)) {
-				_slot = _value;
-				_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-			}
+		if (_MD.reasonsHit(_reasons, 0)) {
+			_MD.setTextData(_text, ticks);
 		}
 
 		{
@@ -104,10 +95,7 @@ export function Ticker(_id, _parent, _dataPolicies) {
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = ticks)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, ticks);
 
 	const _span = _document.createElement("span");
 
@@ -137,24 +125,18 @@ _MD.installAccessTable({ readers: { "./component.tsx#selected": ["App"] } }, "Ap
 export let selected = null;
 
 export function Picker(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
-		if (_slot !== (_value = selected)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, selected);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = selected)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, selected);
 
 	const _button = _document.createElement("button");
 
@@ -176,25 +158,19 @@ exports[`emission golden snapshots (emission-spec.md) > R1 — components become
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Counter(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let count = 0;
 
 	const _update = () => {
-		if (_slot !== (_value = count)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, count);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = count)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, count);
 
 	const _button = _document.createElement("button");
 
@@ -259,18 +235,15 @@ exports[`emission golden snapshots (emission-spec.md) > R4 — update branch wri
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Label(_id, _parent, _dataPolicies) {
-	let _slot, _slot2, _value;
+	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let name = 'a';
 
 	const _update = () => {
-		if (_slot !== (_value = name)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, name);
 
-		if (_slot2 !== (_value = _MD.classValue({ big: name.length > 2 }))) {
-			_slot2 = _value;
+		if (_slot !== (_value = _MD.classValue({ big: name.length > 2 }))) {
+			_slot = _value;
 			_MD.setClassValue(_span, _value);
 		}
 	};
@@ -279,15 +252,12 @@ export function Label(_id, _parent, _dataPolicies) {
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = name)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, name);
 
 	const _span = _document.createElement("span");
 
-	if (_slot2 !== (_value = _MD.classValue({ big: name.length > 2 }))) {
-		_slot2 = _value;
+	if (_slot !== (_value = _MD.classValue({ big: name.length > 2 }))) {
+		_slot = _value;
 		_MD.setClassValue(_span, _value);
 	}
 
@@ -391,13 +361,10 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 		_ul,
 		_id + "/items",
 		(item, _rowId) => {
-			let _slot, _value2;
+			let _value2;
 
 			const _update2 = () => {
-				if (_slot !== (_value2 = item.label)) {
-					_slot = _value2;
-					_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-				}
+				_MD.setTextData(_text, item.label);
 			};
 
 			const _document2 = _MD.getActiveEnvironment().document;
@@ -420,10 +387,7 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 
 			const _text = _li.firstChild;
 
-			if (_slot !== (_value2 = item.label)) {
-				_slot = _value2;
-				_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-			}
+			_MD.setTextData(_text, item.label);
 
 			return {
 				nodes: [_li],
@@ -501,7 +465,7 @@ exports[`emission golden snapshots (emission-spec.md) > R12/R13 — computeds co
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Totals(_id, _parent, _props, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let items = _props[0];
 	let total = items.length * 2;
@@ -517,10 +481,7 @@ export function Totals(_id, _parent, _props, _dataPolicies) {
 			}
 		}
 
-		if (_slot !== (_value = total)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, total);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
@@ -528,10 +489,7 @@ export function Totals(_id, _parent, _props, _dataPolicies) {
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = total)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, total);
 
 	const _output = _document.createElement("output");
 
@@ -545,7 +503,7 @@ exports[`emission golden snapshots (emission-spec.md) > R20 — factory callback
 "import * as _MD from "@memoized-dom/runtime";
 
 export function LiveFeed(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	let status = 'idle';
 
@@ -557,20 +515,14 @@ export function LiveFeed(_id, _parent, _dataPolicies) {
 	_MD.cleanup(_id, () => sub.unsubscribe());
 
 	const _update = () => {
-		if (_slot !== (_value = status)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, status);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = status)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, status);
 
 	const _span = _document.createElement("span");
 
@@ -593,7 +545,7 @@ export function Avatar(_id, _parent, _props, _dataPolicies) {
 			({ user = { name: 'anon' }, size = 32 } = _props[0]);
 		}
 
-		if (_reasons === null || _reasons === -1 || _reasons === 1 || typeof _reasons === "object" && (_reasons.has(-1) || _reasons.has(1))) {
+		if (_MD.reasonsHit(_reasons, 1)) {
 			if (_slot !== (_value = user.name)) {
 				_slot = _value;
 
@@ -603,7 +555,7 @@ export function Avatar(_id, _parent, _props, _dataPolicies) {
 			}
 		}
 
-		if (_reasons === null || _reasons === -1 || _reasons === 0 || typeof _reasons === "object" && (_reasons.has(-1) || _reasons.has(0))) {
+		if (_MD.reasonsHit(_reasons, 0)) {
 			if (_slot2 !== (_value = size)) {
 				_slot2 = _value;
 
@@ -802,13 +754,10 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 		_ul,
 		_id + "/_listView",
 		(item, _rowId) => {
-			let _slot, _value2;
+			let _value2;
 
 			const _update2 = () => {
-				if (_slot !== (_value2 = item.text)) {
-					_slot = _value2;
-					_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-				}
+				_MD.setTextData(_text, item.text);
 			};
 
 			const _document2 = _MD.getActiveEnvironment().document;
@@ -831,10 +780,7 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 
 			const _text = _li.firstChild;
 
-			if (_slot !== (_value2 = item.text)) {
-				_slot = _value2;
-				_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-			}
+			_MD.setTextData(_text, item.text);
 
 			return {
 				nodes: [_li],
@@ -889,34 +835,25 @@ import * as _MDD from "@memoized-dom/data/internal";
 import { $fetch } from '@memoized-dom/data';
 
 export function Profile(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	const user = $fetch('/api/user');
 
 	const _update = () => {
-		if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name))) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name));
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name))) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name));
 
 	_MD.register({
 		id: _id + "/$data/0",
 		parent: _id,
 		render: () => {
-			if (_slot !== (_value = _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name))) {
-				_slot = _value;
-				_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-			}
+			_MD.setTextData(_text, _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name));
 		}
 	});
 

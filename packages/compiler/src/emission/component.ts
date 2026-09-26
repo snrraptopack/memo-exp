@@ -500,7 +500,7 @@ export function transformComponent(
   }
   body.push(
     ...kept,
-    updateDecl(scope),
+    updateDecl(ctx, scope),
     ...(lightweight
       ? []
       : [

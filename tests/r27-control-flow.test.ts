@@ -43,7 +43,7 @@ describe('R27 - render-prelude code generation', () => {
     `);
     const update = code.indexOf('const _update');
     const replay = code.indexOf('if (count % 2 === 0)', update);
-    const textWrite = code.indexOf('.data =', update);
+    const textWrite = code.indexOf('setTextData(', update);
     expect(replay).toBeGreaterThan(update);
     expect(textWrite).toBeGreaterThan(replay);
   });
@@ -67,7 +67,7 @@ describe('R27 - render-prelude code generation', () => {
     const update = code.indexOf('const _update');
     const reset = code.indexOf("title = ''", update);
     const replay = code.indexOf('switch (step)', update);
-    const textWrite = code.indexOf('.data =', update);
+    const textWrite = code.indexOf('setTextData(', update);
     expect(reset).toBeGreaterThan(update);
     expect(replay).toBeGreaterThan(reset);
     expect(textWrite).toBeGreaterThan(replay);

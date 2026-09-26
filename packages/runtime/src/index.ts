@@ -37,6 +37,7 @@ export type {
   DirtyReasons,
   Entity,
 } from './kernel';
+export { reasonsHit } from './dirty-reasons';
 export type {
   Capability,
   DocumentLike,
@@ -59,6 +60,7 @@ export type { EffectCallback, EffectCondition } from './effect';
 
 export {
   setText,
+  setTextData,
   setClassName,
   setClass,
   setAttr,

@@ -5,11 +5,17 @@ import { analyzeScope, parseEstreeOrThrow } from '../packages/compiler/src/ast';
 
 // Execute emitted JavaScript directly: no TS loader may hide incomplete erasure.
 function execute(code: string, runtime: object = {}, onGet = () => {}) {
+  const defaults = {
+    setTextData(node: Text, value: unknown) {
+      const next = value == null || typeof value === 'boolean' ? '' : String(value);
+      if (node.data !== next) node.data = next;
+    },
+  };
   return new Function('_MD', 'onGet', code
     .replace(/^import \* as _MD from .*;$/m, '')
     .replace(/export function /g, 'function ')
     + '\nreturn { App: typeof App === "undefined" ? undefined : App, read: typeof read === "undefined" ? undefined : read };'
-  )(runtime, onGet);
+  )({ ...defaults, ...runtime }, onGet);
 }
 
 function mount(body: string, setup = 'let count = 0;', effect = false, asyncHandler = false) {

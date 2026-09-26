@@ -258,7 +258,7 @@ export function buildConditionalBranchCreate(
     astFactory.blockStatement([
       cacheDecl(branchScope),
       ...branchScope.prelude,
-      updateDecl(branchScope),
+      updateDecl(ctx, branchScope),
       ...branchScope.creation,
       ...branchScope.mounts,
       astFactory.returnStatement(astFactory.objectExpression(properties)),

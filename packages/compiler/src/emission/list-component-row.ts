@@ -140,7 +140,7 @@ function buildComponentRowFactory({
     ],
     astFactory.blockStatement([
       ...(rowScope.updaters.length > 0
-        ? [cacheDecl(rowScope), updateDecl(rowScope)]
+        ? [cacheDecl(rowScope), updateDecl(ctx, rowScope)]
         : []),
       ...rowScope.prelude,
       ...rowScope.creation,

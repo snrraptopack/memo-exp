@@ -200,7 +200,7 @@ export function buildRenderCallbackAdapter(
     ],
     astFactory.blockStatement([
       cacheDecl(rowScope),
-      updateDecl(rowScope),
+      updateDecl(ctx, rowScope),
       astFactory.variableDeclaration('const', [
         astFactory.variableDeclarator(
           cloneEstreeNode(refreshRow),

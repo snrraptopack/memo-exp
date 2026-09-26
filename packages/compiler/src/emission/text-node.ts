@@ -2,12 +2,10 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { type Ctx } from '../context';
-import { generatedIdentifier } from '../identifiers';
+import { generatedIdentifier, md } from '../identifiers';
 import {
-  freshSlot,
   pushSlotUpdater,
   renderDocument,
-  slotGuard,
   type EmitScope,
 } from './scope';
 import {
@@ -16,60 +14,25 @@ import {
 } from '../data-sources';
 
 // ---------------------------------------------------------------------
-// shared statement builders
-// ---------------------------------------------------------------------
-
-/**
- * M5.9: dynamic slots are per-scope LOCALS (`let $s0, $s1, …`), not a cache
- * object with string keys — the update closure guards inline
- * (`if ($s0 !== ($t = expr)) { $s0 = $t; …write… }`), which keeps the whole
- * row update in one inlinable function instead of N calls × string lookups.
- */
-/**
- * The inline guarded write shared by every dynamic slot:
- * `if ($sK !== ($t = EXPR)) { $sK = $t; WRITE($t) }` — used for BOTH the
- * creation and the update branch: a fresh slot (undefined) never equals a
- * legit first value except undefined/null/boolean, and for those the
- * freshly-created DOM node already holds exactly what the write would set
- * (empty text data, empty className, absent attribute).
- */
-/** The value-normalization shared by text semantics: null/undefined/bool → ''. */
-function textValue(tmp: t.Identifier): t.Expression {
-  return astFactory.conditionalExpression(
-    astFactory.logicalExpression(
-      '||',
-      astFactory.binaryExpression('==', cloneEstreeNode(tmp), astFactory.nullLiteral()),
-      astFactory.binaryExpression(
-        '===',
-        astFactory.unaryExpression('typeof', cloneEstreeNode(tmp), true),
-        astFactory.stringLiteral('boolean'),
-      ),
-    ),
-    astFactory.stringLiteral(''),
-    astFactory.callExpression(astFactory.identifier('String'), [cloneEstreeNode(tmp)]),
-  );
-}
-
-// ---------------------------------------------------------------------
 // component transform
 // ---------------------------------------------------------------------
 
-/** M5.9: inline text write — if ($sK !== ($t = expr)) { $sK = $t; node.data = … } */
+/**
+ * Dynamic text write: `_MD.setTextData(node, expr)` — the runtime helper
+ * guards on the node's current data so no per-slot local is needed, and the
+ * same call seeds the freshly-created node and runs inside update closures.
+ */
 function textSetter(
-  scope: EmitScope,
-  key: string,
+  ctx: Ctx,
   varName: string,
   expr: t.Expression,
 ): () => t.Statement {
   return () =>
-    slotGuard(scope, key, cloneEstreeNode(expr), (tmp) =>
-      astFactory.expressionStatement(
-        astFactory.assignmentExpression(
-          '=',
-          astFactory.memberExpression(astFactory.identifier(varName), astFactory.identifier('data')),
-          textValue(tmp),
-        ),
-      ),
+    astFactory.expressionStatement(
+      astFactory.callExpression(md(ctx, 'setTextData'), [
+        astFactory.identifier(varName),
+        cloneEstreeNode(expr),
+      ]),
     );
 }
 
@@ -98,7 +61,6 @@ export function emitText(
     );
     return varName;
   }
-  const key = freshSlot(ctx, scope);
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
@@ -113,7 +75,7 @@ export function emitText(
       ),
     ]),
   );
-  const setter = textSetter(scope, key, varName, expr);
+  const setter = textSetter(ctx, varName, expr);
   scope.creation.push(setter()); // R4: creation seeds through the same guarded setter
   registerTransparentDataSite(
     ctx,
