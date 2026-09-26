@@ -85,17 +85,6 @@ export interface MemoDomOptions {
   moduleStateCells?: boolean;
 }
 
-/** Package identity, never a substring of an application source path. */
-export function isReactPackageModule(moduleId: string, packages: readonly string[]): boolean {
-  const normalized = moduleId.replaceAll('\\', '/');
-  const marker = 'node_modules/';
-  const index = normalized.lastIndexOf(marker);
-  const packagePath = index < 0 ? normalized : normalized.slice(index + marker.length);
-  if (index < 0 && (packagePath.startsWith('./') || packagePath.startsWith('/') ||
-      /^[A-Za-z]:\//.test(packagePath))) return false;
-  return packages.some((name) => packagePath === name || packagePath.startsWith(`${name}/`));
-}
-
 export interface ExternalReactiveSourceDefinition {
   /** Authored module containing the imported live value. */
   readonly module: string;
@@ -385,7 +374,6 @@ export type HelperPath = CompilerPath<
 >;
 
 export interface Ctx {
-  reactDialect: boolean;
   runtimePath: string;
   hotRuntimePath: string;
   routerPath: string;
@@ -710,7 +698,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   );
   const runtimePath = opts.runtimePath ?? '@memoized-dom/runtime';
   return {
-    reactDialect: isReactPackageModule(moduleId, opts.react?.packages ?? []),
     runtimePath,
     hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',

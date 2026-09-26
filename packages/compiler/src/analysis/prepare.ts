@@ -20,7 +20,7 @@ import {
 export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   normalizeNamedReexports(programPath.node);
   normalizeComponentDeclarations(programPath);
-  assimilateReactSource(ctx, programPath);
+  assimilateReactSource(programPath);
   installLinkedDynamicComponentImports(ctx, programPath);
   normalizeConditionalJsxDirectives(programPath);
   initializeGeneratedIdentifiers(ctx, programPath.node);

@@ -42,12 +42,14 @@ describe('authored React package assimilation', () => {
     })).toThrow(message);
   });
 
-  it('does not enable React APIs in MMD application modules', () => {
-    expect(() => compile("import { useState } from 'react'; function App() { const [n] = useState(0); return <p>{n}</p>; }"))
-      .toThrow('requires an opted-in React package');
-    expect(() => compile(compiled.graph.modules[packageFile]!, {
+  it('recognizes React imports in MMD application modules by their source binding', () => {
+    const source = "import { useState } from 'react'; function App() { const [n, setN] = useState(0); return <button onClick={() => setN(n + 1)}>{n}</button>; }";
+    const output = compile(source);
+    expect(output).not.toMatch(/from ['"]react['"]/);
+    expect(output).toContain('.markDirty(');
+    expect(compile(compiled.graph.modules[packageFile]!, {
       moduleId: 'counter-kit-extra/index.tsx', react: { packages: ['counter-kit'] },
-    })).toThrow('requires an opted-in React package');
+    })).not.toMatch(/from ['"]react['"]/);
   });
 });
 

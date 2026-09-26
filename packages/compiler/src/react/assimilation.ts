@@ -6,7 +6,7 @@
 import type * as t from '../ast/compiler-types';
 import * as ast from '../ast/factory';
 import { analyzeScope, cloneNode, walkAst, type BaseNode } from '../ast';
-import { nodeHasJsx, type Ctx, type ProgramPath } from '../context';
+import { nodeHasJsx, type ProgramPath } from '../context';
 
 type HookName = 'useState' | 'useReducer' | 'useMemo' | 'useCallback' |
   'useEffect' | 'useSyncExternalStore';
@@ -30,7 +30,6 @@ interface ImportUse {
   readonly source: string;
   readonly binding: ReturnType<typeof analyzeScope>['rootScope']['bindings'] extends Map<string, infer B> ? B : never;
   readonly namespace: boolean;
-  readonly linkedHook: boolean;
 }
 
 function copy<T>(node: T): T {
@@ -98,7 +97,7 @@ function hookCall(
 }
 
 /** Called by both manifest analysis and final emission on their own AST clone. */
-export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void {
+export function assimilateReactSource(programPath: ProgramPath): void {
   const program = programPath.node;
   const imports = program.body.filter((statement): statement is t.ImportDeclaration =>
     ast.isImportDeclaration(statement) &&
@@ -121,10 +120,7 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
         ? '*'
         : ast.isIdentifier(specifier.imported) ? specifier.imported.name
         : ast.isStringLiteral(specifier.imported) ? String(specifier.imported.value) : '';
-      const linkedHook = (declaration as t.ImportDeclaration & {
-        __mmdLinkedHookImport?: boolean;
-      }).__mmdLinkedHookImport === true;
-      uses.push({ name, source: String(declaration.source.value), binding, namespace, linkedHook });
+      uses.push({ name, source: String(declaration.source.value), binding, namespace });
     }
   }
 
@@ -157,18 +153,6 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
       fail(`has no MMD translation for JSX tag '${tag.name}' imported from '${use.source}'`, node);
     }
   } });
-
-  if (!ctx.reactDialect) {
-    for (const use of uses) {
-      if (!use.linkedHook && use.binding.references.length > 0) {
-        fail(`'${use.source}.${use.name}' requires an opted-in React package`, use.binding.references[0]!);
-      }
-    }
-    if (!uses.some(use => use.linkedHook && use.binding.references.length > 0)) {
-      program.body = program.body.filter((statement) => !imports.includes(statement as t.ImportDeclaration));
-      return;
-    }
-  }
 
   for (const use of uses) {
     if (use.binding.constantViolations.length > 0) {

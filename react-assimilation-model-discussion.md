@@ -408,8 +408,10 @@ operation rather than by package name.
 
 ## 7. Rewrite checkpoint
 
-The rewrite now selects React source by opted-in package identity and validates
-one translation plan before changing a module AST. The instance category covers
+The rewrite recognizes React source bindings in any compiled module, including
+an MMD application file, and validates one translation plan before changing a
+module AST. Package selection still controls which dependencies enter the
+linked graph. The instance category covers
 direct `useState` and `useReducer` bindings. Derived values and stable closures
 cover direct `useMemo` and `useCallback`; an owned process covers direct
 `useEffect`. `useSyncExternalStore(subscribe, getSnapshot)` uses one MMD
@@ -430,8 +432,8 @@ named barrels. The linker proves that value stable, so a lowered `useMemo`
 expression participates in MMD's ordinary per-instance derivation replay.
 Local hook calls and named
 barrel reexports use the same template path. An MMD application component can
-own a hook imported from an opted-in package without enabling authored React
-imports in that application. Other source-module captures and unsupported call
+own a hook imported from a package or authored locally beside ordinary MMD
+state and keyed lists. Other source-module captures and unsupported call
 shapes get diagnostics rather than runtime stubs. Function declarations,
 arrow-function variables, and anonymous function-expression variables share
 the template path. This initial template form requires named React API

@@ -5,7 +5,6 @@
 import type * as t from '../ast/compiler-types';
 import * as ast from '../ast/factory';
 import { analyzeScope, cloneNode, isReferenceIdentifier, walkAst, type BaseNode } from '../ast';
-import { isReactPackageModule } from '../context';
 import { compilerError } from '../errors';
 import { matchMapCall } from '../lists/map-site';
 import type { CompileModulesOptions, ModuleEntry } from '../linking/model';
@@ -297,7 +296,6 @@ function dynamicMapCall(operation: Extract<ChildOperation, { kind: 'map' }>): t.
 export function specializeLinkedReactChildSequences(
   entries: ReadonlyMap<string, ModuleEntry>, options: CompileModulesOptions,
 ): void {
-  const packages = options.react?.packages ?? [];
   const templates = new Map<string, ChildTemplate>();
   const consumedImports = new Set<t.ImportDeclaration>();
   const occupied = new Set<string>();
@@ -317,7 +315,6 @@ export function specializeLinkedReactChildSequences(
   }
 
   for (const entry of entries.values()) {
-    if (!isReactPackageModule(entry.id, packages)) continue;
     const analysis = analyzeScope(entry.ast);
     for (const statement of entry.ast.body) {
       if (!ast.isImportDeclaration(statement) || statement.source.value !== 'react') continue;

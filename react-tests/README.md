@@ -8,8 +8,8 @@ them. Put a local package under `fixture/<package-name>/`, import it by its bare
 name from an app fixture, and add the name to `compileFixture({ packages: [...] })`.
 The harness collects the reachable files, calls `compileModules` with real
 module identities, emits the linked graph under the ignored `out/` directory,
-and lets tests import and mount the result in happy-dom. Only listed package
-identities enter the React source dialect; application files stay MMD. A
+and lets tests import and mount the result in happy-dom. Application files can
+mix React imports with ordinary MMD constructs in the same module. A
 selected installed npm package can use the same `packages` list; its files resolve from
 `node_modules`.
 

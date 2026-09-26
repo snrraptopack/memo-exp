@@ -1,14 +1,14 @@
-# React Package Assimilation RFC — React as a Compiler Dialect
+# React and MMD Source Assimilation RFC
 
-Status: draft for debate
+Status: draft; mixed MMD and React authoring is required
 Audience: compiler, vite plugin, language-service, and testing contributors
 
 ## Goal
 
-Memoized DOM compiles selected React-authored npm packages into native
-Memoized DOM output. React is treated as a **source dialect the compiler
-understands** — not a runtime to shim and not a transpile target. The shipped
-bundle contains no React: no reconciler, no hook dispatcher, no `react` or
+Memoized DOM compiles selected React-authored npm packages and mixed
+application modules into native Memoized DOM output. React imports are source
+forms the compiler understands. The shipped bundle contains no React: no
+reconciler, no hook dispatcher, no `react` or
 `react-dom` module.
 
 ```ts
@@ -31,53 +31,50 @@ No wrapper, no island, no separate React root.
 
 ## Non-goals
 
-- **React as a user authoring mode.** The dialect exists only for opted-in
-  package graphs. Users do not write, and are not taught, React APIs; the
-  React semantic table is unreachable from application code.
+- **A separate React runtime mode.** Recognized React APIs can appear beside
+  MMD constructs in any compiled module. They compile to MMD semantics rather
+  than selecting a separate execution model for the file.
 - **A runtime compatibility layer.** No fake `react` module executes at
   runtime. This is a deliberate trade: runtime shims (the `preact/compat`
   model) cover React's whole API surface including unanticipated usage, at
   the cost of a permanent second runtime. Assimilation pays zero runtime
-  cost but covers only the semantic subset with compilation rules — coverage
-  is binary per package: it compiles, or it emits diagnostics.
+  cost but covers only the semantic subset with compilation rules — each
+  compiled use either lowers or emits a diagnostic.
 - **React's execution model.** Rerender-ordering assumptions, Suspense
   semantics, RSC packages, React internals/Fiber dependencies, custom
   renderers, and React DevTools integration are permanently out of scope.
 
-## Core architecture: dialect-aware compilation
+## Core architecture: source-bound translation into MMD
 
-The pipeline is single-pass over a uniform internal representation. There is
-no intermediate "MMD-flavored AST" and no desugaring pass.
+The current compiler recognizes React APIs by their imported bindings. A
+validated translation plan converts supported calls into MMD component
+operations before shared analysis and emission. Linked custom hooks and child
+sequences are specialized before that plan runs. Ordinary MMD constructs in
+the same module continue through the normal compiler.
 
 ```
-opted-in React package source
+MMD and React imports in an application or selected package
         ↓
 ordinary parser → standard ESTree
-        ↓                       (React source is ordinary JS + JSX;
-semantic analysis, dialect='react'   the parser never needs to know)
         ↓
-useState() recognized AS state binding
-useEffect() recognized AS effect entity
-forwardRef()/memo() recognized AS wrappers
+linked specialization + source-bound React translation
         ↓
-the same internal entities hand-written MMD produces
+useState() becomes an MMD state binding
+useEffect() becomes an MMD owned effect
         ↓
 normal linking + analysis + emission
         ↓
 native Memoized DOM output
 ```
 
-### Per-module dialect, uniform IR below
+### Source-bound recognition, uniform IR below
 
-Module dialect is selected by package identity, never by user opt-in per
-file:
+React operations are recognized from their imported bindings in any compiled
+module. Package selection determines which dependencies enter the graph:
 
 ```ts
 compileModules(graph, {
-  dialectOf: (moduleId) =>
-    allowlistedPackages.some((pkg) => moduleId.startsWith(pkg.root))
-      ? 'react'
-      : 'mmd',
+  react: { packages: ['@radix-ui/react-dialog'] },
 });
 ```
 
@@ -85,10 +82,10 @@ By link time every module has compiled to the same entities; an assimilated
 component and a hand-written component are indistinguishable to the linker,
 the runtime, SSR, and hydration.
 
-### Analysis-level recognition, not lowering
+### Imported API recognition and lowering
 
-The semantic analyzer consults a dialect recognition table. For the `react`
-dialect, call shapes map directly onto existing internal concepts:
+The semantic analyzer recognizes imports from React modules. Supported call
+shapes map onto existing internal concepts:
 
 | React source                      | Compiled entity                        |
 | --------------------------------- | -------------------------------------- |

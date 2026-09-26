@@ -6,7 +6,7 @@
 import type * as t from '../ast/compiler-types';
 import * as ast from '../ast/factory';
 import { analyzeScope, cloneNode, isReferenceIdentifier, walkAst, type BaseNode, type Binding } from '../ast';
-import { nodeHasJsx, isReactPackageModule } from '../context';
+import { nodeHasJsx } from '../context';
 import { compilerError } from '../errors';
 import type { CompileModulesOptions, ModuleEntry } from '../linking/model';
 import { resolveModule } from '../linking/resolution';
@@ -221,7 +221,6 @@ function expand(use: HookUse, occupied: Set<string>): {
     const declaration = ast.importDeclaration([
       ast.importSpecifier(ast.identifier(alias), ast.identifier(imported)),
     ], ast.stringLiteral('react'));
-    (declaration as t.ImportDeclaration & { __mmdLinkedHookImport: boolean }).__mmdLinkedHookImport = true;
     imports.push(declaration);
   }
   if (use.importStatement !== undefined) {
@@ -261,11 +260,8 @@ function expand(use: HookUse, occupied: Set<string>): {
 export function specializeLinkedReactHooks(
   entries: Map<string, ModuleEntry>, options: CompileModulesOptions,
 ): void {
-  const packages = options.react?.packages ?? [];
-  if (packages.length === 0) return;
   const templates = new Map<string, HookTemplate>();
   for (const entry of entries.values()) {
-    if (!isReactPackageModule(entry.id, packages)) continue;
     const analysis = analyzeScope(entry.ast);
     for (const statement of entry.ast.body) {
       const exported = ast.isExportNamedDeclaration(statement);
