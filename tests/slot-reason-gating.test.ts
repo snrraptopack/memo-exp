@@ -178,14 +178,21 @@ describe('slot reason gating — emission', () => {
 
   it('gates each slot on exactly the sources it reads', () => {
     const gates = gatesOf(code, '_update2');
+    const gateReasons = (gate: string | undefined): string => {
+      if (gate === undefined) return '';
+      if (!gate.startsWith('_REASONS_')) return gate;
+      // Hoisted const: resolve `_REASONS_N` back to its declared array.
+      const decl = code.match(new RegExp(`const ${gate} = (\\[[^\\]]*\\])`));
+      return decl?.[1] ?? gate;
+    };
     // a=0 b=1 items=2 (sorted source names)
     expect(gates.get('a')).toBe('0');
-    expect(gates.get('ab')).toBe('[0, 1]');
+    expect(gateReasons(gates.get('ab'))).toBe('[0, 1]');
     expect(gates.get('fmt(b)')).toBe('1');
     expect(gates.get('String(a)')).toBe('0');
     // derivation rooted in a module list: numeric root + structural string
-    expect(gates.get('done')).toContain('2');
-    expect(gates.get('done')).toContain(`"${STRUCTURAL}"`);
+    expect(gateReasons(gates.get('done'))).toContain('2');
+    expect(gateReasons(gates.get('done'))).toContain(`"${STRUCTURAL}"`);
   });
 
   it('leaves module-state slots unconditional', () => {
@@ -205,9 +212,15 @@ describe('slot reason gating — emission', () => {
 
   it('gates the prop-driven class attribute on the prop it reads only', () => {
     const gates = gatesOf(code, '_update');
+    const gateReasons = (gate: string | undefined): string => {
+      if (gate === undefined) return '';
+      if (!gate.startsWith('_REASONS_')) return gate;
+      const decl = code.match(new RegExp(`const ${gate} = (\\[[^\\]]*\\])`));
+      return decl?.[1] ?? gate;
+    };
     // Child sources: local=0 v=1 w=2
     expect(gates.get("_MD.classValue(v > 1 ? 'big' : 'small')")).toBe('1');
-    expect(gates.get('v + ":" + w + ":" + local')).toBe('[0, 1, 2]');
+    expect(gateReasons(gates.get('v + ":" + w + ":" + local'))).toBe('[0, 1, 2]');
   });
 });
 

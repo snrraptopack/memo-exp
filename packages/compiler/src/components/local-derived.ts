@@ -3,7 +3,7 @@
  */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { canonicalStateKey, type Ctx } from '../context';
+import { canonicalStateKey, freshReasonConst, type Ctx } from '../context';
 import { md } from '../identifiers';
 
 /** Runtime protocol: reason attached to a compiler-proven structural write. */
@@ -17,10 +17,12 @@ function reasonLiteral(reason: number | string): t.Expression {
 }
 
 /**
- * `_MD.reasonsHit(r, v)` / `_MD.reasonsHit(r, [a, b, …])`
+ * `_MD.reasonsHit(r, v)` / `_MD.reasonsHit(r, _REASONS_N)`
  *
  * Reasons are a number, a structural-write string, or a Set of either; the
  * runtime helper owns the null/-1/Set dispatch so gates stay one call.
+ * Multi-reason gates pass a hoisted const — an inline array literal would
+ * allocate on every gated update run.
  */
 export function reasonCondition(
   ctx: Ctx,
@@ -31,7 +33,7 @@ export function reasonCondition(
     astFactory.identifier(reasonVar),
     reasons.length === 1
       ? reasonLiteral(reasons[0]!)
-      : astFactory.arrayExpression(reasons.map(reasonLiteral)),
+      : freshReasonConst(ctx, reasons),
   ]);
 }
 
