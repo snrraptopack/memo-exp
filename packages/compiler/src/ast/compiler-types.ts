@@ -27,6 +27,7 @@ export type ChainExpression = e.ChainExpression;
 export type ConditionalExpression = e.ConditionalExpression;
 export type ClassDeclaration = e.ClassDeclaration;
 export type EmptyStatement = e.EmptyStatement;
+export type ExportAllDeclaration = e.ExportAllDeclaration;
 export type ExportDefaultDeclaration = e.ExportDefaultDeclaration;
 export type ExportNamedDeclaration = e.ExportNamedDeclaration;
 export type ExportSpecifier = e.ExportSpecifier;

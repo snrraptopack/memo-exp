@@ -134,6 +134,9 @@ An optional third argument can report hydration mismatches.
 - **Everything must be reachable by static import** from `clientEntry` — the
   compiler only sees the connected graph. A file nobody imports isn't
   compiled into the app.
+- Barrel files can use `export * from './module'` for modules in that graph.
+  Star exports omit `default`; if two sources export the same name, re-export
+  the chosen binding explicitly.
 - **`jsx: preserve`** — if your editor complains about `react/jsx-runtime`,
   your tsconfig is wrong, not your code.
 - Components run **once** as initialization — don't expect the body to rerun

@@ -16,6 +16,48 @@ describe('linker identifier lifecycle', () => {
     expect(output['./barrel.ts']).toContain('export { __mmdReexport0 as Label }');
   });
 
+  it('links MMD components and values through star-export barrels', () => {
+    const output = compileModules({
+      './Inner.tsx': `
+        export const label = 'ready';
+        export function Badge({ text }) { return <span>{text}</span>; }
+        export default 'hidden';
+      `,
+      './types.ts': `export interface BadgeOptions { text: string }`,
+      './middle.ts': `export * from './Inner'; export type * from './types';`,
+      './barrel.ts': `export * from './middle';`,
+      './App.tsx': `import { Badge, label } from './barrel';
+        export function App() { return <div><Badge text={label} /></div>; }`,
+    });
+    expect(output['./App.tsx']).toContain('Badge(');
+    expect(output['./barrel.ts']).toContain('as Badge');
+    expect(output['./barrel.ts']).toContain('as label');
+    expect(output['./barrel.ts']).not.toContain('as default');
+    expect(output['./middle.ts']).not.toContain('BadgeOptions');
+  });
+
+  it('lets an explicit MMD reexport override a star-exported name', () => {
+    const output = compileModules({
+      './Preferred.tsx': `export function Badge() { return <strong>preferred</strong>; }`,
+      './Other.tsx': `export function Badge() { return <em>other</em>; }`,
+      './barrel.ts': `export { Badge } from './Preferred'; export * from './Other';`,
+      './App.tsx': `import { Badge } from './barrel';
+        export function App() { return <Badge />; }`,
+    });
+    expect(output['./App.tsx']).toContain('Badge(');
+    expect(output['./barrel.ts']).not.toMatch(/import\s*\{[^}]*Badge[^}]*\}\s*from ['"]\.\/Other['"]/);
+  });
+
+  it('diagnoses an ambiguous MMD star-exported component', () => {
+    expect(() => compileModules({
+      './First.tsx': `export function Badge() { return <strong>first</strong>; }`,
+      './Second.tsx': `export function Badge() { return <em>second</em>; }`,
+      './barrel.ts': `export * from './First'; export * from './Second';`,
+      './App.tsx': `import { Badge } from './barrel';
+        export function App() { return <Badge />; }`,
+    })).toThrow("ambiguous star export 'Badge'");
+  });
+
   it('initializes generated identifiers before manifest analysis', () => {
     const output = compileModules(
       {
