@@ -277,12 +277,12 @@ describe('Group boundaries across component ownership', () => {
     expect(requests[1]!.url).toMatch(/\/matrix\/mixed-child$/);
     expect(document.querySelector('#mixed-parent output')?.textContent)
       .toBe('Parent');
-    expect(document.querySelector('#mixed-child')?.textContent).toBe('');
-    expect(document.querySelector('.outer-pending')).toBeNull();
+    expect(document.querySelector('#mixed-child .outer-pending')).not.toBeNull();
 
     requests[1]!.resolve(json({ name: 'Child' }));
     await expect.poll(() => document.querySelector('#mixed-child')?.textContent)
       .toBe('Child');
+    expect(document.querySelector('.outer-pending')).toBeNull();
   });
 
   it('rejects parent suspension when the only source is owned inside B', () => {
@@ -290,7 +290,7 @@ describe('Group boundaries across component ownership', () => {
     expect(() => compileModules({
       './group-boundary-invalid-descendant.tsx': source,
     })).toThrow(
-      /suspended Group content must read colorless sources in the current component/,
+      /suspend currently requires compiler-visible sources in the current component/,
     );
   });
 });

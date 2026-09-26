@@ -55,16 +55,22 @@ function policyComponentRenderer(
 function fixedPolicyExpression(
   ctx: Ctx,
   policy: TransparentPresentationPolicy,
+  inherited?: t.Expression,
 ): t.ObjectExpression {
   return astFactory.objectExpression([
-    astFactory.objectProperty(
-      astFactory.identifier('pending'),
-      policyComponentRenderer(ctx, policy.pending, 'pending'),
-    ),
-    astFactory.objectProperty(
-      astFactory.identifier('error'),
-      policyComponentRenderer(ctx, policy.error, 'error'),
-    ),
+    ...(inherited === undefined ? [] : [astFactory.spreadElement(cloneNode(inherited))]),
+    ...(policy.pending === undefined ? [] : [
+      astFactory.objectProperty(
+        astFactory.identifier('pending'),
+        policyComponentRenderer(ctx, policy.pending, 'pending'),
+      ),
+    ]),
+    ...(policy.error === undefined ? [] : [
+      astFactory.objectProperty(
+        astFactory.identifier('error'),
+        policyComponentRenderer(ctx, policy.error, 'error'),
+      ),
+    ]),
   ]);
 }
 
@@ -75,10 +81,18 @@ export function transparentCallPolicyArgument(
   element: t.JSXElement,
 ): t.ObjectExpression | null {
   const entries = new Map<string, t.Expression>();
-  for (const [prop, policy] of ctx.transparentGroupCallPolicies.get(element) ?? []) {
-    entries.set(prop, fixedPolicyExpression(ctx, policy));
-  }
   const inherited = ctx.transparentPolicyParams.get(owner);
+  for (const [prop, policy] of ctx.transparentGroupCallPolicies.get(element) ?? []) {
+    const inheritedDefault = inherited === undefined ? undefined : astFactory.optionalMemberExpression(
+      cloneNode(inherited), astFactory.identifier('$default'), false, true,
+    );
+    const inheritedProp = inherited === undefined || prop === '$default' ? inheritedDefault
+      : astFactory.logicalExpression('??', astFactory.optionalMemberExpression(
+          cloneNode(inherited), isValidIdentifier(prop) ? astFactory.identifier(prop) : astFactory.stringLiteral(prop),
+          !isValidIdentifier(prop), true,
+        ), inheritedDefault!);
+    entries.set(prop, fixedPolicyExpression(ctx, policy, inheritedProp));
+  }
   const sourceProps = ctx.transparentSourceProps.get(owner);
   if (inherited !== undefined && !entries.has('$default')) {
     entries.set(

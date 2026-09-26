@@ -838,29 +838,105 @@ export function Profile(_id, _parent, _dataPolicies) {
 	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 	const user = $fetch('/api/user');
-
-	const _update = () => {
-		_MD.setTextData(_text, _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name));
-	};
+	const _update = () => {};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
 
-	const _text = _document.createTextNode("");
-
-	_MD.setTextData(_text, _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name));
-
-	_MD.register({
-		id: _id + "/$data/0",
-		parent: _id,
-		render: () => {
-			_MD.setTextData(_text, _MDD.readResolvedValuesForRender([user], (_userValue) => _userValue.name));
-		}
-	});
-
 	const _h = _document.createElement("h1");
 
-	_h.appendChild(_text);
-	_MD.cleanup(_id + "/$data/0", _MDD.connectResolvedValues([user], () => _MD.markDirty(_id + "/$data/0")));
+	_MD.register({
+		id: _id + "/when0",
+		parent: _id,
+		render: () => _when.update()
+	});
+
+	const _when = _MD.createCondRegion(
+		_h,
+		_id + "/when0",
+		() => _MDD.resolvedValuesError([user]) && _dataPolicies?.$default?.error
+			? 0
+			: _MDD.resolvedValuesError([user])
+				? 1
+				: _MDD.resolvedValuesPending([user]) && _dataPolicies?.$default?.pending ? 2 : _MDD.resolvedValuesPending([user]) ? 3 : 4,
+		[
+			() => {
+				let _value2;
+				const _update2 = () => {};
+				const _dataPolicy = _dataPolicies?.$default?.error(_id + "/when0" + "/$dataPolicy", _id + "/when0", _MDD.resolvedValuesError([user]), () => _MDD.retryResolvedValues([user]));
+
+				return {
+					nodes: _MD.rootNodes(_dataPolicy),
+					update: _update2,
+					dispose: () => {
+						_MD.unregisterSubtree(_id + "/when0" + "/$dataPolicy");
+					}
+				};
+			},
+
+			() => {
+				let _value3;
+				const _document2 = _MD.getActiveEnvironment().document;
+
+				const _update3 = () => {
+					_MD.setTextData(_text, _MDD.throwResolvedValuesError([user]));
+				};
+
+				const _text = _document2.createTextNode("");
+
+				_MD.setTextData(_text, _MDD.throwResolvedValuesError([user]));
+
+				const _fragment = _document2.createDocumentFragment();
+
+				_fragment.appendChild(_text);
+
+				return { nodes: _MD.rootNodes(_fragment), update: _update3 };
+			},
+
+			() => {
+				let _value4;
+				const _update4 = () => {};
+				const _dataPolicy2 = _dataPolicies?.$default?.pending(_id + "/when0" + "/$dataPolicy", _id + "/when0");
+
+				return {
+					nodes: _MD.rootNodes(_dataPolicy2),
+					update: _update4,
+					dispose: () => {
+						_MD.unregisterSubtree(_id + "/when0" + "/$dataPolicy");
+					}
+				};
+			},
+
+			() => {
+				let _value5;
+				const _document3 = _MD.getActiveEnvironment().document;
+				const _update5 = () => {};
+				const _fragment2 = _document3.createDocumentFragment();
+
+				return { nodes: _MD.rootNodes(_fragment2), update: _update5 };
+			},
+
+			() => {
+				let _value6;
+				const _document4 = _MD.getActiveEnvironment().document;
+
+				const _update6 = () => {
+					_MD.setTextData(_text2, _MDD.readResolvedValue(user, "user", "./component.tsx:5:21").name);
+				};
+
+				const _text2 = _document4.createTextNode("");
+
+				_MD.setTextData(_text2, _MDD.readResolvedValue(user, "user", "./component.tsx:5:21").name);
+
+				const _fragment3 = _document4.createDocumentFragment();
+
+				_fragment3.appendChild(_text2);
+
+				return { nodes: _MD.rootNodes(_fragment3), update: _update6 };
+			}
+		]
+	);
+
+	_MD.cleanup(_id + "/when0", _MDD.connectResolvedValues([user], () => _MD.markDirty(_id + "/when0")));
 	_MD.cleanup(_id, _MDD.ownResolvedValue(user));
 
 	return _h;

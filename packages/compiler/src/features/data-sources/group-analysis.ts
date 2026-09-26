@@ -269,8 +269,8 @@ export function annotateGroupComponentCalls(
   ctx: Ctx,
   content: BaseNode,
   origins: ReadonlyMap<AstBinding, ReadonlySet<string>>,
-  pending: string | TransparentPresentationComponent,
-  error: string | TransparentPresentationComponent,
+  pending?: string | TransparentPresentationComponent,
+  error?: string | TransparentPresentationComponent,
 ): void {
   const note = (node: BaseNode): void => {
     const element = node as unknown as t.JSXElement;
@@ -281,9 +281,11 @@ export function annotateGroupComponentCalls(
     // A source-less component boundary still inherits the Group's nearest
     // presentation policy. The child may own its own colorless sources or
     // forward the policy through another component before one is created.
-    if (!policies.has('$default')) {
-      policies.set('$default', { pending, error });
-    }
+    const outer = {
+      ...(pending === undefined ? {} : { pending }),
+      ...(error === undefined ? {} : { error }),
+    };
+    policies.set('$default', { ...outer, ...policies.get('$default') });
     for (const attribute of element.openingElement.attributes) {
       if (!astFactory.isJSXAttribute(attribute)) continue;
       const prop = componentPropName(attribute);
@@ -302,7 +304,7 @@ export function annotateGroupComponentCalls(
         ).size === 0
       ) continue;
       // Inner groups run first (exit traversal) and own the nearest match.
-      if (!policies.has(prop)) policies.set(prop, { pending, error });
+      policies.set(prop, { ...outer, ...policies.get(prop) });
     }
     ctx.transparentGroupCallPolicies.set(element, policies);
   };

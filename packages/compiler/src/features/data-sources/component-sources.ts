@@ -189,7 +189,7 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
       ctx.transparentSourceProps.set(component, sourceProps);
       ctx.transparentPolicyParams.set(
         component,
-        generatedIdentifier(ctx, 'dataPolicies'),
+        ctx.transparentPolicyParams.get(component) ?? generatedIdentifier(ctx, 'dataPolicies'),
       );
     }
     if (sources.size === 0) continue;

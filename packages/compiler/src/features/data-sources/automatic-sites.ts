@@ -7,7 +7,7 @@ import {
   overwriteNode,
   type BaseNode,
 } from '../../ast';
-import type { Ctx } from '../../context';
+import type { Ctx, TransparentPresentationPolicy, TransparentPresentationComponent } from '../../context';
 import { mdd } from '../../identifiers';
 import { annotateTransparentSources, sourceArray } from './subscriptions';
 
@@ -105,11 +105,23 @@ function policyMember(
 }
 
 function fragmentExpression(expression: t.Expression): t.JSXFragment {
+  if (astFactory.isJSXFragment(expression)) return expression;
   return astFactory.jsxFragment(
     astFactory.jsxOpeningFragment(),
     astFactory.jsxClosingFragment(),
-    [astFactory.jsxExpressionContainer(expression)],
+    [astFactory.isJSXElement(expression) ? expression : astFactory.jsxExpressionContainer(expression)],
   );
+}
+
+function authoredPolicyElement(
+  policy: string | TransparentPresentationComponent,
+  props: Array<{ name: string; value: t.Expression }> = [],
+): t.JSXElement {
+  const component = typeof policy === 'string' ? policy : policy.component;
+  const entries = typeof policy === 'string' ? props : [...props, ...policy.props];
+  return astFactory.jsxElement(astFactory.jsxOpeningElement(astFactory.jsxIdentifier(component),
+    entries.map(({ name, value }) => astFactory.jsxAttribute(astFactory.jsxIdentifier(name),
+      astFactory.jsxExpressionContainer(cloneEstreeNode(value, true)))), true), null, []);
 }
 
 export function wrapAutomaticSite(
@@ -117,6 +129,7 @@ export function wrapAutomaticSite(
   component: string,
   expression: t.Expression,
   dependencies: readonly string[],
+  override?: TransparentPresentationPolicy,
 ): void {
   const sources = sourceArray(dependencies);
   const errorRead = (): t.CallExpression =>
@@ -139,8 +152,10 @@ export function wrapAutomaticSite(
     dependencies,
     'resolvedValuesPendingIndex',
   );
-  const errorRenderer = policyMember(errorPolicy, 'error');
-  const pendingRenderer = policyMember(pendingPolicy, 'pending');
+  const errorRenderer = override?.error === undefined ? policyMember(errorPolicy, 'error')
+    : astFactory.booleanLiteral(true);
+  const pendingRenderer = override?.pending === undefined ? policyMember(pendingPolicy, 'pending')
+    : astFactory.booleanLiteral(true);
   const retry = astFactory.arrowFunctionExpression(
     [],
     astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
@@ -149,7 +164,9 @@ export function wrapAutomaticSite(
   );
   const conditional = astFactory.conditionalExpression(
     astFactory.logicalExpression('&&', errorRead(), cloneEstreeNode(errorRenderer)),
-    policyRendererElement(cloneEstreeNode(errorRenderer), [errorRead(), retry]),
+    override?.error === undefined
+      ? policyRendererElement(cloneEstreeNode(errorRenderer), [errorRead(), retry])
+      : authoredPolicyElement(override.error, [{ name: 'error', value: errorRead() }, { name: 'retry', value: retry }]),
     astFactory.conditionalExpression(
       errorRead(),
       fragmentExpression(
@@ -159,7 +176,8 @@ export function wrapAutomaticSite(
       ),
       astFactory.conditionalExpression(
         astFactory.logicalExpression('&&', pendingRead(), cloneEstreeNode(pendingRenderer)),
-        policyRendererElement(cloneEstreeNode(pendingRenderer), []),
+        override?.pending === undefined ? policyRendererElement(cloneEstreeNode(pendingRenderer), [])
+          : authoredPolicyElement(override.pending),
         astFactory.conditionalExpression(
           pendingRead(),
           astFactory.jsxFragment(astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(), []),

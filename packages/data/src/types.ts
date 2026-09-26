@@ -180,20 +180,14 @@ export type DataPolicyComponent<TProps = object> = (
 ) => unknown;
 
 export interface GroupProps {
+  readonly pending?: DataPolicyComponent;
+  readonly error?: DataPolicyComponent<ErrorPolicyComponentProps>;
   readonly children?: unknown;
-}
-
-export interface PendingProps {
-  readonly component: DataPolicyComponent;
 }
 
 export interface ErrorPolicyComponentProps {
   readonly error: import('./errors').RequestError;
   readonly retry: () => Promise<unknown>;
-}
-
-export interface ErrorProps {
-  readonly component: DataPolicyComponent<ErrorPolicyComponentProps>;
 }
 
 export interface FetchResourceCore<T> extends RefreshableResource {

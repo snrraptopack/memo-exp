@@ -11,7 +11,7 @@ const output = join(outDir, 'ssr-concurrency.compiled.ts');
 
 const modules = {
   './concurrency.tsx': `
-    import { $fetch, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+    import { $fetch, Group } from '@memoized-dom/data';
 
     function Skeleton() {
       return <div class="skeleton">Loading...</div>;
@@ -25,9 +25,7 @@ const modules = {
       const user = $fetch('/api/user');
       return (
         <section>
-          <Group>
-            <Pending component={Skeleton} />
-            <ErrorArm component={ErrorView} />
+          <Group pending={Skeleton} error={ErrorView}>
             <h1>{user.name}</h1>
           </Group>
         </section>

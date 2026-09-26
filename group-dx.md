@@ -14,7 +14,20 @@ Group also governs ordinary resource availability after entry.
 
 ### Implementation status
 
-The new Group API and route-shell integration below are not implemented yet.
+The props-based Group API now supports arbitrary children, inline synchronous
+callbacks, and independently inherited pending/error policies across component
+calls and files. Empty Groups pass through inherited policies; they add no DOM.
+Group has one authored API: pending/error props. Pending/Error child
+declarations and their public exports are removed; there is no compatibility
+mode or positional three-child contract.
+This slice handles ordinary resource read sites, not render crashes or route
+entry failures. Group-level and complete descendant-wide `suspend` forms
+still require staged preparation. Marked elements/components
+can currently gate compiler-visible sources in their authoring component;
+this does not discover descendant-owned resources. Group-level suspend is
+diagnosed until that broader readiness contract is implemented.
+Route-shell integration below is not implemented yet.
+
 The first code slice hardens existing router behavior: native history
 traversal now prepares `$routed` before entry, tracked failed/blocked pops
 recover by traversal rather than extra pushes, stale retries are guarded,
@@ -375,18 +388,6 @@ scope they use the built-in default: pending renders nothing at the site,
 an unclaimed request error throws, and a render crash propagates and
 kills the mount — same as today. `Group` supplies the UI, never the
 permission.
-
-## What changes from today
-
-| Today | Proposed |
-|---|---|
-| Exactly three children: `<Pending>`, `<Error>`, one content child | `pending` / `error` props; unlimited children |
-| `<Pending component={X} />` sentinel element | `pending={X}` — component identifier or inline render callback |
-| `suspend` only on the direct content child | `suspend` on any element or component in scope |
-| Policy = the one Group that wraps you | Policy = nearest Group ancestor, resolved per callsite, per key |
-| No Group → automatic-site defaults | Unchanged — same defaults |
-| `suspend` requires provable local sources | `suspend` claims all reads beneath it — descendant sources included; nothing inside opts out |
-| `error` = request failure only; render crashes kill the mount | `error` = the one failure arm — request failures and render crashes both claim at it, discriminated by `error.kind` |
 
 ## Semantics pinned by this DX
 

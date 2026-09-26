@@ -1,4 +1,4 @@
-import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+import { $fetch, Group } from '@memoized-dom/data';
 import { Dashboard } from '../components/Dashboard';
 import { LocalFailure, LocalPending } from '../components/Feedback';
 import { PageIntro } from '../components/PageIntro';
@@ -11,9 +11,7 @@ export function ColorlessTsxPage() {
   return (
     <section class="page">
       <PageIntro eyebrow="TSX · normal colorless mode" title="The useful shell does not wait." description="Watch the card mount immediately, then replace only the exact fields unlocked by each response." code="<Dashboard profile={profile} ... />" />
-      <Group>
-        <Pending component={LocalPending} />
-        <Error component={LocalFailure} />
+      <Group pending={LocalPending} error={LocalFailure}>
         <Dashboard profile={profile} metrics={metrics} activity={activity} frontend="TSX" mode="Colorless" />
       </Group>
     </section>

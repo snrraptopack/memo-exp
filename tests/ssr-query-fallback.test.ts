@@ -15,14 +15,12 @@ const outDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'out');
 const output = join(outDir, 'ssr-query-fallback.compiled.ts');
 const compiled = compileModules({
   './app.tsx': `
-    import { $fetch, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+    import { $fetch, Group } from '@memoized-dom/data';
     function Loading() { return <p>Loading...</p>; }
     function Failed({ error, retry }) { return <p>{error.message}</p>; }
     export function App() {
       const user = $fetch('/api/user', { query: { id: 7 } });
-      return <Group>
-        <Pending component={Loading} />
-        <ErrorArm component={Failed} />
+      return <Group pending={Loading} error={Failed}>
         <h1>{user.name}</h1>
       </Group>;
     }

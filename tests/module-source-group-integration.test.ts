@@ -22,10 +22,7 @@ import {
   unregister,
 } from '@memoized-dom/runtime';
 import { renderToString } from '@memoized-dom/server';
-import {
-  createDataRuntime,
-  setActiveDataRuntime,
-} from '@memoized-dom/data';
+import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
 
 const outDir = join(import.meta.dirname, 'fixtures', 'out', 'mmd-module-group');
 
@@ -60,7 +57,7 @@ const sessionSource = `
 `;
 
 const appSource = `
-  import { $track, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+  import { $track, Group } from '@memoized-dom/data';
   import { notifications } from './session';
 
   function Skeleton() {
@@ -77,9 +74,7 @@ const appSource = `
     return (
       <section>
         <span class="pill" class={{ busy: state.refreshing }}>{unread} unread</span>
-        <Group>
-          <Pending component={Skeleton} />
-          <ErrorArm component={ErrorRow} />
+        <Group pending={Skeleton} error={ErrorRow}>
           <ul class="list">
             {notifications.map((n) => (
               <li key={n.id} class={n.read ? 'read' : 'unread'}>{n.text}</li>

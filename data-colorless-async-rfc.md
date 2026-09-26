@@ -16,8 +16,8 @@ The first client/compiler vertical slice exists in the working tree:
 - availability-gated replay of component-local derived state;
 - fetch notifications connected to ordinary runtime push invalidation with
   automatic component cleanup;
-- compiler-only `Group`, `Pending`, and `Error` declarations with the normalized
-  three-child shape, plus independent pending/error/retry replacement for
+- compiler-only `Group` scopes with optional pending/error props and
+  unrestricted children, plus independent pending/error/retry replacement for
   scalar, conditional, structural, and keyed-list consumption sites;
 - transparent origin propagation through component-local derivations and
   linked component props, including private policy forwarding across modules;
@@ -155,28 +155,19 @@ function App() {
   const user = $fetch<User>('/api/user');
 
   return (
-    <Group>
-      <Pending component={UserPending} />
-      <Error component={UserFailure} />
+    <Group pending={UserPending} error={UserFailure}>
       <Profile user={user} />
     </Group>
   );
 }
 ```
 
-`Group` has exactly three direct children, in this order:
-
-1. one `Pending` policy declaration;
-2. one `Error` policy declaration;
-3. one content child.
-
-When the content contains several siblings, the author uses a fragment as that
-third child:
+`Group` accepts optional `pending` and `error` props and any number of content
+children. Policies inherit independently through component calls, including
+across files. The nearest Group overrides only the keys it declares.
 
 ```tsx
-<Group>
-  <Pending component={UserPending} />
-  <Error component={UserFailure} />
+<Group pending={UserPending} error={UserFailure}>
   <>
     <Avatar src={user.avatar} />
     <strong>{user.name}</strong>
@@ -184,16 +175,11 @@ third child:
 </Group>
 ```
 
-`Pending` and `Error` are policy declarations consumed by `Group`. They do not
-render where they are written and are not alternative content branches. The
-single content child mounts normally and immediately. A fragment introduces no
-wrapper DOM element, and `Group` itself emits none.
-
-The exact shape is deliberate, not an incidental parser restriction. Opting
-into `Group` means choosing both automatic policies. Authors who want to omit a
-policy or write different control flow use `$track` instead. The compiler must
-reject missing, reordered, or additional direct children rather than inventing
-defaults.
+The props declare presentation at resource read sites, not alternative content
+branches. Static content mounts immediately unless its region is marked
+`suspend`. Group emits no wrapper DOM. An empty Group inherits both policies;
+without an available pending policy, unavailable read slots are empty. Source
+failures without an error policy throw rather than disappearing.
 
 ### 3.1 Pending receives no source bookkeeping
 
@@ -205,9 +191,7 @@ function PendingText() {
   return <span>Loading…</span>;
 }
 
-<Group>
-  <Pending component={PendingText} />
-  <Error component={LocalFailure} />
+<Group pending={PendingText} error={LocalFailure}>
   <Profile user={user} />
 </Group>
 ```
@@ -256,9 +240,7 @@ function App() {
   const statistics = $fetch<Statistics>('/api/statistics');
 
   return (
-    <Group>
-      <Pending component={InlineSkeleton} />
-      <Error component={InlineError} />
+    <Group pending={InlineSkeleton} error={InlineError}>
       <Dashboard user={user} statistics={statistics} />
     </Group>
   );
@@ -297,9 +279,7 @@ When a component is only useful after all of the Group's initial values exist,
 the author can request coordinated first mount explicitly:
 
 ```tsx
-<Group>
-  <Pending component={DashboardSkeleton} />
-  <Error component={DashboardError} />
+<Group pending={DashboardSkeleton} error={DashboardError}>
   <Dashboard suspend user={user} statistics={statistics} />
 </Group>
 ```
@@ -367,9 +347,7 @@ function App() {
   const user = $fetch<User>('/api/user');
 
   return (
-    <Group>
-      <Pending component={AvatarSkeleton} />
-      <Error component={AvatarError} />
+    <Group pending={AvatarSkeleton} error={AvatarError}>
       <Layout>
         <Navigation user={user} />
         <Page>
@@ -395,9 +373,7 @@ function Todos() {
   const count = open.length;
 
   return (
-    <Group>
-      <Pending component={InlineSkeleton} />
-      <Error component={InlineError} />
+    <Group pending={InlineSkeleton} error={InlineError}>
       <>
         <h1>Todos</h1>
         <strong>{count}</strong>
@@ -430,16 +406,12 @@ function Todos() {
   const todos = $fetch<Todo[]>('/api/todos');
 
   return (
-    <Group>
-      <Pending component={InlineSkeleton} />
-      <Error component={InlineError} />
+    <Group pending={InlineSkeleton} error={InlineError}>
       <>
         <h1>You have {todos.length} todos</h1>
 
         <ul>
-          <Group>
-            <Pending component={TodoRowsSkeleton} />
-            <Error component={TodoRowsError} />
+          <Group pending={TodoRowsSkeleton} error={TodoRowsError}>
             {todos.map((todo) => <li>{todo.title}</li>)}
           </Group>
         </ul>
@@ -564,9 +536,7 @@ function Users() {
   const users = $fetch<User[]>('/api/users');
 
   return (
-    <Group>
-      <Pending component={UsersSkeleton} />
-      <Error component={UsersError} />
+    <Group pending={UsersSkeleton} error={UsersError}>
       <>
         <button onClick={() => $track(users).refresh()}>Refresh</button>
         <UserList users={users} />
@@ -689,9 +659,7 @@ import { currentUser } from './session';
 
 function Header() {
   return (
-    <Group>
-      <Pending component={AvatarSkeleton} />
-      <Error component={SignedOutMark} />
+    <Group pending={AvatarSkeleton} error={SignedOutMark}>
       <>
         <Avatar src={currentUser.avatar} />
         <strong>{currentUser.name}</strong>
@@ -780,8 +748,8 @@ Required compiler responsibilities:
    creation, according to section 8.1.
 4. Associate every consuming DOM sink or structural region with its source
    prerequisites.
-5. Validate that each `Group` has exactly `Pending`, `Error`, and one content
-   child; several content siblings must be wrapped in a fragment.
+5. Validate Group policy props and resolve pending/error inheritance
+   independently per mounted callsite; Group children are unrestricted.
 6. Make an initially unavailable site render its nearest matching pending
    policy without preventing unrelated creation work.
 7. Replace only that local pending/error content when prerequisites change.
@@ -837,7 +805,7 @@ No row in this table requires a `loading` check from the author.
 ## 11. Explicitly rejected
 
 - An implicit `Ready`, `Loading`, `Suspense`, or equivalent whole-subtree gate.
-- Waiting for every inferred content dependency without a direct content
+- Waiting for every inferred content dependency without an authored
   element explicitly marked `suspend`.
 - Passing `sources`, indexes, canonical keys, or compiler IDs to pending UI.
 - Making authors inspect `available`/`pending` before ordinary value reads.
@@ -851,8 +819,6 @@ No row in this table requires a `loading` check from the author.
   to payload objects and arrays; payload fields may use those names.
 - Making development throw while production silently renders an empty failed
   site; failure propagation is the same in both modes.
-- Optional or reordered `Group` policy children. Authors choosing automatic
-  local policy provide both declarations in the normalized three-child form.
 - Moving fetch operations or optimistic transaction producers onto the state
   returned by `$track`.
 - Treating `$fetch` as a generic async-computation API for viewport, timers, or
@@ -894,9 +860,9 @@ behavior are already frozen or proven.
 6. **Local site emission** — add stable anchors, DOM-legality diagnostics, and
    pending/error handling to existing scalar and structural regions without
    creating a new application-wide scheduler.
-7. **Group lowering** — validate exactly three children, consume
-   `Pending`/`Error` declarations as local presentation policies, and implement
-   nesting plus nearest-match behavior.
+7. **Group lowering** — consume pending/error props as presentation policies,
+   allow arbitrary children, and implement independent nearest-key inheritance
+   through mounted component callsites.
 8. **`$track` surface** — expose request identity, reactive lifecycle state,
    outcome observation, refresh, and abort without turning it into a data store.
 9. **Ownership and escape diagnostics** — automatic cleanup plus clear errors
@@ -921,10 +887,9 @@ Rejected alternative: implicit whole-branch readiness and Promise.all-style grou
 ```
 
 ```text
-Decision: Group has exactly three direct children: Pending, Error, and one content child.
+Decision: Group has optional pending/error props and unrestricted children.
 Status: accepted authoring direction
-Reason: a normalized shape avoids ambiguous content classification and gives the compiler one stable content scope; multiple content siblings use a fragment.
-Rejected alternative: optional policies or extra direct content children; authors wanting custom policy control use $track.
+Reason: Group declares an inherited presentation scope, not a positional list of state arms. Each prop overrides only its own inherited key.
 ```
 
 ```text
@@ -961,7 +926,7 @@ Reason: a failed source must not leave an unexplained permanent hole; SSR reject
 
 ## 15. Open questions
 
-1. Final names for `$track`, `Pending`, and `Error`.
+1. Final lifecycle vocabulary for `$track`.
 2. The concise explicit syntax for replacing a whole element when one of its
    attributes is unavailable; default attribute behavior remains deferred
    assignment.

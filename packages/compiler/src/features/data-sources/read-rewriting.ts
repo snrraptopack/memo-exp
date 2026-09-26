@@ -231,6 +231,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         );
         if (
           nodeHasJsx(rawExpression as unknown as t.Node) ||
+          ctx.transparentPolicyParams.has(component) ||
           dependencies.some((source) =>
             ctx.transparentSourceProps.get(component)?.has(source) === true
           )

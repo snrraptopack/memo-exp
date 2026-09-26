@@ -919,17 +919,7 @@ TypeScript shape, while the compiler preserves the hidden request provenance
 needed for availability checks and targeted DOM updates.
 
 ```ts
-import {
-  $fetch,
-  $track,
-  $action,
-  Group,
-  Pending,
-  Error as ErrorArm,
-  createDataRuntime,
-  clearDataRuntime,
-  RequestError,
-} from '@memoized-dom/data';
+import { $fetch, $track, $action, Group, createDataRuntime, clearDataRuntime, RequestError } from '@memoized-dom/data';
 ```
 
 Do not import `@memoized-dom/data/internal`. That entry exists only for
@@ -941,12 +931,7 @@ generated code and framework adapters.
 to `T`. Consume the payload directly: there is no public `.data` wrapper.
 
 ```tsx
-import {
-  $fetch,
-  Group,
-  Pending,
-  Error as ErrorArm,
-} from '@memoized-dom/data';
+import { $fetch, Group } from '@memoized-dom/data';
 
 interface Todo {
   id: number;
@@ -975,9 +960,7 @@ export function Todos() {
   const open = todos.filter((todo) => !todo.done);
 
   return (
-    <Group>
-      <Pending component={TodoSkeleton} />
-      <ErrorArm component={TodoFailure} />
+    <Group pending={TodoSkeleton} error={TodoFailure}>
       <ul>
         {open.map((todo) => (
           <li key={todo.id}>{todo.title}</li>
@@ -988,21 +971,19 @@ export function Todos() {
 }
 ```
 
-`Group` owns the unavailable states for its data sources. Its first child is a
-`Pending` policy, its second child is an `Error` policy, and its final child is
-the content UI. By default the content mounts immediately: each expression or
+`Group` declares optional pending/error policies and accepts arbitrary content.
+Each prop inherits independently from the nearest Group through component
+calls, including across files. By default the content mounts immediately: each expression or
 structural site that actually consumes unavailable data receives the matching
 policy independently. The error component receives `{ error, retry }`;
 retrying is a boundary capability, not a method added to the payload.
 
-Put the shorthand compiler directive `suspend` on the direct content element
+Put the shorthand compiler directive `suspend` on the element or component
 when its first mount must wait for every colorless source the compiler infers
 from that content:
 
 ```tsx
-<Group>
-  <Pending component={DashboardSkeleton} />
-  <ErrorArm component={DashboardFailure} />
+<Group pending={DashboardSkeleton} error={DashboardFailure}>
   <Dashboard suspend user={user} statistics={statistics} />
 </Group>
 ```
@@ -1318,10 +1299,7 @@ mounting; authored modules still use the exported transparent `$fetch` and
 `$action` facades.
 
 ```ts
-import {
-  createDataRuntime,
-  setActiveDataRuntime,
-} from '@memoized-dom/data';
+import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
 import { mount } from '@memoized-dom/runtime';
 import { App } from './App';
 
@@ -1581,7 +1559,7 @@ As demonstrated in `examples/fullstack/App.tsx`, calling a `get*` function retur
 ```tsx
 // App.tsx
 import { getStories, getStory, postVote } from '#server-functions';
-import { $track, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+import { $track, Group } from '@memoized-dom/data';
 
 export function App() {
   let selectedId: number | null = null;
@@ -1779,11 +1757,7 @@ the temporary item owned by `creation.id`. The package does not invent
 `append`, `replace`, `remove`, `mutate`, or rollback methods.
 
 ```ts
-import {
-  $action,
-  $fetch,
-  type ActionResult,
-} from '@memoized-dom/data';
+import { $action, $fetch, type ActionResult } from '@memoized-dom/data';
 
 interface Todo {
   id: string;
@@ -2011,12 +1985,7 @@ export function toggleCompact() {
 `src/App.tsx`:
 
 ```tsx
-import {
-  $fetch,
-  Group,
-  Pending,
-  Error as ErrorArm,
-} from '@memoized-dom/data';
+import { $fetch, Group } from '@memoized-dom/data';
 import { route } from '@memoized-dom/router';
 import {
   recordVisit,
@@ -2063,9 +2032,7 @@ function Home() {
         <button onClick={() => heading?.focus()}>Focus heading</button>
       </div>
 
-      <Group>
-        <Pending component={PostsPending} />
-        <ErrorArm component={PostsError} />
+      <Group pending={PostsPending} error={PostsError}>
         <ul>
           {visiblePosts.map((post) => (
             <li key={post.id}>

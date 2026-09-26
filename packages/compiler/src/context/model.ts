@@ -25,8 +25,6 @@ export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceD
     source: '$fetch',
     track: '$track',
     group: 'Group',
-    pending: 'Pending',
-    error: 'Error',
   },
 ];
 
@@ -115,15 +113,13 @@ export interface TransparentAsyncSourceDefinition {
   track?: string;
   /** Export that exposes imperative operations without resolving the value. */
   operations?: string;
-  /** Compile-time local presentation boundary and its policy declarations. */
+  /** Compile-time presentation scope with pending/error props. */
   group?: string;
-  pending?: string;
-  error?: string;
 }
 
 export interface TransparentPresentationPolicy {
-  pending: string | TransparentPresentationComponent;
-  error: string | TransparentPresentationComponent;
+  pending?: string | TransparentPresentationComponent;
+  error?: string | TransparentPresentationComponent;
 }
 
 export interface TransparentPresentationComponent {
@@ -411,8 +407,6 @@ export interface Ctx {
   transparentTrackFactories: Set<string>;
   transparentSourcePassthroughs: Set<string>;
   transparentGroups: Set<string>;
-  transparentPendingPolicies: Set<string>;
-  transparentErrorPolicies: Set<string>;
   /** Component-local source holders and track-state aliases. */
   transparentSources: Map<string, Set<string>>;
   transparentTrackBindings: Map<string, Map<string, readonly string[]>>;
@@ -729,8 +723,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     transparentTrackFactories: new Set(),
     transparentSourcePassthroughs: new Set(),
     transparentGroups: new Set(),
-    transparentPendingPolicies: new Set(),
-    transparentErrorPolicies: new Set(),
     transparentSources: new Map(),
     transparentTrackBindings: new Map(),
     importedState,

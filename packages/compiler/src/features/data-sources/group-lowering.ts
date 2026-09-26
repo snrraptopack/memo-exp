@@ -8,11 +8,10 @@
  */
 import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
-import { cloneNode as cloneEstreeNode } from '../../ast';
 import {
   refreshAstAnalysis,
   type Ctx,
-  type TransparentPresentationComponent,
+  type TransparentPresentationPolicy,
 } from '../../context';
 import {
   childNode,
@@ -20,7 +19,8 @@ import {
   walkAst,
   type BaseNode,
 } from '../../ast';
-import { mdd } from '../../identifiers';
+import { generatedIdentifier } from '../../identifiers';
+import { wrapAutomaticSite } from './automatic-sites';
 import {
   annotateGroupComponentCalls,
   expressionOrigins,
@@ -31,10 +31,6 @@ import {
 } from './group-analysis';
 import { componentPolicy } from './group-policy-components';
 import {
-  annotateTransparentSources,
-  sourceArray,
-} from './subscriptions';
-import {
   consumeSuspendDirective,
   suspendDirective,
 } from './suspend-directive';
@@ -43,166 +39,136 @@ import {
   tsrxTryMetadata,
 } from './tsrx-boundaries';
 
-function meaningfulGroupChildren(
-  element: t.JSXElement,
-  errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
-): Array<t.JSXElement | t.JSXFragment | t.JSXExpressionContainer> {
-  return element.children.filter((child): child is
-    t.JSXElement | t.JSXFragment | t.JSXExpressionContainer => {
-    if (astFactory.isJSXText(child)) {
-      if (child.value.trim() !== '') {
-        throw errorAt.buildCodeFrameError(
-          'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
-          child,
-        );
-      }
-      return false;
-    }
-    if (
-      astFactory.isJSXExpressionContainer(child) &&
-      astFactory.isJSXEmptyExpression(child.expression)
-    ) {
-      return false;
-    }
-    return astFactory.isJSXElement(child) ||
-      astFactory.isJSXFragment(child) ||
-      astFactory.isJSXExpressionContainer(child);
-  });
-}
-
-function policyElement(name: string, attributes: t.JSXAttribute[]): t.JSXElement {
-  return astFactory.jsxElement(
-    astFactory.jsxOpeningElement(astFactory.jsxIdentifier(name), attributes, true),
-    null,
-    [],
-  );
-}
-
-function groupPolicyElement(
-  policy: string | TransparentPresentationComponent,
-  attributes: t.JSXAttribute[],
-): t.JSXElement {
-  if (typeof policy === 'string') return policyElement(policy, attributes);
-  return policyElement(policy.component, [
-    ...attributes,
-    ...policy.props.map(({ name, value }) =>
-      astFactory.jsxAttribute(
-        astFactory.jsxIdentifier(name),
-        astFactory.jsxExpressionContainer(cloneEstreeNode(value, true)),
-      )
-    ),
-  ]);
-}
-
-function wrapGroupSite(
+/** Erase Group scopes and lower source reads under their nearest policies. */
+function lowerGroupScopes(
   ctx: Ctx,
-  expression: t.Expression,
-  dependencies: readonly string[],
-  pending: string | TransparentPresentationComponent,
-  error: string | TransparentPresentationComponent,
+  programPath: {
+    node: t.Program;
+    buildCodeFrameError(message: string, at?: t.Node): Error;
+  },
+  generatedPolicies: t.FunctionDeclaration[],
 ): void {
-  const sources = sourceArray(dependencies);
-  const errorRead = (): t.CallExpression =>
-    astFactory.callExpression(mdd(ctx, 'resolvedValuesError'), [
-      cloneEstreeNode(sources, true),
-    ]);
-  const retry = astFactory.arrowFunctionExpression(
-    [],
-    astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
-      cloneEstreeNode(sources, true),
-    ]),
-  );
-  const committed = astFactory.jsxFragment(
-    astFactory.jsxOpeningFragment(),
-    astFactory.jsxClosingFragment(),
-    [astFactory.jsxExpressionContainer(cloneEstreeNode(expression, true))],
-  );
-  const conditional = astFactory.conditionalExpression(
-    errorRead(),
-    groupPolicyElement(error, [
-      astFactory.jsxAttribute(
-        astFactory.jsxIdentifier('error'),
-        astFactory.jsxExpressionContainer(errorRead()),
-      ),
-      astFactory.jsxAttribute(
-        astFactory.jsxIdentifier('retry'),
-        astFactory.jsxExpressionContainer(retry),
-      ),
-    ]),
-    astFactory.conditionalExpression(
-      astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
-        cloneEstreeNode(sources, true),
-      ]),
-      groupPolicyElement(pending, []),
-      committed,
-    ),
-  );
-  (conditional as t.ConditionalExpression & {
-    __memoDomTransparentGroup?: boolean;
-  }).__memoDomTransparentGroup = true;
-  annotateTransparentSources(conditional, dependencies);
-  replaceNode(
-    ctx.astAnalysis!,
-    expression as unknown as BaseNode,
-    conditional as unknown as BaseNode,
-  );
+  const scopes: TransparentPresentationPolicy[] = [];
+  const plans = new WeakMap<t.JSXElement, TransparentPresentationPolicy>();
+  const ownerOf = (node: BaseNode): string => {
+    let parent = ctx.astAnalysis?.parentByNode.get(node);
+    while (parent !== undefined && parent !== null) {
+      if (parent.type === 'FunctionDeclaration') {
+        const owner = parent as unknown as t.FunctionDeclaration;
+        if (owner.id !== null) return owner.id.name;
+      }
+      parent = ctx.astAnalysis?.parentByNode.get(parent);
+    }
+    throw programPath.buildCodeFrameError('memo-dom: Group must be authored inside a component', node as unknown as t.Node);
+  };
+  const readPolicy = (element: t.JSXElement, kind: 'pending' | 'error') => {
+    const attribute = element.openingElement.attributes.find(candidate =>
+      astFactory.isJSXAttribute(candidate) && astFactory.isJSXIdentifier(candidate.name, { name: kind }));
+    if (attribute === undefined) return undefined;
+    if (!astFactory.isJSXAttribute(attribute) || !astFactory.isJSXExpressionContainer(attribute.value)) {
+      throw programPath.buildCodeFrameError(`memo-dom: Group ${kind} must be a component identifier or inline render callback`, attribute);
+    }
+    return componentPolicy(ctx, attribute.value.expression, kind, generatedPolicies, programPath, element as unknown as BaseNode);
+  };
+  walkAst<BaseNode>(programPath.node as unknown as BaseNode, {
+    enter(node) {
+      if (node.type !== 'JSXElement') return;
+      const element = node as unknown as t.JSXElement;
+      const tag = jsxTagName(element);
+      if (tag === null || !ctx.transparentGroups.has(tag)) return;
+      const seenAttributes = new Set<string>();
+      for (const attribute of element.openingElement.attributes) {
+        if (astFactory.isJSXAttribute(attribute) && astFactory.isJSXIdentifier(attribute.name, { name: 'data' })) {
+          throw programPath.buildCodeFrameError('memo-dom: Group infers colorless sources from its content; remove the data prop', attribute);
+        }
+        if (!astFactory.isJSXAttribute(attribute) || !astFactory.isJSXIdentifier(attribute.name) ||
+          !['pending', 'error', 'suspend'].includes(attribute.name.name)) {
+          throw programPath.buildCodeFrameError('memo-dom: Group accepts pending, error, and suspend; sources are inferred from its content', attribute);
+        }
+        if (seenAttributes.has(attribute.name.name)) {
+          throw programPath.buildCodeFrameError(`memo-dom: duplicate Group ${attribute.name.name} declaration`, attribute);
+        }
+        seenAttributes.add(attribute.name.name);
+      }
+      if (suspendDirective(element, programPath) !== null) {
+        throw programPath.buildCodeFrameError('memo-dom: Group suspend requires staged descendant preparation, which is not implemented yet', element);
+      }
+      const pending = readPolicy(element, 'pending');
+      const error = readPolicy(element, 'error');
+      const policy = {
+        ...scopes.at(-1),
+        ...(pending === undefined ? {} : { pending }),
+        ...(error === undefined ? {} : { error }),
+      };
+      plans.set(element, policy);
+      scopes.push(policy);
+    },
+    leave(node) {
+      if (node.type !== 'JSXElement') return;
+      const element = node as unknown as t.JSXElement;
+      const tag = jsxTagName(element);
+      if (tag === null) return;
+      if (!ctx.transparentGroups.has(tag)) {
+        const directive = suspendDirective(element, programPath);
+        if (directive === null) return;
+        // TSRX owns its output gate; do not consume its directive before the
+        // @try lowering pass validates and lowers that boundary.
+        let ancestor = ctx.astAnalysis?.parentByNode.get(node);
+        while (ancestor !== undefined && ancestor !== null) {
+          if (tsrxTryMetadata(ancestor) !== null) return;
+          ancestor = ctx.astAnalysis?.parentByNode.get(ancestor);
+        }
+        const owner = ownerOf(node);
+        if (!ctx.transparentPolicyParams.has(owner)) {
+          ctx.transparentPolicyParams.set(owner, generatedIdentifier(ctx, 'dataPolicies'));
+        }
+        const dependencies = inferredGroupDataNames(ctx, element, node, programPath);
+        if (dependencies.length === 0) {
+          throw programPath.buildCodeFrameError(
+            'memo-dom: suspend currently requires compiler-visible sources in the current component; descendant-owned readiness requires staged preparation', directive,
+          );
+        }
+        consumeSuspendDirective(element, directive);
+        const content = astFactory.jsxFragment(astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(), [element]);
+        wrapAutomaticSite(ctx, owner, content as unknown as t.Expression, dependencies, scopes.at(-1));
+        replaceNode(ctx.astAnalysis!, node, astFactory.jsxFragment(
+          astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(),
+          [astFactory.jsxExpressionContainer(content as unknown as t.Expression)],
+        ) as unknown as BaseNode);
+        return;
+      }
+      scopes.pop();
+      const policy = plans.get(element)!;
+      const owner = ownerOf(node);
+      if (!ctx.transparentPolicyParams.has(owner)) {
+        ctx.transparentPolicyParams.set(owner, generatedIdentifier(ctx, 'dataPolicies'));
+      }
+      const content = astFactory.jsxFragment(astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(), element.children);
+      const data = inferredGroupDataNames(ctx, element, content as unknown as BaseNode, programPath);
+      const origins = groupOrigins(ctx, node, data);
+      annotateGroupComponentCalls(ctx, content as unknown as BaseNode, origins, policy.pending, policy.error);
+      walkAst(content as unknown as BaseNode, {
+        enter(current) {
+          if (current.type !== 'JSXExpressionContainer') return;
+          const parent = ctx.astAnalysis?.parentByNode.get(current);
+          if (parent?.type === 'JSXAttribute') return false;
+          const expression = childNode(current, 'expression');
+          if (expression === null || !astFactory.isExpression(expression as unknown as t.Node)) return false;
+          if (isLoweredGroupExpression(expression as unknown as t.Expression)) return false;
+          const dependencies = [...expressionOrigins(ctx, expression, origins)];
+          if (dependencies.length === 0) return;
+          wrapAutomaticSite(ctx, owner, expression as unknown as t.Expression, dependencies, policy);
+          return false;
+        },
+      });
+      ctx.usesTransparentData = true;
+      replaceNode(ctx.astAnalysis!, node, content as unknown as BaseNode);
+    },
+  });
+  refreshAstAnalysis(ctx, programPath.node);
 }
 
-function suspendedGroupOutput(
-  ctx: Ctx,
-  content: t.JSXElement,
-  dependencies: readonly string[],
-  pending: string | TransparentPresentationComponent,
-  error: string | TransparentPresentationComponent,
-): t.JSXFragment {
-  const sources = sourceArray(dependencies);
-  const errorRead = (): t.CallExpression =>
-    astFactory.callExpression(mdd(ctx, 'resolvedValuesError'), [
-      cloneEstreeNode(sources, true),
-    ]);
-  const retry = astFactory.arrowFunctionExpression(
-    [],
-    astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
-      cloneEstreeNode(sources, true),
-    ]),
-  );
-  const committed = astFactory.jsxFragment(
-    astFactory.jsxOpeningFragment(),
-    astFactory.jsxClosingFragment(),
-    [cloneEstreeNode(content, true)],
-  );
-  const conditional = astFactory.conditionalExpression(
-    errorRead(),
-    groupPolicyElement(error, [
-      astFactory.jsxAttribute(
-        astFactory.jsxIdentifier('error'),
-        astFactory.jsxExpressionContainer(errorRead()),
-      ),
-      astFactory.jsxAttribute(
-        astFactory.jsxIdentifier('retry'),
-        astFactory.jsxExpressionContainer(retry),
-      ),
-    ]),
-    astFactory.conditionalExpression(
-      astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
-        cloneEstreeNode(sources, true),
-      ]),
-      groupPolicyElement(pending, []),
-      committed,
-    ),
-  );
-  (conditional as t.ConditionalExpression & {
-    __memoDomTransparentGroup?: boolean;
-  }).__memoDomTransparentGroup = true;
-  annotateTransparentSources(conditional, dependencies);
-  return astFactory.jsxFragment(
-    astFactory.jsxOpeningFragment(),
-    astFactory.jsxClosingFragment(),
-    [astFactory.jsxExpressionContainer(conditional)],
-  );
-}
-
-/** Normalize the exact three-child Group form into independent local sites. */
+/** Lower Group scopes and TSRX boundaries into independent local sites. */
 export function lowerTransparentGroups(
   ctx: Ctx,
   programPath: {
@@ -212,6 +178,7 @@ export function lowerTransparentGroups(
 ): void {
   const generatedPolicies: t.FunctionDeclaration[] = [];
   refreshAstAnalysis(ctx, programPath.node);
+  lowerGroupScopes(ctx, programPath, generatedPolicies);
   walkAst<BaseNode>(programPath.node as unknown as BaseNode, {
     leave(node) {
         const tryMetadata = tsrxTryMetadata(node);
@@ -229,113 +196,7 @@ export function lowerTransparentGroups(
           );
           return;
         }
-        if (node.type !== 'JSXElement') return;
-        const element = node as unknown as t.JSXElement;
-        const tag = jsxTagName(element);
-        if (tag === null || !ctx.transparentGroups.has(tag)) return;
-        const children = meaningfulGroupChildren(element, programPath);
-        if (children.length !== 3) {
-          throw programPath.buildCodeFrameError(
-            'memo-dom: Group requires exactly three direct children: Pending, Error, and one content child',
-            element,
-          );
-        }
-        const [pendingElement, errorElement, content] = children;
-        if (!astFactory.isJSXElement(pendingElement) || !astFactory.isJSXElement(errorElement)) {
-          throw programPath.buildCodeFrameError(
-            'memo-dom: Group children one and two must be Pending and Error declarations',
-            element,
-          );
-        }
-        const pending = componentPolicy(
-          ctx,
-          pendingElement,
-          ctx.transparentPendingPolicies,
-          'Pending',
-          'pending',
-          generatedPolicies,
-          programPath,
-        );
-        const error = componentPolicy(
-          ctx,
-          errorElement,
-          ctx.transparentErrorPolicies,
-          'Error',
-          'error',
-          generatedPolicies,
-          programPath,
-        );
-        const contentSuspend = astFactory.isJSXElement(content)
-          ? suspendDirective(content, programPath)
-          : null;
-        const data = inferredGroupDataNames(
-          ctx,
-          element,
-          content as unknown as BaseNode,
-          programPath,
-        );
-        const origins = groupOrigins(
-          ctx,
-          node,
-          data,
-        );
-        if (astFactory.isJSXElement(content)) {
-          if (contentSuspend !== null) {
-            if (data.length === 0) {
-              throw programPath.buildCodeFrameError(
-                'memo-dom: suspended Group content must read colorless sources in the current component; descendant-owned sources can use this Group only in colorless mode',
-                contentSuspend,
-              );
-            }
-            consumeSuspendDirective(content, contentSuspend);
-            replaceNode(
-              ctx.astAnalysis!,
-              node,
-              suspendedGroupOutput(
-                ctx,
-                content,
-                data,
-                pending,
-                error,
-              ) as unknown as BaseNode,
-            );
-            ctx.usesTransparentData = true;
-            return;
-          }
-        }
-        annotateGroupComponentCalls(
-          ctx,
-          content as unknown as BaseNode,
-          origins,
-          pending,
-          error,
-        );
-        walkAst(content as unknown as BaseNode, {
-          enter(current) {
-            if (current.type !== 'JSXExpressionContainer') return;
-            const parent = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-            if (parent?.type === 'JSXAttribute') return false;
-            const expression = childNode(current, 'expression');
-            if (
-              expression === null ||
-              !astFactory.isExpression(expression as unknown as t.Node)
-            ) return false;
-            const authoredExpression = expression as unknown as t.Expression;
-            if (isLoweredGroupExpression(authoredExpression)) return false;
-            const used = expressionOrigins(ctx, expression, origins);
-            if (used.size === 0) return undefined;
-            wrapGroupSite(ctx, authoredExpression, [...used], pending, error);
-            return false;
-          },
-        });
-        ctx.usesTransparentData = true;
-        // Move the authored content node so Group's internal lowering markers
-        // survive into the later transparent-read pass.
-        replaceNode(
-          ctx.astAnalysis!,
-          node,
-          content as unknown as BaseNode,
-        );
+
     },
   });
   programPath.node.body.push(...generatedPolicies);
@@ -348,7 +209,7 @@ export function lowerTransparentGroups(
       if (tag === null || !/^[A-Z]/.test(tag)) return;
       if (suspendDirective(element, programPath) === null) return;
       throw programPath.buildCodeFrameError(
-        'memo-dom: suspend requires the element to be the direct content child of Group',
+        'memo-dom: suspend requires staged descendant preparation, which is not implemented yet',
         element,
       );
     },

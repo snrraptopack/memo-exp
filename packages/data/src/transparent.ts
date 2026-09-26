@@ -11,8 +11,6 @@ import {
 import type {
   FetchResource,
   GroupProps,
-  PendingProps,
-  ErrorProps,
   ResolvedValue,
   ResourceListener,
   ResourceSnapshot,
@@ -48,16 +46,6 @@ function compileOnly(name: string): never {
 /** Compile-time local data presentation policy. */
 export function Group(_props: GroupProps): never {
   return compileOnly('Group');
-}
-
-/** Compile-time pending policy declaration consumed by Group. */
-export function Pending(_props: PendingProps): never {
-  return compileOnly('Pending');
-}
-
-/** Compile-time error policy declaration consumed by Group. */
-export function Error(_props: ErrorProps): never {
-  return compileOnly('Error');
 }
 
 /**

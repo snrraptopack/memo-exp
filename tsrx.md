@@ -281,9 +281,7 @@ is a whole-panel skeleton that should appear only once.
 The suspended form is conceptually the same readiness contract as this TSX:
 
 ```tsx
-<Group>
-  <Pending component={DashboardSkeleton} />
-  <Error component={DashboardFailure} />
+<Group pending={DashboardSkeleton} error={DashboardFailure}>
   <Dashboard suspend user={user} statistics={statistics} />
 </Group>
 ```

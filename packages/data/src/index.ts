@@ -9,9 +9,7 @@ import type {
   TransparentFetchFunction,
 } from './types';
 import {
-  Error,
   Group,
-  Pending,
   trackResolvedValue,
 } from './transparent';
 
@@ -29,7 +27,7 @@ export const $fetch = ((
 ) => getActiveDataRuntime().$fetch(target, options)) as unknown as TransparentFetchFunction;
 export const $track = (<T>(value: ResolvedValue<T> | PromiseLike<T>) =>
   trackResolvedValue(value)) as typeof trackResolvedValue;
-export { Group, Pending, Error };
+export { Group };
 export const $action = ((
   target: string | URL,
   options?: ActionOptions<never, never>,
@@ -65,8 +63,6 @@ export type {
   JsonPrimitive,
   JsonValue,
   OptimisticChange,
-  PendingProps,
-  ErrorProps,
   ErrorPolicyComponentProps,
   Query,
   QueryPrimitive,

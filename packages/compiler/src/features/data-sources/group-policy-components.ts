@@ -19,69 +19,41 @@ import {
   generatedComponentIdentifier,
   generatedIdentifier,
 } from '../../identifiers';
-import { jsxTagName } from './group-analysis';
 
 export function componentPolicy(
   ctx: Ctx,
-  element: t.JSXElement,
-  expected: ReadonlySet<string>,
-  label: string,
+  expression: t.Expression | t.JSXEmptyExpression,
   kind: 'pending' | 'error',
   generatedPolicies: t.FunctionDeclaration[],
   errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
+  boundary: BaseNode,
 ): string | TransparentPresentationComponent {
-  const tag = jsxTagName(element);
-  if (tag === null || !expected.has(tag)) {
-    throw errorAt.buildCodeFrameError(
-      `memo-dom: Group child must be <${label} component={...} />`,
-      element,
-    );
-  }
-  const attributes = element.openingElement.attributes;
-  if (attributes.length !== 1 || !astFactory.isJSXAttribute(attributes[0])) {
-    throw errorAt.buildCodeFrameError(
-      `memo-dom: <${label}> requires exactly one component prop`,
-      element.openingElement,
-    );
-  }
-  const attribute = attributes[0];
-  const name = astFactory.isJSXIdentifier(attribute.name)
-    ? attribute.name.name
-    : null;
-  const value = attribute.value;
-  if (name !== 'component' || !astFactory.isJSXExpressionContainer(value)) {
-    throw errorAt.buildCodeFrameError(
-      `memo-dom: <${label}> component must be a component identifier or inline render callback`,
-      attribute,
-    );
-  }
-  const expression = value.expression;
   if (astFactory.isIdentifier(expression)) return expression.name;
   if (
     !astFactory.isArrowFunctionExpression(expression) &&
     !astFactory.isFunctionExpression(expression)
   ) {
     throw errorAt.buildCodeFrameError(
-      `memo-dom: <${label}> component must be a component identifier or inline render callback`,
+      `memo-dom: Group ${kind} must be a component identifier or inline render callback`,
       expression,
     );
   }
   if (expression.async || expression.generator) {
     throw errorAt.buildCodeFrameError(
-      `memo-dom: <${label}> render callbacks must be synchronous`,
+      `memo-dom: Group ${kind} render callbacks must be synchronous`,
       expression,
     );
   }
   if (expression.params.length > 1) {
     throw errorAt.buildCodeFrameError(
-      `memo-dom: <${label}> render callbacks accept at most one props parameter`,
+      `memo-dom: Group ${kind} render callbacks accept at most one props parameter`,
       expression,
     );
   }
   const parameter = expression.params[0];
   if (kind === 'pending' && parameter !== undefined) {
     throw errorAt.buildCodeFrameError(
-      'memo-dom: <Pending> render callbacks do not receive props',
+      'memo-dom: Group pending render callbacks do not receive props',
       parameter,
     );
   }
@@ -91,13 +63,13 @@ export function componentPolicy(
     !astFactory.isObjectPattern(parameter)
   ) {
     throw errorAt.buildCodeFrameError(
-      'memo-dom: <Error> render callbacks receive one destructured { error, retry } props object',
+      'memo-dom: Group error render callbacks receive one destructured { error, retry } props object',
       parameter,
     );
   }
   const captures = policyCaptures(
     ctx,
-    element as unknown as BaseNode,
+    boundary,
     expression as unknown as BaseNode,
     new Set(),
   );

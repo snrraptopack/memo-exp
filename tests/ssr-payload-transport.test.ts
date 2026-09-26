@@ -13,7 +13,7 @@ const output = join(outDir, 'ssr-payload-transport.compiled.ts');
 
 const modules = {
   './app.tsx': `
-    import { $fetch, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+    import { $fetch, Group } from '@memoized-dom/data';
     import { $routed } from '@memoized-dom/router';
 
     function Skeleton() {
@@ -33,9 +33,7 @@ const modules = {
       return (
         <section route="/">
           <h2>{page.title}: {page.visits}</h2>
-          <Group>
-            <Pending component={Skeleton} />
-            <ErrorArm component={ErrorView} />
+          <Group pending={Skeleton} error={ErrorView}>
             <h1>{user.name}</h1>
           </Group>
         </section>

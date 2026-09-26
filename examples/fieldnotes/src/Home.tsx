@@ -1,4 +1,4 @@
-import { $fetch, $track, Group, Pending, Error } from '@memoized-dom/data';
+import { $fetch, $track, Group } from '@memoized-dom/data';
 import type { ErrorPolicyComponentProps } from '@memoized-dom/data';
 
 interface Health {
@@ -35,9 +35,7 @@ export function Home() {
       <h2>Base camp</h2>
       <p>
         Server:{' '}
-        <Group>
-          <Pending component={Checking} />
-          <Error component={HealthFailed} />
+        <Group pending={Checking} error={HealthFailed}>
           <span class={health.ok ? 'badge badge-ok' : 'badge badge-down'}>
             {health.ok ? `up · ${health.expeditions} expeditions logged` : 'down'}
           </span>

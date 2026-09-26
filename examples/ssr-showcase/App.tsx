@@ -18,7 +18,7 @@
  * dependent reader immediately.
  */
 import { route } from '@memoized-dom/router';
-import { Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 import {
   currentUser,
   stories,
@@ -38,9 +38,7 @@ function SessionError({ error, retry: _retry }: { error: { message: string }; re
 
 function SessionBadge() {
   return (
-    <Group>
-      <Pending component={SessionPending} />
-      <ErrorArm component={SessionError} />
+    <Group pending={SessionPending} error={SessionError}>
       <span class="badge user">
         <span class="avatar">{currentUser.avatar}</span>
         {currentUser.name}
@@ -85,9 +83,7 @@ function Dashboard() {
   return (
     <section class="panel">
       <div class="panel-head"><h2>Dashboard</h2></div>
-      <Group>
-        <Pending component={DashboardPending} />
-        <ErrorArm component={DashboardError} />
+      <Group pending={DashboardPending} error={DashboardError}>
         <div class="stats">
           <div class="stat">
             <span class="stat-value">{stories.length}</span>
@@ -173,9 +169,7 @@ function Stories() {
           + Publish
         </button>
       </div>
-      <Group>
-        <Pending component={StoriesPending} />
-        <ErrorArm component={StoriesError} />
+      <Group pending={StoriesPending} error={StoriesError}>
         <ul class="list">
           {stories.map((item) => <StoryRow item={item} key={item.id} />)}
         </ul>
