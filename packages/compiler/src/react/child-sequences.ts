@@ -412,7 +412,7 @@ export function specializeLinkedReactChildSequences(
 
   // Validate all callers before changing any component body.
   const injections: Array<{ entry: ModuleEntry; element: t.JSXElement; template: ChildTemplate;
-    sequence: ChildSequence; sourceImport?: t.ImportDeclaration }> = [];
+    sequence: ChildSequence; sourceImport?: t.ImportDeclaration; importedName?: string }> = [];
   const reached = new Set<ChildTemplate>();
   for (const entry of entries.values()) {
     const analysis = analyzeScope(entry.ast);
@@ -422,10 +422,12 @@ export function specializeLinkedReactChildSequences(
       const binding = analysis.nodeToScope.get(node)?.getBinding(name);
       let template: ChildTemplate | undefined;
       let sourceImport: t.ImportDeclaration | undefined;
+      let importedName: string | undefined;
       if (binding?.kind === 'import' && ast.isImportDeclaration(binding.declarationNode)) {
         sourceImport = binding.declarationNode;
         const specifier = binding.declarationNode.specifiers.find(item => item.local.name === name);
         if (ast.isImportSpecifier(specifier) && ast.isIdentifier(specifier.imported)) {
+          importedName = specifier.imported.name;
           const target = resolveModule(entry.id, String(binding.declarationNode.source.value), entries, options);
           if (target !== undefined) template = resolveTemplate(target, specifier.imported.name);
         }
@@ -440,7 +442,7 @@ export function specializeLinkedReactChildSequences(
         fail(entry, 'cannot specialize a spread or reserved child-sequence prop', node.openingElement);
       }
       const sequence = planChildren(entry, node.children);
-      injections.push({ entry, element: node, template, sequence, sourceImport });
+      injections.push({ entry, element: node, template, sequence, sourceImport, importedName });
       reached.add(template);
     } });
   }
@@ -500,8 +502,38 @@ export function specializeLinkedReactChildSequences(
     }
   }
 
+  const forwardedWrapperExports = new Set<string>();
+  function forwardWrapperExport(
+    entry: ModuleEntry, componentName: string, defining: ModuleEntry, exported: string,
+    seen = new Set<string>(),
+  ): boolean {
+    if (entry === defining) return true;
+    const key = `${entry.id}#${componentName}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    for (const statement of entry.ast.body) {
+      if (!ast.isExportNamedDeclaration(statement) || !ast.isStringLiteral(statement.source)) continue;
+      const next = resolveModule(entry.id, statement.source.value, entries, options);
+      if (next === undefined) continue;
+      for (const specifier of statement.specifiers) {
+        if (!ast.isExportSpecifier(specifier) || !ast.isIdentifier(specifier.local) ||
+            !ast.isIdentifier(specifier.exported, { name: componentName }) ||
+            !forwardWrapperExport(next, specifier.local.name, defining, exported, seen)) continue;
+        const forwardedKey = `${entry.id}#${exported}`;
+        if (!forwardedWrapperExports.has(forwardedKey)) {
+          forwardedWrapperExports.add(forwardedKey);
+          entry.ast.body.push(ast.exportNamedDeclaration(null, [
+            ast.exportSpecifier(ast.identifier(exported), ast.identifier(exported)),
+          ], cloneNode(statement.source as BaseNode, true) as t.StringLiteral));
+        }
+        return true;
+      }
+    }
+    seen.delete(key);
+    return false;
+  }
   const componentImports = new Map<t.ImportDeclaration, Map<string, string>>();
-  for (const { entry, element, template, sequence, sourceImport } of injections) {
+  for (const { entry, element, template, sequence, sourceImport, importedName } of injections) {
     for (const operation of template.operations) {
       if (operation.kind === 'count') {
         const count = sequence.dynamic === undefined
@@ -515,9 +547,12 @@ export function specializeLinkedReactChildSequences(
         if (operation.dynamicComponent !== undefined) {
           componentAlias = operation.dynamicComponent.local;
           if (entry !== template.entry) {
-            if (sourceImport === undefined || resolveModule(entry.id, sourceImport.source.value,
-              entries, options) !== template.entry) {
-              fail(entry, 'dynamic package wrapper requires a direct component import', element);
+            const importedEntry = sourceImport === undefined ? undefined :
+              resolveModule(entry.id, sourceImport.source.value, entries, options);
+            if (sourceImport === undefined || importedEntry === undefined || importedName === undefined ||
+                !forwardWrapperExport(importedEntry, importedName, template.entry,
+                  operation.dynamicComponent.exported)) {
+              fail(entry, 'dynamic package wrapper needs a linked named export path', element);
             }
             const imported = componentImports.get(sourceImport) ?? new Map<string, string>();
             componentImports.set(sourceImport, imported);

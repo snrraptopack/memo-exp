@@ -35,6 +35,7 @@ render callback path. The dynamic fixtures grow and shrink the caller list,
 check retained DOM identity, and update a package-owned wrapper through state
 and props. The dynamic callback must return one JSX element; its collection
 source is currently an identifier. The package wrapper may have an intrinsic
-root or a top-level package component root that the caller imports directly;
-the latter preserves the wrapper component's children slot and live props.
+root or a top-level package component root exposed through a named export,
+including `export { Name } from './module'` barrels. The latter preserves the
+wrapper component's children slot and live props.
 Other unknown child shapes diagnose.

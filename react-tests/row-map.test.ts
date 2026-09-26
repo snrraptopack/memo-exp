@@ -117,3 +117,22 @@ it('keeps a package-owned wrapper component around each dynamic caller row', asy
   expect(rows()).toEqual([['B', 'selected'], ['C', 'selected']]);
   expect(document.querySelector('li')).toBe(retained);
 });
+
+it('links a dynamic wrapper component through a package barrel', async () => {
+  const appFile = join(fixtureRoot, 'row-barrel-app.tsx');
+  const compiled = compileFixture({ entries: [appFile], packages: ['row-barrel-kit'],
+    outDir: 'out/row-barrel' });
+  const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+  document.body.appendChild(app.App('App', null));
+  const rows = () => [...document.querySelectorAll('li')].map(node => [node.textContent, node.className]);
+  expect(rows()).toEqual([['A', 'row'], ['B', 'row']]);
+  const retained = document.querySelectorAll('li')[1];
+  document.querySelector<HTMLButtonElement>('#package-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('#add')!.click();
+  expect(rows()).toEqual([['A', 'active'], ['B', 'active'], ['C', 'active']]);
+  document.querySelector<HTMLButtonElement>('#package-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('#app-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('#remove')!.click();
+  expect(rows()).toEqual([['B', 'selected'], ['C', 'selected']]);
+  expect(document.querySelector('li')).toBe(retained);
+});
