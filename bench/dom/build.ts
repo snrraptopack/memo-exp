@@ -27,7 +27,8 @@ const compiledAppTsx = compileModules(
   { runtimePath: '@memoized-dom/runtime' },
 )['./bench/dom/App.tsx']!;
 
-const compiledTsxAppContent = `${compiledAppTsx}
+const compiledTsxAppContent = `/* oxlint-disable no-unused-expressions -- compiler-generated mutation sequences */
+${compiledAppTsx}
 
 export function createCompiledTsxApp() {
   const root = BenchApp('BenchApp', null) as HTMLElement;
@@ -70,7 +71,8 @@ const compiledAppInline = compileModules(
   { runtimePath: '@memoized-dom/runtime' },
 )['./bench/dom/AppInline.tsx']!;
 
-const compiledInlineAppContent = `${compiledAppInline}
+const compiledInlineAppContent = `/* oxlint-disable no-unused-expressions -- compiler-generated mutation sequences */
+${compiledAppInline}
 
 export function createCompiledInlineApp() {
   const root = BenchAppInline('BenchAppInline', null) as HTMLElement;

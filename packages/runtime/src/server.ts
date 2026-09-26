@@ -8,3 +8,5 @@ import { setStorageFactory } from './async-storage';
 setStorageFactory(<T>() => new AsyncLocalStorage<T>());
 
 export * from './index';
+export { parseMarkup } from './markup-parse';
+export type { MarkupChild, MarkupElement } from './markup-parse';

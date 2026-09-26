@@ -22,8 +22,9 @@
  */
 
 import { getActiveEnvironment } from './kernel';
+import type { DocumentLike } from './environment';
 
-const templates = new Map<string, Element>();
+const templates = new WeakMap<DocumentLike, Map<string, Element>>();
 
 /**
  * Materialize one compiler-generated markup string. Returns nodes in
@@ -39,11 +40,16 @@ export function materializeMarkup(markup: string): Node[] {
   if (document.materializeMarkup !== undefined) {
     return document.materializeMarkup(markup);
   }
-  let template = templates.get(markup);
+  let documentTemplates = templates.get(document);
+  if (documentTemplates === undefined) {
+    documentTemplates = new Map();
+    templates.set(document, documentTemplates);
+  }
+  let template = documentTemplates.get(markup);
   if (template === undefined) {
     template = document.createElement('template');
     (template as { innerHTML: string }).innerHTML = markup;
-    templates.set(markup, template);
+    documentTemplates.set(markup, template);
   }
   const clone = (
     template as unknown as { content: DocumentFragment }

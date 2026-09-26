@@ -53,9 +53,30 @@ const UNSAFE_TAGS = new Set([
   'tr',
   'colgroup',
   'select',
+  'option',
   'optgroup',
   'datalist',
   'frameset',
+  // Native HTML parsing can close/reparent these nodes or ignore their
+  // start/end tags depending on ancestry. Keep their factories imperative.
+  'html',
+  'head',
+  'body',
+  'caption',
+  'td',
+  'th',
+  'ruby',
+  'rb',
+  'rp',
+  'rt',
+  'rtc',
+  'pre',
+  'image',
+  'isindex',
+  'keygen',
+  'nobr',
+  'svg',
+  'math',
 ]);
 
 /** Placeholder text node for dynamic text slots (zero-width space). */
@@ -98,6 +119,27 @@ const MIN_SEGMENT_SAVINGS = 100;
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MATH_NS = 'http://www.w3.org/1998/Math/MathML';
+
+const P_CLOSERS = new Set([
+  'address', 'article', 'aside', 'blockquote', 'details', 'div', 'dl',
+  'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3',
+  'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'main', 'menu', 'nav', 'ol',
+  'p', 'pre', 'search', 'section', 'table', 'ul', 'li', 'dt', 'dd',
+  'center', 'dialog', 'dir', 'summary',
+]);
+const HEADINGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+
+function parserClosesAncestor(tag: string, ancestors: string[]): boolean {
+  if (P_CLOSERS.has(tag) && ancestors.includes('p')) return true;
+  if (['a', 'button', 'form', 'li'].includes(tag) && ancestors.includes(tag)) {
+    return true;
+  }
+  if ((tag === 'dt' || tag === 'dd') &&
+      ancestors.some(ancestor => ancestor === 'dt' || ancestor === 'dd')) {
+    return true;
+  }
+  return HEADINGS.has(tag) && ancestors.some(ancestor => HEADINGS.has(ancestor));
+}
 
 interface MarkupNode {
   kind: 'element' | 'text' | 'other';
@@ -282,7 +324,9 @@ export function applyStaticMarkup(
             ns: HTML_NS,
             text: null,
             createIndex: index,
-            ineligible: UNSAFE_TAGS.has(tag),
+            // Custom-element constructors and reactions must retain the
+            // imperative creation timing; inert template parsing differs.
+            ineligible: UNSAFE_TAGS.has(tag) || tag.includes('-'),
           });
         } else if (
           method === 'createElementNS' &&
@@ -296,9 +340,10 @@ export function applyStaticMarkup(
             ns: arg0.value,
             text: null,
             createIndex: index,
-            ineligible:
-              UNSAFE_TAGS.has(tag) ||
-              (arg0.value !== SVG_NS && arg0.value !== MATH_NS),
+            // Foreign-content parsing adjusts case, namespaces and HTML
+            // integration points. Retain imperative factories until the
+            // markup path can guarantee the same nodes in every host.
+            ineligible: true,
           });
         } else if (method === 'createTextNode') {
           // Dynamic slots emit createTextNode('') + a setTextData seed;
@@ -307,12 +352,14 @@ export function applyStaticMarkup(
             kind: 'text',
             tag: null,
             ns: HTML_NS,
-            text:
-              astFactory.isStringLiteral(arg0) && arg0.value !== ''
-                ? arg0.value
-                : null,
+            text: astFactory.isStringLiteral(arg0) ? arg0.value : null,
             createIndex: index,
-            ineligible: false,
+            // Empty literal nodes disappear in markup; CR and NUL are
+            // normalized by the browser parser. Dynamic seeds below opt
+            // empty factory nodes back in using the placeholder.
+            ineligible:
+              !astFactory.isStringLiteral(arg0) ||
+              arg0.value === '' || /[\r\0]/.test(arg0.value),
           });
         } else {
           nodes.set(varName, {
@@ -376,6 +423,16 @@ export function applyStaticMarkup(
         }
         // _MD.setClassValue(V, 'x') / _MD.setStyleValue(V, 'x')
         const mdName = mdCallee(expr);
+        if (
+          mdName === 'setTextData' &&
+          astFactory.isIdentifier(expr.arguments[0])
+        ) {
+          const node = nodes.get(expr.arguments[0].name);
+          if (node?.kind === 'text') {
+            node.text = null;
+            node.ineligible = false;
+          }
+        }
         if (
           (mdName === 'setClassValue' || mdName === 'setStyleValue') &&
           expr.arguments.length === 2 &&
@@ -584,6 +641,10 @@ export function applyStaticMarkup(
     const list = (attrOps.get(name) ?? []).filter(
       (attr) =>
         ATTR_NAME_RE.test(attr.name) &&
+        // Customized built-ins only upgrade when `is` participates in
+        // creation. An imperative setAttribute must stay a later write.
+        attr.name.toLowerCase() !== 'is' &&
+        !/[\r\0]/.test(attr.value) &&
         !(attr.helper && attr.value === '') &&
         !(unsafe !== undefined && unsafe.has(attr.name)),
     );
@@ -598,11 +659,16 @@ export function applyStaticMarkup(
    * (createElement always makes HTML-ns nodes, even inside <svg>, while
    * markup inherits namespaces by ancestry).
    */
-  const emitMarkup = (name: string, parentNs: string): string | null => {
+  const emitMarkup = (
+    name: string,
+    parentNs: string,
+    ancestors: string[] = [],
+  ): string | null => {
     const node = nodes.get(name)!;
     if (node.kind === 'text') {
       return node.text === null ? TEXT_PLACEHOLDER : escapeText(node.text);
     }
+    if (parserClosesAncestor(node.tag!, ancestors)) return null;
     const derivedNs =
       node.tag === 'svg'
         ? SVG_NS
@@ -621,7 +687,7 @@ export function applyStaticMarkup(
     // Void elements serialize bare — a closing tag would create siblings.
     if (VOID_TAGS.has(node.tag!)) return markup;
     for (const child of coveredChildren.get(name) ?? []) {
-      const childMarkup = emitMarkup(child, derivedNs);
+      const childMarkup = emitMarkup(child, derivedNs, [...ancestors, node.tag!]);
       if (childMarkup === null) return null;
       markup += childMarkup;
     }

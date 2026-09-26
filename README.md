@@ -56,8 +56,10 @@ const output = compileModules(modules, {
 
 The default emitted runtime import is `@memoized-dom/runtime`.
 Browser-only applications retain neither hydration nor server host code.
-`mount()` automatically adopts compatible server output and restores its data
-payload; framework HMR uses `@memoized-dom/runtime/hot`, and server
+For SSR, import `@memoized-dom/runtime/hydrate` in the client entry so
+`mount()` adopts compatible server output and restores its data payload.
+The Vite plugin adds this import when `serverEntry` is configured.
+Framework HMR uses `@memoized-dom/runtime/hot`, and server
 integrations use `@memoized-dom/runtime/server`.
 All compiler paths emit canonical keys such as
 `./src/state.ts#store.selectedId`. `compileModules()` resolves named imports

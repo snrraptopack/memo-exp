@@ -5,8 +5,8 @@
  * server rendering without allocating heavyweight DOM element trees.
  */
 
-import type { DocumentLike, MarkupChild } from '@memoized-dom/runtime';
-import { parseMarkup } from '@memoized-dom/runtime';
+import type { DocumentLike } from '@memoized-dom/runtime';
+import { parseMarkup, type MarkupChild } from '@memoized-dom/runtime/server';
 
 function escapeHtml(text: string): string {
   return text

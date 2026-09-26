@@ -6,7 +6,7 @@ import {
 import { rootNodes } from './jsx-dom';
 import { HydrationMismatchError } from './hydration-error';
 import type { HydratedApplicationRoot } from './hydration';
-import { parseHydrationMarker } from './hydration';
+import { parseHydrationMarker } from './hydration-marker';
 
 /** Authored zero-argument component reference accepted by the browser entry. */
 export type MountableComponent = () => unknown;

@@ -6,9 +6,9 @@ import {
   it,
   vi,
 } from 'vitest';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { compile } from '@memoized-dom/compiler';
 import {
   mount,
@@ -58,6 +58,25 @@ afterEach(() => {
 });
 
 describe('hydration opt-in fallback', () => {
+  it('keeps hydration and the markup parser out of the published client graph', () => {
+    const pending = [join(here, '../packages/runtime/dist/index.js')];
+    const visited = new Set<string>();
+    let source = '';
+    while (pending.length > 0) {
+      const file = pending.pop()!;
+      if (visited.has(file)) continue;
+      visited.add(file);
+      const code = readFileSync(file, 'utf8');
+      source += code;
+      for (const match of code.matchAll(/\b(?:from\s*|import\s*)["'](\.[^"']+)["']/g)) {
+        pending.push(resolve(dirname(file), match[1]!));
+      }
+    }
+    expect(source).not.toContain('application-root marker');
+    expect(source).not.toContain('unclaimed server node(s)');
+    expect(source).not.toContain('#x22');
+  });
+
   it('warns and mounts fresh when server markup lacks the hydrate entry', async () => {
     const app = await import(/* @vite-ignore */ pathToFileURL(output).href) as CompiledApp;
     registerRootFactory(app.App, {

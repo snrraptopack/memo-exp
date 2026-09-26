@@ -8,7 +8,7 @@ const root = resolve(import.meta.dirname, '../..');
 await build({
   configFile: false,
   root: resolve(root, 'examples/todo'),
-  plugins: [memoizedDom({ entries: 'main.ts' })],
+  plugins: [memoizedDom({ clientEntry: 'main.ts' })],
   build: {
     emptyOutDir: true,
     outDir: resolve(root, 'bench/package-size/dist'),

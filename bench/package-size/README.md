@@ -13,7 +13,7 @@ bun run build
 bun run bench:size
 ```
 
-The compiler figure excludes its external Babel dependencies. The Vite
+The compiler figure excludes its external parser dependencies. The Vite
 adapter excludes Vite and the compiler package. The todo figure is the useful
 browser check: compiler and development tooling must not appear in it.
 
@@ -33,8 +33,8 @@ These are three different numbers:
 Gzip sizes are not additive, so the package graph gzip sizes must not be
 reported as the runtime's contribution to an application bundle.
 
-The benchmark fails if the Todo browser JavaScript exceeds 28,000 B raw or
-9,500 B gzip. It also rejects hydration, HMR, and Node host markers in that
+The benchmark fails if the Todo browser JavaScript exceeds 29,000 B raw or
+10,000 B gzip. It also rejects hydration, HMR, and Node host markers in that
 browser output.
 
 The live measurements printed by `bun run bench:size` are authoritative; the

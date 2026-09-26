@@ -135,5 +135,3 @@ function hydrateWithPayload(
 }
 
 installHydrationRuntime(hydrateWithPayload);
-
-export {};

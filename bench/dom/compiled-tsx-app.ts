@@ -1,3 +1,4 @@
+/* oxlint-disable no-unused-expressions -- compiler-generated mutation sequences */
 import * as _MD from "@memoized-dom/runtime";
 
 const _WRITES_ = ["./bench/dom/App.tsx#selected"];
