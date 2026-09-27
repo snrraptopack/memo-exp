@@ -254,10 +254,10 @@ export function readRouteComponent(key: string): (...args: unknown[]) => unknown
   return component as (...args: unknown[]) => unknown;
 }
 
-async function awaitModuleLoading(
-  loading: Promise<void>,
+async function awaitRouteWork<Value>(
+  loading: PromiseLike<Value>,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<Value> {
   if (signal.aborted) {
     throw signal.reason ?? new DOMException('Route loading was superseded', 'AbortError');
   }
@@ -269,7 +269,9 @@ async function awaitModuleLoading(
     signal.addEventListener('abort', abort, { once: true });
   });
   try {
-    await Promise.race([loading, canceled]);
+    const value = await Promise.race([loading, canceled]);
+    signal.throwIfAborted();
+    return value;
   } finally {
     signal.removeEventListener('abort', abort);
   }
@@ -306,7 +308,7 @@ async function prepareRouteModules(
       loadingComponents.set(key, loading);
       setRouteModuleState(key, { status: 'loading', error: null });
     }
-    await awaitModuleLoading(loading, signal);
+    await awaitRouteWork(loading, signal);
     if (signal.aborted) {
       throw signal.reason ?? new DOMException('Route loading was superseded', 'AbortError');
     }
@@ -323,12 +325,13 @@ export async function prepareRoutedMatches(
   matches: readonly RouteMatch[],
   input: RoutedPreparationInput,
 ): Promise<RoutedPreparationOutcome> {
+  input.signal.throwIfAborted();
   const pending = new Map<string, unknown>();
   for (const match of matches) {
     // A parent gate may redirect or reject before child code is even fetched.
     await prepareRouteModules([match], input.signal);
     for (const { id, key } of preparationIds([match])) {
-      if (input.signal.aborted) throw input.signal.reason;
+      input.signal.throwIfAborted();
       const definition = definitions.get(id);
       if (definition === undefined) {
         throw new Error(`memo-dom: missing routed preparation '${id}'`);
@@ -342,14 +345,17 @@ export async function prepareRoutedMatches(
           `memo-dom: server routed preparation '${id}' requires an active server request context`,
         );
       }
-      const outcome: RoutedPreparationOutcome = definition.prepare === undefined
-        ? await invokeBrowserServerPreparation(runtime, id, key, input)
-        : await (async () => {
+      const outcome: RoutedPreparationOutcome = await awaitRouteWork(
+        definition.prepare === undefined
+        ? invokeBrowserServerPreparation(runtime, id, key, input)
+        : (async () => {
             const value = await definition.prepare!(browserContext(runtime, key, input));
             return definition.settle?.(value, input.signal) ?? value;
           })().then(data => isRedirect(data)
             ? { kind: 'redirect', redirect: data } as const
-            : { kind: 'data', data } as const);
+            : { kind: 'data', data } as const),
+        input.signal,
+      );
       if (outcome.kind === 'redirect') return outcome;
       if (outcome.state !== undefined) {
         Object.assign(stateFor(runtime, key), outcome.state);
@@ -357,6 +363,10 @@ export async function prepareRoutedMatches(
       pending.set(key, outcome.data);
     }
   }
+  // The application's callback may ignore cancellation. Never let its late
+  // result overwrite data belonging to a newer navigation, even at the last
+  // gate where there is no subsequent child to check the signal.
+  input.signal.throwIfAborted();
   let prepared = preparedByRuntime.get(runtime);
   if (prepared === undefined) {
     prepared = new Map();

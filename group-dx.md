@@ -103,6 +103,11 @@ across controlled navigation and history traversal. Query/hash publication
 retains a pending first activation when the route-instance chain is unchanged.
 Post-entry atomic failure emits a navigation error, while the Group arm owns
 its local retry; successful entry gates and history are not replayed.
+Entry preparation also cancels its wait promptly when superseded or disposed,
+even if an application callback ignores its signal. Late gate/settlement
+results cannot overwrite committed preparation data or start child gates.
+This does not undo arbitrary callback side effects or mutations of the
+application-owned persistent preparation state bag.
 Legacy/external browser history entries without a tracked index cannot be
 reversed reliably through the fallback History API. Their failure is reported
 while committed UI is retained; a stronger untracked-entry recovery policy
