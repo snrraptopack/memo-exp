@@ -65,6 +65,7 @@ if (routedBridge.pendingState !== undefined) {
 }
 
 export const route = activeRoute;
+export { routeRegionIdentity } from './region-identity';
 export const navigateRoute = activeNavigate;
 
 export { createRouteRuntime, supportsNavigationAPI } from './runtime';

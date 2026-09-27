@@ -6,6 +6,7 @@ import {
 } from './path';
 import { createRouteManifest } from './manifest';
 import { createScrollCoordinator } from './scroll';
+import { collectRenderReadiness } from '@memoized-dom/runtime';
 import {
   hasRoutedPreparations,
   prepareRoutedMatches,
@@ -639,13 +640,14 @@ export function createRouteRuntime(
       previousController.abort();
     }
     locationRevision++;
+    let ready: Promise<void> | undefined;
     try {
-      emit();
+      ready = collectRenderReadiness(emit);
     } catch (error) {
       if (fromRouteHistory) throw new RouteHistoryCommittedUpdateError(error);
       throw error;
     }
-    scrollCoordinator.restore(url, navigationType, currentHistoryKey);
+    scrollCoordinator.restore(url, navigationType, currentHistoryKey, ready);
   }
 
   if (routeHistory !== undefined) {

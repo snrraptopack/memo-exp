@@ -28,7 +28,6 @@ export function emitRouteRegion(
   const unsubscribe = generatedIdentifier(ctx, 'routeUnsubscribe');
   const dispose = generatedIdentifier(ctx, 'routeDispose');
   const currentRoute = generatedIdentifier(ctx, 'currentRoute');
-  const match = generatedIdentifier(ctx, 'routeMatch');
   const regionIndex = scope.regionCounter++;
   const regionId = astFactory.binaryExpression(
     '+',
@@ -74,25 +73,9 @@ export function emitRouteRegion(
   );
   const selected = astFactory.arrowFunctionExpression(
     [cloneEstreeNode(currentRoute)],
-    astFactory.callExpression(
-      astFactory.memberExpression(
-        astFactory.memberExpression(
-          cloneEstreeNode(currentRoute),
-          astFactory.identifier('matches'),
-        ),
-        astFactory.identifier('some'),
-      ),
-      [
-        astFactory.arrowFunctionExpression(
-          [cloneEstreeNode(match)],
-          astFactory.binaryExpression(
-            '===',
-            astFactory.memberExpression(cloneEstreeNode(match), astFactory.identifier('id')),
-            instanceId,
-          ),
-        ),
-      ],
-    ),
+    astFactory.callExpression(mr(ctx, 'routeRegionIdentity'), [
+      cloneEstreeNode(currentRoute), instanceId,
+    ]),
   );
   const updateRegion = astFactory.arrowFunctionExpression(
     [],
@@ -130,12 +113,14 @@ export function emitRouteRegion(
           astFactory.arrowFunctionExpression(
             [],
             astFactory.conditionalExpression(
-              astFactory.callExpression(selected, [mr(ctx, 'route')]),
+              astFactory.binaryExpression('!==',
+                astFactory.callExpression(selected, [mr(ctx, 'route')]), astFactory.nullLiteral()),
               astFactory.numericLiteral(0),
               astFactory.numericLiteral(1),
             ),
           ),
           astFactory.arrayExpression([branch, astFactory.nullLiteral()]),
+          astFactory.arrowFunctionExpression([], astFactory.callExpression(selected, [mr(ctx, 'route')])),
         ]),
       ),
     ]),

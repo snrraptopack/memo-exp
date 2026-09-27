@@ -123,7 +123,11 @@ function lowerGroupScopes(
           ctx.transparentPolicyParams.set(owner, generatedIdentifier(ctx, 'dataPolicies'));
         }
         consumeSuspendDirective(element, directive);
-        if (ctx.routeElements.has(element)) {
+        // Route metadata is collected after data lowering. Preserve this
+        // element until route emission can put suspension inside the match.
+        if (element.openingElement.attributes.some(attribute =>
+          astFactory.isJSXAttribute(attribute) &&
+          astFactory.isJSXIdentifier(attribute.name, { name: 'route' }))) {
           markAtomicRoute(element, scopes.at(-1));
           return;
         }

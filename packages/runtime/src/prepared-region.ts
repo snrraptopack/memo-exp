@@ -4,6 +4,7 @@ import { createRenderPreparation, type RenderPreparation } from './preparation';
 import type { CondEntry } from './cond';
 import type { DirtyReasons } from './dirty-reasons';
 import { HydrationMismatchError } from './hydration-error';
+import { noteRenderReadiness } from './render-readiness';
 
 /** @internal Factories return compiler-owned entries, never authored JSX. */
 export function createPreparedRegion(
@@ -147,6 +148,7 @@ export function createPreparedRegion(
     readiness = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
     // Navigation can await it; an ordinary mounted boundary need not.
     void readiness.catch(() => {});
+    noteRenderReadiness(readiness);
     detached = getActiveEnvironment().document.createDocumentFragment();
     preparation = createRenderPreparation(fail);
     unsubscribe = preparation.subscribe(check);
