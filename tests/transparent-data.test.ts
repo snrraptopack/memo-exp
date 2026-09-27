@@ -549,7 +549,7 @@ describe('compiler-transparent data values', () => {
     );
     await expect.poll(
       () => document.querySelector('#group-statistics .data-error')?.textContent,
-    ).toBe('http');
+    ).toBe('request');
     expect(document.querySelector('#group-user')?.textContent).toBe('Ada');
     expect(ownerRenders()).toBe(0);
     expect(userRenders()).toBe(userRendersAfterUser);
@@ -595,7 +595,7 @@ describe('compiler-transparent data values', () => {
     }));
     await expect.poll(
       () => document.querySelector('.inline-callback-error')?.textContent,
-    ).toBe('http');
+    ).toBe('request');
 
     document.querySelector<HTMLButtonElement>('.inline-callback-error')!.click();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
@@ -991,9 +991,9 @@ describe('compiler-transparent data values', () => {
 
     await expect.poll(
       () => document.querySelector('#open-count .data-error')?.textContent,
-    ).toBe('http');
+    ).toBe('request');
     expect(document.querySelector('#open-state .data-error')).not.toBeNull();
-    expect(document.querySelector('#todo-rows .rows-error')?.textContent).toBe('http');
+    expect(document.querySelector('#todo-rows .rows-error')?.textContent).toBe('request');
 
     document.querySelector<HTMLButtonElement>('#todo-rows .rows-error')!.click();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
@@ -1057,8 +1057,8 @@ describe('compiler-transparent data values', () => {
 
     await expect.poll(
       () => document.querySelector('#cross-greeting .data-error')?.textContent,
-    ).toBe('http');
-    expect(document.querySelector('#cross-leaf .deep-error')?.textContent).toBe('http');
+    ).toBe('request');
+    expect(document.querySelector('#cross-leaf .deep-error')?.textContent).toBe('request');
 
     document.querySelector<HTMLButtonElement>('#cross-leaf .deep-error')!.click();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
