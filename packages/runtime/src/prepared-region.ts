@@ -1,64 +1,57 @@
-/** Internal publication prototype. Not yet emitted for authored suspend. */
+/** Compiler-owned atomic range: staged discovery, adoption and owned retry. */
 import { getActiveApplicationRuntime, getActiveEnvironment, runWithApplicationRuntime } from './kernel';
 import { createRenderPreparation, type RenderPreparation } from './preparation';
 import type { CondEntry } from './cond';
 import type { DirtyReasons } from './dirty-reasons';
 import { HydrationMismatchError } from './hydration-error';
 
-/** @internal A range, rather than a frozen node list, owns late child output. */
+/** @internal Factories return compiler-owned entries, never authored JSX. */
 export function createPreparedRegion(
   parent: Node,
   id: string,
   create: () => CondEntry,
   pending?: () => CondEntry,
+  error?: (cause: unknown, retry: () => Promise<void>) => CondEntry,
 ) {
   const runtime = getActiveApplicationRuntime();
   const inRuntime = <T>(run: () => T): T => runWithApplicationRuntime(runtime, run);
   const environment = getActiveEnvironment();
-  const document = environment.document;
   const controller = environment.hydration;
   const adopted = controller?.claimRange('g', id);
-  const open = adopted?.open ?? document.createComment(`mmd:g:${id}`);
-  const end = adopted?.end ?? document.createComment('/mmd');
-  if (adopted === undefined) {
-    parent.appendChild(open);
-    parent.appendChild(end);
-  } else {
-    controller!.recordFragmentRange(parent, adopted);
-  }
-  // Adoption validates the server range without moving it into private DOM.
-  // Failed adoption must leave that DOM intact for mount's recovery policy.
+  const open = adopted?.open ?? environment.document.createComment(`mmd:g:${id}`);
+  const end = adopted?.end ?? environment.document.createComment('/mmd');
+  if (adopted === undefined) { parent.appendChild(open); parent.appendChild(end); }
+  else controller!.recordFragmentRange(parent, adopted);
   let preserveAdopted = adopted !== undefined;
+  const clear = () => {
+    if (open.parentNode === null || open.parentNode !== end.parentNode) return;
+    while (open.nextSibling !== null && open.nextSibling !== end) open.nextSibling.remove();
+  };
   const createContent = () => {
-    if (adopted === undefined) return create();
-    controller!.pushRange(adopted);
+    if (!preserveAdopted) return create();
+    controller!.pushRange(adopted!);
     try {
       const entry = create();
       controller!.popRange();
       return entry;
-    } catch (error) {
-      // A mismatch in creation is more useful than an unfinished cursor.
-      try { controller!.popRange(); } catch { /* Preserve the primary error. */ }
-      throw error;
+    } catch (cause) {
+      try { controller!.popRange(); } catch { /* Preserve the primary mismatch. */ }
+      throw cause;
     }
   };
-  const detached = document.createDocumentFragment();
-  // An uncommitted outer boundary owns the whole discovery tree. Nested
-  // markers must not introduce independent fallback or activation milestones.
+  // The outer uncommitted generation owns first-mount readiness and lifecycle.
   const enclosing = runtime.state.preparation as RenderPreparation | undefined;
   if (enclosing !== undefined) {
     let entry: CondEntry;
     try {
       entry = createContent();
-      if (adopted === undefined) {
-        for (const node of entry.nodes) end.parentNode!.insertBefore(node, end);
-      }
-    } catch (error) {
-      if (!preserveAdopted) { open.remove(); end.parentNode?.removeChild(end); }
-      throw error;
+      if (!preserveAdopted) for (const node of entry.nodes) end.parentNode!.insertBefore(node, end);
+    } catch (cause) {
+      if (!preserveAdopted) { clear(); open.remove(); end.parentNode?.removeChild(end); }
+      throw cause;
     }
-    let disposed = false;
     preserveAdopted = false;
+    let disposed = false;
     return {
       get status() { return disposed ? 'disposed' as const : 'active' as const; },
       get error(): unknown { return undefined; },
@@ -70,92 +63,152 @@ export function createPreparedRegion(
         disposed = true;
         inRuntime(() => {
           try { entry.dispose?.(); }
-          finally {
-            while (open.nextSibling !== null && open.nextSibling !== end) open.nextSibling.remove();
-            open.remove(); end.parentNode?.removeChild(end);
-          }
+          finally { clear(); open.remove(); end.parentNode?.removeChild(end); }
         });
       },
     };
   }
-  const preparation = createRenderPreparation();
+  let preparation: RenderPreparation;
+  let detached: DocumentFragment;
   let content: CondEntry | undefined;
   let fallback: CondEntry | undefined;
   let state: 'pending' | 'active' | 'error' | 'disposed' = 'pending';
+  const hasFailed = () => state === 'error';
   let failure: unknown;
   let unsubscribe = () => {};
-  const clear = () => {
-    while (open.nextSibling !== null && open.nextSibling !== end) open.nextSibling.remove();
+  let generation = 0;
+  let retrying: Promise<void> | undefined;
+  let resolveReady = () => {};
+  let rejectReady = (_cause: unknown) => {};
+  let readiness: Promise<void>;
+  const release = (releases: Array<() => void>) => {
+    const failures: unknown[] = [];
+    for (const run of releases) {
+      try { run(); } catch (cause) { failures.push(cause); }
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, '[memo-dom] atomic range cleanup failed');
   };
+  const releaseContent = () => {
+    const previous = content;
+    content = undefined;
+    release([() => previous?.dispose?.(), () => preparation.dispose(), () => detached.replaceChildren()]);
+  };
+  const releaseFallback = () => {
+    const previous = fallback;
+    fallback = undefined;
+    previous?.dispose?.();
+  };
+  const fail = (cause: unknown) => inRuntime(() => {
+    if (state === 'disposed' || state === 'error') return;
+    state = 'error';
+    failure = cause;
+    unsubscribe();
+    try { releaseContent(); }
+    catch (cleanup) { failure = new AggregateError([cause, cleanup], '[memo-dom] atomic render and rollback failed'); }
+    rejectReady(failure);
+    // Cursor/mismatch failures belong to mount recovery, never to Group UI.
+    if (preserveAdopted || cause instanceof HydrationMismatchError) throw failure;
+    releaseFallback();
+    clear();
+    if (error === undefined) throw failure;
+    // A failed error renderer escapes rather than selecting itself recursively.
+    const token = generation;
+    fallback = error(failure, () => token === generation ? retry() : Promise.resolve());
+    for (const node of fallback.nodes) end.parentNode!.insertBefore(node, end);
+  });
   const check = () => {
     if (state !== 'pending') return;
     if (preparation.status === 'disposed') { dispose(); return; }
-    if (preparation.readiness === 'error') {
-      failure = preparation.errors[0];
-      state = 'error';
-      unsubscribe();
-      return;
-    }
+    if (preparation.readiness === 'error') { fail(preparation.errors[0]); return; }
     if (preparation.readiness !== 'ready') return;
-    if (adopted !== undefined && preserveAdopted) {
-      state = 'active';
-      unsubscribe();
-      preparation.activate();
-      return;
-    }
-    fallback?.dispose?.();
-    fallback = undefined;
-    clear();
-    // Move the current detached range, including child nodes discovered after
-    // creation. The factory's original nodes[] is not a publication snapshot.
-    end.parentNode!.insertBefore(detached, end);
+    releaseFallback();
+    if (!preserveAdopted) { clear(); end.parentNode!.insertBefore(detached, end); }
     state = 'active';
     unsubscribe();
-    preparation.activate();
+    const token = generation;
+    // The surrounding compiler factory may still be initializing its closures.
+    queueMicrotask(() => inRuntime(() => {
+      if (token !== generation || state !== 'active') return;
+      try { preparation.activate(); resolveReady(); }
+      catch (cause) {
+        if (preparation.status === 'active') { rejectReady(cause); throw cause; }
+        fail(cause);
+      }
+    }));
   };
-  function dispose(): void {
+  function start() {
+    state = 'pending';
+    failure = undefined;
+    generation++;
+    readiness = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    // Navigation can await it; an ordinary mounted boundary need not.
+    void readiness.catch(() => {});
+    detached = getActiveEnvironment().document.createDocumentFragment();
+    preparation = createRenderPreparation(fail);
+    unsubscribe = preparation.subscribe(check);
+    try {
+      content = preparation.run(createContent);
+      if (!preserveAdopted) detached.append(...content.nodes);
+      else if (preparation.readiness !== 'ready') {
+        throw new HydrationMismatchError(id, 'resolved atomic content', preparation.readiness);
+      }
+      check();
+      preserveAdopted = false;
+      if (state === 'pending' && pending !== undefined) {
+        fallback = pending();
+        for (const node of fallback.nodes) end.parentNode!.insertBefore(node, end);
+      }
+    } catch (cause) {
+      if (!hasFailed()) fail(cause);
+      else throw cause;
+    }
+  }
+  function retry(): Promise<void> {
+    if (state === 'disposed') return Promise.resolve();
+    if (retrying !== undefined) return retrying;
+    if (state !== 'error') return readiness;
+    const token = generation;
+    // Owned holders retire; surviving borrowed operations need explicit retry.
+    retrying = Promise.resolve().then(() => inRuntime(() => {
+      if (state === 'disposed' || token !== generation) return;
+      void preparation.retryFailed().catch(() => {});
+      releaseFallback();
+      clear();
+      start();
+      return readiness;
+    })).finally(() => { retrying = undefined; });
+    void retrying.catch(() => {});
+    return retrying;
+  }
+  function dispose() {
     if (state === 'disposed') return;
     state = 'disposed';
+    generation++;
     unsubscribe();
-    const errors: unknown[] = [];
+    rejectReady(new DOMException('Atomic region was disposed', 'AbortError'));
     inRuntime(() => {
-      for (const release of [() => fallback?.dispose?.(), () => content?.dispose?.(), () => preparation.dispose()]) {
-        try { release(); } catch (error) { errors.push(error); }
+      try { release([releaseFallback, releaseContent]); }
+      finally {
+        if (!preserveAdopted) { clear(); open.remove(); end.parentNode?.removeChild(end); }
       }
-      if (!preserveAdopted) { clear(); open.remove(); end.parentNode?.removeChild(end); }
     });
-    detached.replaceChildren();
-    if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) throw new AggregateError(errors, '[memo-dom] prepared region cleanup failed');
   }
-  unsubscribe = preparation.subscribe(check);
-  try {
-    content = preparation.run(createContent);
-    if (adopted === undefined) detached.append(...content.nodes);
-    else if (preparation.readiness !== 'ready') {
-      throw new HydrationMismatchError(id, 'resolved atomic content', preparation.readiness);
-    }
-    check();
-    preserveAdopted = false;
-    if (state === 'pending' && pending !== undefined) {
-      fallback = pending();
-      for (const node of fallback.nodes) end.parentNode!.insertBefore(node, end);
-    }
-  } catch (error) {
-    // Effect exceptions after successful activation remain mounted errors.
-    if (preparation.status === 'active') throw error;
+  try { start(); }
+  catch (cause) {
     try { dispose(); }
-    catch (rollback) { throw new AggregateError([error, rollback], '[memo-dom] prepared region and rollback failed'); }
-    throw error;
+    catch (cleanup) { throw new AggregateError([cause, cleanup], '[memo-dom] atomic creation and rollback failed'); }
+    throw cause;
   }
   return {
     get status() { return state; },
     get error() { return failure; },
+    get settled() { return readiness; },
+    retry,
     update(reasons: DirtyReasons = null) {
-      if (state === 'pending' || state === 'active') {
-        preparation.run(() => content?.update(reasons));
-        check();
-      }
+      if (state !== 'pending' && state !== 'active') return;
+      try { preparation.run(() => content?.update(reasons)); check(); }
+      catch (cause) { fail(cause); }
     },
     dispose,
   };

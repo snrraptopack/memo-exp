@@ -74,6 +74,8 @@ export interface PreparationDependency {
   readonly key: object;
   snapshot(): { status: 'pending' | 'ready' | 'error'; error?: unknown };
   subscribe(invalidate: () => void): () => void;
+  /** @internal Retry a borrowed failed operation after staged owners retire. */
+  retry?(): Promise<unknown>;
 }
 
 // ---------------------------------------------------------------------------

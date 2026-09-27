@@ -6,6 +6,7 @@ import {
   fetchResourceSnapshot,
   isFetchResource,
   rebindFetchResource,
+  retryFetchResourceIfLive,
   rebindFetchResourceFrom,
   subscribeFetchResource,
 } from './resource';
@@ -82,6 +83,7 @@ function consumeRenderSource<T>(value: ResolvedValue<T>): FetchResource<T> {
       return { status: snapshot.status === 'success' ? 'ready' : 'pending' };
     },
     subscribe: invalidate => observeResolvedValue(value, invalidate),
+    retry: () => retryFetchResourceIfLive(resource),
   });
   return resource;
 }

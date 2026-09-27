@@ -56,8 +56,14 @@ generation; abandoning a region prevents stale publication. It now uses
 stable `mmd:g` range identities and adopts resolved server ranges in place,
 including nested regions, without moving their content or showing a fallback.
 Mismatch reporting preserves the rejected server range until mount recovery.
+The internal range also rolls back failed staged/committed owners, replaces
+its slot through an internal error factory, and retries in a fresh generation.
+Borrowed failed requests retry without reviving disposed component holders;
+retry clicks deduplicate and callbacks from retired error arms are inert.
+Ref/effect activation waits until surrounding compiler initialization finishes,
+and an internal settled promise distinguishes publication from lifecycle readiness.
 This prototype is not emitted for authored `suspend`: compiler/SSR integration, broader
-read-path coverage (including specialized component-row prop paths), and failure/retry
+read-path coverage (including specialized component-row prop paths), and authored failure/retry
 presentation still need integration and verification. This does not expand
 the authored suspend support above or enable route loading shells yet.
 

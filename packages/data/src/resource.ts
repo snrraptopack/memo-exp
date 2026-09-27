@@ -1186,6 +1186,12 @@ export function disposeFetchResource<T>(resource: FetchResource<T>): void {
   resourceController(resource).dispose();
 }
 
+/** @internal Owned holders retire with their staged component; borrowed
+ * holders survive and need an explicit retry before a fresh render generation. */
+export function retryFetchResourceIfLive<T>(resource: FetchResource<T>): Promise<unknown> {
+  return resourceController(resource).disposed ? Promise.resolve() : resource.refresh();
+}
+
 /** Rebind one stable resource when compiler-tracked request inputs change. */
 export function rebindFetchResource<T>(
   resource: FetchResource<T>,

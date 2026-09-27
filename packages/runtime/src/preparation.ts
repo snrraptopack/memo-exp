@@ -21,13 +21,14 @@ export interface RenderPreparation extends RenderPreparationOwner {
   readonly readiness: 'pending' | 'ready' | 'error';
   readonly errors: readonly unknown[];
   subscribe(listener: () => void): () => void;
+  retryFailed(): Promise<unknown>;
   activate(): void;
   dispose(): void;
   readonly status: 'pending' | 'active' | 'disposed';
 }
 
 /** @internal Start one request/runtime-owned activation generation. */
-export function createRenderPreparation(): RenderPreparation {
+export function createRenderPreparation(onRenderError?: (error: unknown) => void): RenderPreparation {
   const runtime = getActiveApplicationRuntime();
   const parent = runtime.state.preparation as RenderPreparation | undefined;
   const entities = new Map<string, Entity>();
@@ -44,6 +45,15 @@ export function createRenderPreparation(): RenderPreparation {
   let rendering = 0;
   let status: RenderPreparation['status'] = 'pending';
   let ready = false;
+  let failedRetries: Array<() => Promise<unknown>> = [];
+  const captureRetries = () => {
+    const retries = [...dependencies.values()].flatMap(({ resource }) =>
+      resource.snapshot().status === 'error' && resource.retry !== undefined
+        ? [() => resource.retry!()] : []);
+    // Nested read/run frames unwind through the same rollback. The outer
+    // frames must not erase adapters already captured by the innermost one.
+    if (retries.length !== 0) failedRetries = retries;
+  };
   const listeners = new Set<() => void>();
   let notificationQueued = false;
   const notifyParent = parent === undefined ? undefined : notifications.get(parent);
@@ -117,6 +127,11 @@ export function createRenderPreparation(): RenderPreparation {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
+    retryFailed() {
+      const retry = failedRetries;
+      failedRetries = [];
+      return inRuntime(() => Promise.all(retry.map(run => run())));
+    },
     run<T>(render: () => T): T {
       if (status === 'disposed') {
         throw new Error('[memo-dom] cannot render a disposed preparation');
@@ -128,6 +143,7 @@ export function createRenderPreparation(): RenderPreparation {
         rendering++;
         try { return render(); }
         catch (error) {
+          captureRetries();
           try { preparation.dispose(); }
           catch (rollback) {
             throw new AggregateError([error, rollback], '[memo-dom] preparation and rollback failed');
@@ -219,7 +235,11 @@ export function createRenderPreparation(): RenderPreparation {
         if (status === 'pending' && entity.phase === 'effect') return;
         // Updates are incremental. Compiler-owned read scopes must wrap only
         // the sinks actually replayed; do not clear untouched sink claims here.
-        preparation.run(() => render.call(entity, reasons));
+        try { preparation.run(() => render.call(entity, reasons)); }
+        catch (error) {
+          if (onRenderError === undefined || entity.phase === 'effect') throw error;
+          onRenderError(error);
+        }
       };
       entities.set(entity.id, entity);
       cleanup(entity.id, () => {
@@ -276,6 +296,7 @@ export function createRenderPreparation(): RenderPreparation {
     },
     dispose() {
       if (status === 'disposed') return;
+      captureRetries();
       status = 'disposed';
       refs.clear();
       const errors: unknown[] = [];

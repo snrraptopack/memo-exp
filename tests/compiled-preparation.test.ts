@@ -190,6 +190,34 @@ describe('compiler-owned detached preparation', () => {
     expect((root as HTMLInputElement).value).toBe('Mary');
   });
 
+  it.each(['owned', 'borrowed'])('retries a failed %s source without reviving retired holders', async kind => {
+    const url = kind === 'owned' ? '/attribute' : '/module-spread';
+    let retry!: () => Promise<void>;
+    const create = () => {
+      const root = kind === 'owned' ? fixture.AttributeOnly!('AttributeOnly', null)
+        : list.ModuleSpread!('ModuleSpread', null);
+      return { nodes: rootNodes(root), update() {} };
+    };
+    const region = inRuntime(() => createPreparedRegion(document.body, 'failed-request', create,
+      () => ({ nodes: [document.createTextNode('Pending')], update() {} }),
+      (_error, again) => { retry = again; return { nodes: [document.createTextNode('Failed')], update() {} }; }));
+    await vi.waitFor(() => expect(requests.some(request => request.url.endsWith(url))).toBe(true));
+    requests.find(request => request.url.endsWith(url))!.resolve(new Response('denied', { status: 403 }));
+    await vi.waitFor(() => expect(region.status).toBe('error'));
+    expect(document.body.textContent).toBe('Failed');
+    expect(application.state.registry.size).toBe(0);
+    const attempt = retry();
+    await vi.waitFor(() => expect(requests.filter(request => request.url.endsWith(url))).toHaveLength(2));
+    expect(document.body.textContent).toBe('Pending');
+    requests.findLast(request => request.url.endsWith(url))!.resolve(new Response(JSON.stringify({ name: 'Recovered' }), {
+      headers: { 'content-type': 'application/json' },
+    }));
+    await attempt;
+    expect(document.querySelector('input')?.value).toBe('Recovered');
+    region.dispose();
+    expect(application.state.registry.size).toBe(0);
+  });
+
   it('waits for module list reads and descendants discovered when the list settles', async () => {
     const region = inRuntime(() => createPreparedRegion(document.body, 'list-boundary', () => {
       const root = list.ModuleList!('ModuleList', null);

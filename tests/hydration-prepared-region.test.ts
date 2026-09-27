@@ -59,7 +59,7 @@ describe('atomic prepared-range hydration', () => {
     return { App, pending, refs, effects };
   }
 
-  it.each([false, true])('adopts resolved content without fallback, movement or duplication (nested=%s)', nested => {
+  it.each([false, true])('adopts resolved content without fallback, movement or duplication (nested=%s)', async nested => {
     const fixture = app(nested);
     const markup = nested
       ? '<!--mmd:g:App/atomic--><!--mmd:g:App/atomic/inner--><p>Ready</p><!--/mmd--><!--/mmd-->'
@@ -70,6 +70,7 @@ describe('atomic prepared-range hydration', () => {
     const observer = new MutationObserver(records => mutations.push(...records));
     observer.observe(original.parentNode!, { childList: true });
     mounted = inRuntime(() => mount(root, fixture.App));
+    await Promise.resolve();
     mutations.push(...observer.takeRecords());
     observer.disconnect();
     expect(root.querySelectorAll('p')).toHaveLength(1);
@@ -85,7 +86,7 @@ describe('atomic prepared-range hydration', () => {
     expect(runtime.state.registry.size).toBe(0);
   });
 
-  it('keeps the rejected server range intact until mount reports recovery', () => {
+  it('keeps the rejected server range intact until mount reports recovery', async () => {
     const fixture = app();
     const root = host('<!--mmd:g:App/atomic--><span>Ready</span><!--/mmd-->');
     const original = root.querySelector('span')!;
@@ -94,6 +95,7 @@ describe('atomic prepared-range hydration', () => {
       expect(root.querySelector('span')).toBe(original);
     });
     mounted = inRuntime(() => mount(root, fixture.App, { onHydrateError: mismatch }));
+    await Promise.resolve();
     expect(mismatch).toHaveBeenCalledTimes(1);
     expect(root.querySelector('span')).toBeNull();
     expect(root.querySelectorAll('p')).toHaveLength(1);
