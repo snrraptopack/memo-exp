@@ -246,11 +246,16 @@ prepares the traversed destination, but it cannot promise pre-commit address
 bar behavior for traversal. The Navigation API may improve this where
 available, but it is not the compatibility baseline.
 
-The current `navigate()` result describes synchronous commitment. Once route
-preparation is introduced, its final contract must distinguish a blocked
-intent, a redirected preparation, a failed preparation, commitment, and DOM
-readiness. Transition state exposes preparing, ready, error, retry, and
-superseded states to the currently mounted application.
+`navigate()` now returns `preparing` with a `finished` promise when entry
+work or first destination activation is asynchronous. `finished` and the
+navigation `complete` event wait for actual renderer readiness, not merely
+history commitment or a pending fallback. Entry failure rejects `finished`
+and publishes an error event with guarded retry. Post-entry atomic failure
+also rejects it, but local Group recovery owns retry instead of replaying
+successful gates or adding history entries. Supersession cancels the old wait
+promptly, including callbacks that ignore their signal; their late results
+cannot overwrite committed preparation data. Application callback side
+effects and persistent state mutations are not automatically rolled back.
 
 The default structural behavior during controlled preparation is therefore:
 
@@ -266,10 +271,11 @@ The default structural behavior during controlled preparation is therefore:
 - traversal retains a frozen previous snapshot until the already-changed URL
   is ready to become the active application route.
 
-Scroll restoration must move from URL commitment to DOM readiness for lazy
-routes. Hash scrolling cannot succeed reliably before the target route region
-has mounted. A superseded transition must never restore its scroll position
-after the newer transition becomes active.
+Scroll restoration now consumes the same first-activation readiness signal,
+including work found in later scheduled render passes. Pending atomic output
+is not scroll-ready. Hash targets revealed later by progressive data are
+observed rather than assumed to exist after a fixed number of frames.
+Superseded work cannot restore an obsolete destination's scroll position.
 
 ## Route-module resource and async presentation
 
@@ -820,15 +826,24 @@ These points still require focused design before their implementation phase:
    Vite carries their CSS with the chunk. Validate HMR invalidation and shared
    eager-import edges before considering this item fully closed.
 7. Internal slice completed: route-module loading, ready, error, retry, and
-   prompt supersession. Authored availability presentation remains open.
-8. Extract `$routed` preparations into deterministic route-scoped server
-   functions and generate their browser facades.
-9. Add prepare-before-commit transitions for controlled navigation, including
-   redirect, not-found, failure, retry, cancellation, and traversal fallback.
-10. Retain and transport the plain application-owned `$routed` `state` object.
-11. Add the shared availability-boundary protocol.
-12. Make scroll restoration readiness-aware.
-13. Coordinate SSR loading, payload delivery, module preload, and client
-    adoption.
+   prompt supersession. Group presentation is agreed, but its pre-entry route
+   integration is not implemented.
+8. Completed: extract `$routed` preparations into deterministic route-scoped
+   server functions and generate their browser facades.
+9. Existing deferred path implemented: preparation, redirects, failures,
+   guarded retry, cancellation, and tracked traversal recovery. Group shell
+   and error URL-publication milestones still need implementation; untracked
+   history recovery and failed-child-only retry also remain incomplete.
+10. Completed: retain and transport the plain application-owned `$routed`
+    `state` object, keeping JSON-unsafe keys server/runtime-local.
+11. Data implementation in place: props-based Group inheritance and arbitrary
+    descendant suspension, including cross-file component rows. Route entry
+    presentation, general component crash recovery, slotless-read promotion,
+    and fallback escalation/ownership still need integration.
+12. Implemented and tested: first-activation readiness-aware scroll,
+    late hash targets, independent history positions, and supersession.
+13. Partial: matched modules are loaded before normal mount adoption and SSR
+    preparation uses the existing hydration payload. Automatic Vite client
+    chunk identity/preload delivery is not implemented.
 14. Add code prefetch policy.
 15. Re-evaluate client middleware after route data and transitions exist.
