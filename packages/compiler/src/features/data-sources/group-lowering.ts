@@ -216,7 +216,7 @@ export function lowerTransparentGroups(
       if (tag === null || !/^[A-Z]/.test(tag)) return;
       if (suspendDirective(element, programPath) === null) return;
       throw programPath.buildCodeFrameError(
-        'memo-dom: suspend requires staged descendant preparation, which is not implemented yet',
+        'memo-dom: suspend could not be assigned to a component-owned render boundary',
         element,
       );
     },

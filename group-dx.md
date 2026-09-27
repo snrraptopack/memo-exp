@@ -24,6 +24,9 @@ Authored `Group suspend`, host-element suspension, and component suspension
 now prepare the active descendant tree, including resources owned in other
 files. Ordinary atomic request failures and owned render crashes replace that
 atomic slot through its effective error policy, with fresh-generation retry.
+TSRX `@try` outputs marked `suspend` use the same descendant preparation and
+their `@pending`/`@catch` arms; suspension does not require resource props at
+the boundary callsite.
 Plain, unsuspended component crash recovery and route entry failures still
 need their separate ownership integration.
 Group request/error arms now receive a normalized presentation error: request

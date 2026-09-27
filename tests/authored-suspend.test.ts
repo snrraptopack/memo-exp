@@ -10,6 +10,19 @@ import '@memoized-dom/runtime/hydrate';
 import { _internals, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
 const modules = {
+  './Tsrx.tsrx': `
+    import { Leaf } from './Leaf';
+    export function Tsrx() @{
+      const label = 'TSRX';
+      @try {
+        <Leaf suspend />
+      } @pending {
+        <i class="tsrx-loading">Waiting {label}</i>
+      } @catch (error, retry) {
+        <button class="tsrx-failed" onClick={retry}>{error.kind}:{error.status}</button>
+      }
+    }
+  `,
   './Leaf.tsx': `
     import { $fetch, Group } from '@memoized-dom/data';
     function Inner() { return <i class="inner">Inner</i>; }
@@ -47,9 +60,10 @@ describe('authored descendant-wide suspension', () => {
     const directory = join(import.meta.dirname, 'fixtures', 'out', 'authored-suspend');
     mkdirSync(directory, { recursive: true });
     for (const [name, source] of Object.entries(output)) {
-      writeFileSync(join(directory, name.replace(/\.tsx$/, '.ts')), source);
+      writeFileSync(join(directory, name.replace(/\.(tsx|tsrx)$/, '.ts')), source);
     }
     fixture = await import(pathToFileURL(join(directory, 'App.ts')).href);
+    Object.assign(fixture = { ...fixture }, await import(pathToFileURL(join(directory, 'Tsrx.ts')).href));
   });
   afterEach(() => {
     mounted?.unmount();
@@ -102,6 +116,28 @@ describe('authored descendant-wide suspension', () => {
     document.body.append(fixture.Static!('Static', null));
     expect(document.body.textContent).toBe('ReadyOnce');
     expect(requests).toHaveLength(0);
+  });
+  it('discovers descendant-owned TSRX reads without requiring source props and retries failures', async () => {
+    setup();
+    document.body.append(fixture.Tsrx!('Tsrx', null));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(document.querySelector('.tsrx-loading')?.textContent).toBe('Waiting TSRX');
+    expect(document.querySelector('.inner')).toBeNull();
+    expect(document.querySelector('#leaf')).toBeNull();
+    requests[0]!.resolve(response('Unavailable', 503));
+    await vi.waitFor(() => expect(document.querySelector('.tsrx-failed')?.textContent).toBe('request:503'));
+    document.querySelector<HTMLButtonElement>('.tsrx-failed')!.click();
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    requests[1]!.resolve(response('Recovered TSRX'));
+    await vi.waitFor(() => expect(document.querySelector('#leaf')?.textContent).toBe('Recovered TSRX'));
+    expect(document.querySelector('.tsrx-loading')).toBeNull();
+  });
+  it('resolves the same descendant TSRX preparation during SSR', async () => {
+    const html = await renderToStringAsync(fixture.Tsrx!, {
+      mode: 'resolve', fetch: (async () => response('TSRX server')) as typeof fetch,
+    });
+    expect(html).toContain('TSRX server');
+    expect(html).not.toContain('tsrx-loading');
   });
   it('rolls back a failed descendant and recreates its owned request on retry', async () => {
     setup();

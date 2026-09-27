@@ -350,9 +350,8 @@ describe('experimental TSRX frontend', () => {
     });
     const code = output['./App.tsrx'];
     expect(code).not.toContain('suspend');
-    expect(code).toContain('createCondRegion');
-    expect(code).toContain('resolvedValuesPending');
-    expect(code).toContain('retryResolvedValues');
+    expect(code).toContain('createPreparedRegion');
+    expect(code).toContain('TsrxCatch');
     expect(code).toContain('Loading dashboard');
   });
 
