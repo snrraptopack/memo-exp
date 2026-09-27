@@ -34,7 +34,7 @@ describe('route preparation cancellation', () => {
       expect(serializeRoutedPreparationState(runtime)?.entries[0]?.data).toBe('new data');
       release('stale data');
       await completion;
-      await new Promise(resolve => queueMicrotask(resolve));
+      await new Promise<void>(resolve => queueMicrotask(resolve));
       expect(serializeRoutedPreparationState(runtime)?.entries[0]?.data).toBe('new data');
       expect(runtime.route.search).toBe('?version=new');
     } finally {

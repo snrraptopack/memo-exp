@@ -1,12 +1,36 @@
-import { getActiveApplicationRuntime, getExtensionStore, onCommitFinished } from './kernel';
+import { getActiveApplicationRuntime, getExtensionStore, onCommitFinished, onRuntimeDisposed } from './kernel';
 
 interface Publication {
   readonly regions: PromiseLike<void>[];
   resolve(): void;
   reject(error: unknown): void;
 }
-function readinessStore(): { collecting?: PromiseLike<void>[]; queued: Publication[] } {
-  return getExtensionStore('render-readiness', () => ({ queued: [] }));
+function readinessStore(): { collecting?: PromiseLike<void>[]; queued: Publication[]; pending: Set<Publication> } {
+  return getExtensionStore('render-readiness', () => ({ queued: [], pending: new Set<Publication>() }));
+}
+
+onRuntimeDisposed(() => {
+  const store = readinessStore();
+  const error = new DOMException('Render publication was disposed', 'AbortError');
+  for (const publication of store.pending) publication.reject(error);
+  store.queued.length = 0;
+});
+
+function publicationReadiness(regions: PromiseLike<void>[], queued: boolean): Promise<void> {
+  const store = readinessStore();
+  const ready = new Promise<void>((resolve, reject) => {
+    const publication: Publication = {
+      regions,
+      resolve() { store.pending.delete(publication); resolve(); },
+      reject(error) { store.pending.delete(publication); reject(error); },
+    };
+    store.pending.add(publication);
+    if (queued) store.queued.push(publication);
+    else void Promise.all(regions).then(publication.resolve, publication.reject);
+  });
+  // A caller may collect just for scroll, or abandon its publication.
+  void ready.catch(() => {});
+  return ready;
 }
 
 onCommitFinished((failed, error) => {
@@ -38,13 +62,8 @@ export function collectRenderReadiness(publish: () => void): Promise<void> | und
   }
   const state = getActiveApplicationRuntime().state;
   if (state.dirty.size !== 0 || state.inCommit) {
-    const ready = new Promise<void>((resolve, reject) => {
-      store.queued.push({ regions: current, resolve, reject });
-    });
-    // A caller may use collection just for scroll, or abandon the publication.
-    void ready.catch(() => {});
-    return ready;
+    return publicationReadiness(current, true);
   }
   if (current.length === 0) return undefined;
-  return Promise.all(current).then(() => {});
+  return publicationReadiness(current, false);
 }

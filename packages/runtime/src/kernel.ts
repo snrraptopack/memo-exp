@@ -206,6 +206,10 @@ export function createApplicationRuntime(
           try { unregisterSubtreeInState(state, id); }
           catch (error) { errors.push(error); }
         }
+        for (const listener of runtimeDisposedListeners) {
+          try { listener(runtime); }
+          catch (error) { errors.push(error); }
+        }
         state.dirty.clear();
         state.dirtyReasons.clear();
         state.cells.clear();
@@ -254,6 +258,12 @@ export function getActiveApplicationRuntime(): ApplicationRuntime {
 
 type RuntimeCreatedListener = (runtime: ApplicationRuntime) => void;
 const runtimeCreatedListeners: RuntimeCreatedListener[] = [];
+const runtimeDisposedListeners: RuntimeCreatedListener[] = [];
+
+/** @internal Drain runtime-owned asynchronous bookkeeping before stores clear. */
+export function onRuntimeDisposed(listener: RuntimeCreatedListener): void {
+  runtimeDisposedListeners.push(listener);
+}
 
 /** Invoke `listener` for every application runtime created from now on. */
 export function onRuntimeCreated(

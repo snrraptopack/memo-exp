@@ -87,4 +87,33 @@ describe('scheduled publication readiness', () => {
       second.dispose();
     }
   });
+  it('rejects a publication if its runtime is disposed before a scheduled drain', async () => {
+    const runtime = createApplicationRuntime('disposed-publication');
+    const ready = runWithApplicationRuntime(runtime, () => {
+      setScheduler(() => {});
+      register({ id: 'pending', parent: null, render: () => {} });
+      return collectRenderReadiness(() => markDirty('pending'));
+    });
+    runtime.dispose();
+    await expect(ready).rejects.toMatchObject({ name: 'AbortError' });
+    expect(runtime.state.registry.size).toBe(0);
+  });
+  it.each([false, true])('rejects a region wait after runtime disposal (scheduled: %s)', async scheduled => {
+    const runtime = createApplicationRuntime(`disposed-region-${scheduled}`);
+    let release!: () => void;
+    const region = new Promise<void>(resolve => { release = resolve; });
+    const ready = runWithApplicationRuntime(runtime, () => {
+      if (!scheduled) return collectRenderReadiness(() => noteRenderReadiness(region));
+      setScheduler(() => {});
+      register({ id: 'pending', parent: null, render: () => noteRenderReadiness(region) });
+      const ready = collectRenderReadiness(() => markDirty('pending'));
+      commit();
+      return ready;
+    });
+    runtime.dispose();
+    await expect(ready).rejects.toMatchObject({ name: 'AbortError' });
+    release();
+    await expect(ready).rejects.toMatchObject({ name: 'AbortError' });
+    expect(runtime.state.extensions.size).toBe(0);
+  });
 });

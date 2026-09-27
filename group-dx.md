@@ -98,6 +98,9 @@ not scroll-ready. Superseded ranges reject readiness and cannot scroll the
 new destination. This is internal coordination, not a developer option.
 Collection spans the normal scheduled render drain, including descendant
 work discovered in later passes, without forcing synchronous rendering.
+Disposing the owning application rejects both queued publication promises
+and active region waits, even when a custom scheduler never drains. Later
+resource settlement cannot turn an abandoned publication into success.
 Navigation `finished`/`complete` now wait for that first destination activation
 across controlled navigation and history traversal. Query/hash publication
 retains a pending first activation when the route-instance chain is unchanged.
