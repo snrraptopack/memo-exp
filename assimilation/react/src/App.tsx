@@ -8,6 +8,12 @@ import { UseCallbackStep } from './cases/06-usecallback/Case';
 import { UseReducerInit } from './cases/07-usereducer/Case';
 import { UseSyncExternalStoreCase } from './cases/08-usesyncexternalstore/Case';
 import { UseLayoutEffectMeasure } from './cases/09-uselayouteffect/Case';
+import { UseImperativeHandleCase } from './cases/10-useimperativehandle/Case';
+import { UseContextCase } from './cases/11-usecontext/Case';
+import { UseIdCase } from './cases/12-useid/Case';
+import { UseTransitionCase } from './cases/13-usetransition/Case';
+import { UseDeferredValueCase } from './cases/14-usedeferredvalue/Case';
+import { FragmentCase } from './cases/15-fragment/Case';
 
 function Chrome() {
   const { pathname } = useLocation();
@@ -66,6 +72,26 @@ function CaseIndex() {
             useLayoutEffect — measure before paint
           </Link>
         </li>
+        <li>
+          <Link to="/10-useimperativehandle">
+            useImperativeHandle — parent-driven actions
+          </Link>
+        </li>
+        <li>
+          <Link to="/11-usecontext">useContext — provider through layers</Link>
+        </li>
+        <li>
+          <Link to="/12-useid">useId — stable unique ids</Link>
+        </li>
+        <li>
+          <Link to="/13-usetransition">useTransition — deferred list update</Link>
+        </li>
+        <li>
+          <Link to="/14-usedeferredvalue">useDeferredValue — lagging mirror</Link>
+        </li>
+        <li>
+          <Link to="/15-fragment">Fragment — children without a wrapper</Link>
+        </li>
       </ul>
     </nav>
   );
@@ -87,6 +113,12 @@ export function App() {
         <Route path="/07-usereducer" element={<UseReducerInit />} />
         <Route path="/08-usesyncexternalstore" element={<UseSyncExternalStoreCase />} />
         <Route path="/09-uselayouteffect" element={<UseLayoutEffectMeasure />} />
+        <Route path="/10-useimperativehandle" element={<UseImperativeHandleCase />} />
+        <Route path="/11-usecontext" element={<UseContextCase />} />
+        <Route path="/12-useid" element={<UseIdCase />} />
+        <Route path="/13-usetransition" element={<UseTransitionCase />} />
+        <Route path="/14-usedeferredvalue" element={<UseDeferredValueCase />} />
+        <Route path="/15-fragment" element={<FragmentCase />} />
       </Routes>
     </main>
   );

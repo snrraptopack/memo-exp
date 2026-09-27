@@ -8,6 +8,12 @@ import { UseCallbackStep } from './cases/06-usecallback/Case';
 import { UseReducerInit } from './cases/07-usereducer/Case';
 import { UseSyncExternalStoreCase } from './cases/08-usesyncexternalstore/Case';
 import { UseLayoutEffectMeasure } from './cases/09-uselayouteffect/Case';
+import { UseImperativeHandleCase } from './cases/10-useimperativehandle/Case';
+import { UseContextCase } from './cases/11-usecontext/Case';
+import { UseIdCase } from './cases/12-useid/Case';
+import { UseTransitionCase } from './cases/13-usetransition/Case';
+import { UseDeferredValueCase } from './cases/14-usedeferredvalue/Case';
+import { FragmentCase } from './cases/15-fragment/Case';
 
 function Chrome() {
   return (
@@ -65,6 +71,26 @@ function CaseIndex() {
             useLayoutEffect — measure before paint
           </a>
         </li>
+        <li>
+          <a route-to="/10-useimperativehandle">
+            useImperativeHandle — parent-driven actions
+          </a>
+        </li>
+        <li>
+          <a route-to="/11-usecontext">useContext — provider through layers</a>
+        </li>
+        <li>
+          <a route-to="/12-useid">useId — stable unique ids</a>
+        </li>
+        <li>
+          <a route-to="/13-usetransition">useTransition — deferred list update</a>
+        </li>
+        <li>
+          <a route-to="/14-usedeferredvalue">useDeferredValue — lagging mirror</a>
+        </li>
+        <li>
+          <a route-to="/15-fragment">Fragment — children without a wrapper</a>
+        </li>
       </ul>
     </nav>
   );
@@ -85,6 +111,12 @@ export function App() {
       <UseReducerInit route="/07-usereducer" />
       <UseSyncExternalStoreCase route="/08-usesyncexternalstore" />
       <UseLayoutEffectMeasure route="/09-uselayouteffect" />
+      <UseImperativeHandleCase route="/10-useimperativehandle" />
+      <UseContextCase route="/11-usecontext" />
+      <UseIdCase route="/12-useid" />
+      <UseTransitionCase route="/13-usetransition" />
+      <UseDeferredValueCase route="/14-usedeferredvalue" />
+      <FragmentCase route="/15-fragment" />
     </main>
   );
 }

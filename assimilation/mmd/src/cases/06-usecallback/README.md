@@ -22,4 +22,4 @@ recreating the callback when `[step]` changes. No dep array, no memo slot.
 - This lowering **is** the idiomatic form — a plain closure over `let`
   state is what a native author writes. No separate idiomatic block needed.
 
-_(fill in when verified)_
+_verified in browser — matches the React twin._

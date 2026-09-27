@@ -42,4 +42,4 @@ exactly why compiled React needs it.
 - Idiomatic section has no show/hide toggle — remount behavior is covered
   by the lowered section's checklist.
 
-_(fill in when verified)_
+_verified in browser — matches the React twin._

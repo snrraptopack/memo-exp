@@ -30,4 +30,4 @@ reducer at all.
 
 ## Notes / divergences
 
-_(fill in when verified)_
+_verified in browser — matches the React twin._

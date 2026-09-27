@@ -23,4 +23,4 @@ whether that lands **before paint** (matching `useLayoutEffect`) or after
 
 ## Notes / divergences
 
-_(fill in when verified)_
+_verified in browser — `effect` lands before paint; no 0-flash. `effect()` is a sound lowering target for `useLayoutEffect`._

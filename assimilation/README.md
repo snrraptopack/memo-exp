@@ -94,23 +94,23 @@ The hand-written cases here mirror exactly what these passes emit.
 | `useRef` | `/03-memo-forwardref` | `{ current }` box / `let` ref sink | verified |
 | `memo` + `forwardRef` | `/03-memo-forwardref` | erased / `ref` prop pass-through | verified |
 | `memo` alone | `/04-memo-only` | erased — bodies run once anyway | verified |
-| `useMemo` | `/05-usememo` | `const` derivation chain | paired |
-| `useCallback` | `/06-usecallback` | plain function (stable by construction) | paired |
-| `useReducer` | `/07-usereducer` | `let` + dispatch writing the cell | paired |
-| `useSyncExternalStore` | `/08-usesyncexternalstore` | `let` + `effect` subscribe/`Object.is` guard | paired |
-| `useLayoutEffect` | `/09-uselayouteffect` | `effect()` candidate — compiler diagnoses it today; case decides if pre-paint | paired |
-| `useImperativeHandle` | — | ref prop forwarding | pending |
-| `useContext` + `createContext` | — | context entity | pending |
-| `useId` | — | pending | pending |
-| `useTransition` | — | pending | pending |
-| `useDeferredValue` | — | pending | pending |
-| `useInsertionEffect` | — | pending | pending |
+| `useMemo` | `/05-usememo` | `const` derivation chain | verified |
+| `useCallback` | `/06-usecallback` | plain function (stable by construction) | verified |
+| `useReducer` | `/07-usereducer` | `let` + dispatch writing the cell | verified |
+| `useSyncExternalStore` | `/08-usesyncexternalstore` | `let` + `effect` subscribe/`Object.is` guard | verified |
+| `useLayoutEffect` | `/09-uselayouteffect` | `effect()` — **pre-paint confirmed**, sound lowering target | verified |
+| `useImperativeHandle` | `/10-useimperativehandle` | ordinary `api` prop box + `effect` — `ref` attr is a DOM-root sink (error-log #003) | verified |
+| `useContext` + `createContext` | `/11-usecontext` | no MMD primitive — prop-drilling twin; diagnosed today | verified |
+| `useId` | `/12-useid` | `let` + statement write of module counter; needs entity-derived id (error-log #002) | verified |
+| `useTransition` | `/13-usetransition` | sync write; `isPending` → constant `false` — diagnosed today | divergent |
+| `useDeferredValue` | `/14-usedeferredvalue` | identity (`const x = q`) — diagnosed today | divergent |
+| `Fragment` | `/15-fragment` | native `<>` support | verified |
+| `useInsertionEffect` | — | `effect()` timing differs — pending | pending |
 | `useOptimistic` (19) | — | pending | pending |
 | `use` (19) | — | pending | pending |
 | `useActionState` / `useFormStatus` (19) | — | pending | pending |
 | `useDebugValue` | — | erased | pending |
 | `Children.map` / `count` / `only` / `toArray` | — | render slots / keyed rows | pending |
-| `Fragment` | — | native `<>` support | pending |
 | `createRoot` → `mount` | — | explicit browser entry | pending |
 | `StrictMode` double-invoke | — | unsupported | unsupported |
 | `lazy` / `Suspense` | — | unsupported | unsupported |
