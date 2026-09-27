@@ -362,13 +362,19 @@ export function emitComponentCall(
   // attribute order is irrelevant (positional matching silently misaligned
   // props when attribute order and declaration order disagreed).
   let props: t.Expression[];
+  const preparedPropObject = orderedPropObject === null ? null
+    : preparationRead(ctx, scope, ownerId, orderedPropObject);
+  if (orderedPropObject !== null) {
+    for (const source of transparentExpressionSources(ctx, orderedPropObject)) dataPropSources.add(source);
+    if (dataPropSources.size > 0) needsPush = true;
+  }
   if (orderedPropObject !== null) {
     const propObject = generatedIdentifier(ctx, `${base}Props`);
     scope.creation.push(
       astFactory.variableDeclaration('const', [
         astFactory.variableDeclarator(
           cloneEstreeNode(propObject),
-          cloneEstreeNode(orderedPropObject),
+          cloneEstreeNode(preparedPropObject!),
         ),
       ]),
     );
@@ -446,7 +452,7 @@ export function emitComponentCall(
           tag,
           ownerId,
           idSuffix,
-          orderedPropObject,
+          preparedPropObject!,
         );
   registerTransparentDataSite(
     ctx,

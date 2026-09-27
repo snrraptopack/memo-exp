@@ -25,6 +25,7 @@ import { getExtensionStore } from '@memoized-dom/runtime';
 import { getActiveDataRuntime } from './active-runtime';
 import { disposeFetchResource, rebindFetchResource } from './resource';
 import type { FetchOptions, FetchResource, ResolvedValue } from './types';
+import { readResolvedValueForRender } from './transparent';
 
 /** Stable lazy handle placed in the authored binding. */
 export interface ModuleSourceRef {
@@ -79,6 +80,8 @@ const disposersByRuntime = new WeakMap<object, Set<() => void>>();
 export function runModuleInstanceDisposers(runtime: object): void {
   const disposers = disposersByRuntime.get(runtime);
   if (disposers === undefined) return;
+  // Disposing a source removes its callback from this set during traversal.
+  // eslint-disable-next-line unicorn/no-useless-spread
   for (const disposer of [...disposers]) disposer();
   disposers.clear();
 }
@@ -178,18 +181,6 @@ export function rebindModuleSource<T>(
  * an initial failure stays loud.
  */
 export function readModuleSourceList<T>(ref: ModuleSourceRef): T[] {
-  const instance = resolveModuleSource<T>(ref);
-  const loose = instance as unknown as {
-    status?: string;
-    data?: T[];
-    error?: unknown;
-  };
-  if (
-    loose.status === 'error' &&
-    loose.error !== null &&
-    loose.error !== undefined
-  ) {
-    throw loose.error;
-  }
-  return Array.isArray(loose.data) ? loose.data : [];
+  const data = readResolvedValueForRender(ref as unknown as ResolvedValue<T[]>);
+  return Array.isArray(data) ? data : [];
 }

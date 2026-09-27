@@ -42,7 +42,8 @@ a source settling can reveal another child and must not publish in between.
 Data render-read and availability helpers participate in these scopes;
 unused declarations, derivations, and mounted-effect reads do not independently
 block preparation. Compiler-owned scopes now cover initial and incremental
-text, scalar attribute/prop reads, and availability/conditional picks. A
+text, scalar attribute/prop reads (including ordered spreads), module-list
+receivers, and availability/conditional picks. A
 removed non-entity branch releases its read sites too. Local selectors do not
 wait for sources used only by inactive branches; request-state selectors retain
 their subscriptions. Attribute values use scalar availability reads rather
@@ -53,7 +54,7 @@ current detached DOM once, including child output discovered after creation,
 before releasing refs and effects. Nested regions fold into a pending outer
 generation; abandoning a region prevents stale publication. This prototype is
 not emitted for authored `suspend`: SSR/hydration marker adoption, broader
-read-path coverage (including spreads/module list reads), and failure/retry
+read-path coverage (including specialized component-row prop paths), and failure/retry
 presentation still need integration and verification. This does not expand
 the authored suspend support above or enable route loading shells yet.
 
@@ -226,8 +227,7 @@ An inner error policy does not split an outer uncommitted atomic region.
 ## `<Group suspend>` — the shorthand
 
 `Group` itself can take `suspend`, making the whole subtree one atomic
-boundary with its own policy — the direct replacement for today's
-suspend-on-the-content-child pattern:
+boundary with its own policy:
 
 ```tsx
 <Group suspend pending={PageSkeleton} error={PageFailure}>
@@ -349,7 +349,8 @@ shell when available, and activates the destination only after success.
 Request preparation failures use `error.kind: 'request'`; import failures
 use `'module'`. Displaying a destination error is a separate failure
 presentation milestone, not successful entry. URL/history timing for that
-milestone remains an explicit open decision below.
+milestone follows the agreed contract in answer #6 below; its presentation
+integration remains unimplemented.
 
 After entry, ordinary resource failures use the effective Group error
 policy. Request retry refires that operation; render-crash retry recreates
@@ -456,10 +457,11 @@ permission.
   Group also governs ordinary resources after entry. Empty/error-only
   Groups do not enable shells unless they inherit a pending policy.
 
-## Six implementation questions — proposed answers
+## Six implementation questions — agreed direction
 
-The following are recommendations for review, not approved implementation
-decisions. They specify the missing contracts without adding public syntax.
+The following answers are the agreed implementation direction. They specify
+the contracts without adding public syntax; the implementation-status section
+above remains authoritative about which pieces have actually shipped.
 
 1. **How does an atomic `suspend` discover its complete wait set?** A child
    may create a source only while preparing or mounting. Which work may run
@@ -608,8 +610,9 @@ If an available pending policy lets the router publish a shell, update
 URL/history when publishing it. Otherwise keep the old URL and page until
 successful destination publication. Showing an available destination error
 also publishes that destination URL, even after deferred preparation. If no
-error policy can show it, retain the previous page and URL. These are proposed
-failure/presentation rules, not claims that entry succeeded.
+error policy can show it, retain the previous page and URL. These are separate
+failure/presentation milestones, not claims that entry succeeded. Their
+shell/error integration is not implemented yet.
 
 Retry stays on the same attempted URL and creates no extra history entry.
 If preparation redirects after a shell URL was published, replace that
@@ -621,9 +624,10 @@ Back/forward already changes the browser URL: do not push a new entry to
 mirror it. Prepare the selected history destination and use its shell or
 retain old content while waiting. Unhandled failure must be visibly reported
 as a failed history navigation, not silently treated as successful entry.
-The policy for restoring the prior history entry after a blocked/failed pop
-needs a focused history implementation/test; never approximate it with an
-extra push. Supersession invalidates old commits and retries; it must not
+For tracked history entries, a blocked/failed pop restores the prior entry by
+traversal, not an extra push; this recovery is covered by unit and browser tests.
+Untracked/external entries still need a stronger recovery policy, as noted in
+the implementation status. Supersession invalidates old commits and retries; it must not
 undo history belonging to a newer navigation.
 
 Keep separate internal milestones: shell/error publication, successful

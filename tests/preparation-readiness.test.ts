@@ -153,6 +153,49 @@ describe('consumed-resource preparation readiness', () => {
     outer.activate();
   });
 
+  it('notifies an outer observer when an otherwise unobserved nested resource settles', async () => {
+    const outer = inRuntime(() => createRenderPreparation());
+    outer.run(() => register({ id: 'root', parent: null, render() {} }));
+    const inner = outer.run(() => createRenderPreparation());
+    const source = dependency();
+    inner.run(() => register({ id: 'root/child', parent: 'root', render() {
+      inner.collect('root/child', () => inner.consume(source));
+    } }));
+    inner.collect('root/child', () => inner.consume(source));
+    await Promise.resolve();
+    const states: string[] = [];
+    const unsubscribe = outer.subscribe(() => states.push(outer.readiness));
+    source.settle();
+    flush();
+    inner.activate();
+    await Promise.resolve();
+    expect(states).toEqual(['ready']);
+    outer.activate();
+    unsubscribe();
+  });
+
+  it('notifies outer observers of nested failure and cancellation without polling', async () => {
+    const outer = inRuntime(() => createRenderPreparation());
+    outer.run(() => register({ id: 'root', parent: null, render() {} }));
+    const inner = outer.run(() => createRenderPreparation());
+    const source = dependency();
+    inner.run(() => register({ id: 'root/child', parent: 'root', render() {
+      inner.collect('root/child', () => inner.consume(source));
+    } }));
+    inner.collect('root/child', () => inner.consume(source));
+    await Promise.resolve();
+    const states: string[] = [];
+    outer.subscribe(() => states.push(outer.readiness));
+    source.settle('error', new Error('failed'));
+    flush();
+    await Promise.resolve();
+    expect(states).toEqual(['error']);
+    inner.dispose();
+    await Promise.resolve();
+    expect(states).toEqual(['error', 'ready']);
+    expect(source.listeners).toBe(0);
+  });
+
   it('ignores completion from an abandoned generation', () => {
     const preparation = inRuntime(() => createRenderPreparation());
     const source = dependency();

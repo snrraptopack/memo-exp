@@ -38,11 +38,35 @@ const modules = {
       const user = $fetch<{ name: string }>('/prop');
       return <Target name={user.name} />;
     }
+    export function SpreadHost() {
+      const user = $fetch<{ name: string }>('/spread-host');
+      return <input id="spread-host" {...{ value: user.name }} title="ready" />;
+    }
+    export function SpreadProp() {
+      const user = $fetch<{ name: string }>('/spread-prop');
+      return <Target {...{ name: user.name }} />;
+    }
     let visible = true;
     export function ConditionalAttribute() {
       const user = $fetch<{ name: string }>('/conditional');
       return <Group><main><button id="hide" onClick={() => { visible = false; }}>Hide</button>
         {visible ? <input id="conditional" value={user.name} /> : <i>Gone</i>}</main></Group>;
+    }
+  `,
+  './List.tsx': `
+    import { $fetch } from '@memoized-dom/data';
+    const items = $fetch<{ id: string }[]>('/module-list');
+    const profile = $fetch<{ name: string }>('/module-spread');
+    export function ModuleSpread() {
+      return <input id="module-spread" {...{ value: profile.name }} />;
+    }
+    function ListLeaf() {
+      const user = $fetch<{ name: string }>('/list-leaf');
+      effect(() => globalThis.__prepareEffect(null));
+      return <section id="list-leaf"><input value={user.name} /></section>;
+    }
+    export function ModuleList() {
+      return <main id="module-list">{items.map(item => <ListLeaf key={item.id} />)}</main>;
     }
   `,
 };
@@ -51,6 +75,7 @@ type Factory = (id: string, parent: string | null) => Node;
 describe('compiler-owned detached preparation', () => {
   let fixture: Record<string, Factory>;
   let leaf: { currentInput(): HTMLInputElement | null | undefined };
+  let list: Record<string, Factory>;
   let application: ApplicationRuntime;
   let data: DataRuntime;
   let previous: DataRuntime;
@@ -66,6 +91,7 @@ describe('compiler-owned detached preparation', () => {
     }
     fixture = await import(pathToFileURL(join(directory, 'App.ts')).href);
     leaf = await import(pathToFileURL(join(directory, 'Leaf.ts')).href);
+    list = await import(pathToFileURL(join(directory, 'List.ts')).href);
   });
   beforeEach(() => {
     requests = [];
@@ -135,6 +161,53 @@ describe('compiler-owned detached preparation', () => {
     inRuntime(() => (root as Element).querySelector<HTMLButtonElement>('#hide')!.click());
     await vi.waitFor(() => expect(root.textContent).toContain('Gone'));
     expect(preparation.readiness).toBe('ready');
+  });
+
+  it.each(['SpreadHost', 'SpreadProp'])('tracks source reads and updates through %s', async name => {
+    const preparation = inRuntime(() => createRenderPreparation());
+    const root = preparation.run(() => fixture[name]!(name, null));
+    expect(preparation.readiness).toBe('pending');
+    await respond(name === 'SpreadHost' ? '/spread-host' : '/spread-prop', { name: 'Katherine' });
+    await vi.waitFor(() => expect(preparation.readiness).toBe('ready'));
+    expect(name === 'SpreadHost' ? (root as HTMLInputElement).value : root.textContent).toBe('Katherine');
+  });
+
+  it.each(['SpreadHost', 'SpreadProp'])('updates mounted %s without a preparation observer', async name => {
+    const root = inRuntime(() => fixture[name]!(name, null));
+    document.body.append(root);
+    await respond(name === 'SpreadHost' ? '/spread-host' : '/spread-prop', { name: 'Dorothy' });
+    await vi.waitFor(() => expect(
+      name === 'SpreadHost' ? (root as HTMLInputElement).value : root.textContent,
+    ).toBe('Dorothy'));
+  });
+
+  it('collects lazy module-source reads in spread attributes', async () => {
+    const preparation = inRuntime(() => createRenderPreparation());
+    const root = preparation.run(() => list.ModuleSpread!('ModuleSpread', null));
+    expect(preparation.readiness).toBe('pending');
+    await respond('/module-spread', { name: 'Mary' });
+    await vi.waitFor(() => expect(preparation.readiness).toBe('ready'));
+    expect((root as HTMLInputElement).value).toBe('Mary');
+  });
+
+  it('waits for module list reads and descendants discovered when the list settles', async () => {
+    const region = inRuntime(() => createPreparedRegion(document.body, () => {
+      const root = list.ModuleList!('ModuleList', null);
+      return { nodes: rootNodes(root), update() {} };
+    }, () => ({ nodes: [document.createTextNode('Loading list')], update() {} })));
+    expect(region.status).toBe('pending');
+    await respond('/module-list', [{ id: 'one' }]);
+    await vi.waitFor(() => expect(requests.some(request => request.url.endsWith('/list-leaf'))).toBe(true));
+    expect(region.status).toBe('pending');
+    expect(document.body.textContent).toBe('Loading list');
+    expect(effects).not.toHaveBeenCalled();
+    await respond('/list-leaf', { name: 'Ada' });
+    await vi.waitFor(() => expect(region.status).toBe('active'));
+    expect(document.querySelectorAll('#list-leaf')).toHaveLength(1);
+    expect(document.querySelector('input')?.value).toBe('Ada');
+    expect(effects).toHaveBeenCalledTimes(1);
+    region.dispose();
+    expect(application.state.registry.size).toBe(0);
   });
 
   it('publishes the final range once, including late child output, before activating refs/effects', async () => {

@@ -296,9 +296,11 @@ Module loading and data loading remain different resource implementations:
   data declaration is separately extracted into the route manifest.
 
 They should still share a presentation protocol so an application does not
-learn unrelated pending/error concepts. The current data `Group`, `Pending`,
-and `Error` implementation is not generic yet; it is compiler-lowered around
-transparent data sources and requires a specific three-child structure.
+learn unrelated pending/error concepts. Data presentation now uses one
+props-based `Group` API with arbitrary children and independently inherited
+pending/error policies. It is compiler-lowered around transparent data reads;
+route-entry and module failures are not wired into those policies yet.
+There is no Pending/Error child declaration or three-child contract.
 
 The intended direction is to extract a framework-level availability-boundary
 protocol that both data resources and route-module resources can participate
@@ -339,8 +341,9 @@ Navigation owns pre-entry retry; Group owns post-entry resource/render
 recovery. Without an available error policy, retain the current page and
 report through navigation events. Error/shell UI must be available outside
 the destination's unloaded chunk. URL/history timing for shell and failure
-presentation remains to be specified; these are proposed semantics, not a
-claim of current implementation.
+presentation follows answer #6 in `group-dx.md`; those publication milestones
+remain unimplemented. These are agreed semantics, not a claim of current
+implementation.
 
 ## Route preparation with `$routed`
 

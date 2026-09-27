@@ -46,9 +46,13 @@ export function createRenderPreparation(): RenderPreparation {
   let ready = false;
   const listeners = new Set<() => void>();
   let notificationQueued = false;
+  const notifyParent = parent === undefined ? undefined : notifications.get(parent);
 
   const inRuntime = <T>(run: () => T): T => runWithApplicationRuntime(runtime, run);
   const notify = (): void => {
+    // An outer coordinator must observe child settlement, branch release and
+    // cancellation even when nobody subscribes to the child directly.
+    notifyParent?.();
     if (notificationQueued || listeners.size === 0) return;
     notificationQueued = true;
     globalThis.queueMicrotask(() => {
@@ -240,7 +244,7 @@ export function createRenderPreparation(): RenderPreparation {
       // Nested generations may become ready independently, but their mounted
       // lifecycle must remain held until the uncommitted outer generation.
       ready = true;
-      if (parent?.status === 'pending') return;
+      if (parent?.status === 'pending') { notify(); return; }
       inRuntime(() => {
         for (const child of children) {
           if (child.status === 'pending' && !isReady(child)) {
@@ -297,12 +301,14 @@ export function createRenderPreparation(): RenderPreparation {
       readiness.delete(preparation);
       descendants.delete(preparation);
       releases.delete(preparation);
+      notifications.delete(preparation);
       notify();
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, '[memo-dom] preparation rollback failed');
     },
   };
   readiness.set(preparation, () => ready);
+  notifications.set(preparation, notify);
   releases.set(preparation, effects => {
     if (status !== 'pending') return;
     status = 'active';
@@ -329,6 +335,7 @@ export function createRenderPreparation(): RenderPreparation {
 const readiness = new WeakMap<RenderPreparation, () => boolean>();
 const descendants = new WeakMap<RenderPreparation, Set<RenderPreparation>>();
 const releases = new WeakMap<RenderPreparation, (effects: Entity[]) => void>();
+const notifications = new WeakMap<RenderPreparation, () => void>();
 function isReady(preparation: RenderPreparation): boolean {
   return preparation.readiness === 'ready' && readiness.get(preparation)?.() === true &&
     [...descendants.get(preparation) ?? []].every(child =>

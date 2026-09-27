@@ -161,7 +161,8 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
 
     walkAst(componentNode, {
       enter(container) {
-        if (container.type !== 'JSXExpressionContainer') return;
+        const spread = container.type === 'JSXSpreadAttribute';
+        if (container.type !== 'JSXExpressionContainer' && !spread) return;
         if (
           isEventOrRefContainer(ctx, container) ||
           isGroupDataContainer(ctx, container) ||
@@ -173,7 +174,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         ) {
           return false;
         }
-        const rawExpression = childNode(container, 'expression');
+        const rawExpression = childNode(container, spread ? 'argument' : 'expression');
         if (
           rawExpression === null ||
           !astFactory.isExpression(rawExpression as unknown as t.Node)
@@ -245,7 +246,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           eventSources.has(source)
         );
         if (
-          ctx.astAnalysis?.parentByNode.get(container)?.type !== 'JSXAttribute' && (
+          !spread && ctx.astAnalysis?.parentByNode.get(container)?.type !== 'JSXAttribute' && (
             nodeHasJsx(rawExpression as unknown as t.Node) ||
             ctx.transparentPolicyParams.has(component) ||
             dependencies.some((source) =>
