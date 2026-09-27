@@ -862,7 +862,7 @@ export function Profile(_id, _parent, _dataPolicies) {
 			() => {
 				let _value2;
 				const _update2 = () => {};
-				const _dataPolicy = _dataPolicies?.$default?.error(_id + "/when0" + "/$dataPolicy", _id + "/when0", _MDD.resolvedValuesError([user]), () => _MDD.retryResolvedValues([user]));
+				const _dataPolicy = _dataPolicies?.$default?.error(_id + "/when0" + "/$dataPolicy", _id + "/when0", _MD.toPresentationError(_MDD.resolvedValuesError([user]), "request"), () => _MDD.retryResolvedValues([user]));
 
 				return {
 					nodes: _MD.rootNodes(_dataPolicy),
