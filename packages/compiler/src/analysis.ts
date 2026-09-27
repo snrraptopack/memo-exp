@@ -117,6 +117,7 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
         !ctx.transparentSources.has(name) && isListLightweightCandidate(ctx, name))
     ) continue;
     ctx.transparentPolicyParams.set(name, generatedIdentifier(ctx, 'dataPolicies'));
+    ctx.transparentInheritedOnlyPolicyParams.add(name);
   }
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)

@@ -127,7 +127,7 @@ describe('M5.10 - lightweight listed component rows', () => {
   it('keeps rows with local state on the existing entity and props-box path', () => {
     const code = compile(STATEFUL_SOURCE, { runtimePath: '@memoized-dom/runtime' });
     expect(code).toMatch(/\.registerProps\(_id\d*, _props\d*\)/);
-    expect(code).toMatch(/Row\(_rowId\d*, _id\d*, \[item\]\)/);
+    expect(code).toMatch(/Row\(_rowId\d*, _id\d*, \[item\], \{ \$default: _dataPolicies\d*\?\.\$default \}\)/);
     expect(code).not.toContain('.cloneNode(true)');
   });
 

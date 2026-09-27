@@ -416,6 +416,8 @@ export interface Ctx {
   transparentSourceProps: Map<string, Map<string, string>>;
   /** Private factory parameter carrying inherited presentation renderers. */
   transparentPolicyParams: Map<string, t.Identifier>;
+  /** Parameters added only for ordinary call-through, not intrinsic policy. */
+  transparentInheritedOnlyPolicyParams: Set<string>;
   /** Nearest lexical Group policies attached to component prop call sites. */
   transparentGroupCallPolicies: WeakMap<
     t.JSXElement,
@@ -732,6 +734,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     transparentModuleSources,
     transparentSourceProps: new Map(),
     transparentPolicyParams: new Map(),
+    transparentInheritedOnlyPolicyParams: new Set(),
     transparentGroupCallPolicies: new WeakMap(),
     state,
     stateKeys,

@@ -109,7 +109,8 @@ export function analyzedComponentExport(
     acceptsUnknownProps: props.acceptsUnknown,
     hasWholeDefault: props.hasWholeDefault,
     listLightweight: isListLightweightCandidate(ctx, local) &&
-      !ctx.transparentSources.has(local) && !ctx.transparentPolicyParams.has(local),
+      !ctx.transparentSources.has(local) &&
+      (!ctx.transparentPolicyParams.has(local) || ctx.transparentInheritedOnlyPolicyParams.has(local)),
     delegatedEvents: [...(ctx.componentHostEvents.get(local) ?? [])],
     renderProps: [...props.renderProps],
     renderCallbacks: [...props.renderCallbacks],
