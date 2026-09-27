@@ -76,7 +76,12 @@ synchronous shell SSR, resolved SSR, and in-place resolved hydration coverage.
 Unused resources and inactive branches do not hold first activation open.
 After that activation, a source rebind preserves the owner and uses read-local
 availability UI; remounting creates a fresh atomic generation.
-Specialized component-row prop paths still need focused integration coverage.
+Resource-owning component rows also inherit the private policy channel across
+files. Their static row content renders immediately with read-local pending
+and error slots; suspending the containing list instead withholds all rows
+until every consumed row resource is ready. Integration tests cover local
+row retry and cancellation of all staged requests when the list is removed.
+Synchronous lightweight rows retain their optimized calling convention.
 Route ranges now key activation by their semantic route ID and consumed
 pathname: changed path parameters remount and re-suspend the destination,
 query/hash changes retain its instance, and unchanged parent layouts remain.
