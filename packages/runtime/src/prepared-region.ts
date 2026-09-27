@@ -1,38 +1,70 @@
 /** Internal publication prototype. Not yet emitted for authored suspend. */
 import { getActiveApplicationRuntime, getActiveEnvironment, runWithApplicationRuntime } from './kernel';
-import { createRenderPreparation } from './preparation';
+import { createRenderPreparation, type RenderPreparation } from './preparation';
 import type { CondEntry } from './cond';
+import type { DirtyReasons } from './dirty-reasons';
+import { HydrationMismatchError } from './hydration-error';
 
 /** @internal A range, rather than a frozen node list, owns late child output. */
 export function createPreparedRegion(
   parent: Node,
+  id: string,
   create: () => CondEntry,
   pending?: () => CondEntry,
 ) {
   const runtime = getActiveApplicationRuntime();
   const inRuntime = <T>(run: () => T): T => runWithApplicationRuntime(runtime, run);
-  const document = getActiveEnvironment().document;
-  const open = document.createComment('mmd:preparing');
-  const end = document.createComment('/mmd');
-  parent.appendChild(open);
-  parent.appendChild(end);
+  const environment = getActiveEnvironment();
+  const document = environment.document;
+  const controller = environment.hydration;
+  const adopted = controller?.claimRange('g', id);
+  const open = adopted?.open ?? document.createComment(`mmd:g:${id}`);
+  const end = adopted?.end ?? document.createComment('/mmd');
+  if (adopted === undefined) {
+    parent.appendChild(open);
+    parent.appendChild(end);
+  } else {
+    controller!.recordFragmentRange(parent, adopted);
+  }
+  // Adoption validates the server range without moving it into private DOM.
+  // Failed adoption must leave that DOM intact for mount's recovery policy.
+  let preserveAdopted = adopted !== undefined;
+  const createContent = () => {
+    if (adopted === undefined) return create();
+    controller!.pushRange(adopted);
+    try {
+      const entry = create();
+      controller!.popRange();
+      return entry;
+    } catch (error) {
+      // A mismatch in creation is more useful than an unfinished cursor.
+      try { controller!.popRange(); } catch { /* Preserve the primary error. */ }
+      throw error;
+    }
+  };
   const detached = document.createDocumentFragment();
   // An uncommitted outer boundary owns the whole discovery tree. Nested
   // markers must not introduce independent fallback or activation milestones.
-  if (runtime.state.preparation !== undefined) {
+  const enclosing = runtime.state.preparation as RenderPreparation | undefined;
+  if (enclosing !== undefined) {
     let entry: CondEntry;
     try {
-      entry = create();
-      for (const node of entry.nodes) end.parentNode!.insertBefore(node, end);
+      entry = createContent();
+      if (adopted === undefined) {
+        for (const node of entry.nodes) end.parentNode!.insertBefore(node, end);
+      }
     } catch (error) {
-      open.remove();
-      end.remove();
+      if (!preserveAdopted) { open.remove(); end.parentNode?.removeChild(end); }
       throw error;
     }
     let disposed = false;
+    preserveAdopted = false;
     return {
       get status() { return disposed ? 'disposed' as const : 'active' as const; },
       get error(): unknown { return undefined; },
+      update(reasons: DirtyReasons = null) {
+        if (!disposed) enclosing.run(() => entry.update(reasons));
+      },
       dispose() {
         if (disposed) return;
         disposed = true;
@@ -40,7 +72,7 @@ export function createPreparedRegion(
           try { entry.dispose?.(); }
           finally {
             while (open.nextSibling !== null && open.nextSibling !== end) open.nextSibling.remove();
-            open.remove(); end.remove();
+            open.remove(); end.parentNode?.removeChild(end);
           }
         });
       },
@@ -65,6 +97,12 @@ export function createPreparedRegion(
       return;
     }
     if (preparation.readiness !== 'ready') return;
+    if (adopted !== undefined && preserveAdopted) {
+      state = 'active';
+      unsubscribe();
+      preparation.activate();
+      return;
+    }
     fallback?.dispose?.();
     fallback = undefined;
     clear();
@@ -84,9 +122,7 @@ export function createPreparedRegion(
       for (const release of [() => fallback?.dispose?.(), () => content?.dispose?.(), () => preparation.dispose()]) {
         try { release(); } catch (error) { errors.push(error); }
       }
-      clear();
-      open.remove();
-      end.remove();
+      if (!preserveAdopted) { clear(); open.remove(); end.parentNode?.removeChild(end); }
     });
     detached.replaceChildren();
     if (errors.length === 1) throw errors[0];
@@ -94,9 +130,13 @@ export function createPreparedRegion(
   }
   unsubscribe = preparation.subscribe(check);
   try {
-    content = preparation.run(create);
-    detached.append(...content.nodes);
+    content = preparation.run(createContent);
+    if (adopted === undefined) detached.append(...content.nodes);
+    else if (preparation.readiness !== 'ready') {
+      throw new HydrationMismatchError(id, 'resolved atomic content', preparation.readiness);
+    }
     check();
+    preserveAdopted = false;
     if (state === 'pending' && pending !== undefined) {
       fallback = pending();
       for (const node of fallback.nodes) end.parentNode!.insertBefore(node, end);
@@ -111,6 +151,12 @@ export function createPreparedRegion(
   return {
     get status() { return state; },
     get error() { return failure; },
+    update(reasons: DirtyReasons = null) {
+      if (state === 'pending' || state === 'active') {
+        preparation.run(() => content?.update(reasons));
+        check();
+      }
+    },
     dispose,
   };
 }

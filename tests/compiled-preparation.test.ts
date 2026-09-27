@@ -191,7 +191,7 @@ describe('compiler-owned detached preparation', () => {
   });
 
   it('waits for module list reads and descendants discovered when the list settles', async () => {
-    const region = inRuntime(() => createPreparedRegion(document.body, () => {
+    const region = inRuntime(() => createPreparedRegion(document.body, 'list-boundary', () => {
       const root = list.ModuleList!('ModuleList', null);
       return { nodes: rootNodes(root), update() {} };
     }, () => ({ nodes: [document.createTextNode('Loading list')], update() {} })));
@@ -214,7 +214,7 @@ describe('compiler-owned detached preparation', () => {
     const fallbackDisposed = vi.fn();
     const pending = document.createElement('p');
     pending.textContent = 'Loading';
-    const region = inRuntime(() => createPreparedRegion(document.body, () => create('App'),
+    const region = inRuntime(() => createPreparedRegion(document.body, 'app-boundary', () => create('App'),
       () => ({ nodes: [pending], update() {}, dispose: fallbackDisposed })));
     expect(document.body.textContent).toBe('Loading');
     await respond('/show', { enabled: true });
@@ -236,7 +236,7 @@ describe('compiler-owned detached preparation', () => {
   });
 
   it('abandons a staged range without publishing stale completions or lifecycles', async () => {
-    const region = inRuntime(() => createPreparedRegion(document.body, () => create('App')));
+    const region = inRuntime(() => createPreparedRegion(document.body, 'app-boundary', () => create('App')));
     await respond('/show', { enabled: true });
     await vi.waitFor(() => expect(requests.some(request => request.url.endsWith('/leaf'))).toBe(true));
     region.dispose();
@@ -251,8 +251,8 @@ describe('compiler-owned detached preparation', () => {
   it('lets an outer pending region own nested discovery without exposing an inner fallback', async () => {
     const innerPending = vi.fn();
     const container = document.createElement('div');
-    const outer = inRuntime(() => createPreparedRegion(document.body, () => {
-      const inner = createPreparedRegion(container, () => create('AttributeOnly'), innerPending);
+    const outer = inRuntime(() => createPreparedRegion(document.body, 'outer-boundary', () => {
+      const inner = createPreparedRegion(container, 'inner-boundary', () => create('AttributeOnly'), innerPending);
       return { nodes: [container], update() {}, dispose: () => inner.dispose() };
     }, () => ({ nodes: [document.createTextNode('Outer loading')], update() {} })));
     expect(document.body.textContent).toBe('Outer loading');

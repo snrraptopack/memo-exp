@@ -52,8 +52,11 @@ than embedding pending/error JSX in an attribute.
 A testing-only prepared-range prototype observes readiness and publishes the
 current detached DOM once, including child output discovered after creation,
 before releasing refs and effects. Nested regions fold into a pending outer
-generation; abandoning a region prevents stale publication. This prototype is
-not emitted for authored `suspend`: SSR/hydration marker adoption, broader
+generation; abandoning a region prevents stale publication. It now uses
+stable `mmd:g` range identities and adopts resolved server ranges in place,
+including nested regions, without moving their content or showing a fallback.
+Mismatch reporting preserves the rejected server range until mount recovery.
+This prototype is not emitted for authored `suspend`: compiler/SSR integration, broader
 read-path coverage (including specialized component-row prop paths), and failure/retry
 presentation still need integration and verification. This does not expand
 the authored suspend support above or enable route loading shells yet.
