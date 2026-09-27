@@ -23,7 +23,7 @@ export {
   subscribeTransparentStructuralSite,
   transparentExpressionSources,
 } from './subscriptions';
-export { transparentPolicyRenderer } from './automatic-sites';
+export { isImplicitPolicyProp, transparentPolicyRenderer } from './automatic-sites';
 export { rewriteTransparentDataReads } from './read-rewriting';
 export { lowerTransparentGroups } from './group-lowering';
 export { atomicSitePolicy } from './atomic-sites';

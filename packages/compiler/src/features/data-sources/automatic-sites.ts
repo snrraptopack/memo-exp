@@ -8,7 +8,7 @@ import {
   type BaseNode,
 } from '../../ast';
 import type { Ctx, TransparentPresentationPolicy, TransparentPresentationComponent } from '../../context';
-import { mdd } from '../../identifiers';
+import { md, mdd } from '../../identifiers';
 import { annotateTransparentSources, sourceArray } from './subscriptions';
 
 interface TransparentPolicyRenderer {
@@ -118,10 +118,22 @@ function authoredPolicyElement(
   props: Array<{ name: string; value: t.Expression }> = [],
 ): t.JSXElement {
   const component = typeof policy === 'string' ? policy : policy.component;
-  const entries = typeof policy === 'string' ? props : [...props, ...policy.props];
+  const entries = [
+    ...props.map(prop => ({ ...prop, implicit: true })),
+    ...(typeof policy === 'string' ? [] : policy.props.map(prop => ({ ...prop, implicit: false }))),
+  ];
   return astFactory.jsxElement(astFactory.jsxOpeningElement(astFactory.jsxIdentifier(component),
-    entries.map(({ name, value }) => astFactory.jsxAttribute(astFactory.jsxIdentifier(name),
-      astFactory.jsxExpressionContainer(cloneEstreeNode(value, true)))), true), null, []);
+    entries.map(({ name, value, implicit }) => {
+      const attribute = astFactory.jsxAttribute(astFactory.jsxIdentifier(name),
+        astFactory.jsxExpressionContainer(cloneEstreeNode(value, true))) as PolicyProp;
+      attribute.__memoDomImplicitPolicyProp = implicit;
+      return attribute;
+    }), true), null, []);
+}
+
+type PolicyProp = t.JSXAttribute & { __memoDomImplicitPolicyProp?: boolean };
+export function isImplicitPolicyProp(attribute: t.JSXAttribute): boolean {
+  return (attribute as PolicyProp).__memoDomImplicitPolicyProp === true;
 }
 
 export function wrapAutomaticSite(
@@ -140,6 +152,9 @@ export function wrapAutomaticSite(
     astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
       cloneEstreeNode(sources, true),
     ]);
+  const presentationError = () => astFactory.callExpression(md(ctx, 'toPresentationError'), [
+    errorRead(), astFactory.stringLiteral('request'),
+  ]);
   const errorPolicy = policyForStatus(
     ctx,
     component,
@@ -165,8 +180,8 @@ export function wrapAutomaticSite(
   const conditional = astFactory.conditionalExpression(
     astFactory.logicalExpression('&&', errorRead(), cloneEstreeNode(errorRenderer)),
     override?.error === undefined
-      ? policyRendererElement(cloneEstreeNode(errorRenderer), [errorRead(), retry])
-      : authoredPolicyElement(override.error, [{ name: 'error', value: errorRead() }, { name: 'retry', value: retry }]),
+      ? policyRendererElement(cloneEstreeNode(errorRenderer), [presentationError(), retry])
+      : authoredPolicyElement(override.error, [{ name: 'error', value: presentationError() }, { name: 'retry', value: retry }]),
     astFactory.conditionalExpression(
       errorRead(),
       fragmentExpression(

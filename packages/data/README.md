@@ -85,6 +85,9 @@ export function StoriesPanel() {
 - **`pending`**: Shown independently at source-consuming sites while their
   initial requests are in flight.
 - **`error`**: Injects `{ error, retry }` into the error component when a request fails.
+  Group uses `error.kind: 'request'` and preserves transport detail as
+  `requestKind` and the original error as `cause`. Atomic render crashes use
+  `kind: 'crash'`; their retry recreates the failed atomic unit.
 - **Content**: Mounts immediately by default; each dependent expression or
   structural site resolves independently.
 - **Dependencies**: The compiler infers exactly which colorless sources are
@@ -111,9 +114,12 @@ host element:
 The pending arm appears once until every inferred source has its initial value.
 The compiler removes `suspend` before component prop checking and emission.
 Committed content remains visible during later refreshes.
-Current gates wait for compiler-visible sources at the marked region, not
-private resources created by descendants. Full descendant-wide staged
-preparation and `Group suspend` remain unimplemented.
+Suspension includes reads of child-owned resources across files. The active
+subtree prepares off-screen; refs/effects run only after atomic publication.
+Inactive branches and unused sources do not block it. `Group suspend` uses
+the same mechanism for all its children. Source rebinds in an already
+committed instance use read-local pending UI; a fresh route-parameter
+destination remounts and starts a new atomic activation.
 
 ---
 

@@ -187,7 +187,7 @@ export interface GroupProps {
 }
 
 export interface ErrorPolicyComponentProps {
-  readonly error: import('./errors').RequestError;
+  readonly error: import('@memoized-dom/runtime').PresentationError;
   readonly retry: () => Promise<unknown>;
 }
 

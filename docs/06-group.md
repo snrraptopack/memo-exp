@@ -48,6 +48,10 @@ The contract:
 - `pending`: what to show at a read site while its source is loading.
 - `error`: what to show when its source fails. The component receives
   `{ error, retry }`; retry refires the failed request.
+  `error.kind` is `request`; `error.requestKind` retains the transport category
+  (`http`, `network`, `decode`, or `validation`). Status/data/issues are retained,
+  and `error.cause` is the original error. A covered atomic render crash uses
+  `kind: 'crash'` and Retry remounts that atomic unit, not the whole app.
 - Children: any number of elements, components, fragments, or text.
   Group adds no wrapper DOM.
 
@@ -161,11 +165,10 @@ element, while a marked component call withholds that component and its DOM.
 Its surrounding layout remains mounted. Marking a region does not suspend
 its parent or unrelated siblings.
 
-Current support gates on compiler-visible resources in the component that
-authors the marked region, including source props and imports. It does not
-yet prepare descendants to discover their private resources. `Group suspend`
-and complete descendant-wide readiness require that next implementation;
-the compiler rejects unsupported forms rather than claiming full readiness.
+The marked region prepares its active descendant tree off-screen, including
+resources created inside child components in other files. Refs and mounted
+effects are held until publication. An unused source or inactive branch does
+not block readiness. `Group suspend` applies the same rule to all its children.
 
 Sometimes you *don't* want piecemeal rendering — a dashboard that looks
 broken half-loaded, a component that needs all its props at once. Put the
@@ -182,7 +185,7 @@ export function Page() {
 ```
 
 Now one pending policy covers the whole thing until **every** source the
-compiler infers from that element has committed — then `Dashboard` mounts
+active subtree consumes has committed — then `Dashboard` appears
 atomically with all values ready.
 
 It's not component-only — a host element takes it too:
@@ -215,7 +218,9 @@ Details that matter:
   `Dashboard` as a prop.
 - `suspend` only controls the **first** mount. Later refreshes keep the
   committed UI on screen — it's not a "re-suspend on every fetch" switch.
-  Rebinding the source to a new resource gates the region again.
+  Rebinding a source in the same committed instance uses ordinary read-local
+  pending UI. A remount or changed route path parameter starts a new atomic
+  activation; query/hash changes retain the instance.
 
 ### Across a component boundary
 
@@ -227,10 +232,12 @@ Details that matter:
 </Group>
 ```
 
-The heading stays visible. ReportBody is not invoked until `report` is ready,
-so neither its DOM nor child-owned requests start before that gate opens.
-Afterward, any resource created privately inside ReportBody follows ordinary
-read-site loading. The current gate does not wait for that private resource.
+The heading stays visible. ReportBody initializes in a detached preparation,
+so its own safe data work can start alongside `report`. The whole region
+remains withheld until every active descendant read is ready. Public refs
+and mounted effects do not run against this detached work. This is ordinary
+data readiness, not authorization: `$routed` still gates route entry before
+protected destination components initialize.
 
 A child can instead own the marked region:
 
@@ -250,12 +257,12 @@ The section and h2 mount; only the article waits. The empty Group inherits
 the caller's pending/error UI. Add `pending={DetailLoading}` here to change
 the article's placeholder without changing the parent's other read sites.
 
-The intended descendant-wide model is broader: preparing a suspended parent
-will start safe child resources while keeping the whole region detached,
-then reveal it once all active descendants are ready. An inner boundary
-cannot reveal content through an uncommitted outer boundary. That staged
-behavior is not implemented yet; the current source-visible gate must not
-be used as proof that every descendant is ready.
+An inner boundary cannot reveal content through an uncommitted outer
+boundary. The outer boundary owns first-mount replacement and uses its own
+effective policy; inner Groups still choose read-local presentation after
+the outer region commits. A failed staged descendant rolls back the atomic
+  region, and Retry creates a fresh generation. Shared resources are borrowed,
+not disposed with the failed component.
 
 ## When to use which
 

@@ -5,6 +5,7 @@ import type { CondEntry } from './cond';
 import type { DirtyReasons } from './dirty-reasons';
 import { HydrationMismatchError } from './hydration-error';
 import { noteRenderReadiness } from './render-readiness';
+import { toPresentationError } from './presentation-error';
 
 /** @internal Factories return compiler-owned entries, never authored JSX. */
 export function createPreparedRegion(
@@ -118,7 +119,7 @@ export function createPreparedRegion(
     if (error === undefined) throw failure;
     // A failed error renderer escapes rather than selecting itself recursively.
     const token = generation;
-    fallback = error(failure, () => token === generation ? retry() : Promise.resolve());
+    fallback = error(toPresentationError(failure), () => token === generation ? retry() : Promise.resolve());
     for (const node of fallback.nodes) end.parentNode!.insertBefore(node, end);
   });
   const check = () => {

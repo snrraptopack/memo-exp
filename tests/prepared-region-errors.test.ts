@@ -28,7 +28,7 @@ describe('atomic range failure ownership', () => {
       cleanup('unit', mountRef(document.createElement('input'), refAssign(ref)));
       if (attempt === 1) throw cause;
       return text('Ready');
-    }, () => text('Pending'), (error, again) => { expect(error).toBe(cause); retry = again; return text('Failed'); }));
+    }, () => text('Pending'), (error, again) => { expect(error).toMatchObject({ kind: 'crash', cause }); retry = again; return text('Failed'); }));
     expect(region.status).toBe('error');
     expect(runtime.state.registry.size).toBe(0);
     expect(disposed).toHaveBeenCalledTimes(1);
@@ -62,7 +62,7 @@ describe('atomic range failure ownership', () => {
       render();
       return text('Hidden');
     }, () => text('Pending'), error => {
-      expect(error).toBe(cause);
+      expect(error).toMatchObject({ kind: 'crash', cause });
       expect(runtime.state.registry.size).toBe(0);
       expect(unsubscribe).toHaveBeenCalledTimes(1);
       return text('Failed');

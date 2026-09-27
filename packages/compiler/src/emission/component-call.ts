@@ -32,6 +32,7 @@ import {
 import { buildRenderCallbackAdapter } from './render-callback';
 import { compileRefValue } from '../jsx/refs';
 import {
+  isImplicitPolicyProp,
   preparationRead,
   registerTransparentDataSite,
   transparentCallPolicyArgument,
@@ -196,6 +197,8 @@ export function emitComponentCall(
   for (const attr of open.attributes) {
     const a = attr as t.JSXAttribute;
     const propName = jsxAttributeName(a.name);
+    if (isImplicitPolicyProp(a) && targetPlan !== undefined &&
+      !targetPlan.acceptsUnknown && !targetPlan.names.includes(propName)) continue;
     const v =
       a.value == null ? astFactory.booleanLiteral(true) : attrExpr(a.value);
     if (v == null) {

@@ -55,6 +55,7 @@ export { cleanup } from './cleanup';
 export { readPreparationScope, releasePreparationRead } from './preparation-read';
 export { createPreparedRegion } from './prepared-region';
 export { collectRenderReadiness } from './render-readiness';
+export { toPresentationError, type PresentationError, type PresentationErrorKind } from './presentation-error';
 export type { CleanupDisposer } from './cleanup';
 export { mountRef, refAssign } from './refs';
 export type { RefCallback, RefValue } from './refs';

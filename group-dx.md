@@ -26,6 +26,12 @@ files. Ordinary atomic request failures and owned render crashes replace that
 atomic slot through its effective error policy, with fresh-generation retry.
 Plain, unsuspended component crash recovery and route entry failures still
 need their separate ownership integration.
+Group request/error arms now receive a normalized presentation error: request
+failures have `kind: 'request'`, retain transport detail as `requestKind`, and
+preserve the original `RequestError` as `cause`. Atomic render failures have
+`kind: 'crash'`. Transport/resource APIs themselves retain their original
+errors and kinds. Module classification is available internally; presenting
+route-import failures in a Group arm still depends on route-shell integration.
 Route-shell integration below is not implemented yet.
 
 The internal runtime now provides detached activation generations:
@@ -108,7 +114,7 @@ navigation events; the Group error replacement described below is proposed.
 - `pending` — a component (or inline render callback) shown while a covered
   source is pending.
 - `error` — a component receiving `{ error, retry }`, shown when a covered
-  source fails **or the subtree crashes**. Proposed `error.kind` is
+  source fails **or a covered atomic subtree crashes**. `error.kind` is
   `'request'`, `'module'`, or `'crash'`; `error.message` is the
   human-readable cause in each case.
   Request failures additionally carry `status`, `statusText`, `data`,
