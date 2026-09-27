@@ -9,7 +9,8 @@ export function App() {
       <nav aria-label="Reveal experiments">
         <a route-to={{ path: '/progressive/:run', params: { run: 'first' } }}>Progressive rows</a>
         <a route-to={{ path: '/atomic/:run', params: { run: 'first' } }}>Atomic board</a>
-        <a route-to={{ path: '/detail/:id', params: { id: 'fast' } }}>Prepared detail (2s)</a>
+        <a route-to={{ path: '/detail/:id', params: { id: 'fast' } }}>Fast detail (400ms)</a>
+        <a route-to={{ path: '/detail/:id', params: { id: 'slow' } }}>Slow detail (2400ms)</a>
       </nav>
       <nav class="fresh-runs" aria-label="Fresh request identities">
         <a route-to={{ path: '/progressive/:run', params: { run: 'second' } }}>Fresh progressive run</a>

@@ -31,16 +31,27 @@ node examples/group-router-lab/tests/browser.mjs
   one pending arm, then publishes the board once. Its input is absent while
   pending and its focus ref runs after activation. Hide it before completion
   to cancel the staged requests and prevent stale DOM publication.
-- **Prepared detail:** `$routed` waits two seconds before the destination
+- **Prepared detail:** `$routed` waits 400ms for fast or 2400ms for slow before the destination
   component mounts. The old page and URL stay committed during preparation.
   Click another destination before it finishes to supersede that attempt.
   Group pre-entry shells/errors are **not implemented** and are not simulated.
+  On a direct visit, client entry waits before mounting; there is no old page
+  to retain. Vite's first-time module compilation adds development overhead;
+  these timings describe the data delay, not the entire cold startup.
 - **Route identity:** type a detail draft and switch between fast/slow detail;
   the changed path parameter creates a fresh input. Change the query instead
   to retain the route instance and its draft (entry preparation still reruns).
+  The current tab is displayed, and both Notes and Overview links let you
+  repeat the check. A hard refresh resets the draft: no storage is used.
 - **Fresh runs:** the first/second run links change request identity and route
   parameters. Revisiting a resolved run can reuse cached results; reload the
   browser to reset the demo transport's first-attempt failures.
+- **Scroll restoration:** scroll a page, navigate elsewhere, then use browser
+  Back/Forward. Each history entry restores its own offset after its DOM is
+  ready. Clicking a link creates a new entry and starts at the top. Use a short
+  browser window if a page does not have enough content to scroll.
+  Chrome can show its native loading indicator while atomic publication is
+  pending; this is same-document navigation, not a full page reload.
 
 ## File responsibilities
 

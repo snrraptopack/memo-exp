@@ -6,7 +6,7 @@ export function Overview() {
     <ol>
       <li>Progressive: titles and the input appear immediately; each row owns its data read.</li>
       <li>Atomic: all three requests start, but the board appears once after the slowest settles.</li>
-      <li>Prepared detail: the previous page stays visible for two seconds before entry.</li>
+      <li>Prepared detail: the previous page stays visible during entry (400ms fast / 2400ms slow).</li>
     </ol>
     <p>There is no pre-entry Group route shell here. That integration is still pending.</p>
     <a class="action" route-to={{ path: '/progressive/:run', params: { run: 'first' } }}>

@@ -37,6 +37,8 @@ export interface RoutedPreparationInput {
   readonly params: Readonly<Record<string, string>>;
   readonly signal: AbortSignal;
   readonly serverContext?: RoutedServerContext;
+  /** Initial client entry may reuse values delivered by SSR, unlike navigation. */
+  readonly reusePrepared?: boolean;
 }
 
 export interface RoutedServerContext {
@@ -332,6 +334,7 @@ export async function prepareRoutedMatches(
     await prepareRouteModules([match], input.signal);
     for (const { id, key } of preparationIds([match])) {
       input.signal.throwIfAborted();
+      if (input.reusePrepared && preparedByRuntime.get(runtime)?.has(key)) continue;
       const definition = definitions.get(id);
       if (definition === undefined) {
         throw new Error(`memo-dom: missing routed preparation '${id}'`);
@@ -379,11 +382,13 @@ export async function prepareRoutedMatches(
 export async function prepareInitialRoutedRuntime(
   runtime: RouteRuntime,
   serverContext?: RoutedServerContext,
+  reusePrepared = false,
 ): Promise<RoutedPreparationOutcome> {
   return prepareRoutedMatches(runtime, runtime.route.matches, {
     href: runtime.route.href,
     params: runtime.route.params,
     signal: serverContext?.request.signal ?? runtime.route.signal,
+    reusePrepared,
     ...(serverContext === undefined ? {} : { serverContext }),
   });
 }

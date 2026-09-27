@@ -650,7 +650,6 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
   if (definitions.length === 0) return [];
   ctx.usesRouter = true;
   const manifest = generatedIdentifier(ctx, 'routeManifest');
-  const hasLazyRoutes = definitions.some(definition => definition.lazyComponent !== undefined);
   return [
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
@@ -740,11 +739,16 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
       ]),
     ),
     astFactory.expressionStatement(astFactory.callExpression(mr(ctx, 'ensureRouterConnected'), [])),
-    ...(hasLazyRoutes && ctx.routedEnvironment === 'client'
-      ? [astFactory.expressionStatement({
-          type: 'AwaitExpression',
-          argument: astFactory.callExpression(mr(ctx, 'prepareInitialRouteModules'), []),
-        })]
-      : []),
   ];
+}
+
+export function initialRoutePreparationStatements(ctx: Ctx): t.Statement[] {
+  if (!ctx.emitRouteManifest || ctx.routedEnvironment !== 'client') return [];
+  const definitions = ctx.linkedRoutes ?? ctx.localRoutes;
+  if (!definitions.some(definition => definition.lazyComponent !== undefined ||
+      (definition.preparations?.length ?? 0) > 0)) return [];
+  return [astFactory.expressionStatement({
+    type: 'AwaitExpression',
+    argument: astFactory.callExpression(mr(ctx, 'prepareInitialRoute'), []),
+  })];
 }

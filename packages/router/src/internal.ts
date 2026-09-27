@@ -121,6 +121,36 @@ export {
 export function prepareInitialRouteModules(): Promise<void> {
   return prepareInitialModules(getActiveRouteRuntime());
 }
+/** Load and prepare before a fresh client mount; SSR already delivered its data. */
+export async function prepareInitialRoute(): Promise<void> {
+  const runtime = getActiveRouteRuntime();
+  // Adoption normally restores this at mount(). Entry preparation happens
+  // earlier, so deliver only the routed envelope now to avoid running gates twice.
+  if (typeof document !== 'undefined') {
+    const script = document.querySelector('script[type="application/mmd+json"][data-mmd-root]');
+    if (script?.textContent) {
+      try {
+        const payload = JSON.parse(script.textContent);
+        if (payload?.version === 1 && payload.routed !== undefined) {
+          restoreRoutedPreparationState(runtime, payload.routed);
+        }
+      } catch {
+        // Malformed payloads cannot substitute for actual preparation.
+      }
+    }
+  }
+  const outcome = await prepareInitialRoutedRuntime(runtime, undefined, true);
+  if (outcome.kind === 'redirect') {
+    const result = runtime.navigate(outcome.redirect.to.toString(), {
+      replace: outcome.redirect.replace ?? true,
+      state: outcome.redirect.state ?? null,
+    });
+    const settled = result.status === 'preparing' ? await result.finished : result;
+    if (settled.status === 'blocked') {
+      throw new RoutedPreparationRedirectError(outcome.redirect);
+    }
+  }
+}
 export {
   invokeServerRoutedPreparation,
   prepareInitialRoutedRuntime,

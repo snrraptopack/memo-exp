@@ -7,6 +7,24 @@ import {
 } from '@memoized-dom/compiler';
 
 describe('compiler-owned JSX routing', () => {
+  it('prepares eager client entry gates too, but leaves server preparation to SSR', () => {
+    const modules = {
+      './App.tsx': `
+        import { $routed } from '@memoized-dom/router';
+        export function App() {
+          const page = $routed(async () => ({ title: 'Ready' }));
+          return <main route="/">{page.title}</main>;
+        }
+      `,
+    };
+    const client = compileModulesDetailed(modules, { routedEnvironment: 'client' });
+    const server = compileModulesDetailed(modules, { routedEnvironment: 'server' });
+    expect(client.output['./App.tsx']).toContain('await _MR.prepareInitialRoute()');
+    expect(client.output['./App.tsx'].indexOf('registerRoutedPreparation('))
+      .toBeLessThan(client.output['./App.tsx'].indexOf('await _MR.prepareInitialRoute()'));
+    expect(server.output['./App.tsx']).not.toContain('prepareInitialRoute()');
+  });
+
   it('composes nearest route ancestors and emits route regions plus one manifest', () => {
     const code = compile(`
       function App() {
@@ -178,9 +196,9 @@ describe('compiler-owned JSX routing', () => {
     expect(client.output['./App.tsx']).not.toContain('import { Detail } from');
     expect(client.output['./App.tsx']).toContain('import("./Detail.tsx")');
     expect(client.output['./App.tsx']).toContain('readRouteComponent');
-    expect(client.output['./App.tsx']).toContain('prepareInitialRouteModules');
+    expect(client.output['./App.tsx']).toContain('prepareInitialRoute()');
     expect(server.output['./App.tsx']).toContain('import { Detail } from');
-    expect(server.output['./App.tsx']).not.toContain('prepareInitialRouteModules');
+    expect(server.output['./App.tsx']).not.toContain('prepareInitialRoute()');
 
     const eager = compileModulesDetailed({
       ...modules,
@@ -190,7 +208,7 @@ describe('compiler-owned JSX routing', () => {
       `,
     }, { routedEnvironment: 'client' });
     expect(eager.output['./App.tsx']).toContain('import { Detail } from');
-    expect(eager.output['./App.tsx']).not.toContain('prepareInitialRouteModules');
+    expect(eager.output['./App.tsx']).not.toContain('prepareInitialRoute()');
   });
 
   it('loads aliased route component imports by their exported name', () => {
@@ -225,7 +243,7 @@ describe('compiler-owned JSX routing', () => {
       `,
     }, { routedEnvironment: 'client' });
     expect(compiled.output['./App.tsx']).toContain('import { Detail } from');
-    expect(compiled.output['./App.tsx']).not.toContain('prepareInitialRouteModules');
+    expect(compiled.output['./App.tsx']).not.toContain('prepareInitialRoute()');
     expect(compiled.routeDefinitions.find(route => route.pattern === '/detail')?.lazy)
       .toBeUndefined();
   });

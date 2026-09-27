@@ -7,7 +7,11 @@ import {
   registerRoutedPreparation,
   restoreRoutedPreparationState,
   serializeRoutedPreparationState,
+  prepareInitialRoute,
+  prepareInitialRoutedRuntime,
+  readRoutedPreparation,
 } from '../src/internal';
+import { setActiveRouteRuntime } from '../src/active-runtime';
 import type {
   NavigationController,
   NavigationEventLike,
@@ -31,6 +35,63 @@ beforeEach(() => {
 });
 
 describe('route runtime', () => {
+  it('prepares direct client entry and reuses SSR data only on initial entry', async () => {
+    const prepare = vi.fn(() => ({ title: 'Prepared' }));
+    registerRoutedPreparation({ id: 'initial-client-data', server: false, prepare });
+    const options = {
+      environment: {},
+      routeHistory: createMemoryRouteHistory({ initialEntries: ['/detail'] }),
+      routes: [{ id: 'initial-detail', pattern: '/detail', metadata: { preparations: ['initial-client-data'] } }],
+    };
+    const runtime = createRouteRuntime(options);
+    const previous = setActiveRouteRuntime(runtime);
+    let script: HTMLScriptElement | undefined;
+    try {
+      await prepareInitialRoute();
+      expect(readRoutedPreparation('initial-client-data')).toEqual({ title: 'Prepared' });
+      expect(prepare).toHaveBeenCalledTimes(1);
+      const payload = serializeRoutedPreparationState(runtime);
+      script = document.createElement('script');
+      script.type = 'application/mmd+json';
+      script.setAttribute('data-mmd-root', 'App');
+      script.textContent = JSON.stringify({ version: 1, routed: payload });
+      document.body.append(script);
+      const adopted = createRouteRuntime({ ...options, routeHistory: createMemoryRouteHistory({ initialEntries: ['/detail'] }) });
+      setActiveRouteRuntime(adopted);
+      try {
+        await prepareInitialRoute();
+        expect(readRoutedPreparation('initial-client-data')).toEqual({ title: 'Prepared' });
+        expect(prepare).toHaveBeenCalledTimes(1);
+        await prepareInitialRoutedRuntime(adopted);
+        expect(prepare).toHaveBeenCalledTimes(2);
+      } finally { adopted.dispose(); }
+    } finally {
+      script?.remove();
+      setActiveRouteRuntime(previous);
+      runtime.dispose();
+    }
+  });
+
+  it('follows a direct-entry redirect before mounting the destination', async () => {
+    registerRoutedPreparation({ id: 'initial-redirect', server: false, prepare: () => redirectRoute('/login') });
+    const runtime = createRouteRuntime({
+      environment: {},
+      routeHistory: createMemoryRouteHistory({ initialEntries: ['/private'] }),
+      routes: [
+        { id: 'private', pattern: '/private', metadata: { preparations: ['initial-redirect'] } },
+        { id: 'login', pattern: '/login' },
+      ],
+    });
+    const previous = setActiveRouteRuntime(runtime);
+    try {
+      await prepareInitialRoute();
+      expect(runtime.route.pathname).toBe('/login');
+    } finally {
+      setActiveRouteRuntime(previous);
+      runtime.dispose();
+    }
+  });
+
   function trackedBrowser() {
     const entries: Array<{ href: string; state: unknown }> = [{ href: 'http://localhost/', state: null }];
     let index = 0;

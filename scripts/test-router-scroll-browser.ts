@@ -31,15 +31,17 @@ registerRoutedPreparation({ id: 'browser-first', server: false, prepare: async (
   return 'ready';
 } });
 const runtime = createRouteRuntime({
-  // Explicitly exercise the fallback History API even in Navigation API browsers.
+  // Test both the fallback History API and the real Navigation API.
   environment: {
     location, history,
+    ...(new URL(location.href).searchParams.has('native') ? { navigation } : {}),
     addEventListener: (type, listener) => window.addEventListener(type, listener),
     removeEventListener: (type, listener) => window.removeEventListener(type, listener),
   },
   routes: [
     { id: 'first', pattern: '/first', metadata: { preparations: ['browser-first'] } },
     { id: 'second', pattern: '/second' },
+    { id: 'third', pattern: '/third' },
   ],
 });
 runtime.subscribe(route => {
@@ -155,6 +157,27 @@ try {
   await page.waitForFunction(() => window.routerScrollTest.route === '/first' && window.scrollY === 900);
   assert.equal(await page.evaluate(() => history.length), historyLength);
   console.log('PASS failed native traversal recovers and retries without duplicate history');
+
+  await page.goto(`http://127.0.0.1:${server.port}/first?native=1`);
+  await page.waitForFunction(() => window.routerScrollTest?.route === '/first');
+  assert.equal(await page.evaluate(() => 'navigation' in window), true,
+    'This regression requires a browser with the Navigation API');
+  await scroll(900);
+  await page.evaluate(() => window.routerScrollTest.navigate('/second'));
+  await page.waitForFunction(() => window.scrollY === 0);
+  await scroll(350);
+  await page.evaluate(() => window.routerScrollTest.navigate('/third'));
+  await page.waitForFunction(() => window.scrollY === 0);
+  await scroll(250);
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => window.routerScrollTest.route === '/second' && window.scrollY === 350);
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => window.routerScrollTest.route === '/first' && window.scrollY === 900);
+  await page.evaluate(() => history.forward());
+  await page.waitForFunction(() => window.routerScrollTest.route === '/second' && window.scrollY === 350);
+  await page.evaluate(() => history.forward());
+  await page.waitForFunction(() => window.routerScrollTest.route === '/third' && window.scrollY === 250);
+  console.log('PASS Navigation API post-commit keys retain independent scroll offsets');
 
   await reset();
   await page.evaluate(async () => {

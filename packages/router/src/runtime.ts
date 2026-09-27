@@ -1074,6 +1074,22 @@ export function createRouteRuntime(
     navigateToURL(destination, { state: null });
   };
 
+  function restoreCommittedNavigationScroll(
+    event: NavigationEventLike,
+    destination: URL,
+    type: NavigationType,
+    ready?: Promise<void>,
+  ): void {
+    // For push/replace, Chrome's pre-commit destination.key can be empty.
+    // The intercept handler runs after commit, when currentEntry has its real
+    // key. Retarget restoration before any scroll events can save an offset.
+    if (event.destination.key || url.href !== destination.href) return;
+    const key = environment.navigation?.currentEntry?.key;
+    if (!key) return;
+    currentHistoryKey = key;
+    scrollCoordinator.restore(url, type, key, ready);
+  }
+
   const onNavigate: EventListener = event => {
     navigationEventRevision++;
     const navigationEvent = event as NavigationEventLike;
@@ -1188,24 +1204,26 @@ export function createRouteRuntime(
       }
       scrollCoordinator.capture(currentHistoryKey);
       supersedePreparation();
-      currentHistoryKey = navigationEvent.destination.key ?? currentHistoryKey;
+      currentHistoryKey = navigationEvent.destination.key || generateHistoryKey();
       setLocation(destination, type, destinationState);
       const result = finishNavigation(prepared.navigation, prepared.redirects);
       navigationEvent.intercept({
         scroll: 'manual',
         async handler() {
+          restoreCommittedNavigationScroll(navigationEvent, destination, type, pendingRenderReady);
           if (result.status === 'preparing') await result.finished;
         },
       });
       return;
     }
 
-    currentHistoryKey = navigationEvent.destination.key ?? currentHistoryKey;
+    currentHistoryKey = navigationEvent.destination.key || currentHistoryKey;
     setLocation(destination, type, destinationState);
     const ready = pendingRenderReady;
     navigationEvent.intercept({
       scroll: 'manual',
       async handler() {
+        restoreCommittedNavigationScroll(navigationEvent, destination, type, ready);
         // Route subscribers render from the synchronous location update.
         // Yielding here lets their microtask commit settle before navigation
         // success. Our coordinator, not the browser, owns scroll restoration.
@@ -1786,5 +1804,6 @@ export function createRouteRuntime(
     setMatches,
     dispose,
   };
+
   return runtime;
 }
