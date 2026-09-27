@@ -180,6 +180,7 @@ export type DataPolicyComponent<TProps = object> = (
 ) => unknown;
 
 export interface GroupProps {
+  readonly suspend?: true;
   readonly pending?: DataPolicyComponent;
   readonly error?: DataPolicyComponent<ErrorPolicyComponentProps>;
   readonly children?: unknown;

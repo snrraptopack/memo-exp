@@ -14,6 +14,7 @@ export {
 } from './component-sources';
 export {
   transparentCallPolicyArgument,
+  transparentBoundaryPolicyArgument,
   transparentSourceMounts,
 } from './policy-arguments';
 export {
@@ -25,3 +26,4 @@ export {
 export { transparentPolicyRenderer } from './automatic-sites';
 export { rewriteTransparentDataReads } from './read-rewriting';
 export { lowerTransparentGroups } from './group-lowering';
+export { atomicSitePolicy } from './atomic-sites';

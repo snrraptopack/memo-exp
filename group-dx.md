@@ -20,19 +20,19 @@ calls and files. Empty Groups pass through inherited policies; they add no DOM.
 Group has one authored API: pending/error props. Pending/Error child
 declarations and their public exports are removed; there is no compatibility
 mode or positional three-child contract.
-This slice handles ordinary resource read sites, not render crashes or route
-entry failures. Group-level and complete descendant-wide `suspend` forms
-still require staged preparation. Marked elements/components
-can currently gate compiler-visible sources in their authoring component;
-this does not discover descendant-owned resources. Group-level suspend is
-diagnosed until that broader readiness contract is implemented.
+Authored `Group suspend`, host-element suspension, and component suspension
+now prepare the active descendant tree, including resources owned in other
+files. Ordinary atomic request failures and owned render crashes replace that
+atomic slot through its effective error policy, with fresh-generation retry.
+Plain, unsuspended component crash recovery and route entry failures still
+need their separate ownership integration.
 Route-shell integration below is not implemented yet.
 
 The internal runtime now provides detached activation generations:
 ordinary preparation renders can update detached output while assignable refs,
 authored refs, and mounted effects remain held. Nested generations cannot
 release lifecycle work through a pending parent; cancellation drains registered
-owners and queued refs. The helper currently has testing-only exposure.
+owners and queued refs. These are compiler primitives, not authored APIs.
 It also tracks resources consumed in explicit owner/read-site scopes. Replays
 replace that site's read set without dropping untouched sinks during incremental
 updates, removed branches release their claims, and
@@ -49,7 +49,7 @@ wait for sources used only by inactive branches; request-state selectors retain
 their subscriptions. Attribute values use scalar availability reads rather
 than embedding pending/error JSX in an attribute.
 
-A testing-only prepared-range prototype observes readiness and publishes the
+A compiler-emitted prepared range observes readiness and publishes the
 current detached DOM once, including child output discovered after creation,
 before releasing refs and effects. Nested regions fold into a pending outer
 generation; abandoning a region prevents stale publication. It now uses
@@ -62,10 +62,13 @@ Borrowed failed requests retry without reviving disposed component holders;
 retry clicks deduplicate and callbacks from retired error arms are inert.
 Ref/effect activation waits until surrounding compiler initialization finishes,
 and an internal settled promise distinguishes publication from lifecycle readiness.
-This prototype is not emitted for authored `suspend`: compiler/SSR integration, broader
-read-path coverage (including specialized component-row prop paths), and authored failure/retry
-presentation still need integration and verification. This does not expand
-the authored suspend support above or enable route loading shells yet.
+Compiled Group suspension now has cross-file, cancellation, nested dominance,
+synchronous shell SSR, resolved SSR, and in-place resolved hydration coverage.
+Unused resources and inactive branches do not hold first activation open.
+After that activation, a source rebind preserves the owner and uses read-local
+availability UI; remounting creates a fresh atomic generation.
+Specialized component-row prop paths and route destination identity still
+need focused integration coverage. This does not enable route loading shells yet.
 
 The first code slice hardens existing router behavior: native history
 traversal now prepares `$routed` before entry, tracked failed/blocked pops
@@ -83,8 +86,8 @@ late hash targets, and superseded scroll work. It uses an installed browser
 (or `MMD_BROWSER_PATH`) rather than downloading one. Unit tests additionally
 exercise readiness promises, malformed hashes, stale retries, and disposal.
 
-Detached subtree preparation, transactional crash recovery, slotless-read
-promotion, fallback chunk ownership, unified route shells/errors, and the
+General component crash recovery, slotless-read promotion, fallback chunk
+ownership, unified route shells/errors, and the
 new shell/error URL-publication rules still require implementation and
 integration tests. Existing pre-entry failures currently report through
 navigation events; the Group error replacement described below is proposed.

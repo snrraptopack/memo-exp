@@ -178,9 +178,9 @@ describe('Group boundaries across component ownership', () => {
     ).toBe('Ada');
   });
 
-  it('starts a child-owned request only after its suspended parent mounts', async () => {
+  it('discovers child-owned requests before publishing the suspended parent', async () => {
     mount('SuspendedParentCreatesWaterfall');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
 
     expect(requests[0]!.url).toMatch(/\/matrix\/waterfall-parent$/);
     expect(document.querySelector('#waterfall-a-shell')).toBeNull();
@@ -189,10 +189,11 @@ describe('Group boundaries across component ownership', () => {
     request('/matrix/waterfall-parent').resolve(json({ name: 'Parent' }));
     await vi.waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1]!.url).toMatch(/\/matrix\/waterfall-child$/);
-    expect(document.querySelector('#waterfall-a-shell')).not.toBeNull();
-    expect(document.querySelector('#waterfall-b-shell')).not.toBeNull();
+    expect(document.querySelector('#waterfall-a-shell')).toBeNull();
+    expect(document.querySelector('#waterfall-b-shell')).toBeNull();
     expect(document.querySelector('#waterfall-b-value')).toBeNull();
-    expect(document.querySelector('.inner-pending')).not.toBeNull();
+    expect(document.querySelector('.inner-pending')).toBeNull();
+    expect(document.querySelector('.outer-pending')).not.toBeNull();
 
     request('/matrix/waterfall-child').resolve(json({ name: 'Child' }));
     await expect.poll(
@@ -200,19 +201,19 @@ describe('Group boundaries across component ownership', () => {
     ).toBe('Child');
   });
 
-  it('does not start a child-owned request when the suspended parent fails', async () => {
+  it('withholds the entire staged subtree when the parent dependency fails', async () => {
     mount('SuspendedParentCreatesWaterfall');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
 
     request('/matrix/waterfall-parent').resolve(failure());
     await expect.poll(() => document.querySelector('.outer-error')?.textContent)
       .toContain('503');
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2);
     expect(document.querySelector('#waterfall-a-shell')).toBeNull();
     expect(document.querySelector('#waterfall-b-shell')).toBeNull();
   });
 
-  it('keeps committed suspended content during refresh but suspends it on rebind', async () => {
+  it('keeps the committed owner during refresh and uses read-local pending on rebind', async () => {
     mount('SuspendedRefreshAndRebind');
     await vi.waitFor(() => expect(requests).toHaveLength(1));
 
@@ -221,6 +222,7 @@ describe('Group boundaries across component ownership', () => {
     request('/matrix/rebind/one').resolve(json({ name: 'Initial' }));
     await expect.poll(() => document.querySelector('#rebind-value')?.textContent)
       .toBe('Initial');
+    const committed = document.querySelector('#rebind-value');
 
     document.querySelector<HTMLButtonElement>('#refresh-source')!.click();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
@@ -234,7 +236,7 @@ describe('Group boundaries across component ownership', () => {
     document.querySelector<HTMLButtonElement>('#rebind-source')!.click();
     await vi.waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[2]!.url).toMatch(/\/matrix\/rebind\/two$/);
-    expect(document.querySelector('#rebind-value')).toBeNull();
+    expect(document.querySelector('#rebind-value')).toBe(committed);
     expect(document.querySelector('.outer-pending')).not.toBeNull();
     requests[2]!.resolve(json({ name: 'Rebound' }));
     await expect.poll(() => document.querySelector('#rebind-value')?.textContent)
@@ -266,18 +268,18 @@ describe('Group boundaries across component ownership', () => {
       .toBe('Left:Right');
   });
 
-  it('opens a parent gate before starting an ungrouped child-private source', async () => {
+  it('includes child-private sources in the parent atomic activation', async () => {
     mount('SuspendedParentWithColorlessChild');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[0]!.url).toMatch(/\/matrix\/mixed-parent$/);
     expect(document.querySelector('#mixed-parent')).toBeNull();
 
     requests[0]!.resolve(json({ name: 'Parent' }));
     await vi.waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1]!.url).toMatch(/\/matrix\/mixed-child$/);
-    expect(document.querySelector('#mixed-parent output')?.textContent)
-      .toBe('Parent');
-    expect(document.querySelector('#mixed-child .outer-pending')).not.toBeNull();
+    expect(document.querySelector('#mixed-parent')).toBeNull();
+    expect(document.querySelector('#mixed-child')).toBeNull();
+    expect(document.querySelector('.outer-pending')).not.toBeNull();
 
     requests[1]!.resolve(json({ name: 'Child' }));
     await expect.poll(() => document.querySelector('#mixed-child')?.textContent)
@@ -285,12 +287,11 @@ describe('Group boundaries across component ownership', () => {
     expect(document.querySelector('.outer-pending')).toBeNull();
   });
 
-  it('rejects parent suspension when the only source is owned inside B', () => {
+  it('accepts parent suspension when the only source is owned inside B', () => {
     const source = readFileSync(invalidSourcePath, 'utf8');
-    expect(() => compileModules({
+    const output = compileModules({
       './group-boundary-invalid-descendant.tsx': source,
-    })).toThrow(
-      /suspend currently requires compiler-visible sources in the current component/,
-    );
+    });
+    expect(output['./group-boundary-invalid-descendant.tsx']).toContain('createPreparedRegion');
   });
 });

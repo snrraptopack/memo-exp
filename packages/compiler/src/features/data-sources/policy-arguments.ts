@@ -25,12 +25,16 @@ function policyComponentRenderer(
   const parent = generatedIdentifier(ctx, 'dataPolicyParent');
   const error = generatedIdentifier(ctx, 'dataPolicyError');
   const retry = generatedIdentifier(ctx, 'dataPolicyRetry');
-  const entries = kind === 'error'
+  const plan = ctx.componentProps.get(component);
+  // Policy callbacks may consume either argument (or neither). Project only
+  // implicit framework arguments; explicit authored props still validate.
+  const entries = (kind === 'error'
     ? [
         { name: 'error', value: cloneNode(error) as t.Expression },
         { name: 'retry', value: cloneNode(retry) as t.Expression },
       ]
-    : [];
+    : []).filter(entry =>
+      plan === undefined || plan.acceptsUnknown || plan.names.includes(entry.name));
   if (typeof presentation !== 'string') {
     entries.push(...presentation.props.map(({ name, value }) => ({
       name,
@@ -72,6 +76,18 @@ function fixedPolicyExpression(
       ),
     ]),
   ]);
+}
+
+/** Effective default policy at an independently activating atomic region. */
+export function transparentBoundaryPolicyArgument(
+  ctx: Ctx,
+  owner: string,
+  policy: TransparentPresentationPolicy,
+): t.Expression {
+  const inherited = ctx.transparentPolicyParams.get(owner);
+  return fixedPolicyExpression(ctx, policy, inherited === undefined
+    ? undefined
+    : astFactory.optionalMemberExpression(cloneNode(inherited), astFactory.identifier('$default'), false, true));
 }
 
 /** Private presentation argument supplied to one compiled component call. */

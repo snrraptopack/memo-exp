@@ -22,6 +22,7 @@ import {
 } from '../../ast';
 import { generatedIdentifier } from '../../identifiers';
 import { wrapAutomaticSite } from './automatic-sites';
+import { atomicSite, markAtomicRoute } from './atomic-sites';
 import {
   annotateGroupComponentCalls,
   expressionOrigins,
@@ -91,9 +92,7 @@ function lowerGroupScopes(
         }
         seenAttributes.add(attribute.name.name);
       }
-      if (suspendDirective(element, programPath) !== null) {
-        throw programPath.buildCodeFrameError('memo-dom: Group suspend requires staged descendant preparation, which is not implemented yet', element);
-      }
+      suspendDirective(element, programPath);
       const pending = readPolicy(element, 'pending');
       const error = readPolicy(element, 'error');
       const policy = {
@@ -123,19 +122,12 @@ function lowerGroupScopes(
         if (!ctx.transparentPolicyParams.has(owner)) {
           ctx.transparentPolicyParams.set(owner, generatedIdentifier(ctx, 'dataPolicies'));
         }
-        const dependencies = inferredGroupDataNames(ctx, element, node, programPath);
-        if (dependencies.length === 0) {
-          throw programPath.buildCodeFrameError(
-            'memo-dom: suspend currently requires compiler-visible sources in the current component; descendant-owned readiness requires staged preparation', directive,
-          );
-        }
         consumeSuspendDirective(element, directive);
-        const content = astFactory.jsxFragment(astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(), [element]);
-        wrapAutomaticSite(ctx, owner, content as unknown as t.Expression, dependencies, scopes.at(-1));
-        replaceNode(ctx.astAnalysis!, node, astFactory.jsxFragment(
-          astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(),
-          [astFactory.jsxExpressionContainer(content as unknown as t.Expression)],
-        ) as unknown as BaseNode);
+        if (ctx.routeElements.has(element)) {
+          markAtomicRoute(element, scopes.at(-1));
+          return;
+        }
+        replaceNode(ctx.astAnalysis!, node, atomicSite(element, scopes.at(-1)) as unknown as BaseNode);
         return;
       }
       scopes.pop();
@@ -172,7 +164,8 @@ function lowerGroupScopes(
         },
       });
       ctx.usesTransparentData = true;
-      replaceNode(ctx.astAnalysis!, node, content as unknown as BaseNode);
+      const directive = suspendDirective(element, programPath);
+      replaceNode(ctx.astAnalysis!, node, (directive === null ? content : atomicSite(content, policy)) as unknown as BaseNode);
     },
   });
   refreshAstAnalysis(ctx, programPath.node);

@@ -224,8 +224,8 @@ describe('props-based Group policy scopes', () => {
     ` })).toThrow(/duplicate Group pending/);
     expect(() => compileModules({ './bad.tsx': `
       import { Group } from '@memoized-dom/data';
-      export function App() { return <Group suspend><i /></Group>; }
-    ` })).toThrow(/staged descendant preparation/);
+      export function App() { return <Group suspend={true}><i /></Group>; }
+    ` })).toThrow(/suspend/);
   });
 
   it('lets inner scopes override both outer policies', async () => {

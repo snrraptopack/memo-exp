@@ -1365,7 +1365,7 @@ describe('compiler-transparent data values', () => {
     })).toThrow(/Group infers colorless sources from its content; remove the data prop/);
   });
 
-  it('requires bare suspend and compiler-supported resource scope', () => {
+  it('accepts static suspend boundaries but requires the bare directive', () => {
     const invalidSuspend = `
         function Dashboard() { return <main>Dashboard</main>; }
         export function App() { return <Dashboard suspend />; }
@@ -1373,15 +1373,7 @@ describe('compiler-transparent data values', () => {
     const diagnostics = diagnoseModules({
       './invalid-suspend.tsx': invalidSuspend,
     });
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]?.message).toMatch(
-      /suspend currently requires compiler-visible sources/,
-    );
-    expect(diagnostics[0]?.moduleId).toBe('./invalid-suspend.tsx');
-    expect(diagnostics[0]?.line).toBe(
-      invalidSuspend.slice(0, invalidSuspend.indexOf('suspend')).split('\n').length,
-    );
-    expect(diagnostics[0]?.column).toBeGreaterThan(0);
+    expect(diagnostics).toHaveLength(0);
 
     expect(() => compileModules({
       './invalid-suspend-value.tsx': `

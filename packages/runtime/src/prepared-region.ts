@@ -25,7 +25,7 @@ export function createPreparedRegion(
   let preserveAdopted = adopted !== undefined;
   const clear = () => {
     if (open.parentNode === null || open.parentNode !== end.parentNode) return;
-    while (open.nextSibling !== null && open.nextSibling !== end) open.nextSibling.remove();
+    while (open.nextSibling !== null && open.nextSibling !== end) open.parentNode.removeChild(open.nextSibling);
   };
   const createContent = () => {
     if (!preserveAdopted) return create();
@@ -47,7 +47,7 @@ export function createPreparedRegion(
       entry = createContent();
       if (!preserveAdopted) for (const node of entry.nodes) end.parentNode!.insertBefore(node, end);
     } catch (cause) {
-      if (!preserveAdopted) { clear(); open.remove(); end.parentNode?.removeChild(end); }
+      if (!preserveAdopted) { clear(); open.parentNode?.removeChild(open); end.parentNode?.removeChild(end); }
       throw cause;
     }
     preserveAdopted = false;
@@ -63,7 +63,7 @@ export function createPreparedRegion(
         disposed = true;
         inRuntime(() => {
           try { entry.dispose?.(); }
-          finally { clear(); open.remove(); end.parentNode?.removeChild(end); }
+          finally { clear(); open.parentNode?.removeChild(open); end.parentNode?.removeChild(end); }
         });
       },
     };
@@ -92,7 +92,10 @@ export function createPreparedRegion(
   const releaseContent = () => {
     const previous = content;
     content = undefined;
-    release([() => previous?.dispose?.(), () => preparation.dispose(), () => detached.replaceChildren()]);
+    // Capture failed borrowed adapters before entry cleanup releases read claims.
+    release([() => preparation.dispose(), () => previous?.dispose?.(), () => {
+      while (detached.firstChild !== null) detached.removeChild(detached.firstChild);
+    }]);
   };
   const releaseFallback = () => {
     const previous = fallback;
@@ -149,7 +152,7 @@ export function createPreparedRegion(
     unsubscribe = preparation.subscribe(check);
     try {
       content = preparation.run(createContent);
-      if (!preserveAdopted) detached.append(...content.nodes);
+      if (!preserveAdopted) for (const node of content.nodes) detached.appendChild(node);
       else if (preparation.readiness !== 'ready') {
         throw new HydrationMismatchError(id, 'resolved atomic content', preparation.readiness);
       }
@@ -190,7 +193,7 @@ export function createPreparedRegion(
     inRuntime(() => {
       try { release([releaseFallback, releaseContent]); }
       finally {
-        if (!preserveAdopted) { clear(); open.remove(); end.parentNode?.removeChild(end); }
+        if (!preserveAdopted) { clear(); open.parentNode?.removeChild(open); end.parentNode?.removeChild(end); }
       }
     });
   }
