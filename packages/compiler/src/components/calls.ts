@@ -97,7 +97,7 @@ export function buildSpreadComponentPropUpdate(
   tag: string,
   ownerId: t.Expression,
   idSuffix: string,
-  expression: t.ObjectExpression,
+  expression: t.Expression,
 ): t.Statement {
   const next = generatedIdentifier(ctx, `${tag}Props`);
   return astFactory.blockStatement([

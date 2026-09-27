@@ -1,16 +1,12 @@
 import {
   getActiveEnvironment,
   getExtensionStore,
-  runWithRenderEnvironment,
   unregisterSubtree,
 } from './kernel';
 import { rootNodes } from './jsx-dom';
-import {
-  createHydrationCursor,
-  HydrationDocument,
-  HydrationMismatchError,
-  parseHydrationMarker,
-} from './hydration';
+import { HydrationMismatchError } from './hydration-error';
+import type { HydratedApplicationRoot } from './hydration';
+import { parseHydrationMarker } from './hydration-marker';
 
 /** Authored zero-argument component reference accepted by the browser entry. */
 export type MountableComponent = () => unknown;
@@ -39,37 +35,38 @@ export interface MountedApplication {
   unmount(): void;
 }
 
-interface HydrationPayloadDelivery {
-  readonly version: 1;
-  readonly state?: unknown;
-  readonly routed?: unknown;
+interface HydrationRuntimeBridge {
+  hydrate?(
+    host: Element,
+    definition: RootFactoryDefinition,
+    adopt: (adopted: HydratedApplicationRoot) => MountedApplication,
+  ): MountedApplication;
 }
 
-interface DataRuntimeBridge {
-  restoreState?(state: unknown): void;
-  completeHydration?(): void;
-  cancelHydration?(): void;
-  pendingState?: unknown;
-}
-
-interface RouterRuntimeBridge {
-  restoreState?(state: unknown): void;
-  pendingState?: unknown;
-}
-
-const routerRuntimeBridgeKey = Symbol.for(
-  'memoized-dom:router-runtime-bridge',
+const hydrationRuntimeBridgeKey = Symbol.for(
+  'memoized-dom:hydration-runtime-bridge',
 );
 
-function routerRuntimeBridge(): RouterRuntimeBridge {
+function hydrationRuntimeBridge(): HydrationRuntimeBridge {
   const realm = globalThis as unknown as Record<PropertyKey, unknown>;
-  const existing = realm[routerRuntimeBridgeKey];
+  const existing = realm[hydrationRuntimeBridgeKey];
   if (typeof existing === 'object' && existing !== null) {
-    return existing as RouterRuntimeBridge;
+    return existing as HydrationRuntimeBridge;
   }
-  const created: RouterRuntimeBridge = {};
-  realm[routerRuntimeBridgeKey] = created;
+  const created: HydrationRuntimeBridge = {};
+  realm[hydrationRuntimeBridgeKey] = created;
   return created;
+}
+
+/**
+ * Installed by the optional '@memoized-dom/runtime/hydrate' entry. Keeping
+ * the adoption machinery behind this bridge keeps HydrationDocument out of
+ * browser bundles that only ever perform fresh client mounts.
+ */
+export function installHydrationRuntime(
+  hydrate: NonNullable<HydrationRuntimeBridge['hydrate']>,
+): void {
+  hydrationRuntimeBridge().hydrate = hydrate;
 }
 
 // Factory definitions are build artifacts — process-wide by nature.
@@ -210,103 +207,19 @@ function hydrationRootId(host: Element): string | null {
   return null;
 }
 
-function restorePayload(
-  rootId: string,
-  host: Element,
-): { script?: Element; data: DataRuntimeBridge } | undefined {
-  const document = host.ownerDocument;
-  const data = getExtensionStore<DataRuntimeBridge>(
-    'mmd:data-runtime-active',
-    () => ({}),
-  );
-  const script = [...document.querySelectorAll(
-    'script[type="application/mmd+json"][data-mmd-root]',
-  )].find(candidate => candidate.getAttribute('data-mmd-root') === rootId);
-  if (!script?.textContent) return { data };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(script.textContent);
-  } catch {
-    return { script, data };
-  }
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    (parsed as { version?: unknown }).version !== 1
-  ) {
-    return { script, data };
-  }
-  const payload = parsed as HydrationPayloadDelivery;
-  if (payload.state !== undefined) {
-    if (data.restoreState !== undefined) {
-      try {
-        data.restoreState(payload.state);
-      } catch {
-        // A malformed or incompatible data envelope must not prevent the
-        // application from mounting. Its sources can fetch normally.
-      }
-    } else {
-      // Preserve an early payload until the optional data package registers its
-      // default runtime. Browser bootstrap never has to install one manually.
-      data.pendingState = payload.state;
-    }
-  }
-  if (payload.routed !== undefined) {
-    const router = routerRuntimeBridge();
-    if (router.restoreState !== undefined) {
-      router.restoreState(payload.routed);
-    } else {
-      router.pendingState = payload.routed;
-    }
-  }
-  return { script, data };
-}
-
 function adoptApplication(
   host: Element,
   definition: RootFactoryDefinition,
+  hydrate: NonNullable<HydrationRuntimeBridge['hydrate']>,
 ): MountedApplication {
-  const restoration = restorePayload(definition.id, host);
-  const range = createHydrationCursor(host, definition.id);
-  const hydrationDocument = new HydrationDocument(
-    getActiveEnvironment().document,
-    range,
+  return hydrate(host, definition, adopted =>
+    createMountedApplication(
+      host,
+      definition,
+      rootNodes(adopted.root),
+      adopted.disposeMarkers,
+    ),
   );
-  let root: Node;
-  try {
-    root = runWithRenderEnvironment(
-      {
-        mode: 'hydrate',
-        document: hydrationDocument,
-        hydration: hydrationDocument,
-      },
-      () => definition.create({ mode: 'hydrate', host }),
-    );
-    hydrationDocument.expectDone();
-  } catch (error) {
-    unregisterSubtree(definition.id);
-    if (error instanceof HydrationMismatchError) {
-      restoration?.data?.completeHydration?.();
-    } else {
-      restoration?.data?.cancelHydration?.();
-    }
-    restoration?.script?.remove();
-    throw error;
-  } finally {
-    hydrationDocument.finishHydration();
-  }
-  const mounted = createMountedApplication(
-    host,
-    definition,
-    rootNodes(root),
-    () => {
-      range.open.parentNode?.removeChild(range.open);
-      range.end.parentNode?.removeChild(range.end);
-    },
-  );
-  restoration?.data?.completeHydration?.();
-  restoration?.script?.remove();
-  return mounted;
 }
 
 /**
@@ -330,6 +243,14 @@ export function mount(
   if (serverRootId === null) {
     return createApplication(host, definition);
   }
+  const hydrate = hydrationRuntimeBridge().hydrate;
+  if (hydrate === undefined) {
+    console.warn(
+      "memoized-dom: server markup found but the hydration runtime is not installed; add `import '@memoized-dom/runtime/hydrate'` to the client entry to adopt it. Falling back to a fresh client mount.",
+    );
+    host.innerHTML = '';
+    return createApplication(host, definition);
+  }
   try {
     if (serverRootId !== definition.id) {
       throw new HydrationMismatchError(
@@ -338,7 +259,7 @@ export function mount(
         `<!--mmd:r:${serverRootId}-->`,
       );
     }
-    return adoptApplication(host, definition);
+    return adoptApplication(host, definition, hydrate);
   } catch (error) {
     if (!(error instanceof HydrationMismatchError)) throw error;
     options.onHydrateError?.(error);

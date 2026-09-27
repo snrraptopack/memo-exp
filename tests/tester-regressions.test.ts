@@ -9,7 +9,7 @@ describe('external tester regressions', () => {
   it('allows a Group to provide policy for sources owned by descendant components', () => {
     expect(() => compileModules({
       './app.tsx': `
-        import { $fetch, Group, Pending, Error } from '@memoized-dom/data';
+        import { $fetch, Group } from '@memoized-dom/data';
         function Loading() { return <p>Loading</p>; }
         function Failed({ error, retry }) { return <button onClick={retry}>{error.message}</button>; }
         function Sidebar() {
@@ -18,9 +18,7 @@ describe('external tester regressions', () => {
         }
         export function App() {
           return (
-            <Group>
-              <Pending component={Loading} />
-              <Error component={Failed} />
+            <Group pending={Loading} error={Failed}>
               <main><Sidebar /></main>
             </Group>
           );

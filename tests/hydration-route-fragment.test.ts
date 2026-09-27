@@ -11,6 +11,7 @@ import {
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
+import '@memoized-dom/runtime/hydrate';
 import { navigateRoute } from '@memoized-dom/router/internal';
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'out');

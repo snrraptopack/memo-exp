@@ -69,10 +69,10 @@ describe('R26 — effect code generation and validation', () => {
       code.indexOf('const _update'),
       code.indexOf('.register({'),
     );
-    expect(update).toContain('.data =');
+    expect(update).toContain('setTextData(');
     expect(update).toContain('.markDirty(');
     expect(update.indexOf('.markDirty(')).toBeGreaterThan(
-      update.indexOf('.data ='),
+      update.indexOf('setTextData('),
     );
   });
 

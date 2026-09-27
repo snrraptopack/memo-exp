@@ -171,9 +171,19 @@ export function freshWriteConst(
 /** Hoist and dedupe a sorted array used to batch local dirty reasons. */
 export function freshReasonConst(
   ctx: Ctx,
-  reasons: readonly number[],
+  reasons: readonly (number | string)[],
 ): t.Identifier {
-  const unique = [...new Set(reasons)].sort((left, right) => left - right);
+  const unique = [...new Set(reasons)].sort((left, right) =>
+    typeof left === 'number' && typeof right === 'number'
+      ? left - right
+      : typeof left === 'number'
+        ? -1
+        : typeof right === 'number'
+          ? 1
+          : left < right
+            ? -1
+            : 1,
+  );
   const key = unique.join(' ');
   const existing = ctx.reasonConsts.get(key);
   if (existing !== undefined) return astFactory.identifier(existing);
@@ -187,9 +197,33 @@ export function freshReasonConst(
       astFactory.variableDeclarator(
         id,
         astFactory.arrayExpression(
-          unique.map((reason) => astFactory.numericLiteral(reason)),
+          unique.map((reason) =>
+            typeof reason === 'number'
+              ? astFactory.numericLiteral(reason)
+              : astFactory.stringLiteral(reason),
+          ),
         ),
       ),
+    ]),
+  );
+  return id;
+}
+
+/** Hoist and dedupe a static-markup string const. */
+export function freshMarkupConst(
+  ctx: Ctx,
+  markup: string,
+): t.Identifier {
+  const existing = ctx.markupConsts.get(markup);
+  if (existing !== undefined) return astFactory.identifier(existing);
+  const id = generatedIdentifier(
+    ctx,
+    `HTML_${ctx.markupConstCounter++}`,
+  );
+  ctx.markupConsts.set(markup, id.name);
+  ctx.header.push(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(id, astFactory.stringLiteral(markup)),
     ]),
   );
   return id;

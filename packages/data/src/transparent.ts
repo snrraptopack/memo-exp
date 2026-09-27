@@ -1,18 +1,18 @@
 import { RequestError, toRequestError } from './errors';
+import { getActiveApplicationRuntime } from '@memoized-dom/runtime';
 import {
   disposeFetchResource,
   fetchResourceOperationId,
   fetchResourceSnapshot,
   isFetchResource,
   rebindFetchResource,
+  retryFetchResourceIfLive,
   rebindFetchResourceFrom,
   subscribeFetchResource,
 } from './resource';
 import type {
   FetchResource,
   GroupProps,
-  PendingProps,
-  ErrorProps,
   ResolvedValue,
   ResourceListener,
   ResourceSnapshot,
@@ -50,16 +50,6 @@ export function Group(_props: GroupProps): never {
   return compileOnly('Group');
 }
 
-/** Compile-time pending policy declaration consumed by Group. */
-export function Pending(_props: PendingProps): never {
-  return compileOnly('Pending');
-}
-
-/** Compile-time error policy declaration consumed by Group. */
-export function Error(_props: ErrorProps): never {
-  return compileOnly('Error');
-}
-
 /**
  * The compiler keeps a FetchResource (or, for module sources, materializes a
  * per-runtime instance from the source's lazy description) behind authored
@@ -77,6 +67,34 @@ function resolveTarget<T>(
 
 function source<T>(value: ResolvedValue<T> | ModuleSourceRef): FetchResource<T> {
   return resolveTarget(value);
+}
+
+/** Render-only bridge. Declaration, derivation and imperative status reads do
+ * not join a staged subtree's wait set. No resource ownership is transferred. */
+function consumeRenderSource<T>(value: ResolvedValue<T>): FetchResource<T> {
+  const resource = source(value);
+  const preparation = getActiveApplicationRuntime().state.preparation;
+  if (preparation === undefined) return resource;
+  preparation.consume({
+    key: resource,
+    snapshot() {
+      const snapshot = fetchResourceSnapshot(resource);
+      if (snapshot.error !== null) return { status: 'error', error: snapshot.error };
+      return { status: snapshot.status === 'success' ? 'ready' : 'pending' };
+    },
+    subscribe: invalidate => observeResolvedValue(value, invalidate),
+    retry: () => retryFetchResourceIfLive(resource),
+  });
+  return resource;
+}
+
+function consumeRenderSources(values: readonly (ResolvedValue<unknown> | null | undefined)[]): void {
+  // Preserve ordinary helpers' short-circuit/lazy module-source behavior when
+  // no detached generation is collecting render prerequisites.
+  if (getActiveApplicationRuntime().state.preparation === undefined) return;
+  for (const value of values) {
+    if (value !== null && value !== undefined) consumeRenderSource(value);
+  }
 }
 
 const trackedValues = new WeakMap<object, TrackedValue<unknown>>();
@@ -324,7 +342,7 @@ export function readResolvedValueForRender<T>(
   value: ResolvedValue<T> | null | undefined,
 ): T | undefined {
   if (value === null || value === undefined) return undefined;
-  const snapshot = fetchResourceSnapshot(source(value));
+  const snapshot = fetchResourceSnapshot(consumeRenderSource(value));
   if (snapshot.status === 'success') return snapshot.data as T;
   if (snapshot.status === 'error' && snapshot.error !== null) {
     throw snapshot.error;
@@ -339,6 +357,14 @@ export function readResolvedValuesForRender<TResult>(
     | null
     | undefined
   )[],
+  compute: (...resolved: unknown[]) => TResult,
+): TResult | undefined {
+  consumeRenderSources(values);
+  return readResolvedValues(values, compute);
+}
+
+function readResolvedValues<TResult>(
+  values: readonly (ResolvedValue<unknown> | null | undefined)[],
   compute: (...resolved: unknown[]) => TResult,
 ): TResult | undefined {
   const resolved: unknown[] = [];
@@ -363,7 +389,7 @@ export function runResolvedValuesEffect<TResult>(
   )[],
   run: (...resolved: unknown[]) => TResult,
 ): TResult | undefined {
-  return readResolvedValuesForRender(values, run);
+  return readResolvedValues(values, run);
 }
 
 /**
@@ -386,6 +412,7 @@ export function deriveResolvedValues<TResult>(
 export function resolvedValuesError(
   values: readonly ResolvedValue<unknown>[],
 ): RequestError | null {
+  consumeRenderSources(values);
   for (const value of values) {
     const error = fetchResourceSnapshot(source(value)).error;
     if (error !== null) return error;
@@ -396,6 +423,7 @@ export function resolvedValuesError(
 export function resolvedValuesErrorIndex(
   values: readonly ResolvedValue<unknown>[],
 ): number {
+  consumeRenderSources(values);
   return values.findIndex(value =>
     fetchResourceSnapshot(source(value)).error !== null
   );
@@ -413,6 +441,7 @@ export function resolvedValuesPending(
 export function resolvedValuesPendingIndex(
   values: readonly ResolvedValue<unknown>[],
 ): number {
+  consumeRenderSources(values);
   return values.findIndex(value => {
     const snapshot = fetchResourceSnapshot(source(value));
     return snapshot.error === null && snapshot.status !== 'success';

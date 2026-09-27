@@ -8,25 +8,29 @@
  */
 
 import type { DocumentLike } from './environment';
+import {
+  getActiveEnvironment,
+  runWithRenderEnvironment,
+} from './kernel';
+import { parseMarkup, type MarkupChild } from './markup-parse';
+import type { RootFactoryDefinition } from './mount';
 export { HydrationMismatchError } from './hydration-error';
 import { HydrationMismatchError } from './hydration-error';
 
-export type HydrationMarkerKind = 'r' | 'c' | 'g' | 'l' | 'w' | 'd';
-export type PairedHydrationMarkerKind = 'r' | 'c' | 'g' | 'l';
-
-export interface HydrationOpenMarker {
-  readonly type: 'open';
-  readonly kind: HydrationMarkerKind;
-  readonly identity: string;
-  readonly attribute?: string;
-}
-
-export interface HydrationCloseMarker {
-  readonly type: 'close';
-}
-
-export type HydrationMarker = HydrationOpenMarker | HydrationCloseMarker;
-
+import {
+  parseHydrationMarker,
+  type HydrationMarker,
+  type HydrationMarkerKind,
+  type PairedHydrationMarkerKind,
+} from './hydration-marker';
+export { parseHydrationMarker } from './hydration-marker';
+export type {
+  HydrationMarker,
+  HydrationMarkerKind,
+  PairedHydrationMarkerKind,
+  HydrationOpenMarker,
+  HydrationCloseMarker,
+} from './hydration-marker';
 
 export interface HydrationController {
   claimRange(
@@ -37,6 +41,13 @@ export interface HydrationController {
   pushRange(range: ClaimedHydrationRange): void;
   popRange(): void;
   recordFragmentRange(parent: Node, range: ClaimedHydrationRange): void;
+  /**
+   * Claim every node of a compiler-generated static markup subtree against
+   * the active creation plan. Returns the claimed nodes in compiler
+   * creation order (post-order — the markup root is last). Equivalent
+   * validation to sequential createElement/createTextNode claims.
+   */
+  claimMarkup(markup: string): Node[];
 }
 export interface HydrationNodeExpectation {
   readonly nodeType: number;
@@ -59,40 +70,6 @@ const PAIRED_KINDS: ReadonlySet<HydrationMarkerKind> = new Set([
   'g',
   'l',
 ]);
-
-/** Parse one protocol comment body. Unrelated comments return null. */
-export function parseHydrationMarker(data: string): HydrationMarker | null {
-  if (data === '/mmd') return { type: 'close' };
-  if (!data.startsWith('mmd:') || data.length < 7) return null;
-
-  const kind = data[4];
-  if (
-    data[5] !== ':' ||
-    (kind !== 'r' &&
-      kind !== 'c' &&
-      kind !== 'g' &&
-      kind !== 'l' &&
-      kind !== 'w' &&
-      kind !== 'd')
-  ) {
-    return null;
-  }
-
-  const payload = data.slice(6);
-  const attributeAt = payload.indexOf(' @ ');
-  const identity =
-    attributeAt === -1 ? payload : payload.slice(0, attributeAt);
-  if (identity.length === 0 || identity.includes('>')) return null;
-  const attribute =
-    attributeAt === -1 ? undefined : payload.slice(attributeAt + 3);
-
-  return {
-    type: 'open',
-    kind,
-    identity,
-    ...(attribute === undefined ? {} : { attribute }),
-  };
-}
 
 function markerFor(node: Node | null): HydrationMarker | null {
   return node?.nodeType === 8
@@ -660,6 +637,41 @@ export class HydrationDocument
     return this.#activePlan().claimNode({ nodeType: 3 }) as Text;
   }
 
+  /**
+   * Markup adoption: parse the compiler's static subtree, then claim each
+   * parsed node through the active creation plan in creation order. This is
+   * the hydration counterpart of materializeMarkup() — the claim sequence
+   * and validation are identical to the imperative factory calls the markup
+   * replaced, without constructing any real DOM. Claimed elements receive
+   * the same append/insert patching as createElement claims so later
+   * imperative appends stay correct.
+   */
+  claimMarkup(markup: string): Node[] {
+    const expectations: HydrationNodeExpectation[] = [];
+    const collect = (children: MarkupChild[]): void => {
+      for (const child of children) {
+        if (child.type === 'text') {
+          expectations.push({ nodeType: 3 });
+          continue;
+        }
+        collect(child.children);
+        expectations.push({
+          nodeType: 1,
+          tagName: child.tag,
+          namespaceURI: child.ns,
+        });
+      }
+    };
+    collect(parseMarkup(markup));
+    const plan = this.#activePlan();
+    return expectations.map((expectation) => {
+      const claimed = plan.claimNode(expectation);
+      return expectation.nodeType === 1
+        ? this.#adoptElement(claimed as Element)
+        : claimed;
+    });
+  }
+
   createComment(data: string): Comment {
     return this.#fallback.createComment(data);
   }
@@ -749,5 +761,47 @@ export class HydrationDocument
 
   #activePlan(): HydrationNodePlan {
     return this.#plans.at(-1)!;
+  }
+}
+
+/** Server-adopted application root: the claimed top node plus marker cleanup. */
+export interface HydratedApplicationRoot {
+  readonly root: Node;
+  disposeMarkers(): void;
+}
+
+/**
+ * Adopt one server-rendered application root under a hydrate-mode document.
+ * Installed into mount() by the optional '@memoized-dom/runtime/hydrate'
+ * entry so applications without server markup never bundle this module.
+ */
+export function hydrateApplicationRoot(
+  host: Element,
+  definition: RootFactoryDefinition,
+): HydratedApplicationRoot {
+  const range = createHydrationCursor(host, definition.id);
+  const hydrationDocument = new HydrationDocument(
+    getActiveEnvironment().document,
+    range,
+  );
+  try {
+    const root = runWithRenderEnvironment(
+      {
+        mode: 'hydrate',
+        document: hydrationDocument,
+        hydration: hydrationDocument,
+      },
+      () => definition.create({ mode: 'hydrate', host }),
+    );
+    hydrationDocument.expectDone();
+    return {
+      root,
+      disposeMarkers() {
+        range.open.parentNode?.removeChild(range.open);
+        range.end.parentNode?.removeChild(range.end);
+      },
+    };
+  } finally {
+    hydrationDocument.finishHydration();
   }
 }

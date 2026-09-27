@@ -15,7 +15,6 @@ import type {
 import {
   generatedComponentIdentifier,
   generatedIdentifier,
-  mdd,
 } from '../../identifiers';
 import {
   componentSourceProps,
@@ -26,10 +25,7 @@ import {
   objectBindingPattern,
   policyCaptures,
 } from './group-policy-components';
-import {
-  annotateTransparentSources,
-  sourceArray,
-} from './subscriptions';
+import { atomicSite, markAtomicRoute } from './atomic-sites';
 import {
   consumeSuspendDirective,
   suspendDirective,
@@ -69,112 +65,6 @@ export function tsrxTryMetadata(node: BaseNode): TsrxTryMetadata | null {
       output: handlerRecord.output as BaseNode,
     },
   };
-}
-
-function renderOutputFragment(output: BaseNode): t.JSXFragment {
-  const child = cloneEstreeNode(output, true) as unknown as t.Expression;
-  return astFactory.jsxFragment(
-    astFactory.jsxOpeningFragment(),
-    astFactory.jsxClosingFragment(),
-    astFactory.isJSXElement(child) || astFactory.isJSXFragment(child)
-      ? [child]
-      : [astFactory.jsxExpressionContainer(child)],
-  );
-}
-
-function handlerOutput(
-  metadata: TsrxTryHandlerMetadata,
-  error: t.Expression,
-  reset: t.Expression,
-  programPath: { buildCodeFrameError(message: string, at?: t.Node): Error },
-): t.JSXFragment {
-  const params: t.Identifier[] = [];
-  const args: t.Expression[] = [];
-  if (metadata.param !== null) {
-    if (!astFactory.isIdentifier(metadata.param as unknown as t.Node)) {
-      throw programPath.buildCodeFrameError(
-        'memo-dom: TSRX @catch currently requires an identifier error parameter',
-        metadata.param as unknown as t.Node,
-      );
-    }
-    params.push(cloneEstreeNode(metadata.param as unknown as t.Identifier));
-    args.push(cloneEstreeNode(error));
-  }
-  if (metadata.resetParam !== null) {
-    if (!astFactory.isIdentifier(metadata.resetParam as unknown as t.Node)) {
-      throw programPath.buildCodeFrameError(
-        'memo-dom: TSRX @catch currently requires an identifier reset parameter',
-        metadata.resetParam as unknown as t.Node,
-      );
-    }
-    params.push(cloneEstreeNode(metadata.resetParam as unknown as t.Identifier));
-    args.push(cloneEstreeNode(reset));
-  }
-  const output = cloneEstreeNode(metadata.output, true) as unknown as t.Expression;
-  const call = astFactory.callExpression(
-    astFactory.arrowFunctionExpression(params, output),
-    args,
-  );
-  return renderOutputFragment(call as unknown as BaseNode);
-}
-
-function suspendedTsrxTryOutput(
-  ctx: Ctx,
-  component: t.JSXElement,
-  dependencies: readonly string[],
-  metadata: TsrxTryMetadata,
-  programPath: { buildCodeFrameError(message: string, at?: t.Node): Error },
-): t.JSXFragment {
-  const sources = sourceArray(dependencies);
-  const errorRead = (): t.CallExpression =>
-    astFactory.callExpression(mdd(ctx, 'resolvedValuesError'), [
-      cloneEstreeNode(sources, true),
-    ]);
-  const reset = astFactory.arrowFunctionExpression(
-    [],
-    astFactory.callExpression(mdd(ctx, 'retryResolvedValues'), [
-      cloneEstreeNode(sources, true),
-    ]),
-  );
-  const errorOutput = metadata.handler === null
-    ? renderOutputFragment(
-        astFactory.callExpression(mdd(ctx, 'throwResolvedValuesError'), [
-          cloneEstreeNode(sources, true),
-        ]) as unknown as BaseNode,
-      )
-    : handlerOutput(
-        metadata.handler,
-        errorRead(),
-        reset,
-        programPath,
-      );
-  const pendingOutput = metadata.pending === null
-    ? astFactory.jsxFragment(
-        astFactory.jsxOpeningFragment(),
-        astFactory.jsxClosingFragment(),
-        [],
-      )
-    : renderOutputFragment(metadata.pending);
-  const conditional = astFactory.conditionalExpression(
-    errorRead(),
-    errorOutput,
-    astFactory.conditionalExpression(
-      astFactory.callExpression(mdd(ctx, 'resolvedValuesPending'), [
-        cloneEstreeNode(sources, true),
-      ]),
-      pendingOutput,
-      renderOutputFragment(component as unknown as BaseNode),
-    ),
-  );
-  (conditional as t.ConditionalExpression & {
-    __memoDomTransparentGroup?: boolean;
-  }).__memoDomTransparentGroup = true;
-  annotateTransparentSources(conditional, dependencies);
-  return astFactory.jsxFragment(
-    astFactory.jsxOpeningFragment(),
-    astFactory.jsxClosingFragment(),
-    [astFactory.jsxExpressionContainer(conditional)],
-  );
 }
 
 function tsrxPolicyComponent(
@@ -285,65 +175,63 @@ export function lowerTsrxTryBoundary(
   }
   const suspend = suspendDirective(component, programPath);
   const sourceProps = componentSourceProps(ctx, component);
-  const dependencies = [...new Set(sourceProps.map(({ source }) => source))];
-  if (sourceProps.length === 0) {
+  if (suspend === null && sourceProps.length === 0) {
     throw programPath.buildCodeFrameError(
       `memo-dom: TSRX @try component <${tag}> requires at least one direct colorless-source prop`,
       component,
     );
   }
   ctx.usesTransparentData = true;
+  if (suspend === null && metadata.handler === null) {
+    throw programPath.buildCodeFrameError(
+      'memo-dom: unsuspended TSRX @try requires @catch so colorless source failures have a local policy',
+      node as unknown as t.Node,
+    );
+  }
+  for (const [parameter, label] of [
+    [metadata.handler?.param, 'error'],
+    [metadata.handler?.resetParam, 'reset'],
+  ] as const) {
+    if (parameter != null && !astFactory.isIdentifier(parameter as unknown as t.Node)) {
+      throw programPath.buildCodeFrameError(
+        `memo-dom: TSRX @catch currently requires an identifier ${label} parameter`,
+        parameter as unknown as t.Node,
+      );
+    }
+  }
+  const policy: TransparentPresentationPolicy = {};
+  if (metadata.pending !== null) {
+    const pending = tsrxPolicyComponent(ctx, node, metadata.pending, 'pending', null);
+    generatedPolicies.push(pending.declaration);
+    policy.pending = pending.renderer;
+  }
+  if (metadata.handler !== null) {
+    const error = tsrxPolicyComponent(ctx, node, metadata.handler.output, 'error', metadata.handler);
+    generatedPolicies.push(error.declaration);
+    policy.error = error.renderer;
+  }
   if (suspend === null) {
-    if (metadata.handler === null) {
-      throw programPath.buildCodeFrameError(
-        'memo-dom: unsuspended TSRX @try requires @catch so colorless source failures have a local policy',
-        node as unknown as t.Node,
-      );
-    }
-    if (!astFactory.isIdentifier(metadata.handler.param as unknown as t.Node)) {
-      throw programPath.buildCodeFrameError(
-        'memo-dom: TSRX @catch currently requires an identifier error parameter',
-        metadata.handler.param as unknown as t.Node,
-      );
-    }
-    if (!astFactory.isIdentifier(metadata.handler.resetParam as unknown as t.Node)) {
-      throw programPath.buildCodeFrameError(
-        'memo-dom: TSRX @catch currently requires an identifier reset parameter',
-        metadata.handler.resetParam as unknown as t.Node,
-      );
-    }
-    const pendingOutput = metadata.pending ?? astFactory.jsxFragment(
-      astFactory.jsxOpeningFragment(),
-      astFactory.jsxClosingFragment(),
-      [],
-    ) as unknown as BaseNode;
-    const pending = tsrxPolicyComponent(
-      ctx,
-      node,
-      pendingOutput,
-      'pending',
-      null,
-    );
-    const error = tsrxPolicyComponent(
-      ctx,
-      node,
-      metadata.handler.output,
-      'error',
-      metadata.handler,
-    );
-    generatedPolicies.push(pending.declaration, error.declaration);
-    attachTsrxColorlessPolicy(ctx, component, sourceProps, {
-      pending: pending.renderer,
-      error: error.renderer,
-    });
+    attachTsrxColorlessPolicy(ctx, component, sourceProps, policy);
     return component as unknown as BaseNode;
   }
+  // The same staged owner used by JSX suspension discovers consumed reads
+  // in descendants, rather than gating only sources passed at this callsite.
+  let parent = ctx.astAnalysis?.parentByNode.get(node);
+  while (parent != null && parent.type !== 'FunctionDeclaration') {
+    parent = ctx.astAnalysis?.parentByNode.get(parent);
+  }
+  const owner = parent as unknown as t.FunctionDeclaration | undefined;
+  if (owner?.id == null) {
+    throw programPath.buildCodeFrameError('memo-dom: suspend must be authored inside a component', component);
+  }
+  if (!ctx.transparentPolicyParams.has(owner.id.name)) {
+    ctx.transparentPolicyParams.set(owner.id.name, generatedIdentifier(ctx, 'dataPolicies'));
+  }
   consumeSuspendDirective(component, suspend);
-  return suspendedTsrxTryOutput(
-    ctx,
-    component,
-    dependencies,
-    metadata,
-    programPath,
-  ) as unknown as BaseNode;
+  if (component.openingElement.attributes.some(attribute =>
+    astFactory.isJSXAttribute(attribute) && astFactory.isJSXIdentifier(attribute.name, { name: 'route' }))) {
+    markAtomicRoute(component, policy);
+    return component as unknown as BaseNode;
+  }
+  return atomicSite(component, policy) as unknown as BaseNode;
 }

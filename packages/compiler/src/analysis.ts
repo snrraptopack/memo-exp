@@ -33,7 +33,7 @@ import {
   finalizeInstancePreludes,
   scanInstanceControlFlow,
 } from './analysis/instance-control-flow';
-import { pathVariants } from './analysis/component-graph';
+import { isListLightweightCandidate, pathVariants } from './analysis/component-graph';
 import { normalizeComponentJsxValues } from './components/jsx-values';
 import { normalizeRenderFunctions } from './components/render-functions';
 import { normalizeCalculatedListSources } from './lists/calculated-sources';
@@ -108,15 +108,16 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   foldRenderCallbackSubtreeReads(ctx);
   // Every ordinary component participates in the private presentation-policy
   // channel. This lets a Group policy cross source-less component boundaries
-  // without making policy an authored prop. Listed row factories keep their
-  // specialized ABI; their containing list site already owns presentation.
+  // without making policy an authored prop. Only synchronous lightweight
+  // rows omit the channel; resource-owning rows need their own read-local UI.
   for (const [name] of ctx.comps) {
     if (
-      ctx.listedSites.has(name) ||
-      ctx.linkedComponentRows.has(name) ||
-      ctx.transparentPolicyParams.has(name)
+      ctx.transparentPolicyParams.has(name) ||
+      ((ctx.listedSites.has(name) || ctx.linkedComponentRows.has(name)) &&
+        !ctx.transparentSources.has(name) && isListLightweightCandidate(ctx, name))
     ) continue;
     ctx.transparentPolicyParams.set(name, generatedIdentifier(ctx, 'dataPolicies'));
+    ctx.transparentInheritedOnlyPolicyParams.add(name);
   }
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)

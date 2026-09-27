@@ -11,7 +11,7 @@ _MD.installAccessTable({ readers: { "./component.tsx#count": ["App"] } }, "App",
 let count = 0;
 
 export function AsyncCounter(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const incLater = async () => {
@@ -31,10 +31,7 @@ export function AsyncCounter(_id, _parent, _dataPolicies) {
 	};
 
 	const _update = () => {
-		if (_slot !== (_value = count)) {
-			_slot = _value;
-			_text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text3, count);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
@@ -67,10 +64,7 @@ export function AsyncCounter(_id, _parent, _dataPolicies) {
 
 	const _text3 = _document.createTextNode("");
 
-	if (_slot !== (_value = count)) {
-		_slot = _value;
-		_text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text3, count);
 
 	const _span = _document.createElement("span");
 
@@ -119,17 +113,14 @@ const items = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
 let selected = 0;
 
 function Row(item, _id, _onClickBinding) {
-	let _slot, _slot2, _value;
+	let _slot, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
-		if (_slot !== (_value = item.label)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, item.label);
 
-		if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-			_slot2 = _value;
+		if (_slot !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+			_slot = _value;
 			_MD.setClassValue(_li, _value);
 		}
 	};
@@ -150,13 +141,10 @@ function Row(item, _id, _onClickBinding) {
 
 	const _text = _li.firstChild;
 
-	if (_slot !== (_value = item.label)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, item.label);
 
-	if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-		_slot2 = _value;
+	if (_slot !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+		_slot = _value;
 		_MD.setClassValue(_li, _value);
 	}
 
@@ -283,16 +271,13 @@ export function InlineList(_id, _parent, _dataPolicies) {
 		_ul,
 		_id + "/items",
 		(item, _rowId) => {
-			let _slot, _slot2, _value2;
+			let _slot, _value2;
 
 			const _update2 = () => {
-				if (_slot !== (_value2 = item.label)) {
-					_slot = _value2;
-					_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-				}
+				_MD.setTextData(_text, item.label);
 
-				if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-					_slot2 = _value2;
+				if (_slot !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+					_slot = _value2;
 					_MD.setClassValue(_li, _value2);
 				}
 			};
@@ -317,13 +302,10 @@ export function InlineList(_id, _parent, _dataPolicies) {
 
 			const _text = _li.firstChild;
 
-			if (_slot !== (_value2 = item.label)) {
-				_slot = _value2;
-				_text.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-			}
+			_MD.setTextData(_text, item.label);
 
-			if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-				_slot2 = _value2;
+			if (_slot !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+				_slot = _value2;
 				_MD.setClassValue(_li, _value2);
 			}
 
@@ -381,24 +363,18 @@ _MD.installAccessTable(
 let label = 'hello';
 
 function Tag(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
-		if (_slot !== (_value = label)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, label);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = label)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, label);
 
 	const _span = _document.createElement("span");
 
@@ -459,7 +435,7 @@ let count = 0;
 let again = 0;
 
 export function Counter(_id, _parent, _dataPolicies) {
-	let _slot, _slot2, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const inc = () => {
@@ -469,15 +445,8 @@ export function Counter(_id, _parent, _dataPolicies) {
 	};
 
 	const _update = () => {
-		if (_slot !== (_value = count)) {
-			_slot = _value;
-			_text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
-
-		if (_slot2 !== (_value = again)) {
-			_slot2 = _value;
-			_text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text2, count);
+		_MD.setTextData(_text3, again);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
@@ -490,10 +459,7 @@ export function Counter(_id, _parent, _dataPolicies) {
 
 	const _text2 = _document.createTextNode("");
 
-	if (_slot !== (_value = count)) {
-		_slot = _value;
-		_text2.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text2, count);
 
 	const _span = _document.createElement("span");
 
@@ -501,10 +467,7 @@ export function Counter(_id, _parent, _dataPolicies) {
 
 	const _text3 = _document.createTextNode("");
 
-	if (_slot2 !== (_value = again)) {
-		_slot2 = _value;
-		_text3.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text3, again);
 
 	const _span2 = _document.createElement("span");
 
@@ -533,24 +496,18 @@ _MD.installAccessTable({ readers: { "./component.tsx#name": ["App/Badge"] } }, "
 let name = 'Ada';
 
 function Badge(_id, _parent, _dataPolicies) {
-	let _slot, _value;
+	let _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
-		if (_slot !== (_value = name)) {
-			_slot = _value;
-			_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-		}
+		_MD.setTextData(_text, name);
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
-	if (_slot !== (_value = name)) {
-		_slot = _value;
-		_text.data = _value == null || typeof _value === "boolean" ? "" : String(_value);
-	}
+	_MD.setTextData(_text, name);
 
 	const _span = _document.createElement("span");
 

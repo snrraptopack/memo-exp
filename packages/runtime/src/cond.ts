@@ -44,6 +44,7 @@ export function createCondRegion(
   id: EntityId,
   pick: () => number,
   branches: readonly (CondBranchFactory | null)[],
+  identity?: () => unknown,
 ): CondRegion {
   // Hydration protocol (hydration-markers.md §2/§3): an opening `mmd:g`
   // marker before the branch content and a uniform `/mmd` close after it.
@@ -67,6 +68,7 @@ export function createCondRegion(
   let adopting = adoptedRange !== undefined;
 
   let current = -1;
+  let currentIdentity: unknown;
   let entry: CondEntry | null = null;
 
   // A child region can insert nodes after this branch's initial node snapshot.
@@ -83,7 +85,8 @@ export function createCondRegion(
 
   function update(reasons: DirtyReasons = null): void {
     const idx = pick();
-    if (idx === current) {
+    const nextIdentity = identity?.();
+    if (idx === current && Object.is(nextIdentity, currentIdentity)) {
       entry?.update(reasons);
       return;
     }
@@ -123,6 +126,7 @@ export function createCondRegion(
       }
     }
     current = idx;
+    currentIdentity = nextIdentity;
   }
 
   function dispose(): void {

@@ -44,6 +44,13 @@ export interface DocumentLike {
   createDocumentFragment(): DocumentFragment;
   createRange?(): Range;
   getElementById(id: string): Element | null;
+  /**
+   * Optional: materialize compiler-generated static markup into nodes in
+   * compiler creation order. Server document implementations provide this
+   * so emitted markup segments render identically without a DOM parser;
+   * browser documents use the native <template> path instead.
+   */
+  materializeMarkup?(markup: string): Node[];
 }
 
 export interface RenderEnvironment {

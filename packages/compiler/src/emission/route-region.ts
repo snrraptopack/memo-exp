@@ -10,6 +10,7 @@ import type { EmitScope } from './scope';
 import { registerStmt, renderDocument } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { buildConditionalBranchCreate } from './conditional-region';
+import { atomicRoutePolicy, atomicSite } from '../features/data-sources/atomic-sites';
 
 export function emitRouteRegion(
   ctx: Ctx,
@@ -27,7 +28,6 @@ export function emitRouteRegion(
   const unsubscribe = generatedIdentifier(ctx, 'routeUnsubscribe');
   const dispose = generatedIdentifier(ctx, 'routeDispose');
   const currentRoute = generatedIdentifier(ctx, 'currentRoute');
-  const match = generatedIdentifier(ctx, 'routeMatch');
   const regionIndex = scope.regionCounter++;
   const regionId = astFactory.binaryExpression(
     '+',
@@ -44,7 +44,7 @@ export function emitRouteRegion(
   try {
     branch = buildConditionalBranchCreate(
       ctx,
-      element,
+      atomicRoutePolicy(element) === undefined ? element : atomicSite(element, atomicRoutePolicy(element)),
       componentName,
       componentPath,
       regionId,
@@ -73,25 +73,9 @@ export function emitRouteRegion(
   );
   const selected = astFactory.arrowFunctionExpression(
     [cloneEstreeNode(currentRoute)],
-    astFactory.callExpression(
-      astFactory.memberExpression(
-        astFactory.memberExpression(
-          cloneEstreeNode(currentRoute),
-          astFactory.identifier('matches'),
-        ),
-        astFactory.identifier('some'),
-      ),
-      [
-        astFactory.arrowFunctionExpression(
-          [cloneEstreeNode(match)],
-          astFactory.binaryExpression(
-            '===',
-            astFactory.memberExpression(cloneEstreeNode(match), astFactory.identifier('id')),
-            instanceId,
-          ),
-        ),
-      ],
-    ),
+    astFactory.callExpression(mr(ctx, 'routeRegionIdentity'), [
+      cloneEstreeNode(currentRoute), instanceId,
+    ]),
   );
   const updateRegion = astFactory.arrowFunctionExpression(
     [],
@@ -129,12 +113,14 @@ export function emitRouteRegion(
           astFactory.arrowFunctionExpression(
             [],
             astFactory.conditionalExpression(
-              astFactory.callExpression(selected, [mr(ctx, 'route')]),
+              astFactory.binaryExpression('!==',
+                astFactory.callExpression(selected, [mr(ctx, 'route')]), astFactory.nullLiteral()),
               astFactory.numericLiteral(0),
               astFactory.numericLiteral(1),
             ),
           ),
           astFactory.arrayExpression([branch, astFactory.nullLiteral()]),
+          astFactory.arrowFunctionExpression([], astFactory.callExpression(selected, [mr(ctx, 'route')])),
         ]),
       ),
     ]),

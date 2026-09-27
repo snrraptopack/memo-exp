@@ -49,6 +49,7 @@ import {
   resolveLocalHelper,
 } from '../handlers';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
+import { isImplicitPolicyProp, transparentCallPolicyArgument } from '../data-sources';
 
 interface ComponentRowFactoryPlan {
   ctx: Ctx;
@@ -69,6 +70,7 @@ interface ComponentRowFactoryPlan {
   prefixStatements: t.Statement[];
   callProps: t.Expression[];
   updateStatements: t.Statement[];
+  dataPolicies: t.Expression | null;
 }
 
 function buildComponentRowFactory({
@@ -90,6 +92,7 @@ function buildComponentRowFactory({
   prefixStatements,
   callProps,
   updateStatements,
+  dataPolicies,
 }: ComponentRowFactoryPlan): t.ArrowFunctionExpression {
   const entryProperties: t.ObjectProperty[] = lightweight
     ? [
@@ -140,7 +143,7 @@ function buildComponentRowFactory({
     ],
     astFactory.blockStatement([
       ...(rowScope.updaters.length > 0
-        ? [cacheDecl(rowScope), updateDecl(rowScope)]
+        ? [cacheDecl(rowScope), updateDecl(ctx, rowScope)]
         : []),
       ...rowScope.prelude,
       ...rowScope.creation,
@@ -164,6 +167,7 @@ function buildComponentRowFactory({
                 ...(callProps.length > 0
                   ? [astFactory.arrayExpression(callProps)]
                   : []),
+                ...(dataPolicies === null ? [] : [cloneEstreeNode(dataPolicies)]),
               ]),
         ),
       ]),
@@ -397,6 +401,8 @@ export function buildComponentRowCreate(
     for (const attribute of attributes) {
       const direct = attribute as t.JSXAttribute;
       const propName = jsxAttributeName(direct.name);
+      if (isImplicitPolicyProp(direct) && targetPlan !== undefined &&
+        !targetPlan.acceptsUnknown && !targetPlan.names.includes(propName)) continue;
       const value =
         direct.value == null ? astFactory.booleanLiteral(true) : attrExpr(direct.value);
       if (value === null) {
@@ -644,5 +650,6 @@ export function buildComponentRowCreate(
     prefixStatements,
     callProps,
     updateStatements,
+    dataPolicies: transparentCallPolicyArgument(ctx, componentName, site.jsx!),
   });
 }

@@ -246,11 +246,16 @@ prepares the traversed destination, but it cannot promise pre-commit address
 bar behavior for traversal. The Navigation API may improve this where
 available, but it is not the compatibility baseline.
 
-The current `navigate()` result describes synchronous commitment. Once route
-preparation is introduced, its final contract must distinguish a blocked
-intent, a redirected preparation, a failed preparation, commitment, and DOM
-readiness. Transition state exposes preparing, ready, error, retry, and
-superseded states to the currently mounted application.
+`navigate()` now returns `preparing` with a `finished` promise when entry
+work or first destination activation is asynchronous. `finished` and the
+navigation `complete` event wait for actual renderer readiness, not merely
+history commitment or a pending fallback. Entry failure rejects `finished`
+and publishes an error event with guarded retry. Post-entry atomic failure
+also rejects it, but local Group recovery owns retry instead of replaying
+successful gates or adding history entries. Supersession cancels the old wait
+promptly, including callbacks that ignore their signal; their late results
+cannot overwrite committed preparation data. Application callback side
+effects and persistent state mutations are not automatically rolled back.
 
 The default structural behavior during controlled preparation is therefore:
 
@@ -266,10 +271,11 @@ The default structural behavior during controlled preparation is therefore:
 - traversal retains a frozen previous snapshot until the already-changed URL
   is ready to become the active application route.
 
-Scroll restoration must move from URL commitment to DOM readiness for lazy
-routes. Hash scrolling cannot succeed reliably before the target route region
-has mounted. A superseded transition must never restore its scroll position
-after the newer transition becomes active.
+Scroll restoration now consumes the same first-activation readiness signal,
+including work found in later scheduled render passes. Pending atomic output
+is not scroll-ready. Hash targets revealed later by progressive data are
+observed rather than assumed to exist after a fixed number of frames.
+Superseded work cannot restore an obsolete destination's scroll position.
 
 ## Route-module resource and async presentation
 
@@ -296,9 +302,11 @@ Module loading and data loading remain different resource implementations:
   data declaration is separately extracted into the route manifest.
 
 They should still share a presentation protocol so an application does not
-learn unrelated pending/error concepts. The current data `Group`, `Pending`,
-and `Error` implementation is not generic yet; it is compiler-lowered around
-transparent data sources and requires a specific three-child structure.
+learn unrelated pending/error concepts. Data presentation now uses one
+props-based `Group` API with arbitrary children and independently inherited
+pending/error policies. It is compiler-lowered around transparent data reads;
+route-entry and module failures are not wired into those policies yet.
+There is no Pending/Error child declaration or three-child contract.
 
 The intended direction is to extract a framework-level availability-boundary
 protocol that both data resources and route-module resources can participate
@@ -313,7 +321,35 @@ The boundary policy must eventually define:
 - retry without changing the current URL;
 - behavior when a transition is superseded.
 
-The exact authored boundary syntax remains open.
+The proposed authored policy is now specified in `group-dx.md`:
+
+```tsx
+<Group pending={ReportSkeleton} error={ReportError}>
+  <ReportDetail route="/reports/:id" suspend />
+</Group>
+```
+
+An effective, independently available `pending` policy at the route region
+or any ancestor shows a loading shell in the changing route slot during
+lazy module loading and required `$routed` preparation. Without that policy,
+retain the previous page until preparation succeeds. Empty/error-only Groups
+do not enable a shell unless they inherit a pending policy.
+
+`$routed` still blocks destination entry: the shell does not mount protected
+destination components or start their child work. `suspend` governs atomic
+ordinary-resource activation after entry; without it, static destination UI
+and per-read pending placeholders render progressively after entry. Shared
+parent layouts remain mounted.
+
+The nearest available Group `error` policy presents a failed import or
+`$routed` request at that route slot using the same `{ error, retry }` contract.
+Navigation owns pre-entry retry; Group owns post-entry resource/render
+recovery. Without an available error policy, retain the current page and
+report through navigation events. Error/shell UI must be available outside
+the destination's unloaded chunk. URL/history timing for shell and failure
+presentation follows answer #6 in `group-dx.md`; those publication milestones
+remain unimplemented. These are agreed semantics, not a claim of current
+implementation.
 
 ## Route preparation with `$routed`
 
@@ -790,15 +826,24 @@ These points still require focused design before their implementation phase:
    Vite carries their CSS with the chunk. Validate HMR invalidation and shared
    eager-import edges before considering this item fully closed.
 7. Internal slice completed: route-module loading, ready, error, retry, and
-   prompt supersession. Authored availability presentation remains open.
-8. Extract `$routed` preparations into deterministic route-scoped server
-   functions and generate their browser facades.
-9. Add prepare-before-commit transitions for controlled navigation, including
-   redirect, not-found, failure, retry, cancellation, and traversal fallback.
-10. Retain and transport the plain application-owned `$routed` `state` object.
-11. Add the shared availability-boundary protocol.
-12. Make scroll restoration readiness-aware.
-13. Coordinate SSR loading, payload delivery, module preload, and client
-    adoption.
+   prompt supersession. Group presentation is agreed, but its pre-entry route
+   integration is not implemented.
+8. Completed: extract `$routed` preparations into deterministic route-scoped
+   server functions and generate their browser facades.
+9. Existing deferred path implemented: preparation, redirects, failures,
+   guarded retry, cancellation, and tracked traversal recovery. Group shell
+   and error URL-publication milestones still need implementation; untracked
+   history recovery and failed-child-only retry also remain incomplete.
+10. Completed: retain and transport the plain application-owned `$routed`
+    `state` object, keeping JSON-unsafe keys server/runtime-local.
+11. Data implementation in place: props-based Group inheritance and arbitrary
+    descendant suspension, including cross-file component rows. Route entry
+    presentation, general component crash recovery, slotless-read promotion,
+    and fallback escalation/ownership still need integration.
+12. Implemented and tested: first-activation readiness-aware scroll,
+    late hash targets, independent history positions, and supersession.
+13. Partial: matched modules are loaded before normal mount adoption and SSR
+    preparation uses the existing hydration payload. Automatic Vite client
+    chunk identity/preload delivery is not implemented.
 14. Add code prefetch policy.
 15. Re-evaluate client middleware after route data and transitions exist.

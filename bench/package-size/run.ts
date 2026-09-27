@@ -57,7 +57,7 @@ function browserAssets(directory: string): string[] {
     .map((entry) => resolve(entry.parentPath, entry.name));
 }
 
-measure('runtime client', 'packages/runtime/dist/index.js');
+const client = measure('runtime client', 'packages/runtime/dist/index.js');
 measure('runtime hydrate', 'packages/runtime/dist/hydrate.js');
 measure('runtime hot', 'packages/runtime/dist/hot.js');
 measure('runtime server', 'packages/runtime/dist/server.js');
@@ -89,8 +89,16 @@ const forbiddenBrowserRuntime = [
 const browserSource = browser.files
   .map((file) => readFileSync(file, 'utf8'))
   .join('\n');
-for (const marker of forbiddenBrowserRuntime) {
-  if (browserSource.includes(marker)) {
-    throw new Error(`todo browser bundle leaked runtime marker '${marker}'`);
+const clientSource = client.files
+  .map((file) => readFileSync(file, 'utf8'))
+  .join('\n');
+for (const [label, source] of [
+  ['todo browser bundle', browserSource],
+  ['runtime client graph', clientSource],
+] as const) {
+  for (const marker of forbiddenBrowserRuntime) {
+    if (source.includes(marker)) {
+      throw new Error(`${label} leaked runtime marker '${marker}'`);
+    }
   }
 }

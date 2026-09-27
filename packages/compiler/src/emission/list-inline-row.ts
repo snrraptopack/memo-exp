@@ -102,7 +102,7 @@ export function buildInlineRowCreate(
     ],
     astFactory.blockStatement([
       cacheDecl(rowScope),
-      updateDecl(rowScope),
+      updateDecl(ctx, rowScope),
       ...rowScope.prelude,
       registerStmt(
         ctx,

@@ -25,8 +25,6 @@ export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceD
     source: '$fetch',
     track: '$track',
     group: 'Group',
-    pending: 'Pending',
-    error: 'Error',
   },
 ];
 
@@ -117,15 +115,13 @@ export interface TransparentAsyncSourceDefinition {
   track?: string;
   /** Export that exposes imperative operations without resolving the value. */
   operations?: string;
-  /** Compile-time local presentation boundary and its policy declarations. */
+  /** Compile-time presentation scope with pending/error props. */
   group?: string;
-  pending?: string;
-  error?: string;
 }
 
 export interface TransparentPresentationPolicy {
-  pending: string | TransparentPresentationComponent;
-  error: string | TransparentPresentationComponent;
+  pending?: string | TransparentPresentationComponent;
+  error?: string | TransparentPresentationComponent;
 }
 
 export interface TransparentPresentationComponent {
@@ -415,8 +411,6 @@ export interface Ctx {
   transparentTrackFactories: Set<string>;
   transparentSourcePassthroughs: Set<string>;
   transparentGroups: Set<string>;
-  transparentPendingPolicies: Set<string>;
-  transparentErrorPolicies: Set<string>;
   /** Component-local source holders and track-state aliases. */
   transparentSources: Map<string, Set<string>>;
   transparentTrackBindings: Map<string, Map<string, readonly string[]>>;
@@ -426,6 +420,8 @@ export interface Ctx {
   transparentSourceProps: Map<string, Map<string, string>>;
   /** Private factory parameter carrying inherited presentation renderers. */
   transparentPolicyParams: Map<string, t.Identifier>;
+  /** Parameters added only for ordinary call-through, not intrinsic policy. */
+  transparentInheritedOnlyPolicyParams: Set<string>;
   /** Nearest lexical Group policies attached to component prop call sites. */
   transparentGroupCallPolicies: WeakMap<
     t.JSXElement,
@@ -580,6 +576,9 @@ export interface Ctx {
   reasonConstCounter: number;
   /** Dedupe table for hoisted multi-reason arrays. */
   reasonConsts: Map<string, string>;
+  markupConstCounter: number;
+  /** Dedupe table for hoisted static-markup strings. */
+  markupConsts: Map<string, string>;
   /** Shared scratch binding for once-evaluated dynamic-tag selectors. */
   dynamicTagSelector: string | null;
   /** Function nodes whose handler analysis already ran (shared declarations). */
@@ -733,8 +732,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     transparentTrackFactories: new Set(),
     transparentSourcePassthroughs: new Set(),
     transparentGroups: new Set(),
-    transparentPendingPolicies: new Set(),
-    transparentErrorPolicies: new Set(),
     transparentSources: new Map(),
     transparentTrackBindings: new Map(),
     importedState,
@@ -745,6 +742,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     transparentModuleSources,
     transparentSourceProps: new Map(),
     transparentPolicyParams: new Map(),
+    transparentInheritedOnlyPolicyParams: new Set(),
     transparentGroupCallPolicies: new WeakMap(),
     state,
     stateKeys,
@@ -833,6 +831,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     writeConsts: new Map(),
     reasonConstCounter: 0,
     reasonConsts: new Map(),
+    markupConstCounter: 0,
+    markupConsts: new Map(),
     dynamicTagSelector: null,
     analyzedFunctions: new WeakSet(),
     compilerOwnedCallbacks: new WeakSet(),

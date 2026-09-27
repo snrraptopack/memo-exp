@@ -82,6 +82,9 @@
     "packages/router": {
       "name": "@memoized-dom/router",
       "version": "0.0.4",
+      "peerDependencies": {
+        "@memoized-dom/runtime": "workspace:*",
+      },
     },
     "packages/runtime": {
       "name": "@memoized-dom/runtime",

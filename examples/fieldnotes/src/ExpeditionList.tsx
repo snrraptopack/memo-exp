@@ -1,5 +1,5 @@
 import { getExpeditions } from '#server-functions';
-import { Group, Pending, Error, $track } from '@memoized-dom/data';
+import { Group, $track } from '@memoized-dom/data';
 import type { ErrorPolicyComponentProps } from '@memoized-dom/data';
 
 function Loading() {
@@ -19,9 +19,7 @@ export function ExpeditionList() {
   const request = $track(expeditions);
 
   return (
-    <Group>
-      <Pending component={Loading} />
-      <Error component={Failed} />
+    <Group pending={Loading} error={Failed}>
       <div suspend>
         <ul class="plain">
           {expeditions.map(e => (

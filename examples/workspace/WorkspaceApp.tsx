@@ -1,4 +1,4 @@
-import { $track, Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+import { $track, Group } from '@memoized-dom/data';
 import { currentUser, notifications } from './session';
 
 function UserBadge() {
@@ -24,9 +24,7 @@ function NotificationsPanel() {
         <span class={{ pill: true, busy: state.refreshing }}>{unread} unread</span>
       </div>
 
-      <Group>
-        <Pending component={Skeleton} />
-        <ErrorArm component={ErrorRow} />
+      <Group pending={Skeleton} error={ErrorRow}>
         <ul class="list">
           {notifications.map((n) => (
             <li key={n.id} class={n.read ? 'row read' : 'row unread'}>

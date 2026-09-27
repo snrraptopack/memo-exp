@@ -18,8 +18,11 @@ import {
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import {
+  preparationRead,
   subscribeTransparentStructuralSite,
   transparentExpressionSources,
+  atomicSitePolicy,
+  transparentBoundaryPolicyArgument,
 } from '../data-sources';
 
 /** Static path appended to a component factory id by enclosing regions. */
@@ -60,6 +63,47 @@ export function emitConditionalRegion(
     cloneEstreeNode(ownerId),
     astFactory.stringLiteral(`/${site.suffix}`),
   );
+  const atomic = atomicSitePolicy(expression);
+  if (atomic !== undefined) {
+    const policy = generatedIdentifier(ctx, 'atomicPolicy');
+    const cause = generatedIdentifier(ctx, 'atomicError');
+    const retry = generatedIdentifier(ctx, 'atomicRetry');
+    const renderer = (kind: 'pending' | 'error') => astFactory.memberExpression(
+      cloneEstreeNode(policy), astFactory.identifier(kind));
+    const fallback = (kind: 'pending' | 'error') => {
+      const child = generatedIdentifier(ctx, 'atomicFallback');
+      const childId = astFactory.binaryExpression('+', cloneEstreeNode(regionId), astFactory.stringLiteral(`/$${kind}`));
+      return astFactory.conditionalExpression(renderer(kind), astFactory.arrowFunctionExpression(
+        kind === 'pending' ? [] : [cloneEstreeNode(cause), cloneEstreeNode(retry)],
+        astFactory.blockStatement([
+          astFactory.variableDeclaration('const', [astFactory.variableDeclarator(child,
+            astFactory.callExpression(renderer(kind), [cloneEstreeNode(childId), cloneEstreeNode(ownerId),
+              ...(kind === 'pending' ? [] : [cloneEstreeNode(cause), cloneEstreeNode(retry)])]))]),
+          astFactory.returnStatement(astFactory.objectExpression([
+            astFactory.objectProperty(astFactory.identifier('nodes'), astFactory.callExpression(md(ctx, 'rootNodes'), [cloneEstreeNode(child)])),
+            astFactory.objectProperty(astFactory.identifier('update'), astFactory.arrowFunctionExpression([], astFactory.blockStatement([]))),
+            astFactory.objectProperty(astFactory.identifier('dispose'), astFactory.arrowFunctionExpression([],
+              astFactory.callExpression(md(ctx, 'unregisterSubtree'), [cloneEstreeNode(childId)]))),
+          ])),
+        ])), astFactory.identifier('undefined'));
+    };
+    const branch = buildConditionalBranchCreate(ctx, site.branches[0]!, componentName, componentPath,
+      regionId, emitNode, inSvg, regionId, true, scope.usedConds, [], true);
+    (branch.body as t.BlockStatement).body.unshift(registerStmt(ctx, cloneEstreeNode(regionId), cloneEstreeNode(ownerId),
+      astFactory.arrowFunctionExpression([], astFactory.callExpression(astFactory.memberExpression(
+        astFactory.identifier(regionVariable), astFactory.identifier('update')), []))));
+    scope.creation.push(astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(cloneEstreeNode(policy), transparentBoundaryPolicyArgument(ctx, componentName, atomic)),
+      astFactory.variableDeclarator(astFactory.identifier(regionVariable), astFactory.callExpression(md(ctx, 'createPreparedRegion'), [
+        astFactory.identifier(parentElementVariable), cloneEstreeNode(regionId), branch, fallback('pending'), fallback('error'),
+      ])),
+    ]));
+    scope.updaters.push(() => astFactory.expressionStatement(astFactory.callExpression(astFactory.memberExpression(
+      astFactory.identifier(regionVariable), astFactory.identifier('update')), scope.reasonVar === null ? [] : [astFactory.identifier(scope.reasonVar)])));
+    scope.disposableRegions.push(regionVariable);
+    scope.disposableEntities.push(cloneEstreeNode(regionId));
+    return;
+  }
   const transparentSources = transparentExpressionSources(ctx, expression);
 
   // Route regions are real runtime owners (`App/route0/...`). Conditional
@@ -76,7 +120,9 @@ export function emitConditionalRegion(
     }
   }
 
-  const pick = astFactory.arrowFunctionExpression([], cloneEstreeNode(site.pickExpr));
+  const pick = astFactory.arrowFunctionExpression([], preparationRead(
+    ctx, scope, regionId, cloneEstreeNode(site.pickExpr), transparentSources,
+  ));
   const branchFactories: t.Expression[] = site.branches.map((jsx) =>
     jsx !== null
       ? buildConditionalBranchCreate(
@@ -258,7 +304,7 @@ export function buildConditionalBranchCreate(
     astFactory.blockStatement([
       cacheDecl(branchScope),
       ...branchScope.prelude,
-      updateDecl(branchScope),
+      updateDecl(ctx, branchScope),
       ...branchScope.creation,
       ...branchScope.mounts,
       astFactory.returnStatement(astFactory.objectExpression(properties)),

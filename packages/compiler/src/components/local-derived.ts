@@ -3,16 +3,11 @@
  */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { canonicalStateKey, type Ctx } from '../context';
+import { canonicalStateKey, freshReasonConst, type Ctx } from '../context';
+import { md } from '../identifiers';
 
 /** Runtime protocol: reason attached to a compiler-proven structural write. */
 const LIST_STRUCTURE_PREFIX = '\0memo-dom:list-structure:';
-
-function or(expressions: t.Expression[]): t.Expression {
-  return expressions.reduce((left, right) =>
-    astFactory.logicalExpression('||', left, right),
-  );
-}
 
 function reasonLiteral(reason: number | string): t.Expression {
   if (typeof reason === 'string') return astFactory.stringLiteral(reason);
@@ -22,38 +17,23 @@ function reasonLiteral(reason: number | string): t.Expression {
 }
 
 /**
- * `r === null || r === -1 || r === a || … || (typeof r === 'object' && (r.has(-1) || r.has(a) || …))`
+ * `_MD.reasonsHit(r, v)` / `_MD.reasonsHit(r, _REASONS_N)`
  *
  * Reasons are a number, a structural-write string, or a Set of either; the
- * `typeof r === 'object'` guard keeps a bare string from reaching `.has`.
+ * runtime helper owns the null/-1/Set dispatch so gates stay one call.
+ * Multi-reason gates pass a hoisted const — an inline array literal would
+ * allocate on every gated update run.
  */
 export function reasonCondition(
+  ctx: Ctx,
   reasonVar: string,
   reasons: readonly (number | string)[],
 ): t.Expression {
-  const current = (): t.Identifier => astFactory.identifier(reasonVar);
-  const candidates: (number | string)[] = [-1, ...reasons];
-  return or([
-    astFactory.binaryExpression('===', current(), astFactory.nullLiteral()),
-    ...candidates.map((reason) =>
-      astFactory.binaryExpression('===', current(), reasonLiteral(reason)),
-    ),
-    astFactory.logicalExpression(
-      '&&',
-      astFactory.binaryExpression(
-        '===',
-        astFactory.unaryExpression('typeof', current()),
-        astFactory.stringLiteral('object'),
-      ),
-      or(
-        candidates.map((reason) =>
-          astFactory.callExpression(
-            astFactory.memberExpression(current(), astFactory.identifier('has')),
-            [reasonLiteral(reason)],
-          ),
-        ),
-      ),
-    ),
+  return astFactory.callExpression(md(ctx, 'reasonsHit'), [
+    astFactory.identifier(reasonVar),
+    reasons.length === 1
+      ? reasonLiteral(reasons[0]!)
+      : freshReasonConst(ctx, reasons),
   ]);
 }
 

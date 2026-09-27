@@ -63,6 +63,19 @@ import { App } from './src/App';
 mount('root', App);   // detects the server markup and hydrates
 ```
 
+The hydration runtime is an opt-in bundle feature, so non-SSR applications
+never ship it. The Vite plugin installs it automatically for client entries
+when `serverEntry` is configured. Outside the plugin, add one import to the
+client entry:
+
+```ts
+import '@memoized-dom/runtime/hydrate';
+```
+
+If server markup is found without the hydration runtime installed, `mount`
+logs a warning and falls back to a fresh client mount — the page still
+works, it just rebuilds the DOM.
+
 ## SSR only some paths
 
 `app.ssr(path, component)` renders a component only for requests matching

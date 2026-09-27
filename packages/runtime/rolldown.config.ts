@@ -4,6 +4,7 @@ export default defineConfig({
   input: {
     index: './src/index.ts',
     hot: './src/hot.ts',
+    hydrate: './src/hydrate.ts',
     server: './src/server.ts',
     testing: './src/testing.ts',
   },

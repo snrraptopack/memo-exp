@@ -5,6 +5,7 @@ import {
   createDataRuntime,
   type DataRuntime,
   type DataRuntimeOptions,
+  type GroupProps,
   type ResolvedValue,
 } from '../src';
 
@@ -14,6 +15,17 @@ const options = {
 } satisfies DataRuntimeOptions;
 
 const runtime: DataRuntime = createDataRuntime(options);
+
+const pendingGroup: GroupProps = { pending: () => null, children: ['static', null] };
+const errorGroup: GroupProps = { error: ({ error, retry }) => {
+  void error.message;
+  retry();
+  return null;
+} };
+const inheritedGroup: GroupProps = {};
+void pendingGroup;
+void errorGroup;
+void inheritedGroup;
 
 runtime.$fetch<unknown>('users');
 runtime.$action<unknown>('users');

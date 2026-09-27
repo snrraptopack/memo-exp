@@ -9,10 +9,7 @@ import {
   registerRootFactory,
   resetScheduler,
 } from '@memoized-dom/runtime';
-import {
-  createDataRuntime,
-  setActiveDataRuntime,
-} from '@memoized-dom/data';
+import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out', 'transparent-source-mutations');
@@ -29,7 +26,7 @@ describe('Transparent source mutations, delegated events, and routed access reso
         export const stories = $fetch<Story[]>('/api/stories');
       `,
       './App.tsx': `
-        import { Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+        import { Group } from '@memoized-dom/data';
         import { stories, type Story } from './session';
 
         function PendingView() { return <p class="loading">Loading...</p>; }
@@ -61,9 +58,7 @@ describe('Transparent source mutations, delegated events, and routed access reso
           return (
             <div class="app-root">
               <button class="publish-btn" onClick={handlePublish}>+ Publish</button>
-              <Group>
-                <Pending component={PendingView} />
-                <ErrorArm component={ErrorView} />
+              <Group pending={PendingView} error={ErrorView}>
                 <ul class="list">
                   {stories.map((item) => <StoryRow item={item} key={item.id} />)}
                 </ul>
@@ -149,7 +144,7 @@ describe('Transparent source mutations, delegated events, and routed access reso
         export const stories = $fetch<Story[]>('/api/stories');
       `,
       './App.tsx': `
-        import { Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+        import { Group } from '@memoized-dom/data';
         import { route } from '@memoized-dom/router';
         import { stories, type Story } from './session';
 
@@ -165,9 +160,7 @@ describe('Transparent source mutations, delegated events, and routed access reso
         function Stories() {
           return (
             <div>
-              <Group>
-                <Pending component={PendingView} />
-                <ErrorArm component={ErrorView} />
+              <Group pending={PendingView} error={ErrorView}>
                 <ul class="list">
                   {stories.map((item) => <StoryRow item={item} key={item.id} />)}
                 </ul>

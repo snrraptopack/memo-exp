@@ -163,7 +163,7 @@ export function pushSlotUpdater(
  * Adjacent updaters with equal reasons share one `if` so a partial update
  * skips whole runs of slots; ungated updaters run unconditionally.
  */
-function updateBody(scope: EmitScope): t.Statement[] {
+function updateBody(ctx: Ctx, scope: EmitScope): t.Statement[] {
   if (scope.reasonVar === null || scope.updaterReasons.size === 0) {
     return scope.updaters.map((updater) => updater());
   }
@@ -177,7 +177,7 @@ function updateBody(scope: EmitScope): t.Statement[] {
     if (group !== null) {
       body.push(
         astFactory.ifStatement(
-          reasonCondition(scope.reasonVar!, group.reasons),
+          reasonCondition(ctx, scope.reasonVar!, group.reasons),
           astFactory.blockStatement(group.statements),
         ),
       );
@@ -202,7 +202,7 @@ function updateBody(scope: EmitScope): t.Statement[] {
   return body;
 }
 
-export function updateDecl(scope: EmitScope): t.Statement {
+export function updateDecl(ctx: Ctx, scope: EmitScope): t.Statement {
   return astFactory.variableDeclaration('const', [
     astFactory.variableDeclarator(
       astFactory.identifier(scope.updateVar),
@@ -215,7 +215,7 @@ export function updateDecl(scope: EmitScope): t.Statement {
                 astFactory.nullLiteral(),
               ),
             ],
-        astFactory.blockStatement(updateBody(scope)),
+        astFactory.blockStatement(updateBody(ctx, scope)),
       ),
     ),
   ]);

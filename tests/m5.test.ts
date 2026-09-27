@@ -54,9 +54,9 @@ describe('M5 compiler — code generation', () => {
     // R1: entity factory + register
     expect(code).toMatch(/function Counter\(_id\d*, _parent\d*, _dataPolicies\d*\)/);
     expect(code).toContain('.register(');
-    // R3/R4 (M5.9 form): inline guarded writes over numbered slot locals
-    expect(code).toMatch(/if \(_slot\d* !== \(_value\d* = count\)\)/);
-    expect(code).toMatch(/_text\d*\.data =/);
+    // R3/R4: text slots write through the value-cached runtime helper —
+    // seeded at creation and re-run from the update closure.
+    expect(code.match(/_MD\.setTextData\(_text\d*, count\)/g)).toHaveLength(2);
     // R5: module state always commits through its canonical table key.
     expect(code).toMatch(
       /_WRITES_\d* = \["\.\/component\.tsx#again", "\.\/component\.tsx#count"\]/,

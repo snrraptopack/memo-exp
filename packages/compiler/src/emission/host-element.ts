@@ -41,6 +41,7 @@ import {
 import { createElementExpression, isSvgElement } from '../jsx/svg';
 import { compileRefValue, emitRefMount } from '../jsx/refs';
 import {
+  preparationRead,
   registerTransparentDataSite,
   transparentExpressionSources,
 } from '../data-sources';
@@ -250,11 +251,13 @@ if (hasSpread) {
     },
   });
   const propObject = generatedIdentifier(ctx, `${tag}Props`);
+  const sources = transparentExpressionSources(ctx, ordered.expression);
+  const preparedProps = preparationRead(ctx, scope, ownerId, ordered.expression, sources);
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
         cloneEstreeNode(propObject),
-        cloneEstreeNode(ordered.expression),
+        cloneEstreeNode(preparedProps),
       ),
     ]),
   );
@@ -277,7 +280,8 @@ if (hasSpread) {
     ownerId,
     astFactory.memberExpression(cloneEstreeNode(propObject), astFactory.identifier('ref')),
   );
-  scope.updaters.push(() => patch(ordered.expression));
+  registerTransparentDataSite(ctx, scope, sources, ownerId, patch(preparedProps));
+  scope.updaters.push(() => patch(preparedProps));
 } else {
   for (const attr of open.attributes) {
   const a = attr as t.JSXAttribute;
@@ -416,7 +420,7 @@ if (hasSpread) {
     );
   }
   const dataSources = transparentExpressionSources(ctx, v);
-  const expr = cloneEstreeNode(v);
+  const expr = preparationRead(ctx, scope, ownerId, cloneEstreeNode(v));
   if (attrName === 'style') {
     const setStyle = (): t.Statement =>
       astFactory.expressionStatement(

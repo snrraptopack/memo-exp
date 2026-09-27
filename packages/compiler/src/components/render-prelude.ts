@@ -100,7 +100,7 @@ export function buildRenderPreludeReplay(
       group.reasons === null || reasonVar === null
         ? astFactory.blockStatement(group.statements)
         : astFactory.ifStatement(
-            reasonCondition(reasonVar, group.reasons),
+            reasonCondition(ctx, reasonVar, group.reasons),
             astFactory.blockStatement(group.statements),
           ),
     ),

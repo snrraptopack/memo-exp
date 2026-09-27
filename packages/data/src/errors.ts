@@ -25,6 +25,7 @@ export class RequestError<TData = unknown> extends Error {
   constructor(message: string, options: RequestErrorOptions<TData>) {
     super(message, { cause: options.cause });
     this.name = 'RequestError';
+    Object.defineProperty(this, Symbol.for('memoized-dom:request-error'), { value: true });
     this.kind = options.kind;
     this.status = options.status ?? null;
     this.statusText = options.statusText ?? null;

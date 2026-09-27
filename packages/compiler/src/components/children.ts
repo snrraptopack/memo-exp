@@ -198,7 +198,7 @@ export function buildChildrenSlot(
             ]),
             cacheDecl(childScope),
             ...childScope.prelude,
-            updateDecl(childScope),
+            updateDecl(ctx, childScope),
             ...childScope.creation,
             ...childScope.mounts,
             astFactory.ifStatement(

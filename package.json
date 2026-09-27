@@ -16,6 +16,7 @@
     "test:adapters": "bun run --cwd packages/adapters test",
     "test:data": "bun run --cwd packages/data test",
     "test:router": "bun run --cwd packages/router test",
+    "test:router:browser": "bun run scripts/test-router-scroll-browser.ts",
     "test:vite": "bun run --cwd packages/vite test",
     "test:server": "bun run --cwd packages/server test",
     "test:language-service": "bun run --cwd packages/language-service test",

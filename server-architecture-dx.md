@@ -550,7 +550,7 @@ export const stories = $fetch<Story[]>('/api/stories');
 ```tsx
 // App.tsx
 import { stories } from './data/stories';
-import { Group, Pending, Error } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 
 function StoriesPending() {
   return <div class="skeleton">Loading stories...</div>;
@@ -564,9 +564,7 @@ export function App() {
   return (
     <div>
       <h1>Stories</h1>
-      <Group>
-        <Pending component={StoriesPending} />
-        <Error component={StoriesError} />
+      <Group pending={StoriesPending} error={StoriesError}>
         {stories.map((story) => (
           <article key={story.id}>
             <h2>{story.title}</h2>
@@ -1018,7 +1016,7 @@ Function Call AST Node: getStories() or postVote()
   ├── 1. get* Functions (HTTP GET)
   │     ├── Allowed in: Component Render, Module Scope, Event Handlers
   │     ├── Lowered to: $fetch('/_fn/<module>/<fn>', { query }) ──► ResolvedValue<T>
-  │     ├── Participates in <Group>, <Pending>, <Error> availability gating
+  │     ├── Participates in <Group pending={...} error={...}> availability policy
   │     └── Settle & Hydration: Bundled into SSR payload and restored without refetching
   │
   ├── 2. post*, put*, patch*, delete* Functions (HTTP Methods)

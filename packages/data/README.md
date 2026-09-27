@@ -38,12 +38,12 @@ export function UserProfile() {
 
 ---
 
-## 2. Declarative State Arms (`Group`, `Pending`, `Error`)
+## 2. Scoped loading and errors (`Group`)
 
 Handle loading skeletons and error states declaratively without ternary clutter:
 
 ```tsx
-import { Group, Pending, Error as ErrorArm } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 import { stories, type Story } from './session';
 
 function LoadingSkeleton() {
@@ -64,11 +64,9 @@ export function StoriesPanel() {
     <section class="panel">
       <h2>Top Stories</h2>
 
-      <Group>
-        <Pending component={() => <LoadingSkeleton />} />
-        <ErrorArm component={({ error, retry }) => (
+      <Group pending={() => <LoadingSkeleton />} error={({ error, retry }) => (
           <ErrorBanner error={error} retry={retry} />
-        )} />
+        )}>
         {/* Resolved arm: renders automatically once data settles */}
         <ul class="story-list">
           {stories.map(item => (
@@ -84,24 +82,29 @@ export function StoriesPanel() {
 }
 ```
 
-- **`Pending`**: Shown independently at source-consuming sites while their
+- **`pending`**: Shown independently at source-consuming sites while their
   initial requests are in flight.
-- **`Error`**: Injects `{ error, retry }` into the error component when a request fails.
+- **`error`**: Injects `{ error, retry }` into the error component when a request fails.
+  Group uses `error.kind: 'request'` and preserves transport detail as
+  `requestKind` and the original error as `cause`. Atomic render crashes use
+  `kind: 'crash'`; their retry recreates the failed atomic unit.
 - **Content**: Mounts immediately by default; each dependent expression or
   structural site resolves independently.
 - **Dependencies**: The compiler infers exactly which colorless sources are
   read by the content. `Group` does not need a `data` prop.
-- **Policies**: `component` accepts either a named component or a synchronous
+- **Policies**: `pending` and `error` accept a named component or a synchronous
   inline render callback. Inline callbacks may capture component-local values.
 
-To make the first mount atomic, mark the one direct content element with the
+Both policies are optional and independently inherited through mounted
+component calls, including across files. An inner Group overrides only its
+declared keys; an empty Group passes both through. Group itself adds no DOM.
+
+To gate a region's first mount, mark the element or component with the
 shorthand compiler directive `suspend`. The element may be a component or a
 host element:
 
 ```tsx
-<Group>
-  <Pending component={DashboardSkeleton} />
-  <ErrorArm component={ErrorBanner} />
+<Group pending={DashboardSkeleton} error={ErrorBanner}>
   <section suspend>
     <Dashboard profile={profile} activity={activity} />
   </section>
@@ -111,6 +114,12 @@ host element:
 The pending arm appears once until every inferred source has its initial value.
 The compiler removes `suspend` before component prop checking and emission.
 Committed content remains visible during later refreshes.
+Suspension includes reads of child-owned resources across files. The active
+subtree prepares off-screen; refs/effects run only after atomic publication.
+Inactive branches and unused sources do not block it. `Group suspend` uses
+the same mechanism for all its children. Source rebinds in an already
+committed instance use read-local pending UI; a fresh route-parameter
+destination remounts and starts a new atomic activation.
 
 ---
 

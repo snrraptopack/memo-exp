@@ -26,6 +26,7 @@ import {
   runtimeListSource,
 } from './list-update';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
+import { preparationRead } from '../data-sources';
 
 export function emitListRegion(
   ctx: Ctx,
@@ -241,6 +242,9 @@ export function emitListRegion(
     );
   }
 
+  // Use one read identity for creation and every structural replay. A settled
+  // module list can discover child-owned resources in the same generation.
+  const preparedSource = preparationRead(ctx, scope, ownerId, site.sourceExpr);
   const reconcile = (update = false): t.Statement =>
     astFactory.expressionStatement(
       astFactory.callExpression(
@@ -249,7 +253,7 @@ export function emitListRegion(
           astFactory.identifier('reconcile'),
         ),
         [
-          runtimeListSource(site.sourceExpr, site.optional),
+          runtimeListSource(preparedSource, site.optional),
           ...(update && scope.reasonVar !== null
             ? [
                 astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
@@ -281,7 +285,7 @@ export function emitListRegion(
           reconcile(true),
           astFactory.expressionStatement(astFactory.callExpression(
             astFactory.memberExpression(astFactory.identifier(regionVariable), astFactory.identifier('refreshIndices')),
-            [runtimeListSource(site.sourceExpr, site.optional), indices, astFactory.booleanLiteral(true)],
+            [runtimeListSource(preparedSource, site.optional), indices, astFactory.booleanLiteral(true)],
           ))),
       ]);
     });
@@ -292,7 +296,7 @@ export function emitListRegion(
         componentName,
         scope.reasonVar!,
         regionVariable,
-        site.sourceExpr,
+        preparedSource,
         site.optional,
         dependencyCaches,
         mutation,

@@ -1,9 +1,4 @@
-import {
-  $fetch,
-  Error as ErrorArm,
-  Group,
-  Pending,
-} from '@memoized-dom/data';
+import { $fetch, Group } from '@memoized-dom/data';
 
 function Loading() {
   return <i>Loading</i>;
@@ -20,9 +15,7 @@ function ChildOwnsTheOnlySource() {
 
 export function InvalidParentSuspension() {
   return (
-    <Group>
-      <Pending component={Loading} />
-      <ErrorArm component={Failed} />
+    <Group pending={Loading} error={Failed}>
       <ChildOwnsTheOnlySource suspend />
     </Group>
   );

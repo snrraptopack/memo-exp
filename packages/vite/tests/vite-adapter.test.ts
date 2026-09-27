@@ -230,7 +230,8 @@ describe('Vite 8 adapter', () => {
 
     expect(code).toContain('/_fn/stories/getStory');
     expect(code).toContain('/_fn/stories/postVote');
-    expect(code).toContain('readResolvedValuesForRender');
+    expect(code).toContain('resolvedValuesPending');
+    expect(code).toContain('readResolvedValue(story');
     expect(code).not.toContain('must-not-enter-client');
     expect(code).not.toContain('node:fs/promises');
 

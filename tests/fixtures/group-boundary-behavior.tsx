@@ -1,10 +1,4 @@
-import {
-  $fetch,
-  $track,
-  Error as ErrorArm,
-  Group,
-  Pending,
-} from '@memoized-dom/data';
+import { $fetch, $track, Group } from '@memoized-dom/data';
 
 interface User {
   name: string;
@@ -54,15 +48,11 @@ export function SharedSourceChildSuspended() {
   const user = $fetch<User>('/matrix/shared-user');
 
   return (
-    <Group>
-      <Pending component={OuterPending} />
-      <ErrorArm component={OuterError} />
+    <Group pending={OuterPending} error={OuterError}>
       <section id="shared-a-shell">
         <h1>A mounted</h1>
         <output id="shared-a-value">{user.name}</output>
-        <Group>
-          <Pending component={InnerPending} />
-          <ErrorArm component={InnerError} />
+        <Group pending={InnerPending} error={InnerError}>
           <UserChild suspend user={user} id="shared-b" />
         </Group>
       </section>
@@ -79,14 +69,10 @@ export function IndependentChildSuspended() {
   const details = $fetch<User>('/matrix/independent-details');
 
   return (
-    <Group>
-      <Pending component={OuterPending} />
-      <ErrorArm component={OuterError} />
+    <Group pending={OuterPending} error={OuterError}>
       <section id="independent-a-shell">
         <output id="independent-a-value">{summary.text}</output>
-        <Group>
-          <Pending component={InnerPending} />
-          <ErrorArm component={InnerError} />
+        <Group pending={InnerPending} error={InnerError}>
           <UserChild suspend user={details} id="independent-b" />
         </Group>
       </section>
@@ -112,9 +98,7 @@ export function ParentSuspendsComponent() {
   const user = $fetch<User>('/matrix/parent-suspended-user');
 
   return (
-    <Group>
-      <Pending component={OuterPending} />
-      <ErrorArm component={OuterError} />
+    <Group pending={OuterPending} error={OuterError}>
       <NormalParent suspend user={user} />
     </Group>
   );
@@ -124,9 +108,7 @@ function SelfSuspendingChild({ user }: { user: User }) {
   return (
     <section id="self-suspending-b-shell">
       <h2>B mounted</h2>
-      <Group>
-        <Pending component={InnerPending} />
-        <ErrorArm component={InnerError} />
+      <Group pending={InnerPending} error={InnerError}>
         <article suspend id="self-suspending-b-value">{user.name}</article>
       </Group>
     </section>
@@ -151,9 +133,7 @@ function ChildOwnedRequest() {
   return (
     <section id="waterfall-b-shell">
       <h2>B mounted</h2>
-      <Group>
-        <Pending component={InnerPending} />
-        <ErrorArm component={InnerError} />
+      <Group pending={InnerPending} error={InnerError}>
         <article suspend id="waterfall-b-value">{user.name}</article>
       </Group>
     </section>
@@ -177,9 +157,7 @@ export function SuspendedParentCreatesWaterfall() {
   const user = $fetch<User>('/matrix/waterfall-parent');
 
   return (
-    <Group>
-      <Pending component={OuterPending} />
-      <ErrorArm component={OuterError} />
+    <Group pending={OuterPending} error={OuterError}>
       <SuspendedParentWithChildRequest suspend user={user} />
     </Group>
   );
@@ -199,9 +177,7 @@ export function SuspendedRefreshAndRebind() {
       <button id="rebind-source" onClick={() => {
         version = 'two';
       }}>Rebind</button>
-      <Group>
-        <Pending component={OuterPending} />
-        <ErrorArm component={OuterError} />
+      <Group pending={OuterPending} error={OuterError}>
         <article suspend id="rebind-value">{user.name}</article>
       </Group>
     </main>
@@ -228,9 +204,7 @@ export function MultipleFailureSuspended() {
   const right = $fetch<User>('/matrix/failure-right');
 
   return (
-    <Group>
-      <Pending component={OuterPending} />
-      <ErrorArm component={MultiError} />
+    <Group pending={OuterPending} error={MultiError}>
       <section suspend id="multi-value">{left.name}:{right.name}</section>
     </Group>
   );
@@ -250,9 +224,7 @@ export function SuspendedParentWithColorlessChild() {
   const user = $fetch<User>('/matrix/mixed-parent');
 
   return (
-    <Group>
-      <Pending component={OuterPending} />
-      <ErrorArm component={OuterError} />
+    <Group pending={OuterPending} error={OuterError}>
       <section suspend id="mixed-parent">
         <output>{user.name}</output>
         <ColorlessPrivateChild />

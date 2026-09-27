@@ -6,6 +6,9 @@ export default defineConfig({
     internal: './src/internal.ts',
   },
   platform: 'browser',
+  // Share the application kernel with compiled components; a bundled copy
+  // would collect readiness in a different runtime/extension store.
+  external: id => id === '@memoized-dom/runtime' || id.startsWith('@memoized-dom/runtime/'),
   transform: { target: 'es2022' },
   output: {
     dir: './dist',

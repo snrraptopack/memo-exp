@@ -14,7 +14,7 @@
  *     and its lifecycle is observed through `$track`.
  */
 import { getStories, getStory, postVote } from '#server-functions';
-import { Error, Group, Pending, $track } from '@memoized-dom/data';
+import { Group, $track } from '@memoized-dom/data';
 import type { ErrorPolicyComponentProps } from '@memoized-dom/data';
 
 
@@ -95,9 +95,7 @@ function StoryDetail({ id }: { id: number }) {
   const story = getStory(id);
   return (
 
-    <Group>
-      <Pending component={LocalPending} />
-      <Error component={LocalFailure} />
+    <Group pending={LocalPending} error={LocalFailure}>
       <Details story={story}/>
     </Group>
   );

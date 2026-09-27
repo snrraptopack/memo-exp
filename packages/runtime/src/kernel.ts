@@ -55,6 +55,27 @@ export interface Entity {
   phase?: 'render' | 'effect';
   depth?: number;
   children?: Set<EntityId>;
+  /** @internal Detached activation owner, propagated through child creation. */
+  preparation?: RenderPreparationOwner;
+}
+
+/** @internal Lifecycle interception used by detached subtree preparation. */
+export interface RenderPreparationOwner {
+  attach(entity: Entity): void;
+  deferRef(activate: () => void): () => void;
+  /** @internal Only explicit render-read scopes participate in readiness. */
+  consume(dependency: PreparationDependency): void;
+  collect<T>(owner: string, render: () => T, site?: string): T;
+  releaseRead(owner: string, site: string): void;
+}
+
+/** @internal Resource adapter; the kernel never imports a data implementation. */
+export interface PreparationDependency {
+  readonly key: object;
+  snapshot(): { status: 'pending' | 'ready' | 'error'; error?: unknown };
+  subscribe(invalidate: () => void): () => void;
+  /** @internal Retry a borrowed failed operation after staged owners retire. */
+  retry?(): Promise<unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +142,8 @@ interface KernelState {
   readonly extensions: Map<string, unknown>;
   /** Capability descriptor selecting browser/server behavior. */
   environment: RenderEnvironment;
+  /** @internal Preparation context for synchronous creation/update work. */
+  preparation?: RenderPreparationOwner;
 }
 
 function createKernelState(
@@ -173,24 +196,40 @@ export function createApplicationRuntime(
     id,
     state,
     dispose() {
-      const ids = [...state.registry.keys()];
-      for (const id of ids) unregisterSubtreeInState(state, id);
-      state.dirty.clear();
-      state.dirtyReasons.clear();
-      state.cells.clear();
-      state.volatile.clear();
-      state.idsCache = null;
-      state.scheduled = false;
-      state.inCommit = false;
-      state.renderingEntity = null;
-      state.renderCounts = null;
-      state.markedBy = null;
-      state.extensions.clear();
+      const errors: unknown[] = [];
+      // Disposal hooks resolve their stores through the active runtime. A
+      // detached generation may be abandoned outside its original render
+      // call, so teardown must explicitly reactivate the owning runtime.
+      runWithApplicationRuntime(runtime, () => {
+        const ids = [...state.registry.keys()];
+        for (const id of ids) {
+          try { unregisterSubtreeInState(state, id); }
+          catch (error) { errors.push(error); }
+        }
+        for (const listener of runtimeDisposedListeners) {
+          try { listener(runtime); }
+          catch (error) { errors.push(error); }
+        }
+        state.dirty.clear();
+        state.dirtyReasons.clear();
+        state.cells.clear();
+        state.volatile.clear();
+        state.idsCache = null;
+        state.scheduled = false;
+        state.inCommit = false;
+        state.renderingEntity = null;
+        state.renderCounts = null;
+        state.markedBy = null;
+        state.preparation = undefined;
+        state.extensions.clear();
+      });
       if (activeRuntime === runtime) {
         // Re-activating the default keeps ambient semantics predictable
         // after a server request disposes its runtime mid-flight.
         activeRuntime = defaultRuntime;
       }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, '[memo-dom] runtime disposal failed');
     },
   };
   for (const listener of runtimeCreatedListeners) listener(runtime);
@@ -219,6 +258,12 @@ export function getActiveApplicationRuntime(): ApplicationRuntime {
 
 type RuntimeCreatedListener = (runtime: ApplicationRuntime) => void;
 const runtimeCreatedListeners: RuntimeCreatedListener[] = [];
+const runtimeDisposedListeners: RuntimeCreatedListener[] = [];
+
+/** @internal Drain runtime-owned asynchronous bookkeeping before stores clear. */
+export function onRuntimeDisposed(listener: RuntimeCreatedListener): void {
+  runtimeDisposedListeners.push(listener);
+}
 
 /** Invoke `listener` for every application runtime created from now on. */
 export function onRuntimeCreated(
@@ -336,6 +381,12 @@ const registryListeners: RegistryListener[] = [];
 export type EntityDisposeHook = (id: EntityId) => readonly unknown[] | void;
 const entityDisposeHooks: EntityDisposeHook[] = [];
 
+/** @internal Observe the end of a scheduled render drain, including failure. */
+const commitFinishedListeners: Array<(failed: boolean, error?: unknown) => void> = [];
+export function onCommitFinished(listener: (failed: boolean, error?: unknown) => void): void {
+  commitFinishedListeners.push(listener);
+}
+
 export function onEntityDispose(fn: EntityDisposeHook): void {
   if (!entityDisposeHooks.includes(fn)) entityDisposeHooks.push(fn);
 }
@@ -386,6 +437,8 @@ export function register(entity: Entity): void {
   const k = getActiveApplicationRuntime().state;
   const parent =
     entity.parent !== null ? k.registry.get(entity.parent) : undefined;
+  const preparation = k.preparation ?? parent?.preparation;
+  preparation?.attach(entity);
   // any reader renders); else derive from the parent — string scan fallback
   entity.depth =
     entity.depth ??
@@ -611,6 +664,8 @@ export function commit(): void {
   k.inCommit = true;
   k.renderCounts ??= new Map();
   k.markedBy ??= new Map();
+  let failed = false;
+  let failure: unknown;
   try {
     // R10: drain loop — renders may mark further ids (setProps pushing props
     // to children, update-driven invalidation). Depth-sorted batches keep
@@ -676,11 +731,16 @@ export function commit(): void {
         '[memo-dom] commit cascade exceeded 100 passes — an update is dirtying its own readers (cycle)',
       );
     }
+  } catch (error) {
+    failed = true;
+    failure = error;
+    throw error;
   } finally {
     k.inCommit = false;
     k.renderingEntity = null;
     k.renderCounts = null;
     k.markedBy = null;
+    for (const listener of commitFinishedListeners) listener(failed, failure);
   }
 }
 

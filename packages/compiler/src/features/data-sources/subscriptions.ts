@@ -8,13 +8,40 @@ import {
   type BaseNode,
 } from '../../ast';
 import type { Ctx } from '../../context';
-import { md, mdd } from '../../identifiers';
+import { generatedIdentifier, md, mdd } from '../../identifiers';
 import { registerStmt, type EmitScope } from '../../emission/scope';
 
 export function sourceArray(names: readonly string[]): t.ArrayExpression {
   return astFactory.arrayExpression(
     names.map((name) => astFactory.identifier(name)),
   );
+}
+
+/** Give initial and incremental sink evaluations the same readiness claim. */
+export function preparationRead(
+  ctx: Ctx,
+  scope: EmitScope,
+  owner: t.Expression,
+  expression: t.Expression,
+  sources: readonly string[] = transparentExpressionSources(ctx, expression),
+): t.Expression {
+  if (sources.length === 0) return expression;
+  const site = generatedIdentifier(ctx, 'readSite').name;
+  if (scope.manualDisposal) {
+    const disposer = astFactory.identifier(site);
+    scope.creation.push(astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(disposer, astFactory.arrowFunctionExpression([],
+        astFactory.callExpression(md(ctx, 'releasePreparationRead'), [
+          cloneNode(owner, true), astFactory.stringLiteral(site),
+        ]))),
+    ]));
+    scope.disposableCallbacks.push(disposer);
+  }
+  return astFactory.callExpression(md(ctx, 'readPreparationScope'), [
+    cloneNode(owner, true),
+    astFactory.stringLiteral(site),
+    astFactory.arrowFunctionExpression([], expression),
+  ]);
 }
 
 type TransparentDataExpression = t.Expression & {

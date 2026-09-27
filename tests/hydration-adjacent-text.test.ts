@@ -18,6 +18,7 @@ import {
   setScheduler,
   type MountedApplication,
 } from '@memoized-dom/runtime';
+import '@memoized-dom/runtime/hydrate';
 import { renderToString } from '@memoized-dom/server';
 
 const here = dirname(fileURLToPath(import.meta.url));

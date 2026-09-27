@@ -4,7 +4,8 @@
   "description": "Dependency-free runtime for compiler-analyzed memoized DOM updates",
   "type": "module",
   "sideEffects": [
-    "./dist/server.js"
+    "./dist/server.js",
+    "./dist/hydrate.js"
   ],
   "files": [
     "dist"
@@ -24,6 +25,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./hydrate": {
+      "types": "./dist/hydrate.d.ts",
+      "import": "./dist/hydrate.js",
+      "default": "./dist/hydrate.js"
     },
     "./server": {
       "types": "./dist/server.d.ts",

@@ -107,9 +107,10 @@ export function lowerModuleRefReadsEstree(
 
   walkAst(component, {
     enter(node) {
-      if (node.type !== 'JSXExpressionContainer') return;
+      const spread = node.type === 'JSXSpreadAttribute';
+      if (node.type !== 'JSXExpressionContainer' && !spread) return;
       if (isEventOrRefContainer(ctx, node)) return false;
-      const rawExpression = childNode(node, 'expression');
+      const rawExpression = childNode(node, spread ? 'argument' : 'expression');
       if (
         rawExpression === null ||
         !astFactory.isExpression(rawExpression as unknown as t.Node)

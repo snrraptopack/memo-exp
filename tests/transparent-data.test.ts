@@ -3,11 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileModules, diagnoseModules } from '@memoized-dom/compiler';
-import {
-  createDataRuntime,
-  setActiveDataRuntime,
-  type DataRuntime,
-} from '@memoized-dom/data';
+import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import {
   _internals,
   resetAccessTable,
@@ -22,13 +18,7 @@ const fixture = join(outDir, 'transparent-data.compiled.ts');
 const tsrxFixture = join(outDir, 'transparent-data-tsrx.compiled.ts');
 
 const source = `
-  import {
-    $fetch,
-    $track,
-    Error,
-    Group,
-    Pending,
-  } from '@memoized-dom/data';
+  import { $fetch, $track, Group } from '@memoized-dom/data';
 
   interface User {
     id: number;
@@ -105,9 +95,7 @@ const source = `
     return (
       <article id="cross-profile">
         <span id="cross-greeting">{greeting}</span>
-        <Group>
-          <Pending component={DeepPending} />
-          <Error component={DeepError} />
+        <Group pending={DeepPending} error={DeepError}>
           <CrossLeaf user={user} />
         </Group>
       </article>
@@ -147,9 +135,7 @@ const source = `
     const statistics = $fetch<{ count: number }>('/statistics');
 
     return (
-      <Group>
-        <Pending component={InlinePending} />
-        <Error component={InlineError} />
+      <Group pending={InlinePending} error={InlineError}>
         <>
           <h1>Dashboard</h1>
           <strong id="group-user">{user.name}</strong>
@@ -164,11 +150,9 @@ const source = `
     const waiting = 'Waiting inline';
 
     return (
-      <Group>
-        <Pending component={() => <i class="inline-callback-pending">{waiting}</i>} />
-        <Error component={({ error, retry }) => (
+      <Group pending={() => <i class="inline-callback-pending">{waiting}</i>} error={({ error, retry }) => (
           <button class="inline-callback-error" onClick={retry}>{error.kind}</button>
-        )} />
+        )}>
         <section suspend id="inline-suspended-content">{user.name}</section>
       </Group>
     );
@@ -179,9 +163,7 @@ const source = `
     const statistics = $fetch<{ count: number }>('/suspended-statistics');
 
     return (
-      <Group>
-        <Pending component={InlinePending} />
-        <Error component={InlineError} />
+      <Group pending={InlinePending} error={InlineError}>
         <SuspendedDashboard suspend user={user} statistics={statistics} />
       </Group>
     );
@@ -193,9 +175,7 @@ const source = `
     const count = open.length;
 
     return (
-      <Group>
-        <Pending component={InlinePending} />
-        <Error component={InlineError} />
+      <Group pending={InlinePending} error={InlineError}>
         <section>
           <h1>Todos</h1>
           <strong id="open-count">{count}</strong>
@@ -203,9 +183,7 @@ const source = `
             {count > 0 ? <span>Open work</span> : <span>All done</span>}
           </div>
           <ul id="todo-rows">
-            <Group>
-              <Pending component={TodoRowsPending} />
-              <Error component={TodoRowsError} />
+            <Group pending={TodoRowsPending} error={TodoRowsError}>
               {open.map(todo => <li key={todo.id}>{todo.title}</li>)}
             </Group>
           </ul>
@@ -217,9 +195,7 @@ const source = `
   export function CrossComponentApp() {
     const user = $fetch<User>('/cross-user');
     return (
-      <Group>
-        <Pending component={InlinePending} />
-        <Error component={InlineError} />
+      <Group pending={InlinePending} error={InlineError}>
         <main>
           <h1>Cross component</h1>
           <CrossProfile user={user} />
@@ -237,9 +213,7 @@ const source = `
     }));
 
     return (
-      <Group>
-        <Pending component={InlinePending} />
-        <Error component={InlineError} />
+      <Group pending={InlinePending} error={InlineError}>
         <ul id="nested-cards">
           {cards.map(card => <li key={card.project.id}>{card.project.name}:{card.count}</li>)}
         </ul>
@@ -250,9 +224,7 @@ const source = `
   export function CrossCollectionApp() {
     const tasks = $fetch<Array<{ id: number; title: string; done: boolean }>>('/cross-tasks');
     return (
-      <Group>
-        <Pending component={InlinePending} />
-        <Error component={InlineError} />
+      <Group pending={InlinePending} error={InlineError}>
         <CrossList tasks={tasks} />
       </Group>
     );
@@ -268,9 +240,7 @@ const source = `
 
   export function DescendantOwnedGroupApp() {
     return (
-      <Group>
-        <Pending component={DeepPending} />
-        <Error component={DeepError} />
+      <Group pending={DeepPending} error={DeepError}>
         <main id="owned-source-shell"><OwnedSourceChild /></main>
       </Group>
     );
@@ -460,10 +430,12 @@ describe('compiler-transparent data values', () => {
       { runtimePath: '@memoized-dom/runtime' },
     );
     const compiled = output['./transparent-data.tsx']!;
-    expect(compiled).toContain('readResolvedValuesForRender');
+    // Plain child reads now participate in inherited Group presentation too,
+    // rather than using a text-only gate that silently discards that policy.
+    expect(compiled).toContain('resolvedValuesPending');
     expect(compiled).toContain('connectResolvedValues');
     expect(compiled).toContain('ownResolvedValue');
-    expect(compiled).toContain('/$data/0');
+    expect(compiled).toContain('/$dataPolicy');
     expect(compiled).not.toContain('markDirtySubtree');
     expect(compiled).toContain('readResolvedValue(user, "user"');
     expect(compiled).toContain('rebindResolvedValue(users, \'/users\'');
@@ -504,8 +476,10 @@ describe('compiler-transparent data values', () => {
     const mod = await importFixture();
     document.body.appendChild(mod.App('App', null));
     const ownerRenders = countEntityRenders('App');
-    const greetingRenders = countEntityRenders('App/$data/0');
-    const pendingRenders = countEntityRenders('App/when0');
+    // Plain payload reads now have structural slots so inherited policies can
+    // render components here, while preserving site-local invalidation.
+    const greetingRenders = countEntityRenders('App/when0');
+    const pendingRenders = countEntityRenders('App/when1');
 
     expect(document.querySelector('p')?.textContent).toBe('Loading');
     expect(document.querySelector('#greeting')?.textContent).toBe('');
@@ -575,7 +549,7 @@ describe('compiler-transparent data values', () => {
     );
     await expect.poll(
       () => document.querySelector('#group-statistics .data-error')?.textContent,
-    ).toBe('http');
+    ).toBe('request');
     expect(document.querySelector('#group-user')?.textContent).toBe('Ada');
     expect(ownerRenders()).toBe(0);
     expect(userRenders()).toBe(userRendersAfterUser);
@@ -621,7 +595,7 @@ describe('compiler-transparent data values', () => {
     }));
     await expect.poll(
       () => document.querySelector('.inline-callback-error')?.textContent,
-    ).toBe('http');
+    ).toBe('request');
 
     document.querySelector<HTMLButtonElement>('.inline-callback-error')!.click();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
@@ -1017,9 +991,9 @@ describe('compiler-transparent data values', () => {
 
     await expect.poll(
       () => document.querySelector('#open-count .data-error')?.textContent,
-    ).toBe('http');
+    ).toBe('request');
     expect(document.querySelector('#open-state .data-error')).not.toBeNull();
-    expect(document.querySelector('#todo-rows .rows-error')?.textContent).toBe('http');
+    expect(document.querySelector('#todo-rows .rows-error')?.textContent).toBe('request');
 
     document.querySelector<HTMLButtonElement>('#todo-rows .rows-error')!.click();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
@@ -1083,8 +1057,8 @@ describe('compiler-transparent data values', () => {
 
     await expect.poll(
       () => document.querySelector('#cross-greeting .data-error')?.textContent,
-    ).toBe('http');
-    expect(document.querySelector('#cross-leaf .deep-error')?.textContent).toBe('http');
+    ).toBe('request');
+    expect(document.querySelector('#cross-leaf .deep-error')?.textContent).toBe('request');
 
     document.querySelector<HTMLButtonElement>('#cross-leaf .deep-error')!.click();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
@@ -1112,7 +1086,7 @@ describe('compiler-transparent data values', () => {
         }
       `,
       './transparent-cross/app.tsx': `
-        import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+        import { $fetch, Group } from '@memoized-dom/data';
         import { RemoteProfile } from './profile';
         function Loading() { return <i class="remote-pending">Loading</i>; }
         function Failed({ error, retry }) {
@@ -1121,9 +1095,7 @@ describe('compiler-transparent data values', () => {
         export function RemoteApp() {
           const user = $fetch('/remote-user');
           return (
-            <Group>
-              <Pending component={Loading} />
-              <Error component={Failed} />
+            <Group pending={Loading} error={Failed}>
               <RemoteProfile user={user} />
             </Group>
           );
@@ -1190,45 +1162,41 @@ describe('compiler-transparent data values', () => {
     ).toBe('OneTwo');
   });
 
-  it('requires Pending, Error, and one content child in Group', () => {
+  it('accepts multiple content children in Group', () => {
     expect(() => compileModules({
       './invalid-group.tsx': `
-        import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+        import { $fetch, Group } from '@memoized-dom/data';
         function Loading() { return <i>Loading</i>; }
-        function Failed() { return <i>Failed</i>; }
+        function Failed({ error, retry }) { return <button onClick={retry}>{error.message}</button>; }
         export function InvalidGroup() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group>
-              <Pending component={Loading} />
-              <Error component={Failed} />
+            <Group pending={Loading} error={Failed}>
               <strong>{user.name}</strong>
               <small>extra direct content</small>
             </Group>
           );
         }
       `,
-    })).toThrow(/Group requires exactly three direct children/);
+    })).not.toThrow();
   });
 
-  it('requires Group policy declarations in Pending then Error order', () => {
+  it('accepts either policy prop order', () => {
     expect(() => compileModules({
       './invalid-group-order.tsx': `
-        import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+        import { $fetch, Group } from '@memoized-dom/data';
         function Loading() { return <i>Loading</i>; }
-        function Failed() { return <i>Failed</i>; }
+        function Failed({ error, retry }) { return <button onClick={retry}>{error.message}</button>; }
         export function InvalidGroupOrder() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group>
-              <Error component={Failed} />
-              <Pending component={Loading} />
+            <Group error={Failed} pending={Loading}>
               <strong>{user.name}</strong>
             </Group>
           );
         }
       `,
-    })).toThrow(/Group child must be <Pending/);
+    })).not.toThrow();
   });
 
   it('waits for every source read inside an immediate derivation callback', async () => {
@@ -1382,15 +1350,13 @@ describe('compiler-transparent data values', () => {
   it('rejects the removed Group data prop', () => {
     expect(() => compileModules({
       './invalid-group-data.tsx': `
-        import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+        import { $fetch, Group } from '@memoized-dom/data';
         function Loading() { return <i>Loading</i>; }
         function Failed() { return <i>Failed</i>; }
         export function InvalidGroupData() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group data={user}>
-              <Pending component={Loading} />
-              <Error component={Failed} />
+            <Group pending={Loading} error={Failed} data={user}>
               <strong>{user.name}</strong>
             </Group>
           );
@@ -1399,7 +1365,7 @@ describe('compiler-transparent data values', () => {
     })).toThrow(/Group infers colorless sources from its content; remove the data prop/);
   });
 
-  it('requires suspend to be a shorthand direct Group child', () => {
+  it('accepts static suspend boundaries but requires the bare directive', () => {
     const invalidSuspend = `
         function Dashboard() { return <main>Dashboard</main>; }
         export function App() { return <Dashboard suspend />; }
@@ -1407,28 +1373,18 @@ describe('compiler-transparent data values', () => {
     const diagnostics = diagnoseModules({
       './invalid-suspend.tsx': invalidSuspend,
     });
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]?.message).toMatch(
-      /suspend requires the element to be the direct content child of Group/,
-    );
-    expect(diagnostics[0]?.moduleId).toBe('./invalid-suspend.tsx');
-    expect(diagnostics[0]?.line).toBe(
-      invalidSuspend.slice(0, invalidSuspend.indexOf('suspend')).split('\n').length,
-    );
-    expect(diagnostics[0]?.column).toBeGreaterThan(0);
+    expect(diagnostics).toHaveLength(0);
 
     expect(() => compileModules({
       './invalid-suspend-value.tsx': `
-        import { $fetch, Error, Group, Pending } from '@memoized-dom/data';
+        import { $fetch, Group } from '@memoized-dom/data';
         function Loading() { return <i>Loading</i>; }
         function Failed() { return <i>Failed</i>; }
         function Dashboard() { return <main>Dashboard</main>; }
         export function App() {
           const user = $fetch<{ name: string }>('/user');
           return (
-            <Group>
-              <Pending component={Loading} />
-              <Error component={Failed} />
+            <Group pending={Loading} error={Failed}>
               <Dashboard suspend={true} />
             </Group>
           );

@@ -25,12 +25,16 @@ function policyComponentRenderer(
   const parent = generatedIdentifier(ctx, 'dataPolicyParent');
   const error = generatedIdentifier(ctx, 'dataPolicyError');
   const retry = generatedIdentifier(ctx, 'dataPolicyRetry');
-  const entries = kind === 'error'
+  const plan = ctx.componentProps.get(component);
+  // Policy callbacks may consume either argument (or neither). Project only
+  // implicit framework arguments; explicit authored props still validate.
+  const entries = (kind === 'error'
     ? [
         { name: 'error', value: cloneNode(error) as t.Expression },
         { name: 'retry', value: cloneNode(retry) as t.Expression },
       ]
-    : [];
+    : []).filter(entry =>
+      plan === undefined || plan.acceptsUnknown || plan.names.includes(entry.name));
   if (typeof presentation !== 'string') {
     entries.push(...presentation.props.map(({ name, value }) => ({
       name,
@@ -55,17 +59,35 @@ function policyComponentRenderer(
 function fixedPolicyExpression(
   ctx: Ctx,
   policy: TransparentPresentationPolicy,
+  inherited?: t.Expression,
 ): t.ObjectExpression {
   return astFactory.objectExpression([
-    astFactory.objectProperty(
-      astFactory.identifier('pending'),
-      policyComponentRenderer(ctx, policy.pending, 'pending'),
-    ),
-    astFactory.objectProperty(
-      astFactory.identifier('error'),
-      policyComponentRenderer(ctx, policy.error, 'error'),
-    ),
+    ...(inherited === undefined ? [] : [astFactory.spreadElement(cloneNode(inherited))]),
+    ...(policy.pending === undefined ? [] : [
+      astFactory.objectProperty(
+        astFactory.identifier('pending'),
+        policyComponentRenderer(ctx, policy.pending, 'pending'),
+      ),
+    ]),
+    ...(policy.error === undefined ? [] : [
+      astFactory.objectProperty(
+        astFactory.identifier('error'),
+        policyComponentRenderer(ctx, policy.error, 'error'),
+      ),
+    ]),
   ]);
+}
+
+/** Effective default policy at an independently activating atomic region. */
+export function transparentBoundaryPolicyArgument(
+  ctx: Ctx,
+  owner: string,
+  policy: TransparentPresentationPolicy,
+): t.Expression {
+  const inherited = ctx.transparentPolicyParams.get(owner);
+  return fixedPolicyExpression(ctx, policy, inherited === undefined
+    ? undefined
+    : astFactory.optionalMemberExpression(cloneNode(inherited), astFactory.identifier('$default'), false, true));
 }
 
 /** Private presentation argument supplied to one compiled component call. */
@@ -75,10 +97,18 @@ export function transparentCallPolicyArgument(
   element: t.JSXElement,
 ): t.ObjectExpression | null {
   const entries = new Map<string, t.Expression>();
-  for (const [prop, policy] of ctx.transparentGroupCallPolicies.get(element) ?? []) {
-    entries.set(prop, fixedPolicyExpression(ctx, policy));
-  }
   const inherited = ctx.transparentPolicyParams.get(owner);
+  for (const [prop, policy] of ctx.transparentGroupCallPolicies.get(element) ?? []) {
+    const inheritedDefault = inherited === undefined ? undefined : astFactory.optionalMemberExpression(
+      cloneNode(inherited), astFactory.identifier('$default'), false, true,
+    );
+    const inheritedProp = inherited === undefined || prop === '$default' ? inheritedDefault
+      : astFactory.logicalExpression('??', astFactory.optionalMemberExpression(
+          cloneNode(inherited), isValidIdentifier(prop) ? astFactory.identifier(prop) : astFactory.stringLiteral(prop),
+          !isValidIdentifier(prop), true,
+        ), inheritedDefault!);
+    entries.set(prop, fixedPolicyExpression(ctx, policy, inheritedProp));
+  }
   const sourceProps = ctx.transparentSourceProps.get(owner);
   if (inherited !== undefined && !entries.has('$default')) {
     entries.set(

@@ -99,12 +99,6 @@ export function scanTransparentSourceImports(
       if (name === definition.group) {
         ctx.transparentGroups.add(specifier.local.name);
       }
-      if (name === definition.pending) {
-        ctx.transparentPendingPolicies.add(specifier.local.name);
-      }
-      if (name === definition.error) {
-        ctx.transparentErrorPolicies.add(specifier.local.name);
-      }
     }
   }
 }

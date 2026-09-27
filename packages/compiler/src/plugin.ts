@@ -50,6 +50,7 @@ import {
 } from './effects';
 import {
   routeManifestStatements,
+  initialRoutePreparationStatements,
 } from './router';
 import { analyzeRoutedPreparations } from './routed';
 import {
@@ -361,6 +362,9 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
     );
     programPath.node.body.push(registration);
   }
+  // Eager preparations and their module-local dependencies must be initialized
+  // before entry gates run. Lazy modules register during the preparation walk.
+  programPath.node.body.push(...initialRoutePreparationStatements(ctx));
 }
 
 function transformProgramAst(

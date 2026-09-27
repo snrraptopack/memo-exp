@@ -61,22 +61,16 @@ export function CondApp(_id, _parent, _dataPolicies) {
 
 	const _when = _MD.createCondRegion(_div, _id + "/when0", () => loggedIn ? 0 : 1, [
 		() => {
-			let _slot, _value2;
+			let _value2;
 			const _document2 = _MD.getActiveEnvironment().document;
 
 			const _update2 = () => {
-				if (_slot !== (_value2 = "in " + count + " ")) {
-					_slot = _value2;
-					_text2.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-				}
+				_MD.setTextData(_text2, "in " + count + " ");
 			};
 
 			const _text2 = _document2.createTextNode("");
 
-			if (_slot !== (_value2 = "in " + count + " ")) {
-				_slot = _value2;
-				_text2.data = _value2 == null || typeof _value2 === "boolean" ? "" : String(_value2);
-			}
+			_MD.setTextData(_text2, "in " + count + " ");
 
 			const _text3 = _document2.createTextNode("+");
 			const _button2 = _document2.createElement("button");

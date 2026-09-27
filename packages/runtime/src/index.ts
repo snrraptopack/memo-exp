@@ -37,6 +37,7 @@ export type {
   DirtyReasons,
   Entity,
 } from './kernel';
+export { reasonsHit } from './dirty-reasons';
 export type {
   Capability,
   DocumentLike,
@@ -51,14 +52,21 @@ export {
 } from './state-cells';
 export type { StateCell } from './state-cells';
 export { cleanup } from './cleanup';
+export { readPreparationScope, releasePreparationRead } from './preparation-read';
+export { createPreparedRegion } from './prepared-region';
+export { collectRenderReadiness } from './render-readiness';
+export { toPresentationError, type PresentationError, type PresentationErrorKind } from './presentation-error';
 export type { CleanupDisposer } from './cleanup';
 export { mountRef, refAssign } from './refs';
 export type { RefCallback, RefValue } from './refs';
 export { registerConditionalEffect, registerEffect } from './effect';
 export type { EffectCallback, EffectCondition } from './effect';
 
+export { materializeMarkup } from './markup';
+
 export {
   setText,
+  setTextData,
   setClassName,
   setClass,
   setAttr,
