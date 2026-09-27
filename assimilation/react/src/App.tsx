@@ -3,6 +3,11 @@ import { UseStateCounter } from './cases/01-usestate-counter/Case';
 import { UseEffectTitle } from './cases/02-useeffect-title/Case';
 import { MemoForwardRef } from './cases/03-memo-forwardref/Case';
 import { MemoOnly } from './cases/04-memo-only/Case';
+import { UseMemoDerived } from './cases/05-usememo/Case';
+import { UseCallbackStep } from './cases/06-usecallback/Case';
+import { UseReducerInit } from './cases/07-usereducer/Case';
+import { UseSyncExternalStoreCase } from './cases/08-usesyncexternalstore/Case';
+import { UseLayoutEffectMeasure } from './cases/09-uselayouteffect/Case';
 
 function Chrome() {
   const { pathname } = useLocation();
@@ -42,6 +47,25 @@ function CaseIndex() {
         <li>
           <Link to="/04-memo-only">memo — erased wrapper, plain component</Link>
         </li>
+        <li>
+          <Link to="/05-usememo">useMemo — derived chains</Link>
+        </li>
+        <li>
+          <Link to="/06-usecallback">useCallback — dep-driven closure</Link>
+        </li>
+        <li>
+          <Link to="/07-usereducer">useReducer — with initializer</Link>
+        </li>
+        <li>
+          <Link to="/08-usesyncexternalstore">
+            useSyncExternalStore — external store
+          </Link>
+        </li>
+        <li>
+          <Link to="/09-uselayouteffect">
+            useLayoutEffect — measure before paint
+          </Link>
+        </li>
       </ul>
     </nav>
   );
@@ -58,6 +82,11 @@ export function App() {
         <Route path="/02-useeffect-title" element={<UseEffectTitle />} />
         <Route path="/03-memo-forwardref" element={<MemoForwardRef />} />
         <Route path="/04-memo-only" element={<MemoOnly />} />
+        <Route path="/05-usememo" element={<UseMemoDerived />} />
+        <Route path="/06-usecallback" element={<UseCallbackStep />} />
+        <Route path="/07-usereducer" element={<UseReducerInit />} />
+        <Route path="/08-usesyncexternalstore" element={<UseSyncExternalStoreCase />} />
+        <Route path="/09-uselayouteffect" element={<UseLayoutEffectMeasure />} />
       </Routes>
     </main>
   );

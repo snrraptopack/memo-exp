@@ -24,4 +24,7 @@ version is just a plain component.
   construction — memo's bail-out is the default, which is exactly why erasing
   it is safe. Verify DOM text + node retention instead of the count.
 
-_(mark verified once checked in the browser)_
+**Verified** — prop changes propagate, node retained, unrelated parent
+updates don't touch the child. MMD is finer-grained than React here by
+design: `body ran` stays `1×` because bodies never re-run, which is the
+documented intended divergence.

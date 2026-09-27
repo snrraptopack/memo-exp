@@ -8,7 +8,9 @@ lowering path before touching the compiler.
 assimilation/
   react/        real Vite + React 19 + react-router-dom   → :5173
   mmd/          hand-lowered MMD via @memoized-dom/vite   → :5174
-  error-log.md  compiler errors hit while lowering + how they were resolved
+  error-log.md  every genuine error hit on the MMD side (compile or
+                runtime) gets a numbered entry: producing code, exact
+                error, resolution. Non-negotiable — log it there.
 ```
 
 ## Run
@@ -83,15 +85,15 @@ The hand-written cases here mirror exactly what these passes emit.
 | `useEffect` | `/02-useeffect-title` | `effect()` intrinsic | verified |
 | `useRef` | `/03-memo-forwardref` | `{ current }` box / `let` ref sink | verified |
 | `memo` + `forwardRef` | `/03-memo-forwardref` | erased / `ref` prop pass-through | verified |
-| `memo` alone | `/04-memo-only` | erased — bodies run once anyway | paired |
-| `useReducer` | — | `let` + update function | pending |
-| `useMemo` | — | `const` derivation | pending |
-| `useCallback` | — | plain function (stable by construction) | pending |
+| `memo` alone | `/04-memo-only` | erased — bodies run once anyway | verified |
+| `useMemo` | `/05-usememo` | `const` derivation chain | paired |
+| `useCallback` | `/06-usecallback` | plain function (stable by construction) | paired |
+| `useReducer` | `/07-usereducer` | `let` + dispatch writing the cell | paired |
+| `useSyncExternalStore` | `/08-usesyncexternalstore` | `let` + `effect` subscribe/`Object.is` guard | paired |
+| `useLayoutEffect` | `/09-uselayouteffect` | `effect()` candidate — compiler diagnoses it today; case decides if pre-paint | paired |
 | `useImperativeHandle` | — | ref prop forwarding | pending |
-| `useLayoutEffect` | — | `effect()` (post-render ordering) | pending |
 | `useContext` + `createContext` | — | context entity | pending |
 | `useId` | — | pending | pending |
-| `useSyncExternalStore` | — | module-scope state + subscription | pending |
 | `useTransition` | — | pending | pending |
 | `useDeferredValue` | — | pending | pending |
 | `useInsertionEffect` | — | pending | pending |
