@@ -105,11 +105,12 @@ The hand-written cases here mirror exactly what these passes emit.
 | `useTransition` | `/13-usetransition` | sync write; `isPending` → constant `false` — diagnosed today | divergent |
 | `useDeferredValue` | `/14-usedeferredvalue` | identity (`const x = q`) — diagnosed today | divergent |
 | `Fragment` | `/15-fragment` | native `<>` support | verified |
-| `useInsertionEffect` | — | `effect()` timing differs — pending | pending |
+| `useInsertionEffect` | `/19-useinsertioneffect` | `effect()` candidate — ordered phase, pre-paint | paired |
+| `useDebugValue` | `/18-usedebugvalue` | erased | paired |
+| attrs: `className`/`style`/`htmlFor`/`checked`/`onChange` | `/17-attrs` | shared host-attr pipeline; `onChange`→`onInput` on text inputs | paired |
 | `useOptimistic` (19) | — | pending | pending |
 | `use` (19) | — | pending | pending |
 | `useActionState` / `useFormStatus` (19) | — | pending | pending |
-| `useDebugValue` | — | erased | pending |
 | `Children.count` / `Children.map` | `/16-children` | call-site specialization → constant/list row; authored twin = opaque slot + array prop | paired |
 | `Children.only` / `toArray` | — | no supported kind — pending | pending |
 | `createRoot` → `mount` | — | explicit browser entry | pending |

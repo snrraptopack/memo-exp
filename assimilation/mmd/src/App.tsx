@@ -15,6 +15,9 @@ import { UseTransitionCase } from './cases/13-usetransition/Case';
 import { UseDeferredValueCase } from './cases/14-usedeferredvalue/Case';
 import { FragmentCase } from './cases/15-fragment/Case';
 import { ChildrenCase } from './cases/16-children/Case';
+import { AttrsCase } from './cases/17-attrs/Case';
+import { UseDebugValueCase } from './cases/18-usedebugvalue/Case';
+import { UseInsertionEffectCase } from './cases/19-useinsertioneffect/Case';
 
 function Chrome() {
   return (
@@ -95,6 +98,17 @@ function CaseIndex() {
         <li>
           <a route-to="/16-children">Children — count + map</a>
         </li>
+        <li>
+          <a route-to="/17-attrs">attrs — className / style / for / onChange</a>
+        </li>
+        <li>
+          <a route-to="/18-usedebugvalue">useDebugValue — devtools label only</a>
+        </li>
+        <li>
+          <a route-to="/19-useinsertioneffect">
+            useInsertionEffect — styles before layout
+          </a>
+        </li>
       </ul>
     </nav>
   );
@@ -122,6 +136,9 @@ export function App() {
       <UseDeferredValueCase route="/14-usedeferredvalue" />
       <FragmentCase route="/15-fragment" />
       <ChildrenCase route="/16-children" />
+      <AttrsCase route="/17-attrs" />
+      <UseDebugValueCase route="/18-usedebugvalue" />
+      <UseInsertionEffectCase route="/19-useinsertioneffect" />
     </main>
   );
 }
