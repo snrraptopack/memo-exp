@@ -18,6 +18,8 @@ import { ChildrenCase } from './cases/16-children/Case';
 import { AttrsCase } from './cases/17-attrs/Case';
 import { UseDebugValueCase } from './cases/18-usedebugvalue/Case';
 import { UseInsertionEffectCase } from './cases/19-useinsertioneffect/Case';
+import { FormsCase } from './cases/20-forms/Case';
+import { CreatePortalCase } from './cases/21-createportal/Case';
 
 function Chrome() {
   const { pathname } = useLocation();
@@ -110,6 +112,12 @@ function CaseIndex() {
             useInsertionEffect — styles before layout
           </Link>
         </li>
+        <li>
+          <Link to="/20-forms">React 19 forms — action state + optimistic</Link>
+        </li>
+        <li>
+          <Link to="/21-createportal">createPortal — render outside the root</Link>
+        </li>
       </ul>
     </nav>
   );
@@ -141,6 +149,8 @@ export function App() {
         <Route path="/17-attrs" element={<AttrsCase />} />
         <Route path="/18-usedebugvalue" element={<UseDebugValueCase />} />
         <Route path="/19-useinsertioneffect" element={<UseInsertionEffectCase />} />
+        <Route path="/20-forms" element={<FormsCase />} />
+        <Route path="/21-createportal" element={<CreatePortalCase />} />
       </Routes>
     </main>
   );

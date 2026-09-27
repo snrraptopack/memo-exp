@@ -82,6 +82,7 @@ The hand-written cases here mirror exactly what these passes emit.
 - `pending` — not started
 - `paired` — both versions exist, awaiting browser verification
 - `verified` — MMD matches React in the browser
+- `provisional` — the MMD side is a known-wrong stand-in awaiting a real primitive
 - `divergent` — a difference was found (note it in the case README)
 - `unsupported` — deliberately out of scope (per react-assimilation-rfc.md)
 
@@ -108,12 +109,12 @@ The hand-written cases here mirror exactly what these passes emit.
 | `useInsertionEffect` | `/19-useinsertioneffect` | `effect()` candidate — ordered phase, pre-paint | paired |
 | `useDebugValue` | `/18-usedebugvalue` | erased | paired |
 | attrs: `className`/`style`/`htmlFor`/`checked`/`onChange` | `/17-attrs` | shared host-attr pipeline; `onChange`→`onInput` on text inputs | paired |
-| `useOptimistic` (19) | — | pending | pending |
-| `use` (19) | — | pending | pending |
-| `useActionState` / `useFormStatus` (19) | — | pending | pending |
+| `useOptimistic` + `useActionState` + `useFormStatus` (19) | `/20-forms` | ordinary `let` writes — provisional stand-in, **not** a valid lowering; awaits a real MMD form/action API | provisional |
+| `createPortal` | `/21-createportal` | manual `effect` + imperative DOM; reactive JSX in foreign container unsupported | paired |
+| `use` (19) | — | needs Suspense boundary — `use` alone can't render a pending resource | unsupported |
 | `Children.count` / `Children.map` | `/16-children` | call-site specialization → constant/list row; authored twin = opaque slot + array prop | paired |
-| `Children.only` / `toArray` | — | no supported kind — pending | pending |
-| `createRoot` → `mount` | — | explicit browser entry | pending |
+| `Children.only` / `toArray` | — | no supported kind (error-log #004/#005 — no element introspection) | unsupported |
+| `createRoot` → `mount` | entry files | `createRoot(el).render()` → MMD `mount` — the two apps themselves are the verification | verified |
 | `StrictMode` double-invoke | — | unsupported | unsupported |
 | `lazy` / `Suspense` | — | unsupported | unsupported |
 | `createPortal` | — | pending | pending |
