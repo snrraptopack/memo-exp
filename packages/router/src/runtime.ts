@@ -396,6 +396,7 @@ export function createRouteRuntime(
   let navigationId = 0;
   let committingNavigation = 0;
   let activePreparation: AbortController | null = null;
+  let pendingRenderReady: Promise<void> | undefined;
   let pendingBrowserHref: string | null = null;
   let browserRetry: {
     readonly href: string;
@@ -608,6 +609,8 @@ export function createRouteRuntime(
     const previousNavigationType = navigationType;
     const previousQuery = query;
     const previousController = controller;
+    const previousMatches = matches;
+    const previousReady = pendingRenderReady;
     const hadAccessedController = controllerAccessed;
     if (hadAccessedController) {
       controller = new AbortController();
@@ -643,9 +646,22 @@ export function createRouteRuntime(
     let ready: Promise<void> | undefined;
     try {
       ready = collectRenderReadiness(emit);
+      // Query/hash publication retains the route instance. Its unfinished
+      // first activation still matters even if no new atomic region is made.
+      if (previousReady !== undefined && sameMatches(previousMatches, matches)) {
+        ready = ready === undefined ? previousReady : Promise.all([previousReady, ready]).then(() => {});
+      }
     } catch (error) {
       if (fromRouteHistory) throw new RouteHistoryCommittedUpdateError(error);
       throw error;
+    }
+    pendingRenderReady = ready;
+    if (ready !== undefined) {
+      void ready.then(() => {
+        if (pendingRenderReady === ready) pendingRenderReady = undefined;
+      }, () => {
+        if (pendingRenderReady === ready) pendingRenderReady = undefined;
+      });
     }
     scrollCoordinator.restore(url, navigationType, currentHistoryKey, ready);
   }
@@ -820,6 +836,48 @@ export function createRouteRuntime(
     environment.history?.go(previousIndex - targetIndex);
   }
 
+  // History publication is not DOM readiness. An atomic destination can be
+  // visible only as a pending arm until the renderer's first commit settles.
+  function finishNavigation(
+    navigation: RouteNavigation,
+    redirects: number,
+    preparation?: AbortController,
+    preparingAlready = false,
+  ): RouteNavigationResult {
+    const ready = pendingRenderReady;
+    const complete = (): RouteNavigationSettledResult => {
+      if (disposed || navigationId !== navigation.id || preparation?.signal.aborted) {
+        throw preparation?.signal.reason ?? new DOMException('Route navigation was superseded', 'AbortError');
+      }
+      if (activePreparation === preparation) activePreparation = null;
+      emitNavigation(Object.freeze({ phase: 'complete', navigation }));
+      return Object.freeze({ status: 'completed', navigation, redirects });
+    };
+    if (ready === undefined) return complete();
+    const waiting = preparation ?? new AbortController();
+    activePreparation = waiting;
+    if (!preparingAlready) emitNavigation(Object.freeze({ phase: 'prepare', navigation }));
+    const finished = new Promise<void>((resolve, reject) => {
+      const aborted = () => reject(waiting.signal.reason ?? new DOMException('Route navigation was superseded', 'AbortError'));
+      if (waiting.signal.aborted) { aborted(); return; }
+      waiting.signal.addEventListener('abort', aborted, { once: true });
+      void ready.then(resolve, reject).finally(() => waiting.signal.removeEventListener('abort', aborted));
+    }).then(() => {
+      if (activePreparation === waiting) activePreparation = null;
+      return complete();
+    }).catch(error => {
+      if (activePreparation === waiting) activePreparation = null;
+      if (!disposed && !waiting.signal.aborted && navigationId === navigation.id) {
+        // Entry already succeeded. The failed owned region's Group arm owns
+        // retry; rerunning navigation would duplicate history or replay gates.
+        emitNavigation(Object.freeze({ phase: 'error', navigation, error }));
+      }
+      throw error;
+    });
+    void finished.catch(() => {});
+    return Object.freeze({ status: 'preparing', navigation, redirects, finished });
+  }
+
   function prepareBrowserTraversal(destination: URL, userState: unknown, key: string | null, index: number | null): RouteNavigationResult {
     const previousIndex = currentHistoryIndex;
     scrollCoordinator.capture(currentHistoryKey);
@@ -836,6 +894,7 @@ export function createRouteRuntime(
       prepared.next, 'pop', userState, preparation.signal,
     );
     let entryCommitted = false;
+    let preparingEntry = false;
     const publish = () => {
       pendingBrowserHref = null;
       const previousKey = currentHistoryKey;
@@ -853,8 +912,7 @@ export function createRouteRuntime(
       } finally {
         entryCommitted = before !== locationRevision || url.href === prepared.next.href;
       }
-      emitNavigation(Object.freeze({ phase: 'complete', navigation: prepared.navigation }));
-      return Object.freeze({ status: 'completed' as const, navigation: prepared.navigation, redirects: prepared.redirects });
+      return finishNavigation(prepared.navigation, prepared.redirects, preparation, preparingEntry);
     };
     const redirect = (to: URL, options: Pick<NavigateOptions, 'replace' | 'state'>) => {
       pendingBrowserHref = null;
@@ -867,9 +925,9 @@ export function createRouteRuntime(
       return redirect(prepared.next, prepared.options);
     }
     if (isHashOnlyDestination(destination, userState) || !hasRoutedPreparations(destinationMatches.matches)) {
-      activePreparation = null;
       return publish();
     }
+    preparingEntry = true;
     emitNavigation(Object.freeze({ phase: 'prepare', navigation: prepared.navigation }));
     const finished: Promise<RouteNavigationSettledResult> = prepareRoutedMatches(runtime, destinationMatches.matches, {
       href: prepared.next.href, params: destinationMatches.params, signal: preparation.signal,
@@ -877,14 +935,15 @@ export function createRouteRuntime(
       if (activePreparation !== preparation || preparation.signal.aborted) {
         throw preparation.signal.reason ?? new DOMException('Route preparation was superseded', 'AbortError');
       }
-      activePreparation = null;
       if (outcome.kind === 'redirect') {
+        activePreparation = null;
         const result = redirect(outcome.redirect.to instanceof URL ? outcome.redirect.to : applicationURL(
           resolveRoutePath(prepared.navigation.to.pathname, outcome.redirect.to),
         ), { replace: true, state: outcome.redirect.state ?? null });
         return result.status === 'preparing' ? await result.finished : result;
       }
-      return publish();
+      const result = publish();
+      return result.status === 'preparing' ? await result.finished : result;
     }).catch(error => {
       if (preparation.signal.aborted || disposed) throw error;
       if (entryCommitted) throw error;
@@ -1073,6 +1132,7 @@ export function createRouteRuntime(
           phase: 'prepare',
           navigation: prepared.navigation,
         }));
+        let entryCommitted = false;
         const traversal = prepareRoutedMatches(runtime, destinationMatches.matches, {
           href: destination.href,
           params: destinationMatches.params,
@@ -1084,8 +1144,8 @@ export function createRouteRuntime(
               'AbortError',
             );
           }
-          activePreparation = null;
           if (outcome.kind === 'redirect') {
+            activePreparation = null;
             const redirected = outcome.redirect.to instanceof URL
               ? outcome.redirect.to
               : applicationURL(resolveRoutePath(
@@ -1100,13 +1160,12 @@ export function createRouteRuntime(
           }
           currentHistoryKey = navigationEvent.destination.key ?? currentHistoryKey;
           setLocation(destination, 'pop', destinationState);
-          emitNavigation(Object.freeze({
-            phase: 'complete',
-            navigation: prepared.navigation,
-          }));
+          entryCommitted = true;
+          const result = finishNavigation(prepared.navigation, prepared.redirects, probe, true);
+          return result.status === 'preparing' ? result.finished : result;
         }).catch(error => {
           if (activePreparation === probe) activePreparation = null;
-          if (!probe.signal.aborted) {
+          if (!entryCommitted && !probe.signal.aborted && navigationId === prepared.navigation.id) {
             emitNavigation(Object.freeze({
               phase: 'error',
               navigation: prepared.navigation,
@@ -1131,14 +1190,11 @@ export function createRouteRuntime(
       supersedePreparation();
       currentHistoryKey = navigationEvent.destination.key ?? currentHistoryKey;
       setLocation(destination, type, destinationState);
-      emitNavigation(Object.freeze({
-        phase: 'complete',
-        navigation: prepared.navigation,
-      }));
+      const result = finishNavigation(prepared.navigation, prepared.redirects);
       navigationEvent.intercept({
         scroll: 'manual',
         async handler() {
-          await Promise.resolve();
+          if (result.status === 'preparing') await result.finished;
         },
       });
       return;
@@ -1146,13 +1202,14 @@ export function createRouteRuntime(
 
     currentHistoryKey = navigationEvent.destination.key ?? currentHistoryKey;
     setLocation(destination, type, destinationState);
+    const ready = pendingRenderReady;
     navigationEvent.intercept({
       scroll: 'manual',
       async handler() {
         // Route subscribers render from the synchronous location update.
         // Yielding here lets their microtask commit settle before navigation
         // success. Our coordinator, not the browser, owns scroll restoration.
-        await Promise.resolve();
+        await ready;
       },
     });
   };
@@ -1478,6 +1535,7 @@ export function createRouteRuntime(
       preparation.signal,
     );
     if (!isHashOnlyDestination(next, options.state ?? null) && hasRoutedPreparations(destinationMatches.matches)) {
+      let entryCommitted = false;
       activePreparation = preparation;
       emitNavigation(Object.freeze({
         phase: 'prepare',
@@ -1498,8 +1556,8 @@ export function createRouteRuntime(
             'AbortError',
           );
         }
-        activePreparation = null;
         if (outcome.kind === 'redirect') {
+          activePreparation = null;
           const redirectedPath = outcome.redirect.to instanceof URL
             ? outcome.redirect.to
             : applicationURL(resolveRoutePath(
@@ -1513,18 +1571,12 @@ export function createRouteRuntime(
           return result.status === 'preparing' ? await result.finished : result;
         }
         commitNavigation(next, options);
-        emitNavigation(Object.freeze({
-          phase: 'complete',
-          navigation: routeNavigation,
-        }));
-        return Object.freeze({
-          status: 'completed' as const,
-          navigation: routeNavigation,
-          redirects,
-        });
+        entryCommitted = true;
+        const result = finishNavigation(routeNavigation, redirects, preparation, true);
+        return result.status === 'preparing' ? await result.finished : result;
       }).catch(error => {
         if (activePreparation === preparation) activePreparation = null;
-        if (!preparation.signal.aborted) {
+        if (!entryCommitted && !preparation.signal.aborted && navigationId === routeNavigation.id) {
           emitNavigation(Object.freeze({
             phase: 'error',
             navigation: routeNavigation,
@@ -1547,12 +1599,7 @@ export function createRouteRuntime(
       });
     }
     commitNavigation(next, options);
-    emitNavigation(Object.freeze({ phase: 'complete', navigation: routeNavigation }));
-    return Object.freeze({
-      status: 'completed',
-      navigation: routeNavigation,
-      redirects,
-    });
+    return finishNavigation(routeNavigation, redirects);
   }
 
   function navigateToURL(
@@ -1591,6 +1638,7 @@ export function createRouteRuntime(
       preparation.signal,
     );
     if (!isHashOnlyDestination(prepared.next, target.state) && hasRoutedPreparations(destinationMatches.matches)) {
+      let entryCommitted = false;
       activePreparation = preparation;
       emitNavigation(Object.freeze({
         phase: 'prepare',
@@ -1611,8 +1659,8 @@ export function createRouteRuntime(
             'AbortError',
           );
         }
-        activePreparation = null;
         if (outcome.kind === 'redirect') {
+          activePreparation = null;
           const redirected = outcome.redirect.to instanceof URL
             ? outcome.redirect.to
             : applicationURL(resolveRoutePath(
@@ -1626,18 +1674,12 @@ export function createRouteRuntime(
           return result.status === 'preparing' ? await result.finished : result;
         }
         routeHistory.go(delta);
-        emitNavigation(Object.freeze({
-          phase: 'complete',
-          navigation: prepared.navigation,
-        }));
-        return Object.freeze({
-          status: 'completed' as const,
-          navigation: prepared.navigation,
-          redirects: prepared.redirects,
-        });
+        entryCommitted = true;
+        const result = finishNavigation(prepared.navigation, prepared.redirects, preparation, true);
+        return result.status === 'preparing' ? await result.finished : result;
       }).catch(error => {
         if (activePreparation === preparation) activePreparation = null;
-        if (!preparation.signal.aborted) {
+        if (!entryCommitted && !preparation.signal.aborted && navigationId === prepared.navigation.id) {
           emitNavigation(Object.freeze({
             phase: 'error',
             navigation: prepared.navigation,
@@ -1673,15 +1715,7 @@ export function createRouteRuntime(
     } else {
       commitNavigation(prepared.next, prepared.options);
     }
-    emitNavigation(Object.freeze({
-      phase: 'complete',
-      navigation: prepared.navigation,
-    }));
-    return Object.freeze({
-      status: 'completed',
-      navigation: prepared.navigation,
-      redirects: prepared.redirects,
-    });
+    return finishNavigation(prepared.navigation, prepared.redirects);
   }
 
   function back(): RouteNavigationResult | null {

@@ -224,8 +224,7 @@ platform, and service objects are never serialized to the browser.
 `$routed` is a compiler intrinsic and must be:
 
 - assigned directly to a component-local `const`;
-- passed an inline synchronous callback (return asynchronous work instead of
-  declaring the callback `async`);
+- passed an inline callback, which may be asynchronous;
 - independent of component props and other component-instance bindings,
   because preparation runs before the component exists;
 - attached by the compiler to a route-owning component in the linked route
@@ -253,10 +252,18 @@ const unsubscribe = subscribeNavigation(event => {
 ```
 
 Preparation errors reject `finished` and publish an `error` navigation event.
-The event's `retry()` repeats the failed destination. A newer navigation
+An entry-preparation error event's `retry()` repeats the failed destination. A newer navigation
 aborts the previous preparation through its `signal`. Browser Back/Forward
 uses the same preparation pipeline while respecting the browser's already
 committed history traversal.
+
+`preparing` also covers a published destination whose first atomic DOM
+activation is still pending. Its URL can already be committed while a Group
+pending arm is visible; `finished` and `complete` wait for the actual output.
+Query/hash changes retain an unfinished wait for the same route instance.
+An owned render/resource failure after entry rejects `finished` and emits
+`error` without a navigation retry: the Group error arm retries that local
+region, without replaying successful entry gates or adding history entries.
 
 During SSR, the matched preparation runs before the component. Its result and
 serializable `state` keys are included in the hydration payload, and `mount()`

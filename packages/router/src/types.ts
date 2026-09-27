@@ -277,7 +277,7 @@ export type RouteNavigationSettledResult =
 export type RouteNavigationResult =
   | RouteNavigationSettledResult
   | {
-      /** Synchronous blockers passed; route preparation is running pre-commit. */
+      /** Entry preparation or first destination DOM activation is still pending. */
       readonly status: 'preparing';
       readonly navigation: RouteNavigation;
       readonly redirects: number;

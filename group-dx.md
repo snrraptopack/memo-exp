@@ -93,6 +93,11 @@ not scroll-ready. Superseded ranges reject readiness and cannot scroll the
 new destination. This is internal coordination, not a developer option.
 Collection spans the normal scheduled render drain, including descendant
 work discovered in later passes, without forcing synchronous rendering.
+Navigation `finished`/`complete` now wait for that first destination activation
+across controlled navigation and history traversal. Query/hash publication
+retains a pending first activation when the route-instance chain is unchanged.
+Post-entry atomic failure emits a navigation error, while the Group arm owns
+its local retry; successful entry gates and history are not replayed.
 Legacy/external browser history entries without a tracked index cannot be
 reversed reliably through the fallback History API. Their failure is reported
 while committed UI is retained; a stronger untracked-entry recovery policy
