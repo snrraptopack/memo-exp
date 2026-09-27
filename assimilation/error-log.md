@@ -159,3 +159,70 @@ the `ref` attribute channel — the compiler must route the handle box
 through a differently-named internal prop (or a dedicated handle slot),
 because `ref` is owned by DOM-root sinking on both host and component
 elements.
+
+## 004 — `key` on literal JSX children
+
+**Code** (`assimilation/mmd/src/cases/16-children/Case.tsx`):
+
+```tsx
+<WrappedListGroup title="wrapped-two">
+  {[<li key="a">A</li>, <li key="b">B</li>]}
+</WrappedListGroup>
+```
+
+**Error** (vite dev server, plugin `memoized-dom`):
+
+```
+key={...} is only meaningful on list rows: items.map(item => <Row key={item.id} />)
+```
+
+**Why it fails**: `key` is not a general element prop in MMD — it exists
+only to identify rows inside a `.map` list region. A literal array of JSX
+isn't a list region, so `key` has no meaning there.
+
+**Resolution**: removed `key` from the literal array (identity isn't
+needed — the array is static). The deeper finding: this case also revealed
+that authored `children` is an **opaque slot-mount closure**, not an array
+— `Array.isArray(children)` is false and `children.map` doesn't exist.
+React's `Children.count`/`Children.map` survive only as call-site
+specializations, never runtime introspection.
+
+## 005 — JSX-valued props must be render slots, not data
+
+**Code** (`assimilation/mmd/src/cases/16-children/Case.tsx`):
+
+```tsx
+function WrappedList({ title, items }: { title: string; items: unknown[] }) {
+  return <ul>{items.map((item, i) => <li data-index={i}>{item}</li>)}</ul>;
+}
+<WrappedList title="wrapped" items={[<span>A</span>, <span>B</span>]} />
+```
+
+**Error** (vite dev server startup, plugin `memoized-dom`):
+
+```
+JSX prop 'items' on <WrappedList> is not rendered by the callee; interpolate
+that prop in <WrappedList> to declare a render slot
+  at assimilation/mmd/src/cases/16-children/Case.tsx:25:7
+```
+
+**Why it fails**: props carrying JSX values are opaque render slots — the
+callee may only interpolate them (`{items}`). Passing them through `.map`
+as data doesn't count as "rendering" — the compiler requires an explicit
+slot use. Together with #004 this closes the loop on #16: authored MMD has
+**no element-level child introspection at all** — `Children.*` exists only
+as React call-site specialization.
+
+**Resolution**: data flows as data — `items={['A','B']}` (`string[]`), and
+the component produces the row markup itself:
+
+```tsx
+function WrappedList({ title, items }: { title: string; items: string[] }) {
+  return <ul>{items.map((item, i) => <li data-index={i}>{item}</li>)}</ul>;
+}
+```
+
+**Lowering consequence**: `Children.map(children, fn)` can never have an
+authored twin that inspects elements — the idiomatic equivalent is always a
+data prop + list region. For assimilation, `Children.map` is sound *only*
+via call-site specialization (which is what the compiler does).

@@ -110,7 +110,8 @@ The hand-written cases here mirror exactly what these passes emit.
 | `use` (19) | — | pending | pending |
 | `useActionState` / `useFormStatus` (19) | — | pending | pending |
 | `useDebugValue` | — | erased | pending |
-| `Children.map` / `count` / `only` / `toArray` | — | render slots / keyed rows | pending |
+| `Children.count` / `Children.map` | `/16-children` | call-site specialization → constant/list row; authored twin = opaque slot + array prop | paired |
+| `Children.only` / `toArray` | — | no supported kind — pending | pending |
 | `createRoot` → `mount` | — | explicit browser entry | pending |
 | `StrictMode` double-invoke | — | unsupported | unsupported |
 | `lazy` / `Suspense` | — | unsupported | unsupported |

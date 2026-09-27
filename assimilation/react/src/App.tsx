@@ -14,6 +14,7 @@ import { UseIdCase } from './cases/12-useid/Case';
 import { UseTransitionCase } from './cases/13-usetransition/Case';
 import { UseDeferredValueCase } from './cases/14-usedeferredvalue/Case';
 import { FragmentCase } from './cases/15-fragment/Case';
+import { ChildrenCase } from './cases/16-children/Case';
 
 function Chrome() {
   const { pathname } = useLocation();
@@ -92,6 +93,9 @@ function CaseIndex() {
         <li>
           <Link to="/15-fragment">Fragment — children without a wrapper</Link>
         </li>
+        <li>
+          <Link to="/16-children">Children — count + map</Link>
+        </li>
       </ul>
     </nav>
   );
@@ -119,6 +123,7 @@ export function App() {
         <Route path="/13-usetransition" element={<UseTransitionCase />} />
         <Route path="/14-usedeferredvalue" element={<UseDeferredValueCase />} />
         <Route path="/15-fragment" element={<FragmentCase />} />
+        <Route path="/16-children" element={<ChildrenCase />} />
       </Routes>
     </main>
   );

@@ -14,6 +14,7 @@ import { UseIdCase } from './cases/12-useid/Case';
 import { UseTransitionCase } from './cases/13-usetransition/Case';
 import { UseDeferredValueCase } from './cases/14-usedeferredvalue/Case';
 import { FragmentCase } from './cases/15-fragment/Case';
+import { ChildrenCase } from './cases/16-children/Case';
 
 function Chrome() {
   return (
@@ -91,6 +92,9 @@ function CaseIndex() {
         <li>
           <a route-to="/15-fragment">Fragment — children without a wrapper</a>
         </li>
+        <li>
+          <a route-to="/16-children">Children — count + map</a>
+        </li>
       </ul>
     </nav>
   );
@@ -117,6 +121,7 @@ export function App() {
       <UseTransitionCase route="/13-usetransition" />
       <UseDeferredValueCase route="/14-usedeferredvalue" />
       <FragmentCase route="/15-fragment" />
+      <ChildrenCase route="/16-children" />
     </main>
   );
 }
