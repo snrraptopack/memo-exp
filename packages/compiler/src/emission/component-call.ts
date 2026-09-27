@@ -32,6 +32,7 @@ import {
 import { buildRenderCallbackAdapter } from './render-callback';
 import { compileRefValue } from '../jsx/refs';
 import {
+  preparationRead,
   registerTransparentDataSite,
   transparentCallPolicyArgument,
   transparentExpressionSources,
@@ -315,7 +316,7 @@ export function emitComponentCall(
             v,
             `${propName}Callback`,
           )
-        : cloneEstreeNode(v),
+        : preparationRead(ctx, scope, ownerId, cloneEstreeNode(v)),
     });
   }
   }

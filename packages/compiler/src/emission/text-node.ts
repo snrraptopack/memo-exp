@@ -9,6 +9,7 @@ import {
   type EmitScope,
 } from './scope';
 import {
+  preparationRead,
   registerTransparentDataSite,
   transparentExpressionSources,
 } from '../data-sources';
@@ -75,7 +76,7 @@ export function emitText(
       ),
     ]),
   );
-  const setter = textSetter(ctx, varName, expr);
+  const setter = textSetter(ctx, varName, preparationRead(ctx, scope, ownerId, cloneEstreeNode(expr)));
   scope.creation.push(setter()); // R4: creation seeds through the same guarded setter
   registerTransparentDataSite(
     ctx,

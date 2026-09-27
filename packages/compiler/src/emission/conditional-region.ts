@@ -18,6 +18,7 @@ import {
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import {
+  preparationRead,
   subscribeTransparentStructuralSite,
   transparentExpressionSources,
 } from '../data-sources';
@@ -76,7 +77,9 @@ export function emitConditionalRegion(
     }
   }
 
-  const pick = astFactory.arrowFunctionExpression([], cloneEstreeNode(site.pickExpr));
+  const pick = astFactory.arrowFunctionExpression([], preparationRead(
+    ctx, scope, regionId, cloneEstreeNode(site.pickExpr), transparentSources,
+  ));
   const branchFactories: t.Expression[] = site.branches.map((jsx) =>
     jsx !== null
       ? buildConditionalBranchCreate(

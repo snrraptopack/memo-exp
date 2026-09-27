@@ -10,6 +10,7 @@ import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
 import {
   refreshAstAnalysis,
+  nodeHasJsx,
   type Ctx,
   type TransparentPresentationPolicy,
 } from '../../context';
@@ -155,6 +156,15 @@ function lowerGroupScopes(
           const expression = childNode(current, 'expression');
           if (expression === null || !astFactory.isExpression(expression as unknown as t.Node)) return false;
           if (isLoweredGroupExpression(expression as unknown as t.Expression)) return false;
+          const value = expression as unknown as t.Expression;
+          const selector = astFactory.isConditionalExpression(value) ? value.test
+            : astFactory.isLogicalExpression(value) ? value.left : null;
+          if (selector !== null && nodeHasJsx(value) &&
+            expressionOrigins(ctx, selector as unknown as BaseNode, origins).size === 0) {
+            // The selector itself is available. Keep inactive branch sources
+            // out of readiness and apply Group policy at the active sinks.
+            return undefined;
+          }
           const dependencies = [...expressionOrigins(ctx, expression, origins)];
           if (dependencies.length === 0) return;
           wrapAutomaticSite(ctx, owner, expression as unknown as t.Expression, dependencies, policy);

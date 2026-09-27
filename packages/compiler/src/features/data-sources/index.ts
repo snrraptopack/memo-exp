@@ -17,6 +17,7 @@ export {
   transparentSourceMounts,
 } from './policy-arguments';
 export {
+  preparationRead,
   registerTransparentDataSite,
   subscribeTransparentStructuralSite,
   transparentExpressionSources,

@@ -194,6 +194,21 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           );
           return false;
         }
+        const selector = astFactory.isConditionalExpression(expression) ? expression.test
+          : astFactory.isLogicalExpression(expression) ? expression.left : null;
+        if (selector !== null && nodeHasJsx(expression) && sourceDependencies(
+          ctx, selector as unknown as BaseNode, bindings, derived, eventSources,
+        ).length === 0 && trackDependencies(
+          ctx, selector as unknown as BaseNode, tracks, bindings,
+        ).length === 0) {
+          // A local selector chooses the active branch before that branch's
+          // payload sinks are evaluated. Descend into those sinks instead of
+          // collecting sources from inactive JSX behind one eager gate.
+          // Event holders rebind dynamically through the owner's event slot;
+          // never subscribe a structural region to their initial null value.
+          excludeTransparentSubscriptions(expression, [...eventSources]);
+          return undefined;
+        }
         const dependencies = sourceDependencies(
           ctx,
           rawExpression,
@@ -230,10 +245,12 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           eventSources.has(source)
         );
         if (
-          nodeHasJsx(rawExpression as unknown as t.Node) ||
-          ctx.transparentPolicyParams.has(component) ||
-          dependencies.some((source) =>
-            ctx.transparentSourceProps.get(component)?.has(source) === true
+          ctx.astAnalysis?.parentByNode.get(container)?.type !== 'JSXAttribute' && (
+            nodeHasJsx(rawExpression as unknown as t.Node) ||
+            ctx.transparentPolicyParams.has(component) ||
+            dependencies.some((source) =>
+              ctx.transparentSourceProps.get(component)?.has(source) === true
+            )
           )
         ) {
           if (

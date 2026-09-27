@@ -41,6 +41,7 @@ import {
 import { createElementExpression, isSvgElement } from '../jsx/svg';
 import { compileRefValue, emitRefMount } from '../jsx/refs';
 import {
+  preparationRead,
   registerTransparentDataSite,
   transparentExpressionSources,
 } from '../data-sources';
@@ -416,7 +417,7 @@ if (hasSpread) {
     );
   }
   const dataSources = transparentExpressionSources(ctx, v);
-  const expr = cloneEstreeNode(v);
+  const expr = preparationRead(ctx, scope, ownerId, cloneEstreeNode(v));
   if (attrName === 'style') {
     const setStyle = (): t.Statement =>
       astFactory.expressionStatement(

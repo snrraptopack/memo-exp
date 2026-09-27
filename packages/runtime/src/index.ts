@@ -52,6 +52,7 @@ export {
 } from './state-cells';
 export type { StateCell } from './state-cells';
 export { cleanup } from './cleanup';
+export { readPreparationScope, releasePreparationRead } from './preparation-read';
 export type { CleanupDisposer } from './cleanup';
 export { mountRef, refAssign } from './refs';
 export type { RefCallback, RefValue } from './refs';

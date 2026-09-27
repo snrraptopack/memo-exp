@@ -20,6 +20,7 @@ export interface RenderPreparation extends RenderPreparationOwner {
   collect<T>(owner: string, render: () => T, site?: string): T;
   readonly readiness: 'pending' | 'ready' | 'error';
   readonly errors: readonly unknown[];
+  subscribe(listener: () => void): () => void;
   activate(): void;
   dispose(): void;
   readonly status: 'pending' | 'active' | 'disposed';
@@ -43,8 +44,22 @@ export function createRenderPreparation(): RenderPreparation {
   let rendering = 0;
   let status: RenderPreparation['status'] = 'pending';
   let ready = false;
+  const listeners = new Set<() => void>();
+  let notificationQueued = false;
 
   const inRuntime = <T>(run: () => T): T => runWithApplicationRuntime(runtime, run);
+  const notify = (): void => {
+    if (notificationQueued || listeners.size === 0) return;
+    notificationQueued = true;
+    globalThis.queueMicrotask(() => {
+      notificationQueued = false;
+      inRuntime(() => {
+        // Listeners may unsubscribe/re-subscribe during publication.
+        // eslint-disable-next-line unicorn/no-useless-spread
+        for (const listener of [...listeners]) listener();
+      });
+    });
+  };
   const dropRead = (scope: ReadScope, key: object): void => {
     const entry = dependencies.get(key);
     if (entry === undefined) return;
@@ -94,6 +109,10 @@ export function createRenderPreparation(): RenderPreparation {
       }
       return errors;
     },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
     run<T>(render: () => T): T {
       if (status === 'disposed') {
         throw new Error('[memo-dom] cannot render a disposed preparation');
@@ -111,7 +130,7 @@ export function createRenderPreparation(): RenderPreparation {
           }
           throw error;
         }
-        finally { rendering--; runtime.state.preparation = previous; }
+        finally { rendering--; runtime.state.preparation = previous; notify(); }
       });
     },
     collect<T>(owner: string, render: () => T, site = 'render'): T {
@@ -152,6 +171,13 @@ export function createRenderPreparation(): RenderPreparation {
         }
       });
     },
+    releaseRead(owner, site) {
+      const scope = reads.get(owner)?.get(site);
+      if (scope === undefined) return;
+      reads.get(owner)!.delete(site);
+      for (const key of scope.keys) dropRead(scope, key);
+      notify();
+    },
     consume(resource) {
       if (status !== 'pending' || collecting === undefined) return;
       const { keys } = collecting;
@@ -170,6 +196,7 @@ export function createRenderPreparation(): RenderPreparation {
             if (entities.get(id) === getEntity(id)) markDirty(id);
           }
         });
+        notify();
       });
       subscribing = false;
     },
@@ -195,6 +222,7 @@ export function createRenderPreparation(): RenderPreparation {
         dropOwner(entity.id);
         if (entities.get(entity.id) === entity) entities.delete(entity.id);
         if (entities.size === 0) preparation.dispose();
+        notify();
       });
     },
     deferRef(activate) {
@@ -269,6 +297,7 @@ export function createRenderPreparation(): RenderPreparation {
       readiness.delete(preparation);
       descendants.delete(preparation);
       releases.delete(preparation);
+      notify();
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, '[memo-dom] preparation rollback failed');
     },

@@ -853,11 +853,11 @@ export function Profile(_id, _parent, _dataPolicies) {
 	const _when = _MD.createCondRegion(
 		_h,
 		_id + "/when0",
-		() => _MDD.resolvedValuesError([user]) && _dataPolicies?.$default?.error
+		() => _MD.readPreparationScope(_id + "/when0", "_readSite", () => _MDD.resolvedValuesError([user]) && _dataPolicies?.$default?.error
 			? 0
 			: _MDD.resolvedValuesError([user])
 				? 1
-				: _MDD.resolvedValuesPending([user]) && _dataPolicies?.$default?.pending ? 2 : _MDD.resolvedValuesPending([user]) ? 3 : 4,
+				: _MDD.resolvedValuesPending([user]) && _dataPolicies?.$default?.pending ? 2 : _MDD.resolvedValuesPending([user]) ? 3 : 4),
 		[
 			() => {
 				let _value2;
@@ -920,18 +920,25 @@ export function Profile(_id, _parent, _dataPolicies) {
 				const _document4 = _MD.getActiveEnvironment().document;
 
 				const _update6 = () => {
-					_MD.setTextData(_text2, _MDD.readResolvedValue(user, "user", "./component.tsx:5:21").name);
+					_MD.setTextData(_text2, _MD.readPreparationScope(_id + "/when0", "_readSite2", () => _MDD.readResolvedValue(user, "user", "./component.tsx:5:21").name));
 				};
 
 				const _text2 = _document4.createTextNode("");
+				const _readSite2 = () => _MD.releasePreparationRead(_id + "/when0", "_readSite2");
 
-				_MD.setTextData(_text2, _MDD.readResolvedValue(user, "user", "./component.tsx:5:21").name);
+				_MD.setTextData(_text2, _MD.readPreparationScope(_id + "/when0", "_readSite2", () => _MDD.readResolvedValue(user, "user", "./component.tsx:5:21").name));
 
 				const _fragment3 = _document4.createDocumentFragment();
 
 				_fragment3.appendChild(_text2);
 
-				return { nodes: _MD.rootNodes(_fragment3), update: _update6 };
+				return {
+					nodes: _MD.rootNodes(_fragment3),
+					update: _update6,
+					dispose: () => {
+						if (_readSite2 !== null) _readSite2();
+					}
+				};
 			}
 		]
 	);

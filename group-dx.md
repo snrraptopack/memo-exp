@@ -41,9 +41,21 @@ Readiness waits for queued owned render work as well as consumed resources:
 a source settling can reveal another child and must not publish in between.
 Data render-read and availability helpers participate in these scopes;
 unused declarations, derivations, and mounted-effect reads do not independently
-block preparation. Compiler wiring for initial read scopes and automatic
-readiness/DOM publication are not implemented yet, so this does not expand
-the authored suspend support above.
+block preparation. Compiler-owned scopes now cover initial and incremental
+text, scalar attribute/prop reads, and availability/conditional picks. A
+removed non-entity branch releases its read sites too. Local selectors do not
+wait for sources used only by inactive branches; request-state selectors retain
+their subscriptions. Attribute values use scalar availability reads rather
+than embedding pending/error JSX in an attribute.
+
+A testing-only prepared-range prototype observes readiness and publishes the
+current detached DOM once, including child output discovered after creation,
+before releasing refs and effects. Nested regions fold into a pending outer
+generation; abandoning a region prevents stale publication. This prototype is
+not emitted for authored `suspend`: SSR/hydration marker adoption, broader
+read-path coverage (including spreads/module list reads), and failure/retry
+presentation still need integration and verification. This does not expand
+the authored suspend support above or enable route loading shells yet.
 
 The first code slice hardens existing router behavior: native history
 traversal now prepares `$routed` before entry, tracked failed/blocked pops

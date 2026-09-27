@@ -65,6 +65,8 @@ export interface RenderPreparationOwner {
   deferRef(activate: () => void): () => void;
   /** @internal Only explicit render-read scopes participate in readiness. */
   consume(dependency: PreparationDependency): void;
+  collect<T>(owner: string, render: () => T, site?: string): T;
+  releaseRead(owner: string, site: string): void;
 }
 
 /** @internal Resource adapter; the kernel never imports a data implementation. */
