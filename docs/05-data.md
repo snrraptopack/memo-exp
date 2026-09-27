@@ -32,10 +32,12 @@ operation shouldn't force your markup into `loading`/`error` branches and
 promise plumbing — you should be able to read the result like an ordinary
 value and let the runtime handle when it's actually there.
 
-That's what the two `$`-prefixed primitives in `@memoized-dom/data` are for:
+The data primitives in `@memoized-dom/data` cover values and their lifecycle:
 
 - **`$fetch`** — the *value*. Declares a request and gives you the payload
   as if it were already resolved.
+- **`$read`** — reads a promise result as a transparent value.
+- **`$forms`** — handles form submission, validation, pending state, and errors.
 - **`$track`** — the *request*. A lens over that value's lifecycle:
   pending/success/error, retry, abort, outcome callbacks.
 
@@ -191,22 +193,19 @@ What `request` gives you:
 Two rules: `$track` is **not a store** (no `.mutate`/`.update` — mutate the
 value itself) and **not a promise** (no `.then` — use `onSuccess`/`onError`).
 
-`$track` also accepts a **bare promise** — you don't need `$fetch` to get a
-tracked request:
+`$track` accepts transparent sources. Use `$read` when work starts as a
+promise. Its fulfilled result reads like a `$fetch` value:
 
 ```tsx
-const save = $track(saveDraft(draft));
-
-save.onSuccess(() => toast('saved'));
-save.onError((e) => toast(e.message));
+const user = $read(loadUser(id));
+const request = $track(user);
+return <p>{user.name}</p>;
 ```
 
-A promise is exactly one execution, so the tracker is a subset of the
-fetch-backed one: `pending`, `error`, `onSuccess`, and `onError` all work —
-including retroactively if the promise already settled — while `refresh()`
-just awaits the same work (there is nothing to re-request), `refreshing`
-stays `false`, and `abort()` is a no-op since a promise has no cancellation
-protocol. Tracking the same promise twice returns the same tracker.
+`request.refresh()` starts another `loadUser(id)` using current reactive
+inputs. A separately bound promise works too: `const promise = loadUser(id);
+const user = $read(promise);`. The compiler retains the creation expression.
+`$track(promise)` is unsupported, and trackers have no `.value` property.
 
 ## Optimistic updates — the real pattern
 
@@ -221,7 +220,7 @@ function vote(id: number) {
   const story = stories.find(s => s.id === id);
   if (!story) return;
 
-  const request = $track(postVote(id));
+  const request = $track($read(postVote(id)));
   pending.set(request.id, story);
   story.votes++;                          // instant UI
 
@@ -243,5 +242,52 @@ Each `id` keys the smallest reversible change (here a `votes--` delta), so a
 failed attempt rolls back *its own* mutation without wiping successful
 optimistic writes from other in-flight attempts. Snapshotting the whole
 object can't do that.
+
+## Forms on the client and server
+
+`$forms` owns submission state. A browser form uses its `submit` handler;
+server code can call the same handler with `FormData` directly. The action
+may call a server function or any other asynchronous operation.
+
+```tsx
+const form = $forms((fields: FormData) => saveMessage(fields));
+
+return <form onSubmit={form.submit}>
+  <input name="message" />
+  <button disabled={form.pending}>Send</button>
+  {form.errors.map(error => <p>{error.message}</p>)}
+</form>;
+```
+
+`form.pending` is true while any submission is active. For validation,
+`$forms({ schema, action })` accepts a Standard Schema validator, including
+Zod schemas. Its validated output is inferred as the action's fields type.
+The schema receives an object made from submitted `FormData` entries and
+decides any coercion. `form.errors` is one array: each item has
+`kind: 'parse' | 'submit'`; parse issues may include a field `path`.
+
+`$track(form)` observes the current submission. Inside the action, it sees
+the execution ID allocated before the action began. Callbacks attach to
+that exact execution, even if later submissions start and finish first.
+Each form action can therefore apply and reconcile its own optimistic write:
+
+```tsx
+const form = $forms((fields: FormData) => {
+  const request = $track(form);
+  const id = request.id;
+  pendingVotes.add(id);
+  story.votes++;
+  request.onSuccess((_result, settledId) => pendingVotes.delete(settledId));
+  request.onError((_error, settledId) => {
+    if (pendingVotes.delete(settledId)) story.votes--;
+  });
+  return saveVote(story.id, fields);
+});
+```
+
+The form does not perform optimistic updates itself. It keeps independent
+callbacks for overlapping submissions; displayed result and errors belong
+to the newest accepted submission. Server-side code can submit a `FormData`
+instance without DOM globals, and the same validation and tracking apply.
 
 Next: [06 — Group](./06-group.md)

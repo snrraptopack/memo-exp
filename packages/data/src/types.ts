@@ -105,31 +105,6 @@ export interface ValidatedFetchOptions<
   readonly validate: TSchema;
 }
 
-export type ActionMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-
-export interface ActionOptions<TResult, TInput> {
-  readonly method?: ActionMethod;
-  readonly query?: Query;
-  readonly headers?: HeadersInit;
-  readonly validate?: StandardSchemaV1<unknown, TResult>;
-  readonly onSuccess?: (
-    result: TResult,
-    input: TInput,
-  ) => void | Promise<void>;
-  readonly onError?: (
-    error: import('./errors').RequestError,
-    input: TInput,
-  ) => void | Promise<void>;
-}
-
-/** Opaque change produced by a resource and consumed by an action call. */
-export interface OptimisticChange<TResult = unknown> {
-  readonly kind: 'memoized-dom.optimistic-change';
-
-  /** Invariant phantom type connecting the change to an action result. */
-  readonly resultType?: (result: TResult) => TResult;
-}
-
 export interface RefreshableResource {
   refresh(): Promise<unknown>;
 }
@@ -149,21 +124,20 @@ export type ResolvedValue<T> = T extends null | undefined
     };
 
 /** Reactive request state exposed for authored conditional rendering. */
-export interface TrackedValue<T> {
+export interface TrackedValue<T, TError = import('./errors').RequestError> {
   /** Identity of the exact request execution currently represented. */
   readonly id: string;
   /** The fulfilled value, or undefined while no value is available. */
-  readonly value: T | undefined;
   readonly status: AsyncStatus;
   readonly pending: boolean;
   readonly refreshing: boolean;
-  readonly error: import('./errors').RequestError | null;
+  readonly error: TError | null;
   /** Observe this execution's successful result exactly once. */
   onSuccess(callback: (data: T, requestId: string) => void): () => void;
   /** Observe this execution's failure exactly once. */
   onError(
     callback: (
-      error: import('./errors').RequestError,
+    error: TError,
       requestId: string,
     ) => void,
   ): () => void;
@@ -204,18 +178,7 @@ export interface FetchResourceCore<T> extends RefreshableResource {
   mutate(change: (current: T | undefined) => void): void;
 }
 
-export interface FetchCollectionChanges<TItem> {
-  append(temporary: TItem): OptimisticChange<TItem>;
-  replace(current: TItem, temporary: TItem): OptimisticChange<TItem>;
-  remove<TResult = unknown>(current: TItem): OptimisticChange<TResult>;
-}
-
-export type FetchResource<T> = FetchResourceCore<T> &
-  (T extends TItemArray<infer TItem>
-    ? FetchCollectionChanges<TItem>
-    : object);
-
-type TItemArray<TItem> = TItem[];
+export type FetchResource<T> = FetchResourceCore<T>;
 
 export interface FetchFunction {
   <T = unknown>(
@@ -242,27 +205,6 @@ export interface TransparentFetchFunction {
   ): ResolvedValue<InferSchemaOutput<TSchema>>;
 }
 
-/** One independently tracked invocation returned immediately by an action. */
-export interface ActionResult<TResult> {
-  readonly id: string;
-  readonly state: AsyncStatus;
-  readonly data: TResult | undefined;
-  readonly error: import('./errors').RequestError | null;
-}
-
-type ActionCall<TResult, TInput> = [TInput] extends [void]
-  ? (input?: TInput) => ActionResult<TResult>
-  : (input: TInput) => ActionResult<TResult>;
-
-export type Action<TResult, TInput = void> = ActionCall<TResult, TInput>;
-
-export interface ActionFunction {
-  <TResult, TInput = void>(
-    target: string | URL,
-    options?: ActionOptions<TResult, TInput>,
-  ): Action<TResult, TInput>;
-}
-
 export interface DataRuntimeOptions {
   readonly fetch?: typeof globalThis.fetch;
   readonly baseURL?: string | URL;
@@ -270,7 +212,7 @@ export interface DataRuntimeOptions {
 
 export interface DataRuntime {
   readonly $fetch: FetchFunction;
-  readonly $action: ActionFunction;
+  readonly $read: <T>(promise: PromiseLike<T>, replay?: () => PromiseLike<T>) => FetchResource<T>;
 
   /** Abort active work, detach live reads, and empty retained request data. */
   clear(): void;
@@ -336,15 +278,4 @@ export interface ResourceSnapshot<T> {
 
 export type ResourceListener<T> = (
   snapshot: ResourceSnapshot<T>,
-) => void;
-
-export interface ActionResultSnapshot<T> {
-  readonly id: string;
-  readonly data: T | undefined;
-  readonly error: import('./errors').RequestError | null;
-  readonly state: AsyncStatus;
-}
-
-export type ActionResultListener<T> = (
-  snapshot: ActionResultSnapshot<T>,
 ) => void;

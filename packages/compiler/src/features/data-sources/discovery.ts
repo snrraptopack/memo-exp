@@ -59,22 +59,29 @@ export function scanTransparentSourceImports(
   ctx: Ctx,
   programPath: { node: t.Program },
 ): void {
-  const definitions = new Map(
-    ctx.transparentAsyncSources.map((definition) => [
-      definition.module,
-      definition,
-    ]),
-  );
+  const definitions = new Map<string, typeof ctx.transparentAsyncSources[number][]>();
+  for (const definition of ctx.transparentAsyncSources) {
+    const entries = definitions.get(definition.module) ?? [];
+    entries.push(definition);
+    definitions.set(definition.module, entries);
+  }
   for (const statement of programPath.node.body) {
     if (!astFactory.isImportDeclaration(statement)) continue;
-    const definition = definitions.get(statement.source.value);
-    if (definition === undefined) continue;
+    const moduleDefinitions = definitions.get(statement.source.value);
+    if (moduleDefinitions === undefined) continue;
     for (const specifier of statement.specifiers) {
       if (!astFactory.isImportSpecifier(specifier)) continue;
       const name = importedName(specifier);
-      if (name === definition.source) {
+      const sourceDefinition = moduleDefinitions.find(definition => name === definition.source);
+      if (sourceDefinition !== undefined) {
         ctx.transparentSourceFactories.add(specifier.local.name);
-        ctx.transparentProviderFactories.add(specifier.local.name);
+        if (sourceDefinition.source === '$read' && sourceDefinition.module === '@memoized-dom/data') {
+          ctx.transparentReadFactories.add(specifier.local.name);
+        } else if (sourceDefinition.source === '$forms' && sourceDefinition.module === '@memoized-dom/data') {
+          ctx.transparentFormFactories.add(specifier.local.name);
+        } else {
+          ctx.transparentProviderFactories.add(specifier.local.name);
+        }
         ctx.importedFunctions.set(specifier.local.name, {
           reads: new Set(),
           writes: new Set(),
@@ -83,9 +90,12 @@ export function scanTransparentSourceImports(
           unbounded: false,
         });
       }
-      if (name === definition.track || name === definition.operations) {
+      const passthrough = moduleDefinitions.find(definition =>
+        name === definition.track || name === definition.operations
+      );
+      if (passthrough !== undefined) {
         ctx.transparentSourcePassthroughs.add(specifier.local.name);
-        if (name === definition.track) {
+        if (name === passthrough.track) {
           ctx.transparentTrackFactories.add(specifier.local.name);
         }
         ctx.importedFunctions.set(specifier.local.name, {
@@ -96,7 +106,7 @@ export function scanTransparentSourceImports(
           unbounded: false,
         });
       }
-      if (name === definition.group) {
+      if (moduleDefinitions.some(definition => name === definition.group)) {
         ctx.transparentGroups.add(specifier.local.name);
       }
     }

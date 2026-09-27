@@ -16,7 +16,7 @@ a write that might change it, the two are linked. That's the whole mechanism.
 ```tsx
 export function Counter() {
   let count = 0;
-  const doubled = count * 2;   // derived — replays when count changes
+  let doubled = count * 2;     // derived — replays when count changes
 
   return <button onClick={() => count++}>{count} / {doubled}</button>;
 }
@@ -41,8 +41,12 @@ So:
   reassigned is just a variable.
 - **`const` doesn't block reactivity.** `state.step++`, `items.push(x)`,
   `set.add(x)` are all valid reactive writes.
+- **`let` can be derived.** An initializer that reads reactive state, such as
+  `let doubled = count * 2`, replays when the source changes. Later assigning
+  `doubled = 0` is a compile error; write `count` instead.
 - Use `const` whenever you only mutate contents. Reach for `let` only when
-  the binding itself is reassigned (`count++`, `name = 'x'`).
+  the binding itself is reassigned (`count++`, `name = 'x'`) or when it reads
+  reactive state as a derived value.
 
 ## State can live anywhere
 
@@ -214,7 +218,7 @@ JSX in a mutable array; map the data.
 Think of the whole app as a spreadsheet:
 
 - **Cells** = your variables, fields, array elements, Set/Map contents.
-- **Formulas** = `const` derived expressions.
+- **Formulas** = derived `const` or `let` expressions.
 - **The DOM** = cells' display.
 
 You edit cells; the compiler already worked out which formulas and which

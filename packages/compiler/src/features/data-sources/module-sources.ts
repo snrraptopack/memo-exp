@@ -46,6 +46,7 @@ export function scanAndLowerModuleSourceDeclarations(
       if (!ctx.transparentSourceFactories.has(declarator.init.callee.name)) {
         continue;
       }
+      if (ctx.transparentFormFactories.has(declarator.init.callee.name)) continue;
       const binding = astBindingAt(
         ctx,
         declarator.init,
@@ -60,6 +61,7 @@ export function scanAndLowerModuleSourceDeclarations(
 
       const target = declarator.init.arguments[0];
       const options = declarator.init.arguments[1];
+      const readSource = ctx.transparentReadFactories.has(declarator.init.callee.name);
       let readsProgramBinding = false;
       const noteProgramReads = (input: t.Node | undefined): void => {
         if (input === undefined) return;
@@ -86,16 +88,20 @@ export function scanAndLowerModuleSourceDeclarations(
             astFactory.callExpression(astFactory.identifier('effect'), [
               astFactory.arrowFunctionExpression(
                 [],
-                astFactory.callExpression(mdd(ctx, 'rebindModuleSource'), [
+                astFactory.callExpression(mdd(ctx, readSource
+                  ? 'rebindReadModuleSource'
+                  : 'rebindModuleSource'), [
                   astFactory.callExpression(mdd(ctx, 'sourceRef'), [
                     astFactory.stringLiteral(key),
                   ]),
-                  target === undefined
-                    ? astFactory.nullLiteral()
-                    : cloneNode(target, true),
-                  ...(options === undefined
-                    ? []
-                    : [cloneNode(options, true)]),
+                  ...(readSource
+                    ? [options === undefined
+                      ? astFactory.arrowFunctionExpression([], cloneNode(target as t.Expression, true))
+                      : cloneNode(options as t.Expression, true)]
+                    : [target === undefined
+                      ? astFactory.nullLiteral()
+                      : cloneNode(target, true),
+                      ...(options === undefined ? [] : [cloneNode(options, true)])]),
                 ]),
               ),
             ]),
@@ -113,12 +119,15 @@ export function scanAndLowerModuleSourceDeclarations(
               [],
               astFactory.blockStatement([
                 astFactory.returnStatement(
-                  astFactory.callExpression(mdd(ctx, 'createSource'), [
-                    target === undefined
+                  astFactory.callExpression(mdd(ctx, readSource
+                    ? 'createReadSource'
+                    : 'createSource'), readSource
+                    ? [astFactory.callExpression(cloneNode(options as t.Expression, true), []),
+                      cloneNode(options as t.Expression, true)]
+                    : [target === undefined
                       ? astFactory.nullLiteral()
                       : cloneNode(target),
-                    ...(options === undefined ? [] : [cloneNode(options)]),
-                  ]),
+                      ...(options === undefined ? [] : [cloneNode(options)])]),
                 ),
               ]),
             ),

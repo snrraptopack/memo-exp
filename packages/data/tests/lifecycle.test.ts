@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDataRuntime } from '../src';
 import {
-  disposeActionResult,
   disposeFetchResource,
-  subscribeActionResult,
   subscribeFetchResource,
 } from '../src/internal';
 import type { FetchResource } from '../src';
@@ -73,40 +71,11 @@ describe('data runtime lifecycle', () => {
     await expect(resource.refresh()).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  it('makes runtime clearing a logical boundary for a non-cooperative action fetcher', async () => {
-    let finish!: (response: Response) => void;
-    const fetcher = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
-    const action = runtime.$action<{ saved: boolean }>('/save');
-    const result = action();
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
-
-    runtime.clear();
-    finish(json({ saved: true }));
-
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(result.state).toBe('idle');
-  });
-
-  it('resets active actions when their runtime is cleared', async () => {
-    const fetcher = vi.fn(() => new Promise<Response>(() => {}));
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
-    const action = runtime.$action('/save');
-    const result = action();
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
-
-    runtime.clear();
-
-    expect(result.state).toBe('idle');
-  });
-
-  it('isolates listener failures from resource and action state transitions', async () => {
+  it('isolates listener failures from resource state transitions', async () => {
     const reportError = vi.fn();
     vi.stubGlobal('reportError', reportError);
     const runtime = createDataRuntime({
-      fetch: (async (_input, init) =>
-        init?.method === 'GET' ? json(['ready']) : json({ saved: true })) as typeof fetch,
+      fetch: (async () => json(['ready'])) as typeof fetch,
     });
     const resource = runtime.$fetch<string[]>('/read');
     subscribeFetchResource(resource, value => {
@@ -115,44 +84,19 @@ describe('data runtime lifecycle', () => {
     await settled(resource);
     expect(resource.data).toEqual(['ready']);
 
-    const action = runtime.$action<{ saved: boolean }>('/save');
-    const result = action();
-    subscribeActionResult(result, value => {
-      if (value.state === 'pending') throw new Error('action listener');
-    });
-    await vi.waitFor(() => expect(result.state).toBe('success'));
-    expect(result.data).toEqual({ saved: true });
-    expect(reportError).toHaveBeenCalledTimes(2);
-  });
-
-  it('removes a listener when its initial subscription throws', () => {
-    const reportError = vi.fn();
-    vi.stubGlobal('reportError', reportError);
-    const runtime = createDataRuntime({ fetch: (() => new Promise(() => {})) as typeof fetch });
-    const action = runtime.$action('/save');
-    const result = action();
-
-    expect(() => subscribeActionResult(result, () => {
-      throw new Error('initial listener');
-    })).toThrow('initial listener');
-    runtime.clear();
-    expect(reportError).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledTimes(1);
   });
 
   it('rejects commands and subscriptions after generated-code disposal', async () => {
     const runtime = createDataRuntime({ fetch: (async () => json([])) as typeof fetch });
     const resource = runtime.$fetch<unknown[]>('/read');
     await settled(resource);
-    const action = runtime.$action('/save');
-    const result = action();
     disposeFetchResource(resource);
-    disposeActionResult(result);
 
     await expect(resource.refresh()).rejects.toThrow('disposed fetch resource');
     expect(() => resource.abort()).toThrow('disposed fetch resource');
     expect(() => resource.update(() => [])).toThrow('disposed fetch resource');
     expect(() => resource.mutate(() => {})).toThrow('disposed fetch resource');
     expect(() => subscribeFetchResource(resource, () => {})).toThrow('disposed');
-    expect(() => subscribeActionResult(result, () => {})).toThrow('disposed');
   });
 });

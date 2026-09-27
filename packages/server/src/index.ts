@@ -90,8 +90,8 @@ export interface RenderOptions {
    */
   url?: string;
   /**
-   * Fetch implementation backing the request-local data runtime (`$fetch`/
-   * `$action`). Defaults to globalThis.fetch; inject a deterministic
+   * Fetch implementation backing the request-local data runtime (`$fetch`).
+   * Defaults to globalThis.fetch; inject a deterministic
    * implementation for tests.
    */
   fetch?: typeof globalThis.fetch;

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  $read,
   $track,
   createDataRuntime,
   RequestError,
+  runWithDataRuntime,
   UnresolvedDataReadError,
   type ResolvedValue,
 } from '../src';
@@ -49,32 +51,43 @@ describe('transparent resolved values', () => {
     runtime.clear();
   });
 
-  it('tracks a promise through the same state and value surface', async () => {
+  it('reads a promise as a transparent source and refreshes fresh work', async () => {
     let resolve!: (user: User) => void;
     const promise = new Promise<User>(accept => {
       resolve = accept;
     });
-    const state = $track(promise);
+    const runtime = createDataRuntime();
+    let refreshes = 0;
+    const user = runWithDataRuntime(runtime, () => $read(promise, () => {
+      refreshes++;
+      return Promise.resolve({ id: 2, name: 'Grace' });
+    }));
+    const state = $track(user);
     const success = vi.fn();
     const unsubscribe = state.onSuccess(success);
 
-    expect($track(promise)).toBe(state);
+    expect($track(user)).toBe(state);
     expect(state.status).toBe('pending');
     expect(state.pending).toBe(true);
     expect(state.refreshing).toBe(false);
-    expect(state.value).toBeUndefined();
+    expect(readResolvedValueForRender(user)).toBeUndefined();
+    expect(state).not.toHaveProperty('value');
     expect(state.error).toBeNull();
 
     resolve({ id: 1, name: 'Ada' });
-    await expect(state.refresh()).resolves.toEqual({ id: 1, name: 'Ada' });
+    await vi.waitFor(() => expect(state.status).toBe('success'));
 
     expect(state.status).toBe('success');
     expect(state.pending).toBe(false);
-    expect(state.value).toEqual({ id: 1, name: 'Ada' });
-    expect(success).toHaveBeenCalledWith(state.value, state.id);
+    expect(readResolvedValue(user)).toEqual({ id: 1, name: 'Ada' });
+    expect(success).toHaveBeenCalledWith({ id: 1, name: 'Ada' }, state.id);
+    await expect(state.refresh()).resolves.toEqual({ id: 2, name: 'Grace' });
+    expect(refreshes).toBe(1);
+    expect(readResolvedValue(user)).toEqual({ id: 2, name: 'Grace' });
     expect(state.onSuccess(vi.fn())).toBeTypeOf('function');
     expect(() => state.abort()).not.toThrow();
     unsubscribe();
+    runtime.clear();
   });
 
   it('exposes promise rejection through the normal tracked error surface', async () => {
@@ -82,22 +95,44 @@ describe('transparent resolved values', () => {
     const promise = new Promise<User>((_resolve, fail) => {
       reject = fail;
     });
-    const state = $track(promise);
+    const runtime = createDataRuntime();
+    const user = runWithDataRuntime(runtime, () => $read(promise, () => Promise.resolve({ id: 3, name: 'Retry' })));
+    const state = $track(user);
     const failure = vi.fn();
     state.onError(failure);
 
     reject(new Error('offline'));
-    await expect(state.refresh()).rejects.toMatchObject({
-      name: 'RequestError',
-      kind: 'network',
-      message: 'offline',
-    });
+    await vi.waitFor(() => expect(state.status).toBe('error'));
 
     expect(state.status).toBe('error');
     expect(state.pending).toBe(false);
-    expect(state.value).toBeUndefined();
+    expect(state).not.toHaveProperty('value');
     expect(state.error).toBeInstanceOf(RequestError);
     expect(failure).toHaveBeenCalledWith(state.error, state.id);
+    await expect(state.refresh()).resolves.toEqual({ id: 3, name: 'Retry' });
+    runtime.clear();
+  });
+
+  it('keeps the newest read after overlapping refreshes settle in reverse order', async () => {
+    const pending: Array<{ resolve(value: User): void; reject(reason: unknown): void }> = [];
+    const runtime = createDataRuntime();
+    const user = runWithDataRuntime(runtime, () => $read(
+      Promise.resolve({ id: 0, name: 'Initial' }),
+      () => new Promise<User>((resolve, reject) => pending.push({ resolve, reject })),
+    ));
+    const request = $track(user);
+    await vi.waitFor(() => expect(request.status).toBe('success'));
+
+    const first = request.refresh();
+    const second = request.refresh();
+    expect(pending).toHaveLength(2);
+    pending[1]!.resolve({ id: 2, name: 'Newest' });
+    await expect(second).resolves.toMatchObject({ id: 2 });
+    pending[0]!.reject(new Error('old failure'));
+    await expect(first).rejects.toThrow('old failure');
+    expect(request.status).toBe('success');
+    expect(readResolvedValue(user)).toEqual({ id: 2, name: 'Newest' });
+    runtime.clear();
   });
 
   it('retries all failed values represented by a shared boundary', async () => {
@@ -194,12 +229,12 @@ describe('transparent resolved values', () => {
     expect(readResolvedValue(user)).toEqual({ id: 1, name: 'Ada' });
     expect(state.status).toBe('success');
     expect(state.pending).toBe(false);
-    expect(state.value).toEqual({ id: 1, name: 'Ada' });
+    expect(state).not.toHaveProperty('value');
     expect(transitions).toBe(1);
 
     resource.update(current => ({ ...current!, name: 'Grace' }));
     expect(readResolvedValue(user).name).toBe('Grace');
-    expect(state.value?.name).toBe('Grace');
+    expect(state).not.toHaveProperty('value');
     expect(transitions).toBe(2);
 
     disconnect();

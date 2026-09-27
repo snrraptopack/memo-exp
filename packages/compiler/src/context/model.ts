@@ -26,6 +26,14 @@ export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceD
     track: '$track',
     group: 'Group',
   },
+  {
+    module: '@memoized-dom/data',
+    source: '$read',
+  },
+  {
+    module: '@memoized-dom/data',
+    source: '$forms',
+  },
 ];
 
 export interface MemoDomOptions {
@@ -401,6 +409,9 @@ export interface Ctx {
   transparentSourceFactories: Set<string>;
   /** Direct provider bindings (for example `$fetch`), whose arguments are request inputs. */
   transparentProviderFactories: Set<string>;
+  /** `$read` aliases: replay is generated from the promise creation expression. */
+  transparentReadFactories: Set<string>;
+  transparentFormFactories: Set<string>;
   /** Component-local variables assigned colorless sources inside event handlers. */
   eventSourceSlots: Map<string, Set<string>>;
   transparentSourceFactoryMethods: Map<string, TransparentSourceMethod>;
@@ -720,6 +731,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     usesTransparentData: false,
     transparentSourceFactories,
     transparentProviderFactories,
+    transparentReadFactories: new Set(),
+    transparentFormFactories: new Set(),
     eventSourceSlots,
     transparentSourceFactoryMethods,
     transparentTrackFactories: new Set(),

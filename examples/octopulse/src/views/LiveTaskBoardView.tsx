@@ -2,13 +2,14 @@
  * Live Engineering Task Board (`/tasks`)
  *
  * Demonstrates:
- * 1. `@memoized-dom/data` `$action` with real HTTP POST, PUT, and DELETE operations
+ * 1. `@memoized-dom/data` tracked HTTP write operations
  * 2. Optimistic UI mutations with `resource.mutate(...)`
  * 3. Pure derived counters (`completedCount`, `openCount`, `completionRate`)
  * 4. DOM ref on task input for instant submission
  */
 
 import { createTaskApi, type LiveTasksResponse, type LiveTask } from '../services/api';
+import { $track } from '@memoized-dom/data';
 
 export type TaskFilter = 'all' | 'open' | 'completed';
 
@@ -23,32 +24,6 @@ export function LiveTaskBoardView() {
     cache: { scope: 'app' },
   });
   let isCreating = false;
-
-  // Action: POST /todos/add to create a task
-  const createTaskAction = taskApi.$action<LiveTask, { todo: string; completed: boolean; userId: number }>(
-    'todos/add',
-    {
-      method: 'POST',
-      onSuccess(result, input) {
-        tasksResource.mutate(current => {
-          const index = current?.todos.findIndex(
-            task => task.todo === input.todo && task.id > 1_000_000,
-          ) ?? -1;
-          if (current && index >= 0) current.todos[index] = result;
-        });
-        isCreating = false;
-      },
-      onError(_error, input) {
-        tasksResource.mutate(current => {
-          const index = current?.todos.findIndex(
-            task => task.todo === input.todo && task.id > 1_000_000,
-          ) ?? -1;
-          if (current && index >= 0) current.todos.splice(index, 1);
-        });
-        isCreating = false;
-      },
-    }
-  );
 
   cleanup(taskApi.clear);
 
@@ -92,8 +67,23 @@ export function LiveTaskBoardView() {
     });
 
     isCreating = true;
-    const creation = createTaskAction({ todo: title, completed: false, userId: 5 });
-    void creation;
+    const request = $track(taskApi.$fetch<LiveTask>('todos/add', {
+      method: 'POST', body: { todo: title, completed: false, userId: 5 },
+    }));
+    request.onSuccess(result => {
+      tasksResource.mutate(current => {
+        const index = current?.todos.indexOf(optimisticItem) ?? -1;
+        if (current && index >= 0) current.todos[index] = result;
+      });
+      isCreating = false;
+    });
+    request.onError(() => {
+      tasksResource.mutate(current => {
+        const index = current?.todos.indexOf(optimisticItem) ?? -1;
+        if (current && index >= 0) current.todos.splice(index, 1);
+      });
+      isCreating = false;
+    });
   }
 
   function toggleTaskState(task: LiveTask) {

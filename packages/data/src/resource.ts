@@ -7,7 +7,23 @@ import {
   type RequestErrorKind,
 } from './errors';
 import { SnapshotNotifier } from './notifications';
-import { createOptimisticChange } from './optimistic';
+import {
+  disposeFormSource,
+  formSourceOperationId,
+  formSourceSnapshot,
+  isFormSource,
+  subscribeFormSource,
+  type FormSource,
+} from './forms';
+import {
+  adoptReadResource,
+  disposeReadResource,
+  isReadResource,
+  readResourceIsLive,
+  readResourceOperationId,
+  readResourceSnapshot,
+  subscribeReadResource,
+} from './read-resource';
 import {
   abortable,
   abortReason,
@@ -24,7 +40,6 @@ import type {
   FetchMethod,
   FetchOptions,
   FetchResource,
-  OptimisticChange,
   ResourceListener,
   ResourceSnapshot,
   SerializedDataState,
@@ -870,180 +885,6 @@ class ResourceController<T> {
 }
 const controllers = getGlobalControllers() as WeakMap<object, ResourceController<unknown>>;
 
-function collection<T>(controller: ResourceController<T[]>): T[] {
-  return Array.isArray(controller.snapshot.data)
-    ? controller.snapshot.data
-    : [];
-}
-
-interface ReplacementStep<T> {
-  readonly temporary: T;
-  outcome: 'pending' | 'committed' | 'rolled-back';
-  result?: T;
-}
-
-interface ReplacementChain<T> {
-  readonly index: number;
-  readonly base: T;
-  readonly steps: ReplacementStep<T>[];
-  visible: T;
-}
-
-const replacementChains = new WeakMap<object, Set<ReplacementChain<unknown>>>();
-
-function chainsFor<T>(
-  controller: ResourceController<T[]>,
-): Set<ReplacementChain<T>> {
-  let chains = replacementChains.get(controller);
-  if (chains === undefined) {
-    chains = new Set();
-    replacementChains.set(controller, chains);
-  }
-  return chains as Set<ReplacementChain<T>>;
-}
-
-function replacementTarget<T>(
-  items: readonly T[],
-  chain: ReplacementChain<T>,
-  visible: T,
-): number {
-  if (Object.is(items[chain.index], visible)) return chain.index;
-  let target = -1;
-  for (let index = 0; index < items.length; index++) {
-    if (!Object.is(items[index], visible)) continue;
-    if (target !== -1) return -1;
-    target = index;
-  }
-  return target;
-}
-
-function settleReplacement<T>(
-  controller: ResourceController<T[]>,
-  chain: ReplacementChain<T>,
-  step: ReplacementStep<T>,
-  outcome: 'committed' | 'rolled-back',
-  result?: T,
-): void {
-  step.outcome = outcome;
-  step.result = result;
-
-  let visible = chain.base;
-  for (const current of chain.steps) {
-    if (current.outcome === 'pending') visible = current.temporary;
-    else if (current.outcome === 'committed') visible = current.result as T;
-  }
-
-  const previous = chain.visible;
-  chain.visible = visible;
-  if (!Object.is(previous, visible)) {
-    controller.update(items => {
-      const next = [...(items ?? [])];
-      const target = replacementTarget(next, chain, previous);
-      if (target !== -1) next[target] = visible;
-      return next;
-    });
-  }
-
-  if (chain.steps.every(current => current.outcome !== 'pending')) {
-    chainsFor(controller).delete(chain);
-  }
-}
-
-function appendChange<T>(
-  controller: ResourceController<T[]>,
-  temporary: T,
-): OptimisticChange<T> {
-  const index = collection(controller).length;
-  controller.update(current => [...(current ?? []), temporary]);
-  return createOptimisticChange({
-    rollback() {
-      controller.update(current => {
-        const next = [...(current ?? [])];
-        const target = next[index] === temporary
-          ? index
-          : next.lastIndexOf(temporary);
-        if (target !== -1) next.splice(target, 1);
-        return next;
-      });
-    },
-    commit(result) {
-      controller.update(current => {
-        const next = [...(current ?? [])];
-        const target = next[index] === temporary
-          ? index
-          : next.lastIndexOf(temporary);
-        if (target !== -1) next[target] = result;
-        return next;
-      });
-    },
-  });
-}
-
-function replaceChange<T>(
-  controller: ResourceController<T[]>,
-  current: T,
-  temporary: T,
-): OptimisticChange<T> {
-  const items = collection(controller);
-  const index = items.indexOf(current);
-  if (index === -1) {
-    return createOptimisticChange({ rollback() {}, commit() {} });
-  }
-  const chains = chainsFor(controller);
-  let chain = [...chains].find(candidate =>
-    Object.is(candidate.visible, current) &&
-    replacementTarget(items, candidate, current) === index
-  );
-  if (chain === undefined) {
-    chain = { index, base: current, visible: current, steps: [] };
-    chains.add(chain);
-  }
-  const step: ReplacementStep<T> = {
-    temporary,
-    outcome: 'pending',
-  };
-  chain.steps.push(step);
-  chain.visible = temporary;
-  controller.update(values =>
-    (values ?? []).map((item, itemIndex) =>
-      itemIndex === index ? temporary : item
-    ),
-  );
-  return createOptimisticChange({
-    rollback() {
-      settleReplacement(controller, chain, step, 'rolled-back');
-    },
-    commit(result) {
-      settleReplacement(controller, chain, step, 'committed', result);
-    },
-  });
-}
-
-function removeChange<T, TResult>(
-  controller: ResourceController<T[]>,
-  current: T,
-): OptimisticChange<TResult> {
-  const index = collection(controller).indexOf(current);
-  if (index === -1) {
-    return createOptimisticChange<TResult>({ rollback() {}, commit() {} });
-  }
-  controller.update(items => {
-    const next = [...(items ?? [])];
-    if (next[index] === current) next.splice(index, 1);
-    return next;
-  });
-  return createOptimisticChange<TResult>({
-    rollback() {
-      controller.update(items => {
-        const next = [...(items ?? [])];
-        next.splice(Math.min(index, next.length), 0, current);
-        return next;
-      });
-    },
-    commit() {},
-  });
-}
-
 export function createFetchResource<T>(
   store: FetchStore,
   environment: FetchEnvironment,
@@ -1124,8 +965,6 @@ function fetchDescriptor(
 function resourceObject<T>(
   controller: ResourceController<T>,
 ): FetchResource<T> {
-  const collectionController =
-    controller as unknown as ResourceController<unknown[]>;
   const resource = {
     get data() { return controller.snapshot.data; },
     get error() { return controller.snapshot.error; },
@@ -1138,19 +977,6 @@ function resourceObject<T>(
       controller.update(change),
     mutate: (change: (current: T | undefined) => void) =>
       controller.mutate(change),
-    append: (temporary: unknown) =>
-      appendChange(collectionController, temporary),
-    replace: (current: unknown, temporary: unknown) =>
-      replaceChange(
-        collectionController,
-        current,
-        temporary,
-      ),
-    remove: <TResult>(current: unknown) =>
-      removeChange<unknown, TResult>(
-        collectionController,
-        current,
-      ),
   };
   controllers.set(resource, controller as ResourceController<unknown>);
   return resource as unknown as FetchResource<T>;
@@ -1168,13 +994,18 @@ function resourceController<T>(
 
 /** Internal capability check used by cross-runtime availability adapters. */
 export function isFetchResource(value: unknown): value is FetchResource<unknown> {
-  return typeof value === 'object' && value !== null && controllers.has(value);
+  return typeof value === 'object' && value !== null &&
+    (controllers.has(value) || isReadResource(value) || isFormSource(value));
 }
 
 export function subscribeFetchResource<T>(
   resource: FetchResource<T>,
   listener: ResourceListener<T>,
 ): () => void {
+  if (isFormSource(resource)) {
+    return subscribeFormSource(resource, listener as unknown as ResourceListener<FormSource<unknown>>);
+  }
+  if (isReadResource(resource)) return subscribeReadResource(resource, listener);
   const controller = resourceController(resource);
   if (controller.disposed) {
     throw new Error('Cannot subscribe to a disposed fetch resource');
@@ -1183,12 +1014,18 @@ export function subscribeFetchResource<T>(
 }
 
 export function disposeFetchResource<T>(resource: FetchResource<T>): void {
+  if (isFormSource(resource)) return disposeFormSource(resource);
+  if (isReadResource(resource)) return disposeReadResource(resource);
   resourceController(resource).dispose();
 }
 
 /** @internal Owned holders retire with their staged component; borrowed
  * holders survive and need an explicit retry before a fresh render generation. */
 export function retryFetchResourceIfLive<T>(resource: FetchResource<T>): Promise<unknown> {
+  if (isFormSource(resource)) return Promise.resolve();
+  if (isReadResource(resource)) {
+    return readResourceIsLive(resource) ? resource.refresh() : Promise.resolve();
+  }
   return resourceController(resource).disposed ? Promise.resolve() : resource.refresh();
 }
 
@@ -1208,12 +1045,18 @@ export function rebindFetchResourceFrom<T>(
   resource: FetchResource<T>,
   candidate: FetchResource<T>,
 ): void {
+  if (isReadResource(resource) && isReadResource(candidate)) {
+    adoptReadResource(resource, candidate);
+    return;
+  }
   resourceController(resource).adopt(resourceController(candidate));
 }
 
 export function fetchResourceSnapshot<T>(
   resource: FetchResource<T>,
 ): ResourceSnapshot<T> {
+  if (isFormSource(resource)) return formSourceSnapshot(resource) as ResourceSnapshot<T>;
+  if (isReadResource(resource)) return readResourceSnapshot(resource);
   return publicSnapshot(resourceController(resource).snapshot);
 }
 
@@ -1221,6 +1064,8 @@ export function fetchResourceSnapshot<T>(
 export function fetchResourceOperationId<T>(
   resource: FetchResource<T>,
 ): string {
+  if (isFormSource(resource)) return formSourceOperationId(resource);
+  if (isReadResource(resource)) return readResourceOperationId(resource);
   return resourceController(resource).operationId;
 }
 

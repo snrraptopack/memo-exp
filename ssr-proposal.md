@@ -126,7 +126,7 @@ real nodes and follow structural ownership. On the server:
 The router exposes `createRouteRuntime()` and memory history. The data package
 exposes `createDataRuntime()`. These are useful request boundaries.
 
-The default `route`, `$fetch`, and `$action` exports are singleton-backed and
+The default `route`, `$fetch`, and `$read` exports are singleton-backed and
 must not be shared by concurrent server requests. The compiler or server
 render API will need a way to supply request-local instances without making
 application authors abandon the convenient public APIs.

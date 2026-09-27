@@ -1,4 +1,4 @@
-import { createDataRuntime } from '@memoized-dom/data';
+import { $track, createDataRuntime } from '@memoized-dom/data';
 import {
   currentUser,
   mockFetch,
@@ -22,70 +22,6 @@ export function ChatApp() {
   const dataRuntime = createDataRuntime({
     fetch: mockFetch as typeof fetch,
   });
-
-  const sendMessageAction = dataRuntime.$action<Message, CreateMessageInput>(
-    '/api/messages',
-    {
-      method: 'POST',
-      onSuccess(result, input) {
-        messagesResource.mutate((items) => {
-          const index = items?.findIndex(
-            item => item.isOptimistic && item.content === input.content,
-          ) ?? -1;
-          if (items && index >= 0) items[index] = result;
-        });
-        actionNotification = '✓ Server verified: message committed in-place!';
-        isSending = false;
-      },
-      onError(error, input) {
-        messagesResource.mutate((items) => {
-          const index = items?.findIndex(
-            item => item.isOptimistic && item.content === input.content,
-          ) ?? -1;
-          if (items && index >= 0) items.splice(index, 1);
-        });
-        actionNotification = `❌ Network Error: Optimistic message rolled back! (${error.message})`;
-        isSending = false;
-      },
-    },
-  );
-
-  const reactMessageAction = dataRuntime.$action<Message, ReactMessageInput>(
-    '/api/messages/react',
-    {
-      method: 'POST',
-      onSuccess(result) {
-        messagesResource.mutate((items) => {
-          const index = items?.findIndex(item => item.id === result.id) ?? -1;
-          if (items && index >= 0) items[index] = result;
-        });
-        actionNotification = '✓ Reaction confirmed by server!';
-      },
-      onError() {
-        actionNotification = '❌ Reaction failed!';
-      },
-    },
-  );
-
-  const replyThreadAction = dataRuntime.$action<Message, ReplyThreadInput>(
-    '/api/messages/reply',
-    {
-      method: 'POST',
-      onSuccess(result) {
-        messagesResource.mutate((items) => {
-          const index = items?.findIndex(item => item.id === result.id) ?? -1;
-          if (items && index >= 0) items[index] = result;
-        });
-        activeThreadMessage = result;
-        actionNotification = '✓ Thread reply committed!';
-        isSendingReply = false;
-      },
-      onError() {
-        actionNotification = '❌ Thread reply failed!';
-        isSendingReply = false;
-      },
-    },
-  );
 
   let activeChannelId = 'c-engineering';
   let searchQuery = '';
@@ -160,8 +96,25 @@ export function ChatApp() {
 
     actionNotification = '⚡ In-flight: message rendered optimistically to real DOM...';
     messagesResource.mutate(items => items?.push(tempMessage));
-    const sending = sendMessageAction(inputData);
-    void sending;
+    const request = $track(dataRuntime.$fetch<Message>('/api/messages', {
+      method: 'POST', body: { ...inputData },
+    }));
+    request.onSuccess(result => {
+      messagesResource.mutate(items => {
+        const index = items?.indexOf(tempMessage) ?? -1;
+        if (items && index >= 0) items[index] = result;
+      });
+      actionNotification = '✓ Server verified: message committed in-place!';
+      isSending = false;
+    });
+    request.onError(error => {
+      messagesResource.mutate(items => {
+        const index = items?.indexOf(tempMessage) ?? -1;
+        if (items && index >= 0) items.splice(index, 1);
+      });
+      actionNotification = `❌ Network Error: Optimistic message rolled back! (${error.message})`;
+      isSending = false;
+    });
   }
 
   function handleReact(message: Message, emoji: string) {
@@ -203,12 +156,28 @@ export function ChatApp() {
       const index = items?.indexOf(message) ?? -1;
       if (items && index >= 0) items[index] = optimisticMessage;
     });
-    const reaction = reactMessageAction({
+    const input: ReactMessageInput = {
       messageId: message.id,
       emoji,
       userId: currentUser.id,
+    };
+    const request = $track(dataRuntime.$fetch<Message>('/api/messages/react', {
+      method: 'POST', body: { ...input },
+    }));
+    request.onSuccess(result => {
+      messagesResource.mutate(items => {
+        const index = items?.indexOf(optimisticMessage) ?? -1;
+        if (items && index >= 0) items[index] = result;
+      });
+      actionNotification = '✓ Reaction confirmed by server!';
     });
-    void reaction;
+    request.onError(() => {
+      messagesResource.mutate(items => {
+        const index = items?.indexOf(optimisticMessage) ?? -1;
+        if (items && index >= 0) items[index] = message;
+      });
+      actionNotification = '❌ Reaction failed!';
+    });
   }
 
   function handleSendReply() {
@@ -243,12 +212,32 @@ export function ChatApp() {
       const index = items?.indexOf(parentRef) ?? -1;
       if (items && index >= 0) items[index] = optimisticParent;
     });
-    const reply = replyThreadAction({
+    const input: ReplyThreadInput = {
       parentId: parentRef.id,
       content,
       authorId: currentUser.id,
+    };
+    const request = $track(dataRuntime.$fetch<Message>('/api/messages/reply', {
+      method: 'POST', body: { ...input },
+    }));
+    request.onSuccess(result => {
+      messagesResource.mutate(items => {
+        const index = items?.indexOf(optimisticParent) ?? -1;
+        if (items && index >= 0) items[index] = result;
+      });
+      activeThreadMessage = result;
+      actionNotification = '✓ Thread reply committed!';
+      isSendingReply = false;
     });
-    void reply;
+    request.onError(() => {
+      messagesResource.mutate(items => {
+        const index = items?.indexOf(optimisticParent) ?? -1;
+        if (items && index >= 0) items[index] = parentRef;
+      });
+      activeThreadMessage = parentRef;
+      actionNotification = '❌ Thread reply failed!';
+      isSendingReply = false;
+    });
   }
 
   function handleOpenThread(message: Message) {
@@ -291,7 +280,7 @@ export function ChatApp() {
       };
 
       // Append incoming message through active resource
-      messagesResource.append(autoMessage);
+      messagesResource.mutate(items => items?.push(autoMessage));
     }, 14000);
 
     return () => clearInterval(interval);

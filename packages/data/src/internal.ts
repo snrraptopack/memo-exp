@@ -1,10 +1,5 @@
 export { createDataRuntime } from './client';
 export {
-  actionResultSnapshot,
-  disposeActionResult,
-  subscribeActionResult,
-} from './action';
-export {
   disposeFetchResource,
   fetchResourceSnapshot,
   subscribeFetchResource,
@@ -38,17 +33,17 @@ export {
 } from './transparent';
 export {
   createSource,
+  createReadSource,
   describeModuleSource,
   isModuleSourceRef,
   readModuleSourceList,
   rebindModuleSource,
+  rebindReadModuleSource,
   resolveModuleSource,
   sourceRef,
 } from './transparent-module';
 export type { ModuleSourceRef } from './transparent-module';
 export type {
-  ActionResultListener,
-  ActionResultSnapshot,
   DataRuntime,
   DataRuntimeOptions,
   ResourceListener,
