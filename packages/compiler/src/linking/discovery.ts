@@ -32,6 +32,7 @@ import {
 import { DEFAULT_TRANSPARENT_ASYNC_SOURCES } from '../context/model';
 import { isRenderPropReference } from '../components/children';
 import { normalizeComponentDeclarations } from '../components/declarations';
+import { unwrapReactComponentWrappers } from '../react/assimilation';
 import { compilerError } from '../errors';
 import type { CompilerRouteDefinition } from '../router';
 import { analyzeRoutedPreparations } from '../routed';
@@ -605,6 +606,7 @@ export function discoverManifest(
     },
   };
         normalizeNamedReexports(compilerPath.node);
+        unwrapReactComponentWrappers(compilerPath);
         normalizeComponentDeclarations(compilerPath);
         const locals = new Map<string, LinkedExport>();
         const tagCandidates = moduleStateStringCandidates(compilerPath.node);

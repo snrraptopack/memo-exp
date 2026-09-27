@@ -33,6 +33,41 @@ interface ImportUse {
   readonly namespace: boolean;
 }
 
+type Binding = ImportUse['binding'];
+
+interface ReactUseScan {
+  readonly uses: ImportUse[];
+  readonly analysis: ReturnType<typeof analyzeScope>;
+}
+
+function reactImportDeclarations(program: t.Program): t.ImportDeclaration[] {
+  return program.body.filter((statement): statement is t.ImportDeclaration =>
+    ast.isImportDeclaration(statement) &&
+    ast.isStringLiteral(statement.source) &&
+    isReactSpecifier(String(statement.source.value)));
+}
+
+function collectReactUses(
+  program: t.Program,
+  imports: readonly t.ImportDeclaration[],
+): ReactUseScan {
+  const analysis = analyzeScope(program as BaseNode);
+  const uses: ImportUse[] = [];
+  for (const declaration of imports) {
+    for (const specifier of declaration.specifiers) {
+      const binding = analysis.rootScope.bindings.get(specifier.local.name);
+      if (binding === undefined) continue;
+      const namespace = specifier.type !== 'ImportSpecifier';
+      const name = namespace
+        ? '*'
+        : ast.isIdentifier(specifier.imported) ? specifier.imported.name
+        : ast.isStringLiteral(specifier.imported) ? String(specifier.imported.value) : '';
+      uses.push({ name, source: String(declaration.source.value), binding, namespace });
+    }
+  }
+  return { uses, analysis };
+}
+
 function copy<T>(node: T): T {
   return cloneNode(node as BaseNode, true) as T;
 }
@@ -97,33 +132,132 @@ function hookCall(
     ? parent : null;
 }
 
+function foldRefParameter(
+  fn: t.ArrowFunctionExpression | t.FunctionExpression,
+): boolean {
+  const refParam = fn.params[1];
+  if (refParam === undefined) return true;
+  if (!ast.isIdentifier(refParam)) return false;
+  const props = fn.params[0];
+  if (props === undefined) return false;
+  const target = ast.isAssignmentPattern(props) ? props.left : props;
+  if (ast.isObjectPattern(target)) {
+    const hasRef = target.properties.some((property) =>
+      !ast.isRestElement(property) && !property.computed &&
+      ast.isIdentifier(property.key) && property.key.name === 'ref');
+    if (hasRef) return false;
+    const slot = ast.objectProperty(
+      ast.identifier('ref'),
+      ast.identifier(refParam.name),
+    );
+    const rest = target.properties.findIndex((property) => ast.isRestElement(property));
+    if (rest === -1) target.properties.push(slot);
+    else target.properties.splice(rest, 0, slot);
+  } else if (ast.isIdentifier(target)) {
+    const bind = ast.variableDeclaration('const', [ast.variableDeclarator(
+      ast.identifier(refParam.name),
+      ast.memberExpression(ast.identifier(target.name), ast.identifier('ref')),
+    )]);
+    if (ast.isBlockStatement(fn.body)) fn.body.body.unshift(bind);
+    else {
+      fn.body = ast.blockStatement([
+        bind,
+        ast.returnStatement(fn.body as t.Expression),
+      ]);
+    }
+  } else return false;
+  fn.params = fn.params.slice(0, 1);
+  return true;
+}
+
+/**
+ * React component wrappers are declaration-level syntax: `memo()` is erased
+ * and `forwardRef()`'s second parameter folds into the MMD `ref` prop binding,
+ * matching authored MMD (`function Input({ label, ref: forwarded })`).
+ * Runs before component declaration normalization so wrapped components enter
+ * the canonical function-declaration path like any authored component.
+ */
+export function unwrapReactComponentWrappers(programPath: ProgramPath): void {
+  const program = programPath.node;
+  const imports = reactImportDeclarations(program);
+  if (imports.length === 0) return;
+  const { uses, analysis } = collectReactUses(program, imports);
+
+  const named = new Map<Binding, 'memo' | 'forwardRef'>();
+  const namespaces = new Set<Binding>();
+  for (const use of uses) {
+    if (use.namespace) namespaces.add(use.binding);
+    else if (use.name === 'memo' || use.name === 'forwardRef') {
+      named.set(use.binding, use.name);
+    }
+  }
+  if (named.size === 0 && namespaces.size === 0) return;
+
+  const wrapperName = (callee: t.Expression): 'memo' | 'forwardRef' | null => {
+    if (ast.isIdentifier(callee)) {
+      const binding = analysis.nodeToScope.get(callee as BaseNode)?.getBinding(callee.name);
+      return binding === undefined ? null : named.get(binding) ?? null;
+    }
+    if (ast.isMemberExpression(callee) && !callee.computed && !callee.optional &&
+        ast.isIdentifier(callee.object) && ast.isIdentifier(callee.property)) {
+      const binding = analysis.nodeToScope.get(callee.object as BaseNode)
+        ?.getBinding(callee.object.name);
+      if (binding !== undefined && namespaces.has(binding) &&
+          (callee.property.name === 'memo' || callee.property.name === 'forwardRef')) {
+        return callee.property.name;
+      }
+    }
+    return null;
+  };
+
+  const peel = (init: t.Expression): t.Expression | null => {
+    const chain: { name: 'memo' | 'forwardRef'; inner: t.Expression }[] = [];
+    let expr = init;
+    while (ast.isCallExpression(expr) && !expr.optional &&
+           expr.arguments.length === 1 && ast.isExpression(expr.arguments[0]!)) {
+      const name = wrapperName(expr.callee);
+      if (name === null) break;
+      chain.push({ name, inner: expr.arguments[0] as t.Expression });
+      expr = expr.arguments[0] as t.Expression;
+    }
+    if (chain.length === 0 ||
+        (!ast.isArrowFunctionExpression(expr) && !ast.isFunctionExpression(expr))) {
+      return null;
+    }
+    const fn = expr;
+    for (const entry of chain) {
+      // forwardRef owns the render function itself: it must be innermost.
+      if (entry.name === 'forwardRef' && (entry.inner !== fn || !foldRefParameter(fn))) {
+        return null;
+      }
+    }
+    return fn;
+  };
+
+  for (const statement of program.body) {
+    const declaration = ast.isVariableDeclaration(statement) ? statement
+      : ast.isExportNamedDeclaration(statement) && statement.declaration !== null &&
+        ast.isVariableDeclaration(statement.declaration) ? statement.declaration : null;
+    if (declaration === null) continue;
+    for (const declarator of declaration.declarations) {
+      if (!ast.isIdentifier(declarator.id) || !/^[A-Z]/.test(declarator.id.name) ||
+          declarator.init === null) continue;
+      const unwrapped = peel(declarator.init);
+      if (unwrapped !== null) declarator.init = unwrapped;
+    }
+  }
+}
+
 /** Called by both manifest analysis and final emission on their own AST clone. */
 export function assimilateReactSource(programPath: ProgramPath): void {
   const program = programPath.node;
-  const imports = program.body.filter((statement): statement is t.ImportDeclaration =>
-    ast.isImportDeclaration(statement) &&
-    ast.isStringLiteral(statement.source) &&
-    isReactSpecifier(String(statement.source.value)));
+  const imports = reactImportDeclarations(program);
   const exportsFromReact = program.body.filter((statement) =>
     ((ast.isExportNamedDeclaration(statement) && statement.source !== null) ||
       statement.type === 'ExportAllDeclaration') &&
     ast.isStringLiteral(statement.source) && isReactSpecifier(String(statement.source.value)));
   if (imports.length === 0 && exportsFromReact.length === 0) return;
-
-  const analysis = analyzeScope(program as BaseNode);
-  const uses: ImportUse[] = [];
-  for (const declaration of imports) {
-    for (const specifier of declaration.specifiers) {
-      const binding = analysis.rootScope.bindings.get(specifier.local.name);
-      if (binding === undefined) continue;
-      const namespace = specifier.type !== 'ImportSpecifier';
-      const name = namespace
-        ? '*'
-        : ast.isIdentifier(specifier.imported) ? specifier.imported.name
-        : ast.isStringLiteral(specifier.imported) ? String(specifier.imported.value) : '';
-      uses.push({ name, source: String(declaration.source.value), binding, namespace });
-    }
-  }
+  const { uses, analysis } = collectReactUses(program, imports);
 
   const operations: Operation[] = [];
   const accepted = new Set<HookName>([
