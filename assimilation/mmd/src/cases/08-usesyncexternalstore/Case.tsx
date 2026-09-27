@@ -1,6 +1,12 @@
-import { decrement, getSnapshot, increment, subscribe } from './store';
+import {
+  current,
+  decrement,
+  getSnapshot,
+  increment,
+  subscribe,
+} from './store';
 
-function Reader({ name }: { name: string }) {
+function LoweredReader({ name }: { name: string }) {
   let value = getSnapshot();
   effect(() => {
     const onChange = () => {
@@ -18,13 +24,13 @@ function Reader({ name }: { name: string }) {
   );
 }
 
-export function UseSyncExternalStoreCase() {
+function Lowered() {
   let showB = true;
   return (
     <section>
-      <h2>useSyncExternalStore — external store</h2>
+      <h3>lowered — what compiled React emits</h3>
       <p>
-        <Reader name="A" /> {showB ? <Reader name="B" /> : null}
+        <LoweredReader name="A" /> {showB ? <LoweredReader name="B" /> : null}
       </p>
       <button onClick={decrement}>store -1</button>
       <label>
@@ -36,5 +42,40 @@ export function UseSyncExternalStoreCase() {
         show B
       </label>
     </section>
+  );
+}
+
+function IdiomaticReader({ name }: { name: string }) {
+  return (
+    <button onClick={increment}>
+      {name}: {current}
+    </button>
+  );
+}
+
+function Idiomatic() {
+  return (
+    <section>
+      <h3>idiomatic — module state read directly</h3>
+      <p>
+        <IdiomaticReader name="A" /> <IdiomaticReader name="B" />
+      </p>
+      <p>
+        <small>
+          No subscribe/effect — `current` is a module `let`; reads in JSX are
+          already reactive.
+        </small>
+      </p>
+    </section>
+  );
+}
+
+export function UseSyncExternalStoreCase() {
+  return (
+    <>
+      <h2>useSyncExternalStore — lowered vs idiomatic</h2>
+      <Lowered />
+      <Idiomatic />
+    </>
   );
 }

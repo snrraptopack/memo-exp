@@ -20,4 +20,7 @@ Dep arrays vanish — read tracking is the dependency mechanism.
 
 ## Notes / divergences
 
+- This lowering **is** the idiomatic form — `const` derivations are how
+  native MMD expresses derived values. No separate idiomatic block needed.
+
 _(fill in when verified)_

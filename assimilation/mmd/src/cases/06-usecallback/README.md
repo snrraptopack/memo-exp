@@ -19,4 +19,7 @@ recreating the callback when `[step]` changes. No dep array, no memo slot.
 
 ## Notes / divergences
 
+- This lowering **is** the idiomatic form — a plain closure over `let`
+  state is what a native author writes. No separate idiomatic block needed.
+
 _(fill in when verified)_

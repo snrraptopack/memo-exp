@@ -1,26 +1,45 @@
 # 08-usesyncexternalstore (MMD lowering)
 
-Hand-lowered equivalent — mirrors the exact shape `assimilateReactSource`
-emits for `useSyncExternalStore`.
+The routed page renders **both** forms side by side.
 
-## Lowering demonstrated
+## Lowered — what compiled React emits
 
 | React | MMD |
 |---|---|
 | `const v = useSyncExternalStore(subscribe, getSnapshot)` | `let value = getSnapshot()` + `effect(() => { onChange → Object.is guard → write; subscribe(onChange); onChange(); return unsubscribe; })` |
 
+This bridge exists because React must treat the store as opaque — the only
+way it learns about changes is the `subscribe` callback.
+
+## Idiomatic — how a native MMD author writes it
+
+```tsx
+import { current, increment } from './store';
+function Reader({ name }) {
+  return <button onClick={increment}>{name}: {current}</button>;
+}
+```
+
+No subscribe, no effect, no `Object.is` guard. `current` is a module `let`
+— the compiler's access table registers `store.ts#current` readers, and
+writes inside `increment()` dirty-mark them across the module boundary.
+Verified in the emitted bundle: `_MD.installAccessTable` maps
+`store.ts#current` to `IdiomaticReader`, and both writers call
+`_MD.commitWrites(["store.ts#current"])`.
+
+The subscribe/effect form is still the right lowering when the store is
+*genuinely external* (an npm package outside the compiled graph) — which is
+exactly why compiled React needs it.
+
 ## Same checklist as the React version
 
-1. Both readers start at `0`.
-2. Either button updates both.
-3. B unmount/remount shows the current value.
-4. Updates during B's absence apply on remount.
+1. All four readers start `0`.
+2. Any increment updates all four.
+3. B unmount/remount in the lowered section shows the current value.
 
 ## Notes / divergences
 
-- Native MMD could also just read the module's `current` directly — the
-  compiler already tracks module-scope state. This file deliberately uses
-  the *lowered* form because that's what React source compiles to: the store
-  boundary stays opaque, subscription is explicit.
+- Idiomatic section has no show/hide toggle — remount behavior is covered
+  by the lowered section's checklist.
 
 _(fill in when verified)_

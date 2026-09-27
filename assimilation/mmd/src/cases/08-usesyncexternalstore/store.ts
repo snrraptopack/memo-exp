@@ -1,4 +1,4 @@
-let current = 0;
+export let current = 0;
 const listeners = new Set<() => void>();
 
 export function getSnapshot() {

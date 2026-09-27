@@ -50,6 +50,14 @@ Conventions:
   each `CaseIndex`.
 - No single-page mega-app, no dynamic component dispatch — MMD has no runtime
   component type (see `error-log.md` #001).
+- **Lowered vs idiomatic.** The MMD `Case.tsx` starts from the exact shape the
+  compiler emits (that's the thing being verified). When the *idiomatic* MMD
+  version differs meaningfully — e.g. `useReducer` handlers can write the
+  cell directly, `useSyncExternalStore` can read a module `let` instead of
+  subscribing — the routed page renders both labeled sections
+  ("lowered" / "idiomatic") and the README spells out both forms. Where the
+  lowering already *is* idiomatic (useMemo/useCallback/effect), the README
+  says so instead.
 
 ## Compiler lowering path (confirmed)
 
