@@ -102,6 +102,32 @@ describe('compiled route destination identity and readiness', () => {
     await vi.waitFor(() => expect(document.querySelector('#detail')).not.toBeNull());
     await vi.waitFor(() => expect(scroll).toHaveBeenCalledWith(0, 0));
   });
+  it('also waits for atomic discovery through the default asynchronous scheduler', async () => {
+    resetScheduler();
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    router.navigate('/reports/one');
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(document.querySelector('.loading')).not.toBeNull();
+    expect(scroll).not.toHaveBeenCalled();
+    resolve(0, 'Scheduled');
+    await vi.waitFor(() => expect(document.querySelector('#detail span')?.textContent).toBe('Scheduled'));
+    await vi.waitFor(() => expect(scroll).toHaveBeenCalledWith(0, 0));
+  });
+  it('cancels scheduled readiness when a new destination supersedes it', async () => {
+    resetScheduler();
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    router.navigate('/reports/one');
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    router.navigate('/reports/two');
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    resolve(0, 'Late');
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(scroll).not.toHaveBeenCalled();
+    resolve(1, 'Newest');
+    await vi.waitFor(() => expect(document.querySelector('#detail span')?.textContent).toBe('Newest'));
+    await vi.waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+  });
   it('abandons a parameter destination without stale publication or scroll', async () => {
     const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
     router.navigate('/reports/one');

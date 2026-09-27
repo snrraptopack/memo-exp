@@ -11,3 +11,4 @@ export { _propsBox } from './props';
 export { listStructureReason } from './list-update';
 export { createRenderPreparation } from './preparation';
 export { createPreparedRegion } from './prepared-region';
+export { noteRenderReadiness } from './render-readiness';

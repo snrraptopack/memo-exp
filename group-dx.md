@@ -91,6 +91,8 @@ renderer-readiness promise. Route publication now collects real atomic commit
 promises and passes them to scroll restoration; a pending atomic fallback is
 not scroll-ready. Superseded ranges reject readiness and cannot scroll the
 new destination. This is internal coordination, not a developer option.
+Collection spans the normal scheduled render drain, including descendant
+work discovered in later passes, without forcing synchronous rendering.
 Legacy/external browser history entries without a tracked index cannot be
 reversed reliably through the fallback History API. Their failure is reported
 while committed UI is retained; a stronger untracked-entry recovery policy

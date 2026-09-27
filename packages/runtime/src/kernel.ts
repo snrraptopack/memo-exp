@@ -371,6 +371,12 @@ const registryListeners: RegistryListener[] = [];
 export type EntityDisposeHook = (id: EntityId) => readonly unknown[] | void;
 const entityDisposeHooks: EntityDisposeHook[] = [];
 
+/** @internal Observe the end of a scheduled render drain, including failure. */
+const commitFinishedListeners: Array<(failed: boolean, error?: unknown) => void> = [];
+export function onCommitFinished(listener: (failed: boolean, error?: unknown) => void): void {
+  commitFinishedListeners.push(listener);
+}
+
 export function onEntityDispose(fn: EntityDisposeHook): void {
   if (!entityDisposeHooks.includes(fn)) entityDisposeHooks.push(fn);
 }
@@ -648,6 +654,8 @@ export function commit(): void {
   k.inCommit = true;
   k.renderCounts ??= new Map();
   k.markedBy ??= new Map();
+  let failed = false;
+  let failure: unknown;
   try {
     // R10: drain loop — renders may mark further ids (setProps pushing props
     // to children, update-driven invalidation). Depth-sorted batches keep
@@ -713,11 +721,16 @@ export function commit(): void {
         '[memo-dom] commit cascade exceeded 100 passes — an update is dirtying its own readers (cycle)',
       );
     }
+  } catch (error) {
+    failed = true;
+    failure = error;
+    throw error;
   } finally {
     k.inCommit = false;
     k.renderingEntity = null;
     k.renderCounts = null;
     k.markedBy = null;
+    for (const listener of commitFinishedListeners) listener(failed, failure);
   }
 }
 
