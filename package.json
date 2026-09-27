@@ -26,6 +26,8 @@
     "typecheck": "tsc --noEmit",
     "dev": "bun run build && vitest",
     "example:dev": "vite --config examples/vite.config.ts",
+    "assimilation:react": "vite --config assimilation/react/vite.config.ts",
+    "assimilation:mmd": "vite --config assimilation/mmd/vite.config.ts",
     "example:workspace": "MMD_EXAMPLE=workspace/main.ts vite --config examples/vite.config.ts",
     "example:tsrx": "MMD_EXAMPLE=tsrx-todo/main.ts vite --config examples/vite.config.ts",
     "example:ssr": "vite --config examples/ssr-showcase/vite.config.ts",

@@ -39,7 +39,7 @@
       }
     },
     {
-      "files": ["evaluation/**", "bench/**", "examples/**", "scratch/**"],
+      "files": ["evaluation/**", "bench/**", "examples/**", "assimilation/**", "scratch/**"],
       "rules": {
         "no-unused-vars": "warn",
         "no-unassigned-vars": "off",
