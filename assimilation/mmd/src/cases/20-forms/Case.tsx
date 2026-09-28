@@ -1,10 +1,21 @@
+import { $forms } from '@memoized-dom/data';
+import { optimistic } from '@memoized-dom/utils';
+
 interface Message {
+  id: string;
   text: string;
   pending?: boolean;
 }
 
 function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+let nextServerId = 1;
+
+async function postMessage(text: string): Promise<Message> {
+  await delay(1200);
+  return { id: `srv-${nextServerId++}`, text };
 }
 
 function SubmitButton({ pending }: { pending: boolean }) {
@@ -16,43 +27,64 @@ function SubmitButton({ pending }: { pending: boolean }) {
 }
 
 export function FormsCase() {
-  let pending = false;
+  let formEl: HTMLFormElement | null = null;
   let messages: Message[] = [];
+
+  const sendMessage = optimistic({
+    action: (text: string) => postMessage(text),
+    apply(text, id) {
+      messages.push({ id, text, pending: true });
+      return () => {
+        const index = messages.findIndex((m) => m.id === id);
+        if (index !== -1) messages.splice(index, 1);
+      };
+    },
+    reconcile(saved, _text, id) {
+      const index = messages.findIndex((m) => m.id === id);
+      if (index !== -1) messages.splice(index, 1, saved);
+      formEl?.reset();
+    },
+  });
+
+  const form = $forms((fields: FormData) =>
+    sendMessage(String(fields.get('msg') ?? '')),
+  );
+
   return (
     <section>
       <h2>React 19 forms — action state + optimistic</h2>
       <ul>
-        {messages.map((m, i) => (
-          <li data-index={i} data-pending={m.pending ?? false}>
+        {messages.map((m) => (
+          <li key={m.id} data-pending={m.pending ?? false}>
             {m.text}
             {m.pending ? ' (sending)' : ''}
           </li>
         ))}
       </ul>
       <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const fd = new FormData(e.currentTarget);
-          const text = String(fd.get('msg') ?? '');
-          const item = { text, pending: true };
-          messages = [...messages, item];
-          pending = true;
-          e.currentTarget.reset();
-          await delay(1200);
-          messages = messages.map((m) =>
-            m === item ? { text } : m,
-          );
-          pending = false;
+        ref={(el) => {
+          formEl = el;
         }}
+        onSubmit={form.submit}
       >
         <input name="msg" placeholder="message" required />{' '}
-        <SubmitButton pending={pending} />
+        <SubmitButton pending={form.pending} />
       </form>
+      {form.errors.map((e) => (
+        <p>{e.message}</p>
+      ))}
       <p>
         <small>
-          "Optimistic" is a plain write — the row pushes instantly, its
-          `pending` field flips when the awaited commit resolves. No action
-          channel, no form context.
+          {form.hasResult
+            ? `last delivered: ${form.result?.text} (${form.result?.id})`
+            : 'nothing delivered yet'}
+        </small>
+      </p>
+      <p>
+        <small>
+          `$forms` owns submit/pending/errors/result; `optimistic` owns the
+          instant row plus per-operation rollback and reconcile (its plain
+          promise action is wrapped in `$read` internally).
         </small>
       </p>
     </section>

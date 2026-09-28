@@ -226,3 +226,55 @@ function WrappedList({ title, items }: { title: string; items: string[] }) {
 authored twin that inspects elements — the idiomatic equivalent is always a
 data prop + list region. For assimilation, `Children.map` is sound *only*
 via call-site specialization (which is what the compiler does).
+
+## 006 — writing a `let` whose initializer reads reactive state (post-merge derived-let rule)
+
+**Code** (`assimilation/mmd/src/cases/08-usesyncexternalstore/Case.tsx`):
+
+```tsx
+function LoweredReader({ name }: { name: string }) {
+  let value = getSnapshot();          // getSnapshot() reads module `let current`
+  effect(() => {
+    const onChange = () => {
+      const next = getSnapshot();
+      if (!Object.is(value, next)) value = next;   // ← write to a derived let
+    };
+    const unsubscribe = subscribe(onChange);
+    onChange();
+    return unsubscribe;
+  });
+  ...
+}
+```
+
+**Error** (vite dev server startup, plugin `memoized-dom`):
+
+```
+cannot write derived 'value' — its initializer reads reactive state; write its source instead
+  at assimilation/mmd/src/cases/08-usesyncexternalstore/Case.tsx:10:6
+```
+
+**Why it fails**: the merged compiler generalised derivations — a `let`
+whose initializer reads reactive state is now a *derived let*: it replays
+when the source changes and is read-only for authors (writes must go to
+the source). This is the *inverse* of the pre-merge rule that rejected
+`let` initializers reading reactive state unless reassigned (see #002) —
+the new rule allows the initializer but forbids the writes.
+
+**Important asymmetry**: the exact same shape is still what the React
+lowering *emits* for `useSyncExternalStore` — `let value = getSnapshot()`
+plus effect-time writes (`assimilation.ts` external-store op) — and all
+`state-sources.test.ts` tests still pass. Compiler output is rewritten at
+the AST level *after* the authored-binding check runs, so the restriction
+applies to handwritten source only. A hand-authored subscription bridge
+over an MMD-reactive snapshot can no longer express the lowered shape.
+
+**Resolution**: initialise from a literal and sync inside the effect:
+
+```tsx
+let value = 0;              // plain let — init reads no reactive state
+effect(() => { … value = next … });
+```
+
+The initial literal is never visible — `effect` runs pre-paint (case 09
+finding), so `onChange()` installs the real snapshot before first paint.

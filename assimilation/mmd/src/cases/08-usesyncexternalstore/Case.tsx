@@ -7,7 +7,7 @@ import {
 } from './store';
 
 function LoweredReader({ name }: { name: string }) {
-  let value = getSnapshot();
+  let value = 0;
   effect(() => {
     const onChange = () => {
       const next = getSnapshot();

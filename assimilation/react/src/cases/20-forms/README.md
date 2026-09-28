@@ -19,10 +19,14 @@ Three intertwined APIs in one real form:
 
 ## Expected React semantics being captured
 
-- `useOptimistic(state, mergeFn)` → the optimistic write is just a second
-  state channel in MMD terms — see the twin: it's a normal `let` write.
-- `useActionState` → `let` list + async handler writing on resolve.
-- `useFormStatus` → form-context pending read → the twin passes a plain
-  prop (MMD has no implicit form context — same lesson as `11-usecontext`).
-- `action={}` on `<form>` itself is a React-19 idiom; MMD uses `onSubmit`
-  + `preventDefault`.
+- `useOptimistic(state, mergeFn)` → `optimistic({ action, apply, reconcile })`
+  from `@memoized-dom/utils` — apply returns a per-operation rollback,
+  reconcile swaps the pending row for the saved one (keyed by operation id).
+- `useActionState` → `$forms` from `@memoized-dom/data` — owns
+  `submit`/`pending`/`errors`/`result`; the action's plain promise is wrapped
+  in `$read` internally.
+- `useFormStatus` → form-context pending read → the twin passes
+  `form.pending` as a prop (MMD has no implicit form context — same lesson
+  as `11-usecontext`, but now a real `FormSource` field).
+- `action={}` on `<form>` is a React-19 idiom; MMD uses
+  `onSubmit={form.submit}` which preventDefaults and builds the `FormData`.
