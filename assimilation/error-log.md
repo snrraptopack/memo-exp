@@ -368,3 +368,11 @@ Verified in emitted code: `_MD.refAssign((_refNode) => { formEl = _refNode; … 
 **Compiler gap worth fixing**: `ref={X}` on a host element should either
 adapt `{current}` boxes or *diagnose* non-adaptable non-function values —
 a guaranteed runtime TypeError should never emit silently.
+
+**Resolved (runtime)**: `mountRef`'s `mountValue` now accepts a `{ current }`
+box at runtime — the same write + conditional-clear contract as the
+compile-time `refAssign` adapter. This covers the case the compiler can
+never see: a box carried through a prop (`<Field inputRef={box}>` →
+`ref={inputRef}`). Compile-time adaptation stays preferred for provable
+module/component-scope boxes because it lands in the eager creation-time
+class. The `let` sink idiom remains the recommended authored form.

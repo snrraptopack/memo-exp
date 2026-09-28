@@ -22,8 +22,18 @@ import { getActiveApplicationRuntime, getActiveEnvironment } from './kernel';
 export type RefCallback<T extends Node = Node> = (
   node: T,
 ) => void | (() => void);
+/**
+ * A `{ current }` ref box carried through a prop. Compile-time sinks are
+ * adapted into refAssign callbacks, but a box that crosses a component
+ * boundary arrives as a runtime value and is mounted with the same
+ * write/conditional-clear contract.
+ */
+export interface RefBox<T extends Node = Node> {
+  current: T | null | undefined;
+}
 export type RefValue<T extends Node = Node> =
   | RefCallback<T>
+  | RefBox<T>
   | readonly RefValue<T>[]
   | null
   | undefined
@@ -201,6 +211,16 @@ function mountValue<T extends Node>(
     return;
   }
   if (typeof value !== 'function') {
+    if (
+      typeof value === 'object' && value !== null && 'current' in value
+    ) {
+      const box = value as RefBox<T>;
+      box.current = node;
+      disposers.push(() => {
+        if (box.current === node) box.current = undefined;
+      });
+      return;
+    }
     throw new TypeError(
       '[memo-dom] ref value must be a callback, an assignable JSX target, or an array of refs',
     );
