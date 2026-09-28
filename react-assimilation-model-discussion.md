@@ -3,9 +3,12 @@
 Status: discussion, not an implementation plan or compatibility promise.
 
 Implementation observations below describe the archived
-`feat/react-assimilation` experiment at commit `0b4df8a`. This rewrite branch
-starts from `main`, without that experiment's React lowering. Archived files
-can be inspected with `git show 0b4df8a:<path>`.
+`feat/react-assimilation` experiment at commit `0b4df8a`. This document is a
+historical design inventory; the current rewrite branch now has a different
+lowering implementation. For the current compiler path and paired executable
+cases, see the [working RFC](react-assimilation-rfc.md) and
+[assimilation lab](assimilation/README.md). Archived files can be inspected with
+`git show 0b4df8a:<path>`.
 
 The question here is: **what does React-authored package code mean after it is
 compiled as MMD?** MMD does not try to execute React's render loop. The source
@@ -237,8 +240,8 @@ ones. The source references are the official
 
 ## 5. Where the archived assimilation crosses the model
 
-The [RFC](react-assimilation-rfc.md) describes recognition that yields common
-compiler entities. The archived preparation order in
+The current [RFC](react-assimilation-rfc.md) describes source translation into
+ordinary MMD analysis. The archived preparation order in
 `packages/compiler/src/analysis/prepare.ts`
 instead lowers element factories, providers, wrappers, hooks, and then element
 factories again before ordinary MMD analysis. This turns phase order and AST

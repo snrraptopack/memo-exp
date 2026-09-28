@@ -1,35 +1,15 @@
-# React and MMD Source Assimilation RFC
+# React source assimilation into MMD
 
-Status: draft; mixed MMD and React authoring is required
-Audience: compiler, vite plugin, language-service, and testing contributors
+Status: working design for `feat/react-assimilation-rewrite`.
 
 ## Goal
 
-Memoized DOM compiles selected React-authored npm packages and mixed
-application modules into native Memoized DOM output. React imports are source
-forms the compiler understands. The shipped bundle contains no React: no
-reconciler, no hook dispatcher, no `react` or
-`react-dom` module.
+Compile supported React-authored source and ordinary MMD source together into
+one MMD application. React imports can appear in app modules or selected
+packages. They are source forms; the shipped application does not load React or
+run a React reconciler.
 
-```ts
-memoizedDom({
-  react: {
-    packages: ['@radix-ui/react-dialog'],
-  },
-});
-```
-
-```tsx
-import { Dialog } from '@radix-ui/react-dialog';
-
-<Dialog.Root>
-  <Dialog.Trigger>Open</Dialog.Trigger>
-</Dialog.Root>
-```
-
-No wrapper, no island, no separate React root.
-
-Migration keeps MMD's explicit browser entry:
+Migration changes the browser entry to MMD's root contract:
 
 ```ts
 import { mount } from '@memoized-dom/runtime';
@@ -38,239 +18,116 @@ import { App } from './App';
 mount('root', App);
 ```
 
-The application component and its dependencies may still contain supported
-React imports. `createRoot` is not translated because `mount` establishes the
-application root identity used by MMD compilation.
+`createRoot` is diagnosed. `mount` gives the compiler the application root and
+its identity. A component below that root may use supported React imports and
+MMD constructs in the same module. MMD semantics govern the result: component
+bodies run once per instance, local derivations update from their sources, and
+effects have MMD ownership and cleanup. React rerender timing and scheduling
+are not promised.
 
-## Non-goals
+## Proof before lowering
 
-- **A separate React runtime mode.** Recognized React APIs can appear beside
-  MMD constructs in any compiled module. They compile to MMD semantics rather
-  than selecting a separate execution model for the file.
-- **A runtime compatibility layer.** No fake `react` module executes at
-  runtime. This is a deliberate trade: runtime shims (the `preact/compat`
-  model) cover React's whole API surface including unanticipated usage, at
-  the cost of a permanent second runtime. Assimilation pays zero runtime
-  cost but covers only the semantic subset with compilation rules — each
-  compiled use either lowers or emits a diagnostic.
-- **React's execution model.** Rerender-ordering assumptions, Suspense
-  semantics, RSC packages, React internals/Fiber dependencies, custom
-  renderers, and React DevTools integration are permanently out of scope.
+The root [`assimilation/`](assimilation/README.md) lab contains paired,
+runnable React and hand-authored MMD cases. The React app is a reference for
+the source API. The MMD app is an executable candidate for the code the
+compiler should produce. Its case README records the translation and any
+observable divergence. Run both apps and compare their behavior before
+implementing a new lowering rule:
 
-## Core architecture: source-bound translation into MMD
-
-The current compiler recognizes React APIs by their imported bindings. A
-validated translation plan converts supported calls into MMD component
-operations before shared analysis and emission. Linked custom hooks and child
-sequences are specialized before that plan runs. Ordinary MMD constructs in
-the same module continue through the normal compiler.
-
-```
-MMD and React imports in an application or selected package
-        ↓
-ordinary parser → standard ESTree
-        ↓
-linked specialization + source-bound React translation
-        ↓
-useState() becomes an MMD state binding
-useEffect() becomes an MMD owned effect
-        ↓
-normal linking + analysis + emission
-        ↓
-native Memoized DOM output
+```bash
+bun run assimilation:react  # :5173
+bun run assimilation:mmd    # :5174
 ```
 
-### Source-bound recognition, uniform IR below
+Then add an isolated `react-tests/` fixture that compiles real React source
+through the same MMD compiler, asserting emitted operations and DOM behavior.
+The normal root compiler suite excludes these fixtures. A passing MMD lab case
+proves only that its *target* is expressible; it does not mean the React API is
+already translated. The lab matrix tracks both statuses separately.
 
-React operations are recognized from their imported bindings in any compiled
-module. Package selection determines which dependencies enter the graph:
+When an MMD target cannot express a behavior, record the attempted source and
+error in [`assimilation/error-log.md`](assimilation/error-log.md). Decide
+whether to extend ordinary MMD or diagnose the React form. Do not add a second
+compilation mode to hide the gap.
 
-```ts
-compileModules(graph, {
-  react: { packages: ['@radix-ui/react-dialog'] },
-});
+## Compiler path
+
+There is one parser, linker, analysis, emitter, and runtime. React calls are
+identified by their imported bindings, not by a file-wide dialect switch:
+
+```text
+MMD source + React-authored source
+  → parse and link modules
+  → specialize supported linked hooks and child call sites
+  → unwrap memo/forwardRef component declarations
+  → normalize component declarations
+  → rewrite recognized React calls into MMD source operations
+  → ordinary MMD analysis and emission
+  → MMD runtime
 ```
 
-By link time every module has compiled to the same entities; an assimilated
-component and a hand-written component are indistinguishable to the linker,
-the runtime, SSR, and hydration.
+The source rewrite happens in `packages/compiler/src/react/assimilation.ts`
+through `analysis/prepare.ts`. Wrapper discovery also runs while building the
+linker manifest. The `react.packages` option selects dependencies to bring
+into the source graph; it does not select a React execution mode. Supported
+React imports in an app module need no package opt-in.
 
-### Imported API recognition and lowering
+Diagnostics should name the original API and source location. A recognized
+import used in an unsupported shape is rejected during compilation. We do not
+leave a runtime React import or silently reinterpret an unsupported call.
 
-The semantic analyzer recognizes imports from React modules. Supported call
-shapes map onto existing internal concepts:
+## Current translation boundaries
 
-| React source                      | Compiled entity                        |
-| --------------------------------- | -------------------------------------- |
-| `useState(init)`                  | component-local reactive cell + setter |
-| `useMemo(fn, deps)`               | derivation                             |
-| `useCallback(fn, deps)`           | stable function                        |
-| `useEffect`/`useLayoutEffect`     | effect entity                          |
-| `useRef(init)`                    | persistent local/ref storage           |
-| `useImperativeHandle`             | ref exposure                           |
-| `createContext`/`useContext`      | context entity                         |
-| `forwardRef(fn)`                  | ref-forwarding component               |
-| `memo(fn)`                        | erased / compile-time annotation       |
-| `react`/`react/jsx-runtime` JSX   | MMD element representation             |
+The [lab matrix](assimilation/README.md#matrix) is the detailed status source.
+The current direction is:
 
-Recognizing the original call site — rather than rewriting it into MMD
-syntax — preserves fidelity (dep arrays, initializer thunks, generics) and
-keeps diagnostics in the user's vocabulary: "conditional `useState` at
-module X line N" rather than an error emitted from generated code.
+| Source form | MMD target or boundary |
+| --- | --- |
+| `useState`, `useReducer` | local `let` cell and write function |
+| `useMemo`, `useCallback` | derivation or stable function; dependency arrays do not define MMD invalidation |
+| `useEffect`, `useLayoutEffect`, `useInsertionEffect` | owned `effect()` operations, with phase ordering where implemented |
+| `useRef`, `createRef` | `{ current }` box and MMD ref attachment |
+| `memo`, `forwardRef` | wrapper erased; forwarded ref becomes an MMD prop/ref path |
+| `useSyncExternalStore` | subscription effect updating a local cell; see the authored-source limitation in error log #006 |
+| `useId` | stable per-instance allocation; a native entity-derived ID remains a possible improvement |
+| `Children.count`, `Children.map` | bounded link-time caller specialization, not runtime child introspection |
+| `use(promise)`, `Suspense` | `$read` and `Group`/`suspend` for the supported source shape |
+| `useActionState` | `$forms` for the supported direct form |
+| `useTransition`, `useDeferredValue` | current synchronous/identity translations are behaviorally divergent |
+| `createContext`, `useContext` | diagnosed; no ancestry-scoped MMD context primitive yet |
+| `createPortal` | diagnosed; no MMD portal ownership primitive yet |
+| `lazy` component values | diagnosed; route-level code splitting is a different capability |
+| `Children.only`, `Children.toArray`, `cloneElement`, `createElement` | diagnosed; MMD has no general element-value API |
+| `react/jsx-runtime` `jsx`/`jsxs`/`jsxDEV` calls | diagnosed; compile JSX source before that transform |
 
-### Diagnostics on unsupported semantics
+Some paired cases intentionally show an idiomatic MMD equivalent that cannot
+be generated from the React source today. For example, prop drilling reproduces
+one `useContext` example but is not a general translation for nested providers.
+Likewise, manually moving DOM for a portal example is not a compiler-owned
+portal primitive.
 
-Coverage is per-semantic, not per-package-name. A React construct with no
-recognition rule produces a compiler diagnostic at the call site, aimed at
-the developer who opted the package in:
+## Package and type work
 
-```
-@radix-ui/react-dialog: unsupported react semantic 'useSyncExternalStore'
-  at node_modules/@radix-ui/react-dialog/dist/index.js:412
-```
+Opted-in packages must be resolved as source graphs, including their internal
+imports. Test them as authored modules under `react-tests/fixture/` and, when
+appropriate, as installed npm packages. Unsupported transpiled JSX runtime
+calls and minified bundles are not accepted as if they were JSX source.
 
-There is no graceful-degradation path; an unsupported semantic blocks the
-package at build time.
+Before claiming support for a named package, collect its actual imported React
+API uses, unsupported source shapes, and transitive dependencies. The coverage
+report remains work to build. A package may also depend on another runtime
+system, such as a CSS-in-JS engine; React elimination alone does not translate
+that dependency.
 
-## Package resolution and graph expansion
+The compiler strips TypeScript types, but typed application development will
+need a React vocabulary mapped to MMD component and ref types. A dedicated
+types-only shim remains deferred; it should avoid a conflicting global JSX
+namespace.
 
-The linker currently resolves only relative specifiers; it has no
-`node_modules` handling. Assimilation adds:
+## Acceptance rule
 
-- an allowlist-aware resolver that maps bare specifiers for opted-in
-  packages to their package root, then expands the module graph through the
-  package's internal imports;
-- a policy for transitive imports: another allowlisted React package →
-  assimilated; non-React dependencies → treated as ordinary external
-  imports unless they themselves need assimilation;
-- `requireApplicationRoot: false` for package graphs (no `mount()` root
-  exists in library code — the option already exists for this reason).
-
-### Input formats
-
-Packages ship source in three forms:
-
-- **Source / unminified TS or JSX** — parsed directly.
-- **Transpiled ESM dist** — `jsx(...)`/`React.createElement(...)` call-form.
-  Structured enough to analyze without a JSX parser; the analyzer
-  recognizes element-construction calls.
-- **Minified bundles** — out of scope. Documented hard constraint.
-
-## Hard semantic work items
-
-Ordered by how many packages they gate:
-
-1. **`children` introspection** — `React.Children.*`, `cloneElement`,
-   `isValidElement`, `Children.only`. These operate on element descriptors,
-   not DOM nodes; the dialect needs an element-descriptor representation at
-   its boundary before DOM emission. The largest single design piece.
-2. **`createContext`/`useContext`** across module boundaries, including
-   Provider subtrees and compound-component patterns.
-3. **Portals** — `createPortal` needs a mount-point contract in the runtime.
-4. **Event normalization** — `onChange` ≈ DOM `input`, capture variants,
-   `onDoubleClick`, focus/blur delegation. A mapping table covers most of
-   it; the remainder is documented behavioral difference.
-5. **Controlled/uncontrolled props** — `value`+`onChange` and
-   `defaultValue` patterns.
-6. **`useImperativeHandle` + `forwardRef`** — imperative ref exposure.
-7. **Hook discipline diagnostics** — conditional hooks, hooks after early
-   return, hooks in callbacks. Illegal in React too, but real packages
-   occasionally depend on subtleties; diagnostics must be precise.
-
-### Transitive non-React dependencies
-
-Assimilation covers React semantics, not arbitrary runtime ecosystems.
-MUI, for example, is blocked less by React semantics than by Emotion
-(`styled`, `ThemeProvider`, the `css` prop), Popper, and
-`react-transition-group`. "Zero React" is guaranteed; "zero extra runtime"
-is not. Per package, decide whether a transitive dep is compiled, kept as
-an external runtime dependency, or disqualifying.
-
-## Coverage report (build first)
-
-Before committing to named package support, build the tool that makes
-coverage measurable: point the linker at a package with
-`requireApplicationRoot: false` and the `react` dialect, walk its module
-graph, and report every React API it touches with counts and coverage
-status.
-
-- Drives phase order by real-world API frequency rather than guesses.
-- Doubles as the user-facing error when an opted-in package hits an
-  unsupported semantic.
-- Doubles as a corpus generator for tests (below).
-
-## Testing strategy
-
-Three layers, extending the existing dense-corpus approach:
-
-1. **Syntactic density per recognition rule** — every surface spelling of
-   each API: named/aliased imports, `React.useState` member access,
-   namespace imports, non-destructured tuple results, ignored results,
-   `jsx()`/`createElement` call-form, wrapped calls.
-2. **Harvested real-world corpus** — fixtures generated from actual API
-   usage patterns in target packages' source, so the corpus reflects what
-   npm code really looks like rather than imagined usage.
-3. **Behavioral parity fixtures** — assimilated component compiled and
-   driven against DOM assertions (state updates, effect cleanup, ref
-   timing, context propagation), reusing the `compileFixture`/`expectParity`
-   harness style. Emphasis on hook composition and interaction — isolated
-   spellings are easy; interactions are where assimilation bugs live.
-
-## Types shim (deferred)
-
-Not needed for compilation — the compiler strips types and never reads
-`.d.ts`. Needed eventually for typed props on assimilated components.
-
-- Real `@types/react` is **not** an option: it declares a global `JSX`
-  namespace whose `ElementClass`/`LibraryManagedAttributes` contracts
-  conflict with `compiler/src/jsx-types.ts`'s global `JSX`.
-- The shim is a small types-only package (`@memoized-dom/react-types`)
-  declaring `module 'react'` with React's type vocabulary defined in terms
-  of MMD types — `FC<P>` as the MMD component signature, `ReactNode` as the
-  MMD child type, `Ref`/`RefCallback` as MMD ref types — and deliberately
-  no global `JSX` declarations.
-- Until it exists: `skipLibCheck` lets assimilated components degrade to
-  loosely-typed usage without breaking user builds.
-
-## Phased rollout
-
-| Phase | Semantics                                   | Unlocks                          |
-| ----- | ------------------------------------------- | -------------------------------- |
-| 1     | JSX, props, spread, `memo`, `forwardRef`    | icon/SVG libraries, simple kits  |
-| 2     | `useState`, `useMemo`, `useCallback`,       | hooks-only packages              |
-|       | `useEffect`, `useRef`                       |                                  |
-| 3     | `createContext`/`useContext`, controlled    | compound-component libraries     |
-|       | props, imperative refs                      |                                  |
-| 4     | portals, layout effects, external stores    | Radix-class headless primitives  |
-| 5     | remainder per coverage-report frequency     | design systems, charts, motion   |
-
-Each phase ships real value — phase 1 alone is a demoable feature.
-
-## Fit with the current codebase
-
-Already-landed enablers:
-
-- `EstreeFrontend` seam (`compiler/src/compile.ts`) — pluggable input
-  formats, precedent in the TSRX frontend;
-- `resolveImport` hook + whole-module-graph linker
-  (`compiler/src/linking/model.ts`);
-- `diagnoseModules` — the diagnostics path used by the language service;
-- `requireApplicationRoot` on `CompileModulesOptions` — compiling graphs
-  without a `mount()` root;
-- `packages/css` precedent for a compiler-owned language surface.
-
-New infrastructure required:
-
-- `node_modules` resolution for allowlisted packages in the linker;
-- `dialectOf` (or equivalent) plumbed into semantic analysis;
-- the React semantic-recognition table;
-- the coverage-report tool;
-- `@memoized-dom/react-types` types shim (deferred).
-
-## Prior art
-
-- **Builder.io Mitosis** — JSX-as-interchange-format compiling to multiple
-  frameworks; validates the two-stage approach.
-- **`preact/compat`** — the opposite strategy (runtime aliasing). Ours
-  avoids the double-runtime tax at the cost of binary coverage.
-- **Qwik `qwikify$`** — island wrapping, explicitly not this design.
+For each new React form: write its React and MMD pair, run the MMD target,
+document differences, implement source translation through the shared
+compiler, and verify a compiled React fixture in the DOM. If the MMD target
+does not exist, improve MMD itself or give a precise diagnostic. This keeps
+mixed authoring on one semantic path.
