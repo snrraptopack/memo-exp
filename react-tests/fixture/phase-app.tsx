@@ -1,5 +1,5 @@
 import { StrictMode, useDebugValue, useRef, useState } from 'react';
-import { Trace, Field, Pair, Deferred } from 'phase-kit';
+import { Trace, Field, Pair, Deferred, CreatedRef } from 'phase-kit';
 
 interface FieldApi {
   read(): string;
@@ -38,6 +38,7 @@ export function App() {
       <output id="seen">{seen}</output>
       <output id="cbstate">{cbState}</output>
       <Deferred />
+      <CreatedRef />
     </main>
   </StrictMode>;
 }

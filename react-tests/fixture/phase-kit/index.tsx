@@ -1,6 +1,7 @@
 import {
-  useDebugValue, useDeferredValue, useId, useImperativeHandle, useInsertionEffect,
-  useLayoutEffect, useEffect, useRef, useState, useTransition, forwardRef,
+  createRef, useDebugValue, useDeferredValue, useId, useImperativeHandle,
+  useInsertionEffect, useLayoutEffect, useEffect, useRef, useState,
+  useTransition, forwardRef,
 } from 'react';
 
 // Source order is deliberately scrambled: React guarantees insertion effects
@@ -39,5 +40,15 @@ export function Deferred() {
     <button id="set" onClick={() => start(() => setQuery('b'))}>set</button>
     <output id="pending">{String(pending)}</output>
     <output id="value">{deferred}</output>
+  </section>;
+}
+
+export function CreatedRef() {
+  const box = createRef<HTMLInputElement>();
+  const [seen, setSeen] = useState('empty');
+  return <section>
+    <input id="cr-input" ref={box} />
+    <button id="cr-read" onClick={() => setSeen(box.current?.id ?? 'missing')}>read</button>
+    <output id="cr-out">{seen}</output>
   </section>;
 }

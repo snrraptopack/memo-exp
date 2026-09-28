@@ -376,3 +376,39 @@ never see: a box carried through a prop (`<Field inputRef={box}>` →
 `ref={inputRef}`). Compile-time adaptation stays preferred for provable
 module/component-scope boxes because it lands in the eager creation-time
 class. The `let` sink idiom remains the recommended authored form.
+
+## 009 — opaque member write + self-committing trap double-schedules a drain (merge regression)
+
+**Code** (`tests/compiler-semantic-regressions.test.ts`):
+
+```ts
+let count = 0;
+const key = { toString() { onGet(); return 'value'; } };
+const box = new Proxy({}, {
+  set(target, key, value) { count = value; return true; }
+});
+effect(() => { box[key] = 1; });
+```
+
+**Symptom**: `commits` records `[1, 1]` — two drains where pre-merge emitted one.
+The proxy `set` trap body now carries `commitWrites(_WRITES_)` (complete
+nested-function write instrumentation, ae5fb5d), so the `count` write
+self-commits and drains; then the effect's conservative opaque-write
+fallback emits `markDirtySubtree("App")` and schedules a second drain.
+
+**Why it happens**: `box[key] = 1` is an unbounded member write — the
+receiver isn't a proven reactive binding — so the effect keeps the
+markDirtySubtree fallback that protects genuinely untracked mutations.
+That fallback can't see that this particular write path self-commits.
+Semantically safe (the second render is idempotent), but wasteful.
+
+**Options, unresolved**: (a) tighten `rootFallback` for member writes
+whose receiver has no non-effect readers in the access table — nested
+self-committed calls then carry the notification; (b) teach the runtime
+to coalesce marks that land immediately after a same-subtree drain;
+(c) update the test contract if double-schedule is accepted as the
+price of complete write instrumentation.
+
+**Context**: passes pre-merge (`234b6a2`); only the trap-side
+`commitWrites` is new. Same rule family as #006 — derived-let
+instrumentation from the main merge changing observable emission.

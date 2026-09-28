@@ -113,6 +113,13 @@ describe('assimilated phase hook DOM behavior', () => {
     document.querySelector<HTMLButtonElement>('#cbgone')!.click();
     expect(document.querySelector('#cbstate')!.textContent).toBe('detached');
   });
+
+  it('lowers createRef to a live box ref', async () => {
+    const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+    document.body.appendChild(app.App('App', null));
+    document.querySelector<HTMLButtonElement>('#cr-read')!.click();
+    expect(document.querySelector('#cr-out')!.textContent).toBe('cr-input');
+  });
 });
 
 describe('React phase hook diagnostics', () => {
@@ -126,6 +133,10 @@ describe('React phase hook diagnostics', () => {
     ["import { useInsertionEffect } from 'react'; function App() { const e = useInsertionEffect(() => {}); return <p />; }", 'statement'],
     ["import { use } from 'react'; function App() { const v = 1 && use(x); return <p />; }", 'direct component binding'],
     ["import { createContext, use } from 'react'; const Ctx = createContext(null); function App() { const v = use(Ctx); return <p>{v}</p>; }", 'ancestry-scoped context'],
+    ["import { jsx } from 'react/jsx-runtime'; function App() { return jsx('div', {}); }", 'precompiled JSX runtime'],
+    ["import { unstable_act } from 'react'; function App() { unstable_act(() => {}); return <p />; }", 'experimental React surface'],
+    ["import { Component } from 'react'; class A extends Component {}; function App() { return <A />; }", 'class component'],
+    ["import { createPortal } from 'react-dom'; function App() { return createPortal(<p/>, document.body); }", 'foreign container'],
   ])('diagnoses unsupported hook shapes', (source, message) => {
     expect(() => compile(source, {
       moduleId: 'phase-kit/invalid.tsx', react: { packages: ['phase-kit'] },

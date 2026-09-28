@@ -12,7 +12,7 @@ import { nodeHasJsx, type Ctx, type ProgramPath } from '../context';
 type HookName = 'useState' | 'useReducer' | 'useRef' | 'useMemo' | 'useCallback' |
   'useEffect' | 'useSyncExternalStore' | 'useLayoutEffect' | 'useInsertionEffect' |
   'useDeferredValue' | 'useTransition' | 'useDebugValue' | 'useImperativeHandle' |
-  'useId' | 'use' | 'useActionState' | 'startTransition';
+  'useId' | 'use' | 'useActionState' | 'startTransition' | 'createRef';
 function isReactSpecifier(source: string): boolean {
   return source === 'react' || source.startsWith('react/') ||
     source === 'react-dom' || source.startsWith('react-dom/');
@@ -76,6 +76,15 @@ const DIAGNOSED: Record<string, string> = {
   cloneElement: `mutates element objects; MMD children are opaque slots, not values`,
   isValidElement: `inspects element objects; MMD children are opaque slots, not values`,
   createFactory: `creates element objects; MMD JSX values are rendered, not values`,
+  jsx: `is a precompiled JSX runtime call; MMD lowers JSX from source — compile the un-transpiled module`,
+  jsxs: `is a precompiled JSX runtime call; MMD lowers JSX from source — compile the un-transpiled module`,
+  jsxDEV: `is a precompiled JSX runtime call; MMD lowers JSX from source — compile the un-transpiled module`,
+  cache: `is a React Server Components memoizer; MMD has no per-request render cache`,
+  cacheSignal: `is a React Server Components signal; MMD has no per-request render cache`,
+  SuspenseList: `is a Suspense ordering primitive; MMD Group boundaries do not coordinate reveal order`,
+  ViewTransition: `is a React transition animation primitive; MMD has no view-transition surface`,
+  addTransitionType: `annotates transition types; MMD transitions are synchronous and untyped`,
+  captureOwnerStack: `is a React DevTools debug helper; MMD has no owner-stack instrumentation`,
 };
 
 interface ImportUse {
@@ -352,7 +361,7 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
     'useState', 'useReducer', 'useRef', 'useMemo', 'useCallback', 'useEffect',
     'useSyncExternalStore', 'useLayoutEffect', 'useInsertionEffect',
     'useDeferredValue', 'useTransition', 'useDebugValue', 'useImperativeHandle',
-    'useId', 'use', 'useActionState',
+    'useId', 'use', 'useActionState', 'createRef',
   ]);
   const seenCalls = new Set<t.CallExpression>();
   function fail(message: string, node: BaseNode): never {
@@ -456,7 +465,12 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
       const member = use.namespace ? analysis.parentByNode.get(reference) : null;
       const name = use.namespace && ast.isMemberExpression(member) &&
         ast.isIdentifier(member.property) ? member.property.name : use.name;
-      if (DIAGNOSED[name] !== undefined) fail(DIAGNOSED[name], reference);
+      if (DIAGNOSED[name] !== undefined) {
+        fail(`'${use.source}.${name}' ${DIAGNOSED[name]}`, reference);
+      }
+      if (name.startsWith('unstable_') || name.startsWith('experimental_')) {
+        fail(`'${use.source}.${name}' is an experimental React surface with no stable MMD translation`, reference);
+      }
       if (name === 'startTransition' && use.source === 'react') {
         // Synchronous scope invocation is the sound lowering: MMD schedules
         // nothing, so the work runs inline. Call sites become `scope()`;
@@ -492,11 +506,21 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
         operations.push({ kind: 'debug-value', statement });
         continue;
       }
+      const parent = analysis.parentByNode.get(call as BaseNode);
+      if (name === 'createRef') {
+        // Not a hook — a bare box factory, legal at any scope.
+        const declarator = ast.isVariableDeclarator(parent) && parent.init === call ? parent : null;
+        if (declarator === null || !ast.isIdentifier(declarator.id) ||
+            call.arguments.length !== 0) {
+          fail(`requires a direct binding: const ref = createRef()`, call);
+        }
+        operations.push({ kind: 'ref', declarator, call });
+        continue;
+      }
       const owner = componentOwner(analysis, call);
       if (owner === null) {
         fail(`requires '${name}' in a top-level JSX component; custom hook and nested call ownership is not implemented`, call);
       }
-      const parent = analysis.parentByNode.get(call as BaseNode);
       if (name === 'useState' || name === 'useReducer') {
         const declarator = ast.isVariableDeclarator(parent) && parent.init === call ? parent : null;
         const statement = declarator === null ? null : analysis.parentByNode.get(declarator as BaseNode);
