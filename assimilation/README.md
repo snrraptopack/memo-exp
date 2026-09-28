@@ -116,7 +116,14 @@ The hand-written cases here mirror exactly what these passes emit.
 | `lazy` | `/22-suspense` | no component-level twin — route-scoped code splitting only (the route is the lazy chunk) | divergent | **diagnosed** — dynamic component value not supported |
 | `Children.count` / `Children.map` | `/16-children` | call-site specialization → constant/list row; authored twin = opaque slot + array prop | verified | specialized (link-time call-site pass) |
 | `Children.only` / `toArray` | — | no supported kind (error-log #004/#005 — no element introspection) | unsupported | diagnosed |
+| `createRef` | `/20-forms` (kit `RefField`) | `{ current }` box at module or component scope | verified | lowered — same box as `useRef()` |
 | `createRoot` → `mount` | entry files | `createRoot(el).render()` → MMD `mount` — the two apps themselves are the verification | verified | diagnosed — use `mount` |
 | `StrictMode` double-invoke | — | tag unwraps transparently; the double-invoke discipline check has no twin | — | tag lowered; double-invoke not emulated |
 | `lazy` component-level | — | unsupported — no dynamic component value; `route` splitting covers page-level | unsupported | diagnosed |
 | runtime route dispatch (`routes[loc]`) | — | no MMD lowering — use `route` attrs | unsupported | diagnosed |
+| `createElement` / `cloneElement` / `isValidElement` / `createFactory` | — | element objects are not values in MMD | unsupported | diagnosed |
+| `Component` / `PureComponent` | — | MMD components are functions | unsupported | diagnosed |
+| `render` / `hydrateRoot` / `unmountComponentAtNode` / `findDOMNode` / `flushSync` / `act` | — | entry/scheduler/lookup APIs owned by the MMD mount pipeline | unsupported | diagnosed |
+| `jsx` / `jsxs` / `jsxDEV` (`react/jsx-runtime`) | — | precompiled JSX runtime calls; MMD lowers JSX from source | unsupported | diagnosed — compile the un-transpiled module |
+| `unstable_*` / `experimental_*` | — | no stable MMD translation | unsupported | diagnosed |
+| `cache` / `cacheSignal` / `SuspenseList` / `ViewTransition` / `addTransitionType` / `captureOwnerStack` | — | RSC/DevTools/order-coordination surfaces with no MMD target | unsupported | diagnosed |
