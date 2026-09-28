@@ -18,7 +18,7 @@ Plus a third MMD-only section: bare `Group` children with **no `suspend`** —
 the skeleton lands at the *read site* only (`fast: loading…` — the label
 stays visible). Finer granularity than React can express.
 
-## Deliberate divergences
+## MMD behavior and open design
 
 - **`api.ts` differs from the React twin** — no promise cache. React needs a
   stable promise identity across re-renders; MMD bodies run once, so `$read`
@@ -27,9 +27,10 @@ stays visible). Finer granularity than React can express.
   reactive state.
 - **`suspend` is first-mount only** — React Suspense can re-suspend a mounted
   tree on updates; MMD never blanks committed UI.
-- **`lazy()` has no twin** — no dynamic component value exists (error-log
-  #001). MMD's answer is route-level code splitting: this page itself is a
-  lazy route chunk. Component-granular `lazy` would need a new primitive.
+- **`lazy()` remains open** — the current MMD example uses route-level code
+  splitting: this page itself is a lazy route chunk. That does not cover a
+  lazy component inside an already mounted route. A component-level target
+  needs a separate ownership and loading design (error-log #001).
 
 ## Checklist
 
@@ -42,4 +43,5 @@ stays visible). Finer granularity than React can express.
 4. Error states: not exercised (promises always resolve); `Group` also takes
    an `error` policy — `error.kind === 'promise'` for `$read` rejections.
 
-_verified in browser — matches the React twin._
+_The read/reveal checklist was verified in the browser. Component-level
+`lazy()` is still an open design question._

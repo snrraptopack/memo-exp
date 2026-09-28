@@ -73,8 +73,9 @@ into the source graph; it does not select a React execution mode. Supported
 React imports in an app module need no package opt-in.
 
 Diagnostics should name the original API and source location. A recognized
-import used in an unsupported shape is rejected during compilation. We do not
-leave a runtime React import or silently reinterpret an unsupported call.
+import with no established MMD target is rejected during compilation while its
+design question remains open. We do not leave a runtime React import or
+silently reinterpret an unexamined call.
 
 ## Current translation boundaries
 
@@ -93,7 +94,7 @@ The current direction is:
 | `Children.count`, `Children.map` | bounded link-time caller specialization, not runtime child introspection |
 | `use(promise)`, `Suspense` | `$read` and `Group`/`suspend` for the supported source shape |
 | `useActionState` | `$forms` for the supported direct form |
-| `useTransition`, `useDeferredValue` | current synchronous/identity translations are behaviorally divergent |
+| `useTransition`, `useDeferredValue` | synchronous/identity translations deliberately preserve MMD scheduling; `isPending` stays false and values do not lag |
 | `createContext`, `useContext` | diagnosed; no ancestry-scoped MMD context primitive yet |
 | `createPortal` | diagnosed; no MMD portal ownership primitive yet |
 | `lazy` component values | diagnosed; route-level code splitting is a different capability |
@@ -105,6 +106,35 @@ be generated from the React source today. For example, prop drilling reproduces
 one `useContext` example but is not a general translation for nested providers.
 Likewise, manually moving DOM for a portal example is not a compiler-owned
 portal primitive.
+
+## Open design questions
+
+`Divergent` means we have chosen MMD behavior for a supported translation. It
+does not mean we intend to recreate React scheduling to make the two apps look
+identical. For a migrating package, check whether its visible behavior depends
+on React's pending or stale periods. If it does, document that migration
+effect; do not label the MMD translation as accidentally broken.
+
+`Open` means the compiler diagnoses a source form because its MMD target has
+not been established. The paired lab should probe these questions before a
+lowering rule is added:
+
+| Source forms | Question to answer in MMD |
+| --- | --- |
+| `createContext`, `useContext`, `use(Context)` | How does an owned descendant read the nearest provider, including nested providers, lists, and reactive changes, without a React render loop? |
+| `createPortal` | How can MMD mount reactive JSX into a foreign container while preserving ownership, cleanup, refs, and event behavior? |
+| component-level `lazy`, dynamic component lookup | What finite component choices can the linker prove, and how should component-scoped code loading work beyond route chunks? |
+| `Children.only`, `toArray`, element factories and cloning | Which element observations can be specialized at linked call sites, and which require a source-level element-value representation? |
+| `useOptimistic`, `useFormStatus` | Can the write owner and nearest form status be identified and mapped onto `$forms` and `optimistic` without ambiguous global state? |
+| class components | Can supported class source be transformed into MMD instance state and owned methods, or is an explicit source migration required? |
+| `react/jsx-runtime` calls | Should the compiler accept unminified, pretransformed package output as an additional *input syntax* through the same MMD path? |
+| root, hydration, lookup, and scheduler helpers | Which calls map to existing MMD host APIs, and which require separate host contracts? The browser entry itself is already decided: use `mount`. |
+| cache, coordination, experimental, and tooling APIs | Identify the precise source use and owner before deciding whether an MMD primitive, an intentional semantic difference, or a diagnostic applies. |
+
+The lab's manual portal example is a probe, not proof of a general portal
+lowering. Route-level chunking is similarly not proof of component-level
+`lazy`. Keep those rows open until an executable MMD target covers the
+relevant ownership and update behavior.
 
 ## Package and type work
 

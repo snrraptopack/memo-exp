@@ -1,6 +1,6 @@
 # 14-usedeferredvalue (MMD lowering candidate)
 
-Candidate lowering per the RFC: **`useDeferredValue(x)` → immediate `x`**.
+MMD lowering: **`useDeferredValue(x)` → immediate `x`**.
 
 ## Lowering being tested
 
@@ -13,8 +13,8 @@ Candidate lowering per the RFC: **`useDeferredValue(x)` → immediate `x`**.
 
 `deferred` is a `const` derivation — it replays the moment `q` changes, so
 `stale` can never be true. The `stale…` badge is dead code by
-construction, exactly as the RFC's identity lowering predicts. In React it
-may flash; in MMD it never does — documented divergence, same class as
+construction, as the chosen identity lowering predicts. In React it
+may flash; in MMD it never does — intentional MMD behavior, same class as
 `useTransition`'s `isPending`.
 
 ## Same checklist as the React version

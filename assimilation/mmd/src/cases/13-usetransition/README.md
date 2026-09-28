@@ -1,6 +1,6 @@
 # 13-usetransition (MMD lowering candidate)
 
-Candidate lowering per the RFC: **the transition runs synchronously and
+MMD lowering: **the transition runs synchronously and
 `isPending` is constant `false`**.
 
 ## Lowering being tested
@@ -18,10 +18,9 @@ React defers the list render so the input stays instant *and* exposes
 may hitch if the list is genuinely slow, and `pending…` **never shows**
 (`false` is a literal here, mirroring the emitted lowering).
 
-The honest checklist difference: if React shows `pending…` while typing
-and MMD never does, that's the documented divergence — not a bug, the
-absence of a concurrent scheduler. The equivalence being verified is that
-**the list always lands on the final value**.
+The checklist difference is intentional: MMD uses its synchronous write and
+commit behavior. `pending…` never appears. The shared outcome being checked
+is that **the list lands on the final value**.
 
 ## Same checklist as the React version
 
@@ -30,9 +29,8 @@ absence of a concurrent scheduler. The equivalence being verified is that
 
 ## Notes / divergences
 
-- React may flash "pending…"; MMD cannot. Documented, not a defect —
-  packages that *depend* on pending state are exactly where this lowering
-  is unsound (RFC says it's "intentional only where a package does not
-  rely on pending/deferred behavior").
+- React may flash "pending…"; MMD does not. This is the chosen MMD behavior.
+  A package that uses pending state for visible UI needs migration review so
+  the team understands the changed presentation.
 
 _verified — list converges; `pending…` never shows (documented divergence, MMD has no scheduler)._
