@@ -20,6 +20,7 @@ import { UseDebugValueCase } from './cases/18-usedebugvalue/Case';
 import { UseInsertionEffectCase } from './cases/19-useinsertioneffect/Case';
 import { FormsCase } from './cases/20-forms/Case';
 import { CreatePortalCase } from './cases/21-createportal/Case';
+import { SuspenseCase } from './cases/22-suspense/Case';
 
 function Chrome() {
   const { pathname } = useLocation();
@@ -118,6 +119,9 @@ function CaseIndex() {
         <li>
           <Link to="/21-createportal">createPortal — render outside the root</Link>
         </li>
+        <li>
+          <Link to="/22-suspense">Suspense + lazy vs Group/suspend + $read</Link>
+        </li>
       </ul>
     </nav>
   );
@@ -151,6 +155,7 @@ export function App() {
         <Route path="/19-useinsertioneffect" element={<UseInsertionEffectCase />} />
         <Route path="/20-forms" element={<FormsCase />} />
         <Route path="/21-createportal" element={<CreatePortalCase />} />
+        <Route path="/22-suspense" element={<SuspenseCase />} />
       </Routes>
     </main>
   );

@@ -112,10 +112,11 @@ The hand-written cases here mirror exactly what these passes emit.
 | attrs: `className`/`style`/`htmlFor`/`checked`/`onChange` | `/17-attrs` | shared host-attr pipeline; `onChange`→`onInput` on text inputs | paired |
 | `useOptimistic` + `useActionState` + `useFormStatus` (19) | `/20-forms` | `optimistic({action, apply, reconcile})` + `$forms` — real primitives (post-merge) | verified |
 | `createPortal` | `/21-createportal` | manual `effect` + imperative DOM; reactive JSX in foreign container unsupported | paired |
-| `use` (19) | — | `$read(promise)` is now the tracked-promise bridge — candidate for a `use`/`Suspense` case; `use(context)` still needs the context entity | candidate |
+| `use(promise)` + `Suspense` (19) | `/22-suspense` | `$read(promise)` + `Group pending`/`suspend` — per-call and per-region reveal units; `suspend` is first-mount only | verified |
+| `lazy` | `/22-suspense` | no component-level twin — route-scoped code splitting only (the route is the lazy chunk) | divergent |
 | `Children.count` / `Children.map` | `/16-children` | call-site specialization → constant/list row; authored twin = opaque slot + array prop | paired |
 | `Children.only` / `toArray` | — | no supported kind (error-log #004/#005 — no element introspection) | unsupported |
 | `createRoot` → `mount` | entry files | `createRoot(el).render()` → MMD `mount` — the two apps themselves are the verification | verified |
 | `StrictMode` double-invoke | — | unsupported | unsupported |
-| `lazy` / `Suspense` | — | unsupported | unsupported |
+| `lazy` component-level | — | unsupported — no dynamic component value; `route` splitting covers page-level | unsupported |
 | runtime route dispatch (`routes[loc]`) | — | no MMD lowering — use `route` attrs | unsupported |

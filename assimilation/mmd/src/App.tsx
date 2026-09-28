@@ -20,6 +20,7 @@ import { UseDebugValueCase } from './cases/18-usedebugvalue/Case';
 import { UseInsertionEffectCase } from './cases/19-useinsertioneffect/Case';
 import { FormsCase } from './cases/20-forms/Case';
 import { CreatePortalCase } from './cases/21-createportal/Case';
+import { SuspenseCase } from './cases/22-suspense/Case';
 
 function Chrome() {
   return (
@@ -117,6 +118,9 @@ function CaseIndex() {
         <li>
           <a route-to="/21-createportal">createPortal — render outside the root</a>
         </li>
+        <li>
+          <a route-to="/22-suspense">Suspense + lazy vs Group/suspend + $read</a>
+        </li>
       </ul>
     </nav>
   );
@@ -149,6 +153,7 @@ export function App() {
       <UseInsertionEffectCase route="/19-useinsertioneffect" />
       <FormsCase route="/20-forms" />
       <CreatePortalCase route="/21-createportal" />
+      <SuspenseCase route="/22-suspense" />
     </main>
   );
 }

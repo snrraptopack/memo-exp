@@ -27,7 +27,7 @@ function SubmitButton({ pending }: { pending: boolean }) {
 }
 
 export function FormsCase() {
-  const formEl = { current: null as HTMLFormElement | null };
+  let formEl: HTMLFormElement | null = null;
   let messages: Message[] = [];
 
   const sendMessage = optimistic({
@@ -42,7 +42,7 @@ export function FormsCase() {
     reconcile(saved, _text, id) {
       const index = messages.findIndex((m) => m.id === id);
       if (index !== -1) messages.splice(index, 1, saved);
-      formEl.current?.reset();
+      formEl?.reset();
     },
   });
 

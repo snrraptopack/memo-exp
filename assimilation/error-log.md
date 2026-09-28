@@ -278,3 +278,93 @@ effect(() => { … value = next … });
 
 The initial literal is never visible — `effect` runs pre-paint (case 09
 finding), so `onChange()` installs the real snapshot before first paint.
+
+## 007 — derivation calling a helper that writes a module Map (promise cache)
+
+**Code** (`assimilation/mmd/src/cases/22-suspense/api.ts` + `Case.tsx`):
+
+```ts
+// api.ts
+const cache = new Map<string, Promise<Message>>();
+export function fetchMessage(key: string, ms: number): Promise<Message> {
+  let pending = cache.get(key);
+  if (pending === undefined) {
+    pending = new Promise(/* … */);
+    cache.set(key, pending);              // ← write into reactive container
+  }
+  return pending;
+}
+
+// Case.tsx
+function Panel({ k, ms, label }) {
+  const msg = $read(fetchMessage(k, ms)); // ← derivation calls the helper
+```
+
+**Error** (vite dev server, plugin `memoized-dom`):
+
+```
+local const 'msg' is a per-instance derivation but calls helper 'fetchMessage' which writes reactive state
+```
+
+**Why it fails**: same purity machinery as #002 — the compiler scans through
+`fetchMessage` into `api.ts` and sees `cache.set(...)` writing a
+module-scope `Map` (a reactive container). A `const` derivation must be
+pure; the write can't hide behind a call, even across files.
+
+**Resolution**: the cache exists only for *React's* benefit — `use(promise)`
+requires stable promise identity across re-renders. MMD bodies run once per
+instance, so the MMD `api.ts` drops the cache entirely and returns a fresh
+promise per call. The api files legitimately diverge; documented in both
+READMEs.
+
+**Finding**: "memoized promise factory" is itself a React-ism — a
+render-stability device that has no purpose under run-once bodies. Where a
+shared pending resource IS wanted, `$fetch`'s active-request sharing or an
+explicit `$read` source binding is the MMD shape — not a hand cache.
+
+## 008 — `ref={constBox}` on a host element passes the raw object to `mountRef` (silent runtime failure)
+
+**Code** (`assimilation/mmd/src/cases/20-forms/Case.tsx`):
+
+```tsx
+export function FormsCase() {
+  const formEl = { current: null as HTMLFormElement | null };
+  ...
+  <form ref={formEl} onSubmit={form.submit}>
+```
+
+**Error**: no compile error. Emitted code:
+
+```js
+const formEl = { current: null };
+const _refDispose = _MD.mountRef(_form, formEl);   // raw box, not adapted
+```
+
+`mountRef`'s `mountValue` rejects non-function/non-array values with
+`TypeError: ref value must be a callback, an assignable JSX target, or an
+array of refs`. The box lands in the *deferred* ref class, so the throw
+happens inside a microtask — the page keeps working and the failure is only
+observable as "the ref never populated": `formEl.current` stays `null` and
+`formEl.current?.reset()` silently no-ops (input didn't reset on submit).
+
+**Why it happens**: `compileRefValue` only wraps a box when
+`isObjectRefIdentifier` matches — identifier bound to a `const` declarator
+whose init is an object literal with a `current` property. That check
+didn't fire here (component-body const classification or the `null as T`
+cast init), so the identifier fell through to raw clone — emitting code the
+runtime is guaranteed to reject. Neither compile nor mount reported it
+loudly.
+
+**Resolution**: use the mutable-sink idiom (same as case 10):
+
+```tsx
+let formEl: HTMLFormElement | null = null;
+<form ref={formEl}>                    // → refAssign(node => formEl = node)
+... formEl?.reset();
+```
+
+Verified in emitted code: `_MD.refAssign((_refNode) => { formEl = _refNode; … })`.
+
+**Compiler gap worth fixing**: `ref={X}` on a host element should either
+adapt `{current}` boxes or *diagnose* non-adaptable non-function values —
+a guaranteed runtime TypeError should never emit silently.
