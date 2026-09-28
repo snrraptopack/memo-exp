@@ -48,6 +48,10 @@ So:
   the binding itself is reassigned (`count++`, `name = 'x'`) or when it reads
   reactive state as a derived value.
 
+A derived initializer stays live. If you need a one-time snapshot, assign it
+in a separate statement after declaring the variable; otherwise later source
+writes will replay the initializer.
+
 ## State can live anywhere
 
 ### In a component — per instance
@@ -136,7 +140,7 @@ export function Cart() {
 ## `if` and `switch` are reactive too
 
 Control flow that reads reactive state replays when that state changes —
-and the read doesn't have to be direct. A condition on a derived `const`,
+and the read doesn't have to be direct. A condition on a derived `const` or `let`,
 a prop, or an imported module value tracks the original source
 transitively.
 

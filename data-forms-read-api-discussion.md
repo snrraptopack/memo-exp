@@ -1,14 +1,13 @@
-# Discussion: `$read`, `$forms`, and the lifecycle-only `$track`
+# `$read`, `$forms`, and lifecycle-only `$track`: closed discussion
 
-Status: discussion record with an implementation in progress on `main`.
+Status: closed. The agreed core API was implemented on `main` in `81450ce`.
 Written on `main`, starting at `e68e848`, on 2026-09-27.
 
-This document records the current conversation and makes the proposed contracts
-specific enough to evaluate. Sections marked **agreed direction** reflect user
-instructions. Sections marked **proposal** describe a candidate design and must
-not be treated as settled decisions. API signatures below are illustrative;
-The code now implements the core APIs; this document still distinguishes
-agreed behavior from unresolved design details.
+This is the design record, not the current API reference. Sections marked
+**proposal** preserve alternatives considered during discussion; they do not
+override the implemented contract. Current usage is in [the data guide](docs/05-data.md)
+and [the package README](packages/data/README.md). Later extensions, if any,
+will be separate work rather than an unresolved part of this discussion.
 
 ## 1. Purpose and agreed direction
 
@@ -553,7 +552,7 @@ The same distinction applies to form result state: a returned result commits to
 the result source, while application writes remain ordinary writes. `$forms` must
 not implicitly merge its result into some unrelated application collection.
 
-## 10. Concrete implementation work, when authorized
+## 10. Historical implementation checklist
 
 1. Remove promise-input overloads and `.value` from public/internal tracking, docs,
    type fixtures, and tests. Preserve result-bearing success callbacks.
@@ -593,38 +592,24 @@ mapping, async validation, direct form pending, overlapping form tracking
 callbacks tied to submission IDs, pending-count behavior, previous
 result preservation, and compile-time rejection of `$track(promise)`/tracker `.value`.
 
-## 11. Decisions still needed
+## 11. Final contract and possible later extensions
 
-The following are **settled directions**, not remaining options:
+The implementation settles the core choices:
 
-- `$forms` returns a trackable form source and exposes direct `pending`.
-- Application-owned optimistic updates use `$track(form)`.
-- A schema-compatible form exposes one kind-tagged `errors` collection.
-- `$read` refresh replays creation expressions in both direct and bound-promise
-  authoring forms, without requiring an authored arrow function.
-- `$track` accepts sources, not ordinary promises, and has no `.value`.
+- `$read(promise)` has transparent `$fetch`-style reads. The compiler retains
+  direct or bound promise creation for refresh with current reactive inputs.
+- `$track` accepts sources, not bare promises, and exposes no `.value`.
+- `$forms` accepts a raw `FormData` action or `{ schema, action }`, and its
+  `submit` accepts a browser submit event or `FormData` on the server.
+- The form exposes aggregate `pending`, `hasResult`, `result`, and one
+  `errors` array with `parse` or `submit` entries. The newest accepted
+  submission owns the displayed result and errors.
+- `$track(form)` supplies the current execution ID and outcome callbacks.
+  Callbacks stay pinned to their execution across overlapping submissions.
+  It does not expose fetch-like `refresh` or `abort`.
+- `$action` and the bundled optimistic collection helpers are removed.
+  Application code performs optimistic writes and per-execution reconciliation.
 
-| Decision | Proposal in this document | Consequence |
-|---|---|---|
-| How is the payload read? | `form.result` | Requires a transparent result projection |
-| Is typing mandatory? | No; raw FormData or an optional schema | Basic forms need no validation setup |
-| What happens before submission? | Idle; guard with `hasResult` | Idle result reads must not imply active loading |
-| Do later failures erase results? | No | Separate payload availability and submission error |
-| How are fields validated? | Optional Standard Schema | Requires a minimal FormData input mapping |
-| How are errors exposed? | One `form.errors` collection with `parse` or `submit` kind | Parse issues may carry a field path |
-| Are field values live state? | No, submitted snapshots | Live/touched/dirty APIs are separate scope |
-| What happens on rapid submits? | Allow overlap; retain per-ID callbacks | Pending aggregates active executions |
-| Which overlapping result is displayed? | Newest accepted submission | Older callbacks still settle independently |
-| What does tracker `pending` mean for forms? | Current execution, while `form.pending` aggregates | Needs an unambiguous contract |
-| Are controls reset automatically? | No | Reset timing belongs to application code |
-| Can trackers universally refresh/abort? | No; source capabilities | Type/API compatibility change |
-| Which inputs does `$read` refresh use? | Current reactive inputs | Compiler-generated replay must retain input dependencies |
-| Which additional promise provenance shapes are supported? | Follow known creation expressions | Imports, reassignments, aliases, and ownership need defined analysis |
-| Does replay update unrelated promise aliases? | Undecided | Stable read-source refresh must not silently redefine alias semantics |
-| How do form callbacks registered while idle behave? | Undecided | Next-execution and persistent subscription are different contracts |
-| Is promise payload transfer automatic? | No in the first version | Client may execute work again after SSR |
-| What happens to existing `$action`? | Removed | Use source tracking and application writes |
-
-This table is the boundary between the agreed direction and decisions that need
-further discussion. Implementing all proposals without resolving those decisions
-would turn assumptions into public API.
+Possible later work includes initial form results, explicit cancellation,
+broader promise provenance diagnostics, and transfer of promise results through
+hydration. None is required to use the implemented API.

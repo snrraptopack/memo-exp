@@ -912,6 +912,9 @@ The normal `ref` property can also travel through an ordinary rest/spread
 wrapper. When building a runtime props object, use a callback ref. An object
 literal `{ ref: input }` reads the current value of `input`; ordinary JavaScript
 cannot preserve the ability to assign back to that lexical binding.
+The child receives a ref adapter rather than the caller's original box. Pass
+an imperative handle as an ordinary prop such as `api={handle}`; reserve
+`ref` for DOM-node forwarding.
 
 ## Data loading: `@memoized-dom/data`
 
