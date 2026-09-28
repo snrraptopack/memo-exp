@@ -89,34 +89,34 @@ The hand-written cases here mirror exactly what these passes emit.
 
 ## Matrix
 
-| React API | Case path | MMD lowering | Status |
-|---|---|---|---|
-| `useState` | `/01-usestate-counter` | `let` binding + `const` derivations | verified |
-| `useEffect` | `/02-useeffect-title` | `effect()` intrinsic | verified |
-| `useRef` | `/03-memo-forwardref` | `{ current }` box / `let` ref sink | verified |
-| `memo` + `forwardRef` | `/03-memo-forwardref` | erased / `ref` prop pass-through | verified |
-| `memo` alone | `/04-memo-only` | erased — bodies run once anyway | verified |
-| `useMemo` | `/05-usememo` | `const` derivation chain | verified |
-| `useCallback` | `/06-usecallback` | plain function (stable by construction) | verified |
-| `useReducer` | `/07-usereducer` | `let` + dispatch writing the cell | verified |
-| `useSyncExternalStore` | `/08-usesyncexternalstore` | `let` + `effect` subscribe/`Object.is` guard | verified |
-| `useLayoutEffect` | `/09-uselayouteffect` | `effect()` — **pre-paint confirmed**, sound lowering target | verified |
-| `useImperativeHandle` | `/10-useimperativehandle` | ordinary `api` prop box + `effect` — `ref` attr is a DOM-root sink (error-log #003) | verified |
-| `useContext` + `createContext` | `/11-usecontext` | no MMD primitive — prop-drilling twin; diagnosed today | verified |
-| `useId` | `/12-useid` | `let` + statement write of module counter; needs entity-derived id (error-log #002) | verified |
-| `useTransition` | `/13-usetransition` | sync write; `isPending` → constant `false` — diagnosed today | divergent |
-| `useDeferredValue` | `/14-usedeferredvalue` | identity (`const x = q`) — diagnosed today | divergent |
-| `Fragment` | `/15-fragment` | native `<>` support | verified |
-| `useInsertionEffect` | `/19-useinsertioneffect` | `effect()` candidate — ordered phase, pre-paint | paired |
-| `useDebugValue` | `/18-usedebugvalue` | erased | paired |
-| attrs: `className`/`style`/`htmlFor`/`checked`/`onChange` | `/17-attrs` | shared host-attr pipeline; `onChange`→`onInput` on text inputs | paired |
-| `useOptimistic` + `useActionState` + `useFormStatus` (19) | `/20-forms` | `optimistic({action, apply, reconcile})` + `$forms` — real primitives (post-merge) | verified |
-| `createPortal` | `/21-createportal` | manual `effect` + imperative DOM; reactive JSX in foreign container unsupported | paired |
-| `use(promise)` + `Suspense` (19) | `/22-suspense` | `$read(promise)` + `Group pending`/`suspend` — per-call and per-region reveal units; `suspend` is first-mount only | verified |
-| `lazy` | `/22-suspense` | no component-level twin — route-scoped code splitting only (the route is the lazy chunk) | divergent |
-| `Children.count` / `Children.map` | `/16-children` | call-site specialization → constant/list row; authored twin = opaque slot + array prop | paired |
-| `Children.only` / `toArray` | — | no supported kind (error-log #004/#005 — no element introspection) | unsupported |
-| `createRoot` → `mount` | entry files | `createRoot(el).render()` → MMD `mount` — the two apps themselves are the verification | verified |
-| `StrictMode` double-invoke | — | unsupported | unsupported |
-| `lazy` component-level | — | unsupported — no dynamic component value; `route` splitting covers page-level | unsupported |
-| runtime route dispatch (`routes[loc]`) | — | no MMD lowering — use `route` attrs | unsupported |
+| React API | Case path | MMD lowering | Lab status | Compiler |
+|---|---|---|---|---|
+| `useState` | `/01-usestate-counter` | `let` binding + `const` derivations | verified | lowered |
+| `useEffect` | `/02-useeffect-title` | `effect()` intrinsic | verified | lowered |
+| `useRef` | `/03-memo-forwardref` | `{ current }` box / `let` ref sink | verified | lowered |
+| `memo` + `forwardRef` | `/03-memo-forwardref` | erased / `ref` prop pass-through | verified | lowered |
+| `memo` alone | `/04-memo-only` | erased — bodies run once anyway | verified | lowered |
+| `useMemo` | `/05-usememo` | `const` derivation chain | verified | lowered |
+| `useCallback` | `/06-usecallback` | plain function (stable by construction) | verified | lowered |
+| `useReducer` | `/07-usereducer` | `let` + dispatch writing the cell | verified | lowered |
+| `useSyncExternalStore` | `/08-usesyncexternalstore` | `let` + `effect` subscribe/`Object.is` guard | verified | lowered |
+| `useLayoutEffect` | `/09-uselayouteffect` | `effect()` — **pre-paint confirmed**, sound lowering target | verified | lowered → `effect()` (runs before passive `useEffect` regardless of source order) |
+| `useImperativeHandle` | `/10-useimperativehandle` | ordinary `api` prop box + `effect` — `ref` attr is a DOM-root sink (error-log #003) | verified | lowered → write-through `effect` keyed on the ref identity |
+| `useContext` + `createContext` | `/11-usecontext` | no MMD primitive — prop-drilling twin; diagnosed today | verified | **diagnosed** — no context primitive |
+| `useId` | `/12-useid` | `let` + statement write of module counter; needs entity-derived id (error-log #002) | verified | lowered → module serial `r0`, `r1`, … in mount order |
+| `useTransition` | `/13-usetransition` | sync write; `isPending` → constant `false` — diagnosed today | divergent | lowered → `startTransition` runs sync, `isPending` always `false` |
+| `useDeferredValue` | `/14-usedeferredvalue` | identity (`const x = q`) — diagnosed today | divergent | lowered → identity (`const v = arg`) |
+| `Fragment` | `/15-fragment` | native `<>` support | verified | lowered (`Fragment`, `StrictMode`, `Suspense` tags all translate) |
+| `useInsertionEffect` | `/19-useinsertioneffect` | `effect()` candidate — ordered phase, pre-paint | verified | lowered → `effect()` ordered before layout effects |
+| `useDebugValue` | `/18-usedebugvalue` | erased | verified | erased — calls removed, including inside local `use*` hooks |
+| attrs: `className`/`style`/`htmlFor`/`checked`/`onChange` | `/17-attrs` | shared host-attr pipeline; `onChange`→`onInput` on text inputs | verified | shared attr pipeline (no special casing) |
+| `useOptimistic` + `useActionState` + `useFormStatus` (19) | `/20-forms` | `optimistic({action, apply, reconcile})` + `$forms` — real primitives (post-merge) | verified | `useActionState` → `$forms`; `form action={fn}`/`formAction={fn}` → `onSubmit`/`onClick` `FormData` wrapper. `useOptimistic`/`useFormStatus` **diagnosed** — written state / read position not recoverable |
+| `createPortal` | `/21-createportal` | manual `effect` + imperative DOM; reactive JSX in foreign container unsupported | verified | **diagnosed** — needs a portal primitive |
+| `use(promise)` + `Suspense` (19) | `/22-suspense` | `$read(promise)` + `Group pending`/`suspend` — per-call and per-region reveal units; `suspend` is first-mount only | verified | lowered → injected `$read` + `<Group pending>`; a `use` of non-source values **diagnosed** |
+| `lazy` | `/22-suspense` | no component-level twin — route-scoped code splitting only (the route is the lazy chunk) | divergent | **diagnosed** — dynamic component value not supported |
+| `Children.count` / `Children.map` | `/16-children` | call-site specialization → constant/list row; authored twin = opaque slot + array prop | verified | specialized (link-time call-site pass) |
+| `Children.only` / `toArray` | — | no supported kind (error-log #004/#005 — no element introspection) | unsupported | diagnosed |
+| `createRoot` → `mount` | entry files | `createRoot(el).render()` → MMD `mount` — the two apps themselves are the verification | verified | diagnosed — use `mount` |
+| `StrictMode` double-invoke | — | tag unwraps transparently; the double-invoke discipline check has no twin | — | tag lowered; double-invoke not emulated |
+| `lazy` component-level | — | unsupported — no dynamic component value; `route` splitting covers page-level | unsupported | diagnosed |
+| runtime route dispatch (`routes[loc]`) | — | no MMD lowering — use `route` attrs | unsupported | diagnosed |

@@ -30,10 +30,14 @@ describe('authored React package assimilation', () => {
   });
 
   it.each([
-    ["import { useLayoutEffect } from 'react'; function App() { useLayoutEffect(() => {}, []); return <p />; }", 'useLayoutEffect'],
+    ["import { useContext, createContext } from 'react'; const C = createContext(0); function App() { const v = useContext(C); return <p />; }", 'context channel'],
+    ["import { useOptimistic } from 'react'; function App() { const [v, add] = useOptimistic(0, (s, x) => s + x); return <p />; }", 'optimistic('],
+    ["import { useFormStatus } from 'react-dom'; function App() { const s = useFormStatus(); return <p />; }", 'enclosing form'],
+    ["import { lazy } from 'react'; const L = lazy(() => import('./x')); function App() { return <p />; }", 'route'],
+    ["import { createPortal } from 'react-dom'; function App() { return createPortal(<p />, document.body); }", 'portal'],
     ["import { useState } from 'react'; function useCounter() { return useState(0); } function App() { useCounter(); return <p />; }", 'custom hook'],
     ["import { useState } from 'react'; function App() { if (true) { const [n, setN] = useState(0); } return <p />; }", 'direct component declaration'],
-    ["import React from 'react'; function App() { return <React.Fragment><p /></React.Fragment>; }", 'JSX tag'],
+    ["import React from 'react'; function App() { return <React.Profiler><p /></React.Profiler>; }", 'JSX tag'],
     ["import 'react'; function App() { return <p />; }", 'side-effect import'],
     ["import { jsx } from 'react/jsx-runtime'; const view = jsx('p', {});", 'react/jsx-runtime.jsx'],
   ])('diagnoses source forms without a proven target', (source, message) => {

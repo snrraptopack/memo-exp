@@ -22,7 +22,7 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   normalizeNamedReexports(programPath.node);
   unwrapReactComponentWrappers(programPath);
   normalizeComponentDeclarations(programPath);
-  assimilateReactSource(programPath);
+  assimilateReactSource(ctx, programPath);
   installLinkedDynamicComponentImports(ctx, programPath);
   normalizeConditionalJsxDirectives(programPath);
   initializeGeneratedIdentifiers(ctx, programPath.node);
