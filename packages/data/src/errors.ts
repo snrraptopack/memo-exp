@@ -1,6 +1,7 @@
 import type { StandardSchemaIssue } from './types';
 
 export type RequestErrorKind =
+  | 'promise'
   | 'network'
   | 'http'
   | 'decode'

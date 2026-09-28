@@ -14,6 +14,7 @@
         "@memoized-dom/data": "workspace:*",
         "@memoized-dom/router": "workspace:*",
         "@memoized-dom/runtime": "workspace:*",
+        "@memoized-dom/utils": "workspace:*",
         "@memoized-dom/vite": "workspace:*",
         "@types/bun": "latest",
         "@types/node": "^26.5.1",
@@ -102,6 +103,13 @@
       "devDependencies": {
         "@memoized-dom/compiler": "workspace:*",
         "@types/bun": "latest",
+      },
+    },
+    "packages/utils": {
+      "name": "@memoized-dom/utils",
+      "version": "0.0.1",
+      "peerDependencies": {
+        "@memoized-dom/data": "workspace:*",
       },
     },
     "packages/vite": {
@@ -203,6 +211,8 @@
     "@memoized-dom/runtime": ["@memoized-dom/runtime@workspace:packages/runtime"],
 
     "@memoized-dom/server": ["@memoized-dom/server@workspace:packages/server"],
+
+    "@memoized-dom/utils": ["@memoized-dom/utils@workspace:packages/utils"],
 
     "@memoized-dom/vite": ["@memoized-dom/vite@workspace:packages/vite"],
 

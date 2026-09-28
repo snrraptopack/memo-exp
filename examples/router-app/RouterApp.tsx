@@ -1,6 +1,6 @@
 import { route, matchRoutePattern } from '@memoized-dom/router';
 import { connectRouter, subscribeRoute } from '@memoized-dom/router/internal';
-import { createDataRuntime } from '@memoized-dom/data';
+import { $track, createDataRuntime } from '@memoized-dom/data';
 import type {
   CloudService,
   DeployActionInput,
@@ -37,40 +37,10 @@ export function RouterApp() {
     };
   });
 
-  // 2. Data Runtime for REST Operations & Action Mutations
+  // 2. Data Runtime for REST operations
   const dataRuntime = createDataRuntime({
     fetch: mockRouterFetch as typeof fetch,
   });
-
-  const deployAction = dataRuntime.$action<CloudService, DeployActionInput>(
-    '/api/deploy',
-    {
-      method: 'POST',
-      onSuccess(updated) {
-        servicesState = servicesState.map((service) =>
-          service.id === updated.id ? updated : service,
-        );
-        deploymentsState = [
-          {
-            id: `dep-${Date.now().toString().slice(-4)}`,
-            serviceId: updated.id,
-            serviceName: updated.name,
-            version: updated.version,
-            commitSha: Math.random().toString(16).slice(2, 9),
-            author: 'Current User (Console)',
-            timestamp: 'Just now',
-            status: 'success',
-            duration: '18s',
-          },
-          ...deploymentsState,
-        ];
-        isDeploying = false;
-      },
-      onError() {
-        isDeploying = false;
-      },
-    },
-  );
 
   let servicesState: CloudService[] = [...initialServices];
   let deploymentsState: DeploymentRecord[] = [...initialDeployments];
@@ -81,11 +51,31 @@ export function RouterApp() {
     if (isDeploying) return;
     isDeploying = true;
 
-    const deployment = deployAction({
+    const input: DeployActionInput = {
       serviceId,
       targetVersion: version,
+    };
+    const request = $track(dataRuntime.$fetch<CloudService>('/api/deploy', {
+      method: 'POST', body: { ...input },
+    }));
+    request.onSuccess(updated => {
+      servicesState = servicesState.map(service =>
+        service.id === updated.id ? updated : service,
+      );
+      deploymentsState = [{
+        id: `dep-${Date.now().toString().slice(-4)}`,
+        serviceId: updated.id,
+        serviceName: updated.name,
+        version: updated.version,
+        commitSha: Math.random().toString(16).slice(2, 9),
+        author: 'Current User (Console)',
+        timestamp: 'Just now',
+        status: 'success',
+        duration: '18s',
+      }, ...deploymentsState];
+      isDeploying = false;
     });
-    void deployment;
+    request.onError(() => { isDeploying = false; });
   }
 
   function handleScaleReplicas(serviceId: string, replicas: number) {

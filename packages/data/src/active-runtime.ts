@@ -1,7 +1,7 @@
 /**
  * Ambient data-runtime selection (SSR request isolation).
  *
- * The default `$fetch`/`$action` exports are singleton-backed. Server
+ * The default `$fetch`/`$read` exports are singleton-backed. Server
  * rendering activates a request-local data runtime for the duration of its
  * synchronous work; with no override active every export behaves exactly as
  * before.

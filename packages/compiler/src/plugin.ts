@@ -61,7 +61,7 @@ import {
 } from './external-reactivity';
 
 /**
- * R13: rewrite each computed declaration (`const x = <state derivation>`)
+ * R13: rewrite each computed declaration (`const` or `let` initialized from state)
  * into a `let` plus a depth-(-1) entity whose render recomputes and commits
  * 'x' downstream ONLY when the value actually changed (computedChanged).
  * Depth -1 guarantees the recompute renders BEFORE any reader in a commit.
@@ -72,7 +72,8 @@ function rewriteComputeds(ctx: Ctx, program: t.Program): void {
     const statement = program.body[statementIndex]!;
     let declNode: t.Node | null | undefined = statement;
     if (astFactory.isExportNamedDeclaration(declNode)) declNode = declNode.declaration;
-    if (!astFactory.isVariableDeclaration(declNode) || declNode.kind !== 'const') continue;
+    if (!astFactory.isVariableDeclaration(declNode) ||
+      (declNode.kind !== 'const' && declNode.kind !== 'let')) continue;
     const registrations: t.Statement[] = [];
     for (const d of declNode.declarations) {
       if (!astFactory.isIdentifier(d.id) || d.init == null) continue;

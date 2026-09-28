@@ -101,6 +101,25 @@ function instrumentArgument(
       rowCtx,
       executionAwareRoot,
     );
+  } else if (astFactory.isObjectExpression(argument)) {
+    for (const property of argument.properties) {
+      if (astFactory.isSpreadElement(property)) {
+        if (astFactory.isExpression(property.argument)) {
+          instrumentArgument(ctx, compPath, property.argument, compName, rowCtx, executionAwareRoot);
+        }
+      } else if (
+        astFactory.isObjectProperty(property) &&
+        astFactory.isExpression(property.value)
+      ) {
+        instrumentArgument(ctx, compPath, property.value, compName, rowCtx, executionAwareRoot);
+      }
+    }
+  } else if (astFactory.isArrayExpression(argument)) {
+    for (const element of argument.elements) {
+      if (element !== null) {
+        instrumentArgument(ctx, compPath, element, compName, rowCtx, executionAwareRoot);
+      }
+    }
   } else if (astFactory.isIdentifier(argument)) {
     instrumentIdentifier(
       ctx,
@@ -145,6 +164,25 @@ function instrumentSharedArgument(
   if (astFactory.isArrowFunctionExpression(argument) || astFactory.isFunctionExpression(argument)) {
     if (nodeHasJsx(argument.body)) return;
     instrumentSharedCallback(ctx, argument, executionAwareRoot);
+  } else if (astFactory.isObjectExpression(argument)) {
+    for (const property of argument.properties) {
+      if (astFactory.isSpreadElement(property)) {
+        if (astFactory.isExpression(property.argument)) {
+          instrumentSharedArgument(ctx, programPath, property.argument, executionAwareRoot);
+        }
+      } else if (
+        astFactory.isObjectProperty(property) &&
+        astFactory.isExpression(property.value)
+      ) {
+        instrumentSharedArgument(ctx, programPath, property.value, executionAwareRoot);
+      }
+    }
+  } else if (astFactory.isArrayExpression(argument)) {
+    for (const element of argument.elements) {
+      if (element !== null) {
+        instrumentSharedArgument(ctx, programPath, element, executionAwareRoot);
+      }
+    }
   } else if (astFactory.isIdentifier(argument)) {
     instrumentSharedIdentifier(
       ctx,

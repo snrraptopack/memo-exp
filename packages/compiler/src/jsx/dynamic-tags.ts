@@ -293,7 +293,11 @@ function collectLocalComponentNames(
     return;
   }
   if (current.type === 'LogicalExpression') {
+    const left = childNode(current, 'left');
     const right = childNode(current, 'right');
+    if (left !== null) {
+      collectLocalComponentNames(ctx, left as unknown as t.Expression, output, visiting);
+    }
     if (right !== null) {
       collectLocalComponentNames(ctx, right as unknown as t.Expression, output, visiting);
     }
@@ -391,6 +395,17 @@ function collectCandidates(
     const alternate = childNode(current, 'alternate')!;
     collectCandidates(ctx, at, consequent as unknown as t.Expression, output, onError, visiting);
     collectCandidates(ctx, at, alternate as unknown as t.Expression, output, onError, visiting);
+    return;
+  }
+  if (current.type === 'LogicalExpression') {
+    const left = childNode(current, 'left');
+    const right = childNode(current, 'right');
+    if (left !== null) {
+      collectCandidates(ctx, at, left as unknown as t.Expression, output, onError, visiting);
+    }
+    if (right !== null) {
+      collectCandidates(ctx, at, right as unknown as t.Expression, output, onError, visiting);
+    }
     return;
   }
   const literal = stringValue(current);

@@ -1,0 +1,123 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { compileModules } from '@memoized-dom/compiler';
+import { renderToString, renderToStringAsync } from '@memoized-dom/server';
+import { _internals, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
+
+describe('$read and $forms compiler integration', () => {
+  afterEach(() => {
+    for (const id of _internals().registry.keys()) unregister(id);
+    document.body.replaceChildren();
+    resetScheduler();
+  });
+  it('retains promise creation for direct and bound reads', () => {
+    const output = compileModules({
+      './app.tsx': `
+        import { $read, $track } from '@memoized-dom/data';
+        function load(id) { return Promise.resolve({ id }); }
+        export function App() {
+          let id = 1;
+          const direct = $read(load(id));
+          const promise = load(id);
+          const bound = $read(promise);
+          const request = $track(bound);
+          return <main><p>{direct.id}</p><p>{bound.id}</p><button onClick={() => request.refresh()}>Retry</button></main>;
+        }
+      `,
+    }, {});
+    const app = output['./app.tsx']!;
+    expect(app).toMatch(/\$read\(load\(id\), \(\) => load\(id\)\)/);
+    expect(app).toMatch(/\$read\(promise, \(\) => load\(id\)\)/);
+  });
+
+  it('keeps form pending reads and track calls live', () => {
+    const output = compileModules({
+      './app.tsx': `
+        import { $forms, $track } from '@memoized-dom/data';
+        export function App() {
+          const form = $forms(async fields => fields.get('message'));
+          const request = $track(form);
+          return <form onSubmit={form.submit}>
+            <input name="message" />
+            <button disabled={form.pending}>{form.pending ? 'Sending' : 'Send'}</button>
+            <output>{request.status}</output>
+          </form>;
+        }
+      `,
+    }, {});
+    const app = output['./app.tsx']!;
+    expect(app).toContain('$forms');
+    expect(app).toContain('connectResolvedValue');
+    expect(app).toContain('readResolvedValue(form,');
+  });
+
+  it('renders a form on the server and updates its compiled client UI after submission', async () => {
+    const output = compileModules({
+      './app.tsx': `
+        import { $forms } from '@memoized-dom/data';
+        export function App() {
+          const form = $forms(async fields => String(fields.get('message')));
+          return <form onSubmit={form.submit}>
+            <input name="message" />
+            <button disabled={form.pending}>{form.pending ? 'Sending' : 'Send'}</button>
+            <output>{form.hasResult ? form.result : 'Empty'}</output>
+          </form>;
+        }
+      `,
+    }, {});
+    const directory = join(import.meta.dirname, 'fixtures', 'out', 'forms-read');
+    mkdirSync(directory, { recursive: true });
+    const fixture = join(directory, 'app.ts');
+    writeFileSync(fixture, output['./app.tsx']!);
+    const { App } = await import(pathToFileURL(fixture).href);
+    expect(renderToString(App)).toContain('<form');
+
+    setScheduler(run => run());
+    const root = App('FormsApp', null) as HTMLFormElement;
+    document.body.append(root);
+    const input = root.querySelector('input')!;
+    input.value = 'hello';
+    const event = new SubmitEvent('submit', {
+      bubbles: true,
+      cancelable: true,
+      submitter: root.querySelector('button'),
+    });
+    root.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(root.querySelector('output')?.textContent).toBe('hello'));
+    expect(root.querySelector('button')?.disabled).toBe(false);
+  });
+
+  it('resolves a compiled read on the server and replays its bound promise on refresh', async () => {
+    const output = compileModules({
+      './app.tsx': `
+        import { $read, $track } from '@memoized-dom/data';
+        export function App() {
+          let id = 1;
+          const promise = Promise.resolve({ id });
+          const user = $read(promise);
+          const request = $track(user);
+          return <main>
+            <span>{user.id}</span>
+            <button onClick={() => { id++; request.refresh(); }}>Next</button>
+          </main>;
+        }
+      `,
+    }, {});
+    const directory = join(import.meta.dirname, 'fixtures', 'out', 'forms-read');
+    mkdirSync(directory, { recursive: true });
+    const fixture = join(directory, 'read.ts');
+    writeFileSync(fixture, output['./app.tsx']!);
+    const { App } = await import(pathToFileURL(fixture).href);
+    expect(await renderToStringAsync(App, { mode: 'resolve' })).toContain('<span>1</span>');
+
+    setScheduler(run => run());
+    const root = App('ReadApp', null) as HTMLElement;
+    document.body.append(root);
+    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('1'));
+    root.querySelector('button')!.click();
+    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('2'));
+  });
+});

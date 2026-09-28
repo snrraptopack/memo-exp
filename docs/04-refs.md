@@ -98,8 +98,8 @@ ref cleanups and cleared mutable slots both honor that boundary.
 
 ## Forwarding refs through components
 
-Components have no implicit host element, so a ref travels as a normal prop
-and the child plants it on a real element:
+Components have no implicit host element. A `ref` supplied to a component is
+an assignable DOM sink that the child must forward to a real element:
 
 ```tsx
 function Input({ label, ref: forwarded }: { label: string; ref?: unknown }) {
@@ -120,6 +120,11 @@ export function Form() {
 `Form`'s `email` ends up holding the `<input>` inside `Input` — the ref just
 passes through. Combine with arrays to grab it locally *and* forward it:
 `ref={[forwarded, inputRef]}`.
+
+The child receives a ref adapter, not the parent's original variable or
+mutable box. If the child needs to read or write a parent-owned handle object,
+pass it under an ordinary prop name such as `api={handle}`. A component
+`ref={handle}` means DOM ref forwarding, not imperative-handle transfer.
 
 ## Rules of thumb
 

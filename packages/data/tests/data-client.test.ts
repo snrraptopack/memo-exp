@@ -3,7 +3,6 @@ import { RequestError } from '../src';
 import { createDataRuntime } from '../src/client';
 import { disposeFetchResource } from '../src/resource';
 import type {
-  ActionResult,
   FetchResource,
   StandardSchemaV1,
 } from '../src';
@@ -19,12 +18,6 @@ async function settled<T>(resource: FetchResource<T>): Promise<void> {
   await vi.waitFor(() => {
     expect(resource.pending).toBe(false);
     expect(['success', 'error']).toContain(resource.status);
-  });
-}
-
-async function actionSettled<T>(result: ActionResult<T>): Promise<void> {
-  await vi.waitFor(() => {
-    expect(['success', 'error']).toContain(result.state);
   });
 }
 
@@ -373,69 +366,5 @@ describe('$fetch', () => {
     expect(users.data).toBeUndefined();
     expect(users.error).toBeInstanceOf(RequestError);
     expect(users.error?.kind).toBe('validation');
-  });
-});
-
-describe('$action', () => {
-  interface Todo {
-    id: string;
-    title: string;
-  }
-
-  interface CreateTodo {
-    title: string;
-  }
-
-  it('returns one live result and encodes plain input as JSON', async () => {
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      expect(init?.method).toBe('POST');
-      expect(init?.headers).toBeInstanceOf(Headers);
-      expect((init?.headers as Headers).get('content-type')).toBe('application/json');
-      expect(init?.body).toBe(JSON.stringify({ title: 'Write tests' }));
-      return json({ id: '1', title: 'Write tests' });
-    });
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
-    const createTodo = client.$action<Todo, CreateTodo>('/api/todos');
-
-    const creation = createTodo({ title: 'Write tests' });
-    expect(creation.id).toBe('action-1');
-    expect(creation.state).toBe('idle');
-
-    await vi.waitFor(() => expect(creation.state).toBe('success'));
-    expect(creation.data).toEqual({ id: '1', title: 'Write tests' });
-  });
-
-  it('keeps concurrent invocations independent', async () => {
-    const responses: Array<(response: Response) => void> = [];
-    const client = createDataRuntime({
-      fetch: (() => new Promise<Response>(resolve => responses.push(resolve))) as typeof fetch,
-    });
-    const createTodo = client.$action<Todo, CreateTodo>('/api/todos');
-    const first = createTodo({ title: 'First' });
-    const second = createTodo({ title: 'Second' });
-
-    expect(first.id).not.toBe(second.id);
-    await vi.waitFor(() => expect(responses).toHaveLength(2));
-    responses[1]!(json({ id: '2', title: 'Second' }));
-    await actionSettled(second);
-    expect(second.state).toBe('success');
-    expect(first.state).toBe('pending');
-
-    responses[0]!(json({ id: '1', title: 'First' }));
-    await actionSettled(first);
-    expect(first.data).toMatchObject({ id: '1' });
-    expect(second.data).toMatchObject({ id: '2' });
-  });
-
-  it('stores a request failure on the returned result', async () => {
-    const client = createDataRuntime({
-      fetch: (async () => json({ message: 'No' }, 500)) as typeof fetch,
-    });
-    const createTodo = client.$action<Todo, CreateTodo>('/api/todos');
-    const creation = createTodo({ title: 'Rejected' });
-
-    await actionSettled(creation);
-    expect(creation.state).toBe('error');
-    expect(creation.error).toMatchObject({ kind: 'http', status: 500 });
   });
 });

@@ -1,16 +1,11 @@
-import {
-  ActionStore,
-  createAction,
-} from './action';
 import { runModuleInstanceDisposers } from './transparent-module';
 import {
   createFetchEnvironment,
   createFetchResource,
   FetchStore,
 } from './resource';
+import { createReadResource, ReadStore } from './read-resource';
 import type {
-  ActionFunction,
-  ActionOptions,
   DataRuntime,
   DataRuntimeOptions,
   FetchFunction,
@@ -39,7 +34,7 @@ export function createDataRuntime(
 ): DataRuntime {
   const environment = createFetchEnvironment(options.fetch, options.baseURL);
   const store = new FetchStore(environment);
-  const actions = new ActionStore();
+  const reads = new ReadStore();
 
   const fetchResource = (<T>(
     target: string | URL | null,
@@ -53,25 +48,20 @@ export function createDataRuntime(
     fetchOptions,
   )) as FetchFunction;
 
-  const action = (<TResult, TInput = void>(
-    target: string | URL,
-    actionOptions: ActionOptions<TResult, TInput> = {},
-  ) => createAction(
-    environment,
-    actions,
-    target,
-    actionOptions,
-  )) as ActionFunction;
   const runtime: DataRuntime = {
     $fetch: fetchResource,
-    $action: action,
+    $read: (promise, replay) => createReadResource(reads, promise, replay),
     clear() {
-      actions.clear();
+      reads.clear();
       store.clear();
       runModuleInstanceDisposers(runtime);
     },
-    settle(timeoutMs) {
-      return store.settle(timeoutMs);
+    async settle(timeoutMs) {
+      const [fetchesSettled, readsSettled] = await Promise.all([
+        store.settle(timeoutMs),
+        reads.settle(timeoutMs),
+      ]);
+      return fetchesSettled && readsSettled;
     },
     serializeState() {
       return store.serialize();

@@ -162,7 +162,6 @@ export function SyncButton() {
 
 ### Tracked State Properties:
 - `state.id`: identity of this exact request execution
-- `state.value`: the resolved value, or `undefined` before fulfillment
 - `state.status`: `'idle' | 'pending' | 'success' | 'error'`
 - `state.pending`: `true` during cold initial load
 - `state.refreshing`: `true` during background revalidation (previous data remains visible)
@@ -172,10 +171,10 @@ export function SyncButton() {
 - `state.refresh()`: starts another execution; awaiting is optional
 - `state.abort()`: explicitly cancels the represented request
 
-`$track` also accepts an ordinary promise. It exposes the same state and
-one-shot outcome callbacks, and fills `state.value` when that promise fulfills.
-Because a promise represents one fixed execution, `refresh()` awaits that same
-promise and `abort()` is a no-op for this input.
+`$track` accepts a transparent source, not a bare promise. To read a promise's
+result as a value, declare `const value = $read(load())` and track `value`.
+The compiler retains the creation expression, so `state.refresh()` starts
+new work. A plain promise has no general cancellation protocol.
 
 ---
 
@@ -189,7 +188,7 @@ the smallest inverse operation when optimistic rollback is required:
 const pendingVotes = new Set<string>();
 
 function vote(story: Story) {
-  const result = postVote(story.id);
+  const result = $read(postVote(story.id));
   const request = $track(result);
 
   pendingVotes.add(request.id);

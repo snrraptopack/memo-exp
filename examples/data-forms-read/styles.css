@@ -1,0 +1,8 @@
+:root { font-family: system-ui, sans-serif; color-scheme: light dark; }
+body { max-width: 42rem; margin: 3rem auto; padding: 0 1rem; }
+section { display: grid; gap: 1rem; }
+ul { margin: 0; padding-left: 1.5rem; }
+form { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+input { min-width: 16rem; padding: 0.45rem; }
+button { padding: 0.45rem 0.7rem; cursor: pointer; }
+[role="alert"] { width: 100%; color: #c43b32; margin: 0; }

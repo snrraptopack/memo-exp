@@ -278,7 +278,7 @@ isolation.
 
 Finished proposal §1.5: `renderToString`/`renderWithDom` now install a
 request-local router and data runtime per call. Compiled modules keep their
-convenient singleton imports (`route`, `$fetch`, `$action`) — delegation is
+convenient singleton imports (`route`, `$fetch`, `$read`) — delegation is
 ambient:
 
 - **Router** (`active-runtime.ts`): public exports and the compiler bridge
@@ -288,7 +288,7 @@ ambient:
   it onto every newly activated runtime, so each request resolves its own URL
   against the application graph (solves the module-evaluates-once ordering
   problem). `ensureRouterConnected` memoizes per runtime.
-- **Data** (`active-runtime.ts`): `$fetch`/`$action`/`clearDataRuntime` are
+- **Data** (`active-runtime.ts`): `$fetch`/`$read`/`clearDataRuntime` are
   delegating facades over the active data runtime.
 - **Server** (`RenderOptions`): `url` installs a memory-history route
   runtime; `fetch` backs a request-local data runtime. Both are activated

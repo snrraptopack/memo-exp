@@ -25,6 +25,7 @@ import { getExtensionStore } from '@memoized-dom/runtime';
 import { getActiveDataRuntime } from './active-runtime';
 import { disposeFetchResource, rebindFetchResource } from './resource';
 import type { FetchOptions, FetchResource, ResolvedValue } from './types';
+import { rebindReadResource } from './read-resource';
 import { readResolvedValueForRender } from './transparent';
 
 /** Stable lazy handle placed in the authored binding. */
@@ -153,6 +154,29 @@ export function createSource<T>(
     target,
     options,
   ) as unknown as ResolvedValue<T>;
+}
+
+/** Materialize a compiler-described `$read` in the active request runtime. */
+export function createReadSource<T>(
+  promise: PromiseLike<T>,
+  replay: () => PromiseLike<T>,
+): ResolvedValue<T> {
+  return getActiveDataRuntime().$read(promise, replay) as unknown as ResolvedValue<T>;
+}
+
+/** Rebind only an already-materialized module read source. */
+export function rebindReadModuleSource<T>(
+  ref: ModuleSourceRef,
+  replay: () => PromiseLike<T>,
+): void {
+  const cached = runtimeCache().get(ref.key);
+  const described = describedSources.get(ref.key);
+  if (cached === undefined || cached.version !== described?.version) return;
+  try {
+    rebindReadResource(cached.instance as FetchResource<T>, replay(), replay);
+  } catch (cause) {
+    rebindReadResource(cached.instance as FetchResource<T>, Promise.reject(cause), replay);
+  }
 }
 
 /**

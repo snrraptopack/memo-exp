@@ -76,16 +76,28 @@ describe('R13 — computeds, code generation', () => {
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#shout"');
   });
 
-  it('requires an unwritten module derivation to use const', () => {
-    expect(() =>
-      compile(`
-        let count = 1;
-        let doubled = count * 2;
-        export function App() {
-          return <button onClick={() => count++}>{doubled}</button>;
-        }
-      `),
-    ).toThrowError(/let 'doubled' is never reassigned.*use const for derived values/);
+  it('accepts a module let derivation and rejects later writes to it', () => {
+    const source = `
+      let count = 1;
+      let doubled = count * 2;
+      export function App() {
+        return <button onClick={() => count++}>{doubled}</button>;
+      }
+    `;
+    expect(compile(source)).toContain('"App/$computed/.%2Fcomponent.tsx#doubled"');
+    expect(() => compile(source.replace('count++', '(count++, doubled = 0)')))
+      .toThrowError(/cannot write derived 'doubled'/);
+    expect(() => compile(source.replace('count++', '(count++, doubled++)')))
+      .toThrowError(/cannot write derived 'doubled'/);
+    expect(() => compile(`
+      let items = [1];
+      let visible = items.filter(Boolean);
+      export function App() {
+        return <button onClick={() => { items.push(2); visible.push(3); }}>
+          {visible.length}
+        </button>;
+      }
+    `)).toThrowError(/cannot write derived 'visible'/);
   });
 
   it('does not treat an unwritten primitive let as reactive by declaration kind', () => {
@@ -198,6 +210,8 @@ describe('R13 — computeds, code generation', () => {
 // ---------------------------------------------------------------------
 
 const SOURCES: Record<string, string> = {
+  'r13-let': `let count = 1; let doubled = count * 2;
+    export function App() { return <button onClick={() => count++}>{doubled}</button>; }`,
   'r13-parity': `let count = 0;\nexport const parity = count % 2;\nexport function P() { return <em>{parity}</em>; }\nexport function C() { return <div><button onClick={() => { count += 2; }}>+2</button><button onClick={() => { count += 1; }}>+1</button><span>{count}</span></div>; }\nexport function W() { return <section><C /><P /></section>; }`,
   'r13-filter': `let todos = [{ id: 1, title: 'a', done: false }, { id: 2, title: 'b', done: false }];\nconst active = todos.filter((t) => !t.done);\nexport function Controls() { return <div><button onClick={() => { todos[0].title = 'a2'; }}>rename</button><button onClick={() => { todos[0].done = true; }}>toggle</button></div>; }\nexport function List() { return <ul>{active.map((t) => <li key={t.id}>{t.title}</li>)}</ul>; }\nexport function W() { return <section><Controls /><List /></section>; }`,
 };
@@ -222,6 +236,15 @@ describe('R13 — compiled output runs', () => {
 
   afterEach(() => {
     resetScheduler();
+  });
+
+  it('recomputes a module let derivation after source writes', async () => {
+    const { App } = await importCompiled('r13-let');
+    document.body.appendChild(App('App', null));
+    const button = document.querySelector('button')!;
+    expect(button.textContent).toBe('2');
+    button.click();
+    expect(button.textContent).toBe('4');
   });
 
   it('deep memoization: unchanged derivation → zero downstream renders', async () => {

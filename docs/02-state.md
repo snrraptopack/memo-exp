@@ -16,7 +16,7 @@ a write that might change it, the two are linked. That's the whole mechanism.
 ```tsx
 export function Counter() {
   let count = 0;
-  const doubled = count * 2;   // derived — replays when count changes
+  let doubled = count * 2;     // derived — replays when count changes
 
   return <button onClick={() => count++}>{count} / {doubled}</button>;
 }
@@ -41,8 +41,16 @@ So:
   reassigned is just a variable.
 - **`const` doesn't block reactivity.** `state.step++`, `items.push(x)`,
   `set.add(x)` are all valid reactive writes.
+- **`let` can be derived.** An initializer that reads reactive state, such as
+  `let doubled = count * 2`, replays when the source changes. Later assigning
+  `doubled = 0` is a compile error; write `count` instead.
 - Use `const` whenever you only mutate contents. Reach for `let` only when
-  the binding itself is reassigned (`count++`, `name = 'x'`).
+  the binding itself is reassigned (`count++`, `name = 'x'`) or when it reads
+  reactive state as a derived value.
+
+A derived initializer stays live. If you need a one-time snapshot, assign it
+in a separate statement after declaring the variable; otherwise later source
+writes will replay the initializer.
 
 ## State can live anywhere
 
@@ -132,7 +140,7 @@ export function Cart() {
 ## `if` and `switch` are reactive too
 
 Control flow that reads reactive state replays when that state changes —
-and the read doesn't have to be direct. A condition on a derived `const`,
+and the read doesn't have to be direct. A condition on a derived `const` or `let`,
 a prop, or an imported module value tracks the original source
 transitively.
 
@@ -248,7 +256,7 @@ losing their keyed DOM nodes. The callback must return one JSX element.
 Think of the whole app as a spreadsheet:
 
 - **Cells** = your variables, fields, array elements, Set/Map contents.
-- **Formulas** = `const` derived expressions.
+- **Formulas** = derived `const` or `let` expressions.
 - **The DOM** = cells' display.
 
 You edit cells; the compiler already worked out which formulas and which

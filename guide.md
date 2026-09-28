@@ -27,19 +27,20 @@ class. Module state is not a special store type.
    signals, or a state manager.
 2. Do not invent APIs such as `useState`, `useEffect`, `createSignal`, `ref()`,
    `computed()`, or `defineComponent()`.
-3. Import `mount` only in the browser entry. Import `$fetch`/`$action` only when
+3. Import `mount` only in the browser entry. Import `$fetch`/`$read`/`$forms` only when
    using the data package, and import router values only when they are actually
    read or called.
 4. `effect(...)` and `cleanup(...)` are compiler intrinsics. Use them as ambient
    globals and do not import them.
-5. Use `let` only when the binding itself must be reassigned. Prefer `const`
-   when only an object's or collection's contents change.
+5. Use `let` for a binding that is reassigned or for a derived expression.
+   Prefer `const` when only an object's or collection's contents change.
 6. Never use `let` as a reactivity marker. A never-written `let` is not made
    reactive merely by being declared with `let`.
 7. A `const` object, array, `Map`, `Set`, or class instance can be reactive.
    `const` fixes the binding, not its contents.
-8. Express derived state as an ordinary pure `const` expression. The compiler
-   replays it when its dependencies change. Do not assign to a derived value.
+8. Express derived state as an ordinary pure `const` or `let` expression. The
+   compiler replays it when its dependencies change and rejects later writes
+   to the derived binding.
 9. Keep all authored application modules reachable through static imports from
    the configured Vite entry so the compiler can link cross-file reads and
    writes.
@@ -280,7 +281,7 @@ Declaration kind retains normal JavaScript meaning:
 | `const state = { count: 0 }` | The binding is fixed; `state.count` may change reactively. |
 | `const items = []` | The binding is fixed; `push`, `splice`, index writes, and other content mutations can be reactive. |
 | `const selected = new Set()` | `add`, `delete`, and other receiver operations can invalidate readers. |
-| `const doubled = count * 2` | A pure derived value, replayed when `count` changes. It is read-only authored state. |
+| `let doubled = count * 2` | A pure derived value, replayed when `count` changes. It is read-only authored state. |
 | `let label = 'ready'` with no writes | Just a stable variable; `let` alone does not create reactivity. |
 
 Correct examples:
@@ -911,6 +912,9 @@ The normal `ref` property can also travel through an ordinary rest/spread
 wrapper. When building a runtime props object, use a callback ref. An object
 literal `{ ref: input }` reads the current value of `input`; ordinary JavaScript
 cannot preserve the ability to assign back to that lexical binding.
+The child receives a ref adapter rather than the caller's original box. Pass
+an imperative handle as an ordinary prop such as `api={handle}`; reserve
+`ref` for DOM-node forwarding.
 
 ## Data loading: `@memoized-dom/data`
 
@@ -919,7 +923,7 @@ TypeScript shape, while the compiler preserves the hidden request provenance
 needed for availability checks and targeted DOM updates.
 
 ```ts
-import { $fetch, $track, $action, Group, createDataRuntime, clearDataRuntime, RequestError } from '@memoized-dom/data';
+import { $fetch, $read, $forms, $track, Group, createDataRuntime, clearDataRuntime, RequestError } from '@memoized-dom/data';
 ```
 
 Do not import `@memoized-dom/data/internal`. That entry exists only for
@@ -1296,7 +1300,7 @@ failures use `error.kind === 'validation'`.
 Use `createDataRuntime` for application/request isolation, a custom base URL,
 or an injected fetch implementation. Install it as the active runtime before
 mounting; authored modules still use the exported transparent `$fetch` and
-`$action` facades.
+`$read` facades.
 
 ```ts
 import { createDataRuntime, setActiveDataRuntime } from '@memoized-dom/data';
@@ -1702,106 +1706,37 @@ export function handleRequest(request: Request): Response {
 }
 ```
 
-### Actions and action results
+### Forms and source-tracked mutations
 
-`$action` creates a lazy write operation. Creating it sends nothing; calling it
-sends the request and immediately returns that invocation's independent live
-result. It does not return a promise.
-
-```ts
-import { $action } from '@memoized-dom/data';
-
-interface Todo { id: string; title: string }
-interface CreateTodo { title: string }
-
-const createTodo = $action<Todo, CreateTodo>('/api/todos', {
-  method: 'POST',
-});
-
-const creation = createTodo({ title: 'Write the guide' });
-
-creation.id;    // unique to this invocation
-creation.state; // initially 'idle', then 'pending'/'success'/'error'
-```
-
-Supported methods are `POST`, `PUT`, `PATCH`, and `DELETE`; the default is
-`POST`. Plain objects/arrays are JSON encoded, while native request bodies such
-as `FormData`, blobs, and `URLSearchParams` pass through.
-
-Read `data` and `error` under the matching state boundary. No optional chaining
-is needed inside those arms:
+`$forms` accepts native `FormData` and exposes `submit`, `pending`, the last
+result, and one `errors` array. Browser forms use `onSubmit={form.submit}`;
+server code can submit a `FormData` instance directly. With
+`$forms({ schema, action })`, a Standard Schema validator (including Zod)
+infers the action's fields type. Parse and action failures appear as errors
+with `kind: 'parse'` or `kind: 'submit'`.
 
 ```tsx
-import type { ActionResult } from '@memoized-dom/data';
+import { $forms, $track } from '@memoized-dom/data';
 
-function CreationState({ creation }: { creation: ActionResult<Todo> }) {
-  return (
-    <section>
-      <p if={creation.state === 'pending'}>Creating…</p>
-      <p if={creation.state === 'error'}>{creation.error.message}</p>
-      <TodoRow if={creation.state === 'success'} todo={creation.data} />
-    </section>
-  );
-}
-```
-
-Every call returns a different `id` and state record, so concurrent calls cannot
-overwrite one another. There is no `await`, `.settled`, `pending` boolean,
-`status`, `abort`, `reset`, `refresh`, or action-call options object.
-
-Optimistic UI is ordinary program logic, not a data-package mutation API:
-create a temporary item, insert it into the same data structure the UI reads,
-and retain the returned action result with that temporary item's identity. On
-`success`, replace/reconcile it from `creation.data`; on `error`, remove only
-the temporary item owned by `creation.id`. The package does not invent
-`append`, `replace`, `remove`, `mutate`, or rollback methods.
-
-```ts
-import { $action, $fetch, type ActionResult } from '@memoized-dom/data';
-
-interface Todo {
-  id: string;
-  title: string;
-}
-
-interface CreateTodo {
-  title: string;
-  temporaryId: string;
-}
-
-const todos = $fetch<Todo[]>('/api/todos');
-const creations = new Map<string, ActionResult<Todo>>();
-
-const createTodo = $action<Todo, CreateTodo>('/api/todos', {
-  onSuccess(created, input) {
-    const index = todos.findIndex((todo) => todo.id === input.temporaryId);
-    if (index !== -1) todos[index] = created;
-  },
-  onError(_error, input) {
-    const index = todos.findIndex((todo) => todo.id === input.temporaryId);
-    if (index !== -1) todos.splice(index, 1);
-  },
+const form = $forms((fields: FormData) => {
+  const request = $track(form);
+  const id = request.id;
+  pending.add(id);
+  request.onSuccess((_result, settledId) => pending.delete(settledId));
+  request.onError((_error, settledId) => pending.delete(settledId));
+  return saveTodo(fields);
 });
 
-function addTodo(title: string) {
-  const temporary: Todo = {
-    id: `temporary-${crypto.randomUUID()}`,
-    title,
-  };
-
-  todos.unshift(temporary);
-
-  const creation = createTodo({
-    title,
-    temporaryId: temporary.id,
-  });
-  creations.set(creation.id, creation);
-}
+return <form onSubmit={form.submit}>
+  <input name="title" />
+  <button disabled={form.pending}>Save</button>
+</form>;
 ```
 
-The temporary ID connects the ordinary array entry to its request. The action
-result remains available in `creations` for pending/error UI, while the action
-callbacks perform only the success/error reconciliation owned by that request.
+Each submission has an independent ID and callbacks, even when submissions
+finish out of order. Application code owns any optimistic write and its
+inverse. `$read(promise)` exposes a promise's resolved payload like `$fetch`;
+`$track` accepts these sources and forms, not bare promises.
 
 ## Routing: `@memoized-dom/router`
 
@@ -2245,8 +2180,7 @@ Before returning a generated Memoized DOM project, verify:
 - Refs use `ref={target}` or callback refs, with explicit component forwarding.
 - `$fetch` values are consumed as plain payloads, unresolved reads are covered
   by `Group`, request state uses `$track`, and no resource methods are invented.
-- `$action` invocations are stored as independent action results and are never
-  awaited or given `.settled`/refresh/optimistic call options.
+- `$forms` submissions keep independent execution IDs and outcome callbacks.
 - Router paths start with `/`, route targets are declared, param keys are exact,
   and no router internals are imported.
 

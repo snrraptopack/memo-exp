@@ -2,8 +2,6 @@ import {
   getActiveDataRuntime,
 } from './active-runtime';
 import type {
-  ActionFunction,
-  ActionOptions,
   FetchOptions,
   ResolvedValue,
   TransparentFetchFunction,
@@ -12,6 +10,7 @@ import {
   Group,
   trackResolvedValue,
 } from './transparent';
+import { $forms, isFormSource, trackForm } from './forms';
 
 export { createDataRuntime } from './client';
 export {
@@ -25,14 +24,22 @@ export const $fetch = ((
   target: string | URL | null,
   options?: FetchOptions,
 ) => getActiveDataRuntime().$fetch(target, options)) as unknown as TransparentFetchFunction;
-export const $track = (<T>(value: ResolvedValue<T> | PromiseLike<T>) =>
-  trackResolvedValue(value)) as typeof trackResolvedValue;
+export const $read = <T>(
+  promise: PromiseLike<T>,
+  replay?: () => PromiseLike<T>,
+): ResolvedValue<Awaited<T>> =>
+  getActiveDataRuntime().$read(promise, replay) as unknown as ResolvedValue<Awaited<T>>;
+export { $forms };
+export function $track<T>(value: import('./forms').FormSource<T>): import('./forms').FormTracker<T>;
+export function $track<T>(value: import('./transparent-module').ModuleSourceRef): import('./types').TrackedValue<T>;
+export function $track<T>(value: import('./types').FetchResource<T>): import('./types').TrackedValue<T>;
+export function $track<T>(value: ResolvedValue<T>): import('./types').TrackedValue<T>;
+export function $track<T>(value: ResolvedValue<T> | import('./types').FetchResource<T> | import('./transparent-module').ModuleSourceRef | import('./forms').FormSource<T>): import('./types').TrackedValue<T, import('./errors').RequestError> | import('./forms').FormTracker<T> {
+  return isFormSource(value)
+    ? trackForm(value)
+    : trackResolvedValue(value as ResolvedValue<T>);
+}
 export { Group };
-export const $action = ((
-  target: string | URL,
-  options?: ActionOptions<never, never>,
-) =>
-  getActiveDataRuntime().$action(target, options)) as unknown as ActionFunction;
 export function clearDataRuntime(): void {
   getActiveDataRuntime().clear();
 }
@@ -40,18 +47,12 @@ export { RequestError } from './errors';
 export { UnresolvedDataReadError } from './transparent';
 
 export type {
-  Action,
-  ActionFunction,
-  ActionMethod,
-  ActionOptions,
-  ActionResult,
   AppCacheOptions,
   AsyncStatus,
   DataRuntime,
   DataRuntimeOptions,
   FetchCache,
   FetchBody,
-  FetchCollectionChanges,
   FetchFunction,
   FetchMethod,
   FetchOptions,
@@ -62,7 +63,6 @@ export type {
   JsonObject,
   JsonPrimitive,
   JsonValue,
-  OptimisticChange,
   ErrorPolicyComponentProps,
   Query,
   QueryPrimitive,
@@ -82,3 +82,4 @@ export type {
   ValidatedFetchOptions,
 } from './types';
 export type { RequestErrorKind, RequestErrorOptions } from './errors';
+export type { FormError, FormSource, FormTracker, SchemaFormOptions } from './forms';

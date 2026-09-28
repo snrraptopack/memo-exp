@@ -1,12 +1,14 @@
 import {
-  $action,
   $fetch,
+  $forms,
+  $read,
   $track,
   createDataRuntime,
   type DataRuntime,
   type DataRuntimeOptions,
   type GroupProps,
   type ResolvedValue,
+  type StandardSchemaV1,
 } from '../src';
 
 const options = {
@@ -28,7 +30,6 @@ void errorGroup;
 void inheritedGroup;
 
 runtime.$fetch<unknown>('users');
-runtime.$action<unknown>('users');
 runtime.clear();
 
 // @ts-expect-error Runtime capabilities are stable, read-only bindings.
@@ -60,7 +61,8 @@ $track(nullableUser).onSuccess(data => {
   if (data !== null) void data.name;
 });
 void $track(user).pending;
-void $track(user).value?.name;
+// @ts-expect-error Tracking does not expose the payload.
+void $track(user).value;
 void $track(user).error;
 void $track(user).id;
 $track(user).onSuccess((data, requestId) => {
@@ -77,9 +79,32 @@ void savedUser.name;
 void $track(savedUser).pending;
 
 const promisedUser = Promise.resolve<User>({ id: 1, name: 'Ada' });
-void $track(promisedUser).pending;
-void $track(promisedUser).value?.name;
-$track(promisedUser).onSuccess(value => void value.name);
+const readUser = $read(promisedUser);
+void readUser.name;
+void $track(readUser).pending;
+$track(readUser).onSuccess(value => void value.name);
+// @ts-expect-error Bare promises are not trackable.
+$track(promisedUser);
+
+const form = $forms((fields: FormData) => String(fields.get('name')));
+void form.pending;
+void form.errors[0]?.kind;
+void form.result;
+const formTracker = $track(form);
+formTracker.onSuccess(value => void value.toUpperCase());
+// @ts-expect-error A form starts another execution through submit, not refresh.
+formTracker.refresh();
+// @ts-expect-error The form tracker has no payload slot.
+void formTracker.value;
+
+const nameSchema: StandardSchemaV1<unknown, { name: string }> = {
+  '~standard': {
+    version: 1,
+    vendor: 'test',
+    validate: () => ({ value: { name: 'Ada' } }),
+  },
+};
+$forms({ schema: nameSchema, action: fields => fields.name.toUpperCase() });
 
 // @ts-expect-error HTTP methods use the canonical uppercase spelling.
 $fetch('/user', { method: 'post', body: { id: 1 } });
@@ -92,13 +117,3 @@ $fetch('/user', { method: 'POST', body: { id: 1n } });
 
 // @ts-expect-error Operations never collide with or decorate the payload.
 user.refresh();
-
-const createUser = $action<User, { name: string }>('/users');
-const creation = createUser({ name: 'Grace' });
-void creation.id;
-void creation.state;
-void creation.data?.name;
-void creation.error?.message;
-
-// @ts-expect-error Action invocation results are not promises.
-creation.then(() => {});

@@ -8,6 +8,7 @@ import {
   type BaseNode,
 } from '../ast';
 import {
+  bindingHasVisibleWrite,
   registerState,
   type ComputedAnalysis,
   type Ctx,
@@ -212,10 +213,10 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
       const init = childNode(declaration, 'init');
       const name = identifierName(id);
       if (name === null || init === null) continue;
-      // Reassignable roots stay mutable. Const object/collection roots are
-      // provisional: a state-reading initializer is a derivation and must
-      // take precedence over their shape-based mutable classification.
-      if (ctx.state.get(name) === 'let' || ctx.state.get(name) === 'computed') {
+      // A state-reading initializer takes precedence over provisional mutable
+      // classification. A later write to that binding is an error, even when
+      // it was authored with `let`.
+      if (ctx.state.get(name) === 'computed') {
         continue;
       }
       if (
@@ -226,23 +227,10 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
         continue;
       }
       const result = analyzeComputed(ctx, init);
-      if (declarationKind !== 'const') {
-        const binding = ctx.astAnalysis?.nodeToScope
-          .get(declaration)
-          ?.getBinding(name);
-        if (
-          result.reads.size > 0 &&
-          (binding?.constantViolations.length ?? 0) === 0
-        ) {
-          throw programPath.buildCodeFrameError(
-            `memo-dom: ${String(declarationKind)} '${name}' is never reassigned and its initializer reads reactive state; use const for derived values`,
-            declaration,
-          );
-        }
-        continue;
-      }
+      if (declarationKind !== 'const' && declarationKind !== 'let') continue;
       if (result.impure) {
         if (result.reads.size > 0) {
+          if (declarationKind === 'let') continue;
           throw programPath.buildCodeFrameError(
             `memo-dom: const '${name}' is a state derivation but ${
               result.reason ?? 'cannot be analyzed'
@@ -253,6 +241,15 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
         continue;
       }
       if (result.reads.size === 0) continue;
+      const binding = ctx.astAnalysis?.nodeToScope
+        .get(declaration)
+        ?.getBinding(name);
+      if (declarationKind === 'let' && bindingHasVisibleWrite(ctx, binding)) {
+        throw programPath.buildCodeFrameError(
+          `memo-dom: cannot write derived '${name}' — its initializer reads reactive state; write its source instead`,
+          declaration,
+        );
+      }
       registerState(ctx, name, 'computed');
       ctx.computeds.set(name, { reads: result.reads });
     }

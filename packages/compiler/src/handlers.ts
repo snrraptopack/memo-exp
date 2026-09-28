@@ -239,6 +239,21 @@ export function buildHandler(
     );
   }
 
+  // A compiler-recognized form owns its own submission lifecycle and publishes
+  // invalidations. Preserve the receiver when passing form.submit as a handler.
+  if (
+    attrName === 'onSubmit' &&
+    astFactory.isMemberExpression(value) &&
+    !value.computed &&
+    astFactory.isIdentifier(value.property, { name: 'submit' })
+  ) {
+    return wrapSharedHandlerWithOrigin(
+      ctx,
+      value,
+      buildEventOriginCommit(ctx, compName, rowCtx, eventOriginId),
+    );
+  }
+
   if (astFactory.isArrowFunctionExpression(value) || astFactory.isFunctionExpression(value)) {
     target = value;
   } else if (astFactory.isIdentifier(value)) {

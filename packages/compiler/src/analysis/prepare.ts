@@ -11,6 +11,7 @@ import { assimilateReactSource, unwrapReactComponentWrappers } from '../react/as
 import { normalizeNamedReexports } from '../linking/reexports';
 import {
   scanTransparentSourceImports,
+  addReadReplayFactories,
   lowerTransparentGroups,
   scanAndLowerModuleSourceDeclarations,
   rejectNonGetServerFunctionRenderCalls,
@@ -27,6 +28,7 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   initializeGeneratedIdentifiers(ctx, programPath.node);
   scanExternalReactiveImports(ctx, programPath);
   scanTransparentSourceImports(ctx, programPath);
+  addReadReplayFactories(ctx, programPath.node);
   lowerTransparentGroups(ctx, programPath);
   scanAndLowerModuleSourceDeclarations(ctx, programPath);
   analyzeRouterJsx(ctx, programPath);

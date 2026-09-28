@@ -93,16 +93,28 @@ describe('R14 - code generation', () => {
     expect(timer).toMatch(/\.markDirty\(_id\d*\)/);
   });
 
-  it('requires an unwritten local derivation to use const', () => {
-    expect(() =>
-      compile(`
-        export function App() {
-          let count = 1;
-          let doubled = count * 2;
-          return <button onClick={() => count++}>{doubled}</button>;
-        }
-      `),
-    ).toThrowError(/let 'doubled' is never reassigned.*use const for derived values/);
+  it('accepts a local let derivation and rejects later writes to it', () => {
+    const source = `
+      export function App() {
+        let count = 1;
+        let doubled = count * 2;
+        return <button onClick={() => count++}>{doubled}</button>;
+      }
+    `;
+    expect(compile(source)).toContain('doubled = count * 2');
+    expect(() => compile(source.replace('count++', '(count++, doubled = 0)')))
+      .toThrowError(/cannot write derived 'doubled'/);
+    expect(() => compile(source.replace('count++', '(count++, doubled++)')))
+      .toThrowError(/cannot write derived 'doubled'/);
+    expect(() => compile(`
+      export function App() {
+        let items = [1];
+        let visible = items.filter(Boolean);
+        return <button onClick={() => { items.push(2); visible.push(3); }}>
+          {visible.length}
+        </button>;
+      }
+    `)).toThrowError(/cannot write derived 'visible'/);
   });
 
   it('keeps const collection contents reactive', () => {
@@ -141,6 +153,11 @@ describe('R14 - code generation', () => {
 });
 
 const SOURCES: Record<string, string> = {
+  'r14-let-local': `export function App() {
+    let count = 1;
+    let doubled = count * 2;
+    return <button onClick={() => count++}>{doubled}</button>;
+  }`,
   'r14-local': `
     export function Counter() {
       let count = 1;
@@ -251,6 +268,15 @@ describe('R14 - compiled execution', () => {
 
   afterEach(() => {
     resetScheduler();
+  });
+
+  it('recomputes a local let derivation after source writes', async () => {
+    const { App } = await importCompiled('r14-let-local');
+    document.body.appendChild(App('App', null));
+    const button = document.querySelector('button')!;
+    expect(button.textContent).toBe('2');
+    button.click();
+    expect(button.textContent).toBe('4');
   });
 
   it('keeps local derivations isolated per instance', async () => {

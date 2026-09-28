@@ -209,6 +209,21 @@ describe('R20 - cleanup compiler contract', () => {
     );
   });
 
+  it('instruments callbacks nested in arbitrary setup options and arrays', () => {
+    const code = compile(`
+      function retain(_options) {}
+      let shared = 0;
+      retain({ hooks: [() => shared++] });
+      function App() {
+        let local = 0;
+        retain({ lifecycle: { changed: () => local++ } });
+        return <p>{shared}:{local}</p>;
+      }
+    `);
+    expect(code).toMatch(/hooks:\s*\[\s*\(\) => \{[\s\S]*shared\+\+[\s\S]*\.commitWrites\(/);
+    expect(code).toMatch(/changed:\s*\(\) => \{[\s\S]*local\+\+[\s\S]*\.markDirty\(/);
+  });
+
   it('leaves JSX-producing list callbacks to row/event emission', () => {
     const code = compile(`
       const rows = [{ id: 1 }];

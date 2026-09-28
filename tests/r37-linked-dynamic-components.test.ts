@@ -93,6 +93,52 @@ describe('R37 - linked dynamic components', () => {
     expect(code).toContain('.createCondRegion(');
   });
 
+  it('supports a finite route registry with a nullish fallback', () => {
+    const code = compile(`
+      function Index() { return <p>index</p>; }
+      function Counter() { return <p>counter</p>; }
+      function Form() { return <p>form</p>; }
+      const routes = { counter: Counter, form: Form };
+      export function App() {
+        let route = 'counter';
+        const Case = (routes as Record<string, typeof Index>)[route] ?? Index;
+        return <main><Case /></main>;
+      }
+    `);
+    expect(code).toContain('.createCondRegion(');
+    expect(code).toContain('Counter(');
+    expect(code).toContain('Form(');
+    expect(code).toContain('Index(');
+  });
+
+  it('switches a route registry through its fallback at runtime', async () => {
+    const code = compile(`
+      function Index() { return <p id="index">index</p>; }
+      function Counter() { return <p id="counter">counter</p>; }
+      function Form() { return <p id="form">form</p>; }
+      const routes = { counter: Counter, form: Form };
+      export function RouteApp() {
+        let route = 'counter';
+        const Case = (routes as Record<string, typeof Index>)[route] ?? Index;
+        return <main>
+          <button id="choose-form" onClick={() => route = 'form'}>form</button>
+          <button id="choose-missing" onClick={() => route = 'missing'}>missing</button>
+          <Case />
+        </main>;
+      }
+    `);
+    const fixture = join(linkedOutDir, 'RouteApp.ts');
+    writeFileSync(fixture, code);
+    const specifier = './fixtures/out/r37-linked/RouteApp.ts';
+    const { RouteApp } = await import(specifier);
+    document.body.appendChild(RouteApp('RouteApp', null));
+    expect(document.querySelector('#counter')?.textContent).toBe('counter');
+    document.querySelector<HTMLButtonElement>('#choose-form')!.click();
+    expect(document.querySelector('#form')?.textContent).toBe('form');
+    document.querySelector<HTMLButtonElement>('#choose-missing')!.click();
+    expect(document.querySelector('#index')?.textContent).toBe('index');
+  });
+
   it('synthesizes candidate imports for a component-returning helper', () => {
     const output = compileModules({
       './views.tsx': `

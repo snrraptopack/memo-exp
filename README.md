@@ -208,6 +208,18 @@ const View = selectView(mode);
 return <View value={value} />;
 ```
 
+A local component registry can use a reactive key and a nullish fallback. The
+compiler enumerates the registry's known component values and the fallback:
+
+```tsx
+const routes = { home: Home, settings: Settings };
+const Page = routes[route] ?? NotFound;
+return <Page />;
+```
+
+The candidate set must still be finite and visible to the compiler. An
+arbitrary runtime component value cannot be used as a JSX tag.
+
 JSX-returning local functions are compile-time render helpers. They support
 pure return `if`/`switch` flow and may be used directly as a map callback:
 
