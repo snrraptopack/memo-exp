@@ -1,6 +1,8 @@
 import { SnapshotNotifier } from './notifications';
 import { fetchResourceSnapshot, isFetchResource, subscribeFetchResource } from './resource';
 import type {
+  FetchResource,
+  ResolvedValue,
   ResourceListener,
   ResourceSnapshot,
   StandardSchemaIssue,
@@ -245,7 +247,19 @@ function createForm<TFields, TResult>(
 }
 
 export function $forms<TResult>(
+  action: (fields: FormData) => ResolvedValue<TResult>,
+): FormSource<TResult>;
+export function $forms<TResult>(
+  action: (fields: FormData) => FetchResource<TResult>,
+): FormSource<TResult>;
+export function $forms<TResult>(
   action: (fields: FormData) => TResult | PromiseLike<TResult>,
+): FormSource<TResult>;
+export function $forms<TFields, TResult>(
+  options: SchemaFormOptions<TFields, ResolvedValue<TResult>>,
+): FormSource<TResult>;
+export function $forms<TFields, TResult>(
+  options: SchemaFormOptions<TFields, FetchResource<TResult>>,
 ): FormSource<TResult>;
 export function $forms<TFields, TResult>(
   options: SchemaFormOptions<TFields, TResult>,

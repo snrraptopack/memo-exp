@@ -2,6 +2,7 @@ export { createDataRuntime } from './client';
 export {
   disposeFetchResource,
   fetchResourceSnapshot,
+  isFetchResource,
   subscribeFetchResource,
 } from './resource';
 export {
