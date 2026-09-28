@@ -124,6 +124,42 @@ function copy<T>(node: T): T {
   return cloneNode(node as BaseNode, true) as T;
 }
 
+/**
+ * True when `expression` is an identifier bound to a `const x = <imported>()`
+ * call where `<imported>` resolves to the named React import — used to catch
+ * `use(context)` double-duty without treating arbitrary promise consts as
+ * context objects.
+ */
+function boundToReactCall(
+  analysis: ReactUseScan['analysis'],
+  uses: readonly ImportUse[],
+  expression: t.Expression,
+  imported: string,
+): boolean {
+  if (!ast.isIdentifier(expression)) return false;
+  const binding = analysis.nodeToScope.get(expression as BaseNode)
+    ?.getBinding(expression.name);
+  const node = binding?.declarationNode;
+  if (node === undefined || node.type !== 'VariableDeclarator') return false;
+  const init = (node as t.VariableDeclarator).init;
+  if (init === null || !ast.isCallExpression(init)) return false;
+  const callee = init.callee;
+  if (ast.isIdentifier(callee)) {
+    const calleeBinding = analysis.nodeToScope.get(callee as BaseNode)
+      ?.getBinding(callee.name);
+    return uses.some((use) =>
+      !use.namespace && use.name === imported && use.binding === calleeBinding);
+  }
+  if (ast.isMemberExpression(callee) && !callee.computed &&
+      ast.isIdentifier(callee.object) && ast.isIdentifier(callee.property) &&
+      callee.property.name === imported) {
+    const nsBinding = analysis.nodeToScope.get(callee.object as BaseNode)
+      ?.getBinding(callee.object.name);
+    return uses.some((use) => use.namespace && use.binding === nsBinding);
+  }
+  return false;
+}
+
 function enclosingFunction(
   analysis: ReturnType<typeof analyzeScope>,
   node: BaseNode,
@@ -625,7 +661,12 @@ export function assimilateReactSource(ctx: Ctx, programPath: ProgramPath): void 
             call.arguments.length !== 1 || argument(call, 0) === null) {
           fail(`requires a direct component binding: const value = use(promise); conditional or nested use() is not supported`, call);
         }
-        operations.push({ kind: 'read', declarator, promise: argument(call, 0)! });
+        const readTarget = argument(call, 0)!;
+        if (boundToReactCall(analysis, uses, readTarget, 'createContext')) {
+          const label = ast.isIdentifier(readTarget) ? readTarget.name : 'context';
+          fail(`requires an ancestry-scoped context channel that MMD does not provide: use(${label}) reads a createContext() value — lift state or pass props (see assimilation/11-usecontext)`, call);
+        }
+        operations.push({ kind: 'read', declarator, promise: readTarget });
       } else if (name === 'useActionState') {
         const declarator = ast.isVariableDeclarator(parent) && parent.init === call ? parent : null;
         const statement = declarator === null ? null : analysis.parentByNode.get(declarator as BaseNode);

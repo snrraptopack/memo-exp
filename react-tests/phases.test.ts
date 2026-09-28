@@ -125,6 +125,7 @@ describe('React phase hook diagnostics', () => {
     ["import { startTransition } from 'react'; function App() { const f = () => startTransition(); return <p />; }", 'exactly one callback'],
     ["import { useInsertionEffect } from 'react'; function App() { const e = useInsertionEffect(() => {}); return <p />; }", 'statement'],
     ["import { use } from 'react'; function App() { const v = 1 && use(x); return <p />; }", 'direct component binding'],
+    ["import { createContext, use } from 'react'; const Ctx = createContext(null); function App() { const v = use(Ctx); return <p>{v}</p>; }", 'ancestry-scoped context'],
   ])('diagnoses unsupported hook shapes', (source, message) => {
     expect(() => compile(source, {
       moduleId: 'phase-kit/invalid.tsx', react: { packages: ['phase-kit'] },

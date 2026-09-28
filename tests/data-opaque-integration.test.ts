@@ -89,16 +89,21 @@ const source = `
     function load() {
       return data.$fetch('/users', { query: { page } });
     }
-    let users = load();
+    // Derived binding: load() reads page, so users replays the fetch
+    // automatically when page changes — no manual reload.
+    const users = load();
+    // Superseded resources are still caller-managed: replay aborts the
+    // request the previous derivation was holding.
+    let previous;
+    effect(() => {
+      const stale = previous;
+      previous = users;
+      stale?.abort?.();
+    });
     cleanup(data.clear);
 
     return <main>
-      <button id="next" onClick={() => {
-        page++;
-        const previous = users;
-        users = load();
-        previous.abort();
-      }}>Next</button>
+      <button id="next" onClick={() => { page++; }}>Next</button>
       <output id="search-status">{users.status}</output>
       <output id="search-result">{users.data?.[0]?.name ?? ''}</output>
     </main>;
