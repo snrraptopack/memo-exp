@@ -110,7 +110,7 @@ The hand-written cases here mirror exactly what these passes emit.
 | `useInsertionEffect` | `/19-useinsertioneffect` | `effect()` candidate — ordered phase, pre-paint | paired |
 | `useDebugValue` | `/18-usedebugvalue` | erased | paired |
 | attrs: `className`/`style`/`htmlFor`/`checked`/`onChange` | `/17-attrs` | shared host-attr pipeline; `onChange`→`onInput` on text inputs | paired |
-| `useOptimistic` + `useActionState` + `useFormStatus` (19) | `/20-forms` | `optimistic({action, apply, reconcile})` + `$forms` — real primitives (post-merge) | paired |
+| `useOptimistic` + `useActionState` + `useFormStatus` (19) | `/20-forms` | `optimistic({action, apply, reconcile})` + `$forms` — real primitives (post-merge) | verified |
 | `createPortal` | `/21-createportal` | manual `effect` + imperative DOM; reactive JSX in foreign container unsupported | paired |
 | `use` (19) | — | `$read(promise)` is now the tracked-promise bridge — candidate for a `use`/`Suspense` case; `use(context)` still needs the context entity | candidate |
 | `Children.count` / `Children.map` | `/16-children` | call-site specialization → constant/list row; authored twin = opaque slot + array prop | paired |

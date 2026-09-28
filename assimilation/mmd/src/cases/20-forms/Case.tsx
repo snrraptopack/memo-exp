@@ -27,7 +27,7 @@ function SubmitButton({ pending }: { pending: boolean }) {
 }
 
 export function FormsCase() {
-  let formEl: HTMLFormElement | null = null;
+  const formEl = { current: null as HTMLFormElement | null };
   let messages: Message[] = [];
 
   const sendMessage = optimistic({
@@ -42,7 +42,7 @@ export function FormsCase() {
     reconcile(saved, _text, id) {
       const index = messages.findIndex((m) => m.id === id);
       if (index !== -1) messages.splice(index, 1, saved);
-      formEl?.reset();
+      formEl.current?.reset();
     },
   });
 
@@ -61,12 +61,7 @@ export function FormsCase() {
           </li>
         ))}
       </ul>
-      <form
-        ref={(el) => {
-          formEl = el;
-        }}
-        onSubmit={form.submit}
-      >
+      <form ref={formEl} onSubmit={form.submit}>
         <input name="msg" placeholder="message" required />{' '}
         <SubmitButton pending={form.pending} />
       </form>

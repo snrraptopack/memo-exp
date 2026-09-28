@@ -53,4 +53,4 @@ from `docs/05-data.md`, solved by the operation id).
 - `$forms({ schema, action })` additionally accepts a Standard Schema
   validator — not exercised here (React side has no schema equivalent).
 
-_awaiting verification_
+_verified in browser — matches the React twin._
