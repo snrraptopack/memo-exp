@@ -402,12 +402,21 @@ markDirtySubtree fallback that protects genuinely untracked mutations.
 That fallback can't see that this particular write path self-commits.
 Semantically safe (the second render is idempotent), but wasteful.
 
-**Options, unresolved**: (a) tighten `rootFallback` for member writes
-whose receiver has no non-effect readers in the access table — nested
-self-committed calls then carry the notification; (b) teach the runtime
-to coalesce marks that land immediately after a same-subtree drain;
-(c) update the test contract if double-schedule is accepted as the
-price of complete write instrumentation.
+**Resolution**: implemented option (a) in `isSelfContainedProxyWrite`
+(`packages/compiler/src/handlers/member-assignment.ts`). A member-write
+site on a `const box = new Proxy(freshLiteral, inAstHandler)` receiver
+whose references never leave the instrumented scope records **no**
+scope write at all — every trap already self-commits (verified: trap
+bodies get `commitWrites` covering even member writes like
+`mirror.x = v`), and pass-through writes land on an anonymous `{}` no
+reader can reach. `noteMemberWrite` returns early so no routed `box`
+write is recorded, and `finalizeHandlerInstrumentation` skips the
+`rootFallback` mark. The emitted effect is just `box.a = 1;` — the
+trap's own `commitWrites` carries the notification. Escaped proxies
+(handler not in-AST, receiver aliased elsewhere, references outside
+the instrumented scope) keep the conservative `markDirtySubtree`.
+Accessor objects (`{ set x(v){...} }`) keep it too — their setter
+bodies are deliberately uninstrumented, the fallback is their commit.
 
 **Context**: passes pre-merge (`234b6a2`); only the trap-side
 `commitWrites` is new. Same rule family as #006 — derived-let

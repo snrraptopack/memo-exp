@@ -1,7 +1,6 @@
 
 
 export function App() {
-  let count = 0
   let items = ['helo', 'heoo3']
   let temp = ''
   return (

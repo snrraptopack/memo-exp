@@ -42,7 +42,7 @@ export function FormsCase() {
     reconcile(saved, _text, id) {
       const index = messages.findIndex((m) => m.id === id);
       if (index !== -1) messages.splice(index, 1, saved);
-      formEl?.reset();
+      (formEl as unknown as HTMLFormElement)?.reset();
     },
   });
 

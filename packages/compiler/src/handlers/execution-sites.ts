@@ -14,7 +14,7 @@ import {
 import { buildEventOriginCommit } from '../handler-origin';
 import { generatedIdentifier, md } from '../identifiers';
 import { HandlerPath } from './traversal';
-import { isPlainDataAssignment } from './member-assignment';
+import { isPlainDataAssignment, isSelfContainedProxyWrite } from './member-assignment';
 
 export interface HandlerExecutionSite {
   path: HandlerPath;
@@ -54,8 +54,13 @@ export function finalizeHandlerInstrumentation(
     for (const site of executionSites.values()) {
       if (site.path.isAssignmentExpression() &&
           astFactory.isMemberExpression(site.path.node.left) &&
-          !isPlainDataAssignment(ctx, rootFn, site.path.node.left)) {
-        // A setter/proxy can mutate state beyond the apparent receiver.
+          !isPlainDataAssignment(ctx, rootFn, site.path.node.left) &&
+          !isSelfContainedProxyWrite(ctx, rootFn, site.path.node.left)) {
+        // A setter/proxy can mutate state beyond the apparent receiver —
+        // except a proxy whose traps are all instrumented in-AST nested
+        // functions and whose target no outside reader can reach: its
+        // writes already self-commit, so the fallback would only schedule
+        // a redundant second drain.
         site.writes.rootFallback = true;
       }
       const commit = buildScopeCommit(ctx, site.writes, compName, rowCtx);

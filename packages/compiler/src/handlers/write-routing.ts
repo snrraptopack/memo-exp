@@ -28,7 +28,7 @@ import {
 } from './mutation-targets';
 import { HandlerPath, walkHandler, type FunctionNode } from './traversal';
 import type { HandlerExecutionSite } from './execution-sites';
-import { hasKnownAccessor } from './member-assignment';
+import { hasKnownAccessor, isSelfContainedProxyWrite } from './member-assignment';
 
 export interface HandlerWriteRouting {
   locals: Set<string>;
@@ -464,6 +464,11 @@ export function createHandlerWriteRouting({
   };
 
   const noteMemberWrite = (p: HandlerPath, node: t.MemberExpression): void => {
+    // A proxy over a fresh literal whose references never leave this scope has
+    // no observable receiver write: in-AST traps self-commit their own state
+    // writes, and pass-through writes land on an anonymous target. Recording
+    // 'box' would only self-notify the writing scope.
+    if (isSelfContainedProxyWrite(ctx, rootFn, node)) return;
     if (hasKnownAccessor(ctx, rootFn, node)) {
       mutateScope(p, scope => { scope.rootFallback = true; });
     }
