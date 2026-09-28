@@ -443,6 +443,18 @@ export function scanInstanceDerivations(ctx: Ctx): void {
           continue;
         }
         const initializer = declaration.init as unknown as BaseNode;
+        // A form is a stable controller. Its action may capture reactive
+        // state, but recreating the controller would lose in-flight attempts.
+        const formFactory = initializer.type === 'CallExpression'
+          ? identifierName(childNode(initializer, 'callee'))
+          : null;
+        if (
+          formFactory !== null &&
+          ctx.transparentFormFactories.has(formFactory) &&
+          astBindingAt(ctx, initializer, formFactory)?.kind === 'import'
+        ) {
+          continue;
+        }
         const isTransparentFetch = isTransparentFetchCall(initializer);
         if (classifyOpaqueReads(initializer) === 'bad') continue;
 

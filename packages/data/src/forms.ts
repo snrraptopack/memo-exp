@@ -42,6 +42,7 @@ interface Attempt<T> {
 interface FormController<T> {
   notifier: SnapshotNotifier<number>;
   current: Attempt<T> | null;
+  executing: Attempt<T> | null;
   active: number;
   version: number;
   errors: readonly FormError[];
@@ -125,6 +126,7 @@ function createForm<TFields, TResult>(
   const controller: FormController<TResult> = {
     notifier: undefined as unknown as SnapshotNotifier<number>,
     current: null,
+    executing: null,
     active: 0,
     version: 0,
     errors: [],
@@ -214,9 +216,16 @@ function createForm<TFields, TResult>(
           }
           fields = parsed.value;
         }
-        // The execution is already current before the action runs, so
-        // $track(form) inside it can attach callbacks to this exact attempt.
-        const output = action(fields);
+        // An earlier validated attempt may run after a later submit has made
+        // another attempt current. Bind $track(form) in this call to its owner.
+        const previousExecution = controller.executing;
+        controller.executing = attempt;
+        let output: TResult | PromiseLike<TResult>;
+        try {
+          output = action(fields);
+        } finally {
+          controller.executing = previousExecution;
+        }
         succeed(await settleOutput(output));
       } catch (cause) {
         fail({ kind: 'submit', message: message(cause), cause });
@@ -285,7 +294,10 @@ export function disposeFormSource<T>(form: FormSource<T>): void {
 export function trackForm<T>(form: FormSource<T>): FormTracker<T> {
   const controller = controllers.get(form) as FormController<T> | undefined;
   if (controller === undefined) throw new TypeError('Not a form source');
-  const current = () => controller.current;
+  // Capture the attempt while its action runs. Other submissions may become
+  // current before asynchronous schema validation reaches this action.
+  const selected = controller.executing;
+  const current = () => selected ?? controller.current;
   return Object.freeze({
     get id() { return current()?.id ?? ''; },
     get status() { return current()?.status ?? 'idle'; },
