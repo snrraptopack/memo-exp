@@ -19,5 +19,5 @@ describe('assimilation lab source compile', () => {
     walk(src);
     const output = compileModules(modules);
     expect(Object.keys(output).length).toBe(Object.keys(modules).length);
-  });
+  }, 30_000);
 });

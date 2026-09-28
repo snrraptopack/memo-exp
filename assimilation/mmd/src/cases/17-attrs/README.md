@@ -22,9 +22,12 @@ MMD wires handlers to real DOM events, so `onChange` here is blur-time —
 the per-keystroke equivalent is `onInput`. The React twin uses `onChange`;
 this file uses `onInput`, and both echo per keystroke.
 
-Lowering consequence: React `onChange` on text controls must translate to
-MMD `onInput` (checkbox/radio `change` is already equivalent — it fires on
-toggle, which is why the checkbox above keeps `onChange`).
+Lowering gap: React `onChange` on text controls currently remains MMD's native
+DOM `change` event, so a compiled React input updates on commit rather than
+per keystroke. The authored MMD twin demonstrates that `onInput` is a valid
+target. How the compiler distinguishes this React convention from intentional
+native MMD `onChange` in a mixed module remains open. Checkbox/radio `change`
+already fires on toggle, which is why the checkbox above keeps `onChange`.
 
 ## Same checklist as the React version
 
@@ -36,4 +39,6 @@ toggle, which is why the checkbox above keeps `onChange`).
 
 ## Notes / divergences
 
-_(fill in when verified)_
+_The authored MMD target supports per-keystroke echo. The compiled React lab
+source currently differs on text-input `onChange`; see
+`react-tests/lab-lowering.test.ts`._

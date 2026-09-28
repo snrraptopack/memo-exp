@@ -128,6 +128,7 @@ lowering rule is added:
 | `useOptimistic`, `useFormStatus` | Can the write owner and nearest form status be identified and mapped onto `$forms` and `optimistic` without ambiguous global state? |
 | class components | Can supported class source be transformed into MMD instance state and owned methods, or is an explicit source migration required? |
 | `react/jsx-runtime` calls | Should the compiler accept unminified, pretransformed package output as an additional *input syntax* through the same MMD path? |
+| text-input `onChange` | The MMD target is `onInput`, but native MMD `onChange` means DOM commit. How can source translation recognize React's event convention within a mixed module without introducing a file-wide React mode? |
 | root, hydration, lookup, and scheduler helpers | Which calls map to existing MMD host APIs, and which require separate host contracts? The browser entry itself is already decided: use `mount`. |
 | cache, coordination, experimental, and tooling APIs | Identify the precise source use and owner before deciding whether an MMD primitive, an intentional semantic difference, or a diagnostic applies. |
 

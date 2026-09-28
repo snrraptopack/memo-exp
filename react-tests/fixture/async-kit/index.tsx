@@ -41,3 +41,18 @@ export function Tally() {
     <output id="pending">{pending ? 'pending' : 'idle'}</output>
   </section>;
 }
+
+export function ButtonAction() {
+  const [total, dispatch] = useActionState(
+    async (previous: number, fields: FormData) =>
+      previous + Number(fields.get('amount') ?? 0),
+    0,
+  );
+  return <section>
+    <form>
+      <input name="amount" value="7" />
+      <button id="button-action" type="submit" formAction={dispatch}>add</button>
+    </form>
+    <output id="button-total">{total}</output>
+  </section>;
+}

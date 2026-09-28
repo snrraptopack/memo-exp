@@ -117,7 +117,8 @@ choosing it for migration. See the [open design questions](../react-assimilation
 | `Fragment` | `/15-fragment` | native `<>` support | verified | lowered (`Fragment`, `StrictMode`, `Suspense` tags all translate) |
 | `useInsertionEffect` | `/19-useinsertioneffect` | `effect()` candidate — ordered phase, pre-paint | verified | lowered → `effect()` ordered before layout effects |
 | `useDebugValue` | `/18-usedebugvalue` | erased | verified | erased — calls removed, including inside local `use*` hooks |
-| attrs: `className`/`style`/`htmlFor`/`checked`/`onChange` | `/17-attrs` | shared host-attr pipeline; `onChange`→`onInput` on text inputs | verified | shared attr pipeline (no special casing) |
+| attrs: `className`/`style`/`htmlFor`/`checked` | `/17-attrs` | shared host-attr pipeline | verified | lowered and DOM-tested |
+| text-input `onChange` | `/17-attrs` | authored MMD uses `onInput` for each keystroke | verified target | **open** — compiled React source currently retains native DOM `change` timing |
 | `useOptimistic` + `useActionState` + `useFormStatus` (19) | `/20-forms` | `optimistic({action, apply, reconcile})` + `$forms` — real primitives (post-merge) | verified | `useActionState` → `$forms`; `form action={fn}`/`formAction={fn}` → `onSubmit`/`onClick` `FormData` wrapper. `useOptimistic`/`useFormStatus` **diagnosed; design open** — written state / read position not recoverable |
 | `createPortal` | `/21-createportal` | manual `effect` + imperative DOM demonstrates the host boundary; no general reactive JSX target yet | paired | **diagnosed; design open** — portal ownership |
 | `use(promise)` + `Suspense` (19) | `/22-suspense` | `$read(promise)` + `Group pending`/`suspend` — per-call and per-region reveal units; `suspend` is first-mount only | verified | lowered → injected `$read` + `<Group pending>`; a `use` of non-source values **diagnosed** |

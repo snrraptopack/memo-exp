@@ -63,6 +63,7 @@ describe('assimilated async hook DOM behavior', () => {
       bubbles: true, cancelable: true,
       submitter: form.querySelector('button')!,
     }));
+    expect(document.querySelector('#pending')!.textContent).toBe('pending');
     await vi.waitFor(() => {
       expect(document.querySelector('#state')!.textContent).toBe('5');
     });
@@ -75,6 +76,16 @@ describe('assimilated async hook DOM behavior', () => {
     document.querySelector<HTMLButtonElement>('#manual')!.click();
     await vi.waitFor(() => {
       expect(document.querySelector('#state')!.textContent).toBe('2');
+    });
+  });
+
+  it('submits a button formAction using the enclosing form data', async () => {
+    const app = await import(/* @vite-ignore */ pathToFileURL(compiled.emitted.get(appFile)!).href);
+    document.body.appendChild(app.App('App', null));
+    const submitter = document.querySelector<HTMLButtonElement>('#button-action')!;
+    submitter.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('#button-total')!.textContent).toBe('7');
     });
   });
 });

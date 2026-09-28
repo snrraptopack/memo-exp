@@ -23,6 +23,15 @@ should cover updates, independent instances, cleanup, and ownership where the
 package needs them. A package passing source recognition alone is not a claim
 that it works in the DOM.
 
+`lab-lowering.test.ts` compiles selected authored files directly from
+`assimilation/react/src/cases/` and drives their MMD output in the DOM. It
+currently checks derived chains, callback captures, immediate deferred values,
+and host attributes. The text-input event assertions expose a current gap:
+React-authored `onChange` remains MMD's native `change` event, while the
+handwritten MMD twin uses `onInput` for per-keystroke updates. The full MMD lab
+compile test validates source acceptance only; it does not test every React
+case's behavior.
+
 The compound child fixture exercises the first bounded child-sequence
 observation: `Children.count(children)` in a package component. The linker
 reads each known caller's JSX children, passes the count as a scalar component
