@@ -123,6 +123,18 @@ describe('R13 — computeds, code generation', () => {
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#total"');
   });
 
+  it('rejects writes to an object literal that directly derives from state', () => {
+    expect(() => compile(`
+      let count = 1;
+      const snapshot = { value: count };
+      export function App() {
+        return <button onClick={() => { count++; snapshot.value = 2; }}>
+          {snapshot.value}
+        </button>;
+      }
+    `)).toThrowError(/cannot mutate computed 'snapshot'/);
+  });
+
   it('detection is by reference — arbitrary calls, new, and local mutations are allowed', () => {
     // unknown/imported/global functions, new expressions, and callbacks that
     // mutate LOCALS are all fine: a derivation recomputes on every source

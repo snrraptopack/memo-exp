@@ -96,7 +96,11 @@ function memberKey(node: BaseNode): string | null {
  * Analyze a candidate module-level computed initializer. Detection is by
  * reactive-state reference rather than by a whitelist of expression forms.
  */
-export function analyzeComputed(ctx: Ctx, expr: BaseNode): ComputedAnalysis {
+export function analyzeComputed(
+  ctx: Ctx,
+  expr: BaseNode,
+  includeHelperReads = true,
+): ComputedAnalysis {
   const reads = new Set<string>();
   let impure = false;
   let reason: string | undefined;
@@ -165,7 +169,9 @@ export function analyzeComputed(ctx: Ctx, expr: BaseNode): ComputedAnalysis {
         ) {
           const summary =
             ctx.importedFunctions.get(callee) ?? summarizeHelper(ctx, callee);
-          for (const read of summary.reads) reads.add(read);
+          if (includeHelperReads) {
+            for (const read of summary.reads) reads.add(read);
+          }
           if (summary.writes.size > 0) {
             for (const write of summary.writes) reads.add(write);
             fail(
@@ -228,6 +234,21 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
       }
       const result = analyzeComputed(ctx, init);
       if (declarationKind !== 'const' && declarationKind !== 'let') continue;
+      // A statically shaped object whose members are written is an authored
+      // store. A helper called only to build its initial value may read its
+      // own module state; that does not make the object a derivation. Direct
+      // state reads in the initializer still make it a computed.
+      const binding = ctx.astAnalysis?.nodeToScope
+        .get(declaration)
+        ?.getBinding(name);
+      if (
+        ctx.state.get(name) === 'store' &&
+        bindingHasVisibleWrite(ctx, binding) &&
+        !result.impure &&
+        analyzeComputed(ctx, init, false).reads.size === 0
+      ) {
+        continue;
+      }
       if (result.impure) {
         if (result.reads.size > 0) {
           if (declarationKind === 'let') continue;
@@ -241,9 +262,6 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
         continue;
       }
       if (result.reads.size === 0) continue;
-      const binding = ctx.astAnalysis?.nodeToScope
-        .get(declaration)
-        ?.getBinding(name);
       if (declarationKind === 'let' && bindingHasVisibleWrite(ctx, binding)) {
         throw programPath.buildCodeFrameError(
           `memo-dom: cannot write derived '${name}' — its initializer reads reactive state; write its source instead`,

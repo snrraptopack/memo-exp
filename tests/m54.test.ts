@@ -70,6 +70,27 @@ describe('M5.4 - mutable const roots, code generation', () => {
     expect(output['./app.tsx']).toContain('.commitWrites(');
   });
 
+  it('keeps a written store mutable when its initializer helper reads module state', () => {
+    const output = compileModules({
+      './model.ts': `
+        const labels = ['initial'];
+        export function createState() { return { label: labels[0] }; }
+      `,
+      './app.tsx': `
+        import { createState } from './model';
+        const store = { state: createState() };
+        export function App() {
+          return <button onClick={() => { store.state = createState(); }}>
+            {store.state.label}
+          </button>;
+        }
+      `,
+    });
+
+    expect(output['./app.tsx']).toContain('.commitWrites(');
+    expect(output['./app.tsx']).not.toContain('$computed/');
+  });
+
   it('rebinding a mutable const root is a compile error, not a runtime TypeError', () => {
     expect(() =>
       compile(
