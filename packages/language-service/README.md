@@ -21,6 +21,12 @@ Add the plugin to the application `tsconfig.json`:
 }
 ```
 
+This plugin uses the TypeScript 6 tsserver API. Its workspace build uses a
+package-local TypeScript 6 dependency; the repository's TypeScript 7 compiler
+remains available for the other packages. To use the plugin in an editor,
+select a TypeScript 6 tsserver; the TypeScript 7 language server does not load
+tsserver plugins.
+
 TypeScript language-service plugins run in editors powered by tsserver. They
 do not add diagnostics to standalone `tsc`; the analysis core is kept separate
 so a future CLI can report the same diagnostics in CI.
