@@ -174,6 +174,82 @@ export function analyzeHandler(
     const kind = ctx.state.get(name);
     return kind === undefined ? null : moduleOrigin(name, kind);
   });
+  // Handler analysis runs on a detached function clone. Seed provenance from
+  // declarations in the module and owning component before walking it.
+  const outerScope = ctx.astAnalysis?.rootScope;
+  if (outerScope !== undefined) {
+    const seedDeclaration = (declaration: t.VariableDeclarator): void => {
+      if (declaration.init === null) return;
+      const init = declaration.init as t.Expression;
+      const rawInit = declaration.init as t.Node;
+      if (astFactory.isIdentifier(declaration.id)) {
+        const name = declaration.id.name;
+        if (astFactory.isObjectExpression(init)) {
+          for (const property of init.properties) {
+            if (!astFactory.isObjectProperty(property) || property.computed ||
+                !astFactory.isExpression(property.value)) continue;
+            const key = astFactory.isIdentifier(property.key)
+              ? property.key.name
+              : astFactory.isStringLiteral(property.key)
+                ? property.key.value
+                : null;
+            if (key !== null) {
+              aliases.trackNamedMember(`${name}.${key}`,
+                aliases.resolveExpressionOrigins(outerScope, property.value)
+                  .filter(origin => origin.stateKind === 'const' || origin.stateKind === 'store'));
+            }
+          }
+        } else if (astFactory.isIdentifier(init) ||
+                   astFactory.isMemberExpression(init) ||
+                   astFactory.isConditionalExpression(init) ||
+                   astFactory.isTSNonNullExpression(rawInit)) {
+          const value = astFactory.isTSNonNullExpression(rawInit)
+            ? rawInit.expression
+            : init;
+          aliases.trackNamed(name,
+            astFactory.isCallExpression(value) &&
+            astFactory.isMemberExpression(value.callee)
+              ? aliases.resolveExpressionOrigins(outerScope, value.callee.object)
+              : aliases.resolveExpressionOrigins(outerScope, value));
+        } else if (astFactory.isCallExpression(init) &&
+                   astFactory.isMemberExpression(init.callee)) {
+          aliases.trackNamed(name,
+            aliases.resolveExpressionOrigins(outerScope, init.callee.object));
+        }
+      } else if (astFactory.isObjectPattern(declaration.id)) {
+        const sources = aliases.resolveExpressionOrigins(outerScope, init);
+        for (const property of declaration.id.properties) {
+          if (!astFactory.isObjectProperty(property) || property.computed ||
+              !astFactory.isIdentifier(property.value)) continue;
+          const key = astFactory.isIdentifier(property.key)
+            ? property.key.name
+            : astFactory.isStringLiteral(property.key)
+              ? property.key.value
+              : null;
+          if (key !== null) {
+            aliases.trackNamed(property.value.name,
+              sources.map(origin => extendOrigin(origin, [key])));
+          }
+        }
+      }
+    };
+    const program = outerScope.block as t.Program;
+    for (const statement of program.body) {
+      const declaration = astFactory.isExportNamedDeclaration(statement)
+        ? statement.declaration
+        : statement;
+      if (astFactory.isVariableDeclaration(declaration) && declaration.kind === 'const') {
+        for (const item of declaration.declarations) seedDeclaration(item);
+      }
+    }
+    if (compName !== null) {
+      for (const statement of ctx.compPaths.get(compName)?.node.body.body ?? []) {
+        if (astFactory.isVariableDeclaration(statement) && statement.kind === 'const') {
+          for (const item of statement.declarations) seedDeclaration(item);
+        }
+      }
+    }
+  }
   const {
     locals,
     rootParamIndex,
@@ -470,10 +546,14 @@ export function analyzeHandler(
           noteBoundedArguments(p, p.node.arguments);
           return;
         }
+        const receiverOrigins = astFactory.isExpression(callee.object)
+          ? aliases.resolveExpressionOrigins(p.scope, callee.object)
+          : [];
         if (
           receiverRoot !== null &&
           instDerived?.has(receiverRoot) &&
-          !projectedProps.has(receiverRoot)
+          !projectedProps.has(receiverRoot) &&
+          receiverOrigins.length === 0
         ) {
           // Method bodies are opaque. The call may change observable state,
           // so invalidate the owner without declaring the invocation illegal.
@@ -511,13 +591,28 @@ export function analyzeHandler(
           });
           return;
         }
-        const receiver =
-          astFactory.isExpression(callee.object)
-            ? aliases.resolveExpression(p.scope, callee.object)
-            : null;
-        if (receiver !== null) {
-          noteReceiverEffect(p, receiver);
+        if (receiverOrigins.length > 0) {
+          for (const receiver of receiverOrigins) noteReceiverEffect(p, receiver);
         } else {
+          if (astFactory.isCallExpression(callee.object)) {
+            const provider = callee.object.callee;
+            if (astFactory.isIdentifier(provider) &&
+                !componentLocals.has(provider.name) &&
+                (ctx.helpers.has(provider.name) || ctx.importedFunctions.has(provider.name))) {
+              const summary = ctx.importedFunctions.get(provider.name) ??
+                summarizeHelper(ctx, provider.name);
+              mutateScope(p, scope => {
+                for (const read of summary.reads) recordRoutedWrite(scope, read);
+              });
+            } else {
+              // A call result can alias any module object. Escalate its
+              // receiver effect instead of silently emitting no invalidation.
+              mutateScope(p, scope => {
+                for (const name of ctx.state.keys()) recordRoutedWrite(scope, name);
+                if (compName !== null) scope.rootFallback = true;
+              });
+            }
+          }
           noteBoundedArguments(p, p.node.arguments);
         }
         return;

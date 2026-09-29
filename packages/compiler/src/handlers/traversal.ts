@@ -98,6 +98,7 @@ export class HandlerPath<TNode extends t.Node = t.Node> {
 
 export interface HandlerVisitor {
   VariableDeclarator?(path: HandlerPath<t.VariableDeclarator>): void;
+  ForOfStatement?(path: HandlerPath<t.ForOfStatement>): void;
   Function?(path: HandlerPath<FunctionNode>): void;
   AssignmentExpression?(path: HandlerPath<t.AssignmentExpression>): void;
   UpdateExpression?(path: HandlerPath<t.UpdateExpression>): void;
@@ -118,6 +119,9 @@ export function walkHandler(
         visitor.VariableDeclarator?.(
           path as HandlerPath<t.VariableDeclarator>,
         );
+      }
+      if (node.type === 'ForOfStatement') {
+        visitor.ForOfStatement?.(path as HandlerPath<t.ForOfStatement>);
       }
       if (astFactory.isFunction(node as unknown as t.Node)) {
         visitor.Function?.(path as HandlerPath<FunctionNode>);

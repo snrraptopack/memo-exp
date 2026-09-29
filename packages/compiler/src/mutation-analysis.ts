@@ -50,6 +50,8 @@ export function bindingScopeIsProgram(binding: BindingLike): boolean {
 
 export class AliasTracker {
   private readonly origins = new WeakMap<object, ReactiveOrigin>();
+  private readonly namedOrigins = new Map<string, ReactiveOrigin[]>();
+  private readonly memberOrigins = new Map<string, ReactiveOrigin[]>();
 
   constructor(private readonly fallback: OriginFallback) {}
 
@@ -67,6 +69,22 @@ export class AliasTracker {
     if (origin === null) return;
     const binding = scope.getBinding(declarator.id.name);
     if (binding !== undefined) this.origins.set(binding.identifier, origin);
+  }
+
+  /** Seed declarations outside a detached handler's lexical scope. */
+  trackNamed(name: string, origins: ReactiveOrigin[]): void {
+    if (origins.length > 0) this.namedOrigins.set(name, origins);
+  }
+
+  trackBinding(scope: ScopeLike, name: string, origins: ReactiveOrigin[]): void {
+    const binding = scope.getBinding(name);
+    if (binding !== undefined && origins.length === 1) {
+      this.origins.set(binding.identifier, origins[0]!);
+    }
+  }
+
+  trackNamedMember(key: string, origins: ReactiveOrigin[]): void {
+    if (origins.length > 0) this.memberOrigins.set(key, origins);
   }
 
   /**
@@ -102,8 +120,27 @@ export class AliasTracker {
     if (binding !== undefined) {
       const tracked = this.origins.get(binding.identifier);
       if (tracked !== undefined) return tracked;
+      if (!bindingScopeIsProgram(binding)) return this.fallback(name, binding);
     }
+    const named = this.namedOrigins.get(name);
+    if (named !== undefined) return named.length === 1 ? named[0]! : null;
     return this.fallback(name, binding);
+  }
+
+  resolveNameOrigins(scope: ScopeLike, name: string): ReactiveOrigin[] {
+    const binding = scope.getBinding(name);
+    if (binding !== undefined) {
+      const tracked = this.origins.get(binding.identifier);
+      if (tracked !== undefined) return [tracked];
+      if (!bindingScopeIsProgram(binding)) {
+        const local = this.fallback(name, binding);
+        return local === null ? [] : [local];
+      }
+    }
+    const named = this.namedOrigins.get(name);
+    if (named !== undefined) return named;
+    const origin = this.fallback(name, binding);
+    return origin === null ? [] : [origin];
   }
 
   resolveExpression(scope: ScopeLike, raw: t.Node): ReactiveOrigin | null {
@@ -130,19 +167,73 @@ export class AliasTracker {
     }
     if (!astFactory.isMemberExpression(expression)) return null;
 
+    const staticKey = memberKey(expression);
+    if (staticKey !== null) {
+      const seeded = this.memberOrigins.get(staticKey);
+      if (seeded !== undefined) return seeded.length === 1 ? seeded[0]! : null;
+    }
     const root = memberRoot(expression);
     if (root === null) return null;
     const origin = this.resolveName(scope, root);
     if (origin === null) return null;
     const key = memberKey(expression);
     if (origin.key === null || key === null) return { ...origin, key: null };
-
     const relative = key.split('.').slice(1);
     return {
       ...origin,
       key: [origin.key, ...relative].join('.'),
     };
   }
+
+  resolveExpressionOrigins(scope: ScopeLike, raw: t.Node): ReactiveOrigin[] {
+    const expression = unwrapExpression(raw);
+    if (astFactory.isConditionalExpression(expression)) {
+      return uniqueOrigins([
+        ...this.resolveExpressionOrigins(scope, expression.consequent),
+        ...this.resolveExpressionOrigins(scope, expression.alternate),
+      ]);
+    }
+    if (astFactory.isIdentifier(expression)) {
+      return this.resolveNameOrigins(scope, expression.name);
+    }
+    if (astFactory.isMemberExpression(expression)) {
+      const key = memberKey(expression);
+      const seeded = key === null ? undefined : this.memberOrigins.get(key);
+      if (seeded !== undefined) return seeded;
+      const root = memberRoot(expression);
+      if (root !== null) {
+        const bases = this.resolveNameOrigins(scope, root);
+        const relative = key?.split('.').slice(1) ?? null;
+        if (bases.length > 0) return uniqueOrigins(bases.map(origin => ({
+          ...origin,
+          key: origin.key === null || relative === null
+            ? null
+            : [origin.key, ...relative].join('.'),
+        })));
+      }
+    }
+    const origin = this.resolveExpression(scope, expression);
+    return origin === null ? [] : [origin];
+  }
+}
+
+function uniqueOrigins(origins: ReactiveOrigin[]): ReactiveOrigin[] {
+  const seen = new Set<string>();
+  return origins.filter(origin => {
+    const key = `${origin.locality}:${origin.root}:${origin.key ?? '*'}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function memberRoot(node: t.MemberExpression): string | null {
+  let current: t.Expression = node;
+  while (astFactory.isMemberExpression(current)) {
+    if (astFactory.isSuper(current.object)) return null;
+    current = unwrapExpression(current.object);
+  }
+  return astFactory.isIdentifier(current) ? current.name : null;
 }
 
 export function moduleOrigin(
@@ -209,15 +300,6 @@ export function memberName(node: t.MemberExpression): string | null {
   if (!node.computed && astFactory.isIdentifier(node.property)) return node.property.name;
   if (node.computed && astFactory.isStringLiteral(node.property)) return node.property.value;
   return null;
-}
-
-function memberRoot(node: t.MemberExpression): string | null {
-  let current: t.Expression = node;
-  while (astFactory.isMemberExpression(current)) {
-    if (astFactory.isSuper(current.object)) return null;
-    current = unwrapExpression(current.object);
-  }
-  return astFactory.isIdentifier(current) ? current.name : null;
 }
 
 function unwrapExpression(node: t.Node): t.Expression {

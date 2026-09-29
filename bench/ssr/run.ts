@@ -2,9 +2,9 @@ import { performance } from 'node:perf_hooks';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { renderToString, renderToStringAsync } from '@memoized-dom/server';
-import { registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
-import { hydrate } from '@memoized-dom/runtime/hydrate';
+import { renderToString } from '@memoized-dom/server';
+import { mount, registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import '@memoized-dom/runtime/hydrate';
 import { parseHTML } from 'linkedom';
 import { TABLE_SOURCE, DASHBOARD_SOURCE, compileScenario } from './scenarios';
 
@@ -65,14 +65,14 @@ function benchmarkSync(
   clientDocument.body.appendChild(host);
   for (let i = 0; i < 5; i++) {
     host.innerHTML = markedHtml;
-    const m = hydrate(host, app.App);
+    const m = mount(host, app.App);
     m.unmount();
   }
 
   const startHydrate = performance.now();
   for (let i = 0; i < iterations; i++) {
     host.innerHTML = markedHtml;
-    const m = hydrate(host, app.App);
+    const m = mount(host, app.App);
     m.unmount();
   }
   const endHydrate = performance.now();

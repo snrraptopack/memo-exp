@@ -75,6 +75,12 @@ export function scanModuleState(ctx: Ctx, programPath: ProgramPath): void {
           registerState(ctx, decl.id.name, 'store');
         } else if (isConstObjectState(decl.init)) {
           registerState(ctx, decl.id.name, 'const');
+        } else if (astFactory.isCallExpression(decl.init) &&
+                   bindingHasVisibleWrite(ctx,
+                     astBindingAt(ctx, decl as unknown as BaseNode, decl.id.name))) {
+          // A factory can return a stable mutable object with methods that
+          // change hidden state. Track its receiver so sibling readers update.
+          registerState(ctx, decl.id.name, 'const');
         }
       }
       if (ctx.state.has(decl.id.name)) {

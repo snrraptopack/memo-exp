@@ -150,6 +150,13 @@ export function createHandlerWriteRouting({
 
   // pass A: locals declared anywhere inside the handler
   walkHandler(wrapper, {
+    ForOfStatement(p) {
+      if (!astFactory.isVariableDeclaration(p.node.left)) return;
+      const item = p.node.left.declarations[0];
+      if (item === undefined || !astFactory.isIdentifier(item.id)) return;
+      aliases.trackBinding(p.scope, item.id.name,
+        aliases.resolveExpressionOrigins(p.scope, p.node.right));
+    },
     VariableDeclarator(p) {
       if (astFactory.isIdentifier(p.node.id)) {
         locals.add(p.node.id.name);
@@ -517,10 +524,12 @@ export function createHandlerWriteRouting({
       });
       return;
     }
+    const origins = aliases.resolveExpressionOrigins(p.scope, node);
     if (
       rootName !== null &&
       instDerived?.has(rootName) &&
-      !projectedProps.has(rootName)
+      !projectedProps.has(rootName) &&
+      origins.length === 0
     ) {
       throw p.buildCodeFrameError(
         `memo-dom: cannot mutate per-instance derivation '${rootName}' (R14) — write its source instead`,
@@ -559,7 +568,7 @@ export function createHandlerWriteRouting({
       });
       return;
     }
-    const origin = aliases.resolveExpression(p.scope, node);
+    const origin = origins.length === 1 ? origins[0]! : null;
     if (origin?.locality === 'module' && rootName !== null &&
         !executionAwareRoot && !rootFn.async && !componentLocals.has(rootName)) {
       const plan = ctx.moduleListTargets.get(rootName);
@@ -578,8 +587,8 @@ export function createHandlerWriteRouting({
         return;
       }
     }
-    if (origin !== null) {
-      noteOriginWrite(p, origin);
+    if (origins.length > 0) {
+      for (const resolved of origins) noteOriginWrite(p, resolved);
       return;
     }
     if (rootName !== null && propNames.has(rootName)) {
