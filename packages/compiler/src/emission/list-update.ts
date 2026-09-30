@@ -67,70 +67,21 @@ export function buildTargetedListUpdate(
   componentName: string,
   reasonVar: string,
   regionVariable: string,
-  sourceExpr: t.Expression,
-  optional: boolean,
   dependencies: Array<{
     dependency: TargetedListDependency;
     cache: string;
   }>,
   mutation: KeyedListMutationPlan | undefined,
-  structuralSource: string,
+  generalReplay: t.Statement,
 ): t.Statement {
   const ownerReasons = ctx.instanceReasonIds.get(componentName);
-  if (ownerReasons === undefined) {
-    return astFactory.expressionStatement(
-      astFactory.callExpression(
-        astFactory.memberExpression(
-          astFactory.identifier(regionVariable),
-          astFactory.identifier('reconcile'),
-        ),
-        [
-          runtimeListSource(sourceExpr, optional),
-          astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
-            astFactory.identifier(reasonVar),
-            astFactory.stringLiteral(structuralSource),
-          ]),
-        ],
-      ),
-    );
-  }
+  if (ownerReasons === undefined) return generalReplay;
   const source = mutation?.source ?? dependencies[0]?.dependency.source;
   const sourceReason =
     source === undefined ? undefined : ownerReasons.get(source);
-  if (sourceReason === undefined) {
-    return astFactory.expressionStatement(
-      astFactory.callExpression(
-        astFactory.memberExpression(
-          astFactory.identifier(regionVariable),
-          astFactory.identifier('reconcile'),
-        ),
-        [
-          runtimeListSource(sourceExpr, optional),
-          astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
-            astFactory.identifier(reasonVar),
-            astFactory.stringLiteral(structuralSource),
-          ]),
-        ],
-      ),
-    );
-  }
 
   const fullBody: t.Statement[] = [
-    astFactory.expressionStatement(
-      astFactory.callExpression(
-        astFactory.memberExpression(
-          astFactory.identifier(regionVariable),
-          astFactory.identifier('reconcile'),
-        ),
-        [
-          runtimeListSource(sourceExpr, optional),
-          astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
-            astFactory.identifier(reasonVar),
-            astFactory.stringLiteral(structuralSource),
-          ]),
-        ],
-      ),
-    ),
+    generalReplay,
     ...dependencies.map(({ dependency, cache }) =>
       astFactory.expressionStatement(
         astFactory.assignmentExpression(
@@ -222,15 +173,28 @@ export function buildTargetedListUpdate(
       ),
     );
   }
-  let fullCondition: t.Expression = astFactory.binaryExpression(
-    '===',
-    astFactory.identifier(reasonVar),
-    astFactory.nullLiteral(),
-  );
-  fullCondition = astFactory.logicalExpression(
-    '||',
-    fullCondition,
-    hasReason(reasonVar, -1),
+  const safeReasons = dependencies.flatMap(({ dependency }) => {
+    const reason = ownerReasons.get(dependency.value);
+    return reason === undefined ? [] : [reason];
+  });
+  if (mutation !== undefined) {
+    const targetedReason = ownerReasons.get(mutation.targetedReason);
+    if (targetedReason !== undefined) safeReasons.push(targetedReason);
+    if (sourceReason !== undefined) safeReasons.push(sourceReason);
+  }
+  // Module writes use string causes. Unknown owner causes, mixed module/local
+  // batches and full updates must replay the general path rather than silently
+  // treating absence of the collection's numeric cause as a selection update.
+  let fullCondition: t.Expression = astFactory.unaryExpression(
+    '!',
+    astFactory.callExpression(md(ctx, 'reasonsOnly'), [
+      astFactory.identifier(reasonVar),
+      astFactory.arrayExpression(
+        [...new Set(safeReasons)]
+          .sort((a, b) => a - b)
+          .map(reason => astFactory.numericLiteral(reason)),
+      ),
+    ]),
   );
   if (mutation !== undefined) {
     const structuralReason = ownerReasons.get(mutation.structuralReason);
@@ -242,7 +206,7 @@ export function buildTargetedListUpdate(
         hasReason(reasonVar, structuralReason),
       );
     }
-    fullCondition = astFactory.logicalExpression(
+    if (sourceReason !== undefined) fullCondition = astFactory.logicalExpression(
       '||',
       fullCondition,
       targetedReason === undefined
@@ -252,12 +216,6 @@ export function buildTargetedListUpdate(
             hasReason(reasonVar, sourceReason),
             astFactory.unaryExpression('!', hasReason(reasonVar, targetedReason)),
           ),
-    );
-  } else {
-    fullCondition = astFactory.logicalExpression(
-      '||',
-      fullCondition,
-      hasReason(reasonVar, sourceReason),
     );
   }
   const generalUpdate = astFactory.ifStatement(

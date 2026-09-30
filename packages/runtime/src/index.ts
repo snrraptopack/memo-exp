@@ -37,7 +37,7 @@ export type {
   DirtyReasons,
   Entity,
 } from './kernel';
-export { reasonsHit } from './dirty-reasons';
+export { reasonsHit, reasonsOnly } from './dirty-reasons';
 export type {
   Capability,
   DocumentLike,

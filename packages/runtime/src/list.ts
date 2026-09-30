@@ -168,11 +168,12 @@ export function createListRegion<T>(
   const syntheticIds = new Map<unknown, string>();
   let syntheticCounter = 0;
   // M5.7: previous frame's keys + entries in order, for the shape fast path.
-  // M5.8: prevItems lets the shape check compare REFERENCES (items[i] ===
-  // prevItems[i]) instead of calling the key fn per row per step — same
-  // refs in the same order imply same keys; any mismatch falls through to
-  // the structural path, which recomputes keys (and re-snapshots).
+  // Item identity alone does not prove authored keys are unchanged: key
+  // functions can read mutable fields, getters or external state. Keep the
+  // evaluated keys when that validation fails so the structural pass does
+  // not evaluate those expressions a second time.
   let prevItems: T[] = [];
+  const validatedKeys: unknown[] = [];
   let prevEntries: ListEntry[] = [];
   let prevRowIds: Array<EntityId | null> = [];
   // M5.8: scratch buffers for the structural path, swapped with the live
@@ -348,6 +349,7 @@ export function createListRegion<T>(
   ): void {
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
+    let keysValidated = false;
     // The compiler may prove that only fresh records are appended. Broad
     // reasons still replay retained rows; unproven callers keep validation.
     const provenAppend = appendOnly && structuralOnly && !adoptingFrame &&
@@ -361,7 +363,17 @@ export function createListRegion<T>(
       for (let i = 0; i < items.length; i++) {
         if (items[i] !== prevItems[i]) { same = false; break; }
       }
+      if (same && key !== identityKey) {
+        validatedKeys.length = items.length;
+        for (let i = 0; i < items.length; i++) {
+          const currentKey = key(items[i] as T, i);
+          validatedKeys[i] = currentKey;
+          if (cache.get(currentKey)?.pos !== i) same = false;
+        }
+        keysValidated = true;
+      }
       if (same) {
+        validatedKeys.length = 0;
         for (let i = 0; i < items.length; i++) {
           syncRetained(
             prevEntries[i]!,
@@ -600,7 +612,7 @@ export function createListRegion<T>(
     let lastOld = -1;
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as T;
-      const k = key(item, i);
+      const k = keysValidated ? validatedKeys[i] : key(item, i);
       if (next.has(k)) {
         throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
       }
@@ -630,6 +642,7 @@ export function createListRegion<T>(
       ordered[i] = rec.e;
       if (trackRowIds) rowIds[i] = rec.id;
     }
+    validatedKeys.length = 0;
     if (adoptingFrame) {
       if (nextAdoptedRow !== adoptedRange!.end) {
         throw new HydrationMismatchError(
@@ -829,6 +842,7 @@ export function createListRegion<T>(
     cache.clear();
     nextMap.clear();
     prevItems = [];
+    validatedKeys.length = 0;
     prevEntries.length = 0;
     prevRowIds.length = 0;
     nextEntries.length = 0;

@@ -7,8 +7,10 @@ import {
   type BaseNode,
   type Identifier,
 } from '../ast';
+import { astBindingAt, keyPathOf, type Ctx, type MapCallExpression } from '../context';
+import type { MapSite } from './map-site';
 
-const EQUALITY_OPERATORS = new Set(['==', '===']);
+const EQUALITY_OPERATORS = new Set(['===']);
 const NON_SEMANTIC_FIELDS = new Set([
   'loc',
   'range',
@@ -20,12 +22,7 @@ const NON_SEMANTIC_FIELDS = new Set([
   'innerComments',
 ]);
 
-interface TargetedListSite {
-  jsx: BaseNode | null;
-  keyExpr: BaseNode | null;
-  sourceLocal: boolean;
-  sourceExpr: BaseNode;
-}
+type TargetedListSite = Pick<MapSite, 'jsx' | 'keyExpr' | 'sourceLocal' | 'sourceExpr' | 'itemParam'>;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
@@ -137,13 +134,14 @@ function isReferencedIdentifier(
 export function findTargetedListDependencies(
   site: TargetedListSite,
   instanceState: ReadonlySet<string>,
+  moduleState: ReadonlySet<string>,
 ): string[] {
   if (
     site.jsx === null ||
     site.keyExpr === null ||
-    !site.sourceLocal ||
     !isIdentifier(site.sourceExpr) ||
-    !instanceState.has(site.sourceExpr.name)
+    !(site.sourceLocal ? instanceState : moduleState).has(site.sourceExpr.name) ||
+    keyPathOf(site.keyExpr, site.itemParam) === null
   ) {
     return [];
   }
@@ -174,4 +172,44 @@ export function findTargetedListDependencies(
     }
   });
   return [...candidates].filter((name) => !invalid.has(name)).sort();
+}
+
+/** A getter/helper/derivation can read selection without naming it in row JSX.
+ * Reject such captures rather than assuming all visible equality uses are the
+ * complete dependency set. Authored event reads and direct writes do not make
+ * other rows visually dependent on the value.
+ */
+export function hasHiddenListDependency(
+  ctx: Ctx,
+  component: string,
+  call: MapCallExpression,
+  site: TargetedListSite,
+  value: string,
+): boolean {
+  const owner = ctx.compPaths.get(component)?.node;
+  if (owner === undefined || ctx.astAnalysis == null) return true;
+  const binding = astBindingAt(ctx, owner as BaseNode, value);
+  if (binding === undefined) return true;
+  for (const reference of binding.references) {
+    const parent = ctx.astAnalysis.parentByNode.get(reference) ?? null;
+    const parentFields = parent === null ? null : fields(parent);
+    if (parent?.type === 'AssignmentExpression' && parentFields?.left === reference &&
+        parentFields.operator === '=') continue;
+    let current: BaseNode | null = reference;
+    let event = false;
+    let visual = false;
+    let captured = false;
+    while (current !== null && current !== owner) {
+      if (current === site.jsx) visual = true;
+      if (FUNCTION_NODES.has(current.type) && current !== call.arguments[0]) captured = true;
+      if (current.type === 'JSXAttribute') {
+        const name = fields(current).name;
+        if (isNode(name) && name.type === 'JSXIdentifier' &&
+            typeof fields(name).name === 'string' && /^on[A-Z]/.test(fields(name).name as string)) event = true;
+      }
+      current = ctx.astAnalysis.parentByNode.get(current) ?? null;
+    }
+    if (!event && (!visual || captured)) return true;
+  }
+  return false;
 }

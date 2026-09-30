@@ -265,29 +265,30 @@ export function emitListRegion(
       ),
     );
   scope.creation.push(reconcile());
+  const generalReplay = (): t.Statement => {
+    if (site.prelude.length > 0 || scope.reasonVar === null || site.sourceLocal ||
+        !astFactory.isIdentifier(site.sourceExpr) || !ctx.moduleListTargets.has(site.sourceExpr.name)) {
+      return reconcile(true);
+    }
+    const indices = generatedIdentifier(ctx, 'rowIndices');
+    return astFactory.blockStatement([
+      astFactory.variableDeclaration('const', [astFactory.variableDeclarator(indices,
+        astFactory.callExpression(md(ctx, 'listItemIndices'), [
+          astFactory.identifier(scope.reasonVar), astFactory.stringLiteral(structuralSource),
+        ]))]),
+      astFactory.ifStatement(astFactory.binaryExpression('===', indices, astFactory.nullLiteral()),
+        reconcile(true),
+        astFactory.expressionStatement(astFactory.callExpression(
+          astFactory.memberExpression(astFactory.identifier(regionVariable), astFactory.identifier('refreshIndices')),
+          [runtimeListSource(preparedSource, site.optional), indices, astFactory.booleanLiteral(true)],
+        ))),
+    ]);
+  };
   if (
     dependencyCaches.length === 0 && mutation === undefined ||
     scope.reasonVar === null
   ) {
-    scope.updaters.push(() => {
-      if (site.prelude.length > 0 || scope.reasonVar === null || site.sourceLocal ||
-          !astFactory.isIdentifier(site.sourceExpr) || !ctx.moduleListTargets.has(site.sourceExpr.name)) {
-        return reconcile(true);
-      }
-      const indices = generatedIdentifier(ctx, 'rowIndices');
-      return astFactory.blockStatement([
-        astFactory.variableDeclaration('const', [astFactory.variableDeclarator(indices,
-          astFactory.callExpression(md(ctx, 'listItemIndices'), [
-            astFactory.identifier(scope.reasonVar), astFactory.stringLiteral(structuralSource),
-          ]))]),
-        astFactory.ifStatement(astFactory.binaryExpression('===', indices, astFactory.nullLiteral()),
-          reconcile(true),
-          astFactory.expressionStatement(astFactory.callExpression(
-            astFactory.memberExpression(astFactory.identifier(regionVariable), astFactory.identifier('refreshIndices')),
-            [runtimeListSource(preparedSource, site.optional), indices, astFactory.booleanLiteral(true)],
-          ))),
-      ]);
-    });
+    scope.updaters.push(generalReplay);
   } else {
     scope.updaters.push(() =>
       buildTargetedListUpdate(
@@ -295,11 +296,9 @@ export function emitListRegion(
         componentName,
         scope.reasonVar!,
         regionVariable,
-        preparedSource,
-        site.optional,
         dependencyCaches,
         mutation,
-        structuralSource,
+        generalReplay(),
       ),
     );
   }

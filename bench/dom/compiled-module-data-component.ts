@@ -116,12 +116,24 @@ export function BenchModuleDataComponent(_id2, _parent, _dataPolicies) {
 		);
 
 		{
-			if (_didWrite4) _MD.markDirty(_id2);
+			if (_didWrite4) _MD.markDirty(_id2, 0);
 		}
 	};
 
 	const _update2 = (_reasons = null) => {
-		_region.reconcile(data, _MD.isStructuralListUpdate(_reasons, "./bench/dom/AppModuleDataComponent.tsx#data"));
+		if (!_MD.reasonsOnly(_reasons, [0])) {
+			_region.reconcile(data, _MD.isStructuralListUpdate(_reasons, "./bench/dom/AppModuleDataComponent.tsx#data"));
+			_selectedListKey = selected;
+		} else {
+			if (_reasons === 0 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(0))) {
+				const _previousListKey = _selectedListKey;
+
+				_selectedListKey = selected;
+				_region.refreshKey(_previousListKey);
+
+				if (!Object.is(_previousListKey, _selectedListKey)) _region.refreshKey(_selectedListKey);
+			}
+		}
 	};
 
 	_MD.register({ id: _id2, parent: _parent, render: _update2 });
@@ -146,7 +158,7 @@ export function BenchModuleDataComponent(_id2, _parent, _dataPolicies) {
 		selected = null;
 
 		{
-			_MD.markDirty(_id2);
+			_MD.markDirty(_id2, 0);
 
 			{
 				_MD.commitWrites(_WRITES_);
@@ -160,7 +172,7 @@ export function BenchModuleDataComponent(_id2, _parent, _dataPolicies) {
 		selected = null;
 
 		{
-			_MD.markDirty(_id2);
+			_MD.markDirty(_id2, 0);
 
 			{
 				_MD.commitWrites(_WRITES_);
@@ -229,7 +241,7 @@ export function BenchModuleDataComponent(_id2, _parent, _dataPolicies) {
 		selected = null;
 
 		{
-			_MD.markDirty(_id2);
+			_MD.markDirty(_id2, 0);
 			_MD.commitStructuralWrites(_WRITES_2);
 		}
 	};
@@ -254,6 +266,8 @@ export function BenchModuleDataComponent(_id2, _parent, _dataPolicies) {
 		false,
 		false
 	);
+
+	let _selectedListKey = selected;
 
 	_region.reconcile(data);
 

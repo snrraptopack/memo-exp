@@ -19,7 +19,7 @@ import { transparentListExpression } from '../lists/source-shapes';
 import { analyzeCondSite } from '../conds';
 import { summarizeHelper } from '../helper-summaries';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
-import { findTargetedListDependencies } from '../lists/targeted-refresh';
+import { findTargetedListDependencies, hasHiddenListDependency } from '../lists/targeted-refresh';
 import { generatedIdentifier } from '../identifiers';
 import { isIntrinsicLifecycleCall } from '../intrinsics';
 
@@ -239,7 +239,8 @@ export function collectReads(ctx: Ctx): void {
       const targeted = findTargetedListDependencies(
         site,
         ctx.instanceState.get(name) ?? new Set(),
-      );
+        new Set(ctx.state.keys()),
+      ).filter(value => !hasHiddenListDependency(ctx, name, call, site, value));
       if (targeted.length === 0 || !astFactory.isIdentifier(site.sourceExpr)) {
         return;
       }
@@ -249,7 +250,7 @@ export function collectReads(ctx: Ctx): void {
         targeted.map((value) => ({ source, value })),
       );
       ctx.targetedListComponents.add(name);
-      addInstanceReasons(ctx, name, [source, ...targeted]);
+      addInstanceReasons(ctx, name, [...(site.sourceLocal ? [source] : []), ...targeted]);
     }
 
     function collectComponentRowPrelude(call: t.CallExpression | t.OptionalCallExpression,

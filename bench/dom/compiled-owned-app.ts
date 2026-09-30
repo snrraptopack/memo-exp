@@ -105,7 +105,7 @@ export function BenchAppOwned(_id2, _parent, _dataPolicies) {
 	};
 
 	const _update2 = (_reasons = null) => {
-		if (_reasons === null || (_reasons === -1 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(-1))) || (_reasons === 1 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(1))) || (_reasons === 2 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(2))) && !(_reasons === 0 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(0)))) {
+		if (!_MD.reasonsOnly(_reasons, [0, 2, 3]) || (_reasons === 1 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(1))) || (_reasons === 2 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(2))) && !(_reasons === 0 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(0)))) {
 			_region.reconcile(data, _MD.isStructuralListUpdate(_reasons, ""));
 			_selectedListKey = selected;
 			_dataChangedKeys.clear();

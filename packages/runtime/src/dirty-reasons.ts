@@ -94,3 +94,14 @@ export function reasonsHit(
     ? values.includes(reasons)
     : reasons === values;
 }
+
+/** Selective replay is safe only when every pending cause is proven safe. */
+export function reasonsOnly(reasons: DirtyReasons, values: readonly DirtyReason[]): boolean {
+  if (reasons === null || reasons === -1) return false;
+  if (typeof reasons !== 'object') return values.includes(reasons);
+  if (reasons.size === 0) return false;
+  for (const reason of reasons) {
+    if (reason === -1 || !values.includes(reason)) return false;
+  }
+  return true;
+}

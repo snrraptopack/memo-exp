@@ -26,6 +26,15 @@ proof keep the conservative update path described in the compiler README.
   mutations, opaque calls and deferred work retain the conservative path.
 - Adjacent execution sites with identical owner/root completion refreshes share
   one guarded commit. All write flags and setter/proxy fallbacks remain in place.
+- Component-owned selection can refresh the previous and next keys over module
+  data as well as component data, for direct item-property keys and strict
+  equality. Hidden getter/helper/derivation captures retain full replay. Every
+  pending dirty cause must be covered by the selective plan; module data writes
+  and mixed batches retain reconciliation or proven fixed-position refreshes.
+- Reconciliation validates authored keys even when item references and positions
+  are unchanged. Failed validation reuses the evaluated keys in its structural
+  pass, preserving one evaluation per current item in that case. Identity keys
+  retain the reference-only shortcut.
 
 A focused local Chromium check selected alternating rows in an existing 10k
 component-owned component-row list: 25 samples after five warmups, synchronous
@@ -36,6 +45,16 @@ passed all 21 DOM scenarios across nine variants, including retained identity
 and mixed selection/reorder/removal sequences.
 
 Measurements and limits are recorded in `bench/dom/README.md`.
+
+The mixed module-data/component-selection extension was checked locally in
+Chromium with 10k existing rows, alternating selections, five warmups and 25
+samples, synchronous scheduling and class checks after each operation. Two
+before/after runs measured **5.2–5.4 ms → 0.2 ms** for inline rows and
+**4.9–8.0 ms → 0.2 ms** for component rows. These are focused local measurements;
+the VM matrix and earlier timing artifacts have not been replaced. All nine
+variants passed the 21-scenario correctness gate again. Self-contained tests
+also reproduce and fix stale getter-backed labels, loose-equality matches across
+different key types, and keys derived from changing selection.
 
 ## Optimistic forms and benchmark validation
 
@@ -97,7 +116,7 @@ check retained DOM identity or mixed selection/structure sequences.
 |---|---|---|
 | 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
 | 1 | Slower swaps with component-owned data | Duplicate identical owner/root completion commits are merged and order/identity gates pass. Setter/proxy fallbacks remain; re-measure the full matrix on the VM before judging the remaining gap. |
-| 2 | Module selection and mixed-placement selection fanout | Module inline selection remains broad; module data also prevents the existing owner-local keyed selection plan. Preserve key/getter/hidden-read semantics when extending proofs. |
+| 2 | Module-owned selection fanout | Component-owned selection over module data now has a guarded keyed plan. Module-owned selection remains broad for module and component data; preserve key/getter/hidden-read semantics when extending routing. |
 | 2 | Structural reconciliation and safe list mutations | Partial content writes can already collect row keys for owner-local data; this does not complete append/truncate/reorder specialization or arbitrary alias handling. |
 | 2 | Inline row teardown | VM clearing remains slower for inline rows, especially both-module state. Measure registration, unregister, event disposal and retained heap separately. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |

@@ -50,7 +50,19 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 	let selected = null;
 
 	const _update = (_reasons = null) => {
-		_region.reconcile(data, _MD.isStructuralListUpdate(_reasons, "./bench/dom/AppModuleDataInline.tsx#data"));
+		if (!_MD.reasonsOnly(_reasons, [0])) {
+			_region.reconcile(data, _MD.isStructuralListUpdate(_reasons, "./bench/dom/AppModuleDataInline.tsx#data"));
+			_selectedListKey = selected;
+		} else {
+			if (_reasons === 0 || _reasons !== null && (typeof _reasons === "object" && _reasons.has(0))) {
+				const _previousListKey = _selectedListKey;
+
+				_selectedListKey = selected;
+				_region.refreshKey(_previousListKey);
+
+				if (!Object.is(_previousListKey, _selectedListKey)) _region.refreshKey(_selectedListKey);
+			}
+		}
 	};
 
 	_MD.register({ id: _id, parent: _parent, render: _update });
@@ -75,7 +87,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 		selected = null;
 
 		{
-			_MD.markDirty(_id);
+			_MD.markDirty(_id, 0);
 
 			{
 				_MD.commitWrites(_WRITES_);
@@ -89,7 +101,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 		selected = null;
 
 		{
-			_MD.markDirty(_id);
+			_MD.markDirty(_id, 0);
 
 			{
 				_MD.commitWrites(_WRITES_);
@@ -158,7 +170,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 		selected = null;
 
 		{
-			_MD.markDirty(_id);
+			_MD.markDirty(_id, 0);
 			_MD.commitStructuralWrites(_WRITES_2);
 		}
 	};
@@ -213,7 +225,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 
 			_MD.setDelegatedEvent(_onClickBinding, _li, () => {
 				selected = item.id;
-				_MD.markDirty(_id);
+				_MD.markDirty(_id, 0);
 			});
 
 			return {
@@ -229,6 +241,8 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 		true,
 		false
 	);
+
+	let _selectedListKey = selected;
 
 	_region.reconcile(data);
 

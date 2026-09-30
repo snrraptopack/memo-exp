@@ -309,7 +309,7 @@ export type MapCallExpression = t.CallExpression | t.OptionalCallExpression;
 
 /** One owner-local list dependency addressable directly by its row key. */
 export interface TargetedListDependency {
-  /** Instance-owned collection root whose writes require reconciliation. */
+  /** Collection root whose writes require reconciliation. */
   source: string;
   /** Instance-state value compared directly with the authored row key. */
   value: string;
