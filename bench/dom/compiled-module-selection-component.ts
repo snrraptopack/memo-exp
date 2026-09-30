@@ -35,7 +35,7 @@ const _HTML_ = "<div><div class=\"toolbar\"><button>create1k</button><button>cre
 _MD.installAccessTable(
 	{
 		readers: {
-			"./bench/dom/AppModuleSelectionComponent.tsx#selected": ["BenchModuleSelectionComponent"]
+			"./bench/dom/AppModuleSelectionComponent.tsx#selected": ["BenchModuleSelectionComponent/data/$selection"]
 		}
 	},
 	"BenchModuleSelectionComponent",
@@ -256,6 +256,30 @@ export function BenchModuleSelectionComponent(_id2, _parent, _dataPolicies) {
 		false,
 		false
 	);
+
+	const _listSelectionId = _id2 + "/data/$selection";
+	let _selectedModuleListKey = selected;
+
+	_MD.register({
+		id: _listSelectionId,
+		parent: _id2,
+		render: () => {
+			if (!Object.is(_selectedModuleListKey, selected)) {
+				const _previousModuleListKey = _selectedModuleListKey;
+
+				_selectedModuleListKey = selected;
+				_region.refreshKey(_previousModuleListKey);
+				_region.refreshKey(_selectedModuleListKey);
+			}
+		}
+	});
+
+	const _disposeList = _region.dispose;
+
+	_region.dispose = () => {
+		_MD.unregister(_listSelectionId);
+		_disposeList();
+	};
 
 	const _dataChangedKeys = new Set();
 

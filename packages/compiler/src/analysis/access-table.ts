@@ -2,7 +2,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { canonicalStateKey, type Ctx } from '../context';
 import { md } from '../identifiers';
-import { componentPatterns, pathVariants } from './component-graph';
+import { componentPatterns, pathVariants, isLightweightRowComponent } from './component-graph';
 import { expandRenderSlotPaths } from './slot-paths';
 
 // Compiler/runtime protocol. This key is internal access-table metadata, not
@@ -50,12 +50,28 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
       pathVariants(ctx, component),
     );
     for (const variable of variables) {
+      const excluded = new Set<string>();
+      for (const site of ctx.moduleListSelectionSites) {
+        if (site.rowComponent !== component || !site.values.includes(variable)) continue;
+        if (isLightweightRowComponent(ctx, component) &&
+            (ctx.listedSites.get(component) ?? []).some(placement => placement.owner === site.owner &&
+              !ctx.moduleListSelectionSites.some(proven => proven.owner === placement.owner &&
+                proven.suffix === placement.suffix && proven.rowComponent === component && proven.values.includes(variable)))) continue;
+        const rowPatterns = pathVariants(ctx, site.owner).map(owner =>
+          isLightweightRowComponent(ctx, component) ? owner : `${owner}/${site.suffix}/Row[*]`);
+        for (const pattern of expandRenderSlotPaths(ctx, rowPatterns)) excluded.add(pattern);
+      }
       add(
         variable,
-        patterns,
+        patterns.filter(pattern => !excluded.has(pattern)),
         componentOwnsListSource(component, variable) ? ownerPatterns : patterns,
       );
     }
+  }
+  for (const site of ctx.moduleListSelectionSites) {
+    const patterns = expandRenderSlotPaths(ctx, pathVariants(ctx, site.owner).map(owner =>
+      `${owner}/${site.suffix}/$selection`));
+    for (const value of site.values) add(value, patterns);
   }
   for (const { owner, suffix, vars } of ctx.rowReads.values()) {
     const patterns = expandRenderSlotPaths(

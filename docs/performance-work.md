@@ -35,6 +35,15 @@ proof keep the conservative update path described in the compiler README.
   are unchanged. Failed validation reuses the evaluated keys in its structural
   pass, preserving one evaluation per current item in that case. Identity keys
   retain the reference-only shortcut.
+- Closed module selection bindings can route to one registered updater per
+  keyed list instead of `Row[*]` readers. Each list instance caches its previous
+  selection and refreshes the old/new keys, including the first selection from
+  `null`. This covers inline rows, forwarded selection props and local component
+  rows that compare selection with the same item-property key. It uses the
+  existing static access table; no runtime subscriptions or dependency graph
+  were added. Source writes keep their ordinary reconciliation/journal paths.
+- Module reads in authored key expressions and key helpers are owner reads,
+  so changing them reconciles the list rather than only updating row content.
 
 A focused local Chromium check selected alternating rows in an existing 10k
 component-owned component-row list: 25 samples after five warmups, synchronous
@@ -55,6 +64,26 @@ the VM matrix and earlier timing artifacts have not been replaced. All nine
 variants passed the 21-scenario correctness gate again. Self-contained tests
 also reproduce and fix stale getter-backed labels, loose-equality matches across
 different key types, and keys derived from changing selection.
+
+The subsequent module-selection pass used the same focused Chromium protocol
+(five warmups, 25 samples, alternating rows 500/501 in 10k existing rows,
+synchronous scheduling, class validation after every operation). A sequential
+local comparison against `3bb8274` measured:
+
+| Data placement | Rows | Before median | After median |
+|---|---|---|---|
+| Module | Component | 8.6 ms | 0.1 ms |
+| Module | Inline | 12.8 ms | 0.1 ms |
+| Component | Component | 5.5 ms | 0.2 ms |
+| Component | Inline | 7.5 ms | 0.1 ms |
+
+All four use module selection. These small post-change timings approach browser
+timer precision, and local timing is variable; they are not the full VM matrix.
+The existing timing report remains untouched. Exported state/row components,
+general visual reads, hidden helper/getter captures, computed sources and
+unproven keys retain broad routing. A row reused at another unproven list site
+keeps the necessary ordinary owner reader. Tests cover multiple list instances,
+mixed selection/structure batches, disposal and module-dependent key changes.
 
 ## Optimistic forms and benchmark validation
 
@@ -116,7 +145,7 @@ check retained DOM identity or mixed selection/structure sequences.
 |---|---|---|
 | 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
 | 1 | Slower swaps with component-owned data | Duplicate identical owner/root completion commits are merged and order/identity gates pass. Setter/proxy fallbacks remain; re-measure the full matrix on the VM before judging the remaining gap. |
-| 2 | Module-owned selection fanout | Component-owned selection over module data now has a guarded keyed plan. Module-owned selection remains broad for module and component data; preserve key/getter/hidden-read semantics when extending routing. |
+| 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Partial content writes can already collect row keys for owner-local data; this does not complete append/truncate/reorder specialization or arbitrary alias handling. |
 | 2 | Inline row teardown | VM clearing remains slower for inline rows, especially both-module state. Measure registration, unregister, event disposal and retained heap separately. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |

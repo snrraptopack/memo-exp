@@ -508,6 +508,9 @@ export interface Ctx {
   condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Map call → owner-local values whose changes affect only old/new keyed rows. */
   targetedListDependencies: WeakMap<MapCallExpression, TargetedListDependency[]>;
+  /** Per-list module selection readers, independent of ordinary owner renders. */
+  moduleListSelections: WeakMap<MapCallExpression, string[]>;
+  moduleListSelectionSites: Array<{ owner: string; suffix: string; values: string[]; rowComponent: string | null }>;
   /**
    * Source identity proven during list analysis. Transparent-data lowering may
    * subsequently expand a local derivation into a conditional/helper result;
@@ -812,6 +815,8 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     rowReads: new Map(),
     condReads: new Map(),
     targetedListDependencies: new WeakMap(),
+    moduleListSelections: new WeakMap(),
+    moduleListSelectionSites: [],
     analyzedListSources: new WeakMap(),
     targetedListComponents: new Set(),
     listSources: new Set(),

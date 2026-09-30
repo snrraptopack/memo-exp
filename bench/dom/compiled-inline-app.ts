@@ -40,7 +40,7 @@ _MD.installAccessTable(
 		readers: {
 			"./bench/dom/AppInline.tsx#data": ["BenchAppInline"],
 			"./bench/dom/AppInline.tsx#data\u0000memo-dom:list-structure-reader": ["BenchAppInline"],
-			"./bench/dom/AppInline.tsx#selected": ["BenchAppInline/data/Row[*]"]
+			"./bench/dom/AppInline.tsx#selected": ["BenchAppInline/data/$selection"]
 		}
 	},
 	"BenchAppInline",
@@ -227,6 +227,30 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 		true,
 		false
 	);
+
+	const _listSelectionId = _id + "/data/$selection";
+	let _selectedModuleListKey = selected;
+
+	_MD.register({
+		id: _listSelectionId,
+		parent: _id,
+		render: () => {
+			if (!Object.is(_selectedModuleListKey, selected)) {
+				const _previousModuleListKey = _selectedModuleListKey;
+
+				_selectedModuleListKey = selected;
+				_region.refreshKey(_previousModuleListKey);
+				_region.refreshKey(_selectedModuleListKey);
+			}
+		}
+	});
+
+	const _disposeList = _region.dispose;
+
+	_region.dispose = () => {
+		_MD.unregister(_listSelectionId);
+		_disposeList();
+	};
 
 	_region.reconcile(data);
 

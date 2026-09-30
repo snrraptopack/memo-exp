@@ -22,6 +22,7 @@ import { matchRenderCallbackMap } from '../components/render-callbacks';
 import { findTargetedListDependencies, hasHiddenListDependency } from '../lists/targeted-refresh';
 import { generatedIdentifier } from '../identifiers';
 import { isIntrinsicLifecycleCall } from '../intrinsics';
+import { findModuleListSelections } from '../lists/module-selection';
 
 /** Is this complete member expression being invoked (`store.items.method()`)? */
 function isMemberCallCallee(ctx: Ctx, member: BaseNode): boolean {
@@ -233,8 +234,14 @@ export function collectReads(ctx: Ctx): void {
     function registerTargetedListPlan(
       call: t.CallExpression | t.OptionalCallExpression,
       site: ReturnType<typeof analyzeMapSite>,
+      allowModuleSelection = true,
     ): void {
       if (site.prelude.length > 0) return;
+      const selections = allowModuleSelection ? findModuleListSelections(ctx, name, site) : [];
+      if (selections.length > 0) {
+        ctx.moduleListSelections.set(call, selections);
+        ctx.moduleListSelectionSites.push({ owner: name, suffix: site.suffix, values: selections, rowComponent: site.rowComp });
+      }
       registerKeyedListMutationPlan(ctx, name, call, site);
       const targeted = findTargetedListDependencies(
         site,
@@ -286,7 +293,7 @@ export function collectReads(ctx: Ctx): void {
         branchPrefixes,
       );
       registerListSource(site);
-      registerTargetedListPlan(mapCall, site);
+      registerTargetedListPlan(mapCall, site, false);
       const nestedSuffix = `${condSuffix}/${site.suffix}`;
 
       if (site.form === 'component') {
@@ -472,6 +479,7 @@ export function collectReads(ctx: Ctx): void {
         },
       });
 
+      for (const value of ctx.moduleListSelections.get(call) ?? []) rowVars.delete(value);
       if (rowVars.size > 0) {
         ctx.rowReads.set(`${name}/${containerSuffix}`, {
           owner: name,
@@ -607,6 +615,9 @@ export function collectReads(ctx: Ctx): void {
         const site = analyzeMapSite(ctx, mapCall, p, name, usedPrefixes);
         registerListSource(site);
         registerTargetedListPlan(mapCall, site);
+        // Changing a module value used by a key requires reconciliation, not
+        // just replaying row content. Helper summaries participate here too.
+        if (site.keyExpr !== null) walkAst(site.keyExpr, { enter: node => collectRenderNode(node) });
         if (!site.sourceLocal) reads.add(site.sourceKey);
         if (site.form === 'component') {
           collectComponentRowPrelude(mapCall, site);
@@ -639,7 +650,7 @@ export function collectReads(ctx: Ctx): void {
                   n.name,
                 )?.scope.isProgramScope === true
               ) {
-                reads.add(n.name);
+                if (!ctx.moduleListSelections.get(mapCall)?.includes(n.name)) reads.add(n.name);
               }
               if (astFactory.isMemberExpression(n)) {
                 const key = memberKey(n);

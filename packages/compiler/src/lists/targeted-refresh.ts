@@ -146,14 +146,25 @@ export function findTargetedListDependencies(
     return [];
   }
   const source = site.sourceExpr.name;
+  return findKeyComparisons(site.jsx, site.keyExpr, instanceState, source);
+}
 
+/** Every visible use of a candidate must compare it with this exact key. */
+export function findKeyComparisons(
+  jsx: BaseNode,
+  keyExpression: BaseNode,
+  state: ReadonlySet<string>,
+  source = '',
+  isStateReference: (node: Identifier) => boolean = () => true,
+): string[] {
   const candidates = new Set<string>();
-  walkVisual(site.jsx, (node, parent) => {
+  walkVisual(jsx, (node, parent) => {
     if (
       isIdentifier(node) &&
-      instanceState.has(node.name) &&
+      state.has(node.name) &&
+      isStateReference(node) &&
       node.name !== source &&
-      comparisonFor(node, parent, site.keyExpr!)
+      comparisonFor(node, parent, keyExpression)
     ) {
       candidates.add(node.name);
     }
@@ -161,12 +172,13 @@ export function findTargetedListDependencies(
   if (candidates.size === 0) return [];
 
   const invalid = new Set<string>();
-  walkVisual(site.jsx, (node, parent, key) => {
+  walkVisual(jsx, (node, parent, key) => {
     if (
       isIdentifier(node) &&
       candidates.has(node.name) &&
+      isStateReference(node) &&
       isReferencedIdentifier(parent, key) &&
-      !comparisonFor(node, parent, site.keyExpr!)
+      !comparisonFor(node, parent, keyExpression)
     ) {
       invalid.add(node.name);
     }

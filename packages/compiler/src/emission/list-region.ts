@@ -23,6 +23,7 @@ import { buildComponentRowCreate } from './list-component-row';
 import { buildInlineRowCreate } from './list-inline-row';
 import {
   buildTargetedListUpdate,
+  moduleListSelectionSetup,
   runtimeListSource,
 } from './list-update';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
@@ -207,6 +208,8 @@ export function emitListRegion(
     ]),
   );
   scope.disposableRegions.push(regionVariable);
+  scope.creation.push(...moduleListSelectionSetup(ctx, ownerId, site.suffix, regionVariable,
+    ctx.moduleListSelections.get(call) ?? []));
 
   const targeted = ctx.targetedListDependencies.get(call) ?? [];
   const mutation = ctx.keyedListMutations.get(call);

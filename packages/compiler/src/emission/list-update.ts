@@ -8,6 +8,7 @@ import {
   type TargetedListDependency,
 } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
+import { registerStmt } from './scope';
 
 export function runtimeListSource(
   source: t.Expression,
@@ -60,6 +61,49 @@ function refreshKey(
       [value],
     ),
   );
+}
+
+/** One registered list reader replaces a module selection's Row[*] fanout. */
+export function moduleListSelectionSetup(
+  ctx: Ctx,
+  ownerId: t.Expression,
+  suffix: string,
+  region: string,
+  values: readonly string[],
+): t.Statement[] {
+  if (values.length === 0) return [];
+  const id = generatedIdentifier(ctx, 'listSelectionId');
+  const dispose = generatedIdentifier(ctx, 'disposeList');
+  const caches = values.map(value => ({ value, cache: generatedIdentifier(ctx, `${value}ModuleListKey`) }));
+  return [
+    astFactory.variableDeclaration('const', [astFactory.variableDeclarator(id,
+      astFactory.binaryExpression('+', cloneEstreeNode(ownerId), astFactory.stringLiteral(`/${suffix}/$selection`)))]),
+    astFactory.variableDeclaration('let', caches.map(({ value, cache }) =>
+      astFactory.variableDeclarator(cache, astFactory.identifier(value)))),
+    registerStmt(ctx, cloneEstreeNode(id), cloneEstreeNode(ownerId),
+      astFactory.arrowFunctionExpression([], astFactory.blockStatement(caches.map(({ value, cache }) => {
+        const previous = generatedIdentifier(ctx, 'previousModuleListKey');
+        return astFactory.ifStatement(astFactory.unaryExpression('!', astFactory.callExpression(
+          astFactory.memberExpression(astFactory.identifier('Object'), astFactory.identifier('is')),
+          [cloneEstreeNode(cache), astFactory.identifier(value)],
+        )), astFactory.blockStatement([
+          astFactory.variableDeclaration('const', [astFactory.variableDeclarator(previous, cloneEstreeNode(cache))]),
+          astFactory.expressionStatement(astFactory.assignmentExpression('=', cloneEstreeNode(cache), astFactory.identifier(value))),
+          refreshKey(region, cloneEstreeNode(previous)),
+          refreshKey(region, cloneEstreeNode(cache)),
+        ]));
+      }))),
+    ),
+    astFactory.variableDeclaration('const', [astFactory.variableDeclarator(dispose,
+      astFactory.memberExpression(astFactory.identifier(region), astFactory.identifier('dispose')))]),
+    astFactory.expressionStatement(astFactory.assignmentExpression('=',
+      astFactory.memberExpression(astFactory.identifier(region), astFactory.identifier('dispose')),
+      astFactory.arrowFunctionExpression([], astFactory.blockStatement([
+        astFactory.expressionStatement(astFactory.callExpression(md(ctx, 'unregister'), [cloneEstreeNode(id)])),
+        astFactory.expressionStatement(astFactory.callExpression(cloneEstreeNode(dispose), [])),
+      ])),
+    )),
+  ];
 }
 
 export function buildTargetedListUpdate(
