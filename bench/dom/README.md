@@ -1,40 +1,32 @@
 # DOM List Benchmark
 
-> Latest run: 2026-07-25. Real headless Chromium on Windows.
+Run `bun run bench` from the repository root. The build links the component-row
+and inline-row TSX sources, bundles them with the vanilla implementation, and
+runs each operation in headless Chromium. Each number is the median of seven
+samples from one browser process.
 
-Run:
+The benchmark checks the DOM on fresh 1k and 10k lists before timing:
+selecting row 500 must add `danger`, and selecting row 501 must remove it from
+row 500 and add it to row 501. This catches invalid timings where a compiled
+implementation does no visible selection work.
 
-```bash
-bun run bench
-```
+## Validated selection runs (2026-09-30)
 
-`build.ts` links and compiles the component-row and inline-row TSX sources,
-then esbuild bundles them with the vanilla implementation. Each operation is
-the median of seven samples. The table is the median of three independent
-Chromium processes.
+| Run | Rows | Component rows | Inline rows | Vanilla |
+|---|---:|---:|---:|---:|
+| 1 | 1k | 1.9 ms | 2.6 ms | 0.1 ms |
+| 1 | 10k | 19.8 ms | 39.7 ms | 1.0 ms |
+| 2 | 1k | 2.0 ms | 2.7 ms | 0.1 ms |
+| 2 | 10k | 19.9 ms | 28.4 ms | 0.5 ms |
 
-## Latest Results
+The previous 0.5 ms component-row selection result was invalid: the selected
+class did not change. The access table routed that write to nonexistent
+`Row[*]` entities for lightweight component rows. The compiler now routes it
+to the owning list, so the DOM updates; both runs above include that work.
+Selection still revisits rows across the list. The 10k results show why
+`Row[*]` fanout and owner reconciliation remain a performance priority.
 
-| Scenario | Component rows | Inline rows | Vanilla | Component/vanilla | Inline/vanilla |
-|---|---:|---:|---:|---:|---:|
-| create 1k | 18.1 ms | 28.6 ms | 8.3 ms | 2.18x | 3.45x |
-| replace 1k | 17.7 ms | 24.5 ms | 7.6 ms | 2.33x | 3.22x |
-| partial update | 0.7 ms | 0.7 ms | 0.4 ms | 1.75x | 1.75x |
-| select row | 0.5 ms | 1.8 ms | 0.2 ms | 2.50x | 9.00x |
-| swap rows | 1.5 ms | 2.1 ms | 0.1 ms | 15.00x | 21.00x |
-| remove row | 1.1 ms | 1.1 ms | <=0.1 ms | noisy | noisy |
-| create 10k | 131.1 ms | 196.3 ms | 66.2 ms | 1.98x | 2.97x |
-| append 1k to 10k | 26.7 ms | 34.2 ms | 6.2 ms | 4.31x | 5.52x |
-| clear 10k | 16.9 ms | 37.7 ms | 3.4 ms | 4.97x | 11.09x |
-
-## Interpretation
-
-The current compiler does not beat vanilla end to end. Component rows are
-materially better than inline rows for creation, selection, append, and clear,
-which supports retaining component-row specialization. Swap is the largest
-relative gap and should be profiled through keyed reconciliation and DOM move
-counts. Clear and append are the next high-value paths.
-
-The sub-millisecond cases approach `performance.now()` resolution and should
-not be used for fine-grained percentage claims. Any optimization claim needs a
-before/after run of this suite plus DOM mutation and heap/GC measurements.
+These timings vary with browser and machine load. Cases near the timer's
+resolution should not support fine-grained percentage claims. Future
+optimizations should first preserve the DOM validation and then compare
+multiple runs with DOM mutation and heap/GC measurements.

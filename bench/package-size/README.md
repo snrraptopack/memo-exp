@@ -40,3 +40,25 @@ browser output.
 
 The live measurements printed by `bun run bench:size` are authoritative; the
 budget intentionally leaves a small margin for application-level evolution.
+
+## Canonical key interning estimate
+
+After building an application, run:
+
+```bash
+bun run bench/package-size/interning-estimate.ts <assets-directory>
+```
+
+The script estimates how much replacing canonical state-key text with short IDs
+could save. It substitutes matching text in the final JavaScript chunks and
+recompresses them.
+It does not produce runnable code or include the dictionary and runtime support
+that a real implementation would need.
+
+On 2026-09-30, the todo bundle had 10 distinct keys and 26 occurrences. The
+hypothetical substitution saved 521 B raw and 37 B gzip. Fieldnotes had 8 keys
+and 61 occurrences across 10 chunks; it saved 1,096 B raw and 74 B gzip.
+These small gzip savings do not currently justify adding an integer-key
+protocol. The runtime also uses dotted-path prefix matching, independently
+installed module fragments, and string keys at API boundaries; an actual
+implementation must preserve those behaviors and measure its full cost.

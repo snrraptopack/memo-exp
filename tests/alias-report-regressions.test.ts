@@ -136,4 +136,30 @@ describe('reported alias mutations', () => {
     document.querySelector('button')!.click();
     expect(document.querySelector('p')?.textContent).toBe('2');
   });
+
+  it.each([
+    ['holder returned by a call', 'const items=[1]; function box(){ return { list: items }; }', '', 'box().list.push(2)', 'items.length', '2'],
+    ['getter returning state', 'const items=[1]; const store = { get list(){ return items; } };', '', 'store.list.push(2)', 'items.length', '2'],
+    ['class field holding state', 'const items=[1]; class S { list = items; add(){ this.list.push(2); } } const s = new S();', '', 's.add()', 'items.length', '2'],
+    ['array destructuring', 'const rows=[{n:1}];', 'const [first] = rows;', 'first.n++', 'rows[0].n', '2'],
+    ['Array.from elements', 'const rows=[{n:1}];', 'const s = Array.from(rows);', 's[0].n++', 'rows[0].n', '2'],
+    ['Object.values element', 'const cfg={a:{n:1}};', 'const [v] = Object.values(cfg);', 'v.n++', 'cfg.a.n', '2'],
+    ['object rest copy', 'const cfg={a:1,x:0};', 'const {a, ...rest} = cfg;', 'rest.x = 1', 'cfg.x', '0'],
+  ])('%s keeps both readers correct', async (name, declarations, prelude, write, read, expected) => {
+    await mountSource(`alias-neighbor-${name.replaceAll(' ', '-')}`, `
+      ${declarations}
+      function Other() { return <p id="other">{${read}}</p>; }
+      export function App() {
+        ${prelude}
+        return <div>
+          <button onClick={() => { ${write}; }}>go</button>
+          <span id="inline">{${read}}</span>
+          <Other />
+        </div>;
+      }
+    `);
+    document.querySelector('button')!.click();
+    expect(document.getElementById('inline')?.textContent).toBe(expected);
+    expect(document.getElementById('other')?.textContent).toBe(expected);
+  });
 });

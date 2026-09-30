@@ -72,17 +72,12 @@ export function pathVariants(
 
 /** Runtime reader patterns for static, conditional, and listed components. */
 export function componentPatterns(ctx: Ctx, name: string): string[] {
-  const linked = ctx.linkedComponentPaths.get(name);
-  if (linked !== undefined) {
-    return expandRenderSlotPaths(
-      ctx,
-      [...linked],
-    );
-  }
   const sites = ctx.listedSites.get(name);
   const patterns: string[] = [];
   if (sites && sites.length > 0) {
     if (isLightweightRowComponent(ctx, name)) {
+      // Lightweight rows have no registered Row[*] entity. Their owner list
+      // must receive writes even when graph linking supplied row paths.
       for (const site of sites) {
         const containerEnd = site.suffix.lastIndexOf('/');
         const container =
@@ -93,6 +88,12 @@ export function componentPatterns(ctx: Ctx, name: string): string[] {
       }
       return expandRenderSlotPaths(ctx, patterns);
     }
+  }
+  const linked = ctx.linkedComponentPaths.get(name);
+  if (linked !== undefined) {
+    return expandRenderSlotPaths(ctx, [...linked]);
+  }
+  if (sites && sites.length > 0) {
     for (const site of sites) {
       for (const variant of pathVariants(ctx, site.owner)) {
         patterns.push(`${variant}/${site.suffix}/Row[*]`);

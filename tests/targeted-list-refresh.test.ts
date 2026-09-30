@@ -67,6 +67,19 @@ beforeAll(() => {
     join(outDir, 'targeted-list-refresh.compiled.ts'),
     compile(source, { runtimePath: '@memoized-dom/runtime' }),
   );
+  writeFileSync(
+    join(outDir, 'list-item-getter-dependency.compiled.ts'),
+    compile(`
+      export function App() {
+        let count = 0;
+        let items = [{ id: 1, get label() { return count; } }];
+        return <main>
+          <button onClick={() => { count++; }}>count</button>
+          <ul>{items.map(item => <li key={item.id}>{item.label}</li>)}</ul>
+        </main>;
+      }
+    `, { runtimePath: '@memoized-dom/runtime' }),
+  );
 });
 
 describe('targeted keyed-list refresh execution', () => {
@@ -98,5 +111,14 @@ describe('targeted keyed-list refresh execution', () => {
     expect(syncs).toEqual([2, 1]);
     expect(document.querySelector('[data-id="2"]')?.className).toBe('');
     expect(document.querySelector('[data-id="1"]')?.className).toBe('selected');
+  });
+
+  it('refreshes a row getter that reads owner state', async () => {
+    const specifier = './fixtures/out/list-item-getter-dependency.compiled.ts';
+    const { App } = await import(specifier);
+    document.body.appendChild(App('App', null));
+    expect(document.querySelector('li')?.textContent).toBe('0');
+    document.querySelector('button')!.click();
+    expect(document.querySelector('li')?.textContent).toBe('1');
   });
 });

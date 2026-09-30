@@ -13,7 +13,15 @@ const _WRITES_3 = [
 	"./bench/dom/data.ts#nextId"
 ];
 
-const _WRITES_4 = ["./bench/dom/AppInline.tsx#selected"];
+const _WRITES_4 = [
+	"./bench/dom/AppInline.tsx#data",
+	"./bench/dom/data.ts#adjectives",
+	"./bench/dom/data.ts#colours",
+	"./bench/dom/data.ts#nextId",
+	"./bench/dom/data.ts#nouns"
+];
+
+const _WRITES_5 = ["./bench/dom/AppInline.tsx#selected"];
 let _liTemplate, _liTemplateDocument;
 
 function _liCreateTemplate(_document2) {
@@ -95,7 +103,7 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 
 	_button4.onclick = () => {
 		data = buildData(1000).concat(data);
-		_MD.commitWrites(_WRITES_3);
+		_MD.commitWrites(_WRITES_4);
 	};
 
 	_button5.onclick = () => {
@@ -148,7 +156,7 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 		selected = null;
 
 		{
-			_MD.commitWrites(_WRITES_4);
+			_MD.commitWrites(_WRITES_5);
 			_MD.commitStructuralWrites(_WRITES_2);
 		}
 	};
@@ -199,7 +207,7 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 
 			_MD.setDelegatedEvent(_onClickBinding, _li, () => {
 				selected = item.id;
-				_MD.commitWrites(_WRITES_4);
+				_MD.commitWrites(_WRITES_5);
 			});
 
 			return {

@@ -174,10 +174,22 @@ export function analyzeHandler(
     const kind = ctx.state.get(name);
     return kind === undefined ? null : moduleOrigin(name, kind);
   });
+  const classInstances = new Set<string>();
   // Handler analysis runs on a detached function clone. Seed provenance from
   // declarations in the module and owning component before walking it.
   const outerScope = ctx.astAnalysis?.rootScope;
   if (outerScope !== undefined) {
+    const program = outerScope.block as t.Program;
+    const reactiveClasses = new Set<string>();
+    for (const statement of program.body) {
+      const declaration = astFactory.isExportNamedDeclaration(statement)
+        ? statement.declaration : statement;
+      if (astFactory.isClassDeclaration(declaration) && declaration.id &&
+          aliases.referencedOrigins(outerScope, declaration)
+            .some(origin => origin.locality === 'module')) {
+        reactiveClasses.add(declaration.id.name);
+      }
+    }
     const seedDeclaration = (declaration: t.VariableDeclarator): void => {
       if (declaration.init === null) return;
       const init = declaration.init as t.Expression;
@@ -186,6 +198,21 @@ export function analyzeHandler(
         const name = declaration.id.name;
         if (astFactory.isObjectExpression(init)) {
           for (const property of init.properties) {
+            if (astFactory.isObjectProperty(property) &&
+                property.kind === 'get' && !property.computed &&
+                astFactory.isFunction(property.value)) {
+              const key = astFactory.isIdentifier(property.key)
+                ? property.key.name
+                : astFactory.isStringLiteral(property.key)
+                  ? property.key.value
+                  : null;
+              if (key !== null) {
+                aliases.trackNamedMember(`${name}.${key}`,
+                  aliases.referencedOrigins(outerScope, property.value.body)
+                    .filter(origin => origin.locality === 'module'));
+              }
+              continue;
+            }
             if (!astFactory.isObjectProperty(property) || property.computed ||
                 !astFactory.isExpression(property.value)) continue;
             const key = astFactory.isIdentifier(property.key)
@@ -198,6 +225,20 @@ export function analyzeHandler(
                 aliases.resolveExpressionOrigins(outerScope, property.value)
                   .filter(origin => origin.stateKind === 'const' || origin.stateKind === 'store'));
             }
+          }
+        } else if (astFactory.isNewExpression(init)) {
+          if (astFactory.isIdentifier(init.callee) &&
+              reactiveClasses.has(init.callee.name)) classInstances.add(name);
+        } else if (astFactory.isCallExpression(init) &&
+                   astFactory.isMemberExpression(init.callee) &&
+                   astFactory.isIdentifier(init.callee.object) &&
+                   ((init.callee.object.name === 'Array' &&
+                     astFactory.isIdentifier(init.callee.property, { name: 'from' })) ||
+                    (init.callee.object.name === 'Object' &&
+                     astFactory.isIdentifier(init.callee.property, { name: 'values' })))) {
+          const source = init.arguments[0];
+          if (source !== undefined && astFactory.isExpression(source)) {
+            aliases.trackNamed(name, aliases.resolveExpressionOrigins(outerScope, source));
           }
         } else if (astFactory.isIdentifier(init) ||
                    astFactory.isMemberExpression(init) ||
@@ -231,9 +272,19 @@ export function analyzeHandler(
               sources.map(origin => extendOrigin(origin, [key])));
           }
         }
+      } else if (astFactory.isArrayPattern(declaration.id)) {
+        const source = astFactory.isCallExpression(init) &&
+          astFactory.isMemberExpression(init.callee) &&
+          astFactory.isIdentifier(init.callee.object, { name: 'Object' }) &&
+          astFactory.isIdentifier(init.callee.property, { name: 'values' })
+          ? init.arguments[0] : init;
+        const origins = source !== undefined && astFactory.isExpression(source)
+          ? aliases.resolveExpressionOrigins(outerScope, source) : [];
+        for (const element of declaration.id.elements) {
+          if (astFactory.isIdentifier(element)) aliases.trackNamed(element.name, origins);
+        }
       }
     };
-    const program = outerScope.block as t.Program;
     for (const statement of program.body) {
       const declaration = astFactory.isExportNamedDeclaration(statement)
         ? statement.declaration
@@ -549,6 +600,11 @@ export function analyzeHandler(
         const receiverOrigins = astFactory.isExpression(callee.object)
           ? aliases.resolveExpressionOrigins(p.scope, callee.object)
           : [];
+        if (receiverRoot !== null && classInstances.has(receiverRoot)) {
+          // A class method can mutate reactive references held in fields.
+          // The field graph is not summarized here, so invalidate broadly.
+          mutateScope(p, (scope) => { scope.rootFallback = true; });
+        }
         if (
           receiverRoot !== null &&
           instDerived?.has(receiverRoot) &&
@@ -594,8 +650,12 @@ export function analyzeHandler(
         if (receiverOrigins.length > 0) {
           for (const receiver of receiverOrigins) noteReceiverEffect(p, receiver);
         } else {
-          if (astFactory.isCallExpression(callee.object)) {
-            const provider = callee.object.callee;
+          let callReceiver = callee.object;
+          while (astFactory.isMemberExpression(callReceiver)) {
+            callReceiver = callReceiver.object;
+          }
+          if (astFactory.isCallExpression(callReceiver)) {
+            const provider = callReceiver.callee;
             if (astFactory.isIdentifier(provider) &&
                 !componentLocals.has(provider.name) &&
                 (ctx.helpers.has(provider.name) || ctx.importedFunctions.has(provider.name))) {
@@ -603,6 +663,9 @@ export function analyzeHandler(
                 summarizeHelper(ctx, provider.name);
               mutateScope(p, scope => {
                 for (const read of summary.reads) recordRoutedWrite(scope, read);
+                // A holder returned by the helper can expose a reference to
+                // state that its read summary cannot identify precisely.
+                if (callReceiver !== callee.object) scope.rootFallback = true;
               });
             } else {
               // A call result can alias any module object. Escalate its

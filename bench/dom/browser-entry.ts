@@ -47,6 +47,7 @@ const scenarios: Scenario[] = [
   { name: 'replace 1k rows', setup: (a) => (a.click ? a.click('create1k') : a.op!('create1k')), op: (a) => (a.click ? a.click('create1k') : a.op!('create1k')) },
   { name: 'partial update (every 10th)', setup: (a) => (a.click ? a.click('create1k') : a.op!('create1k')), op: (a) => (a.click ? a.click('update') : a.op!('update')) },
   { name: 'select row', setup: (a) => (a.click ? a.click('create1k') : a.op!('create1k')), op: (a) => a.selectRow(500) },
+  { name: 'select row in 10k', setup: (a) => (a.click ? a.click('create10k') : a.op!('create10k')), op: (a) => a.selectRow(500) },
   { name: 'swap rows', setup: (a) => (a.click ? a.click('create1k') : a.op!('create1k')), op: (a) => (a.click ? a.click('swap') : a.op!('swap')) },
   { name: 'remove row', setup: (a) => (a.click ? a.click('create1k') : a.op!('create1k')), op: (a) => (a.click ? a.click('remove') : a.op!('remove')) },
   { name: 'create 10k rows', setup: (a) => (a.click ? a.click('clear') : a.op!('clear')), op: (a) => (a.click ? a.click('create10k') : a.op!('create10k')) },
@@ -84,6 +85,30 @@ export interface BenchRow {
 }
 
 function runAll(): BenchRow[] {
+  // A timing is valid only if the selected row actually changes in the DOM.
+  for (const [app, host] of [
+    [compiledTsx, divTsx],
+    [compiledInline, divInline],
+    [vanilla, divVanilla],
+  ] as const) {
+    for (const count of [1000, 10000]) {
+      const create = count === 1000 ? 'create1k' : 'create10k';
+      if ('click' in app) app.click(create);
+      else app.op(create);
+      app.selectRow(500);
+      const rows = host.querySelectorAll('li');
+      if (rows.length !== count || rows[500]?.className !== 'danger') {
+        throw new Error(`select row benchmark failed DOM validation at ${count} rows`);
+      }
+      app.selectRow(501);
+      if (rows[500]?.className !== '' || rows[501]?.className !== 'danger') {
+        throw new Error(`select row benchmark failed selection transition at ${count} rows`);
+      }
+      if ('click' in app) app.click('clear');
+      else app.op('clear');
+    }
+  }
+
   // JIT warmup — unreported
   for (let i = 0; i < 3; i++) {
     compiledTsx.click('create1k');

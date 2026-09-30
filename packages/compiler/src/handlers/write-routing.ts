@@ -88,6 +88,17 @@ export function createHandlerWriteRouting({
   const rowCtx = rowContext;
   const instVars = instanceVariables;
   const instDerived = instanceDerivations;
+  const copiedObjectRests = new Set<string>();
+  for (const derivation of compName === null
+    ? [] : (ctx.instanceDerivations.get(compName) ?? [])) {
+    if (!astFactory.isObjectPattern(derivation.target)) continue;
+    for (const property of derivation.target.properties) {
+      if (astFactory.isRestElement(property) &&
+          astFactory.isIdentifier(property.argument)) {
+        copiedObjectRests.add(property.argument.name);
+      }
+    }
+  }
   const isComputedOrigin = (origin: ReactiveOrigin): boolean =>
     origin.stateKind === 'computed' || ctx.state.get(origin.root) === 'computed';
   const listMutationPlans =
@@ -531,6 +542,12 @@ export function createHandlerWriteRouting({
       !projectedProps.has(rootName) &&
       origins.length === 0
     ) {
+      if (copiedObjectRests.has(rootName)) {
+        // Object rest is a shallow copy. Writing a field on that copy is
+        // legal, but does not write the source object.
+        mutateScope(p, scope => { recordInstanceMutation(scope, rootName, 'content'); });
+        return;
+      }
       throw p.buildCodeFrameError(
         `memo-dom: cannot mutate per-instance derivation '${rootName}' (R14) — write its source instead`,
       );

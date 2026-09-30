@@ -16,6 +16,15 @@ function _liCreateTemplate(_document) {
 const _WRITES_2 = ["./bench/dom/App.tsx#selected", "./bench/dom/data.ts#nextId"];
 const _WRITES_3 = ["./bench/dom/App.tsx#data"];
 const _WRITES_4 = ["./bench/dom/App.tsx#data", "./bench/dom/data.ts#nextId"];
+
+const _WRITES_5 = [
+	"./bench/dom/App.tsx#data",
+	"./bench/dom/data.ts#adjectives",
+	"./bench/dom/data.ts#colours",
+	"./bench/dom/data.ts#nextId",
+	"./bench/dom/data.ts#nouns"
+];
+
 const _HTML_ = "<div><div class=\"toolbar\"><button>create1k</button><button>create10k</button><button>append1k</button><button>prepend1k</button><button>pop1k</button><button>update</button><button>swap</button><button>reverse</button><button>remove</button><button>remove100</button><button>clear</button></div><ul></ul></div>";
 
 _MD.installAccessTable(
@@ -23,7 +32,7 @@ _MD.installAccessTable(
 		readers: {
 			"./bench/dom/App.tsx#data": ["BenchApp"],
 			"./bench/dom/App.tsx#data\u0000memo-dom:list-structure-reader": ["BenchApp"],
-			"./bench/dom/App.tsx#selected": ["BenchApp/data/Row[*]"]
+			"./bench/dom/App.tsx#selected": ["BenchApp"]
 		}
 	},
 	"BenchApp",
@@ -137,7 +146,7 @@ export function BenchApp(_id2, _parent, _dataPolicies) {
 
 	_button4.onclick = () => {
 		data = buildData(1000).concat(data);
-		_MD.commitWrites(_WRITES_4);
+		_MD.commitWrites(_WRITES_5);
 	};
 
 	_button5.onclick = () => {
