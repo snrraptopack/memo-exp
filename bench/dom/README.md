@@ -34,7 +34,9 @@ append/prepend/truncation/reversal/scattered removal at 10k.
 
 Every operation has an untimed correctness pass, and every timed sample is
 validated afterward. Checks cover text, classes, keyed order, row counts and
-preserved rows. Generated rows must have unique ids and nonempty labels; new
+preserved rows, including retained DOM node identity. Untimed 1k/10k sequences
+also select, reverse, remove the selected key, append and select again.
+Generated rows must have unique ids and nonempty labels; new
 creation/replacement must use new ids. Selection moves from row 500 to 501,
 checking both classes. Validation and setup are outside the timed interval.
 Adapters rotate measurement order, and each measured fixture is cleared after
@@ -46,6 +48,13 @@ operations. Near-zero timings cannot support precise ratios. The older tables
 below used the earlier three-implementation harness and remain historical;
 compare placements within the new matrix rather than treating the new run as
 an isolated compiler performance change.
+
+After building, `bun run bench/dom/state-placement-run.ts --validate-only`
+checks all scenarios and sequences without overwriting timing results. The
+committed timing artifact predates the identity/sequence gates. A subsequent
+full run records timings with the stronger validation. The user's two VM runs
+of `661d247` are recorded separately in
+[state-placement-vm-review.md](state-placement-vm-review.md).
 
 ## Validated selection runs (2026-09-30)
 

@@ -18,12 +18,20 @@ try {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(String(error)));
   await page.goto(`file://${directory}/state-placement-browser.html`, { waitUntil: 'load' });
-  const rows = await page.evaluate(() => (window as unknown as {
-    __runAll(): BenchRow[];
-  }).__runAll());
-  if (errors.length) throw new Error(errors.join('\n'));
-  console.log(writeStatePlacementReport(directory, {
-    measuredAt: new Date().toISOString(), samples: 7,
-    scheduler: 'synchronous', validation: 'every operation outside timed interval', rows,
-  }));
+  if (process.argv.includes('--validate-only')) {
+    await page.evaluate(() => (window as unknown as { __validateAll(): void }).__validateAll());
+    if (errors.length) throw new Error(errors.join('\n'));
+    console.log('All state-placement identity and mixed-sequence checks passed.');
+  } else {
+    const rows = await page.evaluate(() => (window as unknown as {
+      __runAll(): BenchRow[];
+    }).__runAll());
+    if (errors.length) throw new Error(errors.join('\n'));
+    console.log(writeStatePlacementReport(directory, {
+      measuredAt: new Date().toISOString(), samples: 7,
+      scheduler: 'synchronous',
+      validation: 'every operation and retained DOM identity outside timing; mixed selection/structure sequences before timing',
+      rows,
+    }));
+  }
 } finally { await browser.close(); }

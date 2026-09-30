@@ -12,7 +12,7 @@ Optimizations require compiler proof. Recognizing `map`, `push`, `splice`,
 be overridden, and getters or callbacks can read other state. Cases without
 proof keep the conservative update path described in the compiler README.
 
-## Implemented in this iteration
+## Completed changes
 
 - List-row text uses normalized string slots to avoid unchanged DOM text reads.
   Expression evaluation and string conversion still replay.
@@ -70,6 +70,37 @@ calling an already-instrumented owner callback. That extra broad invalidation
 is a candidate cause of the component/inline gap; this is an inference from
 generated code, not a measured isolation of its cost. Proving callback effects
 before removing redundant broad invalidation is now a priority.
+
+## Open performance work and VM review
+
+The earlier review is not fully addressed. The completed changes above reduce
+some costs; the following work remains open. The VM measurements reported by
+the user for commit `661d247` are preserved in
+`bench/dom/state-placement-vm-review.md`, separately from locally measured JSON.
+They passed all nine implementations twice, but the original gates did not
+check retained DOM identity or mixed selection/structure sequences.
+
+| Priority | Open issue | Evidence / required next step |
+|---|---|---|
+| 1 | Broad invalidation after a component-row callback | `props.select()` is followed by row `_update()` and root `markDirtySubtree`; prove all callback targets publish their own effects before dropping extra work. Preserve unknown callbacks, argument mutation, async boundaries and exceptions. |
+| 1 | Slower swaps with component-owned data | Both VM runs show this in component and inline rows. Generated swap handlers have multiple execution-site commits and subtree fallbacks. Isolate their cost; verify order and retained nodes before changing commit grouping. |
+| 2 | Module selection and mixed-placement selection fanout | Module inline selection remains broad; module data also prevents the existing owner-local keyed selection plan. Preserve key/getter/hidden-read semantics when extending proofs. |
+| 2 | Structural reconciliation and safe list mutations | Partial content writes can already collect row keys for owner-local data; this does not complete append/truncate/reorder specialization or arbitrary alias handling. |
+| 2 | Inline row teardown | VM clearing remains slower for inline rows, especially both-module state. Measure registration, unregister, event disposal and retained heap separately. |
+| 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
+| 3 | Browser runtime size and routing | Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. Existing interning estimates were small. |
+| 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
+| 3 | Slot granularity and opaque pulls | Extend reason gates and restrict volatile evaluation to dependent slots; do not hide required unknown-call refreshes. |
+| 4 | SSR client omission and Marko emission ideas | Investigate hydration ownership/markers, per-binding/shared-input updates and region setup; these remain design candidates. |
+
+The DOM matrix now also checks retained node identity after every validated
+operation. Untimed 1k/10k sequences select a key, reverse it into the removal
+position, remove the selected row, append, and select again. These strengthen
+the correctness gate; they do not constitute a performance fix. Use
+`state-placement-run.ts --validate-only` after building to check them without
+replacing timing results. The existing timing artifact remains the earlier run.
+
+## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed
   rows. Preserve getter and key-expression semantics before narrowing fanout.

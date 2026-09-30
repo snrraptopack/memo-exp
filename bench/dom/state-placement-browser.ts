@@ -35,7 +35,7 @@ const operate = (app: App, name: string): void => {
   if (app.click) app.click(name);
   else app.op!(name);
 };
-interface Scenario { name: string; count: number; operation: string }
+interface Scenario { name: string; count: number; operation: string; selectIndex?: number }
 const scenarios: Scenario[] = [
   { name: 'create 1k', count: 0, operation: 'create1k' },
   { name: 'create 10k', count: 0, operation: 'create10k' },
@@ -46,11 +46,15 @@ const scenarios: Scenario[] = [
     name: `${operation} 10k`, count: 10000, operation,
   })),
 ];
-interface Row { text: string; className: string }
+interface Row { text: string; className: string; node: HTMLLIElement }
 function snapshot(app: App): Row[] {
   return [...app.root.querySelectorAll('li')].map(row => ({
-    text: row.textContent ?? '', className: row.className,
+    text: row.textContent ?? '', className: row.className, node: row,
   }));
+}
+function sameRows(left: Row[], right: Row[]): boolean {
+  return left.length === right.length && left.every((row, index) =>
+    row.text === right[index]!.text && row.className === right[index]!.className);
 }
 function setup(app: App, scenario: Scenario): void {
   operate(app, 'clear');
@@ -58,7 +62,7 @@ function setup(app: App, scenario: Scenario): void {
   if (scenario.operation === 'transition') app.selectRow(500);
 }
 function run(app: App, scenario: Scenario): void {
-  if (scenario.operation === 'select') app.selectRow(500);
+  if (scenario.operation === 'select') app.selectRow(scenario.selectIndex ?? 500);
   else if (scenario.operation === 'transition') app.selectRow(501);
   else operate(app, scenario.operation === 'replace'
     ? (scenario.count === 1000 ? 'create1k' : 'create10k') : scenario.operation);
@@ -68,6 +72,13 @@ function validate(id: string, app: App, scenario: Scenario, before: Row[]): void
   const ids = actual.map(row => row.text.split(':')[0]);
   if (new Set(ids).size !== ids.length || actual.some(row => !/^\d+: .+/.test(row.text)) ||
       actual.length !== app.rowCount()) throw new Error(`${id}: malformed rows in ${scenario.name}`);
+  const previousNodes = new Map(before.map(row => [row.text.split(':')[0], row.node]));
+  for (const row of actual) {
+    const previous = previousNodes.get(row.text.split(':')[0]);
+    if (previous !== undefined && row.node !== previous) {
+      throw new Error(`${id}: replaced a retained DOM node in ${scenario.name}`);
+    }
+  }
   let expected: Row[];
   switch (scenario.operation) {
     case 'create1k': case 'create10k': case 'replace': {
@@ -84,7 +95,7 @@ function validate(id: string, app: App, scenario: Scenario, before: Row[]): void
       text: row.text + (index % 10 === 0 ? ' !!!' : ''),
     })); break;
     case 'select': case 'transition': expected = before.map((row, index) => ({ ...row,
-      className: index === (scenario.operation === 'select' ? 500 : 501) ? 'danger' : '',
+      className: index === (scenario.operation === 'select' ? scenario.selectIndex ?? 500 : 501) ? 'danger' : '',
     })); break;
     case 'swap': expected = [...before]; [expected[1], expected[998]] = [expected[998]!, expected[1]!]; break;
     case 'remove': expected = before.filter((_, index) => index !== 500); break;
@@ -93,23 +104,44 @@ function validate(id: string, app: App, scenario: Scenario, before: Row[]): void
     case 'remove100': expected = before.filter((_, index) => index % 100 !== 0); break;
     case 'clear': expected = []; break;
     case 'append1k': case 'prepend1k': {
-      if (actual.length !== before.length + 1000 || actual.some(row => row.className !== '')) {
+      const added = scenario.operation === 'append1k' ? actual.slice(before.length) : actual.slice(0, 1000);
+      if (actual.length !== before.length + 1000 || added.some(row => row.className !== '')) {
         throw new Error(`${id}: failed ${scenario.name}`);
       }
       expected = before;
       const retained = scenario.operation === 'append1k' ? actual.slice(0, before.length) : actual.slice(1000);
-      if (JSON.stringify(retained) !== JSON.stringify(expected)) throw new Error(`${id}: retained rows changed in ${scenario.name}`);
+      if (!sameRows(retained, expected)) throw new Error(`${id}: retained rows changed in ${scenario.name}`);
       return;
     }
     default: throw new Error(`Unknown operation ${scenario.operation}`);
   }
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`${id}: failed ${scenario.name}`);
+  if (!sameRows(actual, expected)) throw new Error(`${id}: failed ${scenario.name}`);
 }
 function median(values: number[]): number {
   return [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
 }
+function validateSelectionSequence(id: string, app: App, count: number): void {
+  setup(app, { name: 'sequence setup', count, operation: 'select' });
+  // Reverse puts this selected key at index 500, where the removal button acts.
+  const steps: Scenario[] = ['select', 'reverse', 'remove', 'append1k'].map(operation => ({
+    name: `select/reverse/remove-selected/append ${count}: ${operation}`,
+    count, operation, selectIndex: count - 501,
+  }));
+  for (const step of steps) {
+    const before = snapshot(app);
+    run(app, step);
+    validate(id, app, step, before);
+  }
+  // The removed key must not regain a class when a different row is selected.
+  const transition: Scenario = { name: `selection after sequence ${count}`, count,
+    operation: 'select', selectIndex: 501 };
+  const before = snapshot(app);
+  run(app, transition);
+  validate(id, app, transition, before);
+  operate(app, 'clear');
+}
 export interface BenchRow { name: string; timings: Record<string, number> }
-function runAll(): BenchRow[] {
+function validateAll(): void {
   // Untimed correctness gates cover every operation and placement, not only selection.
   for (const { id, app } of adapters) {
     for (const scenario of scenarios) {
@@ -122,7 +154,11 @@ function runAll(): BenchRow[] {
     for (let warmup = 0; warmup < 3; warmup++) {
       operate(app, 'create1k'); operate(app, 'update'); app.selectRow(10); operate(app, 'clear');
     }
+    for (const count of [1000, 10000]) validateSelectionSequence(id, app, count);
   }
+}
+function runAll(): BenchRow[] {
+  validateAll();
   return scenarios.map((scenario, index) => {
     console.info(`measure ${scenario.name}`);
     const timings: Record<string, number> = {};
@@ -145,3 +181,4 @@ function runAll(): BenchRow[] {
   });
 }
 (window as unknown as Record<string, unknown>).__runAll = runAll;
+(window as unknown as Record<string, unknown>).__validateAll = validateAll;
