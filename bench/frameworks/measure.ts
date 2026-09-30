@@ -65,10 +65,35 @@ export async function measureInPage(
     };
   }
 
+  function validate(count: number, mode: BenchMode, scenario: BenchScenario, iterations: number): void {
+    const actual = bench.validate();
+    const expected = expectedView(count, scenario, iterations);
+    if (
+      actual.rows !== count || actual.firstTitle.length === 0 ||
+      actual.order !== expected.order || actual.remaining !== expected.remaining ||
+      actual.state !== expected.state
+    ) {
+      throw new Error(
+        `${bench.id} failed ${mode}/${scenario}/${count} after operation ${iterations}: ${JSON.stringify(actual)}`,
+      );
+    }
+  }
+
   for (const mode of config.modes) {
     for (const count of config.counts) {
       for (const scenario of config.scenarios) {
         let pending = bench.reset(count, mode);
+        if (pending && typeof pending.then === 'function') await pending;
+        const iterations = config.iterations[count]!;
+        // Untimed correctness pass: catch stale intermediate states that a
+        // later operation could repair without charging DOM inspection to timing.
+        validate(count, mode, scenario, 0);
+        for (let iteration = 0; iteration < iterations; iteration++) {
+          pending = bench.run(scenario);
+          if (pending && typeof pending.then === 'function') await pending;
+          validate(count, mode, scenario, iteration + 1);
+        }
+        pending = bench.reset(count, mode);
         if (pending && typeof pending.then === 'function') await pending;
         for (let index = 0; index < config.warmup; index++) {
           pending = bench.run(scenario);
@@ -77,7 +102,6 @@ export async function measureInPage(
 
         const timings: number[] = [];
         const mutationCounts: number[] = [];
-        const iterations = config.iterations[count]!;
         for (let sample = 0; sample < config.samples; sample++) {
           pending = bench.reset(count, mode);
           if (pending && typeof pending.then === 'function') await pending;
@@ -103,19 +127,7 @@ export async function measureInPage(
           mutations += observer.takeRecords().length;
           observer.disconnect();
 
-          const validation = bench.validate();
-          const expected = expectedView(count, scenario, iterations);
-          if (
-            validation.rows !== count ||
-            validation.firstTitle.length === 0 ||
-            validation.order !== expected.order ||
-            validation.remaining !== expected.remaining ||
-            validation.state !== expected.state
-          ) {
-            throw new Error(
-              `${bench.id} failed ${mode}/${scenario}/${count}: ${JSON.stringify(validation)}`,
-            );
-          }
+          validate(count, mode, scenario, iterations);
           timings.push((elapsed * 1_000_000) / iterations);
           mutationCounts.push(mutations / iterations);
         }

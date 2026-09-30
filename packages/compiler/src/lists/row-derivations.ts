@@ -142,21 +142,7 @@ export function collectRowDerivations(
         'memo-dom: list callback statements before return must be one const declaration with an identifier, object pattern, or array pattern — R7 L1',
       );
     }
-    walkAst(declaration.init as unknown as BaseNode, {
-      enter(node) {
-        const current = node as unknown as t.Node;
-        if (
-          astFactory.isAssignmentExpression(current) ||
-          astFactory.isUpdateExpression(current) ||
-          astFactory.isAwaitExpression(current) ||
-          astFactory.isYieldExpression(current)
-        ) {
-          fail(
-            'memo-dom: list callback derivations must be pure const expressions — R7 L1',
-          );
-        }
-      },
-    });
+    assertRowRenderExpression(declaration.init, fail);
     const expanded: RowDerivation[] = [];
     decomposeRowPattern(
       declaration.id as unknown as BaseNode,
@@ -174,6 +160,18 @@ export function collectRowDerivations(
     }
   }
   return derivations;
+}
+
+/** Render expressions are synchronous and contain no authored assignments. */
+export function assertRowRenderExpression(expression: t.Expression, fail: Fail): void {
+  walkAst(expression as unknown as BaseNode, {
+    enter(node) {
+      if (astFactory.isAssignmentExpression(node) || astFactory.isUpdateExpression(node) ||
+          astFactory.isAwaitExpression(node) || astFactory.isYieldExpression(node)) {
+        fail('memo-dom: list callback derivations must be pure const expressions — R7 L1');
+      }
+    },
+  });
 }
 
 export function assertNoShadowing(

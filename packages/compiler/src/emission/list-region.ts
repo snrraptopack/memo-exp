@@ -253,7 +253,7 @@ export function emitListRegion(
         ),
         [
           runtimeListSource(preparedSource, site.optional),
-          ...(update && scope.reasonVar !== null
+          ...(update && scope.reasonVar !== null && site.prelude.length === 0
             ? [
                 astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
                   astFactory.identifier(scope.reasonVar),
@@ -270,7 +270,7 @@ export function emitListRegion(
     scope.reasonVar === null
   ) {
     scope.updaters.push(() => {
-      if (scope.reasonVar === null || site.sourceLocal ||
+      if (site.prelude.length > 0 || scope.reasonVar === null || site.sourceLocal ||
           !astFactory.isIdentifier(site.sourceExpr) || !ctx.moduleListTargets.has(site.sourceExpr.name)) {
         return reconcile(true);
       }

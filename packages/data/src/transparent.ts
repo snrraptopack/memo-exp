@@ -1,4 +1,5 @@
 import { RequestError } from './errors';
+import { isFormSource, notifyFormSource } from './forms';
 import { getActiveApplicationRuntime } from '@memoized-dom/runtime';
 import {
   disposeFetchResource,
@@ -405,7 +406,12 @@ export function resolvedValueSnapshot<T>(
 export function notifyResolvedValueMutation<T>(
   value: ResolvedValue<T> | ModuleSourceRef,
 ): void {
-  source(value).mutate(() => {});
+  const target = source(value);
+  if (isFormSource(target)) {
+    notifyFormSource(target);
+    return;
+  }
+  target.mutate(() => {});
 }
 
 /** Subscribe to transitions without delivering the notifier's initial value. */

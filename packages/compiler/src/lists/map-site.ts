@@ -27,6 +27,7 @@ import {
 } from './source-shapes';
 import {
   assertNoShadowing,
+  assertRowRenderExpression,
   collectRowDerivations,
   substituteRowDerivations,
 } from './row-derivations';
@@ -48,6 +49,8 @@ type ParentRow = Pick<
 >;
 
 export interface MapSite {
+  /** Synchronous callback expressions replayed before the row DOM work. */
+  prelude: t.ExpressionStatement[];
   /** Reactive source key (e.g. 'items' or 'store.todos'). */
   sourceKey: string;
   /** Ordered source expression, cloned into the reconcile calls. */
@@ -90,6 +93,7 @@ interface SourcePlan {
 }
 
 interface CallbackPlan {
+  prelude: t.ExpressionStatement[];
   itemPattern: RuntimeBindingPattern;
   itemParam: string;
   indexParam: string | null;
@@ -238,6 +242,7 @@ export function analyzeMapSite(
   const calleeShape = callee as unknown as { type: string; optional?: boolean };
 
   return {
+    prelude: callback.prelude,
     sourceKey: source.key,
     sourceExpr: cloneEstreeNode(source.expression),
     optional:
@@ -513,7 +518,8 @@ function analyzeCallback(
     ? itemPattern.name
     : itemBindings[0]!;
   const indexParam = astFactory.isIdentifier(second) ? second.name : null;
-  const jsx = resolveCallbackJsx(callback, itemPattern, indexParam, fail);
+  const prelude: t.ExpressionStatement[] = [];
+  const jsx = resolveCallbackJsx(callback, itemPattern, indexParam, fail, prelude);
   const renderInvocation = matchRenderCallbackMap(ctx, ownerName, call);
   if (jsx === null && renderInvocation === null) {
     return fail(
@@ -521,6 +527,7 @@ function analyzeCallback(
     );
   }
   return {
+    prelude,
     itemPattern,
     itemParam,
     indexParam,
@@ -544,6 +551,7 @@ function resolveCallbackJsx(
   itemPattern: RuntimeBindingPattern,
   indexParam: string | null,
   fail: Fail,
+  prelude: t.ExpressionStatement[],
 ): t.JSXElement | null {
   if (astFactory.isJSXElement(callback.body)) return callback.body;
   if (!astFactory.isBlockStatement(callback.body)) return null;
@@ -564,21 +572,25 @@ function resolveCallbackJsx(
       ),
       ...(indexParam === null ? [] : [indexParam]),
     ]);
-    const derivations = collectRowDerivations(
-      statements.slice(0, -1),
-      reserved,
-      fail,
-    );
-    assertNoShadowing(jsx, new Set(derivations.map(({ name }) => name)), fail);
     const resolved = new Map<string, t.Expression>();
-    for (const derivation of derivations) {
-      resolved.set(
-        derivation.name,
-        substituteRowDerivations(derivation.init, resolved),
-      );
+    for (const statement of statements.slice(0, -1)) {
+      if (astFactory.isExpressionStatement(statement)) {
+        // Apply the existing render-expression restrictions without choosing
+        // call behavior by method name. Keep each authored call exactly once.
+        assertRowRenderExpression(statement.expression, fail);
+        assertNoShadowing(statement, new Set(resolved.keys()), fail);
+        prelude.push(substituteRowDerivations(cloneEstreeNode(statement), resolved));
+        continue;
+      }
+      for (const derivation of collectRowDerivations([statement], reserved, fail)) {
+        resolved.set(derivation.name, substituteRowDerivations(derivation.init, resolved));
+      }
     }
+    assertNoShadowing(jsx, new Set(resolved.keys()), fail);
     const substituted = substituteRowDerivations(jsx, resolved);
-    callback.body = substituted;
+    // Keep expression statements in the source tree for read collection and
+    // transparent-source rewriting on subsequent analysis/emission passes.
+    if (prelude.length === 0) callback.body = substituted;
     return substituted;
   }
   return jsx;

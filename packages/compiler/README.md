@@ -122,6 +122,13 @@ still seeds through `setTextData`, which also handles adopted server text. This
 reduces DOM reads during broad list refreshes; it does not make those refreshes
 key-targeted or change the conservative list-method fallback.
 
+List callbacks also retain synchronous expression statements before their final
+JSX return, such as logging or calling an inspection helper. They run once before
+the row's creation and once per row replay; their reads participate in routing.
+These callbacks retain full reconciliation instead of narrower keyed/content
+refreshes, because unknown calls do not prove that other rows can be skipped.
+Existing assignment, update, and async render-expression restrictions still apply.
+
 ### List-method optimization candidates
 
 `src/lists/mutation-shapes.ts` centralizes method names considered for list

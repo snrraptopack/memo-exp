@@ -6,8 +6,10 @@ import {
   type BaseNode,
 } from '../ast';
 import {
+  astBindingAt,
   memberKey,
   memberRootName,
+  variableDeclaratorFor,
   type Ctx,
   type RowCtx,
 } from '../context';
@@ -27,11 +29,25 @@ import {
   componentPropProjectionOrigins,
 } from '../components/prop-projections';
 import { transparentListExpression } from '../lists/source-shapes';
+import { isCallToImported } from '../features/data-sources/discovery';
 import {
   walkHandler,
 } from './traversal';
 import { finalizeHandlerInstrumentation } from './execution-sites';
 import { createHandlerWriteRouting } from './write-routing';
+
+/** A direct command on a compiler-known form publishes its own changes. */
+function isFormSubmit(ctx: Ctx, component: string | null, name: string, callee: t.MemberExpression): boolean {
+  const receiver = astFactory.isExpression(callee.object) ? transparentListExpression(callee.object) : callee.object;
+  if (component === null || callee.computed ||
+      (!astFactory.isIdentifier(receiver) && !astFactory.isCallExpression(receiver)) ||
+      !astFactory.isIdentifier(callee.property, { name: 'submit' })) return false;
+  const componentNode = ctx.compPaths.get(component)?.node;
+  if (componentNode === undefined) return false;
+  const binding = astBindingAt(ctx, componentNode.body as BaseNode, name);
+  const declaration = binding === undefined ? null : variableDeclaratorFor(ctx, binding);
+  return isCallToImported(ctx, componentNode.body as BaseNode, declaration?.init ?? null, ctx.transparentFormFactories);
+}
 
 function isLinkedImport(ctx: Ctx, name: string): boolean {
   return (
@@ -579,7 +595,9 @@ export function analyzeHandler(
           ? transparentRootFor(callee.object)
           : null;
         if (transparentRoot !== null) {
-          mutateScope(p, (scope) => scope.transparentWrites.add(transparentRoot));
+          if (!isFormSubmit(ctx, compName, transparentRoot, callee)) {
+            mutateScope(p, (scope) => scope.transparentWrites.add(transparentRoot));
+          }
           return;
         }
         if (

@@ -233,6 +233,7 @@ export function collectReads(ctx: Ctx): void {
       call: t.CallExpression | t.OptionalCallExpression,
       site: ReturnType<typeof analyzeMapSite>,
     ): void {
+      if (site.prelude.length > 0) return;
       registerKeyedListMutationPlan(ctx, name, call, site);
       const targeted = findTargetedListDependencies(
         site,
@@ -248,6 +249,16 @@ export function collectReads(ctx: Ctx): void {
       );
       ctx.targetedListComponents.add(name);
       addInstanceReasons(ctx, name, [source, ...targeted]);
+    }
+
+    function collectComponentRowPrelude(call: t.CallExpression | t.OptionalCallExpression,
+      site: ReturnType<typeof analyzeMapSite>): void {
+      const callback = call.arguments[0];
+      if (site.prelude.length === 0 || !astFactory.isArrowFunctionExpression(callback) ||
+          !astFactory.isBlockStatement(callback.body)) return;
+      for (const statement of callback.body.body.slice(0, -1)) {
+        walkAst(statement as BaseNode, { enter: node => collectRenderNode(node, true) });
+      }
     }
 
     /**
@@ -277,6 +288,7 @@ export function collectReads(ctx: Ctx): void {
       const nestedSuffix = `${condSuffix}/${site.suffix}`;
 
       if (site.form === 'component') {
+        collectComponentRowPrelude(mapCall, site);
         const sites = ctx.listedSites.get(site.rowComp!) ?? [];
         if (
           !sites.some(
@@ -551,6 +563,17 @@ export function collectReads(ctx: Ctx): void {
         });
       }
       const vars = collectStateIds(ctx, node);
+      walkAst(rawNode, {
+        enter(current) {
+          if (current.type !== 'CallExpression' && current.type !== 'OptionalCallExpression') return;
+          const callee = (current as unknown as t.CallExpression).callee;
+          if (!astFactory.isIdentifier(callee) ||
+              (!ctx.helpers.has(callee.name) && !ctx.importedFunctions.has(callee.name)) ||
+              astBindingAt(ctx, current, callee.name)?.scope.isProgramScope !== true) return;
+          const summary = ctx.importedFunctions.get(callee.name) ?? summarizeHelper(ctx, callee.name);
+          for (const read of summary.reads) vars.add(read);
+        },
+      });
       // Nested regions replay through their enclosing branch updater. Keep
       // module routing at the outermost region so one write cannot schedule
       // both ancestor and descendant regions for the same calculation.
@@ -585,6 +608,7 @@ export function collectReads(ctx: Ctx): void {
         registerTargetedListPlan(mapCall, site);
         if (!site.sourceLocal) reads.add(site.sourceKey);
         if (site.form === 'component') {
+          collectComponentRowPrelude(mapCall, site);
           // R10: row-prop reads are OWNER reads — the owner re-pushes row
           // props via updateProps during reconcile
           for (const attr of site.jsx!.openingElement.attributes) {
@@ -665,9 +689,8 @@ export function collectReads(ctx: Ctx): void {
       return true;
     }
 
-    walkAst<BaseNode>(p.node as unknown as BaseNode, {
-      enter(node) {
-        if (node !== p.node && astFactory.isFunction(node)) return false;
+    function collectRenderNode(node: BaseNode, includeFunctionBodies = false): boolean | void {
+        if (!includeFunctionBodies && node !== p.node && astFactory.isFunction(node)) return false;
         if (node.type === 'JSXAttribute') {
           const attribute = node as unknown as t.JSXAttribute;
           const attributeName = attribute.name;
@@ -722,8 +745,9 @@ export function collectReads(ctx: Ctx): void {
           if (key !== null) reads.add(key);
         }
         return;
-      },
-    });
+    }
+
+    walkAst<BaseNode>(p.node as unknown as BaseNode, { enter: node => collectRenderNode(node) });
 
     ctx.compReads.set(name, reads);
   }

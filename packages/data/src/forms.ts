@@ -305,6 +305,14 @@ export function disposeFormSource<T>(form: FormSource<T>): void {
   controllers.get(form)?.notifier.clear();
 }
 
+/** Publish a compiler-observed in-place change to a form result. */
+export function notifyFormSource<T>(form: FormSource<T>): void {
+  const controller = controllers.get(form);
+  if (controller === undefined) throw new TypeError('Not a form source');
+  controller.version++;
+  controller.notifier.notify();
+}
+
 export function trackForm<T>(form: FormSource<T>): FormTracker<T> {
   const controller = controllers.get(form) as FormController<T> | undefined;
   if (controller === undefined) throw new TypeError('Not a form source');

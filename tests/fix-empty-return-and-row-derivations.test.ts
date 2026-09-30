@@ -298,7 +298,7 @@ describe('fix.md - list callback local derivations', () => {
     expect(button.textContent).toBe('Updated:1');
   });
 
-  it('rejects non-const statements before the row return', () => {
+  it('rejects assignments before the row return', () => {
     expect(() =>
       compile(`
         let items = [{ id: 1 }];
@@ -311,7 +311,7 @@ describe('fix.md - list callback local derivations', () => {
           </ul>;
         }
       `),
-    ).toThrowError(/one const declaration with an identifier, object pattern, or array pattern/);
+    ).toThrowError(/pure const expressions/);
   });
 
   it('rejects impure derivation initializers', () => {

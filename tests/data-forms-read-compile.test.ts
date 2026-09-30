@@ -53,6 +53,41 @@ describe('$read and $forms compiler integration', () => {
     expect(app).toContain('readResolvedValue(form,');
   });
 
+  it('uses form-owned submit notifications and publishes later result mutations', async () => {
+    const output = compileModules({
+      './app.tsx': `
+        import { $forms } from '@memoized-dom/data';
+        export function App() {
+          const form = $forms(fields => ({ message: String(fields.get('message')) }));
+          return <form onSubmit={event => { form.submit(event); event.currentTarget.reset(); }}>
+            <input name="message" /><button type="submit">Send</button>
+            <button type="button" onClick={() => { form.result.message += '!'; }}>Edit</button>
+            <span data-role="result">{form.hasResult ? form.result.message : 'Empty'}</span>
+          </form>;
+        }
+      `,
+    });
+    const code = output['./app.tsx']!;
+    // Only the result edit needs publication; submit publishes through its
+    // frozen controller itself and must not add another source notification.
+    const directory = join(import.meta.dirname, 'fixtures', 'out', 'forms-read');
+    mkdirSync(directory, { recursive: true });
+    const fixture = join(directory, 'result-mutation.ts');
+    writeFileSync(fixture, code);
+    expect(code.match(/notifyResolvedValueMutation\(form\)/g)).toHaveLength(1);
+    const { App } = await import(pathToFileURL(fixture).href);
+    setScheduler(run => run());
+    const form = App('FormsResultApp', null) as HTMLFormElement;
+    document.body.append(form);
+    form.querySelector('input')!.value = 'hello';
+    form.dispatchEvent(new SubmitEvent('submit', {
+      bubbles: true, cancelable: true, submitter: form.querySelector('button'),
+    }));
+    await vi.waitFor(() => expect(form.querySelector('[data-role="result"]')?.textContent).toBe('hello'));
+    form.querySelector<HTMLButtonElement>('button[type="button"]')!.click();
+    expect(form.querySelector('[data-role="result"]')?.textContent).toBe('hello!');
+  });
+
   it('renders a form on the server and updates its compiled client UI after submission', async () => {
     const output = compileModules({
       './app.tsx': `

@@ -23,6 +23,25 @@ proof keep the conservative update path described in the compiler README.
 
 Measurements and limits are recorded in `bench/dom/README.md`.
 
+## Optimistic forms and benchmark validation
+
+The simple example now demonstrates optimistic messages with a delayed action.
+Its compiler/runtime regressions use self-contained source fixtures in tests;
+tests do not load the example, which can change or be deleted independently.
+
+Synchronous expression statements before a list callback's JSX return now replay
+once per row, including error-list logging. Their reads participate in routing,
+and they retain full reconciliation. Compiler-known frozen form controllers
+publish their own submit notifications, avoiding an extra post-command refresh;
+later in-place form-result changes still publish through the form notifier.
+
+The framework suite now performs an untimed correctness pass that checks every
+operation after its completion signal, plus the existing timed-batch endpoint
+check. All eight adapters passed this pass at 10, 100, and 1,000 rows in forced
+and reactive modes on 2026-09-30. Adapter fairness limits are documented in
+`bench/frameworks/README.md`; this does not establish equal work or universal
+speed claims.
+
 ## Investigated
 
 - Canonical string key interning: estimates for Todo and Fieldnotes saved only

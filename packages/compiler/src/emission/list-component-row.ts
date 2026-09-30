@@ -142,6 +142,7 @@ function buildComponentRowFactory({
       ...(site.indexParam === null ? [] : [astFactory.identifier(site.indexParam)]),
     ],
     astFactory.blockStatement([
+      ...site.prelude.map(statement => cloneEstreeNode(statement)),
       ...(rowScope.updaters.length > 0
         ? [cacheDecl(rowScope), updateDecl(ctx, rowScope)]
         : []),
@@ -570,6 +571,7 @@ export function buildComponentRowCreate(
       ),
     );
   }
+  updateStatements.push(...site.prelude.map(statement => cloneEstreeNode(statement)));
   let nextCallProps = callProps.map((prop) => cloneEstreeNode(prop));
   if (propObjectExpression !== null) {
     const nextProps = generatedIdentifier(ctx, `next${rowComponent}Props`);
@@ -592,7 +594,7 @@ export function buildComponentRowCreate(
     lightweight ? 'entry' : 'rowElement',
   );
   const needsUpdateProps =
-    callProps.length > 0 || rowScope.updaters.length > 0;
+    callProps.length > 0 || rowScope.updaters.length > 0 || site.prelude.length > 0;
   const reuseLightweightEntry = lightweight && needsUpdateProps;
   const lightweightPushProps = reuseLightweightEntry
     ? generatedIdentifier(ctx, 'pushRowProps')

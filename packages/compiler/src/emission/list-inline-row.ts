@@ -36,6 +36,10 @@ export function buildInlineRowCreate(
     );
   const rowScope = newEmitScope(ctx);
   rowScope.cacheText = true;
+  for (const statement of site.prelude) {
+    rowScope.creation.push(cloneEstreeNode(statement));
+    rowScope.updaters.push(() => cloneEstreeNode(statement));
+  }
   for (const [eventName, binding] of eventBindings) {
     rowScope.delegatedEventBindings.set(eventName, binding.name);
   }
