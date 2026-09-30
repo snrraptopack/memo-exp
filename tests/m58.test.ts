@@ -62,7 +62,8 @@ function C() { return <ul>{items.map(item => <Row key={item.id} item={item} isSe
 `;
 
 function importCompiled(): Promise<any> {
-  return import('./fixtures/out/m510-light.compiled.ts');
+  const specifier = './fixtures/out/m510-light.compiled.ts';
+  return import(specifier);
 }
 
 describe('M5.10 - lightweight listed component rows', () => {
