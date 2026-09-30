@@ -12,6 +12,8 @@ import { generatedIdentifier, md } from '../identifiers';
 import { reasonCondition } from '../components/local-derived';
 
 export interface EmitScope {
+  /** Repeated row text avoids a DOM read on every content replay. */
+  cacheText: boolean;
   slots: string[];
   tempVar: string;
   updateVar: string;
@@ -55,6 +57,7 @@ export interface EmitScope {
 
 export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
   return {
+    cacheText: false,
     slots: [],
     tempVar: generatedIdentifier(ctx, 'value').name,
     updateVar: generatedIdentifier(ctx, 'update').name,

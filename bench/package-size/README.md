@@ -34,7 +34,10 @@ Gzip sizes are not additive, so the package graph gzip sizes must not be
 reported as the runtime's contribution to an application bundle.
 
 The benchmark fails if the Todo browser JavaScript exceeds 30,000 B raw or
-11,000 B gzip. The current measured baseline is 29,577 B raw and 10,742 B gzip.
+11,000 B gzip. The current measurement is 29,869 B raw and 10,850 B gzip
+(2026-09-30, with cached row text and routed-reader batching). Before this
+optimization iteration it was 29,577 B raw and 10,742 B gzip: the changes add
+292 B raw and 108 B gzip to this application.
 It also rejects hydration, HMR, and Node host markers in that
 browser output.
 

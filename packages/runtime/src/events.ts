@@ -15,7 +15,7 @@
  * the write-set are compiler-generated.
  */
 
-import { markDirty, markDirtySubtree, type EntityId } from './kernel';
+import { markDirtyMany, markDirtySubtree, type EntityId } from './kernel';
 import type { DirtyReasonInput } from './dirty-reasons';
 import {
   resolveStaticWrites,
@@ -62,7 +62,7 @@ function routeStaticWrites(
     markDirtySubtree(getRootId());
     return;
   }
-  for (const id of resolved) markDirty(id, reason);
+  markDirtyMany(resolved, reason);
 }
 
 export function commitWrites(writes: readonly string[]): void {
@@ -88,7 +88,7 @@ export function commitStructuralWrites(writes: readonly string[]): void {
       continue;
     }
     const reason = listStructureReason(write);
-    for (const id of structural) markDirty(id, reason);
+    markDirtyMany(structural, reason);
   }
 }
 
@@ -102,7 +102,7 @@ export function commitWritesWithPayload(
     markDirtySubtree(getRootId());
     return;
   }
-  for (const id of resolved) markDirty(id);
+  markDirtyMany(resolved);
 }
 
 export function handle<T extends Event>(

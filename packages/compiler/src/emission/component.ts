@@ -285,6 +285,7 @@ export function transformComponent(
   const lightweightPropCount =
     positionalObjectProps?.length ?? propSlotCount;
   const scope = newEmitScope(ctx, lightweight);
+  scope.cacheText = refs.length > 0 || linkedRefs.length > 0;
   const localDerivations = ctx.instanceDerivations.get(name);
   const controlFlow = ctx.instanceControlFlow.get(name);
   const effects = ctx.effects.get(name);

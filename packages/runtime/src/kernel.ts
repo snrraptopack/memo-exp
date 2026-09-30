@@ -587,7 +587,22 @@ export function markDirty(
   reason?: DirtyReasonInput,
 ): void {
   const k = getActiveApplicationRuntime().state;
-  if (!k.registry.has(id)) return;
+  if (enqueueDirty(k, id, reason)) scheduleCommit(k);
+}
+
+/** @internal Enqueue a resolved write's readers before a synchronous commit. */
+export function markDirtyMany(ids: readonly EntityId[], reason?: DirtyReasonInput): void {
+  if (ids.length === 0) return;
+  const k = getActiveApplicationRuntime().state;
+  let marked = false;
+  for (const id of ids) {
+    if (enqueueDirty(k, id, reason)) marked = true;
+  }
+  if (marked) scheduleCommit(k);
+}
+
+function enqueueDirty(k: KernelState, id: EntityId, reason?: DirtyReasonInput): boolean {
+  if (!k.registry.has(id)) return false;
   if (k.inCommit && k.markedBy !== null && k.renderingEntity !== null) {
     k.markedBy.set(id, k.renderingEntity);
   }
@@ -596,7 +611,7 @@ export function markDirty(
     mergeDirtyReasons(k.dirtyReasons, id, wasDirty, reason);
   }
   k.dirty.add(id);
-  scheduleCommit(k);
+  return true;
 }
 
 /**

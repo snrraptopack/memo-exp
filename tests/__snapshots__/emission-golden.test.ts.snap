@@ -361,10 +361,13 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 		_ul,
 		_id + "/items",
 		(item, _rowId) => {
-			let _value2;
+			let _slot, _value2;
 
 			const _update2 = () => {
-				_MD.setTextData(_text, item.label);
+				if (_slot !== (_value2 = _MD.textValue(item.label))) {
+					_slot = _value2;
+					_text.data = _value2;
+				}
 			};
 
 			const _document2 = _MD.getActiveEnvironment().document;
@@ -387,7 +390,8 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 
 			const _text = _li.firstChild;
 
-			_MD.setTextData(_text, item.label);
+			_slot = _MD.textValue(item.label);
+			_MD.setTextData(_text, _slot);
 
 			return {
 				nodes: [_li],
@@ -754,10 +758,13 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 		_ul,
 		_id + "/_listView",
 		(item, _rowId) => {
-			let _value2;
+			let _slot, _value2;
 
 			const _update2 = () => {
-				_MD.setTextData(_text, item.text);
+				if (_slot !== (_value2 = _MD.textValue(item.text))) {
+					_slot = _value2;
+					_text.data = _value2;
+				}
 			};
 
 			const _document2 = _MD.getActiveEnvironment().document;
@@ -780,7 +787,8 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 
 			const _text = _li.firstChild;
 
-			_MD.setTextData(_text, item.text);
+			_slot = _MD.textValue(item.text);
+			_MD.setTextData(_text, _slot);
 
 			return {
 				nodes: [_li],

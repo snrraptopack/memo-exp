@@ -258,6 +258,7 @@ export function buildComponentRowCreate(
       : generatedIdentifier(ctx, 'nextIndex');
   const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
   const rowScope = newEmitScope(ctx);
+  rowScope.cacheText = true;
   const lightweight = isLightweightRowComponent(ctx, rowComponent);
   const rowContext: RowCtx = {
     itemParam: site.itemParam,

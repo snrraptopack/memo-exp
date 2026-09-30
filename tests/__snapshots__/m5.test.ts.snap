@@ -113,14 +113,17 @@ const items = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
 let selected = 0;
 
 function Row(item, _id, _onClickBinding) {
-	let _slot, _value;
+	let _slot, _slot2, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
-		_MD.setTextData(_text, item.label);
-
-		if (_slot !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+		if (_slot !== (_value = _MD.textValue(item.label))) {
 			_slot = _value;
+			_text.data = _value;
+		}
+
+		if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+			_slot2 = _value;
 			_MD.setClassValue(_li, _value);
 		}
 	};
@@ -141,10 +144,11 @@ function Row(item, _id, _onClickBinding) {
 
 	const _text = _li.firstChild;
 
-	_MD.setTextData(_text, item.label);
+	_slot = _MD.textValue(item.label);
+	_MD.setTextData(_text, _slot);
 
-	if (_slot !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-		_slot = _value;
+	if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+		_slot2 = _value;
 		_MD.setClassValue(_li, _value);
 	}
 
@@ -271,13 +275,16 @@ export function InlineList(_id, _parent, _dataPolicies) {
 		_ul,
 		_id + "/items",
 		(item, _rowId) => {
-			let _slot, _value2;
+			let _slot, _slot2, _value2;
 
 			const _update2 = () => {
-				_MD.setTextData(_text, item.label);
-
-				if (_slot !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+				if (_slot !== (_value2 = _MD.textValue(item.label))) {
 					_slot = _value2;
+					_text.data = _value2;
+				}
+
+				if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+					_slot2 = _value2;
 					_MD.setClassValue(_li, _value2);
 				}
 			};
@@ -302,10 +309,11 @@ export function InlineList(_id, _parent, _dataPolicies) {
 
 			const _text = _li.firstChild;
 
-			_MD.setTextData(_text, item.label);
+			_slot = _MD.textValue(item.label);
+			_MD.setTextData(_text, _slot);
 
-			if (_slot !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-				_slot = _value2;
+			if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+				_slot2 = _value2;
 				_MD.setClassValue(_li, _value2);
 			}
 

@@ -35,6 +35,7 @@ export function buildInlineRowCreate(
         (attribute.name as t.JSXIdentifier).name !== 'key',
     );
   const rowScope = newEmitScope(ctx);
+  rowScope.cacheText = true;
   for (const [eventName, binding] of eventBindings) {
     rowScope.delegatedEventBindings.set(eventName, binding.name);
   }

@@ -67,6 +67,7 @@ export { materializeMarkup } from './markup';
 export {
   setText,
   setTextData,
+  textValue,
   setClassName,
   setClass,
   setAttr,

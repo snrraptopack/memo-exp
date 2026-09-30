@@ -35,12 +35,17 @@ export function setText(
 }
 
 /**
- * M5.9 text write — the node's own data is the cache: it always holds the
- * last normalized string, so compare-and-write needs no slot local.
+ * Seed a dynamic text node, including one adopted from server markup, or update
+ * ordinary component text. List rows use compiler-emitted string slots.
  */
 export function setTextData(node: Text, value: unknown): void {
-  const next = value == null || typeof value === 'boolean' ? '' : String(value);
+  const next = textValue(value);
   if (node.data !== next) node.data = next;
+}
+
+/** Normalize a dynamic text slot before comparing its cached value. */
+export function textValue(value: unknown): string {
+  return value == null || typeof value === 'boolean' ? '' : String(value);
 }
 
 /** Full className string replacement. */

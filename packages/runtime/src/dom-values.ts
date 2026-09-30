@@ -40,6 +40,7 @@ const UNITLESS = new Set([
 
 /** Normalize strings, nested arrays, and conditional class objects. */
 export function classValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
   const names: string[] = [];
   appendClass(value, names);
   return names.join(' ');

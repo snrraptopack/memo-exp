@@ -45,14 +45,17 @@ let data = [];
 let selected = null;
 
 function Row(props, _id, _onClickBinding) {
-	let _slot, _value;
+	let _slot, _slot2, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
-		_MD.setTextData(_text, props.item.id + ": " + props.item.label);
-
-		if (_slot !== (_value = _MD.classValue(selected === props.item.id ? 'danger' : ''))) {
+		if (_slot !== (_value = _MD.textValue(props.item.id + ": " + props.item.label))) {
 			_slot = _value;
+			_text.data = _value;
+		}
+
+		if (_slot2 !== (_value = _MD.classValue(selected === props.item.id ? 'danger' : ''))) {
+			_slot2 = _value;
 			_MD.setClassValue(_li, _value);
 		}
 	};
@@ -73,10 +76,11 @@ function Row(props, _id, _onClickBinding) {
 
 	const _text = _li.firstChild;
 
-	_MD.setTextData(_text, props.item.id + ": " + props.item.label);
+	_slot = _MD.textValue(props.item.id + ": " + props.item.label);
+	_MD.setTextData(_text, _slot);
 
-	if (_slot !== (_value = _MD.classValue(selected === props.item.id ? 'danger' : ''))) {
-		_slot = _value;
+	if (_slot2 !== (_value = _MD.classValue(selected === props.item.id ? 'danger' : ''))) {
+		_slot2 = _value;
 		_MD.setClassValue(_li, _value);
 	}
 

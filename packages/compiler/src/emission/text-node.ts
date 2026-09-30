@@ -4,8 +4,10 @@ import { cloneNode as cloneEstreeNode } from '../ast';
 import { type Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 import {
+  freshSlot,
   pushSlotUpdater,
   renderDocument,
+  slotGuard,
   type EmitScope,
 } from './scope';
 import {
@@ -17,25 +19,6 @@ import {
 // ---------------------------------------------------------------------
 // component transform
 // ---------------------------------------------------------------------
-
-/**
- * Dynamic text write: `_MD.setTextData(node, expr)` — the runtime helper
- * guards on the node's current data so no per-slot local is needed, and the
- * same call seeds the freshly-created node and runs inside update closures.
- */
-function textSetter(
-  ctx: Ctx,
-  varName: string,
-  expr: t.Expression,
-): () => t.Statement {
-  return () =>
-    astFactory.expressionStatement(
-      astFactory.callExpression(md(ctx, 'setTextData'), [
-        astFactory.identifier(varName),
-        cloneEstreeNode(expr),
-      ]),
-    );
-}
 
 export function emitText(
   ctx: Ctx,
@@ -76,15 +59,57 @@ export function emitText(
       ),
     ]),
   );
-  const setter = textSetter(ctx, varName, preparationRead(ctx, scope, ownerId, cloneEstreeNode(expr)));
-  scope.creation.push(setter()); // R4: creation seeds through the same guarded setter
+  const prepared = preparationRead(ctx, scope, ownerId, cloneEstreeNode(expr));
+  if (!scope.cacheText) {
+    const setter = (): t.Statement =>
+      astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'setTextData'), [
+          astFactory.identifier(varName),
+          cloneEstreeNode(prepared),
+        ]),
+      );
+    scope.creation.push(setter());
+    registerTransparentDataSite(
+      ctx, scope, transparentExpressionSources(ctx, expr), ownerId, setter(),
+    );
+    pushSlotUpdater(scope, setter, expr);
+    return varName;
+  }
+  const slot = freshSlot(ctx, scope);
+  const normalized = (): t.Expression =>
+    astFactory.callExpression(md(ctx, 'textValue'), [cloneEstreeNode(prepared)]);
+  scope.creation.push(
+    astFactory.expressionStatement(
+      astFactory.assignmentExpression('=', astFactory.identifier(slot), normalized()),
+    ),
+    // Keep the seed recognizable to markup extraction, including hydration.
+    astFactory.expressionStatement(
+      astFactory.callExpression(md(ctx, 'setTextData'), [
+        astFactory.identifier(varName),
+        astFactory.identifier(slot),
+      ]),
+    ),
+  );
+  const updater = (): t.Statement =>
+    slotGuard(scope, slot, normalized(), (value) =>
+      astFactory.expressionStatement(
+        astFactory.assignmentExpression(
+          '=',
+          astFactory.memberExpression(
+            astFactory.identifier(varName),
+            astFactory.identifier('data'),
+          ),
+          value,
+        ),
+      ),
+    );
   registerTransparentDataSite(
     ctx,
     scope,
     transparentExpressionSources(ctx, expr),
     ownerId,
-    setter(),
+    updater(),
   );
-  pushSlotUpdater(scope, setter, expr);
+  pushSlotUpdater(scope, updater, expr);
   return varName;
 }

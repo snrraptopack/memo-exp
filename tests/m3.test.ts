@@ -49,6 +49,9 @@ describe('M3 origin-scoped commit via static access table', () => {
     document.body.appendChild(root);
     const counts = spyRenders();
 
+    let commits = 0;
+    setScheduler((fn) => { commits++; fn(); });
+
     const rows = root.querySelectorAll('li');
     (rows[1] as HTMLElement).click();
 
@@ -56,6 +59,7 @@ describe('M3 origin-scoped commit via static access table', () => {
     expect(root.querySelector('header')!.textContent).toBe('selected: 2');
     expect(rows[1]!.classList.contains('selected')).toBe(true);
     expect(rows[0]!.classList.contains('selected')).toBe(false);
+    expect(commits).toBe(1);
 
     // readers of selectedId ran: all rows (over-approximation) + the badge
     expect(counts.get('App/Header/Badge')).toBe(1);

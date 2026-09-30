@@ -116,6 +116,12 @@ a method property name cannot prove that retained rows were not mutated. This
 bounds a targeted list refresh by the number of targets without turning method
 recognition into a language or purity whitelist.
 
+Dynamic text updates in list rows normalize the expression on every replay and
+compare it with a compiler-owned string slot before writing `Text.data`. The creation path
+still seeds through `setTextData`, which also handles adopted server text. This
+reduces DOM reads during broad list refreshes; it does not make those refreshes
+key-targeted or change the conservative list-method fallback.
+
 ### List-method optimization candidates
 
 `src/lists/mutation-shapes.ts` centralizes method names considered for list

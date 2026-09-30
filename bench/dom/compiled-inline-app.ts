@@ -167,13 +167,16 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 		_ul,
 		_id + "/data",
 		(item, _rowId) => {
-			let _slot, _value2;
+			let _slot, _slot2, _value2;
 
 			const _update2 = () => {
-				_MD.setTextData(_text10, item.id + ": " + item.label);
-
-				if (_slot !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+				if (_slot !== (_value2 = _MD.textValue(item.id + ": " + item.label))) {
 					_slot = _value2;
+					_text10.data = _value2;
+				}
+
+				if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+					_slot2 = _value2;
 					_MD.setClassValue(_li, _value2);
 				}
 			};
@@ -198,10 +201,11 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 
 			const _text10 = _li.firstChild;
 
-			_MD.setTextData(_text10, item.id + ": " + item.label);
+			_slot = _MD.textValue(item.id + ": " + item.label);
+			_MD.setTextData(_text10, _slot);
 
-			if (_slot !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
-				_slot = _value2;
+			if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+				_slot2 = _value2;
 				_MD.setClassValue(_li, _value2);
 			}
 

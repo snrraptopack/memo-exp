@@ -26,6 +26,64 @@ to the owning list, so the DOM updates; both runs above include that work.
 Selection still revisits rows across the list. The 10k results show why
 `Row[*]` fanout and owner reconciliation remain a performance priority.
 
+## Cached row text comparison (2026-09-30)
+
+List-row text now compares a normalized string slot before writing `Text.data`.
+This removes a DOM text read from every unchanged row replay. Expressions and
+string conversion still run, including getters and mutable `toString()` values.
+Ordinary component text retains the compact `setTextData` helper.
+
+A focused generated-code comparison used the component-row output from
+`a885345` and the new compiler output with a shared current runtime in one
+Chromium process. Each round mounted a fresh 10k list, warmed up six selection
+transitions, then measured twenty transitions between rows 500 and 501. The
+table contains per-round medians; measurement order alternated and the final
+classes were validated after every round.
+
+| Run / round | Previous output | Cached row text |
+|---|---:|---:|
+| 1 / 1 | 18.4 ms | 14.8 ms |
+| 1 / 2 | 22.7 ms | 10.2 ms |
+| 1 / 3 | 19.0 ms | 14.1 ms |
+| 2 / 1 | 24.5 ms | 15.3 ms |
+| 2 / 2 | 30.6 ms | 13.7 ms |
+| 2 / 3 | 21.5 ms | 15.7 ms |
+
+This improves required broad scans and adds one cached string per dynamic row
+text expression. Selection still scans the list. Exact keyed invalidation and
+safe list-method specializations need separate proofs; these measurements do
+not establish constant-time selection or a general framework ranking.
+
+## Routed-reader batching and combined run (2026-09-30)
+
+Routing now enqueues each complete resolved reader set before scheduling its
+commit. Previously the synchronous scheduler committed separately for every
+reader, so a wildcard selection incurred one commit per matched row. Deferred
+schedulers already coalesced those marks. The new behavior also allows parent
+reconciliation to cancel pending row renders after resync.
+
+The DOM suite uses a synchronous scheduler. The framework reconciliation suite
+uses synchronous scheduling in forced mode and microtasks in reactive mode;
+its workloads and list sizes also differ. Scheduling contributes to the gap,
+but does not explain all of it.
+
+The combined row text cache, string class normalization, and batching run passed
+the fresh-list selection checks and produced these medians of seven samples:
+
+| Operation | Component rows | Inline rows | Vanilla |
+|---|---:|---:|---:|
+| Create 1k | 25.1 ms | 36.6 ms | 13.0 ms |
+| Update every tenth row in 1k | 2.4 ms | 2.4 ms | 0.3 ms |
+| Select in 1k | 1.8 ms | 1.8 ms | 0.2 ms |
+| Select in 10k | 12.6 ms | 38.6 ms | 0.8 ms |
+| Create 10k | 194.3 ms | 232.0 ms | 113.1 ms |
+| Append 1k to 10k | 30.6 ms | 43.1 ms | 8.7 ms |
+| Clear 10k | 24.6 ms | 81.7 ms | 4.7 ms |
+
+This is a combined run, not an isolated measurement of batching. Broad row
+fanout, owner reconciliation, registration, and teardown still have costs.
+See `docs/performance-work.md` for the remaining review and Marko candidates.
+
 These timings vary with browser and machine load. Cases near the timer's
 resolution should not support fine-grained percentage claims. Future
 optimizations should first preserve the DOM validation and then compare
