@@ -233,6 +233,8 @@ export interface LinkedComponentRowUse {
 }
 
 export interface LinkedComponentPropSource {
+  /** Every supplied value is a stable instrumented callback with no argument effects. */
+  publishedCallback?: boolean;
   /** Canonical state boundaries that may supply this prop. */
   keys: string[];
   /** At least one call site cannot be bounded to canonical module state. */
@@ -784,6 +786,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
                 keys: [...source.keys],
                 rootFallback: source.rootFallback,
                 transparent: source.transparent === true,
+                publishedCallback: source.publishedCallback === true,
               },
             ]),
           ),

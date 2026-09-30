@@ -6,7 +6,7 @@ export function GsapExternalApp() {
   const externalTarget = { value: 0, angle: 0 };
   let runCount = 0;
 
-  cleanup(() => {
+  $cleanup(() => {
     timeline?.kill();
     gsap.killTweensOf(externalTarget);
   });
@@ -70,7 +70,7 @@ export function GsapExternalApp() {
       <p>
         This component imports only GSAP. The animation mutates an ordinary
         JavaScript object and real DOM nodes without update callbacks or a
-        framework adapter. Its timeline is disposed through cleanup().
+        framework adapter. Its timeline is disposed through $cleanup().
       </p>
 
       <div class="actions">

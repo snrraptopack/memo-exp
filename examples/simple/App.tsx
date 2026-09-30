@@ -1,4 +1,3 @@
-import { $forms } from "@memoized-dom/data"
 import {optimistic} from "@memoized-dom/utils"
 import { deliverMessage } from "./action";
 

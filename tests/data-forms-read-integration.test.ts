@@ -11,7 +11,7 @@ const fixture = join(outputDir, 'app.ts');
 
 beforeAll(() => {
   const source = `
-    import { $forms, $read, $track, Group } from '@memoized-dom/data';
+    import { Group } from '@memoized-dom/data';
     const schema = {
       '~standard': {
         version: 1,

@@ -25,6 +25,7 @@ import {
   linkComponentGraph,
 } from './component-linker';
 import {
+  createCtx,
   type InternalMemoDomOptions,
   type LinkedComponentRowUse,
   type MemoDomOptions,
@@ -57,6 +58,7 @@ import {
 } from './linking/resolution';
 import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest } from './linking/discovery';
+import { installCompilerIntrinsics } from './intrinsics';
 
 export interface CompiledComponentExport {
   exported: string;
@@ -141,8 +143,15 @@ function parseModule(
     filename: id,
     sourceType: 'module',
   });
+  const ast = parsed.program as unknown as t.Program;
+  // Discovery must see the same generated provider imports as final emission,
+  // including route preparation and exported module-source identities.
+  installCompilerIntrinsics(createCtx({ moduleId: id }), {
+    node: ast,
+    buildCodeFrameError: (message, at = ast) => compilerError(message, id, at as BaseNode),
+  });
   return {
-    ast: parsed.program as unknown as t.Program,
+    ast,
     comments: parsed.comments,
     css: parsed.css,
   };
@@ -760,6 +769,7 @@ function compileLinkedModules(
               keys: [...source.keys],
               rootFallback: source.rootFallback,
               transparent: source.transparent,
+              publishedCallback: source.publishedCallback,
             },
           ]),
         );

@@ -70,11 +70,6 @@ function Row(props, _id, _owner, _onClickBinding) {
 
 	_MD.setDelegatedEvent(_onClickBinding, _li, () => {
 		props.select(props.item.id);
-
-		{
-			_update();
-			_MD.markDirtySubtree("BenchAppOwned");
-		}
 	});
 
 	return {
@@ -218,12 +213,7 @@ export function BenchAppOwned(_id2, _parent, _dataPolicies) {
 		}
 
 		{
-			if (_didWrite2) {
-				_MD.markDirty(_id2, _REASONS_2);
-				_MD.markDirtySubtree("BenchAppOwned");
-			}
-
-			if (_didWrite3) {
+			if (_didWrite2 || _didWrite3) {
 				_MD.markDirty(_id2, _REASONS_2);
 				_MD.markDirtySubtree("BenchAppOwned");
 			}

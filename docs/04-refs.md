@@ -54,7 +54,7 @@ export function Panel() {
 
 A callback ref installs **once** per element while that element lives. Its
 identity isn't reactively replaced — if the setup needs to change with
-state, that's what `effect` + a mutable ref is for.
+state, that's what `$effect` + a mutable ref is for.
 
 ## Several refs on one element
 
@@ -114,7 +114,7 @@ pass it under an ordinary prop name such as `api={handle}`. A component
 | Per-node setup with teardown (observers, libraries) | callback ref |
 | Several things want the same node | `ref={[a, b, c]}` |
 | Parent needs a child's node | forward `ref` as a prop |
-| Setup that must change when state changes | `effect` reading a mutable ref |
+| Setup that must change when state changes | `$effect` reading a mutable ref |
 
 One thing refs don't do: they never fire during SSR — there's no browser
 node on the server. Callback refs first run on the client after hydration.

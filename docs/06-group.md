@@ -15,7 +15,7 @@ there (the synchronous-authoring model again), and `Group` supplies the
 pending and error UI for whatever isn't ready yet.
 
 ```tsx
-import { $fetch, Group } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 
 const stories = $fetch<Story[]>('/api/stories');
 

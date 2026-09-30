@@ -12,7 +12,7 @@ export function CartApp() {
 
   const itemCount = items.length;
 
-  effect(() => console.log(itemCount, getEventLog()));
+  $effect(() => console.log(itemCount, getEventLog()));
   console.log("expect only once");
 
   // Local Derivations (R14 - Owner Update Prologue Replay)

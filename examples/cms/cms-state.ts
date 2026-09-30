@@ -19,7 +19,7 @@ export let activeTab: ViewTab = 'preview';
 export let autoSaveLog = 'Initializing...';
 
 // R32: Module-level effect outside any component body!
-effect(() => {
+$effect(() => {
   autoSaveLog = `Auto-saved at ${new Date().toLocaleTimeString()} (${rawMarkup.length} bytes, tag: <${containerTag}>)`;
 });
 

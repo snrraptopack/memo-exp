@@ -1,4 +1,4 @@
-import { $track, Group } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 import { currentUser, notifications } from './session';
 
 function UserBadge() {

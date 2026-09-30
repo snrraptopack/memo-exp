@@ -3,7 +3,7 @@
  */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { extractPatternIdentifiers, type BaseNode } from '../ast';
+import { extractPatternIdentifiers, walkAst, type BaseNode } from '../ast';
 import {
   astBindingAt,
   canonicalStateKey,
@@ -11,6 +11,7 @@ import {
   memberKey,
   memberRootName,
   unwrapTypeExpression,
+  variableDeclaratorFor,
   walkNodes,
   type Ctx,
 } from '../context';
@@ -23,6 +24,7 @@ import {
 export type ComponentPropSourceRef =
   | { type: 'state'; key: string }
   | { type: 'transparent' }
+  | { type: 'published-callback' }
   | { type: 'prop'; name: string; path: string[] }
   | { type: 'root' }
   | { type: 'local' };
@@ -284,6 +286,9 @@ function sourcesOf(
   const unwrapped = unwrapTypeExpression(
     expression as unknown as BaseNode,
   ) as unknown as t.Expression;
+  if (isPublishedScalarCallback(ctx, owner, unwrapped)) {
+    return [{ type: 'published-callback' }];
+  }
   const listSources = listItemSources(ctx, owner, tag, unwrapped);
   if (listSources !== null) return listSources;
 
@@ -338,6 +343,34 @@ function sourcesOf(
       ? { type: 'local' }
       : { type: 'root' },
   ];
+}
+
+/** A stable local callback whose only effects are instrumented lexical writes.
+ * Keep argument mutations, opaque calls, deferred work and property access on
+ * the conservative path. This deliberately proves a small initial case.
+ */
+function isPublishedScalarCallback(ctx: Ctx, owner: string, value: t.Expression): boolean {
+  if (!astFactory.isIdentifier(value)) return false;
+  const binding = astBindingAt(ctx, value as BaseNode, value.name);
+  if (binding?.kind !== 'const' || binding.constantViolations.length !== 0) return false;
+  const declaration = variableDeclaratorFor(ctx, binding);
+  const fn = declaration?.init;
+  if (!fn || (!astFactory.isArrowFunctionExpression(fn) && !astFactory.isFunctionExpression(fn)) ||
+      fn.async || fn.generator || !fn.params.every(parameter => astFactory.isIdentifier(parameter))) return false;
+  // Emission instruments direct component-local callback declarations.
+  if (!ctx.compPaths.get(owner)?.node.body.body.some(statement =>
+    astFactory.isVariableDeclaration(statement) && statement.declarations.includes(declaration!))) return false;
+  const parameters = new Set(fn.params.map(parameter => (parameter as t.Identifier).name));
+  let safe = true;
+  walkAst(fn.body as BaseNode, { enter(node) {
+    if (!['BlockStatement', 'ExpressionStatement', 'ReturnStatement',
+      'AssignmentExpression', 'Identifier', 'Literal', 'NullLiteral',
+      'NumericLiteral', 'StringLiteral', 'BooleanLiteral'].includes(node.type)) safe = false;
+    if (astFactory.isAssignmentExpression(node)) {
+      if (node.operator !== '=' || !astFactory.isIdentifier(node.left) || parameters.has(node.left.name)) safe = false;
+    }
+  } });
+  return safe;
 }
 
 function addSource(
@@ -411,6 +444,18 @@ export function collectComponentPropSources(
         value.expression as t.Expression,
       )) {
         addSource(byTag, name.name, prop, source);
+      }
+    }
+  });
+  // Include omissions after collecting names from every use, including generic
+  // props objects whose declared shape does not enumerate property names.
+  walkNodes(component.node, node => {
+    if (node.type !== 'JSXOpeningElement') return;
+    const opening = node as t.JSXOpeningElement;
+    if (!astFactory.isJSXIdentifier(opening.name)) return;
+    for (const prop of Object.keys(byTag.get(opening.name.name) ?? {})) {
+      if (!opening.attributes.some(attribute => astFactory.isJSXAttribute(attribute) && jsxPropName(attribute) === prop)) {
+        addSource(byTag, opening.name.name, prop, { type: 'root' });
       }
     }
   });

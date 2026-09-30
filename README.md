@@ -154,7 +154,7 @@ The compiler lowers the selected value to a caller-owned mount slot and a
 finite conditional region. It does not create a virtual-node value. A prop
 cannot be used as both scalar data and JSX content in one linked application.
 
-Reactive side effects use the compiler intrinsic `effect`. Dependencies are
+Reactive side effects use the compiler intrinsic `$effect`. Dependencies are
 discovered statically; a returned teardown runs before a rerun and when the
 owning component unmounts:
 
@@ -165,7 +165,7 @@ function App() {
     return () => connection.disconnect();
   };
 
-  if (enabled) effect(sync);
+  if (enabled) $effect(sync);
 
   return <strong>{activeRoom}</strong>;
 }
@@ -177,7 +177,7 @@ the active callback with teardown first, and leaving tears it down. Module
 effects support the same local named and conditional forms as singleton
 entities.
 
-Use `cleanup(disposer)` for component-owned resources that are not reactive
+Use `$cleanup(disposer)` for component-owned resources that are not reactive
 effects.
 
 Direct module-scope effects are linked singleton entities. Imported reactive

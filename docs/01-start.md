@@ -63,7 +63,8 @@ src/
 
 Two things matter here: `"jsx": "preserve"` (the Memoized DOM compiler owns
 JSX — no React JSX transform) and the `@memoized-dom/compiler/jsx` types,
-which give you JSX typing plus the ambient `effect`/`cleanup` intrinsics.
+which give you JSX typing plus the ambient [compiler intrinsics](./17-intrinsics.md),
+including `$effect`, `$cleanup`, `$fetch`, `$read`, `$track`, `$forms` and `$routed`.
 
 `vite.config.ts`
 

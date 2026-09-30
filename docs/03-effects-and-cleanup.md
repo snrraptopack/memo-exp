@@ -1,17 +1,17 @@
 # Effects & cleanup
 
-`effect` and `cleanup` are **compiler intrinsics — you never import them**.
+`$effect` and `$cleanup` are **compiler intrinsics — you never import them**.
 Write them as bare calls; the compiler discovers them and lowers them into
 runtime registrations. (The `@memoized-dom/compiler/jsx` types in your
 tsconfig are what make them valid in the editor.)
 
-Before reaching for `effect`, check you're not solving a solved problem:
+Before reaching for `$effect`, check you're not solving a solved problem:
 
 - Loading data → a `fetch` call in an event handler, or a server function
 - Recomputing a value → a `const` derivation
-- One-time setup tied to the component's life → `cleanup` (below)
+- One-time setup tied to the component's life → `$cleanup` (below)
 
-`effect` is for what's left: **imperative work that must re-run whenever the
+`$effect` is for what's left: **imperative work that must re-run whenever the
 reactive state it reads changes** — pushing state into systems the compiler
 can't see (the document, sockets, media APIs, third-party widgets).
 
@@ -55,7 +55,7 @@ export function Profile() {
 }
 ```
 
-## `effect` — re-syncing on state change
+## `$effect` — re-syncing on state change
 
 No dependency array. The compiler reads the callback body and re-runs it
 whenever any reactive value inside changes.
@@ -65,12 +65,12 @@ export function Chat({ roomId }: { roomId: string }) {
   let unread = 0;
 
   // reruns every time `unread` changes — pushes state outward
-  effect(() => {
+  $effect(() => {
     document.title = unread === 0 ? 'Chat' : `Chat (${unread})`;
   });
 
   // re-subscribes every time `roomId` changes
-  effect(() => {
+  $effect(() => {
     const connection = joinRoom(roomId);
     connection.onMessage(() => unread++);
     return () => connection.leave();     // optional cleanup
@@ -102,7 +102,7 @@ Behavior, concretely:
 If a value only gates *whether* work happens, read it inside the callback:
 
 ```tsx
-effect(() => {
+$effect(() => {
   if (!enabled) return;          // flips work on/off without teardown
   const conn = connect();
   return () => conn.close();
@@ -121,7 +121,7 @@ export function Presence({ roomId }: { roomId: string }) {
     return () => socket.leave();
   }
 
-  effect(connect);   // reads inside `connect` are tracked the same way
+  $effect(connect);   // reads inside `connect` are tracked the same way
 
   return <p>{roomId}</p>;
 }
@@ -129,13 +129,13 @@ export function Presence({ roomId }: { roomId: string }) {
 
 Two limits:
 
-- The named callback **cannot be imported** — `effect(fnFromAnotherFile)` is
-  a compile error. Wrap locally instead: `effect(() => fn())`.
+- The named callback **cannot be imported** — `$effect(fnFromAnotherFile)` is
+  a compile error. Wrap locally instead: `$effect(() => fn())`.
 - Still synchronous, still not a JSX component.
 
 ## Conditional effects
 
-Wrap `effect` in a top-level `if` and its whole lifecycle is owned by the
+Wrap `$effect` in a top-level `if` and its whole lifecycle is owned by the
 condition — not just early-return, actual create/dispose:
 
 ```tsx
@@ -148,25 +148,25 @@ export function AutoSaver({ docId }: { docId: string }) {
   }
 
   if (dirty) {
-    effect(flushLoop);   // exists only while `dirty` is true
+    $effect(flushLoop);   // exists only while `dirty` is true
   }
 }
 ```
 
 `dirty` → `false` runs the teardown and destroys the effect; `true` builds a
-fresh one. The `if` branches may contain **only** `effect` calls, nested
+fresh one. The `if` branches may contain **only** `$effect` calls, nested
 `if`s, or empty statements — anything else is a compile error.
 
 ## Effects at module scope — effects can live in other files
 
-`effect` also works at the top level of any linked module — a singleton
+`$effect` also works at the top level of any linked module — a singleton
 reactive entity that needs no component:
 
 ```ts
 // theme.ts
 export let theme: 'light' | 'dark' = 'light';
 
-effect(() => {
+$effect(() => {
   document.documentElement.dataset.theme = theme;
 });
 ```
@@ -175,10 +175,10 @@ Side-effect wiring can live in dedicated files (`sync.ts`,
 `subscriptions.ts`). Module effects read/write module state like anything
 else; their teardown is owned by module re-evaluation (HMR), not unmount.
 
-## `cleanup` — one-time teardown
+## `$cleanup` — one-time teardown
 
 A resource created **once** during component initialization needs disposing
-**once** — that's `cleanup`, not `effect`. There's nothing reactive to
+**once** — that's `$cleanup`, not `$effect`. There's nothing reactive to
 re-run; the timer below should keep ticking regardless of state:
 
 ```tsx
@@ -186,32 +186,32 @@ export function Clock() {
   let now = Date.now();
 
   const timer = setInterval(() => now = Date.now(), 1000);
-  cleanup(() => clearInterval(timer));
+  $cleanup(() => clearInterval(timer));
 
   const onResize = () => now = Date.now();
   window.addEventListener('resize', onResize);
-  cleanup(() => window.removeEventListener('resize', onResize));
+  $cleanup(() => window.removeEventListener('resize', onResize));
 
   return <p>{new Date(now).toLocaleTimeString()}</p>;
 }
 ```
 
-- Ambient like `effect` — no import.
+- Ambient like `$effect` — no import.
 - Exactly one function argument, called directly in the component body.
-- Multiple `cleanup` calls are fine — they run **last-in, first-out** on
+- Multiple `$cleanup` calls are fine — they run **last-in, first-out** on
   unmount.
-- **Not valid at module scope** — at module level, use an `effect` and
+- **Not valid at module scope** — at module level, use an `$effect` and
   return its teardown.
 
 ## Which one?
 
 | Situation | Use |
 |---|---|
-| Imperative work that must re-sync when state it reads changes | `effect` |
-| That work holds a resource per run | `effect` returning a teardown |
-| One-time resource for the component's lifetime | `cleanup` |
-| Side work at app/module level | module-scope `effect` |
-| Effect owned on/off by state | `if (cond) { effect(...) }` |
-| Loading data / re-computing a value | `fetch` in a handler / server function / `const` derivation — **not** `effect` |
+| Imperative work that must re-sync when state it reads changes | `$effect` |
+| That work holds a resource per run | `$effect` returning a teardown |
+| One-time resource for the component's lifetime | `$cleanup` |
+| Side work at app/module level | module-scope `$effect` |
+| Effect owned on/off by state | `if (cond) { $effect(...) }` |
+| Loading data / re-computing a value | `fetch` in a handler / server function / `const` derivation — **not** `$effect` |
 
 Next: [04 — Refs](./04-refs.md)

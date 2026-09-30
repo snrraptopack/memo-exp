@@ -1,6 +1,6 @@
 import { route, matchRoutePattern } from '@memoized-dom/router';
 import { connectRouter, subscribeRoute } from '@memoized-dom/router/internal';
-import { $track, createDataRuntime } from '@memoized-dom/data';
+import { createDataRuntime } from '@memoized-dom/data';
 import type {
   CloudService,
   DeployActionInput,
@@ -26,7 +26,7 @@ export function RouterApp() {
   // 1. Reactive Path State synchronized via Router Subscription
   let currentPath = route.pathname;
 
-  effect(() => {
+  $effect(() => {
     const disconnect = connectRouter();
     const unsubscribe = subscribeRoute((snapshot) => {
       currentPath = snapshot.pathname;

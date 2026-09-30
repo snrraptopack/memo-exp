@@ -5,7 +5,6 @@
  * DataRuntime materializes them on first read — request-local on the server,
  * payload-restored (no refetch) on the client.
  */
-import { $fetch } from '@memoized-dom/data';
 
 export interface SessionUser {
   name: string;

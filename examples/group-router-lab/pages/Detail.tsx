@@ -1,4 +1,4 @@
-import { $routed, route } from '@memoized-dom/router';
+import { route } from '@memoized-dom/router';
 import { loadEntry } from '../data/entry';
 
 export function Detail() {

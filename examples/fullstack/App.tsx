@@ -14,7 +14,7 @@
  *     and its lifecycle is observed through `$track`.
  */
 import { getStories, getStory, postVote } from '#server-functions';
-import { Group, $track } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 import type { ErrorPolicyComponentProps } from '@memoized-dom/data';
 
 

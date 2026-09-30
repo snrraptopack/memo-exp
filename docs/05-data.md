@@ -32,7 +32,9 @@ operation shouldn't force your markup into `loading`/`error` branches and
 promise plumbing — you should be able to read the result like an ordinary
 value and let the runtime handle when it's actually there.
 
-The data primitives in `@memoized-dom/data` cover values and their lifecycle:
+The compiler intrinsics below cover values and their lifecycle. They need no
+authored imports; install `@memoized-dom/data` for their runtime implementation.
+See the [intrinsic reference](17-intrinsics.md) for the complete catalog and typing.
 
 - **`$fetch`** — the *value*. Declares a request and gives you the payload
   as if it were already resolved.
@@ -47,7 +49,6 @@ and controls the request behind it.
 ## `$fetch` — the payload as a plain value
 
 ```tsx
-import { $fetch } from '@memoized-dom/data';
 
 interface Story {
   id: number;
@@ -154,7 +155,6 @@ to override that identity yourself.
 payload — it's a lens with status fields and controls:
 
 ```tsx
-import { $track } from '@memoized-dom/data';
 
 const stories = $fetch<Story[]>('/api/stories');
 const request = $track(stories);

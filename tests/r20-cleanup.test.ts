@@ -106,18 +106,17 @@ const SOURCES: Record<string, string> = {
   `,
 };
 
-const IMPORTS: Record<string, () => Promise<any>> = {
-  'r20-timer': () => import('./fixtures/out/r20-timer.compiled.ts'),
-  'r20-subscription': () =>
-    import('./fixtures/out/r20-subscription.compiled.ts'),
-  'r20-listener': () => import('./fixtures/out/r20-listener.compiled.ts'),
-  'r20-rows': () => import('./fixtures/out/r20-rows.compiled.ts'),
-  'r20-shared-timer': () =>
-    import(/* @vite-ignore */ sharedTimerFixture),
+const IMPORTS: Record<string, string> = {
+  'r20-timer': './fixtures/out/r20-timer.compiled.ts',
+  'r20-subscription': './fixtures/out/r20-subscription.compiled.ts',
+  'r20-listener': './fixtures/out/r20-listener.compiled.ts',
+  'r20-rows': './fixtures/out/r20-rows.compiled.ts',
+  'r20-shared-timer': sharedTimerFixture,
 };
 
 function importCompiled(name: string): Promise<any> {
-  return IMPORTS[name]!();
+  const specifier = IMPORTS[name]!;
+  return import(/* @vite-ignore */ specifier);
 }
 
 describe('R20 - cleanup runtime ownership', () => {

@@ -1,6 +1,3 @@
-import {$routed} from "@memoized-dom/router"
-
-
 export function Something(){
 
   const currentRoute = $routed(({ url, services }) => {

@@ -1,4 +1,3 @@
-import { $fetch } from '@memoized-dom/data';
 import type { Card, CardDetail, RevealMode } from '../data/cards';
 
 export function CardRow({ item, mode, run }: { item: Card; mode: RevealMode; run: string }) {

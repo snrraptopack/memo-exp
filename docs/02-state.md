@@ -190,8 +190,8 @@ if (theme === 'dark') { accent = '#8af'; } else { accent = '#06c'; }
 Two boundaries worth knowing:
 
 - **Branches must be pure.** An `if` containing calls or resource work
-  isn't replayed — move that logic into `effect()`. The supported
-  conditional form is `if (enabled) effect(fn)`, which runs the effect
+  isn't replayed — move that logic into `$effect()`. The supported
+  conditional form is `if (enabled) $effect(fn)`, which runs the effect
   only while `enabled` holds (see
   [03 — Effects & cleanup](./03-effects-and-cleanup.md)).
 - **JSX-returning control flow must be exhaustive** — every path through

@@ -147,7 +147,10 @@ describe('compiler completion semantics', () => {
       });`, true);
     app.run();
     expect(app.getters()).toBe(1);
-    expect(app.commits).toEqual([1]);
+    // The instrumented setter publishes its lexical write; the opaque proxy
+    // assignment also retains its conservative completion refresh.
+    expect(app.commits).toEqual([1, 1]);
+    expect(app.button.textContent).toBe('1');
   });
 
   it('still suppresses equal writes to proven own data properties', () => {

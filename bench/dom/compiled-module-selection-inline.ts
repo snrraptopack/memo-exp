@@ -149,12 +149,7 @@ export function BenchModuleSelectionInline(_id, _parent, _dataPolicies) {
 		}
 
 		{
-			if (_didWrite2) {
-				_MD.markDirty(_id, _REASONS_);
-				_MD.markDirtySubtree("BenchModuleSelectionInline");
-			}
-
-			if (_didWrite3) {
+			if (_didWrite2 || _didWrite3) {
 				_MD.markDirty(_id, _REASONS_);
 				_MD.markDirtySubtree("BenchModuleSelectionInline");
 			}

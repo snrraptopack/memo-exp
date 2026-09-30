@@ -1,4 +1,4 @@
-import { $track, createDataRuntime } from '@memoized-dom/data';
+import { createDataRuntime } from '@memoized-dom/data';
 import { mockFetch, TaskListSchema } from './mock-server';
 import type { Task, TaskPriority, TaskStatus, CreateTaskInput } from './types';
 import { TaskCard } from './TaskCard';
@@ -29,7 +29,7 @@ export function DataReactivityApp() {
   }
 
   let tasksResource = loadTasks();
-  cleanup(dataRuntime.clear);
+  $cleanup(dataRuntime.clear);
 
   function replaceTasksResource() {
     const previous = tasksResource;

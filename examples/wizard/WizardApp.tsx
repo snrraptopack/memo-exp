@@ -13,7 +13,7 @@ export function WizardApp() {
   const stepProgress = `Step ${currentStep} of 3`;
 
   // Value-Guarded Effect: fires only when stepProgress changes!
-  effect(() => {
+  $effect(() => {
     console.log('[Wizard Progress Effect]', stepProgress, 'Status:', flowStatus);
   });
 

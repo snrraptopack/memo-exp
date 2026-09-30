@@ -1,6 +1,15 @@
 import type { RouteTable } from '@memoized-dom/router';
 
 declare global {
+  /** Compiler-owned calls; the compiler supplies runtime imports when needed. */
+  const $fetch: typeof import('@memoized-dom/data').$fetch;
+  const $read: typeof import('@memoized-dom/data').$read;
+  const $track: typeof import('@memoized-dom/data').$track;
+  const $forms: typeof import('@memoized-dom/data').$forms;
+  const $routed: typeof import('@memoized-dom/router').$routed;
+  function $cleanup(disposer: () => void): () => void;
+  function $effect(callback: () => void | (() => void)): void;
+
   /**
    * Register synchronous teardown owned by the current compiled component.
    * The compiler supplies the component identity in generated output.

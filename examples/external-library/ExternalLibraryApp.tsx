@@ -9,7 +9,7 @@ export function ExternalLibraryApp() {
   let callbackRunCount = 0;
   let effectRunCount = 0;
 
-  effect(() => {
+  $effect(() => {
     if (effectRunCount === 0) return;
     animate(effectValue, {
       value: 100,

@@ -1,5 +1,4 @@
-import { $routed, redirectRoute, blockNavigation } from '@memoized-dom/router';
-import { $track } from '@memoized-dom/data';
+import { redirectRoute, blockNavigation } from '@memoized-dom/router';
 import { postNote, deleteNote } from '#server-functions';
 
 export function ExpeditionDetail() {
@@ -22,7 +21,7 @@ export function ExpeditionDetail() {
       return confirm('Discard your draft note?') ? undefined : false;
     }
   });
-  cleanup(stopGuard);
+  $cleanup(stopGuard);
 
   function addNote() {
     const input = nodes.noteInput;

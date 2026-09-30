@@ -3,7 +3,7 @@
  * 
  * Demonstrates:
  * 1. Module-level reactive state (`export let theme`)
- * 2. Module-level ambient effect (`effect(...)`) that synchronizes state with the DOM documentElement
+ * 2. Module-level ambient $effect (`$effect(...)`) that synchronizes state with the DOM documentElement
  * 3. Derived read-only state (`isDark`)
  */
 
@@ -19,7 +19,7 @@ export let theme: ThemeMode = initialTheme;
 
 // Module-level effect runs once and re-runs whenever 'theme' changes.
 // No dependency array is used—the compiler detects the read to 'theme'.
-effect(() => {
+$effect(() => {
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('octopulse_theme', theme);

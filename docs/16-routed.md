@@ -1,12 +1,14 @@
 # `$routed` — code that runs when a route matches
 
+`$routed` is a compiler intrinsic available without an import. Router utilities
+such as `redirectRoute` still use ordinary imports.
+
 So far, the only way client code reached server code was `#server-functions`.
 `$routed` is the other door — and it can do more: a `$routed` callback can
 read `services` directly, so server-only work (a database query, the
 request's cookies) can back a component without a functions file at all.
 
 ```tsx
-import { $routed } from '@memoized-dom/router';
 
 export function Story() {
   const story = $routed(({ params }) => ({ slug: params.id }));
@@ -104,7 +106,6 @@ be `$track`ed — pending while a navigation prepares it, error if the
 callback throws or the server call fails, `refresh()` to re-run it:
 
 ```tsx
-import { $track } from '@memoized-dom/data';
 
 export function Story() {
   const story = $routed(({ params }) => ({ slug: params.id }));

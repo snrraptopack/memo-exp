@@ -42,6 +42,12 @@ function propAccess(
       };
 }
 
+export function isPublishedPropCallback(ctx: Ctx, component: string, origin: ReactiveOrigin): boolean {
+  const access = propAccess(ctx, component, origin);
+  return access !== null && access.path.length === 0 &&
+    ctx.linkedComponentPropSources.get(component)?.get(access.name)?.publishedCallback === true;
+}
+
 /**
  * Applies one prop effect and returns whether the origin is a named prop.
  */

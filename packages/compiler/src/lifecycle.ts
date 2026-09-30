@@ -28,6 +28,7 @@ import {
   resolveLocalHelper,
 } from './handlers';
 import { md } from './identifiers';
+import { isIntrinsicLifecycleCall } from './intrinsics';
 
 interface ProgramContainer {
   node: t.Program;
@@ -238,13 +239,10 @@ export function transformComponentLifecycle(
         const directFactoryCall = functionDepth === 0;
         if (directFactoryCall && derivationDepth > 0) return false;
         const originalCallee = call.callee;
-        const intrinsicEffect =
-          astFactory.isIdentifier(originalCallee, { name: 'effect' }) &&
-          astBindingAt(ctx, node, 'effect') === undefined;
+        const intrinsicEffect = isIntrinsicLifecycleCall(ctx, node, 'effect');
 
         if (
-          astFactory.isIdentifier(originalCallee, { name: 'cleanup' }) &&
-          astBindingAt(ctx, node, 'cleanup') === undefined
+          isIntrinsicLifecycleCall(ctx, node, 'cleanup')
         ) {
           if (!directFactoryCall) {
             throw compPath.buildCodeFrameError(
@@ -327,9 +325,7 @@ export function transformProgramCallbacks(
       }
       if (node.type === 'CallExpression' && functionDepth === 0) {
         const call = node as unknown as t.CallExpression;
-        const intrinsicEffect =
-          astFactory.isIdentifier(call.callee, { name: 'effect' }) &&
-          astBindingAt(ctx, node, 'effect') === undefined;
+        const intrinsicEffect = isIntrinsicLifecycleCall(ctx, node, 'effect');
         if (astFactory.isIdentifier(call.callee)) {
           instrumentSharedIdentifier(
             ctx,
@@ -415,10 +411,8 @@ export function rejectUnownedCleanup(
   walkAst<BaseNode>(programPath.node, {
     enter(node) {
       if (node.type !== 'CallExpression') return;
-      const call = node as unknown as t.CallExpression;
       if (
-        astFactory.isIdentifier(call.callee, { name: 'cleanup' }) &&
-        astBindingAt(ctx, node, 'cleanup') === undefined
+        isIntrinsicLifecycleCall(ctx, node, 'cleanup')
       ) {
         throw programPath.buildCodeFrameError(
           'memo-dom: cleanup(disposer) is only valid directly inside a component factory',

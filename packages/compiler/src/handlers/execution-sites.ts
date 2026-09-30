@@ -73,16 +73,19 @@ export function finalizeHandlerInstrumentation(
 
   // Several executed writes can request the same conservative refresh. With a
   // synchronous scheduler, emitting it per site renders the subtree repeatedly.
-  // Only merge adjacent pure root refreshes. Other commits remain ordering
+  // Merge adjacent identical owner/root refreshes. Other commits remain ordering
   // barriers: notifications or row-local work can have observable effects.
   const guardedCommits: t.Statement[] = [];
   let pendingRootRefresh: t.IfStatement | null = null;
+  let pendingRefreshKey: string | null = null;
   for (const site of guardedRootSites) {
     const writes = site.writes;
-    const pureRootRefresh = writes.rootFallback &&
+    const mergeableRefresh = writes.rootFallback &&
       writes.transparentWrites.size === 0 && writes.eventOrigin === null &&
-      !writes.rowLocal && !writes.rowOwnerLocal && !writes.instanceLocal;
-    if (pureRootRefresh && pendingRootRefresh !== null) {
+      !writes.rowLocal && !writes.rowOwnerLocal;
+    const refreshKey = mergeableRefresh
+      ? JSON.stringify([writes.instanceLocal, [...writes.instanceWrites].sort()]) : null;
+    if (refreshKey !== null && refreshKey === pendingRefreshKey && pendingRootRefresh !== null) {
       pendingRootRefresh.test = astFactory.logicalExpression(
         '||', pendingRootRefresh.test, cloneEstreeNode(site.flag!),
       );
@@ -92,7 +95,8 @@ export function finalizeHandlerInstrumentation(
       cloneEstreeNode(site.flag!), cloneEstreeNode(site.commit),
     );
     guardedCommits.push(guarded);
-    pendingRootRefresh = pureRootRefresh ? guarded : null;
+    pendingRootRefresh = mergeableRefresh ? guarded : null;
+    pendingRefreshKey = refreshKey;
   }
 
   for (const [fn, writes] of scopes) {

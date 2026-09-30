@@ -30,6 +30,7 @@ import {
 } from '../components/prop-projections';
 import { transparentListExpression } from '../lists/source-shapes';
 import { isCallToImported } from '../features/data-sources/discovery';
+import { isPublishedPropCallback } from '../components/prop-effects';
 import {
   walkHandler,
 } from './traversal';
@@ -527,6 +528,16 @@ export function analyzeHandler(
     },
     CallExpression(p) {
       const callee = p.node.callee;
+      if (compName !== null && astFactory.isExpression(callee)) {
+        const origin = aliases.resolveExpression(p.scope, callee);
+        if (origin !== null && isPublishedPropCallback(ctx, compName, origin) &&
+            !p.node.arguments.some(argument => astFactory.isSpreadElement(argument))) {
+          // The callee publishes its lexical effects. Suppress only its
+          // receiver fallback; nested calls in arguments are still visited.
+          mutateScope(p, () => {});
+          return;
+        }
+      }
 
       if (
         astFactory.isMemberExpression(callee) &&

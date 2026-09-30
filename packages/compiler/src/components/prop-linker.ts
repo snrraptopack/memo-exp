@@ -15,6 +15,7 @@ interface MutablePropSource {
   keys: Set<string>;
   rootFallback: boolean;
   transparent: boolean;
+  publishedCallback: boolean;
 }
 
 function sourceFor(
@@ -29,7 +30,7 @@ function sourceFor(
   }
   let source = props.get(prop);
   if (source === undefined) {
-    source = { keys: new Set(), rootFallback: false, transparent: false };
+    source = { keys: new Set(), rootFallback: false, transparent: false, publishedCallback: true };
     props.set(prop, source);
   }
   return source;
@@ -41,6 +42,9 @@ function resolveRef(
   ref: ComponentPropSourceRef,
   target: MutablePropSource,
 ): void {
+  if (ref.type === 'published-callback') return;
+  // Forward only a whole callback prop, never a property/getter of it.
+  if (ref.type !== 'prop' || ref.path.length !== 0) target.publishedCallback = false;
   if (ref.type === 'state') {
     target.keys.add(ref.key);
     return;
@@ -58,9 +62,11 @@ function resolveRef(
   const callerSource = resolved.get(caller)?.get(ref.name);
   if (callerSource === undefined) {
     target.rootFallback = true;
+    target.publishedCallback = false;
     return;
   }
   target.rootFallback ||= callerSource.rootFallback;
+  target.publishedCallback &&= callerSource.publishedCallback;
   target.transparent ||= callerSource.transparent;
   const suffix = ref.path.length === 0 ? '' : `.${ref.path.join('.')}`;
   for (const key of callerSource.keys) target.keys.add(`${key}${suffix}`);
@@ -72,9 +78,13 @@ export function linkComponentPropSources(
   roots: string[],
 ): Map<string, Map<string, LinkedComponentPropSource>> {
   const incoming = new Map<string, number>();
+  const suppliedProps = new Map<string, Set<string>>();
   for (const node of nodes.values()) {
     for (const edge of node.edges) {
       incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
+      const names = suppliedProps.get(edge.target) ?? new Set<string>();
+      for (const name of Object.keys(edge.propSources ?? {})) names.add(name);
+      suppliedProps.set(edge.target, names);
     }
   }
 
@@ -87,7 +97,8 @@ export function linkComponentPropSources(
   while (pending.length > 0) {
     const caller = pending.shift()!;
     for (const edge of nodes.get(caller)?.edges ?? []) {
-      for (const [prop, refs] of Object.entries(edge.propSources ?? {})) {
+      for (const prop of suppliedProps.get(edge.target) ?? []) {
+        const refs = edge.propSources?.[prop] ?? [{ type: 'root' as const }];
         const target = sourceFor(resolved, edge.target, prop);
         for (const ref of refs) resolveRef(resolved, caller, ref, target);
       }
@@ -107,6 +118,7 @@ export function linkComponentPropSources(
             keys: [...source.keys].sort(),
             rootFallback: source.rootFallback,
             transparent: source.transparent,
+            publishedCallback: source.publishedCallback,
           },
         ]),
       ),

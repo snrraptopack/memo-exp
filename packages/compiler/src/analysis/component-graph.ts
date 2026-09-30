@@ -1,9 +1,10 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { walkAst, type BaseNode } from '../ast';
-import { astBindingAt, type Ctx } from '../context';
+import { type Ctx } from '../context';
 import { containsJsx, matchMapCall } from '../lists';
 import { expandRenderSlotPaths } from './slot-paths';
+import { isIntrinsicLifecycleCall } from '../intrinsics';
 
 /** Resolve every static runtime path at which a component may be mounted. */
 export function pathVariants(
@@ -181,10 +182,8 @@ export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
           | t.CallExpression
           | t.OptionalCallExpression;
     if (
-          (astFactory.isIdentifier(call.callee, { name: 'cleanup' }) &&
-            astBindingAt(ctx, node, 'cleanup') === undefined) ||
-          (astFactory.isIdentifier(call.callee, { name: 'effect' }) &&
-            astBindingAt(ctx, node, 'effect') === undefined)
+          isIntrinsicLifecycleCall(ctx, node, 'cleanup') ||
+          isIntrinsicLifecycleCall(ctx, node, 'effect')
     ) {
       eligible = false;
     }

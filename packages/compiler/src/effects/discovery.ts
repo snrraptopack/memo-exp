@@ -28,6 +28,7 @@ import {
   type ProgramPath,
 } from '../context';
 import { summarizeHelper } from '../helper-summaries';
+import { isIntrinsicLifecycleCall } from '../intrinsics';
 
 type DiagnosticPath = CompilerPath<BaseNode>;
 
@@ -35,12 +36,7 @@ export function isIntrinsicEffect(
   ctx: Ctx,
   call: BaseNode,
 ): boolean {
-  const callee = childNode(call, 'callee');
-  return (
-    call.type === 'CallExpression' &&
-    identifierName(callee) === 'effect' &&
-    astBindingAt(ctx, call, 'effect') === undefined
-  );
+  return isIntrinsicLifecycleCall(ctx, call, 'effect');
 }
 
 export function effectId(factoryId: string, index: number): t.Expression {

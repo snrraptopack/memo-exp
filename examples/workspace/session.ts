@@ -5,7 +5,6 @@
  * The active DataRuntime (installed in main.ts) materializes them on first
  * read, per runtime — request-local on the server.
  */
-import { $fetch } from '@memoized-dom/data';
 
 export interface User {
   id: number;

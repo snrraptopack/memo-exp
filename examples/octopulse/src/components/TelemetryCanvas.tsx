@@ -13,7 +13,7 @@ export function TelemetryCanvas() {
   let canvasElement: HTMLCanvasElement | undefined;
 
   // Ambient effect to initialize and manage canvas animation
-  effect(() => {
+  $effect(() => {
     if (!canvasElement) return;
 
     const ctx = canvasElement.getContext('2d');

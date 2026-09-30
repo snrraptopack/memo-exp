@@ -53,6 +53,7 @@
       "name": "@memoized-dom/compiler",
       "version": "0.0.8",
       "dependencies": {
+        "@memoized-dom/data": "workspace:*",
         "@memoized-dom/router": "workspace:*",
         "@tsrx/core": "0.1.63",
         "esrap": "^2.3.6",

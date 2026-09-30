@@ -16,7 +16,7 @@ export function MusicApp() {
 
   // Value-guarded effect: fires ONLY when the active track changes.
   // play(), pause(), and setVolume() do not trigger this.
-  effect(() => {
+  $effect(() => {
     console.log('[MusicApp] Now playing:', currentTrackTitle);
   });
 

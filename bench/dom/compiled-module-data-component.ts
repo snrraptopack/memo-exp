@@ -87,11 +87,6 @@ function Row(props, _id, _onClickBinding) {
 
 	_MD.setDelegatedEvent(_onClickBinding, _li, () => {
 		props.select(props.item.id);
-
-		{
-			_update();
-			_MD.markDirtySubtree("BenchModuleDataComponent");
-		}
 	});
 
 	return {

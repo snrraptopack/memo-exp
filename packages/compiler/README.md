@@ -227,7 +227,7 @@ path wrappers in handler consumers.
 
 ### Effect pipeline
 
-The compiler intrinsic `effect()` crosses analysis and emission, but each rule
+The compiler intrinsic `$effect()` crosses analysis and emission, but each rule
 still has one owner:
 
 | Module | Responsibility |

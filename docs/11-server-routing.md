@@ -66,7 +66,6 @@ app.get('/api/stories', async (context) => {
 
 ```tsx
 // src/App.tsx
-import { $fetch } from '@memoized-dom/data';
 
 interface Story {
   id: number;

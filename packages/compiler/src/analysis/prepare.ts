@@ -7,6 +7,7 @@ import { normalizeConditionalJsxDirectives } from '../jsx/conditional-directives
 import { initializeGeneratedIdentifiers } from '../identifiers';
 import { scanExternalReactiveImports } from '../external-reactivity';
 import { analyzeRouterJsx } from '../router';
+import { installCompilerIntrinsics } from '../intrinsics';
 import {
   scanTransparentSourceImports,
   addReadReplayFactories,
@@ -17,6 +18,7 @@ import {
 } from '../data-sources';
 
 export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void {
+  installCompilerIntrinsics(ctx, programPath);
   normalizeComponentDeclarations(programPath);
   installLinkedDynamicComponentImports(ctx, programPath);
   normalizeConditionalJsxDirectives(programPath);

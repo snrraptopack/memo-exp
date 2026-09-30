@@ -20,6 +20,20 @@ proof keep the conservative update path described in the compiler README.
 - Each resolved reader set is enqueued before scheduling its commit. This
   avoids a separate commit per reader with a synchronous scheduler and lets
   parent reconciliation cancel pending duplicate row renders.
+- Linked component callbacks can omit the caller's duplicate row/root refresh
+  when every caller supplies a stable component-local callback consisting of
+  direct lexical assignments. Missing props, mutable bindings, argument/property
+  mutations, opaque calls and deferred work retain the conservative path.
+- Adjacent execution sites with identical owner/root completion refreshes share
+  one guarded commit. All write flags and setter/proxy fallbacks remain in place.
+
+A focused local Chromium check selected alternating rows in an existing 10k
+component-owned component-row list: 25 samples after five warmups, synchronous
+scheduling, class validation after each operation. The median was **5.3 ms before
+and 0.2 ms after** these changes. This is a local comparison, not a replacement
+for the user's VM matrix or an isolated swap measurement. Regenerated outputs
+passed all 21 DOM scenarios across nine variants, including retained identity
+and mixed selection/reorder/removal sequences.
 
 Measurements and limits are recorded in `bench/dom/README.md`.
 
@@ -65,11 +79,10 @@ the original three-way harness remains available independently.
 In this run, the 10k selection transition was 19.60 ms for module inline state,
 0.20 ms for component-owned inline state, and 7.90 ms for component-owned
 component rows. These are authored paths, not an isolated compiler comparison.
-The generated component-owned row callback includes `markDirtySubtree` after
-calling an already-instrumented owner callback. That extra broad invalidation
-is a candidate cause of the component/inline gap; this is an inference from
-generated code, not a measured isolation of its cost. Proving callback effects
-before removing redundant broad invalidation is now a priority.
+The original generated component-owned row callback included `markDirtySubtree`
+after calling an already-instrumented owner callback. The narrow callback proof
+above removes that extra work for the benchmark's selection callback. Broader
+callbacks still require additional effect proofs.
 
 ## Open performance work and VM review
 
@@ -82,8 +95,8 @@ check retained DOM identity or mixed selection/structure sequences.
 
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Broad invalidation after a component-row callback | `props.select()` is followed by row `_update()` and root `markDirtySubtree`; prove all callback targets publish their own effects before dropping extra work. Preserve unknown callbacks, argument mutation, async boundaries and exceptions. |
-| 1 | Slower swaps with component-owned data | Both VM runs show this in component and inline rows. Generated swap handlers have multiple execution-site commits and subtree fallbacks. Isolate their cost; verify order and retained nodes before changing commit grouping. |
+| 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
+| 1 | Slower swaps with component-owned data | Duplicate identical owner/root completion commits are merged and order/identity gates pass. Setter/proxy fallbacks remain; re-measure the full matrix on the VM before judging the remaining gap. |
 | 2 | Module selection and mixed-placement selection fanout | Module inline selection remains broad; module data also prevents the existing owner-local keyed selection plan. Preserve key/getter/hidden-read semantics when extending proofs. |
 | 2 | Structural reconciliation and safe list mutations | Partial content writes can already collect row keys for owner-local data; this does not complete append/truncate/reorder specialization or arbitrary alias handling. |
 | 2 | Inline row teardown | VM clearing remains slower for inline rows, especially both-module state. Measure registration, unregister, event disposal and retained heap separately. |

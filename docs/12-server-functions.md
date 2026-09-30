@@ -193,7 +193,6 @@ field (`id`, `pending`, `refreshing`, `error`, `refresh`, `abort`,
 in the handler and track the **returned value**:
 
 ```tsx
-import { $track } from '@memoized-dom/data';
 import { getStories, postVote } from '#server-functions';
 
 export function App() {

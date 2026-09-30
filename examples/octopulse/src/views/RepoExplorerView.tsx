@@ -37,7 +37,7 @@ export function RepoExplorerView() {
   });
 
   // Resource cleanup on unmount
-  cleanup(githubApi.clear);
+  $cleanup(githubApi.clear);
 
   // Global hotkey: press '/' anywhere to focus the search bar
   const onKeyDown = (event: KeyboardEvent) => {
@@ -47,7 +47,7 @@ export function RepoExplorerView() {
     }
   };
   window.addEventListener('keydown', onKeyDown);
-  cleanup(() => window.removeEventListener('keydown', onKeyDown));
+  $cleanup(() => window.removeEventListener('keydown', onKeyDown));
 
   function handleSearchSubmit(e: Event) {
     e.preventDefault();

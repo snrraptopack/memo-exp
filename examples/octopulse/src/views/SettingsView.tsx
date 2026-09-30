@@ -4,7 +4,7 @@
  * Demonstrates:
  * 1. Programmatic router navigation guards with `blockNavigation` from `@memoized-dom/router`
  * 2. Unsaved changes detection via pure derivations
- * 3. Component-level cleanup ownership (`cleanup(unblock)`)
+ * 3. Component-level cleanup ownership (`$cleanup(unblock)`)
  * 4. Local reactive form bindings with strict typing
  */
 
@@ -38,7 +38,7 @@ export function SettingsView() {
   });
 
   // Ensure router guard is cleanly unregistered on unmount
-  cleanup(unblock);
+  $cleanup(unblock);
 
   function handleSave(e: Event) {
     e.preventDefault();

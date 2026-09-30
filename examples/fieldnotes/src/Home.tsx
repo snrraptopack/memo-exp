@@ -1,4 +1,4 @@
-import { $fetch, $track, Group } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 import type { ErrorPolicyComponentProps } from '@memoized-dom/data';
 
 interface Health {
@@ -24,9 +24,9 @@ export function Home() {
 
   let now = Date.now();
   const timer = setInterval(() => { now = Date.now(); }, 1000);
-  cleanup(() => clearInterval(timer));
+  $cleanup(() => clearInterval(timer));
 
-  effect(() => {
+  $effect(() => {
     document.title = `Fieldnotes — ${new Date(now).toLocaleTimeString()}`;
   });
 

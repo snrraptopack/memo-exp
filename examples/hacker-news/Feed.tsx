@@ -8,7 +8,7 @@ const FEED_PAGE_SIZE = 25;
 function FeedPage({ kind, page }: { kind: FeedKind; page: number }) {
   const data = createHackerNewsData();
   const stories = loadFeedPage(data, kind, page);
-  cleanup(data.clear);
+  $cleanup(data.clear);
 
   return (
     <section class="feed-page" data-page={page + 1}>
@@ -52,7 +52,7 @@ export function Feed({ kind, heading }: { kind: FeedKind; heading: string }) {
     }, 900);
   }
 
-  effect(() => {
+  $effect(() => {
     const onScroll = () => {
       const remaining = document.documentElement.scrollHeight -
         (window.scrollY + window.innerHeight);

@@ -20,7 +20,7 @@ export function StoryPage() {
   const storyId = route.params['storyId'] ?? '';
   const data = createHackerNewsData();
   const story = loadStory(data, storyId);
-  cleanup(data.clear);
+  $cleanup(data.clear);
 
   return (
     <main class="story-page">

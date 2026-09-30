@@ -49,7 +49,7 @@ export function setDraggedTask(id: string | null) {
   draggedTaskId = id;
 }
 
-// R33: Named helper function passed to effect() with disposer cleanup
+// R33: Named helper function passed to $effect() with disposer cleanup
 function syncSocketEffect() {
   lastSyncTime = `Connected (${new Date().toLocaleTimeString()})`;
   const timer = setInterval(() => {
@@ -64,7 +64,7 @@ function syncSocketEffect() {
 
 // R33: Conditional effect activation inside an if statement
 if (isSyncingEnabled) {
-  effect(syncSocketEffect);
+  $effect(syncSocketEffect);
 }
 
 export function toggleSync() {

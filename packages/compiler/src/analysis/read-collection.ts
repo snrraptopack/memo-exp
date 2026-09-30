@@ -21,6 +21,7 @@ import { summarizeHelper } from '../helper-summaries';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
 import { findTargetedListDependencies } from '../lists/targeted-refresh';
 import { generatedIdentifier } from '../identifiers';
+import { isIntrinsicLifecycleCall } from '../intrinsics';
 
 /** Is this complete member expression being invoked (`store.items.method()`)? */
 function isMemberCallCallee(ctx: Ctx, member: BaseNode): boolean {
@@ -592,8 +593,7 @@ export function collectReads(ctx: Ctx): void {
         | t.CallExpression
         | t.OptionalCallExpression;
       if (
-        astFactory.isIdentifier(call.callee, { name: 'effect' }) &&
-        astBindingAt(ctx, callNode, 'effect') === undefined
+        isIntrinsicLifecycleCall(ctx, callNode, 'effect')
       ) {
         return false;
       }

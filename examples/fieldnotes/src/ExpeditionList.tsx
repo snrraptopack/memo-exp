@@ -1,5 +1,5 @@
 import { getExpeditions } from '#server-functions';
-import { Group, $track } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 import type { ErrorPolicyComponentProps } from '@memoized-dom/data';
 
 function Loading() {

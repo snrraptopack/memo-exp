@@ -1,4 +1,4 @@
-import { $track, createDataRuntime } from '@memoized-dom/data';
+import { createDataRuntime } from '@memoized-dom/data';
 import {
   currentUser,
   mockFetch,
@@ -46,7 +46,7 @@ export function ChatApp() {
   }
 
   let messagesResource = loadMessages();
-  cleanup(dataRuntime.clear);
+  $cleanup(dataRuntime.clear);
 
   function reloadMessages() {
     const previous = messagesResource;
@@ -249,7 +249,7 @@ export function ChatApp() {
   }
 
   // Simulated Live Teammates background stream
-  effect(() => {
+  $effect(() => {
     if (!serverConfig.simulateLiveTeammates) return;
 
     const interval = setInterval(() => {

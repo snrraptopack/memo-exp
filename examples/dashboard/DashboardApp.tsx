@@ -17,7 +17,7 @@ export function DashboardApp() {
   const systemStatus = avgLatency > 50 ? 'DEGRADED' : 'HEALTHY';
 
   // Effect with Teardown / Cleanup
-  effect(() => {
+  $effect(() => {
     if (!isLive) return;
 
     const timer = setInterval(() => {

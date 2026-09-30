@@ -17,7 +17,7 @@ export function IncidentBoardApp() {
     .filter((check) => check.status === 'warning').length;
   const boardSummary = `${failedChecks} failed · ${warningChecks} warning`;
 
-  effect(() => {
+  $effect(() => {
     console.log('[Incident Board]', boardSummary);
   });
 

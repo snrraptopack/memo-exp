@@ -9,7 +9,6 @@
  */
 
 import { createTaskApi, type LiveTasksResponse, type LiveTask } from '../services/api';
-import { $track } from '@memoized-dom/data';
 
 export type TaskFilter = 'all' | 'open' | 'completed';
 
@@ -25,7 +24,7 @@ export function LiveTaskBoardView() {
   });
   let isCreating = false;
 
-  cleanup(taskApi.clear);
+  $cleanup(taskApi.clear);
 
   // Derived tasks array
   const rawList = tasksResource.data?.todos ?? [];
@@ -43,7 +42,7 @@ export function LiveTaskBoardView() {
     return true;
   });
 
-  effect(() => {
+  $effect(() => {
     console.log(filteredTasks);
   });
 

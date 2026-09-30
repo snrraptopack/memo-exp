@@ -1,4 +1,4 @@
-import { $fetch, Group } from '@memoized-dom/data';
+import { Group } from '@memoized-dom/data';
 import { Dashboard } from '../components/Dashboard';
 import { LocalFailure, LocalPending } from '../components/Feedback';
 import { PageIntro } from '../components/PageIntro';
