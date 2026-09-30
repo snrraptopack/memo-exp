@@ -56,6 +56,21 @@ speed claims.
 
 ## Remaining candidates from the review and Marko output
 
+The separate DOM state-placement suite crosses module/component ownership of
+data and selection with inline/component rows, retaining vanilla. All nine
+implementations passed 21 operation scenarios and validation after every timed
+sample. `bench/dom/state-placement-results.md` groups one report by ownership;
+the original three-way harness remains available independently.
+
+In this run, the 10k selection transition was 19.60 ms for module inline state,
+0.20 ms for component-owned inline state, and 7.90 ms for component-owned
+component rows. These are authored paths, not an isolated compiler comparison.
+The generated component-owned row callback includes `markDirtySubtree` after
+calling an already-instrumented owner callback. That extra broad invalidation
+is a candidate cause of the component/inline gap; this is an inference from
+generated code, not a measured isolation of its cost. Proving callback effects
+before removing redundant broad invalidation is now a priority.
+
 - Prove when module-state selection can refresh only the previous and next keyed
   rows. Preserve getter and key-expression semantics before narrowing fanout.
 - Specialize proven list mutations, retaining conservative reconciliation for

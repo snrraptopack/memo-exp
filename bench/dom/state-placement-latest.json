@@ -1,0 +1,302 @@
+{
+  "measuredAt": "2026-09-30T16:29:02.177Z",
+  "samples": 7,
+  "scheduler": "synchronous",
+  "validation": "every operation outside timed interval",
+  "rows": [
+    {
+      "name": "create 1k",
+      "timings": {
+        "module-component": 11.599999999627471,
+        "module-inline": 19.100000000093132,
+        "owner-component": 11,
+        "owner-inline": 16.5,
+        "module-data-component": 10.700000000186265,
+        "module-data-inline": 16.199999999720603,
+        "module-selection-component": 11,
+        "module-selection-inline": 20.5,
+        "vanilla": 6.5
+      }
+    },
+    {
+      "name": "create 10k",
+      "timings": {
+        "module-component": 116.59999999962747,
+        "module-inline": 226.10000000009313,
+        "owner-component": 92.79999999981374,
+        "owner-inline": 185.60000000009313,
+        "module-data-component": 96.89999999990687,
+        "module-data-inline": 186.3000000002794,
+        "module-selection-component": 96.79999999981374,
+        "module-selection-inline": 277.3000000002794,
+        "vanilla": 70.39999999990687
+      }
+    },
+    {
+      "name": "replace 1k",
+      "timings": {
+        "module-component": 16.5,
+        "module-inline": 27.399999999906868,
+        "owner-component": 15,
+        "owner-inline": 27.699999999720603,
+        "module-data-component": 13.399999999906868,
+        "module-data-inline": 24.799999999813735,
+        "module-selection-component": 17.199999999720603,
+        "module-selection-inline": 28.09999999962747,
+        "vanilla": 7.399999999906868
+      }
+    },
+    {
+      "name": "update 1k",
+      "timings": {
+        "module-component": 2.7999999998137355,
+        "module-inline": 3,
+        "owner-component": 0.7000000001862645,
+        "owner-inline": 0.5,
+        "module-data-component": 1.7999999998137355,
+        "module-data-inline": 3.6000000000931323,
+        "module-selection-component": 0.7000000001862645,
+        "module-selection-inline": 0.5,
+        "vanilla": 0.2999999998137355
+      }
+    },
+    {
+      "name": "select 1k",
+      "timings": {
+        "module-component": 2.1000000000931323,
+        "module-inline": 2.2999999998137355,
+        "owner-component": 1.5,
+        "owner-inline": 0.2999999998137355,
+        "module-data-component": 3.2999999998137355,
+        "module-data-inline": 1.2999999998137355,
+        "module-selection-component": 1.2000000001862645,
+        "module-selection-inline": 1.599999999627471,
+        "vanilla": 0.19999999972060323
+      }
+    },
+    {
+      "name": "transition 1k",
+      "timings": {
+        "module-component": 0.7000000001862645,
+        "module-inline": 1.6000000000931323,
+        "owner-component": 1.1000000000931323,
+        "owner-inline": 0.19999999972060323,
+        "module-data-component": 1.6000000000931323,
+        "module-data-inline": 1,
+        "module-selection-component": 0.8999999999068677,
+        "module-selection-inline": 2.2999999998137355,
+        "vanilla": 0.19999999972060323
+      }
+    },
+    {
+      "name": "swap 1k",
+      "timings": {
+        "module-component": 2.2999999998137355,
+        "module-inline": 3,
+        "owner-component": 4.899999999906868,
+        "owner-inline": 8.100000000093132,
+        "module-data-component": 2.1000000000931323,
+        "module-data-inline": 4.400000000372529,
+        "module-selection-component": 6.600000000093132,
+        "module-selection-inline": 7.7000000001862645,
+        "vanilla": 0
+      }
+    },
+    {
+      "name": "remove 1k",
+      "timings": {
+        "module-component": 1.3999999999068677,
+        "module-inline": 2.1000000000931323,
+        "owner-component": 3,
+        "owner-inline": 1.5,
+        "module-data-component": 2.5,
+        "module-data-inline": 1.6000000000931323,
+        "module-selection-component": 1.5,
+        "module-selection-inline": 1.3999999999068677,
+        "vanilla": 0.10000000009313226
+      }
+    },
+    {
+      "name": "clear 1k",
+      "timings": {
+        "module-component": 3.2000000001862645,
+        "module-inline": 7.2999999998137355,
+        "owner-component": 3.3999999999068677,
+        "owner-inline": 4,
+        "module-data-component": 3.6999999997206032,
+        "module-data-inline": 3.7000000001862645,
+        "module-selection-component": 3.2000000001862645,
+        "module-selection-inline": 4.5,
+        "vanilla": 0.39999999990686774
+      }
+    },
+    {
+      "name": "replace 10k",
+      "timings": {
+        "module-component": 102.5,
+        "module-inline": 226.20000000018626,
+        "owner-component": 125.70000000018626,
+        "owner-inline": 205.39999999990687,
+        "module-data-component": 100.39999999990687,
+        "module-data-inline": 223.10000000009313,
+        "module-selection-component": 99.10000000009313,
+        "module-selection-inline": 329.39999999990687,
+        "vanilla": 63.299999999813735
+      }
+    },
+    {
+      "name": "update 10k",
+      "timings": {
+        "module-component": 10.700000000186265,
+        "module-inline": 21.700000000186265,
+        "owner-component": 4.2000000001862645,
+        "owner-inline": 4.100000000093132,
+        "module-data-component": 11.799999999813735,
+        "module-data-inline": 24,
+        "module-selection-component": 2.7999999998137355,
+        "module-selection-inline": 3.1999999997206032,
+        "vanilla": 2.099999999627471
+      }
+    },
+    {
+      "name": "select 10k",
+      "timings": {
+        "module-component": 11.099999999627471,
+        "module-inline": 22.100000000093132,
+        "owner-component": 10.600000000093132,
+        "owner-inline": 0.8000000002793968,
+        "module-data-component": 18.5,
+        "module-data-inline": 9.700000000186265,
+        "module-selection-component": 8.100000000093132,
+        "module-selection-inline": 20.09999999962747,
+        "vanilla": 0.6999999997206032
+      }
+    },
+    {
+      "name": "transition 10k",
+      "timings": {
+        "module-component": 7.5,
+        "module-inline": 19.600000000093132,
+        "owner-component": 7.900000000372529,
+        "owner-inline": 0.20000000018626451,
+        "module-data-component": 15.799999999813735,
+        "module-data-inline": 8.399999999906868,
+        "module-selection-component": 9.299999999813735,
+        "module-selection-inline": 17.899999999906868,
+        "vanilla": 0.10000000009313226
+      }
+    },
+    {
+      "name": "swap 10k",
+      "timings": {
+        "module-component": 22.199999999720603,
+        "module-inline": 34.8000000002794,
+        "owner-component": 48.10000000009313,
+        "owner-inline": 92.1999999997206,
+        "module-data-component": 21.100000000093132,
+        "module-data-inline": 50.10000000009313,
+        "module-selection-component": 43.5,
+        "module-selection-inline": 70.90000000037253,
+        "vanilla": 0.10000000009313226
+      }
+    },
+    {
+      "name": "remove 10k",
+      "timings": {
+        "module-component": 11.199999999720603,
+        "module-inline": 12.100000000093132,
+        "owner-component": 12.799999999813735,
+        "owner-inline": 11.199999999720603,
+        "module-data-component": 11.299999999813735,
+        "module-data-inline": 12,
+        "module-selection-component": 9,
+        "module-selection-inline": 9.299999999813735,
+        "vanilla": 0
+      }
+    },
+    {
+      "name": "clear 10k",
+      "timings": {
+        "module-component": 15.5,
+        "module-inline": 66,
+        "owner-component": 24.600000000093132,
+        "owner-inline": 32.3000000002794,
+        "module-data-component": 15.799999999813735,
+        "module-data-inline": 27.299999999813735,
+        "module-selection-component": 19.299999999813735,
+        "module-selection-inline": 33.39999999990687,
+        "vanilla": 3.400000000372529
+      }
+    },
+    {
+      "name": "append1k 10k",
+      "timings": {
+        "module-component": 20,
+        "module-inline": 30.899999999906868,
+        "owner-component": 27.399999999906868,
+        "owner-inline": 32.700000000186265,
+        "module-data-component": 25.800000000279397,
+        "module-data-inline": 30.800000000279397,
+        "module-selection-component": 17,
+        "module-selection-inline": 25.299999999813735,
+        "vanilla": 7.100000000093132
+      }
+    },
+    {
+      "name": "prepend1k 10k",
+      "timings": {
+        "module-component": 25.200000000186265,
+        "module-inline": 35.299999999813735,
+        "owner-component": 39.10000000009313,
+        "owner-inline": 37.1999999997206,
+        "module-data-component": 32.39999999990687,
+        "module-data-inline": 37.39999999990687,
+        "module-selection-component": 27.700000000186265,
+        "module-selection-inline": 37.89999999990687,
+        "vanilla": 5.600000000093132
+      }
+    },
+    {
+      "name": "pop1k 10k",
+      "timings": {
+        "module-component": 17.399999999906868,
+        "module-inline": 18,
+        "owner-component": 14.5,
+        "owner-inline": 20,
+        "module-data-component": 16.100000000093132,
+        "module-data-inline": 22,
+        "module-selection-component": 11.300000000279397,
+        "module-selection-inline": 16.5,
+        "vanilla": 1.7999999998137355
+      }
+    },
+    {
+      "name": "reverse 10k",
+      "timings": {
+        "module-component": 43.299999999813735,
+        "module-inline": 45,
+        "owner-component": 46.8000000002794,
+        "owner-inline": 47.799999999813735,
+        "module-data-component": 44.299999999813735,
+        "module-data-inline": 45.10000000009313,
+        "module-selection-component": 41.90000000037253,
+        "module-selection-inline": 44.89999999990687,
+        "vanilla": 27.699999999720603
+      }
+    },
+    {
+      "name": "remove100 10k",
+      "timings": {
+        "module-component": 12,
+        "module-inline": 11.600000000093132,
+        "owner-component": 11.799999999813735,
+        "owner-inline": 11.799999999813735,
+        "module-data-component": 11.5,
+        "module-data-inline": 12.300000000279397,
+        "module-selection-component": 10.300000000279397,
+        "module-selection-inline": 10.800000000279397,
+        "vanilla": 0.5
+      }
+    }
+  ]
+}

@@ -1,14 +1,51 @@
 # DOM List Benchmark
 
-Run `bun run bench` from the repository root. The build links the component-row
-and inline-row TSX sources, bundles them with the vanilla implementation, and
-runs each operation in headless Chromium. Each number is the median of seven
-samples from one browser process.
+Run `bun run bench` from the repository root. The build compiles every TSX
+variant through the compiler/linker, bundles them with vanilla, and runs the
+operations in headless Chromium. Each number is the median of seven samples.
+One combined report is saved to [state-placement-results.md](state-placement-results.md),
+with raw numbers in `state-placement-latest.json`. Headings distinguish Module
+state, Component state, and the two mixed placements.
 
-The benchmark checks the DOM on fresh 1k and 10k lists before timing:
-selecting row 500 must add `danger`, and selecting row 501 must remove it from
-row 500 and add it to row 501. This catches invalid timings where a compiled
-implementation does no visible selection work.
+The additional fixtures, build, browser harness, runner and report writer live
+in separate `App*Owned`/`AppModule*` and `state-placement-*` files. The original
+three-way benchmark files remain intact; run `bun run bench:dom:module` to run
+that harness alone. `bun run bench` runs all placements together in one report.
+
+## State placement matrix
+
+| Result prefix | List data | Selection state |
+|---|---|---|
+| `module` | Module | Module |
+| `owner` | List-owning component | List-owning component |
+| `module-data` | Module | List-owning component |
+| `module-selection` | List-owning component | Module |
+
+Each placement has component-row and inline-row variants: eight compiled
+implementations plus vanilla. Owner selection reaches component rows through
+a boolean prop and an owner callback; module selection is read/written directly
+by the row. These are actual authored state paths, including their prop and
+callback costs. Row components do not each own an independent selection state:
+that would change the single-selected-row workload.
+
+The suite covers creation, replacement, every-tenth-row updates, first selection,
+selection transitions, swapping, removal and clearing at 1k and 10k rows, plus
+append/prepend/truncation/reversal/scattered removal at 10k.
+
+Every operation has an untimed correctness pass, and every timed sample is
+validated afterward. Checks cover text, classes, keyed order, row counts and
+preserved rows. Generated rows must have unique ids and nonempty labels; new
+creation/replacement must use new ids. Selection moves from row 500 to 501,
+checking both classes. Validation and setup are outside the timed interval.
+Adapters rotate measurement order, and each measured fixture is cleared after
+validation so other variants do not retain large lists during its measurement.
+
+The scheduler is synchronous; timings cover JavaScript and DOM writes, not a
+completed browser paint. Vanilla uses direct node references and hand-written
+operations. Near-zero timings cannot support precise ratios. The older tables
+below used the earlier three-implementation harness and remain historical;
+compare placements within the new matrix rather than treating the new run as
+an isolated compiler performance change.
 
 ## Validated selection runs (2026-09-30)
 
