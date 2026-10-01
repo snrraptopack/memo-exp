@@ -86,6 +86,11 @@ target list and should not be presented as the full comparison.
 
 ## Results and limits
 
+The user's latest full VM report at `581b40f` is preserved in
+[vm-review-581b40f.md](vm-review-581b40f.md). All ten targets passed; it also
+contains both DOM timing-stability runs. The CPU host changed, so historical
+timings do not isolate compiler/runtime changes.
+
 The user's first eight-sample VM run at `1fd4911` is preserved in
 [vm-review-1fd4911.md](vm-review-1fd4911.md), including the DOM placement
 suite. All ten targets passed. Browser downloads failed on that VM; an isolated

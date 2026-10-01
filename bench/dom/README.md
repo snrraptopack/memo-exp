@@ -1,9 +1,11 @@
 # DOM List Benchmark
 
-The user's VM report for `1fd4911` covers this matrix and the pinned Octane
-comparison: [VM report](../octane/vm-review-1fd4911.md). It passed all gates;
-10k partial updates measured 1.4–2.4 ms across placements versus vanilla's
-0.5 ms. Historical comparisons are separate runs, not isolated compiler changes.
+The user's latest VM report for `581b40f` covers two full executions of this
+matrix and all ten pinned Octane targets: [VM report](../octane/vm-review-581b40f.md).
+All reported gates passed. Across both DOM executions, 10k partial updates
+measured 1.3–2.4 ms versus vanilla's 0.3–0.5 ms. The host changed from AMD to
+Intel, so comparisons with the [earlier report](../octane/vm-review-1fd4911.md)
+do not isolate compiler/runtime changes. Both current matrices are retained.
 
 Run `bun run bench` from the repository root. The build compiles every TSX
 variant through the compiler/linker, bundles them with vanilla, and runs the

@@ -295,12 +295,12 @@ the optimization priorities.
 
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Conservative partial update cost across state placements | The latest VM report takes 1.4–2.4 ms at 10k rows versus vanilla's 0.5 ms. Row update closures dominate a local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
+| 1 | Conservative partial update cost across state placements | The latest `581b40f` VM report takes 1.3–2.4 ms at 10k rows across two executions, versus vanilla's 0.3–0.5 ms. Row update closures dominate an earlier local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
 | 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Structural retained-row work | Latest VM 10k swaps take 1.8–2.4 ms across placements. LIS and placement exclude unchanged ends; verified cyclic shifts now use linear LIS selection. Evaluated keys survive failed probes, and removed suffix keys come from cached records. General map transfers and required retained-row replay still need investigation. Setter/proxy fallbacks remain. |
+| 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Removal-only reconciliation already avoids Map transfer/LIS but still validates keys and synchronizes retained rows. Profile that work alongside general Map transfers; preserve getter/index/setter/proxy semantics. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
-| 2 | Creation/replacement/teardown | The corrected VM confirms that eligible inline rows now approach component-row creation/clearing. Both still trail vanilla. Inspect event disposal, closure creation and retained heap before broader specialization. |
+| 2 | Creation/replacement/teardown | The latest VM has unstable creation medians: vanilla 10k creation is 48.3 ms then 16.8 ms. Across both runs, compiled 10k replacement is 18.7–32.4 ms versus vanilla's 13.2–13.9 ms, and clear is 2.8–3.9 ms versus 0.8 ms. Inspect event disposal, closure creation and retained heap before broader specialization. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
 | Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
@@ -601,6 +601,38 @@ passed their 21 scenarios plus identity and mixed-sequence gates. The pinned
 Octane harness was not rerun for this compiler-only pass; the prior pass's
 canonical/reorder smoke checks remain recorded above. General opaque partial
 updates and broader callback shapes remain open.
+
+## VM checkpoint: `581b40f`
+
+The user's full [report](../bench/octane/vm-review-581b40f.md) records a passing
+fresh build, two complete DOM matrices with seven samples per cell, and the
+canonical/reorder Octane suites across ten targets with eight samples per cell.
+Text, classes, counts, keyed order, retained identity and mixed sequences passed.
+These are imported VM results; the report's supporting JSON/archive files were
+not supplied with this document.
+
+The runs were sequential after a competing process exited. Both suites used
+the same Chromium 153 executable. The VM host changed from AMD EPYC to Intel
+Xeon, so the historical results cannot establish gains or regressions from the
+intervening commits. Vanilla 10k creation also varied from 48.3 to 16.8 ms
+between the two current DOM runs. Both full matrices are preserved, without
+selecting the faster result or pooling their medians.
+
+Selection remains around 0.1–0.2 ms at 10k in the DOM matrix. Canonical Octane
+records memoized-dom at 7.1 ms for 1k creation, 11.2 ms replacement, 0.6 ms update
+and 0.2 ms selection. Those are competitive within that suite; they do not
+cancel the DOM partial-update, structural and teardown gaps listed above.
+Canonical removal is 1.2 ms with 64.22% RME and a 4.5 ms p95, so its median
+alone is insufficient to attribute a bottleneck. Repeated front removal in
+the reorder suite is 0.315 ms, versus 0.105 ms for octane-tsrx. The next profile
+should separate required row/key evaluation from bookkeeping on partial updates
+and front/scattered removals before adding another specialization.
+
+The existing matrix uses direct selection callbacks and does not exercise the
+forwarding shape added at `581b40f`; that shape's improvement remains supported
+by the focused paired fixture and regressions above. No compiler/runtime source
+or dependency version was changed while recording this checkpoint. Bundle work
+remains deferred, and the existing optimization priorities remain in place.
 
 ## Earlier candidates retained for tracking
 
