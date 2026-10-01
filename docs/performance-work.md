@@ -23,6 +23,10 @@ proof keep the conservative update path described in the compiler README.
   and invalidate the primitive cache after conversion, including reentrant
   updates. Other expression shapes retain the existing text path.
 - String class values skip array allocation during normalization.
+- Conditional class expressions whose every result branch is a string literal
+  normalize those literals during compilation. Conditions still evaluate in
+  their authored order on every replay, with the existing guarded DOM setter.
+  Unknown branches, logical expressions, arrays and objects keep normalization.
 - Each resolved reader set is enqueued before scheduling its commit. This
   avoids a separate commit per reader with a synchronous scheduler and lets
   parent reconciliation cancel pending duplicate row renders.
@@ -277,11 +281,22 @@ vanilla's 0.3 ms. The older component-owned partial-update advantage does not
 measure the restored fallback. These historical runs are not controlled
 comparisons. Bundle-size work is deferred at the user's request.
 
+The user's later `1fd4911` VM report is preserved in
+`bench/octane/vm-review-1fd4911.md`. All DOM placements and ten Octane targets
+passed, including the retained-node gates. DOM partial updates at 10k rows
+measured 1.4–2.4 ms versus vanilla's 0.5 ms; selection stayed around 0.1 ms.
+Creation was mixed (13.3–16.7 ms), so this does not establish a creation win or
+isolate the earlier text-cache change. Swaps still took 1.8–2.4 ms and clearing
+2.3–2.7 ms. The common Octane browser was Chromium 153 through an isolated
+cache fallback after browser downloads failed; the expected Playwright browser
+was Chromium 149. These remain run-specific measurements and do not change
+the optimization priorities.
+
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Conservative partial update cost across state placements | The corrected VM run takes 2.1–3.4 ms at 10k rows versus vanilla's 0.3 ms. Row update closures dominate a local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
+| 1 | Conservative partial update cost across state placements | The latest VM report takes 1.4–2.4 ms at 10k rows versus vanilla's 0.5 ms. Row update closures dominate a local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
 | 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Structural retained-row work | Corrected 10k swaps take 3.1–3.9 ms across placements. LIS and placement exclude unchanged ends; key validation, map transfers and required retained-row replay still need investigation. Setter/proxy fallbacks remain. |
+| 1 | Structural retained-row work | Latest VM 10k swaps take 1.8–2.4 ms across placements. LIS and placement exclude unchanged ends; key validation, map transfers and required retained-row replay still need investigation. Setter/proxy fallbacks remain. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
 | 2 | Creation/replacement/teardown | The corrected VM confirms that eligible inline rows now approach component-row creation/clearing. Both still trail vanilla. Inspect event disposal, closure creation and retained heap before broader specialization. |
@@ -321,6 +336,45 @@ Creation medians varied substantially without a consistent direction. The
 optimization adds three cached values per eligible text join; it still visits
 all rows on an unproven content update. Verify the next commit on the VM before
 drawing wider conclusions about creation, memory or structural operations.
+
+## Literal class branches: local comparison
+
+The compiler now trims class literals inside conditional result branches during
+compilation. It leaves the condition expressions intact and keeps the guarded
+HTML/SVG setter. If any result branch is unknown, the whole expression retains
+runtime normalization, including mutable array/object values. This removes one
+normalization per retained row on an unchanged class replay without adding cache
+fields. It does not narrow list routing or skip any row's required reads.
+
+Two paired Chromium runs compared compiler-generated output from `1fd4911`
+with this class-only change, using the same runtime and production bundling.
+Each variant mounted independent before/after apps in one page. Five warmups
+preceded 25 fresh 10k-list samples per version, alternating measurement order.
+Each sample selected row 500, timed the first every-tenth-row update, then
+checked every row's text, class, count and retained DOM identity outside timing.
+Builds and tests were not running alongside these two measurements.
+
+| Data / selection | Rows | Run 1 before → after (ms) | Run 2 before → after (ms) |
+|---|---|---|---|
+| Module / module | Component | 4.9 → 4.9 | 5.9 → 5.8 |
+| Module / module | Inline | 4.0 → 4.2 | 5.1 → 4.8 |
+| Component / component | Component | 4.7 → 4.4 | 6.4 → 6.0 |
+| Component / component | Inline | 4.7 → 4.5 | 5.3 → 5.0 |
+| Module / component | Component | 4.9 → 4.7 | 6.6 → 6.6 |
+| Module / component | Inline | 4.3 → 4.2 | 5.5 → 5.4 |
+| Component / module | Component | 5.3 → 5.2 | 6.3 → 6.5 |
+| Component / module | Inline | 4.6 → 4.1 | 5.2 → 5.2 |
+
+This is a small reduction in replay work, not a substantial or consistent
+timing win across every placement. Creation was mixed. These local measurements
+do not replace the VM matrix. A separate experiment reordered primitive text
+cache checks; its timings were mixed, so that change was discarded.
+
+The compiler build and 64 focused tests passed, including HTML/SVG condition
+reads, unknown mutable class branches, setter/proxy fallback and hydration.
+Regenerated output passed all 21 scenarios across nine DOM variants, with
+retained identity and mixed selection/structure sequences. Tests compile their
+own source fixtures and do not read examples.
 
 ## Earlier candidates retained for tracking
 

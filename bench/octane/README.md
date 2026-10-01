@@ -86,6 +86,12 @@ target list and should not be presented as the full comparison.
 
 ## Results and limits
 
+The user's first eight-sample VM run at `1fd4911` is preserved in
+[vm-review-1fd4911.md](vm-review-1fd4911.md), including the DOM placement
+suite. All ten targets passed. Browser downloads failed on that VM; an isolated
+cache supplied the same Chromium 153 binary to every target. Keep that browser
+difference in mind when comparing runs.
+
 Each run writes `results/<UTC timestamp>/` with:
 
 - `canonical.json` and `reorder.json`: untouched upstream results, including

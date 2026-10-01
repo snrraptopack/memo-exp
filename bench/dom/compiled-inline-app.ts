@@ -205,7 +205,7 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 					}
 				}
 
-				if (_slot5 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+				if (_slot5 !== (_value2 = selected === item.id ? "danger" : "")) {
 					_slot5 = _value2;
 					_MD.setClassValue(_li, _value2);
 				}
@@ -255,7 +255,7 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 
 			_MD.setTextData(_text10, _slot);
 
-			if (_slot5 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+			if (_slot5 !== (_value2 = selected === item.id ? "danger" : "")) {
 				_slot5 = _value2;
 				_MD.setClassValue(_li, _value2);
 			}

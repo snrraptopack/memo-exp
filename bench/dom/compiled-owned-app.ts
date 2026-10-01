@@ -67,7 +67,7 @@ function Row(props, _id, _owner, _onClickBinding) {
 			}
 		}
 
-		if (_slot5 !== (_value = _MD.classValue(props.selected ? 'danger' : ''))) {
+		if (_slot5 !== (_value = props.selected ? "danger" : "")) {
 			_slot5 = _value;
 			_MD.setClassValue(_li, _value);
 		}
@@ -116,7 +116,7 @@ function Row(props, _id, _owner, _onClickBinding) {
 
 	_MD.setTextData(_text, _slot);
 
-	if (_slot5 !== (_value = _MD.classValue(props.selected ? 'danger' : ''))) {
+	if (_slot5 !== (_value = props.selected ? "danger" : "")) {
 		_slot5 = _value;
 		_MD.setClassValue(_li, _value);
 	}

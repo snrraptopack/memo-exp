@@ -46,6 +46,7 @@ import {
   transparentExpressionSources,
 } from '../data-sources';
 import { emitText } from './text-node';
+import { literalClassValue } from './class-value';
 import type { NodeEmitter } from './node-emitter';
 
 export interface HostElementDependencies {
@@ -451,7 +452,7 @@ if (hasSpread) {
       return slotGuard(
         scope,
         key,
-        astFactory.callExpression(md(ctx, 'classValue'), [cloneEstreeNode(expr)]),
+        literalClassValue(expr) ?? astFactory.callExpression(md(ctx, 'classValue'), [cloneEstreeNode(expr)]),
         (tmp) =>
           astFactory.expressionStatement(
             astFactory.callExpression(md(ctx, 'setClassValue'), [
