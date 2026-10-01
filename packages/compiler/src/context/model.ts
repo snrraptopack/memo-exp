@@ -504,6 +504,8 @@ export interface Ctx {
   lightweightCache: Map<string, boolean>;
   /** Inline-row reads: '<owner>/<suffix>' → site + state vars read in the row JSX. */
   rowReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
+  /** Simple top-level inline rows with no independently routed module readers. */
+  lightweightInlineRows: WeakSet<MapCallExpression>;
   /** Conditional-region reads (R8): '<owner>/when<n>' → site + vars read in condition+branches. */
   condReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Map call → owner-local values whose changes affect only old/new keyed rows. */
@@ -813,6 +815,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     linkedComponentRenderProps,
     lightweightCache: new Map(),
     rowReads: new Map(),
+    lightweightInlineRows: new WeakSet(),
     condReads: new Map(),
     targetedListDependencies: new WeakMap(),
     moduleListSelections: new WeakMap(),

@@ -55,6 +55,12 @@ proof keep the conservative update path described in the compiler README.
   including when additions/removals shift a suffix. A 10k swap at positions
   1/998 now analyzes 998 positions rather than 10k. Ordinary key evaluation,
   retained-row updates, cache transfer and duplicate detection still run.
+- Simple inline host rows can now use lightweight list entries without a
+  registered runtime entity or allocated row ID per item. Their update closure
+  handles row-local and write-free event refreshes. The proof excludes independent
+  module readers, hot builds, transparent owners, callback preludes, refs,
+  spreads, child components, nested regions and calls in render expressions.
+  General routing, key evaluation and setter/proxy fallbacks remain unchanged.
 
 A focused local Chromium check selected alternating rows in an existing 10k
 component-owned component-row list: 25 samples after five warmups, synchronous
@@ -147,6 +153,29 @@ independent minimum-move oracle, shifted suffixes with additions/removals,
 replacement records, multi-node rows, index-sensitive structural updates,
 key/update evaluation order, exact retained identity and key refresh after moves.
 
+The lightweight-inline pass was measured against `f334fb3` in local Chromium:
+10k rows, synchronous scheduling, five warmups and seven samples for creation,
+replacement and clearing. Each variant used a fresh page; counts, classes and
+unique keys were checked outside timing. Bundles used the same runtime, and
+before/after ran sequentially without concurrent builds or tests.
+
+| Data placement | Selection placement | Create before/after | Replace before/after | Clear before/after |
+|---|---|---|---|---|
+| Module | Module | 77.3 / 52.2 ms | 125.9 / 58.3 ms | 17.5 / 8.5 ms |
+| Component | Component | 81.9 / 47.8 ms | 134.2 / 62.5 ms | 17.7 / 7.1 ms |
+| Module | Component | 88.8 / 71.7 ms | 117.5 / 74.7 ms | 17.2 / 12.8 ms |
+| Component | Module | 144.4 / 99.8 ms | 189.8 / 126.4 ms | 22.6 / 13.9 ms |
+
+These inline timings are noisy: the unchanged both-module component-row control
+varied from 81.5 to 56.0 ms for creation, while the unchanged both-component
+control varied from 94.0 to 91.0 ms. Do not infer reliable speedup ratios. The
+deterministic change is 10,000 fewer registered entities in each eligible inline
+variant (1–2 total entities instead of 10,001–10,002). All nine DOM variants
+passed the full correctness gate. Self-contained tests cover events, module and
+component selection, key changes, retained identity, disposal and conservative
+exclusions. Hydration adopts existing inline rows without creation or relocation
+and retains their event updates after reordering. VM confirmation remains open.
+
 ## Optimistic forms and benchmark validation
 
 The simple example now demonstrates optimistic messages with a delayed action.
@@ -203,15 +232,23 @@ the user for commit `661d247` are preserved in
 They passed all nine implementations twice, but the original gates did not
 check retained DOM identity or mixed selection/structure sequences.
 
+The newer user report for `f5108eb` is summarized in
+`bench/dom/state-placement-vm-review-f5108eb.md`. It includes the stronger gates
+and predates the reorder-window and lightweight-inline passes. Selection is now
+about 0–0.1 ms across placements; module-data partial updates and inline creation,
+replacement and clearing remain the clearest gaps. Bundle-size work is deferred
+at the user's request.
+
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
+| 1 | Module-data partial update fanout | The newer VM run takes 2.5–5.0 ms at 10k rows versus 0.8–1.0 ms with component-owned data. Static-index routing requires a closed plain-record source; extending it to mutable opaque-produced module data must preserve setters, getters, aliases and hidden reads. |
 | 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
 | 1 | Slower swaps with component-owned data | Identical completion commits are merged and owner/root publications enqueue together. LIS and placement now exclude unchanged ends. Setter/proxy fallbacks remain; map transfers and required retained-row replay still need investigation. Re-measure the full matrix on the VM. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Partial content writes can already collect row keys for owner-local data; this does not complete append/truncate/reorder specialization or arbitrary alias handling. |
-| 2 | Inline row teardown | VM clearing remains slower for inline rows, especially both-module state. Measure registration, unregister, event disposal and retained heap separately. |
+| 1 | Inline creation/replacement/teardown | Eligible rows now omit per-row entities. Confirm the improvement on the VM; inspect event disposal, closure creation and retained heap before broader specialization. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
-| 3 | Browser runtime size and routing | Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. Existing interning estimates were small. |
+| Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
 | 3 | Slot granularity and opaque pulls | Extend reason gates and restrict volatile evaluation to dependent slots; do not hide required unknown-call refreshes. |
 | 4 | SSR client omission and Marko emission ideas | Investigate hydration ownership/markers, per-binding/shared-input updates and region setup; these remain design candidates. |

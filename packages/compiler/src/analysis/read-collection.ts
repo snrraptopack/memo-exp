@@ -23,6 +23,7 @@ import { findTargetedListDependencies, hasHiddenListDependency } from '../lists/
 import { generatedIdentifier } from '../identifiers';
 import { isIntrinsicLifecycleCall } from '../intrinsics';
 import { findModuleListSelections } from '../lists/module-selection';
+import { isSimpleInlineRow } from './inline-row';
 
 /** Is this complete member expression being invoked (`store.items.method()`)? */
 function isMemberCallCallee(ctx: Ctx, member: BaseNode): boolean {
@@ -480,6 +481,9 @@ export function collectReads(ctx: Ctx): void {
       });
 
       for (const value of ctx.moduleListSelections.get(call) ?? []) rowVars.delete(value);
+      if (rowVars.size === 0 && containerSuffix === site.suffix && !ctx.hot &&
+          !ctx.transparentSources.has(name) && !ctx.transparentPolicyParams.has(name) &&
+          isSimpleInlineRow(site)) ctx.lightweightInlineRows.add(call);
       if (rowVars.size > 0) {
         ctx.rowReads.set(`${name}/${containerSuffix}`, {
           owner: name,

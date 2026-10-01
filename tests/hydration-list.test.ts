@@ -19,6 +19,7 @@ import {
   type MountedApplication,
 } from '@memoized-dom/runtime';
 import '@memoized-dom/runtime/hydrate';
+import { _internals } from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -61,6 +62,14 @@ interface CompiledListApp {
 
 mkdirSync(outDir, { recursive: true });
 writeFileSync(output, compile(SOURCE, { runtimePath: '@memoized-dom/runtime' }));
+const inlineOutput = join(outDir, 'hydration-lightweight-inline.compiled.ts');
+writeFileSync(inlineOutput, compile(`export function InlineApp() {
+  let items = [{id: 1, label: 'one'}, {id: 2, label: 'two'}];
+  return <section>
+    <button class="reverse" onClick={() => { items = [...items].reverse(); }}>reverse</button>
+    <ul>{items.map(item => <li key={item.id} onClick={() => { item.label += '!'; }}>{item.label}</li>)}</ul>
+  </section>;
+}`));
 
 async function importCompiled(): Promise<CompiledListApp> {
   return import(/* @vite-ignore */ pathToFileURL(output).href);
@@ -104,6 +113,34 @@ afterEach(() => {
 });
 
 describe('Phase 3 keyed-list hydrate integration', () => {
+  it('adopts lightweight inline entries and retains their nodes and event updates', async () => {
+    const app = await import(/* @vite-ignore */ pathToFileURL(inlineOutput).href);
+    registerRootFactory(app.InlineApp, { id: 'InlineApp', create: () => app.InlineApp('InlineApp', null) });
+    const host = document.createElement('div');
+    host.id = 'root';
+    host.innerHTML = renderToString(app.InlineApp, { markers: true });
+    document.body.appendChild(host);
+    const list = host.querySelector('ul')!;
+    const [first, second] = [...host.querySelectorAll('li')];
+    const createElement = vi.spyOn(document, 'createElement');
+    const createTextNode = vi.spyOn(document, 'createTextNode');
+    const createComment = vi.spyOn(document, 'createComment');
+    const createFragment = vi.spyOn(document, 'createDocumentFragment');
+    const insertBefore = vi.spyOn(list, 'insertBefore');
+    mounted = mount('root', app.InlineApp);
+    expect([...host.querySelectorAll('li')]).toEqual([first, second]);
+    expect(createElement).not.toHaveBeenCalled();
+    expect(createTextNode).not.toHaveBeenCalled();
+    expect(createComment).not.toHaveBeenCalled();
+    expect(createFragment).not.toHaveBeenCalled();
+    expect(insertBefore).not.toHaveBeenCalled();
+    expect([..._internals().registry.keys()].filter(id => id.startsWith('InlineApp/items/Row['))).toEqual([]);
+    host.querySelector<HTMLButtonElement>('.reverse')!.click();
+    expect([...host.querySelectorAll('li')]).toEqual([second, first]);
+    first!.click();
+    expect(first!.textContent).toBe('one!');
+  });
+
   it('adopts keyed rows without creation or relocation and preserves updates', async () => {
     const app = await importCompiled();
     app.resetItems();

@@ -27,6 +27,7 @@ export function buildInlineRowCreate(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
   eventBindings: ReadonlyMap<string, t.Identifier> = new Map(),
+  lightweight = false,
 ): t.ArrowFunctionExpression {
   site.jsx!.openingElement.attributes =
     site.jsx!.openingElement.attributes.filter(
@@ -51,6 +52,7 @@ export function buildInlineRowCreate(
     itemParam: site.itemParam,
     itemPath: [],
     rowIdVar: rowId,
+    ...(lightweight ? { refreshVar: rowScope.updateVar } : {}),
     keyPath: keyPathOf(site.keyExpr, site.itemParam),
     sourceKey: site.sourceKey,
     sourceLocal: site.sourceLocal,
@@ -70,7 +72,7 @@ export function buildInlineRowCreate(
     componentPath,
     'row',
     rowContext,
-    astFactory.identifier(rowId),
+    lightweight ? undefined : astFactory.identifier(rowId),
     inSvg,
     astFactory.identifier(rowId),
   );
@@ -109,12 +111,12 @@ export function buildInlineRowCreate(
       cacheDecl(rowScope),
       updateDecl(ctx, rowScope),
       ...rowScope.prelude,
-      registerStmt(
+      ...(lightweight ? [] : [registerStmt(
         ctx,
         astFactory.identifier(rowId),
         cloneEstreeNode(ownerId),
         astFactory.identifier(rowScope.updateVar),
-      ),
+      )]),
       ...rowScope.creation,
       ...rowScope.mounts,
       astFactory.returnStatement(
@@ -125,7 +127,7 @@ export function buildInlineRowCreate(
           ),
           astFactory.objectProperty(
             astFactory.identifier('entities'),
-            astFactory.arrayExpression([astFactory.identifier(rowId)]),
+            astFactory.arrayExpression(lightweight ? [] : [astFactory.identifier(rowId)]),
           ),
           astFactory.objectProperty(
             astFactory.identifier('updateProps'),

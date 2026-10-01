@@ -196,9 +196,6 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 			};
 
 			const _document2 = _MD.getActiveEnvironment().document;
-
-			_MD.register({ id: _rowId, parent: _id, render: _update2 });
-
 			const _canReuseTemplate = _MD.canReuseTemplate();
 			let _li;
 
@@ -230,7 +227,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 
 			return {
 				nodes: [_li],
-				entities: [_rowId],
+				entities: [],
 				updateProps: (_nextItem) => {
 					item = _nextItem;
 				},
@@ -238,7 +235,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 			};
 		},
 		(item) => item.id,
-		true,
+		false,
 		false
 	);
 

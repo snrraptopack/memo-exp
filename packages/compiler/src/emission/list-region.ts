@@ -107,6 +107,7 @@ export function emitListRegion(
           inSvg,
           ownerId,
           eventBindings,
+          ctx.lightweightInlineRows.has(call),
         );
 
   const args: t.Expression[] = [
@@ -190,8 +191,8 @@ export function emitListRegion(
     );
   }
   if (
-    site.form === 'component' &&
-    isLightweightRowComponent(ctx, site.rowComp!)
+    site.form === 'component' && isLightweightRowComponent(ctx, site.rowComp!) ||
+    site.form === 'inline' && ctx.lightweightInlineRows.has(call)
   ) {
     if (args.length === 3) args.push(astFactory.identifier('undefined'));
     args.push(astFactory.booleanLiteral(false));
