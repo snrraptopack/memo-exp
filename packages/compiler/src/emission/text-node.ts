@@ -15,6 +15,7 @@ import {
   registerTransparentDataSite,
   transparentExpressionSources,
 } from '../data-sources';
+import { cachedTextConcat } from './text-concat';
 
 // ---------------------------------------------------------------------
 // component transform
@@ -76,12 +77,13 @@ export function emitText(
     return varName;
   }
   const slot = freshSlot(ctx, scope);
-  const normalized = (): t.Expression =>
-    astFactory.callExpression(md(ctx, 'textValue'), [cloneEstreeNode(prepared)]);
+  const concat = cachedTextConcat(ctx, scope, prepared);
+  const seed = (expression: t.Expression): t.Statement => astFactory.expressionStatement(
+    astFactory.assignmentExpression('=', astFactory.identifier(slot),
+      astFactory.callExpression(md(ctx, 'textValue'), [expression])),
+  );
   scope.creation.push(
-    astFactory.expressionStatement(
-      astFactory.assignmentExpression('=', astFactory.identifier(slot), normalized()),
-    ),
+    concat ? concat(seed, true) : seed(cloneEstreeNode(prepared)),
     // Keep the seed recognizable to markup extraction, including hydration.
     astFactory.expressionStatement(
       astFactory.callExpression(md(ctx, 'setTextData'), [
@@ -90,8 +92,8 @@ export function emitText(
       ]),
     ),
   );
-  const updater = (): t.Statement =>
-    slotGuard(scope, slot, normalized(), (value) =>
+  const write = (expression: t.Expression): t.Statement =>
+    slotGuard(scope, slot, astFactory.callExpression(md(ctx, 'textValue'), [expression]), (value) =>
       astFactory.expressionStatement(
         astFactory.assignmentExpression(
           '=',
@@ -103,6 +105,7 @@ export function emitText(
         ),
       ),
     );
+  const updater = () => concat ? concat(write) : write(cloneEstreeNode(prepared));
   registerTransparentDataSite(
     ctx,
     scope,

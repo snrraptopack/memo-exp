@@ -46,17 +46,47 @@ import { buildData } from './data';
 let data = [];
 
 function Row(props, _id, _onClickBinding) {
-	let _slot, _slot2, _value;
+	let _slot, _slot2, _slot3, _slot4, _slot5, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
-		if (_slot !== (_value = _MD.textValue(props.item.id + ": " + props.item.label))) {
-			_slot = _value;
-			_text.data = _value;
+		{
+			const _textLeft = props.item.id;
+
+			if (typeof _textLeft === "number" || typeof _textLeft === "string") {
+				const _textRight = props.item.label;
+
+				if (typeof _textRight === "number" || typeof _textRight === "string") {
+					if (!_slot4 || (_slot2 !== _textLeft || _slot3 !== _textRight)) {
+						_slot2 = _textLeft;
+						_slot3 = _textRight;
+						_slot4 = true;
+
+						if (_slot !== (_value = _MD.textValue(_textLeft + ": " + _textRight))) {
+							_slot = _value;
+							_text.data = _value;
+						}
+					}
+				} else try {
+					if (_slot !== (_value = _MD.textValue(_textLeft + ": " + _textRight))) {
+						_slot = _value;
+						_text.data = _value;
+					}
+				} finally {
+					_slot4 = false;
+				}
+			} else try {
+				if (_slot !== (_value = _MD.textValue(_textLeft + ": " + props.item.label))) {
+					_slot = _value;
+					_text.data = _value;
+				}
+			} finally {
+				_slot4 = false;
+			}
 		}
 
-		if (_slot2 !== (_value = _MD.classValue(props.selected ? 'danger' : ''))) {
-			_slot2 = _value;
+		if (_slot5 !== (_value = _MD.classValue(props.selected ? 'danger' : ''))) {
+			_slot5 = _value;
 			_MD.setClassValue(_li, _value);
 		}
 	};
@@ -77,11 +107,35 @@ function Row(props, _id, _onClickBinding) {
 
 	const _text = _li.firstChild;
 
-	_slot = _MD.textValue(props.item.id + ": " + props.item.label);
+	{
+		const _textLeft = props.item.id;
+
+		if (typeof _textLeft === "number" || typeof _textLeft === "string") {
+			const _textRight = props.item.label;
+
+			if (typeof _textRight === "number" || typeof _textRight === "string") {
+				{
+					_slot2 = _textLeft;
+					_slot3 = _textRight;
+					_slot4 = true;
+					_slot = _MD.textValue(_textLeft + ": " + _textRight);
+				}
+			} else try {
+				_slot = _MD.textValue(_textLeft + ": " + _textRight);
+			} finally {
+				_slot4 = false;
+			}
+		} else try {
+			_slot = _MD.textValue(_textLeft + ": " + props.item.label);
+		} finally {
+			_slot4 = false;
+		}
+	}
+
 	_MD.setTextData(_text, _slot);
 
-	if (_slot2 !== (_value = _MD.classValue(props.selected ? 'danger' : ''))) {
-		_slot2 = _value;
+	if (_slot5 !== (_value = _MD.classValue(props.selected ? 'danger' : ''))) {
+		_slot5 = _value;
 		_MD.setClassValue(_li, _value);
 	}
 

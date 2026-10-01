@@ -15,7 +15,13 @@ proof keep the conservative update path described in the compiler README.
 ## Completed changes
 
 - List-row text uses normalized string slots to avoid unchanged DOM text reads.
-  Expression evaluation and string conversion still replay.
+  Operand reads and opaque string conversions still replay.
+- Repeated-row text shaped as `left + "separator" + right` caches number/string
+  operands from creation. Every replay still evaluates both operands once; when
+  both remain primitive and unchanged, it skips rebuilding and comparing the
+  joined string. Opaque operands retain native coercion order and exceptions,
+  and invalidate the primitive cache after conversion, including reentrant
+  updates. Other expression shapes retain the existing text path.
 - String class values skip array allocation during normalization.
 - Each resolved reader set is enqueued before scheduling its commit. This
   avoids a separate commit per reader with a synchronous scheduler and lets
@@ -259,18 +265,23 @@ check retained DOM identity or mixed selection/structure sequences.
 The newer user report for `f5108eb` is summarized in
 `bench/dom/state-placement-vm-review-f5108eb.md`. It includes the stronger gates
 and predates the reorder-window and lightweight-inline passes. Selection is now
-about 0–0.1 ms across placements; module-data partial updates and inline creation,
-replacement and clearing remain the clearest gaps. Bundle-size work is deferred
-at the user's request.
+about 0–0.1 ms across placements. The corrected `9811e0c` report is preserved in
+`bench/dom/state-placement-vm-review-9811e0c.md`; it includes the restored
+conservative content fallback and the reorder-window/lightweight-inline passes.
+Inline creation is now 12.4–14.1 ms and clearing 2.4–2.5 ms at 10k rows, close to
+component rows. Partial updates across all placements take 2.1–3.4 ms versus
+vanilla's 0.3 ms. The older component-owned partial-update advantage does not
+measure the restored fallback. These historical runs are not controlled
+comparisons. Bundle-size work is deferred at the user's request.
 
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Module-data partial update fanout | The newer VM run takes 2.5–5.0 ms at 10k rows versus 0.8–1.0 ms with component-owned data. Static-index routing requires a closed plain-record source; extending it to mutable opaque-produced module data must preserve setters, getters, aliases and hidden reads. |
+| 1 | Conservative partial update cost across state placements | The corrected VM run takes 2.1–3.4 ms at 10k rows versus vanilla's 0.3 ms. Row update closures dominate a local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
 | 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Slower swaps with component-owned data | Identical completion commits are merged and owner/root publications enqueue together. LIS and placement now exclude unchanged ends. Setter/proxy fallbacks remain; map transfers and required retained-row replay still need investigation. Re-measure the full matrix on the VM. |
+| 1 | Structural retained-row work | Corrected 10k swaps take 3.1–3.9 ms across placements. LIS and placement exclude unchanged ends; key validation, map transfers and required retained-row replay still need investigation. Setter/proxy fallbacks remain. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
-| 2 | Structural reconciliation and safe list mutations | Partial content writes can already collect row keys for owner-local data; this does not complete append/truncate/reorder specialization or arbitrary alias handling. |
-| 1 | Inline creation/replacement/teardown | Eligible rows now omit per-row entities. Confirm the improvement on the VM; inspect event disposal, closure creation and retained heap before broader specialization. |
+| 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
+| 2 | Creation/replacement/teardown | The corrected VM confirms that eligible inline rows now approach component-row creation/clearing. Both still trail vanilla. Inspect event disposal, closure creation and retained heap before broader specialization. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
 | Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
@@ -283,6 +294,30 @@ position, remove the selected row, append, and select again. These strengthen
 the correctness gate; they do not constitute a performance fix. Use
 `state-placement-run.ts --validate-only` after building to check them without
 replacing timing results. The existing timing artifact remains the earlier run.
+
+## Primitive row text joins: local comparison
+
+At `9811e0c`, a local Chromium CPU profile of 60 repeated 10k-row updates
+sampled most JavaScript time inside row update closures (710/1240 component
+samples and 886/1462 inline samples). This identifies the closure as a focus;
+it does not attribute all of that time to concatenation.
+
+Before/after bundles used the same runtime and a synchronous scheduler. Three
+paired runs alternated operation order, with five warmups and 25 fresh-list
+samples per version. Creation and the first every-tenth-row update were timed
+separately. Row count, all text/classes and retained node identity were checked
+after each update outside timing.
+
+| Row shape | Before update medians (ms) | After update medians (ms) |
+|---|---|---|
+| Component | 8.3, 7.2, 7.2 | 5.6, 4.3, 4.5 |
+| Inline | 6.3, 6.4, 12.2 | 4.0, 3.9, 6.6 |
+
+These local timings are noisy and are not replacements for the VM matrix.
+Creation medians varied substantially without a consistent direction. The
+optimization adds three cached values per eligible text join; it still visits
+all rows on an unproven content update. Verify the next commit on the VM before
+drawing wider conclusions about creation, memory or structural operations.
 
 ## Earlier candidates retained for tracking
 
