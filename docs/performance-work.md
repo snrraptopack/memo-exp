@@ -32,8 +32,9 @@ proof keep the conservative update path described in the compiler README.
   parent reconciliation cancel pending duplicate row renders.
 - Linked component callbacks can omit the caller's duplicate row/root refresh
   when every caller supplies a stable component-local callback consisting of
-  direct lexical assignments. Missing props, mutable bindings, argument/property
-  mutations, opaque calls and deferred work retain the conservative path.
+  direct lexical assignments or proven synchronous local forwarding chains.
+  Missing props, mutable bindings, argument/property mutations, opaque calls
+  and deferred work retain the conservative path.
 - Adjacent execution sites with identical owner/root completion refreshes share
   one guarded commit. All write flags and setter/proxy fallbacks remain in place.
 - An owner publication and its conservative root fallback now enqueue together
@@ -295,7 +296,7 @@ the optimization priorities.
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
 | 1 | Conservative partial update cost across state placements | The latest VM report takes 1.4–2.4 ms at 10k rows versus vanilla's 0.5 ms. Row update closures dominate a local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
-| 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
+| 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
 | 1 | Structural retained-row work | Latest VM 10k swaps take 1.8–2.4 ms across placements. LIS and placement exclude unchanged ends; verified cyclic shifts now use linear LIS selection. Evaluated keys survive failed probes, and removed suffix keys come from cached records. General map transfers and required retained-row replay still need investigation. Setter/proxy fallbacks remain. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
@@ -565,6 +566,41 @@ All nine DOM variants passed 21 scenarios plus identity and mixed-sequence
 checks. The pinned memoized-dom Octane canonical and reorder smoke gates
 passed; their one-sample timings are execution checks. The other nine Octane
 targets were unchanged and were not rerun.
+
+## Published local callback forwarding
+
+The published-callback proof now follows direct calls through stable `const`
+functions declared in the same component factory. Every callee is resolved by
+lexical binding, and every function must satisfy the existing synchronous
+scalar-write proof. Arguments must be literals or lexically bound identifiers.
+Property reads, opaque calls, spreads, optional calls, parameter mutations,
+mutable bindings, async/generator functions and recursive cycles keep the
+fallback. Results are memoized within each proof to avoid repeatedly walking
+shared helper bodies. Every component caller still has to supply a proven value.
+
+This allows `select = id => forward(id)` → `forward = id => apply(id)` →
+`apply = id => { selected = id; }` to rely on the already instrumented helper's
+publication. The calling row omits its extra update and conservative root
+refresh. A self-contained linked-module regression reproduced two synchronous
+publications before the change, versus one afterward. Synchronous and deferred
+schedulers preserve selection, text and all retained row nodes.
+
+A production-bundled paired Chromium fixture used 10k component-owned rows,
+the forwarding chain above and synchronous scheduling. The baseline compiler
+used `a693034`'s prop-origin source; both bundles used the same runtime. Five
+warmups preceded 25 alternating old/new selection samples at positions 500 and
+7,500. Count, every row's text/class and retained identity were checked outside
+timing after each operation. The median was **2.3 ms → 0.2 ms**. This measures
+the forwarding case only: the existing DOM matrix's direct callbacks were
+already optimized and its generated output is unchanged.
+
+The compiler build, lint and 76 focused tests passed, including negative proofs
+for shadowed callees, opaque/argument-mutating helpers, mutable targets, cycles,
+property/spread/global arguments and deferred work. All nine DOM variants
+passed their 21 scenarios plus identity and mixed-sequence gates. The pinned
+Octane harness was not rerun for this compiler-only pass; the prior pass's
+canonical/reorder smoke checks remain recorded above. General opaque partial
+updates and broader callback shapes remain open.
 
 ## Earlier candidates retained for tracking
 

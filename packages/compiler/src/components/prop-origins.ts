@@ -345,32 +345,52 @@ function sourcesOf(
   ];
 }
 
-/** A stable local callback whose only effects are instrumented lexical writes.
- * Keep argument mutations, opaque calls, deferred work and property access on
- * the conservative path. This deliberately proves a small initial case.
+/** Stable local callbacks may forward to other proven, instrumented callbacks.
+ * Resolve every callee lexically and reject cycles, argument effects, property
+ * access, mutable targets and deferred work before omitting caller refreshes.
  */
 function isPublishedScalarCallback(ctx: Ctx, owner: string, value: t.Expression): boolean {
   if (!astFactory.isIdentifier(value)) return false;
-  const binding = astBindingAt(ctx, value as BaseNode, value.name);
-  if (binding?.kind !== 'const' || binding.constantViolations.length !== 0) return false;
-  const declaration = variableDeclaratorFor(ctx, binding);
-  const fn = declaration?.init;
-  if (!fn || (!astFactory.isArrowFunctionExpression(fn) && !astFactory.isFunctionExpression(fn)) ||
-      fn.async || fn.generator || !fn.params.every(parameter => astFactory.isIdentifier(parameter))) return false;
   // Emission instruments direct component-local callback declarations.
-  if (!ctx.compPaths.get(owner)?.node.body.body.some(statement =>
-    astFactory.isVariableDeclaration(statement) && statement.declarations.includes(declaration!))) return false;
-  const parameters = new Set(fn.params.map(parameter => (parameter as t.Identifier).name));
-  let safe = true;
-  walkAst(fn.body as BaseNode, { enter(node) {
-    if (!['BlockStatement', 'ExpressionStatement', 'ReturnStatement',
-      'AssignmentExpression', 'Identifier', 'Literal', 'NullLiteral',
-      'NumericLiteral', 'StringLiteral', 'BooleanLiteral'].includes(node.type)) safe = false;
-    if (astFactory.isAssignmentExpression(node)) {
-      if (node.operator !== '=' || !astFactory.isIdentifier(node.left) || parameters.has(node.left.name)) safe = false;
-    }
-  } });
-  return safe;
+  const declarations = new Set((ctx.compPaths.get(owner)?.node.body.body ?? [])
+    .flatMap(statement => astFactory.isVariableDeclaration(statement) ? statement.declarations : []));
+  const active = new Set<t.Node>();
+  const results = new Map<t.Node, boolean>();
+  const literals = new Set(['Literal', 'NullLiteral', 'NumericLiteral', 'StringLiteral', 'BooleanLiteral']);
+
+  const prove = (reference: t.Identifier): boolean => {
+    const binding = astBindingAt(ctx, reference as BaseNode, reference.name);
+    if (binding?.kind !== 'const' || binding.constantViolations.length !== 0) return false;
+    const declaration = variableDeclaratorFor(ctx, binding);
+    const fn = declaration?.init;
+    if (!declaration || !declarations.has(declaration) || !fn ||
+        (!astFactory.isArrowFunctionExpression(fn) && !astFactory.isFunctionExpression(fn)) ||
+        fn.async || fn.generator || !fn.params.every(parameter => astFactory.isIdentifier(parameter))) return false;
+    if (active.has(fn)) return false;
+    const cached = results.get(fn);
+    if (cached !== undefined) return cached;
+    active.add(fn);
+    const parameters = new Set(fn.params.map(parameter => (parameter as t.Identifier).name));
+    let safe = true;
+    walkAst(fn.body as BaseNode, { enter(node) {
+      if (!safe) return false;
+      if (!['BlockStatement', 'ExpressionStatement', 'ReturnStatement',
+        'AssignmentExpression', 'Identifier', 'CallExpression'].includes(node.type) &&
+          !literals.has(node.type)) safe = false;
+      if (astFactory.isAssignmentExpression(node)) {
+        if (node.operator !== '=' || !astFactory.isIdentifier(node.left) || parameters.has(node.left.name)) safe = false;
+      }
+      if (astFactory.isCallExpression(node)) {
+        if (node.optional || !astFactory.isIdentifier(node.callee) || !prove(node.callee) ||
+            !node.arguments.every(argument => astFactory.isIdentifier(argument)
+              ? astBindingAt(ctx, argument as BaseNode, argument.name) !== undefined
+              : literals.has(argument.type))) safe = false;
+      }
+    } });
+    active.delete(fn); results.set(fn, safe);
+    return safe;
+  };
+  return prove(value);
 }
 
 function addSource(

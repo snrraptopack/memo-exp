@@ -27,6 +27,33 @@ describe('published component callbacks', () => {
   });
 
   it.each([
+    'const apply = id => { selected = id; }; const select = id => apply(id);',
+    'const apply = id => { selected = id; }; const forward = id => { return apply(id); }; const select = id => forward(id);',
+    'const select = id => apply(id); const apply = id => { selected = id; };',
+  ])('proves synchronous local forwarding by lexical binding: %s', callback => {
+    const compiled = output(callback);
+    expect(compiled['./row.tsx']).not.toContain('.markDirtySubtree(');
+    expect(compiled['./app.tsx']).toContain('.refreshKey(');
+  });
+
+  it.each([
+    'let apply = id => { selected = id; }; const select = id => apply(id);',
+    'const apply = async id => { selected = id; }; const select = id => apply(id);',
+    'const apply = id => external(id); const select = id => apply(id);',
+    'const apply = item => { item.id = 3; }; const select = id => apply(id);',
+    'const apply = id => { selected = id; }; const select = apply => apply(1);',
+    'const apply = id => { selected = id; }; const select = id => apply(external(id));',
+    'const apply = id => { selected = id; }; const select = id => apply(id.value);',
+    'const apply = id => { selected = id; }; const select = id => apply(...id);',
+    'const apply = id => { selected = id; }; const select = id => apply?.(id);',
+    'const apply = (id = external()) => { selected = id; }; const select = () => apply();',
+    'const apply = id => { selected = id; }; const select = id => apply(unknownGlobal);',
+    'const apply = id => forward(id); const forward = id => apply(id); const select = id => apply(id);',
+  ])('keeps unproven forwarding conservative: %s', callback => {
+    expect(output(callback)['./row.tsx']).toContain('.markDirtySubtree(');
+  });
+
+  it.each([
     'const select = id => external(id);',
     'const select = async id => { selected = id; };',
     'let select = id => { selected = id; };',
