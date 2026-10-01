@@ -133,3 +133,35 @@ it('handles additions, removals, replacement objects and shifted stable suffixes
   }
   observer.disconnect(); region.dispose();
 });
+
+it.each([1, 3, 4, 7])('minimizes moves for an inner cyclic shift of %i multi-node rows', offset => {
+  const host = document.createElement('div'); document.body.append(host);
+  const items = Array.from({ length: 10 }, (_, id) => ({ id }));
+  const nodes = new Map<number, Node[]>();
+  const calls: string[] = [];
+  const region = createListRegion(host, 'cycles', (initial, _id, initialIndex) => {
+    const pair = [document.createElement('span'), document.createElement('b')];
+    nodes.set(initial.id, pair);
+    let item = initial, index = initialIndex;
+    const render = () => { pair[0]!.textContent = `${item.id}@${index}`; };
+    render();
+    return { nodes: pair, entities: [],
+      updateProps(next, position) { item = next as typeof initial; index = position; },
+      update() { calls.push(`u${item.id}@${index}`); render(); } };
+  }, (item, index) => { calls.push(`k${item.id}@${index}`); return item.id; }, false, true);
+  region.reconcile(items); calls.length = 0;
+  const observer = new MutationObserver(() => {}); observer.observe(host, { childList: true });
+  const middle = items.slice(1, 9);
+  const next = [items[0]!, ...middle.slice(offset), ...middle.slice(0, offset), items[9]!];
+  region.reconcile(next);
+  expect(calls).toEqual(next.flatMap((item, index) => [`k${item.id}@${index}`, `u${item.id}@${index}`]));
+  const moved = new Set<Node>();
+  for (const record of observer.takeRecords()) record.addedNodes.forEach(node => moved.add(node));
+  expect(moved.size).toBe(2 * Math.min(offset, 8 - offset));
+  // Ties keep the smaller old positions, as the general LIS does.
+  const movedItems = offset < 4 ? middle.slice(0, offset) : middle.slice(offset);
+  expect(moved).toEqual(new Set(movedItems.flatMap(item => nodes.get(item.id)!)));
+  expect([...host.children]).toEqual(next.flatMap(item => nodes.get(item.id)!));
+  next.forEach((item, index) => expect(nodes.get(item.id)![0]!.textContent).toBe(`${item.id}@${index}`));
+  observer.disconnect(); region.dispose();
+});

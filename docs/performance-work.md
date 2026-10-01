@@ -296,7 +296,7 @@ the optimization priorities.
 |---|---|---|
 | 1 | Conservative partial update cost across state placements | The latest VM report takes 1.4–2.4 ms at 10k rows versus vanilla's 0.5 ms. Row update closures dominate a local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
 | 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Structural retained-row work | Latest VM 10k swaps take 1.8–2.4 ms across placements. LIS and placement exclude unchanged ends; key validation, map transfers and required retained-row replay still need investigation. Setter/proxy fallbacks remain. |
+| 1 | Structural retained-row work | Latest VM 10k swaps take 1.8–2.4 ms across placements. LIS and placement exclude unchanged ends; verified cyclic shifts now use linear LIS selection. Evaluated keys survive failed probes, and removed suffix keys come from cached records. General map transfers and required retained-row replay still need investigation. Setter/proxy fallbacks remain. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
 | 2 | Creation/replacement/teardown | The corrected VM confirms that eligible inline rows now approach component-row creation/clearing. Both still trail vanilla. Inspect event disposal, closure creation and retained heap before broader specialization. |
@@ -375,6 +375,83 @@ reads, unknown mutable class branches, setter/proxy fallback and hydration.
 Regenerated output passed all 21 scenarios across nine DOM variants, with
 retained identity and mixed selection/structure sequences. Tests compile their
 own source fixtures and do not read examples.
+
+## Evaluated list keys and cyclic placement
+
+The runtime stores each evaluated key alongside its existing row entry, entity
+ID and position. Ordered buffers now hold those records rather than separate
+entry/ID arrays. Same-shape validation still evaluates authored current keys,
+then compares against cached keys using Map's SameValueZero identity. It avoids
+one Map lookup per row on this path. Failed append/removal probes pass their
+evaluated keys to the general reconciler, and suffix removal uses the removed
+records' cached keys.
+
+Four regressions failed before the change: a removed suffix accessor could
+throw during removal; failed append and removal probes could read a current
+key twice; duplicate-key rejection could also repeat those reads. The new
+tests cover these failures, NaN/zero/object/symbol identity, and key reads that
+append or truncate the source during shape validation. Each fixture owns its
+data and reads no example files.
+
+Placement also recognizes a complete cyclic shift of evaluated old positions
+inside the active reorder window. It verifies every position, then keeps the
+longer increasing run in linear time. Equal-length runs preserve the general
+LIS tie choice. Additions, gaps and other orders use the existing patience-sort
+path. Key evaluation and retained-row updates still run in their existing
+order; the proof relies on the resulting sequence, with no method-name rules.
+
+Two paired local Chromium runs compared `687a86b` with the cached-record/key
+change before adding cyclic placement. The production bundles used identical
+compiler output and synchronous scheduling. Each placement had five warmups
+and 25 fresh 10k-list samples per version, alternating order. Each sample
+checked all text, classes, count and retained identity outside timing.
+
+| Data / selection | Rows | Run 1 update before → after (ms) | Run 2 update before → after (ms) |
+|---|---|---|---|
+| Module / module | Component | 6.0 → 5.4 | 5.3 → 5.6 |
+| Module / module | Inline | 5.4 → 5.1 | 5.3 → 4.6 |
+| Component / component | Component | 6.1 → 6.2 | 6.4 → 6.0 |
+| Component / component | Inline | 5.7 → 4.9 | 6.0 → 5.6 |
+| Module / component | Component | 5.9 → 5.2 | 6.5 → 5.9 |
+| Module / component | Inline | 5.5 → 4.9 | 7.0 → 7.0 |
+| Component / module | Component | 6.3 → 5.8 | 7.7 → 6.4 |
+| Component / module | Inline | 5.4 → 4.6 | 5.4 → 5.3 |
+
+Creation was mixed, with increases in most placements in the first run and
+both directions after a laptop restart. The new cached key adds one reference
+per row record; removal of the parallel ID buffers also affects memory. No
+retained-heap improvement is established. Broad content replay and general Map
+transfer remain, including for immutable replacement objects.
+
+A separate production-bundled runtime comparison used guarded single-node rows
+at 10k, validating text, order and retained identity after every operation.
+The full-patch comparison used five warmups and 25 fresh-list samples. The
+isolated cyclic-path comparison kept both versions on the new cached records,
+used ten warmups and 100 repeated samples, and alternated measurement order.
+Repeated removals started at 10k and reduced the list by one per sample.
+
+| Operation | `687a86b` → full patch, fresh lists (ms) | Cached records → cyclic path, repeated lists (ms) |
+|---|---|---|
+| Forward one-row rotation | 6.9 → 9.1 | 6.5 → 5.7 |
+| Backward one-row rotation | 7.1 → 6.8 | 7.2 → 6.2 |
+| Half-list rotation | 30.5 → 25.1 | 16.6 → 15.5 |
+| Sparse swap | 8.9 → 10.6 | 6.2 → 5.9 |
+| Reverse | 39.7 → 40.5 | 30.6 → 32.5 |
+| Remove first | 2.9 → 3.0 | 2.4 → 2.4 |
+
+These are noisy local measurements with different sampling protocols. The
+isolated cycle results support keeping the linear proof; the full patch still
+needs the VM matrix to establish creation and structural performance. The
+correctness fixes address demonstrated failures. The broader performance
+backlog remains open.
+
+The runtime build, lint and 65 focused tests passed, including all 720 six-row
+permutations against an independent minimum-move oracle, multi-node cyclic
+windows, key/update ordering, hydration and setter/proxy fallbacks. The nine
+DOM variants passed all 21 scenarios and mixed selection/structure sequences
+with retained identity checks. Memoized-dom also passed the pinned Octane
+canonical and reorder smoke gates. Smoke timings are only execution checks;
+the other nine Octane framework targets were unchanged and were not rerun.
 
 ## Earlier candidates retained for tracking
 

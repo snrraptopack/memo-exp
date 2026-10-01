@@ -79,7 +79,7 @@ export interface ListRegion<T> {
 /**
  * Longest increasing subsequence over `seq` (values; -1 = new item, skipped).
  * Returns the POSITIONS in seq that form one LIS — those rows stay put.
- * Patience sorting, O(n log n).
+ * Verified cyclic shifts use O(n); other shapes use O(n log n) patience sorting.
  */
 // M5.8: LIS working buffers are pooled module-wide (lisPositions calls no
 // user code, so there is no reentrancy) — a 1000-row reorder used to
@@ -91,6 +91,28 @@ const lisPrev: number[] = [];
 function lisPositions(seq: number[], start: number, end: number): boolean[] {
   const n = seq.length;
   const inLis = lisInLis;
+  // A complete cyclic shift has two increasing runs. Prove it from the
+  // evaluated old positions, then keep the longer run without sorting.
+  // This proof accepts any producer; additions, gaps and duplicates fail it.
+  const first = seq[start]!;
+  const offset = first - start;
+  const length = end - start;
+  if (offset > 0 && offset < length) {
+    let expected = first;
+    let cyclic = true;
+    for (let i = start; i < end; i++) {
+      if (seq[i] !== expected) { cyclic = false; break; }
+      if (++expected === end) expected = start;
+    }
+    if (cyclic) {
+      inLis.length = n;
+      const split = end - offset;
+      // Equal runs use the smaller tails, matching patience sorting below.
+      const keepFirst = length - offset > offset;
+      for (let i = start; i < end; i++) inLis[i] = keepFirst ? i < split : i >= split;
+      return inLis;
+    }
+  }
   const tails = lisTails; // tails[k] = position in seq of the smallest tail for length k+1
   const prev = lisPrev;
   inLis.length = n;
@@ -163,6 +185,7 @@ export function createListRegion<T>(
     e: ListEntry;
     id: EntityId | null;
     pos: number;
+    key: unknown;
   }
   let cache = new Map<unknown, RowRec>();
   const syntheticIds = new Map<unknown, string>();
@@ -174,13 +197,14 @@ export function createListRegion<T>(
   // not evaluate those expressions a second time.
   let prevItems: T[] = [];
   const validatedKeys: unknown[] = [];
-  let prevEntries: ListEntry[] = [];
-  let prevRowIds: Array<EntityId | null> = [];
+  // Ordered records keep the evaluated key, entry and optional id together.
+  // Shape checks can compare keys directly, and removals never need to read
+  // a key from a record that is no longer in the source list.
+  let prevRows: RowRec[] = [];
   // M5.8: scratch buffers for the structural path, swapped with the live
   // ones after each reconcile — zero allocation in steady state.
   let nextMap = new Map<unknown, RowRec>();
-  let nextEntries: ListEntry[] = [];
-  let nextRowIds: Array<EntityId | null> = [];
+  let nextRows: RowRec[] = [];
   const nextPositions: number[] = [];
   const seq: number[] = []; // temp LIS sequence, reused
 
@@ -349,7 +373,8 @@ export function createListRegion<T>(
   ): void {
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
-    let keysValidated = false;
+    let evaluatedKeyCount = 0;
+    validatedKeys.length = 0;
     // The compiler may prove that only fresh records are appended. Broad
     // reasons still replay retained rows; unproven callers keep validation.
     const provenAppend = appendOnly && structuralOnly && !adoptingFrame &&
@@ -358,7 +383,7 @@ export function createListRegion<T>(
     // Same length AND every key identical at every position → no additions,
     // no removals, no reorder is possible: skip ALL map building and LIS.
     // This is the steady state of every list that only sees content edits.
-    if (!adoptingFrame && items.length === prevItems.length) {
+    if (!adoptingFrame && items.length === prevItems.length && cache.size === prevItems.length) {
       let same = true;
       for (let i = 0; i < items.length; i++) {
         if (items[i] !== prevItems[i]) { same = false; break; }
@@ -368,17 +393,22 @@ export function createListRegion<T>(
         for (let i = 0; i < items.length; i++) {
           const currentKey = key(items[i] as T, i);
           validatedKeys[i] = currentKey;
-          if (cache.get(currentKey)?.pos !== i) same = false;
+          evaluatedKeyCount = i + 1;
+          const previousRow = prevRows[i];
+          // Match Map's SameValueZero identity, including NaN and +/-0.
+          if (previousRow === undefined || currentKey !== previousRow.key &&
+              !(currentKey !== currentKey && previousRow.key !== previousRow.key)) same = false;
         }
-        keysValidated = true;
       }
+      // Authored key reads may themselves append or truncate the source.
+      if (items.length !== prevItems.length) same = false;
       if (same) {
         validatedKeys.length = 0;
         for (let i = 0; i < items.length; i++) {
           syncRetained(
-            prevEntries[i]!,
+            prevRows[i]!.e,
             items[i] as T,
-            trackRowIds ? prevRowIds[i] ?? null : null,
+            prevRows[i]!.id,
             i,
             i,
             structuralOnly,
@@ -402,7 +432,10 @@ export function createListRegion<T>(
     ) {
       let appendOnly = true;
       for (let i = 0; !provenAppend && i < prevItems.length; i++) {
-        const rec = cache.get(key(items[i] as T, i));
+        const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
+        validatedKeys[i] = k;
+        if (i >= evaluatedKeyCount) evaluatedKeyCount = i + 1;
+        const rec = cache.get(k);
         if (rec === undefined || rec.pos !== i) {
           appendOnly = false;
           break;
@@ -412,7 +445,7 @@ export function createListRegion<T>(
         const appendedKeys: unknown[] = [];
         const seen = new Set<unknown>();
         for (let i = prevItems.length; i < items.length; i++) {
-          const k = key(items[i] as T, i);
+          const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
           if (cache.has(k) || seen.has(k)) {
             throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
           }
@@ -422,9 +455,9 @@ export function createListRegion<T>(
 
         for (let i = 0; !provenAppend && i < prevItems.length; i++) {
           syncRetained(
-            prevEntries[i]!,
+            prevRows[i]!.e,
             items[i] as T,
-            trackRowIds ? prevRowIds[i] ?? null : null,
+            prevRows[i]!.id,
             i,
             i,
             structuralOnly,
@@ -432,10 +465,8 @@ export function createListRegion<T>(
         }
 
         const fragment = environment.document.createDocumentFragment();
-        const appended = nextEntries;
-        const appendedIds = nextRowIds;
+        const appended = nextRows;
         appended.length = 0;
-        appendedIds.length = 0;
         for (let offset = 0; offset < appendedKeys.length; offset++) {
           const i = prevItems.length + offset;
           const item = items[i] as T;
@@ -443,8 +474,7 @@ export function createListRegion<T>(
           const createId = trackRowIds ? rowIdFor(k) : idPrefix;
           const entry = createRow(item, k, createId, i, encodeListKey(k));
           const id = trackRowIds ? createId : null;
-          appended.push(entry);
-          appendedIds.push(id);
+          appended.push({ e: entry, id, pos: i, key: k });
           const nodes = entry.nodes;
           if (Array.isArray(nodes)) {
             for (const node of nodes) fragment.appendChild(node);
@@ -454,15 +484,14 @@ export function createListRegion<T>(
         }
         for (let offset = 0; offset < appended.length; offset++) {
           const pos = prevItems.length + offset;
-          const entry = appended[offset]!;
-          const id = appendedIds[offset] ?? null;
-          cache.set(appendedKeys[offset], { e: entry, id, pos });
-          prevEntries.push(entry);
-          if (trackRowIds) prevRowIds.push(id);
+          const rec = appended[offset]!;
+          rec.pos = pos;
+          cache.set(rec.key, rec);
+          prevRows.push(rec);
         }
         (endAnchor.parentNode ?? parent).insertBefore(fragment, endAnchor);
         appended.length = 0;
-        appendedIds.length = 0;
+        validatedKeys.length = 0;
         if (provenAppend) {
           for (let i = prevItems.length; i < items.length; i++) prevItems.push(items[i] as T);
         } else {
@@ -482,10 +511,8 @@ export function createListRegion<T>(
       items.length < prevItems.length &&
       cache.size === prevItems.length
     ) {
-      const ordered = nextEntries;
-      const rowIds = nextRowIds;
+      const ordered = nextRows;
       ordered.length = items.length;
-      rowIds.length = trackRowIds ? items.length : 0;
       nextPositions.length = items.length;
       seq.length = prevItems.length;
       seq.fill(-1);
@@ -493,7 +520,10 @@ export function createListRegion<T>(
       let lastOld = -1;
       let prefixOnly = true;
       for (let i = 0; i < items.length; i++) {
-        const rec = cache.get(key(items[i] as T, i));
+        const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
+        validatedKeys[i] = k;
+        if (i >= evaluatedKeyCount) evaluatedKeyCount = i + 1;
+        const rec = cache.get(k);
         if (rec === undefined || rec.pos <= lastOld) {
           removalOnly = false;
           break;
@@ -502,15 +532,14 @@ export function createListRegion<T>(
         prefixOnly &&= rec.pos === i;
         nextPositions[i] = rec.pos;
         seq[rec.pos] = i;
-        ordered[i] = rec.e;
-        if (trackRowIds) rowIds[i] = rec.id;
+        ordered[i] = rec;
       }
       if (removalOnly) {
         for (let i = 0; i < items.length; i++) {
           syncRetained(
-            ordered[i]!,
+            ordered[i]!.e,
             items[i] as T,
-            trackRowIds ? rowIds[i] ?? null : null,
+            ordered[i]!.id,
             i,
             nextPositions[i]!,
             structuralOnly,
@@ -518,52 +547,37 @@ export function createListRegion<T>(
         }
 
         if (prefixOnly) {
-          const removedKeys: unknown[] = [];
-          for (let i = items.length; i < prevItems.length; i++) {
-            const k = key(prevItems[i] as T, i);
-            const rec = cache.get(k);
-            if (rec === undefined || rec.pos !== i) {
-              prefixOnly = false;
-              break;
-            }
-            removedKeys.push(k);
+          for (let i = items.length; i < prevRows.length; i++) {
+            prevRows[i]!.e.dispose?.();
           }
-          if (prefixOnly) {
-            for (let i = items.length; i < prevEntries.length; i++) {
-              prevEntries[i]!.dispose?.();
-            }
-            const firstNodes = prevEntries[items.length]!.nodes;
-            const firstNode = Array.isArray(firstNodes)
-              ? firstNodes[0]
-              : firstNodes as Node;
-            let removedAsRange = false;
-            if (
-              firstNode !== undefined &&
-              firstNode.parentNode === container &&
-              endAnchor.parentNode === container &&
-              environment.document.createRange !== undefined
-            ) {
-              const range = environment.document.createRange!();
-              range.setStartBefore(firstNode);
-              range.setEndBefore(endAnchor);
-              range.deleteContents();
-              removedAsRange = true;
-            }
-            for (let offset = 0; offset < removedKeys.length; offset++) {
-              const i = items.length + offset;
-              const k = removedKeys[offset];
-              const entry = prevEntries[i]!;
-              cleanupEntry(entry, !removedAsRange);
-              syntheticIds.delete(k);
-              cache.delete(k);
-            }
-            prevEntries.length = items.length;
-            if (trackRowIds) prevRowIds.length = items.length;
-            nextEntries.length = 0;
-            nextRowIds.length = 0;
-            prevItems = items.slice();
-            return;
+          const firstNodes = prevRows[items.length]!.e.nodes;
+          const firstNode = Array.isArray(firstNodes)
+            ? firstNodes[0]
+            : firstNodes as Node;
+          let removedAsRange = false;
+          if (
+            firstNode !== undefined &&
+            firstNode.parentNode === container &&
+            endAnchor.parentNode === container &&
+            environment.document.createRange !== undefined
+          ) {
+            const range = environment.document.createRange!();
+            range.setStartBefore(firstNode);
+            range.setEndBefore(endAnchor);
+            range.deleteContents();
+            removedAsRange = true;
           }
+          for (let i = items.length; i < prevRows.length; i++) {
+            const rec = prevRows[i]!;
+            cleanupEntry(rec.e, !removedAsRange);
+            syntheticIds.delete(rec.key);
+            cache.delete(rec.key);
+          }
+          prevRows.length = items.length;
+          nextRows.length = 0;
+          validatedKeys.length = 0;
+          prevItems = items.slice();
+          return;
         }
 
         for (const [k, rec] of cache) {
@@ -578,14 +592,11 @@ export function createListRegion<T>(
           syntheticIds.delete(k);
           cache.delete(k);
         }
-        const priorEntries = prevEntries;
-        prevEntries = ordered;
-        nextEntries = priorEntries;
-        const priorRowIds = prevRowIds;
-        prevRowIds = rowIds;
-        nextRowIds = priorRowIds;
-        nextEntries.length = 0;
-        nextRowIds.length = 0;
+        const priorRows = prevRows;
+        prevRows = ordered;
+        nextRows = priorRows;
+        nextRows.length = 0;
+        validatedKeys.length = 0;
         prevItems = items.slice();
         return;
       }
@@ -596,10 +607,8 @@ export function createListRegion<T>(
     // M5.8: build into the scratch buffers (swapped into `live` at the end)
     nextMap.clear();
     const next = nextMap;
-    const rowIds = nextRowIds;
-    const ordered = nextEntries;
+    const ordered = nextRows;
     const n = items.length;
-    rowIds.length = trackRowIds ? n : 0;
     ordered.length = n;
     seq.length = oldWasEmpty ? 0 : n;
 
@@ -612,7 +621,7 @@ export function createListRegion<T>(
     let lastOld = -1;
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as T;
-      const k = keysValidated ? validatedKeys[i] : key(item, i);
+      const k = i < evaluatedKeyCount ? validatedKeys[i] : key(item, i);
       if (next.has(k)) {
         throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
       }
@@ -634,13 +643,13 @@ export function createListRegion<T>(
           e: entry,
           id: trackRowIds ? createId : null,
           pos: i,
+          key: k,
         };
         if (!oldWasEmpty) seq[i] = -1;
         hasNew = true;
       }
       next.set(k, rec);
-      ordered[i] = rec.e;
-      if (trackRowIds) rowIds[i] = rec.id;
+      ordered[i] = rec;
     }
     validatedKeys.length = 0;
     if (adoptingFrame) {
@@ -663,8 +672,8 @@ export function createListRegion<T>(
 
       let removedAsRange = false;
       let firstOwned: Node | undefined;
-      for (const entry of prevEntries) {
-        const nodes = entry.nodes;
+      for (const rec of prevRows) {
+        const nodes = rec.e.nodes;
         firstOwned = Array.isArray(nodes) ? nodes[0] : nodes as Node;
         if (firstOwned !== undefined) break;
       }
@@ -690,7 +699,7 @@ export function createListRegion<T>(
       if (n !== 0) {
         const fragment = getActiveEnvironment().document.createDocumentFragment();
         for (let i = 0; i < ordered.length; i++) {
-          const nodes = ordered[i]!.nodes;
+          const nodes = ordered[i]!.e.nodes;
           if (Array.isArray(nodes)) {
             for (const node of nodes) fragment.appendChild(node);
           } else {
@@ -701,10 +710,8 @@ export function createListRegion<T>(
       }
 
       cache = next; nextMap = old;
-      const pe = prevEntries; prevEntries = ordered; nextEntries = pe;
-      const pr = prevRowIds; prevRowIds = rowIds; nextRowIds = pr;
-      nextEntries.length = 0;
-      nextRowIds.length = 0;
+      const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
+      nextRows.length = 0;
       prevItems = items.slice();
       return;
     }
@@ -720,7 +727,7 @@ export function createListRegion<T>(
         const fragment =
           getActiveEnvironment().document.createDocumentFragment();
         for (let i = 0; i < ordered.length; i++) {
-          const nodes = ordered[i]!.nodes;
+          const nodes = ordered[i]!.e.nodes;
           if (Array.isArray(nodes)) {
             for (const node of nodes) fragment.appendChild(node);
           } else {
@@ -730,10 +737,8 @@ export function createListRegion<T>(
         container.insertBefore(fragment, endAnchor);
       }
       cache = next; nextMap = old;
-      const pe = prevEntries; prevEntries = ordered; nextEntries = pe;
-      const pr = prevRowIds; prevRowIds = rowIds; nextRowIds = pr;
-      nextEntries.length = 0;
-      nextRowIds.length = 0;
+      const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
+      nextRows.length = 0;
       prevItems = items.slice();
       return;
     }
@@ -743,13 +748,11 @@ export function createListRegion<T>(
       // M5.8: scratch buffers become live, live ones become next frame's
       // scratch (they are cleared/length-reset at the top of the slow path)
       cache = next; nextMap = old;
-      const pe = prevEntries; prevEntries = ordered; nextEntries = pe;
-      const pr = prevRowIds; prevRowIds = rowIds; nextRowIds = pr;
+      const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
       // The former live buffers are scratch now. Truncate immediately rather
       // than retaining removed/replaced entries (and their detached DOM) until
       // the next structural reconciliation.
-      nextEntries.length = 0;
-      nextRowIds.length = 0;
+      nextRows.length = 0;
       prevItems = items.slice();
       return;
     }
@@ -785,7 +788,7 @@ export function createListRegion<T>(
       oldEnd--;
     }
     const inLis = lisPositions(seq, start, end);
-    const suffix = ordered[end];
+    const suffix = ordered[end]?.e;
     let cursor: Node = suffix === undefined ? endAnchor
       : Array.isArray(suffix.nodes) ? suffix.nodes[0]! : suffix.nodes as Node;
     let pending: ListEntry[] | null = null; // run of entries awaiting insertion
@@ -806,7 +809,7 @@ export function createListRegion<T>(
     };
 
     for (let i = end - 1; i >= start; i--) {
-      const entry = ordered[i]!;
+      const entry = ordered[i]!.e;
       if (seq[i] === -1 || !inLis[i]) {
         // awaiting insertion — cursor stays on the last IN-PLACE node
         (pending ??= []).push(entry);
@@ -821,10 +824,8 @@ export function createListRegion<T>(
 
     // ---- bookkeeping for the next reconcile (M5.8: buffer swap) --------------
     cache = next; nextMap = old;
-    const pe2 = prevEntries; prevEntries = ordered; nextEntries = pe2;
-    const pr2 = prevRowIds; prevRowIds = rowIds; nextRowIds = pr2;
-    nextEntries.length = 0;
-    nextRowIds.length = 0;
+    const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
+    nextRows.length = 0;
     prevItems = items.slice();
   }
 
@@ -843,8 +844,8 @@ export function createListRegion<T>(
       return;
     }
     for (const index of indices) {
-      const entry = prevEntries[index];
-      if (entry !== undefined) syncRow(entry, items[index] as T, prevRowIds[index] ?? null, index);
+      const rec = prevRows[index];
+      if (rec !== undefined) syncRow(rec.e, items[index] as T, rec.id, index);
     }
   }
 
@@ -858,10 +859,8 @@ export function createListRegion<T>(
     nextMap.clear();
     prevItems = [];
     validatedKeys.length = 0;
-    prevEntries.length = 0;
-    prevRowIds.length = 0;
-    nextEntries.length = 0;
-    nextRowIds.length = 0;
+    prevRows.length = 0;
+    nextRows.length = 0;
     endAnchor.parentNode?.removeChild(endAnchor);
     openAnchor.parentNode?.removeChild(openAnchor);
   }
