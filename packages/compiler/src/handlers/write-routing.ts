@@ -502,7 +502,7 @@ export function createHandlerWriteRouting({
     if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
       const plan = listMutationPlans?.get(rootName!);
       const key =
-        plan === undefined || !isPlainDataAssignment(ctx, rootFn, node)
+        plan === undefined || !isPlainDataAssignment(ctx, rootFn, node, p.scope)
           ? null
           : directListItemMutationKey(node, plan);
       mutateScope(p, (scope) => {
@@ -593,7 +593,7 @@ export function createHandlerWriteRouting({
     }
     const origin = origins.length === 1 ? origins[0]! : null;
     if (origin?.locality === 'module' && rootName !== null &&
-        (!executionAwareRoot || isPlainDataAssignment(ctx, rootFn, node)) &&
+        (!executionAwareRoot || isPlainDataAssignment(ctx, rootFn, node, p.scope)) &&
         !rootFn.async && !componentLocals.has(rootName)) {
       const plan = ctx.moduleListTargets.get(rootName);
       const access = node.object;

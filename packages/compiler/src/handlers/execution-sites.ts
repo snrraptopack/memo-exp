@@ -54,7 +54,7 @@ export function finalizeHandlerInstrumentation(
     for (const site of executionSites.values()) {
       if (site.path.isAssignmentExpression() &&
           astFactory.isMemberExpression(site.path.node.left) &&
-          !isPlainDataAssignment(ctx, rootFn, site.path.node.left)) {
+          !isPlainDataAssignment(ctx, rootFn, site.path.node.left, site.path.scope)) {
         // A setter/proxy can mutate state beyond the apparent receiver.
         site.writes.rootFallback = true;
       }
@@ -157,7 +157,7 @@ function markExecutionSite(
       astFactory.isMemberExpression(path.node.left) &&
       !astFactory.isSuper(path.node.left.object) &&
       !astFactory.isPrivateName(path.node.left.property) &&
-      isPlainDataAssignment(ctx, rootFn, path.node.left))
+      isPlainDataAssignment(ctx, rootFn, path.node.left, path.scope))
   ) {
     const original = path.node;
     const previous = generatedIdentifier(ctx, 'previousValue');

@@ -6,8 +6,10 @@ import {
   identifierName,
   stringValue,
   type BaseNode,
+  type Scope,
 } from '../ast';
 import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
+import { boundedListIndex } from '../analysis/bounded-list-index';
 
 function assignedObject(
   ctx: Ctx,
@@ -41,7 +43,7 @@ export function hasKnownAccessor(ctx: Ctx, at: BaseNode, member: t.MemberExpress
 }
 
 /** Only a non-escaping object literal's own data property permits extra reads. */
-export function isPlainDataAssignment(ctx: Ctx, at: BaseNode, member: t.MemberExpression): boolean {
+export function isPlainDataAssignment(ctx: Ctx, at: BaseNode, member: t.MemberExpression, scope?: Scope): boolean {
   const access = member.object;
   if (access.type === 'MemberExpression' && nodeField(access, 'computed') === true) {
     const source = identifierName(childNode(access, 'object'));
@@ -50,8 +52,14 @@ export function isPlainDataAssignment(ctx: Ctx, at: BaseNode, member: t.MemberEx
     const indexNode = childNode(access, 'property');
     const index = indexNode && nodeField(indexNode, 'value');
     const field = member.computed ? stringValue(member.property) : identifierName(member.property);
-    if (proof !== undefined && typeof index === 'number' && Number.isInteger(index) &&
-        index >= 0 && index < proof.length && field !== null && proof.fields.has(field)) return true;
+    if (proof !== undefined && field !== null && proof.fields.has(field)) {
+      if (scope !== undefined && source !== null && scope.getBinding(source) !== undefined) return false;
+      if (typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < proof.length) return true;
+      // Handler scopes describe the cloned tree. Its list must resolve outside
+      // that tree; a local shadow is not the closed owner/module collection.
+      if (scope !== undefined && source !== null && indexNode !== null &&
+          boundedListIndex(scope, indexNode, proof.length, source, undefined)) return true;
+    }
   }
   const object = assignedObject(ctx, at, member);
   if (object === null) return false;

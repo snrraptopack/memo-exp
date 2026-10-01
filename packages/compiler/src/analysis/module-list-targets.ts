@@ -1,7 +1,8 @@
-import { childNode, childNodes, identifierName, jsxIdentifierName, nodeField, walkAst, type BaseNode, type Binding } from '../ast';
+import { childNode, childNodes, identifierName, jsxIdentifierName, nodeField, stringValue, walkAst, type BaseNode, type Binding } from '../ast';
 import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
 import type { MapCallExpression } from '../lists';
 import { LIST_METHOD_OPTIMIZATIONS } from '../lists/mutation-shapes';
+import { boundedListIndex } from './bounded-list-index';
 
 /** Closed flat records without escapes or cross-row collection reads. */
 export function analyzeModuleListTargets(ctx: Ctx): void {
@@ -46,7 +47,8 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
       if (!element || element.type !== 'ObjectExpression') { valid = false; break; }
       const own = new Set<string>();
       for (const entry of childNodes(element, 'properties')) {
-        const name = identifierName(childNode(entry, 'key'));
+        const key = childNode(entry, 'key');
+        const name = identifierName(key) ?? stringValue(key);
         if (entry.type !== 'Property' || nodeField(entry, 'computed') === true ||
             nodeField(entry, 'kind') !== 'init' || name === null || name === '__proto__' ||
             own.has(name) || !scalar(childNode(entry, 'value'))) { valid = false; break; }
@@ -72,8 +74,18 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
           const name = property(use);
           if (name === null || !fields.has(name)) return false;
           const consumer = parents.get(use);
-          if (!consumer || childNode(consumer, 'left') === use ||
+          if (!consumer || consumer.type === 'AssignmentExpression' && childNode(consumer, 'left') === use ||
               consumer.type === 'UpdateExpression' || consumer.type === 'UnaryExpression' && nodeField(consumer, 'operator') === 'delete') return false;
+          // A member on the left of arithmetic/comparison is a read. Only
+          // assignment patterns and loop targets can turn wrappers into writes.
+          let target = use;
+          let enclosing: BaseNode | null | undefined = consumer;
+          while (enclosing && ['Property', 'ObjectProperty', 'ObjectPattern', 'ArrayPattern', 'RestElement', 'AssignmentPattern'].includes(enclosing.type)) {
+            target = enclosing;
+            enclosing = parents.get(target);
+          }
+          if (enclosing && ['AssignmentExpression', 'ForOfStatement', 'ForInStatement'].includes(enclosing.type) &&
+              childNode(enclosing, 'left') === target) return false;
           if (consumer.type === 'JSXExpressionContainer') {
             const attribute = parents.get(consumer);
             if (attribute?.type === 'JSXAttribute' && nodeField(childNode(attribute, 'name')!, 'name') === 'key') keys.add(name);
@@ -107,6 +119,15 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
       const access = parents.get(reference);
       if (access?.type !== 'MemberExpression' || childNode(access, 'object') !== reference) { valid = false; break; }
       const method = property(access);
+      if (method === 'length' && nodeField(access, 'computed') !== true) {
+        const test = parents.get(access);
+        const counter = test && childNode(test, 'left');
+        const scope = counter && analysis.nodeToScope.get(counter);
+        if (test?.type === 'BinaryExpression' && childNode(test, 'right') === access &&
+            counter != null && scope != null &&
+            boundedListIndex(scope, counter, elements.length, source, binding)) continue;
+        valid = false; break;
+      }
       if (method !== null && Object.hasOwn(LIST_METHOD_OPTIMIZATIONS, method) &&
           LIST_METHOD_OPTIMIZATIONS[method] === 'render' && nodeField(access, 'computed') !== true) {
         const call = parents.get(access);
@@ -136,8 +157,11 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
       const indexNode = childNode(access, 'property');
       const index = indexNode && nodeField(indexNode, 'value');
       const member = parents.get(access);
-      if (nodeField(access, 'computed') !== true || typeof index !== 'number' ||
-          !Number.isInteger(index) || index < 0 || index >= elements.length ||
+      const indexScope = indexNode && analysis.nodeToScope.get(indexNode);
+      const fixedIndex = typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < elements.length;
+      const loopIndex = indexNode !== null && indexScope !== undefined && indexScope !== null &&
+        boundedListIndex(indexScope, indexNode, elements.length, source, binding);
+      if (nodeField(access, 'computed') !== true || !(fixedIndex || loopIndex) ||
           member?.type !== 'MemberExpression' || childNode(member, 'object') !== access) { valid = false; break; }
       const name = property(member);
       if (name === null || !fields.has(name)) { valid = false; break; }

@@ -116,6 +116,20 @@ a method property name cannot prove that retained rows were not mutated. This
 bounds a targeted list refresh by the number of targets without turning method
 recognition into a language or purity whitelist.
 
+Component-owned arrays of closed flat scalar records can also journal executed
+indices from canonical increasing `for` loops: one `let` counter, a nonnegative
+integer literal start, `< items.length` or a bounded integer literal limit,
+and `++` or `+=` with a positive integer literal stride. The counter cannot
+have other writes, the collection cannot escape or change shape, and key fields
+remain immutable. Only executed item writes add keys to the existing owner
+journal; skipped branches schedule no refresh, while broader dirty reasons
+retain full reconciliation. Module-owned dynamic indices still use ordinary
+routing. Opaque producers, mutable/dynamic bounds, hidden cross-row reads,
+setters, aliases and unsupported loop shapes keep the conservative path.
+Identifier and quoted string keys on literal records are equivalent for this
+proof. Arithmetic/comparison field reads remain reads; assignment patterns,
+updates, deletes and loop targets prevent a read-only item proof.
+
 Dynamic text updates in list rows normalize the expression on every replay and
 compare it with a compiler-owned string slot before writing `Text.data`. The creation path
 still seeds through `setTextData`, which also handles adopted server text. This

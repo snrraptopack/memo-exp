@@ -295,7 +295,7 @@ the optimization priorities.
 
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Conservative partial update cost across state placements | The latest `581b40f` VM report takes 1.3–2.4 ms at 10k rows across two executions, versus vanilla's 0.3–0.5 ms. Row update closures dominate an earlier local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
+| 1 | Conservative partial update cost across state placements | The latest `581b40f` VM report takes 1.3–2.4 ms at 10k rows across two executions, versus vanilla's 0.3–0.5 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned literal records now support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof remains open. |
 | 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
 | 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Ordered removal now avoids contiguous Map lookups and Map-entry iteration, alongside its existing Map-transfer/LIS shortcut. Required key and row evaluation remain; investigate broader replay and general Map transfers while preserving getter/index/setter/proxy semantics. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
@@ -740,6 +740,61 @@ class, order and identity checks outside timing. At 10k, update medians were
 reverse was 20.0 → 21.2 ms and 18.3 → 18.4 ms. The results were mixed and did
 not improve partial updates. The prototype and its tests were removed; no
 props-reuse flag or compiler shortcut remains.
+
+## Bounded owner-list updates
+
+The closed-record proof now admits canonical increasing loops over
+component-owned fixed literal arrays: a `let` counter starts at a nonnegative
+safe integer literal, the condition uses `<` with the collection length or a
+bounded integer literal, and the counter advances through `++` or positive
+integer-literal `+=`. Other counter writes, dynamic/invalid bounds, collection
+escapes, cross-row reads, key mutations and opaque values retain full replay.
+The same lexical proof is shared between collection analysis and handler
+instrumentation; a local shadow cannot borrow an enclosing collection's proof.
+Executed writes use the existing owner key journal. No runtime graph, new
+intrinsic or method-name purity rule was added. Module dynamic-index writes
+still use ordinary routing.
+
+Two earlier proof restrictions were also corrected: quoted string field names
+on plain literal records are accepted, and a field on the left of arithmetic
+or a comparison is treated as a read rather than an assignment. Actual writes,
+including wrapped destructuring and loop targets, still prevent a read-only
+row-item proof. The first measurement probe exposed the arithmetic restriction:
+both its outputs retained broad replay, so those timings do not measure this
+optimization. It was corrected and regenerated before the comparison below.
+
+A self-contained paired production Chromium fixture compiled identical 1k/10k
+literal-record apps with compiler source at `8acb876` and this change, using
+the same runtime. Five warmups preceded 25 alternating samples per side,
+updating every tenth label in an existing list. Every row's text, empty class,
+order, count and retained identity were checked after each sample outside
+timing. The regenerated output was checked for executed-write key journals.
+
+| Rows | Row form | Before / after median ms |
+| --- | --- | --- |
+| 1,000 | Inline | 0.5 / 0.4 |
+| 1,000 | Component | 0.6 / 0.4 |
+| 10,000 | Inline | 3.0 / 2.5 |
+| 10,000 | Component | 2.9 / 2.5 |
+
+These are local results for closed literals. They do not establish an improvement
+in the main DOM/Octane suites, whose opaque producers still lack this proof.
+Their regenerated DOM output remains unchanged. Broad opaque partial updates,
+producer proofs, module dynamic targeting and structural work remain open.
+
+A separate browser comparison reproduced an existing block-shadowing bug:
+before the fix, a foreign proxy receiver was read twice and its setter left
+a sibling output at `0`; afterward the receiver is read once and the output
+becomes `1`. Owner rows remain unchanged. The handler now checks its actual
+lexical scope before adding owner keys or making extra plain-field reads.
+
+The compiler build, lint and 64 focused regressions passed. The tests cover
+inline/component rows with synchronous/deferred schedulers, conditional skips,
+mixed broad/targeted batches, arithmetic reads, unsafe loops, opaque receivers
+and assignment patterns. The DOM suite passed all nine variants, including
+identity and mixed-sequence gates. The pinned Octane harness was not rerun for
+this compiler-only extension; no dependency versions or benchmark adapters
+changed. Bundle work remains deferred.
 
 ## Earlier candidates retained for tracking
 
