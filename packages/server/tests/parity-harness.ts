@@ -25,6 +25,7 @@ import {
   setActiveRouteRuntime,
 } from '@memoized-dom/router';
 import {
+  renderToString,
   renderWithDom,
   syncBooleanAttributes,
   type RenderOptions,
@@ -109,6 +110,9 @@ export function normalizeHtml(html: string): string {
                 /&(?!(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);)/g,
                 '&amp;',
               );
+              // The string tier additionally escapes `<`/`>` in attribute
+              // values; both spellings parse to the same attribute.
+              value = value.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
               // `checked` and `checked=""` are the same DOM state.
               return value === '' ? name : `${name}="${value}"`;
             })
@@ -124,6 +128,12 @@ export function normalizeHtml(html: string): string {
 
 export interface ParityResult {
   serverHtml: string;
+  /**
+   * Render the production string tier, held to the LinkeDOM oracle. Lazy:
+   * a complete string render disposes its request runtime, which must not
+   * interleave with assertions about the caller-owned oracle runtime.
+   */
+  renderStringTier(): string;
   clientHtml: string;
   serverNodes: readonly Node[];
   serverDocument: Document;
@@ -181,6 +191,7 @@ export function renderBothTiers(
 
   return {
     serverHtml: rendered.html,
+    renderStringTier: () => renderToString(tiers.serverModule[entry], options),
     clientHtml,
     serverNodes: rendered.nodes,
     serverDocument: rendered.document,
@@ -193,5 +204,8 @@ export function renderBothTiers(
 export function expectParity(result: ParityResult): void {
   expect(normalizeHtml(result.serverHtml)).toBe(
     normalizeHtml(result.clientHtml),
+  );
+  expect(normalizeHtml(result.renderStringTier())).toBe(
+    normalizeHtml(result.serverHtml),
   );
 }

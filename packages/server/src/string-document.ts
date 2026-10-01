@@ -8,7 +8,13 @@
 import type { DocumentLike } from '@memoized-dom/runtime';
 import { parseMarkup, type MarkupChild } from '@memoized-dom/runtime/server';
 
+const TEXT_ESCAPE = /[&<>]/;
+const ATTRIBUTE_ESCAPE = /[&"<>]/;
+
+// Most text and attribute values need no escaping; test once before paying
+// for replacement passes.
 function escapeHtml(text: string): string {
+  if (!TEXT_ESCAPE.test(text)) return text;
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -16,6 +22,7 @@ function escapeHtml(text: string): string {
 }
 
 function escapeAttribute(value: string): string {
+  if (!ATTRIBUTE_ESCAPE.test(value)) return value;
   return value
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
@@ -23,14 +30,29 @@ function escapeAttribute(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
+const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 const INVALID_ATTRIBUTE_NAME = /[\0-\x20\x7F"'`/<> =]/u;
 const INVALID_ELEMENT_NAME = /[\0-\x20\x7F"'`/<> =]/u;
 
-function assertElementName(name: string): string {
-  if (name.length === 0 || INVALID_ELEMENT_NAME.test(name)) {
-    throw new DOMException(`Invalid element name: ${JSON.stringify(name)}`, 'InvalidCharacterError');
+interface TagInfo {
+  readonly tag: string;
+  readonly isVoid: boolean;
+}
+
+// Tag vocabularies are small; validate and normalize each name once.
+const TAG_INFO = new Map<string, TagInfo>();
+
+function tagInfo(name: string): TagInfo {
+  let info = TAG_INFO.get(name);
+  if (info === undefined) {
+    if (name.length === 0 || INVALID_ELEMENT_NAME.test(name)) {
+      throw new DOMException(`Invalid element name: ${JSON.stringify(name)}`, 'InvalidCharacterError');
+    }
+    const tag = name.toLowerCase();
+    info = { tag, isVoid: VOID_TAGS.has(tag) };
+    TAG_INFO.set(name, info);
   }
-  return name;
+  return info;
 }
 
 function assertAttributeName(name: string): string {
@@ -258,14 +280,29 @@ export class StringText implements StringRenderableNode {
 export class StringElement extends StringContainer implements StringRenderableNode {
   readonly nodeType = 1;
 
-  readonly attributes = new Map<string, string>();
   className = '';
-  style: Record<string, string> & { cssText?: string } = {};
   innerHTML?: string;
 
-  constructor(public readonly tagName: string, public readonly namespaceURI: string = 'http://www.w3.org/1999/xhtml') {
+  private readonly info: TagInfo;
+  // Most elements carry neither attributes nor inline style; allocate lazily.
+  private ownAttributes: Map<string, string> | null = null;
+  private ownStyle: (Record<string, string> & { cssText?: string }) | null = null;
+
+  constructor(public readonly tagName: string, public readonly namespaceURI: string = HTML_NAMESPACE) {
     super();
-    assertElementName(tagName);
+    this.info = tagInfo(tagName);
+  }
+
+  get attributes(): Map<string, string> {
+    return this.ownAttributes ??= new Map();
+  }
+
+  get style(): Record<string, string> & { cssText?: string } {
+    return this.ownStyle ??= {};
+  }
+
+  set style(value: Record<string, string> & { cssText?: string }) {
+    this.ownStyle = value;
   }
 
   get textContent(): string {
@@ -284,7 +321,14 @@ export class StringElement extends StringContainer implements StringRenderableNo
   }
 
   setAttribute(name: string, value: string): void {
-    this.attributes.set(assertAttributeName(name).toLowerCase(), String(value));
+    assertAttributeName(name);
+    // HTML attribute names are case-insensitive; foreign (SVG/MathML) names
+    // such as `viewBox` are not.
+    this.attributes.set(this.isHtml ? name.toLowerCase() : name, String(value));
+  }
+
+  private get isHtml(): boolean {
+    return this.namespaceURI === HTML_NAMESPACE;
   }
 
   setAttributeNS(_namespace: string | null, qualifiedName: string, value: string): void {
@@ -293,17 +337,41 @@ export class StringElement extends StringContainer implements StringRenderableNo
 
   getAttribute(name: string): string | null {
     if (name.length === 0 || INVALID_ATTRIBUTE_NAME.test(name)) return null;
-    return this.attributes.get(name.toLowerCase()) ?? null;
+    return this.ownAttributes?.get(this.isHtml ? name.toLowerCase() : name) ?? null;
   }
 
   removeAttribute(name: string): void {
     if (name.length === 0 || INVALID_ATTRIBUTE_NAME.test(name)) return;
-    this.attributes.delete(name.toLowerCase());
+    this.ownAttributes?.delete(this.isHtml ? name.toLowerCase() : name);
   }
 
   hasAttribute(name: string): boolean {
     if (name.length === 0 || INVALID_ATTRIBUTE_NAME.test(name)) return false;
-    return this.attributes.has(name.toLowerCase());
+    return this.ownAttributes?.has(this.isHtml ? name.toLowerCase() : name) ?? false;
+  }
+
+  /**
+   * Compiled JSX lowers form state (`value`, `checked`, `disabled`, ...) to
+   * property writes. A string element has no live state to hold them, so
+   * reflect them into serialized attributes exactly like the LinkeDOM tier
+   * (whose renderer also syncs non-reflecting booleans such as `checked`).
+   */
+  get value(): string {
+    return this.info.tag === 'textarea' ? this.textContent : this.getAttribute('value') ?? '';
+  }
+
+  set value(value: unknown) {
+    const text = value == null ? '' : String(value);
+    if (this.info.tag === 'textarea') this.textContent = text;
+    else this.setAttribute('value', text);
+  }
+
+  get tabIndex(): number {
+    return Number(this.getAttribute('tabindex') ?? -1);
+  }
+
+  set tabIndex(value: unknown) {
+    this.setAttribute('tabindex', String(value));
   }
 
   addEventListener(): void {}
@@ -312,10 +380,10 @@ export class StringElement extends StringContainer implements StringRenderableNo
   cloneNode(deep = false): StringRenderableNode {
     const clone = new StringElement(this.tagName, this.namespaceURI);
     clone.className = this.className;
-    clone.style = { ...this.style };
+    if (this.ownStyle !== null) clone.ownStyle = { ...this.ownStyle };
     clone.innerHTML = this.innerHTML;
-    for (const [k, v] of this.attributes) {
-      clone.attributes.set(k, v);
+    if (this.ownAttributes !== null && this.ownAttributes.size > 0) {
+      clone.ownAttributes = new Map(this.ownAttributes);
     }
     if (deep) {
       for (let child = this.firstChild; child !== null; child = child.nextSibling) {
@@ -326,38 +394,36 @@ export class StringElement extends StringContainer implements StringRenderableNo
   }
 
   override toString(markers: boolean): string {
-    const tag = this.tagName.toLowerCase();
-    let attrs = '';
+    const tag = this.info.tag;
+    const className = this.className;
+    const cssText = this.ownStyle?.cssText;
+    let out = '<' + tag;
 
-    if (this.className !== '') {
-      attrs += ` class="${escapeAttribute(this.className)}"`;
+    if (className !== '') {
+      out += ' class="' + escapeAttribute(className) + '"';
     }
-    if (this.style.cssText) {
-      attrs += ` style="${escapeAttribute(this.style.cssText)}"`;
+    if (cssText) {
+      out += ' style="' + escapeAttribute(cssText) + '"';
     }
-    for (const [key, val] of this.attributes) {
-      if (key === 'class' && this.className !== '') continue;
-      if (key === 'style' && this.style.cssText) continue;
-      if (val === '') {
-        attrs += ` ${key}`;
-      } else {
-        attrs += ` ${key}="${escapeAttribute(val)}"`;
+    if (this.ownAttributes !== null) {
+      for (const [key, val] of this.ownAttributes) {
+        if (key === 'class' && className !== '') continue;
+        if (key === 'style' && cssText) continue;
+        out += val === '' ? ' ' + key : ' ' + key + '="' + escapeAttribute(val) + '"';
       }
     }
+    out += '>';
 
-    if (VOID_TAGS.has(tag) && this.firstChild === null) {
-      return `<${tag}${attrs}>`;
-    }
+    if (this.info.isVoid && this.firstChild === null) return out;
 
-    let inner = '';
     if (this.innerHTML !== undefined) {
-      inner = this.innerHTML;
+      out += this.innerHTML;
     } else {
       for (let child = this.firstChild; child !== null; child = child.nextSibling) {
-        inner += child.toString(markers);
+        out += child.toString(markers);
       }
     }
-    return `<${tag}${attrs}>${inner}</${tag}>`;
+    return out + '</' + tag + '>';
   }
 }
 
@@ -383,6 +449,40 @@ export class StringFragment extends StringContainer implements StringRenderableN
     return out;
   }
 }
+
+const REFLECTED_BOOLEANS: ReadonlyArray<readonly [property: string, attribute: string]> = [
+  ['checked', 'checked'],
+  ['disabled', 'disabled'],
+  ['selected', 'selected'],
+  ['readOnly', 'readonly'],
+  ['multiple', 'multiple'],
+  ['required', 'required'],
+  ['open', 'open'],
+  ['hidden', 'hidden'],
+  ['muted', 'muted'],
+  ['controls', 'controls'],
+  ['loop', 'loop'],
+  ['autoFocus', 'autofocus'],
+  ['autoPlay', 'autoplay'],
+];
+
+for (const [property, attribute] of REFLECTED_BOOLEANS) {
+  Object.defineProperty(StringElement.prototype, property, {
+    configurable: true,
+    get(this: StringElement) {
+      return this.hasAttribute(attribute);
+    },
+    set(this: StringElement, value: unknown) {
+      if (value) this.setAttribute(attribute, '');
+      else this.removeAttribute(attribute);
+    },
+  });
+}
+
+// Markup segments are compiler-emitted module constants, so the set is bounded
+// by application code. Parsed descriptors are read-only; reuse them across
+// requests instead of re-parsing every segment on every render.
+const PARSED_MARKUP = new Map<string, readonly MarkupChild[]>();
 
 export class StringDocument implements DocumentLike {
   createComment(data: string): Comment {
@@ -419,7 +519,7 @@ export class StringDocument implements DocumentLike {
         return text;
       }
       const element =
-        node.ns === 'http://www.w3.org/1999/xhtml'
+        node.ns === HTML_NAMESPACE
           ? this.createElement(node.tag)
           : this.createElementNS(node.ns, node.tag);
       for (const [name, value] of node.attrs) {
@@ -431,7 +531,12 @@ export class StringDocument implements DocumentLike {
       output.push(element as unknown as Node);
       return element as unknown as Node;
     };
-    for (const child of parseMarkup(markup)) {
+    let parsed = PARSED_MARKUP.get(markup);
+    if (parsed === undefined) {
+      parsed = parseMarkup(markup);
+      PARSED_MARKUP.set(markup, parsed);
+    }
+    for (const child of parsed) {
       build(child);
     }
     return output;
