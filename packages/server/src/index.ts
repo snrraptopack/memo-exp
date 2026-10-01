@@ -13,39 +13,25 @@
  * - module-level authored state becomes request-safe with the Phase 1.3 cell
  *   lowering.
  *
+ * Every renderer runs through one `RenderSession` (session.ts), which owns
+ * the request runtimes, cancellation, settlement, and exactly-once disposal.
+ *
  * Effects and refs do not run during server rendering.
  */
 
 import { parseHTML } from 'linkedom';
-import {
-  createApplicationRuntime,
-  rootFactoryStore,
-  runWithApplicationRuntime,
-  setActiveApplicationRuntime,
-  unregisterSubtree,
-  type ApplicationRuntime,
-  type DocumentLike,
-} from '@memoized-dom/runtime/server';
+import type { ApplicationRuntime, DocumentLike } from '@memoized-dom/runtime/server';
 import { StringDocument, type StringRenderableNode } from './string-document';
-import {
-  createMemoryRouteHistory,
-  createRouteRuntime,
-  setActiveRouteRuntime,
-  runWithRouteRuntime,
-} from '@memoized-dom/router';
-import {
-  prepareInitialRoutedRuntime,
-  RoutedPreparationRedirectError,
-  serializeRoutedPreparationState,
-  type RoutedServerContext,
-  type SerializedRoutedPreparationState,
+import type {
+  RoutedServerContext,
+  SerializedRoutedPreparationState,
 } from '@memoized-dom/router/internal';
-import {
-  createDataRuntime,
-  setActiveDataRuntime,
-  runWithDataRuntime,
-} from '@memoized-dom/data';
 import type { SerializedDataState } from '@memoized-dom/data';
+import { RenderSession, type RenderSettlement } from './session';
+import type { ServerComponent } from './root-id';
+
+export { serverRootId, type ServerComponent } from './root-id';
+export type { RenderSettlement } from './session';
 
 export interface RenderPayload {
   version: 1;
@@ -57,19 +43,8 @@ export interface RenderResult {
   html: string;
   payload: RenderPayload;
   scriptTag: string;
-}
-
-/** A compiled application root factory: `function App(_id, _parent)`. */
-export type ServerComponent = (id: string, parent: null) => Node;
-
-/**
- * The hydration root id stamped into markers and the payload channel must match
- * the client-side root factory id, which the compiler derives from the mount
- * callee (`mount('root', Main)` → `'Main'`). Registered factories record that
- * id at module evaluation; unregistered components keep the legacy 'App' id.
- */
-export function serverRootId(component: ServerComponent): string {
-  return rootFactoryStore().get(component)?.id ?? 'App';
+  /** Whether request data settled completely or the settle budget elapsed. */
+  settlement: RenderSettlement;
 }
 
 export interface RenderOptions {
@@ -83,6 +58,14 @@ export interface RenderOptions {
   mode?: 'shell' | 'resolve';
   /** Maximum settle time in ms for 'resolve' mode (default 5000ms). */
   timeout?: number;
+  /**
+   * Hard budget in milliseconds for the whole render, route preparation
+   * included. Unlike the soft `timeout` settle budget (which serializes
+   * pending UI), exceeding it rejects the render with a `TimeoutError`.
+   */
+  deadline?: number;
+  /** Abort the render and all request-owned preparation and data work. */
+  signal?: AbortSignal;
   /**
    * Request URL. Installed as a request-local memory-history route runtime,
    * so compiled route regions and `route.*` reads resolve against this URL
@@ -120,34 +103,8 @@ export interface RenderedDom {
   readonly nodes: readonly Node[];
   /** Caller-owned: dispose after inspecting nodes/HTML. */
   readonly runtime: ApplicationRuntime;
-}
-
-let renderSequence = 0;
-
-async function prepareInitialRoute(
-  routeRuntime: ReturnType<typeof createRouteRuntime>,
-  options: RenderOptions,
-): Promise<void> {
-  const outcome = await prepareInitialRoutedRuntime(
-    routeRuntime,
-    options.routedContext,
-  );
-  if (outcome.kind === 'redirect') {
-    throw new RoutedPreparationRedirectError(outcome.redirect);
-  }
-}
-
-function renderPayload(
-  dataRuntime: ReturnType<typeof createDataRuntime>,
-  routeRuntime: ReturnType<typeof createRouteRuntime>,
-): RenderPayload {
-  const state = dataRuntime.serializeState();
-  const routed = serializeRoutedPreparationState(routeRuntime);
-  return {
-    version: 1,
-    ...(state.sources.length > 0 ? { state } : {}),
-    ...(routed === undefined ? {} : { routed }),
-  };
+  /** Whether request data settled completely or the settle budget elapsed. */
+  readonly settlement: RenderSettlement;
 }
 
 function parseServerDocument(
@@ -201,7 +158,6 @@ export function createPayloadScriptTag(rootId: string, payload: RenderPayload): 
 function serialize(
   nodes: readonly Node[],
   markers: boolean,
-  rootId: string,
 ): string {
   const serializeNode = (node: Node): string => {
     if (node.nodeType === 8 /* COMMENT */) {
@@ -229,11 +185,6 @@ function serialize(
 
   let html = '';
   for (const node of nodes) html += serializeNode(node);
-  // Hydration protocol (hydration-markers.md §2): the application-root pair
-  // wraps every root node so adoption locates the application boundary.
-  if (markers) {
-    html = `<!--mmd:r:${rootId}-->${html}<!--/mmd-->`;
-  }
   return html;
 }
 
@@ -290,119 +241,79 @@ export function syncBooleanAttributes(root: Node): void {
   }
 }
 
+function domTier(options: RenderOptions) {
+  return {
+    mode: 'server-dom',
+    document: parseServerDocument(options.document).document as unknown as DocumentLike,
+    callerOwnsRuntime: true,
+  } as const;
+}
+
+function stringTier() {
+  return { mode: 'server-string', document: new StringDocument() } as const;
+}
+
+function completeDom(
+  session: RenderSession,
+  document: DocumentLike,
+  root: Node,
+): RenderedDom {
+  const nodes =
+    root?.nodeType === 11 /* FRAGMENT */
+      ? Array.from(root.childNodes)
+      : [root];
+  for (const node of nodes) syncBooleanAttributes(node);
+  return {
+    document: document as unknown as Document,
+    html: session.wrap(serialize(nodes, session.options.markers === true)),
+    nodes,
+    runtime: session.retain(),
+    settlement: session.settlement,
+  };
+}
+
+function serializeString(session: RenderSession, root: Node): string {
+  return session.wrap(
+    (root as unknown as StringRenderableNode).toString(session.options.markers === true),
+  );
+}
+
+function stringResult(session: RenderSession, root: Node): RenderResult {
+  const html = serializeString(session, root);
+  const payload = session.payload();
+  return {
+    html,
+    payload,
+    scriptTag: createPayloadScriptTag(session.rootId, payload),
+    settlement: session.settlement,
+  };
+}
+
 /**
  * Render a compiled application into a server document and return the live
  * handles. The caller owns `runtime.dispose()`. Per-request router/data
  * runtimes are restored and disposed here regardless of outcome.
  */
-export async function renderWithDomAsync(
+export function renderWithDomAsync(
   component: ServerComponent,
   options: RenderOptions = {},
 ): Promise<RenderedDom> {
-  const { document: serverDocument } = parseServerDocument(options.document);
-
-  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
-    mode: 'server-dom',
-    document: serverDocument,
-    schedule: null,
-    effects: 'disabled',
-    refs: 'disabled',
+  const tier = domTier(options);
+  return RenderSession.execute(component, options, tier, async session => {
+    await session.prepare();
+    const root = session.mount();
+    await session.settle();
+    return completeDom(session, tier.document, root);
   });
-  const routeHistory = createMemoryRouteHistory({
-    initialEntries: [options.url ?? '/'],
-  });
-  const routeRuntime = createRouteRuntime({ routeHistory });
-  const dataRuntime = createDataRuntime(
-    options.fetch === undefined ? {} : { fetch: options.fetch },
-  );
-  const rootId = serverRootId(component);
-  return runWithRouteRuntime(routeRuntime, () =>
-    runWithDataRuntime(dataRuntime, () =>
-      runWithApplicationRuntime(runtime, async () => {
-        try {
-          await prepareInitialRoute(routeRuntime, options);
-          const root = component(rootId, null);
-          if (options.mode === 'resolve') {
-            await dataRuntime.settle(options.timeout ?? 5000);
-          }
-          const nodes =
-            root?.nodeType === 11 /* FRAGMENT */
-              ? Array.from(root.childNodes)
-              : [root as Node];
-          for (const node of nodes) syncBooleanAttributes(node);
-          return {
-            document: serverDocument as unknown as Document,
-            html: serialize(nodes, options.markers === true, rootId),
-            nodes,
-            runtime,
-          };
-        } catch (error) {
-          unregisterSubtree(rootId);
-          runtime.dispose();
-          throw error;
-        } finally {
-          routeRuntime.dispose();
-          dataRuntime.clear();
-        }
-      }),
-    ),
-  );
 }
 
 export function renderWithDom(
   component: ServerComponent,
   options: RenderOptions = {},
 ): RenderedDom {
-  const { document: serverDocument } = parseServerDocument(options.document);
-
-  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
-    mode: 'server-dom',
-    document: serverDocument,
-    schedule: null,
-    effects: 'disabled',
-    refs: 'disabled',
-  });
-  const previousRuntime = setActiveApplicationRuntime(runtime);
-
-  const routeHistory = createMemoryRouteHistory({
-    initialEntries: [options.url ?? '/'],
-  });
-  const routeRuntime = createRouteRuntime({ routeHistory });
-  const dataRuntime = createDataRuntime(
-    options.fetch === undefined ? {} : { fetch: options.fetch },
-  );
-  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
-  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
-
-  const rootId = serverRootId(component);
-  try {
-    const root = runWithApplicationRuntime(runtime, () =>
-      component(rootId, null),
-    );
-    const nodes =
-      root?.nodeType === 11 /* FRAGMENT */
-        ? Array.from(root.childNodes)
-        : [root as Node];
-    for (const node of nodes) syncBooleanAttributes(node);
-    return {
-      document: serverDocument as unknown as Document,
-      html: serialize(nodes, options.markers === true, rootId),
-      nodes,
-      runtime,
-    };
-  } catch (error) {
-    runWithApplicationRuntime(runtime, () => {
-      unregisterSubtree(rootId);
-    });
-    runtime.dispose();
-    throw error;
-  } finally {
-    setActiveApplicationRuntime(previousRuntime);
-    setActiveRouteRuntime(previousRouteRuntime);
-    setActiveDataRuntime(previousDataRuntime);
-    routeRuntime.dispose();
-    dataRuntime.clear();
-  }
+  const tier = domTier(options);
+  return RenderSession.execute(component, options, tier, session =>
+    completeDom(session, tier.document, session.mount()));
 }
 
 /**
@@ -412,99 +323,24 @@ export function renderToString(
   component: ServerComponent,
   options: RenderOptions = {},
 ): string {
-  const stringDoc = new StringDocument();
-  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
-    mode: 'server-string',
-    document: stringDoc,
-    schedule: null,
-    effects: 'disabled',
-    refs: 'disabled',
-  });
-  const previousRuntime = setActiveApplicationRuntime(runtime);
-  const routeHistory = createMemoryRouteHistory({
-    initialEntries: [options.url ?? '/'],
-  });
-  const routeRuntime = createRouteRuntime({ routeHistory });
-  const dataRuntime = createDataRuntime(
-    options.fetch === undefined ? {} : { fetch: options.fetch },
-  );
-  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
-  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
-
-  const rootId = serverRootId(component);
-  try {
-    const root = runWithApplicationRuntime(runtime, () =>
-      component(rootId, null),
-    ) as unknown as StringRenderableNode;
-    let body = root.toString(options.markers === true);
-    if (options.markers === true) {
-      body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
-    }
-    return body;
-  } catch (error) {
-    runWithApplicationRuntime(runtime, () => {
-      unregisterSubtree(rootId);
-    });
-    throw error;
-  } finally {
-    setActiveApplicationRuntime(previousRuntime);
-    setActiveRouteRuntime(previousRouteRuntime);
-    setActiveDataRuntime(previousDataRuntime);
-    routeRuntime.dispose();
-    dataRuntime.clear();
-    runtime.dispose();
-  }
+  return RenderSession.execute(component, options, stringTier(), session =>
+    serializeString(session, session.mount()));
 }
 
 /**
  * Render a compiled application to an HTML string asynchronously, settling
  * in-flight data resources before serialization when mode is 'resolve' (RFC §16.5).
  */
-export async function renderToStringAsync(
+export function renderToStringAsync(
   component: ServerComponent,
   options: RenderOptions = {},
 ): Promise<string> {
-  const stringDoc = new StringDocument();
-  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
-    mode: 'server-string',
-    document: stringDoc,
-    schedule: null,
-    effects: 'disabled',
-    refs: 'disabled',
+  return RenderSession.execute(component, options, stringTier(), async session => {
+    await session.prepare();
+    const root = session.mount();
+    await session.settle();
+    return serializeString(session, root);
   });
-  const routeHistory = createMemoryRouteHistory({
-    initialEntries: [options.url ?? '/'],
-  });
-  const routeRuntime = createRouteRuntime({ routeHistory });
-  const dataRuntime = createDataRuntime(
-    options.fetch === undefined ? {} : { fetch: options.fetch },
-  );
-  return runWithRouteRuntime(routeRuntime, () =>
-    runWithDataRuntime(dataRuntime, () =>
-      runWithApplicationRuntime(runtime, async () => {
-        const rootId = serverRootId(component);
-        try {
-          await prepareInitialRoute(routeRuntime, options);
-          const root = component(rootId, null) as unknown as StringRenderableNode;
-          if (options.mode === 'resolve') {
-            await dataRuntime.settle(options.timeout ?? 5000);
-          }
-          let body = root.toString(options.markers === true);
-          if (options.markers === true) {
-            body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
-          }
-          return body;
-        } catch (error) {
-          unregisterSubtree(rootId);
-          throw error;
-        } finally {
-          routeRuntime.dispose();
-          dataRuntime.clear();
-          runtime.dispose();
-        }
-      }),
-    ),
-  );
 }
 
 /**
@@ -515,112 +351,23 @@ export function renderToResult(
   component: ServerComponent,
   options: RenderOptions = {},
 ): RenderResult {
-  const stringDoc = new StringDocument();
-  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
-    mode: 'server-string',
-    document: stringDoc,
-    schedule: null,
-    effects: 'disabled',
-    refs: 'disabled',
-  });
-  const previousRuntime = setActiveApplicationRuntime(runtime);
-  const routeHistory = createMemoryRouteHistory({
-    initialEntries: [options.url ?? '/'],
-  });
-  const routeRuntime = createRouteRuntime({ routeHistory });
-  const dataRuntime = createDataRuntime(
-    options.fetch === undefined ? {} : { fetch: options.fetch },
-  );
-  const previousRouteRuntime = setActiveRouteRuntime(routeRuntime);
-  const previousDataRuntime = setActiveDataRuntime(dataRuntime);
-
-  const rootId = serverRootId(component);
-  try {
-    const root = runWithApplicationRuntime(runtime, () =>
-      component(rootId, null),
-    ) as unknown as StringRenderableNode;
-
-    let body = root.toString(options.markers === true);
-    const state = dataRuntime.serializeState();
-    const payload: RenderPayload = { version: 1, ...(state.sources.length > 0 ? { state } : {}) };
-    if (options.markers === true) {
-      body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
-    }
-    return {
-      html: body,
-      payload,
-      scriptTag: createPayloadScriptTag(rootId, payload),
-    };
-  } catch (error) {
-    runWithApplicationRuntime(runtime, () => {
-      unregisterSubtree(rootId);
-    });
-    throw error;
-  } finally {
-    setActiveApplicationRuntime(previousRuntime);
-    setActiveRouteRuntime(previousRouteRuntime);
-    setActiveDataRuntime(previousDataRuntime);
-    routeRuntime.dispose();
-    dataRuntime.clear();
-    runtime.dispose();
-  }
+  return RenderSession.execute(component, options, stringTier(), session =>
+    stringResult(session, session.mount()));
 }
 
-export async function renderToResultAsync(
+export function renderToResultAsync(
   component: ServerComponent,
   options: RenderOptions = {},
 ): Promise<RenderResult> {
-  const stringDoc = new StringDocument();
-  const runtime = createApplicationRuntime(`ssr-${++renderSequence}`, {
-    mode: 'server-string',
-    document: stringDoc,
-    schedule: null,
-    effects: 'disabled',
-    refs: 'disabled',
+  return RenderSession.execute(component, options, stringTier(), async session => {
+    await session.prepare();
+    const root = session.mount();
+    await session.settle();
+    return stringResult(session, root);
   });
-  const routeHistory = createMemoryRouteHistory({
-    initialEntries: [options.url ?? '/'],
-  });
-  const routeRuntime = createRouteRuntime({ routeHistory });
-  const dataRuntime = createDataRuntime(
-    options.fetch === undefined ? {} : { fetch: options.fetch },
-  );
-  return runWithRouteRuntime(routeRuntime, () =>
-    runWithDataRuntime(dataRuntime, () =>
-      runWithApplicationRuntime(runtime, async () => {
-        const rootId = serverRootId(component);
-        try {
-          await prepareInitialRoute(routeRuntime, options);
-          const root = component(rootId, null) as unknown as StringRenderableNode;
-
-          if (options.mode === 'resolve') {
-            await dataRuntime.settle(options.timeout ?? 5000);
-          }
-
-          let body = root.toString(options.markers === true);
-          const payload = renderPayload(dataRuntime, routeRuntime);
-          if (options.markers === true) {
-            body = `<!--mmd:r:${rootId}-->${body}<!--/mmd-->`;
-          }
-          return {
-            html: body,
-            payload,
-            scriptTag: createPayloadScriptTag(rootId, payload),
-          };
-        } catch (error) {
-          unregisterSubtree(rootId);
-          throw error;
-        } finally {
-          routeRuntime.dispose();
-          dataRuntime.clear();
-          runtime.dispose();
-        }
-      }),
-    ),
-  );
 }
 
-export { renderToReadableStream, type StreamOptions } from './stream';
+export { renderToReadableStream } from './stream';
 export { json, type JsonResponse } from './json';
 export {
   composeDocumentStream,

@@ -379,15 +379,23 @@ export async function prepareRoutedMatches(
   return { kind: 'data', data: undefined };
 }
 
+export interface InitialRoutedPreparationOptions {
+  readonly serverContext?: RoutedServerContext;
+  /** Initial client entry may reuse values delivered by SSR. */
+  readonly reusePrepared?: boolean;
+  /** Owner cancellation, e.g. a server render merging request and reader aborts. */
+  readonly signal?: AbortSignal;
+}
+
 export async function prepareInitialRoutedRuntime(
   runtime: RouteRuntime,
-  serverContext?: RoutedServerContext,
-  reusePrepared = false,
+  options: InitialRoutedPreparationOptions = {},
 ): Promise<RoutedPreparationOutcome> {
+  const { serverContext, reusePrepared = false } = options;
   return prepareRoutedMatches(runtime, runtime.route.matches, {
     href: runtime.route.href,
     params: runtime.route.params,
-    signal: serverContext?.request.signal ?? runtime.route.signal,
+    signal: options.signal ?? serverContext?.request.signal ?? runtime.route.signal,
     reusePrepared,
     ...(serverContext === undefined ? {} : { serverContext }),
   });

@@ -125,7 +125,7 @@ abstract class StringContainer {
   }
 
   insertBefore(newNode: StringRenderableNode, refNode: StringRenderableNode | null): StringRenderableNode {
-    // Lenient like the previous tier: an unowned reference appends.
+    // An unowned reference appends rather than throwing NotFoundError.
     return this.insert(newNode, refNode !== null && refNode.parentNode === this.node ? refNode : null);
   }
 
