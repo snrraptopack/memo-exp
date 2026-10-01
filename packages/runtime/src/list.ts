@@ -186,7 +186,11 @@ export function createListRegion<T>(
     id: EntityId | null;
     pos: number;
     key: unknown;
+    /** Consumed by this general frame; unavailable to key refresh until commit. */
+    frame?: GeneralFrame;
   }
+  interface GeneralFrame { remaining: number }
+  let activeFrame: GeneralFrame | null = null;
   let cache = new Map<unknown, RowRec>();
   const syntheticIds = new Map<unknown, string>();
   let syntheticCounter = 0;
@@ -201,8 +205,8 @@ export function createListRegion<T>(
   // Shape checks can compare keys directly, and removals never need to read
   // a key from a record that is no longer in the source list.
   let prevRows: RowRec[] = [];
-  // M5.8: scratch buffers for the structural path, swapped with the live
-  // ones after each reconcile — zero allocation in steady state.
+  // Ordered buffers swap after each general frame. The scratch Map owns only
+  // newly created rows until commit; retained records stay in the live Map.
   let nextMap = new Map<unknown, RowRec>();
   let nextRows: RowRec[] = [];
   const seq: number[] = []; // temp LIS sequence, reused
@@ -375,13 +379,13 @@ export function createListRegion<T>(
     validatedKeys.length = 0;
     // The compiler may prove that only fresh records are appended. Broad
     // reasons still replay retained rows; unproven callers keep validation.
-    const provenAppend = appendOnly && structuralOnly && !adoptingFrame &&
+    const provenAppend = appendOnly && structuralOnly && !adoptingFrame && activeFrame === null &&
       cache.size === prevItems.length;
     if (provenAppend && items.length === prevItems.length) return;
     // Same length AND every key identical at every position → no additions,
     // no removals, no reorder is possible: skip ALL map building and LIS.
     // This is the steady state of every list that only sees content edits.
-    if (!adoptingFrame && items.length === prevItems.length && cache.size === prevItems.length) {
+    if (!adoptingFrame && activeFrame === null && items.length === prevItems.length && cache.size === prevItems.length) {
       let same = true;
       for (let i = 0; i < items.length; i++) {
         if (items[i] !== prevItems[i]) { same = false; break; }
@@ -424,6 +428,7 @@ export function createListRegion<T>(
     // running LIS for a sequence that is already ordered.
     if (
       !adoptingFrame &&
+      activeFrame === null &&
       (provenAppend || prevItems.length > 0) &&
       items.length > prevItems.length &&
       cache.size === prevItems.length
@@ -510,6 +515,7 @@ export function createListRegion<T>(
     // the general reconciler. A pure suffix is deleted as one DOM range.
     if (
       !adoptingFrame &&
+      activeFrame === null &&
       items.length > 0 &&
       items.length < prevItems.length &&
       cache.size === prevItems.length
@@ -610,7 +616,10 @@ export function createListRegion<T>(
 
     const old = cache;
     const oldWasEmpty = old.size === 0;
-    // M5.8: build into the scratch buffers (swapped into `live` at the end)
+    const trustPositions = activeFrame === null && old.size === prevItems.length;
+    const frame: GeneralFrame = { remaining: old.size };
+    activeFrame = frame;
+    // Collect fresh rows separately while retaining existing Map entries.
     nextMap.clear();
     const next = nextMap;
     const ordered = nextRows;
@@ -629,21 +638,23 @@ export function createListRegion<T>(
       const item = items[i] as T;
       const k = i < evaluatedKeyCount ? validatedKeys[i] : key(item, i);
       let rec: RowRec | undefined;
-      // A matching cached key still present in the old map is unique so far.
-      // Delete still happens before its update, as on the general path.
-      // Consumed, displaced or new keys retain the general Map checks.
+      // Keep retained keys in the live Map. A frame marker proves uniqueness
+      // and hides consumed rows from refreshKey/size until this frame commits.
+      // Matching ordered records avoid an extra lookup for unchanged positions.
       const candidate = oldWasEmpty ? undefined : prevRows[i];
       if (candidate !== undefined && (candidate.key === k ||
-          candidate.key !== candidate.key && k !== k) && old.delete(k)) {
+          candidate.key !== candidate.key && k !== k) &&
+          (trustPositions || old.get(k) === candidate)) {
         rec = candidate;
       } else {
-        if (next.has(k)) {
-          throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
-        }
         rec = oldWasEmpty ? undefined : old.get(k);
-        if (rec !== undefined) old.delete(k);
+      }
+      if (rec?.frame === frame || rec === undefined && next.has(k)) {
+        throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
       }
       if (rec !== undefined) {
+        rec.frame = frame;
+        frame.remaining--;
         reused++;
         const oldPos = rec.pos;
         seq[i] = oldPos;
@@ -663,8 +674,8 @@ export function createListRegion<T>(
         };
         if (!oldWasEmpty) seq[i] = -1;
         hasNew = true;
+        next.set(k, rec);
       }
-      next.set(k, rec);
       ordered[i] = rec;
     }
     validatedKeys.length = 0;
@@ -684,7 +695,7 @@ export function createListRegion<T>(
     // then append a replacement batch with one fragment insertion. With no
     // reused key there is also no old ordering to feed through LIS.
     if (!oldWasEmpty && reused === 0 && (n === 0 || hasNew)) {
-      for (const [, rec] of old) rec.e.dispose?.();
+      for (const rec of prevRows) rec.e.dispose?.();
 
       let removedAsRange = false;
       let firstOwned: Node | undefined;
@@ -706,11 +717,12 @@ export function createListRegion<T>(
         removedAsRange = true;
       }
 
-      for (const [k, rec] of old) {
+      for (const rec of prevRows) {
         cleanupEntry(rec.e, !removedAsRange);
-        syntheticIds.delete(k);
+        syntheticIds.delete(rec.key);
       }
       old.clear();
+      frame.remaining = 0;
 
       if (n !== 0) {
         const fragment = getActiveEnvironment().document.createDocumentFragment();
@@ -725,7 +737,7 @@ export function createListRegion<T>(
         container.insertBefore(fragment, endAnchor);
       }
 
-      cache = next; nextMap = old;
+      commitFrame();
       const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
       nextRows.length = 0;
       prevItems = items.slice();
@@ -752,7 +764,7 @@ export function createListRegion<T>(
         }
         container.insertBefore(fragment, endAnchor);
       }
-      cache = next; nextMap = old;
+      commitFrame();
       const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
       nextRows.length = 0;
       prevItems = items.slice();
@@ -760,10 +772,9 @@ export function createListRegion<T>(
     }
 
     // ---- fast path: pure content sync, zero structural work -----------------
-    if (!hasNew && old.size === 0 && inOrder) {
-      // M5.8: scratch buffers become live, live ones become next frame's
-      // scratch (they are cleared/length-reset at the top of the slow path)
-      cache = next; nextMap = old;
+    if (!hasNew && frame.remaining === 0 && inOrder) {
+      // Commit fresh entries and swap only the ordered buffers.
+      commitFrame();
       const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
       // The former live buffers are scratch now. Truncate immediately rather
       // than retaining removed/replaced entries (and their detached DOM) until
@@ -774,16 +785,18 @@ export function createListRegion<T>(
     }
 
     // ---- removals BEFORE placement (keeps placement math accurate) ----------
-    for (const [k, rec] of old) {
+    let removedKeys: unknown[] | null = null;
+    for (const rec of prevRows) {
+      if (rec.frame === frame) continue;
       rec.e.dispose?.();
       cleanupEntry(rec.e);
-      syntheticIds.delete(k);
+      syntheticIds.delete(rec.key);
+      (removedKeys ??= []).push(rec.key);
     }
-    // `old` becomes the next reconciliation's scratch map below. Iterating a
-    // Map does not remove its entries, so without this clear a list that was
-    // reconciled to empty retained every detached row (including DOM nodes and
-    // handler closures) until another structural reconciliation or dispose.
-    old.clear();
+    // As before, removed keys remain refreshable during every cleanup hook.
+    // Delete them together after the last hook, before structural placement.
+    if (removedKeys !== null) for (const k of removedKeys) old.delete(k);
+    frame.remaining = 0;
 
     // ---- pass 2 (reverse): LIS-guided placement ------------------------------
     // Rows in the LIS are already in correct relative order: skip them.
@@ -847,15 +860,29 @@ export function createListRegion<T>(
     flush();
 
     // ---- bookkeeping for the next reconcile (M5.8: buffer swap) --------------
-    cache = next; nextMap = old;
+    commitFrame();
     const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
     nextRows.length = 0;
     prevItems = items.slice();
   }
 
+  function commitFrame(): void {
+    if (cache.size === 0) {
+      // A fresh mount or complete replacement already built its whole Map.
+      // Adopt that Map directly instead of inserting every fresh key twice.
+      const empty = cache;
+      cache = nextMap;
+      nextMap = empty;
+    } else {
+      for (const [k, rec] of nextMap) cache.set(k, rec);
+      nextMap.clear();
+    }
+    activeFrame = null;
+  }
+
   function refreshKey(k: unknown): void {
     const rec = cache.get(k);
-    if (rec === undefined) return;
+    if (rec === undefined || rec.frame === activeFrame) return;
     syncRow(rec.e, prevItems[rec.pos] as T, rec.id, rec.pos);
   }
 
@@ -874,30 +901,38 @@ export function createListRegion<T>(
   }
 
   function dispose(): void {
+    // Successful frames own every live entry in prevRows. An interrupted
+    // general frame can own the same retained entry in several buffers.
+    const disposed = activeFrame === null ? null : new Set<RowRec>();
+    const cleanup = (rec: RowRec): void => {
+      if (disposed?.has(rec)) return;
+      disposed?.add(rec);
+      rec.e.dispose?.();
+      cleanupEntry(rec.e);
+      syntheticIds.delete(rec.key);
+    };
     // Failed append factories can leave completed rows only in the ordered
     // scratch buffer. Removal probes also put live records there, so skip
     // entries already owned by either map to avoid disposing them twice.
     for (const rec of nextRows) {
       if (rec !== undefined && cache.get(rec.key) !== rec && nextMap.get(rec.key) !== rec) {
-        rec.e.dispose?.();
-        cleanupEntry(rec.e);
-        syntheticIds.delete(rec.key);
+        cleanup(rec);
       }
     }
-    for (const [key, rec] of cache) {
-      rec.e.dispose?.();
-      cleanupEntry(rec.e);
-      syntheticIds.delete(key);
-    }
-    // During a failed general frame, consumed and newly created records are
-    // in nextMap, disjoint from the unconsumed records left in cache.
-    for (const [key, rec] of nextMap) {
-      rec.e.dispose?.();
-      cleanupEntry(rec.e);
-      syntheticIds.delete(key);
+    if (activeFrame === null) {
+      for (const rec of prevRows) cleanup(rec);
+    } else {
+      for (const rec of prevRows) {
+        if (rec.frame !== activeFrame && cache.get(rec.key) === rec) cleanup(rec);
+      }
+      for (const rec of nextRows) if (rec !== undefined) cleanup(rec);
+      // Include a consumed row whose update threw before nextRows received it.
+      for (const [, rec] of cache) cleanup(rec);
+      for (const [, rec] of nextMap) cleanup(rec);
     }
     cache.clear();
     nextMap.clear();
+    activeFrame = null;
     prevItems = [];
     validatedKeys.length = 0;
     prevRows.length = 0;
@@ -910,7 +945,7 @@ export function createListRegion<T>(
     reconcile,
     refreshKey,
     refreshIndices,
-    size: () => cache.size,
+    size: () => activeFrame?.remaining ?? cache.size,
     dispose,
   };
 }

@@ -297,7 +297,7 @@ the optimization priorities.
 |---|---|---|
 | 1 | Conservative partial update cost across state placements | The latest `581b40f` VM report takes 1.3–2.4 ms at 10k rows across two executions, versus vanilla's 0.3–0.5 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned records, including fresh local literal factories, now support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof remains open. |
 | 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Ordered removal now avoids contiguous Map lookups and Map-entry iteration, alongside its existing Map-transfer/LIS shortcut. Required key and row evaluation remain; investigate broader replay and general Map transfers while preserving getter/index/setter/proxy semantics. |
+| 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Ordered removal avoids contiguous Map lookups and Map-entry iteration. General reconciliation now keeps retained keys in its live Map rather than transferring them. Required key/row evaluation and broad replay remain; the VM still needs to measure this runtime change. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
 | 2 | Creation/replacement/teardown | The latest VM has unstable creation medians: vanilla 10k creation is 48.3 ms then 16.8 ms. Across both runs, compiled 10k replacement is 18.7–32.4 ms versus vanilla's 13.2–13.9 ms, and clear is 2.8–3.9 ms versus 0.8 ms. Inspect event disposal, closure creation and retained heap before broader specialization. |
@@ -835,6 +835,85 @@ instances, two module-state list readers, retained identity and unsafe factory
 fallbacks. Generated tests do not read examples. Main DOM outputs were regenerated
 through the compiler; their identity and mixed-operation gates cover nine variants.
 The pinned Octane harness is unchanged. Bundle work remains deferred.
+
+## General reconciliation keeps retained keys
+
+General frames now keep retained records in their live Map and mark consumed
+records with a private frame identity. The marker replaces deleting and inserting
+every retained key, detects duplicates before replay, and preserves SameValueZero
+key identity. Ordered records still supply prior positions and lifecycle order;
+authored keys and retained updates keep their forward interleaving. Fresh records
+are staged separately until commit. Fresh mounting and complete replacement adopt
+that staged Map without inserting the complete fresh batch a second time.
+
+Consumed keys remain unavailable to in-frame `refreshKey()`, and `size()` exposes
+the remaining old entries, matching the previous general-frame behavior. General
+removal hooks can still refresh an earlier removed key until every hook completes.
+Removed keys are deleted after those hooks. Successful disposal follows current
+row order; interrupted general disposal deduplicates entries across buffers.
+Hydration, ordinary row updates, index-sensitive structural updates, key validation
+and setter/proxy fallback are unchanged.
+
+This also fixes ownership after a retained prop update or render throws. The old
+path deleted the record before its update and inserted it into the next Map only
+after success, losing that row on failure. A three-row production-browser probe
+against `793b9f3` disposed rows `[1,3]` and left one node; this change disposes
+`[1,2,3]` and leaves none. Tests also check registered entity cleanup, repeated
+disposal, throwing key/factory paths and placement failure after removals. This is
+not transactional reconciliation or rollback of authored effects.
+
+A direct 10k-row operation check, using identical before/after row factories,
+measured Map operations as follows:
+
+| Path | Before / after Map insertions | Before / after Map deletions |
+| --- | --- | --- |
+| Fresh mount | 10,000 / 10,000 | 0 / 0 |
+| Immutable content update | 10,000 / 0 | 10,000 / 0 |
+| Sparse swap | 10,000 / 0 | 10,000 / 0 |
+
+Both content update and swap still evaluated all 10,000 authored keys and all
+10,000 retained updates. This removes bookkeeping rather than assuming producer
+purity or skipping opaque reads. The earlier compiler-only literal-factory work
+does not explain these gains; this change applies to general runtime replay.
+
+A paired local production Chromium comparison compiled the actual Octane adapter
+through the compiler and bundled the same output with runtime `793b9f3` and this
+change. No compiled code was manually edited. Three warmups preceded 15 alternating
+samples per side; each sample rebuilt an equivalent list outside timing and selected
+row 500 before the operation. The deterministic random stream was the same for both
+bundles. Text, classes, count, order and retained node identity were checked outside
+timing after every operation; middle insertion also checked its new rows.
+
+| Rows | Operation | Before / after median ms |
+| --- | --- | --- |
+| 1,000 | Immutable update every tenth row | 0.7 / 0.6 |
+| 1,000 | Swap | 0.5 / 0.5 |
+| 1,000 | Rotate last row to front | 0.7 / 0.7 |
+| 1,000 | Insert 100 rows at middle | 2.0 / 2.0 |
+| 1,000 | Clear control | 2.8 / 2.6 |
+| 10,000 | Immutable update every tenth row | 7.8 / 3.8 |
+| 10,000 | Swap | 4.9 / 2.8 |
+| 10,000 | Rotate last row to front | 8.8 / 6.2 |
+| 10,000 | Insert 100 rows at middle | 6.7 / 4.7 |
+| 10,000 | Clear control | 22.4 / 21.2 |
+
+These are focused local click-to-completion timings, not the upstream harness's
+full VM results. An earlier prototype comparison had mixed 1k middle-insert results,
+and another run overlapped regression testing; neither supplies the final table.
+The small 1k differences and clear control do not establish a reliable improvement.
+The VM still needs to confirm scaling across all state placements and frameworks.
+
+The runtime build, lint and 97 focused regressions passed. These include every
+six-row permutation with an independent minimum-move oracle, mixed additions and
+removals, SameValueZero, in-frame refresh/size observations, removal-hook effects,
+retained identity, selective reasons, exception ownership and hydration.
+The regenerated DOM suite passed all 21 scenarios across nine variants, including
+identity and mixed-operation gates. The memoized-dom target passed the pinned
+Octane canonical and reorder smoke checks. Its first reorder navigation timed out
+before tests; a sequential retry passed both suites. Smoke timings are correctness
+checks here, not evidence of relative framework performance. The upstream pin,
+dependencies, authored adapters and stored VM timing reports remain unchanged.
+Bundle work remains deferred.
 
 ## Earlier candidates retained for tracking
 
