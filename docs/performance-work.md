@@ -509,6 +509,63 @@ The paired Octane-fixture checks above covered creation, immutable update,
 selection, swap, reverse and clear. The complete upstream Octane harness was
 not rerun for this pass.
 
+## Single-node row ownership and isolated DOM moves
+
+Inline row factories now return their root Node directly, using the existing
+`ListEntry.nodes` union. Lightweight single-root component rows already did
+this. This removes one array allocation per inline row. The runtime inserts a
+single pending Node directly instead of allocating a fragment and appending
+the Node into it first. Arrays retain their iteration and fragment handling;
+multi-entry runs still batch into a fragment. Server and hydration entries
+retain their marker-plus-node extents. All generated benchmark changes came
+from the compiler.
+
+A browser cost probe against `a88e100` verified retained identity and order at
+10k rows. A one-row rotation allocated one fragment and staged one Node before
+the patch, versus zero of each afterward. A sparse swap removed two of each.
+Reverse retained one fragment and 9,999 staging appends in both versions.
+
+A paired production runtime comparison used ten warmups and 100 repeated
+samples with alternating order. Text, order and retained identity were checked
+after every operation, outside timing. Repeated removals started at 10k and
+reduced the list by one per sample.
+
+| Operation | `a88e100` → patch median (ms) |
+|---|---|
+| Forward one-row rotation | 5.5 → 5.4 |
+| Backward one-row rotation | 4.4 → 4.8 |
+| Half-list rotation | 16.7 → 16.2 |
+| Sparse swap | 5.9 → 5.4 |
+| Reverse | 25.2 → 25.2 |
+| Remove first | 2.3 → 2.5 |
+
+The compiled eight-variant comparison used five warmups and 25 fresh 10k-list
+samples per version, alternating order and validating text, classes and
+identity after each update. Inline creation medians were module 94.9 → 100.2,
+owned 92.1 → 92.3, module data/component selection 83.5 → 86.4, and component
+data/module selection 95.0 → 92.3 ms. Component controls and update timings
+also varied. These local runs establish removed allocations and DOM calls,
+but do not establish a repeatable overall throughput or heap improvement.
+The VM should evaluate the accumulated changes together. Broad replay and
+general Map transfer remain priorities.
+
+An experiment skipping proven direct inline binding assignments was discarded
+after two paired runs remained mixed or slower. No compiler flag or runtime
+shortcut from that experiment remains.
+
+The compiler/runtime builds, lint and 109 focused regressions passed. Coverage
+includes all 720 six-row permutations against a minimum-move oracle,
+multi-node extents, custom array iteration, retained input values/listeners,
+hydration, key/read order, selection and disposal. An older mutation-journal
+test's targeted expectation also failed on `a88e100`: its producer and indexed
+loop require conservative replay under the existing proof. It now checks that
+fallback; separate literal-record regressions continue to check targeted
+refresh. Lint reports three pre-existing `any` warnings in that test.
+All nine DOM variants passed 21 scenarios plus identity and mixed-sequence
+checks. The pinned memoized-dom Octane canonical and reorder smoke gates
+passed; their one-sample timings are execution checks. The other nine Octane
+targets were unchanged and were not rerun.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

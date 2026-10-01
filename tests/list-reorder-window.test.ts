@@ -3,6 +3,40 @@ import { createListRegion } from '@memoized-dom/runtime/testing';
 
 afterEach(() => { document.body.innerHTML = ''; });
 
+it('retains input state, listeners and ownership when moving one single-node row', () => {
+  const host = document.createElement('div'); document.body.append(host);
+  const items = [0, 1, 2, 3];
+  const inputs: HTMLInputElement[] = [];
+  const clicks: number[] = [], disposed: number[] = [];
+  const region = createListRegion(host, 'single-input', id => {
+    const input = document.createElement('input'); inputs[id] = input;
+    input.value = String(id); input.addEventListener('click', () => clicks.push(id));
+    return { nodes: input, entities: [], dispose() { disposed.push(id); } };
+  }, id => id, false);
+  region.reconcile(items); inputs[0]!.value = 'edited';
+  region.reconcile([1, 2, 0, 3]);
+  expect([...host.children]).toEqual([inputs[1], inputs[2], inputs[0], inputs[3]]);
+  expect(inputs[0]!.value).toBe('edited');
+  inputs[0]!.click(); expect(clicks).toEqual([0]); expect(disposed).toEqual([]);
+  region.dispose(); expect(disposed.sort()).toEqual(items); expect(host.children).toHaveLength(0);
+});
+
+it('preserves array iteration when a one-element array row moves alone', () => {
+  const host = document.createElement('div');
+  const nodes: Node[] = [], iterations: number[] = [];
+  const region = createListRegion(host, 'array-iteration', id => {
+    const node = document.createElement('span'); nodes[id] = node;
+    const extent = [node];
+    extent[Symbol.iterator] = function* () { iterations.push(id); yield node; };
+    return { nodes: extent, entities: [] };
+  }, (id: number) => id, false);
+  region.reconcile([0, 1, 2, 3]); iterations.length = 0;
+  region.reconcile([1, 2, 0, 3]);
+  expect([...host.children]).toEqual([nodes[1], nodes[2], nodes[0], nodes[3]]);
+  expect(iterations).toEqual([0]);
+  region.dispose();
+});
+
 // Independent quadratic oracle: minimum retained rows that must move.
 function minimumMoves(previous: number[], next: number[]): number {
   const positions = next.map(id => previous.indexOf(id)).filter(index => index >= 0);

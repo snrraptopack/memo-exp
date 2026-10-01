@@ -123,7 +123,7 @@ export function buildInlineRowCreate(
         astFactory.objectExpression([
           astFactory.objectProperty(
             astFactory.identifier('nodes'),
-            astFactory.arrayExpression([astFactory.identifier(rootVariable)]),
+            astFactory.identifier(rootVariable),
           ),
           astFactory.objectProperty(
             astFactory.identifier('entities'),

@@ -92,7 +92,7 @@ describe('keyed list mutation journal', () => {
     delete (globalThis as any).__memoizedDomMutationSyncs;
   });
 
-  it('refreshes only directly mutated keys and keeps structural edits full', async () => {
+  it('replays opaque-produced rows for partial writes and structural edits', async () => {
     const specifier = './fixtures/out/keyed-list-mutation-journal.compiled.ts';
     const { App } = await import(specifier);
     document.body.appendChild(App('App', null));
@@ -101,7 +101,9 @@ describe('keyed list mutation journal', () => {
 
     (document.querySelector('#update') as HTMLButtonElement).click();
     flush();
-    expect(syncs).toEqual([1, 11]);
+    // makeItems() is opaque to the closed plain-record proof. The separately
+    // tested literal-record case can target keys; this case must replay rows.
+    expect(syncs).toEqual(Array.from({ length: 12 }, (_, index) => index + 1));
     expect(document.querySelector('[data-id="1"]')?.textContent).toBe('row 1!');
     expect(document.querySelector('[data-id="11"]')?.textContent).toBe('row 11!');
 

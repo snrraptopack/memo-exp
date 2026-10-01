@@ -280,7 +280,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 			});
 
 			return {
-				nodes: [_li],
+				nodes: _li,
 				entities: [],
 				updateProps: (_nextItem) => {
 					item = _nextItem;

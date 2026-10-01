@@ -806,9 +806,17 @@ export function createListRegion<T>(
 
     const flush = (): void => {
       if (pending === null) return;
+      // A single Node can move directly. Arrays retain their iteration and
+      // fragment semantics, including hydration-marker and multi-node extents.
+      const singleNodes = pending.length === 1 ? pending[0]!.nodes : undefined;
+      if (singleNodes !== undefined && !Array.isArray(singleNodes)) {
+        container.insertBefore(singleNodes as Node, cursor);
+        pending = null;
+        return;
+      }
       const frag = getActiveEnvironment().document.createDocumentFragment();
       for (let i = pending.length - 1; i >= 0; i--) {
-        const nodes = pending[i]!.nodes;
+        const nodes = singleNodes ?? pending[i]!.nodes;
         if (Array.isArray(nodes)) {
           for (const node of nodes) frag.appendChild(node);
         } else {
