@@ -1,9 +1,9 @@
 import { childNode, childNodes, identifierName, jsxIdentifierName, nodeField, walkAst, type BaseNode, type Binding } from '../ast';
-import { variableDeclaratorFor, type Ctx } from '../context';
+import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
 import type { MapCallExpression } from '../lists';
 import { LIST_METHOD_OPTIMIZATIONS } from '../lists/mutation-shapes';
 
-/** Closed flat records only. No extra receiver/key evaluations are emitted. */
+/** Closed flat records without escapes or cross-row collection reads. */
 export function analyzeModuleListTargets(ctx: Ctx): void {
   const analysis = ctx.astAnalysis;
   if (analysis === null || analysis === undefined || ctx.moduleStateCells) return;
@@ -18,9 +18,21 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     node !== null && node.type === 'Literal' &&
     (nodeField(node, 'value') === null || ['string', 'number', 'boolean'].includes(typeof nodeField(node, 'value')));
 
+  const candidates = new Map<Binding, string>();
   for (const source of ctx.listSources) {
     const binding = analysis.rootScope.getBinding(source);
-    if (!binding || !binding.scope.isProgramScope || binding.constantViolations.length !== 0) continue;
+    if (binding?.scope.isProgramScope) candidates.set(binding, source);
+  }
+  for (const [component, sources] of ctx.keyedListMutationSources) {
+    const owner = ctx.compPaths.get(component)?.node;
+    if (owner === undefined) continue;
+    for (const source of sources.keys()) {
+      const binding = astBindingAt(ctx, owner.body, source);
+      if (binding !== undefined) candidates.set(binding, source);
+    }
+  }
+  for (const [binding, source] of candidates) {
+    if (binding.constantViolations.length !== 0) continue;
     const declaration = variableDeclaratorFor(ctx, binding);
     const array = declaration && childNode(declaration, 'init');
     if (!array || array.type !== 'ArrayExpression') continue;
@@ -28,24 +40,9 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     if (statement && parents.get(statement)?.type === 'ExportNamedDeclaration') continue;
     const elements = nodeField(array, 'elements');
     if (!Array.isArray(elements) || elements.length === 0) continue;
-    // Include every append payload in the same plain-record proof. Names only
-    // select candidates; arbitrary arguments and escaping receivers still fail.
-    const records = [...elements];
-    const appends = new Set<BaseNode>();
-    for (const reference of binding.references) {
-      const access = parents.get(reference);
-      if (access?.type !== 'MemberExpression' || childNode(access, 'object') !== reference) continue;
-      const method = property(access);
-      if (method === null || !Object.hasOwn(LIST_METHOD_OPTIMIZATIONS, method) ||
-          LIST_METHOD_OPTIMIZATIONS[method] !== 'append') continue;
-      const call = parents.get(access);
-      if (call?.type !== 'CallExpression' || childNode(call, 'callee') !== access) continue;
-      records.push(...childNodes(call, 'arguments'));
-      appends.add(access);
-    }
     const fields = new Set<string>();
     let valid = true;
-    for (const element of records) {
+    for (const element of elements) {
       if (!element || element.type !== 'ObjectExpression') { valid = false; break; }
       const own = new Set<string>();
       for (const entry of childNodes(element, 'properties')) {
@@ -109,7 +106,6 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     for (const reference of binding.references) {
       const access = parents.get(reference);
       if (access?.type !== 'MemberExpression' || childNode(access, 'object') !== reference) { valid = false; break; }
-      if (appends.has(access)) continue;
       const method = property(access);
       if (method !== null && Object.hasOwn(LIST_METHOD_OPTIMIZATIONS, method) &&
           LIST_METHOD_OPTIMIZATIONS[method] === 'render' && nodeField(access, 'computed') !== true) {
@@ -152,16 +148,19 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
         written.add(name);
       } else if (operation?.type === 'UpdateExpression') {
         written.add(name);
-      } else if (operation?.type === 'UnaryExpression' && nodeField(operation, 'operator') === 'delete') {
+      } else {
+        // Reads outside the compiler-owned map can make another row's helper
+        // depend on this field. They do not have a proven per-position boundary.
         valid = false; break;
       }
     }
     if (valid && ![...written].some(name => keys.has(name))) {
-      // Appends preserve existing positions, so proven content writes stay
-      // targeted even when the same array is also appended elsewhere. Calls
-      // themselves remain content-safe: a property name cannot prove native
-      // Array.prototype semantics in JavaScript.
-      ctx.moduleListTargets.set(source, { length: elements.length, fields: written });
+      // Only compiler-owned JSX maps and bounded direct accesses survived.
+      // Opaque methods can escape records or install setters, even if their
+      // arguments are plain literals, and invalidate this proof permanently.
+      const proof = { length: elements.length, fields: written };
+      ctx.plainListItemTargets.set(binding.identifier, proof);
+      if (binding.scope.isProgramScope) ctx.moduleListTargets.set(source, proof);
     }
   }
 }

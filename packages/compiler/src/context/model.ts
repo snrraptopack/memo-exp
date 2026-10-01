@@ -7,7 +7,7 @@
  */
 
 import type * as t from '../ast/compiler-types';
-import type { ScopeAnalysis } from '../ast';
+import type { BaseNode, ScopeAnalysis } from '../ast';
 import type {
   ComponentPropsPlan,
   ControlFlowDerivation,
@@ -539,6 +539,8 @@ export interface Ctx {
   disabledKeyedListMutationSources: Set<string>;
   /** Closed module arrays eligible for static-index content invalidation. */
   moduleListTargets: Map<string, { length: number; fields: Set<string> }>;
+  /** Closed flat-record collection proofs keyed by lexical binding identifier. */
+  plainListItemTargets: WeakMap<BaseNode, { length: number; fields: Set<string> }>;
   /**
    * R12: instance state — component name → top-level let/var names of its
    * body. Instance state lives in the factory closure of ONE instance: it
@@ -828,6 +830,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     keyedListMutations: new WeakMap(),
     keyedListMutationSources: new Map(),
     moduleListTargets: new Map(),
+    plainListItemTargets: new WeakMap(),
     disabledKeyedListMutationSources: new Set(),
     instanceState: new Map(),
     instanceDerivations: new Map(),

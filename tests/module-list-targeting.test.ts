@@ -255,7 +255,7 @@ it('does not read retained positions during proven append and rejects duplicate 
   region.dispose();
 });
 
-it('targets existing content after append and reconciles mixed append/content batches', async () => {
+it('retains general content replay when opaque method calls can invalidate the record proof', async () => {
   const scheduled: Array<() => void> = [];
   setScheduler(callback => scheduled.push(callback));
   const syncs: number[] = [];
@@ -280,7 +280,7 @@ it('targets existing content after append and reconciles mixed append/content ba
   expect([...document.querySelectorAll('li')].map(node => node.textContent)).toEqual([
     'A!', 'b!', 'c!', 'A!', 'b!', 'c!',
   ]);
-  expect(syncs.sort()).toEqual([1, 1]);
+  expect(syncs.sort()).toEqual([1, 1, 2, 2, 3, 3]);
 });
 
 it('refreshes each row once after a synchronous swap and skips untaken writes', async () => {

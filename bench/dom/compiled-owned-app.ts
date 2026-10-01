@@ -23,7 +23,6 @@ const _WRITES_2 = [
 	"./bench/dom/data.ts#nouns"
 ];
 
-const _REASONS_3 = [0, 2];
 const _HTML_ = "<div><div class=\"toolbar\"><button>create1k</button><button>create10k</button><button>append1k</button><button>prepend1k</button><button>pop1k</button><button>update</button><button>swap</button><button>reverse</button><button>remove</button><button>remove100</button><button>clear</button></div><ul></ul></div>";
 
 import { buildData } from './data';
@@ -192,13 +191,10 @@ export function BenchAppOwned(_id2, _parent, _dataPolicies) {
 	_button6.onclick = () => {
 		let _didWrite = false;
 
-		for (let i = 0; i < data.length; i += 10) (
-			_didWrite = true,
-			(_dataChangedKeys.add(data[i].id), data[i].label += ' !!!')
-		);
+		for (let i = 0; i < data.length; i += 10) (_didWrite = true, data[i].label += ' !!!');
 
 		{
-			if (_didWrite) _MD.markDirty(_id2, _REASONS_3);
+			if (_didWrite) _MD.markDirtySubtree("BenchAppOwned", _id2, _REASONS_2);
 		}
 	};
 

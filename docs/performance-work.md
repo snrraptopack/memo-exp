@@ -61,6 +61,19 @@ proof keep the conservative update path described in the compiler README.
   module readers, hot builds, transparent owners, callback preludes, refs,
   spreads, child components, nested regions and calls in render expressions.
   General routing, key evaluation and setter/proxy fallbacks remain unchanged.
+- Content journals now require a closed plain-record proof before adding a
+  key read. Previously, rewriting an opaque member assignment could hide it
+  from setter/proxy fallback analysis, read its receiver twice, and leave a
+  setter-mutated sibling row stale. Unproven instance writes keep owner/root
+  publication and full reconciliation. Closed literal arrays with bounded
+  numeric indices, scalar writes, immutable key fields and no escapes retain
+  targeted refresh. The proof uses lexical bindings, including owner-local
+  bindings, rather than matching source names.
+- Conditional writes to those proven module lists can now publish fixed
+  indices only when the write executes. A skipped branch schedules nothing;
+  an executed write refreshes one addressed row instead of replaying every row.
+  Source reads outside the map (including cross-row helper captures), aliases,
+  opaque methods, replacement producers and dynamic indices retain full replay.
 
 A focused local Chromium check selected alternating rows in an existing 10k
 component-owned component-row list: 25 samples after five warmups, synchronous
@@ -177,6 +190,17 @@ exclusions. Hydration adopts existing inline rows without creation or relocation
 and retains their event updates after reordering. VM confirmation remains open.
 
 ## Optimistic forms and benchmark validation
+
+The journal-fallback pass adds self-contained regressions for inline/component
+rows with synchronous and deferred schedulers. They check one receiver read
+before the authored write, setter changes to another row and a separate child
+component, retained node identity, cross-row helper reads, safe targeted writes
+and skipped conditional writes. The DOM benchmark's owner-local `buildData`
+producer is opaque to this proof, so its partial writes now use the restored
+fallback. Earlier VM partial-update timings remain a record of the older code;
+re-measure them before comparing state-placement speed. This pass does not
+establish faster opaque-produced partial updates. The next optimization requires
+a sound producer/escape proof or a cheaper conservative replay path.
 
 The simple example now demonstrates optimistic messages with a delayed action.
 Its compiler/runtime regressions use self-contained source fixtures in tests;

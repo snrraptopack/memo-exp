@@ -42,6 +42,17 @@ export function hasKnownAccessor(ctx: Ctx, at: BaseNode, member: t.MemberExpress
 
 /** Only a non-escaping object literal's own data property permits extra reads. */
 export function isPlainDataAssignment(ctx: Ctx, at: BaseNode, member: t.MemberExpression): boolean {
+  const access = member.object;
+  if (access.type === 'MemberExpression' && nodeField(access, 'computed') === true) {
+    const source = identifierName(childNode(access, 'object'));
+    const binding = source === null ? undefined : astBindingAt(ctx, at, source);
+    const proof = binding && ctx.plainListItemTargets.get(binding.identifier);
+    const indexNode = childNode(access, 'property');
+    const index = indexNode && nodeField(indexNode, 'value');
+    const field = member.computed ? stringValue(member.property) : identifierName(member.property);
+    if (proof !== undefined && typeof index === 'number' && Number.isInteger(index) &&
+        index >= 0 && index < proof.length && field !== null && proof.fields.has(field)) return true;
+  }
   const object = assignedObject(ctx, at, member);
   if (object === null) return false;
   const { binding, init, key } = object;

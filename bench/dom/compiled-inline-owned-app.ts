@@ -12,7 +12,6 @@ const _WRITES_2 = [
 	"./bench/dom/data.ts#nouns"
 ];
 
-const _REASONS_3 = [0, 2];
 let _liTemplate, _liTemplateDocument;
 
 function _liCreateTemplate(_document2) {
@@ -121,13 +120,10 @@ export function BenchAppInlineOwned(_id, _parent, _dataPolicies) {
 	_button6.onclick = () => {
 		let _didWrite = false;
 
-		for (let i = 0; i < data.length; i += 10) (
-			_didWrite = true,
-			(_dataChangedKeys.add(data[i].id), data[i].label += ' !!!')
-		);
+		for (let i = 0; i < data.length; i += 10) (_didWrite = true, data[i].label += ' !!!');
 
 		{
-			if (_didWrite) _MD.markDirty(_id, _REASONS_3);
+			if (_didWrite) _MD.markDirtySubtree("BenchAppInlineOwned", _id, _REASONS_2);
 		}
 	};
 

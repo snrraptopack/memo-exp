@@ -52,3 +52,14 @@ the contribution of any one change.
 Bundle-size investigation is deferred at the user's request. The rest of the
 general report is retained by the user; this summary selects performance work
 relevant to the current compiler/runtime fixes.
+
+## Subsequent correctness correction
+
+The later journal-fallback pass reproduces stale sibling rows after a proxy
+setter and an extra receiver read in the owner-local key journal. Opaque-produced
+collections now keep broad fallback; only closed plain records support targeted
+content writes. The VM inputs produced ordinary records and passed their gates,
+but the older owner-local partial-update advantage does not measure this restored
+fallback. Re-run the matrix on the corrected compiler before comparing ownership
+performance. Conditional writes to proven module lists can still target one row;
+cross-row helper captures and opaque methods retain general replay.

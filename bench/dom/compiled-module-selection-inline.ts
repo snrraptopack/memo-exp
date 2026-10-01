@@ -17,7 +17,6 @@ const _WRITES_3 = [
 	"./bench/dom/data.ts#nouns"
 ];
 
-const _REASONS_2 = [0, 2];
 const _WRITES_4 = ["./bench/dom/AppModuleSelectionInline.tsx#selected"];
 let _liTemplate, _liTemplateDocument;
 
@@ -128,13 +127,10 @@ export function BenchModuleSelectionInline(_id, _parent, _dataPolicies) {
 	_button6.onclick = () => {
 		let _didWrite = false;
 
-		for (let i = 0; i < data.length; i += 10) (
-			_didWrite = true,
-			(_dataChangedKeys.add(data[i].id), data[i].label += ' !!!')
-		);
+		for (let i = 0; i < data.length; i += 10) (_didWrite = true, data[i].label += ' !!!');
 
 		{
-			if (_didWrite) _MD.markDirty(_id, _REASONS_2);
+			if (_didWrite) _MD.markDirtySubtree("BenchModuleSelectionInline", _id, _REASONS_);
 		}
 	};
 

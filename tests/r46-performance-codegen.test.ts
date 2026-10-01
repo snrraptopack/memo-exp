@@ -161,7 +161,7 @@ describe('R46 performance code generation', () => {
     expect(code).not.toContain('.refreshKey(');
   });
 
-  it('journals direct non-key item writes and keeps structural writes full', () => {
+  it('keeps broad publication for unproven loop receivers and replaceable collections', () => {
     const code = compile(`
       function Row({ item }) {
         return <li>{item.label}</li>;
@@ -192,11 +192,8 @@ describe('R46 performance code generation', () => {
       }
     `);
 
-    const journal = code.match(/const (_itemsChangedKeys\d*) = new Set/);
-    expect(journal).not.toBeNull();
-    expect(code).toContain(`${journal![1]}.add(items[i].id)`);
-    expect(code).toContain(`for (const _changedListKey of ${journal![1]})`);
-    expect(code).toContain(`${journal![1]}.clear()`);
+    expect(code).not.toContain('.add(items[i].id)');
+    expect(code).toContain('.markDirtySubtree(');
     expect(code).toContain('.reconcile(items)');
   });
 
