@@ -297,7 +297,7 @@ the optimization priorities.
 |---|---|---|
 | 1 | Conservative partial update cost across state placements | The latest `581b40f` VM report takes 1.3–2.4 ms at 10k rows across two executions, versus vanilla's 0.3–0.5 ms. Row update closures dominate an earlier local sampled profile. Primitive text joins now skip unchanged string construction; required operand reads and broad replay remain. Narrower routing still requires proof covering setters, getters, aliases and hidden reads. |
 | 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Removal-only reconciliation already avoids Map transfer/LIS but still validates keys and synchronizes retained rows. Profile that work alongside general Map transfers; preserve getter/index/setter/proxy semantics. |
+| 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Ordered removal now avoids contiguous Map lookups and Map-entry iteration, alongside its existing Map-transfer/LIS shortcut. Required key and row evaluation remain; investigate broader replay and general Map transfers while preserving getter/index/setter/proxy semantics. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
 | 2 | Creation/replacement/teardown | The latest VM has unstable creation medians: vanilla 10k creation is 48.3 ms then 16.8 ms. Across both runs, compiled 10k replacement is 18.7–32.4 ms versus vanilla's 13.2–13.9 ms, and clear is 2.8–3.9 ms versus 0.8 ms. Inspect event disposal, closure creation and retained heap before broader specialization. |
@@ -633,6 +633,63 @@ forwarding shape added at `581b40f`; that shape's improvement remains supported
 by the focused paired fixture and regressions above. No compiler/runtime source
 or dependency version was changed while recording this checkpoint. Bundle work
 remains deferred, and the existing optimization priorities remain in place.
+
+## Ordered removal bookkeeping
+
+A local Chromium CPU profile of compiler-generated apps put 887/1,460 samples
+in component-row update closures and 576/802 in inline-row update closures.
+For repeated Octane front removals at 10k, reconciliation accounted for
+283/573 samples. These sampled counts include idle, program and GC samples;
+they identify investigation targets rather than precise elapsed-time shares.
+
+Removal-subsequence validation now compares each authored key with the next
+ordered record before using a Map lookup across a gap. Cleanup walks the old
+ordered records, without iterating Map entries or filling a parallel position
+buffer. Authored key evaluation, required retained-row updates and disposal
+order remain intact. Reordered, duplicate or new keys retain the general path.
+The contiguous suffix-removal Range path remains in use.
+
+A direct-runtime 10k cost probe counted:
+
+| Removal | Map lookups before / after | Map entries visited before / after |
+| --- | --- | --- |
+| First row | 9,999 / 1 | 10,000 / 0 |
+| Every tenth row | 9,000 / 1,000 | 10,000 / 0 |
+| Last 1,000 rows | 9,000 / 0 | 0 / 0 |
+
+Entry visits are logical iterator work, not a measurement of heap allocations.
+A separate paired production Chromium fixture compiled the Octane app with
+the current compiler and compared runtime source at `858b9a4` with this change.
+Five warmups preceded 15 fresh samples per side, alternating execution order.
+Removal samples average 20 individually timed operations on a shrinking list;
+update samples time one operation. Creation, selection and checks of every
+row's text, class, order, count and retained node identity occur outside timing.
+
+| Starting rows | Operation | Before / after median ms |
+| --- | --- | --- |
+| 1,000 | Front removal | 1.93 / 0.78 |
+| 1,000 | Every-tenth removal | 1.28 / 0.83 |
+| 1,000 | Middle removal through row event | 2.36 / 1.36 |
+| 1,000 | Partial update control | 1.10 / 1.10 |
+| 10,000 | Front removal | 7.91 / 5.17 |
+| 10,000 | Every-tenth removal | 7.23 / 5.58 |
+| 10,000 | Middle removal through row event | 11.50 / 10.52 |
+| 10,000 | Partial update control | 9.60 / 9.70 |
+
+These local results support this removal optimization; they are not comparable
+to VM medians or evidence of a general partial-update improvement. Broad row
+replay and structural work remain open priorities. Bundle work stays deferred.
+
+Regression tests also reproduced and fixed two existing removal-proof failures:
+a key read growing the source back to its original length could access a
+missing suffix entry, while truncation could leave a staged phantom row mounted.
+The proof now checks the final removal extent and trims staged survivors.
+The runtime build, lint, 105 focused tests and all nine DOM variants passed,
+including hydration, failed-frame disposal, permutation, identity and mixed
+selection/reorder/removal checks.
+The pinned Octane memoized-dom target also passed canonical and reorder smoke
+checks; their single-sample timings are correctness checks, not performance
+evidence. Other framework targets were unchanged and were not rerun locally.
 
 ## Earlier candidates retained for tracking
 

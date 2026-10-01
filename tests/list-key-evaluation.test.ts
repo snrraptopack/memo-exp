@@ -96,3 +96,53 @@ it.each(['append', 'truncate'] as const)('handles a key read that changes source
   expect(app.host.children[0]).toBe(rows[0]); expect(app.host.children[1]).toBe(rows[1]);
   app.region.dispose();
 });
+
+it.each(['append', 'truncate'] as const)('handles source length changes while proving a removal through %s', operation => {
+  const items = [1,2,3,4].map(id => ({ id, label: String(id) }));
+  let current: typeof items | null = null;
+  const reads: unknown[] = [];
+  const app = create(items, item => {
+    reads.push(item.id);
+    if (current !== null && item.id === (operation === 'append' ? 2 : 3)) {
+      if (operation === 'append') current.push(items[2]!, items[3]!);
+      else current.length = 1;
+      current = null;
+    }
+    return item.id;
+  });
+  const rows = [...app.host.children]; reads.length = 0;
+  const next = operation === 'append' ? items.slice(0, 2) : items.slice(1, 3);
+  current = next;
+  app.region.reconcile(next);
+  expect(reads).toEqual(operation === 'append' ? [1,2,3,4] : [2,3]);
+  expect([...app.host.children]).toEqual(operation === 'append' ? rows : [rows[1]]);
+  expect(app.region.size()).toBe(next.length);
+  expect(app.disposed).toEqual(operation === 'append' ? [] : [items[0], items[2], items[3]]);
+  app.region.dispose();
+});
+
+it('preserves key/update/disposal order and shifted bindings across removal gaps', () => {
+  const symbol = Symbol('key'), object = {};
+  const keys = [NaN, 0, '0', symbol, object, 'last'];
+  const items = keys.map((id, index) => ({ id, label: String(index) }));
+  const calls: string[] = [], nodes: Node[] = [];
+  const host = document.createElement('div');
+  const region = createListRegion(host, 'gaps', (initial, _id, initialIndex) => {
+    const node = document.createElement('span'); nodes[initialIndex] = node;
+    let item = initial, index = initialIndex;
+    const render = () => { node.textContent = `${item.label}@${index}`; };
+    render();
+    return { nodes: node, entities: [],
+      updateProps(value, position) { item = value as typeof initial; index = position; },
+      update() { calls.push(`u${item.label}@${index}`); render(); },
+      dispose() { calls.push(`d${initial.label}`); } };
+  }, (item, index) => { calls.push(`k${item.label}@${index}`); return item.id; }, false, true);
+  region.reconcile(items); calls.length = 0;
+  const retained = [items[1]!, items[2]!, items[4]!];
+  region.reconcile(retained);
+  expect(calls).toEqual(['k1@0', 'k2@1', 'k4@2', 'u1@0', 'u2@1', 'u4@2', 'd0', 'd3', 'd5']);
+  expect([...host.children]).toEqual([nodes[1], nodes[2], nodes[4]]);
+  calls.length = 0; region.refreshKey(object);
+  expect(calls).toEqual(['u4@2']); expect(nodes[4]!.textContent).toBe('4@2');
+  region.dispose(); expect(host.children).toHaveLength(0);
+});

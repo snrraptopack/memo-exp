@@ -205,7 +205,6 @@ export function createListRegion<T>(
   // ones after each reconcile — zero allocation in steady state.
   let nextMap = new Map<unknown, RowRec>();
   let nextRows: RowRec[] = [];
-  const nextPositions: number[] = [];
   const seq: number[] = []; // temp LIS sequence, reused
 
   /**
@@ -514,9 +513,6 @@ export function createListRegion<T>(
     ) {
       const ordered = nextRows;
       ordered.length = items.length;
-      nextPositions.length = items.length;
-      seq.length = prevItems.length;
-      seq.fill(-1);
       let removalOnly = true;
       let lastOld = -1;
       let prefixOnly = true;
@@ -524,25 +520,30 @@ export function createListRegion<T>(
         const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
         validatedKeys[i] = k;
         if (i >= evaluatedKeyCount) evaluatedKeyCount = i + 1;
-        const rec = cache.get(k);
+        // Removal subsequences usually continue at the next old position.
+        // Gaps use the Map; contiguous survivors reuse the ordered record.
+        const candidate = prevRows[lastOld + 1];
+        const rec = candidate !== undefined && (candidate.key === k ||
+          candidate.key !== candidate.key && k !== k) ? candidate : cache.get(k);
         if (rec === undefined || rec.pos <= lastOld) {
           removalOnly = false;
           break;
         }
         lastOld = rec.pos;
         prefixOnly &&= rec.pos === i;
-        nextPositions[i] = rec.pos;
-        seq[rec.pos] = i;
         ordered[i] = rec;
       }
-      if (removalOnly) {
+      if (removalOnly && items.length < prevItems.length) {
+        // Key getters can shrink or grow the source while validating it.
+        // Only the final surviving extent belongs to this removal frame.
+        ordered.length = items.length;
         for (let i = 0; i < items.length; i++) {
           syncRetained(
             ordered[i]!.e,
             items[i] as T,
             ordered[i]!.id,
             i,
-            nextPositions[i]!,
+            ordered[i]!.pos,
             structuralOnly,
           );
         }
@@ -581,17 +582,18 @@ export function createListRegion<T>(
           return;
         }
 
-        for (const [k, rec] of cache) {
-          const nextIndex = seq[rec.pos]!;
-          if (nextIndex >= 0) {
-            rec.pos = nextIndex;
+        let retainedIndex = 0;
+        for (let oldIndex = 0; oldIndex < prevRows.length; oldIndex++) {
+          const rec = prevRows[oldIndex]!;
+          if (rec === ordered[retainedIndex]) {
+            rec.pos = retainedIndex++;
             continue;
           }
           const entry = rec.e;
           entry.dispose?.();
           cleanupEntry(entry);
-          syntheticIds.delete(k);
-          cache.delete(k);
+          syntheticIds.delete(rec.key);
+          cache.delete(rec.key);
         }
         const priorRows = prevRows;
         prevRows = ordered;
