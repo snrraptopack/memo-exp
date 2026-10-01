@@ -635,11 +635,18 @@ export function undirty(id: EntityId): void {
  * root: correct under any circumstance, just not scoped.
  *
  * NOTE: prefix scan (rare fallback path); teardown uses the children links.
+ * The compiler may include an exact owner destination. Enqueue it before the
+ * subtree so even synchronous schedulers commit both publications together.
+ * Owners outside the fallback root retain their supplied reasons.
  */
-export function markDirtySubtree(id: EntityId): void {
+export function markDirtySubtree(
+  id: EntityId,
+  ownerId?: EntityId,
+  ownerReason?: DirtyReasonInput,
+): void {
   const k = getActiveApplicationRuntime().state;
   const prefix = id + '/';
-  let marked = false;
+  let marked = ownerId !== undefined && enqueueDirty(k, ownerId, ownerReason);
   for (const key of k.registry.keys()) {
     if (key === id || key.startsWith(prefix)) {
       k.dirty.add(key);

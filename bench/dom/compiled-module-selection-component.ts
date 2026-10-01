@@ -204,10 +204,7 @@ export function BenchModuleSelectionComponent(_id2, _parent, _dataPolicies) {
 		}
 
 		{
-			if (_didWrite2 || _didWrite3) {
-				_MD.markDirty(_id2, _REASONS_);
-				_MD.markDirtySubtree("BenchModuleSelectionComponent");
-			}
+			if (_didWrite2 || _didWrite3) _MD.markDirtySubtree("BenchModuleSelectionComponent", _id2, _REASONS_);
 		}
 	};
 

@@ -97,6 +97,7 @@ export function buildScopeCommit(
         )
       : null;
   let instanceCommit: t.Statement | null = null;
+  let instanceArguments: t.Expression[] = [];
   if (scope.instanceLocal && compName !== null) {
     const reasonIds = ctx.instanceReasonIds.get(compName);
     const reasons = [...scope.instanceWrites]
@@ -106,17 +107,18 @@ export function buildScopeCommit(
     const exact =
       scope.instanceWrites.size > 0 &&
       reasons.length === scope.instanceWrites.size;
+    instanceArguments = [
+      componentId(ctx, compName),
+      ...(exact
+        ? [
+            reasons.length === 1
+              ? astFactory.numericLiteral(reasons[0]!)
+              : freshReasonConst(ctx, reasons),
+          ]
+        : []),
+    ];
     instanceCommit = astFactory.expressionStatement(
-      astFactory.callExpression(md(ctx, 'markDirty'), [
-        componentId(ctx, compName),
-        ...(exact
-          ? [
-              reasons.length === 1
-                ? astFactory.numericLiteral(reasons[0]!)
-                : freshReasonConst(ctx, reasons),
-            ]
-          : []),
-      ]),
+      astFactory.callExpression(md(ctx, 'markDirty'), instanceArguments),
     );
   }
   const rowOwnerCommit =
@@ -152,20 +154,21 @@ export function buildScopeCommit(
     if (scope.eventOrigin !== null) parts.push(scope.eventOrigin);
     if (rowCommit !== null) parts.push(rowCommit);
     if (rowOwnerCommit !== null) parts.push(rowOwnerCommit);
-    if (instanceCommit !== null) parts.push(instanceCommit);
+    if (instanceCommit !== null && !scope.rootFallback) parts.push(instanceCommit);
     if (routed !== null) parts.push(routed);
     if (parts.length === 0) return null;
     return parts.length === 1 ? parts[0]! : astFactory.blockStatement(parts);
   };
 
   if (scope.rootFallback) {
-    // The root subtree contains every more precise destination above. Emitting
-    // both forms only schedules the same entity twice and obscures why the
-    // conservative fallback was selected.
+    // Publish the exact owner and conservative subtree before scheduling. The
+    // owner can be mounted outside the static root; inside it, broad reasons
+    // dominate. A synchronous scheduler must not replay the owner twice.
     return combine(
       astFactory.expressionStatement(
         astFactory.callExpression(md(ctx, 'markDirtySubtree'), [
           astFactory.stringLiteral(ctx.rootId),
+          ...instanceArguments,
         ]),
       ),
     );

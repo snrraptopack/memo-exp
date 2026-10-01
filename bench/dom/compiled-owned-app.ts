@@ -213,10 +213,7 @@ export function BenchAppOwned(_id2, _parent, _dataPolicies) {
 		}
 
 		{
-			if (_didWrite2 || _didWrite3) {
-				_MD.markDirty(_id2, _REASONS_2);
-				_MD.markDirtySubtree("BenchAppOwned");
-			}
+			if (_didWrite2 || _didWrite3) _MD.markDirtySubtree("BenchAppOwned", _id2, _REASONS_2);
 		}
 	};
 

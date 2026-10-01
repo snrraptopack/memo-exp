@@ -142,10 +142,7 @@ export function BenchAppInlineOwned(_id, _parent, _dataPolicies) {
 		}
 
 		{
-			if (_didWrite2 || _didWrite3) {
-				_MD.markDirty(_id, _REASONS_2);
-				_MD.markDirtySubtree("BenchAppInlineOwned");
-			}
+			if (_didWrite2 || _didWrite3) _MD.markDirtySubtree("BenchAppInlineOwned", _id, _REASONS_2);
 		}
 	};
 
