@@ -18,6 +18,7 @@ latest measurements, limits, and interpretation.
 | [`router`](./router/) | `bun run bench:router` | Cached, warm-varied, construction, and runtime routing paths |
 | [`package-size`](./package-size/) | `bun run bench:size` | Built package and real todo browser bundle size |
 | [`frameworks`](./frameworks/) | `bun run bench:frameworks` | Current framework update-completion scenarios |
+| [`octane`](./octane/) | `bun run bench:octane` | Pinned upstream js-framework and keyed-reorder suites, including memoized-dom |
 | [`application`](./frameworks/application/) | `bun run bench:application` | Structured cross-framework application workflows |
 
 Numbers are machine-local and must be compared using repeated processes on the

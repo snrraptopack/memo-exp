@@ -255,6 +255,9 @@ callbacks still require additional effect proofs.
 
 ## Open performance work and VM review
 
+The pinned Octane comparison in `bench/octane` supplies additional measurements.
+Its outcomes do not replace this backlog or change the existing priorities.
+
 The earlier review is not fully addressed. The completed changes above reduce
 some costs; the following work remains open. The VM measurements reported by
 the user for commit `661d247` are preserved in
