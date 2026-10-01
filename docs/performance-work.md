@@ -50,6 +50,11 @@ proof keep the conservative update path described in the compiler README.
   were added. Source writes keep their ordinary reconciliation/journal paths.
 - Module reads in authored key expressions and key helpers are owner reads,
   so changing them reconciles the list rather than only updating row content.
+- Structural placement trims unchanged key prefixes and suffixes before LIS
+  and reverse placement. Unique retained keys bound the remaining old positions,
+  including when additions/removals shift a suffix. A 10k swap at positions
+  1/998 now analyzes 998 positions rather than 10k. Ordinary key evaluation,
+  retained-row updates, cache transfer and duplicate detection still run.
 
 A focused local Chromium check selected alternating rows in an existing 10k
 component-owned component-row list: 25 samples after five warmups, synchronous
@@ -111,6 +116,37 @@ swap with synchronous or deferred scheduling, while proxy-induced changes to
 sibling output remain visible. All nine variants pass the 21-scenario identity
 and mixed-sequence gates. The VM matrix and tracked timing reports are unchanged.
 
+The subsequent reorder-window pass was checked against `f5108eb` in Chromium.
+An isolated 10k-row list with no row update closure measured **3.8 ms → 3.2 ms**
+for swaps at positions 1/998: ten warmups, 100 samples per version, alternating
+before/after order in one page, with untimed full identity/text checks after
+each sample. This measures runtime reconciliation and DOM moves, not app work.
+
+The compiler-produced apps were then bundled against the before/after runtime
+sources with identical package metadata and esbuild settings. Each variant used
+a fresh page, two independent runtimes, synchronous scheduling, 10k rows and
+a selected row. Before/after order alternated for ten warmups and 50 samples per
+version. Every sample checked all rows' text, class, order and DOM identity:
+
+| Data placement | Selection placement | Rows | Before median | After median |
+|---|---|---|---|---|
+| Module | Module | Component | 8.4 ms | 7.6 ms |
+| Module | Module | Inline | 13.8 ms | 12.9 ms |
+| Component | Component | Component | 10.7 ms | 9.0 ms |
+| Component | Component | Inline | 15.3 ms | 15.0 ms |
+| Module | Component | Component | 9.9 ms | 8.6 ms |
+| Module | Component | Inline | 14.6 ms | 14.5 ms |
+| Component | Module | Component | 8.3 ms | 6.9 ms |
+| Component | Module | Inline | 14.3 ms | 13.6 ms |
+
+These are local medians, not reliable universal speedup ratios; several inline
+differences are small compared with machine variability. The existing matrix
+reports remain unchanged. The full nine-variant correctness gate passed again.
+Self-contained runtime tests check all 720 six-row permutations against an
+independent minimum-move oracle, shifted suffixes with additions/removals,
+replacement records, multi-node rows, index-sensitive structural updates,
+key/update evaluation order, exact retained identity and key refresh after moves.
+
 ## Optimistic forms and benchmark validation
 
 The simple example now demonstrates optimistic messages with a delayed action.
@@ -170,7 +206,7 @@ check retained DOM identity or mixed selection/structure sequences.
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
 | 1 | Broader callback proofs | The benchmark's direct lexical assignment callback is optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Slower swaps with component-owned data | Identical completion commits are merged; the owner and root fallback now enqueue before one scheduled commit, removing a duplicate full list replay. Setter/proxy fallbacks remain. Map transfers, retained-row replay and LIS costs still need investigation; re-measure the full matrix on the VM. |
+| 1 | Slower swaps with component-owned data | Identical completion commits are merged and owner/root publications enqueue together. LIS and placement now exclude unchanged ends. Setter/proxy fallbacks remain; map transfers and required retained-row replay still need investigation. Re-measure the full matrix on the VM. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Partial content writes can already collect row keys for owner-local data; this does not complete append/truncate/reorder specialization or arbitrary alias handling. |
 | 2 | Inline row teardown | VM clearing remains slower for inline rows, especially both-module state. Measure registration, unregister, event disposal and retained heap separately. |

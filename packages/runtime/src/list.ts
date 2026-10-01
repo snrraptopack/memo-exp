@@ -88,7 +88,7 @@ const lisInLis: boolean[] = [];
 const lisTails: number[] = [];
 const lisPrev: number[] = [];
 
-function lisPositions(seq: number[]): boolean[] {
+function lisPositions(seq: number[], start: number, end: number): boolean[] {
   const n = seq.length;
   const inLis = lisInLis;
   const tails = lisTails; // tails[k] = position in seq of the smallest tail for length k+1
@@ -96,12 +96,12 @@ function lisPositions(seq: number[]): boolean[] {
   inLis.length = n;
   prev.length = n;
   tails.length = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = start; i < end; i++) {
     inLis[i] = false;
     prev[i] = -1;
   }
 
-  for (let i = 0; i < n; i++) {
+  for (let i = start; i < end; i++) {
     const v = seq[i]!;
     if (v < 0) continue;
     let lo = 0;
@@ -771,8 +771,23 @@ export function createListRegion<T>(
     // Everything else is inserted (new) or moved (displaced) — and CONTIGUOUS
     // runs of such entries are batched into a DocumentFragment inserted with
     // ONE DOM operation (fresh mount of 1000 rows = 1 insert, not 1000).
-    const inLis = lisPositions(seq);
-    let cursor: Node = endAnchor;
+    // Unique retained keys make the unchanged old prefix/suffix permanent LIS
+    // members. Their old positions bound every retained position in the middle,
+    // even when additions or removals change the list length. Leave those ends
+    // untouched and analyze/place only the changed interval. Row content and
+    // authored keys have already replayed in their ordinary forward order.
+    let start = 0;
+    while (start < n && seq[start] === start) start++;
+    let end = n;
+    let oldEnd = prevItems.length;
+    while (end > start && oldEnd > start && seq[end - 1] === oldEnd - 1) {
+      end--;
+      oldEnd--;
+    }
+    const inLis = lisPositions(seq, start, end);
+    const suffix = ordered[end];
+    let cursor: Node = suffix === undefined ? endAnchor
+      : Array.isArray(suffix.nodes) ? suffix.nodes[0]! : suffix.nodes as Node;
     let pending: ListEntry[] | null = null; // run of entries awaiting insertion
 
     const flush = (): void => {
@@ -790,7 +805,7 @@ export function createListRegion<T>(
       pending = null;
     };
 
-    for (let i = ordered.length - 1; i >= 0; i--) {
+    for (let i = end - 1; i >= start; i--) {
       const entry = ordered[i]!;
       if (seq[i] === -1 || !inLis[i]) {
         // awaiting insertion — cursor stays on the last IN-PLACE node
