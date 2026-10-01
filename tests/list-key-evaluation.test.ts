@@ -152,3 +152,58 @@ it('preserves key/update/disposal order and shifted bindings across removal gaps
   expect(calls).toEqual(['u4@2']); expect(nodes[4]!.textContent).toBe('4@2');
   region.dispose(); expect(host.children).toHaveLength(0);
 });
+
+it('keeps the evaluated matching prefix when a later key changes', () => {
+  let changed = false;
+  const reads: unknown[] = [];
+  const first = { id: 1, label: 'one' };
+  const second = { id: 2, label: 'two' };
+  const third = { id: 3, label: 'three' };
+  const app = create([first, second, third], item => {
+    reads.push(item.id);
+    if (changed && item === third) {
+      first.id = 10; first.label = 'one!'; return 30;
+    }
+    return item.id;
+  });
+  const rows = [...app.host.children]; reads.length = 0; changed = true;
+  app.region.reconcile([first, second, third]);
+  expect(reads).toEqual([1,2,3]);
+  expect(app.host.children[0]).toBe(rows[0]); expect(app.host.children[1]).toBe(rows[1]);
+  expect(app.host.children[2]).not.toBe(rows[2]); expect(app.disposed).toEqual([third]);
+  first.label = 'still key one'; app.region.refreshKey(1);
+  expect(rows[0]!.textContent).toBe('still key one');
+  app.region.dispose();
+});
+
+it.each([false, true])('evaluates all current keys before content replay (late failure=%s)', fails => {
+  const calls: string[] = [], items = [1,2,3].map(id => ({id, label:String(id)}));
+  let checking = false;
+  const host = document.createElement('ul');
+  const region = createListRegion(host, 'content-key-order', item => {
+    const node = document.createElement('li'); node.textContent = item.label;
+    return { nodes:node, entities:[], update() {
+      calls.push(`u${item.id}`); node.textContent = item.label;
+    } };
+  }, item => {
+    if (checking) {
+      calls.push(`k${item.id}`);
+      if (item.id === 3) {
+        items[0]!.label = 'updated during key evaluation';
+        if (fails) throw new Error('key failure');
+      }
+    }
+    return item.id;
+  }, false);
+  region.reconcile(items); const rows = [...host.children]; checking = true;
+  if (fails) {
+    expect(() => region.reconcile(items)).toThrow('key failure');
+    expect(calls).toEqual(['k1','k2','k3']); expect(rows[0]!.textContent).toBe('1');
+  } else {
+    region.reconcile(items);
+    expect(calls).toEqual(['k1','k2','k3','u1','u2','u3']);
+    expect(rows[0]!.textContent).toBe('updated during key evaluation');
+  }
+  expect([...host.children]).toEqual(rows);
+  region.dispose(); expect(host.childNodes).toHaveLength(0);
+});

@@ -295,12 +295,12 @@ the optimization priorities.
 
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Conservative partial update cost across state placements | The latest `581b40f` VM report takes 1.3–2.4 ms at 10k rows across two executions, versus vanilla's 0.3–0.5 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned records, including fresh local literal factories, now support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof remains open. |
+| 1 | Conservative partial update cost across state placements | The `adeb2c4` VM report takes 1.1–1.6 ms at 10k rows, versus vanilla's 0.3 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned records, including fresh local literal factories, support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof or reducing conservative replay cost remains open. |
 | 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Ordered removal avoids contiguous Map lookups and Map-entry iteration. General reconciliation now keeps retained keys in its live Map rather than transferring them. Required key/row evaluation and broad replay remain; the VM still needs to measure this runtime change. |
+| 1 | Structural retained-row work | The `adeb2c4` VM measures 10k swaps at 0.8–1.3 ms across placements; Octane displacement workloads take 0.275–0.430 ms. Ordered removal and persistent retained Maps are included in that run, but its different CPU prevents isolated historical comparisons. Required key/row evaluation and broad replay remain. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
-| 2 | Creation/replacement/teardown | The latest VM has unstable creation medians: vanilla 10k creation is 48.3 ms then 16.8 ms. Across both runs, compiled 10k replacement is 18.7–32.4 ms versus vanilla's 13.2–13.9 ms, and clear is 2.8–3.9 ms versus 0.8 ms. Registered leaf teardown now avoids traversal buffers and empty error arrays. Main DOM/Octane row entries already omit registration, so their closure, event and DOM-range costs remain open. |
+| 2 | Creation/replacement/teardown | The `adeb2c4` VM measures DOM 10k creation at 11.4–14.0 ms versus vanilla's 8.1 ms, replacement at 14.7–16.3 ms versus 9.3 ms, and clear at 2.2–2.5 ms versus 0.6 ms. Registered leaf teardown now avoids traversal buffers and empty error arrays. Main DOM/Octane row entries already omit registration, so their closure, event and DOM-range costs remain open. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
 | Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
@@ -1011,6 +1011,64 @@ The report also exposed a clean workspace build failure: the root script built
 distributions with their guarded clean scripts, the full root build passed.
 No dependency versions or upstream benchmark source changed. The optimization
 backlog retains its priorities, and bundle-size investigation remains deferred.
+
+## Discarded: lazy staging of matching list keys
+
+The main DOM partial-update handlers cannot use the current closed plain-record
+proof: their initially empty lists are replaced with imported producer output and
+also undergo arbitrary replacement/structural operations. Narrowing row writes
+there still requires a stronger producer/escape proof. A cheaper conservative
+runtime experiment instead deferred staging evaluated keys until the first key
+mismatch, copying the already matched prefix from private ordered records.
+Every authored key and row update still ran, with the existing fallback ordering.
+
+A separate instrumented probe showed 10,000 → 0 scratch-key writes for a 10k
+partial update in all eight compiled DOM variants. That removed bookkeeping but
+did not establish better operation time. Two paired runs were mixed; a version
+with a simpler matching-key branch was also mixed and repeatedly a little slower
+in some variants. The final local 10k update comparison against `2c17863` was:
+
+| State / rows | Before / trial median ms |
+| --- | --- |
+| Module / component | 5.2 / 4.7 |
+| Module / inline | 3.7 / 3.7 |
+| Component / component | 3.9 / 3.6 |
+| Component / inline | 3.3 / 3.6 |
+| Module data, component selection / component | 3.7 / 3.8 |
+| Module data, component selection / inline | 3.1 / 3.3 |
+| Component data, module selection / component | 3.6 / 3.7 |
+| Component data, module selection / inline | 3.2 / 3.4 |
+
+Identical compiler-generated apps used separate before/after runtimes, synchronous
+scheduling, five warmups and 25 alternating samples at 1k and 10k. Each list was
+selected at row 500 and updated repeatedly; full text, class, order/count and
+retained identity were checked after each sample outside timing. These focused
+local measurements differ from the VM matrix's reset-per-sample workload.
+
+The trial passed 101 focused tests and all nine DOM variants' 21-scenario,
+identity and mixed-operation gates, but the runtime change was discarded. The
+original staging loop remains unchanged. Three self-contained regression cases
+are retained for late key changes, key-before-update ordering and throwing keys;
+all 13 key-evaluation tests passed again against the unchanged runtime. Existing
+tests also cover key-induced length changes and SameValueZero identities.
+Dependency versions, the upstream benchmark pin and generated outputs are
+unchanged. No VM rerun is needed to evaluate a discarded implementation.
+
+An additional local Chromium sampling profile used the unchanged runtime and
+fresh production-generated apps across all eight variants. Each 10k list had
+row 500 selected, three untimed partial-update warmups and a batch of 40 partial
+updates under the synchronous scheduler. Profiling stopped before full text,
+class, count/order and identity validation. Raw profiles remain local diagnostic
+artifacts. The bundle preserved function names without minification; profiler
+overhead and the repeated-update workload make it unsuitable for timing claims.
+
+The row update closures were the largest named JavaScript leaf functions in
+all eight profiles. Reconciliation also took samples, while prop forwarding and
+dispatch took smaller named leaf counts. Program/idle and GC samples prevent a
+precise attribution of total operation time from these profiles. This supports
+investigating conservative row emission and producer/alias proofs next, rather
+than assuming scratch-key writes dominate. It does not prove any emitted read,
+getter or unknown call can be skipped.
 
 ## Earlier candidates retained for tracking
 
