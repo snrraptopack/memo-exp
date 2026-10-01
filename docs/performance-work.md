@@ -300,7 +300,7 @@ the optimization priorities.
 | 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Ordered removal avoids contiguous Map lookups and Map-entry iteration. General reconciliation now keeps retained keys in its live Map rather than transferring them. Required key/row evaluation and broad replay remain; the VM still needs to measure this runtime change. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
-| 2 | Creation/replacement/teardown | The latest VM has unstable creation medians: vanilla 10k creation is 48.3 ms then 16.8 ms. Across both runs, compiled 10k replacement is 18.7–32.4 ms versus vanilla's 13.2–13.9 ms, and clear is 2.8–3.9 ms versus 0.8 ms. Inspect event disposal, closure creation and retained heap before broader specialization. |
+| 2 | Creation/replacement/teardown | The latest VM has unstable creation medians: vanilla 10k creation is 48.3 ms then 16.8 ms. Across both runs, compiled 10k replacement is 18.7–32.4 ms versus vanilla's 13.2–13.9 ms, and clear is 2.8–3.9 ms versus 0.8 ms. Registered leaf teardown now avoids traversal buffers and empty error arrays. Main DOM/Octane row entries already omit registration, so their closure, event and DOM-range costs remain open. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
 | Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
@@ -914,6 +914,103 @@ before tests; a sequential retry passed both suites. Smoke timings are correctne
 checks here, not evidence of relative framework performance. The upstream pin,
 dependencies, authored adapters and stored VM timing reports remain unchanged.
 Bundle work remains deferred.
+
+## Registered leaf teardown and registry visibility
+
+Entity removal now takes a direct path when the registered entity has no child
+links. It skips the stack, teardown list and their iteration/reversal. Nested
+owners retain the original traversal and descendant-first cleanup order, including
+the authored child-link getter reads. Kernel error collection and owner-cleanup
+hooks allocate error arrays only after an actual failure. All hooks still run,
+with owner callbacks in reverse registration order; multiple errors retain their
+ordered aggregate and a single error is thrown unchanged.
+
+Registry-cache invalidation also moves before removal notifications and user
+cleanup. Three regressions reproduced stale `registeredIds()` snapshots inside
+leaf cleanup, subtree cleanup and per-removal notifications. Removed entities had
+already left the Map, but the ID cache and generation still represented the prior
+registry. The generation now advances before those callbacks, and every removal
+invalidates the ID cache before notification, including when an earlier listener
+repopulated it. Old returned snapshots are not rewritten. A production-browser
+probe against `adeb2c4` saw `['LeafProbe']` during that leaf's cleanup; the new path
+sees `[]`.
+
+A direct 10k-leaf operation check measured **10,000 → 0** teardown-array pushes
+and **10,000 → 0** teardown reversals, with no entities left registered. These
+counters measure traversal bookkeeping, not allocated-byte totals. No hooks,
+registered children, refs, effects or dirty-state cancellation are skipped.
+
+A self-contained production Chromium fixture compiled component-owned lists with
+registered component rows, each owning one `$cleanup` callback. Identical generated
+output was bundled with runtime `adeb2c4` and the combined kernel/cleanup change.
+Three warmups preceded 15 alternating samples per side. Node and registry counts,
+disposal counts, text/classes, new-key order and replacement identity were checked
+outside timing after every operation. The local comparison measured:
+
+| Rows | Operation | Before / after median ms |
+| --- | --- | --- |
+| 1,000 | Clear registered cleanup rows | 5.5 / 4.4 |
+| 1,000 | Replace registered cleanup rows | 17.5 / 16.8 |
+| 1,000 | Fresh creation control | 9.2 / 8.7 |
+| 10,000 | Clear registered cleanup rows | 32.6 / 24.0 |
+| 10,000 | Replace registered cleanup rows | 162.8 / 151.8 |
+| 10,000 | Fresh creation control | 96.2 / 115.9 |
+
+The creation control does not exercise the changed teardown path. Its slower
+10k result prompted an isolated repeat with five warmups and 25 alternating
+samples: **14.1 / 13.5 ms at 1k** and **94.2 / 93.0 ms at 10k**. A kernel-only
+prototype also measured clear at **6.3 / 5.1 ms at 1k** and **33.9 / 30.0 ms at
+10k**, but replacement and creation were mixed. These local controls do not
+establish a creation improvement or a consistent creation regression; replacement
+is also variable. The measured claim is registered-row teardown, with allocation
+work removed directly and successful cleanup counts verified. These fixtures are
+not the main DOM/Octane timing matrix or VM results.
+
+Most current main DOM/Octane rows already use entries with no registered entity.
+This optimization targets registered component ownership and fixes registry
+visibility generally; it does not establish a main-suite row-clear speedup.
+Creation, replacement and lightweight-row teardown remain open.
+
+The runtime build, lint and 75 focused checks passed, including the eight new
+self-contained kernel tests, lifecycle ownership, replacement registration during
+cleanup, pending/volatile cancellation, hook iterator semantics, refs, effects,
+hydration recovery and application-runtime isolation. Regenerated DOM output passed
+all 21 scenarios across nine variants, including retained identity and mixed
+operations. The pinned Octane canonical and reorder smoke checks also passed;
+their timings are correctness gates, not comparative measurements. Dependencies,
+the pinned upstream benchmark and intrinsic syntax remain unchanged. Bundle work
+is deferred.
+
+## VM checkpoint: adeb2c4
+
+The user's full VM report measured `adeb2c4f6ee1c998d6d40843302890c1a3bafad4`
+on an AMD EPYC 9V74 host with Chromium 153. All 21 DOM scenarios across nine
+variants, both full Octane suites and retained-node checks passed. This run predates
+the registered-leaf teardown change above. The preceding `581b40f` run used an
+Intel Xeon host, so historical ratios do not isolate commit improvements.
+
+Across the four DOM state placements at 10k rows, selection measured 0.1 ms for
+both row shapes. Component/inline creation ranged from 11.4 to 14.0 ms against
+vanilla's 8.1 ms; replacement ranged from 14.7 to 16.3 ms against 9.3 ms.
+Partial updates ranged from 1.1 to 1.6 ms against 0.3 ms, and clear ranged from
+2.2 to 2.5 ms against 0.6 ms. Conservative row replay for opaque data producers,
+creation/replacement and lightweight-row disposal therefore remain relevant.
+
+In the pinned Octane canonical suite, memoized-dom measured 0.4 ms for partial
+update and 0.1 ms for selection, while 10k creation measured 47.3 ms against
+38.8 ms for Ripple and 39.7 ms for Solid. The reorder matrix measured reverse at
+2.825 ms against 2.125/2.150 ms for those adapters. Displacement workloads remain
+a concrete candidate: memoized-dom measured 0.275–0.430 ms for displacing 3–8
+rows, compared with Ripple's 0.100–0.130 ms. These are results for the authored
+workloads, with validation outside timing, not universal framework rankings.
+Near-zero selection timings approach browser timer resolution.
+
+The report also exposed a clean workspace build failure: the root script built
+`utils` before its `data` dependency. The build order now follows runtime → data
+→ utils before their consumers. After clearing all ten packages' generated
+distributions with their guarded clean scripts, the full root build passed.
+No dependency versions or upstream benchmark source changed. The optimization
+backlog retains its priorities, and bundle-size investigation remains deferred.
 
 ## Earlier candidates retained for tracking
 

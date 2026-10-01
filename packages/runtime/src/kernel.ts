@@ -473,9 +473,25 @@ function unregisterSubtreeInState(k: KernelState, id: EntityId): void {
     k.registry.get(root.parent)?.children?.delete(id);
   }
 
-  const stack: EntityId[] = [id];
+  // Re-read after detaching: a parent child-link accessor may change the registry.
+  const currentRoot = k.registry.get(id);
+  const children = currentRoot?.children;
+  if (currentRoot !== undefined && children === undefined) {
+    // Most registered rows have no descendants. Preserve ordinary disposal
+    // without allocating a traversal stack, teardown list or empty error list.
+    k.generation++;
+    removeRegisteredEntity(k, id);
+    reportCleanupErrors(disposeEntity(id, null), id);
+    return;
+  }
+
+  const stack: EntityId[] = [];
   const teardown: EntityId[] = [];
-  const cleanupErrors: unknown[] = [];
+  if (currentRoot !== undefined) {
+    teardown.push(id);
+    // Keep the original truthy-check and iteration reads, including accessors.
+    if (children) for (const child of currentRoot.children!) stack.push(child);
+  }
   while (stack.length > 0) {
     const cur = stack.pop()!;
     const e = k.registry.get(cur);
@@ -490,23 +506,39 @@ function unregisterSubtreeInState(k: KernelState, id: EntityId): void {
   // live registry before invoking user teardown so reentrant invalidation and
   // unregister calls become dead letters.
   teardown.reverse();
-  for (const cur of teardown) {
-    k.registry.delete(cur);
-    k.dirty.delete(cur);
-    k.volatile.delete(cur);
-    clearDirtyReasons(k.dirtyReasons, cur);
-    notifyRegistry(cur, 'remove');
-  }
-  for (const cur of teardown) {
-    for (const dispose of entityDisposeHooks) {
-      const errors = dispose(cur);
-      if (errors !== undefined) cleanupErrors.push(...errors);
-    }
-  }
-
-  k.idsCache = null;
   k.generation++;
+  k.idsCache = null;
+  for (const cur of teardown) {
+    removeRegisteredEntity(k, cur);
+  }
+  let cleanupErrors: unknown[] | null = null;
+  for (const cur of teardown) {
+    cleanupErrors = disposeEntity(cur, cleanupErrors);
+  }
+  reportCleanupErrors(cleanupErrors, id);
+}
 
+function removeRegisteredEntity(k: KernelState, id: EntityId): void {
+  k.registry.delete(id);
+  k.dirty.delete(id);
+  k.volatile.delete(id);
+  clearDirtyReasons(k.dirtyReasons, id);
+  // A registry listener can repopulate this cache after each removal. Clear
+  // it again before the next notification, not after user cleanup has run.
+  k.idsCache = null;
+  notifyRegistry(id, 'remove');
+}
+
+function disposeEntity(id: EntityId, cleanupErrors: unknown[] | null): unknown[] | null {
+  for (const dispose of entityDisposeHooks) {
+    const errors = dispose(id);
+    if (errors !== undefined) for (const error of errors) (cleanupErrors ??= []).push(error);
+  }
+  return cleanupErrors;
+}
+
+function reportCleanupErrors(cleanupErrors: unknown[] | null, id: EntityId): void {
+  if (cleanupErrors === null) return;
   if (cleanupErrors.length === 1) throw cleanupErrors[0];
   if (cleanupErrors.length > 1) {
     throw new AggregateError(

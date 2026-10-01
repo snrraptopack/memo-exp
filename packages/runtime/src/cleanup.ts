@@ -1,7 +1,7 @@
 /**
  * cleanup.ts - explicit component-owned teardown.
  *
- * The compiler lowers source `cleanup(disposer)` calls to
+ * The compiler lowers source `$cleanup(disposer)` calls to
  * `cleanup(componentId, disposer)`. Registrations may happen before the
  * component enters the entity registry; unregistering the entity owns and
  * synchronously drains its disposers.
@@ -63,20 +63,20 @@ export function cleanup(
  * Teardown continues after individual failures; the kernel reports them once
  * the complete subtree has been removed.
  */
-export function disposeOwnerCleanups(owner: EntityId): unknown[] {
+export function disposeOwnerCleanups(owner: EntityId): unknown[] | void {
   const { cleanups, disposingOwners } = store();
   const disposers = cleanups.get(owner);
-  if (disposers === undefined) return [];
+  if (disposers === undefined) return;
 
   cleanups.delete(owner);
   disposingOwners.add(owner);
-  const errors: unknown[] = [];
+  let errors: unknown[] | undefined;
   try {
     for (let i = disposers.length - 1; i >= 0; i--) {
       try {
         disposers[i]!();
       } catch (error) {
-        errors.push(error);
+        (errors ??= []).push(error);
       }
     }
   } finally {

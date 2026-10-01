@@ -42,6 +42,19 @@ including when a retained prop update or render throws before its ordered record
 is stored. This preserves ownership; reconciliation is not transactional and
 does not roll back authored effects or completed DOM writes after an exception.
 
+## Entity teardown
+
+`unregisterSubtree()` removes the registered subtree before running cleanup hooks,
+with descendants disposed before their owners. Entities without child links use
+a direct removal path. Traversal buffers are retained for nested owners; error
+arrays are created only when a cleanup reports a failure. Owner cleanups still
+run in reverse registration order, and reported failures do not stop later hooks.
+
+Registry generation advances before removal notifications and cleanup hooks.
+Each removal invalidates the cached ID list before notifying listeners, so calls
+to `registeredIds()` during teardown reflect the current registry. Previously
+returned ID snapshots keep their contents.
+
 The package is independently buildable:
 
 ```bash
