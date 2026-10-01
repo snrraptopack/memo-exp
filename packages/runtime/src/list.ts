@@ -274,10 +274,9 @@ export function createListRegion<T>(
     syncRow(entry, item, rowId, index);
   }
 
-  function rowIdFor(k: unknown): EntityId {
+  function rowIdFor(k: unknown, encoded: string | null): EntityId {
     // Phase 0: type-tagged, escaped encoding — collision-free across
     // primitive types and safe inside the `Row[...]` id/marker structure.
-    const encoded = encodeListKey(k);
     if (encoded !== null) return `${idPrefix}/Row[${encoded}]`;
     // Non-primitive keys: process-local synthetic ids (declared SSR
     // limitation — see list-keys.ts).
@@ -471,8 +470,10 @@ export function createListRegion<T>(
           const i = prevItems.length + offset;
           const item = items[i] as T;
           const k = appendedKeys[offset];
-          const createId = trackRowIds ? rowIdFor(k) : idPrefix;
-          const entry = createRow(item, k, createId, i, encodeListKey(k));
+          // Client rows without entity ids have no serialized key consumer.
+          const encoded = trackRowIds || environment.mode !== 'client-create' ? encodeListKey(k) : null;
+          const createId = trackRowIds ? rowIdFor(k, encoded) : idPrefix;
+          const entry = createRow(item, k, createId, i, encoded);
           const id = trackRowIds ? createId : null;
           appended.push({ e: entry, id, pos: i, key: k });
           const nodes = entry.nodes;
@@ -622,13 +623,23 @@ export function createListRegion<T>(
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as T;
       const k = i < evaluatedKeyCount ? validatedKeys[i] : key(item, i);
-      if (next.has(k)) {
-        throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
+      let rec: RowRec | undefined;
+      // A matching cached key still present in the old map is unique so far.
+      // Delete still happens before its update, as on the general path.
+      // Consumed, displaced or new keys retain the general Map checks.
+      const candidate = oldWasEmpty ? undefined : prevRows[i];
+      if (candidate !== undefined && (candidate.key === k ||
+          candidate.key !== candidate.key && k !== k) && old.delete(k)) {
+        rec = candidate;
+      } else {
+        if (next.has(k)) {
+          throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
+        }
+        rec = oldWasEmpty ? undefined : old.get(k);
+        if (rec !== undefined) old.delete(k);
       }
-      let rec = oldWasEmpty ? undefined : old.get(k);
       if (rec !== undefined) {
         reused++;
-        old.delete(k);
         const oldPos = rec.pos;
         seq[i] = oldPos;
         if (oldPos <= lastOld) inOrder = false;
@@ -636,8 +647,8 @@ export function createListRegion<T>(
         rec.pos = i;
         syncRetained(rec.e, item, rec.id, i, oldPos, structuralOnly);
       } else {
-        const createId = trackRowIds ? rowIdFor(k) : idPrefix;
-        const encoded = encodeListKey(k);
+        const encoded = trackRowIds || environment.mode !== 'client-create' ? encodeListKey(k) : null;
+        const createId = trackRowIds ? rowIdFor(k, encoded) : idPrefix;
         const entry = createRow(item, k, createId, i, encoded);
         rec = {
           e: entry,
@@ -850,7 +861,24 @@ export function createListRegion<T>(
   }
 
   function dispose(): void {
+    // Failed append factories can leave completed rows only in the ordered
+    // scratch buffer. Removal probes also put live records there, so skip
+    // entries already owned by either map to avoid disposing them twice.
+    for (const rec of nextRows) {
+      if (rec !== undefined && cache.get(rec.key) !== rec && nextMap.get(rec.key) !== rec) {
+        rec.e.dispose?.();
+        cleanupEntry(rec.e);
+        syntheticIds.delete(rec.key);
+      }
+    }
     for (const [key, rec] of cache) {
+      rec.e.dispose?.();
+      cleanupEntry(rec.e);
+      syntheticIds.delete(key);
+    }
+    // During a failed general frame, consumed and newly created records are
+    // in nextMap, disjoint from the unconsumed records left in cache.
+    for (const [key, rec] of nextMap) {
       rec.e.dispose?.();
       cleanupEntry(rec.e);
       syntheticIds.delete(key);

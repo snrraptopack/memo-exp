@@ -453,6 +453,62 @@ with retained identity checks. Memoized-dom also passed the pinned Octane
 canonical and reorder smoke gates. Smoke timings are only execution checks;
 the other nine Octane framework targets were unchanged and were not rerun.
 
+## General-path row lookup, key creation and failed-frame cleanup
+
+The general forward pass now compares the current evaluated key with the
+cached record at that position. If it matches using SameValueZero and deletion
+from the old Map succeeds, the record is unconsumed and unique so far. That
+case skips `next.has()` and `old.get()`. New, displaced and already-consumed
+keys retain the normal Map checks. The old record is still removed before its
+row update, and the next Map is still built in the same order. Required key
+reads, props updates and broad retained-row replay remain.
+
+This benefits immutable same-key replacements and the unchanged positions
+around sparse reorders. It adds no per-row field or cache. An initial version
+called a key-comparison helper per row and was slower locally; that version was
+discarded in favor of an inline comparison and the existing deletion check.
+
+Tracked row creation also computes its serialized key once and shares it
+between the entity ID and hydration marker. Client-created rows without entity
+IDs skip serialization because they emit no row marker. Server and hydration
+paths retain encoded keys, escaping and synthetic-ID behavior.
+
+A local paired Chromium comparison compiled the existing memoized-dom Octane
+fixture through the compiler and bundled identical output against `7e1d310`
+and the new runtime. Both versions used source runtime entries, production
+minification and synchronous scheduling. Five warmups preceded 25 fresh-list
+samples per version, with alternating order. Every sample selected a row,
+updated immutable records, swapped, reversed and cleared. Checks outside timing
+covered count, text, classes, order and retained node identity.
+
+| Rows | Creation before → after (ms) | Immutable update before → after (ms) | Swap before → after (ms) | Reverse before → after (ms) | Clear before → after (ms) |
+|---|---|---|---|---|---|
+| 1k | 15.9 → 15.8 | 0.7 → 0.6 | 0.7 → 0.7 | 6.2 → 6.5 | 2.9 → 3.0 |
+| 10k | 150.8 → 147.6 | 7.7 → 7.3 | 5.3 → 4.6 | 58.4 → 57.0 | 22.9 → 21.6 |
+
+These local differences are modest and noisy. The 1k measurements approach
+timer precision. The VM can check these changes together with the preceding
+cached-key/cyclic-placement pass; a full rerun is not needed for each candidate.
+General Map transfers and unproven broad row replay still need further work.
+
+Failure testing also reproduced three teardown bugs: a duplicate-key exception
+could leave a consumed row mounted, a later key exception could leave retained
+and newly created records alive, and a failed append factory could leave a
+completed detached row registered. Disposal now cleans completed records from
+both Maps and the ordered scratch buffer. Removal-probe references are checked
+against the Maps to avoid double disposal. Successful frames leave these scratch
+containers empty, so this adds no scan of successful retained rows. The tests
+verify DOM removal, registry cleanup and exactly-once disposal, including a
+second disposal call. This covers completed row records; it does not make
+reconciliation transactional or recover allocations made inside a factory that
+throws before returning its entry.
+
+The runtime build, lint and 73 focused tests passed. All nine DOM variants
+passed 21 scenarios plus retained-identity and mixed selection/structure gates.
+The paired Octane-fixture checks above covered creation, immutable update,
+selection, swap, reverse and clear. The complete upstream Octane harness was
+not rerun for this pass.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed
