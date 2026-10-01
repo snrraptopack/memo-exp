@@ -691,6 +691,56 @@ The pinned Octane memoized-dom target also passed canonical and reorder smoke
 checks; their single-sample timings are correctness checks, not performance
 evidence. Other framework targets were unchanged and were not rerun locally.
 
+## Append-prefix validation
+
+Unproven appends still evaluate every retained authored key and replay the
+required rows. Prefix validation now compares each key directly with its
+cached ordered record, using SameValueZero, instead of looking it up in the
+Map. A mismatch keeps the existing general reconciliation and evaluated-key
+fallback. Compiler-proven append behavior is unchanged.
+
+A 10k-prefix direct-runtime probe counted **10,000 → 0 Map lookups** when
+appending 1,000 rows, with retained identity, order and text checks. Two paired
+local production Chromium runs compared runtime source at `bfa2fb5` with this
+change, using the compiler-generated DOM component-row apps. Each used five
+warmups and 25 samples per side with alternating order; each sample appended
+1,000 rows, checked the retained prefix's text/identity/order and selection,
+then removed the appended tail outside timing to restore the starting list.
+The complete DOM suite separately validates authored labels and mixed cases.
+
+| State placement | Starting rows | Run 1 before / after ms | Run 2 before / after ms |
+| --- | --- | --- | --- |
+| Module data and selection | 1,000 | 7.6 / 7.6 | 7.4 / 7.8 |
+| Module data and selection | 10,000 | 8.3 / 7.7 | 7.7 / 7.3 |
+| Component data, module selection | 1,000 | 7.0 / 7.3 | 7.2 / 7.1 |
+| Component data, module selection | 10,000 | 8.3 / 8.0 | 9.1 / 8.4 |
+
+The 10k gains were modest and 1k results mixed. This removes redundant prefix
+bookkeeping; it does not narrow required row evaluation or solve partial
+updates. The runtime/compiler builds, lint and 50 focused tests passed. The
+key-identity regression additionally checks appending after a mixed-key
+reorder/removal, preserving NaN, zero, string, symbol and object identity.
+All nine DOM variants passed their 21 scenarios plus retained identity and
+mixed-sequence gates. Generated benchmark output is unchanged. The pinned
+Octane harness was not rerun for this follow-up; its prior smoke results are
+recorded above.
+
+## Discarded: reusable private component-row props
+
+A compiler prototype reused a generic props envelope only when lexical reads
+stayed within explicitly supplied own fields, with no escape, direct mutation,
+computed access or receiver call. It staged all next values before updating
+fields. Twelve focused checks passed, including throwing value evaluation and
+observing previous props while a later value was still being evaluated.
+
+A paired Chromium run at 1k/10k used the two component-row placements above,
+five warmups and 25 samples per side for update, swap and reverse, with text,
+class, order and identity checks outside timing. At 10k, update medians were
+6.2 → 6.4 ms and 5.5 → 5.6 ms; swaps were 4.9 → 4.2 ms and 4.5 → 5.3 ms;
+reverse was 20.0 → 21.2 ms and 18.3 → 18.4 ms. The results were mixed and did
+not improve partial updates. The prototype and its tests were removed; no
+props-reuse flag or compiler shortcut remains.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

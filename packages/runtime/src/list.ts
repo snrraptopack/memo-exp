@@ -433,8 +433,11 @@ export function createListRegion<T>(
         const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
         validatedKeys[i] = k;
         if (i >= evaluatedKeyCount) evaluatedKeyCount = i + 1;
-        const rec = cache.get(k);
-        if (rec === undefined || rec.pos !== i) {
+        const rec = prevRows[i];
+        // The retained prefix has an ordered record for each live cache key.
+        // Validate authored keys without hashing the whole prefix again.
+        if (rec === undefined || rec.pos !== i || rec.key !== k &&
+            !(rec.key !== rec.key && k !== k)) {
           appendOnly = false;
           break;
         }

@@ -61,6 +61,12 @@ it('keeps SameValueZero key identity through content updates, append, removal an
   app.region.reconcile([...items, extra]);
   app.region.reconcile([items[4]!, items[0]!, items[1]!, items[3]!]);
   expect([...app.host.children]).toEqual([rows[4], rows[0], rows[1], rows[3]]);
+  // Append validation must use the current ordered records after a general
+  // reorder/removal, including SameValueZero and synthetic object keys.
+  const appended = { id: Symbol('appended'), label: 'appended' };
+  app.region.reconcile([items[4]!, items[0]!, items[1]!, items[3]!, appended]);
+  expect([...app.host.children].slice(0, 4)).toEqual([rows[4], rows[0], rows[1], rows[3]]);
+  expect(app.host.lastElementChild!.textContent).toBe('appended');
   items[3]!.label = 'object'; app.region.refreshKey(object);
   expect(rows[3]!.textContent).toBe('object');
   app.region.dispose(); expect(app.host.children).toHaveLength(0);
