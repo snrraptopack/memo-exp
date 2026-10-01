@@ -103,8 +103,8 @@ only those rows; an ordinary/full reason or a different source forces ordinary
 reconciliation. Reasons are not a shared consumable mutation set, and generic
 object-prop equality is unchanged.
 
-The proof currently requires a non-exported, unreassigned module array literal
-of flat scalar records, non-escaping item references, and immutable scalar-field
+The proof currently requires a non-exported, unreassigned module array of closed
+flat scalar records, non-escaping item references, and immutable scalar-field
 or identity keys. Structural operations, dynamic indices, nested/aliased objects,
 unknown consumers, async handlers, and execution-aware effect writes retain
 conservative routing. Authored assignments are neither wrapped nor evaluated
@@ -129,6 +129,18 @@ setters, aliases and unsupported loop shapes keep the conservative path.
 Identifier and quoted string keys on literal records are equivalent for this
 proof. Arithmetic/comparison field reads remain reads; assignment patterns,
 updates, deletes and loop targets prevent a read-only item proof.
+
+Closed arrays can be initialized directly or through a stable local synchronous
+factory that only returns a fresh array literal. Function declarations and
+`const` function/arrow expressions qualify when every parameter is an unmodified
+identifier and every supplied argument is a proven primitive literal expression.
+Record fields may combine those parameters with literals through `+`, template
+literals or primitive unary operators. Authored later writes must independently
+preserve the plain scalar shape. Shared returned arrays, imported/opaque calls,
+extra factory statements, defaults/rest/destructuring, async/generator functions,
+getters, spreads, nested values and captured field values retain existing
+conservative routing or derived-state diagnostics. The proof checks lexical
+bindings and fresh allocations; it does not infer purity from a function name.
 
 Dynamic text updates in list rows normalize the expression on every replay and
 compare it with a compiler-owned string slot before writing `Text.data`. The creation path

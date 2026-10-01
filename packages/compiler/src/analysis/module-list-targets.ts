@@ -3,6 +3,7 @@ import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
 import type { MapCallExpression } from '../lists';
 import { LIST_METHOD_OPTIMIZATIONS } from '../lists/mutation-shapes';
 import { boundedListIndex } from './bounded-list-index';
+import { plainListInitializer, plainScalarValue } from './plain-list-initializer';
 
 /** Closed flat records without escapes or cross-row collection reads. */
 export function analyzeModuleListTargets(ctx: Ctx): void {
@@ -15,9 +16,7 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     const value = key && nodeField(key, 'value');
     return typeof value === 'string' ? value : null;
   };
-  const scalar = (node: BaseNode | null): boolean =>
-    node !== null && node.type === 'Literal' &&
-    (nodeField(node, 'value') === null || ['string', 'number', 'boolean'].includes(typeof nodeField(node, 'value')));
+  const scalar = (node: BaseNode | null): boolean => plainScalarValue(ctx, node);
 
   const candidates = new Map<Binding, string>();
   for (const source of ctx.listSources) {
@@ -35,8 +34,9 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
   for (const [binding, source] of candidates) {
     if (binding.constantViolations.length !== 0) continue;
     const declaration = variableDeclaratorFor(ctx, binding);
-    const array = declaration && childNode(declaration, 'init');
-    if (!array || array.type !== 'ArrayExpression') continue;
+    const initializer = plainListInitializer(ctx, declaration && childNode(declaration, 'init'));
+    if (initializer === null) continue;
+    const { array } = initializer;
     const statement = parents.get(declaration!);
     if (statement && parents.get(statement)?.type === 'ExportNamedDeclaration') continue;
     const elements = nodeField(array, 'elements');
@@ -51,7 +51,7 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
         const name = identifierName(key) ?? stringValue(key);
         if (entry.type !== 'Property' || nodeField(entry, 'computed') === true ||
             nodeField(entry, 'kind') !== 'init' || name === null || name === '__proto__' ||
-            own.has(name) || !scalar(childNode(entry, 'value'))) { valid = false; break; }
+            own.has(name) || !initializer.scalar(childNode(entry, 'value'))) { valid = false; break; }
         own.add(name);
       }
       if (!valid) break;

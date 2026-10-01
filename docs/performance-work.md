@@ -295,7 +295,7 @@ the optimization priorities.
 
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Conservative partial update cost across state placements | The latest `581b40f` VM report takes 1.3–2.4 ms at 10k rows across two executions, versus vanilla's 0.3–0.5 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned literal records now support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof remains open. |
+| 1 | Conservative partial update cost across state placements | The latest `581b40f` VM report takes 1.3–2.4 ms at 10k rows across two executions, versus vanilla's 0.3–0.5 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned records, including fresh local literal factories, now support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof remains open. |
 | 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
 | 1 | Structural retained-row work | Latest VM 10k swaps take 2.0–3.4 ms across placements and both executions. Octane front removal takes 0.315 ms per repeated operation at a shrinking 1k list. Ordered removal now avoids contiguous Map lookups and Map-entry iteration, alongside its existing Map-transfer/LIS shortcut. Required key and row evaluation remain; investigate broader replay and general Map transfers while preserving getter/index/setter/proxy semantics. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
@@ -795,6 +795,46 @@ and assignment patterns. The DOM suite passed all nine variants, including
 identity and mixed-sequence gates. The pinned Octane harness was not rerun for
 this compiler-only extension; no dependency versions or benchmark adapters
 changed. Bundle work remains deferred.
+
+## Fresh local literal factories
+
+The closed-record proof now follows stable local synchronous factories that
+only return a fresh array literal. It accepts function declarations and `const`
+function/arrow expressions, simple unmodified parameters and primitive literal
+arguments. Record fields can combine those parameters and literals through `+`,
+templates or primitive unary operators. Later writes must independently preserve
+the plain-data shape. Module fixed-position writes and owner bounded-loop writes
+then use their existing targeting paths.
+
+Imported/opaque calls, mutable factories, shared returned arrays, extra statements,
+default/rest/destructured parameters, async/generator functions, getters, spreads,
+nested values, captured field values and opaque later writes remain unproven.
+The existing escape, immutable-key and cross-row-read checks still apply. No
+method-name purity rule, runtime graph, dependency change or new intrinsic was
+introduced. General array constructors and loop-built producers remain open;
+the main DOM/Octane generators do not gain targeting from this extension.
+
+A paired local production Chromium check compiled identical fresh-factory apps
+against `2054005` and this change with the same runtime. Five warmups preceded
+25 alternating samples per side, updating every tenth label. Every row's text,
+class, count, order and retained node identity were checked outside timing after
+each sample. The baseline output was broad and the new output journaled actual
+executed keys.
+
+| Rows | Row form | Before / after median ms |
+| --- | --- | --- |
+| 1,000 | Inline | 0.7 / 0.5 |
+| 1,000 | Component | 0.7 / 0.5 |
+| 10,000 | Inline | 3.3 / 2.8 |
+| 10,000 | Component | 3.2 / 2.7 |
+
+These are local measurements of this proof extension, not main-suite VM results.
+The compiler build, lint and 112 focused tests passed. New self-contained fixtures
+check inline/component rows, synchronous/deferred scheduling, independent owner
+instances, two module-state list readers, retained identity and unsafe factory
+fallbacks. Generated tests do not read examples. Main DOM outputs were regenerated
+through the compiler; their identity and mixed-operation gates cover nine variants.
+The pinned Octane harness is unchanged. Bundle work remains deferred.
 
 ## Earlier candidates retained for tracking
 
