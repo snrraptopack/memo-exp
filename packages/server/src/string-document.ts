@@ -450,6 +450,31 @@ export class StringFragment extends StringContainer implements StringRenderableN
   }
 }
 
+/**
+ * One retained leaf extent, with no interior server nodes. The compiler owns
+ * escaping and the writer closure reads already-evaluated slot snapshots.
+ * List anchors and reconciliation still use the ordinary pointer operations.
+ */
+class StringHtmlChunk extends StringContainer implements StringRenderableNode {
+  readonly nodeType = 1;
+  textContent: string | null = null;
+
+  constructor(private readonly write: () => string) { super(); }
+
+  cloneNode(): StringRenderableNode {
+    const snapshot = this.write();
+    return new StringHtmlChunk(() => snapshot);
+  }
+
+  override toString(): string { return this.write(); }
+}
+
+const HTML_WRITER: NonNullable<DocumentLike['htmlWriter']> = Object.freeze({
+  create: (write: () => string) => new StringHtmlChunk(write) as unknown as Node,
+  text: escapeHtml,
+  classAttribute: (value: string) => value === '' ? '' : ' class="' + escapeAttribute(value) + '"',
+});
+
 const REFLECTED_BOOLEANS: ReadonlyArray<readonly [property: string, attribute: string]> = [
   ['checked', 'checked'],
   ['disabled', 'disabled'],
@@ -485,6 +510,8 @@ for (const [property, attribute] of REFLECTED_BOOLEANS) {
 const PARSED_MARKUP = new Map<string, readonly MarkupChild[]>();
 
 export class StringDocument implements DocumentLike {
+  readonly htmlWriter = HTML_WRITER;
+
   createComment(data: string): Comment {
     return new StringComment(data) as unknown as Comment;
   }

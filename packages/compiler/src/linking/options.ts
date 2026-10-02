@@ -18,6 +18,7 @@ export function compilerOptions(
       : { externalReactiveSources: options.externalReactiveSources }),
     ...(options.hot === undefined ? {} : { hot: options.hot }),
     ...(options.moduleStateCells === undefined ? {} : { moduleStateCells: options.moduleStateCells }),
+    ...(options.ssrWriter === undefined ? {} : { ssrWriter: options.ssrWriter }),
     ...(options.routedEnvironment === undefined
       ? {}
       : { routedEnvironment: options.routedEnvironment }),

@@ -59,6 +59,7 @@ import {
   updateDecl,
 } from './scope';
 import { applyRepeatedDomTemplate } from './dom-template';
+import { prepareServerWriter } from './server-writer';
 import { applyStaticMarkup } from './markup';
 import { transparentSourceMounts } from '../data-sources';
 import { selectedRouteSubscriptionBinding } from '../external-reactivity';
@@ -390,6 +391,10 @@ export function transformComponent(
   const lightweightSingleRoot =
     lightweight && 'jsx' in returns && astFactory.isJSXElement(returns.jsx);
 
+  const serverWriter = lightweightSingleRoot
+    ? prepareServerWriter(ctx, scope, rootVar)
+    : null;
+
   if (lightweight) {
     applyRepeatedDomTemplate(ctx, scope, rootVar);
   }
@@ -497,6 +502,9 @@ export function transformComponent(
   // pass can see every late reference to member nodes and the document
   // local (dynamic writes inside updaters bind nodes too).
   const updateStatement = updateDecl(ctx, scope);
+  const writerBranch = serverWriter?.(updateStatement, buildLightweightReturn(
+    ctx, scope, propPlan, positionalObjectProps, lightweightPropCount, rootVar, true,
+  ));
   applyStaticMarkup(ctx, scope, rootVar, [
     ...scope.mounts,
     ...sourceMounts,
@@ -520,6 +528,7 @@ export function transformComponent(
   }
   body.push(
     ...kept,
+    ...(writerBranch == null ? [] : [writerBranch]),
     updateStatement,
     ...(lightweight
       ? []
