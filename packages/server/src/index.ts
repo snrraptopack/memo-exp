@@ -166,6 +166,8 @@ export {
 export {
   serve,
   getServerContext,
+  type RenderPolicy,
+  type RenderReport,
   type ServeOptions,
   type ServerApplication,
   type ServerRouteContext,

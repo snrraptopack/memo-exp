@@ -6,6 +6,11 @@ import { RenderSession, type RenderSettlement } from './session';
 
 export interface PreparedRenderStream {
   readonly stream: ReadableStream<Uint8Array>;
+  /**
+   * Settles once route preparation (authentication gates, redirects, routed
+   * data) has decided the response. Rejects with the redirect or failure.
+   */
+  readonly prepared: Promise<void>;
   /** Settles after the complete server render succeeds or rejects. */
   readonly ready: Promise<RenderSettlement>;
 }
@@ -27,6 +32,7 @@ export function prepareRenderToReadableStream(
   options: RenderOptions = {},
 ): PreparedRenderStream {
   const encoder = new TextEncoder();
+  const prepared = Promise.withResolvers<void>();
   let session: RenderSession | undefined;
   const parts = RenderSession.execute(
     component,
@@ -35,6 +41,7 @@ export function prepareRenderToReadableStream(
     async current => {
       session = current;
       await current.prepare();
+      prepared.resolve();
       const root = current.mount() as unknown as StringRenderableNode;
       await current.settle();
       const html = current.wrap(root.toString(options.markers === true));
@@ -44,9 +51,13 @@ export function prepareRenderToReadableStream(
     },
   );
   const ready = parts.then(() => session!.settlement);
-  // Consumers observe failures through the stream or `ready`; never leave
-  // the internal render promise unhandled when neither is awaited.
+  // A failure before preparation completes rejects `prepared`; afterwards it
+  // only rejects `ready` and the stream.
+  parts.catch(prepared.reject);
+  // Consumers observe failures through the stream, `prepared`, or `ready`;
+  // never leave the internal promises unhandled when none is awaited.
   ready.catch(() => {});
+  prepared.promise.catch(() => {});
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -57,7 +68,7 @@ export function prepareRenderToReadableStream(
       session?.abort(reason);
     },
   });
-  return { stream, ready };
+  return { stream, prepared: prepared.promise, ready };
 }
 
 export function renderToReadableStream(

@@ -48,33 +48,48 @@ export function loadDocumentTemplate(path: string | URL): DocumentTemplate {
 
 /**
  * Compose the streamed document: prefix, application render body, suffix.
- * Cancelling the composed stream cancels the application render.
+ *
+ * Delivery is pull-driven: the prefix is available immediately and each
+ * body chunk is read only when the consumer asks for more, so a slow client
+ * applies backpressure to the render instead of buffering it. Cancelling the
+ * composed stream cancels the application render.
+ *
+ * `onBodyError` handles a body failure after the response has committed.
+ * When provided, its return value (if any) is written in place of the
+ * application and the document still closes with its suffix; without it,
+ * the composed stream errors.
  */
 export function composeDocumentStream(parts: {
   prefix: string | Uint8Array;
   body: ReadableStream<Uint8Array>;
   suffix: string | Uint8Array;
+  onBodyError?: (error: unknown) => string | Uint8Array | void;
 }): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const bytes = (value: string | Uint8Array): Uint8Array =>
     typeof value === 'string' ? encoder.encode(value) : value;
   const reader = parts.body.getReader();
   return new ReadableStream<Uint8Array>({
-    async start(controller) {
+    start(controller) {
       controller.enqueue(bytes(parts.prefix));
+    },
+    async pull(controller) {
       try {
-        while (true) {
-          const result = await reader.read();
-          if (result.done) break;
+        const result = await reader.read();
+        if (!result.done) {
           controller.enqueue(result.value);
+          return;
         }
-        controller.enqueue(bytes(parts.suffix));
-        controller.close();
       } catch (error) {
-        controller.error(error);
-      } finally {
-        reader.releaseLock();
+        if (parts.onBodyError === undefined) {
+          controller.error(error);
+          return;
+        }
+        const recovery = parts.onBodyError(error);
+        if (recovery !== undefined) controller.enqueue(bytes(recovery));
       }
+      controller.enqueue(bytes(parts.suffix));
+      controller.close();
     },
     cancel(reason) {
       return reader.cancel(reason);
