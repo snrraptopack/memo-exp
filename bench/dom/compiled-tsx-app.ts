@@ -44,16 +44,16 @@ import { buildData } from './data';
 let data = [];
 let selected = null;
 
-function Row(props, _id, _onClickBinding) {
+function Row(_rowProp, _id, _onClickBinding) {
 	let _slot, _slot2, _slot3, _slot4, _slot5, _value;
 	const _document = _MD.getActiveEnvironment().document;
 
 	const _update = () => {
 		{
-			const _textLeft = props.item.id;
+			const _textLeft = _rowProp.id;
 
 			if (typeof _textLeft === "number" || typeof _textLeft === "string") {
-				const _textRight = props.item.label;
+				const _textRight = _rowProp.label;
 
 				if (typeof _textRight === "number" || typeof _textRight === "string") {
 					if (!_slot4 || (_slot2 !== _textLeft || _slot3 !== _textRight)) {
@@ -75,7 +75,7 @@ function Row(props, _id, _onClickBinding) {
 					_slot4 = false;
 				}
 			} else try {
-				if (_slot !== (_value = _MD.textValue(_textLeft + ": " + props.item.label))) {
+				if (_slot !== (_value = _MD.textValue(_textLeft + ": " + _rowProp.label))) {
 					_slot = _value;
 					_text.data = _value;
 				}
@@ -84,7 +84,7 @@ function Row(props, _id, _onClickBinding) {
 			}
 		}
 
-		if (_slot5 !== (_value = selected === props.item.id ? "danger" : "")) {
+		if (_slot5 !== (_value = selected === _rowProp.id ? "danger" : "")) {
 			_slot5 = _value;
 			_MD.setClassValue(_li, _value);
 		}
@@ -107,10 +107,10 @@ function Row(props, _id, _onClickBinding) {
 	const _text = _li.firstChild;
 
 	{
-		const _textLeft = props.item.id;
+		const _textLeft = _rowProp.id;
 
 		if (typeof _textLeft === "number" || typeof _textLeft === "string") {
-			const _textRight = props.item.label;
+			const _textRight = _rowProp.label;
 
 			if (typeof _textRight === "number" || typeof _textRight === "string") {
 				{
@@ -125,7 +125,7 @@ function Row(props, _id, _onClickBinding) {
 				_slot4 = false;
 			}
 		} else try {
-			_slot = _MD.textValue(_textLeft + ": " + props.item.label);
+			_slot = _MD.textValue(_textLeft + ": " + _rowProp.label);
 		} finally {
 			_slot4 = false;
 		}
@@ -133,13 +133,13 @@ function Row(props, _id, _onClickBinding) {
 
 	_MD.setTextData(_text, _slot);
 
-	if (_slot5 !== (_value = selected === props.item.id ? "danger" : "")) {
+	if (_slot5 !== (_value = selected === _rowProp.id ? "danger" : "")) {
 		_slot5 = _value;
 		_MD.setClassValue(_li, _value);
 	}
 
 	_MD.setDelegatedEvent(_onClickBinding, _li, () => {
-		selected = props.item.id;
+		selected = _rowProp.id;
 		_MD.commitWrites(_WRITES_);
 	});
 
@@ -148,7 +148,7 @@ function Row(props, _id, _onClickBinding) {
 		entities: [],
 		update: _update,
 		updateProps: (_nextProp) => {
-			props = _nextProp;
+			_rowProp = _nextProp;
 		}
 	};
 }
@@ -268,12 +268,12 @@ export function BenchApp(_id2, _parent, _dataPolicies) {
 		_ul,
 		_id2 + "/data",
 		(item, _rowId) => {
-			const _entry = Row({ item }, _rowId, _onClickBinding2);
+			const _entry = Row(item, _rowId, _onClickBinding2);
 			const _pushRowProps = _entry.updateProps;
 
 			_entry.updateProps = (_nextItem) => {
 				item = _nextItem;
-				_pushRowProps({ item });
+				_pushRowProps(item);
 			};
 
 			return _entry;

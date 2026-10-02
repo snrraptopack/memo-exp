@@ -1070,6 +1070,54 @@ investigating conservative row emission and producer/alias proofs next, rather
 than assuming scratch-key writes dominate. It does not prove any emitted read,
 getter or unknown call can be skipped.
 
+## Private single-field row props
+
+A private local component row reading only `props.item` can now use the existing
+positional lightweight ABI when every call supplies that one field in a direct
+keyed map row. This removes the `{ item }` allocation on creation and each retained
+row replay. Lexical binding checks exclude escaping/public factories, envelope
+identity or mutation, receiver calls and tagged templates, defaults, computed
+fields, extra/spread props, member tags, lifecycle/child-component shapes, dynamic scope and
+HMR. Record getters, setter/proxy fallbacks, ordinary key evaluation and full
+conservative replay remain. Local linker metadata can use the proven private ABI;
+exported/imported contracts remain unchanged.
+
+Two paired local Chromium runs compared compiler-generated output against
+`4712300`, using the same runtime, minified production bundles, synchronous
+scheduling, five warmups and 25 alternating samples at 1k and 10k. Row 500 was
+selected before repeated partial updates. Every sample checked text, classes,
+count/order and retained DOM identity outside timing.
+
+| Changed component-row variant, 10k | First before / after ms | Repeat before / after ms |
+| --- | --- | --- |
+| Module data and selection | 4.4 / 4.1 | 4.4 / 3.8 |
+| Component data, module selection | 3.7 / 3.6 | 4.3 / 4.3 |
+
+The six unchanged variants served as controls: 10k medians mostly differed by
+0.0–0.2 ms. The module-state case improved in both runs; the mixed-state case did
+not establish a gain. This is a modest local result for repeated existing-list
+updates, not a replacement for reset-per-sample VM measurements or evidence of
+faster creation/replacement. The two affected tracked outputs were regenerated
+through the compiler. Opaque producer/alias proofs and the other performance
+backlog items remain open.
+
+Compiler build and lint passed, along with 79 focused tests covering props
+replacement, current event captures, escaped envelopes, receiver calls/tags,
+throwing prop evaluation, shadowed parameters, hot builds, linked selection,
+data policies, key semantics and reentrant text caches. All nine DOM variants
+and seven existing dynamic-tag tests passed their checks. The DOM variants
+passed the 21-scenario identity/mixed-operation gate. The pinned Octane canonical
+and reorder smoke checks passed; their timings are correctness checks only.
+After the final proof restrictions, all eight regenerated outputs matched the
+validated output byte for byte. Dependency versions and the upstream pin are
+unchanged.
+
+A preceding text-cache experiment moved the right operand's primitive type guard
+after the cached equality check. Two paired runs were mixed and some variants
+were repeatedly slower, so that emission change was discarded. Four additional
+self-contained reentrant getter/cache checks remain and pass on the original
+text emission. Bundle-size work remains deferred.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

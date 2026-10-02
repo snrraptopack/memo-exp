@@ -148,6 +148,18 @@ still seeds through `setTextData`, which also handles adopted server text. This
 reduces DOM reads during broad list refreshes; it does not make those refreshes
 key-targeted or change the conservative list-method fallback.
 
+Private local component rows that read only one named props field, such as
+`props.item`, can use the existing positional lightweight row ABI. The
+`components/private-row-props.ts` pass requires every call to be a direct keyed
+map row supplying precisely that field. It checks lexical bindings and excludes
+exports, factory escapes, whole-envelope reads or writes, receiver calls/tags,
+defaults, computed fields, spreads, extra props, member tags, lifecycle/child-component shapes,
+dynamic scope and hot compilation. Proven local rows can use this ABI even when
+linking supplied their row metadata; public/imported contracts retain their
+existing representation. Record getters, mutations and opaque calls still replay
+through the ordinary conservative path. The next prop value is evaluated before
+replacing the retained row's captured binding.
+
 List callbacks also retain synchronous expression statements before their final
 JSX return, such as logging or calling an inspection helper. They run once before
 the row's creation and once per row replay; their reads participate in routing.

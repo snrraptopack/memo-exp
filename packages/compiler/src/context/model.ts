@@ -502,6 +502,8 @@ export interface Ctx {
   componentProps: Map<string, ComponentPropsPlan>;
   /** Memoized isLightweightListedComponent results (the eligibility check traverses the AST). */
   lightweightCache: Map<string, boolean>;
+  /** Local keyed-only rows whose generic envelope cannot be observed. */
+  privateRowPropComponents: Set<string>;
   /** Inline-row reads: '<owner>/<suffix>' → site + state vars read in the row JSX. */
   rowReads: Map<string, { owner: string; suffix: string; vars: Set<string> }>;
   /** Simple top-level inline rows with no independently routed module readers. */
@@ -816,6 +818,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     componentProps,
     linkedComponentRenderProps,
     lightweightCache: new Map(),
+    privateRowPropComponents: new Set(),
     rowReads: new Map(),
     lightweightInlineRows: new WeakSet(),
     condReads: new Map(),

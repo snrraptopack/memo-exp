@@ -279,7 +279,7 @@ export function transformComponent(
     !ownsRoutes &&
     isLightweightListedComponent(ctx, name);
   const positionalObjectProps =
-    lightweight && linkedRefs.length === 0
+    lightweight && (linkedRefs.length === 0 || ctx.privateRowPropComponents.has(name))
       ? simpleObjectPropBindings(propPlan)
       : null;
   const lightweightPropCount =

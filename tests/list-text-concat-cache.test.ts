@@ -141,6 +141,31 @@ for (const kind of ['inline', 'component']) describe(`${kind} row text joins`, (
     expect(app.node.textContent).toBe('1:one');
   });
 
+  it.each(['primitive', 'opaque'] as const)('checks the cache after a right getter reenters with %s values', async mode => {
+    let left = 1, right: unknown = 'one', reenter = false;
+    let app: Awaited<ReturnType<typeof create>>;
+    app = await create({ get left() { return left; }, get right() {
+      if (reenter) {
+        reenter = false;
+        const outerRight = right;
+        left = 2;
+        right = mode === 'primitive' ? 'two' : { toString() { return 'two'; } };
+        app.render();
+        return outerRight;
+      }
+      return right;
+    } });
+    const node = app.node;
+    reenter = true;
+    app.render();
+    // The outer expression captured 1 and returns "one" after the nested
+    // update. Its completed text supersedes the nested "2:two" result.
+    expect(node.textContent).toBe('1:one');
+    app.render();
+    expect(node.textContent).toBe('2:two');
+    expect(document.querySelector('li')).toBe(node);
+  });
+
   it('adopts hydrated rows and preserves cached text across edits and reorders', async () => {
     const specifier = `./fixtures/out/text-concat-${kind}.compiled.ts`;
     const { HydratedApp } = await import(specifier);
