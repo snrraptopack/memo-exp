@@ -40,6 +40,7 @@ import { prepareProgramAnalysis } from './analysis/prepare';
 import { liftModuleStateCells } from './cells';
 import { emitDomComponents } from './emission/dom';
 import { planComponentRendering, type ModuleRenderPlan } from './planning/component-render';
+import { planExpressionSources } from './planning/expression-sources';
 import {
   rejectUnownedCleanup,
   transformProgramCallbacks,
@@ -266,7 +267,7 @@ function prepareProgram(
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
   transformSharedHelperCallbacks(ctx, programPath);
-  return planComponentRendering(ctx.compPaths);
+  return planComponentRendering(ctx.compPaths, planExpressionSources(ctx));
 }
 
 function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {

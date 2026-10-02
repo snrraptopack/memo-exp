@@ -40,7 +40,6 @@ import {
   type SimpleObjectPropBinding,
 } from '../components/props';
 import { buildRenderPreludeReplay } from '../components/render-prelude';
-import { slotReasonSources } from '../components/slot-reasons';
 import { createSlotPullProof } from '../components/slot-pull-proof';
 import { structuralReasonsFor } from '../components/local-derived';
 import type { ComponentReturnPlan } from '../components/return-plan';
@@ -260,7 +259,7 @@ export function transformComponent(
   ctx: Ctx,
   component: PlannedComponent,
 ): void {
-  const { source: path, name, returns } = component;
+  const { source: path, name, returns, expressionSources } = component;
   const node = path.node;
   const propPlan = ctx.componentProps.get(name)!;
   const propSlotCount = propPlan.params.length;
@@ -306,7 +305,7 @@ export function transformComponent(
   if (reasonIds !== undefined && !lightweight) {
     if (ctx.volatileComponents.has(name)) scope.slotPullIndependent = createSlotPullProof(ctx, name);
     scope.slotReasons = (expression) => {
-      const sources = slotReasonSources(ctx, name, expression);
+      const sources = expressionSources.sourcesFor(expression);
       if (sources === null) return null;
       const reasons: number[] = [];
       for (const source of sources) {

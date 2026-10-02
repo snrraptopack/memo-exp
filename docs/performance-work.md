@@ -40,6 +40,13 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ## Completed changes
 
+- Exact slot-source inputs are now captured before component emission. The
+  source query has no mutable `Ctx` dependency, and resolved derivation maps
+  are built once per component rather than once per slot. Runtime reason
+  translation remains in the DOM backend. This is compiler organization and
+  repeated analysis work removal; it does not establish a runtime speedup or
+  resolve the VM's structural-update gaps. Opaque pull completion, async and
+  ownership facts retain separate proofs.
 - List-row text uses normalized string slots to avoid unchanged DOM text reads.
   Operand reads and opaque string conversions still replay.
 - Repeated-row text shaped as `left + "separator" + right` caches number/string

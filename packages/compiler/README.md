@@ -52,15 +52,20 @@ modules within a domain import their siblings directly.
 
 Component return structure is now planned before any component factory is
 replaced. `planComponentRendering()` consumes normalized component paths and
-returns a read-only `ModuleRenderPlan`: component identity/source and direct or
-branched JSX returns. It chooses neither DOM operations nor runtime identifiers
-or a factory ABI. `emitDomComponents()` consumes that plan; the DOM component
+receives exact expression-source contracts from `planExpressionSources()` and
+returns a read-only `ModuleRenderPlan`: component identity/source, direct or
+branched JSX returns, and semantic source queries. It chooses neither DOM
+operations nor runtime identifiers or a factory ABI. `emitDomComponents()`
+consumes that plan; the DOM component
 emitter no longer discovers JSX return control flow. Unsupported returns in a
 later component are diagnosed before an earlier component is emitted.
 
 This is the first phase boundary, not a complete target-neutral IR. Plans refer
 to AST nodes owned by this compilation; backend emission consumes those nodes.
-Expression, provenance and ownership facts still share `Ctx`, and several
+Exact slot-source queries no longer read `Ctx`: owner/unknown sources, derivation
+roots and callee proof inputs are captured before backend mutation. Emission
+maps the resulting source names to runtime reasons. Other expression,
+provenance and ownership facts still share `Ctx`, and several
 normalization passes still lower runtime calls. The remaining migration and
 phase invariants are documented in `docs/compiler-architecture.md`.
 
