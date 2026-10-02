@@ -134,8 +134,7 @@ describe('M5 compiler — code generation', () => {
     expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
     // An opaque receiver call may also mutate retained row content.
     expect(code).not.toContain('.commitStructuralWrites(');
-    // row entities live at the bracket pattern
-    expect(code).toContain('"App/items/Row[*]"');
+    expect(code).toContain('"App/items/$selection"');
   });
 
   it('conservatively reconciles array receiver writes without method whitelists', () => {
@@ -217,7 +216,7 @@ describe('M5 compiler — code generation', () => {
       /Row\(item, _rowId\d*, _onClickBinding\d*\)/,
     );
     expect(code).toContain('entities: []');
-    expect(code).toContain('"./component.tsx#selected": ["App"]');
+    expect(code).toContain('"./component.tsx#selected": ["App/items/$selection"]');
   });
 
   it('preserves false ARIA attributes as string values', () => {
@@ -392,15 +391,13 @@ describe('M5 compiler — compiled output runs', () => {
     expect(lis).toHaveLength(2);
     expect(lis[0]!.textContent).toBe('one');
 
-    // row entities registered at the bracket ids; 'selected' routes to both
+    // A selection entity refreshes two keyed DOM-only rows.
     expect(registeredIds()).toEqual([
       'App',
-      'App/items/Row[n:1]',
-      'App/items/Row[n:2]',
+      'App/items/$selection',
     ]);
     expect(resolveWrites(['./component.tsx#selected'], registeredIds())).toEqual([
-      'App/items/Row[n:1]',
-      'App/items/Row[n:2]',
+      'App/items/$selection',
     ]);
 
     lis[0]!.click();
@@ -425,8 +422,8 @@ describe('M5 compiler — compiled output runs', () => {
     let lis = document.querySelectorAll('li');
     expect(lis).toHaveLength(2);
 
-    expect(registeredIds()).toEqual(['App']);
-    expect(resolveWrites(['./component.tsx#selected'], registeredIds())).toEqual(['App']);
+    expect(registeredIds()).toEqual(['App', 'App/items/$selection']);
+    expect(resolveWrites(['./component.tsx#selected'], registeredIds())).toEqual(['App/items/$selection']);
 
     lis[0]!.click();
     expect(lis[0]!.className).toBe('danger');

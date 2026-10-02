@@ -152,6 +152,8 @@ export function createListRegion<T>(
   key: KeyFn<T> = identityKey,
   trackRowIds = true,
   indexSensitive = true,
+  // Compiler proof: entries own DOM only, with no entity or cleanup callbacks.
+  resourceFree = false,
 ): ListRegion<T> {
   // Hydration protocol (hydration-markers.md §2/§3): `mmd:l` owns the
   // complete row set. During adoption the existing pair remains the stable
@@ -191,6 +193,9 @@ export function createListRegion<T>(
   }
   interface GeneralFrame { remaining: number }
   let activeFrame: GeneralFrame | null = null;
+  // Terminal before calling authored cleanup: reentrant work cannot revive
+  // rows that are being detached or queue another render for them.
+  let disposed = false;
   let cache = new Map<unknown, RowRec>();
   const syntheticIds = new Map<unknown, string>();
   let syntheticCounter = 0;
@@ -242,15 +247,49 @@ export function createListRegion<T>(
   }
 
   function cleanupEntry(entry: ListEntry, removeNodes = true): void {
+    let errors: unknown[] | null = null;
     if (removeNodes) {
       const nodes = entry.nodes;
       if (Array.isArray(nodes)) {
-        for (const node of nodes) node.parentNode?.removeChild(node);
+        for (const node of nodes) {
+          try { node.parentNode?.removeChild(node); }
+          catch (error) { (errors ??= []).push(error); }
+        }
       } else {
-        (nodes as Node).parentNode?.removeChild(nodes as Node);
+        try { (nodes as Node).parentNode?.removeChild(nodes as Node); }
+        catch (error) { (errors ??= []).push(error); }
       }
     }
-    for (const entity of entry.entities) unregisterSubtree(entity);
+    for (const entity of entry.entities) {
+      try { unregisterSubtree(entity); }
+      catch (error) { (errors ??= []).push(error); }
+    }
+    reportCleanupErrors(errors);
+  }
+
+  function reportCleanupErrors(errors: unknown[] | null): void {
+    if (errors === null) return;
+    if (errors.length === 1) throw errors[0];
+    throw new AggregateError(errors, `[memo-dom] list '${idPrefix}' disposal failed`);
+  }
+
+  function removeRowRange(rows: readonly RowRec[]): boolean {
+    const container = endAnchor.parentNode ?? parent;
+    let firstOwned: Node | undefined;
+    for (let i = 0; i < rows.length; i++) {
+      const nodes = rows[i]!.e.nodes;
+      firstOwned = Array.isArray(nodes) ? nodes[0] : nodes as Node;
+      if (firstOwned !== undefined) break;
+    }
+    if (firstOwned === undefined) return false;
+    const doc = getActiveEnvironment().document;
+    if (firstOwned.parentNode !== container || endAnchor.parentNode !== container ||
+        doc.createRange === undefined) return false;
+    const range = doc.createRange();
+    range.setStartBefore(firstOwned);
+    range.setEndBefore(endAnchor);
+    range.deleteContents();
+    return true;
   }
 
   function syncRetained(
@@ -373,6 +412,7 @@ export function createListRegion<T>(
     structuralOnly = false,
     appendOnly = false,
   ): void {
+    if (disposed) return;
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
     let evaluatedKeyCount = 0;
@@ -695,31 +735,18 @@ export function createListRegion<T>(
     // then append a replacement batch with one fragment insertion. With no
     // reused key there is also no old ordering to feed through LIS.
     if (!oldWasEmpty && reused === 0 && (n === 0 || hasNew)) {
-      for (const rec of prevRows) rec.e.dispose?.();
-
-      let removedAsRange = false;
-      let firstOwned: Node | undefined;
-      for (const rec of prevRows) {
-        const nodes = rec.e.nodes;
-        firstOwned = Array.isArray(nodes) ? nodes[0] : nodes as Node;
-        if (firstOwned !== undefined) break;
-      }
-      if (
-        firstOwned !== undefined &&
-        firstOwned.parentNode === container &&
-        endAnchor.parentNode === container &&
-        getActiveEnvironment().document.createRange !== undefined
-      ) {
-        const range = getActiveEnvironment().document.createRange!();
-        range.setStartBefore(firstOwned);
-        range.setEndBefore(endAnchor);
-        range.deleteContents();
-        removedAsRange = true;
-      }
-
-      for (const rec of prevRows) {
-        cleanupEntry(rec.e, !removedAsRange);
-        syntheticIds.delete(rec.key);
+      if (!resourceFree) for (const rec of prevRows) rec.e.dispose?.();
+      const removedAsRange = removeRowRange(prevRows);
+      if (resourceFree && removedAsRange) {
+        if (n === 0) syntheticIds.clear();
+        else if (syntheticIds.size !== 0) {
+          for (const rec of prevRows) syntheticIds.delete(rec.key);
+        }
+      } else {
+        for (const rec of prevRows) {
+          cleanupEntry(rec.e, !removedAsRange);
+          syntheticIds.delete(rec.key);
+        }
       }
       old.clear();
       frame.remaining = 0;
@@ -881,12 +908,14 @@ export function createListRegion<T>(
   }
 
   function refreshKey(k: unknown): void {
+    if (disposed) return;
     const rec = cache.get(k);
     if (rec === undefined || rec.frame === activeFrame) return;
     syncRow(rec.e, prevItems[rec.pos] as T, rec.id, rec.pos);
   }
 
   function refreshIndices(items: readonly T[], indices: readonly number[], fixedPositions = false): void {
+    if (disposed) return;
     // Initial/unmounted regions still reconcile. Unproven callers also validate
     // retained identities; the compiler alone can waive that O(n) scan.
     if (adopting || items.length !== prevItems.length ||
@@ -901,15 +930,19 @@ export function createListRegion<T>(
   }
 
   function dispose(): void {
+    if (disposed) return;
+    disposed = true;
+    let errors: unknown[] | null = null;
     // Successful frames own every live entry in prevRows. An interrupted
     // general frame can own the same retained entry in several buffers.
-    const disposed = activeFrame === null ? null : new Set<RowRec>();
+    const seen = activeFrame === null ? null : new Set<RowRec>();
     const cleanup = (rec: RowRec): void => {
-      if (disposed?.has(rec)) return;
-      disposed?.add(rec);
-      rec.e.dispose?.();
-      cleanupEntry(rec.e);
-      syntheticIds.delete(rec.key);
+      if (seen?.has(rec)) return;
+      seen?.add(rec);
+      try { rec.e.dispose?.(); }
+      catch (error) { (errors ??= []).push(error); }
+      try { cleanupEntry(rec.e); }
+      catch (error) { (errors ??= []).push(error); }
     };
     // Failed append factories can leave completed rows only in the ordered
     // scratch buffer. Removal probes also put live records there, so skip
@@ -920,7 +953,12 @@ export function createListRegion<T>(
       }
     }
     if (activeFrame === null) {
-      for (const rec of prevRows) cleanup(rec);
+      let removedAsRange = false;
+      if (resourceFree) {
+        try { removedAsRange = removeRowRange(prevRows); }
+        catch (error) { (errors ??= []).push(error); }
+      }
+      if (!removedAsRange) for (const rec of prevRows) cleanup(rec);
     } else {
       for (const rec of prevRows) {
         if (rec.frame !== activeFrame && cache.get(rec.key) === rec) cleanup(rec);
@@ -932,20 +970,24 @@ export function createListRegion<T>(
     }
     cache.clear();
     nextMap.clear();
+    syntheticIds.clear();
     activeFrame = null;
     prevItems = [];
     validatedKeys.length = 0;
     prevRows.length = 0;
     nextRows.length = 0;
-    endAnchor.parentNode?.removeChild(endAnchor);
-    openAnchor.parentNode?.removeChild(openAnchor);
+    try { endAnchor.parentNode?.removeChild(endAnchor); }
+    catch (error) { (errors ??= []).push(error); }
+    try { openAnchor.parentNode?.removeChild(openAnchor); }
+    catch (error) { (errors ??= []).push(error); }
+    reportCleanupErrors(errors);
   }
 
   return {
     reconcile,
     refreshKey,
     refreshIndices,
-    size: () => activeFrame?.remaining ?? cache.size,
+    size: () => disposed ? 0 : activeFrame?.remaining ?? cache.size,
     dispose,
   };
 }

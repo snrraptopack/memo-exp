@@ -331,6 +331,7 @@ export function BenchModuleSelectionComponent(_id2, _parent, _dataPolicies) {
 	const _dataChangedKeys = new Set();
 
 	_region.reconcile(data);
+	_MD.cleanup(_id2, () => _region.dispose());
 
 	return _div2;
 }

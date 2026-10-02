@@ -290,12 +290,14 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 		},
 		(item) => item.id,
 		false,
-		false
+		false,
+		true
 	);
 
 	let _selectedListKey = selected;
 
 	_region.reconcile(data);
+	_MD.cleanup(_id, () => _region.dispose());
 
 	return _div2;
 }

@@ -373,6 +373,20 @@ The public `createExtensionEstreeFrontend()` utility creates a strict extension
 map for specialized frontends. Virtual or extensionless modules must select a
 frontend explicitly; TSRX callers can use `experimentalTsrxEstreeFrontend`.
 
+## Structural ownership and list teardown
+
+Component factories register their structural regions for cleanup with the
+component owner. Unregistering that owner disposes its lists and conditional
+regions, including mount refs owned by lightweight component rows without their
+own entity record. Separate cleanup registrations allow later owned regions to
+finish when an earlier region reports a failure.
+
+Proven lightweight inline rows own DOM only. The compiler emits an additional
+`createListRegion()` flag for these rows so complete clear/replacement and
+unmount skip empty cleanup scans. Refs, child ownership, effects, unknown row
+callbacks and HMR keep the ordinary cleanup path. Lightweight component rows
+are not automatically DOM-only: they can still own mount refs.
+
 ## Compiler-owned routing
 
 `route` and `route-to` are compiler properties, similar to `key`: they are

@@ -545,6 +545,19 @@ export function transformComponent(
     );
   }
   body.push(...scope.creation, ...scope.mounts);
+  if (!lightweight) {
+    for (const region of scope.disposableRegions) {
+      body.push(astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'cleanup'), [
+          astFactory.identifier(factoryId),
+          astFactory.arrowFunctionExpression([], astFactory.callExpression(
+            astFactory.memberExpression(astFactory.identifier(region), astFactory.identifier('dispose')),
+            [],
+          )),
+        ]),
+      ));
+    }
+  }
   body.push(...sourceMounts, ...eventSourceDisposals);
   for (const source of externalSources) {
     const subscribe = ctx.externalReactiveBindings.get(source)!;

@@ -102,7 +102,7 @@ _MD.installAccessTable(
 		readers: {
 			"./component.tsx#items": ["App"],
 			"./component.tsx#items\\u0000memo-dom:list-structure-reader": ["App"],
-			"./component.tsx#selected": ["App"]
+			"./component.tsx#selected": ["App/items/$selection"]
 		}
 	},
 	"App",
@@ -122,7 +122,7 @@ function Row(item, _id, _onClickBinding) {
 			_text.data = _value;
 		}
 
-		if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+		if (_slot2 !== (_value = selected === item.id ? "danger" : "")) {
 			_slot2 = _value;
 			_MD.setClassValue(_li, _value);
 		}
@@ -147,7 +147,7 @@ function Row(item, _id, _onClickBinding) {
 	_slot = _MD.textValue(item.label);
 	_MD.setTextData(_text, _slot);
 
-	if (_slot2 !== (_value = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+	if (_slot2 !== (_value = selected === item.id ? "danger" : "")) {
 		_slot2 = _value;
 		_MD.setClassValue(_li, _value);
 	}
@@ -204,6 +204,30 @@ export function CompList(_id2, _parent, _dataPolicies) {
 		false
 	);
 
+	const _listSelectionId = _id2 + "/items/$selection";
+	let _selectedModuleListKey = selected;
+
+	_MD.register({
+		id: _listSelectionId,
+		parent: _id2,
+		render: () => {
+			if (!Object.is(_selectedModuleListKey, selected)) {
+				const _previousModuleListKey = _selectedModuleListKey;
+
+				_selectedModuleListKey = selected;
+				_region.refreshKey(_previousModuleListKey);
+				_region.refreshKey(_selectedModuleListKey);
+			}
+		}
+	});
+
+	const _disposeList = _region.dispose;
+
+	_region.dispose = () => {
+		_MD.unregister(_listSelectionId);
+		_disposeList();
+	};
+
 	_region.reconcile(items);
 
 	const _text2 = _document2.createTextNode("add");
@@ -216,6 +240,7 @@ export function CompList(_id2, _parent, _dataPolicies) {
 
 	_div.appendChild(_ul);
 	_div.appendChild(_button);
+	_MD.cleanup(_id2, () => _region.dispose());
 
 	return _div;
 }"
@@ -243,7 +268,7 @@ _MD.installAccessTable(
 		readers: {
 			"./component.tsx#items": ["App"],
 			"./component.tsx#items\\u0000memo-dom:list-structure-reader": ["App"],
-			"./component.tsx#selected": ["App/items/Row[*]"]
+			"./component.tsx#selected": ["App/items/$selection"]
 		}
 	},
 	"App",
@@ -283,16 +308,13 @@ export function InlineList(_id, _parent, _dataPolicies) {
 					_text.data = _value2;
 				}
 
-				if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+				if (_slot2 !== (_value2 = selected === item.id ? "danger" : "")) {
 					_slot2 = _value2;
 					_MD.setClassValue(_li, _value2);
 				}
 			};
 
 			const _document2 = _MD.getActiveEnvironment().document;
-
-			_MD.register({ id: _rowId, parent: _id, render: _update2 });
-
 			const _canReuseTemplate = _MD.canReuseTemplate();
 			let _li;
 
@@ -312,7 +334,7 @@ export function InlineList(_id, _parent, _dataPolicies) {
 			_slot = _MD.textValue(item.label);
 			_MD.setTextData(_text, _slot);
 
-			if (_slot2 !== (_value2 = _MD.classValue(selected === item.id ? 'danger' : ''))) {
+			if (_slot2 !== (_value2 = selected === item.id ? "danger" : "")) {
 				_slot2 = _value2;
 				_MD.setClassValue(_li, _value2);
 			}
@@ -323,8 +345,8 @@ export function InlineList(_id, _parent, _dataPolicies) {
 			});
 
 			return {
-				nodes: [_li],
-				entities: [_rowId],
+				nodes: _li,
+				entities: [],
 				updateProps: (_nextItem) => {
 					item = _nextItem;
 				},
@@ -332,9 +354,34 @@ export function InlineList(_id, _parent, _dataPolicies) {
 			};
 		},
 		(item) => item.id,
-		true,
-		false
+		false,
+		false,
+		true
 	);
+
+	const _listSelectionId = _id + "/items/$selection";
+	let _selectedModuleListKey = selected;
+
+	_MD.register({
+		id: _listSelectionId,
+		parent: _id,
+		render: () => {
+			if (!Object.is(_selectedModuleListKey, selected)) {
+				const _previousModuleListKey = _selectedModuleListKey;
+
+				_selectedModuleListKey = selected;
+				_region.refreshKey(_previousModuleListKey);
+				_region.refreshKey(_selectedModuleListKey);
+			}
+		}
+	});
+
+	const _disposeList = _region.dispose;
+
+	_region.dispose = () => {
+		_MD.unregister(_listSelectionId);
+		_disposeList();
+	};
 
 	_region.reconcile(items);
 
@@ -348,6 +395,7 @@ export function InlineList(_id, _parent, _dataPolicies) {
 
 	_div.appendChild(_ul);
 	_div.appendChild(_button);
+	_MD.cleanup(_id, () => _region.dispose());
 
 	return _div;
 }"

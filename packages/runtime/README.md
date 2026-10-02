@@ -55,6 +55,19 @@ Each removal invalidates the cached ID list before notifying listeners, so calls
 to `registeredIds()` during teardown reflect the current registry. Previously
 returned ID snapshots keep their contents.
 
+List regions become terminal before running disposal callbacks. Reentrant
+`dispose()`, reconciliation and refresh calls then do nothing, and `size()`
+returns zero. Disposal finishes the remaining rows, entities and anchors before
+reporting cleanup failures: one error is rethrown unchanged, multiple errors are
+reported together. Interrupted frames retain the same ownership coverage.
+
+The compiler marks proven DOM-only inline rows with the final `resourceFree`
+argument to `createListRegion()`. Those entries have no entities or disposal
+callbacks. Complete clear/replacement and ordinary unmount can remove their
+owned DOM range without visiting empty cleanup records. Clear retains the same
+boundary comments; unmount removes them. Other callers retain normal cleanup,
+including callers that disable row ID tracking without this additional proof.
+
 The package is independently buildable:
 
 ```bash
