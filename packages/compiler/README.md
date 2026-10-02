@@ -38,6 +38,7 @@ Domain folders keep related implementation details discoverable:
 | `src/context/` | Compiler data model/context construction and raw AST helpers |
 | `src/effects/` | Effect ownership, dependency discovery, invalidation, registration, and rewriting |
 | `src/emission/` | Component factories and generated list/conditional/route regions |
+| `src/planning/` | Target-independent render contracts produced before backend emission |
 | `src/handlers/` | Mutation traversal and commit-routing analysis |
 | `src/jsx/` | Ordered attributes, child classification, refs, and namespaces |
 | `src/linking/` | Linker graph contracts, module resolution, and cross-module import metadata |
@@ -48,6 +49,20 @@ remain stable facades. Cross-domain callers use those facades; implementation
 modules within a domain import their siblings directly.
 
 ## Architecture and evolution rules
+
+Component return structure is now planned before any component factory is
+replaced. `planComponentRendering()` consumes normalized component paths and
+returns a read-only `ModuleRenderPlan`: component identity/source and direct or
+branched JSX returns. It chooses neither DOM operations nor runtime identifiers
+or a factory ABI. `emitDomComponents()` consumes that plan; the DOM component
+emitter no longer discovers JSX return control flow. Unsupported returns in a
+later component are diagnosed before an earlier component is emitted.
+
+This is the first phase boundary, not a complete target-neutral IR. Plans refer
+to AST nodes owned by this compilation; backend emission consumes those nodes.
+Expression, provenance and ownership facts still share `Ctx`, and several
+normalization passes still lower runtime calls. The remaining migration and
+phase invariants are documented in `docs/compiler-architecture.md`.
 
 Model compiler work as an explicit pipeline of domain passes. A pass receives
 the compiler context and AST, performs one named responsibility, and leaves the

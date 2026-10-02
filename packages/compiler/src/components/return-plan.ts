@@ -27,17 +27,17 @@ const HOIST_BARRIERS = new Set([
 ]);
 
 export interface ComponentReturnPlan {
-  /** Branch picker passed directly to createCondRegion(). */
-  pick: t.ArrowFunctionExpression;
+  /** Evaluates the selected branch index without choosing a rendering target. */
+  readonly pick: t.ArrowFunctionExpression;
   /** null marks an empty branch (`return null/false/undefined`). */
-  branches: (JsxNode | null)[];
+  readonly branches: readonly (JsxNode | null)[];
   /** Top-level source statements replaced by the structural region. */
-  statements: Set<t.Statement>;
+  readonly statements: ReadonlySet<t.Statement>;
 }
 
 export interface DirectComponentReturn {
-  jsx: JsxNode;
-  statement: t.ReturnStatement;
+  readonly jsx: JsxNode;
+  readonly statement: t.ReturnStatement;
 }
 
 export type ComponentReturns = DirectComponentReturn | ComponentReturnPlan;

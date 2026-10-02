@@ -38,7 +38,8 @@ import {
 import { buildAccessTable } from './analysis';
 import { prepareProgramAnalysis } from './analysis/prepare';
 import { liftModuleStateCells } from './cells';
-import { transformComponent } from './emission/component';
+import { emitDomComponents } from './emission/dom';
+import { planComponentRendering, type ModuleRenderPlan } from './planning/component-render';
 import {
   rejectUnownedCleanup,
   transformProgramCallbacks,
@@ -259,12 +260,13 @@ export type { MemoDomOptions };
 function prepareProgram(
   ctx: Ctx,
   programPath: ProgramTransformPath,
-): void {
+): ModuleRenderPlan {
   prepareProgramAnalysis(ctx, programPath);
   analyzeRoutedPreparations(ctx, programPath, true);
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
   transformSharedHelperCallbacks(ctx, programPath);
+  return planComponentRendering(ctx.compPaths);
 }
 
 function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
@@ -373,10 +375,8 @@ function transformProgramAst(
   opts: InternalMemoDomOptions = {},
 ): void {
   const ctx = createCtx(opts);
-  prepareProgram(ctx, programPath);
-  for (const [name, componentPath] of ctx.compPaths) {
-    transformComponent(ctx, componentPath, name);
-  }
+  const renderPlan = prepareProgram(ctx, programPath);
+  emitDomComponents(ctx, renderPlan);
   finishProgram(ctx, programPath);
 }
 

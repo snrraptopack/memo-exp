@@ -43,10 +43,8 @@ import { buildRenderPreludeReplay } from '../components/render-prelude';
 import { slotReasonSources } from '../components/slot-reasons';
 import { createSlotPullProof } from '../components/slot-pull-proof';
 import { structuralReasonsFor } from '../components/local-derived';
-import {
-  analyzeComponentReturns,
-  type ComponentReturnPlan,
-} from '../components/return-plan';
+import type { ComponentReturnPlan } from '../components/return-plan';
+import type { PlannedComponent } from '../planning/component-render';
 import {
   buildEffectRegistrations,
   buildLocalEffectInvalidations,
@@ -260,11 +258,10 @@ function buildFactoryParameters(
 
 export function transformComponent(
   ctx: Ctx,
-  path: ComponentPath,
-  name: string,
+  component: PlannedComponent,
 ): void {
+  const { source: path, name, returns } = component;
   const node = path.node;
-  const returns = analyzeComponentReturns(path, name);
   const propPlan = ctx.componentProps.get(name)!;
   const propSlotCount = propPlan.params.length;
   const refs = ctx.listedSites.get(name) ?? [];
