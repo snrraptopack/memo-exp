@@ -306,7 +306,8 @@ export function BenchAppOwned(_id2, _parent, _dataPolicies) {
 		},
 		(item) => item.id,
 		false,
-		false
+		false,
+		true
 	);
 
 	const _dataChangedKeys = new Set();

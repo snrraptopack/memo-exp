@@ -1711,6 +1711,50 @@ opaque-produced collection precision and creation/removal/reorder work remain
 on the plan. Dependencies and the Octane pin are unchanged; bundle size stays
 deferred.
 
+## DOM-only component-row ownership and suffix removal
+
+The compiler now captures a conservative DOM-only ownership fact before JSX
+emission changes component factories. Lightweight component rows with only
+host nodes, scalar expressions and ordinary event callbacks can use the
+existing resource-free list path. Linked imports carry the fact too. Refs,
+child components, effects/cleanup, render slots, spreads, unknown render calls,
+callback preludes, dynamic scope and HMR retain normal ownership.
+
+Successful suffix range removal also skips empty disposal/cleanup scans for
+resource-free rows. Absent or failed range deletion still finishes individual
+node cleanup; resource-bearing rows preserve disposal order and errors.
+
+Import-then-export component aliases now preserve canonical component identity
+and metadata, including application-before-barrel ordering and renamed chains.
+Mounted roots resolve to the declaring module rather than the barrel, so the
+factory receives root registration. Re-export-from syntax remains diagnosed.
+
+Compiler/runtime builds and changed-source lint passed. Focused validation
+passed 152 unique tests across 16 files, including 22 ownership, alias, ref
+lifecycle and range-error cases. All 25 regenerated DOM variants passed retained
+identity and mixed-sequence checks. The routing suite's teardown uses individual
+removal because Happy DOM range emulation is prohibitively slow at 10k rows;
+Chromium validation exercises native range removal. Regeneration adds only the
+resource-free flag to four tracked component benchmark outputs.
+
+A local Chromium comparison used the same runtime with the previous and new
+compiler-generated owned-component output at 10k rows. Both variant orders used
+three warmups and 15 samples; text, selection and retained-node identity were
+checked after every sample outside timing. Medians in milliseconds:
+
+| Operation | Previous / new, first order | Reversed order |
+| --- | --- | --- |
+| Clear | 17.1 / 12.1 | 14.0 / 14.4 |
+| Replace 10k | 109.7 / 114.1 | 197.5 / 102.7 |
+| Remove final 1k | 6.2 / 7.0 | 6.4 / 8.3 |
+
+These noisy local measurements establish no consistent speed improvement;
+suffix removal was slower in both orders. The change removes proven empty
+bookkeeping, but retained-key validation and DOM costs remain. Reliable overall
+performance still needs VM measurement. Broader reactivity precision and
+creation/removal/reorder work remain on the plan. Dependencies, VM results and
+the Octane pin are unchanged; bundle size remains deferred.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

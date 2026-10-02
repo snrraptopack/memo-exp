@@ -205,6 +205,8 @@ export interface LinkedComponentImport {
   hasWholeDefault: boolean;
   /** Whether keyed-row compilation can use the allocation-free row ABI. */
   listLightweight: boolean;
+  /** Proven lightweight factory owns DOM without disposal callbacks or entities. */
+  listResourceFree?: boolean;
   /** Host JSX event names prebound once by a keyed-list caller. */
   delegatedEvents?: string[];
   /** Props consumed as compiler-owned mount slots. */
@@ -535,6 +537,8 @@ export interface Ctx {
   listSources: Set<string>;
   /** Components owning a keyed list updater. */
   listComponents: Set<string>;
+  /** Authored ownership proof retained before JSX emission mutates factories. */
+  domOnlyRowComponents: Set<string>;
   /** Component -> non-local collection sources owned by its list updaters. */
   componentListSources: Map<string, Set<string>>;
   /** Map call -> direct keyed-item mutation journal used by that one list. */
@@ -834,6 +838,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     targetedListComponents: new Set(),
     listSources: new Set(),
     listComponents: new Set(),
+    domOnlyRowComponents: new Set(),
     componentListSources: new Map(),
     keyedListMutations: new WeakMap(),
     keyedListMutationSources: new Map(),

@@ -31,6 +31,7 @@ export interface ComponentExportInfo {
   acceptsUnknownProps: boolean;
   hasWholeDefault: boolean;
   listLightweight: boolean;
+  listResourceFree?: boolean;
   delegatedEvents: string[];
   renderProps: string[];
   renderCallbacks: string[];
@@ -112,6 +113,7 @@ export function analyzedComponentExport(
       !ctx.transparentSources.has(local) &&
       (!ctx.transparentPolicyParams.has(local) || ctx.transparentInheritedOnlyPolicyParams.has(local)),
     delegatedEvents: [...(ctx.componentHostEvents.get(local) ?? [])],
+    ...(ctx.domOnlyRowComponents.has(local) ? { listResourceFree: true } : {}),
     renderProps: [...props.renderProps],
     renderCallbacks: [...props.renderCallbacks],
     refProps: [...props.refProps],

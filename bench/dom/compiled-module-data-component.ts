@@ -318,7 +318,8 @@ export function BenchModuleDataComponent(_id2, _parent, _dataPolicies) {
 		},
 		(item) => item.id,
 		false,
-		false
+		false,
+		true
 	);
 
 	let _selectedListKey = selected;

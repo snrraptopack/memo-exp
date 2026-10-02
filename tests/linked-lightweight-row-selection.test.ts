@@ -43,7 +43,12 @@ beforeAll(() => {
 });
 
 afterEach(() => {
-  _internals().registry.forEach((_, id) => unregister(id));
+  // This suite targets routing, not bulk removal. Happy DOM's range deletion
+  // is prohibitively slow at 10k rows; Chromium covers the native range path.
+  const range = document.createRange;
+  document.createRange = undefined as unknown as typeof range;
+  try { _internals().registry.forEach((_, id) => unregister(id)); }
+  finally { document.createRange = range; }
   resetAccessTable();
   resetScheduler();
   document.body.replaceChildren();

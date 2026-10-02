@@ -68,6 +68,7 @@ export {
 export { buildAccessTable } from './analysis/access-table';
 
 import { analyzeModuleListTargets } from './analysis/module-list-targets';
+import { analyzeDomOnlyRows } from './analysis/dom-only-rows';
 
 export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   refreshAstAnalysis(ctx, programPath.node);
@@ -146,4 +147,5 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   }
   refreshAstAnalysis(ctx, programPath.node);
   analyzeModuleListTargets(ctx);
+  analyzeDomOnlyRows(ctx);
 }

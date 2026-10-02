@@ -113,10 +113,12 @@ General replacement/mixed frames can still be interrupted before placement and
 remain disposable. This does not provide rollback or support arbitrary nested
 reconciliation from cleanup hooks.
 
-The compiler marks proven DOM-only inline rows with the final `resourceFree`
+The compiler marks proven DOM-only inline or component rows with the final `resourceFree`
 argument to `createListRegion()`. Those entries have no entities or disposal
 callbacks. Complete clear/replacement and ordinary unmount can remove their
-owned DOM range without visiting empty cleanup records. Clear retains the same
+owned DOM range without visiting empty cleanup records. Suffix removal also
+skips empty disposal/cleanup work after successful range deletion; failed or
+unavailable ranges still remove individual nodes. Clear retains the same
 boundary comments; unmount removes them. Other callers retain normal cleanup,
 including callers that disable row ID tracking without this additional proof.
 

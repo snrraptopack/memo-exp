@@ -201,7 +201,14 @@ export function emitListRegion(
   if (args.length === 3) args.push(astFactory.identifier('undefined'));
   if (args.length === 4) args.push(astFactory.booleanLiteral(true));
   args.push(astFactory.booleanLiteral(site.indexParam !== null));
-  if (site.form === 'inline' && ctx.lightweightInlineRows.has(call)) {
+  const domOnlyComponent = site.form === 'component' && site.prelude.length === 0 &&
+    isLightweightRowComponent(ctx, site.rowComp!) &&
+    (ctx.domOnlyRowComponents.has(site.rowComp!) ||
+      ctx.importedComponents.get(site.rowComp!)?.listResourceFree === true) &&
+    site.jsx!.openingElement.attributes.every(attribute =>
+      !astFactory.isJSXSpreadAttribute(attribute) &&
+      (attribute.name as t.JSXIdentifier).name !== 'ref');
+  if (site.form === 'inline' && ctx.lightweightInlineRows.has(call) || domOnlyComponent) {
     args.push(astFactory.booleanLiteral(true));
   }
   scope.creation.push(

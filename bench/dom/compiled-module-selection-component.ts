@@ -301,7 +301,8 @@ export function BenchModuleSelectionComponent(_id2, _parent, _dataPolicies) {
 		},
 		(item) => item.id,
 		false,
-		false
+		false,
+		true
 	);
 
 	const _listSelectionId = _id2 + "/data/$selection";

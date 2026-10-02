@@ -458,11 +458,21 @@ regions, including mount refs owned by lightweight component rows without their
 own entity record. Separate cleanup registrations allow later owned regions to
 finish when an earlier region reports a failure.
 
-Proven lightweight inline rows own DOM only. The compiler emits an additional
-`createListRegion()` flag for these rows so complete clear/replacement and
-unmount skip empty cleanup scans. Refs, child ownership, effects, unknown row
-callbacks and HMR keep the ordinary cleanup path. Lightweight component rows
-are not automatically DOM-only: they can still own mount refs.
+Proven lightweight inline rows and a subset of lightweight component rows own
+DOM only. The compiler emits an additional `createListRegion()` flag so complete
+clear/replacement and unmount skip empty cleanup scans. Successful DOM-only
+suffix range removal also skips disposal scans; failed/unavailable ranges retain
+individual node cleanup. Refs, child ownership, effects, render slots, spreads,
+unknown render calls, callback preludes, dynamic scope and HMR keep the ordinary
+cleanup path. Lightweight component rows are not automatically DOM-only: they
+can still own mount refs. Their ownership proof is captured before emission and
+preserved as optional `listResourceFree` component metadata across imports and
+explicit import-then-export aliases.
+
+Component re-exports now retain their canonical component identity, props and
+ownership facts. Discovery seeds component aliases before strict JSX analysis,
+so application-before-barrel input order does not turn a known component into
+an unknown dynamic tag. Re-export-from syntax retains its existing diagnostic.
 
 ## Compiler-owned routing
 

@@ -383,7 +383,7 @@ function applicationMounts(
   return mounted;
 }
 
-function exportedLocals(program: t.Program): Map<string, string> {
+export function exportedLocals(program: t.Program): Map<string, string> {
   const out = new Map<string, string>();
   for (const stmt of program.body) {
     if (astFactory.isExportDefaultDeclaration(stmt)) {
@@ -463,6 +463,18 @@ export function analyzeManifest(
             exports[exported] = {
               type: 'component',
               ...analyzedComponentExport(ctx, entry.id, local),
+            };
+            continue;
+          }
+          const importedComponent = ctx.importedComponents.get(local);
+          if (importedComponent !== undefined) {
+            exports[exported] = {
+              ...importedComponent,
+              delegatedEvents: [...(importedComponent.delegatedEvents ?? [])],
+              renderProps: [...(importedComponent.renderProps ?? [])],
+              renderCallbacks: [...(importedComponent.renderCallbacks ?? [])],
+              refProps: [...(importedComponent.refProps ?? [])],
+              subtreeReads: [...(importedComponent.subtreeReads ?? [])],
             };
             continue;
           }

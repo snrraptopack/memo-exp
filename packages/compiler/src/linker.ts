@@ -57,13 +57,14 @@ import {
   resolveModule,
 } from './linking/resolution';
 import { compilerOptions } from './linking/options';
-import { analyzeManifest, discoverManifest } from './linking/discovery';
+import { analyzeManifest, discoverManifest, exportedLocals } from './linking/discovery';
 import { installCompilerIntrinsics } from './intrinsics';
 
 export interface CompiledComponentExport {
   exported: string;
   local: string;
   listLightweight: boolean;
+  listResourceFree?: boolean;
 }
 
 export interface CompiledStateExport {
@@ -188,7 +189,7 @@ function resolveApplicationRoot(
       const local = component.key.slice(component.key.lastIndexOf('#') + 1);
       roots.push({
         key: component.key,
-        moduleId: target.id,
+        moduleId: component.key.slice(0, component.key.lastIndexOf('#')),
         mountModuleId: entry.id,
         local,
         rootId: local,
@@ -565,6 +566,26 @@ function compileLinkedModules(
   for (const entry of entries.values()) {
     discovered.set(entry.id, discoverManifest(entry, options));
   }
+  // Seed import-then-export identities before strict JSX/root discovery. A
+  // component alias must already be a component even when its importer is
+  // analyzed before the barrel; subsequent worklist passes refine its facts.
+  for (let round = 0; round < entries.size; round++) {
+    let changed = false;
+    for (const entry of entries.values()) {
+      const manifest = discovered.get(entry.id)!;
+      for (const [exported, local] of exportedLocals(entry.ast)) {
+        if (manifest.exports[exported] !== undefined) continue;
+        const reference = manifest.imports.find(candidate => candidate.local === local);
+        if (reference === undefined || reference.imported === '*') continue;
+        const target = resolveModule(entry.id, reference.source, entries, options);
+        const identity = target === undefined ? undefined : discovered.get(target.id)?.exports[reference.imported];
+        if (identity?.type !== 'component') continue;
+        manifest.exports[exported] = identity;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
   const enforceSingleApplicationRoot = options.enforceSingleApplicationRoot !== false;
   const discoveredRoot = resolveApplicationRoot(
     entries,
@@ -675,6 +696,7 @@ function compileLinkedModules(
               (declaration) => declaration.key === component.key,
             )?.local ?? component.key.slice(component.key.lastIndexOf('#') + 1),
           listLightweight: component.listLightweight,
+          ...(component.listResourceFree === true ? { listResourceFree: true } : {}),
         }))
         .sort((left, right) => left.local.localeCompare(right.local)),
       stateExports: Object.entries(manifest.exports)

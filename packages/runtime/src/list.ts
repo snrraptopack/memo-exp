@@ -653,7 +653,7 @@ export function createListRegion<T>(
         }
 
         if (prefixOnly) {
-          for (let i = items.length; i < prevRows.length; i++) {
+          if (!resourceFree) for (let i = items.length; i < prevRows.length; i++) {
             removalErrors = disposeRemoved(prevRows[i]!, removalErrors);
             if (disposed) { reportCleanupErrors(removalErrors); return; }
           }
@@ -663,9 +663,13 @@ export function createListRegion<T>(
           if (disposed) { reportCleanupErrors(removalErrors); return; }
           for (let i = items.length; i < prevRows.length; i++) {
             const rec = prevRows[i]!;
-            removalErrors = cleanupRemoved(rec, removalErrors, !removedAsRange);
-            if (disposed) { reportCleanupErrors(removalErrors); return; }
-            syntheticIds.delete(rec.key);
+            // A successful DOM-only range has no remaining owned hooks or
+            // entities. Range failures still finish individual node cleanup.
+            if (!resourceFree || !removedAsRange) {
+              removalErrors = cleanupRemoved(rec, removalErrors, !removedAsRange);
+              if (disposed) { reportCleanupErrors(removalErrors); return; }
+            }
+            if (syntheticIds.size !== 0) syntheticIds.delete(rec.key);
             cache.delete(rec.key);
           }
           prevRows.length = items.length;
