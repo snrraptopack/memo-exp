@@ -1670,6 +1670,47 @@ creation/removal/reorder work and factory-snapshot policies remain separate
 work. Dependencies, VM results and the Octane pin are unchanged. Bundle size
 remains deferred.
 
+## Closed-list validation on broad and opaque replays
+
+The existing closed-record proof now also reaches broad list reconciliation.
+For non-escaping arrays whose item identities, positions and scalar keys cannot
+change, the compiler passes a fixed-position guarantee. The runtime can bypass
+the item-reference and key-validation passes while preserving every retained
+row's content replay, including opaque getters/calls and mixed write/pull work.
+This uses existing compiler facts; no runtime subscriptions or dependency graph
+were added.
+
+Initial creation still validates keys. Hydration, length mismatches and recovery
+from interrupted general frames use normal reconciliation. Unknown producers,
+accessors, escaped arrays/items, item replacement, structural operations, mutable
+keys, callback preludes and dynamic scope retain the conservative path.
+
+Self-contained tests cover module/local ownership, inline/component rows, both
+schedulers, module fanout to two list regions, independent local instances,
+mixed writes/pulls, retained node identity and conservative exclusions. Runtime
+cases verify that proven replay skips key reads while preserving forward content
+updates, and that cold/changed-length/interrupted frames retain validation.
+Compiler/runtime builds and changed-source lint passed. Focused validation passed
+161 tests across 13 files, including 22 new cases. All 25 regenerated DOM variants
+passed retained identity and mixed-sequence checks; tracked benchmark output
+remains unchanged.
+
+An isolated Chromium comparison used the same runtime and pure key/content
+callbacks with the guarantee off/on. Each sample performed 20 live selection
+updates; 31 samples followed seven warmups. Both variant orders were measured,
+and classes/retained nodes were checked after every sample outside timing:
+
+| Rows | Validation / proven positions, first order (ms) | Reversed order (ms) |
+| --- | --- | --- |
+| 1,000 | 0.065 / 0.035 | 0.055 / 0.035 |
+| 10,000 | 0.680 / 0.475 | 0.555 / 0.455 |
+
+These are isolated replay costs, not main DOM/Octane gains or VM results. The
+existing benchmark producers do not gain this closed-list proof. Broader
+opaque-produced collection precision and creation/removal/reorder work remain
+on the plan. Dependencies and the Octane pin are unchanged; bundle size stays
+deferred.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

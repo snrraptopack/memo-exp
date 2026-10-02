@@ -47,6 +47,14 @@ during the failed render prevents rearming; no immediate retry is added.
 
 ## Keyed list ownership
 
+`reconcile()` accepts an optional fourth `fixedPositions` argument for compiler
+proofs of unchanged item identities, positions and keys. A committed region with
+the same length can skip identity/key validation while still synchronizing all
+retained content in forward order. Existing callers keep ordinary validation.
+Initial mounting, hydration, length mismatches and interrupted general frames
+use the normal path. This is a trusted compiler contract, not a runtime inference
+from an unchanged array reference.
+
 General reconciliation keeps retained keys in the region's existing Map. A
 private frame marker detects duplicates and preserves consumed-key visibility
 for in-frame `refreshKey()` and `size()` calls. Key evaluation, row updates and

@@ -116,6 +116,15 @@ a method property name cannot prove that retained rows were not mutated. This
 bounds a targeted list refresh by the number of targets without turning method
 recognition into a language or purity whitelist.
 
+The same closed-record proof can now waive identity and key scans during a broad
+list replay, including an opaque pull. The compiler passes a fixed-position
+guarantee to `reconcile`; every retained row still receives its ordinary content
+refresh. This does not memoize opaque row reads or skip their calls/coercions.
+Creation still validates all keys. Hydration, length changes and interrupted
+general frames retain ordinary reconciliation. Callback preludes, escaped or
+replaced items, accessors, structural operations and mutable keys cannot receive
+the guarantee.
+
 Component-owned arrays of closed flat scalar records can also journal executed
 indices from canonical increasing `for` loops: one `let` counter, a nonnegative
 integer literal start, `< items.length` or a bounded integer literal limit,

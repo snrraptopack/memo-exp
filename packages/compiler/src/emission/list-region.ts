@@ -5,6 +5,7 @@ import {
 } from '../ast';
 import {
   canonicalStateKey,
+  astBindingAt,
   type ComponentPath,
   type Ctx,
   type RowCtx,
@@ -251,6 +252,12 @@ export function emitListRegion(
   // Use one read identity for creation and every structural replay. A settled
   // module list can discover child-owned resources in the same generation.
   const preparedSource = preparationRead(ctx, scope, ownerId, site.sourceExpr);
+  // The closed-record proof excludes replacement, structural writes, escapes,
+  // accessors and mutable key fields. Content still replays on opaque pulls.
+  const sourceBinding = astFactory.isIdentifier(site.sourceExpr)
+    ? astBindingAt(ctx, call, site.sourceExpr.name) : undefined;
+  const fixedPositions = site.prelude.length === 0 && sourceBinding !== undefined &&
+    ctx.plainListItemTargets.has(sourceBinding.identifier);
   const reconcile = (update = false): t.Statement =>
     astFactory.expressionStatement(
       astFactory.callExpression(
@@ -260,13 +267,17 @@ export function emitListRegion(
         ),
         [
           runtimeListSource(preparedSource, site.optional),
-          ...(update && scope.reasonVar !== null && site.prelude.length === 0
+          ...(update && (fixedPositions || scope.reasonVar !== null && site.prelude.length === 0)
             ? [
+                scope.reasonVar === null ? astFactory.booleanLiteral(false) :
                 astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
                   astFactory.identifier(scope.reasonVar),
                   astFactory.stringLiteral(structuralSource),
                 ]),
               ]
+            : []),
+          ...(update && fixedPositions
+            ? [astFactory.booleanLiteral(false), astFactory.booleanLiteral(true)]
             : []),
         ],
       ),

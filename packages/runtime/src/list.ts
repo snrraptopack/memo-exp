@@ -65,8 +65,12 @@ export type KeyFn<T> = (item: T, index: number) => unknown;
 const identityKey = <T>(item: T): unknown => item;
 
 export interface ListRegion<T> {
-  /** appendOnly requires unchanged retained identities, positions, keys, and content; broad reasons still replay. */
-  reconcile(items: readonly T[], structuralOnly?: boolean, appendOnly?: boolean): void;
+  /**
+   * appendOnly requires unchanged retained identities, positions, keys, and content.
+   * fixedPositions requires compiler proof of unchanged identities, positions, and keys.
+   * Broad reasons still replay retained content.
+   */
+  reconcile(items: readonly T[], structuralOnly?: boolean, appendOnly?: boolean, fixedPositions?: boolean): void;
   /** Re-sync one retained row through the region's O(1) key cache. */
   refreshKey(key: unknown): void;
   /** fixedPositions requires compiler proof of unchanged item identities, positions, and keys. */
@@ -450,6 +454,7 @@ export function createListRegion<T>(
     items: readonly T[],
     structuralOnly = false,
     appendOnly = false,
+    fixedPositions = false,
   ): void {
     if (disposed) return;
     const container = endAnchor.parentNode ?? parent;
@@ -465,12 +470,14 @@ export function createListRegion<T>(
     // Same length AND every key identical at every position → no additions,
     // no removals, no reorder is possible: skip ALL map building and LIS.
     // This is the steady state of every list that only sees content edits.
+    // A closed-list compiler proof can waive the identity/key scans, but never
+    // the row content replay. Unproven callers still evaluate authored keys.
     if (!adoptingFrame && activeFrame === null && items.length === prevItems.length && cache.size === prevItems.length) {
       let same = true;
-      for (let i = 0; i < items.length; i++) {
+      for (let i = 0; !fixedPositions && i < items.length; i++) {
         if (items[i] !== prevItems[i]) { same = false; break; }
       }
-      if (same && key !== identityKey) {
+      if (same && !fixedPositions && key !== identityKey) {
         validatedKeys.length = items.length;
         for (let i = 0; i < items.length; i++) {
           const currentKey = key(items[i] as T, i);
