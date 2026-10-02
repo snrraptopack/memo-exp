@@ -864,7 +864,10 @@ export function createListRegion<T>(
 
     // ---- removals BEFORE placement (keeps placement math accurate) ----------
     let removedKeys: unknown[] | null = null;
-    for (const rec of prevRows) {
+    // The forward pass already counted every consumed old record. Reorders
+    // and mixed insertion/reorders with all old keys retained need no cleanup
+    // scan; frames with missing keys keep the ordinary hook order/visibility.
+    if (frame.remaining !== 0) for (const rec of prevRows) {
       if (rec.frame === frame) continue;
       removalErrors = disposeRemoved(rec, removalErrors);
       if (disposed) { reportCleanupErrors(removalErrors); return; }
@@ -898,9 +901,14 @@ export function createListRegion<T>(
       oldEnd--;
     }
     const inLis = lisPositions(seq, start, end);
-    const suffix = ordered[end]?.e;
-    let cursor: Node = suffix === undefined ? endAnchor
-      : Array.isArray(suffix.nodes) ? suffix.nodes[0]! : suffix.nodes as Node;
+    // Empty extents own a key but no insertion boundary. Find the next
+    // actual suffix node, falling back to the region's stable close anchor.
+    let cursor: Node = endAnchor;
+    for (let i = end; i < n; i++) {
+      const nodes = ordered[i]!.e.nodes;
+      const first = Array.isArray(nodes) ? nodes[0] : nodes as Node;
+      if (first !== undefined) { cursor = first; break; }
+    }
     let pending: ListEntry[] | null = null; // run of entries awaiting insertion
 
     const flush = (): void => {
@@ -932,10 +940,11 @@ export function createListRegion<T>(
         // awaiting insertion — cursor stays on the last IN-PLACE node
         (pending ??= []).push(entry);
       } else {
-        flush();
-        cursor = Array.isArray(entry.nodes)
-          ? entry.nodes[0]!
-          : entry.nodes as Node;
+        const nodes = entry.nodes;
+        const first = Array.isArray(nodes) ? nodes[0] : nodes as Node;
+        // A retained empty row cannot split a pending DOM run. Keeping that
+        // run together preserves its order across the node-free position.
+        if (first !== undefined) { flush(); cursor = first; }
       }
     }
     flush();

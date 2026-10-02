@@ -1441,6 +1441,52 @@ and changed-source lint passed. Four tracked generated applications changed only
 to carry their owner ID in conservative subtree commits. Dependency versions,
 VM timing artifacts and the Octane pin are unchanged.
 
+## Retained-row placement and removal scan
+
+General reconciliation's forward pass already counts unconsumed old records.
+When that count is zero, it now skips the removal scan for pure reorders and
+insertion/reorders retaining every old key. Frames with missing keys preserve
+the normal cleanup order and key visibility. Authored key evaluation and retained
+content replay still run; this does not solve broader partial-list replay.
+
+Seven self-contained placement regressions cover empty row extents. Five failed
+against `842bf78`: a node-free retained row could become an undefined insertion
+cursor, moving visible nodes after the closing anchor. Exhaustive five-row
+permutations also exposed empty LIS rows splitting pending move batches and
+reversing visible rows. Placement now finds the next actual suffix node and keeps
+pending runs together across empty retained rows. Empty keys remain refreshable
+and retain lifecycle ownership, including insertion/removal after reorders.
+
+Two sequential local Chromium comparisons use unchanged compiler-generated DOM
+applications with the baseline `842bf78` list runtime versus the new runtime.
+Both bundles are minified, scheduling is synchronous, labels are deterministic,
+and there are five warmups plus 25 alternating measured samples per case. Each
+sample checks all 10k rows' identity, text, class, order and stable anchors outside
+timing; removal, append and unmount follow each case. Builds, tests and the full
+DOM validation finished before either measurement run.
+
+| State / rows | Operation | First run before / after ms | Second run before / after ms |
+| --- | --- | --- | --- |
+| Module / component | Swap | 2.6 / 2.1 | 2.4 / 1.8 |
+| Module / inline | Swap | 3.7 / 2.7 | 2.9 / 2.5 |
+| Component / component | Swap | 2.9 / 2.2 | 2.9 / 2.4 |
+| Component / inline | Swap | 1.5 / 1.8 | 2.3 / 2.2 |
+| Module / component | Reverse | 22.7 / 22.0 | 19.5 / 19.8 |
+| Module / inline | Reverse | 24.3 / 23.5 | 20.9 / 21.0 |
+| Component / component | Reverse | 18.7 / 18.7 | 21.0 / 22.3 |
+| Component / inline | Reverse | 18.5 / 18.6 | 37.2 / 34.7 |
+
+Three swap variants improve in both local comparisons. Component-owned inline
+swaps and reversals have no consistent gain; the local machine remains variable.
+These measurements do not replace the VM matrix or establish an Octane gain.
+
+Runtime build, changed-source lint and 103 focused tests across 11 files passed.
+All 25 regenerated DOM variants passed retained identity and mixed-operation
+validation. Tracked compiler-generated applications are unchanged. Dependency
+versions, VM timing artifacts and the Octane pin remain untouched. Broader list
+replay, creation/removal costs and opaque producer precision remain open;
+bundle-size work stays deferred.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

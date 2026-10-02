@@ -49,6 +49,15 @@ cleanup hooks retain their forward ordering. Removed keys remain available to
 cleanup hooks until the general removal pass finishes; placement follows cleanup.
 Ordered row records preserve lifecycle order after reorders.
 
+When the forward pass has consumed every old key, reconciliation skips the
+removal scan. Reorders and insertion/reorders still evaluate authored keys and
+refresh retained content normally. Any missing old key keeps the cleanup pass.
+
+Rows with empty node extents still own keys and lifecycle callbacks. During
+placement they do not become insertion boundaries or split pending DOM runs.
+The next actual retained node, or the list's closing anchor, bounds insertion.
+This keeps visible rows inside the region when empty and visible rows reorder.
+
 Fresh rows are staged separately until commit. Fresh mounts and complete
 replacements adopt the staged Map directly. Interrupted frames remain disposable,
 including when a retained prop update or render throws before its ordered record
