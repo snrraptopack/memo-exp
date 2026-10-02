@@ -77,15 +77,19 @@ export function clearDirtyReasons(store: DirtyReasonStore, id: EntityId): void {
 /**
  * Emitted gate: does a dirty-reason payload cover one of `values`?
  * `null` means full update and `-1` is the wildcard cause, so both open
- * every gate. `values` may be one cause or a readonly array of them.
+ * every gate by default. A compiler-proven pull-independent slot passes false
+ * for includePull; ordinary causes in a mixed batch still match individually.
+ * `values` may be one cause or a readonly array of them.
  */
 export function reasonsHit(
   reasons: DirtyReasons,
   values: DirtyReasonInput,
+  includePull = true,
 ): boolean {
-  if (reasons === null || reasons === -1) return true;
+  if (reasons === null) return true;
+  if (reasons === -1) return includePull;
   if (typeof reasons === 'object') {
-    if (reasons.has(-1)) return true;
+    if (includePull && reasons.has(-1)) return true;
     return typeof values === 'object'
       ? values.some((value) => reasons.has(value))
       : reasons.has(values);

@@ -44,14 +44,15 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     const fields = new Set<string>();
     let valid = true;
     for (const element of elements) {
-      if (!element || element.type !== 'ObjectExpression') { valid = false; break; }
+      const record = initializer.record(element ?? null);
+      if (record === null) { valid = false; break; }
       const own = new Set<string>();
-      for (const entry of childNodes(element, 'properties')) {
+      for (const entry of childNodes(record.object, 'properties')) {
         const key = childNode(entry, 'key');
         const name = identifierName(key) ?? stringValue(key);
         if (entry.type !== 'Property' || nodeField(entry, 'computed') === true ||
             nodeField(entry, 'kind') !== 'init' || name === null || name === '__proto__' ||
-            own.has(name) || !initializer.scalar(childNode(entry, 'value'))) { valid = false; break; }
+            own.has(name) || !record.scalar(childNode(entry, 'value'))) { valid = false; break; }
         own.add(name);
       }
       if (!valid) break;

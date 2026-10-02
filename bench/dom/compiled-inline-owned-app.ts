@@ -278,13 +278,15 @@ export function BenchAppInlineOwned(_id, _parent, _dataPolicies) {
 		},
 		(item) => item.id,
 		false,
-		false
+		false,
+		true
 	);
 
 	const _dataChangedKeys = new Set();
 	let _selectedListKey = selected;
 
 	_region.reconcile(data);
+	_MD.cleanup(_id, () => _region.dispose());
 
 	return _div2;
 }

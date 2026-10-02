@@ -28,12 +28,14 @@ export function reasonCondition(
   ctx: Ctx,
   reasonVar: string,
   reasons: readonly (number | string)[],
+  includePull = true,
 ): t.Expression {
   return astFactory.callExpression(md(ctx, 'reasonsHit'), [
     astFactory.identifier(reasonVar),
     reasons.length === 1
       ? reasonLiteral(reasons[0]!)
       : freshReasonConst(ctx, reasons),
+    ...(includePull ? [] : [astFactory.booleanLiteral(false)]),
   ]);
 }
 

@@ -290,7 +290,7 @@ export function buildComponentRowCreate(
   const targetPlan = ctx.componentProps.get(rowComponent);
   const positionalObjectProps =
     lightweight &&
-    (ctx.linkedComponentRows.get(rowComponent)?.length ?? 0) === 0 &&
+    ((ctx.linkedComponentRows.get(rowComponent)?.length ?? 0) === 0 || ctx.privateRowPropComponents.has(rowComponent)) &&
     targetPlan !== undefined
       ? simpleObjectPropBindings(targetPlan)
       : null;

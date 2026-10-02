@@ -314,14 +314,25 @@ describe('opaque-derived reactivity regressions', () => {
     });
   });
 
-  it("folds helper parameter effects into the call site's row scope", async () => {
-    // Emission-level assertion: the row's onClick arrow must carry the row
-    // commit folded from toggleItem (via scheduleToggle's transitive
-    // parameter effects). Before the fix the helper emitted a row-scoped
-    // identifier in component scope (ReferenceError) and the call site
-    // emitted nothing.
-    const { readFileSync } = await import('node:fs');
-    const emitted = readFileSync(fixture, 'utf8');
-    expect(emitted).toContain('_MD.markDirty(_rowId2)');
+  it.each([false, true])('keeps deferred helper writes reactive outside the static root (deferred=%s)', async deferred => {
+    vi.useFakeTimers();
+    try {
+      const pending: Array<() => void> = [];
+      setScheduler(run => { if (deferred) pending.push(run); else run(); });
+      const flush = () => { while (pending.length) pending.shift()!(); };
+      const mod = await importFixture();
+      document.body.append(mod.LocalBoard('LocalApp', null), mod.LocalBoard('OtherApp', null));
+      const rows = [...document.querySelectorAll('li')];
+      const buttons = [...document.querySelectorAll<HTMLButtonElement>('button')];
+      expect(buttons.map(node => node.textContent)).toEqual(['open', 'open', 'open', 'open']);
+      buttons[0]!.click();flush();
+      expect(buttons.map(node => node.textContent)).toEqual(['open', 'open', 'open', 'open']);
+      expect(() => vi.advanceTimersByTime(30)).not.toThrow();
+      flush();
+      expect(buttons.map(node => node.textContent)).toEqual(['done', 'open', 'open', 'open']);
+      expect([...document.querySelectorAll('li')]).toEqual(rows);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

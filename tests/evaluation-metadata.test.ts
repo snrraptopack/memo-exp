@@ -45,6 +45,6 @@ describe('evaluation metadata', () => {
     });
     expect(result.metadata['./derived.ts']!.readers)
       .toHaveProperty('./state.ts#model.value');
-    expect(result.output['./view.tsx']).toContain('markDirtySubtree("App")');
+    expect(result.output['./view.tsx']).toMatch(/markDirtySubtree\("App", _id\d*\)/);
   });
 });

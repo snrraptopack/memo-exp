@@ -19,6 +19,42 @@ in separate `App*Owned`/`AppModule*` and `state-placement-*` files. The original
 three-way benchmark files remain intact; run `bun run bench:dom:module` to run
 that harness alone. `bun run bench` runs all placements together in one report.
 
+## Mutable and immutable updates
+
+`bun run bench` also includes a separate comparison of mutable and immutable
+partial updates, swaps, appends and removals at 1k and 10k rows. Its 16 compiled
+variants cross both update styles with all four state placements and both row
+representations. They are generated from authored TSX in `update-style-source.ts`
+through the compiler/linker by `update-style-build.ts`. The new browser, runner
+and report live in separate `update-style-*` files.
+
+The comparison appears under **Mutable and immutable updates** in the same
+`state-placement-results.md`, with its raw results nested in `updateStyles` in
+`state-placement-latest.json`. The original nine-variant matrix remains in that
+report. To run only the new comparison, use `bun run bench:dom:updates`; its
+standalone reports are `dist/update-style/results.md` and `results.json`.
+
+Mutable partial updates change existing labels; immutable partial updates map
+a new array and copy only the changed records. Mutable swaps assign two existing
+positions; immutable swaps map a new array with the same retained records.
+Append uses push/concat and removal uses splice/filter. These authored paths
+perform different allocation and iteration work, which is included in timing.
+Neither style is assumed to be faster.
+
+Each sample starts from a fresh mounted list, resets a seeded random generator
+for matching labels, and selects row 500 before timing. There is one untimed
+warmup per operation/variant and seven measured samples, with rotating variant
+order. Every sample validates text, order, classes, counts and retained DOM
+identity outside timing. Untimed mixed update/swap/remove/append sequences also
+check selection after removing the selected key. Lists are cleared and their
+owners unregistered after each sample. Timing covers synchronous execution and
+DOM writes, without waiting for paint.
+
+After building, `bun run bench/dom/update-style-run.ts --validate-only` checks
+the new matrix alone. `bun run bench/dom/state-placement-run.ts --validate-only`
+now checks both matrices without overwriting timing reports. A local
+`--samples=1` run is a smoke check, not a performance conclusion.
+
 ## State placement matrix
 
 | Result prefix | List data | Selection state |

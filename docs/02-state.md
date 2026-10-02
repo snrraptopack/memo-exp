@@ -128,14 +128,22 @@ export function Cart() {
 ```
 
 - Write it as a `const` expression — no `computed()` exists.
-- **Derivations must be `const`.** If you forget and write
-  `let doubled = count * 2`, the compiler doesn't error — it treats
-  `doubled` as ordinary writable state, so it initializes once and never
-  recomputes. The language service flags the `let` → `const` suggestion in
-  the editor; compile-time, a stale derived value is your reminder.
+- Both `const` and `let` initializers that read reactive state are derived.
+  `let doubled = count * 2` replays when `count` changes; assigning to
+  `doubled` is a compile error. Use a separate assignment after declaration
+  when you need an explicit one-time snapshot.
 - Chains work: `a` → `b` → `c` replays in order when `a` changes.
 - Pure helper calls inside derivations are fine.
 - **Never write to a derived value** — `total++` is invalid; update `coupon`.
+
+## Opaque values
+
+Values whose changes the compiler cannot see use a browser-frame pull fallback.
+Their reads remain live. A volatile component can skip unrelated primitive local
+DOM slots on a pull frame when the compiler proves that their values change only
+through successfully published writes. Object coercions, getters, unknown calls
+and unproven callbacks retain conservative refreshes. Normal writes still update
+their dependent slots, including when a write and a pull are batched together.
 
 ## `if` and `switch` are reactive too
 

@@ -64,6 +64,7 @@ for (const kind of ['owned', 'module']) {
     click('#remove'); expect(document.querySelector('[data-id="2"]')).toBeNull();
     expect(document.querySelectorAll('li')).toHaveLength(2);
     click('#clear'); expect(document.querySelectorAll('li')).toHaveLength(0);
+    expect(document.querySelector('ul')!.childNodes).toHaveLength(2);
     unregisterSubtree('App'); expect(_internals().registry.size).toBe(0);
   });
   it(`${kind}: write-free events refresh the entry closure after an external effect`, async () => {
@@ -80,6 +81,12 @@ it('retains independently routed rows for general module reads', async () => {
   const { App } = await import(specifier); document.body.append(App('App', null));
   expect([..._internals().registry.keys()].filter(id => id.includes('/Row['))).toHaveLength(3);
   click('#suffix'); expect([...document.querySelectorAll('li')].map(row => row.textContent)).toEqual(['one?', 'two?', 'three?']);
+});
+
+it('emits DOM-only teardown only for proven lightweight inline rows', () => {
+  const code = compile(`export function App() { let items = ${rows};
+    return <ul>{items.map(item => <li key={item.id}>{item.label}</li>)}</ul>; }`);
+  expect(code).toMatch(/\},\s*\(?item\)? => item.id,\s*false,\s*false,\s*true\s*\)/);
 });
 
 it('keeps row entities in hot builds and lists inside a conditional owner', () => {

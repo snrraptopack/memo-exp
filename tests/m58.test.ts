@@ -103,14 +103,14 @@ describe('M5.10 - lightweight listed component rows', () => {
     );
     expect(code).toMatch(/\.createListRegion\([\s\S]*?,\s*false\s*\)/);
     expect(code).toContain('entities: []');
-    expect(code).toContain('"./component.tsx#selected": ["App"]');
+    expect(code).toContain('"./component.tsx#selected": ["App/items/$selection"]');
   });
 
   it('keeps lightweight rows out of the registry and refreshes them through the owner', async () => {
     const mod = await importCompiled();
     document.body.appendChild(mod.C('App', null));
 
-    expect([..._internals().registry.keys()]).toEqual(['App']);
+    expect([..._internals().registry.keys()]).toEqual(['App', 'App/items/$selection']);
     const rows = () => document.querySelectorAll('li');
     expect(rows()[0]).not.toBe(rows()[1]);
     expect(rows()[0]!.textContent).toBe('one');
@@ -143,10 +143,10 @@ describe('M5.10 - lightweight listed component rows', () => {
     expect(code).toMatch(/\.commitWrites\(_WRITES_\d*\)/);
   });
 
-  it('preserves a typed object-prop row contract in lightweight emission', () => {
+  it('normalizes a private typed single-field row to its positional contract', () => {
     const code = compile(OBJECT_PROP_ROW_SOURCE, { runtimePath: '@memoized-dom/runtime' });
-    expect(code).toMatch(/Row\(\{\s*item\s*\}, _rowId\d*\)/);
-    expect(code).toMatch(/_pushRowProps\d*\(\{\s*item\s*\}\)/);
+    expect(code).toMatch(/Row\(item, _rowId\d*\)/);
+    expect(code).toMatch(/_pushRowProps\d*\(item\)/);
   });
 
   it('lowers closed destructured lightweight row props to a positional ABI', () => {
@@ -220,7 +220,7 @@ describe('M5.10 - lightweight listed component rows', () => {
         `function C() { return <ul>{items.map(item => <Row key={item.id} item={item} />)}</ul>; }`,
       { runtimePath: '@memoized-dom/runtime' },
     );
-    expect(code).toMatch(/Row\(\{\s*item\s*\}, _rowId\d*\)/);
+    expect(code).toMatch(/Row\(item, _rowId\d*\)/);
   });
 
   it('rejects unknown props at call sites instead of misaligning silently', () => {

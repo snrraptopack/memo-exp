@@ -152,6 +152,8 @@ export function createListRegion<T>(
   key: KeyFn<T> = identityKey,
   trackRowIds = true,
   indexSensitive = true,
+  // Compiler proof: entries own DOM only, with no entity or cleanup callbacks.
+  resourceFree = false,
 ): ListRegion<T> {
   // Hydration protocol (hydration-markers.md §2/§3): `mmd:l` owns the
   // complete row set. During adoption the existing pair remains the stable
@@ -188,9 +190,14 @@ export function createListRegion<T>(
     key: unknown;
     /** Consumed by this general frame; unavailable to key refresh until commit. */
     frame?: GeneralFrame;
+    /** Removal phases start before authored code, preventing repeated cleanup. */
+    cleanupPhase?: number;
   }
   interface GeneralFrame { remaining: number }
   let activeFrame: GeneralFrame | null = null;
+  // Terminal before calling authored cleanup: reentrant work cannot revive
+  // rows that are being detached or queue another render for them.
+  let disposed = false;
   let cache = new Map<unknown, RowRec>();
   const syntheticIds = new Map<unknown, string>();
   let syntheticCounter = 0;
@@ -227,30 +234,89 @@ export function createListRegion<T>(
     index: number,
   ): void {
     entry.updateProps?.(item, index); // R7/R10: refresh callback bindings
+    if (disposed) return;
     if (entry.update !== undefined) {
       entry.update(); // M5.5: sync retained row with (possibly mutated) item
-      if (rowId !== null) undirty(rowId); // M5.7: no double render
+      if (!disposed && rowId !== null) undirty(rowId); // M5.7: no double render
     } else if (rowId !== null) {
       // Component row: the entity renders in-place with the box just pushed
       // above (single pass), then its pending dirty is cancelled like any row.
       const e = getEntity(rowId);
       if (e) {
         e.render();
-        undirty(rowId);
+        if (!disposed) undirty(rowId);
       }
     }
   }
 
   function cleanupEntry(entry: ListEntry, removeNodes = true): void {
+    let errors: unknown[] | null = null;
     if (removeNodes) {
       const nodes = entry.nodes;
       if (Array.isArray(nodes)) {
-        for (const node of nodes) node.parentNode?.removeChild(node);
+        for (const node of nodes) {
+          try { node.parentNode?.removeChild(node); }
+          catch (error) { (errors ??= []).push(error); }
+        }
       } else {
-        (nodes as Node).parentNode?.removeChild(nodes as Node);
+        try { (nodes as Node).parentNode?.removeChild(nodes as Node); }
+        catch (error) { (errors ??= []).push(error); }
       }
     }
-    for (const entity of entry.entities) unregisterSubtree(entity);
+    for (const entity of entry.entities) {
+      try { unregisterSubtree(entity); }
+      catch (error) { (errors ??= []).push(error); }
+    }
+    reportCleanupErrors(errors);
+  }
+
+  function reportCleanupErrors(errors: unknown[] | null): void {
+    if (errors === null) return;
+    if (errors.length === 1) throw errors[0];
+    throw new AggregateError(errors, `[memo-dom] list '${idPrefix}' disposal failed`);
+  }
+
+  function disposeRecord(rec: RowRec): void {
+    if ((rec.cleanupPhase ?? 0) & 1) return;
+    rec.cleanupPhase = (rec.cleanupPhase ?? 0) | 1;
+    rec.e.dispose?.();
+  }
+
+  function cleanupRecord(rec: RowRec, removeNodes = true): void {
+    if ((rec.cleanupPhase ?? 0) & 2) return;
+    rec.cleanupPhase = (rec.cleanupPhase ?? 0) | 2;
+    cleanupEntry(rec.e, removeNodes);
+  }
+
+  function disposeRemoved(rec: RowRec, errors: unknown[] | null): unknown[] | null {
+    try { disposeRecord(rec); }
+    catch (error) { (errors ??= []).push(error); }
+    return errors;
+  }
+
+  function cleanupRemoved(rec: RowRec, errors: unknown[] | null, removeNodes = true): unknown[] | null {
+    try { cleanupRecord(rec, removeNodes); }
+    catch (error) { (errors ??= []).push(error); }
+    return errors;
+  }
+
+  function removeRowRange(rows: readonly RowRec[], start = 0): boolean {
+    const container = endAnchor.parentNode ?? parent;
+    let firstOwned: Node | undefined;
+    for (let i = start; i < rows.length; i++) {
+      const nodes = rows[i]!.e.nodes;
+      firstOwned = Array.isArray(nodes) ? nodes[0] : nodes as Node;
+      if (firstOwned !== undefined) break;
+    }
+    if (firstOwned === undefined) return false;
+    const doc = getActiveEnvironment().document;
+    if (firstOwned.parentNode !== container || endAnchor.parentNode !== container ||
+        doc.createRange === undefined) return false;
+    const range = doc.createRange();
+    range.setStartBefore(firstOwned);
+    range.setEndBefore(endAnchor);
+    range.deleteContents();
+    return true;
   }
 
   function syncRetained(
@@ -302,7 +368,7 @@ export function createListRegion<T>(
     rowId: EntityId,
     index: number,
     encodedKey: string | null,
-  ): ListEntry {
+  ): ListEntry | null {
     if (adopting && encodedKey === null) {
       throw new HydrationMismatchError(
         idPrefix,
@@ -349,6 +415,18 @@ export function createListRegion<T>(
     }
     if (factoryFailed) throw factoryError;
 
+    // A factory can unmount its owner before returning. That entry was not
+    // yet in either ownership map, so finish it here and abort the caller.
+    if (disposed) {
+      let errors: unknown[] | null = null;
+      try { entry!.dispose?.(); }
+      catch (error) { (errors ??= []).push(error); }
+      try { cleanupEntry(entry!); }
+      catch (error) { (errors ??= []).push(error); }
+      reportCleanupErrors(errors);
+      return null;
+    }
+
     // Client-created rows already carry their compiler-defined node extent in
     // ListEntry.nodes, so a per-row hydration marker would only add another
     // allocation and another moved/removed DOM node. Server output and
@@ -373,8 +451,10 @@ export function createListRegion<T>(
     structuralOnly = false,
     appendOnly = false,
   ): void {
+    if (disposed) return;
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
+    let removalErrors: unknown[] | null = null;
     let evaluatedKeyCount = 0;
     validatedKeys.length = 0;
     // The compiler may prove that only fresh records are appended. Broad
@@ -394,6 +474,7 @@ export function createListRegion<T>(
         validatedKeys.length = items.length;
         for (let i = 0; i < items.length; i++) {
           const currentKey = key(items[i] as T, i);
+          if (disposed) return;
           validatedKeys[i] = currentKey;
           evaluatedKeyCount = i + 1;
           const previousRow = prevRows[i];
@@ -415,6 +496,7 @@ export function createListRegion<T>(
             i,
             structuralOnly,
           );
+          if (disposed) return;
         }
         return;
       }
@@ -436,6 +518,7 @@ export function createListRegion<T>(
       let appendOnly = true;
       for (let i = 0; !provenAppend && i < prevItems.length; i++) {
         const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
+        if (disposed) return;
         validatedKeys[i] = k;
         if (i >= evaluatedKeyCount) evaluatedKeyCount = i + 1;
         const rec = prevRows[i];
@@ -452,6 +535,7 @@ export function createListRegion<T>(
         const seen = new Set<unknown>();
         for (let i = prevItems.length; i < items.length; i++) {
           const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
+          if (disposed) return;
           if (cache.has(k) || seen.has(k)) {
             throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
           }
@@ -468,6 +552,7 @@ export function createListRegion<T>(
             i,
             structuralOnly,
           );
+          if (disposed) return;
         }
 
         const fragment = environment.document.createDocumentFragment();
@@ -481,6 +566,7 @@ export function createListRegion<T>(
           const encoded = trackRowIds || environment.mode !== 'client-create' ? encodeListKey(k) : null;
           const createId = trackRowIds ? rowIdFor(k, encoded) : idPrefix;
           const entry = createRow(item, k, createId, i, encoded);
+          if (entry === null) return;
           const id = trackRowIds ? createId : null;
           appended.push({ e: entry, id, pos: i, key: k });
           const nodes = entry.nodes;
@@ -527,6 +613,7 @@ export function createListRegion<T>(
       let prefixOnly = true;
       for (let i = 0; i < items.length; i++) {
         const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
+        if (disposed) return;
         validatedKeys[i] = k;
         if (i >= evaluatedKeyCount) evaluatedKeyCount = i + 1;
         // Removal subsequences usually continue at the next old position.
@@ -555,32 +642,22 @@ export function createListRegion<T>(
             ordered[i]!.pos,
             structuralOnly,
           );
+          if (disposed) return;
         }
 
         if (prefixOnly) {
           for (let i = items.length; i < prevRows.length; i++) {
-            prevRows[i]!.e.dispose?.();
+            removalErrors = disposeRemoved(prevRows[i]!, removalErrors);
+            if (disposed) { reportCleanupErrors(removalErrors); return; }
           }
-          const firstNodes = prevRows[items.length]!.e.nodes;
-          const firstNode = Array.isArray(firstNodes)
-            ? firstNodes[0]
-            : firstNodes as Node;
           let removedAsRange = false;
-          if (
-            firstNode !== undefined &&
-            firstNode.parentNode === container &&
-            endAnchor.parentNode === container &&
-            environment.document.createRange !== undefined
-          ) {
-            const range = environment.document.createRange!();
-            range.setStartBefore(firstNode);
-            range.setEndBefore(endAnchor);
-            range.deleteContents();
-            removedAsRange = true;
-          }
+          try { removedAsRange = removeRowRange(prevRows, items.length); }
+          catch (error) { (removalErrors ??= []).push(error); }
+          if (disposed) { reportCleanupErrors(removalErrors); return; }
           for (let i = items.length; i < prevRows.length; i++) {
             const rec = prevRows[i]!;
-            cleanupEntry(rec.e, !removedAsRange);
+            removalErrors = cleanupRemoved(rec, removalErrors, !removedAsRange);
+            if (disposed) { reportCleanupErrors(removalErrors); return; }
             syntheticIds.delete(rec.key);
             cache.delete(rec.key);
           }
@@ -588,6 +665,7 @@ export function createListRegion<T>(
           nextRows.length = 0;
           validatedKeys.length = 0;
           prevItems = items.slice();
+          reportCleanupErrors(removalErrors);
           return;
         }
 
@@ -598,9 +676,10 @@ export function createListRegion<T>(
             rec.pos = retainedIndex++;
             continue;
           }
-          const entry = rec.e;
-          entry.dispose?.();
-          cleanupEntry(entry);
+          removalErrors = disposeRemoved(rec, removalErrors);
+          if (disposed) { reportCleanupErrors(removalErrors); return; }
+          removalErrors = cleanupRemoved(rec, removalErrors);
+          if (disposed) { reportCleanupErrors(removalErrors); return; }
           syntheticIds.delete(rec.key);
           cache.delete(rec.key);
         }
@@ -610,6 +689,7 @@ export function createListRegion<T>(
         nextRows.length = 0;
         validatedKeys.length = 0;
         prevItems = items.slice();
+        reportCleanupErrors(removalErrors);
         return;
       }
     }
@@ -637,6 +717,7 @@ export function createListRegion<T>(
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as T;
       const k = i < evaluatedKeyCount ? validatedKeys[i] : key(item, i);
+      if (disposed) return;
       let rec: RowRec | undefined;
       // Keep retained keys in the live Map. A frame marker proves uniqueness
       // and hides consumed rows from refreshKey/size until this frame commits.
@@ -662,10 +743,12 @@ export function createListRegion<T>(
         else lastOld = oldPos;
         rec.pos = i;
         syncRetained(rec.e, item, rec.id, i, oldPos, structuralOnly);
+        if (disposed) return;
       } else {
         const encoded = trackRowIds || environment.mode !== 'client-create' ? encodeListKey(k) : null;
         const createId = trackRowIds ? rowIdFor(k, encoded) : idPrefix;
         const entry = createRow(item, k, createId, i, encoded);
+        if (entry === null) return;
         rec = {
           e: entry,
           id: trackRowIds ? createId : null,
@@ -695,34 +778,29 @@ export function createListRegion<T>(
     // then append a replacement batch with one fragment insertion. With no
     // reused key there is also no old ordering to feed through LIS.
     if (!oldWasEmpty && reused === 0 && (n === 0 || hasNew)) {
-      for (const rec of prevRows) rec.e.dispose?.();
-
+      if (!resourceFree) for (const rec of prevRows) {
+        removalErrors = disposeRemoved(rec, removalErrors);
+        if (disposed) { reportCleanupErrors(removalErrors); return; }
+      }
       let removedAsRange = false;
-      let firstOwned: Node | undefined;
-      for (const rec of prevRows) {
-        const nodes = rec.e.nodes;
-        firstOwned = Array.isArray(nodes) ? nodes[0] : nodes as Node;
-        if (firstOwned !== undefined) break;
-      }
-      if (
-        firstOwned !== undefined &&
-        firstOwned.parentNode === container &&
-        endAnchor.parentNode === container &&
-        getActiveEnvironment().document.createRange !== undefined
-      ) {
-        const range = getActiveEnvironment().document.createRange!();
-        range.setStartBefore(firstOwned);
-        range.setEndBefore(endAnchor);
-        range.deleteContents();
-        removedAsRange = true;
-      }
-
-      for (const rec of prevRows) {
-        cleanupEntry(rec.e, !removedAsRange);
-        syntheticIds.delete(rec.key);
+      try { removedAsRange = removeRowRange(prevRows); }
+      catch (error) { (removalErrors ??= []).push(error); }
+      if (disposed) { reportCleanupErrors(removalErrors); return; }
+      if (resourceFree && removedAsRange) {
+        if (n === 0) syntheticIds.clear();
+        else if (syntheticIds.size !== 0) {
+          for (const rec of prevRows) syntheticIds.delete(rec.key);
+        }
+      } else {
+        for (const rec of prevRows) {
+          removalErrors = cleanupRemoved(rec, removalErrors, !removedAsRange);
+          if (disposed) { reportCleanupErrors(removalErrors); return; }
+          syntheticIds.delete(rec.key);
+        }
       }
       old.clear();
       frame.remaining = 0;
+      reportCleanupErrors(removalErrors);
 
       if (n !== 0) {
         const fragment = getActiveEnvironment().document.createDocumentFragment();
@@ -788,8 +866,10 @@ export function createListRegion<T>(
     let removedKeys: unknown[] | null = null;
     for (const rec of prevRows) {
       if (rec.frame === frame) continue;
-      rec.e.dispose?.();
-      cleanupEntry(rec.e);
+      removalErrors = disposeRemoved(rec, removalErrors);
+      if (disposed) { reportCleanupErrors(removalErrors); return; }
+      removalErrors = cleanupRemoved(rec, removalErrors);
+      if (disposed) { reportCleanupErrors(removalErrors); return; }
       syntheticIds.delete(rec.key);
       (removedKeys ??= []).push(rec.key);
     }
@@ -797,6 +877,7 @@ export function createListRegion<T>(
     // Delete them together after the last hook, before structural placement.
     if (removedKeys !== null) for (const k of removedKeys) old.delete(k);
     frame.remaining = 0;
+    reportCleanupErrors(removalErrors);
 
     // ---- pass 2 (reverse): LIS-guided placement ------------------------------
     // Rows in the LIS are already in correct relative order: skip them.
@@ -881,12 +962,14 @@ export function createListRegion<T>(
   }
 
   function refreshKey(k: unknown): void {
+    if (disposed) return;
     const rec = cache.get(k);
     if (rec === undefined || rec.frame === activeFrame) return;
     syncRow(rec.e, prevItems[rec.pos] as T, rec.id, rec.pos);
   }
 
   function refreshIndices(items: readonly T[], indices: readonly number[], fixedPositions = false): void {
+    if (disposed) return;
     // Initial/unmounted regions still reconcile. Unproven callers also validate
     // retained identities; the compiler alone can waive that O(n) scan.
     if (adopting || items.length !== prevItems.length ||
@@ -897,19 +980,24 @@ export function createListRegion<T>(
     for (const index of indices) {
       const rec = prevRows[index];
       if (rec !== undefined) syncRow(rec.e, items[index] as T, rec.id, index);
+      if (disposed) return;
     }
   }
 
   function dispose(): void {
+    if (disposed) return;
+    disposed = true;
+    let errors: unknown[] | null = null;
     // Successful frames own every live entry in prevRows. An interrupted
     // general frame can own the same retained entry in several buffers.
-    const disposed = activeFrame === null ? null : new Set<RowRec>();
+    const seen = activeFrame === null ? null : new Set<RowRec>();
     const cleanup = (rec: RowRec): void => {
-      if (disposed?.has(rec)) return;
-      disposed?.add(rec);
-      rec.e.dispose?.();
-      cleanupEntry(rec.e);
-      syntheticIds.delete(rec.key);
+      if (seen?.has(rec)) return;
+      seen?.add(rec);
+      try { disposeRecord(rec); }
+      catch (error) { (errors ??= []).push(error); }
+      try { cleanupRecord(rec); }
+      catch (error) { (errors ??= []).push(error); }
     };
     // Failed append factories can leave completed rows only in the ordered
     // scratch buffer. Removal probes also put live records there, so skip
@@ -920,7 +1008,12 @@ export function createListRegion<T>(
       }
     }
     if (activeFrame === null) {
-      for (const rec of prevRows) cleanup(rec);
+      let removedAsRange = false;
+      if (resourceFree) {
+        try { removedAsRange = removeRowRange(prevRows); }
+        catch (error) { (errors ??= []).push(error); }
+      }
+      if (!removedAsRange) for (const rec of prevRows) cleanup(rec);
     } else {
       for (const rec of prevRows) {
         if (rec.frame !== activeFrame && cache.get(rec.key) === rec) cleanup(rec);
@@ -932,20 +1025,24 @@ export function createListRegion<T>(
     }
     cache.clear();
     nextMap.clear();
+    syntheticIds.clear();
     activeFrame = null;
     prevItems = [];
     validatedKeys.length = 0;
     prevRows.length = 0;
     nextRows.length = 0;
-    endAnchor.parentNode?.removeChild(endAnchor);
-    openAnchor.parentNode?.removeChild(openAnchor);
+    try { endAnchor.parentNode?.removeChild(endAnchor); }
+    catch (error) { (errors ??= []).push(error); }
+    try { openAnchor.parentNode?.removeChild(openAnchor); }
+    catch (error) { (errors ??= []).push(error); }
+    reportCleanupErrors(errors);
   }
 
   return {
     reconcile,
     refreshKey,
     refreshIndices,
-    size: () => activeFrame?.remaining ?? cache.size,
+    size: () => disposed ? 0 : activeFrame?.remaining ?? cache.size,
     dispose,
   };
 }

@@ -41,6 +41,7 @@ import {
 } from '../components/props';
 import { buildRenderPreludeReplay } from '../components/render-prelude';
 import { slotReasonSources } from '../components/slot-reasons';
+import { createSlotPullProof } from '../components/slot-pull-proof';
 import { structuralReasonsFor } from '../components/local-derived';
 import {
   analyzeComponentReturns,
@@ -279,7 +280,7 @@ export function transformComponent(
     !ownsRoutes &&
     isLightweightListedComponent(ctx, name);
   const positionalObjectProps =
-    lightweight && linkedRefs.length === 0
+    lightweight && (linkedRefs.length === 0 || ctx.privateRowPropComponents.has(name))
       ? simpleObjectPropBindings(propPlan)
       : null;
   const lightweightPropCount =
@@ -306,6 +307,7 @@ export function transformComponent(
     scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
   }
   if (reasonIds !== undefined && !lightweight) {
+    if (ctx.volatileComponents.has(name)) scope.slotPullIndependent = createSlotPullProof(ctx, name);
     scope.slotReasons = (expression) => {
       const sources = slotReasonSources(ctx, name, expression);
       if (sources === null) return null;
@@ -545,6 +547,19 @@ export function transformComponent(
     );
   }
   body.push(...scope.creation, ...scope.mounts);
+  if (!lightweight) {
+    for (const region of scope.disposableRegions) {
+      body.push(astFactory.expressionStatement(
+        astFactory.callExpression(md(ctx, 'cleanup'), [
+          astFactory.identifier(factoryId),
+          astFactory.arrowFunctionExpression([], astFactory.callExpression(
+            astFactory.memberExpression(astFactory.identifier(region), astFactory.identifier('dispose')),
+            [],
+          )),
+        ]),
+      ));
+    }
+  }
   body.push(...sourceMounts, ...eventSourceDisposals);
   for (const source of externalSources) {
     const subscribe = ctx.externalReactiveBindings.get(source)!;

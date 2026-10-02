@@ -168,7 +168,8 @@ export function buildScopeCommit(
       astFactory.expressionStatement(
         astFactory.callExpression(md(ctx, 'markDirtySubtree'), [
           astFactory.stringLiteral(ctx.rootId),
-          ...instanceArguments,
+          ...(instanceArguments.length > 0 ? instanceArguments
+            : compName !== null ? [componentId(ctx, compName)] : []),
         ]),
       ),
     );

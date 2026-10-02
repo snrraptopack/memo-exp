@@ -23,6 +23,9 @@ export interface EmitScope {
   slotReasons: ((expression: t.Expression) => (number | string)[] | null) | null;
   /** Reasons that gate an updater; absent entries run on every update. */
   updaterReasons: Map<() => t.Statement, (number | string)[]>;
+  /** A proven primitive slot can ignore the wildcard opaque-pull reason. */
+  slotPullIndependent: ((expression: t.Expression) => boolean) | null;
+  updaterExpressions: Map<() => t.Statement, t.Expression>;
   /** Event name to compiler-private prebound list/event binding. */
   delegatedEventBindings: Map<string, string>;
   /** Active renderer document, resolved once when this factory creates DOM. */
@@ -64,6 +67,8 @@ export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
     reasonVar: null,
     slotReasons: null,
     updaterReasons: new Map(),
+    slotPullIndependent: null,
+    updaterExpressions: new Map(),
     delegatedEventBindings: new Map(),
     documentVar: null,
     prelude: [],
@@ -158,6 +163,7 @@ export function pushSlotUpdater(
   const reasons = scope.slotReasons?.(expression) ?? null;
   if (reasons !== null && reasons.length > 0) {
     scope.updaterReasons.set(updater, reasons);
+    if (scope.slotPullIndependent !== null) scope.updaterExpressions.set(updater, expression);
   }
   scope.updaters.push(updater);
 }
@@ -175,12 +181,13 @@ function updateBody(ctx: Ctx, scope: EmitScope): t.Statement[] {
     key: string;
     reasons: (number | string)[];
     statements: t.Statement[];
+    includePull: boolean;
   } | null = null;
   const flush = (): void => {
     if (group !== null) {
       body.push(
         astFactory.ifStatement(
-          reasonCondition(ctx, scope.reasonVar!, group.reasons),
+          reasonCondition(ctx, scope.reasonVar!, group.reasons, group.includePull),
           astFactory.blockStatement(group.statements),
         ),
       );
@@ -194,10 +201,14 @@ function updateBody(ctx: Ctx, scope: EmitScope): t.Statement[] {
       body.push(updater());
       continue;
     }
-    const key = reasons.join(' ');
+    // Handler emission has now finished, so the proof can require that every
+    // future primitive write belongs to an instrumented execution boundary.
+    const expression = scope.updaterExpressions.get(updater);
+    const includePull = expression === undefined || scope.slotPullIndependent?.(expression) !== true;
+    const key = reasons.join(' ') + (includePull ? '' : '/no-pull');
     if (group === null || group.key !== key) {
       flush();
-      group = { key, reasons, statements: [] };
+      group = { key, reasons, statements: [], includePull };
     }
     group.statements.push(updater());
   }

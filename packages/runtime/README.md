@@ -27,6 +27,19 @@ Pass `{ onHydrateError(error) { /* log mismatch */ } }` as a third argument
 to observe a hydration mismatch before `mount()` replaces server markup with
 a fresh client render.
 
+## Dirty reasons and opaque pulls
+
+`reasonsHit()` treats a full update and opaque pull as wildcards by default.
+Compiler-proven primitive slots can pass `false` as its third argument to ignore
+only the pull cause. Actual causes in mixed batches still match, and full updates
+still open every gate. Existing two-argument generated calls retain their behavior.
+
+A failed ordinary render retains a full dirty mark for the next commit. This
+prevents a subsequent pull or partial write from skipping slots that the failed
+render never reached. The runtime does not schedule an immediate retry or roll
+back completed writes. Failed effects keep their existing behavior; unregistered
+or replaced entities are not revived.
+
 ## Keyed list ownership
 
 General reconciliation keeps retained keys in the region's existing Map. A
@@ -54,6 +67,36 @@ Registry generation advances before removal notifications and cleanup hooks.
 Each removal invalidates the cached ID list before notifying listeners, so calls
 to `registeredIds()` during teardown reflect the current registry. Previously
 returned ID snapshots keep their contents.
+
+List regions become terminal before running disposal callbacks. Reentrant
+`dispose()`, reconciliation and refresh calls then do nothing, and `size()`
+returns zero. Disposal finishes the remaining rows, entities and anchors before
+reporting cleanup failures: one error is rethrown unchanged, multiple errors are
+reported together. Interrupted frames retain the same ownership coverage.
+
+An active reconciliation also stops after a key getter, prop replay or retained
+row updater disposes the region. If a row factory disposes its owner before
+returning, the returned entry is cleaned separately because it has not yet
+entered the ownership cache. Later rows are not created or refreshed, and the
+reconciler does not insert into removed anchors. This is cancellation of the
+remaining work; authored effects and completed DOM writes are not rolled back.
+
+Removal, clear and replacement mark each row's disposer and ownership cleanup
+as started before calling authored code. An unmount during either phase cannot
+run it twice, and active reconciliation stops when that callback returns.
+Throwing cleanup hooks do not prevent later removed rows or their entities from
+being cleaned; errors are reported after the removal batch finishes. Successful
+subsequence/suffix removal commits its surviving rows before reporting failures.
+General replacement/mixed frames can still be interrupted before placement and
+remain disposable. This does not provide rollback or support arbitrary nested
+reconciliation from cleanup hooks.
+
+The compiler marks proven DOM-only inline rows with the final `resourceFree`
+argument to `createListRegion()`. Those entries have no entities or disposal
+callbacks. Complete clear/replacement and ordinary unmount can remove their
+owned DOM range without visiting empty cleanup records. Clear retains the same
+boundary comments; unmount removes them. Other callers retain normal cleanup,
+including callers that disable row ID tracking without this additional proof.
 
 The package is independently buildable:
 

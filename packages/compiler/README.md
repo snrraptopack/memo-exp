@@ -137,10 +137,29 @@ identifier and every supplied argument is a proven primitive literal expression.
 Record fields may combine those parameters with literals through `+`, template
 literals or primitive unary operators. Authored later writes must independently
 preserve the plain scalar shape. Shared returned arrays, imported/opaque calls,
-extra factory statements, defaults/rest/destructuring, async/generator functions,
+other factory statements, defaults/rest/destructuring, async/generator functions,
 getters, spreads, nested values and captured field values retain existing
 conservative routing or derived-state diagnostics. The proof checks lexical
 bindings and fresh allocations; it does not infer purity from a function name.
+
+Straight-line factory bodies may also declare primitive `const` values and name
+the fresh literal array through `const` aliases before returning it. Every array
+reference must be another closed alias or the final return. Calls, writes,
+property reads, control flow, destructuring, shared arrays and escapes reject
+the proof. This extends literal producer support; imported/dynamic generators
+and later structural replacements still retain ordinary reconciliation.
+
+Array elements may also call a stable local record factory. The same closed
+factory proof requires a fresh object literal, primitive arguments/fields and
+unmodified identifier parameters; straight-line primitive constants and object
+aliases are allowed. Every object reference must be a closed alias or the final
+return. Each call's arguments are checked in its caller's lexical scope, while
+the returned fields are checked against the factory's own parameters and locals.
+Captured values, shared records, imported/opaque factories, getters, spreads,
+computed/duplicate fields, nested values and escaped objects keep the fallback.
+The proof does not replace or reevaluate authored factory calls. Indexed-fill
+loops remain unproven: a fresh array alone cannot prevent inherited index setters
+from observing assignments or changing its shape.
 
 Dynamic text updates in list rows normalize the expression on every replay and
 compare it with a compiler-owned string slot before writing `Text.data`. The creation path
@@ -148,12 +167,42 @@ still seeds through `setTextData`, which also handles adopted server text. This
 reduces DOM reads during broad list refreshes; it does not make those refreshes
 key-targeted or change the conservative list-method fallback.
 
+Private local component rows that read only one named props field, such as
+`props.item`, can use the existing positional lightweight row ABI. The
+`components/private-row-props.ts` pass requires every call to be a direct keyed
+map row supplying precisely that field. It checks lexical bindings and excludes
+exports, factory escapes, whole-envelope reads or writes, receiver calls/tags,
+defaults, computed fields, spreads, extra props, member tags, lifecycle/child-component shapes,
+dynamic scope and hot compilation. Proven local rows can use this ABI even when
+linking supplied their row metadata; public/imported contracts retain their
+existing representation. Record getters, mutations and opaque calls still replay
+through the ordinary conservative path. The next prop value is evaluated before
+replacing the retained row's captured binding.
+
 List callbacks also retain synchronous expression statements before their final
 JSX return, such as logging or calling an inspection helper. They run once before
 the row's creation and once per row replay; their reads participate in routing.
 These callbacks retain full reconciliation instead of narrower keyed/content
 refreshes, because unknown calls do not prove that other rows can be skipped.
 Existing assignment, update, and async render-expression restrictions still apply.
+
+### Opaque pull precision
+
+Volatile components keep polling unknown values. Within an owner that already
+has exact dirty reasons, primitive local slots can ignore a pull-only reason
+when their initializers and every later write remain proven primitive. Future
+writes must belong to instrumented boundaries whose authored operations prove
+normal completion. Unknown calls, getters, external reassignment, dynamic scope
+and potentially throwing callbacks keep the wildcard fallback.
+
+The proof runs after handler emission. Mixed pull/write batches still open the
+slots for the actual writes; a full update opens every gate. This narrows DOM
+slot work only: derivation preludes, structural regions and unknown expressions
+retain their existing replay behavior.
+
+Component-scope helpers are instrumented without row-scope updater identifiers.
+Conservative commits retain the current component owner alongside the fallback
+root, including callbacks that run later or owners mounted outside that root.
 
 ### List-method optimization candidates
 
@@ -353,6 +402,20 @@ DOM-specific reactivity or runtime semantics before they can be lowered safely.
 The public `createExtensionEstreeFrontend()` utility creates a strict extension
 map for specialized frontends. Virtual or extensionless modules must select a
 frontend explicitly; TSRX callers can use `experimentalTsrxEstreeFrontend`.
+
+## Structural ownership and list teardown
+
+Component factories register their structural regions for cleanup with the
+component owner. Unregistering that owner disposes its lists and conditional
+regions, including mount refs owned by lightweight component rows without their
+own entity record. Separate cleanup registrations allow later owned regions to
+finish when an earlier region reports a failure.
+
+Proven lightweight inline rows own DOM only. The compiler emits an additional
+`createListRegion()` flag for these rows so complete clear/replacement and
+unmount skip empty cleanup scans. Refs, child ownership, effects, unknown row
+callbacks and HMR keep the ordinary cleanup path. Lightweight component rows
+are not automatically DOM-only: they can still own mount refs.
 
 ## Compiler-owned routing
 

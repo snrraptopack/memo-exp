@@ -200,6 +200,9 @@ export function emitListRegion(
   if (args.length === 3) args.push(astFactory.identifier('undefined'));
   if (args.length === 4) args.push(astFactory.booleanLiteral(true));
   args.push(astFactory.booleanLiteral(site.indexParam !== null));
+  if (site.form === 'inline' && ctx.lightweightInlineRows.has(call)) {
+    args.push(astFactory.booleanLiteral(true));
+  }
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(

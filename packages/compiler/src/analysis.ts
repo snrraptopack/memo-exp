@@ -35,6 +35,7 @@ import {
 } from './analysis/instance-control-flow';
 import { isListLightweightCandidate, pathVariants } from './analysis/component-graph';
 import { normalizeComponentJsxValues } from './components/jsx-values';
+import { normalizePrivateRowProps } from './components/private-row-props';
 import { normalizeRenderFunctions } from './components/render-functions';
 import { normalizeCalculatedListSources } from './lists/calculated-sources';
 import {
@@ -76,6 +77,7 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
+  normalizePrivateRowProps(ctx, programPath);
   normalizeTransparentSourceDestructuring(ctx, programPath);
   scanTransparentSourceBindings(ctx);
   scanRefProps(ctx);

@@ -186,7 +186,7 @@ function instrumentReachableLocalHelpers(
       ctx,
       helper,
       compName,
-      rowCtx?.refreshVar !== undefined ? rowCtx : undefined,
+      undefined,
       false,
       undefined,
       hasConditionalRootExecution(helper),

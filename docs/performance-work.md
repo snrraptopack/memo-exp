@@ -295,16 +295,16 @@ the optimization priorities.
 
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Conservative partial update cost across state placements | The `adeb2c4` VM report takes 1.1–1.6 ms at 10k rows, versus vanilla's 0.3 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned records, including fresh local literal factories, support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof or reducing conservative replay cost remains open. |
+| 1 | Conservative partial update cost across state placements | The `60e1dbe` VM report takes 1.1–2.1 ms at 10k rows, versus vanilla's 0.3 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned records, including fresh local literal factories, support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof or reducing conservative replay cost remains open. |
 | 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Structural retained-row work | The `adeb2c4` VM measures 10k swaps at 0.8–1.3 ms across placements; Octane displacement workloads take 0.275–0.430 ms. Ordered removal and persistent retained Maps are included in that run, but its different CPU prevents isolated historical comparisons. Required key/row evaluation and broad replay remain. |
+| 1 | Structural retained-row work | The `60e1dbe` VM measures 10k swaps at 0.8–1.5 ms across placements; Octane displacement workloads take 0.260–0.300 ms. Required key/row evaluation and broad replay remain. Browser/version and dependency differences prevent isolated historical comparisons. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
-| 2 | Creation/replacement/teardown | The `adeb2c4` VM measures DOM 10k creation at 11.4–14.0 ms versus vanilla's 8.1 ms, replacement at 14.7–16.3 ms versus 9.3 ms, and clear at 2.2–2.5 ms versus 0.6 ms. Registered leaf teardown now avoids traversal buffers and empty error arrays. Main DOM/Octane row entries already omit registration, so their closure, event and DOM-range costs remain open. |
+| 2 | Creation/replacement/teardown | The `60e1dbe` VM measures DOM 10k replacement at 14.0–16.1 ms versus vanilla's 9.5 ms, and clear at 2.0–2.6 ms versus 0.5 ms. Creation varied substantially between its two runs, including vanilla. Registered leaf teardown avoids traversal buffers and empty error arrays. Main DOM/Octane row entries already omit registration, so their closure, event and DOM-range costs remain open. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
 | Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
-| 3 | Slot granularity and opaque pulls | Extend reason gates and restrict volatile evaluation to dependent slots; do not hide required unknown-call refreshes. |
+| 3 | Slot granularity and opaque pulls | Proven primitive local DOM slots can now ignore pull-only causes. Broader derivation preludes, structural regions, object/getter reads and unknown calls retain conservative replay. |
 | 4 | SSR client omission and Marko emission ideas | Investigate hydration ownership/markers, per-binding/shared-input updates and region setup; these remain design candidates. |
 
 The DOM matrix now also checks retained node identity after every validated
@@ -1069,6 +1069,377 @@ precise attribution of total operation time from these profiles. This supports
 investigating conservative row emission and producer/alias proofs next, rather
 than assuming scratch-key writes dominate. It does not prove any emitted read,
 getter or unknown call can be skipped.
+
+## Private single-field row props
+
+A private local component row reading only `props.item` can now use the existing
+positional lightweight ABI when every call supplies that one field in a direct
+keyed map row. This removes the `{ item }` allocation on creation and each retained
+row replay. Lexical binding checks exclude escaping/public factories, envelope
+identity or mutation, receiver calls and tagged templates, defaults, computed
+fields, extra/spread props, member tags, lifecycle/child-component shapes, dynamic scope and
+HMR. Record getters, setter/proxy fallbacks, ordinary key evaluation and full
+conservative replay remain. Local linker metadata can use the proven private ABI;
+exported/imported contracts remain unchanged.
+
+Two paired local Chromium runs compared compiler-generated output against
+`4712300`, using the same runtime, minified production bundles, synchronous
+scheduling, five warmups and 25 alternating samples at 1k and 10k. Row 500 was
+selected before repeated partial updates. Every sample checked text, classes,
+count/order and retained DOM identity outside timing.
+
+| Changed component-row variant, 10k | First before / after ms | Repeat before / after ms |
+| --- | --- | --- |
+| Module data and selection | 4.4 / 4.1 | 4.4 / 3.8 |
+| Component data, module selection | 3.7 / 3.6 | 4.3 / 4.3 |
+
+The six unchanged variants served as controls: 10k medians mostly differed by
+0.0–0.2 ms. The module-state case improved in both runs; the mixed-state case did
+not establish a gain. This is a modest local result for repeated existing-list
+updates, not a replacement for reset-per-sample VM measurements or evidence of
+faster creation/replacement. The two affected tracked outputs were regenerated
+through the compiler. Opaque producer/alias proofs and the other performance
+backlog items remain open.
+
+Compiler build and lint passed, along with 79 focused tests covering props
+replacement, current event captures, escaped envelopes, receiver calls/tags,
+throwing prop evaluation, shadowed parameters, hot builds, linked selection,
+data policies, key semantics and reentrant text caches. All nine DOM variants
+and seven existing dynamic-tag tests passed their checks. The DOM variants
+passed the 21-scenario identity/mixed-operation gate. The pinned Octane canonical
+and reorder smoke checks passed; their timings are correctness checks only.
+After the final proof restrictions, all eight regenerated outputs matched the
+validated output byte for byte. Dependency versions and the upstream pin are
+unchanged.
+
+A preceding text-cache experiment moved the right operand's primitive type guard
+after the cached equality check. Two paired runs were mixed and some variants
+were repeatedly slower, so that emission change was discarded. Four additional
+self-contained reentrant getter/cache checks remain and pass on the original
+text emission. Bundle-size work remains deferred.
+
+## Fresh producer aliases and update-style coverage
+
+Closed literal factories can now name primitive values and their fresh array
+through straight-line `const` aliases before returning it. Array references must
+remain inside that alias chain/final return; calls, property reads, mutations,
+control flow, shared allocations and escapes retain the conservative path.
+The existing key/content proofs still independently check later reads and writes.
+
+A paired local Chromium comparison against `7a2f36a` used self-contained 10k
+literal-factory lists, the same runtime, minified bundles, synchronous scheduling,
+five warmups and 25 alternating samples. Text, classes, count/order and retained
+identity were checked after each sample. A fixed first-row module update measured
+1.4 → 0.2 ms for component rows and 1.3 → 0.2 ms inline. Component-owned updates
+of every tenth row measured 3.8 → 2.9 ms and 3.0 → 2.7 ms respectively. These are
+local measurements of the newly proven shape, not gains for the main benchmark's
+imported dynamic producer. The latter and structural replacement proofs remain
+open. Ninety focused checks passed, including alias cases with both row
+types and synchronous/deferred scheduling, instance isolation and unsafe producer
+fallbacks.
+
+The DOM suite now includes 16 separate mutable/immutable variants across the
+four state placements and two row types. Partial updates, swaps, appends and
+removals run at 1k/10k with row 500 selected. Every sample checks the actual DOM
+and retained node identity; mixed operations check selection after removal.
+The report combines both matrices while distinguishing state location and update
+style. This is additional diagnostic coverage and does not change optimization
+priorities. The one-sample local run is a correctness smoke check, not evidence
+that one state style is faster. Bundle-size work remains deferred.
+
+The final combined validation passed all nine original variants and all 16 new
+variants, including identity and mixed-operation checks. The timed one-sample
+smoke also passed every sample check. The combined report was checked to preserve
+the original rows and all 16 update-style timing columns in its raw data. Build
+and lint passed; regenerating the original eight compiled outputs produced no
+changes. Existing timing reports, dependency versions and the Octane pin remain
+unchanged.
+
+## List ownership and DOM-only teardown
+
+Component factories now register their structural regions with the component
+owner. The prior compiler left list regions alive when that owner was
+unregistered, including mount refs in lightweight component rows. Two
+self-contained ownership tests fail against `64fdfdd` and pass with the fix.
+They cover owner unmount, lightweight refs, two lists and a throwing ref cleanup.
+
+List disposal becomes terminal before invoking authored callbacks. Recursive
+disposal and new refresh/reconcile calls cannot revive the region; queued entity
+renders are cancelled by unregistering its rows. A throwing entry disposer no
+longer prevents node/entity cleanup or later rows from finishing. One failure is
+reissued unchanged, multiple failures are aggregated after teardown. Interrupted
+frame ownership remains covered, and synthetic key storage is cleared once at
+the end. This fixes disposal; interrupted reconciliation remains nontransactional.
+
+The compiler additionally proves that eligible lightweight inline rows own DOM
+only. An explicit runtime flag skips empty cleanup scans on complete
+clear/replacement and uses the existing owned range for ordinary unmount.
+The proof excludes refs, nested ownership, unknown render callbacks and HMR.
+Disabling row ID tracking alone never grants this optimization. Lightweight
+component rows retain their ordinary cleanup path because they may own refs.
+Clear preserves its boundary comments; neighboring nodes and multi-node entries
+are covered by regression checks. Interrupted frames retain per-record cleanup.
+
+Two isolated local Chromium comparisons used the same new runtime, plain
+10,000-row entries, five warmups and 25 alternating samples, changing only the
+DOM-only proof flag. Both paths removed the same nodes and anchors. Unmount
+medians were **12.9 → 8.8 ms** and **15.0 → 10.3 ms**. These measure runtime
+teardown of this shape, not overall application speed. The previous generated
+applications lacked owner teardown, so their skipped work is not a valid
+unmount performance baseline.
+
+A separate paired production-bundle comparison of the actual generated DOM
+applications checked clear/recreate, selected classes, markers and row count
+after every sample. The isolated run's 10k inline clear medians changed from
+16.4 → 15.9 ms (module), 15.4 → 12.7 ms (component), 19.9 → 17.7 ms (module
+data/component selection), and 15.8 → 15.5 ms (component data/module selection).
+The two component-row controls were slower by 0.9–1.2 ms in that run. These
+noisy local clear measurements need VM confirmation; they do not establish a
+general clear gain.
+
+The final 110 focused tests passed, covering teardown, pending/reentrant work,
+failed frames, selection/props routing, refs, conditional ownership, HMR,
+hydration, reordered identity and neighboring nodes. All 25 DOM variants passed
+their identity and mixed-operation checks. The pinned Octane canonical/reorder
+smoke gates and full package build passed. Source lint passed with the unchanged
+upstream checkout excluded; the unrestricted root lint also scans that vendor
+checkout and reports its existing lint errors.
+
+Eight stale M5/M5.10 assertions also fail against the starting compiler: they
+still expect row-wide selection routing and the old private single-field props
+envelope. They now assert the current selection entity and positional contract;
+snapshots and the eight tracked benchmark applications were regenerated by the
+compiler. Dependency versions, timing reports and the Octane pin are unchanged.
+
+Creation/replacement costs, broader opaque producer proofs, and failure/reentry
+during ongoing reconciliation remain follow-up work. Bundle-size work remains
+deferred.
+
+## Cancel reconciliation when a callback unmounts
+
+Disposal must also stop work already in progress. Sixteen self-contained runtime
+checks now cover unmounting from a key getter, row factory, prop replay or row
+updater during fresh creation, append, replacement, steady replay, removal,
+mixed frames and index refresh. Thirteen initial cases fail on `218faec`, with
+orphaned row ownership, insertion into removed anchors or reads from cleared
+row buffers; they pass after the fix.
+
+The reconciler checks its terminal state after these authored callbacks and
+stops before creating or refreshing later rows. A factory's returned entry is
+cleaned separately when disposal happened before that entry entered the maps;
+its entity cleanup still finishes if its entry disposer throws. Prop replay
+cancellation also prevents the subsequent row render. This does not roll back
+authored effects, and it does not resolve general nested reconciliation or every
+exception/reentry case during removal cleanup.
+
+## Discarded: private multi-field positional props
+
+A compiler trial extended the existing single-field proof to multiple supplied
+fields. Every call had to keep the same authored attribute order and supply only
+the read fields; receiver calls/tags additionally required unchanged direct arrow
+bindings or inline arrows at every site. Defaults, spreads, escapes, unknown
+receivers and public contracts stayed conservative. Behavioral tests passed for
+linked/local selection, reordered retained rows, replacements and event captures,
+and for ordered/throwing prop evaluation before any captured binding changed.
+
+Two local Chromium comparisons used actual compiler-generated applications,
+identical new runtimes, minified bundles, synchronous scheduling, seeded labels,
+three warmups and 15 alternating 10k samples per operation. Every sample checked
+text/order/classes, fresh replacement identity, current selection events and
+subsequent retained updates outside timing. Only the two multi-field component
+variants changed; the inline variants were controls.
+
+| 10k component rows, before / trial ms | First create | Repeat create | First replace | Repeat replace |
+| --- | --- | --- | --- | --- |
+| Component data and selection | 131.7 / 105.0 | 90.6 / 137.6 | 159.5 / 200.3 | 102.3 / 100.3 |
+| Module data, component selection | 102.6 / 106.8 | 66.4 / 70.2 | 155.4 / 164.8 | 62.6 / 72.0 |
+
+Controls and absolute times varied substantially between runs. The module-data
+component case was slower in both runs for both operations; component-owned
+creation reversed direction. These results do not establish a gain, so the
+compiler trial was discarded and original benchmark outputs were regenerated
+through the unchanged compiler. Ten self-contained behavior/fallback tests stay
+as coverage for future attempts. No creation-speed improvement is claimed.
+Broader producer proofs and creation/replacement costs remain open; bundle-size
+work remains deferred.
+
+After discarding the trial, 86 focused tests passed on the final code, including
+the new cancellation cases, persistent cache/key order, failed frames, props,
+linked selection, hydration and hot compilation. All 25 final DOM variants
+passed identity and mixed-operation validation. A linked 10k-row test exceeded
+its five-second timeout while builds/browser checks ran concurrently; it passed
+alone and in the final two-worker run with a command-level 30-second allowance.
+Runtime/compiler builds and changed-source lint passed. All eight regenerated
+original benchmark applications match `218faec` byte for byte. No dependency
+versions, existing timing reports or upstream pin changed.
+
+## Closed record-factory composition
+
+Fresh literal arrays can now contain calls to closed local record factories,
+including primitive local declarations and fresh-object aliases. The existing
+allocation proof is shared by arrays and records. Primitive inputs are checked
+at the call site, and returned fields against the callee's own lexical bindings;
+captured values and unknown behavior retain conservative routing. This enables
+the existing fixed-position module refresh and component-owned changed-key
+journal without rewriting or reevaluating authored factory calls.
+
+Two paired local Chromium runs used the same runtime, compiler-generated
+10,000-row applications, minified bundles, synchronous scheduling, five warmups
+and 25 alternating samples. Each sample checked row text, selected classes and
+retained DOM identity outside timing. A module-owned update changes one row;
+an owner-local update changes every tenth row.
+
+| Operation / row style | First run before / after ms | Second run before / after ms |
+| --- | --- | --- |
+| Module fixed row / component | 1.6 / 0.2 | 1.7 / 0.2 |
+| Module fixed row / inline | 1.8 / 0.2 | 2.2 / 0.2 |
+| Component partial update / component | 5.3 / 4.3 | 4.8 / 4.0 |
+| Component partial update / inline | 3.9 / 3.0 | 4.7 / 3.5 |
+
+These numbers apply to the newly proven factory shape, not to the imported
+`buildData` generator in the main DOM suite. Its general dynamic production and
+structural replacements remain unproven. A bounded indexed-fill loop was not
+implemented because inherited index setters can intercept fresh-array writes;
+boundedness alone cannot establish plain owned records. Creation/replacement
+costs remain open, and bundle-size work remains deferred.
+
+The final 132 focused tests passed, covering factory composition and rejection,
+instance-local and shared-module routing under immediate/deferred schedulers,
+bounded mutation journals, selection and hot compilation. All 25 regenerated
+DOM variants passed retained-node identity and mixed-operation validation. The
+eight tracked generated applications are unchanged. Compiler build and changed
+source lint passed; dependency versions, timing reports and the Octane pin are
+unchanged.
+
+## Removal cleanup cancellation and failures
+
+Twenty-one initial self-contained regressions fail against `3ea0a64`: cleanup
+callbacks unmounting during suffix/subsequence removal, mixed reconciliation,
+replacement or clear can repeat disposers or continue through cleared buffers.
+A throwing disposer/entity cleanup can stop later removals and lose their
+cleanup coverage. The runtime now marks each cleanup phase before invoking it,
+finishes remaining removals after failures, and cancels the active frame when
+unmounted. General removal hooks retain their existing key visibility and order.
+
+Additional checks cover usable survivors after fast-path removal errors, failure
+aggregation, failures after reentrant unmount, range-deletion fallback, neighboring
+nodes, stable anchors and multi-node/empty row extents. Interrupted general frames
+remain disposable; this is not rollback or a general nested-reconciliation fix.
+
+A DOM-only suffix cleanup-scan trial was discarded after two mixed local
+Chromium comparisons. They used identical compiler-generated apps, before/after
+runtime bundles, seeded labels, three warmups and 15 alternating 10k-to-9k samples
+per variant, with retained identity/text/class/anchor checks, append recovery and
+unmount validation outside timing. The three eligible inline variants changed
+6.5 → 6.3, 6.6 → 7.8 and 8.6 → 5.3 ms in the first run, then 5.8 → 5.3,
+5.0 → 4.1 and 4.9 → 5.0 ms in the second. Controls also changed substantially;
+the first run overlapped tests under heavy load. These results do not establish
+a speed improvement. The final code retains correctness handling and the normal
+suffix cleanup scans. Creation/replacement performance remains open.
+
+Final validation passed 110 focused tests in 11 files, including 32 new removal
+cleanup cases, persistent cache/key semantics, failed-frame ownership, list-owner
+unmount, inline rows, retained positional identity, reorder windows and hydration.
+All 25 DOM variants passed with rebuilt runtime bundles, including identity and
+mixed-operation checks. Runtime build and changed-source lint passed. Authored
+benchmark sources, compiler-generated app files, dependencies and the Octane pin
+are unchanged; bundle-size work remains deferred.
+
+## VM baseline at `60e1dbe`
+
+The user-provided `memo-exp-benchmark-report.md` reports two complete DOM
+executions and the full canonical/reorder Octane suites at
+`60e1dbec7d71b04573d26a7fd21171912ade94bd`, with upstream pin
+`874ca5f139c6ed6f29b4970a567bc7e22b0b3ca4`. Its primary DOM run finished
+2026-10-02 at 05:23 UTC. Environment: Linux, AMD EPYC 9V74, eight CPU
+equivalents, 8 GiB limit, Chrome Headless Shell 149.0.7827.55. DOM uses seven
+samples; Octane uses eight. All state-placement, update-style and reorder
+identity checks passed. This baseline predates the pull/helper changes below.
+
+| Workload | Memoized-dom median ms | Comparison from the same run |
+| --- | --- | --- |
+| DOM update 10k | Component rows 1.30–2.10; inline 1.10–1.40 | Vanilla 0.30 |
+| DOM replacement 10k | 14.00–16.10 | Vanilla 9.50 |
+| DOM clear 10k | 2.00–2.60 | Vanilla 0.50 |
+| DOM reverse 10k | 5.30–6.30 | Vanilla 4.10 |
+| Octane canonical update | 0.400 | Ripple 0.500; Octane TSRX 0.800 |
+| Octane canonical remove | 0.800 | Ripple/Solid/Vue Vapor 0.300 |
+| Octane forward/backward rotation | 0.240 / 0.271 | Ripple 0.056 / 0.033; Octane TSRX 0.149 / 0.115 |
+| Octane displacement 3–8 | 0.260–0.300 | Ripple 0.100–0.130; Octane TSRX 0.155–0.170 |
+
+Creation remains noisy: mixed module-data/component-row creation moves from
+12.40 to 36.90 ms, while vanilla moves from 8.50 to 16.50 ms. That does not
+establish a placement-specific regression. Mutable/immutable results remain
+operation-dependent: component-state/component-row 10k updates tie at 1.80 ms;
+inline append favors immutable at 2.60/2.40 ms, while component-row append favors
+mutable at 3.00/3.30 ms. No state/update style becomes a universal recommendation.
+
+The report provides medians/statistical summaries rather than raw timing arrays.
+Small DOM values approach timer resolution; canonical update/removal have
+32.3%/26.8% RME. Browser distribution/version and root dependencies differ from
+the older VM report, so historical timing changes do not isolate code effects.
+The plan remains broader reactivity precision, conservative partial/retained-row
+work and creation/removal costs. Bundle-size work remains deferred.
+
+Report SHA-256: `8786eec423dd1deb41d9814d45587ad6abeed9a60b05767a607a0feeaa56f6a3`.
+
+## Primitive slots during opaque pulls and helper ownership
+
+Volatile owners with existing exact dirty reasons can now skip unrelated DOM
+slots on pull-only frames. The compiler proves primitive initializers and later
+writes, checks their actual lexical bindings, and requires instrumented write
+boundaries with proven normal completion. It snapshots authored completion
+operations before generated commits and resolves eligibility after handler
+emission. Unknown calls, getter/object coercions, dynamic scope, escaped writes,
+unproven reassignment, shadowed names and potentially throwing callbacks retain
+wildcard pulls. Declaration identifiers are excluded from boundary reads, so a
+named function or an unused event parameter does not defeat the proof.
+
+The runtime's default wildcard behavior remains compatible with existing
+generated calls. An eligible slot ignores only the pull cause; mixed batches
+still match actual writes, and full updates open every gate. Adjacent groups
+include the pull policy in their grouping key. Derivation preludes, list regions
+and other unknown expressions retain their current replay behavior.
+
+Validation also exposed a component helper referencing a row-local updater,
+reproduced against the previous compiler. Helpers now use component scope, while
+conservative commits preserve their actual owner alongside the fallback root.
+Deferred helper writes refresh owners outside the static root and retain rows.
+A failed ordinary render keeps a full dirty mark for a later commit, preventing
+narrow pulls from skipping slots the failed render did not reach. No immediate
+retry is scheduled; effects and removed/replaced entities retain their boundaries.
+
+The self-contained tests exercise controlled pull frames, immediate/deferred
+schedulers, mixed batches, instance isolation, escaped/registered callbacks,
+write-then-throw behavior and render recovery. Existing data integration coverage
+now declares its request snapshot separately from the reactive `load()` initializer,
+as required by the documented derived-state rule. An outdated class-helper
+emission assertion was corrected to the compiler's normalized literal conditional.
+The older row-event assertion now checks direct inline refresh, reproduced with
+the baseline compiler. Fixture imports work before their generated files exist.
+
+Two isolated local Chromium comparisons use the baseline `60e1dbe` compiler and
+the new compiler with the same rebuilt runtime, minified compiler-generated
+applications and synchronous scheduling. Each sample performs 100 opaque pulls,
+with five warmups and 25 alternating measured samples per size. Outside timing,
+each sample checks opaque text, unchanged local text and retained node identity;
+a final local write verifies that every dependent slot still updates.
+
+| Unrelated primitive DOM slots | First run before / after ms per pull | Second run before / after ms per pull |
+| --- | --- | --- |
+| 100 | 0.012 / 0.003 | 0.019 / 0.006 |
+| 1,000 | 0.082 / 0.004 | 0.085 / 0.004 |
+
+These are synthetic pull cases, not gains for the main DOM/Octane collections.
+Small timings approach timer precision. The existing broader list/opaque-producer
+fallbacks remain open, and bundle-size work remains deferred.
+
+Focused validation passed 367 tests across 24 files, including 24 new pull and
+render-recovery cases. All 25 regenerated DOM variants passed retained identity
+and mixed-operation validation with the rebuilt runtime. Compiler/runtime builds
+and changed-source lint passed. Four tracked generated applications changed only
+to carry their owner ID in conservative subtree commits. Dependency versions,
+VM timing artifacts and the Octane pin are unchanged.
 
 ## Earlier candidates retained for tracking
 

@@ -68,8 +68,9 @@ export interface SimpleObjectPropBinding {
 /**
  * Closed `{ item, selected }`-style contracts can use positional arguments in
  * compiler-private lightweight row factories. Defaults, nested patterns,
- * rest properties, and generic `props` bindings retain the object
- * envelope so their authored JavaScript semantics stay exact.
+ * rest properties, and unproven generic `props` bindings retain the object
+ * envelope. Private single-field rows can be normalized before this pass by
+ * components/private-row-props.ts once every envelope use and call is proven.
  */
 export function simpleObjectPropBindings(
   plan: ComponentPropsPlan,
