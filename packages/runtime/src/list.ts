@@ -457,6 +457,10 @@ export function createListRegion<T>(
     fixedPositions = false,
   ): void {
     if (disposed) return;
+    // Reject dishonest payload types before changing ownership or buffers.
+    if (!Array.isArray(items)) {
+      throw new TypeError(`[memo-dom] list '${idPrefix}' requires an array; received ${items === null ? 'null' : typeof items}`);
+    }
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = adopting;
     let removalErrors: unknown[] | null = null;
@@ -911,7 +915,9 @@ export function createListRegion<T>(
       end--;
       oldEnd--;
     }
-    const inLis = lisPositions(seq, start, end);
+    // An increasing retained subsequence is already a complete LIS, even
+    // with inserted rows or removal gaps. The forward pass proved that order.
+    const inLis = inOrder ? null : lisPositions(seq, start, end);
     // Empty extents own a key but no insertion boundary. Find the next
     // actual suffix node, falling back to the region's stable close anchor.
     let cursor: Node = endAnchor;
@@ -947,7 +953,7 @@ export function createListRegion<T>(
 
     for (let i = end - 1; i >= start; i--) {
       const entry = ordered[i]!.e;
-      if (seq[i] === -1 || !inLis[i]) {
+      if (seq[i] === -1 || inLis !== null && !inLis[i]) {
         // awaiting insertion — cursor stays on the last IN-PLACE node
         (pending ??= []).push(entry);
       } else {

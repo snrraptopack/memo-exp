@@ -36,9 +36,13 @@ still open every gate. Existing two-argument generated calls retain their behavi
 
 A failed ordinary render retains a full dirty mark for the next commit. This
 prevents a subsequent pull or partial write from skipping slots that the failed
-render never reached. The runtime does not schedule an immediate retry or roll
-back completed writes. Failed effects keep their existing behavior; unregistered
-or replaced entities are not revived.
+render never reached. Independent render entities and their cascades finish
+before the error is reported. The failed entity and its descendants wait for a
+later commit; effects wait for coherent render completion. One render error is
+re-thrown unchanged, multiple independent errors are aggregated. The runtime
+does not schedule an immediate retry or roll back completed writes. Failed
+effects keep their existing behavior; unregistered or replaced entities are not
+revived. A stale batch entry cannot render a replacement with the same ID.
 
 A synchronous render error during an opaque pull still schedules the next
 browser frame. The original error propagates, and recovery uses the retained
@@ -46,6 +50,12 @@ full dirty mark. Removing the last volatile owner or disposing its application
 during the failed render prevents rearming; no immediate retry is added.
 
 ## Keyed list ownership
+
+List sources must be arrays. A non-array payload raises a diagnostic naming the
+list before changing its buffers or ownership. This preserves existing rows and
+allows a later valid source to recover. TypeScript type arguments do not validate
+network payloads: an API response containing `photos` must be read as
+`result.photos`, not as the whole response array.
 
 `reconcile()` accepts an optional fourth `fixedPositions` argument for compiler
 proofs of unchanged item identities, positions and keys. A committed region with
@@ -65,6 +75,9 @@ Ordered row records preserve lifecycle order after reorders.
 When the forward pass has consumed every old key, reconciliation skips the
 removal scan. Reorders and insertion/reorders still evaluate authored keys and
 refresh retained content normally. Any missing old key keeps the cleanup pass.
+When surviving old positions are increasing, every retained row is already in
+the longest increasing subsequence. Mixed insertion/removal frames skip the LIS
+calculation and place only new rows. Actual reorders keep normal LIS analysis.
 
 Rows with empty node extents still own keys and lifecycle callbacks. During
 placement they do not become insertion boundaries or split pending DOM runs.

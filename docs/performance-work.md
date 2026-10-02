@@ -12,6 +12,32 @@ Optimizations require compiler proof. Recognizing `map`, `push`, `splice`,
 be overridden, and getters or callbacks can read other state. Cases without
 proof keep the conservative update path described in the compiler README.
 
+## Latest VM reassessment: 5dd7680
+
+The full 2026-10-02 VM report tested `5dd76806d5838c45041e3cc8166785607100d76f`
+with the same Chrome binary, CPU model and container limits as `60e1dbe`.
+All DOM, mutable/immutable and Octane correctness/identity gates passed. These
+are separate runs, so differences cannot establish commit-specific gains.
+
+Selection and partial-update precision are useful strengths, but structural
+work remains costly. At 10k rows the DOM suite measured replacement at
+13.8–16.3 ms versus vanilla's 9.0, ordinary updates at 1.2–1.7 versus 0.3,
+clear at 2.0–2.2 versus 0.6, and reverse at 5.3–6.2 versus 4.0. One owned-inline
+creation result reached 36.9 ms; other compiled placements measured 11.9–15.8.
+The creation outlier needs profiling rather than a presumed compiler cause.
+
+Octane measured rotation at 0.291/0.292 ms versus Ripple's 0.074/0.031,
+first-row removal at 0.170 versus 0.045, and displacement at 0.240–0.270 versus
+0.105–0.130. Canonical update measured 0.4, selection 0.1, swap 0.4 and removal
+0.6 ms. Rotations did not improve relative to the previous run.
+
+Reassessment priorities: trace source writes through summaries, reason
+publication, retained validation and row replay; consolidate overlapping facts
+and remove redundant work where that trace proves it unnecessary. Strengthen
+the boundary between normalized/analyzed JSX and target emission so future
+backends do not reproduce DOM-specific decisions. Preserve opaque/getter,
+mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
+
 ## Completed changes
 
 - List-row text uses normalized string slots to avoid unchanged DOM text reads.
@@ -1754,6 +1780,44 @@ bookkeeping, but retained-key validation and DOM costs remain. Reliable overall
 performance still needs VM measurement. Broader reactivity precision and
 creation/removal/reorder work remain on the plan. Dependencies, VM results and
 the Octane pin are unchanged; bundle size remains deferred.
+
+## Ordered mixed frames and independent render recovery
+
+The runtime uses the forward pass's existing retained-order fact to skip LIS
+calculation when all surviving old positions increase. Mixed insertion/removal
+frames then move only fresh rows; actual reorders retain the established LIS
+path. Keys, prop/content replay, removal visibility and ownership keep their
+existing order. This removes a redundant calculation without recognizing
+authored producer names.
+
+Non-array list payloads now receive a named list diagnostic before buffers or
+ownership change. A failed renderer retains its full retry cause, but no longer
+aborts independent render entities and their cascades in the same commit. The
+failed subtree and effects wait for later successful rendering. Errors still
+propagate; this does not roll back a partial render or automatically retry it.
+Replaced entity objects cannot be rendered from a stale pending batch.
+
+The real image-search reproduction returned HTTP 200 and an object containing
+`photos`. Treating that object as an array previously raised `RangeError` and
+left the separate loading condition stale. With the runtime changes, the same
+wrong payload reports a list type error and loading settles. Reading
+`forms.result?.photos` renders all 30 real image rows. The local authored example
+now uses its existing `ImageSearchResponse` type. The mocked fixture separately
+checks dev/production, reported synchronous/deferred commits, later valid-submit
+recovery, observer callbacks, small/large source updates and ref/effect cleanup.
+The temporary credential was removed and is excluded from version control.
+
+Runtime build and changed-source lint passed. Focused validation passed 140
+unique tests across 17 files. All 25 regenerated DOM variants passed retained
+identity and mixed sequences; tracked compiled benchmark output is unchanged.
+
+An isolated local Chromium check compared pristine before/after runtime bundles
+with 1k/10k DOM-only rows. Each variant had five warmups and 21 samples in both
+orders. Every sample checked key counts, text and retained identity outside
+timing. At 10k, sparse replacement medians were 6.8/5.6 ms (before/after) and
+6.6/5.7 with reversed variant order. Prepend was 8.1/7.1 then 5.7/7.0; middle
+insertion was 5.8/5.7 then 5.2/5.5. The mixed timings do not establish an overall
+benchmark gain. These are isolated structural costs, not new VM results.
 
 ## Earlier candidates retained for tracking
 

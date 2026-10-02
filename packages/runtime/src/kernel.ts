@@ -725,6 +725,17 @@ export function commit(): void {
   k.markedBy ??= new Map();
   let failed = false;
   let failure: unknown;
+  let renderErrors: unknown[] | null = null;
+  let failedEntities: Set<Entity> | null = null;
+  const blockedByFailure = (entity: Entity): boolean => {
+    if (failedEntities === null) return false;
+    let current: Entity | undefined = entity;
+    while (current !== undefined) {
+      if (failedEntities.has(current)) return true;
+      current = current.parent === null ? undefined : k.registry.get(current.parent);
+    }
+    return false;
+  };
   try {
     // R10: drain loop — renders may mark further ids (setProps pushing props
     // to children, update-driven invalidation). Depth-sorted batches keep
@@ -736,7 +747,9 @@ export function commit(): void {
       const pending: Entity[] = [];
       for (const id of k.dirty) {
         const e = k.registry.get(id);
-        if (e) pending.push(e);
+        if (e) {
+          if (failedEntities === null || !blockedByFailure(e)) pending.push(e);
+        }
         else {
           k.dirty.delete(id); // dead letter: dirtied, then unregistered
           clearDirtyReasons(k.dirtyReasons, id);
@@ -747,12 +760,17 @@ export function commit(): void {
       // effects a coherent post-DOM view even when parent renders cascade
       // prop updates into deeper children over several drain passes.
       const hasRenderWork = pending.some((e) => e.phase !== 'effect');
+      // Complete independent render work after a failure, but defer effects:
+      // they require a coherent post-DOM view. Failed branches retry only on
+      // a later externally scheduled commit, never repeatedly in this drain.
+      if (renderErrors !== null && !hasRenderWork) break;
       const batch = hasRenderWork
         ? pending.filter((e) => e.phase !== 'effect')
         : pending;
       batch.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
 
       for (const e of batch) {
+        if (k.registry.get(e.id) !== e || failedEntities !== null && blockedByFailure(e)) continue;
         if (k.dirty.delete(e.id)) {
           const renders = (k.renderCounts!.get(e.id) ?? 0) + 1;
           k.renderCounts!.set(e.id, renders);
@@ -788,13 +806,19 @@ export function commit(): void {
               k.dirty.add(e.id);
               clearDirtyReasons(k.dirtyReasons, e.id);
             }
-            throw error;
+            if (e.phase === 'effect') throw error;
+            (failedEntities ??= new Set()).add(e);
+            (renderErrors ??= []).push(error);
           } finally {
             k.renderingEntity = null;
           }
         }
       }
       // ids dirtied DURING renders (cascade) stay in the set → next pass
+    }
+    if (renderErrors !== null) {
+      if (renderErrors.length === 1) throw renderErrors[0];
+      throw new AggregateError(renderErrors, '[memo-dom] independent renders failed');
     }
     if (k.dirty.size > 0) {
       throw new Error(
