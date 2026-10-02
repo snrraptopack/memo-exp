@@ -1273,6 +1273,44 @@ Runtime/compiler builds and changed-source lint passed. All eight regenerated
 original benchmark applications match `218faec` byte for byte. No dependency
 versions, existing timing reports or upstream pin changed.
 
+## Closed record-factory composition
+
+Fresh literal arrays can now contain calls to closed local record factories,
+including primitive local declarations and fresh-object aliases. The existing
+allocation proof is shared by arrays and records. Primitive inputs are checked
+at the call site, and returned fields against the callee's own lexical bindings;
+captured values and unknown behavior retain conservative routing. This enables
+the existing fixed-position module refresh and component-owned changed-key
+journal without rewriting or reevaluating authored factory calls.
+
+Two paired local Chromium runs used the same runtime, compiler-generated
+10,000-row applications, minified bundles, synchronous scheduling, five warmups
+and 25 alternating samples. Each sample checked row text, selected classes and
+retained DOM identity outside timing. A module-owned update changes one row;
+an owner-local update changes every tenth row.
+
+| Operation / row style | First run before / after ms | Second run before / after ms |
+| --- | --- | --- |
+| Module fixed row / component | 1.6 / 0.2 | 1.7 / 0.2 |
+| Module fixed row / inline | 1.8 / 0.2 | 2.2 / 0.2 |
+| Component partial update / component | 5.3 / 4.3 | 4.8 / 4.0 |
+| Component partial update / inline | 3.9 / 3.0 | 4.7 / 3.5 |
+
+These numbers apply to the newly proven factory shape, not to the imported
+`buildData` generator in the main DOM suite. Its general dynamic production and
+structural replacements remain unproven. A bounded indexed-fill loop was not
+implemented because inherited index setters can intercept fresh-array writes;
+boundedness alone cannot establish plain owned records. Creation/replacement
+costs remain open, and bundle-size work remains deferred.
+
+The final 132 focused tests passed, covering factory composition and rejection,
+instance-local and shared-module routing under immediate/deferred schedulers,
+bounded mutation journals, selection and hot compilation. All 25 regenerated
+DOM variants passed retained-node identity and mixed-operation validation. The
+eight tracked generated applications are unchanged. Compiler build and changed
+source lint passed; dependency versions, timing reports and the Octane pin are
+unchanged.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

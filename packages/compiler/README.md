@@ -149,6 +149,18 @@ property reads, control flow, destructuring, shared arrays and escapes reject
 the proof. This extends literal producer support; imported/dynamic generators
 and later structural replacements still retain ordinary reconciliation.
 
+Array elements may also call a stable local record factory. The same closed
+factory proof requires a fresh object literal, primitive arguments/fields and
+unmodified identifier parameters; straight-line primitive constants and object
+aliases are allowed. Every object reference must be a closed alias or the final
+return. Each call's arguments are checked in its caller's lexical scope, while
+the returned fields are checked against the factory's own parameters and locals.
+Captured values, shared records, imported/opaque factories, getters, spreads,
+computed/duplicate fields, nested values and escaped objects keep the fallback.
+The proof does not replace or reevaluate authored factory calls. Indexed-fill
+loops remain unproven: a fresh array alone cannot prevent inherited index setters
+from observing assignments or changing its shape.
+
 Dynamic text updates in list rows normalize the expression on every replay and
 compare it with a compiler-owned string slot before writing `Text.data`. The creation path
 still seeds through `setTextData`, which also handles adopted server text. This

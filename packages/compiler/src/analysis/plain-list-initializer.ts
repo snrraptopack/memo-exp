@@ -19,13 +19,20 @@ export function plainScalarValue(ctx: Ctx, node: BaseNode | null, parameters?: R
     plainScalarValue(ctx, childNode(node, 'argument'), parameters);
 }
 
-/** Fresh literal arrays, including closed local factory aliases with literal inputs. */
-export function plainListInitializer(ctx: Ctx, init: BaseNode | null): {
-  array: BaseNode;
-  scalar: (node: BaseNode | null) => boolean;
-} | null {
+interface PlainAllocation {
+  node: BaseNode;
+  bindings: ReadonlySet<Binding>;
+}
+
+/** A closed factory may name its fresh allocation, but cannot observe or escape it. */
+function plainAllocation(
+  ctx: Ctx,
+  init: BaseNode | null,
+  type: 'ArrayExpression' | 'ObjectExpression',
+  inputs?: ReadonlySet<Binding>,
+): PlainAllocation | null {
   const parameters = new Set<Binding>();
-  let array = init;
+  let result = init;
   if (init?.type === 'CallExpression' && nodeField(init, 'optional') !== true) {
     const callee = childNode(init, 'callee');
     const name = identifierName(callee);
@@ -38,7 +45,7 @@ export function plainListInitializer(ctx: Ctx, init: BaseNode | null): {
         nodeField(fn, 'async') === true || nodeField(fn, 'generator') === true) return null;
     const params = childNodes(fn, 'params');
     const args = childNodes(init, 'arguments');
-    if (params.length !== args.length || args.some(argument => !plainScalarValue(ctx, argument))) return null;
+    if (params.length !== args.length || args.some(argument => !plainScalarValue(ctx, argument, inputs))) return null;
     for (const param of params) {
       const paramName = identifierName(param);
       const parameter = paramName === null ? undefined : astBindingAt(ctx, param, paramName);
@@ -50,9 +57,9 @@ export function plainListInitializer(ctx: Ctx, init: BaseNode | null): {
       const statements = childNodes(body, 'body');
       const last = statements.at(-1);
       if (last?.type !== 'ReturnStatement') return null;
-      const arrays = new Map<Binding, BaseNode>();
+      const allocations = new Map<Binding, BaseNode>();
       // Straight-line const declarations can name primitive values or a fresh
-      // array. No calls, writes, member reads, control flow or escaped arrays.
+      // allocation. No calls, writes, member reads, control flow or escapes.
       for (const statement of statements.slice(0, -1)) {
         if (statement.type !== 'VariableDeclaration' || nodeField(statement, 'kind') !== 'const') return null;
         for (const declaration of childNodes(statement, 'declarations')) {
@@ -62,40 +69,66 @@ export function plainListInitializer(ctx: Ctx, init: BaseNode | null): {
           const value = childNode(declaration, 'init');
           if (local === undefined || local.constantViolations.length !== 0) return null;
           if (plainScalarValue(ctx, value, parameters)) parameters.add(local);
-          else if (value?.type === 'ArrayExpression') arrays.set(local, value);
+          else if (value?.type === type) allocations.set(local, value);
           else {
             const aliasName = identifierName(value);
             const alias = value === null || aliasName === null ? undefined : astBindingAt(ctx, value, aliasName);
-            const target = alias === undefined ? undefined : arrays.get(alias);
+            const target = alias === undefined ? undefined : allocations.get(alias);
             if (target === undefined) return null;
-            arrays.set(local, target);
+            allocations.set(local, target);
           }
         }
       }
       const parents = ctx.astAnalysis!.parentByNode;
-      for (const binding of arrays.keys()) for (const reference of binding.references) {
+      for (const binding of allocations.keys()) for (const reference of binding.references) {
         const use = parents.get(reference);
         if (use?.type === 'ReturnStatement' && use === last && childNode(use, 'argument') === reference) continue;
         if (use?.type === 'VariableDeclarator' && childNode(use, 'init') === reference) {
           const alias = childNode(use, 'id');
           const name = identifierName(alias);
           const target = alias === null || name === null ? undefined : astBindingAt(ctx, alias, name);
-          if (target !== undefined && arrays.has(target)) continue;
+          if (target !== undefined && allocations.has(target)) continue;
         }
         return null;
       }
-      array = childNode(last, 'argument');
-      if (array?.type === 'Identifier') {
-        const binding = astBindingAt(ctx, array, identifierName(array)!);
-        array = binding === undefined ? null : arrays.get(binding) ?? null;
+      result = childNode(last, 'argument');
+      if (result?.type === 'Identifier') {
+        const binding = astBindingAt(ctx, result, identifierName(result)!);
+        result = binding === undefined ? null : allocations.get(binding) ?? null;
       }
       // Only the returned allocation gets its fields inspected below. Extra
       // allocations could contain calls and remain unproven.
-      for (const literal of new Set(arrays.values())) {
-        if (literal !== array) return null;
+      for (const literal of new Set(allocations.values())) {
+        if (literal !== result) return null;
       }
-    } else array = body;
+    } else result = body;
+    if (result?.type !== type) return null;
+    return { node: result, bindings: parameters };
   }
-  if (array?.type !== 'ArrayExpression') return null;
-  return { array, scalar: node => plainScalarValue(ctx, node, parameters) };
+  if (result?.type !== type) return null;
+  return { node: result, bindings: inputs ?? parameters };
+}
+
+interface PlainRecord {
+  object: BaseNode;
+  scalar: (node: BaseNode | null) => boolean;
+}
+
+/** Fresh arrays can contain literals or closed local record-factory calls. */
+export function plainListInitializer(ctx: Ctx, init: BaseNode | null): {
+  array: BaseNode;
+  record: (node: BaseNode | null) => PlainRecord | null;
+} | null {
+  const allocation = plainAllocation(ctx, init, 'ArrayExpression');
+  if (allocation === null) return null;
+  return {
+    array: allocation.node,
+    record(node) {
+      const record = plainAllocation(ctx, node, 'ObjectExpression', allocation.bindings);
+      return record === null ? null : {
+        object: record.node,
+        scalar: value => plainScalarValue(ctx, value, record.bindings),
+      };
+    },
+  };
 }
