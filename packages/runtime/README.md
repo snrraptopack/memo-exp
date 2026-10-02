@@ -68,6 +68,16 @@ entered the ownership cache. Later rows are not created or refreshed, and the
 reconciler does not insert into removed anchors. This is cancellation of the
 remaining work; authored effects and completed DOM writes are not rolled back.
 
+Removal, clear and replacement mark each row's disposer and ownership cleanup
+as started before calling authored code. An unmount during either phase cannot
+run it twice, and active reconciliation stops when that callback returns.
+Throwing cleanup hooks do not prevent later removed rows or their entities from
+being cleaned; errors are reported after the removal batch finishes. Successful
+subsequence/suffix removal commits its surviving rows before reporting failures.
+General replacement/mixed frames can still be interrupted before placement and
+remain disposable. This does not provide rollback or support arbitrary nested
+reconciliation from cleanup hooks.
+
 The compiler marks proven DOM-only inline rows with the final `resourceFree`
 argument to `createListRegion()`. Those entries have no entities or disposal
 callbacks. Complete clear/replacement and ordinary unmount can remove their

@@ -1311,6 +1311,40 @@ eight tracked generated applications are unchanged. Compiler build and changed
 source lint passed; dependency versions, timing reports and the Octane pin are
 unchanged.
 
+## Removal cleanup cancellation and failures
+
+Twenty-one initial self-contained regressions fail against `3ea0a64`: cleanup
+callbacks unmounting during suffix/subsequence removal, mixed reconciliation,
+replacement or clear can repeat disposers or continue through cleared buffers.
+A throwing disposer/entity cleanup can stop later removals and lose their
+cleanup coverage. The runtime now marks each cleanup phase before invoking it,
+finishes remaining removals after failures, and cancels the active frame when
+unmounted. General removal hooks retain their existing key visibility and order.
+
+Additional checks cover usable survivors after fast-path removal errors, failure
+aggregation, failures after reentrant unmount, range-deletion fallback, neighboring
+nodes, stable anchors and multi-node/empty row extents. Interrupted general frames
+remain disposable; this is not rollback or a general nested-reconciliation fix.
+
+A DOM-only suffix cleanup-scan trial was discarded after two mixed local
+Chromium comparisons. They used identical compiler-generated apps, before/after
+runtime bundles, seeded labels, three warmups and 15 alternating 10k-to-9k samples
+per variant, with retained identity/text/class/anchor checks, append recovery and
+unmount validation outside timing. The three eligible inline variants changed
+6.5 → 6.3, 6.6 → 7.8 and 8.6 → 5.3 ms in the first run, then 5.8 → 5.3,
+5.0 → 4.1 and 4.9 → 5.0 ms in the second. Controls also changed substantially;
+the first run overlapped tests under heavy load. These results do not establish
+a speed improvement. The final code retains correctness handling and the normal
+suffix cleanup scans. Creation/replacement performance remains open.
+
+Final validation passed 110 focused tests in 11 files, including 32 new removal
+cleanup cases, persistent cache/key semantics, failed-frame ownership, list-owner
+unmount, inline rows, retained positional identity, reorder windows and hydration.
+All 25 DOM variants passed with rebuilt runtime bundles, including identity and
+mixed-operation checks. Runtime build and changed-source lint passed. Authored
+benchmark sources, compiler-generated app files, dependencies and the Octane pin
+are unchanged; bundle-size work remains deferred.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed
