@@ -19,7 +19,7 @@ export function plainScalarValue(ctx: Ctx, node: BaseNode | null, parameters?: R
     plainScalarValue(ctx, childNode(node, 'argument'), parameters);
 }
 
-/** Fresh literal arrays, including stable local factories with literal inputs. */
+/** Fresh literal arrays, including closed local factory aliases with literal inputs. */
 export function plainListInitializer(ctx: Ctx, init: BaseNode | null): {
   array: BaseNode;
   scalar: (node: BaseNode | null) => boolean;
@@ -48,8 +48,52 @@ export function plainListInitializer(ctx: Ctx, init: BaseNode | null): {
     const body = childNode(fn, 'body');
     if (body?.type === 'BlockStatement') {
       const statements = childNodes(body, 'body');
-      if (statements.length !== 1 || statements[0]!.type !== 'ReturnStatement') return null;
-      array = childNode(statements[0]!, 'argument');
+      const last = statements.at(-1);
+      if (last?.type !== 'ReturnStatement') return null;
+      const arrays = new Map<Binding, BaseNode>();
+      // Straight-line const declarations can name primitive values or a fresh
+      // array. No calls, writes, member reads, control flow or escaped arrays.
+      for (const statement of statements.slice(0, -1)) {
+        if (statement.type !== 'VariableDeclaration' || nodeField(statement, 'kind') !== 'const') return null;
+        for (const declaration of childNodes(statement, 'declarations')) {
+          const id = childNode(declaration, 'id');
+          const name = identifierName(id);
+          const local = id === null || name === null ? undefined : astBindingAt(ctx, id, name);
+          const value = childNode(declaration, 'init');
+          if (local === undefined || local.constantViolations.length !== 0) return null;
+          if (plainScalarValue(ctx, value, parameters)) parameters.add(local);
+          else if (value?.type === 'ArrayExpression') arrays.set(local, value);
+          else {
+            const aliasName = identifierName(value);
+            const alias = value === null || aliasName === null ? undefined : astBindingAt(ctx, value, aliasName);
+            const target = alias === undefined ? undefined : arrays.get(alias);
+            if (target === undefined) return null;
+            arrays.set(local, target);
+          }
+        }
+      }
+      const parents = ctx.astAnalysis!.parentByNode;
+      for (const binding of arrays.keys()) for (const reference of binding.references) {
+        const use = parents.get(reference);
+        if (use?.type === 'ReturnStatement' && use === last && childNode(use, 'argument') === reference) continue;
+        if (use?.type === 'VariableDeclarator' && childNode(use, 'init') === reference) {
+          const alias = childNode(use, 'id');
+          const name = identifierName(alias);
+          const target = alias === null || name === null ? undefined : astBindingAt(ctx, alias, name);
+          if (target !== undefined && arrays.has(target)) continue;
+        }
+        return null;
+      }
+      array = childNode(last, 'argument');
+      if (array?.type === 'Identifier') {
+        const binding = astBindingAt(ctx, array, identifierName(array)!);
+        array = binding === undefined ? null : arrays.get(binding) ?? null;
+      }
+      // Only the returned allocation gets its fields inspected below. Extra
+      // allocations could contain calls and remain unproven.
+      for (const literal of new Set(arrays.values())) {
+        if (literal !== array) return null;
+      }
     } else array = body;
   }
   if (array?.type !== 'ArrayExpression') return null;

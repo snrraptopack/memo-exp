@@ -1118,6 +1118,43 @@ were repeatedly slower, so that emission change was discarded. Four additional
 self-contained reentrant getter/cache checks remain and pass on the original
 text emission. Bundle-size work remains deferred.
 
+## Fresh producer aliases and update-style coverage
+
+Closed literal factories can now name primitive values and their fresh array
+through straight-line `const` aliases before returning it. Array references must
+remain inside that alias chain/final return; calls, property reads, mutations,
+control flow, shared allocations and escapes retain the conservative path.
+The existing key/content proofs still independently check later reads and writes.
+
+A paired local Chromium comparison against `7a2f36a` used self-contained 10k
+literal-factory lists, the same runtime, minified bundles, synchronous scheduling,
+five warmups and 25 alternating samples. Text, classes, count/order and retained
+identity were checked after each sample. A fixed first-row module update measured
+1.4 → 0.2 ms for component rows and 1.3 → 0.2 ms inline. Component-owned updates
+of every tenth row measured 3.8 → 2.9 ms and 3.0 → 2.7 ms respectively. These are
+local measurements of the newly proven shape, not gains for the main benchmark's
+imported dynamic producer. The latter and structural replacement proofs remain
+open. Ninety focused checks passed, including alias cases with both row
+types and synchronous/deferred scheduling, instance isolation and unsafe producer
+fallbacks.
+
+The DOM suite now includes 16 separate mutable/immutable variants across the
+four state placements and two row types. Partial updates, swaps, appends and
+removals run at 1k/10k with row 500 selected. Every sample checks the actual DOM
+and retained node identity; mixed operations check selection after removal.
+The report combines both matrices while distinguishing state location and update
+style. This is additional diagnostic coverage and does not change optimization
+priorities. The one-sample local run is a correctness smoke check, not evidence
+that one state style is faster. Bundle-size work remains deferred.
+
+The final combined validation passed all nine original variants and all 16 new
+variants, including identity and mixed-operation checks. The timed one-sample
+smoke also passed every sample check. The combined report was checked to preserve
+the original rows and all 16 update-style timing columns in its raw data. Build
+and lint passed; regenerating the original eight compiled outputs produced no
+changes. Existing timing reports, dependency versions and the Octane pin remain
+unchanged.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

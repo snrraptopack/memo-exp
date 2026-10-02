@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import type { BenchRow } from './state-placement-browser';
 import { writeStatePlacementReport } from './state-placement-report';
+import { runUpdateStyles } from './update-style-run';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || (process.platform === 'win32'
@@ -22,16 +23,21 @@ try {
     await page.evaluate(() => (window as unknown as { __validateAll(): void }).__validateAll());
     if (errors.length) throw new Error(errors.join('\n'));
     console.log('All state-placement identity and mixed-sequence checks passed.');
+    await page.close();
+    await runUpdateStyles(browser,true);
   } else {
     const rows = await page.evaluate(() => (window as unknown as {
       __runAll(): BenchRow[];
     }).__runAll());
     if (errors.length) throw new Error(errors.join('\n'));
+    await page.close();
+    const updateStyles = await runUpdateStyles(browser);
     console.log(writeStatePlacementReport(directory, {
       measuredAt: new Date().toISOString(), samples: 7,
       scheduler: 'synchronous',
       validation: 'every operation and retained DOM identity outside timing; mixed selection/structure sequences before timing',
       rows,
+      updateStyles,
     }));
   }
 } finally { await browser.close(); }

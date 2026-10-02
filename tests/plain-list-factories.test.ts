@@ -6,6 +6,12 @@ import { _internals, resetScheduler, setScheduler, unregister } from '@memoized-
 
 const probe = globalThis as typeof globalThis & { factoryRenders?: number[] };
 const records = Array.from({ length: 24 }, (_, id) => `{id:${id},label:prefix + ':${id}'}`).join(',');
+const aliasFactory = `function make(prefix) {
+  const label = prefix + ':';
+  const records = [${records.replaceAll("label:prefix + ':", "label:label + '")}];
+  const returned = records;
+  return returned;
+}`;
 function source(kind = 'inline', factory = `const make = prefix => [${records}];`, init = "make('row')", owner = true) {
   const state = `let items = ${init};`;
   return `${factory}
@@ -27,18 +33,23 @@ beforeAll(() => {
     const output = compile(source(kind));
     expect(output).toContain('ChangedKeys.add(items[i].id)');
     writeFileSync(join(directory, `${kind}.ts`), output);
+    const aliasOutput = compile(source(kind, aliasFactory));
+    expect(aliasOutput).toContain('ChangedKeys.add(items[i].id)');
+    writeFileSync(join(directory, `alias-${kind}.ts`), aliasOutput);
   }
   const output = compile(source('component', undefined, undefined, false)
     .replace('</ul>', '</ul><ul>{items.map(item => <Row key={item.id} item={item}/>)}</ul>'));
   expect(output).toContain('commitListItemWrites');
   writeFileSync(join(directory, 'module.ts'), output);
+  writeFileSync(join(directory,'module-alias.ts'), compile(source('component',aliasFactory,undefined,false)
+    .replace('</ul>', '</ul><ul>{items.map(item => <Row key={item.id} item={item}/>)}</ul>')));
 });
 afterEach(() => {
   _internals().registry.forEach((_, id) => unregister(id));
   resetScheduler(); document.body.replaceChildren(); delete probe.factoryRenders;
 });
 
-for (const kind of ['inline', 'component']) it.each([false, true])(`${kind}: factory lists refresh executed keys and stay instance-local (deferred=%s)`, async deferred => {
+for (const kind of ['inline', 'component', 'alias-inline', 'alias-component']) it.each([false, true])(`${kind}: factory lists refresh executed keys and stay instance-local (deferred=%s)`, async deferred => {
   const pending: Array<() => void> = [];
   setScheduler(run => { if (deferred) pending.push(run); else run(); });
   const renders: number[] = []; probe.factoryRenders = renders;
@@ -57,9 +68,9 @@ for (const kind of ['inline', 'component']) it.each([false, true])(`${kind}: fac
   }));
 });
 
-it('module factory lists refresh the fixed row in every mounted list', async () => {
+it.each(['module','module-alias'])('%s: module factory lists refresh the fixed row in every mounted list', async kind => {
   setScheduler(run => run()); const renders: number[] = []; probe.factoryRenders = renders;
-  const specifier = './fixtures/out/plain-factories/module.ts';
+  const specifier = `./fixtures/out/plain-factories/${kind}.ts`;
   const { App } = await import(specifier);
   document.body.append(App('App', null));
   const rows = [...document.querySelectorAll('li')];
@@ -76,6 +87,9 @@ it.each([
   `const make = function(prefix) { return [${records}]; };`,
   'const make = prefix => [{"id": +0, "label": `${prefix}:${-0}`}];',
   'const make = () => [{id: 0, label: "row" + ":0"}];',
+  `function make(prefix) { const records = [${records}]; return records; }`,
+  `const make = prefix => { const label = prefix + '!'; return [{id:0,label}]; };`,
+  `function make(prefix) { const records = [${records}], alias = records; return alias; }`,
 ])('proves fresh local literal factory: %s', factory => {
   const init = factory.includes('() =>') ? 'make()' : "make('row')";
   expect(compile(source('inline', factory, init))).toContain('ChangedKeys.add(items[i].id)');
@@ -98,6 +112,15 @@ it.each([
   ['const make = prefix => [{id:0,...opaque}];', "make('row')"],
   [`const original = prefix => [${records}]; const make = original;`, "make('row')"],
   [`const make = prefix => [${records}];`, "make.call(null, 'row')"],
+  [`function make(prefix) { let rows = [${records}]; return rows; }`, "make('row')"],
+  [`function make(prefix) { const rows = [${records}]; observe(rows); return rows; }`, "make('row')"],
+  [`function make(prefix) { const rows = [${records}]; const alias = rows; globalThis.rows = alias; return rows; }`, "make('row')"],
+  [`function make(prefix) { const rows = [${records}]; const alias = rows; alias[0].label = opaque(); return rows; }`, "make('row')"],
+  ['function make(prefix) { const label = opaque(); return [{id:0,label}]; }', "make('row')"],
+  ['function make(prefix) { const label = globalThis.label; return [{id:0,label}]; }', "make('row')"],
+  ['function make(prefix) { const label = prefix; label = "other"; return [{id:0,label}]; }', "make('row')"],
+  ['function make(prefix) { const rows = [{id:0,get label(){return prefix;}}]; return rows; }', "make('row')"],
+  ['function make(prefix) { const rows = [{id:0,label:prefix}]; const alias = rows.slice(); return alias; }', "make('row')"],
 ])('keeps broad replay for an unproven factory: %s / %s', (factory, init) => {
   expect(compile(source('inline', factory, init))).not.toContain('ChangedKeys.add(items[i].id)');
 });

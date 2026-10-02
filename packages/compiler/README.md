@@ -137,10 +137,17 @@ identifier and every supplied argument is a proven primitive literal expression.
 Record fields may combine those parameters with literals through `+`, template
 literals or primitive unary operators. Authored later writes must independently
 preserve the plain scalar shape. Shared returned arrays, imported/opaque calls,
-extra factory statements, defaults/rest/destructuring, async/generator functions,
+other factory statements, defaults/rest/destructuring, async/generator functions,
 getters, spreads, nested values and captured field values retain existing
 conservative routing or derived-state diagnostics. The proof checks lexical
 bindings and fresh allocations; it does not infer purity from a function name.
+
+Straight-line factory bodies may also declare primitive `const` values and name
+the fresh literal array through `const` aliases before returning it. Every array
+reference must be another closed alias or the final return. Calls, writes,
+property reads, control flow, destructuring, shared arrays and escapes reject
+the proof. This extends literal producer support; imported/dynamic generators
+and later structural replacements still retain ordinary reconciliation.
 
 Dynamic text updates in list rows normalize the expression on every replay and
 compare it with a compiler-owned string slot before writing `Text.data`. The creation path
