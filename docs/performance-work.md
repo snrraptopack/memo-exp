@@ -295,16 +295,16 @@ the optimization priorities.
 
 | Priority | Open issue | Evidence / required next step |
 |---|---|---|
-| 1 | Conservative partial update cost across state placements | The `adeb2c4` VM report takes 1.1–1.6 ms at 10k rows, versus vanilla's 0.3 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned records, including fresh local literal factories, support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof or reducing conservative replay cost remains open. |
+| 1 | Conservative partial update cost across state placements | The `60e1dbe` VM report takes 1.1–2.1 ms at 10k rows, versus vanilla's 0.3 ms. Row update closures dominate an earlier local sampled profile. Closed component-owned records, including fresh local literal factories, support bounded-loop key journals and arithmetic row reads. Opaque-produced collections in the main benchmark still replay broadly; extending the producer/alias proof or reducing conservative replay cost remains open. |
 | 1 | Broader callback proofs | Direct lexical assignments and stable synchronous local forwarding chains are optimized. Opaque calls, argument mutation, mutable targets and deferred work still need stronger proofs; exceptions keep normal-completion semantics. |
-| 1 | Structural retained-row work | The `adeb2c4` VM measures 10k swaps at 0.8–1.3 ms across placements; Octane displacement workloads take 0.275–0.430 ms. Ordered removal and persistent retained Maps are included in that run, but its different CPU prevents isolated historical comparisons. Required key/row evaluation and broad replay remain. |
+| 1 | Structural retained-row work | The `60e1dbe` VM measures 10k swaps at 0.8–1.5 ms across placements; Octane displacement workloads take 0.260–0.300 ms. Required key/row evaluation and broad replay remain. Browser/version and dependency differences prevent isolated historical comparisons. |
 | 2 | Further module selection proofs | Closed module bindings now target old/new keys over module/component data. Exported or imported state, cross-module row contracts, computed sources and general/hidden reads still need stronger proofs before narrowing their routing. |
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
-| 2 | Creation/replacement/teardown | The `adeb2c4` VM measures DOM 10k creation at 11.4–14.0 ms versus vanilla's 8.1 ms, replacement at 14.7–16.3 ms versus 9.3 ms, and clear at 2.2–2.5 ms versus 0.6 ms. Registered leaf teardown now avoids traversal buffers and empty error arrays. Main DOM/Octane row entries already omit registration, so their closure, event and DOM-range costs remain open. |
+| 2 | Creation/replacement/teardown | The `60e1dbe` VM measures DOM 10k replacement at 14.0–16.1 ms versus vanilla's 9.5 ms, and clear at 2.0–2.6 ms versus 0.5 ms. Creation varied substantially between its two runs, including vanilla. Registered leaf teardown avoids traversal buffers and empty error arrays. Main DOM/Octane row entries already omit registration, so their closure, event and DOM-range costs remain open. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
 | Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
-| 3 | Slot granularity and opaque pulls | Extend reason gates and restrict volatile evaluation to dependent slots; do not hide required unknown-call refreshes. |
+| 3 | Slot granularity and opaque pulls | Proven primitive local DOM slots can now ignore pull-only causes. Broader derivation preludes, structural regions, object/getter reads and unknown calls retain conservative replay. |
 | 4 | SSR client omission and Marko emission ideas | Investigate hydration ownership/markers, per-binding/shared-input updates and region setup; these remain design candidates. |
 
 The DOM matrix now also checks retained node identity after every validated
@@ -1344,6 +1344,102 @@ All 25 DOM variants passed with rebuilt runtime bundles, including identity and
 mixed-operation checks. Runtime build and changed-source lint passed. Authored
 benchmark sources, compiler-generated app files, dependencies and the Octane pin
 are unchanged; bundle-size work remains deferred.
+
+## VM baseline at `60e1dbe`
+
+The user-provided `memo-exp-benchmark-report.md` reports two complete DOM
+executions and the full canonical/reorder Octane suites at
+`60e1dbec7d71b04573d26a7fd21171912ade94bd`, with upstream pin
+`874ca5f139c6ed6f29b4970a567bc7e22b0b3ca4`. Its primary DOM run finished
+2026-10-02 at 05:23 UTC. Environment: Linux, AMD EPYC 9V74, eight CPU
+equivalents, 8 GiB limit, Chrome Headless Shell 149.0.7827.55. DOM uses seven
+samples; Octane uses eight. All state-placement, update-style and reorder
+identity checks passed. This baseline predates the pull/helper changes below.
+
+| Workload | Memoized-dom median ms | Comparison from the same run |
+| --- | --- | --- |
+| DOM update 10k | Component rows 1.30–2.10; inline 1.10–1.40 | Vanilla 0.30 |
+| DOM replacement 10k | 14.00–16.10 | Vanilla 9.50 |
+| DOM clear 10k | 2.00–2.60 | Vanilla 0.50 |
+| DOM reverse 10k | 5.30–6.30 | Vanilla 4.10 |
+| Octane canonical update | 0.400 | Ripple 0.500; Octane TSRX 0.800 |
+| Octane canonical remove | 0.800 | Ripple/Solid/Vue Vapor 0.300 |
+| Octane forward/backward rotation | 0.240 / 0.271 | Ripple 0.056 / 0.033; Octane TSRX 0.149 / 0.115 |
+| Octane displacement 3–8 | 0.260–0.300 | Ripple 0.100–0.130; Octane TSRX 0.155–0.170 |
+
+Creation remains noisy: mixed module-data/component-row creation moves from
+12.40 to 36.90 ms, while vanilla moves from 8.50 to 16.50 ms. That does not
+establish a placement-specific regression. Mutable/immutable results remain
+operation-dependent: component-state/component-row 10k updates tie at 1.80 ms;
+inline append favors immutable at 2.60/2.40 ms, while component-row append favors
+mutable at 3.00/3.30 ms. No state/update style becomes a universal recommendation.
+
+The report provides medians/statistical summaries rather than raw timing arrays.
+Small DOM values approach timer resolution; canonical update/removal have
+32.3%/26.8% RME. Browser distribution/version and root dependencies differ from
+the older VM report, so historical timing changes do not isolate code effects.
+The plan remains broader reactivity precision, conservative partial/retained-row
+work and creation/removal costs. Bundle-size work remains deferred.
+
+Report SHA-256: `8786eec423dd1deb41d9814d45587ad6abeed9a60b05767a607a0feeaa56f6a3`.
+
+## Primitive slots during opaque pulls and helper ownership
+
+Volatile owners with existing exact dirty reasons can now skip unrelated DOM
+slots on pull-only frames. The compiler proves primitive initializers and later
+writes, checks their actual lexical bindings, and requires instrumented write
+boundaries with proven normal completion. It snapshots authored completion
+operations before generated commits and resolves eligibility after handler
+emission. Unknown calls, getter/object coercions, dynamic scope, escaped writes,
+unproven reassignment, shadowed names and potentially throwing callbacks retain
+wildcard pulls. Declaration identifiers are excluded from boundary reads, so a
+named function or an unused event parameter does not defeat the proof.
+
+The runtime's default wildcard behavior remains compatible with existing
+generated calls. An eligible slot ignores only the pull cause; mixed batches
+still match actual writes, and full updates open every gate. Adjacent groups
+include the pull policy in their grouping key. Derivation preludes, list regions
+and other unknown expressions retain their current replay behavior.
+
+Validation also exposed a component helper referencing a row-local updater,
+reproduced against the previous compiler. Helpers now use component scope, while
+conservative commits preserve their actual owner alongside the fallback root.
+Deferred helper writes refresh owners outside the static root and retain rows.
+A failed ordinary render keeps a full dirty mark for a later commit, preventing
+narrow pulls from skipping slots the failed render did not reach. No immediate
+retry is scheduled; effects and removed/replaced entities retain their boundaries.
+
+The self-contained tests exercise controlled pull frames, immediate/deferred
+schedulers, mixed batches, instance isolation, escaped/registered callbacks,
+write-then-throw behavior and render recovery. Existing data integration coverage
+now declares its request snapshot separately from the reactive `load()` initializer,
+as required by the documented derived-state rule. An outdated class-helper
+emission assertion was corrected to the compiler's normalized literal conditional.
+The older row-event assertion now checks direct inline refresh, reproduced with
+the baseline compiler. Fixture imports work before their generated files exist.
+
+Two isolated local Chromium comparisons use the baseline `60e1dbe` compiler and
+the new compiler with the same rebuilt runtime, minified compiler-generated
+applications and synchronous scheduling. Each sample performs 100 opaque pulls,
+with five warmups and 25 alternating measured samples per size. Outside timing,
+each sample checks opaque text, unchanged local text and retained node identity;
+a final local write verifies that every dependent slot still updates.
+
+| Unrelated primitive DOM slots | First run before / after ms per pull | Second run before / after ms per pull |
+| --- | --- | --- |
+| 100 | 0.012 / 0.003 | 0.019 / 0.006 |
+| 1,000 | 0.082 / 0.004 | 0.085 / 0.004 |
+
+These are synthetic pull cases, not gains for the main DOM/Octane collections.
+Small timings approach timer precision. The existing broader list/opaque-producer
+fallbacks remain open, and bundle-size work remains deferred.
+
+Focused validation passed 367 tests across 24 files, including 24 new pull and
+render-recovery cases. All 25 regenerated DOM variants passed retained identity
+and mixed-operation validation with the rebuilt runtime. Compiler/runtime builds
+and changed-source lint passed. Four tracked generated applications changed only
+to carry their owner ID in conservative subtree commits. Dependency versions,
+VM timing artifacts and the Octane pin are unchanged.
 
 ## Earlier candidates retained for tracking
 

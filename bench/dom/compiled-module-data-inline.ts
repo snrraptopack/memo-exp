@@ -131,7 +131,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 		for (let i = 0; i < data.length; i += 10) (_didWrite = true, data[i].label += ' !!!');
 
 		{
-			if (_didWrite) _MD.markDirtySubtree("BenchModuleDataInline");
+			if (_didWrite) _MD.markDirtySubtree("BenchModuleDataInline", _id);
 		}
 	};
 
@@ -146,7 +146,7 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 		}
 
 		{
-			if (_didWrite2 || _didWrite3) _MD.markDirtySubtree("BenchModuleDataInline");
+			if (_didWrite2 || _didWrite3) _MD.markDirtySubtree("BenchModuleDataInline", _id);
 		}
 	};
 

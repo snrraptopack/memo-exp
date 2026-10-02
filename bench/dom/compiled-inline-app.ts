@@ -117,7 +117,7 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 		for (let i = 0; i < data.length; i += 10) (_didWrite = true, data[i].label += ' !!!');
 
 		{
-			if (_didWrite) _MD.markDirtySubtree("BenchAppInline");
+			if (_didWrite) _MD.markDirtySubtree("BenchAppInline", _id);
 		}
 	};
 
@@ -132,7 +132,7 @@ export function BenchAppInline(_id, _parent, _dataPolicies) {
 		}
 
 		{
-			if (_didWrite2 || _didWrite3) _MD.markDirtySubtree("BenchAppInline");
+			if (_didWrite2 || _didWrite3) _MD.markDirtySubtree("BenchAppInline", _id);
 		}
 	};
 

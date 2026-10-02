@@ -41,6 +41,7 @@ import {
 } from '../components/props';
 import { buildRenderPreludeReplay } from '../components/render-prelude';
 import { slotReasonSources } from '../components/slot-reasons';
+import { createSlotPullProof } from '../components/slot-pull-proof';
 import { structuralReasonsFor } from '../components/local-derived';
 import {
   analyzeComponentReturns,
@@ -306,6 +307,7 @@ export function transformComponent(
     scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
   }
   if (reasonIds !== undefined && !lightweight) {
+    if (ctx.volatileComponents.has(name)) scope.slotPullIndependent = createSlotPullProof(ctx, name);
     scope.slotReasons = (expression) => {
       const sources = slotReasonSources(ctx, name, expression);
       if (sources === null) return null;

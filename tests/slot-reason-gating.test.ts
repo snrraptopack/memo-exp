@@ -219,7 +219,7 @@ describe('slot reason gating — emission', () => {
       return decl?.[1] ?? gate;
     };
     // Child sources: local=0 v=1 w=2
-    expect(gates.get("_MD.classValue(v > 1 ? 'big' : 'small')")).toBe('1');
+    expect(gates.get('v > 1 ? "big" : "small"')).toBe('1');
     expect(gateReasons(gates.get('v + ":" + w + ":" + local'))).toBe('[0, 1, 2]');
   });
 });

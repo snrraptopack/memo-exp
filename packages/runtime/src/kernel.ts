@@ -773,6 +773,17 @@ export function commit(): void {
           k.renderingEntity = e.id;
           try {
             e.render(takeDirtyReasons(k.dirtyReasons, e.id));
+          } catch (error) {
+            // A partial render may have stopped before some dependent slots.
+            // Keep a full dirty mark for the next commit; a later pull/write
+            // must not discard the consumed cause and leave those slots stale.
+            // Effects retain their normal failure semantics, and teardown or
+            // replacement during the failed render must not revive this entity.
+            if (e.phase !== 'effect' && k.registry.get(e.id) === e) {
+              k.dirty.add(e.id);
+              clearDirtyReasons(k.dirtyReasons, e.id);
+            }
+            throw error;
           } finally {
             k.renderingEntity = null;
           }

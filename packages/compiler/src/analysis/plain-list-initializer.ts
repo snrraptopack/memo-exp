@@ -2,21 +2,26 @@ import { childNode, childNodes, identifierName, nodeField, type BaseNode, type B
 import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
 
 /** Primitive literal expressions cannot install accessors or escape a record. */
-export function plainScalarValue(ctx: Ctx, node: BaseNode | null, parameters?: ReadonlySet<Binding>): boolean {
+export function plainScalarValue(
+  ctx: Ctx,
+  node: BaseNode | null,
+  parameters?: ReadonlySet<Binding>,
+  resolveBinding: (node: BaseNode, name: string) => Binding | undefined = (at, name) => astBindingAt(ctx, at, name),
+): boolean {
   if (node === null) return false;
   if (node.type === 'Literal') return nodeField(node, 'value') === null ||
     ['string', 'number', 'boolean'].includes(typeof nodeField(node, 'value'));
   if (node.type === 'Identifier') {
-    const binding = astBindingAt(ctx, node, identifierName(node)!);
+    const binding = resolveBinding(node, identifierName(node)!);
     return binding !== undefined && parameters?.has(binding) === true;
   }
   if (node.type === 'BinaryExpression' && nodeField(node, 'operator') === '+') {
-    return plainScalarValue(ctx, childNode(node, 'left'), parameters) &&
-      plainScalarValue(ctx, childNode(node, 'right'), parameters);
+    return plainScalarValue(ctx, childNode(node, 'left'), parameters, resolveBinding) &&
+      plainScalarValue(ctx, childNode(node, 'right'), parameters, resolveBinding);
   }
-  if (node.type === 'TemplateLiteral') return childNodes(node, 'expressions').every(expression => plainScalarValue(ctx, expression, parameters));
+  if (node.type === 'TemplateLiteral') return childNodes(node, 'expressions').every(expression => plainScalarValue(ctx, expression, parameters, resolveBinding));
   return node.type === 'UnaryExpression' && ['+', '-', '!', '~'].includes(String(nodeField(node, 'operator'))) &&
-    plainScalarValue(ctx, childNode(node, 'argument'), parameters);
+    plainScalarValue(ctx, childNode(node, 'argument'), parameters, resolveBinding);
 }
 
 interface PlainAllocation {

@@ -37,7 +37,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
 
 function importCompiled(): Promise<any> {
-  return import('./fixtures/out/r18-event.compiled.ts');
+  const specifier = './fixtures/out/r18-event.compiled.ts';
+  return import(specifier);
 }
 
 describe('R18 - scoped event-boundary invalidation', () => {
@@ -79,7 +80,7 @@ describe('R18 - scoped event-boundary invalidation', () => {
     expect(code).not.toContain('markDirtySubtree');
   });
 
-  it('starts row events from the row entity', () => {
+  it('refreshes inline row events directly when the row has no entity', () => {
     const code = compile(`
       const values = [{ id: 1 }];
       function App() {
@@ -88,7 +89,8 @@ describe('R18 - scoped event-boundary invalidation', () => {
         )}</ul>;
       }
     `);
-    expect(code).toMatch(/const _returnValue\d* = value\.id;\s+_MD\d*\.markDirty\(_rowId\d*\)/);
+    expect(code).toMatch(/const _returnValue\d* = value\.id;\s+_update\d*\(\)/);
+    expect(code).toContain('entities: []');
   });
 
   it('starts conditional-branch events from the region entity', () => {

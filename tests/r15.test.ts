@@ -149,7 +149,7 @@ describe('R15 - cross-module code generation', () => {
         }
       `,
     });
-    expect(output['./app.tsx']).toContain('MD.markDirtySubtree("App")');
+    expect(output['./app.tsx']).toMatch(/markDirtySubtree\("App", _id\d*\)/);
   });
 });
 

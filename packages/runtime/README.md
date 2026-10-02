@@ -27,6 +27,19 @@ Pass `{ onHydrateError(error) { /* log mismatch */ } }` as a third argument
 to observe a hydration mismatch before `mount()` replaces server markup with
 a fresh client render.
 
+## Dirty reasons and opaque pulls
+
+`reasonsHit()` treats a full update and opaque pull as wildcards by default.
+Compiler-proven primitive slots can pass `false` as its third argument to ignore
+only the pull cause. Actual causes in mixed batches still match, and full updates
+still open every gate. Existing two-argument generated calls retain their behavior.
+
+A failed ordinary render retains a full dirty mark for the next commit. This
+prevents a subsequent pull or partial write from skipping slots that the failed
+render never reached. The runtime does not schedule an immediate retry or roll
+back completed writes. Failed effects keep their existing behavior; unregistered
+or replaced entities are not revived.
+
 ## Keyed list ownership
 
 General reconciliation keeps retained keys in the region's existing Map. A

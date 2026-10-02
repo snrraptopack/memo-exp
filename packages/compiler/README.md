@@ -186,6 +186,24 @@ These callbacks retain full reconciliation instead of narrower keyed/content
 refreshes, because unknown calls do not prove that other rows can be skipped.
 Existing assignment, update, and async render-expression restrictions still apply.
 
+### Opaque pull precision
+
+Volatile components keep polling unknown values. Within an owner that already
+has exact dirty reasons, primitive local slots can ignore a pull-only reason
+when their initializers and every later write remain proven primitive. Future
+writes must belong to instrumented boundaries whose authored operations prove
+normal completion. Unknown calls, getters, external reassignment, dynamic scope
+and potentially throwing callbacks keep the wildcard fallback.
+
+The proof runs after handler emission. Mixed pull/write batches still open the
+slots for the actual writes; a full update opens every gate. This narrows DOM
+slot work only: derivation preludes, structural regions and unknown expressions
+retain their existing replay behavior.
+
+Component-scope helpers are instrumented without row-scope updater identifiers.
+Conservative commits retain the current component owner alongside the fallback
+root, including callbacks that run later or owners mounted outside that root.
+
 ### List-method optimization candidates
 
 `src/lists/mutation-shapes.ts` centralizes method names considered for list

@@ -89,7 +89,10 @@ const source = `
     function load() {
       return data.$fetch('/users', { query: { page } });
     }
-    let users = load();
+    // Explicit snapshot: load captures reactive page, but each request is
+    // created by the event rather than replayed as a derived initializer.
+    let users;
+    users = load();
     cleanup(data.clear);
 
     return <main>
