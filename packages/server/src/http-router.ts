@@ -10,6 +10,7 @@ import {
   invokeServerRoutedPreparation,
   type RoutedServerContext,
 } from '@memoized-dom/router/internal';
+import type { StandardSchemaV1 } from '@memoized-dom/data';
 
 /** Framework route used by compiler-extracted server-backed `$routed` work. */
 export function invokeRoutedPreparation(
@@ -122,6 +123,8 @@ export interface ServerFunctionRouteDefinition<
   readonly path: `/_fn/${string}`;
   readonly parameters: readonly ServerFunctionRouteParameter[];
   readonly middleware?: readonly ServerMiddleware<TLocals, TPlatform, TServices>[];
+  /** Validates the decoded named argument object after request middleware. */
+  readonly input?: StandardSchemaV1<unknown, Record<string, unknown>>;
   readonly handler: (...args: unknown[]) => ServerHandlerResult | Promise<ServerHandlerResult>;
 }
 
@@ -317,13 +320,43 @@ async function bodyArguments(
     }
   }
   return parameters.map((parameter) => {
-    if (!(parameter.name in body)) {
+    if (!Object.hasOwn(body, parameter.name)) {
       if (parameter.optional) return undefined;
       return serverFunctionInputError(
         `Missing request body field '${parameter.name}'`,
       );
     }
     return body[parameter.name];
+  });
+}
+
+async function validateServerFunctionArguments(
+  schema: StandardSchemaV1<unknown, Record<string, unknown>>,
+  parameters: readonly ServerFunctionRouteParameter[],
+  args: readonly unknown[],
+): Promise<unknown[] | Response> {
+  const input = Object.fromEntries(parameters.flatMap((parameter, index) =>
+    args[index] === undefined ? [] : [[parameter.name, args[index]]]));
+  const result = await schema['~standard'].validate(input);
+  if (result.issues !== undefined) {
+    return Response.json({
+      error: 'invalid_server_function_input',
+      message: 'Input validation failed',
+      issues: result.issues,
+    }, { status: 400 });
+  }
+  if (!isRecord(result.value)) {
+    throw new TypeError('Server function input schema must return a named argument object');
+  }
+  const known = new Set(parameters.map(parameter => parameter.name));
+  if (Object.keys(result.value).some(name => !known.has(name))) {
+    throw new TypeError('Server function input schema returned an unknown argument');
+  }
+  return parameters.map(parameter => {
+    if (!parameter.optional && !Object.hasOwn(result.value, parameter.name)) {
+      throw new TypeError(`Server function input schema omitted required argument '${parameter.name}'`);
+    }
+    return Object.hasOwn(result.value, parameter.name) ? result.value[parameter.name] : undefined;
   });
 }
 
@@ -348,6 +381,15 @@ export function createServerFunctionRoutes<
         `Server function '${definition.id}' must use the reserved /_fn/ namespace`,
       );
     }
+    if (definition.middleware?.some(middleware => typeof middleware !== 'function')) {
+      throw new TypeError(`Server function '${definition.id}' middleware must contain functions`);
+    }
+    if (definition.input !== undefined && (
+      definition.input?.['~standard']?.version !== 1 ||
+      typeof definition.input?.['~standard']?.validate !== 'function'
+    )) {
+      throw new TypeError(`Server function '${definition.id}' input must implement Standard Schema v1`);
+    }
     const route: InternalServerFunctionRoute<TLocals, TPlatform, TServices> = {
       [SERVER_FUNCTION_ROUTE_KEY]: true,
       id: definition.id,
@@ -356,9 +398,14 @@ export function createServerFunctionRoutes<
       middleware: definition.middleware,
       async handler(context) {
         try {
-          const args = definition.method === 'GET'
+          let args = definition.method === 'GET'
             ? queryArguments(context.url, definition.parameters)
             : await bodyArguments(context.request, definition.parameters);
+          if (definition.input !== undefined) {
+            const validated = await validateServerFunctionArguments(definition.input, definition.parameters, args);
+            if (validated instanceof Response) return validated;
+            args = validated;
+          }
           return definition.handler(...args);
         } catch (error) {
           if (error instanceof ServerFunctionInputError) {

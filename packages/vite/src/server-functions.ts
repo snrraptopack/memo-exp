@@ -1,11 +1,16 @@
 /** Vite-side discovery and virtual modules for named HTTP server functions. */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import {
   analyzeServerFunctionModule,
   generateServerFunctionClient,
   generateServerFunctionDeclarations,
+  generateServerFunctionImplementation,
+  memoizedEstreeFrontend,
+  parseWithEstreeFrontendOrThrow,
+  serverFunctionMetadataExport,
+  type EstreeFrontend,
   type ServerFunctionModule,
 } from '@memoized-dom/compiler';
 import type { ResolvedAdapterOptions } from './options';
@@ -49,6 +54,17 @@ export function isServerFunctionFile(
 export function isServerFunctionImplementation(id: string): boolean {
   return id.includes(`?${serverFunctionImplementationQuery}`) ||
     id.includes(`&${serverFunctionImplementationQuery}`);
+}
+
+export function serverFunctionImplementationSource(
+  source: string, file: string, root: string, options: ResolvedAdapterOptions,
+): string {
+  const directory = serverFunctionsRoot(root, options)!;
+  return generateServerFunctionImplementation(source, {
+    moduleId: file,
+    functionsRoot: relative(root, directory).replaceAll('\\', '/'),
+    ...(options.frontend === undefined ? {} : { frontend: options.frontend }),
+  });
 }
 
 export async function clientServerFunctionSource(
@@ -131,47 +147,56 @@ export interface ServerFunctionBarrelEntry {
 export function rewriteServerFunctionBarrelImports(
   source: string,
   barrelEntries: readonly ServerFunctionBarrelEntry[],
+  options: { readonly moduleId?: string; readonly frontend?: EstreeFrontend } = {},
 ): string {
   if (!source.includes(serverFunctionsClientVirtualId)) return source;
-  return source.replace(
-    /import\s+(type\s+)?\{([^}]*)\}\s*from\s*(['"])#server-functions\3\s*;?/g,
-    (match, typeOnly: string | undefined, namesText: string) => {
-      if (typeOnly !== undefined) return match;
-      const groups = new Map<string, string[]>();
-      const typeNames: string[] = [];
-      const unresolved: string[] = [];
-      for (const raw of namesText.split(',')) {
-        const name = raw.trim();
-        if (name === '') continue;
-        const inlineType = /^type\s+(?!as(?:\s|,|$))(.+)$/.exec(name);
-        if (inlineType !== null) {
-          typeNames.push(inlineType[1]!);
-          continue;
-        }
-        const local = name.split(/\s+as\s+/)[0]!.trim();
-        const owner = barrelEntries.find(entry => entry.exported === local);
-        if (owner === undefined) {
-          unresolved.push(name);
-          continue;
-        }
-        const names = groups.get(owner.specifier) ?? [];
-        names.push(name);
-        groups.set(owner.specifier, names);
-      }
-      if (groups.size === 0) return match;
-      const output: string[] = [];
-      if (typeNames.length > 0) {
-        output.push(`import type { ${typeNames.join(', ')} } from "#server-functions";`);
-      }
-      if (unresolved.length > 0) {
-        output.push(`import { ${unresolved.join(', ')} } from "#server-functions";`);
-      }
-      for (const [specifier, names] of groups) {
-        output.push(`import { ${names.join(', ')} } from ${JSON.stringify(specifier)};`);
-      }
-      return output.join('\n');
-    },
+  const parsed = parseWithEstreeFrontendOrThrow(
+    options.frontend ?? memoizedEstreeFrontend, source,
+    { filename: options.moduleId ?? 'module.tsx', sourceType: 'module' },
   );
+  const owners = new Map(barrelEntries.map(entry => [entry.exported, entry.specifier]));
+  const edits: Array<{ start: number; end: number; text: string }> = [];
+  type Node = { type: string; start: number; end: number; [key: string]: unknown };
+  for (const raw of parsed.program.body) {
+    const node = raw as unknown as Node;
+    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue;
+    const target = node.source as Node;
+    if (target.value !== serverFunctionsClientVirtualId) continue;
+    const specifiers = node.specifiers as Node[];
+    const groups = new Map<string, Node[]>();
+    let changed = false;
+    for (const specifier of specifiers) {
+      const imported = specifier.imported as Node | undefined;
+      const owner = specifier.type === 'ImportSpecifier' && specifier.importKind !== 'type'
+        ? owners.get(String(imported?.name ?? imported?.value)) : undefined;
+      const key = owner ?? serverFunctionsClientVirtualId;
+      changed ||= owner !== undefined;
+      const group = groups.get(key) ?? [];
+      group.push(specifier);
+      groups.set(key, group);
+    }
+    if (!changed) continue;
+    // Preserve comments omitted by individual specifier ranges, including
+    // commas and import-looking text inside comments.
+    const comments = parsed.comments.filter(comment =>
+      comment.start >= node.start && comment.end <= node.end &&
+      !specifiers.some(specifier => comment.start >= specifier.start && comment.end <= specifier.end));
+    const lines = comments.map(comment => source.slice(comment.start, comment.end));
+    const suffix = source.slice(target.end, node.end);
+    for (const [owner, group] of groups) {
+      const defaults = group.filter(specifier => specifier.type === 'ImportDefaultSpecifier');
+      const namespaces = group.filter(specifier => specifier.type === 'ImportNamespaceSpecifier');
+      const named = group.filter(specifier => specifier.type === 'ImportSpecifier');
+      const parts = [...defaults, ...namespaces].map(specifier => source.slice(specifier.start, specifier.end));
+      if (named.length > 0) parts.push(`{ ${named.map(specifier => source.slice(specifier.start, specifier.end)).join(', ')} }`);
+      lines.push(`import ${parts.join(', ')} from ${JSON.stringify(owner)}${suffix}`);
+    }
+    edits.push({ start: node.start, end: node.end, text: lines.join('\n') });
+  }
+  for (const edit of edits.reverse()) {
+    source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
+  }
+  return source;
 }
 
 export async function generateServerFunctionRoutesModule(
@@ -247,12 +272,16 @@ export async function generateServerFunctionRoutesModule(
         path: fn.path,
         parameters: fn.parameters,
       });
+      const metadata = `${alias}.${serverFunctionMetadataExport}[${JSON.stringify(fn.exported)}]`;
+      const middleware = layers.map(layer => `...${layer}`);
+      if (fn.middleware !== undefined) middleware.push(`...${metadata}.middleware`);
       definitions.push(`{
         id: ${JSON.stringify(id)},
         method: ${JSON.stringify(fn.method)},
         path: ${JSON.stringify(fn.path)},
         parameters: ${JSON.stringify(fn.parameters)},
-        middleware: [${layers.map(layer => `...${layer}`).join(', ')}],
+        middleware: [${middleware.join(', ')}],
+        ${fn.input === undefined ? '' : `input: ${metadata}.input,`}
         handler: ${alias}[${JSON.stringify(fn.exported)}]
       }`);
     }
@@ -326,8 +355,12 @@ export async function writeServerFunctionDeclarations(
   modules: readonly ServerFunctionModule[],
   options: ResolvedAdapterOptions,
 ): Promise<void> {
-  if (serverFunctionsRoot(root, options) === null) return;
   const file = serverFunctionsDeclarationFile(root);
+  const existing = await readFile(file, 'utf8').catch(() => undefined);
+  if (serverFunctionsRoot(root, options) === null || !modules.some(module => module.functions.length > 0)) {
+    if (existing !== undefined) await rm(file, { force: true });
+    return;
+  }
   const content = generateServerFunctionDeclarations(
     modules.map(module => ({
       ...module,
@@ -335,7 +368,6 @@ export async function writeServerFunctionDeclarations(
     })),
     { resolveImplementation: id => implementationSpecifier(root, id) },
   );
-  const existing = await readFile(file, 'utf8').catch(() => undefined);
   if (existing === content) return;
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, content);

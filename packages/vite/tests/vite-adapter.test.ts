@@ -51,6 +51,25 @@ async function copyFixture(): Promise<string> {
 }
 
 describe('Vite 8 adapter', () => {
+  it('does not generate unused server-function or route declarations for a browser-only app', async () => {
+    const root = await copyFixture();
+    server = await createServer({
+      root, configFile: false, logLevel: 'silent',
+      resolve: { alias: {
+        '@': resolve(root, 'src'),
+        '@memoized-dom/runtime/hot': runtimeHot,
+        '@memoized-dom/runtime': runtime,
+      } },
+      plugins: plugins(),
+      server: { middlewareMode: true },
+    });
+    await server.transformRequest('/src/main.ts');
+    await expect(readFile(resolve(root, '.memoized/server-functions.d.ts'), 'utf8'))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(resolve(root, '.memoized/routes.d.ts'), 'utf8'))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('keeps stateful package subpaths in one browser module graph', async () => {
     server = await createServer({
       root: fixture,
@@ -183,21 +202,40 @@ describe('Vite 8 adapter', () => {
         response.headers.set('x-module', SERVER_SECRET);
         return response;
       }];
-      export async function getStory(id: number) {
+      const functionGuard = async (_context, next) => {
+        const response = await next();
+        response.headers.set('x-function', 'yes');
+        return response;
+      };
+      const storyInput = {
+        '~standard': {
+          version: 1, vendor: 'test',
+          validate(value) {
+            return value.id > 0 ? { value } : { issues: [{ message: 'Positive ID required' }] };
+          },
+        },
+      };
+      /**
+       * @GET
+       * @middleware [functionGuard]
+       * @Input storyInput
+       */
+      export async function story(id: number) {
         if (false) await readFile('secret');
         return { id, title: 'Story ' + id };
       }
-      export async function postVote(id: number) {
+      /** @POST */
+      export async function vote(id: number) {
         return { id, votes: 1 };
       }
     `);
     await writeFile(resolve(temporarySource, 'App.tsx'), `
-      import { getStory, postVote } from '#server-functions';
+      import { story as loadStory, vote } from '#server-functions';
       export function App() {
-        const story = getStory(7);
+        const story = loadStory(7);
         return <main>
           <h1>{story.title}</h1>
-          <button onClick={() => postVote(story.id)}>Vote</button>
+          <button onClick={() => vote(story.id)}>Vote</button>
         </main>;
       }
     `);
@@ -228,11 +266,13 @@ describe('Vite 8 adapter', () => {
       .flatMap(output => output.type === 'chunk' ? [output.code] : [])
       .join('\n');
 
-    expect(code).toContain('/_fn/stories/getStory');
-    expect(code).toContain('/_fn/stories/postVote');
+    expect(code).toContain('/_fn/stories/story');
+    expect(code).toContain('/_fn/stories/vote');
     expect(code).toContain('resolvedValuesPending');
     expect(code).toContain('readResolvedValue(story');
     expect(code).not.toContain('must-not-enter-client');
+    expect(code).not.toContain('Positive ID required');
+    expect(code).not.toContain('functionGuard');
     expect(code).not.toContain('node:fs/promises');
 
     const declarations = resolve(root, '.memoized', 'server-functions.d.ts');
@@ -244,7 +284,7 @@ describe('Vite 8 adapter', () => {
       'import type * as __mmd_impl_0 from "../server/functions/stories.js"',
     );
     expect(declarationSource).toContain(
-      'export declare function getStory(...args: Parameters<typeof __mmd_impl_0.getStory>): ResolvedValue<__mmdClientValue<Awaited<ReturnType<typeof __mmd_impl_0.getStory>>>>;',
+      'export declare function story(...args: Parameters<typeof __mmd_impl_0.story>): ResolvedValue<__mmdClientValue<Awaited<ReturnType<typeof __mmd_impl_0.story>>>>;',
     );
 
     server = await createServer({
@@ -260,13 +300,18 @@ describe('Vite 8 adapter', () => {
     ) as { serverFunctionRoutes: Parameters<typeof createServerRouter>[0]['routes'] };
     const router = createServerRouter({ routes: generated.serverFunctionRoutes });
     const response = await router.fetch(new Request(
-      'https://app.test/_fn/stories/getStory?id=9',
+      'https://app.test/_fn/stories/story?id=9',
     ));
 
     expect(response.status).toBe(200);
     expect(response.headers.get('x-directory')).toBe('yes');
+    expect(response.headers.get('x-function')).toBe('yes');
     expect(response.headers.get('x-module')).toBe('must-not-enter-client');
     await expect(response.json()).resolves.toEqual({ id: 9, title: 'Story 9' });
+
+    const invalidInput = await router.fetch(new Request('https://app.test/_fn/stories/story?id=-1'));
+    expect(invalidInput.status).toBe(400);
+    expect(await invalidInput.json()).toMatchObject({ issues: [{ message: 'Positive ID required' }] });
 
     const invalidPreparation = await router.fetch(new Request(
       'https://app.test/_memoized/routed',
