@@ -122,9 +122,11 @@ Validation issues produce a `400` response with
 `json()` uses native JSON serialization. Values received by the client have
 ordinary JSON types; dates serialize to strings and are never reconstructed.
 
-For expected failures, use `return error(404, 'Story not found')`, importing
-`error` from `@memoized-dom/server`. It sends `{ message: 'Story not found' }`
-with the supplied 400–599 status. The client records an HTTP failure and
+For expected failures, use
+`return error({ message: 'Story not found' }, { status: 404 })`, importing
+`error` from `@memoized-dom/server`. Like `json`, it serializes exactly the
+supplied body and accepts response headers and other response options.
+It requires a 400–599 status. The client records an HTTP failure and
 preserves the successful return type. Cookie helpers are covered in the
 [server package documentation](../packages/server/README.md#response-and-cookie-helpers).
 

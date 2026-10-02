@@ -6,10 +6,10 @@ import { decodeResponse } from '../../data/src/request';
 
 describe('server response helpers', () => {
   it('returns an expected failure from a server function without invoking onError', async () => {
-    const onError = vi.fn(() => error(500, 'Unexpected failure'));
+    const onError = vi.fn(() => error({ message: 'Unexpected failure' }, { status: 500 }));
     const router = createServerRouter({ onError, routes: createServerFunctionRoutes([{
       id: 'stories/story', method: 'GET', path: '/_fn/stories/story', parameters: [],
-      handler: () => error(404, 'Story not found'),
+      handler: () => error({ message: 'Story not found' }, { status: 404 }),
     }]) });
     const response = await router.fetch(new Request('https://app.test/_fn/stories/story'));
     expect(response.status).toBe(404);
@@ -23,7 +23,7 @@ describe('server response helpers', () => {
   it('allows ordinary route middleware to return an error and skip the handler', async () => {
     const handler = vi.fn(() => json({ secret: true }));
     const router = createServerRouter({ routes: [{ method: 'GET', path: '/private',
-      middleware: [() => error(401, 'Sign in first')], handler }] });
+      middleware: [() => error({ message: 'Sign in first' }, { status: 401 })], handler }] });
     const response = await router.fetch(new Request('https://app.test/private'));
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ message: 'Sign in first' });
@@ -31,7 +31,21 @@ describe('server response helpers', () => {
   });
 
   it.each([200, 399, 600, 404.5, NaN])('rejects invalid failure status %s', status => {
-    expect(() => error(status, 'Invalid')).toThrow(RangeError);
+    expect(() => error({ message: 'Invalid' }, { status })).toThrow(RangeError);
+  });
+
+  it('preserves structured error bodies and ordinary response options', async () => {
+    const body = { code: 'conflict', details: [{ field: 'title', message: 'Already exists' }] };
+    const response = error(body, { status: 409, statusText: 'Conflict',
+      headers: { 'x-request-id': 'request-1' } });
+    expect(response.status).toBe(409);
+    expect(response.statusText).toBe('Conflict');
+    expect(response.headers.get('x-request-id')).toBe('request-1');
+    expect(await response.json()).toEqual(body);
+  });
+
+  it.each([{ body: 'Sign in first' }, { body: ['invalid', 'missing'] }, { body: null }])('serializes JSON body $body without wrapping it', async ({ body }) => {
+    expect(await error(body, { status: 400 }).json()).toEqual(body);
   });
 });
 
@@ -76,7 +90,7 @@ describe('cookie helpers', () => {
   });
 
   it('uses the same default path for setting and deleting', () => {
-    const response = error(401, 'Session expired');
+    const response = error({ message: 'Session expired' }, { status: 401 });
     setCookie(response, 'session', 'token');
     deleteCookie(response, 'session');
     expect(response.headers.getSetCookie().every(cookie => cookie.includes('Path=/'))).toBe(true);

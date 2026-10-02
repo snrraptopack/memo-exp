@@ -6,9 +6,10 @@ export type ErrorResponse = Response & {
 };
 
 /** Return an expected HTTP failure. Use `return error(...)` in handlers. */
-export function error(status: number, message: string): ErrorResponse {
+export function error(data: unknown, init: ResponseInit & { status: number }): ErrorResponse {
+  const status = init?.status;
   if (!Number.isInteger(status) || status < 400 || status > 599) {
     throw new RangeError('error() requires an HTTP status between 400 and 599');
   }
-  return Response.json({ message }, { status }) as ErrorResponse;
+  return Response.json(data, init) as ErrorResponse;
 }

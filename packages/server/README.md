@@ -19,7 +19,7 @@ import { json, error, getCookie, setCookie, deleteCookie } from '@memoized-dom/s
 
 // In a handler or middleware:
 const session = getCookie(context.request, 'session');
-if (!session) return error(401, 'Sign in first');
+if (!session) return error({ message: 'Sign in first' }, { status: 401 });
 
 const response = json({ signedIn: true });
 setCookie(response, 'session', token, {
@@ -31,8 +31,15 @@ setCookie(response, 'session', token, {
 return response;
 ```
 
-`error(status, message)` returns a JSON `Response` with `{ message }` and a
-400–599 status. Return it for expected failures; unexpected exceptions still
+`json(data, init?)` and `error(data, init)` both serialize exactly the supplied
+body and accept ordinary response options, including headers. `error` requires
+an explicit 400–599 status. For example:
+
+```ts
+return error({ message: 'Story not found' }, { status: 404 });
+```
+
+Return it for expected failures; unexpected exceptions still
 go to `onError`. Generated server-function client types keep the success body
 type when another branch returns `error()`. The data layer records the HTTP
 status and the response body in `RequestError.data`.
