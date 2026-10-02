@@ -9,6 +9,14 @@ import { plainListInitializer, plainScalarValue } from './plain-list-initializer
 export function analyzeModuleListTargets(ctx: Ctx): void {
   const analysis = ctx.astAnalysis;
   if (analysis === null || analysis === undefined || ctx.moduleStateCells) return;
+  // String-driven lexical access can escape records or install accessors
+  // without producing an indexed reference to the collection binding.
+  let dynamicScope = false;
+  walkAst(analysis.rootScope.block, { enter(node) {
+    if (node.type === 'WithStatement' || node.type === 'CallExpression' &&
+        identifierName(childNode(node, 'callee')) === 'eval') dynamicScope = true;
+  } });
+  if (dynamicScope) return;
   const parents = analysis.parentByNode;
   const property = (node: BaseNode): string | null => {
     const key = childNode(node, 'property');
@@ -16,7 +24,6 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     const value = key && nodeField(key, 'value');
     return typeof value === 'string' ? value : null;
   };
-  const scalar = (node: BaseNode | null): boolean => plainScalarValue(ctx, node);
 
   const candidates = new Map<Binding, string>();
   for (const source of ctx.listSources) {
@@ -63,6 +70,50 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
     const written = new Set<string>();
     const keys = new Set<string>();
     const visited = new Set<Binding>();
+
+    const sameItemRead = (read: BaseNode, target: BaseNode | null): boolean => {
+      if (read.type !== 'MemberExpression' || target?.type !== 'MemberExpression' ||
+          nodeField(read, 'optional') === true || nodeField(target, 'optional') === true ||
+          !fields.has(property(read) ?? '')) return false;
+      const access = childNode(read, 'object'), destination = childNode(target, 'object');
+      if (access?.type !== 'MemberExpression' || destination?.type !== 'MemberExpression' ||
+          nodeField(access, 'computed') !== true || nodeField(destination, 'computed') !== true ||
+          nodeField(access, 'optional') === true || nodeField(destination, 'optional') === true) return false;
+      for (const indexed of [access, destination]) {
+        const object = childNode(indexed, 'object');
+        const name = identifierName(object);
+        if (object === null || name === null || astBindingAt(ctx, object, name) !== binding) return false;
+      }
+      const index = childNode(access, 'property'), targetIndex = childNode(destination, 'property');
+      if (index?.type === 'Literal' && targetIndex?.type === 'Literal') {
+        return typeof nodeField(index, 'value') === 'number' && nodeField(index, 'value') === nodeField(targetIndex, 'value');
+      }
+      const name = identifierName(index), targetName = identifierName(targetIndex);
+      if (index === null || targetIndex === null || name === null || targetName === null) return false;
+      const counter = astBindingAt(ctx, index, name);
+      return counter !== undefined && counter === astBindingAt(ctx, targetIndex, targetName);
+    };
+    const scalarAssignments = new Map<BaseNode, boolean>();
+    const scalarAssignment = (assignment: BaseNode): boolean => {
+      const cached = scalarAssignments.get(assignment);
+      if (cached !== undefined) return cached;
+      const target = childNode(assignment, 'left');
+      const proven = plainScalarValue(ctx, childNode(assignment, 'right'), undefined, undefined,
+        read => sameItemRead(read, target));
+      scalarAssignments.set(assignment, proven);
+      return proven;
+    };
+    const readInAssignment = (member: BaseNode): boolean => {
+      let current: BaseNode = member;
+      for (;;) {
+        const parent = parents.get(current);
+        if (parent == null) return false;
+        if (parent.type === 'AssignmentExpression') return childNode(parent, 'right') === current &&
+          sameItemRead(member, childNode(parent, 'left')) && scalarAssignment(parent);
+        if (!['BinaryExpression', 'LogicalExpression', 'ConditionalExpression', 'UnaryExpression', 'TemplateLiteral'].includes(parent.type)) return false;
+        current = parent;
+      }
+    };
 
     const inspectItem = (item: Binding, allowProp: boolean): boolean => {
       if (visited.has(item)) return true;
@@ -168,11 +219,14 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
       if (name === null || !fields.has(name)) { valid = false; break; }
       const operation = parents.get(member);
       if (operation?.type === 'AssignmentExpression' && childNode(operation, 'left') === member) {
-        // Scalar literals preserve the closed plain-data shape indefinitely.
-        if (!scalar(childNode(operation, 'right'))) { valid = false; break; }
+        // Own primitive fields of the addressed row can feed its new value.
+        // Bounds, immutable keys and non-escaping storage remain required.
+        if (!scalarAssignment(operation)) { valid = false; break; }
         written.add(name);
       } else if (operation?.type === 'UpdateExpression') {
         written.add(name);
+      } else if (readInAssignment(member)) {
+        continue;
       } else {
         // Reads outside the compiler-owned map can make another row's helper
         // depend on this field. They do not have a proven per-position boundary.

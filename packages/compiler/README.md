@@ -130,12 +130,25 @@ Identifier and quoted string keys on literal records are equivalent for this
 proof. Arithmetic/comparison field reads remain reads; assignment patterns,
 updates, deletes and loop targets prevent a read-only item proof.
 
+Later field assignments may compute their new value from the same addressed
+record's own primitive fields. The compiler checks the actual collection and
+index bindings: a literal module index or a proven owner loop counter must
+identify the same row on both sides. Arithmetic, bitwise, comparison, logical,
+conditional and template expressions preserve this proof when every operand is
+primitive. For example, `items[i].label = items[i].label + '!'` can use the same
+targeted path as `+=` on a closed list. Other-row reads, unknown fields/calls,
+getters, object/Symbol/BigInt operands, key writes and escaped storage retain
+ordinary reconciliation. Reads outside such assignments remain conservative.
+Direct `eval` or dynamic scope disables the closed-list proof: string-driven
+access can install setters or escape records without visible source references.
+
 Closed arrays can be initialized directly or through a stable local synchronous
 factory that only returns a fresh array literal. Function declarations and
 `const` function/arrow expressions qualify when every parameter is an unmodified
 identifier and every supplied argument is a proven primitive literal expression.
-Record fields may combine those parameters with literals through `+`, template
-literals or primitive unary operators. Authored later writes must independently
+Record fields may combine those parameters with literals through primitive
+arithmetic, bitwise, comparison, logical/conditional, template and unary
+expressions. Authored later writes must independently
 preserve the plain scalar shape. Shared returned arrays, imported/opaque calls,
 other factory statements, defaults/rest/destructuring, async/generator functions,
 getters, spreads, nested values and captured field values retain existing

@@ -1487,6 +1487,63 @@ versions, VM timing artifacts and the Octane pin remain untouched. Broader list
 replay, creation/removal costs and opaque producer precision remain open;
 bundle-size work stays deferred.
 
+## Same-row calculations in closed lists
+
+The closed flat-record proof now accepts new field values computed from the
+addressed row's own primitive fields. This removes the full-list fallback for
+assignments such as `items[i].label = items[i].label + '!'`, which previously
+lost the precision available to `+=`. Index matching uses lexical binding
+identity, and the existing literal module-index or bounded owner-loop proof
+still applies. Scalar arithmetic, bitwise, comparison, logical, conditional and
+template expressions are admitted only with proven primitive operands. Closed
+factory fields can use the same primitive expression grammar.
+
+Other-row reads, hidden captures, unknown fields/calls, object/Symbol/BigInt
+operands, immutable-key violations, getters and escapes keep full reconciliation.
+No new evaluation or argument conversion is inserted into the authored RHS.
+Tests also exposed direct `eval` bypassing the previous closed-record proof:
+string-driven lexical access could install a setter without a visible source
+reference. Dynamic scope now disables this list proof; immediate/deferred DOM
+tests verify setter effects reaching a sibling row and a separate component.
+A separate comparison reproduced the stale DOM with the `7342795` compiler:
+the sibling remained `2` and the separate output `0` after the setter wrote `9`.
+The new compiler updates both to `9` while retaining the original row nodes.
+
+The new suite covers module/owner state, inline/component rows, immediate and
+deferred schedulers, instance isolation, multiple list readers, skipped branches,
+mixed broad/targeted batches, retained identity and conservative operand/factory
+rejection. Conditional module writes retain their existing separate publication
+boundaries with immediate scheduling; deduplicating those callbacks remains open.
+Twenty of the first 34 cases failed against `7342795`; the final suite has 42 cases.
+
+Two isolated local Chromium comparisons use the baseline `7342795` compiler and
+the new compiler with the same runtime, minified compiler-generated applications
+and synchronous scheduling. Each list has 10k records produced by closed local
+array/record factories. Module cases calculate the first row's label; owner cases
+calculate every tenth row's label. There are five warmups and 25 alternating
+samples per variant. Every sample validates text, classes and exact retained DOM
+identity outside timing; the selected row remains unchanged. No tests, builds or
+other benchmark jobs ran alongside these measurements.
+
+| State / rows | First run before / after ms | Second run before / after ms |
+| --- | --- | --- |
+| Module / component | 1.5 / 0.2 | 1.2 / 0.2 |
+| Module / inline | 1.4 / 0.2 | 1.3 / 0.2 |
+| Component / component | 4.0 / 3.3 | 3.1 / 2.6 |
+| Component / inline | 3.2 / 2.6 | 3.0 / 2.3 |
+
+These measurements apply to proven closed storage and the newly admitted RHS
+shapes. The main DOM suite's imported `buildData` producer remains unproven, so
+its tracked generated applications are unchanged. Small timings approach browser
+timer precision; these local results do not establish main-suite or Octane gains.
+
+Compiler build and changed-source lint passed. Focused validation passed 247
+unique tests across 12 files, including the 42 new cases. All 25 regenerated DOM
+variants passed retained identity and mixed-operation checks. Dependencies, VM
+timing artifacts and the Octane pin are unchanged. Broader opaque producers,
+structural replacements and general creation/removal work remain open; bundle
+size stays deferred.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

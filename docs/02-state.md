@@ -225,6 +225,13 @@ export function List() {
 `todos.push(...)`, `splice`, index writes — all reactive. Don't accumulate
 JSX in a mutable array; map the data.
 
+For closed arrays of plain primitive records with stable keys, the compiler can
+refresh only the rows written. Same-row calculations such as
+`items[0].label = items[0].label + '!'` keep that precision. Component-owned lists
+also support proven bounded loop indices. Getters, unknown producers or calls,
+escaped records and cross-row reads keep conservative reconciliation; this is an
+optimization proof, not a restriction on ordinary update syntax.
+
 ## The mental model
 
 Think of the whole app as a spreadsheet:
