@@ -4,6 +4,7 @@ import { analyzeComponentReturns, type ComponentReturns } from '../components/re
 import type { ComponentExpressionSources } from '../analysis/expression-sources';
 import type { ComponentPullPlan } from '../analysis/primitive-pull';
 import type { ComponentPlacement } from './component-placement';
+import type { ComponentRegionReplay } from '../analysis/region-replay';
 
 export interface PlannedComponent {
   readonly name: string;
@@ -12,10 +13,18 @@ export interface PlannedComponent {
   readonly expressionSources: ComponentExpressionSources;
   readonly pullPlan: ComponentPullPlan | null;
   readonly placement: ComponentPlacement;
+  readonly regionReplay: ComponentRegionReplay;
 }
 
 export interface ModuleRenderPlan {
   readonly components: readonly PlannedComponent[];
+}
+
+export interface ComponentRenderInputs {
+  readonly expressionSources: ReadonlyMap<string, ComponentExpressionSources>;
+  readonly pullPlans: ReadonlyMap<string, ComponentPullPlan>;
+  readonly placements: ReadonlyMap<string, ComponentPlacement>;
+  readonly regionReplays: ReadonlyMap<string, ComponentRegionReplay>;
 }
 
 /**
@@ -23,22 +32,23 @@ export interface ModuleRenderPlan {
  * The plan owns return structure; AST references belong to this compilation
  * and are consumed by emission. It carries no DOM operations, ABI or runtime
  * identifiers. Semantic planning supplies exact sources, authored primitive
- * writes and component placement; region/ABI decisions still live in emission.
+ * writes, component placement and structural replay. Region shape/ABI decisions
+ * still live in emission.
  */
 export function planComponentRendering(
   components: ReadonlyMap<string, ComponentPath>,
-  expressionSources: ReadonlyMap<string, ComponentExpressionSources>,
-  pullPlans: ReadonlyMap<string, ComponentPullPlan>,
-  placements: ReadonlyMap<string, ComponentPlacement>,
+  inputs: ComponentRenderInputs,
 ): ModuleRenderPlan {
   return {
     components: [...components].map(([name, source]) => {
-      const sources = expressionSources.get(name);
+      const sources = inputs.expressionSources.get(name);
       if (sources === undefined) throw new Error(`memo-dom: missing expression-source plan for '${name}'`);
-      const placement = placements.get(name);
+      const placement = inputs.placements.get(name);
       if (placement === undefined) throw new Error(`memo-dom: missing placement plan for '${name}'`);
+      const regionReplay = inputs.regionReplays.get(name);
+      if (regionReplay === undefined) throw new Error(`memo-dom: missing region-replay plan for '${name}'`);
       return { name, source, returns: analyzeComponentReturns(source, name), expressionSources: sources,
-        pullPlan: pullPlans.get(name) ?? null, placement };
+        pullPlan: inputs.pullPlans.get(name) ?? null, placement, regionReplay };
     }),
   };
 }

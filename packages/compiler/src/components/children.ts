@@ -124,6 +124,7 @@ export function buildChildrenSlot(
   emit: EmitChildSlot,
 ): t.Identifier {
   const childScope = newEmitScope(ctx, true);
+  childScope.regionReplay = ownerScope.regionReplay;
   childScope.childCounts = ownerScope.childCounts;
   childScope.usedPrefixes = ownerScope.usedPrefixes;
   childScope.usedConds = ownerScope.usedConds;

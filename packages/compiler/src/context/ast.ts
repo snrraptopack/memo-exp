@@ -10,6 +10,7 @@ import {
 } from '../ast';
 import { generatedIdentifier } from '../identifiers';
 import type { Ctx, StateKind } from './model';
+import { canonicalKeyFor } from './state-keys';
 
 /** Rebuild parser-neutral parent and lexical-scope facts after AST mutation. */
 export function refreshAstAnalysis(
@@ -135,11 +136,7 @@ export function registerState(ctx: Ctx, name: string, kind: StateKind): void {
 
 /** Convert a binding-relative analysis key to its defining module identity. */
 export function canonicalStateKey(ctx: Ctx, key: string): string {
-  if (key.includes('#')) return key;
-  const dot = key.indexOf('.');
-  const root = dot === -1 ? key : key.slice(0, dot);
-  const suffix = dot === -1 ? '' : key.slice(dot);
-  return `${ctx.stateKeys.get(root) ?? root}${suffix}`;
+  return canonicalKeyFor(ctx.stateKeys, key);
 }
 
 /** Hoist and dedupe a canonical write-set constant. */
@@ -412,30 +409,6 @@ export function exprReadsState(
       return false;
     }
     return undefined;
-  });
-  return reads;
-}
-
-/** Whether an expression references state owned by one component instance. */
-export function exprReadsInstanceState(
-  ctx: Ctx,
-  expression: t.Node,
-  componentName: string,
-): boolean {
-  const roots = new Set<string>([
-    ...(ctx.instanceState.get(componentName) ?? []),
-    ...(ctx.instanceDerivedBindings.get(componentName) ?? []),
-    ...(ctx.componentProps.get(componentName)?.bindings ?? []),
-  ]);
-  if (roots.size === 0) return false;
-
-  let reads = false;
-  walkNodes(expression, (node) => {
-    if (astFactory.isIdentifier(node) && roots.has(node.name)) {
-      reads = true;
-      return false;
-    }
-    return reads ? false : undefined;
   });
   return reads;
 }

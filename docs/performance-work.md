@@ -40,6 +40,14 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ## Completed changes
 
+- Structural replay source facts are captured before component emission.
+  List fixed-position proofs retain lexical call identity; module index refresh
+  eligibility and canonical keys use captured inputs. Conditional owner roots
+  are built once per component, rather than reconstructed for every conditional
+  region. Nested rows, branches, routes and slots share the lexical contract.
+  Runtime reason checks, general/mixed-cause fallbacks and reconciliation remain
+  unchanged. Callback/branch shape normalization and mutation journals are still
+  separate migration work. This change establishes no runtime speedup.
 - Component placement is now captured before factory emission: row bindings and
   common key paths, local/linked collection ownership, external inputs and
   effect/route ownership flags. Imported route aliases are analyzed together in

@@ -10,8 +10,11 @@ import * as astFactory from '../ast/factory';
 import type { Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 import { reasonCondition } from '../components/local-derived';
+import type { ComponentRegionReplay } from '../analysis/region-replay';
 
 export interface EmitScope {
+  /** Shared source facts inherited by nested region/slot factories. */
+  regionReplay: ComponentRegionReplay | null;
   /** Repeated row text avoids a DOM read on every content replay. */
   cacheText: boolean;
   slots: string[];
@@ -62,6 +65,7 @@ export interface EmitScope {
 
 export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
   return {
+    regionReplay: null,
     cacheText: false,
     slots: [],
     tempVar: generatedIdentifier(ctx, 'value').name,

@@ -53,10 +53,10 @@ modules within a domain import their siblings directly.
 Component return structure is now planned before any component factory is
 replaced. `planComponentRendering()` consumes normalized component paths and
 receives exact expression-source contracts from `planExpressionSources()` and
-authored primitive-pull plans from `planComponentPulls()` and component placement
-from `planComponentPlacements()`, then
+authored primitive-pull plans from `planComponentPulls()`, component placement
+from `planComponentPlacements()` and structural replay from `planRegionReplays()`, then
 returns a read-only `ModuleRenderPlan`: component identity/source, direct or
-branched JSX returns, semantic source queries and placement facts. DOM operations,
+branched JSX returns, semantic source queries, placement and replay facts. DOM operations,
 runtime identifiers and factory ABI belong to `emitDomComponents()`, which
 consumes that plan; the DOM component
 emitter no longer discovers JSX return control flow. Unsupported returns in a
@@ -83,6 +83,13 @@ ownership, external inputs, local-effect presence and route ownership. Route
 selector analysis batches imported aliases before factory emission. The backend
 consumes these facts and attaches runtime IDs; factory ABI, structural regions
 and cleanup policy remain backend decisions.
+
+Structural replay contracts capture lexical fixed-position list proofs, module
+index eligibility, canonical keys and conditional owner roots/volatility. Their
+queries do not consult mutable `Ctx`. Nested rows, branches, routes and content
+slots inherit the same lexical contract; clones retain conservative list proofs.
+DOM lowering still chooses runtime reasons/operations. List callback validation,
+branch normalization and mutation journals remain further migration work.
 
 Model compiler work as an explicit pipeline of domain passes. A pass receives
 the compiler context and AST, performs one named responsibility, and leaves the

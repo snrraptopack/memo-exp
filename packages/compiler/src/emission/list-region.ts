@@ -4,8 +4,6 @@ import {
   cloneNode as cloneEstreeNode,
 } from '../ast';
 import {
-  canonicalStateKey,
-  astBindingAt,
   type ComponentPath,
   type Ctx,
   type RowCtx,
@@ -98,6 +96,7 @@ export function emitListRegion(
           inSvg,
           ownerId,
           eventBindings,
+          scope.regionReplay,
         )
       : buildInlineRowCreate(
           ctx,
@@ -109,6 +108,7 @@ export function emitListRegion(
           ownerId,
           eventBindings,
           ctx.lightweightInlineRows.has(call),
+          scope.regionReplay,
         );
 
   const args: t.Expression[] = [
@@ -239,9 +239,10 @@ export function emitListRegion(
     dependency,
     cache: generatedIdentifier(ctx, `${dependency.value}ListKey`).name,
   }));
-  const structuralSource = site.sourceLocal
-    ? ''
-    : canonicalStateKey(ctx, site.sourceKey);
+  const { structuralSource, fixedPositions, moduleIndices } = scope.regionReplay!.listFor(call, {
+    sourceExpr: site.sourceExpr, sourceKey: site.sourceKey, sourceLocal: site.sourceLocal,
+    hasPrelude: site.prelude.length > 0,
+  });
   if (dependencyCaches.length > 0) {
     scope.creation.push(
       astFactory.variableDeclaration(
@@ -261,10 +262,6 @@ export function emitListRegion(
   const preparedSource = preparationRead(ctx, scope, ownerId, site.sourceExpr);
   // The closed-record proof excludes replacement, structural writes, escapes,
   // accessors and mutable key fields. Content still replays on opaque pulls.
-  const sourceBinding = astFactory.isIdentifier(site.sourceExpr)
-    ? astBindingAt(ctx, call, site.sourceExpr.name) : undefined;
-  const fixedPositions = site.prelude.length === 0 && sourceBinding !== undefined &&
-    ctx.plainListItemTargets.has(sourceBinding.identifier);
   const reconcile = (update = false): t.Statement =>
     astFactory.expressionStatement(
       astFactory.callExpression(
@@ -291,8 +288,7 @@ export function emitListRegion(
     );
   scope.creation.push(reconcile());
   const generalReplay = (): t.Statement => {
-    if (site.prelude.length > 0 || scope.reasonVar === null || site.sourceLocal ||
-        !astFactory.isIdentifier(site.sourceExpr) || !ctx.moduleListTargets.has(site.sourceExpr.name)) {
+    if (scope.reasonVar === null || !moduleIndices) {
       return reconcile(true);
     }
     const indices = generatedIdentifier(ctx, 'rowIndices');

@@ -6,6 +6,7 @@ import { planComponentRendering } from '../packages/compiler/src/planning/compon
 import { transformEstreeProgram } from '../packages/compiler/src/plugin';
 import { createExpressionSourceFacts } from '../packages/compiler/src/analysis/expression-sources';
 import type { ComponentPlacement } from '../packages/compiler/src/planning/component-placement';
+import { createRegionReplayFacts } from '../packages/compiler/src/analysis/region-replay';
 
 function parse(source: string) {
   return parseEstreeOrThrow(source, {filename:'./plan.tsx'}).program as unknown as t.Program;
@@ -22,8 +23,13 @@ function planReturns(paths: ReadonlyMap<string, ComponentPath>) {
     derivedSources:new Map(),pureCallee:()=>false});
   const placement: ComponentPlacement = {listed:false,hasLinkedRows:false,sourceLocal:false,row:null,
     externalSources:[],routeSelectors:new Map(),hasLocalEffects:false,ownsRoutes:false};
-  return planComponentRendering(paths,new Map([...paths.keys()].map(name=>[name,facts])),new Map(),
-    new Map([...paths.keys()].map(name=>[name,placement])));
+  const replay = createRegionReplayFacts({ ownerRoots:new Set(), volatile:false,
+    moduleIndexSources:new Set(), stateKeys:new Map(), fixedSourceFor:()=>undefined });
+  return planComponentRendering(paths, {
+    expressionSources:new Map([...paths.keys()].map(name=>[name,facts])), pullPlans:new Map(),
+    placements:new Map([...paths.keys()].map(name=>[name,placement])),
+    regionReplays:new Map([...paths.keys()].map(name=>[name,replay])),
+  });
 }
 
 it.each([
@@ -60,6 +66,6 @@ it('plans from normalized paths and semantic sources, independent of emission st
   const plan=planReturns(paths);
   expect(plan.components.map(component=>component.name)).toEqual(['One','Two']);
   expect(Object.keys(plan)).toEqual(['components']);
-  expect(Object.keys(plan.components[0]!)).toEqual(['name','source','returns','expressionSources','pullPlan','placement']);
+  expect(Object.keys(plan.components[0]!)).toEqual(['name','source','returns','expressionSources','pullPlan','placement','regionReplay']);
   expect(JSON.stringify(program as unknown as BaseNode)).toBe(before);
 });

@@ -126,6 +126,7 @@ export function buildRenderCallbackAdapter(
   const nextIndex =
     indexParam === null ? null : generatedIdentifier(ctx, 'renderNextIndex');
   const rowScope = newEmitScope(ctx);
+  rowScope.regionReplay = ownerScope.regionReplay;
   const rowContext: RowCtx = {
     itemParam,
     itemPath: [],

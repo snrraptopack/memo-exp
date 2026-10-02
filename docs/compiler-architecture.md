@@ -18,7 +18,7 @@ implemented by this change.
 flowchart LR
   A[Parse and normalize authored code] --> B[Analyze bindings and component facts]
   B --> C[Prepare reads and callbacks]
-  C --> D[Plan returns, sources, primitive writes and placement]
+  C --> D[Plan returns, sources, placement and structural replay]
   D --> E[DOM creation and handler lowering]
   E --> P[Finalize callback publication facts]
   P --> U[Emit updater gates and component factory]
@@ -29,8 +29,9 @@ flowchart LR
 expression-source contracts from semantic planning. Its
 `ModuleRenderPlan` contains component names/source paths and the existing return
 contract: direct JSX or a branch selector, branch content and replaced source
-statements, plus `ComponentExpressionSources`, an optional `ComponentPullPlan`
-and `ComponentPlacement`.
+statements, plus `ComponentExpressionSources`, an optional `ComponentPullPlan`,
+`ComponentPlacement` and `ComponentRegionReplay`. `ComponentRenderInputs`
+names the separate fact producers at the module planning boundary.
 Contracts are read-only. No generated identifiers, DOM node operations,
 registration policy or runtime
 namespace is allocated by this pass.
@@ -84,6 +85,29 @@ semantic paths and literal query arguments; emission constructs their runtime
 expressions without re-analyzing bindings. Other async/effect facts still use
 their existing collectors.
 
+`planning/region-replay.ts` snapshots the inputs that decide how structural
+content replays: component-owned roots and volatility, module index eligibility,
+canonical source keys and binding-checked fixed-position list sources.
+`analysis/region-replay.ts` queries those facts without `Ctx`. Fixed-position
+proofs stay tied to the indexed map call and source name; cloned calls remain
+unproven. Prelude-bearing lists keep general replay. Queries still accept the
+current source expression so transparent lowering and cloned content do not
+inherit a proof from a matching name alone.
+
+Nested row, branch, route, render-callback and content-slot emission scopes
+inherit the lexical owner's replay contract. The DOM backend supplies reason
+availability and enclosing-owner forwarding, then constructs reconciliation,
+index refresh or conditional updates. Conditional queries retain the existing
+root-name and volatility rules; this change does not broaden getter/callback
+proofs. Callback validation/substitution, branch normalization, region identities,
+targeted mutation journals and DOM-only cleanup/ABI still have their existing
+mixed ownership.
+
+Canonical key resolution is shared by live context consumers and captured
+replay facts through `context/state-keys.ts`; there is one implementation.
+The former context-based conditional owner-read helper is removed now that
+its consumer uses the captured contract.
+
 AST references are owned by one compilation and consumed by its emitter. The
 read-only contract does not imply that referenced AST nodes are frozen or that
 one consumed plan can be reused by a second backend. A multi-backend build must
@@ -97,7 +121,8 @@ give each lowering its own owned tree or immutable semantic representation.
 | Primitive pull safety | Authored fact plan plus explicit late callback-publication input | Move callback analysis/lowering to a shared phase with target-specific publication |
 | Async provenance and effects | Existing collectors and shared `Ctx` | Distinct fact contracts with explicit pass dependencies |
 | Component placement and route selectors | Semantic snapshot consumed by component emission | Extend to structural regions and composition without moving host ABI into shared plans |
-| Props and list/conditional regions | Analysis facts plus decisions in emitters | Backend-independent region plans with explicit inputs |
+| Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |
+| Props and list/conditional shape | Analysis plus normalization called from emitters | Backend-independent region shape plans preserving clone and binding identity |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
 | Generated IDs, headers, imports and output buffers | Same `Ctx` as source analysis | Mutable emission state separate from analyzed facts and configuration |
@@ -181,3 +206,16 @@ effects, forms, hydration and SSR.
 Compiler regeneration leaves tracked DOM benchmark output unchanged. All 25
 browser variants passed retained-node identity and mixed-sequence checks; the
 runner exited successfully. This phase change establishes no runtime speedup.
+
+## Validation of structural replay planning
+
+Compiler build and changed-source lint passed. The selected suites passed 217
+distinct tests across 26 files, including six new replay-contract cases. They
+cover context/factory mutation after capture, lexical shadowing, cloned calls,
+canonical keys, prelude/local/member fallbacks, nested lists/conditionals,
+render props/children, opaque slots, effects, forms, routes, hydration and SSR.
+The six replay cases also passed after canonical key resolution was shared.
+
+Compiler regeneration leaves tracked DOM benchmark output unchanged. All 25
+browser variants passed retained-node identity and mixed-sequence checks and
+the runner exited successfully. Runtime timing gains remain unverified.

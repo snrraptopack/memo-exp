@@ -212,6 +212,7 @@ export function transformComponent(
   const lightweightPropCount =
     positionalObjectProps?.length ?? propSlotCount;
   const scope = newEmitScope(ctx, lightweight);
+  scope.regionReplay = component.regionReplay;
   scope.cacheText = placement.listed;
   const localDerivations = ctx.instanceDerivations.get(name);
   const controlFlow = ctx.instanceControlFlow.get(name);
@@ -621,6 +622,7 @@ function emitComponentReturnRegion(
                     owner,
                     true,
                     scope.usedConds,
+                    scope.regionReplay,
                   )
                 : astFactory.nullLiteral(),
             ),

@@ -2,7 +2,6 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
-  exprReadsInstanceState,
   type ComponentPath,
   type Ctx,
 } from '../context';
@@ -17,6 +16,7 @@ import {
   type EmitScope,
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
+import type { ComponentRegionReplay } from '../analysis/region-replay';
 import {
   preparationRead,
   subscribeTransparentStructuralSite,
@@ -88,7 +88,7 @@ export function emitConditionalRegion(
         ])), astFactory.identifier('undefined'));
     };
     const branch = buildConditionalBranchCreate(ctx, site.branches[0]!, componentName, componentPath,
-      regionId, emitNode, inSvg, regionId, true, scope.usedConds, [], true);
+      regionId, emitNode, inSvg, regionId, true, scope.usedConds, [], true, scope.regionReplay);
     (branch.body as t.BlockStatement).body.unshift(registerStmt(ctx, cloneEstreeNode(regionId), cloneEstreeNode(ownerId),
       astFactory.arrowFunctionExpression([], astFactory.callExpression(astFactory.memberExpression(
         astFactory.identifier(regionVariable), astFactory.identifier('update')), []))));
@@ -138,6 +138,7 @@ export function emitConditionalRegion(
           scope.usedConds,
           transparentSources,
           scope.reasonVar !== null,
+          scope.regionReplay,
         )
       : astFactory.nullLiteral(),
   );
@@ -180,8 +181,7 @@ export function emitConditionalRegion(
   );
   if (
     forwardFromOwner ||
-    ctx.volatileComponents.has(componentName) ||
-    exprReadsInstanceState(ctx, expression, componentName)
+    scope.regionReplay!.conditionFromOwner(expression)
   ) {
     scope.updaters.push(() =>
       astFactory.expressionStatement(
@@ -215,8 +215,10 @@ export function buildConditionalBranchCreate(
   usedConditions?: { count: number },
   coveredTransparentSources: readonly string[] = [],
   forwardReasons = false,
+  regionReplay: ComponentRegionReplay | null = null,
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx, true);
+  branchScope.regionReplay = regionReplay;
   if (forwardReasons) {
     branchScope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
   }

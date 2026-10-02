@@ -43,6 +43,7 @@ import { planComponentRendering, type ModuleRenderPlan } from './planning/compon
 import { planExpressionSources } from './planning/expression-sources';
 import { planComponentPulls } from './planning/primitive-pull';
 import { planComponentPlacements } from './planning/component-placement';
+import { planRegionReplays } from './planning/region-replay';
 import {
   rejectUnownedCleanup,
   transformProgramCallbacks,
@@ -269,9 +270,12 @@ function prepareProgram(
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
   transformSharedHelperCallbacks(ctx, programPath);
-  return planComponentRendering(
-    ctx.compPaths, planExpressionSources(ctx), planComponentPulls(ctx), planComponentPlacements(ctx),
-  );
+  return planComponentRendering(ctx.compPaths, {
+    expressionSources: planExpressionSources(ctx),
+    pullPlans: planComponentPulls(ctx),
+    placements: planComponentPlacements(ctx),
+    regionReplays: planRegionReplays(ctx),
+  });
 }
 
 function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
