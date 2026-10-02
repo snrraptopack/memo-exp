@@ -109,6 +109,40 @@ export function prepareServerWriter(
   return (update, result) => {
     if (scope.mounts.length || scope.disposableRegions.length ||
         scope.disposableEntities.length || scope.disposableCallbacks.length) return null;
+    // A single literal class write with no updater write is immutable. Fold
+    // its normalization/escaping without changing dynamic write order.
+    const classWrites = new Map<string, number>();
+    const classRuntime = (md(ctx, 'setClassValue').object as t.Identifier).name;
+    function classWrite(node: t.Node): { name: string; value: t.Expression } | null {
+      if (!f.isCallExpression(node) || !f.isMemberExpression(node.callee) ||
+          !f.isIdentifier(node.callee.object, { name: classRuntime }) ||
+          !f.isIdentifier(node.callee.property, { name: 'setClassValue' }) ||
+          node.arguments.length !== 2 || !f.isIdentifier(node.arguments[0]) ||
+          !shapes.get(node.arguments[0].name)?.tag || !f.isExpression(node.arguments[1])) return null;
+      return { name: node.arguments[0].name, value: node.arguments[1] };
+    }
+    function countClassWrites(node: t.Node): void {
+      const write = classWrite(node);
+      if (write) classWrites.set(write.name, (classWrites.get(write.name) ?? 0) + 1);
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'loc') continue;
+        if (Array.isArray(value)) for (const child of value) { if (isNode(child)) countClassWrites(child); }
+        else if (isNode(value)) countClassWrites(value);
+      }
+    }
+    for (const statement of creation) countClassWrites(statement);
+    countClassWrites(update);
+    const staticClasses = new Map<string, string>();
+    const foldedClasses = new Set<t.Statement>();
+    for (const statement of creation) {
+      if (!f.isExpressionStatement(statement)) continue;
+      const write = classWrite(statement.expression);
+      if (write && classWrites.get(write.name) === 1 && f.isStringLiteral(write.value)) {
+        // classValue(string) is precisely String.prototype.trim().
+        staticClasses.set(write.name, write.value.value.trim());
+        foldedClasses.add(statement);
+      }
+    }
     let valid = true;
     // A node identifier may only occur in a recognized write. Reading DOM,
     // event/ref work, spread patches, and property writes reject the proof.
@@ -148,7 +182,7 @@ export function prepareServerWriter(
       return node;
     }
     // Text declarations are intentional snapshot bindings, not DOM escapes.
-    const statements = creation.map(statement => f.isVariableDeclaration(statement)
+    const statements = creation.filter(statement => !foldedClasses.has(statement)).map(statement => f.isVariableDeclaration(statement)
       ? cloneNode(statement) : rewrite(cloneNode(statement)) as t.Statement);
     const updated = rewrite(cloneNode(update)) as t.Statement;
     if (!valid) return null;
@@ -158,6 +192,7 @@ export function prepareServerWriter(
       const parts: t.Expression[] = [f.stringLiteral('<' + shape.tag)];
       const className = classes.get(name);
       if (className) parts.push(helper('classAttribute', f.identifier(className)));
+      else if (staticClasses.get(name)) parts.push(f.stringLiteral(' class="' + escape(staticClasses.get(name)!, true) + '"'));
       parts.push(f.stringLiteral(shape.attributes.map(([key, value]) =>
         value === '' ? ' ' + key : ' ' + key + '="' + escape(value, true) + '"').join('') + '>'));
       parts.push(...shape.children.map(output), f.stringLiteral('</' + shape.tag + '>'));

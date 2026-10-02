@@ -162,6 +162,19 @@ describe('experimental compiler leaf writer', () => {
     expect(writer.module.count()).toBe(1);
   });
 
+  it.each(['  card  ', '  a & "b" <c>  ', '   '])('folds a proven literal class with exact parity: %s', async className => {
+    const { baseline, writer } = await variants(`static-class-${++fallbackSequence}`, `
+      let rows = [{ id: 1, label: '<row>' }];
+      function Row(item) { return <li class='${className}' data-kind="row">{item.label}</li>; }
+      export function App() { return <ul>{rows.map(row => <Row item={row} key={row.id} />)}</ul>; }
+    `);
+    expect(writer.code).toContain('.htmlWriter');
+    expect(writer.code).not.toContain('.classAttribute(');
+    for (const markers of [false, true]) {
+      expect(renderToString(writer.module.App, { markers })).toBe(renderToString(baseline.module.App, { markers }));
+    }
+  });
+
   it('keeps retained row snapshots isolated across concurrent request cells', async () => {
     const source = `
       import { $fetch, Group } from '@memoized-dom/data';
@@ -196,6 +209,79 @@ describe('experimental compiler leaf writer', () => {
       expect(after[index]!.html).toContain(index === 0 ? 'request-A' : 'request-B');
       expect(after[index]!.html).not.toContain(index === 0 ? 'request-B' : 'request-A');
       expect(after[index]!.payload).toEqual(before[index]!.payload);
+    }
+  });
+
+  it('preserves imported row cells through concurrent replacement, insertion, and reordering', async () => {
+    const sources = {
+      './writer-imported/state.ts': `
+        export let rows = [{ id: 1, label: 'first', active: false }, { id: 2, label: 'second', active: false }];
+        export function replace(label) {
+          rows = [{ id: 2, label: label + '-two', active: true },
+                  { id: 1, label: label + '-one', active: true },
+                  { id: 3, label: label + '-three', active: false }];
+        }
+      `,
+      './writer-imported/row.tsx': `
+        export let prefix = 'initial';
+        export function setPrefix(next) { prefix = next; }
+        export function Row(item) {
+          return <li class={item.active ? 'hot' : ''}><b>{prefix}</b><span>{item.label}</span></li>;
+        }
+      `,
+      './writer-imported/app.tsx': `
+        import { $fetch, Group } from '@memoized-dom/data';
+        import { rows } from './state';
+        import { Row } from './row';
+        function Pending() { return <p>pending</p>; }
+        export function App() {
+          const result = $fetch('/api/ready');
+          return <main><ul>{rows.map(row => <Row item={row} key={row.id} />)}</ul>
+            <Group pending={Pending}><p>{result.status}</p></Group></main>;
+        }
+      `,
+    };
+    async function load(ssrWriter: boolean) {
+      const output = compileModules(sources, { moduleStateCells: true, ssrWriter });
+      const directory = join(DIRECTORY, `writer-imported-${ssrWriter}`);
+      mkdirSync(directory, { recursive: true });
+      for (const [id, code] of Object.entries(output)) writeFileSync(join(directory, id.slice('./writer-imported/'.length)), code);
+      return { code: output['./writer-imported/row.tsx']!,
+        app: await import(pathToFileURL(join(directory, 'app.tsx')).href),
+        state: await import(pathToFileURL(join(directory, 'state.ts')).href),
+        row: await import(pathToFileURL(join(directory, 'row.tsx')).href) };
+    }
+    const baseline = await load(false);
+    const writer = await load(true);
+    expect(writer.code).toContain('.htmlWriter');
+    async function pair(module: typeof writer) {
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      let arrived = 0;
+      return Promise.all(['import-A', 'import-B'].map(label => render(module.app.App, {
+        mode: 'resolve', markers: true, fetch: (async () => {
+          if (++arrived === 2) release();
+          await gate;
+          module.state.replace(label);
+          module.row.setPrefix(label);
+          commitWrites(['./writer-imported/state.ts#rows', './writer-imported/row.tsx#prefix']);
+          commit();
+          return Response.json({ status: 'done' });
+        }) as typeof fetch,
+      })));
+    }
+    const before = await pair(baseline);
+    const after = await pair(writer);
+    for (const index of [0, 1]) {
+      const own = index === 0 ? 'import-A' : 'import-B';
+      const other = index === 0 ? 'import-B' : 'import-A';
+      expect(after[index]!.html).toBe(before[index]!.html);
+      expect(after[index]!.payload).toEqual(before[index]!.payload);
+      expect(after[index]!.settlement.status).toBe('complete');
+      expect(after[index]!.html).toContain(`<b>${own}</b><span>${own}-three</span>`);
+      expect(after[index]!.html).not.toContain(other);
+      expect(after[index]!.html.indexOf(`${own}-two`)).toBeLessThan(after[index]!.html.indexOf(`${own}-one`));
+      expect(after[index]!.html).toContain('done');
     }
   });
 

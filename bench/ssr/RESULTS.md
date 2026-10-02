@@ -27,7 +27,7 @@ Memory figures are sampled heap/RSS growth, with the limitations in the
 README. Slow consumers retain the atomic application body. No bounded-memory
 network streaming claim follows from this benchmark.
 
-Raw data: `dist/http-results.json`.
+Historical raw data: `dist/http-results-pre-main.json`.
 
 ## Next bet: compiler leaf writer
 
@@ -61,8 +61,9 @@ stream, buffer, and slow-consumer scenarios. Its stream TTFB medians were
 was a separate process later than the baseline, so it is an integration and
 correctness check, not a controlled HTTP speedup ratio.
 
-Raw data: `dist/writer-results-run1.json`, `dist/writer-results.json`, and
-`dist/http-writer-results.json`.
+First paired run raw data: `dist/writer-results-run1.json`. Historical HTTP
+writer data: `dist/http-writer-results-pre-main.json`. Current
+`dist/writer-results.json` contains the latest post-merge profile below.
 
 ## Decision
 
@@ -72,3 +73,105 @@ does not justify enabling it for every component or replacing the string
 tier. Next checks should include imported row components, additional runtimes,
 and paired HTTP runs under steady host load. Extend the proof only when a
 specific unsupported operation has meaningful measured cost.
+
+## After syncing current main
+
+Merged `origin/main` at `842bf78` into this branch (`4bad02f`), then committed
+the opt-in prototype and harness at `0c5d7dc`. The following measurements
+include the subsequent immutable literal-class folding improvement.
+Builds/tests finished before the performance runs; other host load was not
+controlled. Bun 1.4.0, Windows x64; the committed
+[`results/2026-10-02-summary.json`](results/2026-10-02-summary.json) records
+hardware/runtime metadata, every HTTP round pair, diagnostic medians, and
+live-session heap probes.
+
+### Paired HTTP evidence
+
+Six rounds alternated baseline/writer order within each scenario, in one
+process, using identical module identities. All **6,360 measured requests**
+passed status/outcome/byte-count/full-response SHA-256 parity, including the
+hydration payload. Each cell below is the median across the six round
+summaries. Completion uses round p50s; CPU uses round CPU per request and
+includes validation, response hashing, and memory sampling.
+
+| Scenario | Completion baseline → writer (ms) | CPU baseline → writer (ms/request) |
+| --- | --- | --- |
+| Table stream | 5.76 → 3.57 | 13.08 → 7.61 |
+| Table buffer | 6.56 → 4.27 | 13.10 → 7.23 |
+| Table slow consumer | 114.24 → 84.66 | 14.22 → 8.74 |
+| Dashboard stream | 0.459 → 0.546 | 0.783 → 0.898 |
+| Dashboard buffer | 0.578 → 0.667 | 0.823 → 1.090 |
+
+Table buffer completion improved in all six paired rounds; table stream and
+slow-consumer completion improved in five. The stream's last pair and one
+slow-consumer pair regressed, so a blanket latency guarantee is unjustified.
+The small dashboard regresses in the HTTP aggregates despite isolated render
+results below. This is material evidence against default activation, not a
+reason to discard the HTTP path or report only favorable microbenchmarks.
+Sampled HTTP heap/RSS growth does not show a stable reduction; it is not a
+live retained-memory measure. Raw data: `dist/http-paired-results.json`.
+
+### Dashboard investigation and bounded improvement
+
+Generated code showed a constant `class="card"` normalized during every row
+creation and escaped during serialization. The compiler now folds only a
+proven single literal class write with no updater write. Whitespace trimming,
+empty-class omission, escaping, and output order have parity tests. Dynamic
+classes retain their existing snapshots. This removes 96 emitted bytes;
+dashboard modules are now 4,743 baseline / 5,547 writer bytes (+804).
+
+Two separate post-fold runs used 200 warmups, 12 alternating paired rounds,
+and 200 renders per batch:
+
+| Marker policy | Run 1 baseline → writer (ms) | Run 2 baseline → writer (ms) |
+| --- | --- | --- |
+| Plain | 0.231 → 0.228 | 0.537 → 0.351 |
+| Marked | 0.148 → 0.144 | 0.329 → 0.316 |
+
+These do not prove that class folding fixes the HTTP regression: the
+pre-fold diagnostic pass overlapped tests, so it is excluded from timing
+comparisons. Separate stage probes show the dashboard has very little
+serialization work (roughly 8–21µs in these runs); request-session creation
+and disposal contribute substantially. Total timings and mount stages vary
+between runs. Optimize the measured cost rather than choosing a runtime row
+threshold from these fixtures.
+
+Raw data: `dist/writer-dashboard-after-fold-run1.json` and
+`dist/writer-dashboard-after-fold-run2.json`.
+
+### Live-session memory and larger fixture profile
+
+A separate table run used 100 warmups, 12 rounds, and 40 renders per batch.
+Plain render medians were **7.98 → 3.90ms**; marked **10.94 → 5.70ms**.
+Independent plain-output stage medians were mount **4.22 → 2.05ms**,
+serialize **1.97 → 0.95ms**, and dispose **0.86 → 0.48ms**. The writer removes
+work at several stages, not only at final string concatenation.
+
+Three alternating forced-GC probes held 12 live table sessions and roots,
+before serialization. Incremental heap medians per session were about
+**1,693,080 → 1,035,753 bytes** (plain), with essentially the same marked
+result: roughly **39% less retained heap** for this fixture/runtime. These
+include request runtimes and row closures, exclude response strings, and do
+not establish HTTP peak/RSS or a leak guarantee. Dashboard probes held 100
+sessions: baseline medians were about 19.8KB/session, writer 16.2–18.1KB.
+
+Retained graph counts remain **8,015 → 2,015** for the table and **37 → 21**
+for the dashboard. Table emitted code is 4,294 / 5,655 bytes (+1,361).
+
+### Correctness and next decision
+
+The imported-row gate now covers request-owned state in both the list owner
+and row module, concurrent mounting before mutations, same-key replacement,
+insertion/reordering, and exact HTML/payload parity. The server suite passed
+71 tests after the main merge; the expanded writer suite subsequently passed
+16 tests. Another 109 selected root SSR/runtime tests passed. Both HTTP
+variants passed 180-request smoke matrices spanning 15 scenarios. Compiler,
+runtime, and server builds and changed-file lint passed. Workspace typecheck
+still reports the existing `EventTarget.reset` error in
+`examples/simple/App.tsx:45`.
+
+Keep the writer opt-in. The next architecture experiment should compare
+separately emitted server factories against the current dual-path factories,
+preserving these oracle/parity gates and measuring small-app HTTP cost. The
+present evidence supports large repeated leaf lists and lower retained
+session heap; it does not support replacing the default string tier.

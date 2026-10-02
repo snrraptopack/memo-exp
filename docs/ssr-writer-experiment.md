@@ -41,6 +41,12 @@ writes are text snapshots and normalized classes; literal scalar attributes
 are escaped at compilation. Runtime text and class escaping reuse the string
 tier's escape functions.
 
+A literal JSX class is folded into the HTML only when the lowered plan proves
+exactly one literal `setClassValue` call during creation and none in the
+updater. The compiler applies the string case of `classValue` (trim) and
+attribute escaping once. Expression classes and every class with an updater
+write retain their snapshots and evaluation order.
+
 Every generated reference to an interior node must be a recognized write.
 Unsupported operations reject the entire candidate before changing its plan.
 Examples include nested structural regions, nested components, events/refs,
@@ -64,6 +70,10 @@ tests prove interior element/text construction is removed. Unsupported shapes
 must keep the fallback and remain byte-identical to the baseline.
 Concurrent renders with request-owned module cells also preserve distinct row
 snapshots and payload parity.
+An imported row component with its own request-owned prefix cell also passes
+concurrent settlement, same-key replacement, insertion, and reordering. Both
+requests mount before the mutations begin; each retains its own row text,
+class, order, prefix, and payload.
 
 An empty dynamic text slot exposes a pre-existing hydration recovery edge:
 empty HTML text has no physical text node to adopt. The experiment preserves
@@ -85,7 +95,8 @@ prove fewer total allocations or lower RSS.
 3. Measure the real HTTP path with the writer enabled; faster synchronous
    serialization alone does not prove a useful completion/throughput gain.
 4. Extend the request-cell isolation evidence to imported row components
-   before enabling it in SSR builds.
+   before enabling it in SSR builds (the bounded imported-row fixture now
+   passes; retain this gate as the supported operation surface expands).
 5. Extend one proven operation class at a time. Preserve update order and
    evaluation count; do not add a general string interpreter to accommodate
    unsupported shapes.

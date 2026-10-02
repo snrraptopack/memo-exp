@@ -1,0 +1,1194 @@
+{
+  "date": "2026-10-02T13:16:35.266Z",
+  "branch": "feat/ssr-layer-improvements",
+  "main": "842bf78",
+  "prototype": "0c5d7dc",
+  "runtime": {
+    "node": "26.3.0",
+    "bun": "1.4.0",
+    "boringssl": "2288897e2e716330490893d226b4f079f9da9e0c",
+    "openssl": "1.1.0",
+    "llhttp": "9.3.0",
+    "libarchive": "ded82291ab41d5e355831b96b0e1ff49e24d8939",
+    "mimalloc": "6a14aee24315e503fa295a1fa90fe8b24ad91774",
+    "picohttpparser": "066d2b1e9ab820703db0837a7255d92d30f0c9f5",
+    "uwebsockets": "34cbb9a40b4bd1bd767d134a7065e66c2432a676",
+    "webkit": "0f966e81b78c84bb23213e391bc679c4ef83e56b",
+    "zig": "04e7f6ac1e009525bc00934f20199c68f04e0a24",
+    "zlib": "12731092979c6d07f42da27da673a9f6c7b13586",
+    "tinycc": "05f0fafaa3be31e31d7b4b5c17dc60f62c991171",
+    "lolhtml": "725ce499aa9b71e38b7a2d0a9fbb6d7294a4079e",
+    "ares": "c7a3138dcfe3bb0eaaf10c0c24c36dc66dc790ab",
+    "libdeflate": "c8c56a20f8f621e6a966b716b31f1dedab6a41e3",
+    "usockets": "34cbb9a40b4bd1bd767d134a7065e66c2432a676",
+    "lshpack": "8905c024b6d052f083a3d11d0a169b3c2735c8a1",
+    "zstd": "f8745da6ff1ad1e7bab384bd1f9d742439278e99",
+    "v8": "14.6.202.34-node.20",
+    "uv": "1.51.1-dev",
+    "napi": "10",
+    "icu": "78.3",
+    "unicode": "17.0",
+    "sqlite": "3.53.2",
+    "modules": "147"
+  },
+  "cpu": "AMD PRO A12-9800B R7, 12 COMPUTE CORES 4C+8G   ",
+  "methodology": "Same-process paired HTTP rounds alternate variant order; CPU includes response gates and SHA-256 parity. Six rounds, 6360 measured response gates. Profile passes run separately from builds/tests. Stage clocks and forced-GC live-session heap are independent diagnostic probes; host load is uncontrolled. Each pair array is baseline, writer.",
+  "paired": [
+    {
+      "name": "table stream",
+      "requests": 480,
+      "completionMedianMs": [
+        5.760049999999865,
+        3.5726000000004206
+      ],
+      "cpuMedianMs": [
+        13.075,
+        7.6125
+      ],
+      "pairedCompletionRatios": [
+        1.7001668886746233,
+        1.7956400770486394,
+        1.4834715405874677,
+        1.664575979462396,
+        1.6151175065280472,
+        0.7420979174078507
+      ],
+      "pairs": [
+        {
+          "round": 0,
+          "completionMs": [
+            11.104299999999967,
+            6.531299999999646
+          ],
+          "cpuMs": [
+            24.6,
+            12.875
+          ],
+          "heapGrowthBytes": [
+            7425923,
+            7459442
+          ],
+          "rssGrowthBytes": [
+            16797696,
+            9785344
+          ]
+        },
+        {
+          "round": 1,
+          "completionMs": [
+            5.8730000000014115,
+            3.270699999999124
+          ],
+          "cpuMs": [
+            12.875,
+            8.2
+          ],
+          "heapGrowthBytes": [
+            9404422,
+            3414675
+          ],
+          "rssGrowthBytes": [
+            1462272,
+            2179072
+          ]
+        },
+        {
+          "round": 2,
+          "completionMs": [
+            5.259500000000116,
+            3.545400000000882
+          ],
+          "cpuMs": [
+            10.95,
+            5.475
+          ],
+          "heapGrowthBytes": [
+            3238030,
+            9854461
+          ],
+          "rssGrowthBytes": [
+            53248,
+            188416
+          ]
+        },
+        {
+          "round": 3,
+          "completionMs": [
+            5.706000000000131,
+            3.427900000000591
+          ],
+          "cpuMs": [
+            10.55,
+            6.25
+          ],
+          "heapGrowthBytes": [
+            0,
+            8120043
+          ],
+          "rssGrowthBytes": [
+            647168,
+            0
+          ]
+        },
+        {
+          "round": 4,
+          "completionMs": [
+            5.814099999999598,
+            3.5997999999999593
+          ],
+          "cpuMs": [
+            13.3,
+            7.025
+          ],
+          "heapGrowthBytes": [
+            4453507,
+            0
+          ],
+          "rssGrowthBytes": [
+            94208,
+            364544
+          ]
+        },
+        {
+          "round": 5,
+          "completionMs": [
+            5.423399999999674,
+            7.308199999999488
+          ],
+          "cpuMs": [
+            13.275,
+            9.375
+          ],
+          "heapGrowthBytes": [
+            5959478,
+            10805179
+          ],
+          "rssGrowthBytes": [
+            12288,
+            151552
+          ]
+        }
+      ]
+    },
+    {
+      "name": "table buffer",
+      "requests": 480,
+      "completionMedianMs": [
+        6.561899999998786,
+        4.270550000000185
+      ],
+      "cpuMedianMs": [
+        13.100000000000001,
+        7.225
+      ],
+      "pairedCompletionRatios": [
+        1.9006533907187737,
+        1.6085747600673437,
+        1.4405281868969357,
+        1.5834971472404118,
+        1.4917271208545824,
+        1.3205379711019976
+      ],
+      "pairs": [
+        {
+          "round": 0,
+          "completionMs": [
+            8.52310000000034,
+            4.484300000000076
+          ],
+          "cpuMs": [
+            14.05,
+            8.575
+          ],
+          "heapGrowthBytes": [
+            8267926,
+            8542170
+          ],
+          "rssGrowthBytes": [
+            7667712,
+            2904064
+          ]
+        },
+        {
+          "round": 1,
+          "completionMs": [
+            5.380199999999604,
+            3.344700000001467
+          ],
+          "cpuMs": [
+            12.525,
+            5.85
+          ],
+          "heapGrowthBytes": [
+            9928732,
+            6497970
+          ],
+          "rssGrowthBytes": [
+            0,
+            9027584
+          ]
+        },
+        {
+          "round": 2,
+          "completionMs": [
+            5.672800000000279,
+            3.938000000000102
+          ],
+          "cpuMs": [
+            8.225,
+            5.075
+          ],
+          "heapGrowthBytes": [
+            8800735,
+            5661382
+          ],
+          "rssGrowthBytes": [
+            868352,
+            700416
+          ]
+        },
+        {
+          "round": 3,
+          "completionMs": [
+            6.6054000000003725,
+            4.171400000001086
+          ],
+          "cpuMs": [
+            13.675,
+            7.025
+          ],
+          "heapGrowthBytes": [
+            2792868,
+            8094071
+          ],
+          "rssGrowthBytes": [
+            0,
+            5050368
+          ]
+        },
+        {
+          "round": 4,
+          "completionMs": [
+            6.5183999999972,
+            4.369699999999284
+          ],
+          "cpuMs": [
+            10.15,
+            7.425
+          ],
+          "heapGrowthBytes": [
+            11072313,
+            12291313
+          ],
+          "rssGrowthBytes": [
+            32768,
+            602112
+          ]
+        },
+        {
+          "round": 5,
+          "completionMs": [
+            7.000700000000506,
+            5.301400000000285
+          ],
+          "cpuMs": [
+            16.375,
+            8.975
+          ],
+          "heapGrowthBytes": [
+            1874493,
+            6904718
+          ],
+          "rssGrowthBytes": [
+            4096,
+            7143424
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dashboard stream",
+      "requests": 2400,
+      "completionMedianMs": [
+        0.45869999999922584,
+        0.5455999999994674
+      ],
+      "cpuMedianMs": [
+        0.7825,
+        0.8975
+      ],
+      "pairedCompletionRatios": [
+        1.3154754183406931,
+        0.9654506437790447,
+        1.0059368321076037,
+        0.7477607165683515,
+        1.077335375196721,
+        0.850227914044801
+      ],
+      "pairs": [
+        {
+          "round": 0,
+          "completionMs": [
+            1.0140999999994165,
+            0.770900000000438
+          ],
+          "cpuMs": [
+            1.405,
+            1.175
+          ],
+          "heapGrowthBytes": [
+            1134483,
+            0
+          ],
+          "rssGrowthBytes": [
+            2465792,
+            3305472
+          ]
+        },
+        {
+          "round": 1,
+          "completionMs": [
+            0.44989999999961583,
+            0.46599999999853026
+          ],
+          "cpuMs": [
+            0.625,
+            0.705
+          ],
+          "heapGrowthBytes": [
+            0,
+            0
+          ],
+          "rssGrowthBytes": [
+            5226496,
+            1413120
+          ]
+        },
+        {
+          "round": 2,
+          "completionMs": [
+            0.4236000000000786,
+            0.42109999999956926
+          ],
+          "cpuMs": [
+            0.625,
+            0.625
+          ],
+          "heapGrowthBytes": [
+            2081975,
+            464631
+          ],
+          "rssGrowthBytes": [
+            12288,
+            188416
+          ]
+        },
+        {
+          "round": 3,
+          "completionMs": [
+            0.46749999999883585,
+            0.6252000000004045
+          ],
+          "cpuMs": [
+            0.785,
+            1.015
+          ],
+          "heapGrowthBytes": [
+            390606,
+            339192
+          ],
+          "rssGrowthBytes": [
+            344064,
+            487424
+          ]
+        },
+        {
+          "round": 4,
+          "completionMs": [
+            0.42210000000341097,
+            0.3918000000012398
+          ],
+          "cpuMs": [
+            0.78,
+            0.78
+          ],
+          "heapGrowthBytes": [
+            0,
+            0
+          ],
+          "rssGrowthBytes": [
+            712704,
+            950272
+          ]
+        },
+        {
+          "round": 5,
+          "completionMs": [
+            0.7834000000002561,
+            0.9213999999992666
+          ],
+          "cpuMs": [
+            1.175,
+            1.72
+          ],
+          "heapGrowthBytes": [
+            395336,
+            322356
+          ],
+          "rssGrowthBytes": [
+            1597440,
+            180224
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dashboard buffer",
+      "requests": 2400,
+      "completionMedianMs": [
+        0.5776000000005297,
+        0.6665000000011787
+      ],
+      "cpuMedianMs": [
+        0.8225,
+        1.0899999999999999
+      ],
+      "pairedCompletionRatios": [
+        1.02416632914786,
+        0.8239795918367347,
+        0.9946164199205918,
+        0.9991293748909948,
+        0.6369142492767506,
+        0.9834019869160512
+      ],
+      "pairs": [
+        {
+          "round": 0,
+          "completionMs": [
+            0.758600000000115,
+            0.7407000000002881
+          ],
+          "cpuMs": [
+            1.17,
+            1.02
+          ],
+          "heapGrowthBytes": [
+            598842,
+            747818
+          ],
+          "rssGrowthBytes": [
+            860160,
+            745472
+          ]
+        },
+        {
+          "round": 1,
+          "completionMs": [
+            0.58140000000094,
+            0.7056000000011409
+          ],
+          "cpuMs": [
+            0.86,
+            1.1
+          ],
+          "heapGrowthBytes": [
+            607565,
+            1135690
+          ],
+          "rssGrowthBytes": [
+            811008,
+            2899968
+          ]
+        },
+        {
+          "round": 2,
+          "completionMs": [
+            0.4434000000001106,
+            0.44579999999950815
+          ],
+          "cpuMs": [
+            0.625,
+            0.78
+          ],
+          "heapGrowthBytes": [
+            811035,
+            523397
+          ],
+          "rssGrowthBytes": [
+            294912,
+            262144
+          ]
+        },
+        {
+          "round": 3,
+          "completionMs": [
+            0.5738000000001193,
+            0.5743000000002212
+          ],
+          "cpuMs": [
+            0.705,
+            1.085
+          ],
+          "heapGrowthBytes": [
+            620878,
+            0
+          ],
+          "rssGrowthBytes": [
+            4096,
+            2215936
+          ]
+        },
+        {
+          "round": 4,
+          "completionMs": [
+            0.3995999999970081,
+            0.6274000000012165
+          ],
+          "cpuMs": [
+            0.785,
+            1.095
+          ],
+          "heapGrowthBytes": [
+            957575,
+            521051
+          ],
+          "rssGrowthBytes": [
+            397312,
+            1724416
+          ]
+        },
+        {
+          "round": 5,
+          "completionMs": [
+            0.8117000000020198,
+            0.8254000000015367
+          ],
+          "cpuMs": [
+            2.03,
+            1.25
+          ],
+          "heapGrowthBytes": [
+            672856,
+            0
+          ],
+          "rssGrowthBytes": [
+            1585152,
+            1236992
+          ]
+        }
+      ]
+    },
+    {
+      "name": "table slow consumer",
+      "requests": 600,
+      "completionMedianMs": [
+        114.2444000000005,
+        84.65895
+      ],
+      "cpuMedianMs": [
+        14.219999999999999,
+        8.74
+      ],
+      "pairedCompletionRatios": [
+        1.4514165626033038,
+        1.0706977537229763,
+        1.3587359208665568,
+        1.4386600375068535,
+        0.6096959413060021,
+        2.1669145182919047
+      ],
+      "pairs": [
+        {
+          "round": 0,
+          "completionMs": [
+            126.45670000000064,
+            87.1264000000001
+          ],
+          "cpuMs": [
+            18.14,
+            10.94
+          ],
+          "heapGrowthBytes": [
+            18216444,
+            11705937
+          ],
+          "rssGrowthBytes": [
+            20156416,
+            1773568
+          ]
+        },
+        {
+          "round": 1,
+          "completionMs": [
+            90.42609999999968,
+            84.45529999999962
+          ],
+          "cpuMs": [
+            11.24,
+            10.94
+          ],
+          "heapGrowthBytes": [
+            37016677,
+            14799366
+          ],
+          "rssGrowthBytes": [
+            2822144,
+            1306624
+          ]
+        },
+        {
+          "round": 2,
+          "completionMs": [
+            102.03210000000036,
+            75.09339999999975
+          ],
+          "cpuMs": [
+            12.18,
+            8.42
+          ],
+          "heapGrowthBytes": [
+            29586225,
+            12704982
+          ],
+          "rssGrowthBytes": [
+            86016,
+            925696
+          ]
+        },
+        {
+          "round": 3,
+          "completionMs": [
+            100.72620000000097,
+            70.01389999999992
+          ],
+          "cpuMs": [
+            12.2,
+            8.12
+          ],
+          "heapGrowthBytes": [
+            53708505,
+            12006629
+          ],
+          "rssGrowthBytes": [
+            610304,
+            540672
+          ]
+        },
+        {
+          "round": 4,
+          "completionMs": [
+            137.6163000000015,
+            225.71299999999974
+          ],
+          "cpuMs": [
+            16.24,
+            7.52
+          ],
+          "heapGrowthBytes": [
+            15290059,
+            9168780
+          ],
+          "rssGrowthBytes": [
+            0,
+            487424
+          ]
+        },
+        {
+          "round": 5,
+          "completionMs": [
+            183.88999999999942,
+            84.86260000000038
+          ],
+          "cpuMs": [
+            16.24,
+            9.06
+          ],
+          "heapGrowthBytes": [
+            20574423,
+            13532283
+          ],
+          "rssGrowthBytes": [
+            20340736,
+            8683520
+          ]
+        }
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "file": "writer-dashboard-after-fold-run1.json",
+      "measuredAt": "2026-10-02T13:17:07.398Z",
+      "results": [
+        {
+          "name": "dashboard",
+          "markers": false,
+          "baselineMs": 0.23067899999999952,
+          "writerMs": 0.22799900000000037,
+          "codeBytes": {
+            "baseline": 4743,
+            "writer": 5547
+          },
+          "graphNodes": [
+            37,
+            21
+          ],
+          "stageMedianMs": {
+            "baseline": {
+              "session": 0.07373300000000767,
+              "mount": 0.038690250000009876,
+              "serialize": 0.009673999999993164,
+              "dispose": 0.041632250000005804
+            },
+            "writer": {
+              "session": 0.06703050000000303,
+              "mount": 0.044048500000002384,
+              "serialize": 0.007846499999989192,
+              "dispose": 0.048573499999989764
+            }
+          },
+          "liveHeapMedianBytes": {
+            "baseline": 19811.31,
+            "writer": 18106.31
+          },
+          "retainedSamples": [
+            {
+              "round": 0,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 18848.82,
+              "afterReleaseGrowthBytes": -92543
+            },
+            {
+              "round": 0,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18106.31,
+              "afterReleaseGrowthBytes": 6233
+            },
+            {
+              "round": 1,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18130.17,
+              "afterReleaseGrowthBytes": 8686
+            },
+            {
+              "round": 1,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19812.51,
+              "afterReleaseGrowthBytes": 4234
+            },
+            {
+              "round": 2,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19811.31,
+              "afterReleaseGrowthBytes": 5597
+            },
+            {
+              "round": 2,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18084.77,
+              "afterReleaseGrowthBytes": 5965
+            }
+          ]
+        },
+        {
+          "name": "dashboard",
+          "markers": true,
+          "baselineMs": 0.14786124999999856,
+          "writerMs": 0.1439077500000019,
+          "codeBytes": {
+            "baseline": 4743,
+            "writer": 5547
+          },
+          "graphNodes": [
+            37,
+            21
+          ],
+          "stageMedianMs": {
+            "baseline": {
+              "session": 0.09320700000002036,
+              "mount": 0.04411775000000036,
+              "serialize": 0.019566750000008147,
+              "dispose": 0.06765650000001414
+            },
+            "writer": {
+              "session": 0.09880875000000058,
+              "mount": 0.05855875000003834,
+              "serialize": 0.015910750000007287,
+              "dispose": 0.07759125000000039
+            }
+          },
+          "liveHeapMedianBytes": {
+            "baseline": 19780.47,
+            "writer": 18052.77
+          },
+          "retainedSamples": [
+            {
+              "round": 0,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19043.12,
+              "afterReleaseGrowthBytes": -67779
+            },
+            {
+              "round": 0,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18052.71,
+              "afterReleaseGrowthBytes": 5965
+            },
+            {
+              "round": 1,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18052.77,
+              "afterReleaseGrowthBytes": 5965
+            },
+            {
+              "round": 1,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19780.51,
+              "afterReleaseGrowthBytes": 5933
+            },
+            {
+              "round": 2,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19780.47,
+              "afterReleaseGrowthBytes": 5933
+            },
+            {
+              "round": 2,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18059.85,
+              "afterReleaseGrowthBytes": 14889
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "file": "writer-dashboard-after-fold-run2.json",
+      "measuredAt": "2026-10-02T13:17:30.632Z",
+      "results": [
+        {
+          "name": "dashboard",
+          "markers": false,
+          "baselineMs": 0.5372219999999999,
+          "writerMs": 0.35128624999999947,
+          "codeBytes": {
+            "baseline": 4743,
+            "writer": 5547
+          },
+          "graphNodes": [
+            37,
+            21
+          ],
+          "stageMedianMs": {
+            "baseline": {
+              "session": 0.14493000000002668,
+              "mount": 0.08710799999998242,
+              "serialize": 0.015456499999992275,
+              "dispose": 0.08602925000001957
+            },
+            "writer": {
+              "session": 0.09969675000000736,
+              "mount": 0.061889000000018096,
+              "serialize": 0.010181999999999795,
+              "dispose": 0.08059549999997333
+            }
+          },
+          "liveHeapMedianBytes": {
+            "baseline": 19796.42,
+            "writer": 16203.63
+          },
+          "retainedSamples": [
+            {
+              "round": 0,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 8228.34,
+              "afterReleaseGrowthBytes": -2013310
+            },
+            {
+              "round": 0,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 16203.63,
+              "afterReleaseGrowthBytes": -1061431
+            },
+            {
+              "round": 1,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 14700.69,
+              "afterReleaseGrowthBytes": -338009
+            },
+            {
+              "round": 1,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19796.42,
+              "afterReleaseGrowthBytes": -331
+            },
+            {
+              "round": 2,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19812.43,
+              "afterReleaseGrowthBytes": 5933
+            },
+            {
+              "round": 2,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18084.77,
+              "afterReleaseGrowthBytes": 5965
+            }
+          ]
+        },
+        {
+          "name": "dashboard",
+          "markers": true,
+          "baselineMs": 0.328540250000001,
+          "writerMs": 0.3156254999999987,
+          "codeBytes": {
+            "baseline": 4743,
+            "writer": 5547
+          },
+          "graphNodes": [
+            37,
+            21
+          ],
+          "stageMedianMs": {
+            "baseline": {
+              "session": 0.09529974999991742,
+              "mount": 0.06010475000000499,
+              "serialize": 0.021218249999978976,
+              "dispose": 0.06253349999995407
+            },
+            "writer": {
+              "session": 0.09506399999999757,
+              "mount": 0.049924000000014526,
+              "serialize": 0.0144875000000593,
+              "dispose": 0.06203675000002021
+            }
+          },
+          "liveHeapMedianBytes": {
+            "baseline": 19780.47,
+            "writer": 18052.77
+          },
+          "retainedSamples": [
+            {
+              "round": 0,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19505.15,
+              "afterReleaseGrowthBytes": -21599
+            },
+            {
+              "round": 0,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18052.71,
+              "afterReleaseGrowthBytes": 5965
+            },
+            {
+              "round": 1,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18052.77,
+              "afterReleaseGrowthBytes": 5965
+            },
+            {
+              "round": 1,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19780.51,
+              "afterReleaseGrowthBytes": 5933
+            },
+            {
+              "round": 2,
+              "variant": "baseline",
+              "count": 100,
+              "liveBytesPerSession": 19780.47,
+              "afterReleaseGrowthBytes": 5933
+            },
+            {
+              "round": 2,
+              "variant": "writer",
+              "count": 100,
+              "liveBytesPerSession": 18059.85,
+              "afterReleaseGrowthBytes": 14889
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "file": "writer-results.json",
+      "measuredAt": "2026-10-02T13:18:05.315Z",
+      "results": [
+        {
+          "name": "table",
+          "markers": false,
+          "baselineMs": 7.979947500000003,
+          "writerMs": 3.9032037500000056,
+          "codeBytes": {
+            "baseline": 4294,
+            "writer": 5655
+          },
+          "graphNodes": [
+            8015,
+            2015
+          ],
+          "stageMedianMs": {
+            "baseline": {
+              "session": 0.23012000000001076,
+              "mount": 4.215718750000155,
+              "serialize": 1.9680487500000483,
+              "dispose": 0.8649450000002162
+            },
+            "writer": {
+              "session": 0.22650874999994813,
+              "mount": 2.0460200000000217,
+              "serialize": 0.9506587499998658,
+              "dispose": 0.4845062500001404
+            }
+          },
+          "liveHeapMedianBytes": {
+            "baseline": 1693079.8333333333,
+            "writer": 1035753.1666666666
+          },
+          "retainedSamples": [
+            {
+              "round": 0,
+              "variant": "baseline",
+              "count": 12,
+              "liveBytesPerSession": 1694397,
+              "afterReleaseGrowthBytes": 16392
+            },
+            {
+              "round": 0,
+              "variant": "writer",
+              "count": 12,
+              "liveBytesPerSession": 1035753.1666666666,
+              "afterReleaseGrowthBytes": 588
+            },
+            {
+              "round": 1,
+              "variant": "writer",
+              "count": 12,
+              "liveBytesPerSession": 1035797.8333333334,
+              "afterReleaseGrowthBytes": 1132
+            },
+            {
+              "round": 1,
+              "variant": "baseline",
+              "count": 12,
+              "liveBytesPerSession": 1693079.8333333333,
+              "afterReleaseGrowthBytes": 588
+            },
+            {
+              "round": 2,
+              "variant": "baseline",
+              "count": 12,
+              "liveBytesPerSession": 1693079.8333333333,
+              "afterReleaseGrowthBytes": 588
+            },
+            {
+              "round": 2,
+              "variant": "writer",
+              "count": 12,
+              "liveBytesPerSession": 1035627.6666666666,
+              "afterReleaseGrowthBytes": -3863
+            }
+          ]
+        },
+        {
+          "name": "table",
+          "markers": true,
+          "baselineMs": 10.93807625000004,
+          "writerMs": 5.696064999999953,
+          "codeBytes": {
+            "baseline": 4294,
+            "writer": 5655
+          },
+          "graphNodes": [
+            8015,
+            2015
+          ],
+          "stageMedianMs": {
+            "baseline": {
+              "session": 0.2758687499999724,
+              "mount": 4.647612499999832,
+              "serialize": 2.7662162500000247,
+              "dispose": 0.9562400000001616
+            },
+            "writer": {
+              "session": 0.23913749999996975,
+              "mount": 2.1926375000003646,
+              "serialize": 1.7128262500001707,
+              "dispose": 0.6610662500003401
+            }
+          },
+          "liveHeapMedianBytes": {
+            "baseline": 1693074.1666666667,
+            "writer": 1035792.1666666666
+          },
+          "retainedSamples": [
+            {
+              "round": 0,
+              "variant": "baseline",
+              "count": 12,
+              "liveBytesPerSession": 1691604.6666666667,
+              "afterReleaseGrowthBytes": -16278
+            },
+            {
+              "round": 0,
+              "variant": "writer",
+              "count": 12,
+              "liveBytesPerSession": 1035758.1666666666,
+              "afterReleaseGrowthBytes": 651
+            },
+            {
+              "round": 1,
+              "variant": "writer",
+              "count": 12,
+              "liveBytesPerSession": 1035792.1666666666,
+              "afterReleaseGrowthBytes": 1739
+            },
+            {
+              "round": 1,
+              "variant": "baseline",
+              "count": 12,
+              "liveBytesPerSession": 1693084.8333333333,
+              "afterReleaseGrowthBytes": 651
+            },
+            {
+              "round": 2,
+              "variant": "baseline",
+              "count": 12,
+              "liveBytesPerSession": 1693074.1666666667,
+              "afterReleaseGrowthBytes": 523
+            },
+            {
+              "round": 2,
+              "variant": "writer",
+              "count": 12,
+              "liveBytesPerSession": 1035913.5,
+              "afterReleaseGrowthBytes": 2459
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
