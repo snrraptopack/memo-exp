@@ -209,9 +209,15 @@ normal completion. Unknown calls, getters, external reassignment, dynamic scope
 and potentially throwing callbacks keep the wildcard fallback.
 
 The proof runs after handler emission. Mixed pull/write batches still open the
-slots for the actual writes; a full update opens every gate. This narrows DOM
-slot work only: derivation preludes, structural regions and unknown expressions
-retain their existing replay behavior.
+slots and calculations for the actual writes; a full update opens every gate.
+Ordinary primitive identifier derivations use the same proof to skip pull-only
+replay, preserving source order. Adjacent calculations group only when their
+dependencies and pull policies both match. Destructuring, custom replays,
+structural regions and unknown expressions retain conservative replay.
+
+Control-flow results remain conservative even when their assigned values are
+primitive: an opaque condition can select a different value during a pull.
+Derived values and DOM slots depending on those results retain pulls too.
 
 Component-scope helpers are instrumented without row-scope updater identifiers.
 Conservative commits retain the current component owner alongside the fallback

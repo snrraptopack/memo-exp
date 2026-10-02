@@ -22,11 +22,13 @@ interface PreludeStep {
   sequence: number;
   sources: string[];
   statement: t.Statement;
+  includePull: boolean;
 }
 
 interface PreludeGroup {
   reasons: (number | string)[] | null;
   statements: t.Statement[];
+  includePull: boolean;
 }
 
 export function buildRenderPreludeReplay(
@@ -36,6 +38,7 @@ export function buildRenderPreludeReplay(
   body: t.Statement[],
   locals: LocalDerivation[],
   controls: ControlFlowDerivation[],
+  pullIndependent: ((expression: t.Expression) => boolean) | null = null,
 ): t.BlockStatement {
   const order = new Map(body.map((statement, index) => [statement, index]));
   let sequence = 0;
@@ -45,11 +48,20 @@ export function buildRenderPreludeReplay(
       sequence: sequence++,
       sources: derivation.sources,
       statement: buildDerivationReplay(derivation),
+      // Destructuring and custom replays can execute observable operations.
+      // Only ordinary primitive assignments share the DOM slot proof.
+      includePull: derivation.target.type !== 'Identifier' ||
+        derivation.replay !== undefined || derivation.stableTarget === true ||
+        pullIndependent?.(derivation.source) !== true ||
+        // A primitive intermediate may be assigned by control flow whose
+        // condition reads opaque data. Its transitive roots must be proven too.
+        derivation.sources.some(source => pullIndependent?.(astFactory.identifier(source)) !== true),
     })),
     ...controls.map((control) => ({
       order: order.get(control.statement) ?? Number.MAX_SAFE_INTEGER,
       sequence: sequence++,
       sources: control.sources,
+      includePull: true,
       statement: astFactory.blockStatement([
         ...control.resets.map((reset) =>
           astFactory.expressionStatement(
@@ -85,12 +97,13 @@ export function buildRenderPreludeReplay(
     const key = exact?.join(' ') ?? '*';
     const previous = groups.at(-1);
     const previousKey = previous?.reasons?.join(' ') ?? '*';
-    if (previous !== undefined && previousKey === key) {
+    if (previous !== undefined && previousKey === key && previous.includePull === step.includePull) {
       previous.statements.push(step.statement);
     } else {
       groups.push({
         reasons: exact,
         statements: [step.statement],
+        includePull: step.includePull,
       });
     }
   }
@@ -100,7 +113,7 @@ export function buildRenderPreludeReplay(
       group.reasons === null || reasonVar === null
         ? astFactory.blockStatement(group.statements)
         : astFactory.ifStatement(
-            reasonCondition(ctx, reasonVar, group.reasons),
+            reasonCondition(ctx, reasonVar, group.reasons, group.includePull),
             astFactory.blockStatement(group.statements),
           ),
     ),

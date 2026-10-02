@@ -140,10 +140,13 @@ export function Cart() {
 
 Values whose changes the compiler cannot see use a browser-frame pull fallback.
 Their reads remain live. A volatile component can skip unrelated primitive local
-DOM slots on a pull frame when the compiler proves that their values change only
-through successfully published writes. Object coercions, getters, unknown calls
-and unproven callbacks retain conservative refreshes. Normal writes still update
-their dependent slots, including when a write and a pull are batched together.
+DOM slots and ordinary primitive derived calculations on a pull frame when the
+compiler proves that their values change only through successfully published
+writes. Object coercions, getters, unknown calls and unproven callbacks retain
+conservative refreshes. Values selected by reactive control flow retain pulls,
+including their downstream calculations and DOM slots. Normal writes still
+update their dependent calculations and slots, including when a write and a
+pull are batched together.
 
 ## `if` and `switch` are reactive too
 

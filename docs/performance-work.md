@@ -304,7 +304,7 @@ the optimization priorities.
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
 | Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
-| 3 | Slot granularity and opaque pulls | Proven primitive local DOM slots can now ignore pull-only causes. Broader derivation preludes, structural regions, object/getter reads and unknown calls retain conservative replay. |
+| 3 | Slot granularity and opaque pulls | Proven primitive local DOM slots and ordinary primitive derivations can ignore pull-only causes. Control-flow results, structural regions, object/getter reads and unknown calls retain conservative replay. |
 | 4 | SSR client omission and Marko emission ideas | Investigate hydration ownership/markers, per-binding/shared-input updates and region setup; these remain design candidates. |
 
 The DOM matrix now also checks retained node identity after every validated
@@ -1543,6 +1543,60 @@ variants passed retained identity and mixed-operation checks. Dependencies, VM
 timing artifacts and the Octane pin are unchanged. Broader opaque producers,
 structural replacements and general creation/removal work remain open; bundle
 size stays deferred.
+
+## Primitive derivation replay during opaque pulls
+
+The compiler extends the existing primitive slot proof to ordinary identifier
+derivations. Pull-only causes now skip proven calculations; real dirty reasons,
+mixed pull/write batches and full updates still replay them in source order.
+Adjacent calculations share a guard only when both their dependencies and pull
+policies match. Destructuring, custom replay, opaque operations and structural
+regions retain their existing behavior.
+
+Regression tests also exposed a correctness gap in the earlier slot proof.
+A control-flow result can stay primitive while an opaque condition chooses a
+different value on a pull. Proving only its initializer and assignment RHS was
+insufficient: the DOM slot could skip the new value. Control-flow results and
+their downstream primitive calculations and slots now retain conservative pulls.
+Proving those conditions separately remains future work.
+
+The self-contained suite has 24 cases, including chained derivations, equal
+dependencies with different pull policies, immediate/deferred scheduling,
+multiple instances, mixed causes, retained DOM identity, getters, escaped
+callbacks, writes followed by throws and control-flow fallback resets. The
+initial baseline failed all six narrowing assertions; both scheduler cases and
+all conservative rejection cases already passed. The added control-flow tests
+verify that live opaque conditions cannot leave the derived DOM stale.
+
+An isolated Chromium comparison against the `8c30a57` compiler reproduced the
+earlier DOM mismatch: after changing the opaque condition, its output remained
+`count:0`; the new compiler rendered `count:1`. Both use the same runtime.
+
+Two local comparisons use 1,000 ordinary primitive derivations in a volatile
+component. DOM slots already skip unrelated pulls in the baseline, so this
+measures the remaining prelude work. Compiler-generated applications share the
+same runtime implementation, synchronous scheduling and minification. Each run
+has five warmups and 25 alternating samples, each timing 100 pull updates. Every
+sample checks opaque output and all retained slot nodes/text outside timing;
+a subsequent state write checks that all dependent text still updates. Tests,
+builds and other benchmark jobs had finished before timing.
+
+| Primitive derivations | First run before / after ms per pull | Second run before / after ms per pull |
+| --- | --- | --- |
+| 1,000 | 0.068 / 0.003 | 0.067 / 0.002 |
+
+These isolated numbers do not establish main DOM/Octane gains; small timings
+approach browser timer precision. Compiler build and changed-source lint passed.
+Focused validation passed 125 unique tests across seven files, including the
+24 new cases. All 25 regenerated DOM variants passed identity and mixed-sequence
+checks, and their tracked generated output remains unchanged. Dependencies,
+VM results and the Octane pin are unchanged; bundle size remains deferred.
+
+Control-flow discovery driven solely by opaque conditions, without an existing
+reactive state dependency, remains a separate correctness case to investigate.
+The fallback above applies to controls already discovered for reactive replay.
+Broader opaque-produced list precision and creation/removal/reorder work remain
+on the existing plan.
 
 ## Earlier candidates retained for tracking
 

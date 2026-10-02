@@ -9,6 +9,10 @@ import { plainScalarValue } from '../analysis/plain-list-initializer';
 export function createSlotPullProof(ctx: Ctx, component: string): (expression: BaseNode) => boolean {
   const owner = ctx.compPaths.get(component)?.node;
   const opaque = ctx.opaqueBindings.get(component);
+  // A control-flow result may stay primitive while an opaque condition
+  // changes which value it selects. RHS shape alone cannot prove stability.
+  const controlled = new Set((ctx.instanceControlFlow.get(component) ?? [])
+    .flatMap(control => control.bindings));
   const known = new Map<Binding, boolean>();
   const visiting = new Set<Binding>();
   const shadowed = new Set<string>();
@@ -86,7 +90,7 @@ export function createSlotPullProof(ctx: Ctx, component: string): (expression: B
     const cached = known.get(binding);
     if (cached !== undefined) return cached;
     const name = identifierName(binding.identifier);
-    if (owner === undefined || name === null || opaque?.has(name) === true || shadowed.has(name) ||
+    if (owner === undefined || name === null || opaque?.has(name) === true || controlled.has(name) || shadowed.has(name) ||
         binding.scope.isProgramScope || astBindingAt(ctx, owner.body, name) !== binding ||
         visiting.has(binding)) return false;
     const declaration = variableDeclaratorFor(ctx, binding);

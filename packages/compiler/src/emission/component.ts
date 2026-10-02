@@ -410,6 +410,7 @@ export function transformComponent(
         node.body.body,
         localDerivations ?? [],
         controlFlow ?? [],
+        scope.slotPullIndependent,
       ),
     );
   }
