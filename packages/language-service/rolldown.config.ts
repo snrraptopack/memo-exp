@@ -1,14 +1,27 @@
 import { isAbsolute } from 'node:path';
 import { defineConfig } from 'rolldown';
 
-export default defineConfig({
+const external = (id: string) => !id.startsWith('.') && !isAbsolute(id);
+
+export default defineConfig([{
   input: './src/index.ts',
   platform: 'node',
   transform: { target: 'node24' },
-  external: (id) => !id.startsWith('.') && !isAbsolute(id),
+  external,
   output: {
     file: './dist/index.cjs',
     format: 'cjs',
     minify: true,
   },
-});
+}, {
+  input: './src/check.ts',
+  platform: 'node',
+  transform: { target: 'node24' },
+  external,
+  output: {
+    file: './dist/check.cjs',
+    format: 'cjs',
+    banner: '#!/usr/bin/env node',
+    minify: true,
+  },
+}]);

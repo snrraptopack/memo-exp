@@ -99,9 +99,15 @@ middleware, in listed order. Imported and private local bindings are supported;
 member access, factory calls, and array spreads can be used in the list.
 These bindings and their dependencies remain server-only.
 
-TypeScript's `noUnusedLocals` check does not recognize references inside custom
-JSDoc tags. A binding used only by an annotation can therefore be reported as
-unused by `tsc`, even though the generated server module uses it at runtime.
+The `@memoized-dom/language-service` editor plugin recognizes these annotation
+references and checks middleware signatures and schema output types. A binding
+used only by a tag counts as used. For terminal and CI checks, install that
+package and run `memoized-dom-check -p tsconfig.json`; it checks an in-memory
+copy without changing source files. Plain `tsc` does not load editor plugins,
+so it still treats custom tag references as comments and may report the
+imported or local binding as unused. See the
+[language-service setup](../packages/language-service/README.md) for editor
+compatibility and custom server roots.
 
 `@Input` references a Standard Schema v1 validator for the named argument
 object, such as `{ storyId: 42 }`. Middleware runs first; a short-circuit

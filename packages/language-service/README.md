@@ -27,9 +27,28 @@ remains available for the other packages. To use the plugin in an editor,
 select a TypeScript 6 tsserver; the TypeScript 7 language server does not load
 tsserver plugins.
 
-TypeScript language-service plugins run in editors powered by tsserver. They
-do not add diagnostics to standalone `tsc`; the analysis core is kept separate
-so a future CLI can report the same diagnostics in CI.
+The plugin also recognizes `@middleware` and `@Input` references on server
+functions. Imports and local bindings used by those annotations count as used,
+and TypeScript checks middleware signatures and schema outputs against the
+function's named parameters. Errors underline the corresponding JSDoc tag.
+The checks run on an in-memory copy; source files and runtime code are unchanged.
+
+For terminal and CI checks, use the command included in this package:
+
+```sh
+memoized-dom-check -p tsconfig.json
+```
+
+This runs TypeScript checks plus the same server annotation checks, without
+emitting files. It returns a nonzero exit code on errors. Standalone `tsc` does
+not load language-service plugins and still treats custom tag references as
+comments. The command uses the package's TypeScript 6 peer dependency; it also
+works when the editor uses a language server that cannot load this plugin.
+
+If Vite uses a custom server root, set `"server": "backend"` on the plugin
+entry. The command reads that setting from the tsconfig, or accepts
+`--server backend`. Set `"serverFunctionAnnotations": false` on the plugin
+entry to disable annotation checks.
 
 The first diagnostic suggests `const` for initialized `let` bindings that are
 never reassigned. Its message explains that memoized-dom reactivity follows
