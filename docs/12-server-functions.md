@@ -101,9 +101,8 @@ These bindings and their dependencies remain server-only.
 
 The `@memoized-dom/language-service` editor plugin recognizes these annotation
 references and checks middleware signatures and schema output types. A binding
-used only by a tag counts as used. For terminal and CI checks, install that
-package and run `memoized-dom-check -p tsconfig.json`; it checks an in-memory
-copy without changing source files. Plain `tsc` does not load editor plugins,
+used only by a tag counts as used. The editor checks an in-memory copy without
+changing source files. Plain `tsc` does not load editor plugins,
 so it still treats custom tag references as comments and may report the
 imported or local binding as unused. See the
 [language-service setup](../packages/language-service/README.md) for editor

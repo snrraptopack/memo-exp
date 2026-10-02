@@ -13,9 +13,6 @@
   ],
   "main": "./dist/index.cjs",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "memoized-dom-check": "./dist/check.cjs"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -25,8 +22,7 @@
   },
   "scripts": {
     "build": "bun run ./scripts/clean.ts && rolldown -c rolldown.config.ts && tsc6 -p tsconfig.build.json",
-    "test": "vitest run --config vitest.config.ts",
-    "check": "bun run ./src/check.ts"
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@memoized-dom/compiler": "workspace:*"

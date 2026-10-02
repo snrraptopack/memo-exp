@@ -33,21 +33,12 @@ and TypeScript checks middleware signatures and schema outputs against the
 function's named parameters. Errors underline the corresponding JSDoc tag.
 The checks run on an in-memory copy; source files and runtime code are unchanged.
 
-For terminal and CI checks, use the command included in this package:
-
-```sh
-memoized-dom-check -p tsconfig.json
-```
-
-This runs TypeScript checks plus the same server annotation checks, without
-emitting files. It returns a nonzero exit code on errors. Standalone `tsc` does
-not load language-service plugins and still treats custom tag references as
-comments. The command uses the package's TypeScript 6 peer dependency; it also
-works when the editor uses a language server that cannot load this plugin.
+Standalone `tsc` does not load language-service plugins and still treats custom
+tag references as comments. Annotation type checks are provided by the editor
+plugin; there is no additional command to run.
 
 If Vite uses a custom server root, set `"server": "backend"` on the plugin
-entry. The command reads that setting from the tsconfig, or accepts
-`--server backend`. Set `"serverFunctionAnnotations": false` on the plugin
+entry. Set `"serverFunctionAnnotations": false` on the plugin
 entry to disable annotation checks.
 
 The first diagnostic suggests `const` for initialized `let` bindings that are

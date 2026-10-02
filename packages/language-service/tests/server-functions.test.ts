@@ -1,10 +1,7 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import * as ts from 'typescript';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createLanguageService } from '../src/plugin';
-import { runProjectCheck } from '../src/project-check';
 
 const contracts = `
   declare module '@memoized-dom/server' {
@@ -165,45 +162,5 @@ describe('server function annotation types', { timeout: 30_000 }, () => {
     expect(service.getSyntacticDiagnostics(fileName)).toEqual([]);
     expect(service.getSemanticDiagnostics(fileName)).toEqual([]);
     service.dispose();
-  });
-});
-
-let fixture: string | undefined;
-afterEach(async () => {
-  if (fixture !== undefined) {
-    if (!resolve(fixture).startsWith(resolve(tmpdir(), 'memoized-dom-typecheck-'))) {
-      throw new Error('Refusing to remove a fixture outside the test temporary directory');
-    }
-    await rm(fixture, { recursive: true, force: true });
-  }
-  fixture = undefined;
-});
-
-describe('annotation-aware project checking', { timeout: 30_000 }, () => {
-  it('checks annotations without modifying authored files and exits nonzero on failures', async () => {
-    fixture = await mkdtemp(resolve(tmpdir(), 'memoized-dom-typecheck-'));
-    await mkdir(resolve(fixture, 'server/functions'), { recursive: true });
-    await writeFile(resolve(fixture, 'contracts.d.ts'), contracts);
-    await writeFile(resolve(fixture, 'tsconfig.json'), JSON.stringify({
-      compilerOptions: { target: 'esnext', module: 'esnext', moduleResolution: 'bundler', strict: true,
-        noUnusedLocals: true, skipLibCheck: true }, include: ['server/**/*.ts', 'contracts.d.ts'],
-    }));
-    const fileName = resolve(fixture, 'server/functions/stories.ts');
-    const source = `const guard = (_context: unknown, next: () => Promise<Response>) => next();
-      /** @POST @middleware [guard] */ export async function vote() { return {}; }`;
-    await writeFile(fileName, source);
-    expect(runProjectCheck(ts, ['-p', 'tsconfig.json'], fixture).exitCode).toBe(0);
-    expect(await readFile(fileName, 'utf8')).toBe(source);
-    await writeFile(fileName, source.replace('(_context: unknown, next: () => Promise<Response>) => next()', '() => 1'));
-    const failure = runProjectCheck(ts, ['-p', 'tsconfig.json'], fixture);
-    expect(failure.exitCode).toBe(1);
-    expect(failure.output).toContain('@middleware');
-    expect(failure.output).toContain('stories.ts');
-  });
-
-  it('returns clear command-line errors', () => {
-    expect(runProjectCheck(ts, ['--help']).exitCode).toBe(0);
-    expect(runProjectCheck(ts, ['--server']).output).toContain('requires a folder');
-    expect(runProjectCheck(ts, ['--unknown-option']).exitCode).toBe(1);
   });
 });
