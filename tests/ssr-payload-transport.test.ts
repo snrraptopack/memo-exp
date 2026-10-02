@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { compileModules } from '@memoized-dom/compiler';
-import { renderToResult, renderToResultAsync } from '@memoized-dom/server';
+import { render } from '@memoized-dom/server';
 import { mount, registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
 import '@memoized-dom/runtime/hydrate';
 
@@ -73,7 +73,7 @@ describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
     const fetch = mockFetch({ name: 'Ada Lovelace' });
 
     // 1. Server resolves data and packages HTML + payload script tag
-    const result = await renderToResultAsync(app.App, {
+    const result = await render(app.App, {
       mode: 'resolve',
       fetch,
       markers: true,

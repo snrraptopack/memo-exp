@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { compileModules } from '@memoized-dom/compiler';
-import { renderToResultAsync } from '@memoized-dom/server';
+import { render } from '@memoized-dom/server';
 import {
   mount,
   registerRootFactory,
@@ -47,7 +47,7 @@ it('refetches an untransferred query source without leaving duplicate SSR DOM', 
   const response = () => new Response(JSON.stringify({ name: 'Ada' }), {
     headers: { 'content-type': 'application/json' },
   });
-  const result = await renderToResultAsync(app.App, {
+  const result = await render(app.App, {
     mode: 'resolve',
     markers: true,
     fetch: (async () => response()) as typeof fetch,

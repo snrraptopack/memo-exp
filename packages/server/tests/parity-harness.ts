@@ -24,12 +24,8 @@ import {
   createRouteRuntime,
   setActiveRouteRuntime,
 } from '@memoized-dom/router';
-import {
-  renderToString,
-  renderWithDom,
-  syncBooleanAttributes,
-  type RenderOptions,
-} from '../src/index';
+import { renderToString, type RenderOptions } from '../src/index';
+import { renderWithDom, syncBooleanAttributes } from '../src/dom';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, '..', 'tests', 'fixtures', 'out');

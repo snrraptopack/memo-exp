@@ -8,7 +8,7 @@
  * signal, and explicit aborts (stream reader cancellation, deadlines), and
  * propagates it into route preparation and data settlement. Disposal runs
  * exactly once and always releases route and data runtimes; the application
- * runtime is released too unless a successful `renderWithDom*()` hands it to
+ * runtime is released too unless a successful `renderWithDom()` hands it to
  * its caller.
  */
 

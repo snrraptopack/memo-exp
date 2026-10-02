@@ -24,8 +24,7 @@ import {
   type DocumentTemplate,
 } from './document';
 import {
-  renderToResultAsync,
-  renderToStringAsync,
+  render,
   type RenderOptions,
   type ServerComponent,
 } from './index';
@@ -252,21 +251,15 @@ async function renderPage<
     return new Response('Not Found', { status: 404 });
   }
 
-  const render = renderOptions(context, options, router);
+  const policy = renderOptions(context, options, router);
   try {
     if ((options.render?.delivery ?? 'stream') === 'buffer') {
-      const application = render.markers
-        ? await renderToResultAsync(app, render).then(
-            result => result.html + result.scriptTag,
-          )
-        : await renderToStringAsync(app, render);
+      const result = await render(app, policy);
+      const application = policy.markers ? result.html + result.scriptTag : result.html;
       return htmlResponse(template.prefix + application + template.suffix, options.init);
     }
 
-    const application = prepareRenderToReadableStream(app, {
-      ...render,
-      signal: context.request.signal,
-    });
+    const application = prepareRenderToReadableStream(app, policy);
     await application.ready;
     return htmlResponse(
       composeDocumentStream({

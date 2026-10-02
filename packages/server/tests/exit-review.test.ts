@@ -17,7 +17,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   runWithApplicationRuntime,
 } from '@memoized-dom/runtime';
-import { renderToString, renderWithDom } from '../src/index';
+import { renderToString } from '../src/index';
+import { renderWithDom } from '../src/dom';
 import { compileFixture } from './parity-harness';
 
 

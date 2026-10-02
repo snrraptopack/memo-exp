@@ -3,7 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { compileModules } from '@memoized-dom/compiler';
-import { renderToResultAsync, createPayloadScriptTag } from '@memoized-dom/server';
+import { createPayloadScriptTag, render } from '@memoized-dom/server';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -81,7 +81,7 @@ describe('SSR Phase 5: High-Concurrency & Request Isolation (ssr-proposal.md §P
         );
       }) as unknown as typeof globalThis.fetch;
 
-      const result = await renderToResultAsync(app.App, {
+      const result = await render(app.App, {
         url: uniqueUrl,
         fetch: mockFetch,
         markers: true,

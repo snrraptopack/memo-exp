@@ -7,8 +7,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   renderToReadableStream,
-  renderToResultAsync,
-  renderToStringAsync,
+  render,
 } from '../src/index';
 import { compileFixture, type CompiledTiers } from './parity-harness';
 
@@ -77,19 +76,19 @@ function routedContext(url: string) {
 
 describe('render session', () => {
   it('reports shell, complete, and timeout settlement', async () => {
-    const shell = await renderToResultAsync(data.serverModule.App, {
+    const shell = await render(data.serverModule.App, {
       fetch: jsonFetch({ name: 'Ada' }),
     });
     expect(shell.settlement).toEqual({ status: 'shell' });
 
-    const complete = await renderToResultAsync(data.serverModule.App, {
+    const complete = await render(data.serverModule.App, {
       mode: 'resolve',
       fetch: jsonFetch({ name: 'Ada' }),
     });
     expect(complete.settlement.status).toBe('complete');
     expect(complete.html).toContain('<h1>Ada</h1>');
 
-    const timedOut = await renderToResultAsync(data.serverModule.App, {
+    const timedOut = await render(data.serverModule.App, {
       mode: 'resolve',
       timeout: 20,
       fetch: hangingFetch().fetch,
@@ -114,7 +113,7 @@ describe('render session', () => {
 
   it('propagates the caller signal into route preparation', async () => {
     const abort = new AbortController();
-    const rendering = renderToStringAsync(routed.serverModule.Report, {
+    const rendering = render(routed.serverModule.Report, {
       url: '/reports/7',
       routedContext: routedContext('/reports/7'),
       signal: abort.signal,
@@ -127,7 +126,7 @@ describe('render session', () => {
   });
 
   it('rejects a render that exceeds its hard deadline', async () => {
-    const rendering = renderToStringAsync(routed.serverModule.Report, {
+    const rendering = render(routed.serverModule.Report, {
       url: '/reports/7',
       routedContext: routedContext('/reports/7'),
       deadline: 30,
