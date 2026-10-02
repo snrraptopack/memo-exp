@@ -4,6 +4,7 @@ import {
   childNode,
   FUNCTION_NODE_TYPES as FUNCTION_NODES,
   identifierName,
+  isReferenceIdentifier,
   nodeFields as fields,
   walkAst,
   type BaseNode,
@@ -206,7 +207,7 @@ function identifierIsRead(ctx: Ctx, identifier: BaseNode): boolean {
   ) {
     return parent.type === 'UpdateExpression';
   }
-  return true;
+  return isReferenceIdentifier(parent, key);
 }
 
 interface ReactiveReadFlags {
@@ -296,6 +297,7 @@ function noteReactiveReads(
   ctx: Ctx,
   root: BaseNode,
   reactiveBindings: ReadonlyMap<Binding, string>,
+  opaqueBindings: ReadonlyMap<Binding, string>,
   reads: Set<string>,
   flags?: ReactiveReadFlags,
   visited: Set<t.Node> = new Set(),
@@ -323,20 +325,21 @@ function noteReactiveReads(
             (ctx.helpers.has(calleeName)
               ? summarizeHelper(ctx, calleeName)
               : undefined);
-          if (summary === undefined) return;
-          for (const read of summary.reads) reads.add(read);
+          for (const read of summary?.reads ?? []) reads.add(read);
           if (
             flags !== undefined &&
+            summary !== undefined &&
             (summary.writes.size > 0 ||
               summary.boundedWrites.size > 0 ||
               summary.unbounded)
           ) {
             flags.unsafeCall = true;
           }
-          return;
+          // Module summaries describe routed state. Also inspect a visible
+          // body for opaque captures that have no access-table state key.
         }
-        // A component-local function closes over reactive state without a
-        // summary. Fold its body's free reads — its params resolve to local
+        // Visible functions can close over reactive or opaque state. Fold
+        // their body's free reads — parameters resolve to local
         // bindings and are ignored — and flag writes it performs, since the
         // call re-executes on every replay.
         const fn = localFunctionFor(ctx, binding);
@@ -348,7 +351,8 @@ function noteReactiveReads(
         noteReactiveReads(
           ctx,
           childNode(fn as unknown as BaseNode, 'body') ?? fn,
-          reactiveBindings,
+          binding.scope.isProgramScope ? opaqueBindings : reactiveBindings,
+          opaqueBindings,
           reads,
           flags,
           visited,
@@ -373,6 +377,18 @@ function noteReactiveReads(
 export function scanInstanceControlFlow(ctx: Ctx): void {
   for (const [componentName, componentPath] of ctx.compPaths) {
     const reactiveBindings = new Map<Binding, string>();
+    const opaqueBindings = new Map<Binding, string>();
+    const opaqueSources = ctx.opaqueBindings.get(componentName) ?? new Set<string>();
+    // Pure control calculations can depend entirely on compiler-invisible
+    // values. Resolve the owner's actual bindings so hidden helper reads join
+    // the same attribution path without capturing shadowed names.
+    for (const name of opaqueSources) {
+      const binding = astBindingAt(ctx, componentPath.node, name);
+      if (binding) {
+        reactiveBindings.set(binding, name);
+        opaqueBindings.set(binding, name);
+      }
+    }
     for (const name of ctx.componentProps.get(componentName)?.bindings ?? []) {
       const binding = astBindingAt(
         ctx,
@@ -431,6 +447,7 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
           ctx,
           statement as unknown as BaseNode,
           reactiveBindings,
+          opaqueBindings,
           silentReads,
         );
         if (silentReads.size === 0) continue;
@@ -488,6 +505,7 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
         ctx,
         statement as unknown as BaseNode,
         reactiveBindings,
+        opaqueBindings,
         reads,
         readFlags,
       );
@@ -497,6 +515,7 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
           ctx,
           resetExpression as unknown as BaseNode,
           reactiveBindings,
+          opaqueBindings,
           reads,
           readFlags,
         );
@@ -521,6 +540,11 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
         resets,
         sources: [...reads].sort(),
       });
+      // The output may only render the calculated local, with no direct JSX
+      // read of the opaque input to trigger the earlier volatility scan.
+      if ([...reads].some(source => opaqueSources.has(source))) {
+        ctx.volatileComponents.add(componentName);
+      }
       for (const name of shape.bindings) {
         derivedBindings.add(name);
         const binding = astBindingAt(

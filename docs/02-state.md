@@ -153,7 +153,11 @@ pull are batched together.
 Control flow that reads reactive state replays when that state changes —
 and the read doesn't have to be direct. A condition on a derived `const` or `let`,
 a prop, or an imported module value tracks the original source
-transitively.
+transitively. Pure value calculations that depend only on opaque inputs also
+replay on browser-frame pulls, even when JSX only reads the calculated result.
+Visible component and module helpers contribute their captured reads. Partial
+calculations restore their initializer when no branch matches; imperative
+setup statements retain their one-time behavior.
 
 Branching that picks a **value** stays an ordinary statement — the
 compiler replays it inside the update prelude before DOM writes:

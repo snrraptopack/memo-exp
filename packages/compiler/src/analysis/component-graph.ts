@@ -161,6 +161,8 @@ export function isLightweightRowComponent(ctx: Ctx, name: string): boolean {
 
 /** Intrinsic row shape used before graph linking marks a component listed. */
 export function isListLightweightCandidate(ctx: Ctx, name: string): boolean {
+  // Pulling rows need a registered entity even when they own no writable state.
+  if (ctx.volatileComponents.has(name)) return false;
   if ((ctx.instanceState.get(name)?.size ?? 0) > 0) return false;
   let eligible = true;
   const path = ctx.compPaths.get(name)!;

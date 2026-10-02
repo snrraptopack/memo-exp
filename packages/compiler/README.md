@@ -219,6 +219,18 @@ Control-flow results remain conservative even when their assigned values are
 primitive: an opaque condition can select a different value during a pull.
 Derived values and DOM slots depending on those results retain pulls too.
 
+Pure `if`/`switch` calculations can have only opaque inputs. Control analysis
+attributes those inputs by lexical binding, including captures inside visible
+component and module helpers, and marks their owner volatile even when JSX
+contains no direct opaque read. Partial controls retain initializer resets.
+Property keys and shadowed parameters do not contribute captured reads;
+side-effectful setup controls stay outside replay. Visible helpers that write
+reactive or opaque inputs are diagnosed rather than replayed as calculations.
+
+Volatile component rows retain registered entities and the normal factory ABI,
+including through linked exports, so their independent pulls and disposal work
+without requiring a parent-list update.
+
 Component-scope helpers are instrumented without row-scope updater identifiers.
 Conservative commits retain the current component owner alongside the fallback
 root, including callbacks that run later or owners mounted outside that root.

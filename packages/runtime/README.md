@@ -40,6 +40,11 @@ render never reached. The runtime does not schedule an immediate retry or roll
 back completed writes. Failed effects keep their existing behavior; unregistered
 or replaced entities are not revived.
 
+A synchronous render error during an opaque pull still schedules the next
+browser frame. The original error propagates, and recovery uses the retained
+full dirty mark. Removing the last volatile owner or disposing its application
+during the failed render prevents rearming; no immediate retry is added.
+
 ## Keyed list ownership
 
 General reconciliation keeps retained keys in the region's existing Map. A

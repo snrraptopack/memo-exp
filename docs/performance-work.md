@@ -1592,11 +1592,54 @@ Focused validation passed 125 unique tests across seven files, including the
 checks, and their tracked generated output remains unchanged. Dependencies,
 VM results and the Octane pin are unchanged; bundle size remains deferred.
 
-Control-flow discovery driven solely by opaque conditions, without an existing
-reactive state dependency, remains a separate correctness case to investigate.
-The fallback above applies to controls already discovered for reactive replay.
+Control-flow discovery driven solely by opaque conditions was subsequently
+addressed in the batch below.
 Broader opaque-produced list precision and creation/removal/reorder work remain
 on the existing plan.
+
+## Opaque-only control calculations and registered rows
+
+Pure component-body `if`/`switch` calculations now include opaque roots in
+binding-aware source attribution. Their owner receives browser-frame pulls even
+when JSX only reads the selected value. Visible component and module helper
+bodies contribute captured inputs; routed-state summaries alone previously
+missed module helpers' opaque captures. Property keys and shadowed parameters
+are excluded. Partial calculations restore their initializer-backed fallback,
+while imperative setup controls retain one-time execution. Visible helper writes
+to reactive or opaque inputs receive the existing non-replayable-call diagnostic.
+
+The initial self-contained suite failed 25 of 27 cases against `ae9d90c`.
+An isolated Chromium comparison additionally verified the rendered mismatch:
+changing the opaque input and requesting a full update left the baseline at
+`idle!`; the new compiler rendered `active!` with the same retained text node.
+The runtime implementation was identical in both applications.
+
+Composition tests exposed two related gaps. Volatile component rows could still
+use an unregistered lightweight factory, so their controls had no independent
+pulls. Volatile rows now use the registered factory ABI; linked component export
+metadata makes the same decision. A synchronous getter failure during a pull
+could also terminate the frame loop. The runtime now schedules its next frame
+in `finally`, preserving the original error and the existing full-dirty recovery.
+Removing the last volatile owner or disposing the application prevents rearming.
+
+The final control suite covers 37 cases: opaque conditions and RHS values,
+nested/partial/switch controls, component/module helpers, no unrelated state or
+an unrelated local counter, both schedulers, multiple instances, retained nodes,
+linked/local component rows, getter failure recovery, and conservative setup and
+binding attribution. Three isolated runtime cases verify one scheduled recovery
+frame, full retry, and cancellation through owner/application disposal.
+
+This batch repairs required updates; it makes no main-benchmark speed claim.
+Compiler/runtime builds and changed-source lint passed. Focused validation passed
+142 tests across 11 files, including the 40 new compiler/runtime cases. All 25
+DOM variants passed retained identity and mixed-sequence checks. Final
+regeneration kept the eight tracked applications and all 16 update-style source
+digests unchanged, so the helper-attribution refinement did not change the
+validated benchmark applications. Dependencies, VM results and the Octane pin
+are unchanged.
+Broader opaque-produced list precision, helper metadata across linked modules,
+and creation/removal/reorder work remain on the existing plan. Bundle size stays
+deferred.
 
 ## Earlier candidates retained for tracking
 

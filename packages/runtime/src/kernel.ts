@@ -426,10 +426,15 @@ function scheduleVolatileFrame(k: KernelState): void {
   k.volatileFrameScheduled = true;
   schedule(() => {
     k.volatileFrameScheduled = false;
-    if (k.environment.document.hidden !== true) {
-      for (const id of k.volatile) markDirty(id, VOLATILE_PULL_REASON);
+    try {
+      if (k.environment.document.hidden !== true) {
+        for (const id of k.volatile) markDirty(id, VOLATILE_PULL_REASON);
+      }
+    } finally {
+      // A synchronous render can throw. Keep the next frame available for
+      // recovery, while preserving the error and respecting removed owners.
+      scheduleVolatileFrame(k);
     }
-    scheduleVolatileFrame(k);
   });
 }
 
