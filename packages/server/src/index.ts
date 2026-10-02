@@ -622,6 +622,8 @@ export async function renderToResultAsync(
 
 export { renderToReadableStream, type StreamOptions } from './stream';
 export { json, type JsonResponse } from './json';
+export { error, type ErrorResponse } from './error';
+export { getCookie, setCookie, deleteCookie, type CookieOptions } from './cookies';
 export {
   composeDocumentStream,
   loadDocumentTemplate,

@@ -161,10 +161,10 @@ describe('named HTTP server functions', () => {
       'import type { ResolvedValue } from "@memoized-dom/data"',
     );
     expect(declarations).toContain(
-      'import type { JsonResponse } from \'@memoized-dom/server\'',
+      'import type { JsonResponse, ErrorResponse } from \'@memoized-dom/server\'',
     );
     expect(declarations).toContain(
-      'type __mmdClientValue<T> = T extends JsonResponse<infer U> ? U : T extends Response ? unknown : T;',
+      'type __mmdClientValue<T> = T extends ErrorResponse ? never : T extends JsonResponse<infer U> ? U : T extends Response ? unknown : T;',
     );
     expect(declarations).toContain(
       'import type * as __mmd_impl_0 from "../server/functions/stories.js"',
