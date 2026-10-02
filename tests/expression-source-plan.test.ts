@@ -6,6 +6,7 @@ import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepar
 import { createCtx } from '../packages/compiler/src/context';
 import { planExpressionSources } from '../packages/compiler/src/planning/expression-sources';
 import { planComponentRendering } from '../packages/compiler/src/planning/component-render';
+import { planComponentPlacements } from '../packages/compiler/src/planning/component-placement';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source, {filename:'./facts.tsx'}).program as unknown as t.Program;
@@ -61,7 +62,7 @@ it('plans lexical call facts before emission and consumes them without the mutab
   prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
   const before=JSON.stringify(program), header=[...ctx.header];
   const sources=planExpressionSources(ctx);
-  const plan=planComponentRendering(ctx.compPaths,sources,new Map());
+  const plan=planComponentRendering(ctx.compPaths,sources,new Map(),planComponentPlacements(ctx));
   expect(JSON.stringify(program)).toBe(before); expect(ctx.header).toEqual(header);
   const calls=new Map<string,t.CallExpression>();
   for (const component of plan.components) walkAst(component.source.node,{enter(node){

@@ -11,13 +11,9 @@ import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { isLightweightListedComponent } from '../analysis';
 import {
-  keyPathOf,
   type ComponentPath,
   type Ctx,
-  type EffectSite,
-  type LinkedComponentRowUse,
   type RowCtx,
-  type SiteRef,
 } from '../context';
 import { buildBranchCreate, emitNode } from '../emit';
 import {
@@ -31,8 +27,6 @@ import { transformComponentLifecycle } from '../lifecycle';
 import {
   buildPropDeclaration,
   buildPropReplay,
-  localBindingForProp,
-  objectBindingName,
   runtimeParameter,
   simpleObjectPropBindings,
   type ComponentPropsPlan,
@@ -43,6 +37,7 @@ import { buildRenderPreludeReplay } from '../components/render-prelude';
 import { structuralReasonsFor } from '../components/local-derived';
 import type { ComponentReturnPlan } from '../components/return-plan';
 import type { PlannedComponent } from '../planning/component-render';
+import type { ListedRowPlacement } from '../planning/component-placement';
 import {
   buildEffectRegistrations,
   buildLocalEffectInvalidations,
@@ -58,87 +53,28 @@ import { applyRepeatedDomTemplate } from './dom-template';
 import { applyStaticMarkup } from './markup';
 import { transparentSourceMounts } from '../data-sources';
 import { selectedRouteSubscriptionBinding } from '../external-reactivity';
-import {
-  componentRouteSelectors,
-  routeSelectorExpression,
-} from './route-selectors';
+import { routeSelectorExpression } from './route-selectors';
 
 type ComponentEmitScope = ReturnType<typeof newEmitScope>;
 
-function hasComponentLocalEffects(effects: readonly EffectSite[] | undefined): boolean {
-  return effects?.some(
-    (site) =>
-      site.localReads.size > 0 ||
-      site.localDerivationReads.size > 0 ||
-      site.conditionLocalReads.size > 0 ||
-      site.conditionLocalDerivationReads.size > 0,
-  ) === true;
-}
-
-function externalSourceBinding(ctx: Ctx, source: string): string | null {
-  const root = source.split('.')[0]!;
-  return ctx.externalReactiveBindings.has(root) ? root : null;
-}
-
-function componentExternalSources(ctx: Ctx, component: string): string[] {
-  if (ctx.externalReactiveBindings.size === 0) return [];
-  const sources = new Set<string>();
-  const note = (source: string): void => {
-    const binding = externalSourceBinding(ctx, source);
-    if (binding !== null) sources.add(binding);
-  };
-  for (const source of ctx.compReads.get(component) ?? []) note(source);
-  for (const derivation of ctx.instanceDerivations.get(component) ?? []) {
-    for (const source of derivation.sources) note(source);
-  }
-  for (const control of ctx.instanceControlFlow.get(component) ?? []) {
-    for (const source of control.sources) note(source);
-  }
-  for (const site of ctx.effects.get(component) ?? []) {
-    for (const source of site.moduleReads) note(source);
-    for (const source of site.conditionModuleReads) note(source);
-  }
-  return [...sources].sort();
-}
-
 function buildComponentRowContext(
-  propPlan: ComponentPropsPlan,
-  refs: readonly SiteRef[],
-  linkedRefs: readonly LinkedComponentRowUse[],
-  sourceLocal: boolean,
+  placement: ListedRowPlacement | null,
   lightweight: boolean,
   updateVar: string,
   factoryId: string,
   factoryOwner: string | null,
   factoryParent: string | null,
 ): RowCtx | undefined {
-  if (
-    (refs.length === 0 && linkedRefs.length === 0) ||
-    propPlan.bindings.length === 0
-  ) {
-    return undefined;
-  }
-  const keyPaths = [
-    ...refs.map((ref) => keyPathOf(ref.keyExpr ?? null, ref.itemParam ?? '')),
-    ...linkedRefs.map((ref) => ref.keyPath),
-  ];
-  const first = JSON.stringify(keyPaths[0]);
-  const keyPath = keyPaths.every(
-    (candidate) => JSON.stringify(candidate) === first,
-  )
-    ? keyPaths[0]!
-    : null;
-  const directItem = localBindingForProp(propPlan, 'item');
-  const propsObject = objectBindingName(propPlan);
+  if (placement === null) return undefined;
   return {
-    itemParam: directItem ?? propsObject ?? propPlan.bindings[0]!,
-    itemPath: directItem === null && propsObject !== null ? ['item'] : [],
+    itemParam: placement.itemParam,
+    itemPath: [...placement.itemPath],
     rowIdVar: factoryId,
     ...(lightweight ? { refreshVar: updateVar } : {}),
-    keyPath,
-    sourceKey: refs[0]?.sourceKey ?? linkedRefs[0]?.sourceKey ?? '',
-    sourceLocal,
-    ...(sourceLocal
+    keyPath: placement.keyPath === null ? null : [...placement.keyPath],
+    sourceKey: placement.sourceKey,
+    sourceLocal: placement.sourceLocal,
+    ...(placement.sourceLocal
       ? { ownerIdVar: factoryOwner ?? factoryParent! }
       : {}),
   };
@@ -258,40 +194,28 @@ export function transformComponent(
   ctx: Ctx,
   component: PlannedComponent,
 ): void {
-  const { source: path, name, returns, expressionSources } = component;
+  const { source: path, name, returns, expressionSources, placement } = component;
   const node = path.node;
   const propPlan = ctx.componentProps.get(name)!;
   const propSlotCount = propPlan.params.length;
-  const refs = ctx.listedSites.get(name) ?? [];
-  const linkedRefs = ctx.linkedComponentRows.get(name) ?? [];
-  const sourceLocal =
-    refs.some((ref) => ref.sourceLocal === true) ||
-    linkedRefs.some((ref) => ref.sourceLocal);
+  const { sourceLocal, ownsRoutes, externalSources, routeSelectors, hasLocalEffects } = placement;
   const dataPolicies = ctx.transparentPolicyParams.get(name) ?? null;
-  const ownsRoutes = ctx.localRoutes.some(route => route.ownerComponent === name);
   const lightweight =
     dataPolicies === null &&
     !ctx.transparentSources.has(name) &&
     !ownsRoutes &&
     isLightweightListedComponent(ctx, name);
   const positionalObjectProps =
-    lightweight && (linkedRefs.length === 0 || ctx.privateRowPropComponents.has(name))
+    lightweight && (!placement.hasLinkedRows || ctx.privateRowPropComponents.has(name))
       ? simpleObjectPropBindings(propPlan)
       : null;
   const lightweightPropCount =
     positionalObjectProps?.length ?? propSlotCount;
   const scope = newEmitScope(ctx, lightweight);
-  scope.cacheText = refs.length > 0 || linkedRefs.length > 0;
+  scope.cacheText = placement.listed;
   const localDerivations = ctx.instanceDerivations.get(name);
   const controlFlow = ctx.instanceControlFlow.get(name);
   const effects = ctx.effects.get(name);
-  const externalSources = componentExternalSources(ctx, name);
-  const routeSelectors = new Map(
-    externalSources
-      .filter(source => ctx.routeReactiveBindings.has(source))
-      .map(source => [source, componentRouteSelectors(ctx, node, source)]),
-  );
-  const hasLocalEffects = hasComponentLocalEffects(effects);
   const reasonIds = ctx.instanceReasonIds.get(name);
   if (
     reasonIds !== undefined ||
@@ -345,10 +269,7 @@ export function transformComponent(
   requireIdentifiers(ctx).registerComponentId(name, factoryId);
 
   const rowCtx = buildComponentRowContext(
-    propPlan,
-    refs,
-    linkedRefs,
-    sourceLocal,
+    placement.row,
     lightweight,
     scope.updateVar,
     factoryId,

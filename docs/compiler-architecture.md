@@ -18,7 +18,7 @@ implemented by this change.
 flowchart LR
   A[Parse and normalize authored code] --> B[Analyze bindings and component facts]
   B --> C[Prepare reads and callbacks]
-  C --> D[Plan returns, exact sources and primitive writes]
+  C --> D[Plan returns, sources, primitive writes and placement]
   D --> E[DOM creation and handler lowering]
   E --> P[Finalize callback publication facts]
   P --> U[Emit updater gates and component factory]
@@ -29,7 +29,8 @@ flowchart LR
 expression-source contracts from semantic planning. Its
 `ModuleRenderPlan` contains component names/source paths and the existing return
 contract: direct JSX or a branch selector, branch content and replaced source
-statements, plus `ComponentExpressionSources` and an optional `ComponentPullPlan`.
+statements, plus `ComponentExpressionSources`, an optional `ComponentPullPlan`
+and `ComponentPlacement`.
 Contracts are read-only. No generated identifiers, DOM node operations,
 registration policy or runtime
 namespace is allocated by this pass.
@@ -69,6 +70,20 @@ allocation proofs through the existing context adapter. Both consumers retain
 their own lexical eligibility rules. Async provenance, effects and ownership
 retain their current collectors.
 
+`planning/component-placement.ts` captures listed-component status, row item
+bindings and paths, common key paths, collection ownership, external reactive
+inputs, local-effect presence and route ownership before factory mutation.
+Local and linked callers feed the same contract. Unknown or incompatible key
+paths retain the conservative fallback; the planner does not broaden key proofs.
+The backend attaches runtime IDs and chooses factory ABI and ownership cleanup.
+
+`analysis/route-selectors.ts` collects imported route reads in one traversal per
+component, including multiple aliases. Dynamic or indirect reads fall back to
+whole-route subscriptions for that source only. Captured selectors contain
+semantic paths and literal query arguments; emission constructs their runtime
+expressions without re-analyzing bindings. Other async/effect facts still use
+their existing collectors.
+
 AST references are owned by one compilation and consumed by its emitter. The
 read-only contract does not imply that referenced AST nodes are frozen or that
 one consumed plan can be reused by a second backend. A multi-backend build must
@@ -81,7 +96,8 @@ give each lowering its own owned tree or immutable semantic representation.
 | Exact slot-source inputs | Semantic snapshot consumed through `ComponentExpressionSources` | Extend shared facts to other consumers while preserving lexical identity |
 | Primitive pull safety | Authored fact plan plus explicit late callback-publication input | Move callback analysis/lowering to a shared phase with target-specific publication |
 | Async provenance and effects | Existing collectors and shared `Ctx` | Distinct fact contracts with explicit pass dependencies |
-| Props, list/conditional sites and ownership | Analysis facts plus decisions in emitters | Backend-independent component/region plans with explicit inputs |
+| Component placement and route selectors | Semantic snapshot consumed by component emission | Extend to structural regions and composition without moving host ABI into shared plans |
+| Props and list/conditional regions | Analysis facts plus decisions in emitters | Backend-independent region plans with explicit inputs |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
 | Generated IDs, headers, imports and output buffers | Same `Ctx` as source analysis | Mutable emission state separate from analyzed facts and configuration |
@@ -153,3 +169,15 @@ conservative handling of throws, hidden reads, shadowing and dynamic scope.
 All 25 browser variants passed identity and mixed-sequence validation, and the
 runner exited successfully. Compiler regeneration leaves tracked DOM benchmark
 output unchanged. This boundary establishes no runtime speedup.
+
+## Validation of component placement planning
+
+Compiler build and changed-source lint passed. The selected suites passed 220
+tests across 23 files, including eight new placement/route contract cases.
+Coverage includes local and linked row sources, aliased props, incompatible
+keys, route alias isolation, shadowing, snapshots after source/context mutation,
+effects, forms, hydration and SSR.
+
+Compiler regeneration leaves tracked DOM benchmark output unchanged. All 25
+browser variants passed retained-node identity and mixed-sequence checks; the
+runner exited successfully. This phase change establishes no runtime speedup.

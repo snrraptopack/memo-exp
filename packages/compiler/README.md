@@ -53,10 +53,11 @@ modules within a domain import their siblings directly.
 Component return structure is now planned before any component factory is
 replaced. `planComponentRendering()` consumes normalized component paths and
 receives exact expression-source contracts from `planExpressionSources()` and
-authored primitive-pull plans from `planComponentPulls()`, then
+authored primitive-pull plans from `planComponentPulls()` and component placement
+from `planComponentPlacements()`, then
 returns a read-only `ModuleRenderPlan`: component identity/source, direct or
-branched JSX returns, and semantic source queries. It chooses neither DOM
-operations nor runtime identifiers or a factory ABI. `emitDomComponents()`
+branched JSX returns, semantic source queries and placement facts. DOM operations,
+runtime identifiers and factory ABI belong to `emitDomComponents()`, which
 consumes that plan; the DOM component
 emitter no longer discovers JSX return control flow. Unsupported returns in a
 later component are diagnosed before an earlier component is emitted.
@@ -76,6 +77,12 @@ publication decisions and consumes finalized pull queries for both DOM slots
 and derivation replay. Those queries no longer consult mutable `Ctx` or authored
 write ASTs. Primitive syntax is shared with list allocation proofs; lexical
 eligibility remains specific to each proof.
+
+Placement plans capture row bindings/key paths, local or linked collection
+ownership, external inputs, local-effect presence and route ownership. Route
+selector analysis batches imported aliases before factory emission. The backend
+consumes these facts and attaches runtime IDs; factory ABI, structural regions
+and cleanup policy remain backend decisions.
 
 Model compiler work as an explicit pipeline of domain passes. A pass receives
 the compiler context and AST, performs one named responsibility, and leaves the

@@ -40,6 +40,13 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ## Completed changes
 
+- Component placement is now captured before factory emission: row bindings and
+  common key paths, local/linked collection ownership, external inputs and
+  effect/route ownership flags. Imported route aliases are analyzed together in
+  one component traversal instead of rebuilding the parent map per source.
+  DOM emission consumes these facts and attaches runtime IDs; region cleanup
+  and factory ABI remain backend decisions. This is an architecture change,
+  with no runtime speed claim. VM structural-update priorities remain open.
 - Primitive pull safety now uses an authored fact snapshot plus an explicit
   late callback-publication input. Initializer/write dependencies are analyzed
   once before lowering; DOM slot and derivation replay queries share the
