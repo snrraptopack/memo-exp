@@ -40,7 +40,6 @@ import {
   type SimpleObjectPropBinding,
 } from '../components/props';
 import { buildRenderPreludeReplay } from '../components/render-prelude';
-import { createSlotPullProof } from '../components/slot-pull-proof';
 import { structuralReasonsFor } from '../components/local-derived';
 import type { ComponentReturnPlan } from '../components/return-plan';
 import type { PlannedComponent } from '../planning/component-render';
@@ -303,7 +302,7 @@ export function transformComponent(
     scope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
   }
   if (reasonIds !== undefined && !lightweight) {
-    if (ctx.volatileComponents.has(name)) scope.slotPullIndependent = createSlotPullProof(ctx, name);
+    scope.trackPullExpressions = component.pullPlan !== null;
     scope.slotReasons = (expression) => {
       const sources = expressionSources.sourcesFor(expression);
       if (sources === null) return null;
@@ -493,6 +492,11 @@ export function transformComponent(
   // Materialize the updater fn before markup rewrites creation so the
   // pass can see every late reference to member nodes and the document
   // local (dynamic writes inside updaters bind nodes too).
+  if (scope.trackPullExpressions) {
+    scope.slotPullIndependent = component.pullPlan!.finalize(
+      execution => ctx.analyzedFunctions.has(execution as t.Node),
+    ).independentFor;
+  }
   const updateStatement = updateDecl(ctx, scope);
   applyStaticMarkup(ctx, scope, rootVar, [
     ...scope.mounts,

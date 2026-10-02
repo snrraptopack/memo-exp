@@ -61,7 +61,7 @@ it('plans lexical call facts before emission and consumes them without the mutab
   prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
   const before=JSON.stringify(program), header=[...ctx.header];
   const sources=planExpressionSources(ctx);
-  const plan=planComponentRendering(ctx.compPaths,sources);
+  const plan=planComponentRendering(ctx.compPaths,sources,new Map());
   expect(JSON.stringify(program)).toBe(before); expect(ctx.header).toEqual(header);
   const calls=new Map<string,t.CallExpression>();
   for (const component of plan.components) walkAst(component.source.node,{enter(node){

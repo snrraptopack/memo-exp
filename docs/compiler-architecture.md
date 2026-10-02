@@ -18,17 +18,20 @@ implemented by this change.
 flowchart LR
   A[Parse and normalize authored code] --> B[Analyze bindings and component facts]
   B --> C[Prepare reads and callbacks]
-  C --> D[Plan component returns and exact source inputs]
-  D --> E[DOM component emission]
-  E --> F[Finalize module and print]
+  C --> D[Plan returns, exact sources and primitive writes]
+  D --> E[DOM creation and handler lowering]
+  E --> P[Finalize callback publication facts]
+  P --> U[Emit updater gates and component factory]
+  U --> F[Finalize module and print]
 ```
 
 `planning/component-render.ts` takes normalized component paths and exact
 expression-source contracts from semantic planning. Its
 `ModuleRenderPlan` contains component names/source paths and the existing return
 contract: direct JSX or a branch selector, branch content and replaced source
-statements, plus `ComponentExpressionSources`. Contracts are read-only. No
-generated identifiers, DOM node operations, registration policy or runtime
+statements, plus `ComponentExpressionSources` and an optional `ComponentPullPlan`.
+Contracts are read-only. No generated identifiers, DOM node operations,
+registration policy or runtime
 namespace is allocated by this pass.
 
 `emission/dom.ts` consumes the complete module plan. Component emission receives
@@ -50,9 +53,21 @@ unchanged. Summarized helpers retain their existing proof; an unindexed cloned
 global call remains conservative. This boundary preserves current behavior;
 it does not broaden which calls or getters the compiler regards as safe.
 
-Exact sources and opaque pull independence are separate facts. Pull independence
-still examines analyzed callback completion and lexical writes at its existing
-phase. Async provenance, effects and ownership retain their current collectors.
+Exact sources and opaque pull independence are separate facts.
+`planning/primitive-pull.ts` snapshots primitive initializer/write dependencies,
+lexical eligibility and authored callback completion before backend mutation.
+`analysis/primitive-pull.ts` resolves those dependencies after the emitter
+supplies the finalized callback-publication decisions. Finalized queries do not
+read mutable `Ctx` or re-inspect authored initializers/writes. Escaped callbacks,
+throws, hidden reads, shadowing, dynamic scope and unsupported values remain
+conservative. This is an explicit two-phase contract: finalizing before handler
+lowering finishes would miss publication; capturing completion after lowering
+would mistake generated calls for authored effects.
+
+The shared primitive grammar in `analysis/plain-scalar.ts` also serves list
+allocation proofs through the existing context adapter. Both consumers retain
+their own lexical eligibility rules. Async provenance, effects and ownership
+retain their current collectors.
 
 AST references are owned by one compilation and consumed by its emitter. The
 read-only contract does not imply that referenced AST nodes are frozen or that
@@ -64,7 +79,8 @@ give each lowering its own owned tree or immutable semantic representation.
 | Concern | Current ownership | Next boundary |
 | --- | --- | --- |
 | Exact slot-source inputs | Semantic snapshot consumed through `ComponentExpressionSources` | Extend shared facts to other consumers while preserving lexical identity |
-| Opaque pull safety, async provenance and effects | Several collectors and shared `Ctx` | Distinct fact contracts with explicit pass dependencies |
+| Primitive pull safety | Authored fact plan plus explicit late callback-publication input | Move callback analysis/lowering to a shared phase with target-specific publication |
+| Async provenance and effects | Existing collectors and shared `Ctx` | Distinct fact contracts with explicit pass dependencies |
 | Props, list/conditional sites and ownership | Analysis facts plus decisions in emitters | Backend-independent component/region plans with explicit inputs |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
@@ -124,3 +140,16 @@ browser variants passed identity and mixed-sequence assertions. The browser
 runner then exited with a Windows `EBUSY` during temporary-profile cleanup;
 the assertions completed before that cleanup error. This change makes no
 runtime performance claim; the VM structural-update priorities remain open.
+
+## Validation of primitive pull planning
+
+Compiler build and changed-source lint passed. The two selected suites passed
+292 distinct tests across 20 files, including ten new pull-plan contract cases
+and the existing primitive-list, opaque-control, callback, effect, linked-helper,
+async-form, route, hydration and SSR cases. Contract tests check publication
+snapshots, backend AST mutation, synchronous writes, transitive labels and
+conservative handling of throws, hidden reads, shadowing and dynamic scope.
+
+All 25 browser variants passed identity and mixed-sequence validation, and the
+runner exited successfully. Compiler regeneration leaves tracked DOM benchmark
+output unchanged. This boundary establishes no runtime speedup.

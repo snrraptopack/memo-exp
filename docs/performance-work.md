@@ -40,6 +40,15 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ## Completed changes
 
+- Primitive pull safety now uses an authored fact snapshot plus an explicit
+  late callback-publication input. Initializer/write dependencies are analyzed
+  once before lowering; DOM slot and derivation replay queries share the
+  finalized result. Primitive syntax and dependencies are collected in one
+  traversal, replacing a binding walk followed by a grammar walk. Syntax is
+  shared with list allocation proofs,
+  with separate lexical eligibility. This removes coupling to mutable analysis
+  state while preserving conservative polling for unproven writes. It makes
+  no runtime performance claim and leaves the VM structural-update work open.
 - Exact slot-source inputs are now captured before component emission. The
   source query has no mutable `Ctx` dependency, and resolved derivation maps
   are built once per component rather than once per slot. Runtime reason

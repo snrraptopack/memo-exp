@@ -1,21 +1,21 @@
 import {
   childNode, identifierName, isReferenceIdentifier, nodeField, walkAst, FUNCTION_NODE_TYPES, type BaseNode, type Binding,
 } from '../ast';
-import type * as t from '../ast/compiler-types';
 import { astBindingAt, astScopeAt, variableDeclaratorFor, type Ctx } from '../context';
-import { plainScalarValue } from '../analysis/plain-list-initializer';
+import {
+  createPrimitivePullPlan, scalarReadFact, type ComponentPullPlan, type PrimitiveBindingFact, type PrimitiveWriteFact,
+} from '../analysis/primitive-pull';
 
-/** Primitive lexical values cannot change behind the compiler's write channel. */
-export function createSlotPullProof(ctx: Ctx, component: string): (expression: BaseNode) => boolean {
+/** Snapshot authored facts before lowering changes initializer/write nodes. */
+export function planComponentPull(ctx: Ctx, component: string): ComponentPullPlan {
   const owner = ctx.compPaths.get(component)?.node;
   const opaque = ctx.opaqueBindings.get(component);
   // A control-flow result may stay primitive while an opaque condition
   // changes which value it selects. RHS shape alone cannot prove stability.
   const controlled = new Set((ctx.instanceControlFlow.get(component) ?? [])
     .flatMap(control => control.bindings));
-  const known = new Map<Binding, boolean>();
-  const visiting = new Set<Binding>();
   const shadowed = new Set<string>();
+  const seen = new Set<Binding>();
   const unsafeCompletion = new Set<BaseNode>();
   const completionReads = new Map<BaseNode, Set<Binding>>();
   const executionOf = (node: BaseNode): BaseNode | undefined => {
@@ -42,6 +42,7 @@ export function createSlotPullProof(ctx: Ctx, component: string): (expression: B
     if (localName !== null) {
       const ownerBinding = astBindingAt(ctx, owner!.body, localName);
       const binding = astBindingAt(ctx, node, localName);
+      if (binding !== undefined) seen.add(binding);
       if (ownerBinding !== undefined && binding !== undefined && binding !== ownerBinding) shadowed.add(localName);
     }
     const execution = executionOf(node);
@@ -68,56 +69,44 @@ export function createSlotPullProof(ctx: Ctx, component: string): (expression: B
   // Emission clones flat slot expressions. Their identifiers still denote the
   // component scope; indexed authored initializers/writes retain lexical lookup.
   // The scalar grammar below excludes nested functions and local shadow scopes.
+  const scopes = ctx.astAnalysis?.nodeToScope;
+  const ownerScope = owner === undefined ? undefined : scopes?.get(owner.body);
   const resolve = (node: BaseNode, name: string): Binding | undefined =>
-    astScopeAt(ctx, node) === undefined && owner !== undefined
-      ? astBindingAt(ctx, owner.body, name) : astBindingAt(ctx, node, name);
-
-  const scalar = (expression: BaseNode | null): boolean => {
-    if (expression === null) return false;
-    const bindings = new Set<Binding>();
-    let valid = true;
-    walkAst(expression, { enter(node) {
-      const name = identifierName(node);
-      if (name === null) return;
-      const binding = resolve(node, name);
-      if (binding === undefined || !primitive(binding)) valid = false;
-      else bindings.add(binding);
-    } });
-    return valid && plainScalarValue(ctx, expression, bindings, resolve);
-  };
-
-  const primitive = (binding: Binding): boolean => {
-    const cached = known.get(binding);
-    if (cached !== undefined) return cached;
+    (scopes?.get(node) ?? ownerScope)?.getBinding(name);
+  const bindings = new Map<Binding, PrimitiveBindingFact>();
+  for (const binding of seen) {
     const name = identifierName(binding.identifier);
     if (owner === undefined || name === null || opaque?.has(name) === true || controlled.has(name) || shadowed.has(name) ||
-        binding.scope.isProgramScope || astBindingAt(ctx, owner.body, name) !== binding ||
-        visiting.has(binding)) return false;
+        binding.scope.isProgramScope || astBindingAt(ctx, owner.body, name) !== binding) continue;
     const declaration = variableDeclaratorFor(ctx, binding);
-    if (declaration === null || childNode(declaration, 'id') !== binding.identifier) return false;
-    visiting.add(binding);
-    let valid = scalar(childNode(declaration, 'init'));
+    if (declaration === null || childNode(declaration, 'id') !== binding.identifier) continue;
+    const writes: PrimitiveWriteFact[] = [];
     for (const write of binding.constantViolations) {
-      if (!valid) break;
       const execution = executionOf(write);
-      if (execution !== owner && (execution === undefined || unsafeCompletion.has(execution) ||
-          !ctx.analyzedFunctions.has(execution as t.Node) ||
-          [...(completionReads.get(execution) ?? [])].some(read => read !== binding && !primitive(read)))) {
-        valid = false; break;
-      }
       const target = childNode(write, write.type === 'UpdateExpression' ? 'argument' : 'left');
-      if (identifierName(target) !== name || target === null || astBindingAt(ctx, target, name) !== binding) {
-        valid = false;
-      } else if (write.type === 'UpdateExpression') {
-        valid = ['++', '--'].includes(String(nodeField(write, 'operator')));
-      } else {
-        valid = write.type === 'AssignmentExpression' && scalar(childNode(write, 'right'));
-      }
+      const exactTarget = target !== null && identifierName(target) === name && astBindingAt(ctx, target, name) === binding;
+      const value = !exactTarget ? {supported:false,reads:[]} : write.type === 'UpdateExpression'
+        ? {supported:['++', '--'].includes(String(nodeField(write, 'operator'))),reads:[]}
+        : write.type === 'AssignmentExpression' ? scalarReadFact(childNode(write, 'right'), resolve)
+          : {supported:false,reads:[]};
+      writes.push({
+        execution: execution === owner ? null : execution ?? null,
+        completionSafe: execution === owner || execution !== undefined && !unsafeCompletion.has(execution),
+        completionReads: execution === undefined ? [] : [...(completionReads.get(execution) ?? [])],
+        value,
+      });
     }
-    visiting.delete(binding);
-    known.set(binding, valid);
-    return valid;
-  };
+    bindings.set(binding, {initializer:scalarReadFact(childNode(declaration, 'init'), resolve),writes});
+  }
+  return createPrimitivePullPlan(bindings, dynamicScope, resolve);
+}
 
-  return expression => !dynamicScope && scalar(expression);
+export function planComponentPulls(ctx: Ctx): ReadonlyMap<string, ComponentPullPlan> {
+  const plans = new Map<string, ComponentPullPlan>();
+  for (const component of ctx.compPaths.keys()) {
+    if (ctx.volatileComponents.has(component) && ctx.instanceReasonIds.has(component)) {
+      plans.set(component, planComponentPull(ctx, component));
+    }
+  }
+  return plans;
 }

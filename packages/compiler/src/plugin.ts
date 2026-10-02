@@ -41,6 +41,7 @@ import { liftModuleStateCells } from './cells';
 import { emitDomComponents } from './emission/dom';
 import { planComponentRendering, type ModuleRenderPlan } from './planning/component-render';
 import { planExpressionSources } from './planning/expression-sources';
+import { planComponentPulls } from './planning/primitive-pull';
 import {
   rejectUnownedCleanup,
   transformProgramCallbacks,
@@ -267,7 +268,7 @@ function prepareProgram(
   rewriteTransparentDataReads(ctx);
   transformProgramCallbacks(ctx, programPath);
   transformSharedHelperCallbacks(ctx, programPath);
-  return planComponentRendering(ctx.compPaths, planExpressionSources(ctx));
+  return planComponentRendering(ctx.compPaths, planExpressionSources(ctx), planComponentPulls(ctx));
 }
 
 function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {

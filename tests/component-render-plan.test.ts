@@ -19,7 +19,7 @@ function componentPaths(program: t.Program) {
 function planReturns(paths: ReadonlyMap<string, ComponentPath>) {
   const facts = createExpressionSourceFacts({ownerSources:new Set(),unknownSources:new Set(),
     derivedSources:new Map(),pureCallee:()=>false});
-  return planComponentRendering(paths,new Map([...paths.keys()].map(name=>[name,facts])));
+  return planComponentRendering(paths,new Map([...paths.keys()].map(name=>[name,facts])),new Map());
 }
 
 it.each([
@@ -56,6 +56,6 @@ it('plans from normalized paths and semantic sources, independent of emission st
   const plan=planReturns(paths);
   expect(plan.components.map(component=>component.name)).toEqual(['One','Two']);
   expect(Object.keys(plan)).toEqual(['components']);
-  expect(Object.keys(plan.components[0]!)).toEqual(['name','source','returns','expressionSources']);
+  expect(Object.keys(plan.components[0]!)).toEqual(['name','source','returns','expressionSources','pullPlan']);
   expect(JSON.stringify(program as unknown as BaseNode)).toBe(before);
 });

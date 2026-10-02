@@ -1,10 +1,6 @@
 import { childNode, childNodes, identifierName, nodeField, type BaseNode, type Binding } from '../ast';
 import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
-
-const SCALAR_BINARY_OPERATORS = new Set([
-  '+', '-', '*', '/', '%', '**', '<<', '>>', '>>>', '&', '|', '^',
-  '<', '<=', '>', '>=', '==', '!=', '===', '!==',
-]);
+import { isPlainScalarValue } from './plain-scalar';
 
 /** Primitive operands cannot invoke user coercion or escape a record. */
 export function plainScalarValue(
@@ -14,24 +10,10 @@ export function plainScalarValue(
   resolveBinding: (node: BaseNode, name: string) => Binding | undefined = (at, name) => astBindingAt(ctx, at, name),
   primitiveMember?: (node: BaseNode) => boolean,
 ): boolean {
-  if (node === null) return false;
-  if (node.type === 'Literal') return nodeField(node, 'value') === null ||
-    ['string', 'number', 'boolean'].includes(typeof nodeField(node, 'value'));
-  if (node.type === 'Identifier') {
-    const binding = resolveBinding(node, identifierName(node)!);
+  return isPlainScalarValue(node, identifier => {
+    const binding = resolveBinding(identifier, identifierName(identifier)!);
     return binding !== undefined && parameters?.has(binding) === true;
-  }
-  if (node.type === 'MemberExpression') return primitiveMember?.(node) === true;
-  const scalar = (value: BaseNode | null): boolean => plainScalarValue(ctx, value, parameters, resolveBinding, primitiveMember);
-  if (node.type === 'BinaryExpression' && SCALAR_BINARY_OPERATORS.has(String(nodeField(node, 'operator'))) ||
-      node.type === 'LogicalExpression' && ['&&', '||', '??'].includes(String(nodeField(node, 'operator')))) {
-    return scalar(childNode(node, 'left')) && scalar(childNode(node, 'right'));
-  }
-  if (node.type === 'ConditionalExpression') return scalar(childNode(node, 'test')) &&
-    scalar(childNode(node, 'consequent')) && scalar(childNode(node, 'alternate'));
-  if (node.type === 'TemplateLiteral') return childNodes(node, 'expressions').every(scalar);
-  return node.type === 'UnaryExpression' && ['+', '-', '!', '~'].includes(String(nodeField(node, 'operator'))) &&
-    scalar(childNode(node, 'argument'));
+  }, primitiveMember);
 }
 
 interface PlainAllocation {

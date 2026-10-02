@@ -53,6 +53,7 @@ modules within a domain import their siblings directly.
 Component return structure is now planned before any component factory is
 replaced. `planComponentRendering()` consumes normalized component paths and
 receives exact expression-source contracts from `planExpressionSources()` and
+authored primitive-pull plans from `planComponentPulls()`, then
 returns a read-only `ModuleRenderPlan`: component identity/source, direct or
 branched JSX returns, and semantic source queries. It chooses neither DOM
 operations nor runtime identifiers or a factory ABI. `emitDomComponents()`
@@ -60,7 +61,7 @@ consumes that plan; the DOM component
 emitter no longer discovers JSX return control flow. Unsupported returns in a
 later component are diagnosed before an earlier component is emitted.
 
-This is the first phase boundary, not a complete target-neutral IR. Plans refer
+These are partial phase boundaries, not a complete target-neutral IR. Plans refer
 to AST nodes owned by this compilation; backend emission consumes those nodes.
 Exact slot-source queries no longer read `Ctx`: owner/unknown sources, derivation
 roots and callee proof inputs are captured before backend mutation. Emission
@@ -68,6 +69,13 @@ maps the resulting source names to runtime reasons. Other expression,
 provenance and ownership facts still share `Ctx`, and several
 normalization passes still lower runtime calls. The remaining migration and
 phase invariants are documented in `docs/compiler-architecture.md`.
+
+Primitive pull plans capture initializer/write dependencies and authored
+completion before emission. After lowering handlers, the backend supplies
+publication decisions and consumes finalized pull queries for both DOM slots
+and derivation replay. Those queries no longer consult mutable `Ctx` or authored
+write ASTs. Primitive syntax is shared with list allocation proofs; lexical
+eligibility remains specific to each proof.
 
 Model compiler work as an explicit pipeline of domain passes. A pass receives
 the compiler context and AST, performs one named responsibility, and leaves the

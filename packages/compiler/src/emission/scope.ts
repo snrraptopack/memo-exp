@@ -25,6 +25,8 @@ export interface EmitScope {
   updaterReasons: Map<() => t.Statement, (number | string)[]>;
   /** A proven primitive slot can ignore the wildcard opaque-pull reason. */
   slotPullIndependent: ((expression: t.Expression) => boolean) | null;
+  /** Preserve queries until callback publication facts are finalized. */
+  trackPullExpressions: boolean;
   updaterExpressions: Map<() => t.Statement, t.Expression>;
   /** Event name to compiler-private prebound list/event binding. */
   delegatedEventBindings: Map<string, string>;
@@ -68,6 +70,7 @@ export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
     slotReasons: null,
     updaterReasons: new Map(),
     slotPullIndependent: null,
+    trackPullExpressions: false,
     updaterExpressions: new Map(),
     delegatedEventBindings: new Map(),
     documentVar: null,
@@ -163,7 +166,7 @@ export function pushSlotUpdater(
   const reasons = scope.slotReasons?.(expression) ?? null;
   if (reasons !== null && reasons.length > 0) {
     scope.updaterReasons.set(updater, reasons);
-    if (scope.slotPullIndependent !== null) scope.updaterExpressions.set(updater, expression);
+    if (scope.trackPullExpressions) scope.updaterExpressions.set(updater, expression);
   }
   scope.updaters.push(updater);
 }
