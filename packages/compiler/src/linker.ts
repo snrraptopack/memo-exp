@@ -77,6 +77,8 @@ export interface CompiledFunctionExport {
   transparentSourceFactory?: boolean;
   transparentSourceMethod?: TransparentSourceMethod;
   reads: string[];
+  /** Captured inputs whose changes have no routed state key. */
+  opaqueReads?: boolean;
   writes: string[];
   boundedWrites: string[];
   parameterWrites: ParameterWrite[];
@@ -699,6 +701,7 @@ function compileLinkedModules(
             ? {}
             : { transparentSourceMethod: summary.transparentSourceMethod }),
           reads: [...summary.reads],
+          ...(summary.opaqueReads === true ? { opaqueReads: true } : {}),
           writes: [...summary.writes],
           boundedWrites: [...summary.boundedWrites],
           parameterWrites: summary.parameterWrites.map((effect) => ({

@@ -227,6 +227,7 @@ export function linkImports(
           manifests,
         ),
         reads: [...targetExport.reads],
+        ...(targetExport.opaqueReads === true ? { opaqueReads: true } : {}),
         writes: [...targetExport.writes],
         boundedWrites: [...targetExport.boundedWrites],
         parameterWrites: [...targetExport.parameterWrites],

@@ -15,6 +15,8 @@ import {
   nodeFields as fields,
   walkAst,
   type BaseNode,
+  type Binding,
+  type Identifier,
   type Scope,
 } from './ast';
 import {
@@ -22,6 +24,7 @@ import {
   astScopeAt,
   memberKey,
   refreshAstAnalysis,
+  variableDeclaratorFor,
   type Ctx,
   type FnSummary,
 } from './context';
@@ -34,6 +37,7 @@ import {
   staticAssignedKeys,
   type ReactiveOrigin,
 } from './mutation-analysis';
+import { opaqueModuleRoots } from './analysis/opaque-volatility';
 
 function scopeAt(ctx: Ctx, at: BaseNode): Scope {
   let scope = astScopeAt(ctx, at);
@@ -108,6 +112,42 @@ export function summarizeHelper(
     boundedWrites: new Set(),
     parameterWrites: [],
     unbounded: false,
+  };
+  const opaqueRoots = opaqueModuleRoots(ctx);
+  // Resolve local aliases through their initializers and later assignments.
+  // A captured receiver write/call cannot be bounded to routed state keys.
+  const capturesOpaque = (
+    expression: BaseNode | null,
+    seen = new Set<Binding>(),
+  ): boolean => {
+    if (expression === null) return false;
+    let captured = false;
+    walkAst(expression, {
+      enter(node) {
+        if (captured) return false;
+        const name = identifierName(node);
+        if (name === null) return;
+        const binding = astBindingAt(ctx, node, name);
+        if (
+          binding === undefined ||
+          !binding.references.includes(node as Identifier)
+        ) return;
+        if (binding.scope.isProgramScope && opaqueRoots.has(name)) {
+          captured = true;
+          return false;
+        }
+        if (binding.scope.isProgramScope || seen.has(binding)) return;
+        const declaration = variableDeclaratorFor(ctx, binding);
+        if (declaration === null) return;
+        const next = new Set(seen).add(binding);
+        captured = capturesOpaque(childNode(declaration, 'init'), next) ||
+          binding.constantViolations.some(write =>
+            write.type === 'AssignmentExpression' &&
+            capturesOpaque(childNode(write, 'right'), next),
+          );
+      },
+    });
+    return captured;
   };
   const aliases = new AliasTracker((bindingName, binding) => {
     if (
@@ -205,11 +245,13 @@ export function summarizeHelper(
       member as unknown as t.MemberExpression,
     );
     if (origin !== null) noteOriginWrite(origin);
+    if (capturesOpaque(childNode(member, 'object'))) summary.unbounded = true;
   };
 
   const noteBoundedArguments = (call: BaseNode): void => {
     for (const expression of argumentExpressions(call)) {
       if (expression.type !== 'Identifier') continue;
+      if (capturesOpaque(expression)) summary.unbounded = true;
       const origin = aliases.resolveExpression(
         scopeAt(ctx, expression),
         expression as unknown as t.Expression,
@@ -292,17 +334,25 @@ export function summarizeHelper(
         return;
       }
 
-      if (current.type === 'CallExpression') {
+      if (
+        current.type === 'CallExpression' ||
+        current.type === 'OptionalCallExpression'
+      ) {
         const callee = childNode(current, 'callee');
-        if (callee?.type === 'MemberExpression') {
+        if (
+          callee?.type === 'MemberExpression' ||
+          callee?.type === 'OptionalMemberExpression'
+        ) {
           const method = memberName(callee as unknown as t.MemberExpression);
           const receiver = childNode(callee, 'object');
+          if (capturesOpaque(receiver)) summary.unbounded = true;
           if (
             method === 'assign' &&
             identifierName(receiver) === 'Object'
           ) {
             const args = childNodes(current, 'arguments');
             const targetArg = args[0];
+            if (capturesOpaque(targetArg ?? null)) summary.unbounded = true;
             const target =
               targetArg === undefined
                 ? null
@@ -339,12 +389,15 @@ export function summarizeHelper(
         const calleeName = identifierName(callee);
         if (
           calleeName !== null &&
+          callee !== null &&
+          astBindingAt(ctx, callee, calleeName)?.scope.isProgramScope === true &&
           (ctx.helpers.has(calleeName) || ctx.importedFunctions.has(calleeName))
         ) {
           const nested =
             ctx.importedFunctions.get(calleeName) ??
             summarizeHelper(ctx, calleeName, visiting);
           for (const read of nested.reads) summary.reads.add(read);
+          if (nested.opaqueReads === true) summary.opaqueReads = true;
           for (const write of nested.writes) summary.writes.add(write);
           for (const write of nested.boundedWrites) {
             summary.boundedWrites.add(write);
@@ -363,6 +416,7 @@ export function summarizeHelper(
               lexicalScope,
               argument as unknown as t.Expression,
             );
+            if (capturesOpaque(argument)) summary.unbounded = true;
             if (origin !== null) {
               noteReceiverEffect(extendOrigin(origin, effect.path));
             }
@@ -370,12 +424,22 @@ export function summarizeHelper(
           if (nested.unbounded) summary.unbounded = true;
           return;
         }
+        if (capturesOpaque(callee)) summary.unbounded = true;
         noteBoundedArguments(current);
         return;
       }
 
       if (current.type === 'Identifier') {
         const identifier = identifierName(current)!;
+        const binding = astBindingAt(ctx, current, identifier);
+        if (
+          binding?.scope.isProgramScope === true &&
+          opaqueRoots.has(identifier) &&
+          binding.references.includes(current as Identifier) &&
+          !assignmentLeftIs(ctx, current, current)
+        ) {
+          summary.opaqueReads = true;
+        }
         if (!ctx.state.has(identifier) || locals.has(identifier)) return;
         if (assignmentLeftIs(ctx, current, current)) return;
         summary.reads.add(identifier);

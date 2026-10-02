@@ -149,6 +149,7 @@ function calleeIsPure(ctx: Ctx, callee: t.Node): boolean {
   if (summary !== undefined) {
     return (
       summary.reads.size === 0 &&
+      summary.opaqueReads !== true &&
       summary.writes.size === 0 &&
       summary.boundedWrites.size === 0 &&
       summary.parameterWrites.length === 0 &&

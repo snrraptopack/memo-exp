@@ -522,6 +522,7 @@ export function analyzeManifest(
                 ctx.functionComponentCandidates.get(local) ?? [],
               ),
               reads: [...summary.reads].map((key) => canonicalStateKey(ctx, key)).sort(),
+              ...(summary.opaqueReads === true ? { opaqueReads: true } : {}),
               writes: [...summary.writes].map((key) => canonicalStateKey(ctx, key)).sort(),
               boundedWrites: [...summary.boundedWrites]
                 .map((key) => canonicalStateKey(ctx, key))

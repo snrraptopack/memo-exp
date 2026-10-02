@@ -44,6 +44,7 @@ export interface FunctionExport {
   tagCandidates: string[];
   componentCandidates: string[];
   reads: string[];
+  opaqueReads?: boolean;
   writes: string[];
   boundedWrites: string[];
   parameterWrites: ParameterWrite[];

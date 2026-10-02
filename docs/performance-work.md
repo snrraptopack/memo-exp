@@ -1641,6 +1641,35 @@ Broader opaque-produced list precision, helper metadata across linked modules,
 and creation/removal/reorder work remain on the existing plan. Bundle size stays
 deferred.
 
+## Captured opaque reads across linked helpers
+
+Function summaries now carry an optional `opaqueReads` flag separately from
+routed read keys and write effects. Nested module helpers, linked imports and
+explicit re-export aliases preserve it. A read-only helper that captures an
+opaque value retains volatile controls and registered component rows without
+inventing unbounded write effects or replacing canonical routed read keys.
+Slot purity checks also honor the flag, so hidden reads cannot skip required
+pull work. Lexical bindings exclude property names and shadowed helper names.
+
+Captured opaque receiver writes and calls remain conservative effects, including
+optional calls, local aliases, `Object.assign` targets and summarized parameter
+writes. Controls using these helpers receive the existing non-replayable-call
+diagnostic rather than repeatedly performing those effects.
+
+Before the change, all four direct/re-export and scheduler combinations in the
+self-contained linked-helper DOM regression failed to schedule a pull. The
+final 18-case suite checks metadata propagation, mixed opaque/routed reads,
+multiple instances, retained nodes, linked rows, lexical shadows and effects.
+Compiler build and changed-source lint passed; focused validation passed 132
+tests across 12 files. All 25 regenerated DOM variants passed retained identity
+and mixed-sequence checks. Tracked benchmark output remains unchanged.
+
+This is a correctness and metadata prerequisite for broader opaque precision;
+it establishes no main-benchmark speed gain. Opaque-produced list precision,
+creation/removal/reorder work and factory-snapshot policies remain separate
+work. Dependencies, VM results and the Octane pin are unchanged. Bundle size
+remains deferred.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

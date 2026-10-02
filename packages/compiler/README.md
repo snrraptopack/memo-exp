@@ -219,6 +219,13 @@ Control-flow results remain conservative even when their assigned values are
 primitive: an opaque condition can select a different value during a pull.
 Derived values and DOM slots depending on those results retain pulls too.
 
+Linked function summaries carry an optional `opaqueReads` flag independently
+of routed reads and write effects. Nested helpers and explicit re-export aliases
+preserve that flag. Imported read-only opaque helpers therefore retain volatile
+controls and registered component rows without inventing unbounded writes.
+Captured opaque receiver mutations and calls retain conservative effects and
+cannot be replayed as pure control calculations.
+
 Pure `if`/`switch` calculations can have only opaque inputs. Control analysis
 attributes those inputs by lexical binding, including captures inside visible
 component and module helpers, and marks their owner volatile even when JSX

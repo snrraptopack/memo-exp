@@ -174,6 +174,8 @@ export interface LinkedFunctionImport {
   /** Finite component identities declared by helper returns. */
   componentCandidates?: LinkedDynamicComponentCandidate[];
   reads: string[];
+  /** Captured reads may change outside routed state writes. */
+  opaqueReads?: boolean;
   /** Directly proven state writes. */
   writes: string[];
   /** Conservative effects bounded to serialized state roots. */
@@ -291,6 +293,8 @@ export interface SiteRef {
 /** Module-level helper function summary (M5.3 interprocedural analysis). */
 export interface FnSummary {
   reads: Set<string>;
+  /** Captured reads may change outside routed state writes. */
+  opaqueReads?: boolean;
   /** Directly proven state writes. */
   writes: Set<string>;
   /** Conservative effects bounded to module-state roots. */
@@ -677,6 +681,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
       }
       importedFunctions.set(local, {
         reads: new Set(linked.reads),
+        ...(linked.opaqueReads === true ? { opaqueReads: true } : {}),
         writes: new Set(linked.writes),
         boundedWrites: new Set(linked.boundedWrites),
         parameterWrites: linked.parameterWrites.map((effect) => ({

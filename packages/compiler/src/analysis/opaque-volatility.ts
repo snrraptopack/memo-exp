@@ -105,7 +105,7 @@ function isOpaqueInvocation(
   if (root === null) return false;
   if (tainted.has(root)) return true;
   const summary = ctx.importedFunctions.get(root);
-  if (summary !== undefined) return summary.unbounded;
+  if (summary !== undefined) return summary.unbounded || summary.opaqueReads === true;
   const binding = astBindingAt(ctx, invocation, root);
   if (bindingIsExternalImport(binding)) {
     return !(
@@ -314,12 +314,11 @@ function renderedRoots(
 }
 
 /**
- * Mark owners whose render output pulls from state that may continue changing
- * after control escaped into compiler-invisible code.
+ * Module bindings whose captured reads may change outside compiler-visible writes.
  */
-export function scanOpaqueVolatility(ctx: Ctx): void {
+export function opaqueModuleRoots(ctx: Ctx): Set<string> {
   const programBindings = ctx.astAnalysis?.rootScope.bindings;
-  if (programBindings === undefined) return;
+  if (programBindings === undefined) return new Set();
 
   const opaqueImports = [...programBindings]
     .filter(([name, binding]) => {
@@ -328,10 +327,15 @@ export function scanOpaqueVolatility(ctx: Ctx): void {
         return false;
       }
       const summary = ctx.importedFunctions.get(name);
-      return summary === undefined || summary.unbounded;
+      return summary === undefined || summary.unbounded || summary.opaqueReads === true;
     })
     .map(([name]) => name);
-  const moduleTainted = moduleOpaqueRoots(ctx, opaqueImports);
+  return moduleOpaqueRoots(ctx, opaqueImports);
+}
+
+/** Mark owners whose rendered output depends on compiler-invisible changes. */
+export function scanOpaqueVolatility(ctx: Ctx): void {
+  const moduleTainted = opaqueModuleRoots(ctx);
 
   for (const [component, componentPath] of ctx.compPaths) {
     const componentNode = componentPath.node as unknown as BaseNode;
