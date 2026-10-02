@@ -61,6 +61,13 @@ returns zero. Disposal finishes the remaining rows, entities and anchors before
 reporting cleanup failures: one error is rethrown unchanged, multiple errors are
 reported together. Interrupted frames retain the same ownership coverage.
 
+An active reconciliation also stops after a key getter, prop replay or retained
+row updater disposes the region. If a row factory disposes its owner before
+returning, the returned entry is cleaned separately because it has not yet
+entered the ownership cache. Later rows are not created or refreshed, and the
+reconciler does not insert into removed anchors. This is cancellation of the
+remaining work; authored effects and completed DOM writes are not rolled back.
+
 The compiler marks proven DOM-only inline rows with the final `resourceFree`
 argument to `createListRegion()`. Those entries have no entities or disposal
 callbacks. Complete clear/replacement and ordinary unmount can remove their

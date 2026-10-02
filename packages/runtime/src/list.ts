@@ -232,16 +232,17 @@ export function createListRegion<T>(
     index: number,
   ): void {
     entry.updateProps?.(item, index); // R7/R10: refresh callback bindings
+    if (disposed) return;
     if (entry.update !== undefined) {
       entry.update(); // M5.5: sync retained row with (possibly mutated) item
-      if (rowId !== null) undirty(rowId); // M5.7: no double render
+      if (!disposed && rowId !== null) undirty(rowId); // M5.7: no double render
     } else if (rowId !== null) {
       // Component row: the entity renders in-place with the box just pushed
       // above (single pass), then its pending dirty is cancelled like any row.
       const e = getEntity(rowId);
       if (e) {
         e.render();
-        undirty(rowId);
+        if (!disposed) undirty(rowId);
       }
     }
   }
@@ -341,7 +342,7 @@ export function createListRegion<T>(
     rowId: EntityId,
     index: number,
     encodedKey: string | null,
-  ): ListEntry {
+  ): ListEntry | null {
     if (adopting && encodedKey === null) {
       throw new HydrationMismatchError(
         idPrefix,
@@ -387,6 +388,18 @@ export function createListRegion<T>(
       }
     }
     if (factoryFailed) throw factoryError;
+
+    // A factory can unmount its owner before returning. That entry was not
+    // yet in either ownership map, so finish it here and abort the caller.
+    if (disposed) {
+      let errors: unknown[] | null = null;
+      try { entry!.dispose?.(); }
+      catch (error) { (errors ??= []).push(error); }
+      try { cleanupEntry(entry!); }
+      catch (error) { (errors ??= []).push(error); }
+      reportCleanupErrors(errors);
+      return null;
+    }
 
     // Client-created rows already carry their compiler-defined node extent in
     // ListEntry.nodes, so a per-row hydration marker would only add another
@@ -434,6 +447,7 @@ export function createListRegion<T>(
         validatedKeys.length = items.length;
         for (let i = 0; i < items.length; i++) {
           const currentKey = key(items[i] as T, i);
+          if (disposed) return;
           validatedKeys[i] = currentKey;
           evaluatedKeyCount = i + 1;
           const previousRow = prevRows[i];
@@ -455,6 +469,7 @@ export function createListRegion<T>(
             i,
             structuralOnly,
           );
+          if (disposed) return;
         }
         return;
       }
@@ -476,6 +491,7 @@ export function createListRegion<T>(
       let appendOnly = true;
       for (let i = 0; !provenAppend && i < prevItems.length; i++) {
         const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
+        if (disposed) return;
         validatedKeys[i] = k;
         if (i >= evaluatedKeyCount) evaluatedKeyCount = i + 1;
         const rec = prevRows[i];
@@ -492,6 +508,7 @@ export function createListRegion<T>(
         const seen = new Set<unknown>();
         for (let i = prevItems.length; i < items.length; i++) {
           const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
+          if (disposed) return;
           if (cache.has(k) || seen.has(k)) {
             throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
           }
@@ -508,6 +525,7 @@ export function createListRegion<T>(
             i,
             structuralOnly,
           );
+          if (disposed) return;
         }
 
         const fragment = environment.document.createDocumentFragment();
@@ -521,6 +539,7 @@ export function createListRegion<T>(
           const encoded = trackRowIds || environment.mode !== 'client-create' ? encodeListKey(k) : null;
           const createId = trackRowIds ? rowIdFor(k, encoded) : idPrefix;
           const entry = createRow(item, k, createId, i, encoded);
+          if (entry === null) return;
           const id = trackRowIds ? createId : null;
           appended.push({ e: entry, id, pos: i, key: k });
           const nodes = entry.nodes;
@@ -567,6 +586,7 @@ export function createListRegion<T>(
       let prefixOnly = true;
       for (let i = 0; i < items.length; i++) {
         const k = i < evaluatedKeyCount ? validatedKeys[i] : key(items[i] as T, i);
+        if (disposed) return;
         validatedKeys[i] = k;
         if (i >= evaluatedKeyCount) evaluatedKeyCount = i + 1;
         // Removal subsequences usually continue at the next old position.
@@ -595,6 +615,7 @@ export function createListRegion<T>(
             ordered[i]!.pos,
             structuralOnly,
           );
+          if (disposed) return;
         }
 
         if (prefixOnly) {
@@ -677,6 +698,7 @@ export function createListRegion<T>(
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as T;
       const k = i < evaluatedKeyCount ? validatedKeys[i] : key(item, i);
+      if (disposed) return;
       let rec: RowRec | undefined;
       // Keep retained keys in the live Map. A frame marker proves uniqueness
       // and hides consumed rows from refreshKey/size until this frame commits.
@@ -702,10 +724,12 @@ export function createListRegion<T>(
         else lastOld = oldPos;
         rec.pos = i;
         syncRetained(rec.e, item, rec.id, i, oldPos, structuralOnly);
+        if (disposed) return;
       } else {
         const encoded = trackRowIds || environment.mode !== 'client-create' ? encodeListKey(k) : null;
         const createId = trackRowIds ? rowIdFor(k, encoded) : idPrefix;
         const entry = createRow(item, k, createId, i, encoded);
+        if (entry === null) return;
         rec = {
           e: entry,
           id: trackRowIds ? createId : null,
@@ -926,6 +950,7 @@ export function createListRegion<T>(
     for (const index of indices) {
       const rec = prevRows[index];
       if (rec !== undefined) syncRow(rec.e, items[index] as T, rec.id, index);
+      if (disposed) return;
     }
   }
 

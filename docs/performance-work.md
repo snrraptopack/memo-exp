@@ -1215,6 +1215,64 @@ Creation/replacement costs, broader opaque producer proofs, and failure/reentry
 during ongoing reconciliation remain follow-up work. Bundle-size work remains
 deferred.
 
+## Cancel reconciliation when a callback unmounts
+
+Disposal must also stop work already in progress. Sixteen self-contained runtime
+checks now cover unmounting from a key getter, row factory, prop replay or row
+updater during fresh creation, append, replacement, steady replay, removal,
+mixed frames and index refresh. Thirteen initial cases fail on `218faec`, with
+orphaned row ownership, insertion into removed anchors or reads from cleared
+row buffers; they pass after the fix.
+
+The reconciler checks its terminal state after these authored callbacks and
+stops before creating or refreshing later rows. A factory's returned entry is
+cleaned separately when disposal happened before that entry entered the maps;
+its entity cleanup still finishes if its entry disposer throws. Prop replay
+cancellation also prevents the subsequent row render. This does not roll back
+authored effects, and it does not resolve general nested reconciliation or every
+exception/reentry case during removal cleanup.
+
+## Discarded: private multi-field positional props
+
+A compiler trial extended the existing single-field proof to multiple supplied
+fields. Every call had to keep the same authored attribute order and supply only
+the read fields; receiver calls/tags additionally required unchanged direct arrow
+bindings or inline arrows at every site. Defaults, spreads, escapes, unknown
+receivers and public contracts stayed conservative. Behavioral tests passed for
+linked/local selection, reordered retained rows, replacements and event captures,
+and for ordered/throwing prop evaluation before any captured binding changed.
+
+Two local Chromium comparisons used actual compiler-generated applications,
+identical new runtimes, minified bundles, synchronous scheduling, seeded labels,
+three warmups and 15 alternating 10k samples per operation. Every sample checked
+text/order/classes, fresh replacement identity, current selection events and
+subsequent retained updates outside timing. Only the two multi-field component
+variants changed; the inline variants were controls.
+
+| 10k component rows, before / trial ms | First create | Repeat create | First replace | Repeat replace |
+| --- | --- | --- | --- | --- |
+| Component data and selection | 131.7 / 105.0 | 90.6 / 137.6 | 159.5 / 200.3 | 102.3 / 100.3 |
+| Module data, component selection | 102.6 / 106.8 | 66.4 / 70.2 | 155.4 / 164.8 | 62.6 / 72.0 |
+
+Controls and absolute times varied substantially between runs. The module-data
+component case was slower in both runs for both operations; component-owned
+creation reversed direction. These results do not establish a gain, so the
+compiler trial was discarded and original benchmark outputs were regenerated
+through the unchanged compiler. Ten self-contained behavior/fallback tests stay
+as coverage for future attempts. No creation-speed improvement is claimed.
+Broader producer proofs and creation/replacement costs remain open; bundle-size
+work remains deferred.
+
+After discarding the trial, 86 focused tests passed on the final code, including
+the new cancellation cases, persistent cache/key order, failed frames, props,
+linked selection, hydration and hot compilation. All 25 final DOM variants
+passed identity and mixed-operation validation. A linked 10k-row test exceeded
+its five-second timeout while builds/browser checks ran concurrently; it passed
+alone and in the final two-worker run with a command-level 30-second allowance.
+Runtime/compiler builds and changed-source lint passed. All eight regenerated
+original benchmark applications match `218faec` byte for byte. No dependency
+versions, existing timing reports or upstream pin changed.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed
