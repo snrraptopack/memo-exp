@@ -39,7 +39,6 @@
     "bench": "bun run bench/dom/build.ts && bun run bench/dom/state-placement-build.ts && bun run bench/dom/update-style-build.ts && esbuild bench/dom/state-placement-browser.ts --bundle --outfile=bench/dom/dist/state-placement-browser-bundle.js --format=iife && bun run bench/dom/state-placement-run.ts",
     "bench:dom:module": "bun run bench/dom/build.ts && esbuild bench/dom/browser-entry.ts --bundle --outfile=bench/dom/dist/browser-bundle.js --format=iife && bun run bench/dom/run.ts",
     "bench:dom:updates": "bun run bench/dom/update-style-build.ts && bun run bench/dom/update-style-run.ts",
-    "bench:dom:compare": "bun run --cwd packages/compiler build && bun run bench/dom/local-owner-compare.ts",
     "bench:effects": "bun run bench/effects/run.ts",
     "bench:invalidation": "bun run bench/invalidation/run.ts",
     "bench:ssr": "bun run bench/ssr/run.ts",

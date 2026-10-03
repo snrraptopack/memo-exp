@@ -5,7 +5,7 @@
  *   child re-renders in the SAME commit (cascading drain), derived prop
  *   expressions update too
  * - shallow-equal re-push is a no-op: the child does NOT re-render
- * - component rows: reconcile re-pushes the row's box (updateProps), so
+ * - component rows: the entry updater re-pushes the row's box, so
  *   item-field mutation and item replacement both reach retained rows
  * - unmounted child: setProps is a silent dead letter; the box is dropped
  */
@@ -130,7 +130,7 @@ describe('R10 — props flow down', () => {
     commitWrites(['./component.tsx#items']);
     expect(lis()[1]!.textContent).toBe('B2');
 
-    // state-reading extra prop flows through updateProps too
+    // The entry updater refreshes state-reading extra props too.
     mod.setSuffix('!');
     commitWrites(['./component.tsx#suffix']);
     expect(lis()[0]!.textContent).toBe('A!');

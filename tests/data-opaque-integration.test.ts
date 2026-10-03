@@ -48,7 +48,7 @@ const source = `
   export function App() {
     const data = createDataRuntime({ fetch: mockFetch });
     const users = data.$fetch('/users');
-    cleanup(data.clear);
+    $cleanup(data.clear);
 
     return <main>
       <output id="status">{users.status}</output>
@@ -64,7 +64,7 @@ const source = `
     const data = createDataRuntime({ fetch: mockFetch });
     const users = data.$fetch('/users');
     const { data: snapshotData, status: snapshotStatus } = users;
-    cleanup(data.clear);
+    $cleanup(data.clear);
 
     return <main>
       <output id="snapshot-status">{snapshotStatus}</output>
@@ -76,7 +76,7 @@ const source = `
   export function NestedCollectionApp() {
     const data = createDataRuntime({ fetch: mockFetch });
     const feed = data.$fetch('/feed');
-    cleanup(data.clear);
+    $cleanup(data.clear);
 
     return <ol id="nested-feed">{feed.data?.hits.map(hit =>
       <li key={hit.id}>{hit.title}</li>
@@ -93,7 +93,7 @@ const source = `
     // created by the event rather than replayed as a derived initializer.
     let users;
     users = load();
-    cleanup(data.clear);
+    $cleanup(data.clear);
 
     return <main>
       <button id="next" onClick={() => {

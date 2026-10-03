@@ -68,7 +68,7 @@ describe('R22 - cross-file component composition', () => {
         }
         export default function Panel(props) {
           let local = 0;
-          cleanup(() => disposed++);
+          $cleanup(() => disposed++);
           return <section>
             <button id="panel" onClick={() => {
               local++;
@@ -159,7 +159,7 @@ describe('R22 - cross-file component composition', () => {
             shown++;
             ticks++;
           }, 100);
-          cleanup(() => clearInterval(interval));
+          $cleanup(() => clearInterval(interval));
           return <output id="clock">{shown}</output>;
         }
       `,

@@ -1,5 +1,11 @@
 # @memoized-dom/runtime
 
+This project does not support legacy APIs. All packages and consumers must use the current APIs. Do not add compatibility shims, deprecated aliases, or fallback paths for superseded APIs.
+
+List entries expose `update(item, index)` for binding the current item and
+refreshing content together. The compiler and runtime must use this same
+contract; list entries do not support separate `updateProps` callbacks.
+
 Dependency-free registry, scheduling, optional dirty-reason batching, access
 routing, keyed regions, props boxes, cleanup/ref ownership, and DOM value helpers
 for memoized-dom compiler output.

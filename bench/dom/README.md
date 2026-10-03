@@ -55,39 +55,6 @@ the new matrix alone. `bun run bench/dom/state-placement-run.ts --validate-only`
 now checks both matrices without overwriting timing reports. A local
 `--samples=1` run is a smoke check, not a performance conclusion.
 
-## Local compiler before/after checks
-
-`bun run bench:dom:compare --before-ref=<commit>` compares an isolated compiler
-snapshot with the current compiler using the same current runtime. It also
-accepts `--before-compiler=<absolute source or bundle path>`. With neither
-argument, the baseline is `HEAD`. Generated application output always comes
-from the selected compiler; the runner restores current benchmark output after
-building the baseline.
-
-The focused owner-array fixture measures reversals and rotations at 1k and 10k
-rows with five warmups and 15 samples in each execution order. Its authored
-dense literal arrays exercise the structural-only replay proof. Every sample
-checks text, counts and retained node identity outside timing.
-
-Add `--mutable-content` to include scalar-field mutations in the same owner
-array. Untimed renames every five samples validate ordinary content updates
-before measuring the next structural write. Its combined report and raw samples
-live under `dist/local-owner-compare/mutable-content/`, keeping the wholly
-structural comparison intact.
-
-The existing nine-variant DOM matrix runs all 21 scenarios with seven samples
-in before/after/after/before order and deterministic input. Its normal
-text/class/order/identity checks remain enabled. The runner hashes both browser
-artifacts: when they are identical, timing differences measure local noise
-rather than an optimization. The 16 mutable/immutable variants are regenerated
-but are not timed by this comparison command. Run `bun run bench` for the
-combined matrix.
-
-The local report, focused raw samples and DOM medians are saved under
-`dist/local-owner-compare/results.md` and `results.json`. These checks help
-evaluate compiler changes before a VM run. Runtime changes require separately
-isolated runtime bundles for a meaningful comparison.
-
 ## State placement matrix
 
 | Result prefix | List data | Selection state |

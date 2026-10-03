@@ -17,16 +17,16 @@ for (const order of [[1, 2], [2, 4]]) {
       const render = () => { node.textContent = `${item.id}@${index}:${item.label}`; };
       render();
       return { nodes: node, entities: [],
-        updateProps(next, position) {
+        update(next, position) {
           item = next as typeof initial; index = position;
           if (observing) calls.push(`p${item.id}@${index}`);
           if (phase === 'props') refresh();
-        },
-        update() {
+
           if (observing) calls.push(`u${item.id}@${index}`);
           if (phase === 'update') refresh();
           render();
         },
+
       };
     }, (item: { id: number; label: string }) => item.id, false, true);
     region.reconcile([1, 2, 3, 4].map(id => ({ id, label: 'old' })));
@@ -52,8 +52,8 @@ for (const order of [[1, 2], [2, 4]]) {
       const render = () => { node.textContent = `${item.id}@${index}:${item.label}`; };
       render();
       return { nodes: node, entities: [],
-        updateProps(next, position) { item = next as typeof initial; index = position; },
-        update() { calls.push(`u${item.id}@${index}`); render(); },
+        update(next, position) { item = next as typeof initial; index = position;  calls.push(`u${item.id}@${index}`); render(); },
+
         dispose() {
           removed.push(initial.id);
           if (observing) for (const id of order) region.refreshKey(id);
@@ -85,11 +85,11 @@ for (const order of [[1, 2], [2, 4]]) {
       const render = () => { node.textContent = `${item.id}@${index}:${item.label}`; };
       render();
       return { nodes: node, entities: [],
-        updateProps(next, position) {
+        update(next, position) {
           item = next as typeof initial; index = position;
           if (throwing && phase === 'props') throw failure;
-        },
-        update() { calls.push(item.id); if (throwing && phase === 'update') throw failure; render(); },
+         calls.push(item.id); if (throwing && phase === 'update') throw failure; render(); },
+
         dispose() { disposed.push(initial.id); },
       };
     }, (item: { id: number; label: string }) => item.id, false, true);
@@ -121,12 +121,12 @@ it('keeps unconsumed old rows refreshable while survivor bindings move forward',
     const render = () => { node.textContent = `${item.id}@${index}:${item.label}`; };
     render();
     return { nodes: node, entities: [],
-      updateProps(next, position) { item = next as typeof initial; index = position; },
-      update() {
+      update(next, position) { item = next as typeof initial; index = position;
         calls.push(`u${item.id}@${index}:${region.size()}`);
         if (observing && item.id === 2) region.refreshKey(4);
         render();
       },
+
     };
   }, (item: { id: number; label: string }) => item.id, false, true);
   region.reconcile([1, 2, 3, 4].map(id => ({ id, label: 'old' })));
@@ -149,8 +149,8 @@ it.each([false, true])('preserves structural-only replay precision during cleanu
     const node = document.createElement('li'); let item = initial, index = initialIndex;
     node.textContent = String(item.id);
     return { nodes: node, entities: [],
-      updateProps(next, position) { item = next as typeof initial; index = position; },
-      update() { calls.push(`${item.id}@${index}`); },
+      update(next, position) { item = next as typeof initial; index = position;  calls.push(`${item.id}@${index}`); },
+
       dispose() { if (observing) { region.refreshKey(2); region.refreshKey(4); } },
     };
   }, item => item.id, false, indexSensitive);

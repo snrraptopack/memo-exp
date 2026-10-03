@@ -8,6 +8,7 @@
 
 import type * as t from '../ast/compiler-types';
 import type { BaseNode, ScopeAnalysis } from '../ast';
+import type { PlainListReturn } from '../analysis/plain-list-return';
 import type {
   ComponentPropsPlan,
   ControlFlowDerivation,
@@ -165,6 +166,8 @@ export interface LinkedStateImport {
 
 export interface LinkedFunctionImport {
   type: 'function';
+  /** Closed returned-array provenance, independently proven from effect summaries. */
+  plainListReturn?: PlainListReturn;
   /** Calling this imported function creates a compiler-transparent source. */
   transparentSourceFactory?: boolean;
   /** HTTP method carried by a generated server-function source factory. */
@@ -294,6 +297,7 @@ export interface SiteRef {
 
 /** Module-level helper function summary (M5.3 interprocedural analysis). */
 export interface FnSummary {
+  plainListReturn?: PlainListReturn;
   reads: Set<string>;
   /** Captured reads may change outside routed state writes. */
   opaqueReads?: boolean;
@@ -688,6 +692,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
         );
       }
       importedFunctions.set(local, {
+        ...(linked.plainListReturn === undefined ? {} : { plainListReturn: linked.plainListReturn }),
         reads: new Set(linked.reads),
         ...(linked.opaqueReads === true ? { opaqueReads: true } : {}),
         writes: new Set(linked.writes),

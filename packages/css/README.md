@@ -1,5 +1,7 @@
 # @memoized-dom/css
 
+This project does not support legacy APIs. All packages and consumers must use the current APIs. Do not add compatibility shims, deprecated aliases, or fallback paths for superseded APIs.
+
 Styles are functions. TypeScript is the language; this package is the
 compiler/interpreter that lowers style functions to the cheapest possible
 target — usually a static stylesheet.

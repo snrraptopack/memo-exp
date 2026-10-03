@@ -1,4 +1,4 @@
-/** Normalize accepted legacy node spellings to strict ESTree nodes. */
+/** Normalize supported frontend node spellings to strict ESTree nodes. */
 
 import { nodeFields as fields } from './access';
 import { walkAst } from './walk';
@@ -16,7 +16,7 @@ function literal(
 }
 
 /**
- * Convert accepted legacy literal/property spellings into the ESTree dialect
+ * Convert supported frontend literal/property spellings into the ESTree dialect
  * consumed by parser-neutral printers and alternate frontends.
  * Authored ESTree nodes pass through unchanged.
  */

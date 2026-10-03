@@ -30,7 +30,7 @@ class. Module state is not a special store type.
 3. Import `mount` only in the browser entry. Import `$fetch`/`$read`/`$forms` only when
    using the data package, and import router values only when they are actually
    read or called.
-4. `effect(...)` and `cleanup(...)` are compiler intrinsics. Use them as ambient
+4. `$effect(...)` and `$cleanup(...)` are compiler intrinsics. Use them as ambient
    globals and do not import them.
 5. Use `let` for a binding that is reassigned or for a derived expression.
    Prefer `const` when only an object's or collection's contents change.
@@ -717,7 +717,7 @@ systems.
 export function Presence({ roomId }: { roomId: string }) {
   let enabled = true;
 
-  effect(() => {
+  $effect(() => {
     if (!enabled) return;
     const connection = connectToRoom(roomId);
     return () => connection.disconnect();
@@ -763,7 +763,7 @@ export function Clock() {
   }
 
   if (running) {
-    effect(synchronize);
+    $effect(synchronize);
   }
 
   return (
@@ -775,7 +775,7 @@ export function Clock() {
 ```
 
 A conditional effect must be controlled by top-level `if` statements whose
-branches contain only `effect(...)`, nested effect-only `if` statements, or
+branches contain only `$effect(...)`, nested effect-only `if` statements, or
 empty statements. While false, the active callback does not exist; becoming
 false runs its teardown.
 
@@ -784,7 +784,7 @@ Effects also work at module scope as singleton reactive entities:
 ```ts
 export let theme: 'light' | 'dark' = 'light';
 
-effect(() => {
+$effect(() => {
   document.documentElement.dataset.theme = theme;
   return () => delete document.documentElement.dataset.theme;
 });
@@ -798,9 +798,9 @@ Module effects can read and write linked module state. Their latest teardown is
 owned by module reevaluation/HMR. A module effect with no dependencies runs
 once after module initialization.
 
-### `cleanup`
+### `$cleanup`
 
-Use `cleanup(disposer)` for a non-reactive resource created during component
+Use `$cleanup(disposer)` for a non-reactive resource created during component
 initialization:
 
 ```tsx
@@ -809,7 +809,7 @@ export function WidthProbe() {
 
   const onResize = () => width = window.innerWidth;
   window.addEventListener('resize', onResize);
-  cleanup(() => window.removeEventListener('resize', onResize));
+  $cleanup(() => window.removeEventListener('resize', onResize));
 
   return <output>{width}</output>;
 }
@@ -1203,7 +1203,7 @@ To keep the codebase modular, clean, and optimized:
 - ❌ **Do NOT add `.mutate()` or `.update()` to `$track`**: `$track` is an observation lens, not a state manager.
 - ❌ **Do NOT add `.then()` / `.catch()` to `$track`**: `$track` should not be a Promise or thenable. Use `onSuccess` and `onError`.
 - ❌ **Do NOT expose compiler `EventSourceSlot` machinery as public API**: event-assigned variables remain ordinary authored locals.
-- ❌ **Do NOT force developers into `effect()` hooks for event logic**: Event handling logic belongs in event handlers, not in reactive synchronization effects.
+- ❌ **Do NOT force developers into `$effect()` hooks for event logic**: Event handling logic belongs in event handlers, not in reactive synchronization effects.
 
 Request options include query values, headers, identity, sharing, validation,
 and cancellation:
@@ -1882,7 +1882,7 @@ const unblock = blockNavigation((navigation) => {
 `navigate` and `navigateRelative` return a completed/blocked result. Navigation
 guards are synchronous and may allow, block, or redirect. Call `unblock()` when
 the guard is no longer needed; if it is component-owned, register that with
-`cleanup(unblock)`.
+`$cleanup(unblock)`.
 
 Do not use `@memoized-dom/router/internal` in application code. That entry is a
 bridge for compiler-generated code. Do not manually call `connectRouter`,
@@ -1952,7 +1952,7 @@ function Home() {
   const posts = $fetch<Post[]>('/api/posts', { cache: { scope: 'app' } });
   const visiblePosts = posts.slice(0, session.compact ? 3 : 10);
 
-  effect(() => {
+  $effect(() => {
     document.title = `${visitLabel} · Memoized DOM`;
   });
 
@@ -2123,7 +2123,7 @@ Do not do this:
 
 ```ts
 let doubled = 0;
-effect(() => { doubled = count * 2; });
+$effect(() => { doubled = count * 2; });
 ```
 
 Use `const doubled = count * 2`. Effects are for external synchronization.

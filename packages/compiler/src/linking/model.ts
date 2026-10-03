@@ -1,6 +1,7 @@
 import type * as t from '../ast/compiler-types';
 import type { AstComment, BaseNode, EstreeFrontend } from '../ast';
 import type { ComponentGraphNode } from '../component-linker';
+import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { ComponentExportInfo } from '../components/manifest';
 import type { CompilerRoutedPreparation } from '../routed';
 import type {
@@ -39,6 +40,7 @@ export interface StateExport {
 
 export interface FunctionExport {
   type: 'function';
+  plainListReturn?: PlainListReturn;
   transparentSourceFactory?: boolean;
   transparentSourceMethod?: TransparentSourceMethod;
   tagCandidates: string[];

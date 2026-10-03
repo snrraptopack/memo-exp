@@ -228,13 +228,13 @@ describe('M2 keyed list reconciliation', () => {
         return {
           nodes: li,
           entities: [],
-          updateProps: (next) => {
+          update(next) {
             item = next as typeof initial;
-          },
-          update: () => {
+
             updates++;
             li.textContent = item.label;
           },
+
         };
       },
       (item) => item.id,
@@ -273,13 +273,13 @@ describe('M2 keyed list reconciliation', () => {
         return {
           nodes: li,
           entities: [],
-          updateProps: (_next, nextIndex) => {
+          update(_next, nextIndex) {
             index = nextIndex;
-          },
-          update: () => {
+
             updates++;
             li.textContent = `${index}:${item.id}`;
           },
+
         };
       },
       (item) => item.id,

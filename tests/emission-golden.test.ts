@@ -116,7 +116,7 @@ const cases: GoldenCase[] = [
     source: `
       export function Ticker() {
         let ticks = 0;
-        effect(() => {
+        $effect(() => {
           ticks++;
         });
         return <span>{ticks}</span>;
@@ -127,7 +127,7 @@ const cases: GoldenCase[] = [
     rule: 'Cleanup — ownership-scoped teardown',
     source: `
       export function Timer() {
-        cleanup(() => {
+        $cleanup(() => {
           disposeTimer();
         });
         return <span>tick</span>;
@@ -169,7 +169,7 @@ const cases: GoldenCase[] = [
         const sub = subscribe((val) => {
           status = val;
         });
-        cleanup(() => sub.unsubscribe());
+        $cleanup(() => sub.unsubscribe());
         return <span>{status}</span>;
       }
     `,
@@ -194,7 +194,7 @@ const cases: GoldenCase[] = [
     rule: 'R32 — module effects are linked singleton entities',
     source: `
       let route = '/';
-      effect(() => {
+      $effect(() => {
         document.title = route;
       });
       export function Nav() {

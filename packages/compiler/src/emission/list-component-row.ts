@@ -63,7 +63,6 @@ interface ComponentRowFactoryPlan {
   rowScope: EmitScope;
   result: t.Identifier;
   lightweight: boolean;
-  needsUpdateProps: boolean;
   reuseLightweightEntry: boolean;
   lightweightPushProps: t.Identifier | null;
   ownerId: t.Expression;
@@ -85,7 +84,6 @@ function buildComponentRowFactory({
   rowScope,
   result,
   lightweight,
-  needsUpdateProps,
   reuseLightweightEntry,
   lightweightPushProps,
   ownerId,
@@ -103,10 +101,6 @@ function buildComponentRowFactory({
         ),
         astFactory.objectProperty(astFactory.identifier('entities'), astFactory.arrayExpression([])),
         astFactory.objectProperty(
-          astFactory.identifier('update'),
-          astFactory.memberExpression(cloneEstreeNode(result), astFactory.identifier('update')),
-        ),
-        astFactory.objectProperty(
           astFactory.identifier('dispose'),
           astFactory.memberExpression(cloneEstreeNode(result), astFactory.identifier('dispose')),
         ),
@@ -121,16 +115,32 @@ function buildComponentRowFactory({
           astFactory.arrayExpression([cloneEstreeNode(rowId)]),
         ),
       ];
-  if (needsUpdateProps && !reuseLightweightEntry) {
+  const rowContentUpdate = reuseLightweightEntry ? generatedIdentifier(ctx, 'renderRowContent') : null;
+  const contentUpdates = [...updateStatements];
+  if (lightweight) {
+    contentUpdates.push(astFactory.expressionStatement(astFactory.callExpression(
+      rowContentUpdate === null
+        ? astFactory.memberExpression(cloneEstreeNode(result), astFactory.identifier('update'))
+        : cloneEstreeNode(rowContentUpdate), [],
+    )));
+  } else {
+    const entity = generatedIdentifier(ctx, 'rowEntity');
+    contentUpdates.push(astFactory.variableDeclaration('const', [astFactory.variableDeclarator(
+      cloneEstreeNode(entity), astFactory.callExpression(md(ctx, 'getEntity'), [cloneEstreeNode(rowId)]),
+    )]), astFactory.ifStatement(cloneEstreeNode(entity), astFactory.expressionStatement(
+      astFactory.callExpression(astFactory.memberExpression(cloneEstreeNode(entity), astFactory.identifier('render')), []),
+    )));
+  }
+  if (!reuseLightweightEntry) {
     entryProperties.push(
       astFactory.objectProperty(
-        astFactory.identifier('updateProps'),
+        astFactory.identifier('update'),
         astFactory.arrowFunctionExpression(
           [
             cloneEstreeNode(nextItem),
             ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
           ],
-          astFactory.blockStatement(updateStatements),
+          astFactory.blockStatement(contentUpdates),
         ),
       ),
     );
@@ -184,10 +194,10 @@ function buildComponentRowFactory({
                     astFactory.expressionStatement(
                       lightweight
                         ? astFactory.callExpression(
-                            astFactory.memberExpression(
+                            rowContentUpdate === null ? astFactory.memberExpression(
                               cloneEstreeNode(result),
                               astFactory.identifier('update'),
-                            ),
+                            ) : cloneEstreeNode(rowContentUpdate),
                             [],
                           )
                         : astFactory.callExpression(md(ctx, 'markDirty'), [
@@ -208,6 +218,10 @@ function buildComponentRowFactory({
         : [
             astFactory.variableDeclaration('const', [
               astFactory.variableDeclarator(
+                cloneEstreeNode(rowContentUpdate!),
+                astFactory.memberExpression(cloneEstreeNode(result), astFactory.identifier('update')),
+              ),
+              astFactory.variableDeclarator(
                 cloneEstreeNode(lightweightPushProps),
                 astFactory.memberExpression(
                   cloneEstreeNode(result),
@@ -220,14 +234,14 @@ function buildComponentRowFactory({
                 '=',
                 astFactory.memberExpression(
                   cloneEstreeNode(result),
-                  astFactory.identifier('updateProps'),
+                  astFactory.identifier('update'),
                 ),
                 astFactory.arrowFunctionExpression(
                   [
                     cloneEstreeNode(nextItem),
                     ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
                   ],
-                  astFactory.blockStatement(updateStatements),
+                  astFactory.blockStatement(contentUpdates),
                 ),
               ),
             ),
@@ -601,7 +615,7 @@ export function buildComponentRowCreate(
   const lightweightPushProps = reuseLightweightEntry
     ? generatedIdentifier(ctx, 'pushRowProps')
     : null;
-  if (lightweight) {
+  if (lightweight && callProps.length > 0) {
     updateStatements.push(
       astFactory.expressionStatement(
         astFactory.callExpression(
@@ -615,7 +629,7 @@ export function buildComponentRowCreate(
         ),
       ),
     );
-  } else {
+  } else if (!lightweight && needsUpdateProps) {
     updateStatements.push(
       astFactory.expressionStatement(
         astFactory.callExpression(md(ctx, 'setProps'), [
@@ -647,7 +661,6 @@ export function buildComponentRowCreate(
     rowScope,
     result,
     lightweight,
-    needsUpdateProps,
     reuseLightweightEntry,
     lightweightPushProps,
     ownerId,

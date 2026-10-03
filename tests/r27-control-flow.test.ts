@@ -181,7 +181,7 @@ const SOURCES: Record<string, string> = {
     export function App() {
       let enabled = false;
       let unrelated = 0;
-      effect(() => {
+      $effect(() => {
         if (!enabled) return;
         console.log('connect');
         return () => console.log('disconnect');

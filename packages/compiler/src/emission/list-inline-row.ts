@@ -1,18 +1,19 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { cloneNode as cloneEstreeNode } from '../ast';
+import { cloneNode as cloneEstreeNode, isReferenceIdentifier, walkAst } from '../ast';
 import {
   keyPathOf,
   type ComponentPath,
   type Ctx,
   type RowCtx,
 } from '../context';
-import { componentId, generatedIdentifier } from '../identifiers';
+import { componentId, generatedIdentifier, md } from '../identifiers';
 import { type MapSite } from '../lists';
 import {
   cacheDecl,
   newEmitScope,
   registerStmt,
+  updateBody,
   updateDecl,
   type RegionSourcePlans,
 } from './scope';
@@ -100,6 +101,20 @@ export function buildInlineRowCreate(
       ),
     );
   }
+  // Materialize the content plan once: generating it twice could allocate new
+  // temporaries or repeat emitter work. The fused binding/content function owns
+  // an exact clone, preserving read order and all ordinary content checks.
+  const contentUpdates = updateBody(ctx, rowScope);
+  const needsStandaloneUpdate = !lightweight || [
+    ...rowScope.prelude, ...rowScope.creation, ...rowScope.mounts, ...contentUpdates,
+  ].some(statement => {
+    let referenced = false;
+    walkAst(statement, { enter(node, parent, key) {
+      if (referenced) return false;
+      if (astFactory.isIdentifier(node, { name: rowScope.updateVar }) && isReferenceIdentifier(parent, key)) referenced = true;
+    }});
+    return referenced;
+  });
 
   return astFactory.arrowFunctionExpression(
     [
@@ -111,7 +126,7 @@ export function buildInlineRowCreate(
     ],
     astFactory.blockStatement([
       cacheDecl(rowScope),
-      updateDecl(ctx, rowScope),
+      ...(needsStandaloneUpdate ? [updateDecl(ctx, rowScope, contentUpdates)] : []),
       ...rowScope.prelude,
       ...(lightweight ? [] : [registerStmt(
         ctx,
@@ -132,7 +147,7 @@ export function buildInlineRowCreate(
             astFactory.arrayExpression(lightweight ? [] : [astFactory.identifier(rowId)]),
           ),
           astFactory.objectProperty(
-            astFactory.identifier('updateProps'),
+            astFactory.identifier('update'),
             astFactory.arrowFunctionExpression(
               [
                 cloneEstreeNode(nextItem),
@@ -140,12 +155,15 @@ export function buildInlineRowCreate(
                   ? []
                   : [cloneEstreeNode(nextIndex)]),
               ],
-              astFactory.blockStatement(bindingUpdates),
+              astFactory.blockStatement([
+                ...bindingUpdates,
+                ...(lightweight ? [] : [astFactory.ifStatement(
+                  astFactory.unaryExpression('!', astFactory.callExpression(md(ctx, 'getEntity'), [astFactory.identifier(rowId)])),
+                  astFactory.returnStatement(null),
+                )]),
+                ...contentUpdates.map(statement => cloneEstreeNode(statement, true)),
+              ]),
             ),
-          ),
-          astFactory.objectProperty(
-            astFactory.identifier('update'),
-            astFactory.identifier(rowScope.updateVar),
           ),
         ]),
       ),

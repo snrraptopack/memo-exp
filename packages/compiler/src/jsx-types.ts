@@ -10,18 +10,6 @@ declare global {
   function $cleanup(disposer: () => void): () => void;
   function $effect(callback: () => void | (() => void)): void;
 
-  /**
-   * Register synchronous teardown owned by the current compiled component.
-   * The compiler supplies the component identity in generated output.
-   */
-  function cleanup(disposer: () => void): () => void;
-
-  /**
-   * Run a compiler-tracked side effect after DOM updates. At component scope,
-   * teardown follows the owner; at module scope the effect is a singleton.
-   */
-  function effect(callback: () => void | (() => void)): void;
-
   /** Minimal global JSX declarations for compiler-authored source. */
   namespace JSX {
     /** Application route patterns from the generated `.memoized/routes.d.ts`. */

@@ -10,8 +10,8 @@ function create(items: { id: unknown; label: string }[], key = (item: typeof ite
     let item = initial;
     const node = document.createElement('li'); node.textContent = item.label;
     return { nodes: node, entities: [],
-      updateProps(next) { item = next as typeof initial; },
-      update() { node.textContent = item.label; }, dispose() { disposed.push(initial); } };
+      update(next) { item = next as typeof initial;  node.textContent = item.label; },
+       dispose() { disposed.push(initial); } };
   }, key, false);
   region.reconcile(items);
   return { host, region, disposed };
@@ -139,8 +139,8 @@ it('preserves key/update/disposal order and shifted bindings across removal gaps
     const render = () => { node.textContent = `${item.label}@${index}`; };
     render();
     return { nodes: node, entities: [],
-      updateProps(value, position) { item = value as typeof initial; index = position; },
-      update() { calls.push(`u${item.label}@${index}`); render(); },
+      update(value, position) { item = value as typeof initial; index = position;  calls.push(`u${item.label}@${index}`); render(); },
+
       dispose() { calls.push(`d${initial.label}`); } };
   }, (item, index) => { calls.push(`k${item.label}@${index}`); return item.id; }, false, true);
   region.reconcile(items); calls.length = 0;

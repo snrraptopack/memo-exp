@@ -17,8 +17,8 @@ function create(failFactory?: number) {
     const node = document.createElement('li'); node.textContent = initial.label;
     register({id, parent: null, render: () => {}});
     let item = initial;
-    return {nodes: node, entities: [id], updateProps(next) { item = next as typeof initial; },
-      update() { node.textContent = item.label; }, dispose() { disposed.push(initial.id); }};
+    return {nodes: node, entities: [id], update(next) { item = next as typeof initial;  node.textContent = item.label; },
+       dispose() { disposed.push(initial.id); }};
   }, (item: {id: number; label: string}) => item.id);
   const items = [1,2,3].map(id => ({id, label: String(id)}));
   region.reconcile(items);

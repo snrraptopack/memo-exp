@@ -1,5 +1,7 @@
 # @memoized-dom/vite
 
+This project does not support legacy APIs. All packages and consumers must use the current APIs. Do not add compatibility shims, deprecated aliases, or fallback paths for superseded APIs.
+
 Vite 8 integration for compiler-linked Memoized DOM applications. One plugin
 owns the client compiler graph and, when configured, the server boundary,
 server-function facade, SSR document, and development request dispatch.

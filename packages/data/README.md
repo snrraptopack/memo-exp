@@ -1,5 +1,7 @@
 # `@memoized-dom/data`
 
+This project does not support legacy APIs. All packages and consumers must use the current APIs. Do not add compatibility shims, deprecated aliases, or fallback paths for superseded APIs.
+
 `@memoized-dom/data` is Memoized DOM's data-fetching and state synchronization package. It provides **Colorless Async** transparent values, safe GET deduplication, schema validation, declarative pending/error JSX directives, request lifecycle tracking, and zero-roundtrip SSR payload transport.
 
 There are no hooks, provider trees, signals, or store wrappers. Fetched data behaves as plain TypeScript values and arrays in your components.

@@ -13,7 +13,7 @@ function create() {
   const region = createListRegion(host, 'reentrant-unmount/list', (item: number, id) => {
     created.push(item); const node = document.createElement('li'); node.textContent = String(item);
     register({id, parent:null, render() {}}); onCreate(item);
-    return { nodes:node, entities:[id], updateProps(next) { onProps(next as number); }, update() { updated.push(item); onUpdate(item); },
+    return { nodes:node, entities:[id], update(next) { onProps(next as number); if (!registeredIds().includes(id)) return; updated.push(item); onUpdate(item); },
       dispose() { cleaned.push(item); } };
   }, item => { onKey(item); return item; });
   return {host, region, created, updated, cleaned,

@@ -362,18 +362,7 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 		_id + "/items",
 		(item, _rowId) => {
 			let _slot, _value2;
-
-			const _update2 = () => {
-				if (_slot !== (_value2 = _MD.textValue(item.label))) {
-					_slot = _value2;
-					_text.data = _value2;
-				}
-			};
-
 			const _document2 = _MD.getActiveEnvironment().document;
-
-			_MD.register({ id: _rowId, parent: _id, render: _update2 });
-
 			const _canReuseTemplate = _MD.canReuseTemplate();
 			let _li;
 
@@ -394,20 +383,26 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 			_MD.setTextData(_text, _slot);
 
 			return {
-				nodes: [_li],
-				entities: [_rowId],
-				updateProps: (_nextItem) => {
+				nodes: _li,
+				entities: [],
+				update: (_nextItem) => {
 					item = _nextItem;
-				},
-				update: _update2
+
+					if (_slot !== (_value2 = _MD.textValue(item.label))) {
+						_slot = _value2;
+						_text.data = _value2;
+					}
+				}
 			};
 		},
 		(item) => item.id,
-		true,
-		false
+		false,
+		false,
+		true
 	);
 
 	_region.reconcile(items);
+	_MD.cleanup(_id, () => _region.dispose());
 
 	return _ul;
 }"
@@ -759,18 +754,7 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 		_id + "/_listView",
 		(item, _rowId) => {
 			let _slot, _value2;
-
-			const _update2 = () => {
-				if (_slot !== (_value2 = _MD.textValue(item.text))) {
-					_slot = _value2;
-					_text.data = _value2;
-				}
-			};
-
 			const _document2 = _MD.getActiveEnvironment().document;
-
-			_MD.register({ id: _rowId, parent: _id, render: _update2 });
-
 			const _canReuseTemplate = _MD.canReuseTemplate();
 			let _li;
 
@@ -791,20 +775,26 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 			_MD.setTextData(_text, _slot);
 
 			return {
-				nodes: [_li],
-				entities: [_rowId],
-				updateProps: (_nextItem) => {
+				nodes: _li,
+				entities: [],
+				update: (_nextItem) => {
 					item = _nextItem;
-				},
-				update: _update2
+
+					if (_slot !== (_value2 = _MD.textValue(item.text))) {
+						_slot = _value2;
+						_text.data = _value2;
+					}
+				}
 			};
 		},
 		(item) => item.id,
-		true,
-		false
+		false,
+		false,
+		true
 	);
 
 	_region.reconcile(_listView);
+	_MD.cleanup(_id, () => _region.dispose());
 
 	return _ul;
 }"
@@ -952,6 +942,7 @@ export function Profile(_id, _parent, _dataPolicies) {
 	);
 
 	_MD.cleanup(_id + "/when0", _MDD.connectResolvedValues([user], () => _MD.markDirty(_id + "/when0")));
+	_MD.cleanup(_id, () => _when.dispose());
 	_MD.cleanup(_id, _MDD.ownResolvedValue(user));
 
 	return _h;

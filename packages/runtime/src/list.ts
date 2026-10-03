@@ -40,21 +40,14 @@ export interface ListEntry {
   /** Entity ids created for this item — unregistered on removal. */
   entities: EntityId[];
   /**
-   * M5.5: re-run the row's guarded update on every reconcile that REUSES
-   * this entry. Rows read their item (a factory param), not module state,
+   * Bind the current item/index and re-run the row's guarded content update
+   * on every reconcile that REUSES this entry. Rows read their item, not module state,
    * so item-field mutations are otherwise invisible to the access table —
    * this is what keeps `{todo.title}` honest when an outside source (or a
    * handler) mutates a retained row's item. Guarded setters make a no-op
    * sync nearly free; DOM is only touched when data actually changed.
    */
-  update?: () => void;
-  /**
-   * R10: component rows only — re-push the row's props box from the current
-   * item on every reconcile that retains this entry. Item replacement AND
-   * item-field mutation both reach the row entity (setProps shallow-compares,
-   * so an unchanged item costs one comparison pass and nothing else).
-   */
-  updateProps?: (item: unknown, index: number) => void;
+  update?: (item: unknown, index: number) => void;
   /** Allocation-free rows may own mount lifecycle without an entity record. */
   dispose?: () => void;
 }
@@ -226,10 +219,8 @@ export function createListRegion<T>(
    * M5.7: sync a retained row with its (possibly mutated) item, then cancel
    * its pending dirty — the row just rendered with current state, so a
    * wildcard-dirtied entry in the commit batch would render it identically
-   * a second time. Component rows (updateProps only, no update closure)
-   * render their entity update directly in-place: the props box was just
-   * re-pushed above, so the entity renders with current props in the same
-   * pass instead of taking a second turn through the commit drain.
+   * a second time. Generated component entries push props and render their
+   * entity inside this same updater instead of taking another commit turn.
    */
   function syncRow(
     entry: ListEntry,
@@ -237,14 +228,11 @@ export function createListRegion<T>(
     rowId: EntityId | null,
     index: number,
   ): void {
-    entry.updateProps?.(item, index); // R7/R10: refresh callback bindings
-    if (disposed) return;
     if (entry.update !== undefined) {
-      entry.update(); // M5.5: sync retained row with (possibly mutated) item
+      entry.update(item, index);
       if (!disposed && rowId !== null) undirty(rowId); // M5.7: no double render
     } else if (rowId !== null) {
-      // Component row: the entity renders in-place with the box just pushed
-      // above (single pass), then its pending dirty is cancelled like any row.
+      // A registered row without a custom updater renders its entity directly.
       const e = getEntity(rowId);
       if (e) {
         e.render();
@@ -457,6 +445,11 @@ export function createListRegion<T>(
     fixedPositions = false,
   ): void {
     if (disposed) return;
+    // An interrupted frame may have updated cached positions or moved only
+    // part of the DOM. Neither its item snapshot nor its old-position sequence
+    // proves a retained skip/LIS. Replay content and restore the complete order.
+    const recoveringFrame = activeFrame !== null;
+    if (recoveringFrame) structuralOnly = false;
     // Reject dishonest payload types before changing ownership or buffers.
     if (!Array.isArray(items)) {
       throw new TypeError(`[memo-dom] list '${idPrefix}' requires an array; received ${items === null ? 'null' : typeof items}`);
@@ -890,7 +883,7 @@ export function createListRegion<T>(
     }
 
     // ---- fast path: pure content sync, zero structural work -----------------
-    if (!hasNew && frame.remaining === 0 && inOrder) {
+    if (!hasNew && frame.remaining === 0 && inOrder && !recoveringFrame) {
       // Commit fresh entries and swap only the ordered buffers.
       commitFrame();
       const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
@@ -932,17 +925,27 @@ export function createListRegion<T>(
     // even when additions or removals change the list length. Leave those ends
     // untouched and analyze/place only the changed interval. Row content and
     // authored keys have already replayed in their ordinary forward order.
+    // Successful contiguous prediction already proved a complete cyclic order
+    // in pass 1. Place only its shorter run, without scanning/marking an LIS or
+    // visiting the retained run again. Ties keep the smaller old positions.
+    const cyclicPlacement = !recoveringFrame && orderedCursor >= 0 && !hasNew && reused === n && items.length === n;
     let start = 0;
-    while (start < n && seq[start] === start) start++;
     let end = n;
-    let oldEnd = prevItems.length;
-    while (end > start && oldEnd > start && seq[end - 1] === oldEnd - 1) {
-      end--;
-      oldEnd--;
+    if (cyclicPlacement) {
+      const offset = seq[0]!;
+      if (n - offset > offset) start = n - offset;
+      else end = n - offset;
+    } else if (!recoveringFrame) {
+      while (start < n && seq[start] === start) start++;
+      let oldEnd = prevItems.length;
+      while (end > start && oldEnd > start && seq[end - 1] === oldEnd - 1) {
+        end--;
+        oldEnd--;
+      }
     }
     // An increasing retained subsequence is already a complete LIS, even
     // with inserted rows or removal gaps. The forward pass proved that order.
-    const inLis = inOrder ? null : lisPositions(seq, start, end);
+    const inLis = recoveringFrame || cyclicPlacement || inOrder ? null : lisPositions(seq, start, end);
     // Empty extents own a key but no insertion boundary. Find the next
     // actual suffix node, falling back to the region's stable close anchor.
     let cursor: Node = endAnchor;
@@ -978,7 +981,7 @@ export function createListRegion<T>(
 
     for (let i = end - 1; i >= start; i--) {
       const entry = ordered[i]!.e;
-      if (seq[i] === -1 || inLis !== null && !inLis[i]) {
+      if (recoveringFrame || cyclicPlacement || seq[i] === -1 || inLis !== null && !inLis[i]) {
         // awaiting insertion — cursor stays on the last IN-PLACE node
         (pending ??= []).push(entry);
       } else {

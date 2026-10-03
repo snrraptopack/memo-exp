@@ -38,7 +38,7 @@ describe('R26 — effect code generation and validation', () => {
       let count = 0;
       export function increment() { count++; }
       export function App() {
-        effect(() => console.log(count));
+        $effect(() => console.log(count));
         return <main>ready</main>;
       }
     `);
@@ -60,7 +60,7 @@ describe('R26 — effect code generation and validation', () => {
     const code = compile(`
       export function App() {
         let count = 0;
-        effect(() => console.log(count));
+        $effect(() => console.log(count));
         return <button onClick={() => count++}>{count}</button>;
       }
     `);
@@ -83,7 +83,7 @@ describe('R26 — effect code generation and validation', () => {
       export function updateSource() { source++; }
 
       export function App() {
-        effect(() => {
+        $effect(() => {
           sink = source * 2;
         });
         return <output>{sink}</output>;
@@ -103,7 +103,7 @@ describe('R26 — effect code generation and validation', () => {
       const box = { value: 1 };
 
       export function App() {
-        effect(() => {
+        $effect(() => {
           console.log(box.value);
           box.value = 0;
         });
@@ -121,7 +121,7 @@ describe('R26 — effect code generation and validation', () => {
       let count = 0;
 
       export function App() {
-        effect(() => {
+        $effect(() => {
           if (count < 2) count++;
         });
         return <output>{count}</output>;
@@ -155,7 +155,7 @@ describe('R26 — effect code generation and validation', () => {
     expect(() =>
       compile(`
         export function App() {
-          const start = () => effect(() => console.log("nested"));
+          const start = () => $effect(() => console.log("nested"));
           return <button onClick={start}>start</button>;
         }
       `),
@@ -164,7 +164,7 @@ describe('R26 — effect code generation and validation', () => {
     expect(() =>
       compile(`
         export function App() {
-          effect(async () => console.log("async"));
+          $effect(async () => console.log("async"));
           return <main>ready</main>;
         }
       `),
@@ -175,7 +175,7 @@ describe('R26 — effect code generation and validation', () => {
   it('lowers a direct module effect to a singleton registration', () => {
     const code = compile(`
       let count = 0;
-      effect(() => console.log("module:" + count));
+      $effect(() => console.log("module:" + count));
       export function App() { return <main>{count}</main>; }
     `);
     expect(code).toContain('.registerEffect(');
@@ -191,7 +191,7 @@ const SOURCES: Record<string, string> = {
       let count = 0;
       let unrelated = 0;
 
-      effect(() => {
+      $effect(() => {
         const value = count;
         const text = document.querySelector("#count")?.textContent ?? "missing";
         console.log("run:" + value + ":dom:" + text);
@@ -212,7 +212,7 @@ const SOURCES: Record<string, string> = {
     const totalCount = items.length;
 
     export function App() {
-      effect(() => {
+      $effect(() => {
         console.log("total:" + totalCount);
       });
 
@@ -231,7 +231,7 @@ const SOURCES: Record<string, string> = {
     export function App() {
       let count = 0;
 
-      effect(() => {
+      $effect(() => {
         const child = document.querySelector("#child-value")?.textContent ?? "missing";
         console.log("count:" + count + ":child:" + child);
       });
@@ -247,7 +247,7 @@ const SOURCES: Record<string, string> = {
     let sink = 0;
 
     export function App() {
-      effect(() => {
+      $effect(() => {
         sink = source * 2;
       });
 
@@ -262,7 +262,7 @@ const SOURCES: Record<string, string> = {
     let count = 0;
 
     export function App() {
-      effect(() => {
+      $effect(() => {
         if (count < 2) count++;
       });
 
@@ -273,7 +273,7 @@ const SOURCES: Record<string, string> = {
     let count = 0;
 
     export function App() {
-      effect(() => {
+      $effect(() => {
         count++;
       });
 
@@ -284,7 +284,7 @@ const SOURCES: Record<string, string> = {
     const box = { value: 1 };
 
     export function App() {
-      effect(() => {
+      $effect(() => {
         console.log(box.value);
         box.value = 0;
       });
@@ -296,7 +296,7 @@ const SOURCES: Record<string, string> = {
     let count = 0;
 
     export function App() {
-      effect(() => {
+      $effect(() => {
         console.log(count);
       });
 

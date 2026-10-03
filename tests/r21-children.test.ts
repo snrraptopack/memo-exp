@@ -72,7 +72,7 @@ const SOURCES: Record<string, string> = {
     let shared = 0;
     function Worker() {
       let count = 0;
-      cleanup(() => disposed++);
+      $cleanup(() => disposed++);
       return <button onClick={() => {
         count++;
         shared++;
@@ -118,7 +118,7 @@ const SOURCES: Record<string, string> = {
     let shown = true;
     export let disposed = 0;
     function Worker() {
-      cleanup(() => disposed++);
+      $cleanup(() => disposed++);
       return <small>worker</small>;
     }
     function Frame(props) {

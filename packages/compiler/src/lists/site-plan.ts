@@ -131,18 +131,14 @@ function analyzeSource(
       name: 'readModuleSourceList',
     })
   ) {
-    // Emitted forms: readModuleSourceList("key") (legacy) and
-    // readModuleSourceList(_MDD.sourceRef("key")) (current RFC §16.4
-    // lowering — identity is the key itself, matching data-sources.ts).
+    // Source references carry module-source identity (RFC §16.4).
     const argument = current.arguments[0];
-    const key = astFactory.isStringLiteral(argument)
-      ? argument.value
-      : astFactory.isCallExpression(argument) &&
-          astFactory.isMemberExpression(argument.callee) &&
-          astFactory.isIdentifier(argument.callee.property, { name: 'sourceRef' }) &&
-          astFactory.isStringLiteral(argument.arguments[0])
-        ? argument.arguments[0].value
-        : null;
+    const key = astFactory.isCallExpression(argument) &&
+        astFactory.isMemberExpression(argument.callee) &&
+        astFactory.isIdentifier(argument.callee.property, { name: 'sourceRef' }) &&
+        astFactory.isStringLiteral(argument.arguments[0])
+      ? argument.arguments[0].value
+      : null;
     if (key !== null) {
       return {
         expression: current,

@@ -180,7 +180,8 @@ and binding allocation from shared discovery remains work for a later phase.
 
 `analysis/owner-list-structure.ts` proves closed array/record ownership and
 which writes preserve retained contents. Each inline row render reads only
-own primitive item fields or its index. Dense literal allocation, explicit
+own primitive item fields, its index, or a separately published owner selection
+value in strict equality with an item field. Dense literal allocation, explicit
 indexed reorders/replacements and literal truncation are supported. Minimum
 extents bound every indexed access, preventing inherited indexed getters after
 truncation. Bounded direct scalar-field assignments in inline owner host-event
@@ -189,8 +190,16 @@ content callbacks, including custom-element constructors, cannot promise that
 publication and disable the proof. Content-only sources allocate no extra cause.
 Aliases, other field writes (including
 loop/destructuring targets and row-handler mutations), opaque
-methods/factories, spreads, getters, external row reads and component rows retain
+methods/factories, spreads, getters, other external row reads and component rows retain
 ordinary replay. Dynamic scope and HMR disable the proof.
+
+`analysis/plain-list-return.ts` derives return provenance independently of effect
+summaries. The linker carries fresh-record fields, input projections and argument
+requirements through named imports and closed helper chains. Every input index
+is checked against the owner's minimum extent, including discarded reads. Methods, captured storage,
+escaping allocations and opaque producers do not acquire a return fact.
+`analysis/published-owner-dependency.ts` checks that selection writes belong to
+closed host-event call paths; escaped callbacks cannot justify skipping content.
 
 The analysis records original list-call/source identity and ensures the owner
 has numeric reasons for that source. Wholly structural bindings use the existing
@@ -423,22 +432,3 @@ regeneration leaves tracked benchmark output unchanged. The pinned Octane
 canonical and reorder smoke suites pass for memoized-dom. These gates establish
 correctness and removal of redundant callback replay; they do not establish
 comparative timing gains or complete owner-state structural-write proof.
-
-## Validation of closed owner structural replay
-
-Compiler build and changed-source lint passed. The selected suites passed 227
-distinct cases across 17 files, including 28 self-contained owner-array cases
-and one new region-plan contract case. Coverage includes synchronous/deferred
-and mixed causes, multiple instances, immutable/indexed replacements, rendered
-indices, aliases, getters, field/loop mutations, opaque reads, dynamic scope and
-bounds after truncation. The plan retains its original-call/source/reason
-contract after analysis context is cleared; cloned calls receive no proof.
-
-All 25 regenerated DOM variants pass identity and mixed-sequence checks. The
-pinned Octane canonical and reorder smoke suites pass for memoized-dom. A local
-before/after compiler comparison validates every focused sample and repeats all
-21 nine-variant DOM scenarios in both orders. Focused closed-array reorders have
-lower medians in both orders; existing DOM browser artifacts are identical, so
-their timing differences cannot be attributed to this proof. Measurements and
-limitations are recorded in `docs/performance-work.md`. Per-write summaries and
-component-row prop precision remain open work.

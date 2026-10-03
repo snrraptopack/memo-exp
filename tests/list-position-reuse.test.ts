@@ -12,12 +12,12 @@ it.each([false, true])('keeps interleaved key/update effects for replacement obj
     const node = document.createElement('li'); node.textContent = initial.label;
     let item = initial;
     return { nodes: node, entities: [],
-      updateProps(next) { item = next as typeof initial; },
-      update() {
+      update(next) { item = next as typeof initial;
         calls.push(`u:${item.label}`);
         if (item.label === 'one!') changed = true;
         node.textContent = item.label;
-      }, dispose() { calls.push(`d:${item.label}`); } };
+      },
+       dispose() { calls.push(`d:${item.label}`); } };
   }, (item: { id: number; label: string }) => { calls.push(`k:${item.id}`); return item.id; }, tracked);
   region.reconcile([{id: 1, label: 'one'}, {id: 2, label: 'two'}, {id: 3, label: 'three'}]);
   const original = [...host.children]; calls.length = 0;
@@ -36,8 +36,7 @@ it('preserves SameValueZero identities for immutable content updates followed by
   const region = createListRegion(host, 'immutable', initial => {
     const node = document.createElement('li'); node.textContent = initial.label;
     let item = initial;
-    return { nodes: [node], entities: [], updateProps(next) { item = next as typeof initial; },
-      update() { node.textContent = item.label; } };
+    return { nodes: [node], entities: [], update(next) { item = next as typeof initial;  node.textContent = item.label; } };
   }, (item: { id: unknown; label: string }) => item.id, false);
   region.reconcile(keys.map((id, i) => ({id, label: String(i)})));
   const original = [...host.children];
@@ -60,8 +59,7 @@ it('rejects a duplicate after a same-position prefix before reading or creating 
     calls.push(`c:${initial.label}`);
     const node = document.createElement('li'); node.textContent = initial.label;
     let item = initial;
-    return { nodes: node, entities: [], updateProps(next) { item = next as typeof initial; },
-      update() { calls.push(`u:${item.label}`); node.textContent = item.label; } };
+    return { nodes: node, entities: [], update(next) { item = next as typeof initial;  calls.push(`u:${item.label}`); node.textContent = item.label; } };
   }, (item: { id: number; label: string }) => { calls.push(`k:${item.id}`); return item.id; }, false);
   region.reconcile([1,2,3].map(id => ({id, label: String(id)}))); calls.length = 0;
   expect(() => region.reconcile([{id: 1, label: 'updated'}, {id: 1, label: 'duplicate'},

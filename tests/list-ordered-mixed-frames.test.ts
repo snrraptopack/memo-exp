@@ -12,8 +12,8 @@ it.each(['single','multi','empty'] as const)('inserts around ordered survivors w
     nodes.set(initial.id, extent); let item = initial, index = initialIndex;
     const render = () => extent.forEach(node => {node.textContent = `${item.id}@${index}:${item.label}`;}); render();
     return {nodes:shape === 'single' ? extent[0]! : extent,entities:[],
-      updateProps(value, position) {item = value as typeof initial; index = position;},
-      update() {calls.push(`u${item.id}@${index}`); render();}, dispose() {calls.push(`d${initial.id}`);}};
+      update(value, position) {item = value as typeof initial; index = position;calls.push(`u${item.id}@${index}`); render();},
+       dispose() {calls.push(`d${initial.id}`);}};
   }, (item:{id:number;label:string},index) => {calls.push(`k${item.id}@${index}`); return item.id;}, false, true);
   const observer = new MutationObserver(() => {}); observer.observe(host,{childList:true});
   const orders = [[0,1,2,3,4,5], [10,0,1,11,2,3,12,4,5,13], [10,1,14,3,15,5,13],

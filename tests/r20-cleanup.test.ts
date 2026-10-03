@@ -39,7 +39,7 @@ const SOURCES: Record<string, string> = {
       let count = 0;
       const start = () => setInterval(() => count++, 2);
       const timer = start();
-      cleanup(() => {
+      $cleanup(() => {
         disposed++;
         clearInterval(timer);
       });
@@ -60,7 +60,7 @@ const SOURCES: Record<string, string> = {
     }
     export function App() {
       let count = 0;
-      cleanup(subscribe(() => count++));
+      $cleanup(subscribe(() => count++));
       return <output id="subscription">{count}</output>;
     }
   `,
@@ -69,7 +69,7 @@ const SOURCES: Record<string, string> = {
       let count = 0;
       const receive = () => count++;
       window.addEventListener('memo-ping', receive);
-      cleanup(() => window.removeEventListener('memo-ping', receive));
+      $cleanup(() => window.removeEventListener('memo-ping', receive));
       return <output id="listener">{count}</output>;
     }
   `,
@@ -77,7 +77,7 @@ const SOURCES: Record<string, string> = {
     const rows = [{ id: 1 }, { id: 2 }];
     export let disposed = 0;
     function Row(item) {
-      cleanup(() => disposed++);
+      $cleanup(() => disposed++);
       return <li>{item.id}</li>;
     }
     export function App() {
@@ -172,7 +172,7 @@ describe('R20 - cleanup compiler contract', () => {
         const interval = setInterval(() => {
           timer++;
         }, 1000);
-        cleanup(() => clearInterval(interval));
+        $cleanup(() => clearInterval(interval));
         return <p>{timer}</p>;
       }
     `);
@@ -252,14 +252,14 @@ describe('R20 - cleanup compiler contract', () => {
     expect(() =>
       compile(`
         function App() {
-          const later = () => cleanup(() => {});
+          const later = () => $cleanup(() => {});
           return <button onClick={later}>later</button>;
         }
       `),
     ).toThrowError(/must run directly during component factory initialization/);
     expect(() =>
       compile(`
-        function helper() { cleanup(() => {}); }
+        function helper() { $cleanup(() => {}); }
         function App() { return <p>ok</p>; }
       `),
     ).toThrowError(/only valid directly inside a component factory/);

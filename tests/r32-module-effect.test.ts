@@ -38,7 +38,7 @@ const GRAPH = {
   './observer.ts': `
     import { count } from './state';
     export let observed = -1;
-    effect(() => {
+    $effect(() => {
       observed = count * 10;
     });
   `,
@@ -127,7 +127,7 @@ describe('R32 - module effects', () => {
 
   it('keeps a zero-dependency module effect as one post-load run', () => {
     const code = compile(`
-      effect(() => console.log("loaded"));
+      $effect(() => console.log("loaded"));
       export function App() { return <main />; }
     `);
     expect(code).toContain('.registerEffect(');

@@ -1,12 +1,13 @@
 # Compiler
 
+This project does not support legacy APIs. All packages and consumers must use the current APIs. Do not add compatibility shims, deprecated aliases, or fallback paths for superseded APIs.
+
 Requires Node.js 24.11 or newer. Standard JavaScript and TypeScript modules are
 parsed by Yuku, while all compiler analysis and emission operates on ESTree.
 
 Public compilation APIs:
 
-- `compile(source, options)` returns JavaScript and keeps the allocation-light
-  legacy path.
+- `compile(source, options)` returns JavaScript without source maps.
 - `compileDetailed(source, options)` returns `{ code, map, css? }` with authored
   source in `sourcesContent`.
 - `compileModulesDetailed(modules, options)` returns linked `output`, one map
@@ -121,7 +122,7 @@ existing adapter; separating that allocation and publication is further work.
 Model compiler work as an explicit pipeline of domain passes. A pass receives
 the compiler context and AST, performs one named responsibility, and leaves the
 context in a documented state for the next pass. Top-level modules coordinate
-passes and provide stable compatibility exports; they must not grow a second
+passes and provide shared internal exports; they must not grow a second
 implementation of domain behavior.
 
 Use a hybrid functional model:
@@ -195,7 +196,7 @@ replaced items, accessors, structural operations and mutable keys cannot receive
 the guarantee.
 
 A separate owner-array proof can skip unchanged retained row content after
-structural writes. It requires dense literal arrays of plain scalar records,
+structural writes. It requires proven dense arrays of plain scalar records,
 checks every source assignment/reference and every row read, and bounds indexed
 reads against every possible array extent. Explicit literal reorders, bounded
 indexed replacements and literal truncation qualify. Bounded assignments to own
@@ -207,13 +208,25 @@ ordinary write in the same scope or batch prevents structural-only replay;
 guarded callback commits also account for other writes in their completed body.
 Wholly structural bindings still use their original source cause. Aliases,
 getters, opaque/non-scalar field writes, row-handler field mutations, opaque
-factories/methods, spreads, component rows and external row reads retain the
+factories/methods, spreads, component rows and other external row reads retain the
 conservative path. Unpublished constructors, other content callbacks and
 content-mutating helpers also retain ordinary replay. Without a structural
 write site, no extra cause is allocated. Full updates and opaque pulls refresh content. New item
 identities and changed rendered indices also refresh. Original write facts are
 transferred through the handler's exact clone; unrelated clones receive no
 proof. List facts are captured before target emission.
+
+Closed module helpers, including renamed imports and helper chains, can carry
+return provenance for fresh literal records and indexed references to an input
+list. This is separate from their effect summaries. Arguments and minimum input
+extents must satisfy every read, including discarded reads; methods, escaped allocations,
+captured storage, sparse arrays and opaque return paths receive no such fact.
+An owner selection value may appear in strict equality with a primitive item
+field when every write belongs to a closed host-event handler. Its separate
+dirty cause still refreshes classes; mixed causes retain full content replay.
+These are optimization conditions, not a whitelist of permitted helper names
+or application operations. Loop-built producers and Octane's array-method paths
+remain conservative.
 
 Component-owned arrays of closed flat scalar records can also journal executed
 indices from canonical increasing `for` loops: one `let` counter, a nonnegative

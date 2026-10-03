@@ -245,18 +245,21 @@ export function buildRenderCallbackAdapter(
             astFactory.arrayExpression([cloneEstreeNode(rowId)]),
           ),
           astFactory.objectProperty(
-            astFactory.identifier('updateProps'),
+            astFactory.identifier('update'),
             astFactory.arrowFunctionExpression(
               [
                 cloneEstreeNode(nextItem),
                 ...(nextIndex === null ? [] : [cloneEstreeNode(nextIndex)]),
               ],
-              astFactory.blockStatement(bindingUpdates),
+              astFactory.blockStatement([
+                ...bindingUpdates,
+                astFactory.ifStatement(
+                  astFactory.unaryExpression('!', astFactory.callExpression(md(ctx, 'getEntity'), [cloneEstreeNode(rowId)])),
+                  astFactory.returnStatement(null),
+                ),
+                astFactory.expressionStatement(astFactory.callExpression(cloneEstreeNode(refreshRow), [])),
+              ]),
             ),
-          ),
-          astFactory.objectProperty(
-            astFactory.identifier('update'),
-            cloneEstreeNode(refreshRow),
           ),
           astFactory.objectProperty(
             astFactory.identifier('dispose'),

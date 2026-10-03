@@ -290,11 +290,14 @@ export function BenchModuleSelectionComponent(_id2, _parent, _dataPolicies) {
 		_id2 + "/data",
 		(item, _rowId) => {
 			const _entry = Row(item, _rowId, _id2, _onClickBinding2);
-			const _pushRowProps = _entry.updateProps;
 
-			_entry.updateProps = (_nextItem) => {
+			const _renderRowContent = _entry.update,
+				_pushRowProps = _entry.updateProps;
+
+			_entry.update = (_nextItem) => {
 				item = _nextItem;
 				_pushRowProps(item);
+				_renderRowContent();
 			};
 
 			return _entry;

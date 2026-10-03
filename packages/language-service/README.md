@@ -1,5 +1,7 @@
 # @memoized-dom/language-service
 
+This project does not support legacy APIs. All packages and consumers must use the current APIs. Do not add compatibility shims, deprecated aliases, or fallback paths for superseded APIs.
+
 TypeScript editor diagnostics and code fixes for memoized-dom. Compiler errors
 come from `@memoized-dom/compiler`'s structured graph diagnostic API, so the
 editor, Vite overlay, and direct compiler report the same restrictions.

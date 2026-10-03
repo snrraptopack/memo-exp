@@ -35,7 +35,7 @@ const SOURCE = `
     }
 
     if (enabled) {
-      effect(synchronize);
+      $effect(synchronize);
     }
 
     return <main>
@@ -128,7 +128,7 @@ describe('R33 - named and conditional effects', () => {
       function synchronize() {
         console.log(count);
       }
-      if (enabled) effect(synchronize);
+      if (enabled) $effect(synchronize);
       export function App() {
         return <button onClick={() => { enabled = !enabled; count++; }}>{count}</button>;
       }
@@ -145,7 +145,7 @@ describe('R33 - named and conditional effects', () => {
           let enabled = true;
           if (enabled) {
             console.log("imperative");
-            effect(() => console.log("effect"));
+            $effect(() => console.log("effect"));
           }
           return <main />;
         }

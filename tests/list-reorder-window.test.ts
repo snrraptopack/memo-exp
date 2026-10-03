@@ -88,8 +88,8 @@ it('keeps key/update evaluation order and refreshes all content during a sparse 
     const node = document.createElement('li'); let item = initial, index = initialIndex;
     node.textContent = item.label;
     return { nodes: node, entities: [],
-      updateProps(value, position) { item = value as typeof initial; index = position; },
-      update() { calls.push(`u${item.id}@${index}`); node.textContent = item.label; },
+      update(value, position) { item = value as typeof initial; index = position;  calls.push(`u${item.id}@${index}`); node.textContent = item.label; },
+
     };
   }, (item, index) => { calls.push(`k${item.id}@${index}`); return item.id; }, false);
   region.reconcile(items); const nodes = Array.from(host.querySelectorAll('li')); calls.length = 0;
@@ -115,8 +115,7 @@ it('moves multi-node rows between stable boundaries and refreshes changed indice
     let item = initial, index = initialIndex;
     const render = () => { nodes[0]!.textContent = `${item.id}@${index}`; nodes[1]!.textContent = String(item.id); };
     render();
-    return { nodes, entities: [], updateProps(value, position) { item = value as typeof initial; index = position; },
-      update() { updated.push(item.id); render(); } };
+    return { nodes, entities: [], update(value, position) { item = value as typeof initial; index = position;  updated.push(item.id); render(); } };
   }, item => item.id, false, true);
   region.reconcile(items);
   const after = document.createElement('aside'); host.append(after);
@@ -139,8 +138,8 @@ it('handles additions, removals, replacement objects and shifted stable suffixes
   const region = createListRegion(host, 'mixed', (initial, _id, initialIndex) => {
     const node = document.createElement('li'); let item = initial, index = initialIndex;
     node.textContent = `${item.id}@${index}:${item.label}`; live.set(item.id, node);
-    return { nodes: node, entities: [], updateProps(value, position) { item = value as typeof initial; index = position; },
-      update() { node.textContent = `${item.id}@${index}:${item.label}`; }, dispose() { disposed.push(item.id); } };
+    return { nodes: node, entities: [], update(value, position) { item = value as typeof initial; index = position;  node.textContent = `${item.id}@${index}:${item.label}`; },
+       dispose() { disposed.push(item.id); } };
   }, (item: { id: number; label: string }) => item.id, false);
   const observer = new MutationObserver(() => {}); observer.observe(host, { childList: true });
   const orders = [[0,1,2,3,4,5,6,7], [0,3,2,1,4,5,6,7], [0,3,8,1,4,5,6,7],
@@ -180,8 +179,7 @@ it.each([1, 3, 4, 7])('minimizes moves for an inner cyclic shift of %i multi-nod
     const render = () => { pair[0]!.textContent = `${item.id}@${index}`; };
     render();
     return { nodes: pair, entities: [],
-      updateProps(next, position) { item = next as typeof initial; index = position; },
-      update() { calls.push(`u${item.id}@${index}`); render(); } };
+      update(next, position) { item = next as typeof initial; index = position;  calls.push(`u${item.id}@${index}`); render(); } };
   }, (item, index) => { calls.push(`k${item.id}@${index}`); return item.id; }, false, true);
   region.reconcile(items); calls.length = 0;
   const observer = new MutationObserver(() => {}); observer.observe(host, { childList: true });

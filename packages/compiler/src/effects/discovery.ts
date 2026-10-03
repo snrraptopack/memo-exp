@@ -103,7 +103,7 @@ function resolveEffectCallback(
   const argument = args[0];
   if (args.length !== 1 || argument === undefined) {
     throw errorAt.buildCodeFrameError(
-      'memo-dom: effect() requires exactly one callback',
+      'memo-dom: $effect() requires exactly one callback',
     );
   }
   if (
@@ -449,7 +449,7 @@ function collectOwnedEffectCalls(
       if (child.type === 'EmptyStatement') continue;
       if (!containsOwnedEffect(ctx, child)) {
         throw errorAt.buildCodeFrameError(
-          'memo-dom: a conditional effect branch may contain only effect() calls, nested if statements, or empty statements',
+          'memo-dom: a conditional effect branch may contain only $effect() calls, nested if statements, or empty statements',
         );
       }
       collectOwnedEffectCalls(
@@ -489,7 +489,7 @@ function collectOwnedEffectCalls(
     return;
   }
   throw errorAt.buildCodeFrameError(
-    'memo-dom: conditional effect() calls must be controlled by top-level if statements',
+    'memo-dom: conditional $effect() calls must be controlled by top-level if statements',
   );
 }
 
@@ -654,7 +654,7 @@ export function scanEffects(
           accepted.has(node as unknown as t.CallExpression)
         ) return undefined;
         throw compPath.buildCodeFrameError(
-          'memo-dom: effect() must be a direct top-level statement in a component body',
+          'memo-dom: $effect() must be a direct top-level statement in a component body',
         );
       },
     });

@@ -102,8 +102,8 @@ it('skips only proven position/key reads while retaining forward content updates
     let item = initial;
     const node = document.createElement('li'); node.textContent = item.label;
     return { nodes: node, entities: [],
-      updateProps(next) { item = next as typeof initial; },
-      update() { calls.push(`u${item.id}`); node.textContent = item.label; },
+      update(next) { item = next as typeof initial;  calls.push(`u${item.id}`); node.textContent = item.label; },
+
     };
   }, item => { calls.push(`k${item.id}`); return item.id; }, false);
   region.reconcile(items, false, false, true);

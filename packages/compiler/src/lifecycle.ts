@@ -1,7 +1,7 @@
 /**
  * lifecycle.ts - explicit cleanup lowering and factory callback ownership.
  *
- * Source `cleanup(disposer)` is restricted to direct component-factory
+ * Source `$cleanup(disposer)` is restricted to direct component-factory
  * execution and lowered with the generated entity id. Callback analysis is
  * deliberately API-agnostic: any function passed from factory setup receives
  * its own normal-exit invalidation when it writes reactive state.
@@ -246,7 +246,7 @@ export function transformComponentLifecycle(
         ) {
           if (!directFactoryCall) {
             throw compPath.buildCodeFrameError(
-              'memo-dom: cleanup(disposer) must run directly during component factory initialization',
+              'memo-dom: $cleanup(disposer) must run directly during component factory initialization',
             );
           }
           const disposer = call.arguments[0];
@@ -256,7 +256,7 @@ export function transformComponentLifecycle(
             !astFactory.isExpression(disposer)
           ) {
             throw compPath.buildCodeFrameError(
-              'memo-dom: cleanup(disposer) requires exactly one disposer expression',
+              'memo-dom: $cleanup(disposer) requires exactly one disposer expression',
             );
           }
           call.callee = md(ctx, 'cleanup');
@@ -415,7 +415,7 @@ export function rejectUnownedCleanup(
         isIntrinsicLifecycleCall(ctx, node, 'cleanup')
       ) {
         throw programPath.buildCodeFrameError(
-          'memo-dom: cleanup(disposer) is only valid directly inside a component factory',
+          'memo-dom: $cleanup(disposer) is only valid directly inside a component factory',
         );
       }
     },

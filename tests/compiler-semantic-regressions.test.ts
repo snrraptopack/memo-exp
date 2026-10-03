@@ -54,7 +54,7 @@ function mount(body: string, setup = 'let count = 0;', effect = false, asyncHand
   const source = `${setup}
     export function read() { return count; }
     export function App() {
-      ${effect ? `effect(() => { ${body} });` : ''}
+      ${effect ? `$effect(() => { ${body} });` : ''}
       return <button ${effect ? '' : `onClick={${asyncHandler ? 'async ' : ''}() => { ${body} }}`}>{count}</button>;
     }`;
   api = execute(compile(source), runtime, () => getters++);

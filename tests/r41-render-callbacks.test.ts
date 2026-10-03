@@ -54,7 +54,7 @@ const NESTED_SOURCE = `
   let shared = 0;
   export let disposed = 0;
   function Card({ item }) {
-    cleanup(() => disposed++);
+    $cleanup(() => disposed++);
     return <button class="card" onClick={() => shared++}>
       {item.label}:{shared}
     </button>;

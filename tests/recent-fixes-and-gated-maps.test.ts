@@ -93,7 +93,7 @@ beforeAll(() => {
         let items = [{ id: 1 }];
         const parity = items.length % 2;
 
-        effect(() => console.log("parity:" + parity));
+        $effect(() => console.log("parity:" + parity));
 
         return <main>
           <button id="same" onClick={() => {
@@ -179,7 +179,7 @@ beforeAll(() => {
 
         export function App() {
           let count = 0;
-          effect(() => {
+          $effect(() => {
             console.log("effect:" + count + ":" + readExternal());
           });
           return <button id="effect-count" onClick={() => count++}>{count}</button>;

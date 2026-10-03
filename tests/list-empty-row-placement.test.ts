@@ -32,6 +32,8 @@ function setup(pair = false) {
 
 for (const pair of [false, true]) {
   it.each([
+    ['cyclic prefix move', [4, 0, 1, 2, 3]],
+    ['cyclic suffix move', [1, 2, 3, 4, 0]],
     ['empty LIS row', [0, 2, 1, 3, 4]],
     ['empty first suffix row', [2, 1, 0, 3, 4]],
     ['empty trailing suffix', [4, 0, 2, 1, 3]],
@@ -49,6 +51,25 @@ for (const pair of [false, true]) {
     expect([...app.host.childNodes]).toEqual([app.before, app.after]);
   });
 }
+
+it.each([1, 4])('keeps cyclic placement boundaries when the first retained extent is empty (offset=%i)', offset => {
+  const app = setup(true);
+  try {
+    const previous = [1, 2, 3, 4, 0];
+    app.region.reconcile(previous);
+    const next = previous.slice(offset).concat(previous.slice(0, offset));
+    app.calls.length = 0;
+    app.region.reconcile(next);
+    app.check(next);
+    expect(app.calls).toEqual(next.flatMap(id => [`k${id}`, `u${id}`]));
+    expect(app.disposed).toEqual([]);
+    app.calls.length = 0;
+    app.region.refreshKey(next[0]);
+    expect(app.calls).toEqual([`u${next[0]}`]);
+  } finally { app.region.dispose(); }
+  expect(app.disposed.sort()).toEqual([0, 1, 2, 3, 4]);
+  expect([...app.host.childNodes]).toEqual([app.before, app.after]);
+});
 
 function* permutations(values: number[]): Generator<number[]> {
   if (!values.length) { yield []; return; }

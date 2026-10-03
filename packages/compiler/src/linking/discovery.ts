@@ -14,6 +14,7 @@ import {
   discoverComponentExports,
 } from '../components/manifest';
 import { summarizeHelper } from '../helper-summaries';
+import { plainListReturn } from '../analysis/plain-list-return';
 import {
   moduleFunctionStringCandidates,
   moduleStateStringCandidates,
@@ -511,8 +512,10 @@ export function analyzeManifest(
             ctx.importedFunctions.get(local) ??
             (ctx.helpers.has(local) ? summarizeHelper(ctx, local) : undefined);
           if (summary !== undefined) {
+            const listReturn = plainListReturn(ctx, local);
             exports[exported] = {
               type: 'function',
+              ...(listReturn === undefined ? {} : { plainListReturn: listReturn }),
               ...(transparentFunctionFactories.has(local)
                 ? {
                     transparentSourceFactory: true,

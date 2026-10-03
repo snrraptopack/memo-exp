@@ -64,40 +64,11 @@ or journalled content invalidation. Calculations, DOM slots and effects open on
 either source cause. Ordinary/mixed causes disable structural-only replay.
 Original write facts transfer explicitly through handler cloning. Conditional
 commits account for all completed writes before publishing a safe cause.
-Broader producers/write shapes and component-row props remain open work; this
-proof does not optimize the imported factories/method calls used by Octane.
-
-### Local before/after measurement: owner structural replay
-
-On 2026-10-03, the compiler from `a9d4bad` and the current compiler generated
-matching authored 1k/10k owner-array fixtures using the same current runtime.
-Each execution order had five warmups and 15 interleaved samples per variant;
-text, count and retained node identity were checked outside timing after every
-sample. Medians in milliseconds:
-
-| Rows | Operation | Before / after, before first | Before / after, after first |
-|---:|---|---:|---:|
-| 1k | Reverse | 7.2 / 3.7 | 4.8 / 3.8 |
-| 1k | Rotate | 0.9 / 0.5 | 0.8 / 0.5 |
-| 10k | Reverse | 65.0 / 55.6 | 61.6 / 57.1 |
-| 10k | Rotate | 10.6 / 4.1 | 7.5 / 2.3 |
-
-These focused medians were lower in both orders. They exercise the closed
-literal-array proof, not opaque producers or component rows. VM measurement is
-still needed to establish the magnitude under steadier conditions.
-
-The existing nine-variant DOM suite also completed all 21 scenarios in
-before/after/after/before order, with seven samples and per-operation identity
-and correctness checks. Its before/after browser artifacts were identical.
-Large timing swings in that control are local noise: for example, owned-inline
-10k clear measured 14.6 / 10.4 ms in the first order and 9.5 / 13.5 in the other.
-This change establishes no improvement in that matrix or Octane.
-
-The reusable command is `bun run bench:dom:compare --before-ref=<commit>`.
-Its combined report and focused raw samples are saved under
-`bench/dom/dist/local-owner-compare/`. Compiler/runtime optimizations should
-continue to include a matching local comparison and the relevant DOM checks
-before VM measurement; runtime comparisons need isolated runtime bundles.
+Closed module helpers can now carry fresh-record and indexed-input return facts
+through named imports and helper chains. All input reads must satisfy the owner's
+minimum extent. Published selection writes remain separate content causes.
+Broader producers/write shapes and component-row props remain open work; Octane's
+loop-built data and array-method paths still retain ordinary replay.
 
 ## Completed changes
 

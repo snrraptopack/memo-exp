@@ -182,49 +182,6 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 		_id + "/data",
 		(item, _rowId) => {
 			let _slot, _slot2, _slot3, _slot4, _slot5, _value2;
-
-			const _update2 = () => {
-				{
-					const _textLeft = item.id;
-
-					if (typeof _textLeft === "number" || typeof _textLeft === "string") {
-						const _textRight = item.label;
-
-						if (typeof _textRight === "number" || typeof _textRight === "string") {
-							if (!_slot4 || (_slot2 !== _textLeft || _slot3 !== _textRight)) {
-								_slot2 = _textLeft;
-								_slot3 = _textRight;
-								_slot4 = true;
-
-								if (_slot !== (_value2 = _MD.textValue(_textLeft + ": " + _textRight))) {
-									_slot = _value2;
-									_text10.data = _value2;
-								}
-							}
-						} else try {
-							if (_slot !== (_value2 = _MD.textValue(_textLeft + ": " + _textRight))) {
-								_slot = _value2;
-								_text10.data = _value2;
-							}
-						} finally {
-							_slot4 = false;
-						}
-					} else try {
-						if (_slot !== (_value2 = _MD.textValue(_textLeft + ": " + item.label))) {
-							_slot = _value2;
-							_text10.data = _value2;
-						}
-					} finally {
-						_slot4 = false;
-					}
-				}
-
-				if (_slot5 !== (_value2 = selected === item.id ? "danger" : "")) {
-					_slot5 = _value2;
-					_MD.setClassValue(_li, _value2);
-				}
-			};
-
 			const _document2 = _MD.getActiveEnvironment().document;
 			const _canReuseTemplate = _MD.canReuseTemplate();
 			let _li;
@@ -282,10 +239,49 @@ export function BenchModuleDataInline(_id, _parent, _dataPolicies) {
 			return {
 				nodes: _li,
 				entities: [],
-				updateProps: (_nextItem) => {
+				update: (_nextItem) => {
 					item = _nextItem;
-				},
-				update: _update2
+
+					{
+						const _textLeft = item.id;
+
+						if (typeof _textLeft === "number" || typeof _textLeft === "string") {
+							const _textRight = item.label;
+
+							if (typeof _textRight === "number" || typeof _textRight === "string") {
+								if (!_slot4 || (_slot2 !== _textLeft || _slot3 !== _textRight)) {
+									_slot2 = _textLeft;
+									_slot3 = _textRight;
+									_slot4 = true;
+
+									if (_slot !== (_value2 = _MD.textValue(_textLeft + ": " + _textRight))) {
+										_slot = _value2;
+										_text10.data = _value2;
+									}
+								}
+							} else try {
+								if (_slot !== (_value2 = _MD.textValue(_textLeft + ": " + _textRight))) {
+									_slot = _value2;
+									_text10.data = _value2;
+								}
+							} finally {
+								_slot4 = false;
+							}
+						} else try {
+							if (_slot !== (_value2 = _MD.textValue(_textLeft + ": " + item.label))) {
+								_slot = _value2;
+								_text10.data = _value2;
+							}
+						} finally {
+							_slot4 = false;
+						}
+					}
+
+					if (_slot5 !== (_value2 = selected === item.id ? "danger" : "")) {
+						_slot5 = _value2;
+						_MD.setClassValue(_li, _value2);
+					}
+				}
 			};
 		},
 		(item) => item.id,

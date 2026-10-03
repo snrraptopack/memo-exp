@@ -57,8 +57,9 @@ describe('M5.5 — member-path list sources, code generation', () => {
     const code = compile(
       `const items = [{ id: 1 }];\nfunction C() { return <ul>{items.map((i) => <li key={i.id}>{i.id}</li>)}</ul>; }`,
     );
-    // entry object: { nodes: [li0], entities: [rowId], update }
-    expect(code).toMatch(/entities: \[_rowId\d*\],\s*update/);
+    // Both registered and lightweight entries bind the current item in update.
+    expect(code).toMatch(/entities: \[(?:_rowId\d*)?\],\s*update:\s*\(_nextItem\d*\)/);
+    expect(code).not.toMatch(/entities: \[[^\]]*\],\s*updateProps:/);
   });
 
   it('non-store member sources are rejected', () => {

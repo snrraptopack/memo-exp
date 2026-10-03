@@ -15,8 +15,10 @@ const compile = (body: string) => compileModules({ './app.tsx': `
 const probe = `import * as runtime from '@memoized-dom/runtime/testing';
   export * from '@memoized-dom/runtime/testing';
   export function createListRegion(...args){const create=args[2];args[2]=(...values)=>{
-    const entry=create(...values),update=entry.update;
-    if(update) entry.update=()=>{globalThis.__ownerRowReplays++;update();};return entry;
+    const entry=create(...values);
+    const update=entry.update;
+    if(update) entry.update=(...args)=>{globalThis.__ownerRowReplays++;update(...args);};
+    return entry;
   };return runtime.createListRegion(...args);}`;
 async function load(source: string, name: string) {
   const output = compileModules({ './app.tsx': source }, { runtimePath: './probe' })['./app.tsx']!;

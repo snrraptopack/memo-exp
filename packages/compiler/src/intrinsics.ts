@@ -34,6 +34,11 @@ export function installCompilerIntrinsics(
       if (node.type !== 'Identifier' || !isReferenceIdentifier(parent, key))
         return;
       const name = identifierName(node);
+      if ((name === 'effect' || name === 'cleanup') && astBindingAt(ctx, node, name) === undefined) {
+        throw program.buildCodeFrameError(
+          `memo-dom: use $${name}() for the compiler lifecycle intrinsic; unprefixed ${name} is not supported`, node,
+        );
+      }
       if (
         (name === '$effect' || name === '$cleanup') &&
         astBindingAt(ctx, node, name) === undefined &&
@@ -75,7 +80,7 @@ export function installCompilerIntrinsics(
   if (needed.size > 0) refreshAstAnalysis(ctx, program.node);
 }
 
-/** Legacy unprefixed lifecycle syntax remains compatible; shadows are ordinary JS. */
+/** Only prefixed lifecycle intrinsics are implicit; shadows are ordinary JS. */
 export function isIntrinsicLifecycleCall(
   ctx: Ctx,
   call: BaseNode,
@@ -85,7 +90,7 @@ export function isIntrinsicLifecycleCall(
   return (
     (call.type === 'CallExpression' ||
       call.type === 'OptionalCallExpression') &&
-    (name === `$${kind}` || name === kind) &&
+    name === `$${kind}` &&
     astBindingAt(ctx, call, name) === undefined
   );
 }

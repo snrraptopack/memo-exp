@@ -1,5 +1,7 @@
 # `@memoized-dom/router`
 
+This project does not support legacy APIs. All packages and consumers must use the current APIs. Do not add compatibility shims, deprecated aliases, or fallback paths for superseded APIs.
+
 `@memoized-dom/router` is Memoized DOM's compiler-first, renderer-independent routing engine. It owns immutable URL state, deterministic route matching, compiler-extracted nested manifests, history management, scroll restoration, cancellation, and synchronous navigation guards.
 
 There are no router context providers, component wrappers, or hooks. Routing declarations compile to stable, mutually exclusive real-DOM regions.

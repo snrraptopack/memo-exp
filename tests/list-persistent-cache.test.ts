@@ -15,8 +15,7 @@ it('keeps consumed keys hidden, remaining size and forward effects during a mixe
     const node = document.createElement('li'); let item = initial, index = initialIndex;
     node.textContent = `${item.label}@${index}`;
     return { nodes: node, entities: [],
-      updateProps(next, position) { item = next as typeof initial; index = position; },
-      update() {
+      update(next, position) { item = next as typeof initial; index = position;
         if (observing) {
           calls.push(`u${item.id}:${region.size()}`);
           // A consumed key is unavailable until commit; an unconsumed old row
@@ -26,6 +25,7 @@ it('keeps consumed keys hidden, remaining size and forward effects during a mixe
         }
         node.textContent = `${item.label}@${index}`;
       },
+
       dispose() { disposed.push(initial.id); if (observing) calls.push(`d${initial.id}:${region.size()}`); },
     };
   }, (item: { id: number; label: string }) => {
@@ -82,8 +82,8 @@ it.each(['props', 'update'] as const)('disposes every retained entity when %s th
     const id = `persistent-${failure}/${initial.id}`;
     register({id, parent:null, render() {}});
     return { nodes:node, entities:[id],
-      updateProps() { if (throwing && initial.id === 2 && failure === 'props') throw new Error('props'); },
-      update() { if (throwing && initial.id === 2 && failure === 'update') throw new Error('update'); },
+      update() { if (throwing && initial.id === 2 && failure === 'props') throw new Error('props');  if (throwing && initial.id === 2 && failure === 'update') throw new Error('update'); },
+
       dispose() { disposed.push(initial.id); },
     };
   }, (item: {id:number;label:string}) => item.id);

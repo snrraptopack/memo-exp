@@ -220,7 +220,7 @@ describe('opaque external mutation fallback', () => {
       export function App() {
         const state = { value: 0 };
         let started = false;
-        effect(() => {
+        $effect(() => {
           if (started) animate(state, { value: 100 });
         });
         return <button onClick={() => started = true}>{state.value}</button>;

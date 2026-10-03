@@ -44,7 +44,7 @@ Everything below exists to make that sentence true.
 | **slot** | one dynamic expression in JSX (text interpolation, attribute, class condition, style) |
 | **write-set** | state paths an execution scope may have changed |
 | **access table** | the compile-time `readers` map: variable → entity-id patterns |
-| **reactive effect** | a component-owned `effect(() => ...)` callback that reruns after one of its statically discovered inputs changes |
+| **reactive effect** | a component-owned `$effect(() => ...)` callback that reruns after one of its statically discovered inputs changes |
 | **exact write effect** | a state path directly proven to change |
 | **bounded write effect** | a conservative write boundary attached to a known receiver/argument path |
 | **unbounded write effect** | a write effect with no finite state receiver/argument boundary → root-subtree commit |
@@ -374,10 +374,11 @@ batches, up to 100 passes, then a cycle error). This replaces the old
 while a commit is in progress (reentrancy guard) — marks just join the
 current drain.
 
-**List rows.** A component row's entry gains `updateProps(item)` —
-`setProps(rowId, [expr...])` re-pushing item-derived props on every reconcile
-that retains the row (M5.5's `update` stays for inline rows). Item-field
-mutations and item replacement both reach the row.
+**List rows.** Entries use `update(item, index)` to bind current data and refresh
+content in one call. Component entries push item-derived props through
+`setProps(rowId, [expr...])` and render the row in that updater. Item-field
+mutations and item replacement both reach the row. There is no split
+`updateProps`/`update` list-entry contract or compatibility path.
 
 **Dead letters & cleanup.** `setProps` on an unmounted id is a no-op; the
 props box is dropped on unregister via the M5.6 registry listener.
@@ -487,7 +488,7 @@ function Clock() {
   const interval = setInterval(() => {
     time = Date.now();
   }, 1000);
-  cleanup(() => clearInterval(interval));
+  $cleanup(() => clearInterval(interval));
   return <time>{time}</time>;
 }
 ```
@@ -502,7 +503,7 @@ const interval = setInterval(() => {
 MD.cleanup(id, () => clearInterval(interval));
 ```
 
-`cleanup(disposer)` is valid only during direct component-factory execution.
+`$cleanup(disposer)` is valid only during direct component-factory execution.
 It accepts one synchronous disposer. Teardown runs descendants before owners
 and each owner's disposers in reverse registration order. All disposers run
 even when one throws; errors are reported after the subtree is fully removed.
@@ -514,8 +515,8 @@ callbacks, DOM listeners, observers, and application subscriptions without a
 compiler-maintained lifecycle API list. Cancellation remains explicit:
 
 ```ts
-cleanup(subscribe(receive));
-cleanup(() => window.removeEventListener(...));
+$cleanup(subscribe(receive));
+$cleanup(() => window.removeEventListener(...));
 ```
 
 Callbacks retained during module initialization also receive commits.
@@ -732,7 +733,7 @@ item.
 
 ### R26 - Reactive effects are component-owned post-render entities
 
-`effect(callback)` is the optional escape hatch for synchronizing reactive
+`$effect(callback)` is the optional escape hatch for synchronizing reactive
 state with work outside JSX:
 
 ```tsx
@@ -740,7 +741,7 @@ let source = 1;
 let sink = 0;
 
 function App() {
-  effect(() => {
+  $effect(() => {
     sink = source * 2;
     const controller = startExternalWork(source);
     return () => controller.abort();
@@ -834,7 +835,7 @@ rerun, the runtime invokes the previous disposer exactly once, then installs
 the newly returned disposer. Unregistering the effect invokes its latest
 disposer exactly once. Any other return value is a runtime `TypeError`.
 Ownership is automatic: authored code must not wrap an effect in
-`cleanup(...)`. R20 `cleanup(disposer)` remains the explicit ownership form for
+`$cleanup(...)`. R20 `$cleanup(disposer)` remains the explicit ownership form for
 non-reactive factory resources such as timers and listeners.
 
 “Post-render” does not mean “attached to `document`.” With the default browser
@@ -947,14 +948,14 @@ responsible for passing trusted or application-sanitized HTML.
 
 ### R32 - Module effects are linked singleton entities
 
-A direct module-scope `effect(() => ...)` has the same inline synchronous
+A direct module-scope `$effect(() => ...)` has the same inline synchronous
 callback contract and render-priority scheduling as R26, but no component
 owner:
 
 ```tsx
 import { session } from './state';
 
-effect(() => {
+$effect(() => {
   persist(session);
   return () => stopPersistence();
 });
@@ -974,7 +975,7 @@ resource leaks during module reevaluation.
 
 ### R33 - Named and conditional effects retain stable controller identity
 
-`effect(callback)` accepts an inline synchronous callback or a local named
+`$effect(callback)` accepts an inline synchronous callback or a local named
 function/const function. A component or module top-level `if` may contain only
 effect declarations, empty statements, and nested effect-only `if` statements:
 
@@ -984,7 +985,7 @@ const sync = () => {
   return () => resource.close();
 };
 
-if (enabled) effect(sync);
+if (enabled) $effect(sync);
 ```
 
 An unconditional effect keeps the R26/R32 entity shape. A conditional effect
@@ -1728,7 +1729,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 - Reactive effects are post-render entities, not post-attachment mount hooks.
   Detached creation and custom synchronous schedulers do not guarantee that
   the returned root is connected to `document` when the initial effect runs.
-  Effect and `cleanup(disposer)` teardown promises are not awaited.
+  Effect and `$cleanup(disposer)` teardown promises are not awaited.
 - A factory that registers cleanup and then throws before entity registration
   leaves that registration orphaned. Factory exception teardown needs a
   separate decision; event handlers remain free of generated `try/finally`.
@@ -1800,7 +1801,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
 - **R26 (component-owned reactive effects,
   packages/compiler/src/effects.ts + packages/runtime/src/effect.ts +
   packages/runtime/src/kernel.ts, tests/r26-effect.test.ts):** unbound
-  top-level `effect(() => ...)` callbacks receive static module/local
+  top-level `$effect(() => ...)` callbacks receive static module/local
   dependencies, run only after render/computed work drains, propagate ordinary
   compiler-visible writes through per-site execution guards, permit conditional
   feedback to stabilize, retain the cascade guard for genuine cycles, and own
@@ -1845,7 +1846,7 @@ unchanged rows. At L2, it dirties the badge + the two affected rows.
   packages/compiler/src/lifecycle.ts + packages/runtime/src/cleanup.ts,
   tests/r20-cleanup.test.ts):** direct factory timers,
   listeners, constructors, subscriptions, and visible local helpers receive
-  callback-owned normal-completion commits. `cleanup(disposer)` lowers with the
+  callback-owned normal-completion commits. `$cleanup(disposer)` lowers with the
   hygienic entity id and runs on root or keyed-row subtree teardown.
   Module-initialization callbacks table-route canonical state writes.
 - **R19 (receiver-bounded write effects,

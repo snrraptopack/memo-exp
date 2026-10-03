@@ -337,7 +337,7 @@ export function rejectUnownedEffects(
     enter(node) {
       if (node.type === 'CallExpression' && isIntrinsicEffect(ctx, node)) {
         throw programPath.buildCodeFrameError(
-          'memo-dom: effect() must be a direct top-level statement or be controlled by a top-level effect-only if branch in a component or module',
+          'memo-dom: $effect() must be a direct top-level statement or be controlled by a top-level effect-only if branch in a component or module',
         );
       }
     },

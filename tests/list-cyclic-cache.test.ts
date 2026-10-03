@@ -1,18 +1,19 @@
 import { expect, it, vi } from 'vitest';
 import { createListRegion } from '@memoized-dom/runtime';
 
-it.each([1, 3, 8, 19])('validates all keys while avoiding repeated cache hashing for a shift of %i', offset => {
+it.each([1, 3, 8, 10, 19])('validates all keys while avoiding repeated cache hashing for a shift of %i', offset => {
   const host = document.createElement('ul');
   const items = Array.from({ length: 20 }, (_, id) => ({ id, token: {}, label: String(id) }));
   const tokens = new Set(items.map(item => item.token));
   const calls: string[] = [];
+  let extentReads = 0;
   const region = createListRegion(host, 'cyclic-cache', (initial, _id, initialIndex) => {
     const node = document.createElement('li');
     let item = initial, index = initialIndex;
     node.textContent = item.label;
-    return { nodes: node, entities: [],
-      updateProps(next, position) { item = next as typeof initial; index = position; },
-      update() { calls.push(`u${item.id}@${index}`); node.textContent = item.label; },
+    return { get nodes() { extentReads++; return node; }, entities: [],
+      update(next, position) { item = next as typeof initial; index = position;  calls.push(`u${item.id}@${index}`); node.textContent = item.label; },
+
     };
   }, (item, index) => { calls.push(`k${item.id}@${index}`); return item.token; }, false, true);
   region.reconcile(items);
@@ -20,6 +21,7 @@ it.each([1, 3, 8, 19])('validates all keys while avoiding repeated cache hashing
   const observer = new MutationObserver(() => {});
   observer.observe(host, { childList: true });
   calls.length = 0;
+  extentReads = 0;
   items.forEach(item => { item.label += '!'; });
   const next = items.slice(offset).concat(items.slice(0, offset));
   const get = vi.spyOn(Map.prototype, 'get');
@@ -34,6 +36,8 @@ it.each([1, 3, 8, 19])('validates all keys while avoiding repeated cache hashing
     const moved = new Set<Node>();
     observer.takeRecords().forEach(record => record.addedNodes.forEach(node => moved.add(node)));
     expect(moved.size).toBe(Math.min(offset, items.length - offset));
+    // Placement only examines the moved extents and at most one boundary.
+    expect(extentReads).toBeLessThanOrEqual(moved.size + 1);
   } finally {
     get.mockRestore(); observer.disconnect(); region.dispose();
   }
@@ -48,8 +52,8 @@ it('abandons a failed prediction and preserves general reorders and refresh posi
     const render = () => { node.textContent = `${item.id}@${index}`; };
     render();
     return { nodes: node, entities: [],
-      updateProps(next, position) { item = next as typeof initial; index = position; },
-      update() { calls.push(`u${item.id}@${index}`); render(); },
+      update(next, position) { item = next as typeof initial; index = position;  calls.push(`u${item.id}@${index}`); render(); },
+
     };
   }, item => item.id, false, true);
   region.reconcile(items);
@@ -88,8 +92,8 @@ it('preserves SameValueZero key identity and immutable item replacements through
     const node = document.createElement('li'); let item = initial;
     node.textContent = item.label;
     return { nodes: node, entities: [],
-      updateProps(next) { item = next as typeof initial; },
-      update() { node.textContent = item.label; },
+      update(next) { item = next as typeof initial;  node.textContent = item.label; },
+
     };
   }, item => item.key, false, false);
   region.reconcile(items);
@@ -116,8 +120,8 @@ it('reads later keys after earlier row effects even when a prediction must creat
     const node = document.createElement('li'); node.textContent = String(initial.id);
     let item = initial;
     return { nodes: node, entities: [],
-      updateProps(next) { item = next as typeof initial; },
-      update() { calls.push(`u${item.id}`); if (change && item.id === 2) items[3]!.id = 30; },
+      update(next) { item = next as typeof initial;  calls.push(`u${item.id}`); if (change && item.id === 2) items[3]!.id = 30; },
+
       dispose() { calls.push(`d${node.textContent}`); },
     };
   }, item => { calls.push(`k${item.id}`); return item.id; }, false);

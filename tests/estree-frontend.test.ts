@@ -183,7 +183,7 @@ describe('ESTree parser and printer boundary', () => {
   it('discovers module effects and their reads directly from Yuku ESTree', () => {
     const parsed = parseEstreeOrThrow(`
       let count = 0;
-      effect(() => console.log(count));
+      $effect(() => console.log(count));
     `);
     const context = createCtx({ moduleId: './effect.ts' });
     registerState(context, 'count', 'let');
@@ -718,6 +718,7 @@ describe('ESTree parser and printer boundary', () => {
       (node): node is BaseNode => node.type === 'FunctionDeclaration',
     );
     const context = {
+      ...createCtx(),
       astAnalysis: analyzeScope(parsed.program),
       compPaths: new Map([['View', { node: component! }]]),
       componentProps: new Map([

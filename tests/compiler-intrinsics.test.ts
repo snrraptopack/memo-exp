@@ -24,6 +24,18 @@ afterEach(() => {
 });
 
 describe('implicit compiler intrinsics', () => {
+  it.each(['effect', 'cleanup'])('rejects the unprefixed %s lifecycle alias', name => {
+    expect(() => compile(`export function App(){${name}(()=>{});return <main/>;}`))
+      .toThrow(`use $${name}()`);
+  });
+
+  it('keeps ordinary explicitly bound lifecycle names as JavaScript', () => {
+    const output=compile(`function effect(fn){fn();}function cleanup(fn){fn();}
+      export function App(){effect(()=>{});cleanup(()=>{});return <main/>;}`);
+    expect(output).not.toContain('.registerEffect(');
+    expect(output).toContain('effect(() => {})');
+    expect(output).toContain('cleanup(() => {})');
+  });
   it('discovers import-free module/component data and route preparation calls', () => {
     const result = compileModulesDetailed({
       './app.tsx': `

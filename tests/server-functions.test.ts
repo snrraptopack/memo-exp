@@ -209,7 +209,7 @@ describe('named HTTP server functions', () => {
         export function App() {
           let selectedId = 1;
           let lastVote: ReturnType<typeof postVote> | null = null;
-          effect(() => {
+          $effect(() => {
             console.log(lastVote);
           });
           return <main>

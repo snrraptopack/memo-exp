@@ -7,6 +7,8 @@ import {
 import { astBindingAt, variableDeclaratorFor, type Ctx, type MapCallExpression } from '../context';
 import { matchMapCall } from '../lists/source-shapes';
 import { isPlainScalarValue } from './plain-scalar';
+import { plainListReturn } from './plain-list-return';
+import { publishedOwnerDependency } from './published-owner-dependency';
 
 function property(node: BaseNode): string | null {
   const key = childNode(node, 'property');
@@ -100,13 +102,56 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
           astBindingAt(ctx, path.node.body, name!) === binding) candidates.set(binding, name!);
     }});
     for (const [binding, source] of candidates) {
+      const safeArguments = new Set<BaseNode>();
+      let requiredLength = 0;
+      const scalar = (node: BaseNode | null, visiting = new Set<Binding>()): boolean => isPlainScalarValue(node, identifier => {
+        const name = identifierName(identifier)!;
+        const scalarBinding = astBindingAt(ctx, identifier, name);
+        if (scalarBinding === undefined || scalarBinding.kind !== 'const' || scalarBinding.constantViolations.length !== 0 ||
+            visiting.has(scalarBinding)) return false;
+        const declaration = variableDeclaratorFor(ctx, scalarBinding);
+        return declaration !== null && scalar(childNode(declaration, 'init'), new Set(visiting).add(scalarBinding));
+      });
+      const returnedElements = (node: BaseNode | null): BaseNode[] | null => {
+        const literal = elements(node);
+        if (literal !== null) return literal;
+        if (node?.type !== 'CallExpression' || nodeField(node, 'optional') === true) return null;
+        const callee = childNode(node, 'callee');
+        const name = identifierName(callee);
+        const helperBinding = callee === null || name === null ? undefined : astBindingAt(ctx, callee, name);
+        const helperDeclaration = helperBinding === undefined ? null : variableDeclaratorFor(ctx, helperBinding);
+        if (helperBinding === undefined || helperBinding.constantViolations.length !== 0 ||
+            !(helperBinding.kind === 'import' || ctx.helpers.get(name!)?.node === helperBinding.declarationNode ||
+              helperDeclaration !== null && childNode(helperDeclaration, 'init') === ctx.helpers.get(name!)?.node)) return null;
+        const plan = plainListReturn(ctx, name!);
+        const args = childNodes(node, 'arguments');
+        if (plan === undefined || args.length !== plan.parameters.length || args.some(arg => arg.type === 'SpreadElement')) return null;
+        for (let index = 0; index < args.length; index++) {
+          if (plan.parameters[index] === 'list') {
+            if (!sameBinding(args[index]!, binding)) return null;
+            safeArguments.add(args[index]!);
+            requiredLength = Math.max(requiredLength, plan.minimumLengths[index]!);
+          } else if (!scalar(args[index]!)) return null;
+        }
+        // These synthetic nodes describe proven values only. Authored calls are
+        // preserved; scope checks use the original argument binding identities.
+        return plan.elements.map(element => 'fields' in element ? {
+          type: 'ObjectExpression', properties: element.fields.map(name => ({
+            type: 'Property', kind: 'init', computed: false,
+            key: { type: 'Identifier', name }, value: { type: 'Literal', value: 0 },
+          })),
+        } as BaseNode : {
+          type: 'MemberExpression', computed: true, optional: false,
+          object: args[element.parameter], property: { type: 'Literal', value: element.index },
+        } as BaseNode);
+      };
       const declaration = variableDeclaratorFor(ctx, binding);
-      const initial = elements(declaration && childNode(declaration, 'init'));
+      const initial = returnedElements(declaration && childNode(declaration, 'init'));
       if (initial === null || initial.some(value => recordFields(value) === null)) continue;
       const arrays: BaseNode[][] = [initial];
       let valid = true;
       for (const violation of binding.constantViolations) {
-        const values = elements(childNode(violation, 'right'));
+        const values = returnedElements(childNode(violation, 'right'));
         if (violation.type !== 'AssignmentExpression' || nodeField(violation, 'operator') !== '=' ||
             !sameBinding(childNode(violation, 'left'), binding) || values === null) { valid = false; break; }
         arrays.push(values);
@@ -125,7 +170,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
           minimumLength = Math.min(minimumLength, value);
         }
       }
-      if (!valid) continue;
+      if (!valid || requiredLength > minimumLength) continue;
       const indexedItem = (node: BaseNode | null): boolean => {
         if (node === null) return false;
         const index = childNode(node, 'property');
@@ -159,6 +204,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
       }
       const knownFields = fields as ReadonlySet<string> | null;
       if (!valid || knownFields === null || knownFields.size === 0) continue;
+      const publishedDependency = publishedOwnerDependency(ctx, owner, path.node);
       const scalarField = (node: BaseNode): boolean => node.type === 'MemberExpression' &&
         indexedItem(childNode(node, 'object')) && knownFields.has(property(node) ?? '');
       const contentWrite = (node: BaseNode): boolean => {
@@ -185,6 +231,16 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         if (item === undefined || item.constantViolations.length !== 0 || index?.constantViolations.length) return false;
         const itemField = (node: BaseNode): boolean => node.type === 'MemberExpression' &&
           sameBinding(childNode(node, 'object'), item) && knownFields.has(property(node) ?? '');
+        const stableIdentifier = (identifier: BaseNode): boolean => {
+          if (index !== undefined && sameBinding(identifier, index)) return true;
+          if (!publishedDependency(identifier)) return false;
+          const comparison = parents.get(identifier);
+          if (comparison?.type !== 'BinaryExpression' ||
+              !['===', '!=='].includes(String(nodeField(comparison, 'operator')))) return false;
+          const other = childNode(comparison, childNode(comparison, 'left') === identifier ? 'right' : 'left');
+          // Strict equality cannot invoke coercion on the dependency.
+          return other !== null && itemField(other);
+        };
         for (const reference of item.references) {
           const use = parents.get(reference);
           if (use == null || !itemField(use) || !readOnly(use)) return false;
@@ -204,8 +260,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
           }
           if (node.type === 'JSXSpreadAttribute' || node.type === 'JSXSpreadChild' || node.type === 'JSXFragment') pure = false;
           if (node.type === 'JSXExpressionContainer') {
-            pure &&= isPlainScalarValue(childNode(node, 'expression'), identifier =>
-              index !== undefined && sameBinding(identifier, index), itemField);
+            pure &&= isPlainScalarValue(childNode(node, 'expression'), stableIdentifier, itemField);
             return false;
           }
         }});
@@ -213,6 +268,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
       };
       for (const reference of binding.references) {
         const use = parents.get(reference);
+        if (safeArguments.has(reference)) continue;
         if (use?.type === 'AssignmentExpression' && childNode(use, 'left') === reference) continue;
         if (use?.type !== 'MemberExpression' || childNode(use, 'object') !== reference || nodeField(use, 'optional') === true) { valid = false; break; }
         const consumer = parents.get(use);

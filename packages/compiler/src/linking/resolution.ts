@@ -229,6 +229,7 @@ export function linkImports(
           manifests,
         ),
         reads: [...targetExport.reads],
+        ...(targetExport.plainListReturn === undefined ? {} : { plainListReturn: targetExport.plainListReturn }),
         ...(targetExport.opaqueReads === true ? { opaqueReads: true } : {}),
         writes: [...targetExport.writes],
         boundedWrites: [...targetExport.boundedWrites],
