@@ -54,9 +54,11 @@ Component return structure is now planned before any component factory is
 replaced. `planComponentRendering()` consumes normalized component paths and
 receives exact expression-source contracts from `planExpressionSources()` and
 authored primitive-pull plans from `planComponentPulls()`, component placement
-from `planComponentPlacements()` and structural replay from `planRegionReplays()`, then
+from `planComponentPlacements()`, structural replay from `planRegionReplays()` and
+list semantic inputs from `planComponentListSites()`, then
 returns a read-only `ModuleRenderPlan`: component identity/source, direct or
-branched JSX returns, semantic source queries, placement, replay and region shapes. DOM operations,
+branched JSX returns, semantic source queries, placement, replay, region shapes
+and list-site queries. DOM operations,
 runtime identifiers and factory ABI belong to `emitDomComponents()`, which
 consumes that plan; the DOM component
 emitter no longer discovers JSX return control flow. Unsupported returns in a
@@ -95,9 +97,17 @@ pure source contracts prepared through `ComponentRegionShapes` after shared
 lowering. Normalized row and branch content is planned before factory emission;
 cloned attribute/slot content uses the same normalizers on demand. The shared
 analysis adapter applies explicit callback source replacements. Nested factories
-inherit shapes and replay facts together through `RegionSourcePlans`, keeping
-backend slots/statements fresh. Source classification, row targets/keys, region
-identities and mutation journals remain further migration work.
+inherit shapes, replay facts and list semantic inputs through `RegionSourcePlans`,
+keeping backend slots/statements fresh. Region identities and mutation journals
+retain their existing adapters.
+
+List source/target/key queries use captured roots, state kinds, static-derived
+initializers, linked component names and prop references. Shared read collection
+and DOM list emission use one semantic planner. The backend allocates occurrence
+IDs and applies the explicit callback normalization replacement. Cloned calls
+retain conservative source validation; nested lists require explicit parent
+ownership. Already lowered async-helper recognition remains a documented
+normalization dependency rather than a complete semantic async representation.
 
 Model compiler work as an explicit pipeline of domain passes. A pass receives
 the compiler context and AST, performs one named responsibility, and leaves the

@@ -40,13 +40,23 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ## Completed changes
 
+- List source, row target and key analysis now consume captured per-component
+  facts through a shared semantic planner. DOM emission inherits those contracts
+  across nested factories and attaches occurrence IDs separately. Original
+  analyzed calls retain source identity through async lowering; clones require
+  normal source validation and explicit enclosing-row ownership. Key spreads
+  preserve authored order and deferred getter execution. Transparent async
+  helpers still retain a documented normalization dependency. This architecture
+  change establishes no runtime timing gain; structural VM priorities remain
+  open.
+
 - List callback syntax and conditional branch shapes now have pure source
   contracts. Component planning prepares normalized row/branch content after
   shared lowering, and DOM emission consumes those shapes. Newly cloned content
   uses the same normalizers without acquiring a lexical list proof. Nested
   factories inherit shape/replay contracts together while keeping backend state
-  separate. Source classification, row targets, keys and mutation journals are
-  still separate migration work. This phase change establishes no runtime
+  separate. Source/target/key planning is completed by the following migration;
+  mutation journals remain separate work. This phase change establishes no runtime
   timing gain; structural VM priorities remain open.
 - Structural replay source facts are captured before component emission.
   List fixed-position proofs retain lexical call identity; module index refresh

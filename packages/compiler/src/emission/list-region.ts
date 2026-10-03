@@ -13,7 +13,7 @@ import {
   generatedIdentifier,
   md,
 } from '../identifiers';
-import { analyzeMapSite, type MapCallExpression, type MapSite } from '../lists';
+import { allocateMapSite, type MapCallExpression, type MapSite } from '../lists';
 import { isLightweightRowComponent } from '../analysis';
 import { type EmitScope } from './scope';
 import type { NodeEmitter } from './node-emitter';
@@ -41,21 +41,11 @@ export function emitListRegion(
   ownerId: t.Expression = componentId(ctx, componentName),
   parentRow?: RowCtx,
 ): void {
-  const site = analyzeMapSite(
-    ctx,
-    call,
-    componentPath,
-    componentName,
-    scope.usedPrefixes,
-    parentRow === undefined
-      ? undefined
-      : {
-          itemParam: parentRow.itemParam,
-          sourceKey: parentRow.sourceKey,
-          sourceLocal: parentRow.sourceLocal ?? false,
-        },
-    scope.regionShapes!.listCallbackFor(call),
-  );
+  const plan = scope.listSites!.listFor(call, scope.regionShapes!.listCallbackFor(call),
+    parentRow === undefined ? undefined : {
+      itemParam: parentRow.itemParam, sourceKey: parentRow.sourceKey, sourceLocal: parentRow.sourceLocal ?? false,
+    });
+  const site = allocateMapSite(call, plan, componentName, scope.usedPrefixes);
   const regionVariable = generatedIdentifier(
     ctx,
     `region${scope.regionCounter++}`,

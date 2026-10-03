@@ -11,12 +11,14 @@ import type { Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 import { reasonCondition } from '../components/local-derived';
 import type { ComponentRegionReplay } from '../analysis/region-replay';
+import type { ComponentListSites } from '../planning/list-sites';
 import type { ComponentRegionShapes } from '../planning/region-shapes';
 
 export interface RegionSourcePlans {
   /** Shared source facts inherited by nested region/slot factories. */
   regionReplay: ComponentRegionReplay | null;
   regionShapes: ComponentRegionShapes | null;
+  listSites: ComponentListSites | null;
 }
 
 export interface EmitScope extends RegionSourcePlans {
@@ -72,6 +74,7 @@ export function newEmitScope(ctx: Ctx, manualDisposal = false, sources?: RegionS
   return {
     regionReplay: sources?.regionReplay ?? null,
     regionShapes: sources?.regionShapes ?? null,
+    listSites: sources?.listSites ?? null,
     cacheText: false,
     slots: [],
     tempVar: generatedIdentifier(ctx, 'value').name,

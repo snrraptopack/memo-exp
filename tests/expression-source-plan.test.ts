@@ -5,6 +5,7 @@ import { createExpressionSourceFacts } from '../packages/compiler/src/analysis/e
 import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepare';
 import { createCtx } from '../packages/compiler/src/context';
 import { planExpressionSources } from '../packages/compiler/src/planning/expression-sources';
+import {planComponentListSites} from '../packages/compiler/src/planning/list-sites';
 import { planComponentRendering } from '../packages/compiler/src/planning/component-render';
 import { planComponentPlacements } from '../packages/compiler/src/planning/component-placement';
 import { planRegionReplays } from '../packages/compiler/src/planning/region-replay';
@@ -65,7 +66,7 @@ it('plans lexical call facts before emission and consumes them without the mutab
   const sources=planExpressionSources(ctx);
   const plan=planComponentRendering(ctx.compPaths, {
     expressionSources:sources, pullPlans:new Map(), placements:planComponentPlacements(ctx),
-    regionReplays:planRegionReplays(ctx),
+    regionReplays:planRegionReplays(ctx), listSites:planComponentListSites(ctx),
   });
   expect(JSON.stringify(program)).toBe(before); expect(ctx.header).toEqual(header);
   const calls=new Map<string,t.CallExpression>();

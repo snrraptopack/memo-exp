@@ -1,9 +1,32 @@
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
+import type {MapCallExpression} from '../context/model';
 import {
   isNode,
   nodeField as field,
   type BaseNode,
 } from '../ast';
 import { unwrapTypeExpression } from '../context';
+
+/** Is this expression a `.map(...)` call, including optional chains? */
+export function matchMapCall(expr: t.Node): MapCallExpression | null {
+  let current = expr;
+  if (current.type === 'ChainExpression') {
+    current = (current as t.ChainExpression).expression;
+  }
+  while (astFactory.isTransparentExpression(current)) {
+    current = current.expression;
+  }
+  if (!astFactory.isCallExpression(current) && !astFactory.isOptionalCallExpression(current)) {
+    return null;
+  }
+  const callee = current.callee;
+  return (astFactory.isMemberExpression(callee) || astFactory.isOptionalMemberExpression(callee)) &&
+    !callee.computed &&
+    astFactory.isIdentifier(callee.property, { name: 'map' })
+    ? current
+    : null;
+}
 
 /** Remove transparent TypeScript wrappers around a collection expression. */
 export function transparentListExpression<TExpression extends BaseNode>(

@@ -4,6 +4,7 @@
  */
 export {
   analyzeMapSite,
+  allocateMapSite,
   containsJsx,
   matchMapCall,
 } from './lists/map-site';

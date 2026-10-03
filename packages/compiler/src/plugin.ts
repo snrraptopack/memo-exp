@@ -39,6 +39,7 @@ import { buildAccessTable } from './analysis';
 import { prepareProgramAnalysis } from './analysis/prepare';
 import { liftModuleStateCells } from './cells';
 import { emitDomComponents } from './emission/dom';
+import { planComponentListSites } from './planning/list-sites';
 import { planComponentRendering, type ModuleRenderPlan } from './planning/component-render';
 import { planExpressionSources } from './planning/expression-sources';
 import { planComponentPulls } from './planning/primitive-pull';
@@ -275,6 +276,7 @@ function prepareProgram(
     pullPlans: planComponentPulls(ctx),
     placements: planComponentPlacements(ctx),
     regionReplays: planRegionReplays(ctx),
+    listSites: planComponentListSites(ctx),
   });
 }
 

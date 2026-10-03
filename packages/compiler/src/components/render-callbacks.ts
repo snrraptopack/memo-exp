@@ -9,10 +9,12 @@ import {
   type BaseNode,
 } from '../ast';
 import type { Ctx, MapCallExpression } from '../context';
+import {matchMapCall} from '../lists/source-shapes';
 import {
   localBindingForProp,
   objectBindingName,
   propNameForBinding,
+  type ComponentPropsPlan,
 } from './props';
 
 export interface RenderCallbackInvocation {
@@ -90,41 +92,26 @@ export function isRenderCallbackJsxRoot(
   );
 }
 
-function isMapCall(call: MapCallExpression): boolean {
-  return (
-    (astFactory.isMemberExpression(call.callee) ||
-      astFactory.isOptionalMemberExpression(call.callee)) &&
-    !call.callee.computed &&
-    astFactory.isIdentifier(call.callee.property, { name: 'map' })
-  );
+/** Captured prop references shared by structural callback analysis and planning. */
+export interface RenderCallbackProps {
+  readonly objectBinding: string | null;
+  readonly bindingProps: ReadonlyMap<string, string>;
 }
-
-function propReferenceName(
-  ctx: Ctx,
-  componentName: string,
-  expression: t.Expression,
-): string | null {
-  const plan = ctx.componentProps.get(componentName);
-  if (plan === undefined) return null;
-  const objectBinding = objectBindingName(plan);
-  if (
-    objectBinding !== null &&
-    astFactory.isMemberExpression(expression) &&
-    !expression.computed &&
-    astFactory.isIdentifier(expression.object, { name: objectBinding }) &&
-    astFactory.isIdentifier(expression.property)
-  ) {
+export function captureRenderCallbackProps(plan: ComponentPropsPlan | undefined): RenderCallbackProps {
+  const bindingProps = new Map<string, string>();
+  if (plan !== undefined) for (const binding of new Set([...plan.bindings, ...plan.names])) {
+    const name = propNameForBinding(plan, binding) ??
+      (localBindingForProp(plan, binding) !== null ? binding : null);
+    if (name !== null) bindingProps.set(binding, name);
+  }
+  return {objectBinding: plan === undefined ? null : objectBindingName(plan), bindingProps};
+}
+function propReferenceName(props: RenderCallbackProps, expression: t.Expression): string | null {
+  if (props.objectBinding !== null && astFactory.isMemberExpression(expression) && !expression.computed &&
+    astFactory.isIdentifier(expression.object, {name: props.objectBinding}) && astFactory.isIdentifier(expression.property)) {
     return expression.property.name;
   }
-  if (astFactory.isIdentifier(expression)) {
-    return (
-      propNameForBinding(plan, expression.name) ??
-      (localBindingForProp(plan, expression.name) !== null
-        ? expression.name
-        : null)
-    );
-  }
-  return null;
+  return astFactory.isIdentifier(expression) ? props.bindingProps.get(expression.name) ?? null : null;
 }
 
 function returnedExpression(
@@ -141,13 +128,18 @@ function returnedExpression(
   return null;
 }
 
-/** Match `items.map((item, index) => renderItem(item, index))`. */
+/** Context adapter used while discovering authored composition contracts. */
 export function matchRenderCallbackMap(
-  ctx: Ctx,
-  componentName: string,
-  call: MapCallExpression,
+  ctx: Ctx, componentName: string, call: MapCallExpression,
 ): RenderCallbackInvocation | null {
-  if (!isMapCall(call) || call.arguments.length !== 1) return null;
+  return planRenderCallbackMap(captureRenderCallbackProps(ctx.componentProps.get(componentName)), call);
+}
+
+/** Match a structural prop invocation using captured composition facts. */
+export function planRenderCallbackMap(
+  props: RenderCallbackProps, call: MapCallExpression,
+): RenderCallbackInvocation | null {
+  if (matchMapCall(call) === null || call.arguments.length !== 1) return null;
   const callback = call.arguments[0];
   if (!astFactory.isArrowFunctionExpression(callback)) return null;
   const returned = returnedExpression(callback);
@@ -161,11 +153,7 @@ export function matchRenderCallbackMap(
   ) {
     return null;
   }
-  const propName = propReferenceName(
-    ctx,
-    componentName,
-    returned.callee,
-  );
+  const propName = propReferenceName(props, returned.callee);
   if (propName === null) return null;
   return {
     propName,

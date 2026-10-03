@@ -6,6 +6,8 @@ import { planComponentRendering } from '../packages/compiler/src/planning/compon
 import { transformEstreeProgram } from '../packages/compiler/src/plugin';
 import { createExpressionSourceFacts } from '../packages/compiler/src/analysis/expression-sources';
 import type { ComponentPlacement } from '../packages/compiler/src/planning/component-placement';
+import {createCtx} from '../packages/compiler/src/context';
+import {planComponentListSites} from '../packages/compiler/src/planning/list-sites';
 import { createRegionReplayFacts } from '../packages/compiler/src/analysis/region-replay';
 
 function parse(source: string) {
@@ -25,7 +27,10 @@ function planReturns(paths: ReadonlyMap<string, ComponentPath>) {
     externalSources:[],routeSelectors:new Map(),hasLocalEffects:false,ownsRoutes:false};
   const replay = createRegionReplayFacts({ ownerRoots:new Set(), volatile:false,
     moduleIndexSources:new Set(), stateKeys:new Map(), fixedSourceFor:()=>undefined });
+  const ctx=createCtx();
+  ctx.compPaths=new Map(paths);
   return planComponentRendering(paths, {
+    listSites:planComponentListSites(ctx),
     expressionSources:new Map([...paths.keys()].map(name=>[name,facts])), pullPlans:new Map(),
     placements:new Map([...paths.keys()].map(name=>[name,placement])),
     regionReplays:new Map([...paths.keys()].map(name=>[name,replay])),
@@ -66,6 +71,6 @@ it('plans from normalized paths and semantic sources, independent of emission st
   const plan=planReturns(paths);
   expect(plan.components.map(component=>component.name)).toEqual(['One','Two']);
   expect(Object.keys(plan)).toEqual(['components']);
-  expect(Object.keys(plan.components[0]!)).toEqual(['name','source','returns','expressionSources','pullPlan','placement','regionReplay','regionShapes']);
+  expect(Object.keys(plan.components[0]!)).toEqual(['name','source','returns','expressionSources','pullPlan','placement','regionReplay','regionShapes','listSites']);
   expect(JSON.stringify(program as unknown as BaseNode)).toBe(before);
 });

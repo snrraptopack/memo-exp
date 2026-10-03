@@ -30,7 +30,8 @@ expression-source contracts from semantic planning. Its
 `ModuleRenderPlan` contains component names/source paths and the existing return
 contract: direct JSX or a branch selector, branch content and replaced source
 statements, plus `ComponentExpressionSources`, an optional `ComponentPullPlan`,
-`ComponentPlacement`, `ComponentRegionReplay` and `ComponentRegionShapes`. `ComponentRenderInputs`
+`ComponentPlacement`, `ComponentRegionReplay`, `ComponentRegionShapes` and
+`ComponentListSites`. `ComponentRenderInputs`
 names the separate fact producers at the module planning boundary.
 Contracts are read-only. No generated identifiers, DOM node operations,
 registration policy or runtime
@@ -99,8 +100,8 @@ inherit the lexical owner's replay contract. The DOM backend supplies reason
 availability and enclosing-owner forwarding, then constructs reconciliation,
 index refresh or conditional updates. Conditional queries retain the existing
 root-name and volatility rules; this change does not broaden getter/callback
-proofs. Source classification, row targets, region identities, targeted mutation
-journals and DOM-only cleanup/ABI still have their existing mixed ownership.
+proofs. Region identities, targeted mutation journals and DOM-only cleanup/ABI
+still have their existing mixed ownership.
 
 Canonical key resolution is shared by live context consumers and captured
 replay facts through `context/state-keys.ts`; there is one implementation.
@@ -112,8 +113,8 @@ substitution and ordered expression preludes. It returns a `ListCallbackPlan`
 without mutating source. The shared list-analysis adapter applies an explicit
 normalized-body replacement for the existing const-only normalization case;
 expression-bearing blocks remain available to read collection and transparent
-source lowering. Component/render-callback recognition and key extraction still
-belong to that adapter.
+source lowering. List source/target/key queries consume captured semantic inputs
+through the shared site planner.
 
 `jsx/conditional-plan.ts` owns branch flattening, source-order selection,
 renderable text wrapping and branch key validation. `ConditionalBranchPlan`
@@ -131,7 +132,31 @@ These lookups use no mutable `Ctx`, generated IDs or backend statement buffers.
 Shape plans reference AST nodes owned by this compilation, rather than frozen
 trees reusable across backends.
 
-`RegionSourcePlans` carries both replay and shape contracts to nested emission
+`lists/site-plan.ts` owns source classification, row component/delegated-callback
+recognition and ordered key extraction. `planning/list-sites.ts` captures local
+and opaque roots, module state kinds, frozen initializers, known component names
+and prop reference contracts once per component before any factory is replaced.
+`ComponentListSites` queries those facts without `Ctx`; DOM list emission no
+longer calls the context-based `analyzeMapSite` adapter. Shared read collection
+uses the same semantic planner through that adapter. Map matching is shared
+with delegated-callback discovery through `lists/source-shapes.ts`.
+
+Analyzed source identities are copied by exact map-call identity. Queries use
+the current source expression, preserving later transparent async expansion.
+Clones acquire no cached identity; nested member lists require explicit parent
+row ownership. Key/spread ordering, deferred getter evaluation, optional sources
+and callback item/index validation retain their existing rules. Occurrence
+suffix allocation and the explicit normalized-body replacement stay in a
+separate adapter. No DOM instructions or generated names are allocated by the
+site planner.
+
+This boundary still recognizes already lowered transparent-data helper calls
+using the captured runtime namespace identifier. That compatibility is an
+explicit remaining dependency on shared runtime-producing normalization;
+semantic async provenance must eventually replace it. These source contracts
+do not constitute a complete target-neutral IR or broaden optimization proofs.
+
+`RegionSourcePlans` carries replay, shape and list-site contracts to nested emission
 scopes. `newEmitScope` inherits only those source contracts from its caller;
 creation statements, node IDs, updater slots and disposal lists stay fresh for
 each factory. Ownership counters keep their existing explicit sharing rules.
@@ -150,7 +175,7 @@ give each lowering its own owned tree or immutable semantic representation.
 | Async provenance and effects | Existing collectors and shared `Ctx` | Distinct fact contracts with explicit pass dependencies |
 | Component placement and route selectors | Semantic snapshot consumed by component emission | Extend to structural regions and composition without moving host ABI into shared plans |
 | Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |
-| List callback and conditional shape | Pure source normalizers and component shape plans, including clone lookups | Extend the contract to source classification, row targets and keys |
+| List syntax, sources, targets and keys | Pure normalizers plus captured per-component semantic contracts, including clone lookups | Replace lowered async-helper recognition with semantic provenance and extend to mutation journals |
 | Props, region identities and mutation journals | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
@@ -262,3 +287,19 @@ slots, effects, forms, routes, hydration and SSR.
 Compiler regeneration leaves tracked DOM benchmark output unchanged. All 25
 browser variants passed retained-node identity and mixed sequences, and the
 runner exited successfully. This change establishes no runtime timing gain.
+
+## Validation of list source, target and key planning
+
+Compiler build and changed-source lint passed. The selected suites passed 312
+distinct tests across 37 files, including 12 new site-plan contract cases.
+Contract coverage checks non-mutation, optional/module/local sources, explicit
+nested-row ownership, key/spread getter ordering, delegated callback validation,
+async gating and copied original-call identities. Clearing the analysis context
+after capture preserves semantic answers; a clone cannot acquire the original
+call's source proof. Existing reactivity, composition, effects, routes, hydration
+and SSR gates pass.
+
+All 25 browser variants pass retained-node and mixed-sequence assertions.
+Compiler regeneration leaves tracked DOM benchmark output unchanged. This
+phase change establishes no runtime performance gain; VM structural priorities
+remain open.
