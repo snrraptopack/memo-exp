@@ -1,7 +1,7 @@
-/** Closed owner arrays whose every visible write preserves retained contents. */
+/** Closed owner arrays with proven retained-content-preserving writes. */
 import type * as t from '../ast/compiler-types';
 import {
-  childNode, childNodes, identifierName, nodeField, stringValue, walkAst,
+  childNode, childNodes, identifierName, nodeField, stringValue, walkAst, ESTREE_VISITOR_KEYS,
   type BaseNode, type Binding,
 } from '../ast';
 import { astBindingAt, variableDeclaratorFor, type Ctx, type MapCallExpression } from '../context';
@@ -61,6 +61,34 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
     return true;
   };
   for (const [owner, path] of ctx.compPaths) {
+    // In-place changes must publish ordinary causes even if host creation
+    // invokes them during reconciliation. Unknown callbacks cannot promise it.
+    const publishedContentCallbacks = new Set<BaseNode>();
+    walkAst<BaseNode>(path.node, { enter(node) {
+      if (node !== path.node && ['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration'].includes(node.type)) return false;
+      if (node.type !== 'JSXOpeningElement') return;
+      const tag = childNode(node, 'name');
+      const name = tag && nodeField(tag, 'name');
+      if (tag?.type !== 'JSXIdentifier' || typeof name !== 'string' || !/^[a-z]/.test(name)) return;
+      for (const attribute of childNodes(node, 'attributes')) {
+        const event = childNode(attribute, 'name');
+        const eventName = event && nodeField(event, 'name');
+        const value = childNode(attribute, 'value');
+        const callback = value?.type === 'JSXExpressionContainer' ? childNode(value, 'expression') : null;
+        if (attribute.type === 'JSXAttribute' && typeof eventName === 'string' && /^on[A-Z]/.test(eventName) &&
+            callback !== null && ['ArrowFunctionExpression', 'FunctionExpression'].includes(callback.type)) {
+          publishedContentCallbacks.add(callback);
+        }
+      }
+    }});
+    const publishesContent = (node: BaseNode): boolean => {
+      for (let parent = parents.get(node); parent != null; parent = parents.get(parent)) {
+        if (['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration'].includes(parent.type)) {
+          return publishedContentCallbacks.has(parent);
+        }
+      }
+      return false;
+    };
     const candidates = new Map<Binding, string>();
     walkAst(path.node, { enter(node) {
       const call = matchMapCall(node as t.Node);
@@ -131,6 +159,17 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
       }
       const knownFields = fields as ReadonlySet<string> | null;
       if (!valid || knownFields === null || knownFields.size === 0) continue;
+      const scalarField = (node: BaseNode): boolean => node.type === 'MemberExpression' &&
+        indexedItem(childNode(node, 'object')) && knownFields.has(property(node) ?? '');
+      const contentWrite = (node: BaseNode): boolean => {
+        const assignment = parents.get(node);
+        return scalarField(node) && assignment?.type === 'AssignmentExpression' &&
+          childNode(assignment, 'left') === node && nodeField(assignment, 'operator') === '=' &&
+          publishesContent(assignment) &&
+          isPlainScalarValue(childNode(assignment, 'right'), () => false, scalarField);
+      };
+      let mutableContents = false;
+      const structuralWrites = new Set<BaseNode>(binding.constantViolations);
       const arrayElements = new Set(arrays.flat());
       const calls: MapCallExpression[] = [];
       const pureRow = (call: BaseNode): boolean => {
@@ -180,11 +219,18 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         if (property(use) === 'length') {
           if (!readOnly(use) && (consumer?.type !== 'AssignmentExpression' ||
               nodeField(consumer, 'operator') !== '=' || nodeField(childNode(consumer, 'right')!, 'value') !== minimumLength)) valid = false;
+          else if (!readOnly(use)) structuralWrites.add(consumer!);
         } else if (indexedItem(use)) {
           if (consumer?.type === 'ArrayExpression' && arrayElements.has(use)) continue;
           if (consumer?.type === 'AssignmentExpression' &&
-              (childNode(consumer, 'left') === use || indexedItem(childNode(consumer, 'left')!) && childNode(consumer, 'right') === use)) continue;
-          if (consumer?.type !== 'MemberExpression' || !knownFields.has(property(consumer) ?? '') || !readOnly(consumer)) valid = false;
+              (childNode(consumer, 'left') === use || indexedItem(childNode(consumer, 'left')!) && childNode(consumer, 'right') === use)) {
+            structuralWrites.add(consumer); continue;
+          }
+          if (consumer?.type !== 'MemberExpression' || !knownFields.has(property(consumer) ?? '')) valid = false;
+          else if (!readOnly(consumer)) {
+            if (!contentWrite(consumer)) valid = false;
+            else mutableContents = true;
+          }
         } else if (property(use) === 'map' && consumer != null &&
             childNode(consumer, 'callee') === use && ctx.analyzedListSources.has(consumer as MapCallExpression) && pureRow(consumer)) {
           calls.push(consumer as MapCallExpression);
@@ -192,9 +238,37 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         if (!valid) break;
       }
       if (!valid || calls.length === 0) continue;
+      if (mutableContents && structuralWrites.size === 0) continue;
       for (const call of calls) ctx.ownerListStructureSources.set(call, source);
       const sources = new Set([...(ctx.instanceReasonIds.get(owner)?.keys() ?? []), source]);
+      if (mutableContents) {
+        const reasonKey = `${source}\0memo-dom:owner-list-structure`;
+        let reasons = ctx.ownerListStructureReasonKeys.get(owner);
+        if (reasons === undefined) ctx.ownerListStructureReasonKeys.set(owner, reasons = new Map());
+        reasons.set(source, reasonKey); sources.add(reasonKey);
+        for (const write of structuralWrites) ctx.ownerListStructureWriteSources.set(write as t.Node, { owner, source });
+      }
       ctx.instanceReasonIds.set(owner, new Map([...sources].sort().map((name, index) => [name, index])));
     }
   }
+}
+
+/** Transfer original write facts only through the handler's exact deep clone. */
+export function captureOwnerStructuralWrites(ctx: Ctx, owner: string | null, original: t.Node, copy: t.Node): WeakMap<t.Node, string> {
+  const writes = new WeakMap<t.Node, string>();
+  if (owner === null || !ctx.ownerListStructureReasonKeys.has(owner)) return writes;
+  const pair = (source: BaseNode, target: BaseNode): void => {
+    if (source.type !== target.type) return;
+    const fact = ctx.ownerListStructureWriteSources.get(source as t.Node);
+    if (fact?.owner === owner) writes.set(target as t.Node, fact.source);
+    for (const key of ESTREE_VISITOR_KEYS[source.type] ?? []) {
+      const child = childNode(source, key), cloned = childNode(target, key);
+      if (child !== null && cloned !== null) pair(child, cloned);
+      else {
+        const children = childNodes(source, key), copies = childNodes(target, key);
+        if (children.length === copies.length) children.forEach((node, index) => pair(node, copies[index]!));
+      }
+    }
+  };
+  pair(original, copy); return writes;
 }

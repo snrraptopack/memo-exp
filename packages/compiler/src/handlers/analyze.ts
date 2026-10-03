@@ -36,6 +36,7 @@ import {
 } from './traversal';
 import { finalizeHandlerInstrumentation } from './execution-sites';
 import { createHandlerWriteRouting } from './write-routing';
+import { captureOwnerStructuralWrites } from '../analysis/owner-list-structure';
 
 /** A direct command on a compiler-known form publishes its own changes. */
 function isFormSubmit(ctx: Ctx, component: string | null, name: string, callee: t.MemberExpression): boolean {
@@ -104,6 +105,7 @@ export function analyzeHandler(
   ) as unknown as typeof rootFn;
   const ROOT: t.Node = clonedFn;
   const wrapper = clonedFn;
+  const structuralWrites = captureOwnerStructuralWrites(ctx, compName, rootFn, clonedFn);
 
   const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
   const instDerived =
@@ -332,6 +334,7 @@ export function analyzeHandler(
     isComputedOrigin,
   } = createHandlerWriteRouting({
     ctx,
+    structuralWrites,
     rootFn,
     clonedFn,
     root: ROOT,
@@ -390,7 +393,8 @@ export function analyzeHandler(
         }
         if (instVars?.has(left.name) === true) {
           mutateScope(p, (scope) => {
-            recordInstanceMutation(scope, left.name);
+            recordInstanceMutation(scope, left.name,
+              structuralWrites.get(p.node) === left.name ? 'owner-structural' : 'structural');
           });
           return;
         }

@@ -41,9 +41,9 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 ### Retained-row replay trace
 
 Owner-local list writes publish numeric source reasons. Those causes can now
-permit structural-only replay when a closed-binding proof establishes that
-every collection write preserves retained item contents and every row render
-reads only known primitive item fields or its index. This does not reinterpret
+permit structural-only replay when a closed-binding proof identifies safe
+writes and every row render reads only known primitive item fields or its
+index. This does not reinterpret
 all owner reasons: a journal's structural reason still means full reconciliation,
 and lists outside the proof retain their previous behavior. Any other cause in
 the batch, including an opaque pull or full update, disables the skip.
@@ -52,9 +52,19 @@ The first proof accepts dense literal arrays of flat scalar records, explicit
 literal-array reorders, bounded indexed replacements and literal truncation.
 It checks all assignments and references, including item references in row
 handlers. Bounds must remain safe across every possible array extent. Aliases,
-getters, field mutations, opaque factories/methods, spreads, component rows,
+getters, opaque/non-scalar field mutations, row-handler mutations, opaque
+factories/methods, spreads, component rows,
 external row reads, callback preludes, dynamic scope and HMR are excluded.
-Broader per-write proof and component-row props remain open work; this initial
+Bounded assignments to own primitive fields in direct inline owner host-event
+callbacks may coexist with structural writes. Other content callbacks cannot
+promise publication; constructors and content-mutating helpers retain full
+fallback. Content-only sources allocate no synthetic cause.
+Safe writes publish a separate numeric cause; ordinary writes retain normal
+or journalled content invalidation. Calculations, DOM slots and effects open on
+either source cause. Ordinary/mixed causes disable structural-only replay.
+Original write facts transfer explicitly through handler cloning. Conditional
+commits account for all completed writes before publishing a safe cause.
+Broader producers/write shapes and component-row props remain open work; this
 proof does not optimize the imported factories/method calls used by Octane.
 
 ### Local before/after measurement: owner structural replay
@@ -91,7 +101,20 @@ before VM measurement; runtime comparisons need isolated runtime bundles.
 
 ## Completed changes
 
-- Closed owner arrays can pass structural-only replay from their existing
+- Closed owner arrays with bounded scalar-field writes now distinguish proven
+  structural writes from ordinary content causes. Safe reorders skip retained
+  content while normal writes and mixed batches preserve content invalidation.
+  Content writes require compiler-instrumented inline owner event handlers;
+  unpublished constructors/callbacks keep ordinary replay. A custom-element
+  constructor regression reproduced stale retained text with the initial
+  unfinished proof and now prevents that unsafe narrowing.
+  Source-reader gates include the structural alias so calculations, direct DOM
+  reads and effects stay current. Helpers preserve original write provenance;
+  unrelated clones cannot inherit it. Conditional commits do not skip content
+  already changed by another completed site. Changed keys still reconcile, and
+  indexed fresh replacements refresh the changed record without the generic
+  journal setter fallback. Opaque producers and component rows remain open work.
+- Wholly structural closed owner arrays can pass structural-only replay from their existing
   numeric source reason. Pure reorders skip unchanged item updates; changed
   indices and new item identities still replay. Original map-call identity and
   captured source/reason facts keep the proof separate from DOM emission.

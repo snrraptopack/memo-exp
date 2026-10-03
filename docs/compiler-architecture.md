@@ -178,24 +178,36 @@ read-analysis adapter to preserve allocation order and generated output. They
 are explicit compatibility data in the snapshot. Fully separating publication
 and binding allocation from shared discovery remains work for a later phase.
 
-`analysis/owner-list-structure.ts` proves a separate closed-binding property:
-every array write preserves retained contents, and each inline row render reads
-only own primitive item fields or its index. Dense literal allocation, explicit
+`analysis/owner-list-structure.ts` proves closed array/record ownership and
+which writes preserve retained contents. Each inline row render reads only
+own primitive item fields or its index. Dense literal allocation, explicit
 indexed reorders/replacements and literal truncation are supported. Minimum
 extents bound every indexed access, preventing inherited indexed getters after
-truncation. Aliases, field writes (including loop/destructuring targets), opaque
+truncation. Bounded direct scalar-field assignments in inline owner host-event
+callbacks retain the record proof and publish ordinary content causes. Other
+content callbacks, including custom-element constructors, cannot promise that
+publication and disable the proof. Content-only sources allocate no extra cause.
+Aliases, other field writes (including
+loop/destructuring targets and row-handler mutations), opaque
 methods/factories, spreads, getters, external row reads and component rows retain
 ordinary replay. Dynamic scope and HMR disable the proof.
 
 The analysis records original list-call/source identity and ensures the owner
-has a numeric reason for that source. `planRegionReplays` captures that source
+has numeric reasons for that source. Wholly structural bindings use the existing
+source cause. Bindings permitting scalar content writes allocate one separate
+structural cause; source-reader gates recognize both numeric causes. Original
+structural assignment facts transfer only through the handler's exact deep clone.
+Ordinary writes dominate safe ones within each function scope and dirty batch.
+Guarded root sites use the whole completed scope when another site could already
+have changed content before publication. Proven indexed replacements also bypass
+the journal's generic unknown-setter fallback. `planRegionReplays` captures source
 and reason before emission. Clones, changed source expressions and callback
 preludes cannot acquire the proof. The DOM emitter uses the existing
 `reasonsOnly` protocol with a hoisted reason array: any unrelated, opaque or
 full-update cause retains content replay. Runtime key/order validation,
 replacement-item updates and index sensitivity remain unchanged. Supporting
-content-mutating sources needs a per-write publication proof; component rows
-also need a props/hidden-read proof. No new runtime API is introduced.
+broader producers and write shapes remains open; component rows need a
+props/hidden-read proof. No new runtime API is introduced.
 
 `RegionSourcePlans` carries replay, shape and list-site contracts to nested emission
 scopes. `newEmitScope` inherits only those source contracts from its caller;

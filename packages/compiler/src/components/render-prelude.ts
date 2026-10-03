@@ -9,7 +9,7 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
-import type { Ctx } from '../context';
+import { instanceSourceReasons, type Ctx } from '../context';
 import {
   buildDerivationReplay,
   type ControlFlowDerivation,
@@ -87,11 +87,10 @@ export function buildRenderPreludeReplay(
       reasonVar === null || reasonIds === undefined
         ? null
         : step.sources
-            .map((source) => reasonIds.get(source))
-            .filter((reason): reason is number => reason !== undefined)
+            .flatMap((source) => instanceSourceReasons(ctx, component, source) ?? [])
             .sort((left, right) => left - right);
     const exact: (number | string)[] | null =
-      reasons === null || reasons.length !== step.sources.length
+      reasons === null || step.sources.some(source => instanceSourceReasons(ctx, component, source) === null)
         ? null
         : [...reasons, ...structuralReasonsFor(ctx, step.sources)];
     const key = exact?.join(' ') ?? '*';

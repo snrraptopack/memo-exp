@@ -7,13 +7,15 @@ import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import { compileModules } from '@memoized-dom/compiler';
 import type { BenchRow } from './state-placement-browser';
+import { ownerReorderSource } from './local-owner-source';
 
 if (process.argv.includes('--help')) {
-  console.log('Usage: bun run bench:dom:compare [--before-ref=<commit> | --before-compiler=<source or bundle>] (default: HEAD)');
+  console.log('Usage: bun run bench:dom:compare [--before-ref=<commit> | --before-compiler=<source or bundle>] [--mutable-content] (default: HEAD)');
   process.exit(0);
 }
 const root = resolve(import.meta.dirname, '../..');
-const directory = resolve(import.meta.dirname, 'dist/local-owner-compare');
+const mutableContent = process.argv.includes('--mutable-content');
+const directory = resolve(import.meta.dirname, 'dist/local-owner-compare', mutableContent ? 'mutable-content' : '.');
 mkdirSync(directory, { recursive: true });
 let beforePath = process.argv.find(value => value.startsWith('--before-compiler='))?.slice('--before-compiler='.length);
 const beforeRef = process.argv.find(value => value.startsWith('--before-ref='))?.slice('--before-ref='.length);
@@ -48,14 +50,7 @@ const run = async (script: string, compiler?: string) => {
 };
 const imports: string[] = [], adapters: string[] = [];
 for (const count of [1000, 10000]) {
-  const records = Array.from({ length: count }, (_, id) => `{id:${id},label:'row ${id}'}`).join(',');
-  const reversed = Array.from({ length: count }, (_, index) => `items[${count - index - 1}]`).join(',');
-  const rotated = Array.from({ length: count }, (_, index) => `items[${(index + 1) % count}]`).join(',');
-  const source = `export function App(){let items=[${records}];return <main>
-    <button onClick={()=>{items=[${reversed}]}}>reverse</button>
-    <button onClick={()=>{items=[${rotated}]}}>rotate</button>
-    <ul>{items.map(item=><li key={item.id}><span>{item.id}</span><span>: {item.label}</span></li>)}</ul>
-  </main>;}`;
+  const source = ownerReorderSource(count, mutableContent);
   for (const [variant, compiler] of [['before', before.compileModules], ['after', compileModules]] as const) {
     console.log(`Compile focused ${variant}: ${count} rows`);
     const name = `${variant}${count}`;
@@ -69,7 +64,7 @@ writeFileSync(resolve(directory, 'browser.ts'), `${imports.join('\n')}
   import {setScheduler} from '@memoized-dom/runtime/client';setScheduler(run=>run());
   const adapters=[${adapters.join(',')}].map(adapter=>{
     const root=adapter.App('Local'+adapter.variant+adapter.count,null);document.body.append(root);
-    return {...adapter,root,order:Array.from({length:adapter.count},(_,id)=>id),nodes:[...root.querySelectorAll('li')]};
+    return {...adapter,root,order:Array.from({length:adapter.count},(_,id)=>id),labels:Array.from({length:adapter.count},(_,id)=>'row '+id),nodes:[...root.querySelectorAll('li')]};
   });
   const median=values=>[...values].sort((a,b)=>a-b)[values.length>>1];
   window.__focused=()=>{
@@ -79,13 +74,19 @@ writeFileSync(resolve(directory, 'browser.ts'), `${imports.join('\n')}
       for(let sample=-5;sample<15;sample++)for(const variant of [first,first==='before'?'after':'before']){
         const app=adapters.find(adapter=>adapter.count===count&&adapter.variant===variant);
         const button=[...app.root.querySelectorAll('button')].find(button=>button.textContent===operation);
+        if(${mutableContent}&&sample%5===0){
+          app.root.querySelectorAll('button')[2].click();app.labels[app.order[0]]+='!';
+          [...app.root.querySelectorAll('li')].forEach((node,index)=>{const id=app.order[index];
+            if(node!==app.nodes[id]||node.textContent!==id+': '+app.labels[id])throw new Error('stale rename '+variant+' row '+index);
+          });
+        }
         const start=performance.now();button.click();const elapsed=performance.now()-start;
         if(sample>=0)values[variant].push(elapsed);
         app.order=operation==='reverse'?[...app.order].reverse():[...app.order.slice(1),app.order[0]];
         const actual=[...app.root.querySelectorAll('li')];
         if(actual.length!==count)throw new Error('wrong row count');
         actual.forEach((node,index)=>{const id=app.order[index];
-          if(node!==app.nodes[id]||node.textContent!==id+': row '+id)throw new Error('stale or recreated '+variant+' '+operation+' row '+index);
+          if(node!==app.nodes[id]||node.textContent!==id+': '+app.labels[id])throw new Error('stale or recreated '+variant+' '+operation+' row '+index);
         });
       }
       rows.push({count,operation,first,before:median(values.before),after:median(values.after),samples:values});
@@ -143,6 +144,7 @@ try {
 const hashes = { before: hash(resolve(directory, 'dom-before.js')), after: hash(resolve(directory, 'dom-after.js')) };
 const lines = ['# Local compiler before/after comparison', '',
   `Baseline compiler: ${beforeCommit ?? baselinePath}. Same current runtime for both builds.`, '',
+  `Focused source: ${mutableContent ? 'mixed structural/content writes; untimed renames checked every five samples' : 'wholly structural writes'}.`, '',
   'Focused cases: five warmups and 15 samples per execution order. Text/count/node identity checked after every sample outside timing.', '',
   '| Rows | Operation | First | Before ms | After ms | Change |', '|---:|---|---|---:|---:|---:|'];
 for (const row of focused) lines.push(`| ${row.count} | ${row.operation} | ${row.first} | ${row.before.toFixed(3)} | ${row.after.toFixed(3)} | ${row.before === 0 ? 'n/a' : ((row.after / row.before - 1) * 100).toFixed(1) + '%'} |`);
@@ -157,6 +159,6 @@ for (const [beforeIndex, afterIndex] of [[0, 1], [3, 2]]) {
   }
   lines.push('');
 }
-writeFileSync(resolve(directory, 'results.json'), JSON.stringify({ measuredAt: new Date().toISOString(), beforePath: baselinePath, beforeCommit, hashes, focused, dom }, null, 2));
+writeFileSync(resolve(directory, 'results.json'), JSON.stringify({ measuredAt: new Date().toISOString(), beforePath: baselinePath, beforeCommit, mutableContent, hashes, focused, dom }, null, 2));
 writeFileSync(resolve(directory, 'results.md'), lines.join('\n'));
 console.log(lines.slice(0, 17).join('\n')); console.log(`Report: ${resolve(directory, 'results.md')}`);

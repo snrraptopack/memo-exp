@@ -40,7 +40,7 @@ export interface HandlerWriteRouting {
   recordInstanceMutation(
     scope: ScopeWrites,
     source: string,
-    kind?: 'targeted' | 'structural',
+    kind?: 'targeted' | 'structural' | 'owner-structural',
   ): void;
   noteReceiverEffect(path: HandlerPath, origin: ReactiveOrigin): void;
   noteMemberWrite(path: HandlerPath, node: t.MemberExpression): void;
@@ -54,6 +54,7 @@ export interface HandlerWriteRouting {
 
 export function createHandlerWriteRouting({
   ctx,
+  structuralWrites,
   rootFn,
   clonedFn,
   root,
@@ -69,6 +70,7 @@ export function createHandlerWriteRouting({
   transparentRootFor,
 }: {
   ctx: Ctx;
+  structuralWrites: WeakMap<t.Node, string>;
   rootFn: FunctionNode;
   clonedFn: FunctionNode;
   root: t.Node;
@@ -108,9 +110,10 @@ export function createHandlerWriteRouting({
   const recordInstanceMutation = (
     scope: ScopeWrites,
     source: string,
-    kind: 'targeted' | 'structural' | 'content' = 'structural',
+    kind: 'targeted' | 'structural' | 'content' | 'owner-structural' = 'structural',
   ): void => {
-    recordInstanceWrite(scope, source);
+    recordInstanceWrite(scope, source, kind === 'owner-structural');
+    if (kind === 'owner-structural') return;
     const plan = listMutationPlans.forSource(source);
     if (plan !== undefined) {
       recordInstanceWrite(
@@ -482,10 +485,11 @@ export function createHandlerWriteRouting({
   };
 
   const noteMemberWrite = (p: HandlerPath, node: t.MemberExpression): void => {
-    if (hasKnownAccessor(ctx, rootFn, node)) {
+    const rootName = memberRootName(node);
+    const ownerStructural = rootName !== null && structuralWrites.get(p.node) === rootName;
+    if (!ownerStructural && hasKnownAccessor(ctx, rootFn, node)) {
       mutateScope(p, scope => { scope.rootFallback = true; });
     }
-    const rootName = memberRootName(node);
     if (
       rootName !== null &&
       isStaticDerivedListConst(ctx, rootName, compName)
@@ -506,7 +510,7 @@ export function createHandlerWriteRouting({
           ? null
           : directListItemMutationKey(node, plan);
       mutateScope(p, (scope) => {
-        if (plan !== undefined && key === null) {
+        if (!ownerStructural && plan !== undefined && key === null) {
           // Do this before any AST rewrite: a key journal can hide the member
           // assignment from finalization, and evaluating its key can repeat
           // an opaque receiver/getter before the authored write.
@@ -519,7 +523,7 @@ export function createHandlerWriteRouting({
           // replace content as well as shape. The source reason still forces
           // reconciliation; omitting the structural-only reason keeps row
           // replay conservative.
-          key === null ? 'content' : 'targeted',
+          ownerStructural ? 'owner-structural' : key === null ? 'content' : 'targeted',
         );
       });
       if (plan !== undefined && key !== null) {

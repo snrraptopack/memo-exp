@@ -11,6 +11,7 @@ import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { isLightweightListedComponent } from '../analysis';
 import {
+  instanceSourceReasons,
   type ComponentPath,
   type Ctx,
   type RowCtx,
@@ -232,9 +233,9 @@ export function transformComponent(
       if (sources === null) return null;
       const reasons: number[] = [];
       for (const source of sources) {
-        const reason = reasonIds.get(source);
-        if (reason === undefined) return null;
-        reasons.push(reason);
+        const sourceReasons = instanceSourceReasons(ctx, name, source);
+        if (sourceReasons === null) return null;
+        reasons.push(...sourceReasons);
       }
       // A derivation rooted in a module list replays on the structural
       // string reason; the slot that renders it must open on it too.

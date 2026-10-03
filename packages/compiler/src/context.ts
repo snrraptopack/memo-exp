@@ -6,3 +6,4 @@
  */
 export * from './context/model';
 export * from './context/ast';
+export * from './context/instance-reasons';

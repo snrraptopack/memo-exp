@@ -11,6 +11,7 @@ import {
 } from '../ast';
 import {
   refreshAstAnalysis,
+  instanceSourceReasons,
   type Ctx,
   type EffectSite,
   type ModuleEffectSite,
@@ -39,10 +40,9 @@ function localEffectCondition(
   const reasonIds = ctx.instanceReasonIds.get(component);
   if (reasonIds === undefined) return null;
   const reasons = [...reads]
-    .map((source) => reasonIds.get(source))
-    .filter((reason): reason is number => reason !== undefined)
+    .flatMap((source) => instanceSourceReasons(ctx, component, source) ?? [])
     .sort((a, b) => a - b);
-  if (reasons.length === 0 || reasons.length !== reads.size) {
+  if (reasons.length === 0 || [...reads].some(source => instanceSourceReasons(ctx, component, source) === null)) {
     return null;
   }
   const current = (): t.Identifier => astFactory.identifier(reasonVar);

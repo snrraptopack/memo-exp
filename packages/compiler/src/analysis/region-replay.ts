@@ -14,7 +14,7 @@ export interface ListReplayFacts {
   readonly structuralSource: string;
   readonly fixedPositions: boolean;
   readonly moduleIndices: boolean;
-  /** Existing owner reason is structural only when every source write is proven. */
+  /** Ordinary cause for wholly structural sources, otherwise a dedicated safe-write cause. */
   readonly ownerStructuralReason?: number;
 }
 

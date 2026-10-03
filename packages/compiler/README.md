@@ -198,12 +198,22 @@ A separate owner-array proof can skip unchanged retained row content after
 structural writes. It requires dense literal arrays of plain scalar records,
 checks every source assignment/reference and every row read, and bounds indexed
 reads against every possible array extent. Explicit literal reorders, bounded
-indexed replacements and literal truncation qualify. Aliases, getters, field
-mutations, opaque factories/methods, spreads, component rows and external row
-reads retain ordinary replay. The existing numeric source reason authorizes the
-skip only when it is the sole cause; mixed causes, full updates and opaque pulls
-still refresh content. New item identities and changed rendered indices also
-refresh. This proof is captured before target emission.
+indexed replacements and literal truncation qualify. Bounded assignments to own
+scalar fields in direct inline owner host-event handlers may coexist with those
+structural writes. Those callbacks have compiler-owned publication. They retain ordinary
+content invalidation; each proven structural write publishes a separate numeric
+cause. Source calculations, DOM slots and effects recognize both causes. An
+ordinary write in the same scope or batch prevents structural-only replay;
+guarded callback commits also account for other writes in their completed body.
+Wholly structural bindings still use their original source cause. Aliases,
+getters, opaque/non-scalar field writes, row-handler field mutations, opaque
+factories/methods, spreads, component rows and external row reads retain the
+conservative path. Unpublished constructors, other content callbacks and
+content-mutating helpers also retain ordinary replay. Without a structural
+write site, no extra cause is allocated. Full updates and opaque pulls refresh content. New item
+identities and changed rendered indices also refresh. Original write facts are
+transferred through the handler's exact clone; unrelated clones receive no
+proof. List facts are captured before target emission.
 
 Component-owned arrays of closed flat scalar records can also journal executed
 indices from canonical increasing `for` loops: one `let` counter, a nonnegative

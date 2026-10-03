@@ -6,6 +6,8 @@ import { createRegionReplayFacts, type ListReplaySource } from '../packages/comp
 import { createCtx } from '../packages/compiler/src/context';
 import { planRegionReplays } from '../packages/compiler/src/planning/region-replay';
 import { matchMapCall } from '../packages/compiler/src/lists';
+import { captureOwnerStructuralWrites } from '../packages/compiler/src/analysis/owner-list-structure';
+import { instanceSourceReasons } from '../packages/compiler/src/context';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source, { filename:'./region-replay.tsx' }).program as unknown as t.Program;
@@ -112,5 +114,30 @@ it('captures closed owner replay reasons only for the original lexical list call
   expect(facts.listFor(call!,list()).ownerStructuralReason).toBeUndefined();
   expect(JSON.stringify(program)).toBe(before);
   ctx.ownerListStructureSources=new WeakMap();ctx.instanceReasonIds.clear();ctx.astAnalysis=null;
+  expect(facts.listFor(call!,source).ownerStructuralReason).toBe(reason);
+});
+
+it('captures a separate cause and transfers write facts only from original owner nodes', () => {
+  const program=parse(`function View(){let items=[{id:1,text:'one'},{id:2,text:'two'}];
+    return <main><button onClick={()=>{items=[items[1],items[0]]}}>swap</button>
+      <button onClick={()=>{items[0].text='changed'}}>rename</button>
+      <ul>{items.map(item=><li key={item.id}>{item.text}</li>)}</ul></main>;}`);
+  const ctx=createCtx();prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
+  let call:t.Node|undefined;
+  walkAst(program,{enter(node){if(matchMapCall(node)!==null)call=node;}});
+  const facts=planRegionReplays(ctx).get('View')!,source={...list(),sourceLocal:true};
+  const reason=facts.listFor(call!,source).ownerStructuralReason!;
+  expect(reason).toBeTypeOf('number');
+  expect(reason).not.toBe(ctx.instanceReasonIds.get('View')!.get('items'));
+  expect(instanceSourceReasons(ctx,'View','items')).toContain(reason);
+  const copy=cloneNode(program),again=cloneNode(copy);
+  const copied=captureOwnerStructuralWrites(ctx,'View',program,copy);
+  const unrelated=captureOwnerStructuralWrites(ctx,'Other',program,copy);
+  const unproven=captureOwnerStructuralWrites(ctx,'View',copy,again);
+  let count=0;
+  walkAst(copy,{enter(node){if(copied.get(node)==='items')count++;expect(unrelated.has(node)).toBe(false);}});
+  expect(count).toBe(1);
+  walkAst(again,{enter(node){expect(unproven.has(node)).toBe(false);}});
+  ctx.ownerListStructureReasonKeys.clear();ctx.instanceReasonIds.clear();ctx.ownerListStructureSources=new WeakMap();
   expect(facts.listFor(call!,source).ownerStructuralReason).toBe(reason);
 });

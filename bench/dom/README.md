@@ -69,6 +69,12 @@ rows with five warmups and 15 samples in each execution order. Its authored
 dense literal arrays exercise the structural-only replay proof. Every sample
 checks text, counts and retained node identity outside timing.
 
+Add `--mutable-content` to include scalar-field mutations in the same owner
+array. Untimed renames every five samples validate ordinary content updates
+before measuring the next structural write. Its combined report and raw samples
+live under `dist/local-owner-compare/mutable-content/`, keeping the wholly
+structural comparison intact.
+
 The existing nine-variant DOM matrix runs all 21 scenarios with seven samples
 in before/after/after/before order and deterministic input. Its normal
 text/class/order/identity checks remain enabled. The runner hashes both browser

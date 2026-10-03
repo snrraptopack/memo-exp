@@ -39,6 +39,10 @@ export interface ScopeWrites {
   instanceLocal: boolean;
   /** Exact instance or prop roots written by this scope. */
   instanceWrites: Set<string>;
+  /** Safe original writes may use a dedicated cause when no ordinary write overlaps. */
+  instanceStructuralWrites: Set<string>;
+  /** Ordinary writes dominate structural precision within this scope. */
+  instanceContentWrites: Set<string>;
   /** Component-local colorless payloads mutated in place by authored code. */
   transparentWrites: Set<string>;
   /** Scoped event fallback when a handler has no recognized write. */
@@ -56,6 +60,8 @@ export function createScopeWrites(): ScopeWrites {
     rowOwnerLocal: false,
     instanceLocal: false,
     instanceWrites: new Set(),
+    instanceStructuralWrites: new Set(),
+    instanceContentWrites: new Set(),
     transparentWrites: new Set(),
     eventOrigin: null,
   };
@@ -74,9 +80,11 @@ export function recordRoutedWrite(
 export function recordInstanceWrite(
   scope: ScopeWrites,
   source: string,
+  structural = false,
 ): void {
   scope.instanceLocal = true;
   scope.instanceWrites.add(source);
+  (structural ? scope.instanceStructuralWrites : scope.instanceContentWrites).add(source);
 }
 
 /** Build the static commit form for one analyzed function scope. */
@@ -101,7 +109,9 @@ export function buildScopeCommit(
   if (scope.instanceLocal && compName !== null) {
     const reasonIds = ctx.instanceReasonIds.get(compName);
     const reasons = [...scope.instanceWrites]
-      .map((source) => reasonIds?.get(source))
+      .map((source) => reasonIds?.get(!scope.rootFallback && scope.instanceStructuralWrites.has(source) &&
+        !scope.instanceContentWrites.has(source)
+        ? ctx.ownerListStructureReasonKeys.get(compName)?.get(source) ?? source : source))
       .filter((reason): reason is number => reason !== undefined)
       .sort((a, b) => a - b);
     const exact =

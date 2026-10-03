@@ -52,8 +52,17 @@ export function finalizeHandlerInstrumentation(
   const guardedRootSites: Array<HandlerExecutionSite & { commit: t.Statement }> = [];
   if (executionAwareRoot) {
     for (const site of executionSites.values()) {
+      // All authored writes finish before these guarded commits. An earlier
+      // safe site must not skip content already changed by a later site.
+      const aggregate = scopes.get(root);
+      for (const source of site.writes.instanceStructuralWrites) {
+        if (aggregate?.rootFallback || aggregate?.instanceContentWrites.has(source)) {
+          site.writes.instanceContentWrites.add(source);
+        }
+      }
       if (site.path.isAssignmentExpression() &&
           astFactory.isMemberExpression(site.path.node.left) &&
+          site.writes.instanceStructuralWrites.size === 0 &&
           !isPlainDataAssignment(ctx, rootFn, site.path.node.left, site.path.scope)) {
         // A setter/proxy can mutate state beyond the apparent receiver.
         site.writes.rootFallback = true;
