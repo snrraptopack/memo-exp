@@ -14,6 +14,8 @@ export interface ListReplayFacts {
   readonly structuralSource: string;
   readonly fixedPositions: boolean;
   readonly moduleIndices: boolean;
+  /** Existing owner reason is structural only when every source write is proven. */
+  readonly ownerStructuralReason?: number;
 }
 
 export interface ComponentRegionReplay {
@@ -28,6 +30,7 @@ export interface RegionReplayEnvironment {
   readonly stateKeys: ReadonlyMap<string, string>;
   /** Binding identity was checked before backend mutation; clones are unproven. */
   readonly fixedSourceFor: (call: t.Node) => string | undefined;
+  readonly ownerStructureFor?: (call: t.Node) => { source: string; reason: number } | undefined;
 }
 
 export function createRegionReplayFacts(environment: RegionReplayEnvironment): ComponentRegionReplay {
@@ -36,14 +39,18 @@ export function createRegionReplayFacts(environment: RegionReplayEnvironment): C
   const moduleIndexSources = new Set(environment.moduleIndexSources);
   const stateKeys = new Map(environment.stateKeys);
   const fixedSourceFor = environment.fixedSourceFor;
+  const ownerStructureFor = environment.ownerStructureFor;
   return {
     listFor(call, source) {
       const identifier = source.sourceExpr.type === 'Identifier' ? source.sourceExpr.name : null;
+      const ownerStructure = ownerStructureFor?.(call);
       return {
         structuralSource: source.sourceLocal ? '' : canonicalKeyFor(stateKeys, source.sourceKey),
         fixedPositions: !source.hasPrelude && identifier !== null && fixedSourceFor(call) === identifier,
         moduleIndices: !source.hasPrelude && !source.sourceLocal && identifier !== null &&
           moduleIndexSources.has(identifier),
+        ...(source.sourceLocal && !source.hasPrelude && identifier === ownerStructure?.source
+          ? { ownerStructuralReason: ownerStructure.reason } : {}),
       };
     },
     conditionFromOwner(expression) {

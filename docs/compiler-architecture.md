@@ -178,6 +178,25 @@ read-analysis adapter to preserve allocation order and generated output. They
 are explicit compatibility data in the snapshot. Fully separating publication
 and binding allocation from shared discovery remains work for a later phase.
 
+`analysis/owner-list-structure.ts` proves a separate closed-binding property:
+every array write preserves retained contents, and each inline row render reads
+only own primitive item fields or its index. Dense literal allocation, explicit
+indexed reorders/replacements and literal truncation are supported. Minimum
+extents bound every indexed access, preventing inherited indexed getters after
+truncation. Aliases, field writes (including loop/destructuring targets), opaque
+methods/factories, spreads, getters, external row reads and component rows retain
+ordinary replay. Dynamic scope and HMR disable the proof.
+
+The analysis records original list-call/source identity and ensures the owner
+has a numeric reason for that source. `planRegionReplays` captures that source
+and reason before emission. Clones, changed source expressions and callback
+preludes cannot acquire the proof. The DOM emitter uses the existing
+`reasonsOnly` protocol with a hoisted reason array: any unrelated, opaque or
+full-update cause retains content replay. Runtime key/order validation,
+replacement-item updates and index sensitivity remain unchanged. Supporting
+content-mutating sources needs a per-write publication proof; component rows
+also need a props/hidden-read proof. No new runtime API is introduced.
+
 `RegionSourcePlans` carries replay, shape and list-site contracts to nested emission
 scopes. `newEmitScope` inherits only those source contracts from its caller;
 creation statements, node IDs, updater slots and disposal lists stay fresh for
@@ -215,7 +234,7 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |
 | List syntax, sources, targets and keys | Pure normalizers plus captured per-component semantic contracts, including clone lookups | Replace lowered async-helper recognition with semantic provenance and extend to mutation journals |
 | Mutation journals | Shared candidate/path analysis and frozen backend snapshots; one source registry | Move binding allocation and reason publication behind explicit backend contracts |
-| Retained row replay for owner writes | Numeric source/journal reasons currently require conservative content replay | Distinguish proven structural causes from content/opaque writes and external row props; preserve mixed-cause fallback |
+| Retained row replay for owner writes | Closed structural-only sources capture original-call/source/reason facts; other numeric/journal causes keep full replay | Extend to per-write content/opaque publication and component-row props while preserving mixed-cause fallback |
 | Props and region identities | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
@@ -392,3 +411,22 @@ regeneration leaves tracked benchmark output unchanged. The pinned Octane
 canonical and reorder smoke suites pass for memoized-dom. These gates establish
 correctness and removal of redundant callback replay; they do not establish
 comparative timing gains or complete owner-state structural-write proof.
+
+## Validation of closed owner structural replay
+
+Compiler build and changed-source lint passed. The selected suites passed 227
+distinct cases across 17 files, including 28 self-contained owner-array cases
+and one new region-plan contract case. Coverage includes synchronous/deferred
+and mixed causes, multiple instances, immutable/indexed replacements, rendered
+indices, aliases, getters, field/loop mutations, opaque reads, dynamic scope and
+bounds after truncation. The plan retains its original-call/source/reason
+contract after analysis context is cleared; cloned calls receive no proof.
+
+All 25 regenerated DOM variants pass identity and mixed-sequence checks. The
+pinned Octane canonical and reorder smoke suites pass for memoized-dom. A local
+before/after compiler comparison validates every focused sample and repeats all
+21 nine-variant DOM scenarios in both orders. Focused closed-array reorders have
+lower medians in both orders; existing DOM browser artifacts are identical, so
+their timing differences cannot be attributed to this proof. Measurements and
+limitations are recorded in `docs/performance-work.md`. Per-write summaries and
+component-row prop precision remain open work.

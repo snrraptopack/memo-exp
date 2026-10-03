@@ -11,9 +11,15 @@ export function planRegionReplays(ctx: Ctx): ReadonlyMap<string, ComponentRegion
   const plans = new Map<string, ComponentRegionReplay>();
   for (const [name, path] of ctx.compPaths) {
     const fixedSources = new WeakMap<t.Node, string>();
+    const ownerStructures = new WeakMap<t.Node, { source: string; reason: number }>();
     walkAst<t.Node>(path.node, { enter(node) {
       const call = matchMapCall(node);
       if (call === null) return;
+      const structuralSource = ctx.ownerListStructureSources.get(call);
+      const structuralReason = structuralSource === undefined ? undefined : ctx.instanceReasonIds.get(name)?.get(structuralSource);
+      if (structuralSource !== undefined && structuralReason !== undefined) {
+        ownerStructures.set(call, { source: structuralSource, reason: structuralReason });
+      }
       const callee = call.callee as t.MemberExpression | t.OptionalMemberExpression;
       if (!astFactory.isExpression(callee.object)) return;
       const source = transparentListExpression(callee.object);
@@ -33,6 +39,7 @@ export function planRegionReplays(ctx: Ctx): ReadonlyMap<string, ComponentRegion
       moduleIndexSources: new Set(ctx.moduleListTargets.keys()),
       stateKeys: ctx.stateKeys,
       fixedSourceFor: call => fixedSources.get(call),
+      ownerStructureFor: call => ownerStructures.get(call),
     }));
   }
   return plans;

@@ -40,19 +40,65 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ### Retained-row replay trace
 
-Owner-local list writes currently publish numeric source reasons. A mutation
-journal's numeric structural reason selects full reconciliation; it is not the
-module-list structure-only protocol. Local lists capture an empty structural
-source, so those numeric writes do not activate `isStructuralListUpdate`.
-Extending this requires a separate proof that retained item content and external
-row props are unchanged, with ordinary/opaque writes dominating a structural
-cause in mixed batches. Converting the existing numeric reason wholesale would
-make content mutations eligible for an unsafe skip. This optimization remains
-open; removal refresh protection addresses a separate correctness gap exposed
-while tracing the replay path.
+Owner-local list writes publish numeric source reasons. Those causes can now
+permit structural-only replay when a closed-binding proof establishes that
+every collection write preserves retained item contents and every row render
+reads only known primitive item fields or its index. This does not reinterpret
+all owner reasons: a journal's structural reason still means full reconciliation,
+and lists outside the proof retain their previous behavior. Any other cause in
+the batch, including an opaque pull or full update, disables the skip.
+
+The first proof accepts dense literal arrays of flat scalar records, explicit
+literal-array reorders, bounded indexed replacements and literal truncation.
+It checks all assignments and references, including item references in row
+handlers. Bounds must remain safe across every possible array extent. Aliases,
+getters, field mutations, opaque factories/methods, spreads, component rows,
+external row reads, callback preludes, dynamic scope and HMR are excluded.
+Broader per-write proof and component-row props remain open work; this initial
+proof does not optimize the imported factories/method calls used by Octane.
+
+### Local before/after measurement: owner structural replay
+
+On 2026-10-03, the compiler from `a9d4bad` and the current compiler generated
+matching authored 1k/10k owner-array fixtures using the same current runtime.
+Each execution order had five warmups and 15 interleaved samples per variant;
+text, count and retained node identity were checked outside timing after every
+sample. Medians in milliseconds:
+
+| Rows | Operation | Before / after, before first | Before / after, after first |
+|---:|---|---:|---:|
+| 1k | Reverse | 7.2 / 3.7 | 4.8 / 3.8 |
+| 1k | Rotate | 0.9 / 0.5 | 0.8 / 0.5 |
+| 10k | Reverse | 65.0 / 55.6 | 61.6 / 57.1 |
+| 10k | Rotate | 10.6 / 4.1 | 7.5 / 2.3 |
+
+These focused medians were lower in both orders. They exercise the closed
+literal-array proof, not opaque producers or component rows. VM measurement is
+still needed to establish the magnitude under steadier conditions.
+
+The existing nine-variant DOM suite also completed all 21 scenarios in
+before/after/after/before order, with seven samples and per-operation identity
+and correctness checks. Its before/after browser artifacts were identical.
+Large timing swings in that control are local noise: for example, owned-inline
+10k clear measured 14.6 / 10.4 ms in the first order and 9.5 / 13.5 in the other.
+This change establishes no improvement in that matrix or Octane.
+
+The reusable command is `bun run bench:dom:compare --before-ref=<commit>`.
+Its combined report and focused raw samples are saved under
+`bench/dom/dist/local-owner-compare/`. Compiler/runtime optimizations should
+continue to include a matching local comparison and the relevant DOM checks
+before VM measurement; runtime comparisons need isolated runtime bundles.
 
 ## Completed changes
 
+- Closed owner arrays can pass structural-only replay from their existing
+  numeric source reason. Pure reorders skip unchanged item updates; changed
+  indices and new item identities still replay. Original map-call identity and
+  captured source/reason facts keep the proof separate from DOM emission.
+  Mixed causes retain full replay. A compiled 20-row regression measures zero
+  retained updates for a proven reorder versus 20 with an escaping alias, while
+  both retain the same nodes/text. The focused local timing comparison above
+  measures this supported case; broader state paths retain conservative replay.
 - Removal-only reconciliation now applies the existing frame-consumption
   boundary before retained callbacks run. A consumed survivor cannot refresh
   itself recursively or receive the previous snapshot through a cleanup hook.

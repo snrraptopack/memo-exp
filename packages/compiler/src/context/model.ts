@@ -543,6 +543,8 @@ export interface Ctx {
   componentListSources: Map<string, Set<string>>;
   /** Component -> source root -> journal plan, for handler write analysis. */
   keyedListMutationSources: Map<string, Map<string, KeyedListMutationPlan>>;
+  /** Original list calls backed by closed owner arrays with structure-only writes. */
+  ownerListStructureSources: WeakMap<MapCallExpression, string>;
   /** Sources used by multiple list sites deliberately keep full reconciliation. */
   disabledKeyedListMutationSources: Set<string>;
   /** Closed module arrays eligible for static-index content invalidation. */
@@ -839,6 +841,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     domOnlyRowComponents: new Set(),
     componentListSources: new Map(),
     keyedListMutationSources: new Map(),
+    ownerListStructureSources: new WeakMap(),
     moduleListTargets: new Map(),
     plainListItemTargets: new WeakMap(),
     disabledKeyedListMutationSources: new Set(),

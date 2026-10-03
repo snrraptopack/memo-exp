@@ -1,9 +1,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { compileModules } from '@memoized-dom/compiler';
+import { loadBenchmarkCompiler } from '../load-compiler';
 import { build } from 'esbuild';
 import { rowStyles, statePlacements, updateStyles } from './state-placement-matrix';
 import { updateStyleSource } from './update-style-source';
+
+const { compileModules } = await loadBenchmarkCompiler();
 
 const directory = import.meta.dirname;
 const output = resolve(directory, 'dist/update-style');

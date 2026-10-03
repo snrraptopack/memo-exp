@@ -91,3 +91,26 @@ it('does not transfer a closed module binding proof to a same-named component pa
       .toBe(name==='ModuleView');
   }
 });
+
+it('captures closed owner replay reasons only for the original lexical list call', () => {
+  const program = parse(`function View(){let items=[{id:1,text:'one'},{id:2,text:'two'}];
+    return <main><button onClick={()=>{items=[items[1],items[0]]}}>swap</button>
+      <ul>{items.map(item=><li key={item.id}>{item.text}</li>)}</ul></main>;}`);
+  const ctx = createCtx();
+  prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
+  let call: t.Node | undefined;
+  walkAst(program,{enter(node){const found=matchMapCall(node);if(found!==null)call=found;}});
+  const before = JSON.stringify(program);
+  const facts = planRegionReplays(ctx).get('View')!;
+  const source = {...list(), sourceLocal:true};
+  const reason = ctx.instanceReasonIds.get('View')!.get('items');
+  expect(reason).toBeTypeOf('number');
+  expect(facts.listFor(call!,source).ownerStructuralReason).toBe(reason);
+  expect(facts.listFor(cloneNode(call!),source).ownerStructuralReason).toBeUndefined();
+  expect(facts.listFor(call!,{...source,hasPrelude:true}).ownerStructuralReason).toBeUndefined();
+  expect(facts.listFor(call!,{...source,sourceExpr:expression('other')}).ownerStructuralReason).toBeUndefined();
+  expect(facts.listFor(call!,list()).ownerStructuralReason).toBeUndefined();
+  expect(JSON.stringify(program)).toBe(before);
+  ctx.ownerListStructureSources=new WeakMap();ctx.instanceReasonIds.clear();ctx.astAnalysis=null;
+  expect(facts.listFor(call!,source).ownerStructuralReason).toBe(reason);
+});

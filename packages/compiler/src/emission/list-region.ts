@@ -7,6 +7,7 @@ import {
   type ComponentPath,
   type Ctx,
   type RowCtx,
+  freshReasonConst,
 } from '../context';
 import {
   componentId,
@@ -230,7 +231,7 @@ export function emitListRegion(
     dependency,
     cache: generatedIdentifier(ctx, `${dependency.value}ListKey`).name,
   }));
-  const { structuralSource, fixedPositions, moduleIndices } = scope.regionReplay!.listFor(call, {
+  const { structuralSource, fixedPositions, moduleIndices, ownerStructuralReason } = scope.regionReplay!.listFor(call, {
     sourceExpr: site.sourceExpr, sourceKey: site.sourceKey, sourceLocal: site.sourceLocal,
     hasPrelude: site.prelude.length > 0,
   });
@@ -265,9 +266,12 @@ export function emitListRegion(
           ...(update && (fixedPositions || scope.reasonVar !== null && site.prelude.length === 0)
             ? [
                 scope.reasonVar === null ? astFactory.booleanLiteral(false) :
-                astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
+                ownerStructuralReason === undefined ? astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
                   astFactory.identifier(scope.reasonVar),
                   astFactory.stringLiteral(structuralSource),
+                ]) : astFactory.callExpression(md(ctx, 'reasonsOnly'), [
+                  astFactory.identifier(scope.reasonVar),
+                  freshReasonConst(ctx, [ownerStructuralReason]),
                 ]),
               ]
             : []),

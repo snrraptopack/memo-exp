@@ -7,7 +7,9 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compileModules } from '@memoized-dom/compiler';
+import { loadBenchmarkCompiler } from '../load-compiler';
+
+const { compileModules } = await loadBenchmarkCompiler();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataSource = readFileSync(resolve(__dirname, 'data.ts'), 'utf-8');

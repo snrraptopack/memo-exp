@@ -194,6 +194,17 @@ general frames retain ordinary reconciliation. Callback preludes, escaped or
 replaced items, accessors, structural operations and mutable keys cannot receive
 the guarantee.
 
+A separate owner-array proof can skip unchanged retained row content after
+structural writes. It requires dense literal arrays of plain scalar records,
+checks every source assignment/reference and every row read, and bounds indexed
+reads against every possible array extent. Explicit literal reorders, bounded
+indexed replacements and literal truncation qualify. Aliases, getters, field
+mutations, opaque factories/methods, spreads, component rows and external row
+reads retain ordinary replay. The existing numeric source reason authorizes the
+skip only when it is the sole cause; mixed causes, full updates and opaque pulls
+still refresh content. New item identities and changed rendered indices also
+refresh. This proof is captured before target emission.
+
 Component-owned arrays of closed flat scalar records can also journal executed
 indices from canonical increasing `for` loops: one `let` counter, a nonnegative
 integer literal start, `< items.length` or a bounded integer literal limit,
@@ -356,6 +367,7 @@ produced by earlier stages; it does not own their implementations.
 | `component-validation.ts` | Component composition edges and structural JSX diagnostics |
 | `read-collection.ts` | Module-state reads, list/conditional ownership, and helper-read attribution |
 | `module-list-targets.ts` | Closed module-array proof for static-index content invalidation |
+| `owner-list-structure.ts` | Closed owner-array proof for skipping unchanged retained content after structural writes |
 | `computed.ts` | Module computed-state discovery and dependency analysis |
 | `instance.ts` | Component-local state and ordered derivation discovery |
 | `instance-control-flow.ts` | Replay planning for component-local control flow |
