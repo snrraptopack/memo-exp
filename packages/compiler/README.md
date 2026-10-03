@@ -109,6 +109,15 @@ retain conservative source validation; nested lists require explicit parent
 ownership. Already lowered async-helper recognition remains a documented
 normalization dependency rather than a complete semantic async representation.
 
+Mutation-journal discovery and handler lowering share one indexed-item write
+parser. Candidate paths are captured once per component; they do not establish
+plain-data or lexical safety on their own. Handler routing retains those checks
+before journaling a key. DOM list emission uses frozen unique-source journal
+snapshots through `ComponentListSites.mutationFor`, tied to the original map
+call. Clones remain unproven and independent consumers disable the journal.
+Shared discovery still allocates journal binding/reason names through its
+existing adapter; separating that allocation and publication is further work.
+
 Model compiler work as an explicit pipeline of domain passes. A pass receives
 the compiler context and AST, performs one named responsibility, and leaves the
 context in a documented state for the next pass. Top-level modules coordinate

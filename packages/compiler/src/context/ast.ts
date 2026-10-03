@@ -298,8 +298,8 @@ export function keyPathOf(
 
 /** Whether an item-relative write can alter the authored row key. */
 export function writeTouchesKey(
-  writtenSegments: string[],
-  keyPath: string[] | null,
+  writtenSegments: readonly string[],
+  keyPath: readonly string[] | null,
 ): boolean {
   if (keyPath === null) return true;
   if (keyPath.length === 0) return false;

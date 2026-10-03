@@ -215,7 +215,7 @@ export function emitListRegion(
     ctx.moduleListSelections.get(call) ?? []));
 
   const targeted = ctx.targetedListDependencies.get(call) ?? [];
-  const mutation = ctx.keyedListMutations.get(call);
+  const mutation = scope.listSites!.mutationFor(call);
   if (mutation !== undefined) {
     scope.creation.push(
       astFactory.variableDeclaration('const', [

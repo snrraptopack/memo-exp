@@ -323,12 +323,12 @@ export interface TargetedListDependency {
 
 /** Conservative direct-item mutation plan for one instance-owned keyed list. */
 export interface KeyedListMutationPlan {
-  source: string;
-  keyPath: string[];
-  keysVariable: string;
-  targetedReason: string;
-  structuralReason: string;
-  call: MapCallExpression;
+  readonly source: string;
+  readonly keyPath: readonly string[];
+  readonly keysVariable: string;
+  readonly targetedReason: string;
+  readonly structuralReason: string;
+  readonly call: MapCallExpression;
 }
 
 /** One compiler-owned reactive side effect declared in a component body. */
@@ -541,8 +541,6 @@ export interface Ctx {
   domOnlyRowComponents: Set<string>;
   /** Component -> non-local collection sources owned by its list updaters. */
   componentListSources: Map<string, Set<string>>;
-  /** Map call -> direct keyed-item mutation journal used by that one list. */
-  keyedListMutations: WeakMap<MapCallExpression, KeyedListMutationPlan>;
   /** Component -> source root -> journal plan, for handler write analysis. */
   keyedListMutationSources: Map<string, Map<string, KeyedListMutationPlan>>;
   /** Sources used by multiple list sites deliberately keep full reconciliation. */
@@ -840,7 +838,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     listComponents: new Set(),
     domOnlyRowComponents: new Set(),
     componentListSources: new Map(),
-    keyedListMutations: new WeakMap(),
     keyedListMutationSources: new Map(),
     moduleListTargets: new Map(),
     plainListItemTargets: new WeakMap(),

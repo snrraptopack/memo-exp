@@ -8,14 +8,12 @@ import {
   attrExpr,
   astBindingAt,
   collectStateIds,
-  keyPathOf,
   memberKey,
   walkNodes,
-  writeTouchesKey,
   type Ctx,
 } from '../context';
 import { analyzeMapSite, containsJsx, matchMapCall } from '../lists';
-import { transparentListExpression } from '../lists/source-shapes';
+import { collectComponentItemWrites, planListMutationCandidate, type ComponentItemWrites } from './list-mutation-journals';
 import { analyzeCondSite } from '../conds';
 import { summarizeHelper } from '../helper-summaries';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
@@ -82,91 +80,16 @@ function addInstanceReasons(
   );
 }
 
-function directItemWrittenPath(
-  member: t.MemberExpression,
-  source: string,
-): string[] | null {
-  const chain: t.MemberExpression[] = [];
-  let current: t.Expression = member;
-  for (;;) {
-    current = transparentListExpression(current);
-    if (!astFactory.isMemberExpression(current)) break;
-    chain.unshift(current);
-    if (astFactory.isSuper(current.object)) return null;
-    current = current.object;
-  }
-  if (!astFactory.isIdentifier(current, { name: source })) return null;
-  const itemAccess = chain[0];
-  if (
-    itemAccess === undefined ||
-    !itemAccess.computed ||
-    !astFactory.isExpression(itemAccess.property) ||
-    !(
-      astFactory.isIdentifier(itemAccess.property) ||
-      astFactory.isNumericLiteral(itemAccess.property) ||
-      astFactory.isStringLiteral(itemAccess.property)
-    ) ||
-    chain.length < 2
-  ) {
-    return null;
-  }
-  const path: string[] = [];
-  for (const segment of chain.slice(1)) {
-    if (!segment.computed && astFactory.isIdentifier(segment.property)) {
-      path.push(segment.property.name);
-    } else if (segment.computed && astFactory.isStringLiteral(segment.property)) {
-      path.push(segment.property.value);
-    } else {
-      return null;
-    }
-  }
-  return path;
-}
-
-function componentHasDirectItemMutation(
-  component: t.FunctionDeclaration,
-  source: string,
-  keyPath: string[],
-): boolean {
-  let found = false;
-  walkNodes(component.body, (node) => {
-    if (found) return;
-    const target =
-      astFactory.isAssignmentExpression(node) && astFactory.isMemberExpression(node.left)
-        ? node.left
-        : astFactory.isUpdateExpression(node) && astFactory.isMemberExpression(node.argument)
-          ? node.argument
-          : astFactory.isUnaryExpression(node, { operator: 'delete' }) &&
-              astFactory.isMemberExpression(node.argument)
-            ? node.argument
-            : null;
-    if (target === null) return;
-    const writtenPath = directItemWrittenPath(target, source);
-    if (writtenPath !== null && !writeTouchesKey(writtenPath, keyPath)) {
-      found = true;
-    }
-  });
-  return found;
-}
-
 function registerKeyedListMutationPlan(
   ctx: Ctx,
   component: string,
   call: t.CallExpression | t.OptionalCallExpression,
   site: ReturnType<typeof analyzeMapSite>,
+  writes: ComponentItemWrites,
 ): void {
-  if (!site.sourceLocal || !astFactory.isIdentifier(site.sourceExpr)) return;
-  const source = site.sourceExpr.name;
-  if (ctx.instanceState.get(component)?.has(source) !== true) return;
-  const keyPath = keyPathOf(site.keyExpr, site.itemParam);
-  if (keyPath === null || keyPath.length === 0) return;
-  const componentPath = ctx.compPaths.get(component);
-  if (
-    componentPath === undefined ||
-    !componentHasDirectItemMutation(componentPath.node, source, keyPath)
-  ) {
-    return;
-  }
+  const candidate = planListMutationCandidate(site, ctx.instanceState.get(component) ?? new Set(), writes);
+  if (candidate === null) return;
+  const { source, keyPath } = candidate;
 
   const address = `${component}\0${source}`;
   if (ctx.disabledKeyedListMutationSources.has(address)) return;
@@ -178,7 +101,6 @@ function registerKeyedListMutationPlan(
   const existing = sources.get(source);
   if (existing !== undefined) {
     // One journal cannot be consumed independently by two list regions.
-    ctx.keyedListMutations.delete(existing.call);
     sources.delete(source);
     ctx.disabledKeyedListMutationSources.add(address);
     return;
@@ -193,7 +115,6 @@ function registerKeyedListMutationPlan(
     call,
   };
   sources.set(source, plan);
-  ctx.keyedListMutations.set(call, plan);
   ctx.targetedListComponents.add(component);
   addInstanceReasons(ctx, component, [
     ...(ctx.instanceState.get(component) ?? []),
@@ -214,6 +135,13 @@ function registerKeyedListMutationPlan(
 export function collectReads(ctx: Ctx): void {
   for (const [name] of ctx.comps) {
     const p = ctx.compPaths.get(name)!;
+    let authoredItemWrites: ComponentItemWrites | undefined;
+    const itemWrites: ComponentItemWrites = {
+      hasNonKeyWrite(source, keyPath) {
+        authoredItemWrites ??= collectComponentItemWrites(p.node);
+        return authoredItemWrites.hasNonKeyWrite(source, keyPath);
+      },
+    };
     const reads = new Set<string>();
     const usedPrefixes = new Map<string, number>();
     const usedConds = { count: 0 };
@@ -243,7 +171,7 @@ export function collectReads(ctx: Ctx): void {
         ctx.moduleListSelections.set(call, selections);
         ctx.moduleListSelectionSites.push({ owner: name, suffix: site.suffix, values: selections, rowComponent: site.rowComp });
       }
-      registerKeyedListMutationPlan(ctx, name, call, site);
+      registerKeyedListMutationPlan(ctx, name, call, site, itemWrites);
       const targeted = findTargetedListDependencies(
         site,
         ctx.instanceState.get(name) ?? new Set(),

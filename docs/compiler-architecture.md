@@ -156,6 +156,28 @@ explicit remaining dependency on shared runtime-producing normalization;
 semantic async provenance must eventually replace it. These source contracts
 do not constitute a complete target-neutral IR or broaden optimization proofs.
 
+`lists/item-write.ts` supplies one indexed-item write parser for journal
+discovery and handler key construction. `analysis/list-mutation-journals.ts`
+collects candidate paths once per component, rather than walking its complete
+body for each eligible list. Candidate eligibility describes owned state and a
+direct key path without allocating generated names or DOM operations. It is
+only a candidate: handler routing still checks lexical origins, plain-data
+assignments, accessors and key-changing writes before publishing a targeted
+reason. Unknown receiver effects keep content-safe reconciliation.
+
+The final unique-source journals are copied and frozen before backend use.
+`ComponentListSites.mutationFor` indexes them by the original map call; cloned
+maps acquire no journal. Nested factories inherit this lookup with other list
+facts. Handler routing consumes captured source lookups. The redundant mutable
+per-call journal map is removed from `Ctx`; one source registry remains for
+shared discovery and closed-record analysis. Two independent list consumers
+of one source still disable the journal.
+
+Runtime journal binding names and reason addresses are still allocated by the
+read-analysis adapter to preserve allocation order and generated output. They
+are explicit compatibility data in the snapshot. Fully separating publication
+and binding allocation from shared discovery remains work for a later phase.
+
 `RegionSourcePlans` carries replay, shape and list-site contracts to nested emission
 scopes. `newEmitScope` inherits only those source contracts from its caller;
 creation statements, node IDs, updater slots and disposal lists stay fresh for
@@ -176,7 +198,8 @@ give each lowering its own owned tree or immutable semantic representation.
 | Component placement and route selectors | Semantic snapshot consumed by component emission | Extend to structural regions and composition without moving host ABI into shared plans |
 | Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |
 | List syntax, sources, targets and keys | Pure normalizers plus captured per-component semantic contracts, including clone lookups | Replace lowered async-helper recognition with semantic provenance and extend to mutation journals |
-| Props, region identities and mutation journals | Shared analysis plus backend lowering | Explicit composition and publication contracts |
+| Mutation journals | Shared candidate/path analysis and frozen backend snapshots; one source registry | Move binding allocation and reason publication behind explicit backend contracts |
+| Props and region identities | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
 | Generated IDs, headers, imports and output buffers | Same `Ctx` as source analysis | Mutable emission state separate from analyzed facts and configuration |
@@ -303,3 +326,17 @@ All 25 browser variants pass retained-node and mixed-sequence assertions.
 Compiler regeneration leaves tracked DOM benchmark output unchanged. This
 phase change establishes no runtime performance gain; VM structural priorities
 remain open.
+
+## Validation of mutation-journal planning
+
+Compiler build and changed-source lint passed. The selected suites passed 294
+distinct tests across 31 files, including 15 new mutation-plan contract cases.
+Coverage includes shared item-write syntax, owned/keyed candidate requirements,
+lazy scan eligibility, frozen snapshots, original-call identity and disabling
+independent consumers. Existing alias, targeted-write, opaque-pull, key,
+composition, async/form, effect, route, hydration and SSR cases pass.
+
+Compiler regeneration leaves tracked DOM benchmark output unchanged. All 25
+browser variants pass retained-node and mixed-sequence checks. Candidate scanning
+is consolidated on the compiler side; no runtime timing gain is established.
+The VM priorities remain rotations, first removal and broad retained-row work.

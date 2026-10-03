@@ -2,6 +2,8 @@
 import type * as t from '../ast/compiler-types';
 import {childNodes, childNode, nodeField, cloneNode, walkAst, type BaseNode} from '../ast';
 import type {Ctx, MapCallExpression} from '../context';
+import {captureMutationJournals} from '../analysis/list-mutation-journals';
+import type {KeyedListMutationPlan} from '../context';
 import {captureRenderCallbackProps} from '../components/render-callbacks';
 import {isStaticDerivedChain} from '../lists/static-derived';
 import {matchMapCall, transparentListExpression} from '../lists/source-shapes';
@@ -10,6 +12,7 @@ import type {ListCallbackPlan} from '../lists/callback-plan';
 import {planListSite, type ListSiteInputs, type ListSitePlan, type ListSourceIdentity} from '../lists/site-plan';
 
 export interface ComponentListSites {
+  readonly mutationFor: (call: MapCallExpression) => KeyedListMutationPlan | undefined;
   readonly listFor: (call: MapCallExpression, callback: ListCallbackPlan, parent?: ParentRow) => ListSitePlan;
 }
 
@@ -47,6 +50,7 @@ export function planComponentListSites(ctx: Ctx): ReadonlyMap<string, ComponentL
   const plans = new Map<string, ComponentListSites>();
   for (const [name, path] of ctx.compPaths) {
     const inputs = captureListSiteInputs(ctx, name);
+    const journals = captureMutationJournals(ctx.keyedListMutationSources.get(name));
     const identities = new WeakMap<MapCallExpression, ListSourceIdentity>();
     walkAst<BaseNode>(path.node, {enter(node) {
       const call = matchMapCall(node as t.Node);
@@ -54,7 +58,7 @@ export function planComponentListSites(ctx: Ctx): ReadonlyMap<string, ComponentL
       const identity = ctx.analyzedListSources.get(call);
       if (identity !== undefined) identities.set(call, {...identity});
     }});
-    plans.set(name, {listFor: (call, callback, parent) => planListSite(inputs, call,
+    plans.set(name, {mutationFor: journals.forCall, listFor: (call, callback, parent) => planListSite(inputs, call,
       (message, at) => {throw path.buildCodeFrameError(message, at);}, parent, callback, identities.get(call))});
   }
   return plans;

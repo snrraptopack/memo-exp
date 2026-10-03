@@ -40,6 +40,15 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ## Completed changes
 
+- Mutation-journal discovery and handler lowering share the indexed-item write
+  parser. Candidate paths are collected once per component instead of scanning
+  the component body for each eligible list. DOM emission uses frozen journal
+  snapshots tied to original map calls; cloned maps cannot inherit them. The
+  redundant mutable per-call context registry is removed. Accessor/alias/plain
+  data checks and multiple-consumer fallbacks remain intact. Generated binding
+  allocation and publication retain documented adapters. This change makes no
+  runtime speed claim; rotation, first removal and retained-row work remain the
+  VM priorities.
 - List source, row target and key analysis now consume captured per-component
   facts through a shared semantic planner. DOM emission inherits those contracts
   across nested factories and attaches occurrence IDs separately. Original

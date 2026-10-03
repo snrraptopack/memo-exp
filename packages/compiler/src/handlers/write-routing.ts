@@ -28,6 +28,7 @@ import {
 } from './mutation-targets';
 import { HandlerPath, walkHandler, type FunctionNode } from './traversal';
 import type { HandlerExecutionSite } from './execution-sites';
+import { captureMutationJournals } from '../analysis/list-mutation-journals';
 import { hasKnownAccessor, isPlainDataAssignment } from './member-assignment';
 
 export interface HandlerWriteRouting {
@@ -101,17 +102,16 @@ export function createHandlerWriteRouting({
   }
   const isComputedOrigin = (origin: ReactiveOrigin): boolean =>
     origin.stateKind === 'computed' || ctx.state.get(origin.root) === 'computed';
-  const listMutationPlans =
-    compName === null
-      ? undefined
-      : ctx.keyedListMutationSources.get(compName);
+  const listMutationPlans = captureMutationJournals(
+    compName === null ? undefined : ctx.keyedListMutationSources.get(compName),
+  );
   const recordInstanceMutation = (
     scope: ScopeWrites,
     source: string,
     kind: 'targeted' | 'structural' | 'content' = 'structural',
   ): void => {
     recordInstanceWrite(scope, source);
-    const plan = listMutationPlans?.get(source);
+    const plan = listMutationPlans.forSource(source);
     if (plan !== undefined) {
       recordInstanceWrite(
         scope,
@@ -500,7 +500,7 @@ export function createHandlerWriteRouting({
       return;
     }
     if (rootName !== undefined && instVars?.has(rootName ?? '') === true) {
-      const plan = listMutationPlans?.get(rootName!);
+      const plan = listMutationPlans.forSource(rootName!);
       const key =
         plan === undefined || !isPlainDataAssignment(ctx, rootFn, node, p.scope)
           ? null

@@ -7,48 +7,15 @@ import {
   type KeyedListMutationPlan,
   type RowCtx,
 } from '../context';
-import { transparentListExpression } from '../lists/source-shapes';
+import { directItemWrite } from '../lists/item-write';
 
 export function directListItemMutationKey(
   node: t.MemberExpression,
   plan: KeyedListMutationPlan,
 ): t.Expression | null {
-  const chain: t.MemberExpression[] = [];
-  let current: t.Expression = node;
-  for (;;) {
-    current = transparentListExpression(current);
-    if (!astFactory.isMemberExpression(current)) break;
-    chain.unshift(current);
-    if (astFactory.isSuper(current.object)) return null;
-    current = current.object;
-  }
-  if (!astFactory.isIdentifier(current, { name: plan.source })) return null;
-  const itemAccess = chain[0];
-  if (
-    itemAccess === undefined ||
-    !itemAccess.computed ||
-    !astFactory.isExpression(itemAccess.property) ||
-    !(
-      astFactory.isIdentifier(itemAccess.property) ||
-      astFactory.isNumericLiteral(itemAccess.property) ||
-      astFactory.isStringLiteral(itemAccess.property)
-    ) ||
-    chain.length < 2
-  ) {
-    return null;
-  }
-
-  const writtenSegments: string[] = [];
-  for (const member of chain.slice(1)) {
-    if (!member.computed && astFactory.isIdentifier(member.property)) {
-      writtenSegments.push(member.property.name);
-    } else if (member.computed && astFactory.isStringLiteral(member.property)) {
-      writtenSegments.push(member.property.value);
-    } else {
-      return null;
-    }
-  }
-  if (writeTouchesKey(writtenSegments, plan.keyPath)) return null;
+  const write = directItemWrite(node);
+  if (write === null || write.source !== plan.source || writeTouchesKey(write.path, plan.keyPath)) return null;
+  const { itemAccess } = write;
 
   let key: t.Expression = cloneEstreeNode(itemAccess, true);
   for (const segment of plan.keyPath) {
