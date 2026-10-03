@@ -40,6 +40,16 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ## Completed changes
 
+- The general keyed reconciler predicts contiguous old positions after a
+  displaced first row. Every authored key is still evaluated and compared in
+  source order; a mismatch disables prediction and restores ordinary lookup.
+  Complete cyclic shifts can reuse ordered records after one cache lookup,
+  instead of hashing every retained key. Interrupted frames keep Map membership
+  checks. Row content, index replay, duplicate detection, node placement and
+  cleanup remain unchanged. This removes measured lookup work in regression
+  tests; end-to-end timing gains require the next VM run. First-row removal
+  already avoids LIS and most key hashing, but broader retained-row replay
+  remains a separate compiler-proof task.
 - Mutation-journal discovery and handler lowering share the indexed-item write
   parser. Candidate paths are collected once per component instead of scanning
   the component body for each eligible list. DOM emission uses frozen journal

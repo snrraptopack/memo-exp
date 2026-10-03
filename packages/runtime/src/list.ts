@@ -729,6 +729,11 @@ export function createListRegion<T>(
     let reused = 0;
     let inOrder = true;
     let lastOld = -1;
+    // A displaced first row may begin a contiguous cyclic order. Predict the
+    // next old position, but validate its authored key before every reuse.
+    // One mismatch disables prediction for the rest of this frame. Interrupted
+    // frames retain their Map membership checks instead of trusting positions.
+    let orderedCursor = -1;
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as T;
       const k = i < evaluatedKeyCount ? validatedKeys[i] : key(item, i);
@@ -737,13 +742,18 @@ export function createListRegion<T>(
       // Keep retained keys in the live Map. A frame marker proves uniqueness
       // and hides consumed rows from refreshKey/size until this frame commits.
       // Matching ordered records avoid an extra lookup for unchanged positions.
-      const candidate = oldWasEmpty ? undefined : prevRows[i];
+      const candidate = oldWasEmpty ? undefined : prevRows[orderedCursor < 0 ? i : orderedCursor];
       if (candidate !== undefined && (candidate.key === k ||
           candidate.key !== candidate.key && k !== k) &&
           (trustPositions || old.get(k) === candidate)) {
         rec = candidate;
       } else {
-        rec = oldWasEmpty ? undefined : old.get(k);
+        // Failed predictions still try the ordinary unchanged-position path.
+        const positional = orderedCursor < 0 ? undefined : prevRows[i];
+        orderedCursor = -1;
+        rec = positional !== undefined && (positional.key === k ||
+          positional.key !== positional.key && k !== k) && trustPositions
+          ? positional : oldWasEmpty ? undefined : old.get(k);
       }
       if (rec?.frame === frame || rec === undefined && next.has(k)) {
         throw new Error(`[memo-dom] duplicate list key: ${String(k)}`);
@@ -753,6 +763,8 @@ export function createListRegion<T>(
         frame.remaining--;
         reused++;
         const oldPos = rec.pos;
+        if (i === 0 && trustPositions && n === prevItems.length && oldPos > 0) orderedCursor = oldPos;
+        if (orderedCursor >= 0) orderedCursor = oldPos + 1 === n ? 0 : oldPos + 1;
         seq[i] = oldPos;
         if (oldPos <= lastOld) inOrder = false;
         else lastOld = oldPos;
@@ -760,6 +772,7 @@ export function createListRegion<T>(
         syncRetained(rec.e, item, rec.id, i, oldPos, structuralOnly);
         if (disposed) return;
       } else {
+        orderedCursor = -1;
         const encoded = trackRowIds || environment.mode !== 'client-create' ? encodeListKey(k) : null;
         const createId = trackRowIds ? rowIdFor(k, encoded) : idPrefix;
         const entry = createRow(item, k, createId, i, encoded);

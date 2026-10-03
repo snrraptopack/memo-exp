@@ -190,6 +190,14 @@ give each lowering its own owned tree or immutable semantic representation.
 
 ## Remaining coupling
 
+Runtime keyed reconciliation can exploit observed ordering without inferring
+authored method behavior. A displaced first row seeds an old-position cursor;
+subsequent keys must match its predicted ordered record before reuse. A mismatch
+falls back to position/cache lookup, and interrupted frames retain membership
+checks. This is distinct from compiler structural-write proof: it does not waive
+key evaluation, retained content replay or index refresh, and works with any
+producer whose evaluated order satisfies the checks.
+
 | Concern | Current ownership | Next boundary |
 | --- | --- | --- |
 | Exact slot-source inputs | Semantic snapshot consumed through `ComponentExpressionSources` | Extend shared facts to other consumers while preserving lexical identity |
@@ -340,3 +348,21 @@ Compiler regeneration leaves tracked DOM benchmark output unchanged. All 25
 browser variants pass retained-node and mixed-sequence checks. Candidate scanning
 is consolidated on the compiler side; no runtime timing gain is established.
 The VM priorities remain rotations, first removal and broad retained-row work.
+
+## Validation of contiguous cyclic reuse
+
+Runtime build and changed-source lint passed. The selected suites passed 203
+distinct tests across 19 files, including eight new cyclic-cache cases. The
+lookup probe verifies one key-cache lookup for complete shifts while preserving
+all authored key reads and content updates. Coverage includes failed prediction,
+duplicate/recovery paths, SameValueZero keys, immutable replacement items and
+an earlier row effect changing a later key. Existing exhaustive reorder,
+multi-node/empty-row, cleanup, reentrant unmount, failed-frame, hydration,
+reactivity and opaque fallback cases pass.
+
+All 25 DOM browser variants pass identity and mixed-sequence checks. Compiler
+regeneration leaves tracked DOM output unchanged. Reduced cache lookup work is
+verified independently of timings; end-to-end gains require the next VM run.
+The pinned Octane canonical and reorder smoke suites also pass for the
+memoized-dom target, including per-operation identity/correctness gates.
+The local single-sample timings are not used as comparative performance evidence.
