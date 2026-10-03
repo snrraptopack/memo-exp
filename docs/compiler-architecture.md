@@ -198,6 +198,14 @@ checks. This is distinct from compiler structural-write proof: it does not waive
 key evaluation, retained content replay or index refresh, and works with any
 producer whose evaluated order satisfies the checks.
 
+Removal-only frames reuse the general path's consumed-record marker. The marker
+is installed before retained props/content callbacks and stays active through
+removed-row cleanup, so key refresh cannot read the old snapshot using a new
+survivor position. Unconsumed rows still expose their previous bindings. A
+completed frame publishes the new snapshot before releasing the marker;
+interrupted frames retain ownership for general recovery or unmount. Ordered
+subsequence and suffix-range removal still avoid map transfer and LIS.
+
 | Concern | Current ownership | Next boundary |
 | --- | --- | --- |
 | Exact slot-source inputs | Semantic snapshot consumed through `ComponentExpressionSources` | Extend shared facts to other consumers while preserving lexical identity |
@@ -207,6 +215,7 @@ producer whose evaluated order satisfies the checks.
 | Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |
 | List syntax, sources, targets and keys | Pure normalizers plus captured per-component semantic contracts, including clone lookups | Replace lowered async-helper recognition with semantic provenance and extend to mutation journals |
 | Mutation journals | Shared candidate/path analysis and frozen backend snapshots; one source registry | Move binding allocation and reason publication behind explicit backend contracts |
+| Retained row replay for owner writes | Numeric source/journal reasons currently require conservative content replay | Distinguish proven structural causes from content/opaque writes and external row props; preserve mixed-cause fallback |
 | Props and region identities | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
@@ -366,3 +375,20 @@ verified independently of timings; end-to-end gains require the next VM run.
 The pinned Octane canonical and reorder smoke suites also pass for the
 memoized-dom target, including per-operation identity/correctness gates.
 The local single-sample timings are not used as comparative performance evidence.
+
+## Validation of removal refresh protection
+
+The six initial regressions failed before the runtime fix. Runtime build and
+changed-source lint passed, and the selected suites passed 228 distinct tests
+across 21 files, including 13 new removal-refresh cases. They verify props and
+content callback reentry, cleanup refresh with replacement items, unconsumed
+old-row visibility, interrupted-frame recovery/disposal and structural-only
+index precision. Existing exhaustive reorder, failed-frame, cleanup/unmount,
+hydration, dirty-render recovery, alias/journal fallback, mixed selection and
+image-search form cases pass.
+
+All 25 DOM browser variants pass identity and mixed-sequence checks; compiler
+regeneration leaves tracked benchmark output unchanged. The pinned Octane
+canonical and reorder smoke suites pass for memoized-dom. These gates establish
+correctness and removal of redundant callback replay; they do not establish
+comparative timing gains or complete owner-state structural-write proof.

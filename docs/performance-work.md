@@ -38,8 +38,29 @@ the boundary between normalized/analyzed JSX and target emission so future
 backends do not reproduce DOM-specific decisions. Preserve opaque/getter,
 mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
+### Retained-row replay trace
+
+Owner-local list writes currently publish numeric source reasons. A mutation
+journal's numeric structural reason selects full reconciliation; it is not the
+module-list structure-only protocol. Local lists capture an empty structural
+source, so those numeric writes do not activate `isStructuralListUpdate`.
+Extending this requires a separate proof that retained item content and external
+row props are unchanged, with ordinary/opaque writes dominating a structural
+cause in mixed batches. Converting the existing numeric reason wholesale would
+make content mutations eligible for an unsafe skip. This optimization remains
+open; removal refresh protection addresses a separate correctness gap exposed
+while tracing the replay path.
+
 ## Completed changes
 
+- Removal-only reconciliation now applies the existing frame-consumption
+  boundary before retained callbacks run. A consumed survivor cannot refresh
+  itself recursively or receive the previous snapshot through a cleanup hook.
+  Unconsumed old rows remain refreshable until their own replay, and committed
+  survivors become refreshable with the new item/index bindings. Interrupted
+  removals retain ownership for recovery or disposal. This fixes stale content
+  and redundant/reentrant replay without adding key scans, hashing or LIS work.
+  It does not establish a gain for benchmark rows without such callbacks.
 - The general keyed reconciler predicts contiguous old positions after a
   displaced first row. Every authored key is still evaluated and compared in
   source order; a mismatch disables prediction and restores ordinary lookup.
@@ -50,6 +71,7 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
   tests; end-to-end timing gains require the next VM run. First-row removal
   already avoids LIS and most key hashing, but broader retained-row replay
   remains a separate compiler-proof task.
+
 - Mutation-journal discovery and handler lowering share the indexed-item write
   parser. Candidate paths are collected once per component instead of scanning
   the component body for each eligible list. DOM emission uses frozen journal

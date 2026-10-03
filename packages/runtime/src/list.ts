@@ -192,7 +192,7 @@ export function createListRegion<T>(
     id: EntityId | null;
     pos: number;
     key: unknown;
-    /** Consumed by this general frame; unavailable to key refresh until commit. */
+    /** Consumed by this frame; unavailable to key refresh until commit. */
     frame?: GeneralFrame;
     /** Removal phases start before authored code, preventing repeated cleanup. */
     cleanupPhase?: number;
@@ -644,13 +644,23 @@ export function createListRegion<T>(
         // Key getters can shrink or grow the source while validating it.
         // Only the final surviving extent belongs to this removal frame.
         ordered.length = items.length;
+        // Retained callbacks and removed-row cleanup can refresh keys. Hide
+        // each consumed survivor before changing its bindings, just as in the
+        // general path; the previous item snapshot remains live until commit.
+        const frame: GeneralFrame = { remaining: cache.size };
+        activeFrame = frame;
         for (let i = 0; i < items.length; i++) {
+          const rec = ordered[i]!;
+          const oldPos = rec.pos;
+          rec.frame = frame;
+          frame.remaining--;
+          rec.pos = i;
           syncRetained(
-            ordered[i]!.e,
+            rec.e,
             items[i] as T,
-            ordered[i]!.id,
+            rec.id,
             i,
-            ordered[i]!.pos,
+            oldPos,
             structuralOnly,
           );
           if (disposed) return;
@@ -680,6 +690,7 @@ export function createListRegion<T>(
           nextRows.length = 0;
           validatedKeys.length = 0;
           prevItems = items.slice();
+          activeFrame = null;
           reportCleanupErrors(removalErrors);
           return;
         }
@@ -688,7 +699,7 @@ export function createListRegion<T>(
         for (let oldIndex = 0; oldIndex < prevRows.length; oldIndex++) {
           const rec = prevRows[oldIndex]!;
           if (rec === ordered[retainedIndex]) {
-            rec.pos = retainedIndex++;
+            retainedIndex++;
             continue;
           }
           removalErrors = disposeRemoved(rec, removalErrors);
@@ -704,6 +715,7 @@ export function createListRegion<T>(
         nextRows.length = 0;
         validatedKeys.length = 0;
         prevItems = items.slice();
+        activeFrame = null;
         reportCleanupErrors(removalErrors);
         return;
       }
