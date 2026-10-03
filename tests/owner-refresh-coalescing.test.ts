@@ -219,6 +219,87 @@ it('refreshes indices on imported reorders', async () => {
   expect(counts().updates).toBe(3);
 });
 
+it.each([false, true])('replays only replaced records through primitive-field helper chains (deferred=%s)', async deferred => {
+  const { App } = await load({
+    './rows.ts': `export function create(){return [{id:1,label:'one'},{id:2,label:'two'}];}
+      export function change(rows,suffix){const first=rows[0];const second=rows[1];
+        const replacement={id:first.id,label:first['label']+suffix};return [second,replacement];}`,
+    './bridge.ts': `import {change as transform} from './rows';
+      export function update(rows){return transform(rows,'!');}`,
+    './App.tsx': `import {create} from './rows';import {update as change} from './bridge';
+      export function App(){let items=create();let selected=0;const select=id=>{selected=id;};
+        return <main><button id="change" onClick={()=>{items=change(items);}}>change</button>
+          <button id="mixed" onClick={()=>{items=change(items);selected=1;}}>mixed</button>
+          <ul>{items.map(item=><li key={item.id} class={selected===item.id?'danger':''}>
+            <a onClick={()=>select(item.id)}>{item.label}</a></li>)}</ul></main>;}`,
+  }, `imported-field-change-${deferred}`);
+  const pending: Array<() => void> = [];
+  setScheduler(run=>{if(deferred)pending.push(run);else run();});
+  const flush=()=>{for(let turns=0;pending.length;turns++){
+    if(turns>=50)throw new Error('Owner refresh failed to settle');pending.shift()!();
+  }};
+  document.body.append(App('FieldChange',null));flush();
+  const original=[...document.querySelectorAll('li')];
+  const click=(id:string)=>{document.getElementById(id)!.click();flush();};
+  resetCounts();click('change');
+  expect(counts()).toEqual({reconciles:1,updates:1});
+  expect([...document.querySelectorAll('li')]).toEqual([original[1],original[0]]);
+  expect(original.map(row=>row.textContent)).toEqual(['one!','two']);
+  original[1]!.querySelector('a')!.click();flush();
+  expect(original[1]!.className).toBe('danger');
+  resetCounts();click('change');
+  expect(counts()).toEqual({reconciles:1,updates:1});
+  expect([...document.querySelectorAll('li')]).toEqual(original);
+  expect(original.map(row=>row.textContent)).toEqual(['one!','two!']);
+  expect(original[1]!.className).toBe('danger');
+  resetCounts();click('mixed');
+  expect(counts()).toEqual({reconciles:1,updates:2});
+  expect(original.map(row=>row.textContent)).toEqual(['one!!','two!']);
+  expect(original.map(row=>row.className)).toEqual(['danger','']);
+});
+
+it.each([false, true])('keeps inherited field reads conservative through helper chains (wrapped=%s)', async wrapped => {
+  const { App } = await load({
+    './rows.ts': `export function create(){return [{id:1,label:'one'},{id:2,label:'two'}];}
+      export function change(rows){const ignored=rows[0].unknown;return [rows[1],rows[0]];}`,
+    './bridge.ts': `import {change} from './rows';export function reorder(rows){return change(rows);}`,
+    './App.tsx': `import {create,change} from './rows';import {reorder} from './bridge';
+      export function App(){let items=create();return <main>
+        <button onClick={()=>{items=${wrapped ? 'reorder' : 'change'}(items);}}>change</button>
+        <ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul></main>;}`,
+  }, `imported-inherited-field-${wrapped}`);
+  setScheduler(run=>run());document.body.append(App('InheritedField',null));
+  const original=[...document.querySelectorAll('li')];
+  const previous=Object.getOwnPropertyDescriptor(Object.prototype,'unknown');
+  Object.defineProperty(Object.prototype,'unknown',{configurable:true,get(){this.label='changed';return 0;}});
+  try {
+    resetCounts();document.querySelector('button')!.click();
+    expect([...document.querySelectorAll('li')]).toEqual([original[1],original[0]]);
+    expect(original[0]!.textContent).toBe('changed');
+    expect(counts()).toEqual({reconciles:1,updates:2});
+  } finally {
+    if(previous===undefined)delete (Object.prototype as Record<string,unknown>).unknown;
+    else Object.defineProperty(Object.prototype,'unknown',previous);
+  }
+});
+
+it.each([
+  `export function create(){return [{id:1,get label(){return 'one'}},{id:2,label:'two'}];}`,
+  `export function create(){return [{id:1,label:{toString(){return 'one'}}},{id:2,label:'two'}];}`,
+  `export function create(){return [{id:1,label:'one'},{id:2,label:'two'}];}
+    export function leak(rows){globalThis.savedRow=rows[0];return rows;}`,
+])('does not infer primitive input fields from opaque producers: %s', factory => {
+  const output=compileModules({
+    './rows.ts': `${factory}export function change(rows){
+      const first=rows[0];return [rows[1],{id:first.id,label:first.label+'!'}];}`,
+    './App.tsx': `import {create,change${factory.includes('function leak') ? ',leak' : ''}} from './rows';
+      export function App(){let items=create();${factory.includes('function leak') ? 'items=leak(items);' : ''}
+        return <main><button onClick={()=>{items=change(items);}}>change</button>
+          <ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul></main>;}`,
+  })['./App.tsx']!;
+  expect(output).not.toMatch(/\.reconcile\(items, [^\n]*\.reasonsOnly\(/);
+});
+
 it('retains replay for a helper that mutates an input record', async () => {
   const { App } = await load({
     './rows.ts': `export function create(){return [{id:1,label:'one'},{id:2,label:'two'}];}

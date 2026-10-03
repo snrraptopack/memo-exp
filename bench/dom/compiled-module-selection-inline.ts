@@ -181,8 +181,9 @@ export function BenchModuleSelectionInline(_id, _parent, _dataPolicies) {
 		_id + "/data",
 		(item, _rowId) => {
 			let _slot, _slot2, _slot3, _slot4, _slot5, _value2;
-			const _document2 = _MD.getActiveEnvironment().document;
-			const _canReuseTemplate = _MD.canReuseTemplate();
+			const _templateEnvironment = _MD.getActiveEnvironment();
+			const _document2 = _templateEnvironment.document;
+			const _canReuseTemplate = _templateEnvironment.hydration === void 0;
 			let _li;
 
 			if (_canReuseTemplate) {

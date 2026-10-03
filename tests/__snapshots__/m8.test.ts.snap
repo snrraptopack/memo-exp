@@ -101,6 +101,8 @@ export function CondApp(_id, _parent, _dataPolicies) {
 		}
 	]);
 
+	_MD.cleanup(_id, () => _when.dispose());
+
 	return _div;
 }"
 `;

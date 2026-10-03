@@ -53,10 +53,22 @@ describe('scheduled publication readiness', () => {
   it('rejects publication readiness with the original scheduled render failure', async () => {
     setScheduler(() => {});
     const error = new Error('Scheduled render failed');
-    register({ id: 'failed', parent: null, render: () => { throw error; } });
+    let shouldFail = true;
+    let renders = 0;
+    register({ id: 'failed', parent: null, render: () => {
+      renders++;
+      if (shouldFail) throw error;
+    } });
     const ready = collectRenderReadiness(() => markDirty('failed'));
     expect(() => commit()).toThrow(error);
     await expect(ready).rejects.toBe(error);
+    expect(_internals().dirtySet.has('failed')).toBe(true);
+    const retryReady = collectRenderReadiness(() => {});
+    expect(retryReady).toBeInstanceOf(Promise);
+    shouldFail = false;
+    commit();
+    await retryReady;
+    expect(renders).toBe(2);
     expect(collectRenderReadiness(() => {})).toBeUndefined();
   });
   it('keeps queued publications isolated between application runtimes', async () => {

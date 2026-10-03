@@ -36,7 +36,8 @@ import {
 } from './traversal';
 import { finalizeHandlerInstrumentation } from './execution-sites';
 import { createHandlerWriteRouting } from './write-routing';
-import { captureOwnerStructuralWrites } from '../analysis/owner-list-structure';
+import { captureOwnerListWrites } from '../analysis/owner-list-structure';
+import { applyListOperations } from '../emission/list-update';
 
 /** A direct command on a compiler-known form publishes its own changes. */
 function isFormSubmit(ctx: Ctx, component: string | null, name: string, callee: t.MemberExpression): boolean {
@@ -105,7 +106,8 @@ export function analyzeHandler(
   ) as unknown as typeof rootFn;
   const ROOT: t.Node = clonedFn;
   const wrapper = clonedFn;
-  const structuralWrites = captureOwnerStructuralWrites(ctx, compName, rootFn, clonedFn);
+  const listWrites = captureOwnerListWrites(ctx, compName, rootFn, clonedFn);
+  const structuralWrites = listWrites.structuralWrites;
 
   const instVars = compName !== null ? ctx.instanceState.get(compName) : undefined;
   const instDerived =
@@ -833,6 +835,7 @@ export function analyzeHandler(
     },
   }, ctx.moduleId);
 
+  applyListOperations(ctx, listWrites);
   finalizeHandlerInstrumentation(
     ctx,
     rootFn,

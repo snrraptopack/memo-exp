@@ -4,11 +4,12 @@
  * A handler inside a list row that writes a field of the row's ITEM
  * (todo.done = …) affects ONLY that row's DOM: item data reaches the row
  * through reconcile/props, never through the access table. The compiler
- * knows the row statically, so the commit is a plain markDirty on the row
- * id — no table routing, no wildcard, no sibling renders.
+ * knows the row statically, so DOM-only rows call their local updater;
+ * rows with entities dirty their row id. Neither path needs table routing
+ * or sibling renders for a plain item-field write.
  *
- *   - inline rows:       todo.done = …      → markDirty(rowId)
- *   - component rows:    item.done = …      → markDirty(id)
+ *   - DOM-only rows:     todo.done = …      → local updater
+ *   - entity rows:       item.done = …      → markDirty(id)
  *   - key-field writes:  todo.id = …        → source-array write (re-key)
  *   - dynamic item path: todo[k] = …        → source-array write (fallback)
  *   - mixed scopes:      item field + state → BOTH commits, one scope
@@ -54,11 +55,12 @@ function spyRenders(id: string): () => number {
 // ---------------------------------------------------------------------
 
 describe('R11 — row-local item writes, code generation', () => {
-  it('inline row: item-field write commits markDirty(rowId), no table write', () => {
+  it('DOM-only inline row: item-field write calls its local updater, no table write', () => {
     const code = compile(
       `let todos = [{ id: 1, done: false }];\nfunction C() { return <ul>{todos.map((todo) => <li key={todo.id} onClick={() => { todo.done = !todo.done; }}>{todo.done ? 'y' : 'n'}</li>)}</ul>; }`,
     );
-    expect(code).toMatch(/\.\w*markDirty\(_rowId\d*\)/);
+    expect(code).toMatch(/todo\.done = !todo\.done;\s+_update\d*\(\)/);
+    expect(code).not.toContain('.markDirty(');
     // the item write must NOT route through the array's write key
     expect(code).not.toContain('WRITES');
   });
@@ -104,7 +106,7 @@ describe('R11 — row-local item writes, code generation', () => {
 // ---------------------------------------------------------------------
 
 const SOURCES: Record<string, string> = {
-  'r11-inline': `let todos = [{ id: 1, done: false }, { id: 2, done: false }];\nexport function C() { return <ul>{todos.map((todo) => <li key={todo.id} onClick={() => { todo.done = !todo.done; }}>{todo.done ? 'y' : 'n'}</li>)}</ul>; }`,
+  'r11-inline': `export let todos = [{ id: 1, done: false }, { id: 2, done: false }];\nexport function C() { return <ul>{todos.map((todo) => <li key={todo.id} onClick={() => { todo.done = !todo.done; }}>{todo.done ? 'y' : 'n'}</li>)}</ul>; }`,
   'r11-comp': `let todos = [{ id: 1, done: false }, { id: 2, done: false }];\nexport function Row(item) { return <li onClick={() => { item.done = !item.done; }}>{item.done ? 'y' : 'n'}</li>; }\nexport function C() { return <ul>{todos.map((todo) => <Row key={todo.id} item={todo} />)}</ul>; }`,
 };
 
@@ -131,19 +133,27 @@ describe('R11 — compiled output runs', () => {
   });
 
   it('inline rows: a toggle renders ONLY the clicked row', async () => {
-    const { C } = await importCompiled('r11-inline');
+    const { C, todos } = await importCompiled('r11-inline');
     document.body.appendChild(C('App', null));
     expect(document.querySelectorAll('li')).toHaveLength(2);
 
     const appR = spyRenders('App');
-    const row1R = spyRenders('App/todos/Row[n:1]');
-    const row2R = spyRenders('App/todos/Row[n:2]');
+    expect([..._internals().registry.keys()]).toEqual(['App']);
+    const reads = [0, 0];
+    todos.forEach((todo: { done: boolean }, index: number) => {
+      let value = todo.done;
+      Object.defineProperty(todo, 'done', {
+        configurable: true,
+        get() { reads[index]++; return value; },
+        set(next: boolean) { value = next; },
+      });
+    });
 
     const first = document.querySelectorAll('li')[0]!;
     first.click();
     expect(first.textContent).toBe('y'); // view synced
-    expect(row1R()).toBe(1); // clicked row rendered
-    expect(row2R()).toBe(0); // sibling untouched
+    expect(reads).toEqual([2, 0]); // handler and clicked render read; sibling never read
+    expect(document.querySelectorAll('li')[1]!.textContent).toBe('n');
     expect(appR()).toBe(0); // owner untouched — no reconcile at all
   });
 

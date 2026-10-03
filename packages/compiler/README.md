@@ -208,7 +208,7 @@ ordinary write in the same scope or batch prevents structural-only replay;
 guarded callback commits also account for other writes in their completed body.
 Wholly structural bindings still use their original source cause. Aliases,
 getters, opaque/non-scalar field writes, row-handler field mutations, opaque
-factories/methods, spreads, component rows and other external row reads retain the
+factories, unproven methods/spreads, component rows and other external row reads retain the
 conservative path. Unpublished constructors, other content callbacks and
 content-mutating helpers also retain ordinary replay. Without a structural
 write site, no extra cause is allocated. Full updates and opaque pulls refresh content. New item
@@ -218,15 +218,30 @@ proof. List facts are captured before target emission.
 
 Closed module helpers, including renamed imports and helper chains, can carry
 return provenance for fresh literal records and indexed references to an input
-list. This is separate from their effect summaries. Arguments and minimum input
+list. Helpers can construct replacements from input fields when every producer
+proves those fields are own primitive data properties. Field requirements follow
+renamed imports and helper chains, including discarded reads. Unchanged records
+then skip content replay while replacement records still update. This is separate
+from their effect summaries. Arguments and minimum input
 extents must satisfy every read, including discarded reads; methods, escaped allocations,
 captured storage, sparse arrays and opaque return paths receive no such fact.
 An owner selection value may appear in strict equality with a primitive item
 field when every write belongs to a closed host-event handler. Its separate
 dirty cause still refreshes classes; mixed causes retain full content replay.
 These are optimization conditions, not a whitelist of permitted helper names
-or application operations. Loop-built producers and Octane's array-method paths
-remain conservative.
+or application operations. Loop-built producers remain conservative.
+
+Closed owner arrays can also use the returned-array candidates in the central
+method table. Copies, reorders, concatenation and primitive predicates preserve
+retained records; a conditional `map` can replace selected records with fresh
+primitive fields. The proof checks every source producer, callback expression
+and possible escape. Runtime guards verify required native identities and hooks
+before each operation executes. Failed guards and exceptions invalidate a
+per-owner trust slot before authored code runs; restoring a method cannot make
+escaped records trusted again. Only an independent proven fresh producer resets
+the slot. Mixed causes, changed indices, new identities and ordinary pulls still
+refresh content. Unknown methods and callbacks retain ordinary reconciliation.
+This extension currently excludes sources with in-place content writes.
 
 Component-owned arrays of closed flat scalar records can also journal executed
 indices from canonical increasing `for` loops: one `let` counter, a nonnegative
@@ -286,11 +301,14 @@ The proof does not replace or reevaluate authored factory calls. Indexed-fill
 loops remain unproven: a fresh array alone cannot prevent inherited index setters
 from observing assignments or changing its shape.
 
-Dynamic text updates in list rows normalize the expression on every replay and
-compare it with a compiler-owned string slot before writing `Text.data`. The creation path
-still seeds through `setTextData`, which also handles adopted server text. This
-reduces DOM reads during broad list refreshes; it does not make those refreshes
-key-targeted or change the conservative list-method fallback.
+Dynamic text updates in list rows read the expression on every replay. Unchanged
+primitive inputs reuse their normalized string; objects and functions still
+convert on every replay. Conversion failures and reentrant opaque conversions
+invalidate the primitive cache. The normalized result is compared with a
+compiler-owned string slot before writing `Text.data`. Creation still seeds
+through `setTextData`, including adopted server text. These caches reduce work
+inside broad refreshes; they do not make those refreshes key-targeted or change
+the conservative list-method fallback.
 
 Private local component rows that read only one named props field, such as
 `props.item`, can use the existing positional lightweight row ABI. The
@@ -354,11 +372,18 @@ Component-scope helpers are instrumented without row-scope updater identifiers.
 Conservative commits retain the current component owner alongside the fallback
 root, including callbacks that run later or owners mounted outside that root.
 
+Generated request-input effects use the current `$effect` lowering path.
+`intrinsics.ts` recognizes their exact original nodes through compiler-owned
+facts, so authored lifecycle-name shadows cannot intercept generated work.
+Authored shadows retain ordinary JavaScript behavior.
+
 ### List-method optimization candidates
 
 `src/lists/mutation-shapes.ts` centralizes method names considered for list
-optimization: `map`, `push`, `pop`, `unshift`, `shift`, `splice`, `reverse`,
-`sort`, `fill`, and `copyWithin`. **This is not a whitelist of supported
+optimization, their candidate category, returned-array behavior, argument
+limits and required native guards. It includes `map`, `push`, `pop`, `unshift`,
+`shift`, `splice`, `reverse`, `sort`, `fill`, `copyWithin`, `slice`, `filter`,
+`concat` and `toReversed`. **This is not a whitelist of supported
 JavaScript methods.** An absent name does not produce an unsupported-method
 error; it retains existing conservative receiver-effect routing. Existing
 independent language restrictions, such as writes to read-only state, still apply.
@@ -370,12 +395,21 @@ content-capable receiver effect. JavaScript permits an own or inherited method
 to replace `Array.prototype.push`, so spelling alone cannot authorize skipping
 retained-prefix validation or row replay.
 
-Structural labels remain candidates, not implemented specializations.
+Structural labels remain candidates, not guarantees.
 Adding a name alone cannot authorize an optimization. Receiver provenance,
 overrides, callbacks, argument effects, and mixed writes must be proven safe.
 Names are neither purity guarantees nor permission to skip invalidation.
 Unknown calls can mutate retained content; the table introduces no new errors
 and does not change the existing fallback implementation.
+
+The owner-array analysis consumes this same table for returned-array candidates;
+do not create another method-name list in analysis or emission. Compiler
+`emission/list-update.ts` owns guarded RHS construction and shares static
+requirement arrays across actions and component instances. Runtime
+`list-update.ts` verifies emitted requirements against generically captured
+native identities, and owns the trust slot and internal source snapshots. It
+does not decide which authored method names qualify for optimization. Original
+write facts transfer through one shared owner-list clone capture.
 
 ### Analysis pipeline
 

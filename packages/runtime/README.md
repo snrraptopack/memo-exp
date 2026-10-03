@@ -71,6 +71,14 @@ Initial mounting, hydration, length mismatches and interrupted general frames
 use the normal path. This is a trusted compiler contract, not a runtime inference
 from an unchanged array reference.
 
+Closed owner lists can carry a compiler-owned trust slot across array operations.
+The compiler supplies the native methods and hook requirements to verify before
+executing an operation. A failed guard or exception invalidates trust; restoring
+a method does not restore it. An independent proven fresh producer can recover
+trust. Internal source snapshots use a captured native copy that bypasses method
+overrides and species hooks, with an own-property copy for hosts lacking that
+capability. Source snapshots never dispatch `items.slice()`.
+
 General reconciliation keeps retained keys in the region's existing Map. A
 private frame marker detects duplicates and preserves consumed-key visibility
 for in-frame `refreshKey()` and `size()` calls. Key evaluation, row updates and
@@ -135,7 +143,10 @@ reconciliation from cleanup hooks.
 The compiler marks proven DOM-only inline or component rows with the final `resourceFree`
 argument to `createListRegion()`. Those entries have no entities or disposal
 callbacks. Complete clear/replacement and ordinary unmount can remove their
-owned DOM range without visiting empty cleanup records. Suffix removal also
+owned DOM range without visiting empty cleanup records. When the region's
+anchors enclose the complete parent child set, bulk removal uses one
+`replaceChildren()` call preserving those anchors. Neighbors, partial extents,
+and hosts without that capability use bounded range removal. Suffix removal also
 skips empty disposal/cleanup work after successful range deletion; failed or
 unavailable ranges still remove individual nodes. Clear retains the same
 boundary comments; unmount removes them. Other callers retain normal cleanup,

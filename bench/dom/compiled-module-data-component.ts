@@ -47,7 +47,8 @@ let data = [];
 
 function Row(props, _id, _onClickBinding) {
 	let _slot, _slot2, _slot3, _slot4, _slot5, _value;
-	const _document = _MD.getActiveEnvironment().document;
+	const _templateEnvironment = _MD.getActiveEnvironment();
+	const _document = _templateEnvironment.document;
 
 	const _update = () => {
 		{
@@ -91,7 +92,7 @@ function Row(props, _id, _onClickBinding) {
 		}
 	};
 
-	const _canReuseTemplate = _MD.canReuseTemplate();
+	const _canReuseTemplate = _templateEnvironment.hydration === void 0;
 	let _li;
 
 	if (_canReuseTemplate) {

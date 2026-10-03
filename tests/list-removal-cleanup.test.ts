@@ -138,3 +138,59 @@ it.each([false, true])('DOM-only suffix removal keeps markers, neighbors and mul
     region.dispose(); expect([...host.childNodes]).toEqual([before,after]);
   } finally { document.createRange = original; }
 });
+
+it.each(['clear', 'replace', 'dispose'] as const)('bulk %s of an exclusive DOM-only region preserves anchors without creating a range', operation => {
+  const host = document.createElement('div'); document.body.append(host);
+  const region = createListRegion(host, 'removal-cleanup/exclusive', (item: number) => {
+    if (item === 0) return { nodes: [], entities: [] };
+    const first = document.createTextNode(String(item));
+    const second = document.createElement('b'); second.textContent = String(item);
+    return { nodes: [first, second], entities: [] };
+  }, undefined, false, false, true);
+  const open = host.firstChild, end = host.lastChild;
+  region.reconcile([0, 1, 2]);
+  const old = [...host.childNodes].slice(1, -1);
+  const original = document.createRange;
+  document.createRange = () => { throw new Error('bulk operation must not create a range'); };
+  try {
+    if (operation === 'dispose') region.dispose();
+    else {
+      region.reconcile(operation === 'clear' ? [] : [3, 4]);
+      expect(host.firstChild).toBe(open); expect(host.lastChild).toBe(end);
+      expect(host.textContent).toBe(operation === 'clear' ? '' : '3344');
+      region.reconcile([5]); expect(host.textContent).toBe('55');
+      region.dispose();
+    }
+    expect(host.childNodes).toHaveLength(0);
+    for (const node of old) expect(node.parentNode).toBe(null);
+  } finally { document.createRange = original; }
+});
+
+it('bulk DOM-only removal keeps content preceding the first owned row inside its anchors', () => {
+  const host = document.createElement('div');
+  const region = createListRegion(host, 'removal-cleanup/unowned', (item: number) => {
+    const node = document.createTextNode(String(item)); return { nodes: node, entities: [] };
+  }, undefined, false, false, true);
+  const open = host.firstChild, end = host.lastChild;
+  region.reconcile([1, 2]);
+  const unowned = document.createTextNode('unowned'); host.insertBefore(unowned, open!.nextSibling);
+  region.reconcile([]);
+  expect([...host.childNodes]).toEqual([open, unowned, end]);
+  region.dispose(); expect([...host.childNodes]).toEqual([unowned]);
+});
+
+it('does not restore anchors after a bulk disconnection callback disposes the region', () => {
+  const host = document.createElement('div'); document.body.append(host);
+  let onDisconnect = () => {};
+  const tag = 'bulk-disconnection-row';
+  if (!customElements.get(tag)) customElements.define(tag, class extends HTMLElement {
+    disconnectedCallback() { onDisconnect(); }
+  });
+  const region = createListRegion(host, 'removal-cleanup/disconnection', () => ({
+    nodes: document.createElement(tag), entities: [],
+  }), undefined, false, false, true);
+  region.reconcile([1, 2]);
+  onDisconnect = () => region.dispose();
+  region.reconcile([]);
+  expect(host.childNodes).toHaveLength(0); expect(region.size()).toBe(0);
+});

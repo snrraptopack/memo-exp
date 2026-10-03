@@ -213,6 +213,11 @@ export function transformComponent(
   const lightweightPropCount =
     positionalObjectProps?.length ?? propSlotCount;
   const scope = newEmitScope(ctx, lightweight, component);
+  for (const token of ctx.ownerListProvenance.get(name)?.values() ?? []) {
+    scope.prelude.push(astFactory.variableDeclaration('const', [astFactory.variableDeclarator(
+      astFactory.identifier(token), astFactory.callExpression(md(ctx, 'createListProvenance'), []),
+    )]));
+  }
   scope.cacheText = placement.listed;
   const localDerivations = ctx.instanceDerivations.get(name);
   const controlFlow = ctx.instanceControlFlow.get(name);

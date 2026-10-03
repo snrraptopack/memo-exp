@@ -6,7 +6,7 @@ import { createRegionReplayFacts, type ListReplaySource } from '../packages/comp
 import { createCtx } from '../packages/compiler/src/context';
 import { planRegionReplays } from '../packages/compiler/src/planning/region-replay';
 import { matchMapCall } from '../packages/compiler/src/lists';
-import { captureOwnerStructuralWrites } from '../packages/compiler/src/analysis/owner-list-structure';
+import { captureOwnerListWrites } from '../packages/compiler/src/analysis/owner-list-structure';
 import { instanceSourceReasons } from '../packages/compiler/src/context';
 
 function parse(source: string): t.Program {
@@ -131,9 +131,9 @@ it('captures a separate cause and transfers write facts only from original owner
   expect(reason).not.toBe(ctx.instanceReasonIds.get('View')!.get('items'));
   expect(instanceSourceReasons(ctx,'View','items')).toContain(reason);
   const copy=cloneNode(program),again=cloneNode(copy);
-  const copied=captureOwnerStructuralWrites(ctx,'View',program,copy);
-  const unrelated=captureOwnerStructuralWrites(ctx,'Other',program,copy);
-  const unproven=captureOwnerStructuralWrites(ctx,'View',copy,again);
+  const copied=captureOwnerListWrites(ctx,'View',program,copy).structuralWrites;
+  const unrelated=captureOwnerListWrites(ctx,'Other',program,copy).structuralWrites;
+  const unproven=captureOwnerListWrites(ctx,'View',copy,again).structuralWrites;
   let count=0;
   walkAst(copy,{enter(node){if(copied.get(node)==='items')count++;expect(unrelated.has(node)).toBe(false);}});
   expect(count).toBe(1);

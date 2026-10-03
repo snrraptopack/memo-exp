@@ -113,22 +113,35 @@ const items = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
 let selected = 0;
 
 function Row(item, _id, _onClickBinding) {
-	let _slot, _slot2, _value;
-	const _document = _MD.getActiveEnvironment().document;
+	let _slot, _slot2, _slot3, _value;
+	const _templateEnvironment = _MD.getActiveEnvironment();
+	const _document = _templateEnvironment.document;
 
 	const _update = () => {
-		if (_slot !== (_value = _MD.textValue(item.label))) {
-			_slot = _value;
-			_text.data = _value;
+		{
+			const _textValue = item.label;
+
+			if (_slot2 !== _textValue) {
+				try {
+					if (_slot !== (_value = _MD.textValue(_textValue))) {
+						_slot = _value;
+						_text.data = _value;
+					}
+				} finally {
+					_slot2 = 0 / 0;
+				}
+
+				if (_textValue === null || typeof _textValue !== "object" && typeof _textValue !== "function") _slot2 = _textValue;
+			}
 		}
 
-		if (_slot2 !== (_value = selected === item.id ? "danger" : "")) {
-			_slot2 = _value;
+		if (_slot3 !== (_value = selected === item.id ? "danger" : "")) {
+			_slot3 = _value;
 			_MD.setClassValue(_li, _value);
 		}
 	};
 
-	const _canReuseTemplate = _MD.canReuseTemplate();
+	const _canReuseTemplate = _templateEnvironment.hydration === void 0;
 	let _li;
 
 	if (_canReuseTemplate) {
@@ -144,11 +157,24 @@ function Row(item, _id, _onClickBinding) {
 
 	const _text = _li.firstChild;
 
-	_slot = _MD.textValue(item.label);
+	{
+		const _textValue = item.label;
+
+		{
+			try {
+				_slot = _MD.textValue(_textValue);
+			} finally {
+				_slot2 = 0 / 0;
+			}
+
+			if (_textValue === null || typeof _textValue !== "object" && typeof _textValue !== "function") _slot2 = _textValue;
+		}
+	}
+
 	_MD.setTextData(_text, _slot);
 
-	if (_slot2 !== (_value = selected === item.id ? "danger" : "")) {
-		_slot2 = _value;
+	if (_slot3 !== (_value = selected === item.id ? "danger" : "")) {
+		_slot3 = _value;
 		_MD.setClassValue(_li, _value);
 	}
 
@@ -304,9 +330,10 @@ export function InlineList(_id, _parent, _dataPolicies) {
 		_ul,
 		_id + "/items",
 		(item, _rowId) => {
-			let _slot, _slot2, _value2;
-			const _document2 = _MD.getActiveEnvironment().document;
-			const _canReuseTemplate = _MD.canReuseTemplate();
+			let _slot, _slot2, _slot3, _value2;
+			const _templateEnvironment = _MD.getActiveEnvironment();
+			const _document2 = _templateEnvironment.document;
+			const _canReuseTemplate = _templateEnvironment.hydration === void 0;
 			let _li;
 
 			if (_canReuseTemplate) {
@@ -322,11 +349,24 @@ export function InlineList(_id, _parent, _dataPolicies) {
 
 			const _text = _li.firstChild;
 
-			_slot = _MD.textValue(item.label);
+			{
+				const _textValue = item.label;
+
+				{
+					try {
+						_slot = _MD.textValue(_textValue);
+					} finally {
+						_slot2 = 0 / 0;
+					}
+
+					if (_textValue === null || typeof _textValue !== "object" && typeof _textValue !== "function") _slot2 = _textValue;
+				}
+			}
+
 			_MD.setTextData(_text, _slot);
 
-			if (_slot2 !== (_value2 = selected === item.id ? "danger" : "")) {
-				_slot2 = _value2;
+			if (_slot3 !== (_value2 = selected === item.id ? "danger" : "")) {
+				_slot3 = _value2;
 				_MD.setClassValue(_li, _value2);
 			}
 
@@ -341,13 +381,25 @@ export function InlineList(_id, _parent, _dataPolicies) {
 				update: (_nextItem) => {
 					item = _nextItem;
 
-					if (_slot !== (_value2 = _MD.textValue(item.label))) {
-						_slot = _value2;
-						_text.data = _value2;
+					{
+						const _textValue = item.label;
+
+						if (_slot2 !== _textValue) {
+							try {
+								if (_slot !== (_value2 = _MD.textValue(_textValue))) {
+									_slot = _value2;
+									_text.data = _value2;
+								}
+							} finally {
+								_slot2 = 0 / 0;
+							}
+
+							if (_textValue === null || typeof _textValue !== "object" && typeof _textValue !== "function") _slot2 = _textValue;
+						}
 					}
 
-					if (_slot2 !== (_value2 = selected === item.id ? "danger" : "")) {
-						_slot2 = _value2;
+					if (_slot3 !== (_value2 = selected === item.id ? "danger" : "")) {
+						_slot3 = _value2;
 						_MD.setClassValue(_li, _value2);
 					}
 				}

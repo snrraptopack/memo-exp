@@ -11,7 +11,7 @@
  * 3. Derived values over module refs (unread = list.filter().length) must
  *    gate through deriveResolvedValues instead of imperative reads.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
@@ -224,8 +224,15 @@ describe('module-scope sources through Group/$track/derivations', () => {
       'out',
       'ws-e2e',
     );
-    await import(pathToFileURL(join(fixtures, 'api.ts')).href);
-    await import(pathToFileURL(join(fixtures, 'session.ts')).href);
+    const source = join(import.meta.dirname, '../examples/workspace');
+    const output = compileModules({
+      './session.ts': readFileSync(join(source, 'session.ts'), 'utf8'),
+      './WorkspaceApp.tsx': readFileSync(join(source, 'WorkspaceApp.tsx'), 'utf8'),
+    }, { runtimePath: '@memoized-dom/runtime/testing' });
+    mkdirSync(fixtures, { recursive: true });
+    for (const [path, code] of Object.entries(output)) {
+      writeFileSync(join(fixtures, path.replace(/\.tsx$/, '.ts')), code);
+    }
     const { WorkspaceApp } = await import(
       pathToFileURL(join(fixtures, 'WorkspaceApp.ts')).href
     );

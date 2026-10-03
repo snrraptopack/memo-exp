@@ -181,7 +181,7 @@ export function analyzeModuleListTargets(ctx: Ctx): void {
         valid = false; break;
       }
       if (method !== null && Object.hasOwn(LIST_METHOD_OPTIMIZATIONS, method) &&
-          LIST_METHOD_OPTIMIZATIONS[method] === 'render' && nodeField(access, 'computed') !== true) {
+          LIST_METHOD_OPTIMIZATIONS[method]?.kind === 'render' && nodeField(access, 'computed') !== true) {
         const call = parents.get(access);
         const callback = call && childNodes(call, 'arguments')[0];
         const param = callback && childNodes(callback, 'params')[0];

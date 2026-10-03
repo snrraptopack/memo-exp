@@ -102,7 +102,7 @@ export type { EventRecord } from './events';
 
 export { createListRegion } from './list';
 export type { ListRegion, ListEntry, KeyFn } from './list';
-export { isStructuralListUpdate, listItemIndices } from './list-update';
+export { isStructuralListUpdate, listItemIndices, createListProvenance, evaluateListOperation } from './list-update';
 export { rootNodes } from './jsx-dom';
 export { decodeListKey, encodeListKey } from './list-keys';
 export { HydrationMismatchError } from './hydration-error';

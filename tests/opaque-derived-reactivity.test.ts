@@ -67,7 +67,7 @@ const source = `
   export function TaskBoard() {
     const api = createDataRuntime({ fetch: mockFetch });
     const res = api.\$fetch('/todos');
-    cleanup(api.clear);
+    $cleanup(api.clear);
 
     let statusFilter = 'all';
     const rawList = res.data?.todos ?? [];
@@ -100,9 +100,9 @@ const source = `
   export function CanvasPanel() {
     const telemetry = createDataRuntime({ fetch: mockFetch });
     const stats = telemetry.$fetch('/stats');
-    cleanup(telemetry.clear);
+    $cleanup(telemetry.clear);
     let canvas;
-    effect(() => {
+    $effect(() => {
       effectRuns++;
       if (!canvas) return;
       canvas.width = canvas.clientWidth + 1;
@@ -117,7 +117,7 @@ const source = `
   export function HelperBoard() {
     const api = createDataRuntime({ fetch: mockFetch });
     const res = api.\$fetch('/items');
-    cleanup(api.clear);
+    $cleanup(api.clear);
 
     function toggleItem(item) {
       item.done = !item.done;

@@ -44,7 +44,8 @@ describe('real TODO compiler regression', () => {
 
   it('emits scoped, path-sensitive updates for the authored handlers', () => {
     expect(code).not.toContain('markDirtySubtree("App")');
-    expect(code.match(/\.canReuseTemplate\(/g)).toHaveLength(1);
+    expect(code).not.toContain('.canReuseTemplate(');
+    expect(code).toMatch(/_templateEnvironment\d*\.hydration === void 0/);
     expect(code).toMatch(/_when\d*\.update\(_reasons\d*\)/);
     expect(code).toMatch(/if \(_didWrite\d*\) _MD\.markDirty/);
   });

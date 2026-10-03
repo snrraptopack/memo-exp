@@ -16,6 +16,7 @@ import {
   transparentExpressionSources,
 } from '../data-sources';
 import { cachedTextConcat } from './text-concat';
+import { cachedTextValue } from './text-value';
 
 // ---------------------------------------------------------------------
 // component transform
@@ -78,12 +79,13 @@ export function emitText(
   }
   const slot = freshSlot(ctx, scope);
   const concat = cachedTextConcat(ctx, scope, prepared);
+  const value = concat ?? cachedTextValue(ctx, scope, prepared);
   const seed = (expression: t.Expression): t.Statement => astFactory.expressionStatement(
     astFactory.assignmentExpression('=', astFactory.identifier(slot),
       astFactory.callExpression(md(ctx, 'textValue'), [expression])),
   );
   scope.creation.push(
-    concat ? concat(seed, true) : seed(cloneEstreeNode(prepared)),
+    value(seed, true),
     // Keep the seed recognizable to markup extraction, including hydration.
     astFactory.expressionStatement(
       astFactory.callExpression(md(ctx, 'setTextData'), [
@@ -105,7 +107,7 @@ export function emitText(
         ),
       ),
     );
-  const updater = () => concat ? concat(write) : write(cloneEstreeNode(prepared));
+  const updater = () => value(write);
   registerTransparentDataSite(
     ctx,
     scope,

@@ -18,7 +18,7 @@ const modules = {
     export function Leaf() {
       const user = $fetch<{ name: string }>('/leaf');
       const unused = $fetch('/unused');
-      effect(() => globalThis.__prepareEffect(input));
+      $effect(() => globalThis.__prepareEffect(input));
       return <section id="leaf"><input ref={input} value={user.name} /><span>{user.name}</span></section>;
     }
   `,
@@ -62,7 +62,7 @@ const modules = {
     }
     function ListLeaf() {
       const user = $fetch<{ name: string }>('/list-leaf');
-      effect(() => globalThis.__prepareEffect(null));
+      $effect(() => globalThis.__prepareEffect(null));
       return <section id="list-leaf"><input value={user.name} /></section>;
     }
     export function ModuleList() {

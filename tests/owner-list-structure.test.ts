@@ -117,7 +117,7 @@ it.each([
   basic.replace('return <main>', '[items[0].label]=["changed"];return <main>'),
   basic.replace('return <main>', 'items.reverse();return <main>'),
   basic.replace('items=[items[2],items[0],items[1]]', 'items=opaque()'),
-  basic.replace('items=[items[2],items[0],items[1]]', 'items=[...items]'),
+  basic.replace('items=[items[2],items[0],items[1]]', 'items=[...opaque()]'),
   basic.replace('item.id}:{item.label', 'item.id}:{clock.value}:{item.label'),
   basic.replace('{item.label}', '{opaque(item.label)}'),
   basic.replace('<li key={item.id}', '<li onClick={()=>{item.label="changed"}} key={item.id}'),

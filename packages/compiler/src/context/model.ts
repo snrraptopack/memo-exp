@@ -9,6 +9,7 @@
 import type * as t from '../ast/compiler-types';
 import type { BaseNode, ScopeAnalysis } from '../ast';
 import type { PlainListReturn } from '../analysis/plain-list-return';
+import type { OwnerListOperation } from '../analysis/owner-list-structure';
 import type {
   ComponentPropsPlan,
   ControlFlowDerivation,
@@ -553,6 +554,12 @@ export interface Ctx {
   ownerListStructureWriteSources: WeakMap<t.Node, { owner: string; source: string }>;
   /** Separate safe-write cause for closed arrays that also permit content writes. */
   ownerListStructureReasonKeys: Map<string, Map<string, string>>;
+  /** Runtime trust slots for closed lists using guarded array semantics. */
+  ownerListProvenance: Map<string, Map<string, string>>;
+  /** Exact assignment operations captured before handler cloning. */
+  ownerListOperations: WeakMap<t.Node, OwnerListOperation>;
+  /** Shared static arrays for native-operation and guard requirements. */
+  listOperationConsts: Map<string, string>;
   /** Sources used by multiple list sites deliberately keep full reconciliation. */
   disabledKeyedListMutationSources: Set<string>;
   /** Closed module arrays eligible for static-index content invalidation. */
@@ -618,6 +625,8 @@ export interface Ctx {
   analyzedFunctions: WeakSet<t.Node>;
   /** Pure callbacks synthesized and owned by compiler derivation/read helpers. */
   compilerOwnedCallbacks: WeakSet<t.Node>;
+  /** Generated lifecycle calls keep their identity despite authored shadows. */
+  compilerLifecycleCalls: WeakMap<BaseNode, 'effect' | 'cleanup'>;
   /** Whether a shared handler already emits a commit in its event scope. */
   handlerHasRootCommit: WeakMap<t.Node, boolean>;
   /**
@@ -853,6 +862,9 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     ownerListStructureSources: new WeakMap(),
     ownerListStructureWriteSources: new WeakMap(),
     ownerListStructureReasonKeys: new Map(),
+    ownerListProvenance: new Map(),
+    ownerListOperations: new WeakMap(),
+    listOperationConsts: new Map(),
     moduleListTargets: new Map(),
     plainListItemTargets: new WeakMap(),
     disabledKeyedListMutationSources: new Set(),
@@ -879,6 +891,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     dynamicTagSelector: null,
     analyzedFunctions: new WeakSet(),
     compilerOwnedCallbacks: new WeakSet(),
+    compilerLifecycleCalls: new WeakMap(),
     handlerHasRootCommit: new WeakMap(),
     localParamEffects: new WeakMap(),
     identifiers: null,

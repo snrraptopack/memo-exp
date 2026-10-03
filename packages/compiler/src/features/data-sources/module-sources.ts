@@ -83,30 +83,28 @@ export function scanAndLowerModuleSourceDeclarations(
       noteProgramReads(astFactory.isNode(target) ? target : undefined);
       noteProgramReads(astFactory.isNode(options) ? options : undefined);
       if (readsProgramBinding) {
-        requestInputEffects.push(
-          astFactory.expressionStatement(
-            astFactory.callExpression(astFactory.identifier('effect'), [
-              astFactory.arrowFunctionExpression(
-                [],
-                astFactory.callExpression(mdd(ctx, readSource
-                  ? 'rebindReadModuleSource'
-                  : 'rebindModuleSource'), [
-                  astFactory.callExpression(mdd(ctx, 'sourceRef'), [
-                    astFactory.stringLiteral(key),
-                  ]),
-                  ...(readSource
-                    ? [options === undefined
-                      ? astFactory.arrowFunctionExpression([], cloneNode(target as t.Expression, true))
-                      : cloneNode(options as t.Expression, true)]
-                    : [target === undefined
-                      ? astFactory.nullLiteral()
-                      : cloneNode(target, true),
-                      ...(options === undefined ? [] : [cloneNode(options, true)])]),
-                ]),
-              ),
+        const effectCall = astFactory.callExpression(astFactory.identifier('$effect'), [
+          astFactory.arrowFunctionExpression(
+            [],
+            astFactory.callExpression(mdd(ctx, readSource
+              ? 'rebindReadModuleSource'
+              : 'rebindModuleSource'), [
+              astFactory.callExpression(mdd(ctx, 'sourceRef'), [
+                astFactory.stringLiteral(key),
+              ]),
+              ...(readSource
+                ? [options === undefined
+                  ? astFactory.arrowFunctionExpression([], cloneNode(target as t.Expression, true))
+                  : cloneNode(options as t.Expression, true)]
+                : [target === undefined
+                  ? astFactory.nullLiteral()
+                  : cloneNode(target, true),
+                  ...(options === undefined ? [] : [cloneNode(options, true)])]),
             ]),
           ),
-        );
+        ]);
+        ctx.compilerLifecycleCalls.set(effectCall, 'effect');
+        requestInputEffects.push(astFactory.expressionStatement(effectCall));
       }
       declarator.init = astFactory.callExpression(mdd(ctx, 'sourceRef'), [
         astFactory.stringLiteral(key),

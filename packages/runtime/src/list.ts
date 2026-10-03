@@ -32,7 +32,7 @@
 import { getActiveEnvironment, unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 import { encodeListKey } from './list-keys';
 import { HydrationMismatchError } from './hydration-error';
-import { retainedRowNeedsSync } from './list-update';
+import { copyListItems, retainedRowNeedsSync } from './list-update';
 
 export interface ListEntry {
   /** Detached or attached DOM nodes owned by this item (usually one root). */
@@ -301,6 +301,28 @@ export function createListRegion<T>(
       if (firstOwned !== undefined) break;
     }
     if (firstOwned === undefined) return false;
+    // A DOM-only region can replace the complete child set when its anchors
+    // enclose exactly that set. Keep the same anchors for subsequent frames.
+    // Partial extents and neighboring content still use a bounded range.
+    if (resourceFree && start === 0 && !adopting &&
+        container.firstChild === openAnchor && container.lastChild === endAnchor &&
+        openAnchor.nextSibling === firstOwned &&
+        typeof (container as ParentNode).replaceChildren === 'function') {
+      // One operation also keeps the anchors attached when synchronous custom
+      // element disconnection callbacks run at the end of DOM reactions.
+      (container as ParentNode).replaceChildren(openAnchor, endAnchor);
+      // Injected hosts may deliver disconnections while replacing children,
+      // then finish inserting the anchors after a reentrant dispose returns.
+      if (disposed) {
+        let errors: unknown[] | null = null;
+        try { openAnchor.parentNode?.removeChild(openAnchor); }
+        catch (error) { (errors ??= []).push(error); }
+        try { endAnchor.parentNode?.removeChild(endAnchor); }
+        catch (error) { (errors ??= []).push(error); }
+        reportCleanupErrors(errors);
+      }
+      return true;
+    }
     const doc = getActiveEnvironment().document;
     if (firstOwned.parentNode !== container || endAnchor.parentNode !== container ||
         doc.createRange === undefined) return false;
@@ -593,7 +615,7 @@ export function createListRegion<T>(
         if (provenAppend) {
           for (let i = prevItems.length; i < items.length; i++) prevItems.push(items[i] as T);
         } else {
-          prevItems = items.slice();
+          prevItems = copyListItems(items);
         }
         return;
       }
@@ -682,7 +704,7 @@ export function createListRegion<T>(
           prevRows.length = items.length;
           nextRows.length = 0;
           validatedKeys.length = 0;
-          prevItems = items.slice();
+          prevItems = copyListItems(items);
           activeFrame = null;
           reportCleanupErrors(removalErrors);
           return;
@@ -707,7 +729,7 @@ export function createListRegion<T>(
         nextRows = priorRows;
         nextRows.length = 0;
         validatedKeys.length = 0;
-        prevItems = items.slice();
+        prevItems = copyListItems(items);
         activeFrame = null;
         reportCleanupErrors(removalErrors);
         return;
@@ -851,7 +873,7 @@ export function createListRegion<T>(
       commitFrame();
       const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
       nextRows.length = 0;
-      prevItems = items.slice();
+      prevItems = copyListItems(items);
       return;
     }
 
@@ -878,7 +900,7 @@ export function createListRegion<T>(
       commitFrame();
       const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
       nextRows.length = 0;
-      prevItems = items.slice();
+      prevItems = copyListItems(items);
       return;
     }
 
@@ -891,7 +913,7 @@ export function createListRegion<T>(
       // than retaining removed/replaced entries (and their detached DOM) until
       // the next structural reconciliation.
       nextRows.length = 0;
-      prevItems = items.slice();
+      prevItems = copyListItems(items);
       return;
     }
 
@@ -998,7 +1020,7 @@ export function createListRegion<T>(
     commitFrame();
     const priorRows = prevRows; prevRows = ordered; nextRows = priorRows;
     nextRows.length = 0;
-    prevItems = items.slice();
+    prevItems = copyListItems(items);
   }
 
   function commitFrame(): void {

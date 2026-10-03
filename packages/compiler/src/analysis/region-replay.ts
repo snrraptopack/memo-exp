@@ -16,11 +16,17 @@ export interface ListReplayFacts {
   readonly moduleIndices: boolean;
   /** Ordinary cause for wholly structural sources, otherwise a dedicated safe-write cause. */
   readonly ownerStructuralReason?: number;
+  readonly ownerProvenance?: string;
 }
 
 export interface ComponentRegionReplay {
   readonly listFor: (call: t.Node, source: ListReplaySource) => ListReplayFacts;
   readonly conditionFromOwner: (expression: t.Node) => boolean;
+}
+export interface OwnerListReplay {
+  readonly source: string;
+  readonly reason: number;
+  readonly provenance?: string;
 }
 
 export interface RegionReplayEnvironment {
@@ -30,7 +36,7 @@ export interface RegionReplayEnvironment {
   readonly stateKeys: ReadonlyMap<string, string>;
   /** Binding identity was checked before backend mutation; clones are unproven. */
   readonly fixedSourceFor: (call: t.Node) => string | undefined;
-  readonly ownerStructureFor?: (call: t.Node) => { source: string; reason: number } | undefined;
+  readonly ownerStructureFor?: (call: t.Node) => OwnerListReplay | undefined;
 }
 
 export function createRegionReplayFacts(environment: RegionReplayEnvironment): ComponentRegionReplay {
@@ -50,7 +56,7 @@ export function createRegionReplayFacts(environment: RegionReplayEnvironment): C
         moduleIndices: !source.hasPrelude && !source.sourceLocal && identifier !== null &&
           moduleIndexSources.has(identifier),
         ...(source.sourceLocal && !source.hasPrelude && identifier === ownerStructure?.source
-          ? { ownerStructuralReason: ownerStructure.reason } : {}),
+          ? { ownerStructuralReason: ownerStructure.reason, ownerProvenance: ownerStructure.provenance } : {}),
       };
     },
     conditionFromOwner(expression) {

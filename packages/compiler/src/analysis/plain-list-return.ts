@@ -1,5 +1,5 @@
 /** Return provenance for closed helpers; effects alone do not describe results. */
-import { childNode, childNodes, identifierName, nodeField, walkAst, type BaseNode, type Binding, type ScopeAnalysis } from '../ast';
+import { childNode, childNodes, identifierName, nodeField, stringValue, walkAst, type BaseNode, type Binding, type ScopeAnalysis } from '../ast';
 import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
 import { isPlainScalarValue } from './plain-scalar';
 
@@ -7,6 +7,8 @@ export interface PlainListReturn {
   readonly parameters: readonly ('unused' | 'scalar' | 'list')[];
   /** Every indexed read must hit an own dense element, including discarded reads. */
   readonly minimumLengths: readonly number[];
+  /** Input fields read by the helper must be own primitive data properties. */
+  readonly requiredFields: readonly (readonly string[])[];
   readonly elements: readonly (
     { readonly fields: readonly string[] } |
     { readonly parameter: number; readonly index: number }
@@ -52,6 +54,7 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
   const params = childNodes(fn, 'params');
   const requirements: Array<'unused' | 'scalar' | 'list'> = params.map(() => 'unused');
   const minimumLengths = params.map(() => 0);
+  const requiredFields = params.map(() => new Set<string>());
   const values = new Map<Binding, Value>();
   for (let index = 0; index < params.length; index++) {
     const param = params[index]!;
@@ -69,9 +72,21 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
     const binding = node === null || name === null ? undefined : astBindingAt(ctx, node, name);
     return binding === undefined ? undefined : values.get(binding);
   };
+  const field = (element: PlainListReturn['elements'][number], name: string): boolean => {
+    if ('fields' in element) return element.fields.includes(name);
+    if (!require(element.parameter, 'list')) return false;
+    requiredFields[element.parameter]!.add(name); return true;
+  };
   const scalar = (node: BaseNode | null): boolean => isPlainScalarValue(node, identifier => {
     const value = lookup(identifier);
     return value !== undefined && ('scalar' in value || 'parameter' in value && require(value.parameter, 'scalar'));
+  }, member => {
+    if (nodeField(member, 'optional') === true) return false;
+    const key = childNode(member, 'property');
+    const name = nodeField(member, 'computed') === true ? stringValue(key) : identifierName(key);
+    if (name === null) return false;
+    const receiver = evaluate(childNode(member, 'object'));
+    return receiver !== undefined && 'element' in receiver && field(receiver.element, name);
   });
   const nextVisiting = new Set(visiting).add(name);
   const evaluate = (node: BaseNode | null): Value | undefined => {
@@ -136,6 +151,10 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
           if ('parameter' in value) {
             minimumLengths[value.parameter] = Math.max(minimumLengths[value.parameter]!, plan.minimumLengths[index]!);
           } else if (value.list.length < plan.minimumLengths[index]!) return;
+          for (const name of plan.requiredFields[index]!) {
+            if ('parameter' in value) requiredFields[value.parameter]!.add(name);
+            else if (!value.list.every(element => field(element, name))) return;
+          }
           arguments_.push(value);
         }
       }
@@ -172,5 +191,8 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
     if (last?.type !== 'ReturnStatement') return;
     result = evaluate(childNode(last, 'argument'));
   }
-  return result !== undefined && 'list' in result ? { parameters: requirements, minimumLengths, elements: result.list } : undefined;
+  return result !== undefined && 'list' in result ? {
+    parameters: requirements, minimumLengths,
+    requiredFields: requiredFields.map(fields => [...fields].sort()), elements: result.list,
+  } : undefined;
 }

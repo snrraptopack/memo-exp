@@ -9,6 +9,20 @@ import { matchMapCall } from '../lists/source-shapes';
 import { isPlainScalarValue } from './plain-scalar';
 import { plainListReturn } from './plain-list-return';
 import { publishedOwnerDependency } from './published-owner-dependency';
+import { generatedIdentifier } from '../identifiers';
+import { LIST_METHOD_OPTIMIZATIONS } from '../lists/mutation-shapes';
+
+export interface OwnerListOperation {
+  readonly owner: string;
+  readonly token: string;
+  readonly operations: string[];
+  readonly guards: string[];
+  readonly fresh: boolean;
+}
+export interface CapturedOwnerListWrites {
+  readonly structuralWrites: WeakMap<t.Node, string>;
+  readonly operations: readonly { assignment: t.AssignmentExpression; plan: OwnerListOperation }[];
+}
 
 function property(node: BaseNode): string | null {
   const key = childNode(node, 'property');
@@ -104,6 +118,18 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
     for (const [binding, source] of candidates) {
       const safeArguments = new Set<BaseNode>();
       let requiredLength = 0;
+      const requiredFields = new Set<string>();
+      const retainedElements = new Set<BaseNode>();
+      const operations = new Map<BaseNode, string[]>();
+      const freshWrites = new Map<BaseNode, boolean>();
+      let currentOperations = new Set<string>();
+      let currentUsesSource = false;
+      const retained = (reference: BaseNode): BaseNode[] => {
+        currentUsesSource = true;
+        safeArguments.add(reference);
+        const marker = { type: 'OwnerListElements' } as BaseNode;
+        retainedElements.add(marker); return [marker];
+      };
       const scalar = (node: BaseNode | null, visiting = new Set<Binding>()): boolean => isPlainScalarValue(node, identifier => {
         const name = identifierName(identifier)!;
         const scalarBinding = astBindingAt(ctx, identifier, name);
@@ -111,12 +137,102 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
             visiting.has(scalarBinding)) return false;
         const declaration = variableDeclaratorFor(ctx, scalarBinding);
         return declaration !== null && scalar(childNode(declaration, 'init'), new Set(visiting).add(scalarBinding));
+      }, member => {
+        const object = childNode(member, 'object');
+        if (object === null || !sameBinding(object, binding) || property(member) !== 'length' ||
+            nodeField(member, 'optional') === true || !readOnly(member)) return false;
+        currentUsesSource = true; return true;
       });
       const returnedElements = (node: BaseNode | null): BaseNode[] | null => {
+        if (node !== null && sameBinding(node, binding)) return retained(node);
         const literal = elements(node);
-        if (literal !== null) return literal;
+        if (literal !== null) return [...literal];
+        if (node?.type === 'ArrayExpression') {
+          const result: BaseNode[] = [];
+          for (const entry of childNodes(node, 'elements')) {
+            if (entry.type !== 'SpreadElement') result.push(entry);
+            else {
+              const values = returnedElements(childNode(entry, 'argument'));
+              if (values === null) return null;
+              currentOperations.add('iterator'); result.push(...values);
+            }
+          }
+          // Preserve hole rejection even though childNodes excludes holes.
+          const entries = nodeField(node, 'elements');
+          if (!Array.isArray(entries) || entries.some(entry => entry === null)) return null;
+          return result;
+        }
         if (node?.type !== 'CallExpression' || nodeField(node, 'optional') === true) return null;
         const callee = childNode(node, 'callee');
+        if (callee?.type === 'MemberExpression' && nodeField(callee, 'optional') !== true) {
+          const method = property(callee);
+          const candidate = method === null || !Object.hasOwn(LIST_METHOD_OPTIMIZATIONS, method)
+            ? undefined : LIST_METHOD_OPTIMIZATIONS[method];
+          if (candidate?.result === undefined) return null;
+          const receiver = returnedElements(childNode(callee, 'object'));
+          const args = childNodes(node, 'arguments');
+          if (receiver === null || args.some(arg => arg.type === 'SpreadElement')) return null;
+          currentOperations.add(method!);
+          if (candidate.result === 'copy') {
+            if (args.length > candidate.maxArguments! || !args.every(arg => scalar(arg))) return null;
+          } else if (candidate.result === 'concat') {
+            for (const arg of args) {
+              const values = returnedElements(arg);
+              if (values === null) return null;
+              receiver.push(...values);
+            }
+          } else {
+            if (args.length !== 1) return null;
+            const callback = args[0]!;
+            const params = childNodes(callback, 'params');
+            const body = childNode(callback, 'body');
+            if (callback.type !== 'ArrowFunctionExpression' || nodeField(callback, 'async') === true ||
+                params.length > 2 || params.some(param => param.type !== 'Identifier')) return null;
+            const item = params[0] && astBindingAt(ctx, params[0], identifierName(params[0])!);
+            const index = params[1] && astBindingAt(ctx, params[1], identifierName(params[1])!);
+            if (item?.constantViolations.length || index?.constantViolations.length) return null;
+            const callbackScalar = (expression: BaseNode | null): boolean => isPlainScalarValue(expression, identifier =>
+              index !== undefined && sameBinding(identifier, index) || scalar(identifier), member => {
+              const name = property(member);
+              if (item === undefined || name === null || nodeField(member, 'optional') === true ||
+                  !sameBinding(childNode(member, 'object'), item)) return false;
+              requiredFields.add(name); return true;
+            });
+            if (candidate.result === 'filter') {
+              if (!callbackScalar(body)) return null;
+            } else {
+              const mapValues = (expression: BaseNode | null): BaseNode[] | null => {
+                if (item !== undefined && sameBinding(expression, item)) return [];
+                if (expression?.type === 'ConditionalExpression') {
+                  if (!callbackScalar(childNode(expression, 'test'))) return null;
+                  const consequent = mapValues(childNode(expression, 'consequent'));
+                  const alternate = mapValues(childNode(expression, 'alternate'));
+                  return consequent === null || alternate === null ? null : [...consequent, ...alternate];
+                }
+                if (expression?.type !== 'ObjectExpression') return null;
+                const fields = new Set<string>();
+                for (const entry of childNodes(expression, 'properties')) {
+                  const name = identifierName(childNode(entry, 'key')) ?? stringValue(childNode(entry, 'key'));
+                  if (entry.type !== 'Property' || nodeField(entry, 'kind') !== 'init' ||
+                      nodeField(entry, 'computed') === true || name === null || name === '__proto__' ||
+                      fields.has(name) || !callbackScalar(childNode(entry, 'value'))) return null;
+                  fields.add(name);
+                }
+                return [{ type: 'ObjectExpression', properties: [...fields].map(name => ({
+                  type: 'Property', kind: 'init', computed: false,
+                  key: { type: 'Identifier', name }, value: { type: 'Literal', value: 0 },
+                })) } as BaseNode];
+              };
+              const values = mapValues(body);
+              if (values === null) return null;
+              receiver.push(...values);
+            }
+          }
+          // These methods may shorten a list to zero. Keep producer field
+          // facts, but do not infer a minimum extent from synthetic markers.
+          const marker = { type: 'OwnerListElements' } as BaseNode;
+          retainedElements.add(marker); receiver.push(marker); return receiver;
+        }
         const name = identifierName(callee);
         const helperBinding = callee === null || name === null ? undefined : astBindingAt(ctx, callee, name);
         const helperDeclaration = helperBinding === undefined ? null : variableDeclaratorFor(ctx, helperBinding);
@@ -129,8 +245,10 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         for (let index = 0; index < args.length; index++) {
           if (plan.parameters[index] === 'list') {
             if (!sameBinding(args[index]!, binding)) return null;
+            currentUsesSource = true;
             safeArguments.add(args[index]!);
             requiredLength = Math.max(requiredLength, plan.minimumLengths[index]!);
+            for (const field of plan.requiredFields[index]!) requiredFields.add(field);
           } else if (!scalar(args[index]!)) return null;
         }
         // These synthetic nodes describe proven values only. Authored calls are
@@ -147,17 +265,24 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
       };
       const declaration = variableDeclaratorFor(ctx, binding);
       const initial = returnedElements(declaration && childNode(declaration, 'init'));
-      if (initial === null || initial.some(value => recordFields(value) === null)) continue;
+      if (initial === null || currentOperations.size !== 0 || initial.some(value => recordFields(value) === null)) continue;
       const arrays: BaseNode[][] = [initial];
       let valid = true;
       for (const violation of binding.constantViolations) {
+        currentOperations = new Set();
+        currentUsesSource = false;
         const values = returnedElements(childNode(violation, 'right'));
         if (violation.type !== 'AssignmentExpression' || nodeField(violation, 'operator') !== '=' ||
             !sameBinding(childNode(violation, 'left'), binding) || values === null) { valid = false; break; }
         arrays.push(values);
+        operations.set(violation, [...currentOperations].sort());
+        walkAst(childNode(violation, 'right')!, { enter(node) {
+          if (sameBinding(node, binding)) currentUsesSource = true;
+        }});
+        freshWrites.set(violation, !currentUsesSource);
       }
       if (!valid) continue;
-      let minimumLength = Math.min(...arrays.map(array => array.length));
+      let minimumLength = Math.min(...arrays.map(array => array.some(value => retainedElements.has(value)) ? 0 : array.length));
       for (const reference of binding.references) {
         const use = parents.get(reference);
         const consumer = use && parents.get(use);
@@ -189,7 +314,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         return true;
       };
       for (const array of arrays) for (const value of array) {
-        if (!indexedItem(value) && !record(value)) valid = false;
+        if (!retainedElements.has(value) && !indexedItem(value) && !record(value)) valid = false;
       }
       // Include every indexed replacement before inspecting any row reads.
       for (const reference of binding.references) {
@@ -204,6 +329,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
       }
       const knownFields = fields as ReadonlySet<string> | null;
       if (!valid || knownFields === null || knownFields.size === 0) continue;
+      if ([...requiredFields].some(field => !knownFields.has(field))) continue;
       const publishedDependency = publishedOwnerDependency(ctx, owner, path.node);
       const scalarField = (node: BaseNode): boolean => node.type === 'MemberExpression' &&
         indexedItem(childNode(node, 'object')) && knownFields.has(property(node) ?? '');
@@ -294,7 +420,26 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         if (!valid) break;
       }
       if (!valid || calls.length === 0) continue;
+      const guarded = [...operations.values()].some(methods => methods.length !== 0);
+      // Content-write publication and native-call effects require separate
+      // causes before they can share one proof. Retain ordinary replay here.
+      if (guarded && mutableContents) continue;
       if (mutableContents && structuralWrites.size === 0) continue;
+      if (guarded) {
+        const token = generatedIdentifier(ctx, `${source}Provenance`).name;
+        let slots = ctx.ownerListProvenance.get(owner);
+        if (slots === undefined) ctx.ownerListProvenance.set(owner, slots = new Map());
+        slots.set(source, token);
+        for (const [write, methods] of operations) {
+          const guards = new Set<string>();
+          for (const method of methods) {
+            if (method === 'iterator') guards.add('iterator');
+            else for (const guard of LIST_METHOD_OPTIMIZATIONS[method]?.guards ?? []) guards.add(guard);
+          }
+          ctx.ownerListOperations.set(write as t.Node, { owner, token, operations: methods.filter(method => method !== 'iterator'),
+            guards: [...guards].sort(), fresh: freshWrites.get(write)! });
+        }
+      }
       for (const call of calls) ctx.ownerListStructureSources.set(call, source);
       const sources = new Set([...(ctx.instanceReasonIds.get(owner)?.keys() ?? []), source]);
       if (mutableContents) {
@@ -310,13 +455,19 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
 }
 
 /** Transfer original write facts only through the handler's exact deep clone. */
-export function captureOwnerStructuralWrites(ctx: Ctx, owner: string | null, original: t.Node, copy: t.Node): WeakMap<t.Node, string> {
+export function captureOwnerListWrites(ctx: Ctx, owner: string | null, original: t.Node, copy: t.Node): CapturedOwnerListWrites {
   const writes = new WeakMap<t.Node, string>();
-  if (owner === null || !ctx.ownerListStructureReasonKeys.has(owner)) return writes;
+  const operations: Array<{ assignment: t.AssignmentExpression; plan: OwnerListOperation }> = [];
+  const captured = { structuralWrites: writes, operations };
+  if (owner === null || !ctx.ownerListStructureReasonKeys.has(owner) && !ctx.ownerListProvenance.has(owner)) return captured;
   const pair = (source: BaseNode, target: BaseNode): void => {
     if (source.type !== target.type) return;
     const fact = ctx.ownerListStructureWriteSources.get(source as t.Node);
     if (fact?.owner === owner) writes.set(target as t.Node, fact.source);
+    const operation = ctx.ownerListOperations.get(source as t.Node);
+    if (operation?.owner === owner && target.type === 'AssignmentExpression') {
+      operations.push({ assignment: target as t.AssignmentExpression, plan: operation });
+    }
     for (const key of ESTREE_VISITOR_KEYS[source.type] ?? []) {
       const child = childNode(source, key), cloned = childNode(target, key);
       if (child !== null && cloned !== null) pair(child, cloned);
@@ -326,5 +477,5 @@ export function captureOwnerStructuralWrites(ctx: Ctx, owner: string | null, ori
       }
     }
   };
-  pair(original, copy); return writes;
+  pair(original, copy); return captured;
 }

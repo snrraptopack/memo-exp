@@ -5,13 +5,13 @@ import { walkAst } from '../ast';
 import { astBindingAt, type Ctx } from '../context';
 import { matchMapCall } from '../lists';
 import { transparentListExpression } from '../lists/source-shapes';
-import { createRegionReplayFacts, type ComponentRegionReplay } from '../analysis/region-replay';
+import { createRegionReplayFacts, type ComponentRegionReplay, type OwnerListReplay } from '../analysis/region-replay';
 
 export function planRegionReplays(ctx: Ctx): ReadonlyMap<string, ComponentRegionReplay> {
   const plans = new Map<string, ComponentRegionReplay>();
   for (const [name, path] of ctx.compPaths) {
     const fixedSources = new WeakMap<t.Node, string>();
-    const ownerStructures = new WeakMap<t.Node, { source: string; reason: number }>();
+    const ownerStructures = new WeakMap<t.Node, OwnerListReplay>();
     walkAst<t.Node>(path.node, { enter(node) {
       const call = matchMapCall(node);
       if (call === null) return;
@@ -20,7 +20,8 @@ export function planRegionReplays(ctx: Ctx): ReadonlyMap<string, ComponentRegion
         ctx.ownerListStructureReasonKeys.get(name)?.get(structuralSource) ?? structuralSource;
       const structuralReason = structuralReasonKey === undefined ? undefined : ctx.instanceReasonIds.get(name)?.get(structuralReasonKey);
       if (structuralSource !== undefined && structuralReason !== undefined) {
-        ownerStructures.set(call, { source: structuralSource, reason: structuralReason });
+        ownerStructures.set(call, { source: structuralSource, reason: structuralReason,
+          provenance: ctx.ownerListProvenance.get(name)?.get(structuralSource) });
       }
       const callee = call.callee as t.MemberExpression | t.OptionalMemberExpression;
       if (!astFactory.isExpression(callee.object)) return;

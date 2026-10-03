@@ -86,6 +86,7 @@ export function isIntrinsicLifecycleCall(
   call: BaseNode,
   kind: 'effect' | 'cleanup',
 ): boolean {
+  if (ctx.compilerLifecycleCalls.get(call) === kind) return true;
   const name = identifierName(childNode(call, 'callee'));
   return (
     (call.type === 'CallExpression' ||

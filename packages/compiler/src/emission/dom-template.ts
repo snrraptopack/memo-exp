@@ -126,6 +126,26 @@ export function applyRepeatedDomTemplate(
   // generated row factories do not repeat the runtime query or duplicate the
   // template-selection expression.
   const canReuse = generatedIdentifier(ctx, 'canReuseTemplate');
+  let reuseCapability: t.Expression = astFactory.callExpression(md(ctx, 'canReuseTemplate'), []);
+  // A scope with only renderer-document setup executes no authored work
+  // between resolving that environment and choosing its template. Reuse that
+  // same capability descriptor rather than querying the runtime twice per row.
+  // Other preludes retain the query at its original execution point.
+  const documentSetup = scope.prelude.length === 1 ? scope.prelude[0] : undefined;
+  const declaration = documentSetup && astFactory.isVariableDeclaration(documentSetup) &&
+    documentSetup.declarations.length === 1 ? documentSetup.declarations[0] : undefined;
+  if (declaration && astFactory.isIdentifier(declaration.id, { name: scope.documentVar }) &&
+      astFactory.isMemberExpression(declaration.init) && astFactory.isCallExpression(declaration.init.object)) {
+    const environment = generatedIdentifier(ctx, 'templateEnvironment');
+    scope.prelude.unshift(astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(cloneEstreeNode(environment), declaration.init.object),
+    ]));
+    declaration.init.object = cloneEstreeNode(environment);
+    reuseCapability = astFactory.binaryExpression('===',
+      astFactory.memberExpression(cloneEstreeNode(environment), astFactory.identifier('hydration')),
+      astFactory.unaryExpression('void', astFactory.numericLiteral(0)),
+    );
+  }
   const initializeCachedTemplate = astFactory.ifStatement(
     astFactory.logicalExpression(
       '||',
@@ -161,7 +181,7 @@ export function applyRepeatedDomTemplate(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
         cloneEstreeNode(canReuse),
-        astFactory.callExpression(md(ctx, 'canReuseTemplate'), []),
+        reuseCapability,
       ),
     ]),
     astFactory.variableDeclaration('let', [

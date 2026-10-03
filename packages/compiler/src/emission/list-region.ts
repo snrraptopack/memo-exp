@@ -231,7 +231,7 @@ export function emitListRegion(
     dependency,
     cache: generatedIdentifier(ctx, `${dependency.value}ListKey`).name,
   }));
-  const { structuralSource, fixedPositions, moduleIndices, ownerStructuralReason } = scope.regionReplay!.listFor(call, {
+  const { structuralSource, fixedPositions, moduleIndices, ownerStructuralReason, ownerProvenance } = scope.regionReplay!.listFor(call, {
     sourceExpr: site.sourceExpr, sourceKey: site.sourceKey, sourceLocal: site.sourceLocal,
     hasPrelude: site.prelude.length > 0,
   });
@@ -254,6 +254,17 @@ export function emitListRegion(
   const preparedSource = preparationRead(ctx, scope, ownerId, site.sourceExpr);
   // The closed-record proof excludes replacement, structural writes, escapes,
   // accessors and mutable key fields. Content still replays on opaque pulls.
+  const structuralUpdate = (): t.Expression => {
+    if (scope.reasonVar === null) return astFactory.booleanLiteral(false);
+    const reason = ownerStructuralReason === undefined ? astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
+      astFactory.identifier(scope.reasonVar), astFactory.stringLiteral(structuralSource),
+    ]) : astFactory.callExpression(md(ctx, 'reasonsOnly'), [
+      astFactory.identifier(scope.reasonVar), freshReasonConst(ctx, [ownerStructuralReason]),
+    ]);
+    return ownerProvenance === undefined ? reason : astFactory.logicalExpression('&&',
+      astFactory.memberExpression(astFactory.identifier(ownerProvenance), astFactory.identifier('valid')), reason,
+    );
+  };
   const reconcile = (update = false): t.Statement =>
     astFactory.expressionStatement(
       astFactory.callExpression(
@@ -265,14 +276,7 @@ export function emitListRegion(
           runtimeListSource(preparedSource, site.optional),
           ...(update && (fixedPositions || scope.reasonVar !== null && site.prelude.length === 0)
             ? [
-                scope.reasonVar === null ? astFactory.booleanLiteral(false) :
-                ownerStructuralReason === undefined ? astFactory.callExpression(md(ctx, 'isStructuralListUpdate'), [
-                  astFactory.identifier(scope.reasonVar),
-                  astFactory.stringLiteral(structuralSource),
-                ]) : astFactory.callExpression(md(ctx, 'reasonsOnly'), [
-                  astFactory.identifier(scope.reasonVar),
-                  freshReasonConst(ctx, [ownerStructuralReason]),
-                ]),
+                structuralUpdate(),
               ]
             : []),
           ...(update && fixedPositions

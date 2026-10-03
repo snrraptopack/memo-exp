@@ -9,7 +9,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   createApplicationRuntime,
@@ -22,6 +22,7 @@ import {
   type DataRuntime,
 } from '@memoized-dom/data';
 import { renderToString } from '@memoized-dom/server';
+import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -79,10 +80,11 @@ describe('module-scope transparent sources', () => {
     expect(sessionMod.currentUser).toBeDefined();
   });
 
-  it('lowers reactive module request inputs to a lazy stable-handle rebind', () => {
+  it.each(['', 'function $effect(run) { run(); }'])('lowers generated request effects independently of authored shadows: %s', shadow => {
     const output = compileModules({
       './reactive-source.ts': `
         import { $fetch } from '@memoized-dom/data';
+        ${shadow}
         export let search = 'Ada';
         export const users = $fetch('/api/users', { query: { search } });
         export function setSearch(next) { search = next; }
@@ -93,6 +95,50 @@ describe('module-scope transparent sources', () => {
     expect(compiled).toContain('describeModuleSource');
     expect(compiled).toContain('rebindModuleSource');
     expect(compiled).toContain('.registerEffect(');
+    expect(compiled).not.toMatch(/^effect\(/m);
+  });
+
+  it('rebinds a mounted request after its module input changes without calling an authored lifecycle shadow', async () => {
+    const directory = join(outDir, 'reactive-module-inputs');
+    const output = compileModules({
+      './input.ts': `import { $fetch } from '@memoized-dom/data';
+        function $effect(run) { throw new Error('authored shadow must not run'); }
+        export let search='Ada';
+        export const users=$fetch('/api/users',{query:{search}});
+        export function setSearch(next){search=next;}`,
+      './View.tsx': `import {users,setSearch} from './input';
+        export function View(){return <main><button onClick={()=>setSearch('Grace')}>change</button>
+          <output>{users.name}</output></main>;}`,
+    }, { runtimePath: '@memoized-dom/runtime/testing' });
+    mkdirSync(directory, { recursive: true });
+    for (const [path, code] of Object.entries(output)) {
+      writeFileSync(join(directory, path.replace(/\.tsx$/, '.ts')), code);
+    }
+    const urls: string[] = [];
+    const data = createDataRuntime({ fetch: (async input => {
+      const url = String(input instanceof Request ? input.url : input); urls.push(url);
+      return new Response(JSON.stringify({ name: url.includes('Grace') ? 'Grace' : 'Ada' }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch });
+    const previous = setActiveDataRuntime(data);
+    setScheduler(run => run()); document.body.replaceChildren();
+    try {
+      const { View } = await import(pathToFileURL(join(directory, 'View.ts')).href);
+      const inputs = await import(pathToFileURL(join(directory, 'input.ts')).href);
+      const original = inputs.users;
+      document.body.append(View('ReactiveInput', null));
+      await vi.waitFor(() => expect(document.querySelector('output')?.textContent).toBe('Ada'));
+      document.querySelector('button')!.click();
+      await vi.waitFor(() => expect(document.querySelector('output')?.textContent).toBe('Grace'));
+      expect(inputs.users).toBe(original);
+      expect(urls).toHaveLength(2);
+      expect(urls[0]).toContain('search=Ada'); expect(urls[1]).toContain('search=Grace');
+    } finally {
+      for (const id of _internals().registry.keys()) unregister(id);
+      data.clear(); setActiveDataRuntime(previous); resetAccessTable(); resetScheduler();
+      document.body.replaceChildren();
+    }
   });
 
   it('materializes request-locally across concurrent runtimes', async () => {

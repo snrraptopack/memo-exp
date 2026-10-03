@@ -9,6 +9,30 @@ import {
 } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 import { registerStmt } from './scope';
+import type { CapturedOwnerListWrites } from '../analysis/owner-list-structure';
+
+/** Requirement arrays are compiler-owned and reused across actions/instances. */
+function operationConstant(ctx: Ctx, values: readonly string[]): t.Identifier {
+  const key = JSON.stringify(values);
+  const existing = ctx.listOperationConsts.get(key);
+  if (existing !== undefined) return astFactory.identifier(existing);
+  const id = generatedIdentifier(ctx, 'LIST_REQUIREMENTS');
+  ctx.listOperationConsts.set(key, id.name);
+  ctx.header.push(astFactory.variableDeclaration('const', [
+    astFactory.variableDeclarator(id, astFactory.arrayExpression(values.map(value => astFactory.stringLiteral(value)))),
+  ]));
+  return cloneEstreeNode(id);
+}
+
+/** Wrap proven RHS operations after write analysis, before commit insertion. */
+export function applyListOperations(ctx: Ctx, captured: CapturedOwnerListWrites): void {
+  for (const { assignment, plan } of captured.operations) {
+    assignment.right = astFactory.callExpression(md(ctx, 'evaluateListOperation'), [
+      astFactory.identifier(plan.token), operationConstant(ctx, plan.operations), operationConstant(ctx, plan.guards),
+      astFactory.booleanLiteral(plan.fresh), astFactory.arrowFunctionExpression([], assignment.right),
+    ]);
+  }
+}
 
 export function runtimeListSource(
   source: t.Expression,
