@@ -40,6 +40,14 @@ mixed-cause, hydration and cleanup semantics. Bundle size remains deferred.
 
 ## Completed changes
 
+- List callback syntax and conditional branch shapes now have pure source
+  contracts. Component planning prepares normalized row/branch content after
+  shared lowering, and DOM emission consumes those shapes. Newly cloned content
+  uses the same normalizers without acquiring a lexical list proof. Nested
+  factories inherit shape/replay contracts together while keeping backend state
+  separate. Source classification, row targets, keys and mutation journals are
+  still separate migration work. This phase change establishes no runtime
+  timing gain; structural VM priorities remain open.
 - Structural replay source facts are captured before component emission.
   List fixed-position proofs retain lexical call identity; module index refresh
   eligibility and canonical keys use captured inputs. Conditional owner roots

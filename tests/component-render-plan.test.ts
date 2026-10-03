@@ -66,6 +66,6 @@ it('plans from normalized paths and semantic sources, independent of emission st
   const plan=planReturns(paths);
   expect(plan.components.map(component=>component.name)).toEqual(['One','Two']);
   expect(Object.keys(plan)).toEqual(['components']);
-  expect(Object.keys(plan.components[0]!)).toEqual(['name','source','returns','expressionSources','pullPlan','placement','regionReplay']);
+  expect(Object.keys(plan.components[0]!)).toEqual(['name','source','returns','expressionSources','pullPlan','placement','regionReplay','regionShapes']);
   expect(JSON.stringify(program as unknown as BaseNode)).toBe(before);
 });

@@ -56,7 +56,7 @@ receives exact expression-source contracts from `planExpressionSources()` and
 authored primitive-pull plans from `planComponentPulls()`, component placement
 from `planComponentPlacements()` and structural replay from `planRegionReplays()`, then
 returns a read-only `ModuleRenderPlan`: component identity/source, direct or
-branched JSX returns, semantic source queries, placement and replay facts. DOM operations,
+branched JSX returns, semantic source queries, placement, replay and region shapes. DOM operations,
 runtime identifiers and factory ABI belong to `emitDomComponents()`, which
 consumes that plan; the DOM component
 emitter no longer discovers JSX return control flow. Unsupported returns in a
@@ -88,8 +88,16 @@ Structural replay contracts capture lexical fixed-position list proofs, module
 index eligibility, canonical keys and conditional owner roots/volatility. Their
 queries do not consult mutable `Ctx`. Nested rows, branches, routes and content
 slots inherit the same lexical contract; clones retain conservative list proofs.
-DOM lowering still chooses runtime reasons/operations. List callback validation,
-branch normalization and mutation journals remain further migration work.
+DOM lowering still chooses runtime reasons/operations.
+
+List callback syntax/substitution and conditional branch normalization now have
+pure source contracts prepared through `ComponentRegionShapes` after shared
+lowering. Normalized row and branch content is planned before factory emission;
+cloned attribute/slot content uses the same normalizers on demand. The shared
+analysis adapter applies explicit callback source replacements. Nested factories
+inherit shapes and replay facts together through `RegionSourcePlans`, keeping
+backend slots/statements fresh. Source classification, row targets/keys, region
+identities and mutation journals remain further migration work.
 
 Model compiler work as an explicit pipeline of domain passes. A pass receives
 the compiler context and AST, performs one named responsibility, and leaves the

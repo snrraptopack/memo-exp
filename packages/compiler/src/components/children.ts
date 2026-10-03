@@ -123,8 +123,7 @@ export function buildChildrenSlot(
   identityOwner: t.Expression,
   emit: EmitChildSlot,
 ): t.Identifier {
-  const childScope = newEmitScope(ctx, true);
-  childScope.regionReplay = ownerScope.regionReplay;
+  const childScope = newEmitScope(ctx, true, ownerScope);
   childScope.childCounts = ownerScope.childCounts;
   childScope.usedPrefixes = ownerScope.usedPrefixes;
   childScope.usedConds = ownerScope.usedConds;

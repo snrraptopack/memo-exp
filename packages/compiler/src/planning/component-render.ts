@@ -5,6 +5,7 @@ import type { ComponentExpressionSources } from '../analysis/expression-sources'
 import type { ComponentPullPlan } from '../analysis/primitive-pull';
 import type { ComponentPlacement } from './component-placement';
 import type { ComponentRegionReplay } from '../analysis/region-replay';
+import { planComponentRegionShapes, type ComponentRegionShapes } from './region-shapes';
 
 export interface PlannedComponent {
   readonly name: string;
@@ -14,6 +15,7 @@ export interface PlannedComponent {
   readonly pullPlan: ComponentPullPlan | null;
   readonly placement: ComponentPlacement;
   readonly regionReplay: ComponentRegionReplay;
+  readonly regionShapes: ComponentRegionShapes;
 }
 
 export interface ModuleRenderPlan {
@@ -32,8 +34,8 @@ export interface ComponentRenderInputs {
  * The plan owns return structure; AST references belong to this compilation
  * and are consumed by emission. It carries no DOM operations, ABI or runtime
  * identifiers. Semantic planning supplies exact sources, authored primitive
- * writes, component placement and structural replay. Region shape/ABI decisions
- * still live in emission.
+ * writes, component placement and structural replay. Callback/branch syntax is
+ * planned here; source classification, row targets and ABI retain their adapters.
  */
 export function planComponentRendering(
   components: ReadonlyMap<string, ComponentPath>,
@@ -48,7 +50,8 @@ export function planComponentRendering(
       const regionReplay = inputs.regionReplays.get(name);
       if (regionReplay === undefined) throw new Error(`memo-dom: missing region-replay plan for '${name}'`);
       return { name, source, returns: analyzeComponentReturns(source, name), expressionSources: sources,
-        pullPlan: inputs.pullPlans.get(name) ?? null, placement, regionReplay };
+        pullPlan: inputs.pullPlans.get(name) ?? null, placement, regionReplay,
+        regionShapes: planComponentRegionShapes(source) };
     }),
   };
 }

@@ -18,7 +18,7 @@ implemented by this change.
 flowchart LR
   A[Parse and normalize authored code] --> B[Analyze bindings and component facts]
   B --> C[Prepare reads and callbacks]
-  C --> D[Plan returns, sources, placement and structural replay]
+  C --> D[Plan returns, sources, placement, replay and region shapes]
   D --> E[DOM creation and handler lowering]
   E --> P[Finalize callback publication facts]
   P --> U[Emit updater gates and component factory]
@@ -30,7 +30,7 @@ expression-source contracts from semantic planning. Its
 `ModuleRenderPlan` contains component names/source paths and the existing return
 contract: direct JSX or a branch selector, branch content and replaced source
 statements, plus `ComponentExpressionSources`, an optional `ComponentPullPlan`,
-`ComponentPlacement` and `ComponentRegionReplay`. `ComponentRenderInputs`
+`ComponentPlacement`, `ComponentRegionReplay` and `ComponentRegionShapes`. `ComponentRenderInputs`
 names the separate fact producers at the module planning boundary.
 Contracts are read-only. No generated identifiers, DOM node operations,
 registration policy or runtime
@@ -99,14 +99,42 @@ inherit the lexical owner's replay contract. The DOM backend supplies reason
 availability and enclosing-owner forwarding, then constructs reconciliation,
 index refresh or conditional updates. Conditional queries retain the existing
 root-name and volatility rules; this change does not broaden getter/callback
-proofs. Callback validation/substitution, branch normalization, region identities,
-targeted mutation journals and DOM-only cleanup/ABI still have their existing
-mixed ownership.
+proofs. Source classification, row targets, region identities, targeted mutation
+journals and DOM-only cleanup/ABI still have their existing mixed ownership.
 
 Canonical key resolution is shared by live context consumers and captured
 replay facts through `context/state-keys.ts`; there is one implementation.
 The former context-based conditional owner-read helper is removed now that
 its consumer uses the captured contract.
+
+`lists/callback-plan.ts` owns callback parameter validation, row derivation
+substitution and ordered expression preludes. It returns a `ListCallbackPlan`
+without mutating source. The shared list-analysis adapter applies an explicit
+normalized-body replacement for the existing const-only normalization case;
+expression-bearing blocks remain available to read collection and transparent
+source lowering. Component/render-callback recognition and key extraction still
+belong to that adapter.
+
+`jsx/conditional-plan.ts` owns branch flattening, source-order selection,
+renderable text wrapping and branch key validation. `ConditionalBranchPlan`
+contains neither a region suffix nor DOM operations. Read analysis combines
+this shape with its source occurrence counter; DOM emission supplies its own
+counter and runtime owner.
+
+`planning/region-shapes.ts` prepares JSX-bearing shapes after shared read/callback
+lowering, before factory emission. It walks normalized row and branch content,
+including the cloned JSX produced by row substitutions and text wrappers.
+Emission consumes the resulting shapes through `ComponentRegionShapes`. Newly
+cloned attribute/slot content and delegated non-JSX callback syntax use the same
+pure normalizers on demand; they do not inherit lexical optimization proofs.
+These lookups use no mutable `Ctx`, generated IDs or backend statement buffers.
+Shape plans reference AST nodes owned by this compilation, rather than frozen
+trees reusable across backends.
+
+`RegionSourcePlans` carries both replay and shape contracts to nested emission
+scopes. `newEmitScope` inherits only those source contracts from its caller;
+creation statements, node IDs, updater slots and disposal lists stay fresh for
+each factory. Ownership counters keep their existing explicit sharing rules.
 
 AST references are owned by one compilation and consumed by its emitter. The
 read-only contract does not imply that referenced AST nodes are frozen or that
@@ -122,7 +150,8 @@ give each lowering its own owned tree or immutable semantic representation.
 | Async provenance and effects | Existing collectors and shared `Ctx` | Distinct fact contracts with explicit pass dependencies |
 | Component placement and route selectors | Semantic snapshot consumed by component emission | Extend to structural regions and composition without moving host ABI into shared plans |
 | Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |
-| Props and list/conditional shape | Analysis plus normalization called from emitters | Backend-independent region shape plans preserving clone and binding identity |
+| List callback and conditional shape | Pure source normalizers and component shape plans, including clone lookups | Extend the contract to source classification, row targets and keys |
+| Props, region identities and mutation journals | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
 | Generated IDs, headers, imports and output buffers | Same `Ctx` as source analysis | Mutable emission state separate from analyzed facts and configuration |
@@ -219,3 +248,17 @@ The six replay cases also passed after canonical key resolution was shared.
 Compiler regeneration leaves tracked DOM benchmark output unchanged. All 25
 browser variants passed retained-node identity and mixed-sequence checks and
 the runner exited successfully. Runtime timing gains remain unverified.
+
+## Validation of region shape planning
+
+Compiler build and changed-source lint passed. The selected suites passed 224
+tests across 29 files, including eleven new shape-contract cases. The contract
+cases verify non-mutation, ordered callback preludes, const substitutions,
+runtime-only parameter clones, shadowing diagnostics, branch selection order,
+empty/text branches, keyed-list exclusions and cloned/nested shape lookups.
+Execution coverage includes nested composition, render callbacks/props, opaque
+slots, effects, forms, routes, hydration and SSR.
+
+Compiler regeneration leaves tracked DOM benchmark output unchanged. All 25
+browser variants passed retained-node identity and mixed sequences, and the
+runner exited successfully. This change establishes no runtime timing gain.

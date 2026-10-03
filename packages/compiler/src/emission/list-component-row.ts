@@ -42,6 +42,7 @@ import {
   newEmitScope,
   updateDecl,
   type EmitScope,
+  type RegionSourcePlans,
 } from './scope';
 import { compileRefValue } from '../jsx/refs';
 import {
@@ -50,7 +51,6 @@ import {
 } from '../handlers';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
 import { isImplicitPolicyProp, transparentCallPolicyArgument } from '../data-sources';
-import type { ComponentRegionReplay } from '../analysis/region-replay';
 
 interface ComponentRowFactoryPlan {
   ctx: Ctx;
@@ -250,7 +250,7 @@ export function buildComponentRowCreate(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, componentName),
   eventBindings: ReadonlyMap<string, t.Identifier> = new Map(),
-  regionReplay: ComponentRegionReplay | null = null,
+  sources: RegionSourcePlans | null = null,
 ): t.ArrowFunctionExpression {
   const rowComponent = site.rowComp!;
   const rowId = generatedIdentifier(ctx, 'rowId');
@@ -260,8 +260,7 @@ export function buildComponentRowCreate(
       ? null
       : generatedIdentifier(ctx, 'nextIndex');
   const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
-  const rowScope = newEmitScope(ctx);
-  rowScope.regionReplay = regionReplay;
+  const rowScope = newEmitScope(ctx, false, sources);
   rowScope.cacheText = true;
   const lightweight = isLightweightRowComponent(ctx, rowComponent);
   const rowContext: RowCtx = {

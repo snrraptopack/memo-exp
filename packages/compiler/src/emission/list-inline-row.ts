@@ -14,10 +14,10 @@ import {
   newEmitScope,
   registerStmt,
   updateDecl,
+  type RegionSourcePlans,
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { applyRepeatedDomTemplate } from './dom-template';
-import type { ComponentRegionReplay } from '../analysis/region-replay';
 
 export function buildInlineRowCreate(
   ctx: Ctx,
@@ -29,7 +29,7 @@ export function buildInlineRowCreate(
   ownerId: t.Expression = componentId(ctx, componentName),
   eventBindings: ReadonlyMap<string, t.Identifier> = new Map(),
   lightweight = false,
-  regionReplay: ComponentRegionReplay | null = null,
+  sources: RegionSourcePlans | null = null,
 ): t.ArrowFunctionExpression {
   site.jsx!.openingElement.attributes =
     site.jsx!.openingElement.attributes.filter(
@@ -37,8 +37,7 @@ export function buildInlineRowCreate(
         astFactory.isJSXSpreadAttribute(attribute) ||
         (attribute.name as t.JSXIdentifier).name !== 'key',
     );
-  const rowScope = newEmitScope(ctx);
-  rowScope.regionReplay = regionReplay;
+  const rowScope = newEmitScope(ctx, false, sources);
   rowScope.cacheText = true;
   for (const statement of site.prelude) {
     rowScope.creation.push(cloneEstreeNode(statement));

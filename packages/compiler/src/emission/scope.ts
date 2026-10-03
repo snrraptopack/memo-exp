@@ -11,10 +11,15 @@ import type { Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 import { reasonCondition } from '../components/local-derived';
 import type { ComponentRegionReplay } from '../analysis/region-replay';
+import type { ComponentRegionShapes } from '../planning/region-shapes';
 
-export interface EmitScope {
+export interface RegionSourcePlans {
   /** Shared source facts inherited by nested region/slot factories. */
   regionReplay: ComponentRegionReplay | null;
+  regionShapes: ComponentRegionShapes | null;
+}
+
+export interface EmitScope extends RegionSourcePlans {
   /** Repeated row text avoids a DOM read on every content replay. */
   cacheText: boolean;
   slots: string[];
@@ -63,9 +68,10 @@ export interface EmitScope {
   manualDisposal: boolean;
 }
 
-export function newEmitScope(ctx: Ctx, manualDisposal = false): EmitScope {
+export function newEmitScope(ctx: Ctx, manualDisposal = false, sources?: RegionSourcePlans | null): EmitScope {
   return {
-    regionReplay: null,
+    regionReplay: sources?.regionReplay ?? null,
+    regionShapes: sources?.regionShapes ?? null,
     cacheText: false,
     slots: [],
     tempVar: generatedIdentifier(ctx, 'value').name,

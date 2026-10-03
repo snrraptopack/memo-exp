@@ -6,11 +6,9 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
-  extractPatternIdentifiers,
   walkAst,
   type BaseNode,
 } from '../ast';
-import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
 import {
   attrExpr,
@@ -25,12 +23,7 @@ import {
   isStaticPrimitiveList,
   transparentListExpression,
 } from './source-shapes';
-import {
-  assertNoShadowing,
-  assertRowRenderExpression,
-  collectRowDerivations,
-  substituteRowDerivations,
-} from './row-derivations';
+import { planListCallback, type ListCallbackPlan } from './callback-plan';
 
 type Fail = (message: string, at?: t.Node) => never;
 interface ErrorPath {
@@ -92,12 +85,7 @@ interface SourcePlan {
   suffixBase: string;
 }
 
-interface CallbackPlan {
-  prelude: t.ExpressionStatement[];
-  itemPattern: RuntimeBindingPattern;
-  itemParam: string;
-  indexParam: string | null;
-  jsx: t.JSXElement | null;
+interface CallbackPlan extends ListCallbackPlan {
   renderInvocation: ReturnType<typeof matchRenderCallbackMap>;
 }
 
@@ -211,6 +199,7 @@ export function analyzeMapSite(
   ownerName: string,
   usedPrefixes: Map<string, number>,
   parentRow?: ParentRow,
+  callbackPlan?: ListCallbackPlan,
 ): MapSite {
   const fail: Fail = (message, at) => {
     throw errorAt.buildCodeFrameError(message, at);
@@ -235,14 +224,14 @@ export function analyzeMapSite(
       suffixBase: source.suffixBase,
     });
   }
-  const callback = analyzeCallback(ctx, call, ownerName, fail);
+  const callback = analyzeCallback(ctx, call, ownerName, fail, callbackPlan);
   const row = analyzeRow(ctx, callback, fail);
   const keyPlan = extractKey(callback.jsx?.openingElement ?? null, fail);
   const suffix = nextSuffix(source.suffixBase, usedPrefixes);
   const calleeShape = callee as unknown as { type: string; optional?: boolean };
 
   return {
-    prelude: callback.prelude,
+    prelude: [...callback.prelude],
     sourceKey: source.key,
     sourceExpr: cloneEstreeNode(source.expression),
     optional:
@@ -480,120 +469,19 @@ function analyzeCallback(
   call: MapCallExpression,
   ownerName: string,
   fail: Fail,
+  prepared?: ListCallbackPlan,
 ): CallbackPlan {
-  if (
-    call.arguments.length !== 1 ||
-    !astFactory.isArrowFunctionExpression(call.arguments[0])
-  ) {
-    return fail(
-      'memo-dom: list rendering expects items.map(item => <JSX />) — R7 L1',
-    );
+  const plan = prepared ?? planListCallback(call, fail);
+  if (plan.normalizedBody !== null) {
+    (call.arguments[0] as t.ArrowFunctionExpression).body = plan.normalizedBody;
   }
-  const callback = call.arguments[0];
-  const first = callback.params[0];
-  const second = callback.params[1];
-  if (
-    callback.params.length < 1 ||
-    callback.params.length > 2 ||
-    (!astFactory.isIdentifier(first) &&
-      !astFactory.isObjectPattern(first) &&
-      !astFactory.isArrayPattern(first)) ||
-    (second !== undefined && !astFactory.isIdentifier(second))
-  ) {
-    return fail(
-      'memo-dom: list callback must take an item binding pattern and optional index identifier — R7 L1',
-    );
-  }
-
-  const itemPattern = cloneRuntimeBindingPattern(first);
-  const itemBindings = extractPatternIdentifiers(
-    itemPattern as unknown as BaseNode,
-  ).map((identifier) => identifier.name);
-  if (itemBindings.length === 0) {
-    return fail(
-      'memo-dom: list callback item pattern must bind at least one name — R7 L1',
-    );
-  }
-  const itemParam = astFactory.isIdentifier(itemPattern)
-    ? itemPattern.name
-    : itemBindings[0]!;
-  const indexParam = astFactory.isIdentifier(second) ? second.name : null;
-  const prelude: t.ExpressionStatement[] = [];
-  const jsx = resolveCallbackJsx(callback, itemPattern, indexParam, fail, prelude);
   const renderInvocation = matchRenderCallbackMap(ctx, ownerName, call);
-  if (jsx === null && renderInvocation === null) {
+  if (plan.jsx === null && renderInvocation === null) {
     return fail(
       'memo-dom: list callback body must be one JSX element, a block containing only return <JSX />, or const derivations followed by return <JSX /> — R7 L1',
     );
   }
-  return {
-    prelude,
-    itemPattern,
-    itemParam,
-    indexParam,
-    jsx,
-    renderInvocation,
-  };
-}
-
-/**
- * Normalize supported callback body shapes to a bare JSX element.
- *
- * A block body of `const` derivations followed by `return <JSX />` is
- * beta-reduced: each derivation initializer is substituted for every
- * reference in the returned JSX (and in later initializers). Reads stay
- * visible to read collection and guarded slots re-evaluate per update, so
- * invalidation and freshness are unchanged; initializers must therefore be
- * pure.
- */
-function resolveCallbackJsx(
-  callback: t.ArrowFunctionExpression,
-  itemPattern: RuntimeBindingPattern,
-  indexParam: string | null,
-  fail: Fail,
-  prelude: t.ExpressionStatement[],
-): t.JSXElement | null {
-  if (astFactory.isJSXElement(callback.body)) return callback.body;
-  if (!astFactory.isBlockStatement(callback.body)) return null;
-  const statements = callback.body.body;
-  const tail = statements.at(-1);
-  if (
-    tail === undefined ||
-    !astFactory.isReturnStatement(tail) ||
-    !astFactory.isJSXElement(tail.argument)
-  ) {
-    return null;
-  }
-  const jsx = tail.argument;
-  if (statements.length > 1) {
-    const reserved = new Set([
-      ...extractPatternIdentifiers(itemPattern as unknown as BaseNode).map(
-        (identifier) => identifier.name,
-      ),
-      ...(indexParam === null ? [] : [indexParam]),
-    ]);
-    const resolved = new Map<string, t.Expression>();
-    for (const statement of statements.slice(0, -1)) {
-      if (astFactory.isExpressionStatement(statement)) {
-        // Apply the existing render-expression restrictions without choosing
-        // call behavior by method name. Keep each authored call exactly once.
-        assertRowRenderExpression(statement.expression, fail);
-        assertNoShadowing(statement, new Set(resolved.keys()), fail);
-        prelude.push(substituteRowDerivations(cloneEstreeNode(statement), resolved));
-        continue;
-      }
-      for (const derivation of collectRowDerivations([statement], reserved, fail)) {
-        resolved.set(derivation.name, substituteRowDerivations(derivation.init, resolved));
-      }
-    }
-    assertNoShadowing(jsx, new Set(resolved.keys()), fail);
-    const substituted = substituteRowDerivations(jsx, resolved);
-    // Keep expression statements in the source tree for read collection and
-    // transparent-source rewriting on subsequent analysis/emission passes.
-    if (prelude.length === 0) callback.body = substituted;
-    return substituted;
-  }
-  return jsx;
+  return { ...plan, renderInvocation };
 }
 
 function analyzeRow(

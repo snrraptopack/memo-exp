@@ -6,7 +6,6 @@ import {
   type Ctx,
 } from '../context';
 import { componentId, generatedIdentifier, md } from '../identifiers';
-import { analyzeCondSite } from '../conds';
 import type { JsxNode } from '../jsx/children';
 import {
   cacheDecl,
@@ -14,9 +13,9 @@ import {
   registerStmt,
   updateDecl,
   type EmitScope,
+  type RegionSourcePlans,
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
-import type { ComponentRegionReplay } from '../analysis/region-replay';
 import {
   preparationRead,
   subscribeTransparentStructuralSite,
@@ -52,11 +51,7 @@ export function emitConditionalRegion(
   ownerId: t.Expression = componentId(ctx, componentName),
   forwardFromOwner = false,
 ): void {
-  const site = analyzeCondSite(
-    expression,
-    componentPath,
-    scope.usedConds,
-  );
+  const site = { ...scope.regionShapes!.conditionalFor(expression), suffix: `when${scope.usedConds.count++}` };
   const regionVariable = generatedIdentifier(ctx, site.suffix).name;
   const regionId = astFactory.binaryExpression(
     '+',
@@ -88,7 +83,7 @@ export function emitConditionalRegion(
         ])), astFactory.identifier('undefined'));
     };
     const branch = buildConditionalBranchCreate(ctx, site.branches[0]!, componentName, componentPath,
-      regionId, emitNode, inSvg, regionId, true, scope.usedConds, [], true, scope.regionReplay);
+      regionId, emitNode, inSvg, regionId, true, scope.usedConds, [], true, scope);
     (branch.body as t.BlockStatement).body.unshift(registerStmt(ctx, cloneEstreeNode(regionId), cloneEstreeNode(ownerId),
       astFactory.arrowFunctionExpression([], astFactory.callExpression(astFactory.memberExpression(
         astFactory.identifier(regionVariable), astFactory.identifier('update')), []))));
@@ -138,7 +133,7 @@ export function emitConditionalRegion(
           scope.usedConds,
           transparentSources,
           scope.reasonVar !== null,
-          scope.regionReplay,
+          scope,
         )
       : astFactory.nullLiteral(),
   );
@@ -215,10 +210,9 @@ export function buildConditionalBranchCreate(
   usedConditions?: { count: number },
   coveredTransparentSources: readonly string[] = [],
   forwardReasons = false,
-  regionReplay: ComponentRegionReplay | null = null,
+  sources: RegionSourcePlans | null = null,
 ): t.ArrowFunctionExpression {
-  const branchScope = newEmitScope(ctx, true);
-  branchScope.regionReplay = regionReplay;
+  const branchScope = newEmitScope(ctx, true, sources);
   if (forwardReasons) {
     branchScope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
   }

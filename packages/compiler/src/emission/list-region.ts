@@ -54,6 +54,7 @@ export function emitListRegion(
           sourceKey: parentRow.sourceKey,
           sourceLocal: parentRow.sourceLocal ?? false,
         },
+    scope.regionShapes!.listCallbackFor(call),
   );
   const regionVariable = generatedIdentifier(
     ctx,
@@ -96,7 +97,7 @@ export function emitListRegion(
           inSvg,
           ownerId,
           eventBindings,
-          scope.regionReplay,
+          scope,
         )
       : buildInlineRowCreate(
           ctx,
@@ -108,7 +109,7 @@ export function emitListRegion(
           ownerId,
           eventBindings,
           ctx.lightweightInlineRows.has(call),
-          scope.regionReplay,
+          scope,
         );
 
   const args: t.Expression[] = [

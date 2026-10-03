@@ -28,6 +28,7 @@ import {
   freshNodeName,
   renderDocument,
   type EmitScope,
+  type RegionSourcePlans,
 } from './emission/scope';
 import {
   isRenderPropReference,
@@ -54,7 +55,6 @@ import {
   type HostElementDependencies,
 } from './emission/host-element';
 import { createAuthoredSlotBuilders } from './emission/authored-slots';
-import type { ComponentRegionReplay } from './analysis/region-replay';
 
 const {
   buildAuthoredChildrenSlot,
@@ -342,7 +342,7 @@ export function buildBranchCreate(
   ownerId: t.Expression = regionId,
   allowConditions = false,
   usedConds?: { count: number },
-  regionReplay: ComponentRegionReplay | null = null,
+  sources: RegionSourcePlans | null = null,
 ): t.ArrowFunctionExpression {
   return buildConditionalBranchCreate(
     ctx,
@@ -357,6 +357,6 @@ export function buildBranchCreate(
     usedConds,
     [],
     false,
-    regionReplay,
+    sources,
   );
 }

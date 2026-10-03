@@ -55,7 +55,7 @@ export function emitRouteRegion(
       scope.usedConds,
       [],
       false,
-      scope.regionReplay,
+      scope,
     );
   } finally {
     ctx.routeElements.set(element, route);
