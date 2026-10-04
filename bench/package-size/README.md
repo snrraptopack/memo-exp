@@ -93,6 +93,18 @@ cover actual server-node adoption and mismatch recovery. Record both reports
 when moving work across the browser/hydration boundary, since reducing one graph
 can increase the other.
 
+The audit includes stable fetch and promise-read fixtures. Compare runtime/data
+source changes against a commit with:
+
+```bash
+bun run bench:size:audit --hydrate --verify --before-ref=744e70d
+```
+
+`source-before` uses the archived runtime/data sources and package metadata;
+`source` uses current sources. Both use the current compiler and identical
+authored fixtures. `package` measures current distributed exports. Source
+attribution is raw output bytes; whole-bundle gzip savings are measured separately.
+
 The explicit-index input/list fixture now selects the compiler's positional
 DOM-only capability. Metafiles verify that it omits the general keyed reconciler
 and key encoder. Keep the owner keyed-list fixture alongside it: shared list DOM

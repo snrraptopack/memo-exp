@@ -872,6 +872,46 @@ writes, later rows, disposal and conservative fallback. All 25 production HTML
 checks pass, including real Chrome composition interaction without initial
 element creation. These are payload/correctness results, not a CPU speed claim.
 
+### Data capability retention and shared settlement
+
+The fetch-only browser graph previously retained the promise controller through
+the default runtime constructor. The runtime now has one request/cache boundary
+and one provider lifetime/settlement coordinator. `$read` installs its capability
+on that same object, with its store created only when the first read runs. The
+full public runtime API still exposes both methods. The old independent fetch
+and promise settlement loops and the separate module-disposer registry were
+removed. There is no second scheduler or cache implementation.
+
+The independent loops had a correctness defect: fetch completion could start a
+read after the read loop had already returned, and read completion could start
+a fetch after the fetch loop had returned. Both authored regressions fail on
+`744e70d` and pass with the shared coordinator. Explicit deadlines span the
+whole settlement; existing provider defaults remain five and thirty seconds.
+
+Paired source measurements use the current compiler, the same authored fixtures,
+mount plus optional hydration, and runtime/data sources archived from `744e70d`
+with their original package metadata:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Fetch-only page | 51,329 / 16,516 | 48,778 / 15,978 |
+| Promise-read page | 51,378 / 16,527 | 51,545 / 16,581 |
+
+The promise page grows 167 raw and 54 gzip bytes to retain the shared coordinator.
+The six existing static/counter/input/composition/list source graphs are unchanged.
+The distributed fetch graph falls from 51,013 / 16,545 to 48,478 / 15,978 bytes.
+Packaging alone was ruled out: the equivalent source graph had no material size
+advantage before this change. Fetch snapshot/ownership adapters remain shared
+with forms and reads; this batch does not remove all data support or general
+hydration from request-dependent pages. These are bundle and correctness results,
+not a CPU speed claim. Production static HTML remains zero JavaScript.
+
+The unchanged production SSR fixture/build also falls from the clean `744e70d`
+measurement of 51,453 / 16,449 browser bytes to 48,915 / 15,892. Served HTML
+remains 564 bytes including the same 315-byte data envelope. The SSR delivery
+harness uses current data code on both adapter sides, so its two adapter rows
+both show the new size; the runtime comparison uses the previous clean result.
+
 ### Remaining order
 
 | Order | Work | Required evidence |

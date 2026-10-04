@@ -1,5 +1,9 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-data': { './App.tsx': `export function App(){const user=$fetch('/api/user');
+    return <main><p>{user?.name}</p></main>;}` },
+  'promise-data': { './App.tsx': `export function App(){const user=$read(Promise.resolve({name:'Ada'}));
+    return <main><p>{user?.name}</p></main>;}` },
   static: { './App.tsx': `export function App(){return <main><h1>Static shell</h1><p>Ready.</p></main>;}` },
   'owner-counter': { './App.tsx': `export function App(){let count=0;return <main>
     <button onClick={()=>count++}>Add</button><p>{count}</p></main>;}` },
