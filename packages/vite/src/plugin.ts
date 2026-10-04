@@ -2,6 +2,7 @@
  * Vite 8 plugin backed by connected compiler graphs and live module HMR.
  */
 import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import type { CompilerSourceMap } from '@memoized-dom/compiler';
 import type {
   DevEnvironment,
@@ -31,6 +32,7 @@ import {
   generateServerFunctionRoutesModule,
   isServerFunctionFile,
   isServerFunctionImplementation,
+  serverFunctionImplementationSource,
   resolvedServerFunctionsClientVirtualId,
   resolvedServerFunctionsVirtualId,
   type ServerFunctionBarrelEntry,
@@ -480,12 +482,23 @@ export function memoizedDom(
       }
       return null;
     },
-    load(id) {
+    async load(id) {
       if (id.startsWith(resolvedInitialBrowserPrefix)) {
         const file = decodeURIComponent(id.slice(resolvedInitialBrowserPrefix.length));
         const code = stateFor(this.environment).initialBrowserOutput.get(file);
         if (code === undefined) this.error('memoized-dom: initial browser module is missing');
         return { code, map: stateFor(this.environment).initialBrowserMaps.get(file) ?? { mappings: '' } };
+      }
+      if (isServerFunctionImplementation(id)) {
+        if (this.environment.name === 'client') {
+          this.error('memoized-dom: server function implementations cannot be imported by the client graph');
+        }
+        const file = cleanViteId(id);
+        this.addWatchFile(file);
+        return {
+          code: serverFunctionImplementationSource(await readFile(file, 'utf8'), file, config!.root, options),
+          map: { mappings: '' },
+        };
       }
       if (id === resolvedServerFunctionsVirtualId) {
         if (this.environment.name === 'client') {

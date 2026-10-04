@@ -8,12 +8,77 @@ import {
   type ServerMiddleware,
 } from '../src/http-router';
 import { registerRoutedPreparation } from '@memoized-dom/router/internal';
+import type { StandardSchemaV1 } from '@memoized-dom/data';
 
 async function json(response: Response): Promise<unknown> {
   return response.json();
 }
 
 describe('server HTTP router', () => {
+  it('validates decoded GET input after middleware and passes transformed arguments', async () => {
+    const order: string[] = [];
+    const schema: StandardSchemaV1<unknown, Record<string, unknown>> = {
+      '~standard': {
+        version: 1, vendor: 'test',
+        async validate(input) {
+          order.push('validation');
+          const value = input as { id: number; label?: string };
+          return value.id > 0
+            ? { value: { id: value.id, label: value.label ?? 'default' } }
+            : { issues: [{ message: 'ID must be positive', path: ['id'] }] };
+        },
+      },
+    };
+    const handler = vi.fn((...args: unknown[]) => {
+      order.push('handler');
+      return { args };
+    });
+    const router = createServerRouter({ routes: createServerFunctionRoutes([{
+      id: 'stories/story', method: 'GET', path: '/_fn/stories/story',
+      parameters: [{ name: 'id', optional: false, queryKind: 'number' }, { name: 'label', optional: true, queryKind: 'string' }],
+      middleware: [async (_context, next) => { order.push('middleware'); return next(); }],
+      input: schema, handler,
+    }]) });
+    const response = await router.fetch(new Request('https://app.test/_fn/stories/story?id=42'));
+    expect(await response.json()).toEqual({ args: [42, 'default'] });
+    expect(order).toEqual(['middleware', 'validation', 'handler']);
+    const invalid = await router.fetch(new Request('https://app.test/_fn/stories/story?id=-1'));
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: 'invalid_server_function_input', issues: [{ message: 'ID must be positive' }] });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates mutation values and allows auth middleware to short-circuit validation', async () => {
+    const validate = vi.fn((input: unknown) => {
+      const value = input as { id: unknown };
+      return typeof value.id === 'number'
+        ? { value }
+        : { issues: [{ message: 'Expected a number' }] };
+    });
+    const handler = vi.fn(() => ({ ok: true }));
+    const router = createServerRouter({ routes: createServerFunctionRoutes([{
+      id: 'stories/vote', method: 'POST', path: '/_fn/stories/vote',
+      parameters: [{ name: 'id', optional: false }],
+      middleware: [(context, next) => context.request.headers.has('authorization')
+        ? next() : new Response(null, { status: 401 })],
+      input: { '~standard': { version: 1, vendor: 'test', validate } }, handler,
+    }]) });
+    const request = (id: unknown, authenticated: boolean) => new Request('https://app.test/_fn/stories/vote', {
+      method: 'POST', body: JSON.stringify({ id }),
+      headers: authenticated ? { authorization: 'user' } : {},
+    });
+    expect((await router.fetch(request(42, false))).status).toBe(401);
+    expect(validate).not.toHaveBeenCalled();
+    expect((await router.fetch(request('wrong', true))).status).toBe(400);
+    expect(handler).not.toHaveBeenCalled();
+    expect((await router.fetch(request(42, true))).status).toBe(200);
+    expect(handler).toHaveBeenCalledWith(42);
+  });
+
+  it('keeps native JSON date serialization without reconstructing values', async () => {
+    const response = respondJson({ createdAt: new Date('2026-10-02T12:00:00.000Z'), label: '2026-10-02' });
+    expect(await response.json()).toEqual({ createdAt: '2026-10-02T12:00:00.000Z', label: '2026-10-02' });
+  });
   it('passes through native Response status, headers, and body from server functions', async () => {
     const result = respondJson({ userId: '42' }, {
       status: 201,

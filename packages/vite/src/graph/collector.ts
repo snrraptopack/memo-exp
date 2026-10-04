@@ -141,6 +141,7 @@ export async function compileGraph(
     const source = rewriteServerFunctionBarrelImports(
       facadeSource,
       serverFunctionBarrelEntries,
+      { moduleId: id, ...(options.frontend === undefined ? {} : { frontend: options.frontend }) },
     );
     sources.set(id, source);
     sourceIds.set(cleanFile, id);

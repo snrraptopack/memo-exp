@@ -54,37 +54,107 @@ change a parameter and the client call sites fail typecheck, not runtime.
 
 ## What a server function is
 
-A file in `functions/` whose **verb-prefixed async exports** become HTTP
+A file in `functions/` whose **annotated or verb-prefixed async exports** become HTTP
 endpoints — the filename is the route namespace, the export name finishes
 the path (`/_fn/<file>/<name>`):
 
 ```ts
 // server/functions/stories.ts
-export async function getStories() {       // GET  /_fn/stories/getStories
+/** @GET */
+export async function stories() {          // GET  /_fn/stories/stories
   return db.stories.findMany();
 }
 
-export async function postVote(id: number) { // POST /_fn/stories/postVote
+/** @POST */
+export async function vote(id: number) {    // POST /_fn/stories/vote
   return db.stories.vote(id);
 }
 ```
+
+`@GET`, `@POST`, `@PUT`, `@PATCH`, and `@DELETE` select the method independently
+of the function name. Existing `get`, `post`, `put`, `patch`, and `delete`
+prefixes remain supported as a fallback; an explicit annotation takes precedence
+so function names are unrestricted. Attach the JSDoc to the function declaration or its single
+variable declaration; local export aliases are supported.
+
+### Function middleware and input validation
+
+```ts
+import { requireUser } from '#server/middleware';
+import { voteInput } from '#server/validation';
+import { json } from '@memoized-dom/server';
+
+/**
+ * @POST
+ * @middleware [requireUser]
+ * @Input voteInput
+ */
+export async function vote(storyId: number) {
+  return json(await db.stories.vote(storyId));
+}
+```
+
+`@middleware [...]` adds ordinary middleware after inherited folder and file
+middleware, in listed order. Imported and private local bindings are supported;
+member access, factory calls, and array spreads can be used in the list.
+These bindings and their dependencies remain server-only.
+
+The `@memoized-dom/language-service` editor plugin recognizes these annotation
+references and checks middleware signatures and schema output types. A binding
+used only by a tag counts as used. The editor checks an in-memory copy without
+changing source files. Plain `tsc` does not load editor plugins,
+so it still treats custom tag references as comments and may report the
+imported or local binding as unused. See the
+[language-service setup](../packages/language-service/README.md) for editor
+compatibility and custom server roots.
+
+`@Input` references a Standard Schema v1 validator for the named argument
+object, such as `{ storyId: 42 }`. Middleware runs first; a short-circuit
+response skips validation and the handler. The transport decodes input once,
+then the schema validates it. GET numbers and booleans are decoded from query
+strings before validation. Schemas may supply defaults or transform field
+values, but must return an object with the function's argument names and
+compatible value types. Optional/defaulted parameters should be optional in
+the schema or have a schema default; function defaults run after validation.
+Validation issues produce a `400` response with
+`error: 'invalid_server_function_input'`, a message, and `issues`.
+
+`json()` uses native JSON serialization. Values received by the client have
+ordinary JSON types; dates serialize to strings and are never reconstructed.
+
+For expected failures, use
+`return error({ message: 'Story not found' }, { status: 404 })`, importing
+`error` from `@memoized-dom/server`. Like `json`, it serializes exactly the
+supplied body and accepts response headers and other response options.
+It requires a 400–599 status. The client records an HTTP failure and
+preserves the successful return type. Cookie helpers are covered in the
+[server package documentation](../packages/server/README.md#response-and-cookie-helpers).
+
+Parameterized GET results can be adopted from SSR state during hydration
+without another initial fetch. Transfer records identify the complete request
+by a fingerprint rather than embedding raw query arguments.
+
+The plugin writes `.memoized/server-functions.d.ts` only when it discovers
+server functions, and removes a stale declaration when the last function is
+removed. Likewise, `.memoized/routes.d.ts` is generated only for an app with
+discovered routes.
 
 And client code just calls them — imported from `#server-functions`,
 one flat barrel of every function across all files:
 
 ```tsx
 // src/App.tsx — client code
-import { getStories, postVote } from '#server-functions';
+import { stories as loadStories, vote } from '#server-functions';
 
 export function App() {
-  const stories = getStories();          // a data source, like $fetch
+  const stories = loadStories();         // a data source, like $fetch
 
   return (
     <ul>
       {stories.map(s => (
         <li key={s.id}>
           {s.title}
-          <button onClick={() => postVote(s.id)}>Vote</button>
+          <button onClick={() => vote(s.id)}>Vote</button>
         </li>
       ))}
     </ul>
@@ -94,7 +164,7 @@ export function App() {
 
 ## The rules
 
-- **The name's prefix picks the HTTP method**: `get*`→GET, `post*`→POST,
+- **The annotation or legacy prefix picks the HTTP method**: `@GET` / `get*`→GET, `@POST` / `post*`→POST,
   `put*`→PUT, `patch*`→PATCH, `delete*`→DELETE. Anything else is a
   compile error (`[MMD-S011]`).
 - **Exports must be async functions** — sync functions, constants,

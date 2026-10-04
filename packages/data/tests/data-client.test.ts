@@ -22,6 +22,28 @@ async function settled<T>(resource: FetchResource<T>): Promise<void> {
 }
 
 describe('$fetch', () => {
+  it('restores parameterized function GETs without another fetch or exposing arguments', async () => {
+    const server = createDataRuntime({
+      baseURL: 'https://app.test/',
+      fetch: (async () => json({ id: 42, createdAt: '2026-10-02T12:00:00.000Z' })) as typeof fetch,
+    });
+    const source = server.$fetch('/_fn/stories/story', { query: { id: 42, label: 'private-query-value' } });
+    await settled(source);
+    const payload = JSON.parse(JSON.stringify(server.serializeState()));
+    expect(payload.sources).toHaveLength(1);
+    expect(JSON.stringify(payload)).not.toContain('private-query-value');
+    const fetcher = vi.fn(async () => json({ id: 43 }));
+    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    client.restoreState(payload);
+    const adopted = client.$fetch('/_fn/stories/story', { query: { label: 'private-query-value', id: 42 } });
+    expect(adopted.data).toEqual({ id: 42, createdAt: '2026-10-02T12:00:00.000Z' });
+    expect(fetcher).not.toHaveBeenCalled();
+    const different = client.$fetch('/_fn/stories/story', { query: { id: 43, label: 'private-query-value' } });
+    await settled(different);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    server.clear();
+    client.clear();
+  });
   it('loads and decodes JSON into an honest resource state', async () => {
     const fetcher = vi.fn(async () => json([{ id: '1', name: 'Ada' }]));
     const client = createDataRuntime({ fetch: fetcher as typeof fetch });

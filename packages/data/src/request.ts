@@ -100,12 +100,13 @@ function transferableTarget(target: string | URL, url: string): string | null {
   try {
     const parsed = new URL(url, 'http://memoized-dom.invalid');
     if (parsed.username !== '' || parsed.password !== '') return null;
-    // Query parameter names cannot establish that their values are public.
-    // A caller with a safe application-level identity can opt in explicitly.
-    if (parsed.search !== '') return null;
+    // Generated GET functions transfer by their complete evaluated request.
+    // The public record contains only its fingerprint, never raw arguments.
+    // Other query-bearing fetches retain the conservative transfer policy.
+    if (parsed.search !== '' && !parsed.pathname.startsWith('/_fn/')) return null;
     const path = parsed.pathname === '' ? '/' : parsed.pathname;
     const absolute = target instanceof URL || /^[A-Za-z][A-Za-z\d+.-]*:/.test(target);
-    return absolute ? `${parsed.origin}${path}` : path;
+    return absolute ? `${parsed.origin}${path}${parsed.search}` : `${path}${parsed.search}`;
   } catch {
     return null;
   }

@@ -267,8 +267,10 @@ mount('root', App);
 
 ---
 
-Header-free GET/HEAD requests without a query, body, or custom cache key transfer
-by method and path. Requests with headers, query values, credentials, bodies,
+Header-free GET/HEAD requests without a body or custom cache key transfer
+by method and path. Generated `/_fn/` GET calls also transfer their query-bearing
+results by the complete normalized request fingerprint, without exposing raw
+arguments in transfer identities. Other requests with headers, query values, credentials, bodies,
 or custom keys are omitted
 from SSR transfer and fetched after hydration. Private request inputs are never
 copied or hashed into the HTML payload.

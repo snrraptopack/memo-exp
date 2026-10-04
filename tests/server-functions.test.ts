@@ -4,10 +4,84 @@ import {
   compileModules,
   generateServerFunctionClient,
   generateServerFunctionDeclarations,
+  generateServerFunctionImplementation,
   serverFunctionModuleName,
 } from '@memoized-dom/compiler';
 
 describe('named HTTP server functions', () => {
+  it('discovers JSDoc methods on declarations and aliased arrow functions', () => {
+    const source = `
+      import { requireUser, limits } from './middleware';
+      const voteInput = schema();
+      /**
+       * Read stories.
+       * @GET
+       */
+      export async function stories(limit: number = 20) { return []; }
+      /**
+       * @POST
+       * @middleware[requireUser, limits.vote({ count: 10 })]
+       * @Input voteInput
+       */
+      const save = async (id: number) => ({ id });
+      export { save as vote };
+    `;
+    const options = { moduleId: '/app/server/functions/stories.ts' };
+    const module = analyzeServerFunctionModule(source, options);
+    expect(module.functions).toEqual([
+      expect.objectContaining({ exported: 'stories', method: 'GET', parameters: [{ name: 'limit', optional: true, queryKind: 'number' }] }),
+      expect.objectContaining({ exported: 'vote', local: 'save', method: 'POST', middleware: '[requireUser, limits.vote({ count: 10 })]', input: 'voteInput' }),
+    ]);
+    const implementation = generateServerFunctionImplementation(source, options);
+    expect(implementation).toContain('["vote"]: { middleware: [requireUser, limits.vote({ count: 10 })], input: voteInput }');
+    const client = generateServerFunctionClient(module);
+    expect(client).toContain('export function vote(id)');
+    expect(client).not.toContain('requireUser');
+    expect(client).not.toContain('voteInput');
+  });
+
+  it('uses the explicit method even when the function name starts with a legacy verb', () => {
+    const module = analyzeServerFunctionModule('/** @POST */ export async function getAccessToken() {}', {
+      moduleId: '/app/server/functions/auth.ts',
+    });
+    expect(module.functions[0]?.method).toBe('POST');
+  });
+
+  it('does not interpret tag-looking strings in middleware configuration as annotations', () => {
+    const module = analyzeServerFunctionModule(`
+      import { limit } from './middleware';
+      /**
+       * @GET
+       * @middleware [limit({ label: '@Input is ordinary text' })]
+       */
+      export async function stories() {}
+    `, { moduleId: '/app/server/functions/stories.ts' });
+    expect(module.functions[0]?.middleware).toBe("[limit({ label: '@Input is ordinary text' })]");
+    expect(module.functions[0]?.input).toBeUndefined();
+  });
+
+  it('reports duplicate, malformed, and unresolved annotations at their declaration', () => {
+    const options = { moduleId: '/app/server/functions/stories.ts' };
+    for (const [source, message] of [
+      ['/** @GET @POST */ export async function stories() {}', /duplicate/],
+      ['/** @GET @middleware [missing] */ export async function stories() {}', /missing.*runtime binding/],
+      ['/** @GET @middleware user */ export async function stories() {}', /array of middleware/],
+      ['/** @GET @Input missing */ export async function stories() {}', /missing.*runtime binding/],
+      ['/** @GET */ export const first = async () => 1, second = async () => 2;', /own declaration/],
+      ['import type { guard } from "./guard"; /** @GET @middleware [guard] */ export async function stories() {}', /guard.*runtime binding/],
+    ] as const) {
+      expect(() => analyzeServerFunctionModule(source, options)).toThrow(message);
+    }
+  });
+
+  it('does not attach annotation-looking strings or detached comments to functions', () => {
+    expect(() => analyzeServerFunctionModule(`
+      const text = '/** @GET */';
+      /** @GET */
+      const unrelated = 1;
+      export async function stories() {}
+    `, { moduleId: '/app/server/functions/stories.ts' })).toThrow(/MMD-S011/);
+  });
   it('discovers endpoints, parameter transport, and middleware', () => {
     const module = analyzeServerFunctionModule(`
       import { database } from '../../database';
@@ -87,10 +161,10 @@ describe('named HTTP server functions', () => {
       'import type { ResolvedValue } from "@memoized-dom/data"',
     );
     expect(declarations).toContain(
-      'import type { JsonResponse } from \'@memoized-dom/server\'',
+      'import type { JsonResponse, ErrorResponse } from \'@memoized-dom/server\'',
     );
     expect(declarations).toContain(
-      'type __mmdClientValue<T> = T extends JsonResponse<infer U> ? U : T extends Response ? unknown : T;',
+      'type __mmdClientValue<T> = T extends ErrorResponse ? never : T extends JsonResponse<infer U> ? U : T extends Response ? unknown : T;',
     );
     expect(declarations).toContain(
       'import type * as __mmd_impl_0 from "../server/functions/stories.js"',

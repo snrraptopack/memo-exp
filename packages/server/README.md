@@ -14,6 +14,53 @@ Every render creates isolated application, route, and data runtimes. Effects,
 cleanup tables, prop boxes, and request data do not leak between concurrent
 requests.
 
+## Response and cookie helpers
+
+```ts
+import { json, error, getCookie, setCookie, deleteCookie } from '@memoized-dom/server';
+
+// In a handler or middleware:
+const session = getCookie(context.request, 'session');
+if (!session) return error({ message: 'Sign in first' }, { status: 401 });
+
+const response = json({ signedIn: true });
+setCookie(response, 'session', token, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'lax',
+  maxAge: 3600,
+});
+return response;
+```
+
+`json(data, init?)` and `error(data, init)` both serialize exactly the supplied
+body and accept ordinary response options, including headers. `error` requires
+an explicit 400–599 status. For example:
+
+```ts
+return error({ message: 'Story not found' }, { status: 404 });
+```
+
+Return it for expected failures; unexpected exceptions still
+go to `onError`. Generated server-function client types keep the success body
+type when another branch returns `error()`. The data layer records the HTTP
+status and the response body in `RequestError.data`.
+
+`getCookie(request, name)` returns a string or `undefined`. Cookie values are
+URI-encoded when written and decoded when read; malformed escapes are returned
+unchanged. The first matching cookie wins if a request contains duplicates.
+
+`setCookie(response, name, value, options?)` appends a `Set-Cookie` header to the
+provided response. It preserves existing cookies, status, headers, and body.
+The default path is `/`; security flags are explicit. Options are `path`,
+`domain`, `maxAge` (seconds), `expires` (a Date), `httpOnly`, `secure`, and
+`sameSite` (`'strict'`, `'lax'`, or `'none'`).
+
+For logout, call `deleteCookie(response, 'session')` before returning your
+response. Pass the original `path` and `domain` if you supplied them when
+setting the cookie. Deletion appends an expired cookie, following the
+[cookie scope rules](https://www.rfc-editor.org/rfc/rfc6265.html#section-4.1.2).
+
 ## Application composition
 
 `serve()` creates the application object used for middleware, routes, and SSR:

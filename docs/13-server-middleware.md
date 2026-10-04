@@ -79,7 +79,7 @@ scoped to that single route, no pattern needed.
 
 ## Inside server functions
 
-Two places, no registration needed:
+Three places, no registration needed:
 
 **Module middleware** — a `middleware` export in the function file runs in
 front of every endpoint that file registers:
@@ -109,13 +109,30 @@ export const middleware = [requireAdmin];
 A `_middleware.ts` file **must** export a named `middleware` array — it's
 the only thing that file is for.
 
+**Function middleware** — a JSDoc annotation applies middleware to just one
+function, after folder and module middleware:
+
+```ts
+/**
+ * @DELETE
+ * @middleware [requireAdmin]
+ */
+export async function removeStory(storyId: number) {
+  return db.stories.delete(storyId);
+}
+```
+
+The list uses ordinary imported or local middleware bindings. Function
+middleware adds to the inherited pipeline and does not replace it.
+
 ## Order
 
 Outermost to innermost:
 
 ```
 app.use global → app.use group → route middleware → _middleware.ts
-(ancestor folders, outermost first) → module middleware export → handler
+(ancestor folders, outermost first) → module middleware export → function middleware
+→ @Input validation (when declared) → handler
 ```
 
 Locals written by an earlier layer are visible to all later layers — put
