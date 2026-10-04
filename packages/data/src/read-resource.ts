@@ -1,6 +1,8 @@
 import { RequestError } from './errors';
 import { SnapshotNotifier } from './notifications';
-import type { FetchResource, ResourceListener, ResourceSnapshot } from './types';
+import { registerDataRuntimeProvider } from './runtime-lifetime';
+import type { CoreDataRuntime } from './runtime-core';
+import type { DataRuntime, FetchResource, ResourceListener, ResourceSnapshot } from './types';
 
 let nextReadId = 1;
 
@@ -17,25 +19,14 @@ export class ReadStore {
   readonly active = new Set<Promise<unknown>>();
 
   clear(): void {
-    for (const controller of [...this.controllers]) controller.dispose();
+    for (const controller of this.controllers) controller.dispose();
     this.active.clear();
   }
 
-  async settle(timeoutMs = 30_000): Promise<boolean> {
-    const deadline = Date.now() + timeoutMs;
-    while (this.active.size > 0) {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) return false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const settled = await Promise.race([
-        Promise.allSettled([...this.active]).then(() => true),
-        new Promise<false>(resolve => {
-          timer = setTimeout(() => resolve(false), remaining);
-        }),
-      ]).finally(() => clearTimeout(timer));
-      if (!settled) return false;
-    }
-    return true;
+  readonly settleTimeoutMs = 30_000;
+
+  pending(): Iterable<Promise<unknown>> {
+    return this.active;
   }
 }
 
@@ -229,4 +220,19 @@ export function adoptReadResource<T>(
   const source = controller(candidate);
   void controller(resource).replace(source.promise, source.replay).catch(() => {});
   source.dispose();
+}
+
+/** Install the promise capability only when exposed or used; its store stays lazy. */
+export function enableDataReads(runtime: CoreDataRuntime): DataRuntime {
+  if ('$read' in runtime) return runtime as DataRuntime;
+  let store: ReadStore | undefined;
+  return Object.assign(runtime, {
+    $read<T>(promise: PromiseLike<T>, replay?: () => PromiseLike<T>): FetchResource<T> {
+      if (store === undefined) {
+        store = new ReadStore();
+        registerDataRuntimeProvider(runtime, store);
+      }
+      return createReadResource(store, promise, replay);
+    },
+  });
 }

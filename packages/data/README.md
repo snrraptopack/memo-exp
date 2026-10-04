@@ -277,6 +277,19 @@ copied or hashed into the HTML payload.
 
 ## 8. Isolated Request Runtimes
 
+All source kinds share one runtime's cache, lifetime and settlement coordinator.
+Promise-read support is installed when used or when the full public runtime API
+is requested; its store is created on the first `$read`. Fetch-only compiled
+applications can omit the promise controller. Public `createDataRuntime()` and
+`getActiveDataRuntime()` continue to expose both `$fetch` and `$read` on the same
+object.
+
+`settle(timeoutMs)` checks all active providers together, including reads started
+by fetch completion and fetches started by read completion. The supplied timeout
+covers the whole settlement; without it, fetch work keeps its five-second budget
+and promise reads keep their thirty-second budget. Clearing a runtime disposes
+its sources and retires module-cache entries; it can then be reused.
+
 For server request isolation or testing:
 
 ```ts

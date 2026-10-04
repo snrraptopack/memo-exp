@@ -1,7 +1,10 @@
 import {
-  getActiveDataRuntime,
+  getActiveDataRuntime as activeDataRuntime,
+  setActiveDataRuntime as setActiveRuntime,
+  runWithDataRuntime as withActiveRuntime,
 } from './active-runtime';
 import type {
+  DataRuntime,
   FetchOptions,
   ResolvedValue,
   TransparentFetchFunction,
@@ -11,19 +14,22 @@ import {
   trackResolvedValue,
 } from './transparent';
 import { $forms, isFormSource, trackForm } from './forms';
+import { enableDataReads } from './read-resource';
 
 export { createDataRuntime } from './client';
-export {
-  getActiveDataRuntime,
-  setActiveDataRuntime,
-  runWithDataRuntime,
-} from './active-runtime';
+export const runWithDataRuntime: <T>(runtime: DataRuntime, fn: () => T) => T = withActiveRuntime;
+export function getActiveDataRuntime(): DataRuntime {
+  return enableDataReads(activeDataRuntime());
+}
+export function setActiveDataRuntime(runtime: DataRuntime | null): DataRuntime {
+  return enableDataReads(setActiveRuntime(runtime));
+}
 // Delegating facades: server rendering swaps the active runtime per request,
 // so the public bindings must never capture the singleton implementation.
 export const $fetch = ((
   target: string | URL | null,
   options?: FetchOptions,
-) => getActiveDataRuntime().$fetch(target, options)) as unknown as TransparentFetchFunction;
+) => activeDataRuntime().$fetch(target, options)) as unknown as TransparentFetchFunction;
 export const $read = <T>(
   promise: PromiseLike<T>,
   replay?: () => PromiseLike<T>,
@@ -41,7 +47,7 @@ export function $track<T>(value: ResolvedValue<T> | import('./types').FetchResou
 }
 export { Group };
 export function clearDataRuntime(): void {
-  getActiveDataRuntime().clear();
+  activeDataRuntime().clear();
 }
 export { RequestError } from './errors';
 export { UnresolvedDataReadError } from './transparent';

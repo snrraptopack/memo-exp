@@ -11,10 +11,11 @@ import { createStorage } from '@memoized-dom/runtime';
 import { getExtensionStore } from '@memoized-dom/runtime';
 import {
   cancelDataHydration,
-  createDataRuntime,
+  createCoreDataRuntime,
   resumeDataHydration,
-} from './client';
-import type { DataRuntime, SerializedDataState } from './types';
+  type CoreDataRuntime,
+} from './runtime-core';
+import type { SerializedDataState } from './types';
 
 interface ActiveDataRuntimeBridge {
   restoreState?(state: unknown): void;
@@ -23,9 +24,9 @@ interface ActiveDataRuntimeBridge {
   pendingState?: unknown;
 }
 
-const asyncLocalStorage = createStorage<DataRuntime>('data');
-let activeOverride: DataRuntime | null = null;
-let defaultDataRuntime: DataRuntime | undefined;
+const asyncLocalStorage = createStorage<CoreDataRuntime>('data');
+let activeOverride: CoreDataRuntime | null = null;
+let defaultDataRuntime: CoreDataRuntime | undefined;
 const activeStore = getExtensionStore<ActiveDataRuntimeBridge>(
   'mmd:data-runtime-active',
   () => ({}),
@@ -33,12 +34,12 @@ const activeStore = getExtensionStore<ActiveDataRuntimeBridge>(
 let pendingState = activeStore.pendingState;
 delete activeStore.pendingState;
 
-function defaultRuntime(): DataRuntime {
-  defaultDataRuntime ??= createDataRuntime();
+function defaultRuntime(): CoreDataRuntime {
+  defaultDataRuntime ??= createCoreDataRuntime();
   return defaultDataRuntime;
 }
 
-export function getActiveDataRuntime(): DataRuntime {
+export function getActiveDataRuntime(): CoreDataRuntime {
   const runtime = asyncLocalStorage.getStore() ?? activeOverride ?? defaultRuntime();
   if (pendingState !== undefined) {
     const state = pendingState;
@@ -63,14 +64,14 @@ activeStore.cancelHydration = () => {
   runtime.clear();
 };
 
-export function runWithDataRuntime<T>(runtime: DataRuntime, fn: () => T): T {
+export function runWithDataRuntime<T>(runtime: CoreDataRuntime, fn: () => T): T {
   return asyncLocalStorage.run(runtime, fn);
 }
 
 /** Activate a runtime; returns the previous active runtime for restoration. */
 export function setActiveDataRuntime(
-  runtime: DataRuntime | null,
-): DataRuntime {
+  runtime: CoreDataRuntime | null,
+): CoreDataRuntime {
   const previous = getActiveDataRuntime();
   activeOverride = runtime;
   return previous;

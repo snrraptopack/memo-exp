@@ -1,78 +1,10 @@
-import { runModuleInstanceDisposers } from './transparent-module';
-import {
-  createFetchEnvironment,
-  createFetchResource,
-  FetchStore,
-} from './resource';
-import { createReadResource, ReadStore } from './read-resource';
-import type {
-  DataRuntime,
-  DataRuntimeOptions,
-  FetchFunction,
-  FetchOptions,
-  StandardSchemaV1,
-} from './types';
+import { createCoreDataRuntime } from './runtime-core';
+import { enableDataReads } from './read-resource';
+import type { DataRuntime, DataRuntimeOptions } from './types';
 
-interface HydrationControls {
-  resume(): void;
-  cancel(): void;
-}
+export { resumeDataHydration, cancelDataHydration } from './runtime-core';
 
-const hydrationControls = new WeakMap<DataRuntime, HydrationControls>();
-
-export function resumeDataHydration(runtime: DataRuntime): void {
-  hydrationControls.get(runtime)?.resume();
-}
-
-export function cancelDataHydration(runtime: DataRuntime): void {
-  hydrationControls.get(runtime)?.cancel();
-}
-
-/** Create an isolated request/cache/action ownership boundary. */
-export function createDataRuntime(
-  options: DataRuntimeOptions = {},
-): DataRuntime {
-  const environment = createFetchEnvironment(options.fetch, options.baseURL);
-  const store = new FetchStore(environment);
-  const reads = new ReadStore();
-
-  const fetchResource = (<T>(
-    target: string | URL | null,
-    fetchOptions: FetchOptions & {
-      readonly validate?: StandardSchemaV1;
-    } = {},
-  ) => createFetchResource<T>(
-    store,
-    environment,
-    target,
-    fetchOptions,
-  )) as FetchFunction;
-
-  const runtime: DataRuntime = {
-    $fetch: fetchResource,
-    $read: (promise, replay) => createReadResource(reads, promise, replay),
-    clear() {
-      reads.clear();
-      store.clear();
-      runModuleInstanceDisposers(runtime);
-    },
-    async settle(timeoutMs) {
-      const [fetchesSettled, readsSettled] = await Promise.all([
-        store.settle(timeoutMs),
-        reads.settle(timeoutMs),
-      ]);
-      return fetchesSettled && readsSettled;
-    },
-    serializeState() {
-      return store.serialize();
-    },
-    restoreState(state) {
-      store.installRestoreRecords(state);
-    },
-  };
-  hydrationControls.set(runtime, {
-    resume: () => store.resumeHydration(),
-    cancel: () => store.cancelHydration(),
-  });
-  return runtime;
+/** Public runtimes expose every source capability on the same ownership boundary. */
+export function createDataRuntime(options: DataRuntimeOptions = {}): DataRuntime {
+  return enableDataReads(createCoreDataRuntime(options));
 }

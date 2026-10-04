@@ -25,7 +25,8 @@ import { getExtensionStore } from '@memoized-dom/runtime';
 import { getActiveDataRuntime } from './active-runtime';
 import { disposeFetchResource, rebindFetchResource } from './resource';
 import type { FetchOptions, FetchResource, ResolvedValue } from './types';
-import { rebindReadResource } from './read-resource';
+import { enableDataReads, rebindReadResource } from './read-resource';
+import { registerDataRuntimeDisposer } from './runtime-lifetime';
 import { readResolvedValueForRender } from './transparent';
 
 /** Stable lazy handle placed in the authored binding. */
@@ -72,22 +73,6 @@ function runtimeCache(): Map<string, CachedInstance> {
 }
 
 /**
- * Disposers registered per data runtime: `DataRuntime.clear()` retires every
- * module-source instance that runtime materialized (RFC §16.4 — instances
- * live until DataRuntime.clear() or application-runtime disposal).
- */
-const disposersByRuntime = new WeakMap<object, Set<() => void>>();
-
-export function runModuleInstanceDisposers(runtime: object): void {
-  const disposers = disposersByRuntime.get(runtime);
-  if (disposers === undefined) return;
-  // Disposing a source removes its callback from this set during traversal.
-  // eslint-disable-next-line unicorn/no-useless-spread
-  for (const disposer of [...disposers]) disposer();
-  disposers.clear();
-}
-
-/**
  * Materialize — once per ApplicationRuntime and per description version —
  * active, so `$fetch` binds to that request's data runtime. A version
  * mismatch (HMR replaced the description) drops the stale instance.
@@ -118,13 +103,7 @@ export function resolveModuleSource<T>(ref: ModuleSourceRef): ResolvedValue<T> {
     version: described.version,
   };
   cache.set(ref.key, entry);
-  const active = getActiveDataRuntime();
-  let disposers = disposersByRuntime.get(active);
-  if (disposers === undefined) {
-    disposers = new Set();
-    disposersByRuntime.set(active, disposers);
-  }
-  disposers.add(() => {
+  registerDataRuntimeDisposer(getActiveDataRuntime(), () => {
     // Clearing an older DataRuntime after HMR must not evict the replacement
     // installed in the same ApplicationRuntime cache.
     if (cache.get(ref.key) === entry) cache.delete(ref.key);
@@ -161,7 +140,7 @@ export function createReadSource<T>(
   promise: PromiseLike<T>,
   replay: () => PromiseLike<T>,
 ): ResolvedValue<T> {
-  return getActiveDataRuntime().$read(promise, replay) as unknown as ResolvedValue<T>;
+  return enableDataReads(getActiveDataRuntime()).$read(promise, replay) as unknown as ResolvedValue<T>;
 }
 
 /** Rebind only an already-materialized module read source. */
