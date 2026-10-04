@@ -21,6 +21,55 @@ them; they cannot be deleted merely because a small example does not exercise th
 
 ## Implemented initial-content boundary
 
+### Single browser graph and SSR delivery — 2026-10-04
+
+Architecture batch: `9ec8f6a`. The linker emits each module once into `output`
+and `maps`. Six alternate output/map tables across the compiler and Vite host,
+their virtual resolver/loader and the second module compile were removed. SSR
+and static HTML use the same shell helper. No alternate bootstrap template is
+kept. New server-only identity checks prevent mixing build artifacts.
+
+Paired production SSR audit against adapter `cc5ce13`, with the current compiler
+and runtime used on both sides. These are byte counts for every emitted client
+chunk, including shared and future code; gzip compresses each chunk separately.
+They isolate adapter delivery changes rather than compare whole repository
+revisions. Server JavaScript is excluded. Each response was actually rendered;
+the request-data case resolved its API data.
+
+| Fixture | Before JS B / gzip sum B | After JS B / gzip sum B | After HTML B | After payload B |
+|---|---:|---:|---:|---:|
+| Static | 18,264 / 6,433 | 0 / 0 | 146 | 0 |
+| Counter | 20,779 / 7,328 | 8,730 / 3,517 | 218 | 0 |
+| Composition | 22,556 / 7,929 | 10,417 / 4,107 | 248 | 0 |
+| Input / list | 28,530 / 10,054 | 17,157 / 6,449 | 348 | 0 |
+| Counter with 60 static cards | 23,979 / 7,755 | 8,728 / 3,517 | 3,078 | 0 |
+| Request data | 51,453 / 16,449 | 51,453 / 16,449 | 564 | 315 |
+
+HTML includes its payload where present. Static delivery emits no JavaScript
+assets. The counter/composition/list cases each emit one browser entry. Static
+composition does not increase binding code; later list/branch creation stays
+available. The request-data fixture still needs the larger hydration/data
+capabilities and is the next delivery area to unify and reduce.
+
+Verification: compiler/runtime/server/Vite package builds and changed-source
+lint passed; 121 server tests and 58 Vite tests passed, including production
+Chrome adoption, event updates, later row/branch creation, CSS retention and
+request data. Focused compiler/runtime tests cover both binding and creation,
+node identity, cleanup and uncertain proofs. The ABBA local DOM comparison
+validated all 21 scenarios and mixed sequences, plus three timed 10k operations
+across all state placements. Its before/after browser bundles are byte-identical;
+this batch makes no DOM timing improvement claim.
+
+The workspace typecheck still reports missing generated fullstack declarations
+and example typing errors. Package builds pass. No dependency version changed.
+VM comparison remains outstanding because no VM is configured here.
+
+Run `bun run bench:size:ssr --before-ref=cc5ce13` for the paired delivery audit.
+Reports live in `bench/package-size/dist/ssr/`. DOM comparison reports live in
+`bench/dom/dist/compare/cc5ce138-both/`.
+
+### Shared planning
+
 Linked compilation captures `InitialRenderPlan` before DOM emission. Its HTML
 case contains target-independent text/element content, attributes and children,
 plus the mount target and entry identity. It is independent of component factory

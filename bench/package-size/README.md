@@ -59,13 +59,21 @@ published browser exports and an equivalent runtime-source graph. Metafiles
 attribute minified bytes to runtime modules and generated application code.
 Compression savings cannot be calculated by adding per-module gzip figures.
 
-`bench:size:html` measures the separate initial-HTML and browser-binding build
-products. The host-scope/polling batch compares the same stable fixtures against
+`bench:size:html` measures HTML and the single browser program selected for each
+document, alongside a direct JS-entry compilation. The host-scope/polling batch compares the same stable fixtures against
 `7873aef`; results and interpretation are recorded in
 `../../docs/browser-bundle-architecture.md`. Published/source attribution checks
 also verify that ordinary counters omit request storage and the opaque driver,
 while opaque sources retain polling. HTML-associated and ordinary DOM-creation
 figures measure different products and should be identified when reporting them.
+
+`bun run bench:size:ssr --before-ref=cc5ce13` compares the previous Vite SSR
+adapter with the current adapter using the same compiler, runtime, fixtures and
+HTML shells. It measures actual served HTML, payload bytes, and all emitted
+client chunks, including shared and future code. Each chunk is compressed
+separately. This isolates delivery changes; it is not a comparison of entire
+repository revisions. The baseline adapter is extracted into an ignored source
+snapshot. Results are written to `dist/ssr/results.md` and `results.json`.
 
 `--verify` checks all twelve package/source browser graphs in Chromium, including
 input reset, rejected whitespace, duplicate todo values, counter/prop updates and

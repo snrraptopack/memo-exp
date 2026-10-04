@@ -58,6 +58,7 @@
     "bench:size": "bun run bench/package-size/build.ts && bun run bench/package-size/run.ts",
     "bench:size:audit": "bun run bench/package-size/audit.ts",
     "bench:size:html": "bun run bench/package-size/html-build.ts",
+    "bench:size:ssr": "bun run bench/package-size/ssr-build.ts",
     "bench:frameworks": "cd bench/frameworks && bun run run",
     "bench:octane:setup": "bun run bench/octane/setup.ts",
     "bench:octane": "bun run bench/octane/run.ts",
