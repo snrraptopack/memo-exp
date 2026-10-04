@@ -160,6 +160,57 @@ compared with the ordinary compiler target: this batch preserves that existing
 commit behavior rather than changing it. Compiler, runtime and Vite builds and
 changed-source lint pass.
 
+## Optional host scope and opaque polling
+
+The shared kernel now exposes a core registration used by compiler-proven
+non-polling entities. General registration installs the optional opaque-pull
+driver; existing programmatic registrations keep their volatility behavior.
+Components select that capability from their captured volatility fact. Module
+computeds, rows and effect registrations without polling use the core path.
+There is one entity registry, dirty queue, reason store, commit drain and
+teardown implementation. Scheduling policy and failure safeguards are shared.
+
+Request context propagation is an optional host adapter. Its named storage cell
+initializes on explicit `runWithApplicationRuntime` use, preserving late
+AsyncLocalStorage installation. Ordinary browser updates resolve the ambient
+runtime without importing scoped-storage machinery. Bundled owner-counter
+metafiles now contain neither `application-scope`, `async-storage` nor `volatile`.
+The opaque mutable-clock fixture retains the pull driver; required routing,
+props and list capabilities remain present in their respective fixtures.
+
+This separation also corrected runtime ownership of delayed work. A queued
+commit or opaque frame now runs against its originating runtime, even if another
+runtime is currently active. Context is restored after success or failure.
+Queued work from a disposed application cannot drain another application's
+dirty queue. This was reproduced with identical entity IDs in distinct
+runtimes; the three initial ownership tests failed before the fix. Additional
+checks cover disposal, property-read order, concurrent requests and loading the
+server host after client scoped storage has already initialized.
+
+Production HTML-entry measurements against `7873aef`, same authored fixtures,
+default Vite minification, all emitted JS included:
+
+| Fixture | Before JS raw / gzip sum B | After JS raw / gzip sum B |
+|---|---:|---:|
+| Owner counter with initial HTML | 11,139 / 4,464 | 10,422 / 4,209 |
+| Module counter with initial HTML | 14,509 / 5,599 | 13,745 / 5,349 |
+| Input/list | 24,850 / 9,180 | 24,118 / 8,926 |
+| Composed counter | 11,940 / 4,656 | 11,217 / 4,411 |
+| Owner keyed list | 24,948 / 9,192 | 24,218 / 8,945 |
+
+Static pages continue to ship zero JS. One versus sixty static host cards
+around a local counter ship 10,422 versus 10,424 B of JS; growth is still only
+two bytes of binding-address digits. HTML compression varies slightly with
+generated asset names. The live measurements are in the existing HTML audit.
+This reduces retained capabilities; the interactive kernel and mounting cost
+remain substantial. It does not complete the small browser-core architecture.
+
+Runtime/compiler builds, focused regression suites, all twenty production HTML
+checks in Chrome and twelve published/source browser interaction graphs pass.
+The interaction audit verifies input reset, duplicate list values, keyed node
+identity, local/module counters and composed prop delivery. No CPU performance
+claim follows from these bundle measurements.
+
 ## Historical browser-creation baseline
 
 The stable `bench:size:audit` fixtures include ordinary client mounting and

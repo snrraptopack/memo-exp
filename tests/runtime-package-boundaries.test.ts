@@ -1,11 +1,15 @@
 import { build } from 'esbuild';
-import { compile } from '@memoized-dom/compiler';
+import { compileModules } from '@memoized-dom/compiler';
 import { expect, it } from 'vitest';
 
 async function bundle(source: string) {
-  const result = await build({ stdin: { contents: compile(source), resolveDir: process.cwd(), loader: 'ts' },
+  const result = await build({ stdin: { contents: compileModules({'./App.tsx':source})['./App.tsx']!, resolveDir: process.cwd(), loader: 'ts' },
     bundle: true, write: false, metafile: true, minify: true, format: 'esm', platform: 'browser',
     define: { 'process.env.NODE_ENV': '"production"' }, outfile: 'browser.js',
+    plugins: [{name:'opaque-clock-fixture',setup(builder) {
+      builder.onResolve({filter:/^@size\/clock$/},() => ({path:'clock',namespace:'clock'}));
+      builder.onLoad({filter:/.*/,namespace:'clock'},() => ({contents:'export function createClock(){return {value:0};}',loader:'js'}));
+    }}],
   });
   const inputs = Object.entries(Object.values(result.metafile!.outputs)[0]!.inputs)
     .filter(([, input]) => input.bytesInOutput > 0).map(([path]) => path.replaceAll('\\', '/'));
@@ -14,11 +18,16 @@ async function bundle(source: string) {
 it('keeps an owner counter free of unused list native guards, routing and props', async () => {
   const { inputs, code } = await bundle(`export function App(){let count=0;return <button onClick={()=>count++}>{count}</button>;}`);
   expect(inputs.some(path => path.endsWith('/dist/kernel.js'))).toBe(true);
-  for (const feature of ['list', 'list-update', 'access', 'props', 'hydration', 'effect']) {
+  for (const feature of ['list', 'list-update', 'access', 'props', 'hydration', 'effect', 'async-storage', 'application-scope', 'volatile']) {
     expect(inputs.some(path => path.endsWith(`/dist/${feature}.js`))).toBe(false);
   }
   expect(code).not.toContain('[native code]');
   expect(code).not.toContain('node:async_hooks');
+});
+it('retains polling only for an opaque source', async () => {
+  const { inputs } = await bundle(`import {createClock} from '@size/clock';
+    export function App(){const clock=createClock();return <p>{clock.value}</p>;}`);
+  expect(inputs.some(path => path.endsWith('/dist/volatile.js'))).toBe(true);
 });
 it('retains access routing when module state requires it', async () => {
   const { inputs } = await bundle(`let count=0;export function App(){return <button onClick={()=>count++}>{count}</button>;}`);

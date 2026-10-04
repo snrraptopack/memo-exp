@@ -45,6 +45,7 @@ function mount(body: string, setup = 'let count = 0;', effect = false, asyncHand
     installAccessTable() {},
     getActiveEnvironment: () => ({ document }),
     register: ({ render }: { render: () => void }) => renders.push(render),
+    registerEntity: ({ render }: { render: () => void }) => renders.push(render),
     registerEffect: (_id: string, _parent: string, fn: () => unknown) => effects.push(fn),
     effectAssignmentChanged: (a: unknown, b: unknown) => !Object.is(a, b),
     commitWrites: notify,
@@ -82,7 +83,7 @@ describe('compiler completion semantics', () => {
     const api = execute(compile(`let count = 0; const increment = () => count++;
       export function read() { return increment(); }
       export function App() { return <button onClick={${handler}}>{count}</button>; }`), {
-      installAccessTable() {}, register() {}, commitWrites() {},
+      installAccessTable() {}, register() {}, registerEntity() {}, commitWrites() {},
       getActiveEnvironment: () => ({ document }),
     });
     const button = api.App('App', null) as HTMLButtonElement;

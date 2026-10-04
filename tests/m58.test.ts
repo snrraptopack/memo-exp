@@ -88,7 +88,7 @@ describe('M5.10 - lightweight listed component rows', () => {
     );
     expect(code).not.toContain('.registerProps');
     const rowFactory = code.slice(code.indexOf('function Row'), code.indexOf('export function C'));
-    expect(rowFactory).not.toContain('.register({');
+    expect(rowFactory).not.toMatch(/\.register(?:Entity)?\(\{/);
     expect(rowFactory).toContain('.cloneNode(true)');
     expect(rowFactory).toContain('.setDelegatedEvent(');
     expect(code.match(/\.createDelegatedEventBinding\(/g)).toHaveLength(1);

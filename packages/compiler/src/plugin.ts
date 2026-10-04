@@ -89,7 +89,7 @@ function rewriteComputeds(ctx: Ctx, program: t.Program): void {
       const init = cloneEstreeNode(d.init);
       const next = generatedIdentifier(ctx, `${name}Next`);
       const registerStmt = astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'register'), [
+        astFactory.callExpression(md(ctx, 'registerEntity'), [
           astFactory.objectExpression([
             astFactory.objectProperty(
               astFactory.identifier('id'),
@@ -181,7 +181,7 @@ function rewriteModuleControlFlow(
       statementIndex + 1,
       0,
       astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'register'), [
+        astFactory.callExpression(md(ctx, 'registerEntity'), [
           astFactory.objectExpression([
             astFactory.objectProperty(
               astFactory.identifier('id'),

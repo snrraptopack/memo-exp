@@ -24,7 +24,9 @@
  * children, so child links exist. Violations don't corrupt rendering — they
  * only orphan children from subtree teardown.
  */
-import { createStorage } from './async-storage';
+import { runWithApplicationRuntime } from './application-scope';
+export { runWithApplicationRuntime } from './application-scope';
+export { register } from './volatile';
 import {
   clearDirtyReasons,
   createDirtyReasonStore,
@@ -92,11 +94,6 @@ const defaultScheduler: Scheduler =
   typeof queueMicrotask === 'function'
     ? queueMicrotask.bind(globalThis)
     : (fn) => Promise.resolve().then(fn);
-
-/**
- * Reserved negative reason: reevaluate pull output without signaling a write.
- */
-const VOLATILE_PULL_REASON = -1;
 
 /** Upper bound on commits' drain passes before a cycle is declared. */
 const MAX_COMMIT_PASSES = 100;
@@ -248,12 +245,21 @@ const defaultRuntime: ApplicationRuntime = {
   },
 };
 
-const asyncLocalStorage = createStorage<ApplicationRuntime>('runtime');
 let activeRuntime: ApplicationRuntime = defaultRuntime;
+
+/** Host-installed context propagation; ordinary browser updates need none. */
+export interface ApplicationRuntimeScope {
+  getStore(): ApplicationRuntime | undefined;
+  run<T>(runtime: ApplicationRuntime, callback: () => T): T;
+}
+let applicationScope: ApplicationRuntimeScope | undefined;
+export function installApplicationRuntimeScope(scope: ApplicationRuntimeScope): void {
+  applicationScope = scope;
+}
 
 /** The runtime all kernel operations currently route through. */
 export function getActiveApplicationRuntime(): ApplicationRuntime {
-  return asyncLocalStorage.getStore() ?? activeRuntime;
+  return applicationScope?.getStore() ?? activeRuntime;
 }
 
 type RuntimeCreatedListener = (runtime: ApplicationRuntime) => void;
@@ -286,19 +292,20 @@ export function setActiveApplicationRuntime(
 }
 
 /** Scope `fn` to `runtime`, restoring the previous runtime afterwards. */
-export function runWithApplicationRuntime<T>(
+export function runInApplicationRuntime<T>(
   runtime: ApplicationRuntime,
   fn: () => T,
 ): T {
   const previous = activeRuntime;
-  return asyncLocalStorage.run(runtime, () => {
+  const invoke = () => {
     activeRuntime = runtime;
     try {
       return fn();
     } finally {
       activeRuntime = previous;
     }
-  });
+  };
+  return applicationScope ? applicationScope.run(runtime, invoke) : invoke();
 }
 
 /** Swap the scheduling policy of the ACTIVE runtime (tests, SSR, hosts). */
@@ -417,29 +424,17 @@ export function registryGeneration(): number {
   return getActiveApplicationRuntime().state.generation;
 }
 
-function scheduleVolatileFrame(k: KernelState): void {
-  if (k.volatileFrameScheduled || k.volatile.size === 0) return;
-  // Volatile pulling is a client concern: server environments inject a null
-  // schedule and render synchronously instead.
-  const schedule = k.environment.schedule;
-  if (schedule === null) return;
-  k.volatileFrameScheduled = true;
-  schedule(() => {
-    k.volatileFrameScheduled = false;
-    try {
-      if (k.environment.document.hidden !== true) {
-        for (const id of k.volatile) markDirty(id, VOLATILE_PULL_REASON);
-      }
-    } finally {
-      // A synchronous render can throw. Keep the next frame available for
-      // recovery, while preserving the error and respecting removed owners.
-      scheduleVolatileFrame(k);
-    }
-  });
+type VolatileDriver = (runtime: ApplicationRuntime) => void;
+let volatileDriver: VolatileDriver | undefined;
+/** The optional opaque-pull capability uses the shared registry/scheduler. */
+export function installVolatileDriver(driver: VolatileDriver): void {
+  volatileDriver = driver;
 }
 
-export function register(entity: Entity): void {
-  const k = getActiveApplicationRuntime().state;
+/** Compiler-known entity registration; polling is selected by its emitter. */
+export function registerEntity(entity: Entity): void {
+  const runtime = getActiveApplicationRuntime();
+  const k = runtime.state;
   const parent =
     entity.parent !== null ? k.registry.get(entity.parent) : undefined;
   const preparation = k.preparation ?? parent?.preparation;
@@ -459,7 +454,7 @@ export function register(entity: Entity): void {
   k.idsCache = null;
   k.generation++;
   notifyRegistry(entity.id, 'add');
-  scheduleVolatileFrame(k);
+  volatileDriver?.(runtime);
 }
 
 /**
@@ -623,19 +618,20 @@ export function markDirty(
   id: EntityId,
   reason?: DirtyReasonInput,
 ): void {
-  const k = getActiveApplicationRuntime().state;
-  if (enqueueDirty(k, id, reason)) scheduleCommit(k);
+  const runtime = getActiveApplicationRuntime();
+  if (enqueueDirty(runtime.state, id, reason)) scheduleCommit(runtime);
 }
 
 /** @internal Enqueue a resolved write's readers before a synchronous commit. */
 export function markDirtyMany(ids: readonly EntityId[], reason?: DirtyReasonInput): void {
   if (ids.length === 0) return;
-  const k = getActiveApplicationRuntime().state;
+  const runtime = getActiveApplicationRuntime();
+  const k = runtime.state;
   let marked = false;
   for (const id of ids) {
     if (enqueueDirty(k, id, reason)) marked = true;
   }
-  if (marked) scheduleCommit(k);
+  if (marked) scheduleCommit(runtime);
 }
 
 function enqueueDirty(k: KernelState, id: EntityId, reason?: DirtyReasonInput): boolean {
@@ -681,7 +677,8 @@ export function markDirtySubtree(
   ownerId?: EntityId,
   ownerReason?: DirtyReasonInput,
 ): void {
-  const k = getActiveApplicationRuntime().state;
+  const runtime = getActiveApplicationRuntime();
+  const k = runtime.state;
   const prefix = id + '/';
   let marked = ownerId !== undefined && enqueueDirty(k, ownerId, ownerReason);
   for (const key of k.registry.keys()) {
@@ -691,13 +688,14 @@ export function markDirtySubtree(
       marked = true;
     }
   }
-  if (marked) scheduleCommit(k);
+  if (marked) scheduleCommit(runtime);
 }
 
-function scheduleCommit(k: KernelState): void {
+function scheduleCommit(runtime: ApplicationRuntime): void {
+  const k = runtime.state;
   if (k.scheduled || k.inCommit) return; // dedupe: 1000 marks → 1 frame
   k.scheduled = true;
-  k.scheduler(commit);
+  k.scheduler(() => runInApplicationRuntime(runtime, commit));
 }
 
 // ---------------------------------------------------------------------------

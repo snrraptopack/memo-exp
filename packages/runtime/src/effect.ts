@@ -11,7 +11,7 @@ import {
   getActiveEnvironment,
   has,
   markDirty,
-  register,
+  registerEntity,
   unregisterSubtree,
   type EntityId,
 } from './kernel';
@@ -35,7 +35,7 @@ export function registerEffect(
   const effects = getActiveEnvironment().effects;
   const execute = effects === 'run';
 
-  register({
+  registerEntity({
     id,
     parent,
     phase: 'effect',
@@ -88,7 +88,7 @@ export function registerConditionalEffect(
   const effects = getActiveEnvironment().effects;
   const execute = effects === 'run';
 
-  register({
+  registerEntity({
     id,
     parent,
     phase: 'effect',

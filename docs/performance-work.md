@@ -7,6 +7,13 @@ interactive host bindings and the remaining browser-program
 work. The measurements and correctness backlog below remain historical records;
 bundle/runtime tuning no longer sets the architecture order.
 
+The host-scope/polling separation removes unused request storage and opaque
+frame scheduling from ordinary browser output while sharing the kernel's
+commit/lifetime implementation. It also fixes delayed commits and pull callbacks
+running against another active runtime. Bundle measurements and ownership gates
+are recorded in `browser-bundle-architecture.md`; these are size reductions,
+not claims of faster DOM timings.
+
 ## Correctness gates
 
 Benchmark timings require visible DOM changes. The DOM suite checks fresh 1k

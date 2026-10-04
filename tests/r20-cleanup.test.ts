@@ -268,7 +268,7 @@ describe('R20 - cleanup compiler contract', () => {
   it('keeps listed components with cleanup as lifecycle entities', () => {
     const code = compile(SOURCES['r20-rows']!);
     expect(code).toMatch(
-      /function Row\(_id\d*, _parent\d*, _props\d*, _dataPolicies\d*\)[\s\S]*?\.register\(/,
+      /function Row\(_id\d*, _parent\d*, _props\d*, _dataPolicies\d*\)[\s\S]*?\.registerEntity\(/,
     );
   });
 });

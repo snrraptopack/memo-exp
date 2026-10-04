@@ -16,6 +16,19 @@ the compiled application, rather than by summing the entire runtime package.
 See [Browser JavaScript architecture](../../docs/browser-bundle-architecture.md)
 for measurements and the remaining separation work.
 
+The kernel shares one registry, dirty queue, commit drain and teardown path.
+Compiler-proven non-polling registrations use `registerEntity`; general
+`register` includes the optional opaque-pull driver. Effects and computed
+registrations without polling use the same core registration. Polling remains
+available for unknown mutable sources, including failed-render recovery.
+
+Scoped context propagation lives in `application-scope.ts` and initializes on
+explicit `runWithApplicationRuntime` use. Ordinary browser updates can omit
+that adapter and `async-storage.ts`. A later server entry still installs the
+host's AsyncLocalStorage through the existing lazy storage factory. Scheduled
+commits and pull callbacks retain their originating runtime and restore the
+previous context, including after errors or disposal.
+
 Application source does not need to import reactive primitives. The ordinary
 browser entry imports only the mounting boundary:
 

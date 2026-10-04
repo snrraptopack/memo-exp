@@ -28,6 +28,10 @@ Public compilation APIs:
   browser target binds only nodes needed by events and updates; unchanged names
   and closed derived text/attributes do not get DOM update instructions. Local
   and module state retain the existing scheduler, routing and owner lifetime.
+- Registration selects runtime capabilities from the captured volatility fact:
+  non-polling components, rows and computed entities use `registerEntity`;
+  opaque components use general `register`. Both share the kernel's registry,
+  scheduler and teardown. Non-polling output can omit the opaque frame driver.
 
 The top-level files are orchestration and whole-program passes:
 

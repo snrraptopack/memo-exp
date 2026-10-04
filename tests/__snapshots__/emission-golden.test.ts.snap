@@ -13,7 +13,7 @@ export function Timer(_id, _parent, _dataPolicies) {
 
 	const _update = () => {};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("tick");
 	const _span = _document.createElement("span");
@@ -41,7 +41,7 @@ export function App(_id, _parent, _dataPolicies) {
 		_MD.setTextData(_text, count);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
@@ -91,7 +91,7 @@ export function Ticker(_id, _parent, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
@@ -132,7 +132,7 @@ export function Picker(_id, _parent, _dataPolicies) {
 		_MD.setTextData(_text, selected);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
@@ -166,7 +166,7 @@ export function Counter(_id, _parent, _dataPolicies) {
 		_MD.setTextData(_text, count);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
@@ -206,7 +206,7 @@ export function Card(_id, _parent, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("Title");
 	const _h = _document.createElement("h1");
@@ -248,7 +248,7 @@ export function Label(_id, _parent, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
@@ -281,7 +281,7 @@ export function Row(_id, _parent, _props, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 	_MD.registerProps(_id, _props, { "item": 1, "index": 0 });
 
 	const _text = _document.createTextNode(" at ");
@@ -310,7 +310,7 @@ export function Shell(_id, _parent, _props, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 	_MD.registerProps(_id, _props, { "header": 1, "children": 0 });
 
 	const _header = _document.createElement("header");
@@ -352,7 +352,7 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 		_region.reconcile(items, _MD.isStructuralListUpdate(_reasons, ""));
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 	_MD.registerProps(_id, _props);
 
 	const _ul = _document.createElement("ul");
@@ -456,7 +456,7 @@ export function Badge(_id, _parent, _props, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 	_MD.registerProps(_id, _props);
 
 	const _text = _document.createTextNode("ready");
@@ -509,7 +509,7 @@ export function Totals(_id, _parent, _props, _dataPolicies) {
 		_MD.setTextData(_text, total);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 	_MD.registerProps(_id, _props);
 
 	const _text = _document.createTextNode("");
@@ -543,7 +543,7 @@ export function LiveFeed(_id, _parent, _dataPolicies) {
 		_MD.setTextData(_text, status);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
@@ -591,7 +591,7 @@ export function Avatar(_id, _parent, _props, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 	_MD.registerProps(_id, _props, { "user": 1, "size": 0 });
 
 	const _img = _document.createElement("img");
@@ -635,7 +635,7 @@ export function RawViewer(_id, _parent, _props, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 	_MD.registerProps(_id, _props);
 
 	const _div = _document.createElement("div");
@@ -677,7 +677,7 @@ export function Nav(_id, _parent, _dataPolicies) {
 	const _document = _MD.getActiveEnvironment().document;
 	const _update = () => {};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("go");
 	const _button = _document.createElement("button");
@@ -707,7 +707,7 @@ export function ArrowBadge(_id, _parent, _props, _dataPolicies) {
 		}
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 	_MD.registerProps(_id, _props);
 
 	const _span = _document.createElement("span");
@@ -727,7 +727,7 @@ export function ExprCard(_id2, _parent2, _props2, _dataPolicies2) {
 		}
 	};
 
-	_MD.register({ id: _id2, parent: _parent2, render: _update2 });
+	_MD.registerEntity({ id: _id2, parent: _parent2, render: _update2 });
 	_MD.registerProps(_id2, _props2);
 
 	const _div = _document2.createElement("div");
@@ -771,7 +771,7 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 		_region.reconcile(_listView, _MD.isStructuralListUpdate(_reasons, ""));
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _ul = _document.createElement("ul");
 
@@ -861,7 +861,7 @@ export function CanvasView(_id, _parent, _dataPolicies) {
 	let canvasEl = null;
 	const _update = () => {};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _canvas = _document.createElement("canvas");
 
@@ -890,11 +890,11 @@ export function Profile(_id, _parent, _dataPolicies) {
 	const user = $fetch('/api/user');
 	const _update = () => {};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _h = _document.createElement("h1");
 
-	_MD.register({
+	_MD.registerEntity({
 		id: _id + "/when0",
 		parent: _id,
 		render: () => _when.update()

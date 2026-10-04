@@ -34,7 +34,7 @@ export function AsyncCounter(_id, _parent, _dataPolicies) {
 		_MD.setTextData(_text3, count);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("async");
 	const _button = _document.createElement("button");
@@ -206,7 +206,7 @@ export function CompList(_id2, _parent, _dataPolicies) {
 		_region.reconcile(items, _MD.isStructuralListUpdate(_reasons, "./component.tsx#items"));
 	};
 
-	_MD.register({ id: _id2, parent: _parent, render: _update2 });
+	_MD.registerEntity({ id: _id2, parent: _parent, render: _update2 });
 
 	const _ul = _document2.createElement("ul");
 	const _onClickBinding2 = _MD.createDelegatedEventBinding(_ul, "onClick");
@@ -237,7 +237,7 @@ export function CompList(_id2, _parent, _dataPolicies) {
 	const _listSelectionId = _id2 + "/items/$selection";
 	let _selectedModuleListKey = selected;
 
-	_MD.register({
+	_MD.registerEntity({
 		id: _listSelectionId,
 		parent: _id2,
 		render: () => {
@@ -321,7 +321,7 @@ export function InlineList(_id, _parent, _dataPolicies) {
 		_region.reconcile(items, _MD.isStructuralListUpdate(_reasons, "./component.tsx#items"));
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _ul = _document.createElement("ul");
 	const _onClickBinding = _MD.createDelegatedEventBinding(_ul, "onClick");
@@ -414,7 +414,7 @@ export function InlineList(_id, _parent, _dataPolicies) {
 	const _listSelectionId = _id + "/items/$selection";
 	let _selectedModuleListKey = selected;
 
-	_MD.register({
+	_MD.registerEntity({
 		id: _listSelectionId,
 		parent: _id,
 		render: () => {
@@ -478,7 +478,7 @@ function Tag(_id, _parent, _dataPolicies) {
 		_MD.setTextData(_text, label);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
@@ -503,7 +503,7 @@ export function App(_id2, _parent2, _dataPolicies2) {
 
 	const _update2 = () => {};
 
-	_MD.register({ id: _id2, parent: _parent2, render: _update2 });
+	_MD.registerEntity({ id: _id2, parent: _parent2, render: _update2 });
 
 	const _tag = Tag(_id2 + "/Tag", _id2, { $default: _dataPolicies2?.$default });
 	const _tag2 = Tag(_id2 + "/Tag[1]", _id2, { $default: _dataPolicies2?.$default });
@@ -557,7 +557,7 @@ export function Counter(_id, _parent, _dataPolicies) {
 		_MD.setTextData(_text3, again);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("increment");
 	const _button = _document.createElement("button");
@@ -611,7 +611,7 @@ function Badge(_id, _parent, _dataPolicies) {
 		_MD.setTextData(_text, name);
 	};
 
-	_MD.register({ id: _id, parent: _parent, render: _update });
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
 
 	const _text = _document.createTextNode("");
 
@@ -636,7 +636,7 @@ function Editor(_id2, _parent2, _dataPolicies2) {
 
 	const _update2 = () => {};
 
-	_MD.register({ id: _id2, parent: _parent2, render: _update2 });
+	_MD.registerEntity({ id: _id2, parent: _parent2, render: _update2 });
 
 	const _text2 = _document2.createTextNode("rename");
 	const _button = _document2.createElement("button");
@@ -652,7 +652,7 @@ export function App(_id3, _parent3, _dataPolicies3) {
 	const _document3 = _MD.getActiveEnvironment().document;
 	const _update3 = () => {};
 
-	_MD.register({ id: _id3, parent: _parent3, render: _update3 });
+	_MD.registerEntity({ id: _id3, parent: _parent3, render: _update3 });
 
 	const _badge = Badge(_id3 + "/Badge", _id3, { $default: _dataPolicies3?.$default });
 	const _editor = Editor(_id3 + "/Editor", _id3, { $default: _dataPolicies3?.$default });

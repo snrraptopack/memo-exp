@@ -67,7 +67,7 @@ describe('R26 — effect code generation and validation', () => {
 
     const update = code.slice(
       code.indexOf('const _update'),
-      code.indexOf('.register({'),
+      code.indexOf('.registerEntity({'),
     );
     expect(update).toContain('setTextData(');
     expect(update).toContain('.markDirty(');

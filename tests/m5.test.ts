@@ -53,7 +53,7 @@ describe('M5 compiler — code generation', () => {
     expect(code).toMatchSnapshot();
     // R1: entity factory + register
     expect(code).toMatch(/function Counter\(_id\d*, _parent\d*, _dataPolicies\d*\)/);
-    expect(code).toContain('.register(');
+    expect(code).toContain('.registerEntity(');
     // R3/R4: text slots write through the value-cached runtime helper —
     // seeded at creation and re-run from the update closure.
     expect(code.match(/_MD\.setTextData\(_text\d*, count\)/g)).toHaveLength(2);

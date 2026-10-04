@@ -59,6 +59,14 @@ published browser exports and an equivalent runtime-source graph. Metafiles
 attribute minified bytes to runtime modules and generated application code.
 Compression savings cannot be calculated by adding per-module gzip figures.
 
+`bench:size:html` measures the separate initial-HTML and browser-binding build
+products. The host-scope/polling batch compares the same stable fixtures against
+`7873aef`; results and interpretation are recorded in
+`../../docs/browser-bundle-architecture.md`. Published/source attribution checks
+also verify that ordinary counters omit request storage and the opaque driver,
+while opaque sources retain polling. HTML-associated and ordinary DOM-creation
+figures measure different products and should be identified when reporting them.
+
 `--verify` checks all twelve package/source browser graphs in Chromium, including
 input reset, rejected whitespace, duplicate todo values, counter/prop updates and
 retained list nodes. Use `PUPPETEER_EXECUTABLE_PATH` to select Chromium. Omit the

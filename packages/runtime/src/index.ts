@@ -9,6 +9,7 @@
 
 export {
   register,
+  registerEntity,
   unregister,
   unregisterSubtree,
   registeredIds,

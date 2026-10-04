@@ -91,12 +91,12 @@ it('emits DOM-only teardown only for proven lightweight inline rows', () => {
 
 it('keeps row entities in hot builds and lists inside a conditional owner', () => {
   const code = compile(source(true), { hot: true });
-  expect(code).toMatch(/\.register\(\{\s*id: _rowId\d*,/);
+  expect(code).toMatch(/\.registerEntity\(\{\s*id: _rowId\d*,/);
   const conditional = compile(`export function App() { let show = true; let items = ${rows};
     return <main><button onClick={() => show = !show}>toggle</button>
       {show ? <ul>{items.map(item => <li key={item.id}>{item.label}</li>)}</ul> : <p>hidden</p>}
     </main>; }`);
-  expect(conditional).toMatch(/\.register\(\{\s*id: _rowId\d*,/);
+  expect(conditional).toMatch(/\.registerEntity\(\{\s*id: _rowId\d*,/);
 });
 
 it.each([
@@ -110,12 +110,12 @@ it.each([
   const code = compile(`function Child({item}) { return <span>{item.label}</span>; }
     function format(label) { return label; }
     export function App() { let items = ${rows}; return <ul>{items.map(item => ${jsx})}</ul>; }`);
-  expect(code).toMatch(/\.register\(\{\s*id: _rowId\d*,/);
+  expect(code).toMatch(/\.registerEntity\(\{\s*id: _rowId\d*,/);
 });
 
 it('retains entity ownership for replayed callback statements', () => {
   const code = compile(`export function App() { let items = ${rows}; return <ul>{items.map(item => {
     console.log(item.id); return <li key={item.id}>{item.label}</li>;
   })}</ul>; }`);
-  expect(code).toMatch(/\.register\(\{\s*id: _rowId\d*,/);
+  expect(code).toMatch(/\.registerEntity\(\{\s*id: _rowId\d*,/);
 });

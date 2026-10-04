@@ -146,7 +146,8 @@ const SOURCES: Record<string, string> = {
 /** Reason gates in the App update: `[gated slot expression] -> reasonsHit args`. */
 function gatesOf(code: string, updateVar: string): Map<string, string> {
   const start = code.indexOf(`const ${updateVar} = (`);
-  const end = code.indexOf('_MD.register(', start);
+  const registration = code.slice(start).match(/_MD\.register(?:Entity)?\(/);
+  const end = registration?.index === undefined ? code.length : start + registration.index;
   const body = code.slice(start, end);
   const gates = new Map<string, string>();
   // Gated updaters emit `if (_MD.reasonsHit(_reasonsN, ARGS)) { … }`; the

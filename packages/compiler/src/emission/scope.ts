@@ -262,7 +262,7 @@ export function registerStmt(
   volatile = false,
 ): t.Statement {
   return astFactory.expressionStatement(
-    astFactory.callExpression(md(ctx, 'register'), [
+    astFactory.callExpression(md(ctx, volatile ? 'register' : 'registerEntity'), [
       astFactory.objectExpression([
         astFactory.objectProperty(astFactory.identifier('id'), id),
         astFactory.objectProperty(astFactory.identifier('parent'), parent),
