@@ -14,6 +14,7 @@ export function writeReport(output: string, metadata: Record<string, unknown>, s
   writeFileSync(resolve(output, 'results.json'), JSON.stringify({ ...metadata, suites }, null, 2) + '\n');
   const lines = ['# Pinned Octane comparison', '',
     `Upstream: \`${metadata.upstreamCommit}\`. Memoized-dom: \`${metadata.memoizedCommit}\`.`, '',
+    ...(metadata.beforeCommit ? [`Baseline compiler/runtime: \`${metadata.beforeCommit}\`. Both memoized-dom columns use the same authored adapter and dependency lock, built from source.`, ''] : []),
     'These results supplement the existing performance backlog; they do not change its priorities.', '',
     ...(metadata.failed ? [`**Incomplete or failed run:** ${metadata.failed}`, ''] : []),
     'Timing values are median milliseconds per operation, including the framework commit. Paint is excluded.',

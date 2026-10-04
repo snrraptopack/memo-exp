@@ -73,6 +73,33 @@ Both suites run sequentially after all production builds. Static servers use
 available local ports and are stopped when the runner exits. No development
 servers or existing example ports are used.
 
+### Compare compiler/runtime revisions on the same VM
+
+After setup, include a baseline commit in the same combined report:
+
+```sh
+bun run bench:octane --before-ref=3c90d2f --samples=8
+bun run bench:octane --before-ref=3c90d2f --samples=8 --comparison-order=after-first
+```
+
+Each report includes all nine upstream targets plus `memoized-dom-before` and
+`memoized-dom`. Both memoized-dom variants use one captured copy of the current
+authored adapter, isolated compiler/runtime source, the same dependency lock and
+the same browser. The baseline is read from a Git archive under ignored results;
+the checkout and compiled adapter sources are not edited. Changed dependency
+locks are rejected because the source snapshots share installed dependencies.
+The normal run without `--before-ref` still uses the distributed compiler/runtime.
+Comparison runs build both variants from source and say so in metadata.
+
+The two orders help expose temporal drift; they do not eliminate it. Keep both
+reports. Adapter and minified JavaScript hashes are recorded; identical artifacts
+cannot establish a code-driven speed difference. `--smoke --targets=memoized-dom`
+checks just the two variants and is labelled as a limited integration check.
+These commands compare CPU/correctness, not request HTML/state payload sizes.
+The HTML/package audits remain separate. Upstream HTML currently loads Bootstrap
+from its pinned CDN URLs, so page-load timeouts can fail a run before measurement;
+failed/missing suites are recorded as incomplete and exit nonzero.
+
 ```sh
 bun run bench:octane --quick                         # three measured samples
 bun run bench:octane --smoke --targets=memoized-dom   # adapter integration check

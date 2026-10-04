@@ -2178,3 +2178,14 @@ counter grows 77–80 gzip bytes. Adding 59 static cards adds one raw JS byte.
 Full figures, unchanged ordinary/runtime graphs and proof limits are documented
 in `browser-bundle-architecture.md`. Request state and further runtime narrowing
 remain on the roadmap.
+
+The Octane wrapper accepts `--before-ref=COMMIT` to include isolated baseline and
+current compiler/runtime builds in one report alongside the upstream targets.
+Both use the same captured adapter and dependency lock; reports record source/
+artifact hashes. `--comparison-order=after-first` provides a complementary order.
+A local one-sample comparison against `3c90d2f` passed canonical/reorder gates;
+its two JavaScript artifacts were identical. A subsequent reverse-order run
+failed during upstream page navigation to CDN-styled pages and was correctly
+reported incomplete, with a nonzero exit. Neither run is a CPU improvement claim.
+Retrying the reversed order for the canonical suite passed both variants.
+VM execution remains pending configuration; the runner creates no cloud resource.

@@ -7,21 +7,36 @@ import { assertPin, directory, fixtureDirectory, git, repository, targetNames, u
 import { buildTargets } from './build';
 import { command } from './process';
 import { writeReport, type SuiteResult } from './report';
+import { prepareComparison } from './comparison';
 
 const args = process.argv.slice(2);
 const known = args.filter(arg => !['--quick', '--smoke', '--canonical-only'].includes(arg)
-  && !arg.startsWith('--targets=') && !arg.startsWith('--samples='));
+  && !arg.startsWith('--targets=') && !arg.startsWith('--samples=') && !arg.startsWith('--before-ref=')
+  && !arg.startsWith('--comparison-order='));
 if (known.length) throw new Error(`Unknown options: ${known.join(', ')}`);
+const beforeRef = args.find(arg => arg.startsWith('--before-ref='))?.slice('--before-ref='.length);
+if (beforeRef === '') throw new Error('--before-ref requires a Git commit/ref');
+const comparisonOrder = args.find(arg => arg.startsWith('--comparison-order='))?.slice('--comparison-order='.length) ?? 'before-first';
+if (!['before-first', 'after-first'].includes(comparisonOrder) ||
+    (beforeRef === undefined && args.some(arg => arg.startsWith('--comparison-order=')))) {
+  throw new Error('--comparison-order requires --before-ref and before-first or after-first');
+}
 const names = args.find(arg => arg.startsWith('--targets='))?.slice('--targets='.length).split(',') ?? [...targetNames];
 if (!names.length || new Set(names).size !== names.length || names.some(name => !targetNames.includes(name as typeof targetNames[number]))) {
   throw new Error(`Targets must be unique names from: ${targetNames.join(', ')}`);
 }
+if (beforeRef !== undefined && !names.includes('memoized-dom')) throw new Error('--before-ref requires the memoized-dom target');
 const samples = Number(args.find(arg => arg.startsWith('--samples='))?.slice('--samples='.length)
   ?? (args.includes('--smoke') ? 1 : args.includes('--quick') ? 3 : 8));
 if (!Number.isInteger(samples) || samples < 1) throw new Error('--samples must be a positive integer');
 assertPin();
 const output = resolve(directory, 'results', new Date().toISOString().replace(/[:.]/g, '-'));
 mkdirSync(output, { recursive: true });
+const comparison = beforeRef === undefined ? undefined : await prepareComparison(beforeRef, output);
+if (comparison) {
+  const index = names.indexOf('memoized-dom');
+  names.splice(index + (comparisonOrder === 'after-first' ? 1 : 0), 0, 'memoized-dom-before');
+}
 const suites: SuiteResult[] = [];
 const metadata: Record<string, unknown> = {
   measuredAt: new Date().toISOString(), upstreamCommit, memoizedCommit: git(['rev-parse', 'HEAD']),
@@ -31,6 +46,10 @@ const metadata: Record<string, unknown> = {
   memoryBytes: totalmem(), bunVersion: Bun.version, targets: names, samples,
   canonicalCpuThrottle: Number(process.env.CPU_THROTTLE || 1),
   memoizedState: 'component-owned; inline keyed rows; immutable array operations; synchronous scheduler',
+  ...(comparison === undefined ? {} : { beforeCommit: comparison.beforeCommit,
+    comparison: 'same authored adapter; isolated compiler/runtime source; identical dependency lock',
+    comparisonOrder, adapterSha256: comparison.adapterSha256,
+    comparisonBuild: 'both variants bundled from source, not the published runtime package' }),
 };
 // Include the container's limits when available; host totals can overstate VM capacity.
 for (const [name, path] of [['cpuQuota', '/sys/fs/cgroup/cpu.max'], ['memoryLimit', '/sys/fs/cgroup/memory.max']] as const) {
@@ -39,10 +58,14 @@ for (const [name, path] of [['cpuQuota', '/sys/fs/cgroup/cpu.max'], ['memoryLimi
 writeFileSync(resolve(output, 'metadata.json'), JSON.stringify(metadata, null, 2) + '\n');
 const servers: ReturnType<typeof Bun.serve>[] = [];
 try {
-  const outputs = await buildTargets(names);
+  const outputs = await buildTargets(names, comparison);
+  if (comparison) metadata.comparisonArtifacts = Object.fromEntries(['memoized-dom-before', 'memoized-dom'].map(name => {
+    const source = readFileSync(resolve(outputs.get(name)!, 'main.js'));
+    return [name, { bytes: source.byteLength, sha256: createHash('sha256').update(source).digest('hex') }];
+  }));
   metadata.runtimeVersions = Object.fromEntries(names.map(name => {
-    const dependencies = name === 'memoized-dom'
-      ? { '@memoized-dom/runtime': JSON.parse(readFileSync(resolve(repository, 'packages/runtime/package.json'), 'utf8')).version }
+    const dependencies = name === 'memoized-dom' || name === 'memoized-dom-before'
+      ? { '@memoized-dom/runtime': JSON.parse(readFileSync(resolve(name === 'memoized-dom-before' ? comparison!.beforeRoot : repository, 'packages/runtime/package.json'), 'utf8')).version }
       : Object.fromEntries(Object.keys(JSON.parse(readFileSync(resolve(fixtureDirectory, name, 'package.json'), 'utf8')).dependencies ?? {})
         .map(dependency => [dependency, JSON.parse(readFileSync(resolve(fixtureDirectory, name, 'node_modules', dependency, 'package.json'), 'utf8')).version]));
     return [name, dependencies];
