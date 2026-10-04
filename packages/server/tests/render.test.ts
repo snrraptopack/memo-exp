@@ -13,7 +13,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 import { resetScheduler, unregister } from '@memoized-dom/runtime';
 import { _internals } from '@memoized-dom/runtime/testing';
-import { renderToString, renderWithDom } from '../src/index';
+import { renderToString } from '../src/index';
+import { renderWithDom } from '../src/dom';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, '..', 'tests', 'fixtures', 'out');
@@ -27,7 +28,7 @@ const source = `
     let open = 3;
     let tasks = ['Alpha', 'Beta'];
 
-    effect(() => {
+    $effect(() => {
       effectRuns++;
     });
 

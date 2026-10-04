@@ -91,6 +91,8 @@ export interface MemoDomOptions {
    * request-owned state-cell operations (server builds only).
    */
   moduleStateCells?: boolean;
+  /** Experimental string-tier leaf-row writer; retains DOM fallback. */
+  ssrWriter?: boolean;
 }
 
 export interface ExternalReactiveSourceDefinition {
@@ -407,6 +409,7 @@ export interface Ctx {
   hot: boolean;
   /** SSR Phase 1.3 lowering: lower reactive module state into request cells. */
   moduleStateCells: boolean;
+  ssrWriter: boolean;
   moduleId: string;
   routedEnvironment: 'universal' | 'client' | 'server';
   linkedRoutes: readonly CompilerRouteDefinition[] | null;
@@ -763,6 +766,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     rootComponent: opts.rootComponent ?? null,
     hot: opts.hot ?? false,
     moduleStateCells: opts.moduleStateCells ?? false,
+    ssrWriter: opts.ssrWriter ?? false,
     moduleId,
     routedEnvironment: opts.routedEnvironment ?? 'universal',
     linkedRoutes: opts.linkedRoutes ?? null,

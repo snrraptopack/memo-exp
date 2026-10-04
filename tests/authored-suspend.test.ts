@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
-import { renderToResultAsync, renderToString, renderToStringAsync } from '@memoized-dom/server';
+import { render, renderToString } from '@memoized-dom/server';
 import { mount, registerRootFactory, type MountedApplication } from '@memoized-dom/runtime';
 import '@memoized-dom/runtime/hydrate';
 import { _internals, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
@@ -133,7 +133,7 @@ describe('authored descendant-wide suspension', () => {
     expect(document.querySelector('.tsrx-loading')).toBeNull();
   });
   it('resolves the same descendant TSRX preparation during SSR', async () => {
-    const html = await renderToStringAsync(fixture.Tsrx!, {
+    const { html } = await render(fixture.Tsrx!, {
       mode: 'resolve', fetch: (async () => response('TSRX server')) as typeof fetch,
     });
     expect(html).toContain('TSRX server');
@@ -156,13 +156,13 @@ describe('authored descendant-wide suspension', () => {
     expect(document.querySelector('h1')?.textContent).toBe('Unchanged');
   });
   it('renders only the outer shell in synchronous SSR', () => {
-    const html = renderToString(fixture.App!, { mode: 'shell', fetch: (() => new Promise(() => {})) as typeof fetch });
+    const html = renderToString(fixture.App!, { fetch: (() => new Promise(() => {})) as typeof fetch });
     expect(html).toContain('class="loading"');
     expect(html).not.toContain('id="held"');
     expect(html).not.toContain('class="inner"');
   });
   it('settles authored descendant preparation during resolved SSR', async () => {
-    const html = await renderToStringAsync(fixture.App!, {
+    const { html } = await render(fixture.App!, {
       mode: 'resolve', fetch: (async () => response('Server ready')) as typeof fetch, markers: true,
     });
     expect(html).toContain('Server ready');
@@ -185,7 +185,7 @@ describe('authored descendant-wide suspension', () => {
     expect(host.querySelectorAll('h2')).toHaveLength(1);
   });
   it('adopts resolved descendant data without refetching or replacing server DOM', async () => {
-    const result = await renderToResultAsync(fixture.App!, {
+    const result = await render(fixture.App!, {
       mode: 'resolve', markers: true, fetch: (async () => response('Transferred')) as typeof fetch,
     });
     setup();

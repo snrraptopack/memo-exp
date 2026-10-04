@@ -8,6 +8,9 @@ import {
   createApplicationHandler,
   getServerContext,
   type ApplicationHandler,
+  type RenderPolicy,
+  type RenderReport,
+  type SsrTarget,
 } from './application-handler';
 import type {
   RegisteredServerLocals,
@@ -75,6 +78,16 @@ export interface ServeOptions<
     error: unknown,
     context: ServerContext<TLocals, TPlatform, TServices>,
   ) => Response | Promise<Response>;
+  /** Application-wide SSR defaults; `app.ssr(..., policy)` overrides them per root. */
+  readonly render?: RenderPolicy;
+  /**
+   * Observe every SSR page: how it was delivered and how it concluded
+   * (data complete, settle timeout, redirect, deadline, abort, or error).
+   */
+  readonly onRender?: (
+    report: RenderReport,
+    context: ServerContext<TLocals, TPlatform, TServices>,
+  ) => void;
 }
 
 export interface ServerApplication<
@@ -140,14 +153,13 @@ export interface ServerApplication<
     ]
   ): this;
 
-  ssr(component: ServerComponent): this;
-  ssr(path: string, component: ServerComponent): this;
+  ssr(component: ServerComponent, policy?: RenderPolicy): this;
+  ssr(path: string, component: ServerComponent, policy?: RenderPolicy): this;
 }
 
-interface SsrRegistration {
+interface SsrRegistration extends SsrTarget {
   readonly id: string;
   readonly path: string;
-  readonly component: ServerComponent;
 }
 
 interface InstallableServerApplication<
@@ -181,7 +193,7 @@ export function serve<
   const groups: ServerMiddlewareGroup<TLocals, TPlatform, TServices>[] = [];
   const routes: ServerRoute<TLocals, TPlatform, TServices>[] = [];
   const ssr: SsrRegistration[] = [];
-  let fallback: ServerComponent | undefined;
+  let fallback: SsrTarget | undefined;
   let ssrMatcher: RouteTableMatcher | undefined;
   let installedServerFunctions: readonly ServerRoute<
     TLocals,
@@ -212,10 +224,10 @@ export function serve<
 
   const resolveApp = (
     context: ServerContext<TLocals, TPlatform, TServices>,
-  ): ServerComponent | undefined => {
+  ): SsrTarget | undefined => {
     const match = ssrMatcher?.match(context.url.pathname);
     if (match !== null && match !== undefined) {
-      return ssr[Number(match.id)]?.component;
+      return ssr[Number(match.id)];
     }
     return fallback;
   };
@@ -249,6 +261,8 @@ export function serve<
         createPlatform: options.createPlatform,
         services,
         onError: options.onError,
+        render: options.render,
+        onRender: options.onRender,
       });
       return current;
     }
@@ -376,15 +390,19 @@ export function serve<
 
     ssr(
       pathOrComponent: string | ServerComponent,
-      component?: ServerComponent,
+      componentOrPolicy?: ServerComponent | RenderPolicy,
+      policy?: RenderPolicy,
     ) {
       if (typeof pathOrComponent === 'function') {
         if (fallback !== undefined) {
           throw new TypeError('memo-dom: app.ssr() fallback is already registered');
         }
-        fallback = pathOrComponent;
+        fallback = {
+          component: pathOrComponent,
+          policy: Object.freeze({ ...(componentOrPolicy as RenderPolicy | undefined) }),
+        };
       } else {
-        if (component === undefined) {
+        if (typeof componentOrPolicy !== 'function') {
           throw new TypeError(
             `memo-dom: app.ssr('${pathOrComponent}') requires a component`,
           );
@@ -392,7 +410,8 @@ export function serve<
         const registration: SsrRegistration = {
           id: String(ssr.length),
           path: validateRoutePattern(pathOrComponent),
-          component,
+          component: componentOrPolicy,
+          policy: Object.freeze({ ...policy }),
         };
         ssr.push(registration);
         try {
@@ -423,4 +442,4 @@ export function serve<
   return application;
 }
 
-export { getServerContext };
+export { getServerContext, type RenderPolicy, type RenderReport };

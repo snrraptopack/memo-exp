@@ -159,16 +159,15 @@ application `services` used by middleware and HTTP handlers. The callback
 therefore should not call `getServerContext()` again. A routed redirect becomes
 an HTTP redirect before any destination HTML is streamed.
 
-The application handler uses the asynchronous renderers, which prepare the
-initial route before creating its component tree. Successful routed results
-and the JSON-safe keys of the preparation's plain `state` object are included
-in the SSR payload. The browser's normal `mount()` call restores them before
-hydration; application code does not initialize a route-data runtime manually.
+The application handler prepares the initial route before creating its
+component tree. Successful routed results and the JSON-safe keys of the
+preparation's plain `state` object are included in the SSR payload. The
+browser's normal `mount()` call restores them before hydration; application
+code does not initialize a route-data runtime manually.
 
 Direct callers rendering an application that contains `$routed` must use
-`renderToStringAsync()`, `renderToResultAsync()`, `renderWithDomAsync()`, or
-`renderToReadableStream()`. The synchronous renderers do not have an
-asynchronous preparation phase.
+`render()` or `renderToReadableStream()`. `renderToString()` is synchronous
+and has no preparation phase.
 
 ## Renderers
 
@@ -176,40 +175,45 @@ Renderers accept a compiled root component and `RenderOptions`:
 
 ```ts
 interface RenderOptions {
-  mode?: 'shell' | 'resolve';
-  timeout?: number;
+  mode?: 'shell' | 'resolve'; // resolve: await request data before output
+  timeout?: number;           // soft settle budget; pending UI is serialized
+  deadline?: number;          // hard budget; the render rejects with TimeoutError
+  signal?: AbortSignal;       // aborts preparation and data work
   url?: string;
   fetch?: typeof globalThis.fetch;
   markers?: boolean;
-  document?: DocumentLike;
 }
 ```
 
-- `renderToString()` renders a synchronous shell.
-- `renderToStringAsync()` can await request-owned data in `resolve` mode.
-- `renderToResult()` and `renderToResultAsync()` also return the payload and
-  ready-to-embed payload script.
-- `renderToReadableStream()` returns ordered application streaming.
-- `renderWithDom()` and `renderWithDomAsync()` provide the LinkeDOM reference
-  tier for parity tests and callers that need live nodes.
+- `render()` prepares the route, settles data in `resolve` mode, and returns
+  the HTML, payload, ready-to-embed payload script, and settlement.
+- `renderToString()` synchronously renders a shell.
+- `renderToReadableStream()` returns ordered application streaming; cancelling
+  the stream aborts the render.
 
 ```ts
-import { renderToResultAsync } from '@memoized-dom/server';
+import { render } from '@memoized-dom/server';
 
-const result = await renderToResultAsync(App, {
+const result = await render(App, {
   url: request.url,
   mode: 'resolve',
   markers: true,
+  signal: request.signal,
 });
 
 result.html;
 result.payload;
 result.scriptTag;
+result.settlement; // { status: 'shell' } | { status: 'complete' | 'timeout', settleMs }
 ```
 
-`markers: true` preserves runtime anchors and emits the serialized data and
+`markers: true` emits the hydration markers and the serialized data and
 routed-preparation payload used by `mount()` when it adopts server-rendered
 output.
+
+The LinkeDOM correctness oracle lives on its own entry so production servers
+never load it: `renderWithDom()` from `@memoized-dom/server/dom` returns live
+nodes and a caller-owned runtime for parity tests.
 
 ## Document composition
 

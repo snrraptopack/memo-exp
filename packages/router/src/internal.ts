@@ -139,7 +139,7 @@ export async function prepareInitialRoute(): Promise<void> {
       }
     }
   }
-  const outcome = await prepareInitialRoutedRuntime(runtime, undefined, true);
+  const outcome = await prepareInitialRoutedRuntime(runtime, { reusePrepared: true });
   if (outcome.kind === 'redirect') {
     const result = runtime.navigate(outcome.redirect.to.toString(), {
       replace: outcome.redirect.replace ?? true,

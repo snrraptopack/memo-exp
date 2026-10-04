@@ -22,6 +22,7 @@ import { renderToString } from '../src/index';
 import {
   compileFixture,
   expectParity,
+  normalizeHtml,
   renderBothTiers,
 } from './parity-harness';
 
@@ -70,6 +71,45 @@ describe('CSR-equivalence corpus', () => {
       // quoted title="<script>..." is inert serialization, not injection.
       expect(result.serverHtml).not.toMatch(/><script/);
       expectParity(result);
+    } finally {
+      result.serverRuntime.dispose();
+    }
+  });
+
+  it('serializes property-lowered form state identically in both server tiers', async () => {
+    const tiers = await compileFixture(
+      'parity-form-state',
+      `
+      export function App() {
+        let name = 'Ada & "co"';
+        let bio = 'Analyst <engine>';
+        let on = true;
+        let off = false;
+        return (
+          <form>
+            <input value={name} />
+            <input type="checkbox" checked={on} disabled={off} />
+            <textarea value={bio} readOnly={on} />
+            <button disabled={on} tabIndex={2}>Go</button>
+          </form>
+        );
+      }
+    `,
+    );
+
+    // The browser tier keeps this state in properties, so the LinkeDOM
+    // oracle (not the client tier) defines the serialized form.
+    const result = renderBothTiers(tiers);
+    try {
+      const stringHtml = result.renderStringTier();
+      expect(stringHtml).toContain('value="Ada &amp; &quot;co&quot;"');
+      expect(stringHtml).toContain('checked');
+      expect(stringHtml).toContain('Analyst &lt;engine&gt;</textarea>');
+      expect(stringHtml).toContain('tabindex="2"');
+      // LinkeDOM writes textarea RCDATA unescaped; the string tier escapes it
+      // so a value containing `</textarea>` cannot terminate the element.
+      expect(normalizeHtml(stringHtml.replace('&lt;engine&gt;', '<engine>')))
+        .toBe(normalizeHtml(result.serverHtml));
     } finally {
       result.serverRuntime.dispose();
     }
@@ -405,12 +445,12 @@ describe('CSR-equivalence corpus', () => {
       export function App() {
         let panel;
 
-        effect(() => {
+        $effect(() => {
           effectRuns++;
           return () => { cleanups++; };
         });
 
-        cleanup(() => { cleanups++; });
+        $cleanup(() => { cleanups++; });
 
         return <div><input ref={(node) => { refRuns++; }} /><span ref={panel}></span></div>;
       }

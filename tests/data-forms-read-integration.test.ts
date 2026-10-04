@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
-import { renderToStringAsync } from '@memoized-dom/server';
+import { render } from '@memoized-dom/server';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
 const outputDir = join(import.meta.dirname, 'fixtures', 'out', 'data-forms-read-integration');
@@ -83,7 +83,7 @@ afterEach(() => {
 
 it('runs read refresh and overlapping form submissions with independent rollback', async () => {
   const { DataFormsReadApp } = await import(pathToFileURL(fixture).href);
-  const html = await renderToStringAsync(DataFormsReadApp, { mode: 'resolve' });
+  const { html } = await render(DataFormsReadApp, { mode: 'resolve' });
   expect(html).toContain('Welcome');
   expect(html).toContain('<form');
   setScheduler(run => run());

@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { compileModules } from '@memoized-dom/compiler';
-import { renderToString, renderToStringAsync } from '@memoized-dom/server';
+import { render, renderToString } from '@memoized-dom/server';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, 'fixtures', 'out');
@@ -78,7 +78,6 @@ describe('SSR Settle Coordinator (RFC §16.5)', () => {
     const fetch = mockFetch({ name: 'Ada' });
 
     const html = renderToString(app.App, {
-      mode: 'shell',
       fetch,
       markers: true,
     });
@@ -91,7 +90,7 @@ describe('SSR Settle Coordinator (RFC §16.5)', () => {
     const app = await importCompiled();
     const fetch = mockFetch({ name: 'Ada Lovelace' });
 
-    const html = await renderToStringAsync(app.App, {
+    const { html } = await render(app.App, {
       mode: 'resolve',
       fetch,
       markers: true,
@@ -109,7 +108,7 @@ describe('SSR Settle Coordinator (RFC §16.5)', () => {
       { id: 1, title: 'First', done: false },
     ]);
 
-    const html = await renderToStringAsync(app.PropCollectionApp, {
+    const { html } = await render(app.PropCollectionApp, {
       mode: 'resolve',
       fetch,
       markers: true,

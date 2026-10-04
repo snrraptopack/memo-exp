@@ -4,6 +4,7 @@ import { defineConfig } from 'rolldown';
 export default defineConfig({
   input: {
     index: './src/index.ts',
+    dom: './src/dom.ts',
     'http-router': './src/http-router.ts',
   },
   platform: 'node',

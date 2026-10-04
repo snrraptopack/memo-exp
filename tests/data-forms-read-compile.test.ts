@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
-import { renderToString, renderToStringAsync } from '@memoized-dom/server';
+import { render, renderToString } from '@memoized-dom/server';
 import { _internals, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
 describe('$read and $forms compiler integration', () => {
@@ -146,7 +146,7 @@ describe('$read and $forms compiler integration', () => {
     const fixture = join(directory, 'read.ts');
     writeFileSync(fixture, output['./app.tsx']!);
     const { App } = await import(pathToFileURL(fixture).href);
-    expect(await renderToStringAsync(App, { mode: 'resolve' })).toContain('<span>1</span>');
+    expect((await render(App, { mode: 'resolve' })).html).toContain('<span>1</span>');
 
     setScheduler(run => run());
     const root = App('ReadApp', null) as HTMLElement;

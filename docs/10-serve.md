@@ -1,7 +1,7 @@
 # `serve()` — the server configuration
 
 `serve()` creates the application your `serverEntry` file default-exports.
-It takes one optional options object — four keys, all optional:
+It takes one optional options object, every key optional:
 
 ```ts
 import { serve } from '@memoized-dom/server';
@@ -106,6 +106,45 @@ const app = serve({
   },
 });
 ```
+
+## `render` and `onRender` — how pages render and how they went
+
+`render` sets application-wide SSR defaults; each `app.ssr()` call can
+override them for its root:
+
+```ts
+const app = serve({
+  render: { mode: 'resolve', timeout: 2_000, deadline: 8_000 },
+  onRender: (report) => metrics.record(report.outcome, report.durationMs),
+});
+
+app.ssr('/', Landing, { mode: 'shell' });            // paint now, data client-side
+app.ssr('/account/*', Account);                      // resolved data, streamed
+app.ssr('/docs/*', Docs, { delivery: 'buffer' });    // complete document, Server-Timing
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `mode` | `'resolve'` | `resolve` waits for request data; `shell` serializes pending UI immediately |
+| `timeout` | `10000` | soft data budget — when it elapses, pending UI is rendered |
+| `deadline` | none | hard budget for the whole render, route preparation included |
+| `markers` | `true` | hydration markers and payload; `false` for HTML that never hydrates |
+| `delivery` | `'stream'` | `stream` or `buffer` (below) |
+
+With `stream`, the response commits as soon as route preparation has decided
+it — authentication gates and `redirectRoute()` still become real redirects —
+and the document head is sent immediately while the application renders. The
+application body is atomic: its markup and payload are sent together once the
+render succeeds. If it fails after the response committed (for example, the
+`deadline` passes), the document closes with an empty outlet and `mount()`
+renders the page client-side, so users get a working page and never a
+half-adopted one. With `buffer`, nothing is sent until the whole document is
+ready, so every failure still reaches `onError`.
+
+`onRender` receives one report per page: `outcome` is `complete`, `timeout`
+(data budget elapsed), `shell`, `redirect`, `deadline`, `aborted` (client
+disconnected), or `error`, plus `durationMs` and, for resolved renders,
+`settleMs`.
 
 ## Where these surface
 

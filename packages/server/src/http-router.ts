@@ -442,6 +442,9 @@ function sortMethods(left: string, right: string): number {
 }
 
 function withoutBody(response: Response): Response {
+  // Cancelling the discarded body stops any work still producing it, such
+  // as a streamed SSR render.
+  void response.body?.cancel().catch(() => {});
   return new Response(null, {
     status: response.status,
     statusText: response.statusText,

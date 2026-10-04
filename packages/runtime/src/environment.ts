@@ -51,6 +51,12 @@ export interface DocumentLike {
    * browser documents use the native <template> path instead.
    */
   materializeMarkup?(markup: string): Node[];
+  /** Experimental compiler-proven leaf output; absent on DOM/hydration tiers. */
+  readonly htmlWriter?: {
+    create(write: () => string): Node;
+    text(value: string): string;
+    classAttribute(value: string): string;
+  };
 }
 
 export interface RenderEnvironment {

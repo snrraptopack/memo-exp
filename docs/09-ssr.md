@@ -130,11 +130,12 @@ client mount or successful hydration. Other rendering errors still throw;
 - **Effects and refs never run on the server** — they first execute
   client-side after hydration. A component that needs the DOM at first
   paint must render everything declaratively.
-- **One synchronous settle** — the server resolves derivations and data
-  boundaries before serializing; nothing streams in later. Async work
-  kicked off by `fetch` in the component body is not awaited — put
+- **One settle per page** — the server resolves derivations and data
+  boundaries before serializing the application; nothing streams in later.
+  Async work kicked off by `fetch` in the component body is not awaited — put
   must-render data behind the preparation/data layer, not a fire-and-forget
-  call.
+  call. Delivery, budgets, and shell vs. resolved rendering are configured per
+  root (see [10 — `serve()`](./10-serve.md)).
 - **Request-owned authored state** — the Vite adapter lowers compiler-tracked
   module state into per-request cells for server renders by default. This
   prevents a write in one render from persisting into the next, including

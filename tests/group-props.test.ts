@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
-import { renderToString, renderToStringAsync } from '@memoized-dom/server';
+import { render, renderToString } from '@memoized-dom/server';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
 const policies = `
@@ -247,7 +247,7 @@ describe('props-based Group policy scopes', () => {
 
   it('renders static shell content and inherited pending policies on the server', () => {
     const html = renderToString(fixture.MultipleChildren!, {
-      mode: 'shell', fetch: (() => new Promise<Response>(() => {})) as typeof fetch,
+      fetch: (() => new Promise<Response>(() => {})) as typeof fetch,
     });
     expect(html).toContain('Static');
     expect(html).toContain('Footer');
@@ -255,7 +255,7 @@ describe('props-based Group policy scopes', () => {
   });
 
   it('settles cross-file props-based scopes during resolved SSR', async () => {
-    const html = await renderToStringAsync(fixture.AcrossFiles!, {
+    const { html } = await render(fixture.AcrossFiles!, {
       mode: 'resolve', fetch: (async () => new Response(JSON.stringify({ name: 'Ada' }), {
         headers: { 'content-type': 'application/json' },
       })) as typeof fetch,
