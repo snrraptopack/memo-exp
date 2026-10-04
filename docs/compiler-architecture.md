@@ -1,5 +1,8 @@
 # Compiler phase boundaries
 
+The browser payload measurements and proposed interaction/lifetime contracts
+are documented in [Browser JavaScript architecture](./browser-bundle-architecture.md).
+
 ## Direction
 
 Separate authored-language meaning from the code a rendering target needs.

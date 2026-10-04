@@ -14,6 +14,10 @@ export default defineConfig({
   output: {
     dir: './dist',
     format: 'esm',
+    // Keep feature initialization in its own module so downstream application
+    // bundlers can drop unused lists, props, routing and lifecycle features.
+    preserveModules: true,
+    preserveModulesRoot: './src',
     minify: true,
     entryFileNames: '[name].js',
     chunkFileNames: 'chunks/[name]-[hash].js',

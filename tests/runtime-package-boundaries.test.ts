@@ -1,0 +1,42 @@
+import { build } from 'esbuild';
+import { compile } from '@memoized-dom/compiler';
+import { expect, it } from 'vitest';
+
+async function bundle(source: string) {
+  const result = await build({ stdin: { contents: compile(source), resolveDir: process.cwd(), loader: 'ts' },
+    bundle: true, write: false, metafile: true, minify: true, format: 'esm', platform: 'browser',
+    define: { 'process.env.NODE_ENV': '"production"' }, outfile: 'browser.js',
+  });
+  const inputs = Object.entries(Object.values(result.metafile!.outputs)[0]!.inputs)
+    .filter(([, input]) => input.bytesInOutput > 0).map(([path]) => path.replaceAll('\\', '/'));
+  return { inputs, code: result.outputFiles[0]!.text };
+}
+it('keeps an owner counter free of unused list native guards, routing and props', async () => {
+  const { inputs, code } = await bundle(`export function App(){let count=0;return <button onClick={()=>count++}>{count}</button>;}`);
+  expect(inputs.some(path => path.endsWith('/dist/kernel.js'))).toBe(true);
+  for (const feature of ['list', 'list-update', 'access', 'props', 'hydration', 'effect']) {
+    expect(inputs.some(path => path.endsWith(`/dist/${feature}.js`))).toBe(false);
+  }
+  expect(code).not.toContain('[native code]');
+  expect(code).not.toContain('node:async_hooks');
+});
+it('retains access routing when module state requires it', async () => {
+  const { inputs } = await bundle(`let count=0;export function App(){return <button onClick={()=>count++}>{count}</button>;}`);
+  expect(inputs.some(path => path.endsWith('/dist/access.js'))).toBe(true);
+  expect(inputs.some(path => path.endsWith('/dist/list.js'))).toBe(false);
+});
+it('retains prop delivery for composed components', async () => {
+  const { inputs } = await bundle(`function Label({value}){return <strong>{value}</strong>;}
+    export function App(){let count=0;return <main><button onClick={()=>count++}>Add</button><Label value={count}/></main>;}`);
+  expect(inputs.some(path => path.endsWith('/dist/props.js'))).toBe(true);
+  expect(inputs.some(path => path.endsWith('/dist/list-update.js'))).toBe(false);
+});
+it('retains native-operation guards for a proven list copy', async () => {
+  const { inputs, code } = await bundle(`export function App(){let rows=[{id:1,label:'one'},{id:2,label:'two'}];
+    return <main><button onClick={()=>{rows=rows.toReversed();}}>Reverse</button>
+      <ul>{rows.map(row=><li key={row.id}>{row.label}</li>)}</ul></main>;}`);
+  expect(inputs.some(path => path.endsWith('/dist/list.js'))).toBe(true);
+  expect(inputs.some(path => path.endsWith('/dist/list-update.js'))).toBe(true);
+  expect(code).toContain('[native code]');
+  expect(inputs.some(path => path.endsWith('/dist/hydration.js'))).toBe(false);
+});

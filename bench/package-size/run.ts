@@ -42,7 +42,7 @@ function measure(
     0,
   );
   console.log(
-    `${label.padEnd(18)} ${String(raw).padStart(8)} B raw  ${String(gzip).padStart(8)} B gzip  (${files.length} file${files.length === 1 ? '' : 's'})`,
+    `${label.padEnd(18)} ${String(raw).padStart(8)} B raw  ${String(gzip).padStart(8)} B gzip${files.length > 1 ? ' sum' : ''}  (${files.length} file${files.length === 1 ? '' : 's'})`,
   );
   return { raw, gzip, files };
 }
@@ -65,7 +65,7 @@ measure('compiler', 'packages/compiler/dist/index.js');
 measure('Vite adapter', 'packages/vite/dist/index.js');
 const browser = measure(
   'todo browser',
-  browserAssets('bench/package-size/dist/assets'),
+  browserAssets('bench/package-size/dist/todo/assets'),
 );
 
 // The current todo graph includes the runtime's newer source-scoped commits,
@@ -73,13 +73,6 @@ const browser = measure(
 // 29,577 B raw / 10,742 B gzip baseline so later growth remains visible.
 const MAX_BROWSER_RAW = 30_000;
 const MAX_BROWSER_GZIP = 11_000;
-if (browser.raw > MAX_BROWSER_RAW || browser.gzip > MAX_BROWSER_GZIP) {
-  throw new Error(
-    `todo browser bundle exceeds its budget: ${browser.raw} B raw / ${browser.gzip} B gzip ` +
-      `(limits: ${MAX_BROWSER_RAW} B raw / ${MAX_BROWSER_GZIP} B gzip)`,
-  );
-}
-
 const forbiddenBrowserRuntime = [
   'node:async_hooks',
   'memoized-dom-hmr',
@@ -101,4 +94,11 @@ for (const [label, source] of [
       throw new Error(`${label} leaked runtime marker '${marker}'`);
     }
   }
+}
+
+if (browser.raw > MAX_BROWSER_RAW || browser.gzip > MAX_BROWSER_GZIP) {
+  throw new Error(
+    `todo browser bundle exceeds its budget: ${browser.raw} B raw / ${browser.gzip} B gzip ` +
+      `(limits: ${MAX_BROWSER_RAW} B raw / ${MAX_BROWSER_GZIP} B gzip)`,
+  );
 }

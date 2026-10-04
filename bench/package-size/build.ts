@@ -11,6 +11,6 @@ await build({
   plugins: [memoizedDom({ clientEntry: 'main.ts' })],
   build: {
     emptyOutDir: true,
-    outDir: resolve(root, 'bench/package-size/dist'),
+    outDir: resolve(root, 'bench/package-size/dist/todo'),
   },
 });

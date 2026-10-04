@@ -10,6 +10,12 @@ Dependency-free registry, scheduling, optional dirty-reason batching, access
 routing, keyed regions, props boxes, cleanup/ref ownership, and DOM value helpers
 for memoized-dom compiler output.
 
+The package build preserves ESM module boundaries so an application bundler can
+remove unused feature initialization. Browser payload is measured after bundling
+the compiled application, rather than by summing the entire runtime package.
+See [Browser JavaScript architecture](../../docs/browser-bundle-architecture.md)
+for measurements and the remaining separation work.
+
 Application source does not need to import reactive primitives. The ordinary
 browser entry imports only the mounting boundary:
 

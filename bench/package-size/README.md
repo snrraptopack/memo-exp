@@ -34,15 +34,43 @@ Gzip sizes are not additive, so the package graph gzip sizes must not be
 reported as the runtime's contribution to an application bundle.
 
 The benchmark fails if the Todo browser JavaScript exceeds 30,000 B raw or
-11,000 B gzip. The current measurement is 29,869 B raw and 10,850 B gzip
-(2026-09-30, with cached row text and routed-reader batching). Before this
-optimization iteration it was 29,577 B raw and 10,742 B gzip: the changes add
-292 B raw and 108 B gzip to this application.
+11,000 B gzip. On 2026-10-04 it measured 35,144 B raw / 12,584 B gzip after
+preserving runtime module boundaries, down from 35,697 B raw / 12,784 B gzip.
+It still fails the budget. The ceiling is unchanged; the runtime architecture
+needs further reduction. The earlier 2026-09-30 measurement was 29,869 B raw /
+10,850 B gzip, before subsequent runtime growth.
 It also rejects hydration, HMR, and Node host markers in that
 browser output.
 
-The live measurements printed by `bun run bench:size` are authoritative; the
-budget intentionally leaves a small margin for application-level evolution.
+The live measurements printed by `bun run bench:size` are authoritative. Todo
+build output is under `dist/todo/`, keeping separate audit results intact.
+
+## Stable browser audit
+
+After building the compiler and runtime, run:
+
+```bash
+bun run bench:size:audit --verify
+```
+
+This compiles self-contained static, counter, positional input/list, composition
+and keyed-list fixtures. It reports whole-bundle raw, gzip and Brotli sizes for
+published browser exports and an equivalent runtime-source graph. Metafiles
+attribute minified bytes to runtime modules and generated application code.
+Compression savings cannot be calculated by adding per-module gzip figures.
+
+`--verify` checks all twelve package/source browser graphs in Chromium, including
+input reset, rejected whitespace, duplicate todo values, counter/prop updates and
+retained list nodes. Use `PUPPETEER_EXECUTABLE_PATH` to select Chromium. Omit the
+flag for size-only runs. Artifacts, checkout metadata and results live in
+ignored `dist/audit/`; examples are not test inputs.
+
+The runtime build preserves module boundaries so unrelated feature initialization
+does not survive alongside a used helper. The full distributed ESM graph has
+more files and can be larger in aggregate while applications ship less. Both
+figures are reported; the application figures drive bundle decisions.
+See [Browser JavaScript architecture](../../docs/browser-bundle-architecture.md)
+for the baseline, the Marko example analysis and the ordered implementation plan.
 
 ## Canonical key interning estimate
 

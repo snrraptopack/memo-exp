@@ -2042,6 +2042,11 @@ claim from this batch.
 
 ## Earlier candidates retained for tracking
 
+Bundle work resumed on 2026-10-04. The measured starting point, first packaging
+reduction and ordered architecture work are in `browser-bundle-architecture.md`.
+The performance measurements and open reactivity/reconciliation work above
+remain recorded here.
+
 - Prove when module-state selection can refresh only the previous and next keyed
   rows. Preserve getter and key-expression semantics before narrowing fanout.
 - Specialize proven list mutations, retaining conservative reconciliation for
