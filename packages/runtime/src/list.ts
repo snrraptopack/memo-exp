@@ -31,7 +31,7 @@
 
 import { getActiveEnvironment, unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 import { encodeListKey } from './list-keys';
-import { HydrationMismatchError } from './hydration-error';
+import { createListDOM, removeListDOMRange } from './list-dom';
 import { copyListItems, retainedRowNeedsSync } from './list-update';
 
 export interface ListEntry {
@@ -152,27 +152,13 @@ export function createListRegion<T>(
   // Compiler proof: entries own DOM only, with no entity or cleanup callbacks.
   resourceFree = false,
 ): ListRegion<T> {
-  // Hydration protocol (hydration-markers.md §2/§3): `mmd:l` owns the
-  // complete row set. During adoption the existing pair remains the stable
-  // insertion boundary; client creation emits an equivalent pair.
-  const environment = getActiveEnvironment();
-  const controller = environment.hydration;
-  const adoptedRange = controller?.claimRange('l', idPrefix);
-  const openAnchor =
-    adoptedRange?.open ??
-    environment.document.createComment(`mmd:l:${idPrefix}`);
-  const endAnchor =
-    (adoptedRange?.end as Comment | undefined) ??
-    environment.document.createComment('/mmd');
-  if (adoptedRange === undefined) {
-    parent.appendChild(openAnchor);
-    parent.appendChild(endAnchor);
-  } else {
-    controller!.recordFragmentRange(parent, adoptedRange);
-  }
-  let adopting = adoptedRange !== undefined;
-  let nextAdoptedRow: Node | null =
-    adoptedRange?.open.nextSibling ?? null;
+  const dom = createListDOM(parent, idPrefix, create, () => disposed, entry => {
+    let errors: unknown[] | null = null;
+    try { entry.dispose?.(); } catch (error) { (errors ??= []).push(error); }
+    try { cleanupEntry(entry); } catch (error) { (errors ??= []).push(error); }
+    reportCleanupErrors(errors);
+  });
+  const {environment, open: openAnchor, end: endAnchor, createRow} = dom;
 
   /**
    * M5.8: ONE map per region. The record carries everything the structural
@@ -293,44 +279,14 @@ export function createListRegion<T>(
   }
 
   function removeRowRange(rows: readonly RowRec[], start = 0): boolean {
-    const container = endAnchor.parentNode ?? parent;
     let firstOwned: Node | undefined;
     for (let i = start; i < rows.length; i++) {
       const nodes = rows[i]!.e.nodes;
       firstOwned = Array.isArray(nodes) ? nodes[0] : nodes as Node;
       if (firstOwned !== undefined) break;
     }
-    if (firstOwned === undefined) return false;
-    // A DOM-only region can replace the complete child set when its anchors
-    // enclose exactly that set. Keep the same anchors for subsequent frames.
-    // Partial extents and neighboring content still use a bounded range.
-    if (resourceFree && start === 0 && !adopting &&
-        container.firstChild === openAnchor && container.lastChild === endAnchor &&
-        openAnchor.nextSibling === firstOwned &&
-        typeof (container as ParentNode).replaceChildren === 'function') {
-      // One operation also keeps the anchors attached when synchronous custom
-      // element disconnection callbacks run at the end of DOM reactions.
-      (container as ParentNode).replaceChildren(openAnchor, endAnchor);
-      // Injected hosts may deliver disconnections while replacing children,
-      // then finish inserting the anchors after a reentrant dispose returns.
-      if (disposed) {
-        let errors: unknown[] | null = null;
-        try { openAnchor.parentNode?.removeChild(openAnchor); }
-        catch (error) { (errors ??= []).push(error); }
-        try { endAnchor.parentNode?.removeChild(endAnchor); }
-        catch (error) { (errors ??= []).push(error); }
-        reportCleanupErrors(errors);
-      }
-      return true;
-    }
-    const doc = getActiveEnvironment().document;
-    if (firstOwned.parentNode !== container || endAnchor.parentNode !== container ||
-        doc.createRange === undefined) return false;
-    const range = doc.createRange();
-    range.setStartBefore(firstOwned);
-    range.setEndBefore(endAnchor);
-    range.deleteContents();
-    return true;
+    return removeListDOMRange(parent, openAnchor, endAnchor, firstOwned,
+      resourceFree && start === 0 && !dom.adopting, () => disposed);
   }
 
   function syncRetained(
@@ -371,95 +327,6 @@ export function createListRegion<T>(
     return `${idPrefix}/Row[${s}]`;
   }
 
-  /**
-   * Create one keyed row. The first hydration reconcile claims the row's
-   * single-opening `mmd:w` extent and scopes DOM construction to its node
-   * plan. Later reconciles use the ordinary document and fresh marker.
-   */
-  function createRow(
-    item: T,
-    keyValue: unknown,
-    rowId: EntityId,
-    index: number,
-    encodedKey: string | null,
-  ): ListEntry | null {
-    if (adopting && encodedKey === null) {
-      throw new HydrationMismatchError(
-        idPrefix,
-        'a hydration-stable primitive row key',
-        `${typeof keyValue} key`,
-      );
-    }
-    const adoptedRow = adopting
-      ? controller!.claimRow(idPrefix, encodedKey!)
-      : undefined;
-    if (
-      adoptedRow !== undefined &&
-      adoptedRow.open !== nextAdoptedRow
-    ) {
-      const actual =
-        nextAdoptedRow?.nodeType === 8
-          ? `<!--${(nextAdoptedRow as Comment).data}-->`
-          : 'a row at a different server position';
-      throw new HydrationMismatchError(
-        `${idPrefix}:${encodedKey}`,
-        `<!--mmd:w:${idPrefix}:${encodedKey}--> in client key order`,
-        actual,
-      );
-    }
-    if (adoptedRow !== undefined) nextAdoptedRow = adoptedRow.end;
-    if (adoptedRow !== undefined) controller!.pushRange(adoptedRow);
-
-    let entry: ListEntry | undefined;
-    let factoryFailed = false;
-    let factoryError: unknown;
-    try {
-      entry = create(item, rowId, index);
-    } catch (error) {
-      factoryFailed = true;
-      factoryError = error;
-    }
-    if (adoptedRow !== undefined) {
-      try {
-        controller!.popRange();
-      } catch (error) {
-        // A row-factory mismatch is more local and must remain primary.
-        if (!factoryFailed) throw error;
-      }
-    }
-    if (factoryFailed) throw factoryError;
-
-    // A factory can unmount its owner before returning. That entry was not
-    // yet in either ownership map, so finish it here and abort the caller.
-    if (disposed) {
-      let errors: unknown[] | null = null;
-      try { entry!.dispose?.(); }
-      catch (error) { (errors ??= []).push(error); }
-      try { cleanupEntry(entry!); }
-      catch (error) { (errors ??= []).push(error); }
-      reportCleanupErrors(errors);
-      return null;
-    }
-
-    // Client-created rows already carry their compiler-defined node extent in
-    // ListEntry.nodes, so a per-row hydration marker would only add another
-    // allocation and another moved/removed DOM node. Server output and
-    // hydration retain the marker protocol until markerless adoption is
-    // separately proven end to end.
-    if (encodedKey !== null && environment.mode !== 'client-create') {
-      const marker =
-        adoptedRow?.open ??
-        getActiveEnvironment().document.createComment(
-          `mmd:w:${idPrefix}:${encodedKey}`,
-        );
-      const nodes = entry!.nodes;
-      entry!.nodes = Array.isArray(nodes)
-        ? [marker, ...nodes]
-        : [marker, nodes as Node];
-    }
-    return entry!;
-  }
-
   function reconcile(
     items: readonly T[],
     structuralOnly = false,
@@ -477,7 +344,7 @@ export function createListRegion<T>(
       throw new TypeError(`[memo-dom] list '${idPrefix}' requires an array; received ${items === null ? 'null' : typeof items}`);
     }
     const container = endAnchor.parentNode ?? parent;
-    const adoptingFrame = adopting;
+    const adoptingFrame = dom.adopting;
     let removalErrors: unknown[] | null = null;
     let evaluatedKeyCount = 0;
     validatedKeys.length = 0;
@@ -581,7 +448,7 @@ export function createListRegion<T>(
           if (disposed) return;
         }
 
-        const fragment = environment.document.createDocumentFragment();
+        const fragment = getActiveEnvironment().document.createDocumentFragment();
         const appended = nextRows;
         appended.length = 0;
         for (let offset = 0; offset < appendedKeys.length; offset++) {
@@ -817,16 +684,7 @@ export function createListRegion<T>(
       ordered[i] = rec;
     }
     validatedKeys.length = 0;
-    if (adoptingFrame) {
-      if (nextAdoptedRow !== adoptedRange!.end) {
-        throw new HydrationMismatchError(
-          idPrefix,
-          'the list close after the final client row',
-          'additional server row content',
-        );
-      }
-      adopting = false;
-    }
+    if (adoptingFrame) dom.finishAdoption();
 
     // Complete replacement and clear own one contiguous DOM range. Delete
     // that range once instead of issuing one removeChild per retained row,
@@ -1048,7 +906,7 @@ export function createListRegion<T>(
     if (disposed) return;
     // Initial/unmounted regions still reconcile. Unproven callers also validate
     // retained identities; the compiler alone can waive that O(n) scan.
-    if (adopting || items.length !== prevItems.length ||
+    if (dom.adopting || items.length !== prevItems.length ||
         !fixedPositions && items.some((item, index) => item !== prevItems[index])) {
       reconcile(items);
       return;

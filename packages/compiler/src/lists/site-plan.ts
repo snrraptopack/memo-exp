@@ -47,6 +47,9 @@ export function planListSite(
       calleeShape.optional === true || containsOptionalMember(callee.object),
     sourceLocal: source.local, itemPattern: callback.itemPattern, itemParam: callback.itemParam,
     indexParam: callback.indexParam, keyExpr: key.expr, keyFromSpread: key.fromSpread,
+    positional: callback.prelude.length === 0 && astFactory.isIdentifier(callback.itemPattern) &&
+      callback.indexParam !== null && !key.fromSpread &&
+      astFactory.isIdentifier(key.expr, {name: callback.indexParam}),
     jsx: callback.jsx, ...row, suffixBase: source.suffixBase, normalizedBody: callback.normalizedBody,
   };
 }

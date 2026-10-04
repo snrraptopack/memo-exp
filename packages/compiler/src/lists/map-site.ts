@@ -42,6 +42,8 @@ export interface MapSite {
   keyExpr: t.Expression | null;
   /** The key merges spread attributes; nullish falls back to item identity. */
   keyFromSpread: boolean;
+  /** Explicit index identity with no destructuring, prelude or key reads. */
+  positional: boolean;
   /** Row JSX element, absent for a delegated render callback. */
   jsx: t.JSXElement | null;
   /** Component/host JSX or a caller-owned delegated row factory. */

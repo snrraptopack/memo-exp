@@ -203,11 +203,14 @@ export function emitListRegion(
   if (site.form === 'inline' && ctx.lightweightInlineRows.has(call) || domOnlyComponent) {
     args.push(astFactory.booleanLiteral(true));
   }
+  const positional = site.positional && site.form === 'inline' && ctx.lightweightInlineRows.has(call);
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
         astFactory.identifier(regionVariable),
-        astFactory.callExpression(md(ctx, 'createListRegion'), args),
+        astFactory.callExpression(md(ctx, positional
+          ? 'createPositionalListRegion' : 'createListRegion'),
+          positional ? args.slice(0, 3) : args),
       ),
     ]),
   );

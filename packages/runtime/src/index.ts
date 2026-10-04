@@ -105,6 +105,7 @@ export {
 export type { EventRecord } from './events';
 
 export { createListRegion } from './list';
+export { createPositionalListRegion } from './list-positional';
 export type { ListRegion, ListEntry, KeyFn } from './list';
 export { isStructuralListUpdate, listItemIndices, createListProvenance, evaluateListOperation } from './list-update';
 export { rootNodes } from './jsx-dom';

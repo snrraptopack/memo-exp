@@ -18,6 +18,16 @@ function expression(source: string): t.Expression {
 }
 function call(source: string): MapCallExpression {return matchMapCall(expression(source))!;}
 const fail=(message:string):never=>{throw new Error(message);};
+it.each([
+  ['owned.map((item,index)=><li key={index}>{item}</li>)', true],
+  ['owned.map((item,index)=><li>{item}</li>)', false],
+  ['owned.map((item,index)=><li key={item.id}/>)', false],
+  ['owned.map((item,index)=><li key={index+1}/>)', false],
+  ['owned.map(({label},index)=><li key={index}>{label}</li>)', false],
+  ['owned.map((item,index)=><li {...item} key={index}/>)', false],
+] as const)('captures only explicit, read-free positional identity: %s', (source, positional) => {
+  expect(planListSite(inputs(),call(source),fail).positional).toBe(positional);
+});
 function inputs(): ListSiteInputs {
   return {localRoots:new Set(['owned','props']), state:new Map<string,StateKind>([['items','let'],['store','store']]),
     staticDerived:new Map(), components:new Set(['Row']),

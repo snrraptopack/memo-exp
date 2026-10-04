@@ -87,3 +87,13 @@ it('retains native-operation guards for a proven list copy', async () => {
   expect(code).toContain('[native code]');
   expect(inputs.some(path => path.endsWith('/dist/hydration.js'))).toBe(false);
 });
+
+it('ships positional reconciliation only for explicit index keys on DOM-only rows', async () => {
+  const { inputs } = await bundle(`export function App(){let items=['one','two'];
+    return <main><button onClick={()=>{items=[...items,'two'];}}>Append</button>
+      <ul>{items.map((item,index)=><li key={index}>{index}-{item}</li>)}</ul></main>;}`);
+  expect(inputs.some(path => path.endsWith('/dist/list-positional.js'))).toBe(true);
+  expect(inputs.some(path => path.endsWith('/dist/list-dom.js'))).toBe(true);
+  expect(inputs.some(path => path.endsWith('/dist/list.js'))).toBe(false);
+  expect(inputs.some(path => path.endsWith('/dist/list-keys.js'))).toBe(false);
+});

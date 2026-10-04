@@ -185,6 +185,21 @@ unavailable ranges still remove individual nodes. Clear retains the same
 boundary comments; unmount removes them. Other callers retain normal cleanup,
 including callers that disable row ID tracking without this additional proof.
 
+### Compiler-selected positional lists
+
+`createPositionalListRegion` is the compiler operation for explicit numeric index
+keys on proven DOM-only inline rows. It shares the `ListRegion` update contract,
+list anchors and hydration protocol with keyed reconciliation, but retains entries
+in an array rather than a key Map. Replacing or reordering values preserves each
+position's nodes. New rows are batched; suffix removal preserves neighboring DOM.
+Broad updates still replay content, and failed frames retry conservatively.
+
+The compiler retains general keyed reconciliation for omitted/arbitrary keys,
+spread or hidden key reads, destructuring, replayed preludes, component rows,
+refs and other row-owned resources. Application code does not call this operation
+or change its keys to enable a different identity model. List append fragments
+use the current document after hydration rather than the adoption document.
+
 The package is independently buildable:
 
 ```bash

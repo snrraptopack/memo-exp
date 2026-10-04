@@ -309,6 +309,63 @@ suite and an isolated rerun: the mixed-child Chrome check initially exceeded the
 timeout. A separate DOM regression also verifies independent reasoned children
 after a skipped static instance, retaining the original surrounding HTML.
 
+## Explicit positional DOM rows
+
+List meaning now includes a captured positional-identity proof. An explicit
+`key={index}` qualifies when the callback binds the item directly, has no
+replayed prelude, and has no spread or additional key reads. DOM emission selects
+`createPositionalListRegion` only when the existing lightweight inline-row proof
+also excludes entities, refs, nested regions and child lifetimes. Other keys and
+resource-bearing rows retain the general keyed reconciler. Omitted keys continue
+to mean item identity; duplicate primitive items still require explicit keys.
+
+The positional capability stores entries by index and retains their nodes when
+values are replaced or reordered. It batches new suffix nodes, removes a retired
+suffix through the shared bounded-range operation, and retains broad content
+replay and targeted index refresh. It contains no keyed Map, key encoder,
+synthetic-key allocator or LIS machinery. Both reconcilers share list anchors,
+row creation, server markers, adoption validation and range removal in
+`list-dom.ts`, and both use the existing scheduler and compiler row factories.
+Failed creation/update frames remain disposable and replay conservatively on
+retry. An updater that starts another complete positional frame cancels the
+remaining outer replay.
+
+Hydration testing also exposed a pre-existing keyed append bug: the append path
+captured the adoption document and later created its inert fragment after
+adoption had finished. Appending could create rows without attaching them. Both
+paths now obtain the active document for new fragments. Compiled regressions
+verify adoption without creation/movement, retained positional identity, append,
+clear, reinsertion and mismatched-marker recovery.
+
+Production HTML-product JavaScript, same fixtures and Vite settings as `0010c01`;
+raw bytes / sum of independently gzipped JavaScript assets:
+
+| Fixture | Before | After |
+|---|---:|---:|
+| Input and positional todo list | 24,225 / 8,995 | 17,356 / 6,697 |
+| Owner keyed list | 24,327 / 9,006 | 24,701 / 9,153 |
+| Owner counter | 8,625 / 3,473 | 8,625 / 3,473 |
+| Module counter | 11,923 / 4,618 | 11,923 / 4,618 |
+| Composed counter | 11,344 / 4,469 | 11,344 / 4,469 |
+| Mixed root with one or sixty static cards | 8,799 / 3,481 | 8,799 / 3,481 |
+| Closed static/name/composition pages | 0 / 0 | 0 / 0 |
+
+The todo graph loses 6,869 raw bytes (28%) and 2,298 gzip bytes (26%). Sharing the
+DOM protocol adds 374 raw bytes to the keyed fixture; this batch does not shrink
+every application. Runtime/compiler builds, positional capability attribution,
+compiled interaction/hydration and existing keyed lifetime/recovery suites pass.
+The twelve published/source Chrome audit graphs pass. The local DOM comparison
+against `0010c01` validates all existing scenarios and mixed sequences before
+timing, then checks every timed sample's content, classes, order and retained
+identity. Five samples and ABBA order cover update, swap, clear and append at
+10,000 rows across eight placements plus vanilla. Later runs slow substantially
+even for vanilla; these timings establish no CPU gain. Reports remain in ignored
+`bench/dom/dist/compare/0010c017-both/` and `bench/package-size/dist/`.
+
+Structural initial HTML and browser binding are still separate unfinished work:
+this todo fixture currently creates its initial DOM from JavaScript. Removing
+that creation program and reducing the shared kernel remain necessary.
+
 ## Historical browser-creation baseline
 
 The stable `bench:size:audit` fixtures include ordinary client mounting and
@@ -354,7 +411,9 @@ LIS reorder algorithm.
 The memoized-dom equivalent in the audit explicitly uses `key={index}` to match
 positional identity and allow duplicate strings. Our default key is item identity;
 silently changing it to positional identity would change application semantics.
-Despite the explicit positional key, we currently ship the general keyed runtime.
+At the original baseline, that explicit positional key still shipped the general
+keyed runtime. The positional DOM-row capability above now removes that machinery
+when the identity and row-lifetime proofs hold.
 
 For that graph, source attribution assigns approximately 10.4 KB minified to
 `list.ts`, 4.9 KB to the kernel, 2.4 KB to mounting and 1.6 KB to generated app

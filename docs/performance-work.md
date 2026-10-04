@@ -2096,5 +2096,14 @@ remain recorded here.
   incomplete cases, so they are design references rather than executable
   performance baselines.
 
+The browser architecture batch now specializes explicit index keys for proven
+DOM-only inline rows. It also fixes append-after-hydration fragments on both
+positional and keyed paths. The measured payload improvement, keyed payload
+tradeoff and local DOM comparison are recorded in `browser-bundle-architecture.md`
+under “Explicit positional DOM rows.” The comparison includes correctness gates
+for all state placements and retained identity; local timing drift prevents a
+CPU speed claim. General keyed-list, opaque and resource-bearing row work remains
+on this list.
+
 These candidates are not completed work. Each needs a correctness test and a
 measurement before it becomes a default optimization.

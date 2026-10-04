@@ -32,7 +32,7 @@ import { UNSAFE_TAGS, VOID_TAGS, parserClosesAncestor } from '../planning/html-s
 const TEXT_PLACEHOLDER = '​';
 
 const ATTR_NAME_RE = /^[a-zA-Z_][\w:.-]*$/;
-const STRUCTURAL_CALLS = new Set(['createCondRegion', 'createListRegion']);
+const STRUCTURAL_CALLS = new Set(['createCondRegion', 'createListRegion', 'createPositionalListRegion']);
 
 /**
  * Minimum estimated emission savings (bytes) for a scope to adopt markup.

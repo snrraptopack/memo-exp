@@ -73,6 +73,12 @@ retained list nodes. Use `PUPPETEER_EXECUTABLE_PATH` to select Chromium. Omit th
 flag for size-only runs. Artifacts, checkout metadata and results live in
 ignored `dist/audit/`; examples are not test inputs.
 
+The explicit-index input/list fixture now selects the compiler's positional
+DOM-only capability. Metafiles verify that it omits the general keyed reconciler
+and key encoder. Keep the owner keyed-list fixture alongside it: shared list DOM
+and hydration factoring increases that graph slightly. The before/after HTML
+product measurements and tradeoff are documented in the architecture record.
+
 The runtime build preserves module boundaries so unrelated feature initialization
 does not survive alongside a used helper. The full distributed ESM graph has
 more files and can be larger in aggregate while applications ship less. Both

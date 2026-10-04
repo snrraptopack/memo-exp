@@ -679,6 +679,16 @@ load the published directive types with `"types": ["@memoized-dom/compiler/jsx"]
 in `tsconfig.json`. TypeScript then checks the slash-prefixed surface shape;
 the compiler/language service performs the stronger application-graph checks.
 
+## Positional list capability
+
+The shared list plan captures explicit index identity independently of DOM
+emission. A direct item binding, index-only key, and absence of spread/key reads
+or replayed preludes establish that proof. The DOM backend combines it with the
+existing DOM-only inline-row proof to select positional reconciliation. Rows
+requiring lifecycle or general key behavior retain keyed reconciliation.
+Omitting `key` still means item identity. Initial HTML for structural regions is
+not yet part of the browser-binding target.
+
 ## Compiler-owned conditional branches
 
 `if`, `else-if`, and `else` are compiler properties for readable sibling
