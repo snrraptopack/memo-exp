@@ -90,19 +90,20 @@ text/attribute update code. Captured writes and aliases of mutable dependencies
 retain updates; object reads stay conservative. HTML and DOM emission share the
 same adjacent-text join contract, including numeric coercion.
 
-This target currently requires one direct host root with known initialization
-and host-only children. Composed children, later structural regions, DOM
-properties/styles, refs, effects and opaque setup retain the ordinary target.
+The first version required one direct host root with known initialization
+and host-only children. Later conditional, list and composition batches below
+extend that proof. DOM properties/styles, refs, effects and opaque setup still
+need their ordinary behavior unless a later section explicitly covers them.
 Empty dynamic text has a comment placeholder replaced with a text node. Runtime
 binding validates all required addresses and node kinds before replacing any
 placeholder. Events, batching, module routing and mount/unmount ownership reuse
 the existing compiler/runtime paths. This is not a separate event scheduler.
 
-This is still a partial architecture change. Live children currently start as
-HTML markers and create their initial DOM through the existing runtime. Their
-full initial HTML, state serialization and binding-only browser code remain
-unfinished; direct host-root bindings are implemented first. The compiler does
-not yet prove arbitrary JS static.
+This is still a partial architecture change. Unproved live children start as
+HTML markers and create their initial DOM through the existing runtime. Proven
+composition can now bind its initial HTML as described below. Request state
+serialization remains separate work. The compiler does not prove arbitrary JS
+static.
 
 `bun run bench:size:html` measures production HTML and every emitted JS chunk
 separately, using published packages and stable authored fixtures. Its reports
@@ -770,6 +771,45 @@ change multi-write handler behavior, early-return behavior and effect ordering.
 Source-specific update groups must retain batching and opaque fallbacks.
 
 ## Implementation order and gates
+
+### Composed initial bindings
+
+The semantic content plan now preserves component calls, defining module/local
+identity and live prop facts. DOM emission derives addresses relative to each
+instance's host root. Nested imported aliases, repeated factories and derived
+props reuse their existing handlers, prop replay, access routing and ownership;
+their initial elements are supplied by HTML. Potentially live text/attribute
+slots are merged conservatively across instances. Closed static children omit
+their client calls and registrations, while instance suffixes still count those
+authored placements.
+
+The proof currently requires a module-owned component with one direct host
+root, outside structural rows/branches. Authored children slots, escaped factory
+references, future unbound uses, differing initial branch/list extents, refs,
+effects and unknown initialization keep the previous mixed/ordinary products.
+Component-owned inline lists can bind inside an eligible child and retain their
+normal creation path for later rows. No authored function is evaluated during
+planning, and ordinary JS-entry output remains a separate compiler product.
+
+Production payload comparison against the previous hydration-host batch:
+
+| Fixture | Before JS raw / gzip B | After JS raw / gzip B | Before / after HTML B |
+|---|---:|---:|---:|
+| Composed counters | 11,344 / 4,469 | 10,417 / 4,107 | 180 / 251 |
+| One static card + counter | 8,799 / 3,481 | 8,857 / 3,558 | 267 / 265 |
+| Sixty static cards + counter | 8,799 / 3,481 | 8,858 / 3,561 | 3,503 / 3,501 |
+
+The small shell grows 77–80 gzip JS bytes; binding the child replaces the
+previous marker/creation product. Adding 59 static cards adds one raw JS byte.
+Static composition remains zero JS. Owner/module counters, inputs and keyed/
+positional list products are unchanged. The ordinary package/source interaction
+audit is unchanged and passes all twelve graphs. Tests cover node identity,
+independent instances, nested alias/derived props, captured and imported callback
+writes, later rows, disposal and conservative fallback. All 25 production HTML
+checks pass, including real Chrome composition interaction without initial
+element creation. These are payload/correctness results, not a CPU speed claim.
+
+### Remaining order
 
 | Order | Work | Required evidence |
 |---|---|---|

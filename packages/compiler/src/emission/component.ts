@@ -213,8 +213,12 @@ export function transformComponent(
   const lightweightPropCount =
     positionalObjectProps?.length ?? propSlotCount;
   const scope = newEmitScope(ctx, lightweight, component);
+  const initialComponent=ctx.initialDomComponents[name];
+  const initialRoot=initialComponent ? generatedIdentifier(ctx,'initialComponentRoot') : null;
   if (ctx.initialDomRoot?.component === name) {
     scope.initialDom={plan:ctx.initialDomRoot,variable:generatedIdentifier(ctx,'initialNodes').name,descriptors:[]};
+  } else if (initialComponent) {
+    scope.initialDom={plan:initialComponent,variable:generatedIdentifier(ctx,'initialNodes').name,descriptors:[]};
   }
   for (const token of ctx.ownerListProvenance.get(name)?.values() ?? []) {
     scope.prelude.push(astFactory.variableDeclaration('const', [astFactory.variableDeclarator(
@@ -317,7 +321,7 @@ export function transformComponent(
   if (scope.initialDom) scope.prelude.unshift(astFactory.variableDeclaration('const',[
     astFactory.variableDeclarator(astFactory.identifier(scope.initialDom.variable),
       astFactory.callExpression(md(ctx,'bindInitialNodes'),[
-        astFactory.stringLiteral(scope.initialDom.plan.target),astFactory.arrayExpression(scope.initialDom.descriptors),
+        initialRoot ?? astFactory.stringLiteral(scope.initialDom.plan.target),astFactory.arrayExpression(scope.initialDom.descriptors),
       ])),
   ]));
 
@@ -582,6 +586,7 @@ export function transformComponent(
     dataPolicies,
     routeContext,
   );
+  if (initialRoot) node.params.push(initialRoot);
   node.body = astFactory.blockStatement(body);
 }
 

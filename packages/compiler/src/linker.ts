@@ -850,9 +850,12 @@ function compileLinkedModules(
         ? { rootComponent: applicationRoot.local }
         : {}),
     };
+    const initialComponents=Object.fromEntries(Object.entries(initialDom?.factories??{}).flatMap(([key,plan])=>
+      key.startsWith(`${entry.id}#`) ? [[key.slice(entry.id.length+1),plan]] : []));
     if (emitInitialBrowser && (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') &&
-        (entry.id === initialRender.rootModuleId || entry.id === initialRender.mountModuleId)) {
+        (entry.id === initialRender.rootModuleId || entry.id === initialRender.mountModuleId || Object.keys(initialComponents).length>0)) {
       const initialOptions = { ...compileOptions,
+        initialDomComponents:initialComponents,
         ...(entry.id !== initialRender.rootModuleId ? {} : initialRender.kind === 'mixed'
           ? {initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
             returnSite: initialRender.returnSite, regions: initialRender.regions }} : {initialDomRoot:initialDom!}),

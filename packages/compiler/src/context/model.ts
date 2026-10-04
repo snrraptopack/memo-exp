@@ -147,6 +147,7 @@ export interface InternalMemoDomOptions extends MemoDomOptions {
   /** Available only in the separate HTML-associated browser target. */
   initialBrowserRoot?: InitialBrowserRoot;
   initialDomRoot?: InitialDomRoot;
+  initialDomComponents?: Readonly<Record<string,InitialDomRoot>>;
   rootId?: string;
   rootComponent?: string;
   /** Application-wide route graph supplied by compileModules(). */
@@ -394,6 +395,7 @@ export type HelperPath = CompilerPath<
 export interface Ctx {
   initialBrowserRoot: InitialBrowserRoot | null;
   initialDomRoot: InitialDomRoot | null;
+  initialDomComponents: Readonly<Record<string,InitialDomRoot>>;
   runtimePath: string;
   hotRuntimePath: string;
   routerPath: string;
@@ -748,6 +750,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   return {
     initialBrowserRoot: opts.initialBrowserRoot ?? null,
     initialDomRoot: opts.initialDomRoot ?? null,
+    initialDomComponents: opts.initialDomComponents ?? {},
     runtimePath,
     hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',

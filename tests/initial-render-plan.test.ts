@@ -132,11 +132,11 @@ describe('initial content and browser requirements', () => {
     const result = compile(`import { Counter } from './Counter'; export function App(){ return <main><h1>Static</h1><Counter/></main>; }`, {
       './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
     });
-    expect(result.initialRender.kind).toBe('mixed');
-    expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Static</h1><!--mmd:initial:0--></main>');
+    expect(result.initialRender.kind).toBe('bindings');
+    expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Static</h1><button>0</button></main>');
     expect(result.output['./App.tsx']).toContain('Static');
     expect(result.initialBrowserOutput?.['./App.tsx']).not.toContain('Static');
-    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('adoptInitialRoot');
+    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('bindInitialNodes');
     expect(result.initialBrowserMaps?.['./App.tsx']?.sourcesContent?.[0]).toContain('<h1>Static</h1>');
   });
 
@@ -153,15 +153,12 @@ describe('initial content and browser requirements', () => {
       return <main><h1>{'Hello '+name}</h1><Counter/><Counter/></main>;}`, {
       './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
     });
-    expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Hello Ada</h1><!--mmd:initial:0--><!--mmd:initial:1--></main>');
+    expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Hello Ada</h1><button>0</button><button>0</button></main>');
     expect(result.initialBrowserOutput?.['./App.tsx']).toContain('/Counter[1]');
   });
 
   it.each([
-    `import {name,change} from './state'; export function App(){return <main><h1>{name}</h1><Counter action={change}/></main>;}`,
-    `export function App(){let name='Ada';function change(){name='Grace';}return <main><h1>{name}</h1><Counter action={change}/></main>;}`,
     `export function App(){let name='Ada';function change(){eval('name="Grace"');}return <main><h1>{name}</h1><Counter action={change}/></main>;}`,
-    `export function App(){const person={name:'Ada'};return <main><h1>{person.name}</h1><Counter/></main>;}`,
     `export function App(){return <main>{true&&<Counter/>}</main>;}`,
     `function Card({children}){return <section>{children}</section>;}export function App(){return <main><Card><Counter/></Card></main>;}`,
   ])('does not extract an unproved interaction boundary', source => {

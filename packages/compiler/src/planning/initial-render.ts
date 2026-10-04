@@ -19,6 +19,8 @@ import { planListCallback } from '../lists/callback-plan';
 export type InitialRenderNode =
   | { readonly kind: 'text'; readonly value: string; readonly live?: boolean }
   | { readonly kind: 'browser'; readonly id: number; readonly site: string }
+  | { readonly kind: 'component'; readonly site: string; readonly moduleId: string; readonly callModuleId: string; readonly component: string;
+      readonly children: readonly InitialRenderNode[]; readonly static?: boolean }
   | { readonly kind: 'conditional'; readonly site: string; readonly branch: number;
       readonly children: readonly InitialRenderNode[] }
   | { readonly kind: 'list'; readonly site: string; readonly rows: readonly (readonly InitialRenderNode[])[] }
@@ -54,8 +56,8 @@ export type InitialRenderPlan =
 
 type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content;
 interface ValueArray { readonly kind: 'array'; readonly items: readonly Value[] }
-interface ValueObject { readonly kind: 'object'; readonly fields: ReadonlyMap<string, Value>; readonly props?: boolean }
-interface Component { readonly kind: 'component'; readonly node: BaseNode; readonly scope: Scope }
+interface ValueObject { readonly kind: 'object'; readonly fields: ReadonlyMap<string, Value>; readonly props?: boolean; readonly live?: ReadonlySet<string> }
+interface Component { readonly kind: 'component'; readonly node: BaseNode; readonly scope: Scope; readonly local?: string }
 interface Content { readonly kind: 'content'; readonly nodes: readonly InitialRenderNode[] }
 interface Scope { readonly moduleId: string; readonly values: Map<string, Value>; readonly unstable: Set<string>; readonly rootRender?: boolean }
 interface ModuleScope extends Scope { readonly exports: Map<string, Value>; readonly unstableExports: Set<string> }
@@ -86,6 +88,7 @@ export function planInitialRendering(
   let mixed = false;
   let bindings = false;
   let bindingEvents = false;
+  let bindingEventCount = 0;
   let returnSite: string | undefined;
   const regions: { id: number; site: string }[] = [];
   let target: string | undefined;
@@ -158,7 +161,7 @@ export function planInitialRendering(
 
   function expression(node: BaseNode | null, scope: Scope): Value {
     if (node === null) return undefined;
-    if (isFunctionNode(node)) return { kind: 'component', node, scope };
+    if (isFunctionNode(node)) return { kind: 'component', node, scope, local: identifierLikeName(childNode(node,'id')) ?? undefined };
     switch (node.type) {
       case 'Literal': case 'StringLiteral': case 'NumericLiteral': case 'BooleanLiteral': case 'NullLiteral': {
         const value = node.type === 'NullLiteral' ? null : nodeField(node, 'value');
@@ -243,6 +246,7 @@ export function planInitialRendering(
           return need(scope, 'Member reads outside closed props need browser execution');
         }
         if (mixed && !object.props) return need(scope, 'Object mutation and escape need an interaction proof');
+        if (mixed && object.live?.has(name)) return need(scope, 'Live prop reads require browser updates');
         if (!object.fields.has(name) && name in Object.prototype) return need(scope, 'Inherited property read needs browser execution');
         return object.fields.get(name);
       }
@@ -290,7 +294,7 @@ export function planInitialRendering(
   function bind(pattern: BaseNode | null, value: Value, scope: Scope): void {
     if (pattern?.type === 'Identifier') {
       const name = identifierLikeName(pattern)!;
-      scope.values.set(name, value);
+      scope.values.set(name, value && typeof value==='object' && value.kind==='component' && !value.local ? {...value,local:name} : value);
       // A wholly closed page has no browser writes. Build capture/write facts
       // only when proving static content in a graph that retains interactivity.
       let analysis = analyses.get(scope.moduleId);
@@ -314,10 +318,17 @@ export function planInitialRendering(
         const key = identifierLikeName(childNode(property, 'key')) ?? stringValue(childNode(property, 'key'));
         if (key === null) need(scope, 'Unknown prop key');
         bind(childNode(property, 'value'), value.fields.get(key), scope);
+        if (value.live?.has(key)) markLive(childNode(property,'value'),scope);
       }
       return;
     }
     need(scope, 'Unknown binding pattern');
+  }
+
+  function markLive(pattern: BaseNode | null, scope: Scope): void {
+    if (pattern?.type==='Identifier') scope.unstable.add(identifierLikeName(pattern)!);
+    else if (pattern?.type==='AssignmentPattern') markLive(childNode(pattern,'left'),scope);
+    else if (pattern?.type==='ObjectPattern') for(const property of childNodes(pattern,'properties')) markLive(childNode(property,'value'),scope);
   }
 
   // Use the same closed-value proof with captured writes enabled. Unknown
@@ -367,7 +378,7 @@ export function planInitialRendering(
     return value == null || typeof value === 'boolean' ? [] : [{ kind: 'text', value: String(value) }];
   }
 
-  function render(component: Component, props: ReadonlyMap<string, Value>, rootCall = false): readonly InitialRenderNode[] {
+  function render(component: Component, props: ReadonlyMap<string, Value>, rootCall = false, live: ReadonlySet<string> = new Set()): readonly InitialRenderNode[] {
     if (rendering.has(component)) need(component.scope, 'Recursive component composition');
     if (nodeField(component.node, 'async') || nodeField(component.node, 'generator')) need(component.scope, 'Async component');
     rendering.add(component);
@@ -378,10 +389,11 @@ export function planInitialRendering(
       const shape = analyzeComponentPropShape(params);
       if (shape.mode === 'object' && params[0]) {
         bind(params[0], rootCall || !props.size && shape.hasWholeDefault
-          ? undefined : { kind: 'object', fields: props, props: true }, scope);
+          ? undefined : { kind: 'object', fields: props, props: true, live }, scope);
       } else {
         for (let index = 0; index < params.length; index++) {
           bind(params[index]!, rootCall ? undefined : props.get(shape.names[index]!), scope);
+          if (live.has(shape.names[index]!)) markLive(params[index]!,scope);
         }
       }
       const body = childNode(component.node, 'body');
@@ -467,6 +479,7 @@ export function planInitialRendering(
     if (tag === null) return need(scope, 'Dynamic tag needs browser execution');
     const host = /^[a-z]/.test(tag);
     const props = new Map<string, Value>();
+    const liveProps = new Set<string>();
     const attributes: InitialRenderAttribute[] = [];
     const hostAttributes = new Set<string>();
     for (const attribute of childNodes(opening, 'attributes')) {
@@ -480,6 +493,7 @@ export function planInitialRendering(
       if (host && /^on/i.test(name)) {
         if (!bindings || !/^on[A-Z]/.test(name)) return need(scope, 'Event handlers require browser execution', 'event');
         bindingEvents=true;
+        bindingEventCount++;
         continue;
       }
       if (name === 'ref') return need(scope, 'Refs require browser execution', 'ref');
@@ -492,21 +506,34 @@ export function planInitialRendering(
       const value = input === null ? true : expression(valueNode, scope);
       if (host && name !== 'key') attributes.push({ name, value: primitive(value, scope),
         ...(bindings ? {site:initialSite(attribute),live:!staysClosed(valueNode,scope)} : {}) });
-      else props.set(name, value);
+      else { props.set(name, value); if (bindings && !staysClosed(valueNode,scope)) liveProps.add(name); }
     }
     if (!host) {
-      if (bindings) need(scope,'Composed initial bindings need a placement proof');
       const component = scope.values.get(tag);
       if (component === null || typeof component !== 'object' || component.kind !== 'component') return need(scope, `Unknown component '${tag}'`);
       if (props.has('children')) return need(scope, 'Explicit children prop needs browser execution');
+      if (bindings && (inStructure || !component.local || !('exports' in component.scope))) need(scope,'Structural/local component bindings need a placement proof');
       if (mixed && scope.rootRender && [...props.values()].some(value => value !== null && typeof value === 'object')) {
         need(scope, 'Captured callbacks and object props need an interaction proof');
       }
       const regionCount = regions.length;
       const nodes = children();
+      if (bindings && nodes.length) need(scope,'Authored children binding needs an ownership placement proof');
       if (mixed && regions.length !== regionCount) need(scope, 'Interactive content slots need a placement proof');
       if (nodes.length) props.set('children', { kind: 'content', nodes });
-      try { return render(component, props); }
+      try {
+        const eventCount=bindingEventCount;
+        const children=render(component, props, false, liveProps);
+        if (!bindings) return children;
+        if (children.length!==1 || children[0]?.kind!=='element') need(scope,'Initial component bindings need one host root');
+        function closed(nodes:readonly InitialRenderNode[]):boolean {
+          return nodes.every(node=>node.kind==='text' ? node.live===false :
+            node.kind==='element' ? node.attributes.every(attribute=>attribute.live===false)&&closed(node.children) :
+            node.kind==='component' ? node.static===true : false);
+        }
+        return [{kind:'component',site:initialSite(node),moduleId:component.scope.moduleId,callModuleId:scope.moduleId,component:component.local!,children,
+          static:eventCount===bindingEventCount && liveProps.size===0 && closed(children)}];
+      }
       catch (error) {
         if (!(error instanceof NeedsBrowser) || !mixed || !scope.rootRender) throw error;
         const region = { id: regions.length, site: initialSite(node) };
@@ -620,6 +647,44 @@ export function planInitialRendering(
     const nodes = render(component, new Map(), true);
     if (bindings) {
       if (!bindingEvents || !returnSite || nodes.length !== 1 || nodes[0]?.kind !== 'element') need(component.scope,'No direct interactive DOM root');
+      const calls = new Map<string,Set<string>>();
+      const shapes = new Map<string,string>();
+      const rootScope=component.scope;
+      function collect(nodes: readonly InitialRenderNode[]): void {
+        for(const node of nodes) {
+          if (node.kind==='component') {
+            const key=`${node.moduleId}#${node.component}`;
+            const shape=JSON.stringify(node.children,(key,value)=>['value','live','static'].includes(key)?undefined:value);
+            if (shapes.has(key) && shapes.get(key)!==shape) need(rootScope,'Repeated component initial extents need a shared binding shape');
+            shapes.set(key,shape);
+            const sites=calls.get(key)??new Set<string>(); sites.add(`${node.callModuleId}:${node.site}`);calls.set(key,sites);
+          }
+          if ('children' in node) collect(node.children);
+          if (node.kind==='list') for(const row of node.rows)collect(row);
+        }
+      }
+      collect(nodes);
+      for(const [id,scope] of modules) {
+        const program=programs.get(id)!;
+        const analysis=analyses.get(id)??analyzeScope(program);
+        for(const [name,value] of scope.values) {
+          if (!value || typeof value!=='object' || value.kind!=='component' || !calls.has(`${value.scope.moduleId}#${value.local}`)) continue;
+          const binding=analysis.rootScope.getBinding(name);
+          if (binding?.constantViolations.length) need(scope,'Mutable component references need a factory placement proof');
+          for(const reference of binding?.references??[]) {
+            const parent=analysis.parentByNode.get(reference);
+            if (!parent || !['ExportSpecifier','ExportDefaultDeclaration'].includes(parent.type)) need(scope,'Escaped component factories need their ordinary creation program');
+          }
+        }
+        walkAst<BaseNode>(program,{enter(node){
+          if (node.type!=='JSXElement') return;
+          const tag=identifierLikeName(childNode(childNode(node,'openingElement')!,'name'));
+          const value=tag?scope.values.get(tag):undefined;
+          if (!value || typeof value!=='object' || value.kind!=='component') return;
+          const sites=calls.get(`${value.scope.moduleId}#${value.local}`);
+          if (sites && !sites.has(`${id}:${initialSite(node)}`)) need(scope,'Future component placements need their ordinary creation program');
+        }});
+      }
       return {kind:'bindings',target,mountModuleId:root!.mountModuleId,rootModuleId:root!.moduleId,
         rootLocal:root!.local,returnSite,nodes};
     }
@@ -641,12 +706,12 @@ export function planInitialRendering(
           ['eval', 'Function'].includes(identifierLikeName(childNode(node, 'callee')) ?? '')) dynamicEvaluation = true;
     } });
     if (dynamicEvaluation) return { kind: 'browser', requirements: [first.requirement] };
-    mixed = true;
+    bindings = true;
     modules.clear(); visiting.clear(); rendering.clear(); target = undefined;
     try { return plan(); } catch (error) {
       if (!(error instanceof NeedsBrowser)) throw error;
     }
-    bindings=true; mixed=false;
+    bindings=false; mixed=true;
     modules.clear(); visiting.clear(); rendering.clear(); regions.length=0; returnSite=undefined; target=undefined;
     try { return plan(); } catch (error) {
       if (!(error instanceof NeedsBrowser)) throw error;

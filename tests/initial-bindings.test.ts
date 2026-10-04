@@ -25,15 +25,16 @@ describe('initial HTML and browser bindings', () => {
     expect(result.output['./main.ts']).toContain('mount as attach');
   });
 
-  it('selects initial mounting for a mixed static root with a live child', () => {
+  it('binds a static root and its composed live child', () => {
     const result = compileModulesDetailed({
       './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
       './App.tsx': `import {Counter} from './Counter';export function App(){return <main><h1>Static</h1><Counter/></main>;}`,
       './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
     });
-    expect(result.initialRender.kind).toBe('mixed');
+    expect(result.initialRender.kind).toBe('bindings');
     expect(result.initialBrowserOutput?.['./main.ts']).toContain('mountInitial as mount');
-    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('adoptInitialRoot');
+    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('bindInitialNodes');
+    expect(result.initialBrowserOutput?.['./Counter.tsx']).toContain('bindInitialNodes');
   });
 
   it('keeps hot and server entries on the general mounting path', () => {

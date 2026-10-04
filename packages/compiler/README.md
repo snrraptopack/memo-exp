@@ -708,8 +708,23 @@ The binding target also supports closed initial `value` properties on text,
 search, email, URL, password and telephone inputs. It restores property-only
 defaults so native form reset matches ordinary creation, then uses the existing
 slot updater for later changes. Other input types and HTML-only property writes
-remain conservative fallbacks. Nested/composed binding and request state still
-need further work.
+remain conservative fallbacks. Request state still needs further work.
+
+## Initial composition bindings
+
+Eligible composed components keep defining-module identity and live prop facts
+in the initial-content plan. The separate DOM backend binds each instance's
+host root and relative slots, retaining existing prop replay, handlers and
+ownership. Imported aliases, repeated instances and derived props are supported.
+Closed static children omit their client calls; authored placement counts still
+preserve following instance identities.
+
+This proof covers module-owned components with one direct host root outside
+structural rows/branches. Children slots, escaped/future factory uses, differing
+initial structural extents, refs/effects and unknown setup retain mixed or
+ordinary creation. A component-owned inline list can bind within a proved child;
+its later rows use the existing creation/reconciliation path. Ordinary JS-entry
+and request/server products remain separate and keep their normal factories.
 
 ## Initial conditional bindings
 

@@ -47,6 +47,59 @@ async function production(root: string) {
 }
 
 describe('HTML first production builds', () => {
+  it('binds nested composed children without creating their initial elements in Chrome', async context => {
+    const executablePath = [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
+      .find((path): path is string => !!path && existsSync(path));
+    if (!executablePath) { context.skip(); return; }
+    const result = await production(await fixture(`import {Counter} from './Counter';import {name,rename} from './state';
+      export function App(){return <main><h1>{name}</h1><Counter offset={2} run={rename}/><Counter offset={10} run={rename}/></main>;}`, {
+      'src/Counter.tsx': `import {Value} from './Value';export function Counter({offset,run}){let n=0;return <section>
+        <button class="add" onClick={()=>n++}>Add</button><button class="rename" onClick={run}>Rename</button><Value text={n+offset}/></section>;}`,
+      'src/Value.tsx': `export function Value({text}){return <strong>{text}</strong>;}`,
+      'src/state.ts': `export let name='Ada';export function rename(){name='Grace';}`,
+    }));
+    expect(result.html).toContain('<strong>2</strong>');
+    const server = createHttpServer((request, response) => {
+      const file = result.files.find(item => item.fileName === (request.url === '/' ? 'index.html' : request.url?.slice(1)));
+      if (!file) { response.writeHead(404).end(); return; }
+      response.setHeader('Content-Type', file.type === 'chunk' ? 'text/javascript' : 'text/html');
+      response.end(file.type === 'chunk' ? file.code : file.source);
+    });
+    await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
+    const browser = await puppeteer.launch({ executablePath, headless: true });
+    try {
+      const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
+      const url = `http://127.0.0.1:${address.port}/`;
+      const staticPage = await browser.newPage(); await staticPage.setJavaScriptEnabled(false); await staticPage.goto(url);
+      expect(await staticPage.$$eval('strong', nodes => nodes.map(node => node.textContent))).toEqual(['2', '10']);
+      await staticPage.close();
+      const page = await browser.newPage(); const errors: string[] = [];
+      page.on('pageerror', error => errors.push(String(error)));
+      await page.evaluateOnNewDocument(() => {
+        const state = window as unknown as { initial?: Element[]; created?: string[] }; state.created = [];
+        const create = document.createElement.bind(document);
+        document.createElement = ((...args: Parameters<Document['createElement']>) => {
+          state.created!.push(args[0]); return create(...args);
+        }) as Document['createElement'];
+        new MutationObserver(() => {
+          if (document.querySelectorAll('strong').length === 2) state.initial ??= [...document.querySelectorAll('#root *')];
+        }).observe(document, { subtree: true, childList: true });
+      });
+      await page.goto(url); await page.click('.add');
+      await page.waitForFunction(() => document.querySelector('strong')?.textContent === '3');
+      expect(await page.$$eval('strong', nodes => nodes.map(node => node.textContent))).toEqual(['3', '10']);
+      await page.click('.rename'); await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Grace');
+      expect(await page.evaluate(() => {
+        const state = window as unknown as { initial: Element[]; created: string[] };
+        const current = [...document.querySelectorAll('#root *')];
+        return { same: state.initial.length === current.length && current.every((node, index) => node === state.initial[index]),
+          created: state.created.filter(tag => tag !== 'link') };
+      })).toEqual({ same: true, created: [] });
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close(); await new Promise<void>((done, reject) => server.close(error => error ? reject(error) : done()));
+    }
+  });
   it('binds controlled input values and empty todo extents in Chrome',async context=>{
     const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
       .find(path=>path&&existsSync(path));
@@ -282,7 +335,7 @@ describe('HTML first production builds', () => {
     const result = await production(root);
     expect(result.html).toContain('<script');
     expect(result.html).toContain('<h1>Hello</h1>');
-    expect(result.html).toContain('<!--mmd:initial:0-->');
+    expect(result.html).toContain('<button>0</button>');
     expect(result.files.some(file => file.type === 'chunk')).toBe(true);
     expect(result.files.filter(file => file.type === 'chunk').map(file => file.code).join('\n')).not.toContain('Hello');
   });

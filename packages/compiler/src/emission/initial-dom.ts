@@ -15,14 +15,17 @@ export interface InitialDomRoot {
   readonly component: string;
   readonly returnSite: string;
   readonly elements: Readonly<Record<string,InitialDomElement>>;
+  readonly components: Readonly<Record<string,{readonly path:readonly number[];readonly tag:string;readonly moduleId:string;readonly component:string;readonly static?:boolean}>>;
+  readonly factories?: Readonly<Record<string,InitialDomRoot>>;
   readonly conditions: Readonly<Record<string, {readonly branch: number; readonly open: readonly number[];
     readonly end: readonly number[]; readonly returnSite: string | null}>>;
   readonly lists: Readonly<Record<string, {readonly open: readonly number[]; readonly end: readonly number[];
     readonly count: number; readonly row: InitialDomRoot | null}>>;
 }
 
-export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}>): InitialDomRoot | null {
+export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}>, factories: Record<string,InitialDomRoot>={}, top=true): InitialDomRoot | null {
   const elements: Record<string,InitialDomElement>={};
+  const components: Record<string,InitialDomRoot['components'][string]>={};
   const conditions: Record<string,InitialDomRoot['conditions'][string]>={};
   const lists: Record<string,InitialDomRoot['lists'][string]>={};
   let valid=true;
@@ -30,6 +33,23 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
     let index=start;
     nodes.forEach(node=>{
       const current=index++;
+      if (node.kind==='component') {
+        const host=node.children[0];
+        if (components[node.site] || node.children.length!==1 || host?.kind!=='element' || !host.site) {valid=false;return;}
+        if (node.static) {
+          components[node.site]={path:[...parent,current],tag:host.tag,moduleId:node.moduleId,component:node.component,static:true};
+          return;
+        }
+        const nested=planInitialDom({...plan,nodes:node.children,rootLocal:node.component,returnSite:host.site},factories,false);
+        if (!nested) {valid=false;return;}
+        const child=relativeInitialDom(nested);
+        const key=`${node.moduleId}#${node.component}`;
+        const merged=factories[key]?mergeInitialDom(factories[key]!,child):child;
+        if (!merged) {valid=false;return;}
+        factories[key]=merged;
+        components[node.site]={path:[...parent,current],tag:host.tag,moduleId:node.moduleId,component:node.component};
+        return;
+      }
       if (node.kind === 'list') {
         if (lists[node.site]) {valid=false;return;}
         if (!node.rows.length) {
@@ -39,10 +59,9 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
         }
         const first=node.rows[0];
         if (!first || first.length!==1 || first[0]?.kind!=='element' || !first[0].site) {valid=false;return;}
-        const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site});
+        const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site},factories,false);
         if (!containerRow) {valid=false;return;}
-        const row={...containerRow,elements:Object.fromEntries(Object.entries(containerRow.elements).map(([site,element])=>
-          [site,{...element,path:element.path.slice(1),texts:element.texts.map(text=>({...text,path:text.path.slice(1)}))}]))};
+        const row=relativeInitialDom(containerRow);
         lists[node.site]={open:[...parent,current],end:[...parent,current+node.rows.length+1],count:node.rows.length,row};
         index += node.rows.length+1;
         return;
@@ -74,7 +93,27 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
     });
   }
   visit(plan.nodes,[]);
-  return valid ? {target:plan.target,component:plan.rootLocal,returnSite:plan.returnSite,elements,conditions,lists} : null;
+  return valid ? {target:plan.target,component:plan.rootLocal,returnSite:plan.returnSite,elements,components,conditions,lists,
+    ...(top?{factories}: {})} : null;
+}
+
+function relativeInitialDom(root:InitialDomRoot):InitialDomRoot {
+  return {...root,elements:Object.fromEntries(Object.entries(root.elements).map(([site,element])=>
+    [site,{...element,path:element.path.slice(1),texts:element.texts.map(text=>({...text,path:text.path.slice(1)}))}])),
+    components:Object.fromEntries(Object.entries(root.components).map(([site,component])=>[site,{...component,path:component.path.slice(1)}])),
+    conditions:Object.fromEntries(Object.entries(root.conditions).map(([site,condition])=>[site,{...condition,open:condition.open.slice(1),end:condition.end.slice(1)}])),
+    lists:Object.fromEntries(Object.entries(root.lists).map(([site,list])=>[site,{...list,open:list.open.slice(1),end:list.end.slice(1)}]))};
+}
+
+/** Repeated factories share shape, but every potentially live slot stays live. */
+function mergeInitialDom(left:InitialDomRoot,right:InitialDomRoot):InitialDomRoot|null {
+  const shape=(root:InitialDomRoot)=>JSON.stringify(root,(key,value)=>['live','empty','staticAttributes','factories'].includes(key)?undefined:value);
+  if (shape(left)!==shape(right))return null;
+  return {...left,elements:Object.fromEntries(Object.entries(left.elements).map(([site,element])=>{
+    const other=right.elements[site]!;
+    return [site,{...element,staticAttributes:element.staticAttributes.filter(site=>other.staticAttributes.includes(site)),
+      texts:element.texts.map((text,index)=>({...text,live:text.live||other.texts[index]!.live,empty:text.empty||other.texts[index]!.empty}))}];
+  })),lists:Object.fromEntries(Object.entries(left.lists).map(([site,list])=>[site,{...list,row:list.row?mergeInitialDom(list.row,right.lists[site]!.row!)!:null}]))};
 }
 
 /** Only nodes used by future browser work get a binding descriptor. */

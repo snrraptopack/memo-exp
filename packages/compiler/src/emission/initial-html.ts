@@ -14,6 +14,11 @@ export function emitInitialHtml(plan: InitialRenderPlan): string | null {
   function emit(nodes: readonly InitialRenderNode[], ancestors: string[]): string | null {
     let html = '';
     for (const node of nodes) {
+      if (node.kind==='component') {
+        const children=emit(node.children,ancestors);
+        if (children===null)return null;
+        html+=children;continue;
+      }
       if (node.kind === 'list') {
         const rows = emit(node.rows.flat(), ancestors);
         if (rows === null) return null;

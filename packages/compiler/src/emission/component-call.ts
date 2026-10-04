@@ -11,6 +11,8 @@ import {
 } from '../context';
 import { generatedIdentifier, md, mr } from '../identifiers';
 import type { EmitScope } from './scope';
+import { initialNode } from './initial-dom';
+import { initialSite } from '../planning/initial-render';
 import {
   hasComponentChildren,
   isRenderPropReference,
@@ -78,10 +80,13 @@ export function emitComponentCall(
   const open = element.openingElement;
   const tag = (open.name as t.JSXIdentifier).name;
   if (!/^[A-Z]/.test(tag)) return null;
+  const initial=scope.initialDom?.plan.components[initialSite(element)];
+  if (scope.initialDom && !initial) throw new Error('memo-dom: initial component has no binding placement');
   // repeated children of the same type need distinct variables AND
   // distinct entity ids: 'App/Tag', 'App/Tag[1]', …
   const seen = scope.childCounts.get(tag) ?? 0;
   scope.childCounts.set(tag, seen + 1);
+  if (initial?.static) return 'undefined';
   const base = tag.charAt(0).toLowerCase() + tag.slice(1);
   const candidate = seen === 0 ? base : `${base}${seen}`;
   // A generated child result must never shadow a user/module binding. The
@@ -431,6 +436,7 @@ export function emitComponentCall(
           ...(props.length > 0 ? [astFactory.arrayExpression(props)] : []),
           ...(dataPolicies === null ? [] : [dataPolicies]),
           ...(calleeOwnsRoutes ? [childRouteContext] : []),
+          ...(initial ? [initialNode(scope,initial.path,initial.tag)] : []),
         ]),
       ),
     ]),

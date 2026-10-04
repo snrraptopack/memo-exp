@@ -2167,3 +2167,14 @@ local callback ownership and conservative argument effects remain in place.
 The regression fixtures cover named/object props, forwarding, return values and
 `throw undefined` in ordinary rendering and imported writes in initial binding.
 This is a correctness fix; it has no CPU speed claim.
+
+The composition binding batch preserves semantic component boundaries and live
+prop facts before DOM emission. Proven children bind existing initial elements;
+closed static children omit browser calls/registrations. Nested aliases,
+independent instances, captured/module callback writes and later list rows pass
+compiled DOM regressions and production Chrome checks. Composed counters fall
+from 11,344 / 4,469 to 10,417 / 4,107 raw/gzip JS bytes; the tiny static-shell
+counter grows 77–80 gzip bytes. Adding 59 static cards adds one raw JS byte.
+Full figures, unchanged ordinary/runtime graphs and proof limits are documented
+in `browser-bundle-architecture.md`. Request state and further runtime narrowing
+remain on the roadmap.
