@@ -36,6 +36,13 @@ still call `mount`; the compiler selects this operation only in its alternate
 HTML-associated product. Mounted handles retain their originating runtime for
 unmount and restore the caller's context even when cleanup throws.
 
+Full-owner invalidation uses `invalidateEntity`; compiler output carrying exact
+causes and the general `markDirty` APIs use `reasoned-invalidation.ts`. Both
+publish through the same queue and commit drain. The exact adapter supplies its
+merging operation explicitly, so full-update-only programs can omit it. Full
+updates dominate pending exact causes, including exact writes arriving later in
+the same batch. Per-runtime isolation and failure/cycle safeguards remain shared.
+
 Application source does not need to import reactive primitives. The ordinary
 browser entry imports only the mounting boundary:
 

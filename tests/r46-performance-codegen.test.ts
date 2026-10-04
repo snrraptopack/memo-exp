@@ -14,7 +14,7 @@ describe('R46 performance code generation', () => {
     `);
 
     expect(code.match(/\.commitWrites\(/g)).toHaveLength(1);
-    expect(code).not.toContain('.markDirty(');
+    expect(code).not.toMatch(/\.(?:markDirty|invalidateEntity)\(/);
   });
 
   it('retains the event boundary for unknown and deferred-only calls', () => {
@@ -24,7 +24,7 @@ describe('R46 performance code generation', () => {
         return <button onClick={() => unknownWork()}>{count}</button>;
       }
     `);
-    expect(unknown).toContain('.markDirty(');
+    expect(unknown).toContain('.invalidateEntity(');
 
     const deferred = compile(`
       let count = 0;
@@ -37,7 +37,7 @@ describe('R46 performance code generation', () => {
         return <button onClick={() => runLater()}>{count}</button>;
       }
     `);
-    expect(deferred).toContain('.markDirty(');
+    expect(deferred).toContain('.invalidateEntity(');
     expect(deferred).toContain('.commitWrites(');
   });
 

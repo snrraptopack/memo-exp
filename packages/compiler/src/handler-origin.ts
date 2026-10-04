@@ -36,7 +36,7 @@ export function buildEventOriginCommit(
         ? componentId(ctx, compName)
         : astFactory.stringLiteral(ctx.rootId));
   return astFactory.expressionStatement(
-    astFactory.callExpression(md(ctx, 'markDirty'), [cloneEstreeNode(id)]),
+    astFactory.callExpression(md(ctx, 'invalidateEntity'), [cloneEstreeNode(id)]),
   );
 }
 

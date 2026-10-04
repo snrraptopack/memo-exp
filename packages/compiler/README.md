@@ -36,6 +36,10 @@ Public compilation APIs:
   captured content plan, preserving authored import aliases and source maps.
   General JS, development and server entries retain ordinary mounting. The
   initial operation shares ownership/validation with it and omits SSR recovery.
+- Existing handler write plans select full-owner invalidation when the emitted
+  update has no exact cause payload. Slot gates, list operations and reasoned
+  prop delivery keep exact reasons. Full event/effect/source refreshes use the
+  same full operation; the runtime retains one queue and commit implementation.
 
 The top-level files are orchestration and whole-program passes:
 

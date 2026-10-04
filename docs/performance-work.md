@@ -20,6 +20,13 @@ also fixes unmounting the wrong runtime after an ambient runtime switch.
 Before/after payload measurements are in `browser-bundle-architecture.md`;
 the ordinary-mount fixtures include the small cost of that ownership fix.
 
+Full-owner invalidation is now distinct from exact-cause publication. The
+compiler uses its existing write/replay facts to select it, and module routing
+omits the merging operation when it publishes only full updates. Exact gates,
+props and lists retain cause merging. Measurements include small increases for
+graphs retaining both capabilities, documented alongside the counter reduction
+in `browser-bundle-architecture.md`. This batch does not claim faster DOM timings.
+
 ## Correctness gates
 
 Benchmark timings require visible DOM changes. The DOM suite checks fresh 1k

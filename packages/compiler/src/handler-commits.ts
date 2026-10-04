@@ -99,7 +99,7 @@ export function buildScopeCommit(
       ? astFactory.expressionStatement(
           rowCtx.refreshVar !== undefined
             ? astFactory.callExpression(astFactory.identifier(rowCtx.refreshVar), [])
-            : astFactory.callExpression(md(ctx, 'markDirty'), [
+            : astFactory.callExpression(md(ctx, 'invalidateEntity'), [
                 astFactory.identifier(rowCtx.rowIdVar),
               ]),
         )
@@ -128,13 +128,13 @@ export function buildScopeCommit(
         : []),
     ];
     instanceCommit = astFactory.expressionStatement(
-      astFactory.callExpression(md(ctx, 'markDirty'), instanceArguments),
+      astFactory.callExpression(md(ctx, instanceArguments.length === 1 ? 'invalidateEntity' : 'markDirty'), instanceArguments),
     );
   }
   const rowOwnerCommit =
     scope.rowOwnerLocal && rowCtx?.ownerIdVar !== undefined
       ? astFactory.expressionStatement(
-          astFactory.callExpression(md(ctx, 'markDirty'), [
+          astFactory.callExpression(md(ctx, 'invalidateEntity'), [
             astFactory.identifier(rowCtx.ownerIdVar),
           ]),
         )

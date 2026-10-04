@@ -87,7 +87,7 @@ export function Ticker(_id, _parent, _dataPolicies) {
 		}
 
 		{
-			if (!(_reasons === -1 || _reasons !== null && typeof _reasons !== "number" && (_reasons.size === 1 && _reasons.has(-1)))) if (_reasons === null || _reasons === 0 || typeof _reasons === "object" && _reasons.has(0)) _MD.markDirty(_id + "/$effects/0");
+			if (!(_reasons === -1 || _reasons !== null && typeof _reasons !== "number" && (_reasons.size === 1 && _reasons.has(-1)))) if (_reasons === null || _reasons === 0 || typeof _reasons === "object" && _reasons.has(0)) _MD.invalidateEntity(_id + "/$effects/0");
 		}
 	};
 
@@ -177,7 +177,7 @@ export function Counter(_id, _parent, _dataPolicies) {
 	_button.onclick = () => {
 		const _returnValue = count++;
 
-		_MD.markDirty(_id);
+		_MD.invalidateEntity(_id);
 
 		return _returnValue;
 	};
@@ -534,7 +534,7 @@ export function LiveFeed(_id, _parent, _dataPolicies) {
 
 	const sub = subscribe((val) => {
 		status = val;
-		_MD.markDirty(_id);
+		_MD.invalidateEntity(_id);
 	});
 
 	_MD.cleanup(_id, () => sub.unsubscribe());
@@ -993,7 +993,7 @@ export function Profile(_id, _parent, _dataPolicies) {
 		]
 	);
 
-	_MD.cleanup(_id + "/when0", _MDD.connectResolvedValues([user], () => _MD.markDirty(_id + "/when0")));
+	_MD.cleanup(_id + "/when0", _MDD.connectResolvedValues([user], () => _MD.invalidateEntity(_id + "/when0")));
 	_MD.cleanup(_id, () => _when.dispose());
 	_MD.cleanup(_id, _MDD.ownResolvedValue(user));
 

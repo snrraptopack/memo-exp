@@ -397,7 +397,7 @@ export function transformComponent(
             ),
             astFactory.arrowFunctionExpression(
               [],
-              astFactory.callExpression(md(ctx, 'markDirty'), [
+              astFactory.callExpression(md(ctx, 'invalidateEntity'), [
                 astFactory.identifier(factoryId),
               ]),
             ),
@@ -506,7 +506,7 @@ export function transformComponent(
           astFactory.identifier(source),
           astFactory.arrowFunctionExpression(
             [],
-            astFactory.callExpression(md(ctx, 'markDirty'), [
+            astFactory.callExpression(md(ctx, 'invalidateEntity'), [
               astFactory.identifier(factoryId),
             ]),
           ),
@@ -522,7 +522,7 @@ export function transformComponent(
             ),
             astFactory.arrowFunctionExpression(
               [],
-              astFactory.callExpression(md(ctx, 'markDirty'), [
+              astFactory.callExpression(md(ctx, 'invalidateEntity'), [
                 astFactory.identifier(factoryId),
               ]),
             ),

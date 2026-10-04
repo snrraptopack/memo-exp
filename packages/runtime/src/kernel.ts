@@ -27,10 +27,10 @@
 import { runWithApplicationRuntime } from './application-scope';
 export { runWithApplicationRuntime } from './application-scope';
 export { register } from './volatile';
+export { markDirty, markDirtyMany, markDirtySubtree } from './reasoned-invalidation';
 import {
   clearDirtyReasons,
   createDirtyReasonStore,
-  mergeDirtyReasons,
   takeDirtyReasons,
   type DirtyReasonInput,
   type DirtyReasons,
@@ -612,37 +612,44 @@ export function registeredIds(): readonly EntityId[] {
  * Mark one entity dirty and schedule a commit.
  *
  * Dead letters (spec §9.7): marking an unmounted id is a silent no-op.
- * Dev builds may warn here later.
+ * Exact causes use the optional adapter; full owner writes need no merger.
  */
-export function markDirty(
+export function invalidateEntity(id: EntityId): void {
+  enqueueEntityInvalidation(id);
+}
+
+type DirtyReasonMerger = (store: DirtyReasonStore, id: EntityId, wasDirty: boolean, reason: DirtyReasonInput) => void;
+
+/** @internal Exact invalidation entry used by the optional cause adapter. */
+export function enqueueEntityInvalidation(
   id: EntityId,
   reason?: DirtyReasonInput,
+  merge?: DirtyReasonMerger,
 ): void {
   const runtime = getActiveApplicationRuntime();
-  if (enqueueDirty(runtime.state, id, reason)) scheduleCommit(runtime);
+  if (enqueueDirty(runtime.state, id, reason, merge)) scheduleCommit(runtime);
 }
 
 /** @internal Enqueue a resolved write's readers before a synchronous commit. */
-export function markDirtyMany(ids: readonly EntityId[], reason?: DirtyReasonInput): void {
+export function enqueueEntityInvalidations(ids: readonly EntityId[], reason?: DirtyReasonInput, merge?: DirtyReasonMerger): void {
   if (ids.length === 0) return;
   const runtime = getActiveApplicationRuntime();
   const k = runtime.state;
   let marked = false;
   for (const id of ids) {
-    if (enqueueDirty(k, id, reason)) marked = true;
+    if (enqueueDirty(k, id, reason, merge)) marked = true;
   }
   if (marked) scheduleCommit(runtime);
 }
 
-function enqueueDirty(k: KernelState, id: EntityId, reason?: DirtyReasonInput): boolean {
+function enqueueDirty(k: KernelState, id: EntityId, reason?: DirtyReasonInput, merge?: DirtyReasonMerger): boolean {
   if (!k.registry.has(id)) return false;
   if (k.inCommit && k.markedBy !== null && k.renderingEntity !== null) {
     k.markedBy.set(id, k.renderingEntity);
   }
   const wasDirty = k.dirty.has(id);
-  if (reason !== undefined || wasDirty) {
-    mergeDirtyReasons(k.dirtyReasons, id, wasDirty, reason);
-  }
+  if (reason !== undefined) merge!(k.dirtyReasons, id, wasDirty, reason);
+  else if (wasDirty) clearDirtyReasons(k.dirtyReasons, id);
   k.dirty.add(id);
   return true;
 }
@@ -672,15 +679,16 @@ export function undirty(id: EntityId): void {
  * subtree so even synchronous schedulers commit both publications together.
  * Owners outside the fallback root retain their supplied reasons.
  */
-export function markDirtySubtree(
+export function enqueueSubtreeInvalidation(
   id: EntityId,
   ownerId?: EntityId,
   ownerReason?: DirtyReasonInput,
+  merge?: DirtyReasonMerger,
 ): void {
   const runtime = getActiveApplicationRuntime();
   const k = runtime.state;
   const prefix = id + '/';
-  let marked = ownerId !== undefined && enqueueDirty(k, ownerId, ownerReason);
+  let marked = ownerId !== undefined && enqueueDirty(k, ownerId, ownerReason, merge);
   for (const key of k.registry.keys()) {
     if (key === id || key.startsWith(prefix)) {
       k.dirty.add(key);

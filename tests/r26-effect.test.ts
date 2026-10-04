@@ -70,8 +70,8 @@ describe('R26 — effect code generation and validation', () => {
       code.indexOf('.registerEntity({'),
     );
     expect(update).toContain('setTextData(');
-    expect(update).toContain('.markDirty(');
-    expect(update.indexOf('.markDirty(')).toBeGreaterThan(
+    expect(update).toContain('.invalidateEntity(');
+    expect(update.indexOf('.invalidateEntity(')).toBeGreaterThan(
       update.indexOf('setTextData('),
     );
   });

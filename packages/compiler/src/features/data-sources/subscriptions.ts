@@ -194,7 +194,7 @@ function subscribeTransparentEntity(
           sourceArray(bindingNames),
           astFactory.arrowFunctionExpression(
             [],
-            astFactory.callExpression(md(ctx, 'markDirty'), [
+            astFactory.callExpression(md(ctx, 'invalidateEntity'), [
               cloneNode(entityId, true),
             ]),
           ),

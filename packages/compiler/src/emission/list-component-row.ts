@@ -200,7 +200,7 @@ function buildComponentRowFactory({
                             ) : cloneEstreeNode(rowContentUpdate),
                             [],
                           )
-                        : astFactory.callExpression(md(ctx, 'markDirty'), [
+                        : astFactory.callExpression(md(ctx, 'invalidateEntity'), [
                             cloneEstreeNode(rowId),
                           ]),
                     ),
@@ -638,7 +638,7 @@ export function buildComponentRowCreate(
         ]),
       ),
       astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'markDirty'), [cloneEstreeNode(rowId)]),
+        astFactory.callExpression(md(ctx, 'invalidateEntity'), [cloneEstreeNode(rowId)]),
       ),
     );
   }

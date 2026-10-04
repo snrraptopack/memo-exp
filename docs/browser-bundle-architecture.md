@@ -262,6 +262,53 @@ fallback proofs, mounting validation, teardown failures, optional hydration,
 SSR concurrency and application isolation. Changed-source lint has no errors;
 the root factory's existing general `Function` types retain four warnings.
 
+## Optional exact-cause invalidation
+
+The compiler now distinguishes full-owner invalidation from an update carrying
+exact causes. The existing captured handler write plan selects `invalidateEntity`
+when no cause payload is emitted. Numeric owner reasons still select `markDirty`.
+Event-origin refreshes, effect scheduling, row/owner refreshes and external-source
+notifications also use the full operation when they carry no exact payload.
+The change consumes existing semantic facts rather than introducing another
+dependency analysis or scheduler.
+
+`reasoned-invalidation.ts` preserves the general runtime API and supplies the
+merging operation to the shared kernel enqueue path. Exact list-item/structure
+routes supply that same operation; ordinary module-write routing does not. There
+is no new global capability state or runtime subscription. Full invalidation
+clears pending exact causes, and later exact writes in the same batch cannot
+weaken it. Commit, reason consumption, render recovery, cycle bounds, ownership
+and teardown remain in the shared kernel. The per-runtime cause store remains
+available even in a full-update-only program.
+
+Production HTML-entry measurements against `ae4896b`, unchanged fixtures and
+default Vite minification, including every emitted JS asset:
+
+| Fixture | Before JS raw / gzip sum B | After JS raw / gzip sum B |
+|---|---:|---:|
+| Owner counter with initial HTML | 8,978 / 3,603 | 8,625 / 3,473 |
+| Module counter with initial HTML | 12,289 / 4,757 | 11,923 / 4,618 |
+| Mixed static cards and counter (1 or 60 cards) | 9,152 / 3,598 | 8,799 / 3,481 |
+| Input/list | 24,173 / 8,963 | 24,225 / 8,995 |
+| Composed counter | 11,272 / 4,447 | 11,344 / 4,469 |
+| Owner keyed list | 24,273 / 8,984 | 24,327 / 9,006 |
+
+Small full-update paths lose 353–366 raw bytes. Graphs retaining exact causes
+gain 52–72 raw bytes for the explicit enqueue boundary. This is a capability
+separation with a measured tradeoff, not a universal payload reduction or a DOM
+timing claim. Static pages remain zero JS, and one versus sixty static host cards
+around a local counter ship 8,625 versus 8,627 B. The kernel, mounting/binding
+cost and the general keyed-list implementation still require further work.
+
+Runtime/compiler builds and changed-production-source lint pass. The selected
+compiler/runtime, exact-slot, cleanup, list, router/data, SSR-isolation and opaque
+pull suites pass. All twelve package/source browser audit graphs pass interaction
+and retained-node checks. All twenty production HTML checks passed across the
+suite and an isolated rerun: the mixed-child Chrome check initially exceeded the
+30-second limit under load, then passed in 7.7 seconds with a 90-second command
+timeout. A separate DOM regression also verifies independent reasoned children
+after a skipped static instance, retaining the original surrounding HTML.
+
 ## Historical browser-creation baseline
 
 The stable `bench:size:audit` fixtures include ordinary client mounting and

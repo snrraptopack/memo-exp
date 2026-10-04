@@ -18,7 +18,7 @@ async function bundle(source: string) {
 it('keeps an owner counter free of unused list native guards, routing and props', async () => {
   const { inputs, code } = await bundle(`export function App(){let count=0;return <button onClick={()=>count++}>{count}</button>;}`);
   expect(inputs.some(path => path.endsWith('/dist/kernel.js'))).toBe(true);
-  for (const feature of ['list', 'list-update', 'access', 'props', 'hydration', 'effect', 'async-storage', 'application-scope', 'volatile']) {
+  for (const feature of ['list', 'list-update', 'access', 'props', 'hydration', 'effect', 'async-storage', 'application-scope', 'volatile', 'reasoned-invalidation']) {
     expect(inputs.some(path => path.endsWith(`/dist/${feature}.js`))).toBe(false);
   }
   expect(code).not.toContain('[native code]');
@@ -28,6 +28,13 @@ it('retains polling only for an opaque source', async () => {
   const { inputs } = await bundle(`import {createClock} from '@size/clock';
     export function App(){const clock=createClock();return <p>{clock.value}</p>;}`);
   expect(inputs.some(path => path.endsWith('/dist/volatile.js'))).toBe(true);
+  expect(inputs.some(path => path.endsWith('/dist/reasoned-invalidation.js'))).toBe(true);
+});
+
+it('retains exact cause merging for a component with independent state slots', async () => {
+  const { inputs } = await bundle(`export function App(){let a=0;let b=0;
+    return <main><button onClick={()=>a++}>{a}</button><button onClick={()=>b++}>{b}</button></main>;}`);
+  expect(inputs.some(path => path.endsWith('/dist/reasoned-invalidation.js'))).toBe(true);
 });
 
 it.each(['bindings', 'mixed'] as const)('omits SSR mounting from the %s HTML product', async kind => {

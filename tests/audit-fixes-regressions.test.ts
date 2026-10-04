@@ -653,7 +653,7 @@ describe('audit check: non-store-shaped const objects', () => {
         return <button onClick={() => cfg.n++}>{cfg.n}</button>;
       }
     `);
-    expect(code).toContain('markDirty');
+    expect(code).toContain('invalidateEntity');
   });
 
   it('rejects reassignment of a const store binding with a clear diagnostic', () => {

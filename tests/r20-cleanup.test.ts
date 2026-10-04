@@ -160,7 +160,7 @@ describe('R20 - cleanup compiler contract', () => {
   it('lowers explicit ownership and instruments direct factory timers', () => {
     const code = compile(SOURCES['r20-timer']!);
     expect(code).toMatch(/\.cleanup\(_id\d*, \(\) =>/);
-    expect(code).toMatch(/setInterval\(\s*\(\) => \{[\s\S]*\.markDirty\(_id\d*\)/);
+    expect(code).toMatch(/setInterval\(\s*\(\) => \{[\s\S]*\.invalidateEntity\(_id\d*\)/);
     expect(code).not.toContain('try {');
     expect(code).not.toContain('finally');
   });
@@ -180,7 +180,7 @@ describe('R20 - cleanup compiler contract', () => {
       code.indexOf('setInterval'),
       code.indexOf('}, 1000)'),
     );
-    expect(interval).toMatch(/timer\+\+[\s\S]*\.markDirty\(_id\d*\)/);
+    expect(interval).toMatch(/timer\+\+[\s\S]*\.invalidateEntity\(_id\d*\)/);
   });
 
   it('table-routes writes from a module-level interval callback', () => {
@@ -194,7 +194,7 @@ describe('R20 - cleanup compiler contract', () => {
       code.indexOf(', 1000)'),
     );
     expect(interval).toMatch(/timer\+\+[\s\S]*\.commitWrites\(_WRITES_\d*\)/);
-    expect(interval).not.toMatch(/\.markDirty\(_id\d*\)/);
+    expect(interval).not.toMatch(/\.(?:markDirty|invalidateEntity)\(_id\d*\)/);
   });
 
   it('commits a retained callback created by a synchronous module helper', () => {
@@ -220,7 +220,7 @@ describe('R20 - cleanup compiler contract', () => {
       }
     `);
     expect(code).toMatch(/hooks:\s*\[\s*\(\) => \{[\s\S]*shared\+\+[\s\S]*\.commitWrites\(/);
-    expect(code).toMatch(/changed:\s*\(\) => \{[\s\S]*local\+\+[\s\S]*\.markDirty\(/);
+    expect(code).toMatch(/changed:\s*\(\) => \{[\s\S]*local\+\+[\s\S]*\.invalidateEntity\(/);
   });
 
   it('leaves JSX-producing list callbacks to row/event emission', () => {

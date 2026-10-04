@@ -50,6 +50,7 @@ function mount(body: string, setup = 'let count = 0;', effect = false, asyncHand
     effectAssignmentChanged: (a: unknown, b: unknown) => !Object.is(a, b),
     commitWrites: notify,
     markDirty: notify,
+    invalidateEntity: notify,
     markDirtySubtree: notify,
   };
   const source = `${setup}
@@ -75,7 +76,7 @@ describe('compiler completion semantics', () => {
       return <output>{status}</output>;
     }`);
     const callback = code.slice(code.indexOf('subscribe('), code.indexOf(');', code.indexOf('subscribe(')));
-    expect(callback).toMatch(/status = val;\s+_MD\w*\.markDirty/);
+    expect(callback).toMatch(/status = val;\s+_MD\w*\.invalidateEntity/);
     expect(callback).not.toContain('try');
   });
 
@@ -83,7 +84,7 @@ describe('compiler completion semantics', () => {
     const api = execute(compile(`let count = 0; const increment = () => count++;
       export function read() { return increment(); }
       export function App() { return <button onClick={${handler}}>{count}</button>; }`), {
-      installAccessTable() {}, register() {}, registerEntity() {}, commitWrites() {},
+      installAccessTable() {}, register() {}, registerEntity() {}, commitWrites() {}, invalidateEntity() {},
       getActiveEnvironment: () => ({ document }),
     });
     const button = api.App('App', null) as HTMLButtonElement;

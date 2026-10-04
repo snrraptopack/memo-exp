@@ -210,7 +210,7 @@ describe('R19 - receiver-bounded code generation', () => {
     expect(code).toMatch(
       /const inspect = \(\) => \{\s+const _returnValue\d* = items\.filter\(Boolean\);\s+_MD\d*\.commitWrites/,
     );
-    expect(code).not.toMatch(/markDirty\(_id\d*\)/);
+    expect(code).not.toMatch(/(?:markDirty|invalidateEntity)\(_id\d*\)/);
   });
 
   it('bounds nested receivers and unknown direct-call root arguments', () => {

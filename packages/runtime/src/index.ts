@@ -15,6 +15,7 @@ export {
   registeredIds,
   has,
   markDirty,
+  invalidateEntity,
   undirty,
   markDirtySubtree,
   commit,

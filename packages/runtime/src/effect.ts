@@ -10,7 +10,7 @@ import { cleanup, type CleanupDisposer } from './cleanup';
 import {
   getActiveEnvironment,
   has,
-  markDirty,
+  invalidateEntity,
   registerEntity,
   unregisterSubtree,
   type EntityId,
@@ -64,7 +64,7 @@ export function registerEffect(
   });
 
   // Initial execution uses the same batched post-render phase as reruns.
-  markDirty(id);
+  invalidateEntity(id);
 }
 
 /**
@@ -109,5 +109,5 @@ export function registerConditionalEffect(
     if (has(activeId)) unregisterSubtree(activeId);
   });
 
-  markDirty(id);
+  invalidateEntity(id);
 }

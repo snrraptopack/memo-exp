@@ -15,8 +15,11 @@
  * the write-set are compiler-generated.
  */
 
-import { markDirtyMany, markDirtySubtree, type EntityId } from './kernel';
-import type { DirtyReasonInput } from './dirty-reasons';
+import {
+  enqueueEntityInvalidations as markDirtyMany,
+  enqueueSubtreeInvalidation as markDirtySubtree, type EntityId,
+} from './kernel';
+import { mergeDirtyReasons, type DirtyReasonInput } from './dirty-reasons';
 import {
   resolveStaticWrites,
   resolveWrites,
@@ -56,13 +59,14 @@ export function clearEventLog(): void {
 function routeStaticWrites(
   writes: readonly string[],
   reason?: DirtyReasonInput,
+  merge?: typeof mergeDirtyReasons,
 ): void {
   const resolved = resolveStaticWrites(writes);
   if (resolved === 'root-subtree') {
     markDirtySubtree(getRootId());
     return;
   }
-  markDirtyMany(resolved, reason);
+  markDirtyMany(resolved, reason, merge);
 }
 
 export function commitWrites(writes: readonly string[]): void {
@@ -72,7 +76,7 @@ export function commitWrites(writes: readonly string[]): void {
 /** Compiler-proven content destinations; full invalidations still dominate. */
 export function commitListItemWrites(source: string, indices: readonly number[]): void {
   if (indices.length === 0) return;
-  routeStaticWrites([source], indices.map(index => listItemReason(source, index)));
+  routeStaticWrites([source], indices.map(index => listItemReason(source, index)), mergeDirtyReasons);
 }
 
 /** Route a compiler-proven structure-only collection write. */
@@ -84,11 +88,11 @@ export function commitStructuralWrites(writes: readonly string[]): void {
     }
     const structural = resolveStaticWrites([listStructureReaderKey(write)]);
     if (structural === 'root-subtree' || structural.length === 0) {
-      routeStaticWrites([write], listStructureReason(write));
+      routeStaticWrites([write], listStructureReason(write), mergeDirtyReasons);
       continue;
     }
     const reason = listStructureReason(write);
-    markDirtyMany(structural, reason);
+    markDirtyMany(structural, reason, mergeDirtyReasons);
   }
 }
 

@@ -129,7 +129,7 @@ export function buildLocalEffectInvalidations(
   ): t.Statement | null => {
       if (localReads.size === 0 && derivationReads.size === 0) return null;
       let mark: t.Statement = astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'markDirty'), [
+        astFactory.callExpression(md(ctx, 'invalidateEntity'), [
           target,
         ]),
       );

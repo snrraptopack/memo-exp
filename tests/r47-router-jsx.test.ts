@@ -313,7 +313,7 @@ describe('compiler-owned JSX routing', () => {
     expect(code).toMatch(/let tab = currentRoute\.query\.get\(['"]tab['"]\) \?\? ['"]board['"]/);
     expect(code).toContain('subscribeRouteValue as _subscribeExternal');
     expect(code).toMatch(/tab = currentRoute\.query\.get\(['"]tab['"]\) \?\? ['"]board['"]/);
-    expect(code).toContain('markDirty(_id)');
+    expect(code).toContain('invalidateEntity(_id)');
     expect(code).toContain('_routeRegion.update()');
   });
 
@@ -382,7 +382,7 @@ describe('compiler-owned JSX routing', () => {
       'subscribeLocation as _subscribeExternal',
     );
     expect(code).toContain(
-      '_subscribeExternal(currentLocation, () => _MD.markDirty(_id))',
+      '_subscribeExternal(currentLocation, () => _MD.invalidateEntity(_id))',
     );
     expect(code).toMatch(/section = currentLocation\.section/);
   });
