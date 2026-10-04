@@ -14,6 +14,12 @@ export function emitInitialHtml(plan: InitialRenderPlan): string | null {
   function emit(nodes: readonly InitialRenderNode[], ancestors: string[]): string | null {
     let html = '';
     for (const node of nodes) {
+      if (node.kind === 'conditional') {
+        const children = emit(node.children, ancestors);
+        if (children === null) return null;
+        html += `<!--mmd:initial:when:${node.site}-->${children}<!--/mmd:initial:when-->`;
+        continue;
+      }
       if (node.kind === 'browser') {
         html += `<!--mmd:initial:${node.id}-->`;
         continue;

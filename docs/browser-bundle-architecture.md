@@ -366,6 +366,70 @@ Structural initial HTML and browser binding are still separate unfinished work:
 this todo fixture currently creates its initial DOM from JavaScript. Removing
 that creation program and reducing the shared kernel remain necessary.
 
+## Initial HTML for conditional regions
+
+The bindings target now represents root-owned conditional regions as a selected
+initial branch between explicit HTML comments. It uses the shared conditional
+normalizer for ternaries, chains and logical JSX, rather than independently
+guessing branch indices. The DOM address plan accounts for both anchors and the
+selected branch when locating later siblings and text. All descriptor paths,
+element kinds and structural comment identities are checked before any empty
+text marker is replaced or events are attached.
+
+For a proven host branch, one browser factory binds retained nodes on first
+activation and creates fresh nodes on later activation. Static surrounding
+markup is absent from the browser factory; branch markup remains because future
+switches must recreate it. Creation-only text, attributes and appends are guarded
+on first activation, while the branch's events and updater share their usual
+state captures. Closed branch attributes have no updater. The existing
+conditional owner, access routing, scheduler and cleanup handle later changes.
+The ordinary JavaScript entry, development HMR and SSR targets retain their
+existing creation/adoption paths.
+
+Conditional lifetime handling also now stops after a selector, identity read,
+factory or DOM insertion disposes the region. A factory that returns after
+unmount has its returned entry cleaned. Cleanup is retired before invoking
+authored disposal, so reentrant unmount cannot call it twice; a throwing disposer
+does not prevent anchor/content teardown. Initial-construction failures remove
+anchors while preserving the original failure, including `throw undefined`.
+Failed branch selection can retry. This is not rollback of arbitrary authored
+factory work or support for arbitrary nested reconciliation from disposal hooks.
+
+Current production products for the same conditional graphs, raw JS bytes /
+gzip sum, with one or sixty static cards outside a switchable branch:
+
+| Static cards | Initial HTML plus binding JS | Ordinary DOM creation JS |
+|---|---:|---:|
+| 1 | 12,741 / 4,879 | 12,926 / 4,942 |
+| 60 | 12,747 / 4,882 | 16,388 / 5,336 |
+
+This comparison uses the same compiler/runtime revision and Vite settings. It
+compares two rendering products, not old versus new CPU performance. Increasing
+surrounding static content adds six JS bytes to the binding program and 3,462
+bytes to ordinary creation. The stable owner counter grows from 8,625 / 3,473 at
+`4f3fdd6` to 8,709 / 3,508; the module counter grows from 11,923 / 4,618 to
+12,007 / 4,644. Structural comment validation costs 84 raw bytes in these
+non-structural binding programs. Ordinary counters, positional/keyed lists,
+composed counters and mixed roots keep their preceding payload sizes. The shared
+conditional runtime itself grows with the initial-range and lifetime safeguards;
+these costs are included in both conditional product figures. Closed static
+pages remain zero JS.
+
+All twenty-one production HTML integration checks pass, including Chrome checks of content with
+JavaScript disabled, initial branch identity with no application element creation,
+branch replacement/reentry with current state, and retained outer nodes. Compiled
+DOM tests cover empty branches, independent regions, chain selection, later text
+addresses, module routing and conservative fallbacks. Conditional lifetime,
+ordinary conditional/directive, SSR adoption, existing binding and compiler
+snapshot suites pass. Vite's detached `link` feature probe is excluded from the
+application-element creation count; root/branch identity is independently checked.
+
+The first structural boundary accepts closed selectors and plain host branches.
+Nested structural bindings, fragment branches, composed children, list initial
+HTML and unproved setup/ref/lifecycle/opaque behavior still use general creation.
+Extending those placement/lifetime proofs and request HTML/state delivery remains
+required; this is not completion of the architecture plan.
+
 ## Historical browser-creation baseline
 
 The stable `bench:size:audit` fixtures include ordinary client mounting and
@@ -503,7 +567,7 @@ Source-specific update groups must retain batching and opaque fallbacks.
 |---|---|---|
 | 1, first boundary implemented | Separate initial content from browser execution; emit closed static pages as HTML | Hello and larger static composition ship zero JS; CSS, unknown effects, dev HMR and direct JS consumers remain correct |
 | 2, first mixed boundary implemented | Extend the semantic plan beyond closed-root/primitive-prop placements with interaction roots, source/slot reachability, captures and lifetime requirements | Static parent with interactive child; unused state; callbacks, hidden reads, refs and cleanup; explain every retained client region |
-| 3, direct host roots implemented | Extend HTML plus browser binding/event/update output to composed children and structural regions | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
+| 3, direct host roots and first conditional boundary implemented | Extend HTML plus browser binding/event/update output to composed children and remaining structural regions | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
 | 4 | Extend the same separation to request HTML and serialized state | Zero-JS static SSR, minimal mixed-page interaction JS, async isolation, payload safety and hydration correctness |
 | 5 | Reduce runtime capabilities required by the derived browser program | Scheduling/lifetime core, optional access routing/host adapters, positional versus keyed lists, opaque fallback and retained identity |
 

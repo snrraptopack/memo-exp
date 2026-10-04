@@ -17,7 +17,9 @@ export function bindInitialNodes(
       }
       node = child;
     }
-    const matches = kind === '#text'
+    const matches = kind.startsWith('#comment:')
+      ? node.nodeType === 8 && (node as Comment).data === kind.slice(9)
+      : kind === '#text'
       ? node.nodeType === 3 || node.nodeType === 8 && (node as Comment).data === 'mmd:empty'
       : node.nodeType === 1 && (node as Element).localName === kind &&
         (node as Element).namespaceURI === 'http://www.w3.org/1999/xhtml';
@@ -29,7 +31,7 @@ export function bindInitialNodes(
   // Complete validation before replacing empty text markers or binding events.
   const replacements = new Map<Node, Text>();
   return nodes.map(node => {
-    if (node.nodeType !== 8) return node;
+    if (node.nodeType !== 8 || (node as Comment).data !== 'mmd:empty') return node;
     let text = replacements.get(node);
     if (!text) {
       text = document.createTextNode('');

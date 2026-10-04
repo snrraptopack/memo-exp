@@ -686,8 +686,19 @@ emission. A direct item binding, index-only key, and absence of spread/key reads
 or replayed preludes establish that proof. The DOM backend combines it with the
 existing DOM-only inline-row proof to select positional reconciliation. Rows
 requiring lifecycle or general key behavior retain keyed reconciliation.
-Omitting `key` still means item identity. Initial HTML for structural regions is
-not yet part of the browser-binding target.
+Omitting `key` still means item identity. List initial HTML is not yet part of the
+browser-binding target.
+
+## Initial conditional bindings
+
+For root-owned conditionals with closed initial selectors and plain host
+branches, the initial-content plan emits the selected branch as HTML. The DOM
+binding backend uses the shared branch normalizer and accounts for anchors in
+sibling addresses. The same branch factory binds initially and creates nodes
+on later activations, retaining its normal updater and handler captures.
+Static surrounding markup is omitted from browser factories. Nested structural
+regions, fragment branches, composed children and unproved lifecycle/opaque
+behavior keep the ordinary creation program.
 
 ## Compiler-owned conditional branches
 

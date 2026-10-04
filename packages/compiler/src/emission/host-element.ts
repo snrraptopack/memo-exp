@@ -48,7 +48,7 @@ import {
 import { emitText } from './text-node';
 import { literalClassValue } from './class-value';
 import type { NodeEmitter } from './node-emitter';
-import { initialNode } from './initial-dom';
+import { initialNode, initialOrCreate, freshInitialStatement } from './initial-dom';
 import { initialSite } from '../planning/initial-render';
 
 function isInitialLiteral(value: t.Expression): boolean {
@@ -95,11 +95,11 @@ export function emitDirectChildOperations(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): void {
-  if (scope.initialDom) return;
   for (const operation of operations) {
     if (operation.type === 'node') {
+      if (scope.initialDom && !scope.initialDom.adopting) continue;
       scope.creation.push(
-        astFactory.expressionStatement(
+        freshInitialStatement(scope, astFactory.expressionStatement(
           astFactory.callExpression(
             astFactory.memberExpression(
               astFactory.identifier(parentVar),
@@ -107,7 +107,7 @@ export function emitDirectChildOperations(
             ),
             [astFactory.identifier(operation.variable)],
           ),
-        ),
+        )),
       );
     } else if (operation.type === 'slot') {
       emitForwardedSlotMount(
@@ -211,7 +211,8 @@ const childOperations = collectDirectChildren(element.children, {
   },
 });
 const varName = freshNodeName(ctx, scope, tag);
-const needsInitialBinding=initial && (initialSite(element) === scope.initialDom!.plan.returnSite ||
+const adopting=scope.initialDom?.adopting;
+const needsInitialBinding=initial && (childOperations.some(operation=>operation.type !== 'node') || initialSite(element) === scope.initialDom!.plan.returnSite ||
   open.attributes.some(attribute=>{
     if (!astFactory.isJSXAttribute(attribute)) return true;
     if (initial.staticAttributes.includes(initialSite(attribute))) return false;
@@ -220,7 +221,7 @@ const needsInitialBinding=initial && (initialSite(element) === scope.initialDom!
     return /^on[A-Z]/.test(name) || value !== null && !isInitialLiteral(value);
   }));
 if (scope.initialDom && !initial) throw new Error('memo-dom: initial DOM element has no binding address');
-const creationExpression = initial ? null : createElementExpression(
+const creationExpression = initial && !adopting ? null : createElementExpression(
   renderDocument(ctx, scope),
   tag,
   elementSvg,
@@ -232,11 +233,11 @@ if (creationExpression && element.loc !== null && element.loc !== undefined) {
     },
   });
 }
-if (!initial || needsInitialBinding) scope.creation.push(
+if (!initial || needsInitialBinding || adopting) scope.creation.push(
   astFactory.variableDeclaration('const', [
     astFactory.variableDeclarator(
       astFactory.identifier(varName),
-      initial ? initialNode(scope,initial.path,tag) : creationExpression!,
+      initial ? initialOrCreate(scope, needsInitialBinding ? initialNode(scope,initial.path,tag) : astFactory.identifier('undefined'), creationExpression ?? astFactory.identifier('undefined')) : creationExpression!,
     ),
   ]),
 );
@@ -307,9 +308,16 @@ if (hasSpread) {
   scope.updaters.push(() => patch(preparedProps));
 } else {
   for (const attr of open.attributes) {
-  const a = attr as t.JSXAttribute;
+    const start=scope.creation.length;
+    emitAttribute(attr as t.JSXAttribute);
+    if (adopting && !/^on[A-Z]/.test(jsxAttributeName((attr as t.JSXAttribute).name))) {
+      const statements=scope.creation.splice(start);
+      if (statements.length) scope.creation.push(freshInitialStatement(scope, astFactory.blockStatement(statements)));
+    }
+  }
+  function emitAttribute(a: t.JSXAttribute): void {
   const attrName = jsxAttributeName(a.name);
-  if (initial?.staticAttributes.includes(initialSite(a))) continue;
+  if (!adopting && initial?.staticAttributes.includes(initialSite(a))) return;
 
   if (attrName === 'ref') {
     const value = attrExpr(a.value);
@@ -325,7 +333,7 @@ if (hasSpread) {
       ownerId,
       compileRefValue(ctx, componentPath, componentName, value),
     );
-    continue;
+    return;
   }
 
   // backstop: row-root keys are stripped before emission, so any key
@@ -375,12 +383,12 @@ if (hasSpread) {
             ]),
           ),
     );
-    continue;
+    return;
   }
 
-  if (initial) {
+  if (initial && !adopting) {
     const value=attrExpr(a.value);
-    if (value === null || isInitialLiteral(value)) continue;
+    if (value === null || isInitialLiteral(value)) return;
   }
 
   if (astFactory.isStringLiteral(a.value)) {
@@ -438,7 +446,7 @@ if (hasSpread) {
         ),
       );
     }
-    continue;
+    return;
   }
 
   const v =
@@ -467,7 +475,7 @@ if (hasSpread) {
       setStyle(),
     );
     pushSlotUpdater(scope, setStyle, v);
-    continue;
+    return;
   }
   const key = freshSlot(ctx, scope);
   // M5.8: IDL-property attributes (checked, value, disabled, …) write the
@@ -515,7 +523,8 @@ if (hasSpread) {
       domAttributeWrite(varName, attrName, tmp),
     );
   };
-  if (!initial) scope.creation.push(makeCall());
+  if (!initial || adopting) scope.creation.push(makeCall());
+  if (initial?.staticAttributes.includes(initialSite(a))) return;
   registerTransparentDataSite(
     ctx,
     scope,

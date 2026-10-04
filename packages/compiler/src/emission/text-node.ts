@@ -17,7 +17,7 @@ import {
 } from '../data-sources';
 import { cachedTextConcat } from './text-concat';
 import { cachedTextValue } from './text-value';
-import { initialNode } from './initial-dom';
+import { initialNode, initialOrCreate, freshInitialStatement } from './initial-dom';
 
 // ---------------------------------------------------------------------
 // component transform
@@ -33,43 +33,42 @@ export function emitText(
   initialEmpty = false,
 ): string {
   const varName = generatedIdentifier(ctx, `text${scope.textCounter++}`).name;
-  if (initialStatic) {
+  const adopting=scope.initialDom?.adopting;
+  if (initialStatic && !adopting) {
     // The descriptor adopts an empty placeholder even when no updater needs
     // to retain its text node afterward.
     if (initialEmpty) initialNode(scope, initialPath!, '#text');
     return varName;
   }
-  if (astFactory.isStringLiteral(expr)) {
-    if (scope.initialDom) return varName;
+  if (astFactory.isStringLiteral(expr) || initialStatic) {
+    if (scope.initialDom && !adopting) return varName;
+    if (initialEmpty) initialNode(scope,initialPath!,'#text');
     // static text: no slot, content baked into the node
     scope.creation.push(
       astFactory.variableDeclaration('const', [
         astFactory.variableDeclarator(
           astFactory.identifier(varName),
-          astFactory.callExpression(
+          initialOrCreate(scope,astFactory.identifier('undefined'),astFactory.callExpression(
             astFactory.memberExpression(
               renderDocument(ctx, scope),
               astFactory.identifier('createTextNode'),
             ),
-            [astFactory.stringLiteral(expr.value)],
-          ),
+            [astFactory.isStringLiteral(expr) ? astFactory.stringLiteral(expr.value) : astFactory.callExpression(md(ctx,'textValue'),[cloneEstreeNode(expr)])],
+          )),
         ),
       ]),
     );
     return varName;
   }
   if (scope.initialDom && !initialPath) throw new Error('memo-dom: initial text has no binding address');
+  const bound = initialPath ? initialNode(scope,initialPath,'#text') : undefined;
+  const created = bound && !adopting ? bound : astFactory.callExpression(
+    astFactory.memberExpression(renderDocument(ctx,scope),astFactory.identifier('createTextNode')),[astFactory.stringLiteral('')]);
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
         astFactory.identifier(varName),
-        initialPath ? initialNode(scope,initialPath,'#text') : astFactory.callExpression(
-          astFactory.memberExpression(
-            renderDocument(ctx, scope),
-            astFactory.identifier('createTextNode'),
-          ),
-          [astFactory.stringLiteral('')],
-        ),
+        bound ? initialOrCreate(scope,bound,created) : created,
       ),
     ]),
   );
@@ -82,7 +81,7 @@ export function emitText(
           cloneEstreeNode(prepared),
         ]),
       );
-    if (!initialPath) scope.creation.push(setter());
+    if (!initialPath || adopting) scope.creation.push(freshInitialStatement(scope,setter()));
     registerTransparentDataSite(
       ctx, scope, transparentExpressionSources(ctx, expr), ownerId, setter(),
     );

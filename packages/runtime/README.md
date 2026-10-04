@@ -200,6 +200,20 @@ refs and other row-owned resources. Application code does not call this operatio
 or change its keys to enable a different identity model. List append fragments
 use the current document after hydration rather than the adoption document.
 
+### Initial conditional HTML
+
+The compiler can supply `createCondRegion` with prevalidated initial anchors and
+the initial branch index. Its selected branch factory receives a first-activation
+binding flag; later activations use ordinary creation. This protocol is distinct
+from SSR adoption and uses the same conditional updater and lifetime ownership.
+An initial selection mismatch fails before branch creation.
+
+Disposed conditionals cannot resume work after authored callbacks. Returned
+entries from a factory that unmounts its owner are cleaned separately. Disposal
+retires the entry before invoking its hook and finishes content/anchor removal
+when that hook throws. Failed construction preserves the original error,
+including a thrown `undefined`, and removes the region anchors.
+
 The package is independently buildable:
 
 ```bash

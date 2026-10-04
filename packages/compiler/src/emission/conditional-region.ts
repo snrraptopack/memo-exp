@@ -1,6 +1,8 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
+import { initialSite } from '../planning/initial-render';
+import { initialNode } from './initial-dom';
 import {
   type ComponentPath,
   type Ctx,
@@ -118,7 +120,9 @@ export function emitConditionalRegion(
   const pick = astFactory.arrowFunctionExpression([], preparationRead(
     ctx, scope, regionId, cloneEstreeNode(site.pickExpr), transparentSources,
   ));
-  const branchFactories: t.Expression[] = site.branches.map((jsx) =>
+  const initial=scope.initialDom?.plan.conditions[initialSite(expression)];
+  if (scope.initialDom && !initial) throw new Error('memo-dom: initial conditional has no placement');
+  const branchFactories: t.Expression[] = site.branches.map((jsx,index) =>
     jsx !== null
       ? buildConditionalBranchCreate(
           ctx,
@@ -134,6 +138,11 @@ export function emitConditionalRegion(
           transparentSources,
           scope.reasonVar !== null,
           scope,
+          initial && initial.branch === index && initial.returnSite !== null ? {
+            ...scope.initialDom!,
+            plan: {...scope.initialDom!.plan,returnSite:initial.returnSite},
+            adopting:generatedIdentifier(ctx,'adoptingBranch'),
+          } : undefined,
         )
       : astFactory.nullLiteral(),
   );
@@ -170,6 +179,11 @@ export function emitConditionalRegion(
           cloneEstreeNode(regionId),
           pick,
           astFactory.arrayExpression(branchFactories),
+          ...(initial ? [astFactory.identifier('undefined'),astFactory.objectExpression([
+            astFactory.objectProperty(astFactory.identifier('open'),initialNode(scope,initial.open,`#comment:mmd:initial:when:${initialSite(expression)}`)),
+            astFactory.objectProperty(astFactory.identifier('end'),initialNode(scope,initial.end,'#comment:/mmd:initial:when')),
+            astFactory.objectProperty(astFactory.identifier('index'),astFactory.numericLiteral(initial.branch)),
+          ])] : []),
         ]),
       ),
     ]),
@@ -211,8 +225,10 @@ export function buildConditionalBranchCreate(
   coveredTransparentSources: readonly string[] = [],
   forwardReasons = false,
   sources: RegionSourcePlans | null = null,
+  initial?: EmitScope['initialDom'],
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx, true, sources);
+  if (initial) branchScope.initialDom=initial;
   if (forwardReasons) {
     branchScope.reasonVar = generatedIdentifier(ctx, 'reasons').name;
   }
@@ -296,7 +312,7 @@ export function buildConditionalBranchCreate(
   }
 
   return astFactory.arrowFunctionExpression(
-    [],
+    initial?.adopting ? [initial.adopting] : [],
     astFactory.blockStatement([
       cacheDecl(branchScope),
       ...branchScope.prelude,

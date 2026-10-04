@@ -79,6 +79,13 @@ and key encoder. Keep the owner keyed-list fixture alongside it: shared list DOM
 and hydration factoring increases that graph slightly. The before/after HTML
 product measurements and tradeoff are documented in the architecture record.
 
+The HTML audit also measures one versus sixty static cards around a switchable
+conditional. It reports initial HTML plus binding JS and ordinary DOM creation
+JS from the same authored graph and revision. This distinguishes static-content
+growth from retained future branch creation. It is a payload comparison, not a
+CPU speed measurement. The architecture record includes the shared validator and
+conditional lifetime costs alongside the reduction in shipped static creation.
+
 The runtime build preserves module boundaries so unrelated feature initialization
 does not survive alongside a used helper. The full distributed ESM graph has
 more files and can be larger in aggregate while applications ship less. Both

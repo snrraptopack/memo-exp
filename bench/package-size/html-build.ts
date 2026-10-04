@@ -30,6 +30,12 @@ const fixtures = { ...sizeFixtures,
       ${Array.from({length:count},(_,index)=>`<section><h2>Static card ${index}</h2><p>Ready.</p></section>`).join('')}
       <button onClick={()=>n++}>Add</button><p>{n}</p></main>;}`,
   }])),
+  ...Object.fromEntries([1,60].map(count=>[`conditions-${count}-cards`, {
+    './App.tsx': `export function App(){let open=true;let n=1;return <main>
+      ${Array.from({length:count},(_,index)=>`<section><h2>Static card ${index}</h2><p>Ready.</p></section>`).join('')}
+      <button class="toggle" onClick={()=>{open=!open;}}>Toggle</button>
+      {open?<section><button class="add" onClick={()=>n++}>{n}</button></section>:<p>Closed</p>}</main>;}`,
+  }])),
 };
 const rows: Array<{ fixture: string; html: number; htmlGzip: number;
   javascript: number; javascriptGzipSum: number; javascriptAssets: number;
@@ -58,7 +64,7 @@ for (const [name, sources] of Object.entries(fixtures)) {
     const row: (typeof rows)[number] = { fixture: name, html: Buffer.byteLength(html.source), htmlGzip: gzipSync(html.source).byteLength,
       javascript: js.reduce((size, file) => size + Buffer.byteLength(file.code), 0),
       javascriptGzipSum: js.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), javascriptAssets: js.length };
-    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.endsWith('-counter')) {
+    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.endsWith('-counter')) {
       // Same authored graph through the ordinary JS-entry DOM creation target.
       const creation = await build({root,configFile:false,logLevel:'silent',
         resolve:{alias:{'@memoized-dom/runtime':resolve(repository,'packages/runtime/dist/index.js')}},

@@ -37,15 +37,16 @@ it('retains exact cause merging for a component with independent state slots', a
   expect(inputs.some(path => path.endsWith('/dist/reasoned-invalidation.js'))).toBe(true);
 });
 
-it.each(['bindings', 'mixed'] as const)('omits SSR mounting from the %s HTML product', async kind => {
+it.each(['bindings', 'mixed', 'conditional'] as const)('omits SSR mounting from the %s HTML product', async kind => {
   const result = compileModulesDetailed({
     './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
     './App.tsx': kind === 'bindings'
       ? `export function App(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`
+      : kind === 'conditional' ? `export function App(){let show=true;return <main><button onClick={()=>{show=!show;}}>Toggle</button>{show?<p>Open</p>:null}</main>;}`
       : `import {Counter} from './Counter';export function App(){return <main><h1>Static</h1><Counter/></main>;}`,
     './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
   });
-  expect(result.initialRender.kind).toBe(kind);
+  expect(result.initialRender.kind).toBe(kind === 'conditional' ? 'bindings' : kind);
   for (const initial of [true, false]) {
     const modules = initial ? result.initialBrowserOutput! : result.output;
     const bundled = await build({

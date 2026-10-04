@@ -5,6 +5,14 @@ import { mountInitial, register, registerRootFactory, has, cleanup } from '@memo
 afterEach(() => document.body.replaceChildren());
 
 describe('initial DOM bindings', () => {
+  it('validates structural comment identities without replacing them',()=>{
+    document.body.innerHTML='<div id="root"><main><!--mmd:initial:when:1:2--><p>Ready</p><!--/mmd:initial:when--></main></div>';
+    const main=document.querySelector('main')!;
+    const nodes=bindInitialNodes('root',[[[0,0],'#comment:mmd:initial:when:1:2'],[[0,2],'#comment:/mmd:initial:when']]);
+    expect(nodes).toEqual([main.firstChild,main.lastChild]);
+    expect(()=>bindInitialNodes('root',[[[0,0],'#comment:mmd:initial:when:wrong']])).toThrow(/shape does not match/);
+    expect(main.firstChild).toBe(nodes[0]);
+  });
   it('retains existing nodes and normal mount/unmount ownership', () => {
     document.body.innerHTML='<div id="root"><main><h1>Hello</h1><button>Add</button><p>0</p></main></div>';
     const main=document.querySelector('main')!;

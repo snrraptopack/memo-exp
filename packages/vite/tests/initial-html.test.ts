@@ -47,6 +47,67 @@ async function production(root: string) {
 }
 
 describe('HTML first production builds', () => {
+  it('binds conditional HTML in Chrome and recreates only the switched branch',async context=>{
+    const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
+      .find(path=>path&&existsSync(path));
+    if (!executablePath) {context.skip();return;}
+    const result=await production(await fixture(`export function App(){let open=true;let n=1;return <main>
+      <h1>Retained surrounding content</h1><button class="toggle" onClick={()=>{open=!open;}}>Toggle</button>
+      {open?<section title="Current branch"><b>Branch label</b><button class="add" onClick={()=>n++}>{n}</button></section>:<p>Closed</p>}
+      <span>{n}</span></main>;}`));
+    expect(result.html).toContain('<section title="Current branch"><b>Branch label</b><button class="add">1</button></section>');
+    const js=result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('\n');
+    expect(js).not.toContain('Retained surrounding content');
+    const server=createHttpServer((request,response)=>{
+      const path=request.url==='/'?'index.html':request.url?.slice(1);
+      const file=result.files.find(item=>item.fileName===path);
+      if (!file) {response.writeHead(404).end();return;}
+      response.setHeader('Content-Type',file.type==='chunk'?'text/javascript':'text/html');
+      response.end(file.type==='chunk'?file.code:file.source);
+    });
+    await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));
+    const browser=await puppeteer.launch({executablePath,headless:true});
+    try {
+      const address=server.address();if(!address||typeof address==='string')throw new Error('Missing HTTP address');
+      const url=`http://127.0.0.1:${address.port}/`;
+      const staticPage=await browser.newPage();await staticPage.setJavaScriptEnabled(false);await staticPage.goto(url);
+      expect(await staticPage.$eval('.add',node=>node.textContent)).toBe('1');await staticPage.close();
+      const page=await browser.newPage();const errors:string[]=[];page.on('pageerror',error=>errors.push(String(error)));
+      await page.evaluateOnNewDocument(()=>{
+        const state=window as unknown as {originalMain?:Element;originalHeading?:Element;originalBranch?:Element;created?:string[]};
+        state.created=[];
+        const create=document.createElement.bind(document);
+        document.createElement=((...args:Parameters<Document['createElement']>)=>{state.created!.push(args[0]);return create(...args);}) as Document['createElement'];
+        new MutationObserver(()=>{
+          state.originalMain??=document.querySelector('#root main')??undefined;
+          state.originalHeading??=document.querySelector('#root h1')??undefined;
+          state.originalBranch??=document.querySelector('#root section')??undefined;
+        }).observe(document,{subtree:true,childList:true});
+      });
+      await page.goto(url);await page.waitForSelector('.add');
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {originalBranch:Element;created:string[]};
+        // Vite's modulepreload feature probe creates a detached link.
+        return {same:state.originalBranch===document.querySelector('section'),created:state.created.filter(tag=>tag!=='link')};
+      })).toEqual({same:true,created:[]});
+      await page.click('.add');await page.waitForFunction(()=>document.querySelector('.add')?.textContent==='2');
+      await page.click('.toggle');await page.waitForSelector('p');
+      expect(await page.$('section')).toBeNull();
+      await page.click('.toggle');await page.waitForSelector('.add');
+      expect(await page.$eval('.add',node=>node.textContent)).toBe('2');
+      expect(await page.$eval('section',node=>node.getAttribute('title'))).toBe('Current branch');
+      expect(await page.$eval('b',node=>node.textContent)).toBe('Branch label');
+      await page.click('.add');await page.waitForFunction(()=>document.querySelector('span')?.textContent==='3');
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {originalMain:Element;originalHeading:Element;originalBranch:Element};
+        return state.originalMain===document.querySelector('main')&&state.originalHeading===document.querySelector('h1')&&
+          state.originalBranch!==document.querySelector('section');
+      })).toBe(true);expect(errors).toEqual([]);
+    } finally {
+      await browser.close();await new Promise<void>((done,reject)=>server.close(error=>error?reject(error):done()));
+    }
+  });
+
   it('ships static hello as HTML with zero JavaScript assets', async () => {
     const result = await production(await fixture(`export function App(){return <h1>Hello</h1>;}`));
     expect(result.html).toContain('<div id="root"><h1>Hello</h1></div>');
