@@ -29,6 +29,13 @@ host's AsyncLocalStorage through the existing lazy storage factory. Scheduled
 commits and pull callbacks retain their originating runtime and restore the
 previous context, including after errors or disposal.
 
+Root ownership and validation live in `mount-core.ts`. Compiler-proven initial
+HTML entries select `mountInitial`, which shares creation and teardown with
+general `mount` while omitting SSR detection and recovery. Application entries
+still call `mount`; the compiler selects this operation only in its alternate
+HTML-associated product. Mounted handles retain their originating runtime for
+unmount and restore the caller's context even when cleanup throws.
+
 Application source does not need to import reactive primitives. The ordinary
 browser entry imports only the mounting boundary:
 

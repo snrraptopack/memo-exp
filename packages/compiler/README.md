@@ -32,6 +32,10 @@ Public compilation APIs:
   non-polling components, rows and computed entities use `registerEntity`;
   opaque components use general `register`. Both share the kernel's registry,
   scheduler and teardown. Non-polling output can omit the opaque frame driver.
+- HTML-associated browser entries select the initial mount operation from the
+  captured content plan, preserving authored import aliases and source maps.
+  General JS, development and server entries retain ordinary mounting. The
+  initial operation shares ownership/validation with it and omits SSR recovery.
 
 The top-level files are orchestration and whole-program passes:
 

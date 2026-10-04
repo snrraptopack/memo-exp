@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { compileModules } from '@memoized-dom/compiler';
+import { compileModules, compileModulesDetailed } from '@memoized-dom/compiler';
 import { expect, it } from 'vitest';
 
 async function bundle(source: string) {
@@ -28,6 +28,37 @@ it('retains polling only for an opaque source', async () => {
   const { inputs } = await bundle(`import {createClock} from '@size/clock';
     export function App(){const clock=createClock();return <p>{clock.value}</p>;}`);
   expect(inputs.some(path => path.endsWith('/dist/volatile.js'))).toBe(true);
+});
+
+it.each(['bindings', 'mixed'] as const)('omits SSR mounting from the %s HTML product', async kind => {
+  const result = compileModulesDetailed({
+    './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
+    './App.tsx': kind === 'bindings'
+      ? `export function App(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`
+      : `import {Counter} from './Counter';export function App(){return <main><h1>Static</h1><Counter/></main>;}`,
+    './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
+  });
+  expect(result.initialRender.kind).toBe(kind);
+  for (const initial of [true, false]) {
+    const modules = initial ? result.initialBrowserOutput! : result.output;
+    const bundled = await build({
+      stdin: { contents: modules['./main.ts']!, resolveDir: process.cwd(), loader: 'ts' },
+      bundle: true, write: false, metafile: true, minify: true, format: 'esm', platform: 'browser',
+      outfile: 'initial-browser.js',
+      plugins: [{ name: 'compiled-initial-fixture', setup(builder) {
+        builder.onResolve({ filter: /^\.\/(App|Counter)$/ }, args => ({ path: args.path + '.tsx', namespace: 'compiled' }));
+        builder.onLoad({ filter: /.*/, namespace: 'compiled' }, args => ({
+          contents: modules[args.path]!, loader: 'ts', resolveDir: process.cwd(),
+        }));
+      } }],
+    });
+    const inputs = Object.entries(Object.values(bundled.metafile!.outputs)[0]!.inputs)
+      .filter(([, input]) => input.bytesInOutput > 0).map(([path]) => path.replaceAll('\\', '/'));
+    expect(inputs.some(path => path.endsWith('/dist/mount-core.js'))).toBe(true);
+    for (const feature of ['mount', 'hydration-error', 'hydration-marker']) {
+      expect(inputs.some(path => path.endsWith(`/dist/${feature}.js`))).toBe(!initial);
+    }
+  }
 });
 it('retains access routing when module state requires it', async () => {
   const { inputs } = await bundle(`let count=0;export function App(){return <button onClick={()=>count++}>{count}</button>;}`);

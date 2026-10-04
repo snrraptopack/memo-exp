@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { bindInitialNodes } from '../packages/runtime/src/initial-bindings';
-import { mount, register, registerRootFactory, has, cleanup } from '@memoized-dom/runtime/testing';
+import { mountInitial, register, registerRootFactory, has, cleanup } from '@memoized-dom/runtime/testing';
 
 afterEach(() => document.body.replaceChildren());
 
@@ -19,7 +19,7 @@ describe('initial DOM bindings', () => {
       expect(nodes).toEqual([main,button,text]);
       return nodes[0]!;
     }});
-    const app=mount('root',App);
+    const app=mountInitial('root',App);
     try {
       expect(app.nodes).toEqual([main]);
       expect(document.querySelector('button')).toBe(button);

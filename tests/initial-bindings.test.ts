@@ -9,6 +9,44 @@ function compile(app: string) {
 }
 
 describe('initial HTML and browser bindings', () => {
+  it('selects the initial mount operation only in the alternate entry', () => {
+    const result = compile(`export function App(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`);
+    expect(result.output['./main.ts']).not.toContain('mountInitial');
+    expect(result.initialBrowserOutput?.['./main.ts']).toContain('mountInitial as mount');
+  });
+
+  it('preserves a mount alias and a configured runtime path', () => {
+    const result = compileModulesDetailed({
+      './main.ts': `import {mount as attach} from 'custom-runtime';import {App} from './App';attach('root',App);`,
+      './App.tsx': `export function App(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
+    }, { runtimePath: 'custom-runtime' });
+    expect(result.initialRender.kind).toBe('bindings');
+    expect(result.initialBrowserOutput?.['./main.ts']).toContain('mountInitial as attach');
+    expect(result.output['./main.ts']).toContain('mount as attach');
+  });
+
+  it('selects initial mounting for a mixed static root with a live child', () => {
+    const result = compileModulesDetailed({
+      './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
+      './App.tsx': `import {Counter} from './Counter';export function App(){return <main><h1>Static</h1><Counter/></main>;}`,
+      './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
+    });
+    expect(result.initialRender.kind).toBe('mixed');
+    expect(result.initialBrowserOutput?.['./main.ts']).toContain('mountInitial as mount');
+    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('adoptInitialRoot');
+  });
+
+  it('keeps hot and server entries on the general mounting path', () => {
+    for (const options of [{ hot: true }, { routedEnvironment: 'server' as const }]) {
+      const result = compileModulesDetailed({
+        './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
+        './App.tsx': `export function App(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
+      }, options);
+      expect(result.initialBrowserOutput).toBeUndefined();
+      expect(result.output['./main.ts']).not.toContain('mountInitial');
+    }
+  });
+
   it('emits a live counter as HTML and binds its existing nodes', () => {
     const result=compile(`export function App(){let n=0;return <main><h1 title="Static title">Static heading</h1>
       <button onClick={()=>n++}>Add</button><p>{n}</p></main>;}`);

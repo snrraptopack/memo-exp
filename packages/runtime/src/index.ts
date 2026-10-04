@@ -109,7 +109,8 @@ export { isStructuralListUpdate, listItemIndices, createListProvenance, evaluate
 export { rootNodes } from './jsx-dom';
 export { decodeListKey, encodeListKey } from './list-keys';
 export { HydrationMismatchError } from './hydration-error';
-export { mount, registerRootFactory, rootFactoryStore } from './mount';
+export { mount } from './mount';
+export { mountInitial, registerRootFactory, rootFactoryStore } from './mount-core';
 export type {
   MountableComponent,
   MountOptions,

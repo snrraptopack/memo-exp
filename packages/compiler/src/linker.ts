@@ -61,6 +61,7 @@ import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest, exportedLocals } from './linking/discovery';
 import { installCompilerIntrinsics } from './intrinsics';
 import { planInitialRendering, type InitialRenderPlan } from './planning/initial-render';
+import { emitInitialMount } from './emission/initial-entry';
 import { planInitialDom } from './emission/initial-dom';
 import { emitInitialHtml } from './emission/initial-html';
 
@@ -849,12 +850,15 @@ function compileLinkedModules(
         ? { rootComponent: applicationRoot.local }
         : {}),
     };
-    if (emitInitialBrowser && (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') && entry.id === initialRender.rootModuleId) {
+    if (emitInitialBrowser && (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') &&
+        (entry.id === initialRender.rootModuleId || entry.id === initialRender.mountModuleId)) {
       const initialOptions = { ...compileOptions,
-        ...(initialRender.kind === 'mixed' ? {initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
-          returnSite: initialRender.returnSite, regions: initialRender.regions }} : {initialDomRoot:initialDom!}),
+        ...(entry.id !== initialRender.rootModuleId ? {} : initialRender.kind === 'mixed'
+          ? {initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
+            returnSite: initialRender.returnSite, regions: initialRender.regions }} : {initialDomRoot:initialDom!}),
       };
       const initialAst = cloneNode(entry.ast);
+      if (entry.id === initialRender.mountModuleId) emitInitialMount(initialAst, options.runtimePath ?? '@memoized-dom/runtime');
       if (sourceMaps) {
         const compiled = compileAstDetailed(entry.source, initialOptions, initialAst, entry.comments);
         initialBrowserOutput[entry.originalId] = compiled.code;

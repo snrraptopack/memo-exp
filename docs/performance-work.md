@@ -14,6 +14,12 @@ running against another active runtime. Bundle measurements and ownership gates
 are recorded in `browser-bundle-architecture.md`; these are size reductions,
 not claims of faster DOM timings.
 
+The initial-HTML product now selects a mounting operation that omits SSR
+detection/recovery while sharing root validation, handles and lifetime. This
+also fixes unmounting the wrong runtime after an ambient runtime switch.
+Before/after payload measurements are in `browser-bundle-architecture.md`;
+the ordinary-mount fixtures include the small cost of that ownership fix.
+
 ## Correctness gates
 
 Benchmark timings require visible DOM changes. The DOM suite checks fresh 1k

@@ -211,6 +211,57 @@ The interaction audit verifies input reset, duplicate list values, keyed node
 identity, local/module counters and composed prop delivery. No CPU performance
 claim follows from these bundle measurements.
 
+## Initial HTML mounting operation
+
+The HTML-associated browser entry now selects `mountInitial` from its captured
+initial-content proof. Application source continues to call `mount`; the ordinary
+output keeps that call. Only the separate `mixed` and `bindings` products select
+the smaller operation, after the same Vite shell validation as before. Development,
+server builds, mount options and uncertain initialization retain general mounting.
+Aliases and configured runtime paths are preserved in the emitted entry.
+
+`mount-core.ts` owns root metadata, host/root validation, application handles,
+creation failure cleanup and unmount. General mounting layers SSR marker detection,
+the optional hydration bridge and mismatch recovery over this core. Initial HTML
+mounting uses the same core with its compiler-generated binding/adoption factory.
+It does not carry an SSR marker parser, mismatch error class or hydration warning
+branch. The package graph tests verify both products; general mounting still
+includes the required SSR detection and fallback behavior.
+
+An ownership regression reproduced during this separation: after switching to a
+second application runtime, calling the first handle's `unmount()` disposed the
+second runtime's matching entity ID. Handles now retain their original runtime
+for teardown, including cleanup callbacks and error paths, and restore the caller
+afterwards. Both mounting operations share this fix, duplicate-root protection and
+failure cleanup.
+
+Production HTML-entry measurements against `8881926`, using the same fixtures,
+default Vite minification and every emitted JS asset:
+
+| Fixture | Before JS raw / gzip sum B | After JS raw / gzip sum B |
+|---|---:|---:|
+| Owner counter with initial HTML | 10,422 / 4,209 | 8,978 / 3,603 |
+| Module counter with initial HTML | 13,745 / 5,349 | 12,289 / 4,757 |
+| Mixed static cards and counter (1 or 60 cards) | 10,596 / 4,191 | 9,152 / 3,598 |
+| Input/list (ordinary mounting) | 24,118 / 8,926 | 24,173 / 8,963 |
+| Composed counter (ordinary mounting) | 11,217 / 4,411 | 11,272 / 4,447 |
+| Owner keyed list (ordinary mounting) | 24,218 / 8,945 | 24,273 / 8,984 |
+
+The ownership correction adds 55 raw bytes to ordinary mounting fixtures. The
+HTML product avoids the general mount capability and saves 1,444 raw bytes in
+the local counter. This does not imply faster DOM updates. Static fixtures still
+ship zero JS. One versus sixty static host cards around the local counter ship
+8,978 versus 8,980 B; the remaining two bytes describe a node address. The shared
+interactive kernel remains the next substantial cost, and live composed children
+still create their initial DOM rather than bind complete initial HTML.
+
+Runtime, compiler and Vite builds pass. The selected suites pass 121 tests across
+thirteen files, including twenty production HTML/browser checks. They cover
+retained DOM identity and interaction, alias/custom-runtime entry selection,
+fallback proofs, mounting validation, teardown failures, optional hydration,
+SSR concurrency and application isolation. Changed-source lint has no errors;
+the root factory's existing general `Function` types retain four warnings.
+
 ## Historical browser-creation baseline
 
 The stable `bench:size:audit` fixtures include ordinary client mounting and

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { adoptInitialRoot } from '../packages/runtime/src/initial-root';
-import { mount, register, registerRootFactory, has, cleanup } from '@memoized-dom/runtime/testing';
+import { mountInitial, register, registerRootFactory, has, cleanup } from '@memoized-dom/runtime/testing';
 
 afterEach(() => document.body.replaceChildren());
 
@@ -19,7 +19,7 @@ describe('initial HTML ownership', () => {
       cleanup('InitialApp/Counter',()=>cleanups++);
       return adoptInitialRoot('root',[[0,child]]);
     }});
-    const app=mount('root',App);
+    const app=mountInitial('root',App);
     try {
       expect(document.querySelector('main')).toBe(main);
       expect(document.querySelector('h1')).toBe(heading);
