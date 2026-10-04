@@ -223,7 +223,7 @@ proves those fields are own primitive data properties. Field requirements follow
 renamed imports and helper chains, including discarded reads. Unchanged records
 then skip content replay while replacement records still update. This is separate
 from their effect summaries. Arguments and minimum input
-extents must satisfy every read, including discarded reads; methods, escaped allocations,
+extents must satisfy every read, including discarded reads; unproven methods, escaped allocations,
 captured storage, sparse arrays and opaque return paths receive no such fact.
 An owner selection value may appear in strict equality with a primitive item
 field when every write belongs to a closed host-event handler. Its separate
@@ -242,6 +242,14 @@ escaped records trusted again. Only an independent proven fresh producer resets
 the slot. Mixed causes, changed indices, new identities and ordinary pulls still
 refresh content. Unknown methods and callbacks retain ordinary reconciliation.
 This extension currently excludes sources with in-place content writes.
+
+The same copy/concat facts now travel through closed local and imported helpers
+using `slice`, `toReversed` and `concat`, including wrappers and discarded native
+results. Native operations and their required guards come from the central
+method table. Variable-length results preserve field schemas but cannot prove
+indexed bounds, even through identity wrappers. Helper callback transformations,
+unknown calls, coercive arguments, captured state and escapes remain conservative.
+Authored helper calls still execute; the summary only controls retained-row replay.
 
 Component-owned arrays of closed flat scalar records can also journal executed
 indices from canonical increasing `for` loops: one `let` counter, a nonnegative

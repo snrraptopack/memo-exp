@@ -6,13 +6,14 @@ import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import type { BenchRow } from './state-placement-browser';
+import { helperComparisonSources } from './helper-comparison-fixture';
 
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('bun run bench:dom:compare --before-ref=COMMIT [--isolate=both|compiler|runtime] [--samples=7] [--operations=swap,remove,... | --full]');
+  console.log('bun run bench:dom:compare --before-ref=COMMIT [--isolate=both|compiler|runtime] [--samples=7] [--operations=swap,remove,... | --full] [--helpers]');
   process.exit(0);
 }
-if (args.some(arg => !/^(--before-ref=.+|--isolate=(both|compiler|runtime)|--samples=\d+|--operations=[a-z0-9,]+|--full)$/.test(arg))) {
+if (args.some(arg => !/^(--before-ref=.+|--isolate=(both|compiler|runtime)|--samples=\d+|--operations=[a-z0-9,]+|--full|--helpers)$/.test(arg))) {
   throw new Error('Unknown comparison option; use --help');
 }
 const value = (name: string) => args.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -21,6 +22,8 @@ if (!ref) throw new Error('An explicit --before-ref=COMMIT is required');
 const samples = Number(value('samples') ?? 7);
 if (!Number.isSafeInteger(samples) || samples < 1) throw new Error('samples must be positive');
 const isolate = value('isolate') ?? 'both';
+const helpers = args.includes('--helpers');
+if (helpers && args.includes('--full')) throw new Error('Helper comparison is a focused suite; omit --full');
 if (args.includes('--full') && value('operations')) throw new Error('Choose --full or --operations');
 const root = resolve(import.meta.dirname, '../..');
 async function git(...arguments_: string[]): Promise<string> {
@@ -33,7 +36,7 @@ const beforeCommit = await git('rev-parse', '--verify', '--end-of-options', `${r
 if (!/^[a-f0-9]{40,64}$/.test(beforeCommit)) throw new Error('Invalid baseline commit');
 const head = await git('rev-parse', 'HEAD');
 const status = await git('status', '--porcelain');
-const directory = resolve(import.meta.dirname, 'dist/compare', `${beforeCommit.slice(0, 8)}-${isolate}`);
+const directory = resolve(import.meta.dirname, 'dist/compare', `${beforeCommit.slice(0, 8)}-${isolate}${helpers ? '-helpers' : ''}`);
 const snapshot = resolve(directory, 'baseline');
 mkdirSync(snapshot, { recursive: true });
 const archive = resolve(snapshot, 'source.tar');
@@ -55,12 +58,18 @@ const variants = [
   ['AppModuleSelectionInline', 'BenchModuleSelectionInline', 'compiled-module-selection-inline', 'createModuleSelectionInline'],
 ] as const;
 const data = readFileSync(resolve(import.meta.dirname, 'data.ts'), 'utf8');
+const entry = resolve(import.meta.dirname, helpers ? 'helper-comparison-browser.ts' : 'state-placement-browser.ts');
 const hashes: Record<string, string> = {};
 for (const variant of ['before', 'after'] as const) {
   const output = resolve(directory, variant);
   mkdirSync(output, { recursive: true });
   writeFileSync(resolve(output, 'data.ts'), data);
-  for (const [file, component, module, factory] of variants) {
+  if (helpers) {
+    const compiled = compilers[variant].compileModules(helperComparisonSources());
+    for (const [id, source] of Object.entries(compiled)) {
+      writeFileSync(resolve(output, id === './App.tsx' ? 'compiled-helper-app.ts' : id), source as string);
+    }
+  } else for (const [file, component, module, factory] of variants) {
     const id = `./bench/dom/${file}.tsx`;
     const compiled = compilers[variant].compileModules({
       [id]: readFileSync(resolve(import.meta.dirname, `${file}.tsx`), 'utf8'),
@@ -78,11 +87,11 @@ export function ${factory}(){
   }
   const runtimeRoot = variant === 'before' && isolate !== 'compiler' ? snapshot : root;
   const bundle = resolve(output, 'browser.js');
-  await build({ entryPoints: [resolve(import.meta.dirname, 'state-placement-browser.ts')], outfile: bundle,
+  await build({ entryPoints: [entry], outfile: bundle,
     bundle: true, format: 'iife', minify: true, define: { 'process.env.NODE_ENV': '"production"' },
     plugins: [{ name: 'isolated-dom-inputs', setup(builder) {
       builder.onResolve({ filter: /^\.\/compiled-/ }, ({ path, importer }) =>
-        importer === resolve(import.meta.dirname, 'state-placement-browser.ts') ? { path: resolve(output, `${path}.ts`) } : undefined);
+        importer === entry ? { path: resolve(output, `${path}.ts`) } : undefined);
       builder.onResolve({ filter: /^@memoized-dom\/runtime(?:\/client)?$/ }, () =>
         ({ path: resolve(runtimeRoot, 'packages/runtime/src/index.ts') }));
     } }],
@@ -91,13 +100,13 @@ export function ${factory}(){
   writeFileSync(resolve(output, 'index.html'), '<!doctype html><body><script src="./browser.js"></script>');
 }
 // Focused timing still runs every existing correctness and mixed-sequence gate.
-const focused = [
+const focused = helpers ? ['reverse 10k', 'rotate 10k', 'drop 10k'] : [
   'create 10k', 'replace 10k', 'update 10k', 'swap 10k', 'remove 10k', 'clear 10k',
   'append1k 10k', 'prepend1k 10k', 'pop1k 10k', 'reverse 10k', 'remove100 10k',
 ];
 const requested = value('operations')?.split(',');
 if (requested?.some(operation => !focused.some(name => name === `${operation} 10k`))) {
-  throw new Error('Unknown operation; use create,replace,update,swap,remove,clear,append1k,prepend1k,pop1k,reverse,remove100');
+  throw new Error(`Unknown operation; use ${focused.map(name => name.split(' ')[0]).join(',')}`);
 }
 const names = args.includes('--full') ? undefined : requested?.map(operation => `${operation} 10k`) ?? focused;
 const browser = await puppeteer.launch({ headless: true, protocolTimeout: 600000,
@@ -131,7 +140,9 @@ try {
 const lines = ['# Local DOM comparison', '', `Baseline: ${beforeCommit}. Current HEAD: ${head}.`, '',
   `Current working tree includes changes: ${status !== ''}. Bundle hashes and checkout status are recorded in results.json.`, '',
   `Isolation: ${isolate}. Browser: ${browserVersion}. ${samples} samples per cell; ABBA order.`, '',
-  'All 21 scenarios and mixed sequences validated before timing. Every timed sample validates text, classes, order and retained identity outside timing. Authored inputs and deterministic seeds match. Timing includes JavaScript and DOM writes, excludes paint.', '',
+  helpers ? 'Focused closed-producer helper fixture: reverse, rotate and drop, plus mixed selection/reverse. This does not establish gains for opaque producers or the general DOM/Octane suite.'
+    : 'All 21 scenarios and mixed sequences validated before timing.', '',
+  'Every timed sample validates text, classes, order and retained identity outside timing. Authored inputs and deterministic seeds match. Timing includes JavaScript and DOM writes, excludes paint.', '',
   `Identical browser artifacts: ${hashes.before === hashes.after}. Local noise remains; this is not a VM ranking.`, ''];
 for (const [before, after] of [[0, 1], [3, 2]] as const) {
   lines.push(`## ${before === 0 ? 'Before first' : 'After first'}`, '',
@@ -142,6 +153,6 @@ for (const [before, after] of [[0, 1], [3, 2]] as const) {
   }
 }
 writeFileSync(resolve(directory, 'results.json'), JSON.stringify({ beforeCommit, head, status, isolate,
-  browserVersion, samples, names, hashes, measuredAt: new Date().toISOString(), runs }, null, 2) + '\n');
+  browserVersion, samples, names, helpers, hashes, measuredAt: new Date().toISOString(), runs }, null, 2) + '\n');
 writeFileSync(resolve(directory, 'results.md'), lines.join('\n') + '\n');
 console.log(`Report: ${resolve(directory, 'results.md')}`);

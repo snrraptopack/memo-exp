@@ -2,6 +2,7 @@
 import { childNode, childNodes, identifierName, nodeField, stringValue, walkAst, type BaseNode, type Binding, type ScopeAnalysis } from '../ast';
 import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
 import { isPlainScalarValue } from './plain-scalar';
+import { LIST_METHOD_OPTIMIZATIONS } from '../lists/mutation-shapes';
 
 export interface PlainListReturn {
   readonly parameters: readonly ('unused' | 'scalar' | 'list')[];
@@ -11,12 +12,16 @@ export interface PlainListReturn {
   readonly requiredFields: readonly (readonly string[])[];
   readonly elements: readonly (
     { readonly fields: readonly string[] } |
-    { readonly parameter: number; readonly index: number }
+    // null describes a variable-length set of retained parameter elements.
+    { readonly parameter: number; readonly index: number | null }
   )[];
+  /** Native behavior must be guarded at the owner's assignment boundary. */
+  readonly operations?: readonly string[];
+  readonly variableLength?: boolean;
 }
 
 type Value = { scalar: true } | { parameter: number } |
-  { element: PlainListReturn['elements'][number] } | { list: PlainListReturn['elements'] };
+  { element: PlainListReturn['elements'][number] } | { list: PlainListReturn['elements']; variableLength?: boolean };
 
 const returnPlans = new WeakMap<Ctx, {
   analysis: ScopeAnalysis;
@@ -24,7 +29,7 @@ const returnPlans = new WeakMap<Ctx, {
   plans: Map<string, PlainListReturn | undefined>;
 }>();
 
-/** No method semantics, callbacks, captured values, mutations or escapes are inferred. */
+/** Only catalogued copy/concat results qualify; authored calls remain intact. */
 export function plainListReturn(ctx: Ctx, name: string, visiting = new Set<string>()): PlainListReturn | undefined {
   if (ctx.hot) return;
   const imported = ctx.importedFunctions.get(name)?.plainListReturn;
@@ -55,6 +60,7 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
   const requirements: Array<'unused' | 'scalar' | 'list'> = params.map(() => 'unused');
   const minimumLengths = params.map(() => 0);
   const requiredFields = params.map(() => new Set<string>());
+  const operations = new Set<string>();
   const values = new Map<Binding, Value>();
   for (let index = 0; index < params.length; index++) {
     const param = params[index]!;
@@ -86,8 +92,17 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
     const name = nodeField(member, 'computed') === true ? stringValue(key) : identifierName(key);
     if (name === null) return false;
     const receiver = evaluate(childNode(member, 'object'));
+    if (name === 'length' && receiver !== undefined && ('parameter' in receiver || 'list' in receiver)) {
+      return !('parameter' in receiver) || require(receiver.parameter, 'list');
+    }
     return receiver !== undefined && 'element' in receiver && field(receiver.element, name);
   });
+  const asList = (value: Value | undefined): PlainListReturn['elements'] | undefined => {
+    if (value !== undefined && 'list' in value) return value.list;
+    if (value !== undefined && 'parameter' in value && require(value.parameter, 'list')) {
+      return [{ parameter: value.parameter, index: null }];
+    }
+  };
   const nextVisiting = new Set(visiting).add(name);
   const evaluate = (node: BaseNode | null): Value | undefined => {
     if (node === null) return;
@@ -128,6 +143,28 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
     }
     if (node.type === 'CallExpression' && nodeField(node, 'optional') !== true) {
       const callee = childNode(node, 'callee');
+      if (callee?.type === 'MemberExpression' && nodeField(callee, 'optional') !== true) {
+        const property = childNode(callee, 'property');
+        const method = nodeField(callee, 'computed') === true ? stringValue(property) : identifierName(property);
+        const candidate = method === null || !Object.hasOwn(LIST_METHOD_OPTIMIZATIONS, method)
+          ? undefined : LIST_METHOD_OPTIMIZATIONS[method];
+        if (candidate?.result !== 'copy' && candidate?.result !== 'concat') return;
+        const receiver = asList(evaluate(childNode(callee, 'object')));
+        const args = childNodes(node, 'arguments');
+        if (receiver === undefined || args.some(arg => arg.type === 'SpreadElement')) return;
+        const result = [...receiver];
+        if (candidate.result === 'copy') {
+          if (args.length > candidate.maxArguments! || !args.every(scalar)) return;
+        } else for (const arg of args) {
+          const list = asList(evaluate(arg));
+          if (list === undefined) return;
+          result.push(...list);
+        }
+        operations.add(method!);
+        // Copies may truncate/reorder any position. Keep schema information,
+        // but projections must no longer promise a fixed extent or input index.
+        return { list: result.map(element => 'fields' in element ? element : { parameter: element.parameter, index: null }), variableLength: true };
+      }
       const calleeName = identifierName(callee);
       const binding = callee === null || calleeName === null ? undefined : astBindingAt(ctx, callee, calleeName);
       const declaration = binding === undefined ? null : variableDeclaratorFor(ctx, binding);
@@ -151,6 +188,8 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
           if ('parameter' in value) {
             minimumLengths[value.parameter] = Math.max(minimumLengths[value.parameter]!, plan.minimumLengths[index]!);
           } else if (value.list.length < plan.minimumLengths[index]!) return;
+          if ('list' in value && (value.variableLength || value.list.some(element => !('fields' in element) && element.index === null)) &&
+              plan.minimumLengths[index]! > 0) return;
           for (const name of plan.requiredFields[index]!) {
             if ('parameter' in value) requiredFields[value.parameter]!.add(name);
             else if (!value.list.every(element => field(element, name))) return;
@@ -159,16 +198,22 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
         }
       }
       const result: PlainListReturn['elements'][number][] = [];
+      let variableLength = plan.variableLength === true;
       for (const element of plan.elements) {
         if ('fields' in element) result.push(element);
         else {
           const argument = arguments_[element.parameter]!;
           if ('parameter' in argument) result.push({ parameter: argument.parameter, index: element.index });
-          else if ('list' in argument && argument.list[element.index] !== undefined) result.push(argument.list[element.index]!);
+          else if ('list' in argument && element.index === null) {
+            result.push(...argument.list);
+            variableLength ||= argument.variableLength === true;
+          }
+          else if ('list' in argument && element.index !== null && argument.list[element.index] !== undefined) result.push(argument.list[element.index]!);
           else return;
         }
       }
-      return { list: result };
+      for (const operation of plan.operations ?? []) operations.add(operation);
+      return { list: result, ...(variableLength ? { variableLength: true } : {}) };
     }
   };
   const body = childNode(fn, 'body');
@@ -191,8 +236,11 @@ function analyzePlainListReturn(ctx: Ctx, name: string, visiting: Set<string>): 
     if (last?.type !== 'ReturnStatement') return;
     result = evaluate(childNode(last, 'argument'));
   }
-  return result !== undefined && 'list' in result ? {
+  const elements = asList(result);
+  return elements !== undefined ? {
     parameters: requirements, minimumLengths,
-    requiredFields: requiredFields.map(fields => [...fields].sort()), elements: result.list,
+    requiredFields: requiredFields.map(fields => [...fields].sort()), elements,
+    ...(operations.size === 0 ? {} : { operations: [...operations].sort() }),
+    ...(result !== undefined && 'list' in result && result.variableLength ? { variableLength: true } : {}),
   } : undefined;
 }

@@ -205,3 +205,18 @@ These timings vary with browser and machine load. Cases near the timer's
 resolution should not support fine-grained percentage claims. Future
 optimizations should first preserve the DOM validation and then compare
 multiple runs with DOM mutation and heap/GC measurements.
+
+## Focused helper comparison
+
+`bun run bench:dom:compare --before-ref=COMMIT --isolate=compiler --helpers --samples=15`
+compares compiler-generated closed owner lists with linked `slice`, `concat` and
+`toReversed` helpers using the same runtime. It measures reverse, one-row rotation
+and suffix removal at 10k rows in ABBA order. Every sample checks text, classes,
+key order and retained DOM identity outside timing; a mixed selection/reverse
+gate follows each page. Reset may recreate removed keys, while retained nodes
+must survive. Raw samples and both compiler bundles stay under ignored
+`dist/compare/`. `--operations=rotate,drop` can restrict this focused comparison.
+
+This isolates helper-summary precision for a closed literal producer. The
+general DOM and Octane fixtures use broader producers and need their own proofs
+and measurements; these results do not establish gains for those suites.

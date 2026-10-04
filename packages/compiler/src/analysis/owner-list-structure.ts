@@ -242,6 +242,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         const plan = plainListReturn(ctx, name!);
         const args = childNodes(node, 'arguments');
         if (plan === undefined || args.length !== plan.parameters.length || args.some(arg => arg.type === 'SpreadElement')) return null;
+        for (const operation of plan.operations ?? []) currentOperations.add(operation);
         for (let index = 0; index < args.length; index++) {
           if (plan.parameters[index] === 'list') {
             if (!sameBinding(args[index]!, binding)) return null;
@@ -253,15 +254,20 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         }
         // These synthetic nodes describe proven values only. Authored calls are
         // preserved; scope checks use the original argument binding identities.
-        return plan.elements.map(element => 'fields' in element ? {
+        const result = plan.elements.flatMap(element => 'fields' in element ? [{
           type: 'ObjectExpression', properties: element.fields.map(name => ({
             type: 'Property', kind: 'init', computed: false,
             key: { type: 'Identifier', name }, value: { type: 'Literal', value: 0 },
           })),
-        } as BaseNode : {
+        } as BaseNode] : element.index === null ? retained(args[element.parameter]!) : [{
           type: 'MemberExpression', computed: true, optional: false,
           object: args[element.parameter], property: { type: 'Literal', value: element.index },
-        } as BaseNode);
+        } as BaseNode]);
+        if (plan.variableLength) {
+          const marker = { type: 'OwnerListElements' } as BaseNode;
+          retainedElements.add(marker); result.push(marker);
+        }
+        return result;
       };
       const declaration = variableDeclaratorFor(ctx, binding);
       const initial = returnedElements(declaration && childNode(declaration, 'init'));

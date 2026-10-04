@@ -207,8 +207,13 @@ ordinary replay. Dynamic scope and HMR disable the proof.
 `analysis/plain-list-return.ts` derives return provenance independently of effect
 summaries. The linker carries fresh-record fields, input projections and argument
 requirements through named imports and closed helper chains. Every input index
-is checked against the owner's minimum extent, including discarded reads. Methods, captured storage,
-escaping allocations and opaque producers do not acquire a return fact.
+is checked against the owner's minimum extent, including discarded reads.
+Closed helper copy/concat calls carry the central method table's native operation
+requirements to the owner assignment guard. Variable-length retained projections
+and fresh-result extents stay distinct from fixed input indices, including through
+identity wrappers. Discarded native results still contribute guard requirements.
+Unproven methods, captured storage, escaping allocations and opaque producers do
+not acquire a return fact. Authored calls and their execution order are preserved.
 `analysis/published-owner-dependency.ts` checks that selection writes belong to
 closed host-event call paths; escaped callbacks cannot justify skipping content.
 

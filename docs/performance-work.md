@@ -1999,6 +1999,47 @@ fallbacks: broader helper-result/mutation summaries and the general retained
 reconciliation path remain the next performance work. No new VM speed claim is
 made; dependencies, example sources and the Octane pin are unchanged.
 
+## Guarded native copies through helper summaries
+
+Closed local/imported helper summaries now preserve retained-row provenance for
+`slice`, `toReversed` and `concat`, including renamed imports and wrapper chains.
+The owner assignment carries their native-operation guards through the existing
+trust protocol. Discarded native results contribute guards too. Unknown calls,
+mutations, opaque/coercive arguments, escapes and helper callback transformations
+retain ordinary replay. Variable-length copies cannot justify indexed bounds,
+even after identity wrappers. Authored calls still execute in their original order.
+
+The six initial positive regressions failed against `219c9a9`. New DOM tests
+check synchronous/deferred scheduling, linked/local helpers, mixed selection,
+rendered indices, retained identity and sticky trust after overridden native
+methods or species hooks. Existing native-method and owner-array gates cover the
+remaining guard and reactivity boundaries.
+
+The focused `bench:dom:compare --helpers` mode uses the same closed literal
+producer, shared current runtime and two compiler revisions in Chromium. Each
+page performs five warmups and 15 samples per operation, with ABBA page order.
+Every sample checks text, selection, order and retained identity outside timing;
+each page also checks mixed selection/reverse. Local medians, milliseconds:
+
+| Operation at 10k rows | Before / after, before first | Before / after, after first |
+|---|---:|---:|
+| Rotate one row | 3.1 / 1.4 | 2.4 / 1.6 |
+| Remove last row | 3.6 / 2.2 | 2.8 / 2.2 |
+| Reverse | 29.4 / 28.2 | 36.9 / 36.1 |
+
+Rotations and suffix removal improve in both orders; reverse remains dominated
+by structural DOM work. These measurements establish the scope of helper-summary
+precision, not a general framework ranking or gains for opaque loop producers.
+Broader producer/mutation summaries, component-row hidden reads and retained
+reconciliation costs remain open. Bundle work remains deferred.
+
+Compiler build and changed-source lint passed. The selected suites passed 201
+distinct tests across 14 files, including 18 helper-method cases. All eight
+existing DOM source graphs and the Octane graph remain byte-identical against
+`219c9a9` (27 compiled modules). Runtime code, dependencies, example sources and
+the Octane pin are unchanged. The general suites therefore receive no timing
+claim from this batch.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed
