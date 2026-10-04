@@ -57,11 +57,21 @@ executed during this proof.
 
 The boundary requires one unconsumed two-argument `mount('id', App)`
 entry and an empty `<div id="id"></div>` directly inside the HTML body. Unknown
-initializers/imports, events, refs, effects, unsupported HTML/property semantics,
+initializers/imports, refs, effects, unsupported HTML/property semantics,
 additional scripts or ambiguous shells retain browser execution. A proven static
 parent around interactive components remains in HTML; a separate browser entry
 creates its live children and adopts the original static nodes. Increasing that
 static composition does not add component creation code to JavaScript.
+
+Direct interactive host roots with closed initial values also render their
+initial text as HTML. Their browser program binds event/update nodes instead of
+recreating the DOM. Unchanged bindings and closed derived text/attributes stay
+in HTML. Local and module state use the existing update and lifetime machinery.
+This currently requires a single direct host root, without composed children,
+structural regions, refs, effects or unknown setup. HTML validation happens
+before selecting the matching browser target; uncertain shells keep ordinary
+DOM creation. Empty dynamic text uses a comment replaced by a text node during
+binding, after all required node addresses have been validated.
 
 Extraction currently requires a direct root JSX return and closed primitive
 props at its browser boundaries. Captured writes, object/callback props, content

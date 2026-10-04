@@ -213,6 +213,9 @@ export function transformComponent(
   const lightweightPropCount =
     positionalObjectProps?.length ?? propSlotCount;
   const scope = newEmitScope(ctx, lightweight, component);
+  if (ctx.initialDomRoot?.component === name) {
+    scope.initialDom={plan:ctx.initialDomRoot,variable:generatedIdentifier(ctx,'initialNodes').name,descriptors:[]};
+  }
   for (const token of ctx.ownerListProvenance.get(name)?.values() ?? []) {
     scope.prelude.push(astFactory.variableDeclaration('const', [astFactory.variableDeclarator(
       astFactory.identifier(token), astFactory.callExpression(md(ctx, 'createListProvenance'), []),
@@ -311,6 +314,12 @@ export function transformComponent(
         );
   const lightweightSingleRoot =
     lightweight && 'jsx' in returns && astFactory.isJSXElement(returns.jsx);
+  if (scope.initialDom) scope.prelude.unshift(astFactory.variableDeclaration('const',[
+    astFactory.variableDeclarator(astFactory.identifier(scope.initialDom.variable),
+      astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+        astFactory.stringLiteral(scope.initialDom.plan.target),astFactory.arrayExpression(scope.initialDom.descriptors),
+      ])),
+  ]));
 
   if (lightweight) {
     applyRepeatedDomTemplate(ctx, scope, rootVar);
@@ -425,7 +434,7 @@ export function transformComponent(
     ).independentFor;
   }
   const updateStatement = updateDecl(ctx, scope);
-  applyStaticMarkup(ctx, scope, rootVar, [
+  if (!scope.initialDom) applyStaticMarkup(ctx, scope, rootVar, [
     ...scope.mounts,
     ...sourceMounts,
     ...eventSourceDisposals,

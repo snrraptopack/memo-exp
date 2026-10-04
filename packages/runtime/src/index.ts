@@ -64,6 +64,7 @@ export type { EffectCallback, EffectCondition } from './effect';
 
 export { materializeMarkup } from './markup';
 export { adoptInitialRoot } from './initial-root';
+export { bindInitialNodes } from './initial-bindings';
 
 export {
   setText,

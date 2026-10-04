@@ -48,6 +48,13 @@ import {
 import { emitText } from './text-node';
 import { literalClassValue } from './class-value';
 import type { NodeEmitter } from './node-emitter';
+import { initialNode } from './initial-dom';
+import { initialSite } from '../planning/initial-render';
+
+function isInitialLiteral(value: t.Expression): boolean {
+  return astFactory.isStringLiteral(value) || astFactory.isNumericLiteral(value) ||
+    astFactory.isBooleanLiteral(value) || astFactory.isNullLiteral(value);
+}
 
 export interface HostElementDependencies {
   emitNode: NodeEmitter;
@@ -88,6 +95,7 @@ export function emitDirectChildOperations(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): void {
+  if (scope.initialDom) return;
   for (const operation of operations) {
     if (operation.type === 'node') {
       scope.creation.push(
@@ -176,8 +184,13 @@ if (innerHtmlAttribute !== undefined) {
 }
 
 // Children emit post-order; insertion operations retain authored order.
+const initial=scope.initialDom?.plan.elements[initialSite(element)];
+let initialTextIndex=0;
 const childOperations = collectDirectChildren(element.children, {
-  emitText: (expression) => emitText(ctx, scope, expression, ownerId),
+  emitText: (expression) => {
+    const text=initial?.texts[initialTextIndex++];
+    return emitText(ctx, scope, expression, ownerId, text?.path, text?.live === false, text?.empty);
+  },
   emitNode: (node) =>
     dependencies.emitNode(
       ctx,
@@ -198,23 +211,32 @@ const childOperations = collectDirectChildren(element.children, {
   },
 });
 const varName = freshNodeName(ctx, scope, tag);
-const creationExpression = createElementExpression(
+const needsInitialBinding=initial && (initialSite(element) === scope.initialDom!.plan.returnSite ||
+  open.attributes.some(attribute=>{
+    if (!astFactory.isJSXAttribute(attribute)) return true;
+    if (initial.staticAttributes.includes(initialSite(attribute))) return false;
+    const name=jsxAttributeName(attribute.name);
+    const value=attrExpr(attribute.value);
+    return /^on[A-Z]/.test(name) || value !== null && !isInitialLiteral(value);
+  }));
+if (scope.initialDom && !initial) throw new Error('memo-dom: initial DOM element has no binding address');
+const creationExpression = initial ? null : createElementExpression(
   renderDocument(ctx, scope),
   tag,
   elementSvg,
 );
-if (element.loc !== null && element.loc !== undefined) {
+if (creationExpression && element.loc !== null && element.loc !== undefined) {
   walkAst(creationExpression as unknown as BaseNode, {
     enter(node) {
       node.loc ??= element.loc;
     },
   });
 }
-scope.creation.push(
+if (!initial || needsInitialBinding) scope.creation.push(
   astFactory.variableDeclaration('const', [
     astFactory.variableDeclarator(
       astFactory.identifier(varName),
-      creationExpression,
+      initial ? initialNode(scope,initial.path,tag) : creationExpression!,
     ),
   ]),
 );
@@ -287,6 +309,7 @@ if (hasSpread) {
   for (const attr of open.attributes) {
   const a = attr as t.JSXAttribute;
   const attrName = jsxAttributeName(a.name);
+  if (initial?.staticAttributes.includes(initialSite(a))) continue;
 
   if (attrName === 'ref') {
     const value = attrExpr(a.value);
@@ -353,6 +376,11 @@ if (hasSpread) {
           ),
     );
     continue;
+  }
+
+  if (initial) {
+    const value=attrExpr(a.value);
+    if (value === null || isInitialLiteral(value)) continue;
   }
 
   if (astFactory.isStringLiteral(a.value)) {
@@ -487,7 +515,7 @@ if (hasSpread) {
       domAttributeWrite(varName, attrName, tmp),
     );
   };
-  scope.creation.push(makeCall());
+  if (!initial) scope.creation.push(makeCall());
   registerTransparentDataSite(
     ctx,
     scope,

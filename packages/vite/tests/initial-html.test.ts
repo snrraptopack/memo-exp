@@ -175,6 +175,111 @@ describe('HTML first production builds', () => {
     }
   });
 
+  it('keeps direct event-program size independent of surrounding static markup', async () => {
+    const bytes: number[] = [];
+    for (const count of [1,60]) {
+      const result=await production(await fixture(`export function App(){let n=0;return <main>
+        ${Array.from({length:count},(_,index)=>`<section><h2>Static card ${index}</h2><p>Ready.</p></section>`).join('')}
+        <button onClick={()=>n++}>Add</button><p>{n}</p></main>;}`));
+      expect(result.html.match(/<section>/g)).toHaveLength(count);
+      expect(result.html).toContain('<p>0</p>');
+      const js=result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('');
+      expect(js).not.toContain('Static card');
+      expect(js).not.toContain('Ready.');
+      bytes.push(Buffer.byteLength(js));
+    }
+    expect(Math.abs(bytes[1]! - bytes[0]!)).toBeLessThan(128);
+  });
+
+  it.each(['owner','module'])('binds %s state to initial DOM without recreating nodes in Chrome', async (placement,context) => {
+    const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
+      .find((path):path is string=>!!path&&existsSync(path));
+    if (!executablePath) {context.skip();return;}
+    const state=`let n=1;let name='';`;
+    const appSource=`${placement==='module'?state:''}
+      export function App(){${placement==='owner'?state:''}const doubled=n*2;const alias=doubled;
+        let fixed='Ada';const greeting='Hello '+fixed;return <main><h1 title={greeting}>{greeting}</h1><em>{alias}</em>
+        <button id="add" onClick={()=>{n++;name='Ada';if(n===4){n=8;return;}n++;}}>Add</button>
+        <p className={'count-'+n}>{n}{2} items</p><b>{n}{2}</b><span>{name}</span>
+        <button id="fail" onClick={()=>{n=20;throw new Error('authored failure');}}>Fail</button>
+        <button id="reset" onClick={()=>{n=0;name='';}}>Reset</button></main>;}`;
+    const result=await production(await fixture(appSource));
+    const baseline=await production(await fixture(appSource,{},`globalThis.creationTarget=true;`));
+    expect(result.html).toContain('<p class="count-1">3 items</p>');
+    const server=createHttpServer((request,response)=>{
+      const file=request.url==='/creation' ? baseline.files.find(item=>item.fileName==='index.html') :
+        [...result.files,...baseline.files].find(item=>item.fileName===(request.url==='/'?'index.html':request.url?.slice(1)));
+      if (!file) {response.writeHead(404).end();return;}
+      response.setHeader('Content-Type',file.type==='chunk'?'text/javascript':'text/html');
+      response.end(file.type==='chunk'?file.code:file.source);
+    });
+    await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));
+    const browser=await puppeteer.launch({executablePath,headless:true});
+    try {
+      const address=server.address();
+      if (!address||typeof address==='string') throw new Error('Missing HTTP address');
+      const url=`http://127.0.0.1:${address.port}/`;
+      const staticPage=await browser.newPage();
+      await staticPage.setJavaScriptEnabled(false);
+      await staticPage.goto(url);
+      expect(await staticPage.$eval('#root',node=>node.textContent)).toBe('Hello Ada2Add3 items12FailReset');
+      await staticPage.close();
+      const ordinary=await browser.newPage();
+      const ordinaryErrors:string[]=[];
+      ordinary.on('pageerror',error=>ordinaryErrors.push(String(error)));
+      await ordinary.goto(`${url}creation`);
+      for (const n of [3,8,10]) {
+        await ordinary.click('#add');
+        await ordinary.waitForFunction(n=>document.querySelector('p')?.className===`count-${n}`,{},n);
+      }
+      await ordinary.click('#fail');
+      // A subsequent successful handler establishes that error recovery still
+      // works; the throw's DOM result must match the ordinary compiler target.
+      const afterThrow=await ordinary.$eval('p',node=>node.textContent);
+      await ordinary.click('#reset');
+      await ordinary.waitForFunction(()=>document.querySelector('p')?.textContent==='2 items');
+      expect(ordinaryErrors).toEqual(['Error: authored failure']);
+      await ordinary.close();
+      const page=await browser.newPage();
+      const errors:string[]=[];
+      page.on('pageerror',error=>errors.push(String(error)));
+      await page.evaluateOnNewDocument(()=>{
+        const saved=window as unknown as {initial?:Node[]};
+        new MutationObserver(()=>{
+          const main=document.querySelector('main');
+          const button=document.querySelector('#add');
+          const text=document.querySelector('p')?.firstChild;
+          if (main&&button&&text) saved.initial??=[main,button,text];
+        }).observe(document,{childList:true,subtree:true});
+      });
+      await page.goto(url);
+      for (const n of [3,8,10]) {
+        await page.click('#add');
+        await page.waitForFunction(n=>document.querySelector('p')?.className===`count-${n}`,{},n);
+        expect(await page.$eval('p',node=>node.textContent)).toBe(`${n+2} items`);
+        expect(await page.$eval('b',node=>node.textContent)).toBe(`${n}2`);
+        expect(await page.$eval('span',node=>node.textContent)).toBe('Ada');
+        expect(await page.$eval('em',node=>node.textContent)).toBe(String(n*2));
+        expect(await page.$eval('h1',node=>[node.textContent,node.getAttribute('title')])).toEqual(['Hello Ada','Hello Ada']);
+      }
+      await page.click('#fail');
+      expect(await page.$eval('p',node=>node.textContent)).toBe(afterThrow);
+      await page.click('#reset');
+      await page.waitForFunction(()=>document.querySelector('p')?.textContent==='2 items');
+      expect(await page.$eval('span',node=>node.childNodes.length)).toBe(1);
+      expect(await page.$eval('span',node=>node.textContent)).toBe('');
+      expect(await page.$eval('em',node=>node.textContent)).toBe('0');
+      expect(await page.evaluate(()=>{
+        const saved=window as unknown as {initial?:Node[]};
+        return saved.initial?.every((node,index)=>node===[document.querySelector('main'),document.querySelector('#add'),document.querySelector('p')?.firstChild][index]);
+      })).toBe(true);
+      expect(errors).toEqual(['Error: authored failure']);
+    } finally {
+      await browser.close();
+      await new Promise<void>((done,reject)=>server.close(error=>error?reject(error):done()));
+    }
+  });
+
   it('leaves development mounting and HMR available', async () => {
     const root = await fixture(`export function App(){return <h1>Hello</h1>;}`);
     const server = await createServer(options(root));

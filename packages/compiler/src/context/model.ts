@@ -9,6 +9,7 @@
 import type * as t from '../ast/compiler-types';
 import type { BaseNode, ScopeAnalysis } from '../ast';
 import type { InitialBrowserRoot } from '../planning/initial-browser';
+import type { InitialDomRoot } from '../emission/initial-dom';
 import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { OwnerListOperation } from '../analysis/owner-list-structure';
 import type {
@@ -145,6 +146,7 @@ export interface TransparentPresentationComponent {
 export interface InternalMemoDomOptions extends MemoDomOptions {
   /** Available only in the separate HTML-associated browser target. */
   initialBrowserRoot?: InitialBrowserRoot;
+  initialDomRoot?: InitialDomRoot;
   rootId?: string;
   rootComponent?: string;
   /** Application-wide route graph supplied by compileModules(). */
@@ -391,6 +393,7 @@ export type HelperPath = CompilerPath<
 
 export interface Ctx {
   initialBrowserRoot: InitialBrowserRoot | null;
+  initialDomRoot: InitialDomRoot | null;
   runtimePath: string;
   hotRuntimePath: string;
   routerPath: string;
@@ -744,6 +747,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   const runtimePath = opts.runtimePath ?? '@memoized-dom/runtime';
   return {
     initialBrowserRoot: opts.initialBrowserRoot ?? null,
+    initialDomRoot: opts.initialDomRoot ?? null,
     runtimePath,
     hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',

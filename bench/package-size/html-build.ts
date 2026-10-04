@@ -25,6 +25,11 @@ const fixtures = { ...sizeFixtures,
     './Card.tsx': `export function Card({title}){return <section><h2>{title}</h2><p>Ready.</p></section>;}`,
     './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
   }])),
+  ...Object.fromEntries([1,60].map(count=>[`bindings-${count}-cards`, {
+    './App.tsx': `export function App(){let n=0;return <main>
+      ${Array.from({length:count},(_,index)=>`<section><h2>Static card ${index}</h2><p>Ready.</p></section>`).join('')}
+      <button onClick={()=>n++}>Add</button><p>{n}</p></main>;}`,
+  }])),
 };
 const rows: Array<{ fixture: string; html: number; htmlGzip: number;
   javascript: number; javascriptGzipSum: number; javascriptAssets: number;
@@ -53,7 +58,7 @@ for (const [name, sources] of Object.entries(fixtures)) {
     const row: (typeof rows)[number] = { fixture: name, html: Buffer.byteLength(html.source), htmlGzip: gzipSync(html.source).byteLength,
       javascript: js.reduce((size, file) => size + Buffer.byteLength(file.code), 0),
       javascriptGzipSum: js.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), javascriptAssets: js.length };
-    if (name.startsWith('mixed-')) {
+    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.endsWith('-counter')) {
       // Same authored graph through the ordinary JS-entry DOM creation target.
       const creation = await build({root,configFile:false,logLevel:'silent',
         resolve:{alias:{'@memoized-dom/runtime':resolve(repository,'packages/runtime/dist/index.js')}},

@@ -17,6 +17,7 @@ import {
 } from '../data-sources';
 import { cachedTextConcat } from './text-concat';
 import { cachedTextValue } from './text-value';
+import { initialNode } from './initial-dom';
 
 // ---------------------------------------------------------------------
 // component transform
@@ -27,9 +28,19 @@ export function emitText(
   scope: EmitScope,
   expr: t.Expression,
   ownerId: t.Expression,
+  initialPath?: readonly number[],
+  initialStatic = false,
+  initialEmpty = false,
 ): string {
   const varName = generatedIdentifier(ctx, `text${scope.textCounter++}`).name;
+  if (initialStatic) {
+    // The descriptor adopts an empty placeholder even when no updater needs
+    // to retain its text node afterward.
+    if (initialEmpty) initialNode(scope, initialPath!, '#text');
+    return varName;
+  }
   if (astFactory.isStringLiteral(expr)) {
+    if (scope.initialDom) return varName;
     // static text: no slot, content baked into the node
     scope.creation.push(
       astFactory.variableDeclaration('const', [
@@ -47,11 +58,12 @@ export function emitText(
     );
     return varName;
   }
+  if (scope.initialDom && !initialPath) throw new Error('memo-dom: initial text has no binding address');
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
         astFactory.identifier(varName),
-        astFactory.callExpression(
+        initialPath ? initialNode(scope,initialPath,'#text') : astFactory.callExpression(
           astFactory.memberExpression(
             renderDocument(ctx, scope),
             astFactory.identifier('createTextNode'),
@@ -70,7 +82,7 @@ export function emitText(
           cloneEstreeNode(prepared),
         ]),
       );
-    scope.creation.push(setter());
+    if (!initialPath) scope.creation.push(setter());
     registerTransparentDataSite(
       ctx, scope, transparentExpressionSources(ctx, expr), ownerId, setter(),
     );
@@ -84,7 +96,10 @@ export function emitText(
     astFactory.assignmentExpression('=', astFactory.identifier(slot),
       astFactory.callExpression(md(ctx, 'textValue'), [expression])),
   );
-  scope.creation.push(
+  if (initialPath) scope.creation.push(astFactory.expressionStatement(astFactory.assignmentExpression('=',
+    astFactory.identifier(slot),astFactory.memberExpression(astFactory.identifier(varName),astFactory.identifier('data')),
+  )));
+  else scope.creation.push(
     value(seed, true),
     // Keep the seed recognizable to markup extraction, including hydration.
     astFactory.expressionStatement(

@@ -13,6 +13,7 @@ import { reasonCondition } from '../components/local-derived';
 import type { ComponentRegionReplay } from '../analysis/region-replay';
 import type { ComponentListSites } from '../planning/list-sites';
 import type { ComponentRegionShapes } from '../planning/region-shapes';
+import type { InitialDomRoot } from './initial-dom';
 
 export interface RegionSourcePlans {
   /** Shared source facts inherited by nested region/slot factories. */
@@ -22,6 +23,7 @@ export interface RegionSourcePlans {
 }
 
 export interface EmitScope extends RegionSourcePlans {
+  initialDom: {plan:InitialDomRoot;variable:string;descriptors:t.Expression[]} | null;
   /** Repeated row text avoids a DOM read on every content replay. */
   cacheText: boolean;
   slots: string[];
@@ -72,6 +74,7 @@ export interface EmitScope extends RegionSourcePlans {
 
 export function newEmitScope(ctx: Ctx, manualDisposal = false, sources?: RegionSourcePlans | null): EmitScope {
   return {
+    initialDom:null,
     regionReplay: sources?.regionReplay ?? null,
     regionShapes: sources?.regionShapes ?? null,
     listSites: sources?.listSites ?? null,

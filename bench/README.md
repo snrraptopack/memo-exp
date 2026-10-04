@@ -7,6 +7,10 @@ and larger composed static pages must emit zero JS assets. Interactive fixtures
 remain alongside them so static pruning cannot hide the current runtime cost.
 The mixed fixtures compare one and sixty static cards around the same counter,
 including the ordinary JS-entry DOM-creation build of each authored graph.
+The direct binding fixtures repeat this comparison for a host root with local
+events and state, including initial counter HTML and growing static content.
+Counter fixtures also record the ordinary DOM-creation target. Binding-helper
+overhead and the existing interactive runtime are included in the measurements.
 
 Each benchmark is a self-contained suite with its runner, sources, methodology,
 latest measurements, limits, and interpretation.

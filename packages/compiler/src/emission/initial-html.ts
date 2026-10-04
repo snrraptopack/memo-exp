@@ -22,7 +22,7 @@ export function emitInitialHtml(plan: InitialRenderPlan): string | null {
         // HTML parsing normalizes CR and replaces NUL; keep such content on
         // the DOM creation path until the backend can preserve it exactly.
         if (/[\r\0]/.test(node.value)) return null;
-        html += escape(node.value);
+        html += plan.kind === 'bindings' && node.value === '' ? '<!--mmd:empty-->' : escape(node.value);
         continue;
       }
       const tag = node.tag;

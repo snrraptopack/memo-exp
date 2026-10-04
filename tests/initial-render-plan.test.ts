@@ -79,8 +79,10 @@ describe('initial content and browser requirements', () => {
   });
 
   it('does not change adjacent expression coercion while separating the backends', () => {
-    expect(compile(`export function App(){const n=1;return <div>{n}{2} items</div>;}`).initialRender.kind).toBe('browser');
-    expect(compile(`export function App(){const value=null;return <div>Value: {value}</div>;}`).initialRender.kind).toBe('browser');
+    expect(emitInitialHtml(compile(`export function App(){const n=1;return <div>{n}{2} items</div>;}`).initialRender))
+      .toBe('<div>3 items</div>');
+    expect(emitInitialHtml(compile(`export function App(){const value=null;return <div>Value: {value}</div>;}`).initialRender))
+      .toBe('<div>Value: null</div>');
   });
 
   it('preserves case-insensitive HTML attribute overrides and removals', () => {
@@ -100,7 +102,6 @@ describe('initial content and browser requirements', () => {
   });
 
   it.each([
-    ['event', `export function App(){ return <button onClick={() => {}}>Click</button>; }`],
     ['ref', `export function App(){ let node=null; return <div ref={node}/>; }`],
     ['lifecycle', `export function App(){ $effect(() => {}); return <h1>Hello</h1>; }`],
     ['unknown', `export function App(){ return <h1>{Date.now()}</h1>; }`],
@@ -110,6 +111,13 @@ describe('initial content and browser requirements', () => {
     expect(result.initialRender.kind).toBe('browser');
     if (result.initialRender.kind === 'browser') expect(result.initialRender.requirements[0]?.kind).toBe(kind);
     expect(emitInitialHtml(result.initialRender)).toBeNull();
+  });
+
+  it('keeps a browser event program beside known initial HTML', () => {
+    const result = compile(`export function App(){return <button onClick={()=>{}}>Click</button>;}`);
+    expect(result.initialRender.kind).toBe('bindings');
+    expect(emitInitialHtml(result.initialRender)).toBe('<button>Click</button>');
+    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('onclick');
   });
 
   it('retains events in a descendant under a static parent', () => {

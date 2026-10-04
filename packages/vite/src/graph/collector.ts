@@ -384,9 +384,9 @@ export async function compileGraph(
     files: new Set(sourceIds.keys()),
     ...(initialBrowserOutput.size ? { initialBrowserOutput, initialBrowserMaps } : {}),
     ...(initialHtml === null || initialEntry === undefined || compiled.initialRender.kind === 'browser' ||
-        compiled.initialRender.kind === 'mixed' && !compiled.initialBrowserOutput ? {} : {
+        compiled.initialRender.kind !== 'html' && !compiled.initialBrowserOutput ? {} : {
       initialPage: { entry: initialEntry, target: compiled.initialRender.target, html: initialHtml,
-        ...(compiled.initialRender.kind === 'mixed' ? { browserEntry: initialBrowserPrefix + encodeURIComponent(initialEntry) } : {}),
+        ...(compiled.initialRender.kind !== 'html' ? { browserEntry: initialBrowserPrefix + encodeURIComponent(initialEntry) } : {}),
       },
     }),
     output,

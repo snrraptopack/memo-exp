@@ -2,7 +2,8 @@
 
 Current focus has moved to deriving JavaScript from required interactivity.
 `browser-bundle-architecture.md` records the new initial-content boundary,
-production zero-JS static builds, retained static HTML in mixed pages and the remaining browser-program
+production zero-JS static builds, retained static HTML in mixed pages, direct
+interactive host bindings and the remaining browser-program
 work. The measurements and correctness backlog below remain historical records;
 bundle/runtime tuning no longer sets the architecture order.
 

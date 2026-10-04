@@ -24,6 +24,10 @@ Public compilation APIs:
   a separate compiler-generated browser target that adopts that HTML. Ordinary
   `output`/`maps` remain valid for direct JavaScript entries. The associated HTML
   and browser target must be used together.
+- A `bindings` plan emits a direct interactive host tree as initial HTML. Its
+  browser target binds only nodes needed by events and updates; unchanged names
+  and closed derived text/attributes do not get DOM update instructions. Local
+  and module state retain the existing scheduler, routing and owner lifetime.
 
 The top-level files are orchestration and whole-program passes:
 
@@ -66,9 +70,10 @@ Initial rendering and future browser execution are separate compiler products.
 graph without executing it, recording browser requirements for unknown setup,
 events, refs or lifecycle work. `emission/initial-html.ts` consumes its content
 nodes independently of component factory emission. The Vite production HTML
-pipeline can omit the mount entry for a proven static page. Mixed interactive
-graphs still use DOM factories; deriving minimal browser regions is the next
-architecture step. See `../../docs/browser-bundle-architecture.md` for scope,
+pipeline can omit the mount entry for a proven static page. Direct interactive
+host roots can bind to initial HTML without DOM creation. Composed interactive
+children still use their existing DOM factories; structural regions, refs,
+effects and unknown setup retain the ordinary target. See `../../docs/browser-bundle-architecture.md` for scope,
 proof limits and the implementation order.
 
 Component return structure is now planned before any component factory is

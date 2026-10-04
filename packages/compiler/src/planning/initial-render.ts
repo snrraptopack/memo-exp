@@ -10,17 +10,23 @@ import {
 import { normalizeJsxText } from '../components/children';
 import { nodeHasJsx } from '../context';
 import { analyzeComponentPropShape } from '../components/prop-shape';
+import { combineTextExpressions } from '../components/text-expression';
+import * as astFactory from '../ast/factory';
+import type * as t from '../ast/compiler-types';
 
 export type InitialRenderNode =
-  | { readonly kind: 'text'; readonly value: string }
+  | { readonly kind: 'text'; readonly value: string; readonly live?: boolean }
   | { readonly kind: 'browser'; readonly id: number; readonly site: string }
   | { readonly kind: 'element'; readonly tag: string;
+      readonly site?: string;
       readonly attributes: readonly InitialRenderAttribute[];
       readonly children: readonly InitialRenderNode[] };
 
 export interface InitialRenderAttribute {
   readonly name: string;
   readonly value: string | number | boolean | null | undefined;
+  readonly site?: string;
+  readonly live?: boolean;
 }
 
 export interface BrowserRequirement {
@@ -36,6 +42,9 @@ export type InitialRenderPlan =
       readonly rootModuleId: string; readonly rootLocal: string; readonly returnSite: string;
       readonly nodes: readonly InitialRenderNode[];
       readonly regions: readonly { readonly id: number; readonly site: string }[] }
+  | { readonly kind: 'bindings'; readonly target: string; readonly mountModuleId: string;
+      readonly rootModuleId: string; readonly rootLocal: string; readonly returnSite: string;
+      readonly nodes: readonly InitialRenderNode[] }
   | { readonly kind: 'browser'; readonly requirements: readonly BrowserRequirement[] };
 
 type Value = string | number | boolean | null | undefined | ValueObject | Component | Content;
@@ -69,6 +78,8 @@ export function planInitialRendering(
   const rendering = new Set<Component>();
   const analyses = new Map<string, ScopeAnalysis>();
   let mixed = false;
+  let bindings = false;
+  let bindingEvents = false;
   let returnSite: string | undefined;
   const regions: { id: number; site: string }[] = [];
   let target: string | undefined;
@@ -164,11 +175,11 @@ export function planInitialRendering(
         return object.fields.get(name);
       }
       case 'ConditionalExpression':
-        if (mixed && scope.rootRender && nodeHasJsx(node)) need(scope, 'Root structural regions need a placement proof');
+        if ((bindings || mixed && scope.rootRender) && nodeHasJsx(node)) need(scope, 'Root structural regions need a placement proof');
         return expression(childNode(node, primitive(expression(childNode(node, 'test'), scope), scope)
           ? 'consequent' : 'alternate'), scope);
       case 'LogicalExpression': {
-        if (mixed && scope.rootRender && nodeHasJsx(node)) need(scope, 'Root structural regions need a placement proof');
+        if ((bindings || mixed && scope.rootRender) && nodeHasJsx(node)) need(scope, 'Root structural regions need a placement proof');
         const left = expression(childNode(node, 'left'), scope);
         const value = primitive(left, scope);
         const operator = nodeField(node, 'operator');
@@ -207,7 +218,7 @@ export function planInitialRendering(
       // A wholly closed page has no browser writes. Build capture/write facts
       // only when proving static content in a graph that retains interactivity.
       let analysis = analyses.get(scope.moduleId);
-      if (mixed && !analysis) {
+      if ((mixed || bindings) && !analysis) {
         analysis = analyzeScope(programs.get(scope.moduleId)!);
         analyses.set(scope.moduleId, analysis);
       }
@@ -233,11 +244,42 @@ export function planInitialRendering(
     need(scope, 'Unknown binding pattern');
   }
 
+  // Use the same closed-value proof with captured writes enabled. Unknown
+  // object reads remain live. Both branches must be safe, even when the initial
+  // value chooses only one; future source writes can choose another branch.
+  function staysClosed(node: BaseNode | null, scope: Scope): boolean {
+    const previous = mixed;
+    mixed = true;
+    try {
+      const value = expression(node, scope);
+      if (value !== null && typeof value === 'object') return false;
+      let safe = true;
+      if (node) walkAst<BaseNode>(node, { enter(input) {
+        if (input.type === 'ConditionalExpression' || input.type === 'LogicalExpression') {
+          for (const key of ['test', 'consequent', 'alternate', 'left', 'right']) {
+            const branch = childNode(input, key);
+            if (branch) expression(branch, scope);
+          }
+        }
+        if (isFunctionNode(input)) safe = false;
+      } });
+      return safe;
+    } catch (error) {
+      if (!(error instanceof NeedsBrowser)) throw error;
+      return false;
+    } finally { mixed = previous; }
+  }
+
   function declarations(node: BaseNode, scope: Scope): void {
     for (const declaration of childNodes(node, 'declarations')) {
       const init = childNode(declaration, 'init');
-      if (mixed && scope.rootRender && init && nodeHasJsx(init)) need(scope, 'Root setup content needs a placement proof');
-      bind(childNode(declaration, 'id'), expression(init, scope), scope);
+      if ((mixed || bindings) && scope.rootRender && init && nodeHasJsx(init)) need(scope, 'Root setup content needs a placement proof');
+      const live = bindings && !staysClosed(init, scope);
+      const pattern = childNode(declaration, 'id');
+      bind(pattern, expression(init, scope), scope);
+      if (live && pattern) walkAst<BaseNode>(pattern, { enter(input) {
+        if (input.type === 'Identifier') scope.unstable.add(identifierLikeName(input)!);
+      } });
     }
   }
 
@@ -269,7 +311,7 @@ export function planInitialRendering(
       const body = childNode(component.node, 'body');
       let result: readonly InitialRenderNode[] | undefined;
       if (body?.type !== 'BlockStatement') {
-        if (mixed && rootCall && body) {
+        if ((mixed || bindings) && rootCall && body) {
           if (!['JSXElement', 'JSXFragment'].includes(body.type)) need(scope, 'Mixed roots need a direct JSX return');
           returnSite = initialSite(body);
           if (!returnSite) need(scope, 'Initial placement needs authored source identity');
@@ -282,7 +324,7 @@ export function planInitialRendering(
           else if (statement.type === 'FunctionDeclaration') bind(childNode(statement, 'id'), expression(statement, scope), scope);
           else if (statement.type === 'ReturnStatement') {
             const argument = childNode(statement, 'argument');
-            if (mixed && rootCall && argument) {
+            if ((mixed || bindings) && rootCall && argument) {
               if (!['JSXElement', 'JSXFragment'].includes(argument.type)) need(scope, 'Mixed roots need a direct JSX return');
               returnSite = initialSite(argument);
               if (!returnSite) need(scope, 'Initial placement needs authored source identity');
@@ -302,33 +344,35 @@ export function planInitialRendering(
   function jsx(node: BaseNode, scope: Scope): readonly InitialRenderNode[] {
     function children(): InitialRenderNode[] {
       const result: InitialRenderNode[] = [];
-      const pending: Array<string | number | boolean | null | undefined> = [];
+      const pending: t.Expression[] = [];
       function flush(): void {
         if (!pending.length) return;
-        // The existing DOM backend joins adjacent authored expressions.
-        // Nullable/boolean/numeric joins require a shared text operation plan;
-        // don't change their coercion by folding each child independently.
-        if (pending.length > 1 && pending.some(value => typeof value !== 'string')) {
-          need(scope, 'Mixed adjacent text expressions need a shared text plan');
-        }
-        result.push(...content(pending.length === 1 ? pending[0] : pending.join(''), scope));
+        const joined=combineTextExpressions(pending);
+        const value=primitive(expression(joined,scope),scope);
+        if (bindings) {
+          const live = !staysClosed(joined, scope);
+          if (astFactory.isStringLiteral(joined) && joined.value === '') need(scope,'Empty static text needs an HTML representation proof');
+          const text = value == null || typeof value === 'boolean' ? '' : String(value);
+          result.push({kind:'text',value:text,live});
+        } else result.push(...content(value,scope));
         pending.length = 0;
       }
       for (const child of childNodes(node, 'children')) {
         if (child.type === 'JSXText') {
           const text = normalizeJsxText(String(nodeField(child, 'value')));
-          if (text) pending.push(text);
+          if (text) pending.push(astFactory.stringLiteral(text));
           continue;
         }
         if (child.type === 'JSXExpressionContainer') {
           const input = childNode(child, 'expression');
           if (input?.type === 'JSXEmptyExpression') continue;
+          if (input?.type === 'Identifier' && nodeField(input, 'name') === 'undefined') continue;
           if (input && (nodeField(input, 'value') === null || typeof nodeField(input, 'value') === 'boolean')) continue;
           const value = expression(input, scope);
           if (value !== null && typeof value === 'object' || input && nodeHasJsx(input)) {
             flush();
             result.push(...content(value, scope));
-          } else pending.push(primitive(value, scope));
+          } else { primitive(value,scope); pending.push(input as t.Expression); }
           continue;
         }
         flush();
@@ -337,7 +381,10 @@ export function planInitialRendering(
       flush();
       return result;
     }
-    if (node.type === 'JSXFragment') return children();
+    if (node.type === 'JSXFragment') {
+      if (bindings) need(scope,'Fragment bindings need a placement proof');
+      return children();
+    }
     if (node.type !== 'JSXElement') return need(scope, 'Unknown JSX child');
     const opening = childNode(node, 'openingElement')!;
     const tag = identifierLikeName(childNode(opening, 'name'));
@@ -345,22 +392,34 @@ export function planInitialRendering(
     const host = /^[a-z]/.test(tag);
     const props = new Map<string, Value>();
     const attributes: InitialRenderAttribute[] = [];
+    const hostAttributes = new Set<string>();
     for (const attribute of childNodes(opening, 'attributes')) {
       const name = identifierLikeName(childNode(attribute, 'name'));
       if (attribute.type !== 'JSXAttribute' || name === null) return need(scope, 'Attribute spread needs browser execution');
-      if (host && /^on/i.test(name)) return need(scope, 'Event handlers require browser execution', 'event');
+      if (bindings && host && !/^on/i.test(name)) {
+        const normalized = (name === 'className' ? 'class' : name === 'htmlFor' ? 'for' : name).toLowerCase();
+        if (hostAttributes.has(normalized)) need(scope, 'Repeated host attributes need an ordered update proof');
+        hostAttributes.add(normalized);
+      }
+      if (host && /^on/i.test(name)) {
+        if (!bindings || !/^on[A-Z]/.test(name)) return need(scope, 'Event handlers require browser execution', 'event');
+        bindingEvents=true;
+        continue;
+      }
       if (name === 'ref') return need(scope, 'Refs require browser execution', 'ref');
       if (['route', 'route-to', 'if', 'else-if', 'else', 'innerHTML'].includes(name)) {
         return need(scope, 'Compiler directives need their browser semantics');
       }
       if (name === '__proto__') return need(scope, 'Prototype-bearing props need browser execution');
       const input = childNode(attribute, 'value');
-      const value = input === null ? true : expression(input.type === 'JSXExpressionContainer'
-        ? childNode(input, 'expression') : input, scope);
-      if (host && name !== 'key') attributes.push({ name, value: primitive(value, scope) });
+      const valueNode = input?.type === 'JSXExpressionContainer' ? childNode(input, 'expression') : input;
+      const value = input === null ? true : expression(valueNode, scope);
+      if (host && name !== 'key') attributes.push({ name, value: primitive(value, scope),
+        ...(bindings ? {site:initialSite(attribute),live:!staysClosed(valueNode,scope)} : {}) });
       else props.set(name, value);
     }
     if (!host) {
+      if (bindings) need(scope,'Composed initial bindings need a placement proof');
       const component = scope.values.get(tag);
       if (component === null || typeof component !== 'object' || component.kind !== 'component') return need(scope, `Unknown component '${tag}'`);
       if (props.has('children')) return need(scope, 'Explicit children prop needs browser execution');
@@ -380,7 +439,9 @@ export function planInitialRendering(
         return [{ kind: 'browser', ...region }];
       }
     }
-    return [{ kind: 'element', tag, attributes, children: children() }];
+    const site=bindings ? initialSite(node) : undefined;
+    if (bindings && !site) need(scope,'Initial bindings need authored source identity');
+    return [{ kind: 'element', tag, ...(site ? {site} : {}), attributes, children: children() }];
   }
 
   function module(id: string): ModuleScope {
@@ -481,6 +542,11 @@ export function planInitialRendering(
       need({ moduleId: root!.moduleId, values: new Map(), unstable: new Set() }, 'Unknown mounted component');
     }
     const nodes = render(component, new Map(), true);
+    if (bindings) {
+      if (!bindingEvents || !returnSite || nodes.length !== 1 || nodes[0]?.kind !== 'element') need(component.scope,'No direct interactive DOM root');
+      return {kind:'bindings',target,mountModuleId:root!.mountModuleId,rootModuleId:root!.moduleId,
+        rootLocal:root!.local,returnSite,nodes};
+    }
     if (regions.some(region => region.site === returnSite) || new Set(regions.map(region => region.site)).size !== regions.length) {
       need(component.scope, 'Initial placements need distinct authored source identities');
     }
@@ -501,6 +567,11 @@ export function planInitialRendering(
     if (dynamicEvaluation) return { kind: 'browser', requirements: [first.requirement] };
     mixed = true;
     modules.clear(); visiting.clear(); rendering.clear(); target = undefined;
+    try { return plan(); } catch (error) {
+      if (!(error instanceof NeedsBrowser)) throw error;
+    }
+    bindings=true; mixed=false;
+    modules.clear(); visiting.clear(); rendering.clear(); regions.length=0; returnSite=undefined; target=undefined;
     try { return plan(); } catch (error) {
       if (!(error instanceof NeedsBrowser)) throw error;
     }

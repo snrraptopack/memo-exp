@@ -16,6 +16,7 @@ import {
   type JsxChild,
 } from '../components/children';
 import { matchMapCall, type MapCallExpression } from '../lists';
+import { combineTextExpressions } from '../components/text-expression';
 
 export type JsxNode = t.JSXElement | t.JSXFragment;
 
@@ -33,31 +34,6 @@ export interface DirectChildEmitters {
   emitNode(node: JsxNode): string;
   isForwarded(expression: t.Expression): boolean;
   fail(message: string): never;
-}
-
-function combineTextExpressions(expressions: t.Expression[]): t.Expression {
-  if (expressions.length === 1) return expressions[0]!;
-
-  const merged: t.Expression[] = [];
-  for (const expr of expressions) {
-    const last = merged[merged.length - 1];
-    if (last && astFactory.isStringLiteral(last) && astFactory.isStringLiteral(expr)) {
-      merged[merged.length - 1] = astFactory.stringLiteral(last.value + expr.value);
-    } else {
-      merged.push(expr);
-    }
-  }
-  if (merged.length === 1) return merged[0]!;
-
-  const hasString = merged.some((e) => astFactory.isStringLiteral(e));
-  let result: t.Expression = hasString
-    ? merged[0]!
-    : astFactory.binaryExpression('+', astFactory.stringLiteral(''), merged[0]!);
-
-  for (let i = 1; i < merged.length; i++) {
-    result = astFactory.binaryExpression('+', result, merged[i]!);
-  }
-  return result;
 }
 
 /** Classify and emit immediate child nodes in authored source order. */

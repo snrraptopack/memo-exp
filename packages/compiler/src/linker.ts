@@ -61,6 +61,8 @@ import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest, exportedLocals } from './linking/discovery';
 import { installCompilerIntrinsics } from './intrinsics';
 import { planInitialRendering, type InitialRenderPlan } from './planning/initial-render';
+import { planInitialDom } from './emission/initial-dom';
+import { emitInitialHtml } from './emission/initial-html';
 
 export interface CompiledComponentExport {
   exported: string;
@@ -630,7 +632,8 @@ function compileLinkedModules(
   const initialRender = planInitialRendering(authoredPrograms, applicationRoot,
     (importer, specifier) => resolveModule(importer, specifier, entries, options)?.id,
     options.runtimePath ?? '@memoized-dom/runtime');
-  const emitInitialBrowser = initialRender.kind === 'mixed' && options.hot !== true && options.routedEnvironment !== 'server';
+  const initialDom = initialRender.kind === 'bindings' && emitInitialHtml(initialRender) !== null ? planInitialDom(initialRender) : null;
+  const emitInitialBrowser = (initialRender.kind === 'mixed' || initialDom !== null) && options.hot !== true && options.routedEnvironment !== 'server';
   const routeManifestModule =
     applicationRoot?.moduleId ?? entries.values().next().value?.id;
   const lazyImportsByModule = new Map<string, Record<string, LazyRouteImport>>();
@@ -846,10 +849,10 @@ function compileLinkedModules(
         ? { rootComponent: applicationRoot.local }
         : {}),
     };
-    if (emitInitialBrowser && initialRender.kind === 'mixed' && entry.id === initialRender.rootModuleId) {
+    if (emitInitialBrowser && (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') && entry.id === initialRender.rootModuleId) {
       const initialOptions = { ...compileOptions,
-        initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
-          returnSite: initialRender.returnSite, regions: initialRender.regions },
+        ...(initialRender.kind === 'mixed' ? {initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
+          returnSite: initialRender.returnSite, regions: initialRender.regions }} : {initialDomRoot:initialDom!}),
       };
       const initialAst = cloneNode(entry.ast);
       if (sourceMaps) {

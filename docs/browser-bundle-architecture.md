@@ -33,7 +33,7 @@ string concatenation/interpolation, simple branches,
 objects used as props and component composition across linked modules. It never
 calls authored functions or evaluates source with JavaScript `eval`. Unknown
 calls, getters, external imports and module side effects retain browser execution,
-even if the JSX has no events. Host properties, mixed adjacent text coercion and
+even if the JSX has no events. Host properties and
 unsupported HTML parser shapes also retain the DOM path.
 
 `emitInitialHtml()` is a separate backend over that content plan. HTML escaping
@@ -81,10 +81,28 @@ Vite integration and SSR isolation/concurrency suites pass 105 tests across
 nine files. A skipped static instance of the same component also preserves the
 following interactive instances' source identities.
 
+Direct interactive host roots now have a `bindings` product. The compiler emits
+closed initial values as HTML and derives child-node addresses from that exact
+content plan. Its browser factory binds only the returned root, event targets,
+dynamic attributes and dynamic text. It emits no DOM creation or child appends
+for that tree. Unchanged variables and closed derived expressions do not get
+text/attribute update code. Captured writes and aliases of mutable dependencies
+retain updates; object reads stay conservative. HTML and DOM emission share the
+same adjacent-text join contract, including numeric coercion.
+
+This target currently requires one direct host root with known initialization
+and host-only children. Composed children, later structural regions, DOM
+properties/styles, refs, effects and opaque setup retain the ordinary target.
+Empty dynamic text has a comment placeholder replaced with a text node. Runtime
+binding validates all required addresses and node kinds before replacing any
+placeholder. Events, batching, module routing and mount/unmount ownership reuse
+the existing compiler/runtime paths. This is not a separate event scheduler.
+
 This is still a partial architecture change. Live children currently start as
 HTML markers and create their initial DOM through the existing runtime. Their
-full initial HTML, state serialization, binding-only browser code and subsequent
-adoption remain unfinished. The compiler does not yet prove arbitrary JS static.
+full initial HTML, state serialization and binding-only browser code remain
+unfinished; direct host-root bindings are implemented first. The compiler does
+not yet prove arbitrary JS static.
 
 `bun run bench:size:html` measures production HTML and every emitted JS chunk
 separately, using published packages and stable authored fixtures. Its reports
@@ -99,7 +117,7 @@ Production measurements for the implemented boundary (default Vite minification)
 | Static shell | 149 / 129 | 0 / 0 |
 | Forty composed static cards | 2,046 / 258 | 0 / 0 |
 | Unchanged name and derived greeting | 120 / 112 | 0 / 0 |
-| Owner counter | 180 / 151 | 10,588 / 4,209 |
+| Owner counter, earlier DOM creation target | 180 / 151 | 10,588 / 4,209 |
 | Interactive input/list | 180 / 150 | 24,850 / 9,180 |
 
 Growing static composition around the same interactive counter now grows HTML
@@ -116,6 +134,31 @@ creation code reduces the larger fixture, and its browser payload is constant
 across the two static sizes. This demonstrates the static/interactivity boundary;
 the existing interactive runtime cost remains substantial. These are distinct
 HTML/DOM-creation build products, not a gzip-only total-payload speed claim.
+
+Direct host binding measurements use the same ordinary DOM-creation comparison.
+They include the existing kernel, mounting, events and binding validation helper;
+the interactive runtime has not been replaced by a smaller browser core.
+
+| Static host cards + local counter | HTML raw / gzip B | HTML-associated JS raw / gzip sum B | Ordinary DOM-creation JS raw / gzip sum B |
+|---|---:|---:|---:|
+| 1 card | 275 / 209 | 11,139 / 4,466 | 10,156 / 3,981 |
+| 60 cards | 3,511 / 378 | 11,141 / 4,465 | 13,548 / 4,353 |
+
+These measurements demonstrate that static host content grows HTML, with only
+two bytes of extra node-address digits in JS. They do **not** demonstrate a
+smaller tiny counter bundle: before binding, the owner counter shipped
+10,588 / 4,209 B; binding ships 11,139 / 4,464 B. Its initial state is now visible
+without JS, and static content no longer contributes creation code. Removing
+the fixed runtime cost remains an architectural requirement.
+
+Regression checks cover unchanged names, derived mutable aliases, object
+mutation conservatism, empty text, duplicate host-attribute fallback and shared
+text coercion. Production Chrome checks cover initial content with JavaScript
+disabled, retained root/button/text identity, multiple writes, early returns,
+module routing and recovery after an authored throw. The throwing path is
+compared with the ordinary compiler target: this batch preserves that existing
+commit behavior rather than changing it. Compiler, runtime and Vite builds and
+changed-source lint pass.
 
 ## Historical browser-creation baseline
 
@@ -252,7 +295,7 @@ Source-specific update groups must retain batching and opaque fallbacks.
 |---|---|---|
 | 1, first boundary implemented | Separate initial content from browser execution; emit closed static pages as HTML | Hello and larger static composition ship zero JS; CSS, unknown effects, dev HMR and direct JS consumers remain correct |
 | 2, first mixed boundary implemented | Extend the semantic plan beyond closed-root/primitive-prop placements with interaction roots, source/slot reachability, captures and lifetime requirements | Static parent with interactive child; unused state; callbacks, hidden reads, refs and cleanup; explain every retained client region |
-| 3 | Emit HTML plus a browser binding/event/update program that adopts the needed nodes | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
+| 3, direct host roots implemented | Extend HTML plus browser binding/event/update output to composed children and structural regions | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
 | 4 | Extend the same separation to request HTML and serialized state | Zero-JS static SSR, minimal mixed-page interaction JS, async isolation, payload safety and hydration correctness |
 | 5 | Reduce runtime capabilities required by the derived browser program | Scheduling/lifetime core, optional access routing/host adapters, positional versus keyed lists, opaque fallback and retained identity |
 
