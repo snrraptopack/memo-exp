@@ -16,6 +16,7 @@ import {
 } from '@memoized-dom/compiler';
 import type { ResolvedAdapterOptions } from '../options';
 import type { InitialPage } from '../initial-html';
+import { initialBrowserPrefix } from '../initial-html';
 import {
   acceptsSource,
   cleanViteId,
@@ -50,6 +51,8 @@ export interface GraphPluginContext {
 
 export interface CompiledGraph {
   readonly initialPage?: InitialPage;
+  readonly initialBrowserOutput?: ReadonlyMap<string, string>;
+  readonly initialBrowserMaps?: ReadonlyMap<string, CompilerSourceMap>;
   files: ReadonlySet<string>;
   output: ReadonlyMap<string, string>;
   maps: ReadonlyMap<string, CompilerSourceMap>;
@@ -282,7 +285,7 @@ export async function compileGraph(
   }
   const rootId = compiled.applicationRoot?.rootId ?? 'App';
   const initialHtml = emitInitialHtml(compiled.initialRender);
-  const initialMountModule = compiled.initialRender.kind === 'html' ? compiled.initialRender.mountModuleId : undefined;
+  const initialMountModule = compiled.initialRender.kind !== 'browser' ? compiled.initialRender.mountModuleId : undefined;
   const initialEntry = initialMountModule !== undefined
     ? [...sourceIds].find(([, id]) => id === initialMountModule)?.[0]
     : undefined;
@@ -329,6 +332,8 @@ export async function compileGraph(
         .filter(style => !eagerStyles.has(style))),
     }));
   const output = new Map<string, string>();
+  const initialBrowserOutput = new Map<string, string>();
+  const initialBrowserMaps = new Map<string, CompilerSourceMap>();
   const maps = new Map<string, CompilerSourceMap>();
   const css = new Map<string, string>();
   const lazyComponentKeys = new Set(compiled.routeDefinitions
@@ -356,6 +361,10 @@ export async function compileGraph(
           )
         : code,
     );
+    if (compiled.initialBrowserOutput?.[id] !== undefined) {
+      initialBrowserOutput.set(file, (compiled.css?.[id]
+        ? `import ${JSON.stringify(`./${basename(file)}?memo-style.css`)};\n` : '') + compiled.initialBrowserOutput[id]!);
+    }
     const map = compiled.maps[id]!;
     // Vite attaches this transform map to the absolute module id. Keeping the
     // compiler's project-relative source (`./src/View.tsx`) makes Node resolve
@@ -366,11 +375,19 @@ export async function compileGraph(
       file,
       sources: map.sources.map((source) => source === id ? file : source),
     });
+    const initialMap = compiled.initialBrowserMaps?.[id];
+    if (initialMap) initialBrowserMaps.set(file, { ...initialMap, file,
+      sources: initialMap.sources.map(source => source === id ? file : source),
+    });
   }
   return {
     files: new Set(sourceIds.keys()),
-    ...(initialHtml === null || initialEntry === undefined || compiled.initialRender.kind !== 'html' ? {} : {
-      initialPage: { entry: initialEntry, target: compiled.initialRender.target, html: initialHtml },
+    ...(initialBrowserOutput.size ? { initialBrowserOutput, initialBrowserMaps } : {}),
+    ...(initialHtml === null || initialEntry === undefined || compiled.initialRender.kind === 'browser' ||
+        compiled.initialRender.kind === 'mixed' && !compiled.initialBrowserOutput ? {} : {
+      initialPage: { entry: initialEntry, target: compiled.initialRender.target, html: initialHtml,
+        ...(compiled.initialRender.kind === 'mixed' ? { browserEntry: initialBrowserPrefix + encodeURIComponent(initialEntry) } : {}),
+      },
     }),
     output,
     maps,

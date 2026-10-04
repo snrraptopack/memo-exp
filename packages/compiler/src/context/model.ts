@@ -8,6 +8,7 @@
 
 import type * as t from '../ast/compiler-types';
 import type { BaseNode, ScopeAnalysis } from '../ast';
+import type { InitialBrowserRoot } from '../planning/initial-browser';
 import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { OwnerListOperation } from '../analysis/owner-list-structure';
 import type {
@@ -142,6 +143,8 @@ export interface TransparentPresentationComponent {
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */
 export interface InternalMemoDomOptions extends MemoDomOptions {
+  /** Available only in the separate HTML-associated browser target. */
+  initialBrowserRoot?: InitialBrowserRoot;
   rootId?: string;
   rootComponent?: string;
   /** Application-wide route graph supplied by compileModules(). */
@@ -387,6 +390,7 @@ export type HelperPath = CompilerPath<
 >;
 
 export interface Ctx {
+  initialBrowserRoot: InitialBrowserRoot | null;
   runtimePath: string;
   hotRuntimePath: string;
   routerPath: string;
@@ -739,6 +743,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   );
   const runtimePath = opts.runtimePath ?? '@memoized-dom/runtime';
   return {
+    initialBrowserRoot: opts.initialBrowserRoot ?? null,
     runtimePath,
     hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',

@@ -63,6 +63,7 @@ export { registerConditionalEffect, registerEffect } from './effect';
 export type { EffectCallback, EffectCondition } from './effect';
 
 export { materializeMarkup } from './markup';
+export { adoptInitialRoot } from './initial-root';
 
 export {
   setText,

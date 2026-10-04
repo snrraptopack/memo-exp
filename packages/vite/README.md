@@ -55,11 +55,19 @@ closed composed page ship zero application JavaScript, including runtime code.
 Imported and extracted component CSS remains in the build. No authored code is
 executed during this proof.
 
-This first boundary requires one unconsumed two-argument `mount('id', App)`
+The boundary requires one unconsumed two-argument `mount('id', App)`
 entry and an empty `<div id="id"></div>` directly inside the HTML body. Unknown
 initializers/imports, events, refs, effects, unsupported HTML/property semantics,
-additional scripts or ambiguous shells retain browser execution. Mixed graphs
-still ship their DOM factories. Development keeps mounting and HMR; fullstack
+additional scripts or ambiguous shells retain browser execution. A proven static
+parent around interactive components remains in HTML; a separate browser entry
+creates its live children and adopts the original static nodes. Increasing that
+static composition does not add component creation code to JavaScript.
+
+Extraction currently requires a direct root JSX return and closed primitive
+props at its browser boundaries. Captured writes, object/callback props, content
+slots, root structural regions and dynamic imports retain the ordinary DOM
+program. Interactive children still create DOM through the existing runtime;
+this is not complete hydration or resumability. Development keeps mounting and HMR; fullstack
 `serverEntry` builds keep their existing SSR path.
 
 The compiler's initial-content plan and the next steps for interactive regions

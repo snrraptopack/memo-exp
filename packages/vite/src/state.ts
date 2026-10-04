@@ -7,6 +7,8 @@ import type { InitialPage } from './initial-html';
 
 export class AdapterState {
   initialPage?: InitialPage;
+  readonly initialBrowserOutput = new Map<string, string>();
+  readonly initialBrowserMaps = new Map<string, CompilerSourceMap>();
   readonly files = new Set<string>();
   readonly output = new Map<string, string>();
   readonly maps = new Map<string, CompilerSourceMap>();
@@ -28,6 +30,10 @@ export class AdapterState {
   hotUpdateFailed = false;
   replace(graph: CompiledGraph): void {
     this.initialPage = graph.initialPage;
+    this.initialBrowserOutput.clear();
+    for (const [file, code] of graph.initialBrowserOutput ?? []) this.initialBrowserOutput.set(file, code);
+    this.initialBrowserMaps.clear();
+    for (const [file, map] of graph.initialBrowserMaps ?? []) this.initialBrowserMaps.set(file, map);
     this.files.clear();
     for (const file of graph.files) this.files.add(file);
     this.output.clear();

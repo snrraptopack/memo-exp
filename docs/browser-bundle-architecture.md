@@ -28,7 +28,8 @@ ABI, runtime registrations and DOM creation statements. The browser case records
 the first requirement that prevented a closed initial-content proof, including
 events, refs, lifecycle work or unknown initialization.
 
-The proof supports closed constants, string interpolation, simple branches,
+The proof supports unchanged `let` bindings, closed constants, primitive arithmetic,
+string concatenation/interpolation, simple branches,
 objects used as props and component composition across linked modules. It never
 calls authored functions or evaluates source with JavaScript `eval`. Unknown
 calls, getters, external imports and module side effects retain browser execution,
@@ -49,17 +50,41 @@ with JavaScript disabled. A larger page with forty instances of an imported
 component also emits zero JS assets. HTML and CSS remain visible. These tests
 use independent fixtures, never example sources.
 
-Compiler and Vite package builds and changed-source lint pass. Verification
-passes 88 tests across eight files: initial plans, production HTML builds,
-existing Vite integration, mounting, DOM templates, hydration templates and
-SSR isolation/concurrency. The production browser test verifies visible text,
-CSS and no script requests with JavaScript disabled.
+Mixed pages now have a separate compiler-generated browser target. A closed,
+event-free root with live child components retains its static ancestors and
+closed composition in HTML. The content plan carries browser placement markers;
+DOM emission creates only those child regions and adopts the original static
+nodes into the mounted application. No extra wrapper elements are introduced.
+The Vite HTML entry selects a separate virtual module graph only after proving
+the shell can receive that HTML. Ordinary JS entries retain their original
+factories. Development and server compilation do not generate the alternate
+browser target.
 
-This is the first implementation boundary. An interactive descendant currently
-keeps the full browser graph, including static ancestors. Extracting minimal
-browser regions and adopting existing HTML is unfinished. The HTML proof is
-conservative; it is not yet a complete interaction analysis for arbitrary JS.
-The existing DOM program remains available to direct JS entry consumers.
+The mixed proof uses lexical binding identity and captured write information.
+Aliases of written state cannot become static HTML. It currently requires a
+direct JSX root return, closed primitive boundary props and no dynamic module
+loading/evaluation. Object mutation/escape, callback props, content slots and root
+structural regions retain the ordinary browser program. Child refs/effects keep
+their normal component owner and cleanup. Unknown root or module setup also
+retains browser execution. Compiler directives retain their routing/conditional
+semantics rather than becoming HTML attributes.
+
+Production Chrome tests verify original static node identity and independent
+state updates in repeated children. Mount/unmount tests verify ownership and
+removal of the retained static nodes. Invalid placement markers are checked
+before any retained nodes move. The alternate browser product also carries its
+own authored source maps. Fixtures never read examples.
+
+Compiler, runtime and Vite builds and changed-source lint pass. The selected
+initial-plan, HTML ownership, production browser, mounting, markup/hydration,
+Vite integration and SSR isolation/concurrency suites pass 105 tests across
+nine files. A skipped static instance of the same component also preserves the
+following interactive instances' source identities.
+
+This is still a partial architecture change. Live children currently start as
+HTML markers and create their initial DOM through the existing runtime. Their
+full initial HTML, state serialization, binding-only browser code and subsequent
+adoption remain unfinished. The compiler does not yet prove arbitrary JS static.
 
 `bun run bench:size:html` measures production HTML and every emitted JS chunk
 separately, using published packages and stable authored fixtures. Its reports
@@ -73,12 +98,24 @@ Production measurements for the implemented boundary (default Vite minification)
 |---|---:|---:|
 | Static shell | 149 / 129 | 0 / 0 |
 | Forty composed static cards | 2,046 / 258 | 0 / 0 |
+| Unchanged name and derived greeting | 120 / 112 | 0 / 0 |
 | Owner counter | 180 / 151 | 10,588 / 4,209 |
 | Interactive input/list | 180 / 150 | 24,850 / 9,180 |
 
-The interactive measurements show the remaining architecture work: the first
-boundary has removed JavaScript from closed static pages, while interactive
-graphs still pay for DOM creation and the existing runtime.
+Growing static composition around the same interactive counter now grows HTML
+without growing JavaScript. The same authored graphs built through an ordinary
+JS entry provide a DOM-creation comparison:
+
+| Static cards + one counter | HTML raw / gzip B | HTML-associated JS raw / gzip sum B | Ordinary DOM-creation JS raw / gzip sum B |
+|---|---:|---:|---:|
+| 1 card | 267 / 209 | 11,315 / 4,446 | 10,643 / 4,128 |
+| 60 cards | 3,503 / 380 | 11,315 / 4,446 | 15,849 / 4,855 |
+
+The adoption helper increases JS for the tiny mixed fixture. Removing static
+creation code reduces the larger fixture, and its browser payload is constant
+across the two static sizes. This demonstrates the static/interactivity boundary;
+the existing interactive runtime cost remains substantial. These are distinct
+HTML/DOM-creation build products, not a gzip-only total-payload speed claim.
 
 ## Historical browser-creation baseline
 
@@ -214,7 +251,7 @@ Source-specific update groups must retain batching and opaque fallbacks.
 | Order | Work | Required evidence |
 |---|---|---|
 | 1, first boundary implemented | Separate initial content from browser execution; emit closed static pages as HTML | Hello and larger static composition ship zero JS; CSS, unknown effects, dev HMR and direct JS consumers remain correct |
-| 2, next | Extend the semantic plan with interaction roots, source/slot reachability, captures and lifetime requirements | Static parent with interactive child; unused state; callbacks, hidden reads, refs and cleanup; explain every retained client region |
+| 2, first mixed boundary implemented | Extend the semantic plan beyond closed-root/primitive-prop placements with interaction roots, source/slot reachability, captures and lifetime requirements | Static parent with interactive child; unused state; callbacks, hidden reads, refs and cleanup; explain every retained client region |
 | 3 | Emit HTML plus a browser binding/event/update program that adopts the needed nodes | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
 | 4 | Extend the same separation to request HTML and serialized state | Zero-JS static SSR, minimal mixed-page interaction JS, async isolation, payload safety and hydration correctness |
 | 5 | Reduce runtime capabilities required by the derived browser program | Scheduling/lifetime core, optional access routing/host adapters, positional versus keyed lists, opaque fallback and retained identity |

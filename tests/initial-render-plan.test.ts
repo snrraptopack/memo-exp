@@ -18,6 +18,15 @@ describe('initial content and browser requirements', () => {
     expect(result.output['./App.tsx']).toContain('registerRootFactory');
   });
 
+  it('renders unchanged let variables and primitive derivations without browser execution', () => {
+    const result = compile(`import {prefix} from './copy'; export function App(){
+      let name='Ada'; const greeting=prefix+name; const total=(3+4)*2;
+      return <main><h1>{greeting}</h1><p>{total}</p><span>{typeof name}</span></main>;
+    }`, { './copy.ts': `export const prefix='Hello ';` });
+    expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Hello Ada</h1><p>14</p><span>string</span></main>');
+    expect(result.initialRender.kind).toBe('html');
+  });
+
   it('plans cross-module composition, closed props, defaults and children', () => {
     const result = compile(`
       import { Card } from './Card'; import { title } from './copy';
@@ -107,7 +116,50 @@ describe('initial content and browser requirements', () => {
     const result = compile(`import { Counter } from './Counter'; export function App(){ return <main><h1>Static</h1><Counter/></main>; }`, {
       './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
     });
+    expect(result.initialRender.kind).toBe('mixed');
+    expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Static</h1><!--mmd:initial:0--></main>');
+    expect(result.output['./App.tsx']).toContain('Static');
+    expect(result.initialBrowserOutput?.['./App.tsx']).not.toContain('Static');
+    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('adoptInitialRoot');
+    expect(result.initialBrowserMaps?.['./App.tsx']?.sourcesContent?.[0]).toContain('<h1>Static</h1>');
+  });
+
+  it('preserves an interactive instance identity after an omitted static instance of the same component', () => {
+    const result=compile(`import {Card} from './Card';export function App(){return <main><Card live={false}/><Card live={true}/></main>;}`, {
+      './Card.tsx': `export function Card({live}){let n=0;return <section>{live?<button onClick={()=>n++}>{n}</button>:<span>Static card</span>}</section>;}`,
+    });
+    expect(emitInitialHtml(result.initialRender)).toBe('<main><section><span>Static card</span></section><!--mmd:initial:0--></main>');
+    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('/Card[1]');
+  });
+
+  it('keeps unchanged names in an HTML shell around repeated interactive children', () => {
+    const result = compile(`import {Counter} from './Counter'; export function App(){let name='Ada';
+      return <main><h1>{'Hello '+name}</h1><Counter/><Counter/></main>;}`, {
+      './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
+    });
+    expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Hello Ada</h1><!--mmd:initial:0--><!--mmd:initial:1--></main>');
+    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('/Counter[1]');
+  });
+
+  it.each([
+    `import {name,change} from './state'; export function App(){return <main><h1>{name}</h1><Counter action={change}/></main>;}`,
+    `export function App(){let name='Ada';function change(){name='Grace';}return <main><h1>{name}</h1><Counter action={change}/></main>;}`,
+    `export function App(){let name='Ada';function change(){eval('name="Grace"');}return <main><h1>{name}</h1><Counter action={change}/></main>;}`,
+    `export function App(){const person={name:'Ada'};return <main><h1>{person.name}</h1><Counter/></main>;}`,
+    `export function App(){return <main>{true&&<Counter/>}</main>;}`,
+    `function Card({children}){return <section>{children}</section>;}export function App(){return <main><Card><Counter/></Card></main>;}`,
+  ])('does not extract an unproved interaction boundary', source => {
+    const result = compile(`import {Counter} from './Counter'; ${source}`, {
+      './Counter.tsx': `export function Counter({action}){let n=0;return <button onClick={()=>{n++;action?.();}}>{n}</button>;}`,
+      './state.ts': `export let name='Ada';export function change(){name='Grace';}`,
+    });
     expect(result.initialRender.kind).toBe('browser');
+    expect(result.initialBrowserOutput).toBeUndefined();
+  });
+
+  it('does not replace component ref or routing semantics with ordinary HTML attributes', () => {
+    expect(compile(`function Card({ref}){return <span ref={ref}>Hi</span>;}export function App(){return <Card ref={()=>{}}/>;}`).initialRender.kind).toBe('browser');
+    expect(compile(`export function App(){return <main route="/"><h1>Hello</h1></main>;}`).initialRender.kind).toBe('browser');
   });
 
   it('preserves browser setup even when no rendered node reads its result', () => {

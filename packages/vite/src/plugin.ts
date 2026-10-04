@@ -24,7 +24,7 @@ import {
   normalizeFile,
 } from './paths';
 import { AdapterState } from './state';
-import { applyInitialPage } from './initial-html';
+import { applyInitialPage, initialBrowserPrefix, resolvedInitialBrowserPrefix } from './initial-html';
 import { registerClientStyles } from './dev-assets';
 import { configureFullstackServer } from './fullstack';
 import {
@@ -430,6 +430,21 @@ export function memoizedDom(
       },
     },
     async resolveId(id, importer) {
+      if (id.startsWith(initialBrowserPrefix)) {
+        const file = decodeURIComponent(id.slice(initialBrowserPrefix.length));
+        if (stateFor(this.environment).initialBrowserOutput.has(file)) return resolvedInitialBrowserPrefix + encodeURIComponent(file);
+        this.error('memoized-dom: initial browser entry is missing its compiled graph');
+      }
+      if (importer?.startsWith(resolvedInitialBrowserPrefix)) {
+        importer = decodeURIComponent(importer.slice(resolvedInitialBrowserPrefix.length));
+        if (!id.includes('?memo-style.css')) {
+          const resolved = await this.resolve(id, importer, { skipSelf: true });
+          if (resolved && stateFor(this.environment).initialBrowserOutput.has(normalizeFile(cleanViteId(resolved.id)))) {
+            return resolvedInitialBrowserPrefix + encodeURIComponent(normalizeFile(cleanViteId(resolved.id)));
+          }
+          return resolved;
+        }
+      }
       if (id === serverFunctionsVirtualId) {
         return resolvedServerFunctionsVirtualId;
       }
@@ -466,6 +481,12 @@ export function memoizedDom(
       return null;
     },
     load(id) {
+      if (id.startsWith(resolvedInitialBrowserPrefix)) {
+        const file = decodeURIComponent(id.slice(resolvedInitialBrowserPrefix.length));
+        const code = stateFor(this.environment).initialBrowserOutput.get(file);
+        if (code === undefined) this.error('memoized-dom: initial browser module is missing');
+        return { code, map: stateFor(this.environment).initialBrowserMaps.get(file) ?? { mappings: '' } };
+      }
       if (id === resolvedServerFunctionsVirtualId) {
         if (this.environment.name === 'client') {
           this.error(
@@ -490,6 +511,7 @@ export function memoizedDom(
     transform: {
       filter: { id: sourceId },
       handler(code, id) {
+        if (id.startsWith(resolvedInitialBrowserPrefix)) return null;
         return transformModule(this, code, id);
       },
     },

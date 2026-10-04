@@ -17,6 +17,13 @@ Public compilation APIs:
 - Linked compilation also returns an `initialRender` plan, captured before DOM
   emission. `emitInitialHtml(plan)` emits closed initial content without runtime
   code, or returns `null` when HTML cannot preserve the planned shape.
+- Unchanged `let` variables and closed primitive derivations can produce HTML
+  with zero JavaScript. Unknown initializers retain browser execution.
+- A `mixed` plan retains proven static ancestors as HTML and places live child
+  components at markers. `initialBrowserOutput` and `initialBrowserMaps` contain
+  a separate compiler-generated browser target that adopts that HTML. Ordinary
+  `output`/`maps` remain valid for direct JavaScript entries. The associated HTML
+  and browser target must be used together.
 
 The top-level files are orchestration and whole-program passes:
 

@@ -11,6 +11,7 @@ import { posix } from 'node:path';
 import {
   parseWithEstreeFrontendOrThrow,
   walkAst,
+  cloneNode,
   type BaseNode,
   type EstreeFrontend,
   type AstComment,
@@ -138,6 +139,9 @@ export interface CompiledModules {
   applicationRoot?: CompiledApplicationRoot;
   /** Initial content is independent of the DOM/browser program. */
   initialRender: InitialRenderPlan;
+  /** Separate browser target; valid only with emitInitialHtml(initialRender). */
+  initialBrowserOutput?: Record<string, string>;
+  initialBrowserMaps?: Record<string, CompilerSourceMap>;
 }
 
 function parseModule(
@@ -626,6 +630,7 @@ function compileLinkedModules(
   const initialRender = planInitialRendering(authoredPrograms, applicationRoot,
     (importer, specifier) => resolveModule(importer, specifier, entries, options)?.id,
     options.runtimePath ?? '@memoized-dom/runtime');
+  const emitInitialBrowser = initialRender.kind === 'mixed' && options.hot !== true && options.routedEnvironment !== 'server';
   const routeManifestModule =
     applicationRoot?.moduleId ?? entries.values().next().value?.id;
   const lazyImportsByModule = new Map<string, Record<string, LazyRouteImport>>();
@@ -687,6 +692,8 @@ function compileLinkedModules(
     applicationRoot,
   );
   const output: Record<string, string> = {};
+  const initialBrowserOutput: Record<string, string> = {};
+  const initialBrowserMaps: Record<string, CompilerSourceMap> = {};
   const maps: Record<string, CompilerSourceMap> = {};
   const metadata: Record<string, CompiledModuleMetadata> = {};
   const css: Record<string, string> = {};
@@ -839,6 +846,18 @@ function compileLinkedModules(
         ? { rootComponent: applicationRoot.local }
         : {}),
     };
+    if (emitInitialBrowser && initialRender.kind === 'mixed' && entry.id === initialRender.rootModuleId) {
+      const initialOptions = { ...compileOptions,
+        initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
+          returnSite: initialRender.returnSite, regions: initialRender.regions },
+      };
+      const initialAst = cloneNode(entry.ast);
+      if (sourceMaps) {
+        const compiled = compileAstDetailed(entry.source, initialOptions, initialAst, entry.comments);
+        initialBrowserOutput[entry.originalId] = compiled.code;
+        initialBrowserMaps[entry.originalId] = compiled.map;
+      } else initialBrowserOutput[entry.originalId] = compileAst(entry.source, initialOptions, initialAst, entry.comments);
+    }
     if (sourceMaps) {
       const compiled = compileAstDetailed(entry.source, compileOptions, entry.ast, entry.comments);
       output[entry.originalId] = compiled.code;
@@ -855,6 +874,8 @@ function compileLinkedModules(
     maps,
     metadata,
     initialRender,
+    ...(emitInitialBrowser ? { initialBrowserOutput: { ...output, ...initialBrowserOutput },
+      initialBrowserMaps: { ...maps, ...initialBrowserMaps } } : {}),
     routes: [...new Set(linkedRoutes.map(route => route.fullPattern))]
       .sort()
       .map(pattern => ({ pattern })),

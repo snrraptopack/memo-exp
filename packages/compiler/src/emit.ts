@@ -16,6 +16,8 @@
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
+import { initialSite } from './planning/initial-render';
+import { emitInitialBrowserRoot } from './emission/initial-browser';
 import {
   type ComponentPath,
   type Ctx,
@@ -83,6 +85,12 @@ export function emitNode(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): string {
+  const initial = ctx.initialBrowserRoot;
+  if (initial && compName === initial.component && initialSite(node) === initial.returnSite) {
+    return emitInitialBrowserRoot(ctx, scope, node, initial, region => emitNode(
+      ctx, scope, region, compName, compPath, nestedIn, rowCtx, eventOriginId, inSvg, ownerId,
+    ));
+  }
   return astFactory.isJSXFragment(node)
     ? emitFragment(
         ctx,

@@ -76,7 +76,11 @@ export interface InitialPage {
   readonly entry: string;
   readonly target: string;
   readonly html: string;
+  readonly browserEntry?: string;
 }
+
+export const initialBrowserPrefix = '/@memoized-dom/initial/';
+export const resolvedInitialBrowserPrefix = '\0memoized-dom:initial:';
 
 /** null means the shell needs the existing browser entry. */
 export function applyInitialPage(
@@ -134,7 +138,8 @@ export function applyInitialPage(
   }).join('\n');
   const edits = [
     { start: host.opening.end, end: host.closing.start, text: page.html },
-    { start: script.opening.start, end: script.closing.end, text: links },
+    { start: script.opening.start, end: script.closing.end, text: links + (page.browserEntry
+      ? `<script type="module" src="${page.browserEntry.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></script>` : '') },
   ].sort((left, right) => right.start - left.start);
   let html = shell;
   for (const edit of edits) html = html.slice(0, edit.start) + edit.text + html.slice(edit.end);

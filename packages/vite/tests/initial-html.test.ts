@@ -54,6 +54,13 @@ describe('HTML first production builds', () => {
     expect(result.files.filter(file => file.type === 'chunk' || /\.m?js$/.test(file.fileName))).toEqual([]);
   });
 
+  it('ships unchanged variables and derived constants with zero JavaScript', async () => {
+    const result = await production(await fixture(`export function App(){let name='Ada';const greeting='Hello '+name;
+      return <h1>{greeting}</h1>;}`));
+    expect(result.html).toContain('<h1>Hello Ada</h1>');
+    expect(result.files.some(file => file.type === 'chunk')).toBe(false);
+  });
+
   it('keeps a larger composed static page at zero JavaScript and preserves CSS', async () => {
     const root = await fixture(`import './page.css'; import {Card} from './Card';
       export function App(){return <main><h1>Hello</h1>${Array.from({length: 40}, (_, index) => `<Card title="Card ${index}"/>`).join('')}</main>;}`, {
@@ -78,14 +85,83 @@ describe('HTML first production builds', () => {
     expect(result.files.some(file => file.type === 'chunk')).toBe(false);
   });
 
-  it('retains the browser program for an interactive descendant', async () => {
+  it('ships a static ancestor as HTML with a separate interactive descendant program', async () => {
     const root = await fixture(`import {Counter} from './Counter'; export function App(){return <main><h1>Hello</h1><Counter/></main>;}`, {
       'src/Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
     });
     const result = await production(root);
     expect(result.html).toContain('<script');
-    expect(result.html).not.toContain('<h1>Hello</h1>');
+    expect(result.html).toContain('<h1>Hello</h1>');
+    expect(result.html).toContain('<!--mmd:initial:0-->');
     expect(result.files.some(file => file.type === 'chunk')).toBe(true);
+    expect(result.files.filter(file => file.type === 'chunk').map(file => file.code).join('\n')).not.toContain('Hello');
+  });
+
+  it('keeps JavaScript independent of a growing static composition around the same counter', async () => {
+    const bytes: number[] = [];
+    for (const count of [1, 60]) {
+      const result = await production(await fixture(`import {Counter} from './Counter';import {Card} from './Card';
+        export function App(){return <main>${Array.from({length:count}, (_, index) => `<Card title="Static card ${index}"/>`).join('')}<Counter/></main>;}`, {
+        'src/Card.tsx': `export function Card({title}){return <section><h2>{title}</h2><p>Static body.</p></section>;}`,
+        'src/Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
+      }));
+      expect(result.html.match(/<section>/g)).toHaveLength(count);
+      const js = result.files.filter(file => file.type === 'chunk').map(file => file.code).join('');
+      expect(js).not.toContain('Static card');
+      expect(js).not.toContain('Static body');
+      bytes.push(Buffer.byteLength(js));
+    }
+    expect(Math.abs(bytes[1]! - bytes[0]!)).toBeLessThan(128);
+  });
+
+  it('retains the original HTML nodes while mounting independent interactive children in Chrome', async context => {
+    const executablePath = [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
+      .find((path): path is string => !!path && existsSync(path));
+    if (!executablePath) { context.skip(); return; }
+    const result = await production(await fixture(`import {Counter} from './Counter';export function App(){let name='Ada';
+      return <main><h1>{'Hello '+name}</h1><Counter offset={0} live={false}/><Counter offset={2} live={true}/><Counter offset={10} live={true}/></main>;}`, {
+      'src/Counter.tsx': `export function Counter({offset,live}){let n=0;return <section>{live?<button onClick={()=>n++}>{n+offset}</button>:<span>Static instance</span>}</section>;}`,
+    }));
+    const server = createHttpServer((request, response) => {
+      const file = result.files.find(item => item.fileName === (request.url === '/' ? 'index.html' : request.url?.slice(1)));
+      if (!file) { response.writeHead(404).end(); return; }
+      response.setHeader('Content-Type', file.type === 'chunk' ? 'text/javascript' : 'text/html');
+      response.end(file.type === 'chunk' ? file.code : file.source);
+    });
+    await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
+    const browser = await puppeteer.launch({executablePath, headless:true});
+    try {
+      const page = await browser.newPage();
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(String(error)));
+      await page.evaluateOnNewDocument(() => {
+        const saved = window as unknown as {initialMain?:Element; initialHeading?:Element};
+        new MutationObserver(() => {
+          saved.initialMain ??= document.querySelector('#root main') ?? undefined;
+          saved.initialHeading ??= document.querySelector('#root h1') ?? undefined;
+        }).observe(document, {childList:true, subtree:true});
+      });
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
+      await page.goto(`http://127.0.0.1:${address.port}/`);
+      await page.waitForSelector('button');
+      expect(await page.$$eval('button', nodes => nodes.map(node => node.textContent))).toEqual(['2','10']);
+      const buttons=await page.$$('button');
+      await buttons[0]!.click();
+      await page.waitForFunction(() => document.querySelector('button')?.textContent === '3');
+      expect(await page.$$eval('button', nodes => nodes.map(node => node.textContent))).toEqual(['3','10']);
+      await buttons[1]!.click();
+      await page.waitForFunction(() => document.querySelectorAll('button')[1]?.textContent === '11');
+      expect(await page.evaluate(() => {
+        const saved = window as unknown as {initialMain?:Element; initialHeading?:Element};
+        return saved.initialMain === document.querySelector('#root main') && saved.initialHeading === document.querySelector('#root h1');
+      })).toBe(true);
+      expect(await page.$eval('#root', node => [...node.childNodes].filter(child => child.nodeType === 8).length)).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+      await new Promise<void>((done,reject)=>server.close(error=>error?reject(error):done()));
+    }
   });
 
   it('retains browser lifecycle and entry side effects', async () => {
