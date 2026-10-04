@@ -555,11 +555,77 @@ vanilla. All twenty-one correctness scenarios and mixed sequences passed before
 timing; every sample checked text, classes, order and retained identity. Local
 timings vary and this binding batch makes no CPU speed claim.
 
-The next runtime boundary to investigate is list hydration adoption. Both
+At the end of the input/empty-list batch, the next boundary was list hydration adoption. Both
 reconcilers should keep the shared DOM/ownership protocol while an optional
 hydration controller owns SSR row validation and adoption. Browser list graphs
 still retain that validation machinery today. This work is not implemented by
 the input/empty-list batch.
+
+## List adoption owned by the hydration host
+
+The shared list DOM protocol now asks the optional hydration controller to claim
+a list. Its transaction owns primitive-key validation, server row order,
+per-row cursor push/pop and final range validation. Ordinary row creation calls
+its factory directly. Both positional and keyed reconcilers retain their shared
+DOM movement, scheduling, identity and cleanup operations. Server rendering still
+writes the same markers; initial build HTML still uses its separate validated
+node range. Successful adoption releases the list transaction before later
+client-created rows.
+
+An authored factory error stays primary if cursor validation also fails,
+including a thrown `undefined`. Disposing during a row factory still cleans
+its returned entry and prevents further reconciliation. Mismatched keys/order
+and extra server rows retain the existing mount recovery. This boundary removes
+the SSR list validator and mismatch class from initial-list binding graphs.
+Ordinary mount still includes marker detection and its own mismatch class.
+
+Whole application measurements against `7a81e98`, minified / gzip bytes:
+
+| Product | Before JS B | After JS B |
+|---|---:|---:|
+| HTML-bound input/list | 17,941 / 6,799 | 17,157 / 6,449 |
+| HTML-bound owner keyed list | 25,311 / 9,241 | 24,525 / 8,893 |
+| HTML-bound positional list, one card | 18,524 / 6,935 | 17,739 / 6,589 |
+| HTML-bound empty todo, one card | 18,003 / 6,821 | 17,219 / 6,473 |
+| Published browser input/list, ordinary mount | 17,481 / 6,979 | 16,932 / 6,749 |
+| Published browser owner keyed list, ordinary mount | 24,898 / 9,725 | 24,334 / 9,484 |
+
+Counters, module state and composition graphs are unchanged. Closed static HTML
+products still ship zero JS. The large fixed list/ownership cost remains;
+this boundary does not establish that the overall runtime is small enough.
+
+Moving the validator also has an explicit hydration-inclusive cost. Source
+graphs including `@memoized-dom/runtime/hydrate`, compiled from the same stable
+fixtures and compressed once, measure:
+
+| Hydration-inclusive source graph | Before JS B | After JS B |
+|---|---:|---:|
+| Owner counter | 19,623 / 7,011 | 20,318 / 7,277 |
+| Input/list | 28,142 / 10,213 | 28,287 / 10,269 |
+| Owner keyed list | 35,590 / 12,933 | 35,724 / 12,996 |
+
+The current full hydration document retains the new list method even for a
+counter. This is a cost of the existing general hydration entry; more precise
+structural hydration capabilities remain future work. `bench:size:audit --hydrate`
+now reports that product separately so future browser savings cannot
+hide hydration growth. Ordinary SSR rendering remains covered independently.
+
+Runtime build, changed-source lint, existing keyed/positional reconciliation,
+compiled initial binding, SSR isolation/concurrency, hydration cursor/recovery
+and production integration checks pass. Eleven new host tests cover retained
+identity, later client creation, extra rows, unconsumed row content, unstable
+keys, disposal during creation and primary error preservation. Published
+positional and keyed integration cases also recover extra server rows and keep
+subsequent append working. All twenty-four production initial-HTML checks pass.
+All twelve published/source browser graphs also pass interaction checks in each
+audit, with and without the hydration capability installed.
+
+The local DOM comparison uses the baseline runtime with the same compiler and
+authored inputs, three samples in ABBA order for create/update/append1k/clear at
+10k rows. All twenty-one correctness scenarios and mixed sequences pass before
+timing, with text/class/order/retained-identity checks after every sample.
+Vanilla also changes substantially between order pairs. These local results
+make no CPU speed claim; payload reduction is the verified gain.
 
 Local DOM comparison against `47751b1` uses five samples in ABBA order for
 10k-row update/swap/append1k/clear across all eight state/row variants and vanilla.

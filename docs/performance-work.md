@@ -2139,3 +2139,20 @@ A local ABBA comparison against `3e8f1fb` also passed all twenty-one correctness
 scenarios and mixed sequences, then measured update/append1k at 10k rows with
 three samples and per-sample retained-identity checks. Local timing variation
 does not establish a CPU improvement for this architecture batch.
+
+The following runtime batch moves SSR list adoption validation into the optional
+hydration controller. Both reconcilers keep their shared DOM/ownership protocol.
+Initial input/list JS falls from 17,941 / 6,799 to 17,157 / 6,449 minified/gzip
+bytes; ordinary published input/list falls from 17,481 / 6,979 to 16,932 / 6,749.
+Hydration-inclusive graphs grow slightly, including 266 gzip bytes for the owner
+counter and 56/63 for input/keyed lists; the architecture record reports both
+products. `bench:size:audit --hydrate` preserves that comparison in future runs.
+
+Focused correctness gates cover key/order/extent mismatches, disposal during
+creation, primary errors including `throw undefined`, SSR isolation, initial
+binding and real hydration recovery. A runtime-only local comparison against
+`7a81e98` passes all twenty-one DOM scenarios and mixed sequences, then measures
+10k-row create/update/append1k/clear with three samples in ABBA order and retained
+identity checks. Both framework and vanilla timings drift, so no CPU improvement
+is claimed. Further compiler composition/request-state and runtime capability
+work remains in `browser-bundle-architecture.md`.

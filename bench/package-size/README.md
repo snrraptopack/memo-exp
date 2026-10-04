@@ -73,6 +73,18 @@ retained list nodes. Use `PUPPETEER_EXECUTABLE_PATH` to select Chromium. Omit th
 flag for size-only runs. Artifacts, checkout metadata and results live in
 ignored `dist/audit/`; examples are not test inputs.
 
+Include the optional hydration capability in these same graphs with:
+
+```bash
+bun run bench:size:audit --hydrate --verify
+```
+
+This writes a separate `dist/audit-hydration/` report. Browser verification checks
+client interactions with the capability installed; the hydration test suites
+cover actual server-node adoption and mismatch recovery. Record both reports
+when moving work across the browser/hydration boundary, since reducing one graph
+can increase the other.
+
 The explicit-index input/list fixture now selects the compiler's positional
 DOM-only capability. Metafiles verify that it omits the general keyed reconciler
 and key encoder. Keep the owner keyed-list fixture alongside it: shared list DOM

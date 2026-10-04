@@ -68,8 +68,7 @@ it.each(['bindings', 'mixed', 'conditional', 'list', 'input'] as const)('omits S
     expect(inputs.some(path => path.endsWith('/dist/initial-list.js'))).toBe(initial && kind==='list');
     expect(inputs.some(path => path.endsWith('/dist/initial-input.js'))).toBe(initial && kind==='input');
     for (const feature of ['mount', 'hydration-error', 'hydration-marker']) {
-      // Lists currently share their SSR row protocol and mismatch error.
-      expect(inputs.some(path => path.endsWith(`/dist/${feature}.js`))).toBe(!initial || kind==='list' && feature==='hydration-error');
+      expect(inputs.some(path => path.endsWith(`/dist/${feature}.js`))).toBe(!initial);
     }
   }
 });
@@ -102,4 +101,5 @@ it('ships positional reconciliation only for explicit index keys on DOM-only row
   expect(inputs.some(path => path.endsWith('/dist/list-dom.js'))).toBe(true);
   expect(inputs.some(path => path.endsWith('/dist/list.js'))).toBe(false);
   expect(inputs.some(path => path.endsWith('/dist/list-keys.js'))).toBe(false);
+  expect(inputs.some(path => path.endsWith('/dist/hydration-error.js'))).toBe(false);
 });

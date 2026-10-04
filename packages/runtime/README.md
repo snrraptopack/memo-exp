@@ -229,6 +229,15 @@ successful bind, the initial node array and its cleanup closure are released;
 removed rows are not kept alive by the initial descriptor. Initial HTML does not
 replace the existing SSR row marker protocol or hydration recovery.
 
+SSR list adoption is delegated to `HydrationController.claimList`. The host
+validates primitive keys, server row order and the final range extent, and runs
+each row factory inside its cursor transaction. An authored factory failure
+remains primary even if cursor validation also fails, including `throw undefined`.
+Both reconcilers retain their shared DOM and ownership operations. Initial HTML
+binding and ordinary creation do not import the SSR list validator or mismatch
+class; server rendering still writes the same row markers. Successful adoption
+releases the list transaction before subsequent client-created rows.
+
 Empty initial ranges bind only their anchors; later rows use their ordinary
 factories, including component ownership and effects.
 

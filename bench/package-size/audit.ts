@@ -7,10 +7,11 @@ import { build } from 'esbuild';
 import { compileModules } from '@memoized-dom/compiler';
 import { sizeFixtures } from './fixtures';
 
-if (process.argv.slice(2).some(arg => arg !== '--verify')) throw new Error('Use --verify or no arguments');
+if (process.argv.slice(2).some(arg => arg !== '--verify' && arg !== '--hydrate')) throw new Error('Use --verify, --hydrate or no arguments');
+const hydration = process.argv.includes('--hydrate');
 
 const root = resolve(import.meta.dirname, '../..');
-const directory = resolve(import.meta.dirname, 'dist/audit');
+const directory = resolve(import.meta.dirname, hydration ? 'dist/audit-hydration' : 'dist/audit');
 const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 const status = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim();
 mkdirSync(directory, { recursive: true });
@@ -18,7 +19,7 @@ const rows: Array<{ fixture: string; graph: string; raw: number; gzip: number; b
   inputs: Array<{ path: string; bytes: number }> }> = [];
 for (const [fixture, sources] of Object.entries(sizeFixtures)) {
   const compiled = compileModules({ ...sources,
-    './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
+    './main.ts': `${hydration ? "import '@memoized-dom/runtime/hydrate';" : ''}import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
   });
   const modules = new Map(Object.entries(compiled).map(([id, source]) => [posix.resolve('/', id), source]));
   for (const graph of ['package', 'source'] as const) {
@@ -38,8 +39,8 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({
           contents: modules.get(args.path)!, loader: 'ts', resolveDir: root,
         }));
-        if (graph === 'source') builder.onResolve({ filter: /^@memoized-dom\/runtime(?:\/client)?$/ }, () => ({
-          path: resolve(root, 'packages/runtime/src/index.ts'),
+        if (graph === 'source') builder.onResolve({ filter: /^@memoized-dom\/runtime(?:\/client|\/hydrate)?$/ }, args => ({
+          path: resolve(root, args.path.endsWith('/hydrate') ? 'packages/runtime/src/hydrate.ts' : 'packages/runtime/src/index.ts'),
         }));
       } }],
     });
@@ -58,6 +59,7 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
 const lines = ['# Browser bundle audit', '',
   `HEAD: ${revision}. Working tree includes changes: ${status !== ''}.`, '',
   'Stable authored fixtures compiled by the current compiler. Each graph includes mount and root metadata.', '',
+  `Optional hydration entry included: ${hydration}. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
   '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
   '| Fixture | Graph | Raw B | Gzip B | Brotli B |', '|---|---|---:|---:|---:|',
   ...rows.map(row => `| ${row.fixture} | ${row.graph} | ${row.raw} | ${row.gzip} | ${row.brotli} |`), ''];
@@ -123,6 +125,6 @@ for (const row of rows.filter(row => row.graph === 'source')) {
     ...row.inputs.map(input => `| ${input.path} | ${input.bytes} |`), '');
 }
 writeFileSync(resolve(directory, 'results.json'), JSON.stringify({ measuredAt: new Date().toISOString(),
-  revision, status, verified: process.argv.includes('--verify'), rows }, null, 2));
+  revision, status, hydration, verified: process.argv.includes('--verify'), rows }, null, 2));
 writeFileSync(resolve(directory, 'results.md'), lines.join('\n') + '\n');
 console.log(`Report: ${resolve(directory, 'results.md')}`);

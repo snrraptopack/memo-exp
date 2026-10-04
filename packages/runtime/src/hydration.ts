@@ -33,6 +33,7 @@ export type {
 } from './hydration-marker';
 
 export interface HydrationController {
+  claimList(parent: Node, identity: string): ClaimedHydrationList;
   claimRange(
     kind: Exclude<PairedHydrationMarkerKind, 'r'>,
     identity: string,
@@ -48,6 +49,14 @@ export interface HydrationController {
    * validation to sequential createElement/createTextNode claims.
    */
   claimMarkup(markup: string): Node[];
+}
+
+/** Row validation and cursor transactions belong to the hydration host. */
+export interface ClaimedHydrationList {
+  readonly open: Comment;
+  readonly end: Node;
+  adoptRow<T>(key: unknown, encoded: string | null, create: () => T): { value: T; marker: Comment };
+  finish(): void;
 }
 export interface HydrationNodeExpectation {
   readonly nodeType: number;
@@ -582,6 +591,43 @@ export class HydrationDocument
 
   claimRow(listId: string, encodedKey: string): ClaimedHydrationRange {
     return this.#index.claimRow(listId, encodedKey);
+  }
+
+  claimList(parent: Node, identity: string): ClaimedHydrationList {
+    const range = this.claimRange('l', identity);
+    this.recordFragmentRange(parent, range);
+    let next: Node | null = range.open.nextSibling;
+    return {
+      open: range.open,
+      end: range.end,
+      adoptRow: <T>(key: unknown, encoded: string | null, create: () => T) => {
+        if (encoded === null) {
+          throw new HydrationMismatchError(identity, 'a hydration-stable primitive row key', `${typeof key} key`);
+        }
+        const row = this.claimRow(identity, encoded);
+        if (row.open !== next) {
+          const actual = next?.nodeType === 8
+            ? `<!--${(next as Comment).data}-->` : 'a row at a different server position';
+          throw new HydrationMismatchError(`${identity}:${encoded}`, `<!--mmd:w:${identity}:${encoded}--> in client key order`, actual);
+        }
+        next = row.end;
+        this.pushRange(row);
+        let value: T;
+        let failed = false;
+        let failure: unknown;
+        try { value = create(); }
+        catch (error) { failed = true; failure = error; }
+        try { this.popRange(); }
+        catch (error) { if (!failed) throw error; }
+        if (failed) throw failure;
+        return { value: value!, marker: row.open };
+      },
+      finish: () => {
+        if (next !== range.end) {
+          throw new HydrationMismatchError(identity, 'the list close after the final client row', 'additional server row content');
+        }
+      },
+    };
   }
 
   pushRange(range: ClaimedHydrationRange): void {

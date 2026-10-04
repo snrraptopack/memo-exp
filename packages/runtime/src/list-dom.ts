@@ -1,6 +1,5 @@
-/** Shared list anchors, row creation and hydration protocol. */
+/** Shared list anchors and row creation; SSR adoption is supplied by the host. */
 import { getActiveEnvironment, type EntityId } from './kernel';
-import { HydrationMismatchError } from './hydration-error';
 import type { ListEntry } from './list';
 
 /** Compiler-proven, single-host rows in an initial HTML range. */
@@ -38,56 +37,40 @@ export function createListDOM<T>(
   initial?: InitialListDOM,
 ) {
   const environment = getActiveEnvironment();
-  const controller = environment.hydration;
-  const adopted = initial ? undefined : controller?.claimRange('l', idPrefix);
+  let adopted = initial ? undefined : environment.hydration?.claimList(parent, idPrefix);
   const open = initial?.open ?? adopted?.open ?? environment.document.createComment(`mmd:l:${idPrefix}`);
   const end = initial?.end ?? adopted?.end ?? environment.document.createComment('/mmd');
   let initialRows=initial?.rows;
   let initialDispose=initial?.dispose;
   if (initial === undefined && adopted === undefined) {
     parent.appendChild(open); parent.appendChild(end);
-  } else if (adopted !== undefined) controller!.recordFragmentRange(parent, adopted);
-  let nextAdoptedRow: Node | null = adopted?.open.nextSibling ?? null;
+  }
   const dom = { environment, open, end, adopting: adopted !== undefined || initialRows!==undefined, createRow, finishAdoption, disposeInitial };
   return dom;
 
   function createRow(item: T, key: unknown, rowId: EntityId, index: number, encoded: string | null): ListEntry | null {
-    if (dom.adopting && !initialRows && encoded === null) {
-      throw new HydrationMismatchError(idPrefix, 'a hydration-stable primitive row key', `${typeof key} key`);
-    }
-    const row = dom.adopting && !initialRows ? controller!.claimRow(idPrefix, encoded!) : undefined;
     if (initialRows && index>=initialRows.length) throw new Error('memo-dom: initial list received additional client rows');
-    if (row !== undefined && row.open !== nextAdoptedRow) {
-      const actual = nextAdoptedRow?.nodeType === 8
-        ? `<!--${(nextAdoptedRow as Comment).data}-->` : 'a row at a different server position';
-      throw new HydrationMismatchError(`${idPrefix}:${encoded}`, `<!--mmd:w:${idPrefix}:${encoded}--> in client key order`, actual);
-    }
-    if (row !== undefined) { nextAdoptedRow = row.end; controller!.pushRange(row); }
-    let entry: ListEntry | undefined;
-    let failed = false;
-    let failure: unknown;
-    try { entry = initialRows ? create(item, rowId, index, initialRows[index]) : create(item, rowId, index); }
-    catch (error) { failed = true; failure = error; }
-    if (row !== undefined) {
-      try { controller!.popRange(); }
-      catch (error) { if (!failed) throw error; }
-    }
-    if (failed) throw failure;
-    if (isDisposed()) { cleanup(entry!); return null; }
+    let entry: ListEntry;
+    let rowMarker: Comment | undefined;
+    if (adopted) {
+      const row = adopted.adoptRow(key, encoded, () => create(item, rowId, index));
+      entry = row.value;
+      rowMarker = row.marker;
+    } else entry = initialRows ? create(item, rowId, index, initialRows[index]) : create(item, rowId, index);
+    if (isDisposed()) { cleanup(entry); return null; }
     if (encoded !== null && environment.mode !== 'client-create') {
-      const marker = row?.open ?? getActiveEnvironment().document.createComment(`mmd:w:${idPrefix}:${encoded}`);
-      const nodes = entry!.nodes;
-      entry!.nodes = Array.isArray(nodes) ? [marker, ...nodes] : [marker, nodes as Node];
+      const marker = rowMarker ?? getActiveEnvironment().document.createComment(`mmd:w:${idPrefix}:${encoded}`);
+      const nodes = entry.nodes;
+      entry.nodes = Array.isArray(nodes) ? [marker, ...nodes] : [marker, nodes as Node];
     }
-    return entry!;
+    return entry;
   }
 
   function finishAdoption(): void {
     if (!dom.adopting) return;
     if (initialRows) { initialRows=undefined;initialDispose=undefined;dom.adopting=false;return; }
-    if (nextAdoptedRow !== adopted!.end) {
-      throw new HydrationMismatchError(idPrefix, 'the list close after the final client row', 'additional server row content');
-    }
+    adopted!.finish();
+    adopted = undefined;
     dom.adopting = false;
   }
 

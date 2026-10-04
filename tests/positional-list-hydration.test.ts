@@ -44,10 +44,22 @@ it.each([true,false])('adopts index markers and keeps append/clear/reinsert corr
   host.querySelector<HTMLButtonElement>('.append')!.click();expect(host.querySelector('li')!.textContent).toBe('0:b');
 });
 
-it('uses the shared hydration mismatch recovery for incorrect index markers',async()=>{
+it.each([true,false])('uses shared recovery for incorrect index markers (positional=%s)',async positional=>{
   const onHydrateError=vi.fn();
-  const {App,host}=await setup(output=>output.replace('mmd:w:App/items:n:1','mmd:w:App/items:n:9'));
+  const {App,host}=await setup(output=>output.replace('mmd:w:App/items:n:1','mmd:w:App/items:n:9'),positional);
   mounted=mount('root',App,{onHydrateError});
   expect(onHydrateError).toHaveBeenCalled();
   expect([...host.querySelectorAll('li')].map(node=>node.textContent)).toEqual(['0:a','1:b','2:b']);
+});
+
+it.each([true,false])('recovers additional server rows and keeps later insertions working (positional=%s)',async positional=>{
+  const onHydrateError=vi.fn();
+  const {App,host}=await setup(output=>output.replace('<!--/mmd--></ul>',
+    '<!--mmd:w:App/items:n:3--><li>3:unexpected</li><!--/mmd--></ul>'),positional);
+  mounted=mount('root',App,{onHydrateError});
+  expect(onHydrateError).toHaveBeenCalledOnce();
+  expect(onHydrateError.mock.calls[0]![0].message).toContain('additional server row content');
+  expect([...host.querySelectorAll('li')].map(node=>node.textContent)).toEqual(['0:a','1:b','2:b']);
+  host.querySelector<HTMLButtonElement>('.append')!.click();
+  expect([...host.querySelectorAll('li')].map(node=>node.textContent)).toEqual(['0:a','1:b','2:b','3:b']);
 });
