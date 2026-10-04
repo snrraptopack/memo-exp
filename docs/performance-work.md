@@ -2156,3 +2156,14 @@ binding and real hydration recovery. A runtime-only local comparison against
 identity checks. Both framework and vanilla timings drift, so no CPU improvement
 is claimed. Further compiler composition/request-state and runtime capability
 work remains in `browser-bundle-architecture.md`.
+
+Named module mutators supplied as component callback props now retain their
+canonical writes through the linked component graph, including forwarded props.
+A native `onClick={run}` uses the same handler analysis as `event => run(event)`;
+named prop calls apply linked module effects before the ordinary argument analysis.
+This fixes a stale parent/module reader without wrapping the callback value at
+the prop boundary. Existing receiver calls, normal-return commits, thrown errors,
+local callback ownership and conservative argument effects remain in place.
+The regression fixtures cover named/object props, forwarding, return values and
+`throw undefined` in ordinary rendering and imported writes in initial binding.
+This is a correctness fix; it has no CPU speed claim.

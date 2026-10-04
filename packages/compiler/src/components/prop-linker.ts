@@ -45,6 +45,11 @@ function resolveRef(
   if (ref.type === 'published-callback') return;
   // Forward only a whole callback prop, never a property/getter of it.
   if (ref.type !== 'prop' || ref.path.length !== 0) target.publishedCallback = false;
+  if (ref.type === 'callback') {
+    for (const key of ref.keys) target.keys.add(key);
+    target.rootFallback ||= ref.rootFallback;
+    return;
+  }
   if (ref.type === 'state') {
     target.keys.add(ref.key);
     return;

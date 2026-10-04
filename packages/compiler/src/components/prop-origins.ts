@@ -20,11 +20,13 @@ import {
   propNameForBinding,
   type ComponentPropsPlan,
 } from './props';
+import { summarizeHelper } from '../helper-summaries';
 
 export type ComponentPropSourceRef =
   | { type: 'state'; key: string }
   | { type: 'transparent' }
   | { type: 'published-callback' }
+  | { type: 'callback'; keys: string[]; rootFallback: boolean }
   | { type: 'prop'; name: string; path: string[] }
   | { type: 'root' }
   | { type: 'local' };
@@ -288,6 +290,22 @@ function sourcesOf(
   ) as unknown as t.Expression;
   if (isPublishedScalarCallback(ctx, owner, unwrapped)) {
     return [{ type: 'published-callback' }];
+  }
+  if (astFactory.isIdentifier(unwrapped)) {
+    const binding = astBindingAt(ctx, unwrapped as BaseNode, unwrapped.name);
+    if (binding?.scope.isProgramScope === true) {
+      const imported = ctx.importedFunctions.get(unwrapped.name);
+      const summary = imported ?? (ctx.helpers.has(unwrapped.name)
+        ? summarizeHelper(ctx, unwrapped.name) : undefined);
+      if (summary !== undefined) {
+        return [{ type: 'callback',
+          keys: [...new Set([...summary.writes, ...summary.boundedWrites]
+            .map(key => imported === undefined ? canonicalStateKey(ctx, key) : key))].sort(),
+          // Native event arguments cannot be mapped back to caller-owned state.
+          rootFallback: summary.unbounded || summary.parameterWrites.length > 0,
+        }];
+      }
+    }
   }
   const listSources = listItemSources(ctx, owner, tag, unwrapped);
   if (listSources !== null) return listSources;

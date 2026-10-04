@@ -48,6 +48,13 @@ export function isPublishedPropCallback(ctx: Ctx, component: string, origin: Rea
     ctx.linkedComponentPropSources.get(component)?.get(access.name)?.publishedCallback === true;
 }
 
+/** Named calls also need the module effects supplied through their prop. */
+export function hasLinkedPropWrites(ctx: Ctx, component: string, origin: ReactiveOrigin): boolean {
+  const access = propAccess(ctx, component, origin);
+  return access !== null &&
+    (ctx.linkedComponentPropSources.get(component)?.get(access.name)?.keys.length ?? 0) > 0;
+}
+
 /**
  * Applies one prop effect and returns whether the origin is a named prop.
  */

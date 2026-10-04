@@ -21,7 +21,8 @@
 
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
-import { type BaseNode } from './ast';
+import { cloneNode, type BaseNode } from './ast';
+import { generatedIdentifier } from './identifiers';
 import {
   astBindingAt,
   memberRootName,
@@ -233,16 +234,13 @@ export function buildHandler(
         memberRootName(value) === propObject));
 
   if (propHandler) {
-    return wrapSharedHandlerWithOrigin(
-      ctx,
-      value,
-      buildEventOriginCommit(
-        ctx,
-        compName,
-        rowCtx,
-        eventOriginId,
-      ),
-    );
+    // Use the same linked effects as an authored `event => props.run(event)`.
+    // The callback value and receiver remain intact; commits follow normal exit.
+    const event = generatedIdentifier(ctx, 'event');
+    const handler = astFactory.arrowFunctionExpression([event],
+      astFactory.callExpression(cloneNode(value), [cloneNode(event)]));
+    analyzeHandler(ctx, handler, compName, rowCtx, true, eventOriginId);
+    return handler;
   }
 
   // A compiler-recognized form owns its own submission lifecycle and publishes

@@ -30,7 +30,7 @@ import {
 } from '../components/prop-projections';
 import { transparentListExpression } from '../lists/source-shapes';
 import { isCallToImported } from '../features/data-sources/discovery';
-import { isPublishedPropCallback } from '../components/prop-effects';
+import { hasLinkedPropWrites, isPublishedPropCallback } from '../components/prop-effects';
 import {
   walkHandler,
 } from './traversal';
@@ -540,6 +540,12 @@ export function planHandlerWrites(
           // The callee publishes its lexical effects. Suppress only its
           // receiver fallback; nested calls in arguments are still visited.
           mutateScope(p, () => {});
+          return;
+        }
+        if (astFactory.isIdentifier(callee) && origin?.locality === 'prop' &&
+            hasLinkedPropWrites(ctx, compName, origin)) {
+          noteReceiverEffect(p, origin);
+          noteBoundedArguments(p, p.node.arguments);
           return;
         }
       }
