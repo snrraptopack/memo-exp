@@ -95,6 +95,13 @@ reports that cost and the increase in ordinary list bundles from sharing the
 initial-range protocol. The optional initial-list validator is omitted from
 ordinary JS-entry graphs.
 
+The HTML suite also measures a controlled-input todo with an empty initial list,
+surrounded by one or sixty static cards. It records the ordinary creation
+product alongside initial HTML plus bindings. Text-like inputs preserve current
+value and native reset semantics; later list rows retain their normal factories.
+These are payload measurements, not CPU timings. The architecture record lists
+the extra fixed binding cost and the smaller JS growth as static content grows.
+
 The runtime build preserves module boundaries so unrelated feature initialization
 does not survive alongside a used helper. The full distributed ESM graph has
 more files and can be larger in aggregate while applications ship less. Both

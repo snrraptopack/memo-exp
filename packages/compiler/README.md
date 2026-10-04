@@ -691,18 +691,25 @@ Omitting `key` still means item identity.
 
 ## Initial list bindings
 
-Initial HTML supports nonempty closed
-arrays with plain host rows. Row callbacks use the shared normalization plan;
+Initial HTML supports closed nonempty arrays with plain host rows and closed
+empty arrays. Row callbacks use the shared normalization plan;
 row bindings remain live even when their initial values are known. The first
 mount binds existing row nodes, and the same factory creates later rows through
 the existing positional or keyed reconciler. An unchanged closed list, including
 composed static rows, can ship HTML with zero browser JavaScript.
 
-Empty interactive lists, nested structural rows, composed interactive rows,
+Empty lists bind their anchors without evaluating a row. Their future factories
+can use composition, destructuring and row lifecycle work through ordinary
+creation. For nonempty initial arrays, nested structural rows, composed rows,
 destructured interactive callbacks and unproved setup/ref/lifecycle behavior
-retain ordinary DOM creation. Controlled input properties also still require
-their placement/initial-value proof. These limits leave further work in the
-browser-binding target.
+retain ordinary DOM creation.
+
+The binding target also supports closed initial `value` properties on text,
+search, email, URL, password and telephone inputs. It restores property-only
+defaults so native form reset matches ordinary creation, then uses the existing
+slot updater for later changes. Other input types and HTML-only property writes
+remain conservative fallbacks. Nested/composed binding and request state still
+need further work.
 
 ## Initial conditional bindings
 

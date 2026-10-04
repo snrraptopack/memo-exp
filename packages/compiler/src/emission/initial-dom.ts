@@ -8,6 +8,7 @@ export interface InitialDomElement {
   readonly path: readonly number[];
   readonly texts: readonly {readonly path: readonly number[]; readonly live: boolean; readonly empty: boolean}[];
   readonly staticAttributes: readonly string[];
+  readonly inputValueSite?: string;
 }
 export interface InitialDomRoot {
   readonly target: string;
@@ -17,7 +18,7 @@ export interface InitialDomRoot {
   readonly conditions: Readonly<Record<string, {readonly branch: number; readonly open: readonly number[];
     readonly end: readonly number[]; readonly returnSite: string | null}>>;
   readonly lists: Readonly<Record<string, {readonly open: readonly number[]; readonly end: readonly number[];
-    readonly count: number; readonly row: InitialDomRoot}>>;
+    readonly count: number; readonly row: InitialDomRoot | null}>>;
 }
 
 export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}>): InitialDomRoot | null {
@@ -30,8 +31,14 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
     nodes.forEach(node=>{
       const current=index++;
       if (node.kind === 'list') {
+        if (lists[node.site]) {valid=false;return;}
+        if (!node.rows.length) {
+          lists[node.site]={open:[...parent,current],end:[...parent,current+1],count:0,row:null};
+          index++;
+          return;
+        }
         const first=node.rows[0];
-        if (lists[node.site] || !first || first.length!==1 || first[0]?.kind!=='element' || !first[0].site) {valid=false;return;}
+        if (!first || first.length!==1 || first[0]?.kind!=='element' || !first[0].site) {valid=false;return;}
         const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site});
         if (!containerRow) {valid=false;return;}
         const row={...containerRow,elements:Object.fromEntries(Object.entries(containerRow.elements).map(([site,element])=>
@@ -55,6 +62,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
       const path=[...parent,current];
       let childIndex=0;
       elements[node.site]={path,
+        ...(node.tag==='input' ? {inputValueSite:node.attributes.find(attribute=>attribute.name==='value')?.site} : {}),
         texts:node.children.flatMap(child=>{
           const current=childIndex;
           childIndex += child.kind === 'conditional' ? child.children.length+2 : child.kind==='list' ? child.rows.length+2 : 1;

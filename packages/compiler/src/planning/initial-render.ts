@@ -101,10 +101,9 @@ export function planInitialRendering(
     const fn=childNodes(node,'arguments')[0];
     if (fn && (nodeField(fn,'async') || nodeField(fn,'generator'))) need(scope,'Async list callbacks need browser execution');
     const callback = planListCallback(node as MapCallExpression, message => need(scope, message));
-    if (!callback.jsx || callback.prelude.length || bindings && callback.itemPattern.type !== 'Identifier') {
+    if (!callback.jsx || input.items.length>0 && (callback.prelude.length || bindings && callback.itemPattern.type !== 'Identifier')) {
       need(scope, 'Initial lists need a closed JSX row callback');
     }
-    if (bindings && !input.items.length) need(scope, 'Empty initial lists need a symbolic row placement proof');
     const previous = inStructure;
     inStructure = true;
     try {

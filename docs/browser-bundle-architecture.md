@@ -500,10 +500,66 @@ factory arity, failed frames including `throw undefined`, and disposal before or
 during binding. Existing keyed/positional, SSR list and compiler golden suites
 remain passing.
 
-Empty interactive arrays, destructured interactive callbacks, nested structures,
+At `3e8f1fb`, empty interactive arrays, destructured interactive callbacks, nested structures,
 composed interactive rows and unproved refs/setup/lifecycle/opaque expressions
 still use general creation. Controlled inputs, nested placement, composition and
 request HTML plus serialized state are outstanding architecture work.
+
+## Empty list and controlled input binding
+
+Closed empty lists now emit and bind their anchors. No initial row is evaluated,
+so there is no need to infer a symbolic host shape from an absent item. Future
+rows use the existing factory and reconciler, including composed/destructured
+rows with effects and cleanup. The stricter plain-host proof still applies to
+nonempty initial lists.
+
+Closed initial values on text, search, email, URL, password and telephone inputs
+now have a binding operation. It assigns the authored current value, then removes
+the serialized `value` attribute. This establishes the browser's dirty-value
+flag and restores the ordinary factory's empty default value. Native form reset
+therefore matches property-only creation. Later updates retain the existing slot
+guards and source routing. This optional helper is absent from ordinary creation
+graphs. Initial binding uses authored state; pre-JavaScript input event replay
+is not implemented.
+
+Other input types, static HTML-only input property writes, nested/composed
+nonempty binding and request HTML plus serialized state remain outstanding.
+Static unchanged pages and closed static lists still ship zero JS.
+
+Against `3e8f1fb`, the unchanged input/list fixture now emits 351 B HTML
+(249 B gzip), instead of 180 / 150 B. JavaScript changes from 17,853 / 6,873 B
+to 17,941 / 6,799 B: 88 B more minified and 74 B less gzip. This is a fixed
+binding cost, not evidence that the list runtime is small enough.
+
+| Empty todo / static cards | Initial HTML, minified / gzip B | Binding JS, minified / gzip B | Ordinary creation JS, minified / gzip B |
+|---|---:|---:|---:|
+| One | 353 / 254 | 18,003 / 6,821 | 17,368 / 6,618 |
+| Sixty | 3,589 / 427 | 18,008 / 6,821 | 20,776 / 6,999 |
+
+Fifty-nine more static cards add five binding JS bytes versus 3,408 ordinary
+creation JS bytes. Ordinary JS-entry and Vite HTML products have different
+bootstrap costs; compare growth within each product. Existing counter, module
+state, composition and non-input list measurements are unchanged.
+
+Focused compiler/DOM suites, ordinary emission goldens, keyed/positional SSR
+hydration and ownership/error recovery checks pass. All twenty-four production
+integration checks pass, including Chrome with JS disabled and interactions
+after binding. Twelve published/source browser graphs pass the interaction
+audit. Self-contained fixtures verify whitespace rejection, duplicate todo
+values, retained nodes, clear/reinsert, primitive input values, native reset,
+conditional input reentry and lifecycle work in later composed rows.
+
+The local DOM comparison against `3e8f1fb` completed in ABBA order with three
+samples for update and append1k at 10k rows across all state/row placements plus
+vanilla. All twenty-one correctness scenarios and mixed sequences passed before
+timing; every sample checked text, classes, order and retained identity. Local
+timings vary and this binding batch makes no CPU speed claim.
+
+The next runtime boundary to investigate is list hydration adoption. Both
+reconcilers should keep the shared DOM/ownership protocol while an optional
+hydration controller owns SSR row validation and adoption. Browser list graphs
+still retain that validation machinery today. This work is not implemented by
+the input/empty-list batch.
 
 Local DOM comparison against `47751b1` uses five samples in ABBA order for
 10k-row update/swap/append1k/clear across all eight state/row variants and vanilla.

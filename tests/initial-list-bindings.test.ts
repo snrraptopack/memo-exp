@@ -10,7 +10,7 @@ let app:MountedApplication|undefined;
 afterEach(()=>{
   app?.unmount();app=undefined;
   for (const id of registeredIds()) unregisterSubtree(id);
-  resetScheduler();vi.restoreAllMocks();document.body.replaceChildren();
+  resetScheduler();vi.restoreAllMocks();vi.unstubAllGlobals();document.body.replaceChildren();
 });
 function compile(source:string) {
   const runtimePath='@memoized-dom/runtime/testing';
@@ -84,8 +84,31 @@ it('binds empty row text and addresses following independent list ranges',async(
   expect(document.querySelector('p')!.textContent).toBe('1');expect(document.querySelector('span')!.textContent).toBe('1');
 });
 
+it.each(['key={item.id}','key={index}'])('binds an empty extent and creates its first %s row normally',async key=>{
+  await mount(key.includes('item')?'empty-keyed':'empty-positional',`export function App(){let items=[];let n=0;return <main>
+    <button class="append" onClick={()=>{items=[...items,{id:n++,label:'new'}];}}>Add</button>
+    <button class="clear" onClick={()=>{items=[];}}>Clear</button><ul>
+    {items.map((item,index)=><li ${key}>{index}:{item.label}</li>)}</ul><p>{n}</p></main>;}`);
+  const main=document.querySelector('main'),ul=document.querySelector('ul');expect(rows()).toEqual([]);
+  click('.append');expect(rows()[0]!.textContent).toBe('0:new');expect(document.querySelector('p')!.textContent).toBe('1');
+  const retained=rows()[0];click('.append');expect(rows()[0]).toBe(retained);
+  click('.clear');expect(rows()).toEqual([]);click('.append');expect(rows()[0]!.textContent).toBe('0:new');
+  expect(document.querySelector('main')).toBe(main);expect(document.querySelector('ul')).toBe(ul);
+});
+
+it('uses ordinary future factories and lifecycle for an empty composed list',async()=>{
+  const log:string[]=[];vi.stubGlobal('__initialListLog',log);
+  await mount('empty-component',`
+    function Row({label}){$effect(()=>{globalThis.__initialListLog.push('mount');return ()=>{globalThis.__initialListLog.push('dispose');};});return <li>{label}</li>;}
+    export function App(){let items=[];return <main><button class="append" onClick={()=>{items=[{id:1,label:'created'}];}}>Add</button>
+      <button class="clear" onClick={()=>{items=[];}}>Clear</button>{items.map(({id,label})=><Row key={id} label={label}/>)}</main>;}`);
+  expect(log).toEqual([]);click('.append');expect(rows()[0]!.textContent).toBe('created');
+  expect(log).toEqual(['mount']);click('.clear');expect(rows()).toEqual([]);expect(log).toEqual(['mount','dispose']);
+  click('.append');app!.unmount();app=undefined;expect(log).toEqual(['mount','dispose','mount','dispose']);expect(registeredIds()).toEqual([]);
+});
+
 it.each([
-  `let items=[];`, `let items=getItems();`,
+  `let items=getItems();`,
 ])('falls back for an unproved initial source: %s',setup=>{
   const result=compile(`function getItems(){return ['one'];}export function App(){${setup}return <main>
     <button onClick={()=>{items=['two'];}}>Replace</button>{items.map(item=><li>{item}</li>)}</main>;}`);

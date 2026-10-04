@@ -2115,7 +2115,7 @@ Tiny list products and ordinary list bundles currently grow with the shared
 initial-range protocol and retained future creation. Exact payload comparisons,
 proof limits and cleanup guarantees are in `browser-bundle-architecture.md` under
 “Initial HTML for lists.” Controlled inputs and empty/nested/composed interactive
-list placement remain outstanding.
+list placement remained outstanding at `3e8f1fb`.
 
 A local comparison against `47751b1` covers update/swap/append1k/clear at 10k rows,
 five samples in ABBA order across all state/row placements plus vanilla. All
@@ -2124,3 +2124,18 @@ pass. Vanilla and framework timings drift across the order pairs, so this batch
 has no CPU speed claim. Initial binding itself is checked separately in compiled
 DOM fixtures and production Chrome, including later row events and disposal
 before/during failed binding.
+
+The next architecture batch binds closed empty list anchors and text-like input
+values. Future empty-list rows retain ordinary component ownership and lifecycle;
+input binding preserves native reset behavior. With sixty static cards rather
+than one, an empty todo adds five binding JS bytes versus 3,408 ordinary creation
+JS bytes. The unchanged input/list fixture grows 88 minified bytes and shrinks
+74 gzip bytes. Focused DOM, production Chrome, hydration, ownership and published
+package interaction checks pass. These payload results make no CPU speed claim;
+the full figures and remaining proof limits are in
+`browser-bundle-architecture.md` under “Empty list and controlled input binding.”
+
+A local ABBA comparison against `3e8f1fb` also passed all twenty-one correctness
+scenarios and mixed sequences, then measured update/append1k at 10k rows with
+three samples and per-sample retained-identity checks. Local timing variation
+does not establish a CPU improvement for this architecture batch.

@@ -47,6 +47,67 @@ async function production(root: string) {
 }
 
 describe('HTML first production builds', () => {
+  it('binds controlled input values and empty todo extents in Chrome',async context=>{
+    const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
+      .find(path=>path&&existsSync(path));
+    if (!executablePath) {context.skip();return;}
+    const result=await production(await fixture(`export function App(){let items=[];let temp='seed';let open=true;return <main>
+      <h1>Static todo surroundings</h1><form><input class="todo" type="text" value={temp} onInput={e=>{temp=e.target.value;}}/></form>
+      <button class="add" onClick={()=>{if(!temp.trim())return;items=[...items,temp];temp='';}}>Add</button>
+      <button class="clear" onClick={()=>{items=[];}}>Clear</button><ul>{items.map((item,index)=><li key={index}>{index}-{item}</li>)}</ul>
+      <button class="toggle" onClick={()=>{open=!open;}}>Toggle</button>
+      {open?<section><input class="branch" value={temp} onInput={e=>{temp=e.target.value;}}/></section>:null}<p>{temp}</p></main>;}`));
+    expect(result.html).toContain('value="seed"');expect(result.html).toContain('mmd:initial:list:');
+    expect(result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('\n')).not.toContain('Static todo surroundings');
+    const server=createHttpServer((request,response)=>{
+      const file=result.files.find(item=>item.fileName===(request.url==='/'?'index.html':request.url?.slice(1)));
+      if (!file) {response.writeHead(404).end();return;}
+      response.setHeader('Content-Type',file.type==='chunk'?'text/javascript':'text/html');
+      response.end(file.type==='chunk'?file.code:file.source);
+    });
+    await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));
+    const browser=await puppeteer.launch({executablePath,headless:true});
+    try {
+      const address=server.address();if(!address||typeof address==='string')throw new Error('Missing HTTP address');
+      const url=`http://127.0.0.1:${address.port}/`;
+      const staticPage=await browser.newPage();await staticPage.setJavaScriptEnabled(false);await staticPage.goto(url);
+      expect(await staticPage.$eval('.todo',node=>(node as HTMLInputElement).value)).toBe('seed');
+      expect(await staticPage.$$eval('li',nodes=>nodes.length)).toBe(0);await staticPage.close();
+      const page=await browser.newPage();const errors:string[]=[];page.on('pageerror',error=>errors.push(String(error)));
+      await page.evaluateOnNewDocument(()=>{
+        const state=window as unknown as {field?:Element;heading?:Element;created?:string[]};state.created=[];
+        const create=document.createElement.bind(document);
+        document.createElement=((...args:Parameters<Document['createElement']>)=>{state.created!.push(args[0]);return create(...args);}) as Document['createElement'];
+        new MutationObserver(()=>{
+          state.field??=document.querySelector('.todo')??undefined;state.heading??=document.querySelector('h1')??undefined;
+        }).observe(document,{subtree:true,childList:true});
+      });
+      await page.goto(url);await page.waitForSelector('.todo');
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {field:HTMLInputElement;created:string[]};const field=document.querySelector<HTMLInputElement>('.todo')!;
+        return {same:field===state.field,value:field.value,defaultValue:field.defaultValue,attribute:field.getAttribute('value'),created:state.created.filter(tag=>tag!=='link')};
+      })).toEqual({same:true,value:'seed',defaultValue:'',attribute:null,created:[]});
+      await page.click('.add');await page.waitForFunction(()=>document.querySelector('li')?.textContent==='0-seed');
+      expect(await page.$eval('.todo',node=>(node as HTMLInputElement).value)).toBe('');
+      await page.evaluate(()=>{const field=document.querySelector<HTMLInputElement>('.todo')!;field.value='new';field.dispatchEvent(new Event('input',{bubbles:true}));});
+      await page.waitForFunction(()=>document.querySelector('p')?.textContent==='new');
+      await page.click('.add');await page.waitForFunction(()=>document.querySelector('li:last-child')?.textContent==='1-new');
+      await page.click('.toggle');await page.waitForFunction(()=>document.querySelector('.branch')===null);
+      await page.click('.toggle');await page.waitForSelector('.branch');
+      expect(await page.$eval('.branch',node=>[(node as HTMLInputElement).value,(node as HTMLInputElement).defaultValue])).toEqual(['','']);
+      await page.evaluate(()=>{const field=document.querySelector<HTMLInputElement>('.todo')!;field.value='again';field.dispatchEvent(new Event('input',{bubbles:true}));});
+      await page.waitForFunction(()=>document.querySelector('p')?.textContent==='again');
+      await page.evaluate(()=>document.querySelector('form')!.reset());
+      expect(await page.$eval('.todo',node=>(node as HTMLInputElement).value)).toBe('');
+      await page.click('.clear');await page.waitForFunction(()=>document.querySelectorAll('li').length===0);
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {field:Element;heading:Element};
+        return state.field===document.querySelector('.todo')&&state.heading===document.querySelector('h1');
+      })).toBe(true);expect(errors).toEqual([]);
+    } finally {
+      await browser.close();await new Promise<void>((done,reject)=>server.close(error=>error?reject(error):done()));
+    }
+  });
   it('binds both list identity modes in Chrome and creates only later rows',async context=>{
     const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
       .find(path=>path&&existsSync(path));

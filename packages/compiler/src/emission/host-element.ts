@@ -50,6 +50,7 @@ import { literalClassValue } from './class-value';
 import type { NodeEmitter } from './node-emitter';
 import { initialNode, initialOrCreate, freshInitialStatement } from './initial-dom';
 import { initialSite } from '../planning/initial-render';
+import { emitInitialInputValue } from './initial-input';
 
 function isInitialLiteral(value: t.Expression): boolean {
   return astFactory.isStringLiteral(value) || astFactory.isNumericLiteral(value) ||
@@ -212,7 +213,7 @@ const childOperations = collectDirectChildren(element.children, {
 });
 const varName = freshNodeName(ctx, scope, tag);
 const adopting=scope.initialDom?.adopting;
-const needsInitialBinding=initial && (childOperations.some(operation=>operation.type !== 'node') || initialSite(element) === scope.initialDom!.plan.returnSite ||
+const needsInitialBinding=initial && (initial.inputValueSite!==undefined || childOperations.some(operation=>operation.type !== 'node') || initialSite(element) === scope.initialDom!.plan.returnSite ||
   open.attributes.some(attribute=>{
     if (!astFactory.isJSXAttribute(attribute)) return true;
     if (initial.staticAttributes.includes(initialSite(attribute))) return false;
@@ -308,6 +309,10 @@ if (hasSpread) {
   scope.updaters.push(() => patch(preparedProps));
 } else {
   for (const attr of open.attributes) {
+    if (initial?.inputValueSite!==undefined && initial.inputValueSite===initialSite(attr)) {
+      emitInitialInputValue(ctx,scope,varName,attr as t.JSXAttribute,ownerId,!initial.staticAttributes.includes(initialSite(attr)));
+      continue;
+    }
     const start=scope.creation.length;
     emitAttribute(attr as t.JSXAttribute);
     if (adopting && !/^on[A-Z]/.test(jsxAttributeName((attr as t.JSXAttribute).name))) {

@@ -229,6 +229,19 @@ successful bind, the initial node array and its cleanup closure are released;
 removed rows are not kept alive by the initial descriptor. Initial HTML does not
 replace the existing SSR row marker protocol or hydration recovery.
 
+Empty initial ranges bind only their anchors; later rows use their ordinary
+factories, including component ownership and effects.
+
+### Initial input HTML
+
+The optional `bindInitialInputValue` operation assigns a compiler-proven
+text-like input's current value before removing the serialized `value`
+attribute. This establishes the dirty-value flag and restores the empty default
+value used by ordinary property initialization. Native form reset therefore
+keeps the same behavior. Binding initializes from authored state; it does not
+implement replay of input events that occurred before JavaScript loaded.
+The helper is omitted from graphs without initial input binding.
+
 The package is independently buildable:
 
 ```bash

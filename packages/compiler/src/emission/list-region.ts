@@ -50,7 +50,7 @@ export function emitListRegion(
     });
   const site = allocateMapSite(call, plan, componentName, scope.usedPrefixes);
   const initial=scope.initialDom?.plan.lists[initialSite(call)];
-  if (scope.initialDom && (!initial || site.form!=='inline')) {
+  if (scope.initialDom && (!initial || initial.row!==null && site.form!=='inline')) {
     throw new Error('memo-dom: initial list needs a host row placement');
   }
   const regionVariable = generatedIdentifier(
@@ -107,7 +107,7 @@ export function emitListRegion(
           eventBindings,
           ctx.lightweightInlineRows.has(call),
           scope,
-          initial?.row,
+          initial?.row ?? undefined,
         );
 
   const args: t.Expression[] = [

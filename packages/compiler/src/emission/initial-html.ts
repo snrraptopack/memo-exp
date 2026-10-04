@@ -43,9 +43,18 @@ export function emitInitialHtml(plan: InitialRenderPlan): string | null {
       const children = emit(node.children, [...ancestors, tag]);
       if (children === null) return null;
       const normalized = new Map<string, string>();
+      const type=node.attributes.find(attribute=>attribute.name.toLowerCase()==='type')?.value;
       for (const { name, value } of node.attributes) {
         // Keep property/style semantics in the backend, separate from the
         // authored, ordered host attributes carried by the content plan.
+        if (name==='value' && tag==='input' && plan.kind==='bindings') {
+          // Text-like input values have a parser representation. Binding also
+          // restores property-only defaults and dirty-value state; HTML alone
+          // cannot preserve native reset behavior for an authored IDL write.
+          if (type!==undefined && (typeof type!=='string' || !['text','search','email','url','password','tel'].includes(type.toLowerCase()))) return null;
+          normalized.set('value',value==null?'':String(value));
+          continue;
+        }
         if (name === 'style' || domPropertyName(name, false) !== null) return null;
         if (name === 'class' || name === 'className') {
           if (value != null && typeof value !== 'string') return null;

@@ -45,6 +45,12 @@ const fixtures = { ...sizeFixtures,
       <button onClick={()=>{items=[...items,{id:3,label:'three'}];}}>Append</button><ul>
       {items.map((item,index)=><li key={${identity==='keyed'?'item.id':'index'}}><b>Row: </b><span>{index}:{item.label}</span></li>)}</ul></main>;}`,
   }]))),
+  ...Object.fromEntries([1,60].map(count=>[`empty-todo-${count}-cards`, {
+    './App.tsx': `export function App(){let items=[];let temp='seed';return <main>
+      ${Array.from({length:count},(_,index)=>`<section><h2>Static card ${index}</h2><p>Ready.</p></section>`).join('')}
+      <input value={temp} onInput={e=>{temp=e.target.value;}}/><ul>{items.map((item,index)=><li key={index}>{index}-{item}</li>)}</ul>
+      <button onClick={()=>{if(!temp.trim())return;items=[...items,temp];temp='';}}>Add todo</button></main>;}`,
+  }])),
 };
 const rows: Array<{ fixture: string; html: number; htmlGzip: number;
   javascript: number; javascriptGzipSum: number; javascriptAssets: number;
@@ -73,7 +79,7 @@ for (const [name, sources] of Object.entries(fixtures)) {
     const row: (typeof rows)[number] = { fixture: name, html: Buffer.byteLength(html.source), htmlGzip: gzipSync(html.source).byteLength,
       javascript: js.reduce((size, file) => size + Buffer.byteLength(file.code), 0),
       javascriptGzipSum: js.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), javascriptAssets: js.length };
-    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.startsWith('list-') || name.endsWith('-counter')) {
+    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.startsWith('list-') || name.startsWith('empty-todo-') || name==='input-list' || name.endsWith('-counter')) {
       // Same authored graph through the ordinary JS-entry DOM creation target.
       const creation = await build({root,configFile:false,logLevel:'silent',
         resolve:{alias:{'@memoized-dom/runtime':resolve(repository,'packages/runtime/dist/index.js')}},

@@ -121,7 +121,7 @@ describe('initial HTML and browser bindings', () => {
   });
 
   it.each([
-    `let n=0;return <main><input value={n}/><button onClick={()=>n++}>Add</button></main>;`,
+    `let n=0;return <main><input type="file" value={n}/><button onClick={()=>n++}>Add</button></main>;`,
     `let n=0;return <main style={{color:'red'}}><button onClick={()=>n++}>Add</button></main>;`,
     `let n=Date.now();return <button onClick={()=>n++}>{n}</button>;`,
     `let n=0;$effect(()=>{});return <button onClick={()=>n++}>{n}</button>;`,
