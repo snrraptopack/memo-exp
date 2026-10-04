@@ -5,8 +5,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler';
 import { mountInitial, resetScheduler, setScheduler } from '@memoized-dom/runtime';
 import { registerRootFactory, rootFactoryStore } from '@memoized-dom/runtime/server';
+import { initialBootstrapDescriptor } from '@memoized-dom/runtime/server';
 import { registeredIds } from '@memoized-dom/runtime/testing';
-import { render, renderToReadableStream } from '../src/index';
+import { render, renderToReadableStream, serve } from '../src/index';
+
+const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
+  compileModulesDetailed(sources, { initialContent: true, ...options });
 
 const entry = `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`;
 let mounted: ReturnType<typeof mountInitial> | undefined;
@@ -14,14 +18,14 @@ afterEach(() => { mounted?.unmount(); mounted = undefined; resetScheduler(); doc
 
 async function fixture(name: string, source: string) {
   const sources = { './main.ts': entry, './App.tsx': source };
-  const server = compileModulesDetailed(sources, { routedEnvironment: 'server', moduleStateCells: true });
-  const client = compileModulesDetailed(sources, { routedEnvironment: 'client' });
+  const server = compileInitial(sources, { routedEnvironment: 'server', moduleStateCells: true });
+  const client = compileInitial(sources, { routedEnvironment: 'client' });
   const directory = join(import.meta.dirname, 'fixtures/out/initial-delivery', name);
   mkdirSync(directory, { recursive: true });
   const serverFile = join(directory, 'server.ts');
   const clientFile = join(directory, 'client.ts');
   writeFileSync(serverFile, server.output['./App.tsx']!);
-  writeFileSync(clientFile, (client.initialBrowserOutput ?? client.output)['./App.tsx']!);
+  writeFileSync(clientFile, client.output['./App.tsx']!);
   return { server, client,
     serverModule: await import(/* @vite-ignore */ pathToFileURL(serverFile).href),
     clientModule: await import(/* @vite-ignore */ pathToFileURL(clientFile).href),
@@ -88,9 +92,27 @@ describe('shared initial server delivery', () => {
   it('rejects stale client contracts before invoking a server factory', async () => {
     const value = await fixture('stale', 'export function App(){return <h1>Hello</h1>;}');
     await expect(render(value.serverModule.App, { initialKey: 'stale-build' })).rejects.toThrow('contracts do not match');
-    const changed = compileModulesDetailed({ './main.ts': entry, './App.tsx': 'export function App(){return <h1>Updated</h1>;}' });
+    const changed = compileInitial({ './main.ts': entry, './App.tsx': 'export function App(){return <h1>Updated</h1>;}' });
     expect(changed.initialDelivery?.key).not.toBe(value.server.initialDelivery?.key);
     expect((await render(value.serverModule.App)).html).toBe('<h1>Hello</h1>');
+  });
+
+  it.each(['stream', 'buffer'] as const)('delivers the matching root with %s delivery and rejects a mismatched server build', async delivery => {
+    const first = await fixture(`selected-${delivery}`, `export function App(){return <h1>Selected root</h1>;}`);
+    const other = await fixture(`other-${delivery}`, `export function App(){return <h1>Other root</h1>;}`);
+    const key = first.server.initialDelivery!.key;
+    const template = `<!doctype html><head></head><body><div id="root"><!--ssr-outlet--></div></body>` +
+      initialBootstrapDescriptor({ key, target: 'root', browser: 'none' });
+    const application = serve();
+    application.ssr(first.serverModule.App, { delivery });
+    application.ssr('/other', other.serverModule.App, { delivery });
+    (application as unknown as { installDocumentTemplate(template: string): void }).installDocumentTemplate(template);
+    const selected = await (await application.fetch(new Request('https://app.test/'))).text();
+    expect(selected).toContain('<h1>Selected root</h1>');
+    expect(selected).not.toMatch(/script|modulepreload|mmd:r:/);
+    const mismatch = await application.fetch(new Request('https://app.test/other'));
+    expect(mismatch.status).toBe(500);
+    expect(await mismatch.text()).not.toContain('<h1>Other root</h1>');
   });
 
   it.each([
@@ -100,13 +122,13 @@ describe('shared initial server delivery', () => {
     `export function App(){const data=$fetch('/api/name');return <h1>{data.name}</h1>;}`,
     `export function App(){let n=0;$effect(()=>n++);return <h1>{n}</h1>;}`,
   ])('keeps request-dependent or externally writable roots on ordinary SSR: %s', source => {
-    const compiled = compileModulesDetailed({ './main.ts': entry, './App.tsx': source }, { routedEnvironment: 'server' });
+    const compiled = compileInitial({ './main.ts': entry, './App.tsx': source }, { routedEnvironment: 'server' });
     expect(compiled.initialDelivery).toBeUndefined();
     expect(compiled.output['./App.tsx']).not.toContain('initialDelivery');
   });
 
   it('allows an exported primitive that is never written', () => {
-    const compiled = compileModulesDetailed({ './main.ts': entry,
+    const compiled = compileInitial({ './main.ts': entry,
       './App.tsx': `export let name='Ada';export function App(){return <h1>{name}</h1>;}` }, { routedEnvironment: 'server' });
     expect(compiled.initialDelivery?.browser).toBe('none');
   });

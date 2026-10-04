@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { readInitialBootstrap, type InitialBootstrap } from '@memoized-dom/runtime/server';
 
 /** A page document split at the SSR outlet for streaming composition. */
 export interface DocumentTemplate {
@@ -6,6 +7,8 @@ export interface DocumentTemplate {
   readonly prefix: string;
   /** Document closing after the application host. */
   readonly suffix: string;
+  /** Compiler identity for this template's sole browser program. */
+  readonly initial?: InitialBootstrap;
 }
 
 /** The single structural marker every page template must carry. */
@@ -19,6 +22,8 @@ export function splitDocumentTemplate(
   template: string,
   source = 'document template',
 ): DocumentTemplate {
+  const bootstrap = readInitialBootstrap(template);
+  if (bootstrap) template = bootstrap.html;
   const index = template.indexOf(SSR_OUTLET);
   if (index === -1) {
     throw new TypeError(`memo-dom: ${source} is missing the ${SSR_OUTLET} marker`);
@@ -31,6 +36,7 @@ export function splitDocumentTemplate(
   return {
     prefix: template.slice(0, index),
     suffix: template.slice(index + SSR_OUTLET.length),
+    ...(bootstrap ? { initial: bootstrap.descriptor } : {}),
   };
 }
 

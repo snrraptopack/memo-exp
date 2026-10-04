@@ -58,27 +58,25 @@ executed during this proof.
 The boundary requires one unconsumed two-argument `mount('id', App)`
 entry and an empty `<div id="id"></div>` directly inside the HTML body. Unknown
 initializers/imports, refs, effects, unsupported HTML/property semantics,
-additional scripts or ambiguous shells retain browser execution. A proven static
-parent around interactive components remains in HTML; a separate browser entry
-creates its live children and adopts the original static nodes. Increasing that
-static composition does not add component creation code to JavaScript.
+additional scripts or ambiguous shells retain browser execution.
 
-Direct interactive host roots with closed initial values also render their
-initial text as HTML. Their browser program binds event/update nodes instead of
-recreating the DOM. Unchanged bindings and closed derived text/attributes stay
-in HTML. Local and module state use the existing update and lifetime machinery.
-This currently requires a single direct host root, without composed children,
-structural regions, refs, effects or unknown setup. HTML validation happens
-before selecting the matching browser target; uncertain shells keep ordinary
-DOM creation. Empty dynamic text uses a comment replaced by a text node during
-binding, after all required node addresses have been validated.
+Production document builds emit one browser graph. The compiler binds the
+initial DOM where its shape is proved; creation instructions remain for later
+rows, branches and other required browser work. Static composition around an
+interactive component adds HTML rather than browser creation instructions.
+Aliases and authored source maps are preserved.
 
-Extraction currently requires a direct root JSX return and closed primitive
-props at its browser boundaries. Captured writes, object/callback props, content
-slots, root structural regions and dynamic imports retain the ordinary DOM
-program. Interactive children still create DOM through the existing runtime;
-this is not complete hydration or resumability. Development keeps mounting and HMR; fullstack
-`serverEntry` builds keep their existing SSR path.
+Fullstack production builds use the same document planning. A static root
+emits no JavaScript assets. An interactive root has one entry that binds its
+server HTML, without importing general hydration. Request-dependent roots
+retain request evaluation and hydration. Vite and the server pair the HTML
+template and root automatically; mismatched builds fail before delivery.
+Development retains mounting and HMR.
+
+A validated shell keeps the authored module script and its nonce/attributes
+when interaction requires it, and removes that script when no browser work is
+needed. Styles remain HTML build dependencies. No virtual duplicate graph,
+alternate bootstrap or compatibility renderer is generated.
 
 The compiler's initial-content plan and the next steps for interactive regions
 are documented in `../../docs/browser-bundle-architecture.md`.

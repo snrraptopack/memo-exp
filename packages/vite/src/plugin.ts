@@ -1,7 +1,7 @@
 /**
  * Vite 8 plugin backed by connected compiler graphs and live module HMR.
  */
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { CompilerSourceMap } from '@memoized-dom/compiler';
 import type {
@@ -25,7 +25,8 @@ import {
   normalizeFile,
 } from './paths';
 import { AdapterState } from './state';
-import { applyInitialPage, initialBrowserPrefix, resolvedInitialBrowserPrefix } from './initial-html';
+import { applyInitialPage } from './initial-html';
+import { initialBootstrapDescriptor } from '@memoized-dom/runtime/server';
 import { registerClientStyles } from './dev-assets';
 import { configureFullstackServer } from './fullstack';
 import {
@@ -130,35 +131,47 @@ export function memoizedDom(
     };
   }
 
+  async function pageDocuments(environmentName: string): Promise<readonly { filename: string; html: string }[]> {
+    if (!config || config.command !== 'build' || environmentName === 'ssr' || config.build.lib) return [];
+    const input = config.build.rollupOptions.input ?? resolve(config.root, 'index.html');
+    const files = typeof input === 'string' ? [input] : Array.isArray(input) ? input : Object.values(input);
+    return Promise.all(files.filter(file => file.endsWith('.html')).map(async file => {
+      const filename = normalizeFile(resolve(config!.root, file));
+      return { filename, html: await readFile(filename, 'utf8') };
+    }));
+  }
+
   async function refreshGraph(
     context: GraphPluginContext,
     state: AdapterState,
     overrides: ReadonlyMap<string, string> = new Map(),
     environmentName = 'client',
   ): Promise<void> {
-    if (config === undefined) {
+    const graphConfig = config;
+    if (graphConfig === undefined) {
       throw new Error(
         'memoized-dom: Vite graph compilation started before config resolution',
       );
     }
     if (state.compiling === undefined) {
-      state.compiling = compileGraph(
+      state.compiling = pageDocuments(environmentName).then(documents => compileGraph(
         graphContext(context),
-        config.root,
+        graphConfig.root,
         entries,
         options,
         overrides,
-        config.command === 'serve',
+        graphConfig.command === 'serve',
         true,
         serverFunctionBarrelEntries,
         environmentName === 'ssr' ? 'server' : 'client',
-      );
+        documents,
+      ));
     }
     const compilation = state.compiling;
     try {
       const graph = await compilation;
       state.replace(graph);
-      await writeRoutesDeclaration(config.root, graph.routes);
+      await writeRoutesDeclaration(graphConfig.root, graph.routes);
       if (devServer !== undefined && environmentName !== 'ssr') {
         registerClientStyles(devServer, state, state.eagerStyles, state.routeStyles, state.routeTree);
       }
@@ -257,11 +270,12 @@ export function memoizedDom(
   function clientEntryCode(
     file: string,
     code: string,
-    environmentName: string,
+    environment: { name: string },
   ): string {
     if (
       options.serverEntry === undefined ||
-      environmentName === 'ssr' ||
+      environment.name === 'ssr' ||
+      stateFor(environment).initialPage !== undefined ||
       !entries.includes(file)
     ) return code;
     // Fullstack entries mount over server markup: append the side-effect
@@ -298,7 +312,7 @@ export function memoizedDom(
     const cached = managed ? state.output.get(file) : undefined;
     if (cached !== undefined) {
       return {
-        code: clientEntryCode(file, cached, context.environment.name),
+        code: clientEntryCode(file, cached, context.environment),
         map: state.maps.get(file)!,
       };
     }
@@ -322,7 +336,7 @@ export function memoizedDom(
         );
       }
       return {
-        code: clientEntryCode(file, compiled, context.environment.name),
+        code: clientEntryCode(file, compiled, context.environment),
         map: state.maps.get(file)!,
       };
     }
@@ -421,32 +435,24 @@ export function memoizedDom(
     transformIndexHtml: {
       order: 'pre',
       handler(html, context) {
-        if (config?.command !== 'build' || options.serverEntry !== undefined) return html;
+        if (config?.command !== 'build') return html;
         for (const [environment, state] of states) {
           if ((environment as { name?: string }).name !== 'client' || !state.initialPage) continue;
-          const initial = applyInitialPage(html, context.filename, config.root,
-            state.initialPage, state.eagerStyles);
-          if (initial !== null) return initial;
+          const prepared = applyInitialPage(html, context.filename, config.root,
+            state.initialPage, state.eagerStyles, options.serverEntry !== undefined);
+          if (prepared === null) throw new Error('memoized-dom: page shell changed after compiler delivery planning');
+          if (options.serverEntry !== undefined) {
+            if (!state.initialDelivery) throw new Error('memoized-dom: missing compiler delivery identity');
+            return prepared + initialBootstrapDescriptor({
+              key: state.initialDelivery.key, target: state.initialDelivery.target, browser: state.initialDelivery.browser,
+            });
+          }
+          return prepared;
         }
         return html;
       },
     },
     async resolveId(id, importer) {
-      if (id.startsWith(initialBrowserPrefix)) {
-        const file = decodeURIComponent(id.slice(initialBrowserPrefix.length));
-        if (stateFor(this.environment).initialBrowserOutput.has(file)) return resolvedInitialBrowserPrefix + encodeURIComponent(file);
-        this.error('memoized-dom: initial browser entry is missing its compiled graph');
-      }
-      if (importer?.startsWith(resolvedInitialBrowserPrefix)) {
-        importer = decodeURIComponent(importer.slice(resolvedInitialBrowserPrefix.length));
-        if (!id.includes('?memo-style.css')) {
-          const resolved = await this.resolve(id, importer, { skipSelf: true });
-          if (resolved && stateFor(this.environment).initialBrowserOutput.has(normalizeFile(cleanViteId(resolved.id)))) {
-            return resolvedInitialBrowserPrefix + encodeURIComponent(normalizeFile(cleanViteId(resolved.id)));
-          }
-          return resolved;
-        }
-      }
       if (id === serverFunctionsVirtualId) {
         return resolvedServerFunctionsVirtualId;
       }
@@ -483,12 +489,6 @@ export function memoizedDom(
       return null;
     },
     async load(id) {
-      if (id.startsWith(resolvedInitialBrowserPrefix)) {
-        const file = decodeURIComponent(id.slice(resolvedInitialBrowserPrefix.length));
-        const code = stateFor(this.environment).initialBrowserOutput.get(file);
-        if (code === undefined) this.error('memoized-dom: initial browser module is missing');
-        return { code, map: stateFor(this.environment).initialBrowserMaps.get(file) ?? { mappings: '' } };
-      }
       if (isServerFunctionImplementation(id)) {
         if (this.environment.name === 'client') {
           this.error('memoized-dom: server function implementations cannot be imported by the client graph');
@@ -524,7 +524,6 @@ export function memoizedDom(
     transform: {
       filter: { id: sourceId },
       handler(code, id) {
-        if (id.startsWith(resolvedInitialBrowserPrefix)) return null;
         return transformModule(this, code, id);
       },
     },

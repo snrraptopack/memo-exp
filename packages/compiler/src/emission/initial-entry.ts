@@ -1,4 +1,4 @@
-/** Select a mount operation only for the separately proved HTML product. */
+/** Select the document mount operation from the shared initial-content proof. */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { identifierLikeName } from '../ast';

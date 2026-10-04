@@ -5,6 +5,9 @@ import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler'
 import { mountInitial, registeredIds, unregisterSubtree, resetScheduler, setScheduler,
   type MountedApplication } from '@memoized-dom/runtime/testing';
 
+const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
+  compileModulesDetailed(sources, { initialContent: true, ...options });
+
 const directory=join(import.meta.dirname,'fixtures/out/initial-lists');
 let app:MountedApplication|undefined;
 afterEach(()=>{
@@ -14,13 +17,13 @@ afterEach(()=>{
 });
 function compile(source:string) {
   const runtimePath='@memoized-dom/runtime/testing';
-  return compileModulesDetailed({'./main.ts':`import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
+  return compileInitial({'./main.ts':`import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
     './App.tsx':source},{runtimePath});
 }
 async function mount(name:string,source:string) {
   const result=compile(source);expect(result.initialRender.kind).toBe('bindings');
   const html=emitInitialHtml(result.initialRender);expect(html).not.toBeNull();
-  mkdirSync(directory,{recursive:true});writeFileSync(join(directory,`${name}.ts`),result.initialBrowserOutput!['./App.tsx']!);
+  mkdirSync(directory,{recursive:true});writeFileSync(join(directory,`${name}.ts`),result.output!['./App.tsx']!);
   document.body.innerHTML=`<div id="root">${html}</div>`;
   const original=[...document.querySelectorAll('*')];
   const create=vi.spyOn(document,'createElement'), text=vi.spyOn(document,'createTextNode');
@@ -43,7 +46,7 @@ it.each(['key={item.id}','key={index}'])('binds initial rows and preserves the %
     {items.map((item,index)=><li ${key} title={item.label}><b>Row: </b><span>{index}:{item.label}</span></li>)}</ul>
     <p>After the list</p></main>;}`);
   const original=rows(),main=document.querySelector('main');
-  expect(result.initialBrowserOutput!['./App.tsx']).not.toContain('Static outside list');
+  expect(result.output!['./App.tsx']).not.toContain('Static outside list');
   click('.reverse');expect(rows().map(row=>row.textContent)).toEqual(['Row: 0:two','Row: 1:one']);
   expect(rows()).toEqual(key.includes('item')?[original[1],original[0]]:original);
   click('.replace');expect(rows().map(row=>row.getAttribute('title'))).toEqual(['two!','one!']);
@@ -112,7 +115,7 @@ it.each([
 ])('falls back for an unproved initial source: %s',setup=>{
   const result=compile(`function getItems(){return ['one'];}export function App(){${setup}return <main>
     <button onClick={()=>{items=['two'];}}>Replace</button>{items.map(item=><li>{item}</li>)}</main>;}`);
-  expect(result.initialBrowserOutput).toBeUndefined();
+  expect(result.initialContent).toBe(false);
 });
 
 it.each([
@@ -121,5 +124,5 @@ it.each([
 ])('falls back for unproved row semantics: %s',row=>{
   const result=compile(`export function App(){let items=['one'];let show=true;return <main>
     <button onClick={()=>{items=['two'];}}>Replace</button>{items.map(item=>${row})}</main>;}`);
-  expect(result.initialBrowserOutput).toBeUndefined();
+  expect(result.initialContent).toBe(false);
 });

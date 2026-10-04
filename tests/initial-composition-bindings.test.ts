@@ -5,18 +5,21 @@ import { pathToFileURL } from 'node:url';
 import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler';
 import { mountInitial, registeredIds, unregisterSubtree, setScheduler, resetScheduler, type MountedApplication } from '@memoized-dom/runtime/testing';
 
+const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
+  compileModulesDetailed(sources, { initialContent: true, ...options });
+
 let app:MountedApplication|undefined;
 afterEach(()=>{app?.unmount();app=undefined;for(const id of registeredIds())unregisterSubtree(id);resetScheduler();vi.restoreAllMocks();document.body.replaceChildren();});
 function compile(source:string,modules:Record<string,string>={}) {
   const runtimePath='@memoized-dom/runtime/testing';
-  return compileModulesDetailed({'./main.ts':`import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
+  return compileInitial({'./main.ts':`import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
     './App.tsx':source,...modules},{runtimePath});
 }
 async function bind(name:string,source:string,modules:Record<string,string>={}) {
   const result=compile(source,modules);
-  expect(result.initialRender.kind).toBe('bindings');expect(result.initialBrowserOutput).toBeDefined();
+  expect(result.initialRender.kind).toBe('bindings');expect(result.initialContent).toBe(true);
   const directory=join(import.meta.dirname,'fixtures/out/initial-composition',name);mkdirSync(directory,{recursive:true});
-  for(const [id,code] of Object.entries(result.initialBrowserOutput!))writeFileSync(join(directory,id),code);
+  for(const [id,code] of Object.entries(result.output!))writeFileSync(join(directory,id),code);
   document.body.innerHTML=`<div id="root">${emitInitialHtml(result.initialRender)}</div>`;
   const original=[...document.querySelectorAll('*')];
   const create=vi.spyOn(document,'createElement'),text=vi.spyOn(document,'createTextNode');
@@ -37,7 +40,7 @@ it('keeps repeated static/live props and empty text distinct while sharing their
   click('button');expect(labels.map(node=>node.textContent)).toEqual(['','1','fallback']);
   expect(labels.map(node=>node.getAttribute('title'))).toEqual(['','1','fallback']);
   expect([...document.querySelectorAll('strong')]).toEqual(labels);
-  expect(result.initialBrowserOutput!['./App.tsx']).not.toMatch(/createElement|createTextNode|materializeMarkup|Static surroundings/);
+  expect(result.output!['./App.tsx']).not.toMatch(/createElement|createTextNode|materializeMarkup|Static surroundings/);
   app!.unmount();app=undefined;expect(registeredIds()).toEqual([]);
 });
 
@@ -51,7 +54,7 @@ it('binds nested imported aliases and retains derived prop updates',async()=>{
   expect(labels.map(node=>node.textContent)).toEqual(['2','10']);buttons[0]!.click();
   expect(labels.map(node=>node.textContent)).toEqual(['4','10']);buttons[1]!.click();
   expect(labels.map(node=>node.textContent)).toEqual(['4','12']);
-  for(const id of ['./App.tsx','./Counter.tsx','./Value.tsx'])expect(result.initialBrowserOutput![id]).not.toMatch(/createElement|createTextNode|materializeMarkup/);
+  for(const id of ['./App.tsx','./Counter.tsx','./Value.tsx'])expect(result.output![id]).not.toMatch(/createElement|createTextNode|materializeMarkup/);
 });
 
 it('retains captured callback writes and sends coherent final props to children',async()=>{
@@ -89,6 +92,6 @@ it.each([
   `function Label({value}){return <strong>{value}</strong>;}export function App(){let show=false;return <main><button onClick={()=>{show=true;}}>Show</button><Label value="one"/>{show&&<Label value="two"/>}</main>;}`,
   `function Label(){return <strong>Value</strong>;}export function App(){const escaped=Label;return <main><Label/><button onClick={()=>escaped()}>Call</button></main>;}`,
 ])('retains ordinary creation for a factory with future or escaped uses',source=>{
-  const result=compile(source);expect(result.initialBrowserOutput).toBeUndefined();
+  const result=compile(source);expect(result.initialContent).toBe(false);
   expect(result.output['./App.tsx']).toMatch(/materializeMarkup|createElement/);
 });

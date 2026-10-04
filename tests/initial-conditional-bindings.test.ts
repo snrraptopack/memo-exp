@@ -5,6 +5,9 @@ import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler'
 import { mountInitial, registeredIds, unregisterSubtree, resetScheduler, setScheduler,
   type MountedApplication } from '@memoized-dom/runtime/testing';
 
+const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
+  compileModulesDetailed(sources, { initialContent: true, ...options });
+
 const directory=join(import.meta.dirname,'fixtures/out/initial-conditions');
 let app:MountedApplication|undefined;
 afterEach(()=>{
@@ -14,13 +17,13 @@ afterEach(()=>{
 });
 function compile(source:string) {
   const runtimePath='@memoized-dom/runtime/testing';
-  return compileModulesDetailed({'./main.ts':`import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
+  return compileInitial({'./main.ts':`import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
     './App.tsx':source},{runtimePath});
 }
 async function mount(name:string,source:string) {
   const result=compile(source);expect(result.initialRender.kind).toBe('bindings');
   const html=emitInitialHtml(result.initialRender);expect(html).not.toBeNull();
-  mkdirSync(directory,{recursive:true});writeFileSync(join(directory,`${name}.ts`),result.initialBrowserOutput!['./App.tsx']!);
+  mkdirSync(directory,{recursive:true});writeFileSync(join(directory,`${name}.ts`),result.output!['./App.tsx']!);
   document.body.innerHTML=`<div id="root">${html}</div>`;
   const original=[...document.querySelectorAll('*')];
   const create=vi.spyOn(document,'createElement'), text=vi.spyOn(document,'createTextNode');
@@ -37,7 +40,7 @@ it('binds initial branches and uses the same factory when returning to them',asy
     {open?<section title={title}><b>Branch label</b><button class="add" onClick={()=>n++}>{n}</button></section>:<p>Closed</p>}
     <span>{n}</span></main>;}`);
   const main=document.querySelector('main'), heading=document.querySelector('h1'), initial=document.querySelector('section');
-  expect(result.initialBrowserOutput!['./App.tsx']).not.toContain('Static surrounding heading');
+  expect(result.output!['./App.tsx']).not.toContain('Static surrounding heading');
   document.querySelector<HTMLButtonElement>('.add')!.click();
   expect(document.querySelector('section')).toBe(initial);expect(document.querySelector('.add')!.textContent).toBe('2');
   document.querySelector<HTMLButtonElement>('.toggle')!.click();expect(document.querySelector('section')).toBeNull();
@@ -78,5 +81,5 @@ it.each([
   `<section {...{title:'spread'}}>spread</section>`,
 ])('retains general creation for unproved branch semantics: %s',branch=>{
   const result=compile(`export function App(){let show=true;return <main><button onClick={()=>{show=!show;}}>Toggle</button>{show?${branch}:null}</main>;}`);
-  expect(result.initialBrowserOutput).toBeUndefined();
+  expect(result.initialContent).toBe(false);
 });

@@ -76,19 +76,19 @@ export interface InitialPage {
   readonly entry: string;
   readonly target: string;
   readonly html: string;
-  readonly browserEntry?: string;
+  readonly interactive?: true;
 }
-
-export const initialBrowserPrefix = '/@memoized-dom/initial/';
-export const resolvedInitialBrowserPrefix = '\0memoized-dom:initial:';
 
 /** null means the shell needs the existing browser entry. */
 export function applyInitialPage(
   shell: string, filename: string, root: string, page: InitialPage,
-  styles: ReadonlySet<string>,
+  styles: ReadonlySet<string>, ssr = false,
 ): string | null {
   const tokens = tags(shell);
   if (!tokens) return null;
+  const outlet = '<!--ssr-outlet-->';
+  if (ssr && (shell.split(outlet).length !== 2 ||
+      tokens.some(tag => tag.name === 'link' && tag.attributes.get('rel')?.toLowerCase() === 'modulepreload'))) return null;
   const stack: Tag[] = [];
   const hosts: { opening: Tag; closing: Tag }[] = [];
   const scripts: { opening: Tag; closing: Tag }[] = [];
@@ -127,7 +127,7 @@ export function applyInitialPage(
   if (stack.length || bodyCount !== 1 || targetCount !== 1 || hosts.length !== 1 || scripts.length !== 1) return null;
   const host = hosts[0]!;
   const script = scripts[0]!;
-  if (shell.slice(host.opening.end, host.closing.start).trim() ||
+  if (shell.slice(host.opening.end, host.closing.start).trim() !== (ssr ? outlet : '') ||
       shell.slice(script.opening.end, script.closing.start).trim()) return null;
   // Preserve authored/imported styles as HTML dependencies so Vite still
   // processes CSS, preprocessor imports, URLs and extracted component styles.
@@ -137,9 +137,9 @@ export function applyInitialPage(
     return `<link rel="stylesheet" href="/${href.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">`;
   }).join('\n');
   const edits = [
-    { start: host.opening.end, end: host.closing.start, text: page.html },
-    { start: script.opening.start, end: script.closing.end, text: links + (page.browserEntry
-      ? `<script type="module" src="${page.browserEntry.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></script>` : '') },
+    { start: host.opening.end, end: host.closing.start, text: ssr ? outlet : page.html },
+    { start: script.opening.start, end: script.closing.end, text: links + (page.interactive
+      ? shell.slice(script.opening.start, script.closing.end) : '') },
   ].sort((left, right) => right.start - left.start);
   let html = shell;
   for (const edit of edits) html = html.slice(0, edit.start) + edit.text + html.slice(edit.end);

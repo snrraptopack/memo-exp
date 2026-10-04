@@ -1,14 +1,13 @@
 /**
  * Owns per-Vite-environment linked output and compilation coordination.
  */
-import type { CompilerSourceMap } from '@memoized-dom/compiler';
+import type { CompilerSourceMap, InitialDelivery } from '@memoized-dom/compiler';
 import type { CompiledGraph } from './graph/collector';
 import type { InitialPage } from './initial-html';
 
 export class AdapterState {
+  initialDelivery?: InitialDelivery;
   initialPage?: InitialPage;
-  readonly initialBrowserOutput = new Map<string, string>();
-  readonly initialBrowserMaps = new Map<string, CompilerSourceMap>();
   readonly files = new Set<string>();
   readonly output = new Map<string, string>();
   readonly maps = new Map<string, CompilerSourceMap>();
@@ -29,11 +28,8 @@ export class AdapterState {
   compiling: Promise<CompiledGraph> | undefined;
   hotUpdateFailed = false;
   replace(graph: CompiledGraph): void {
+    this.initialDelivery = graph.initialDelivery;
     this.initialPage = graph.initialPage;
-    this.initialBrowserOutput.clear();
-    for (const [file, code] of graph.initialBrowserOutput ?? []) this.initialBrowserOutput.set(file, code);
-    this.initialBrowserMaps.clear();
-    for (const [file, map] of graph.initialBrowserMaps ?? []) this.initialBrowserMaps.set(file, map);
     this.files.clear();
     for (const file of graph.files) this.files.add(file);
     this.output.clear();

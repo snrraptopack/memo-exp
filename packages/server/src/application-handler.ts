@@ -4,7 +4,7 @@
  * Combines normalized routes, middleware, page rendering, and the
  * same-origin in-memory `$fetch` bridge behind serve().
  */
-import { createStorage } from '@memoized-dom/runtime/server';
+import { createStorage, rootFactoryStore } from '@memoized-dom/runtime/server';
 import { RoutedPreparationRedirectError } from '@memoized-dom/router/internal';
 import {
   createServerRouter,
@@ -280,9 +280,12 @@ async function renderPage<
   const policy: RenderPolicy = { ...options.render, ...target.policy };
   const delivery = policy.delivery ?? 'stream';
   const markers = policy.markers ?? true;
+  const contract = rootFactoryStore().get(target.component)?.initialDelivery;
+  const initial = template.initial;
   const renderOptions: RenderOptions = {
     mode: policy.mode ?? 'resolve',
     markers,
+    ...(initial === undefined ? {} : { initialKey: initial.key }),
     timeout: policy.timeout ?? DEFAULT_TIMEOUT,
     ...(policy.deadline === undefined ? {} : { deadline: policy.deadline }),
     url: context.url.pathname + context.url.search,
@@ -309,6 +312,9 @@ async function renderPage<
   };
 
   try {
+    if (initial && (initial.key !== contract?.key || initial.target !== contract.target || initial.browser !== contract.browser)) {
+      throw new Error('memo-dom: page template and server root compiler delivery contracts do not match');
+    }
     if (delivery === 'buffer') {
       const result = await render(target.component, renderOptions);
       settled(result.settlement);

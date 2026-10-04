@@ -123,27 +123,14 @@ client mount or successful hydration. Other rendering errors still throw;
 
 `mount` returns `{ host, rootId, nodes, mounted, unmount() }`.
 
+## Browser JavaScript
+
+Production builds can send static content as HTML with no browser JavaScript.
+Interactive content gets the code needed for its events and updates. Pages
+that depend on request data still render that data on the server. The framework
+handles this automatically; use the same `app.ssr()` and `mount()` calls.
+
 ## Server-render rules
-
-### Shared initial content and browser bindings
-
-The compiler records an `initialDelivery` contract for roots with proven
-initial values and a parser-safe DOM shape. It uses the same initial render
-plan as the HTML and browser binding backends. Immutable local variables and
-closed component composition can produce HTML with no browser program;
-interactive roots can bind their existing nodes and retain creation code for
-later rows and conditional branches.
-
-The contract key covers the authored graph and render plan. A host selecting
-`render(App, { initialKey })` must supply the matching key; a stale key is
-rejected before rendering. Successful contract delivery sends the planned
-HTML without general hydration markers or a data payload. The contract HTML
-must be paired with its matching initial browser output.
-
-Request data, lifecycle work, unknown getters and exposed mutable object
-values require ordinary request evaluation. The compiler retains the existing
-SSR and hydration path for those roots. Contract metadata is emitted only in
-server modules, keeping the HTML snapshot out of browser JavaScript.
 
 - **Same component** in `app.ssr(X)` and `mount('root', X)` — adoption
   keys on the compiled root id; different components can never match.

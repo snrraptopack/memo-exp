@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { compileModulesDetailed, emitInitialHtml } from '../packages/compiler/src';
 
+const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
+  compileModulesDetailed(sources, { initialContent: true, ...options });
+
 function compile(app: string, modules: Record<string, string> = {}, entry = '') {
-  return compileModulesDetailed({
+  return compileInitial({
     './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './App'; ${entry} mount('root', App);`,
     './App.tsx': app,
     ...modules,
@@ -125,7 +128,7 @@ describe('initial content and browser requirements', () => {
     const result = compile(`export function App(){return <button onClick={()=>{}}>Click</button>;}`);
     expect(result.initialRender.kind).toBe('bindings');
     expect(emitInitialHtml(result.initialRender)).toBe('<button>Click</button>');
-    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('onclick');
+    expect(result.output?.['./App.tsx']).toContain('onclick');
   });
 
   it('retains events in a descendant under a static parent', () => {
@@ -134,10 +137,9 @@ describe('initial content and browser requirements', () => {
     });
     expect(result.initialRender.kind).toBe('bindings');
     expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Static</h1><button>0</button></main>');
-    expect(result.output['./App.tsx']).toContain('Static');
-    expect(result.initialBrowserOutput?.['./App.tsx']).not.toContain('Static');
-    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('bindInitialNodes');
-    expect(result.initialBrowserMaps?.['./App.tsx']?.sourcesContent?.[0]).toContain('<h1>Static</h1>');
+    expect(result.output?.['./App.tsx']).not.toContain('Static');
+    expect(result.output?.['./App.tsx']).toContain('bindInitialNodes');
+    expect(result.maps?.['./App.tsx']?.sourcesContent?.[0]).toContain('<h1>Static</h1>');
   });
 
   it('preserves an interactive instance identity after an omitted static instance of the same component', () => {
@@ -145,7 +147,7 @@ describe('initial content and browser requirements', () => {
       './Card.tsx': `export function Card({live}){let n=0;return <section>{live?<button onClick={()=>n++}>{n}</button>:<span>Static card</span>}</section>;}`,
     });
     expect(emitInitialHtml(result.initialRender)).toBe('<main><section><span>Static card</span></section><!--mmd:initial:0--></main>');
-    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('/Card[1]');
+    expect(result.output?.['./App.tsx']).toContain('/Card[1]');
   });
 
   it('keeps unchanged names in an HTML shell around repeated interactive children', () => {
@@ -154,7 +156,7 @@ describe('initial content and browser requirements', () => {
       './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
     });
     expect(emitInitialHtml(result.initialRender)).toBe('<main><h1>Hello Ada</h1><button>0</button><button>0</button></main>');
-    expect(result.initialBrowserOutput?.['./App.tsx']).toContain('/Counter[1]');
+    expect(result.output?.['./App.tsx']).toContain('/Counter[1]');
   });
 
   it.each([
@@ -167,7 +169,7 @@ describe('initial content and browser requirements', () => {
       './state.ts': `export let name='Ada';export function change(){name='Grace';}`,
     });
     expect(result.initialRender.kind).toBe('browser');
-    expect(result.initialBrowserOutput).toBeUndefined();
+    expect(result.initialContent).toBe(false);
   });
 
   it('does not replace component ref or routing semantics with ordinary HTML attributes', () => {
@@ -194,7 +196,7 @@ describe('initial content and browser requirements', () => {
   });
 
   it('does not remove mount options', () => {
-    const result = compileModulesDetailed({
+    const result = compileInitial({
       './main.ts': `import {mount} from '@memoized-dom/runtime'; import {App} from './App'; mount('root',App,{onHydrateError:console.error});`,
       './App.tsx': `export function App(){return <h1>Hello</h1>;}`,
     });

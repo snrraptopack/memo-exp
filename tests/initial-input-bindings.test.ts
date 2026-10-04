@@ -5,6 +5,9 @@ import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler'
 import { mount, mountInitial, registeredIds, unregisterSubtree, resetScheduler, setScheduler,
   type MountedApplication } from '@memoized-dom/runtime/testing';
 
+const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
+  compileModulesDetailed(sources, { initialContent: true, ...options });
+
 const directory=join(import.meta.dirname,'fixtures/out/initial-inputs');
 let app:MountedApplication|undefined;
 afterEach(()=>{
@@ -12,15 +15,15 @@ afterEach(()=>{
   for (const id of registeredIds()) unregisterSubtree(id);
   resetScheduler();vi.restoreAllMocks();document.body.replaceChildren();
 });
-function compile(source:string) {
+function compile(source:string,initial=true) {
   const runtimePath='@memoized-dom/runtime/testing';
-  return compileModulesDetailed({'./main.ts':`import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
-    './App.tsx':source},{runtimePath});
+  return compileInitial({'./main.ts':`import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
+    './App.tsx':source},{runtimePath,initialContent:initial});
 }
 async function start(name:string,source:string,initial=true) {
-  const result=compile(source);
+  const result=compile(source,initial);
   expect(result.initialRender.kind).toBe('bindings');const html=emitInitialHtml(result.initialRender);expect(html).not.toBeNull();
-  mkdirSync(directory,{recursive:true});writeFileSync(join(directory,`${name}.ts`),(initial?result.initialBrowserOutput!:result.output)['./App.tsx']!);
+  mkdirSync(directory,{recursive:true});writeFileSync(join(directory,`${name}.ts`),result.output['./App.tsx']!);
   document.body.innerHTML=`<div id="root">${initial?html:''}</div>`;
   const original=[...document.querySelectorAll('*')],create=vi.spyOn(document,'createElement');
   const specifier=`./fixtures/out/initial-inputs/${name}.ts`;const {App}=await import(specifier);
@@ -38,8 +41,8 @@ it.each([false,true])('supports the positional todo graph from a nonempty or emp
     <ul>{items.map((item,index)=><li key={index}>{index}-{item}</li>)}</ul>
     <button class="add" onClick={()=>{if(!temp.trim())return;items=[...items,temp];temp='';}}>Add todo</button>
     <button class="clear" onClick={()=>{items=[];}}>Clear</button><p>{temp}</p></main>;}`);
-  expect(result.initialBrowserOutput!['./App.tsx']).toContain('bindInitialInputValue');
-  expect(result.initialBrowserOutput!['./App.tsx']).not.toContain('Static todo surrounding content');
+  expect(result.output!['./App.tsx']).toContain('bindInitialInputValue');
+  expect(result.output!['./App.tsx']).not.toContain('Static todo surrounding content');
   const first=[...document.querySelectorAll('li')],field=input();expect(field.value).toBe('');expect(field.defaultValue).toBe('');
   type(' ');click('.add');expect(document.querySelectorAll('li').length).toBe(first.length);expect(field.value).toBe(' ');
   type('new');expect(document.querySelector('p')!.textContent).toBe('new');click('.add');
@@ -92,5 +95,5 @@ it('binds initial input rows and initializes values in appended rows',async()=>{
 
 it.each(['file','checkbox','radio','range','number','date'])('retains ordinary creation for unproved input type %s',kind=>{
   const result=compile(`export function App(){let value='';return <input type="${kind}" value={value} onInput={e=>{value=e.target.value;}}/>;}`);
-  expect(result.initialBrowserOutput).toBeUndefined();
+  expect(result.initialContent).toBe(false);
 });

@@ -43,22 +43,36 @@ uses this result before bundling. For a proven static entry and an unambiguous
 empty div host directly inside body, it inserts HTML and omits the mount script.
 CSS remains an HTML build dependency, including scoped TSRX styles. Additional
 scripts, mount options, consumed handles and uncertain shells keep the browser
-entry. Development retains HMR; fullstack SSR uses its existing request path.
+entry. Development retains HMR. Production SSR now selects the same initial-content
+plan before browser emission; request-dependent content still evaluates per request.
 
 The production Hello test emits **zero JavaScript assets** and renders in Chrome
 with JavaScript disabled. A larger page with forty instances of an imported
 component also emits zero JS assets. HTML and CSS remain visible. These tests
 use independent fixtures, never example sources.
 
-Mixed pages now have a separate compiler-generated browser target. A closed,
-event-free root with live child components retains its static ancestors and
-closed composition in HTML. The content plan carries browser placement markers;
-DOM emission creates only those child regions and adopts the original static
-nodes into the mounted application. No extra wrapper elements are introduced.
-The Vite HTML entry selects a separate virtual module graph only after proving
-the shell can receive that HTML. Ordinary JS entries retain their original
-factories. Development and server compilation do not generate the alternate
-browser target.
+Document hosts validate their HTML shell before browser emission. The linker
+then emits one program in `output` and one set of authored maps in `maps`.
+The same DOM emitter consumes binding addresses when initial content is proved,
+and creation instructions when browser work requires them. It no longer compiles
+each eligible module a second time, stores an alternate output table, or creates
+a virtual copy of the browser graph.
+
+A closed root with live child components retains its static ancestors and
+closed composition in HTML. Placement markers describe children whose initial
+work needs browser execution; proved interactive children bind existing nodes.
+The shared runtime owns both retained and newly created nodes. Direct JS entries
+have no HTML document to bind and retain their required creation instructions.
+Development keeps HMR and server compilation retains request ownership.
+
+Production SSR templates carry the compiler identity for their sole browser
+program. The server validates that identity against the responding root before
+delivery; it does not select between two templates or silently use a different
+bootstrap. A static page emits zero JavaScript assets. A closed interactive page
+ships bindings without the general hydration bootstrap or a data payload.
+Request-dependent roots use the existing shared render session and hydration
+capabilities. These remaining capabilities are not a second generated browser
+graph; deeper unification of request-dependent binding plans remains open.
 
 The mixed proof uses lexical binding identity and captured write information.
 Aliases of written state cannot become static HTML. It currently requires a
@@ -72,8 +86,8 @@ semantics rather than becoming HTML attributes.
 Production Chrome tests verify original static node identity and independent
 state updates in repeated children. Mount/unmount tests verify ownership and
 removal of the retained static nodes. Invalid placement markers are checked
-before any retained nodes move. The alternate browser product also carries its
-own authored source maps. Fixtures never read examples.
+before any retained nodes move. The selected browser program carries its
+authored source maps. Fixtures never read examples.
 
 Compiler, runtime and Vite builds and changed-source lint pass. The selected
 initial-plan, HTML ownership, production browser, mounting, markup/hydration,

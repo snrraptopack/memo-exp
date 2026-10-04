@@ -11,7 +11,6 @@ import { posix } from 'node:path';
 import {
   parseWithEstreeFrontendOrThrow,
   walkAst,
-  cloneNode,
   type BaseNode,
   type EstreeFrontend,
   type AstComment,
@@ -145,9 +144,8 @@ export interface CompiledModules {
   initialRender: InitialRenderPlan;
   /** Matching server HTML and browser program; absent when request evaluation is required. */
   initialDelivery?: InitialDelivery;
-  /** Separate browser target; valid only with emitInitialHtml(initialRender). */
-  initialBrowserOutput?: Record<string, string>;
-  initialBrowserMaps?: Record<string, CompilerSourceMap>;
+  /** The sole output program binds compiler-proved document content. */
+  initialContent: boolean;
 }
 
 function parseModule(
@@ -636,15 +634,20 @@ function compileLinkedModules(
   const initialRender = planInitialRendering(authoredPrograms, applicationRoot,
     (importer, specifier) => resolveModule(importer, specifier, entries, options)?.id,
     options.runtimePath ?? '@memoized-dom/runtime');
-  const initialDom = initialRender.kind === 'bindings' && emitInitialHtml(initialRender) !== null ? planInitialDom(initialRender) : null;
+  const initialHtml = emitInitialHtml(initialRender);
+  const initialDom = initialRender.kind === 'bindings' && initialHtml !== null ? planInitialDom(initialRender) : null;
   const initialDelivery = options.hot === true || options.routedEnvironment === 'server' && options.moduleStateCells === false
     ? undefined : planInitialDelivery(
-    initialRender, emitInitialHtml(initialRender), initialDom !== null, applicationRoot?.key,
+    initialRender, initialHtml, initialDom !== null, applicationRoot?.key,
     new Map([...entries].map(([id, entry]) => [id, entry.source])),
     [...manifests.values()].some(manifest => Object.values(manifest.exports).some(value =>
       value.type === 'state' || value.type === 'function' && (value.writes.length > 0 || value.unbounded))),
   );
-  const emitInitialBrowser = (initialRender.kind === 'mixed' || initialDom !== null) && options.hot !== true && options.routedEnvironment !== 'server';
+  const initialContent = initialHtml !== null &&
+    (initialRender.kind === 'html' || initialRender.kind === 'mixed' || initialDom !== null) &&
+    options.hot !== true && options.routedEnvironment !== 'server' &&
+    (typeof options.initialContent === 'function'
+      ? options.initialContent(initialRender, initialDelivery) : options.initialContent === true);
   const routeManifestModule =
     applicationRoot?.moduleId ?? entries.values().next().value?.id;
   const lazyImportsByModule = new Map<string, Record<string, LazyRouteImport>>();
@@ -706,8 +709,6 @@ function compileLinkedModules(
     applicationRoot,
   );
   const output: Record<string, string> = {};
-  const initialBrowserOutput: Record<string, string> = {};
-  const initialBrowserMaps: Record<string, CompilerSourceMap> = {};
   const maps: Record<string, CompilerSourceMap> = {};
   const metadata: Record<string, CompiledModuleMetadata> = {};
   const css: Record<string, string> = {};
@@ -843,7 +844,7 @@ function compileLinkedModules(
           );
       }
     }
-    const compileOptions: InternalMemoDomOptions = {
+    let compileOptions: InternalMemoDomOptions = {
       ...compilerOptions(options, rootId),
       moduleId: entry.id,
       linkedImports,
@@ -864,21 +865,15 @@ function compileLinkedModules(
     };
     const initialComponents=Object.fromEntries(Object.entries(initialDom?.factories??{}).flatMap(([key,plan])=>
       key.startsWith(`${entry.id}#`) ? [[key.slice(entry.id.length+1),plan]] : []));
-    if (emitInitialBrowser && (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') &&
+    if (initialContent && (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') &&
         (entry.id === initialRender.rootModuleId || entry.id === initialRender.mountModuleId || Object.keys(initialComponents).length>0)) {
-      const initialOptions = { ...compileOptions,
+      compileOptions = { ...compileOptions,
         initialDomComponents:initialComponents,
         ...(entry.id !== initialRender.rootModuleId ? {} : initialRender.kind === 'mixed'
           ? {initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
             returnSite: initialRender.returnSite, regions: initialRender.regions }} : {initialDomRoot:initialDom!}),
       };
-      const initialAst = cloneNode(entry.ast);
-      if (entry.id === initialRender.mountModuleId) emitInitialMount(initialAst, options.runtimePath ?? '@memoized-dom/runtime');
-      if (sourceMaps) {
-        const compiled = compileAstDetailed(entry.source, initialOptions, initialAst, entry.comments);
-        initialBrowserOutput[entry.originalId] = compiled.code;
-        initialBrowserMaps[entry.originalId] = compiled.map;
-      } else initialBrowserOutput[entry.originalId] = compileAst(entry.source, initialOptions, initialAst, entry.comments);
+      if (entry.id === initialRender.mountModuleId) emitInitialMount(entry.ast, options.runtimePath ?? '@memoized-dom/runtime');
     }
     if (sourceMaps) {
       const compiled = compileAstDetailed(entry.source, compileOptions, entry.ast, entry.comments);
@@ -896,9 +891,8 @@ function compileLinkedModules(
     maps,
     metadata,
     initialRender,
+    initialContent,
     ...(initialDelivery === undefined ? {} : { initialDelivery }),
-    ...(emitInitialBrowser ? { initialBrowserOutput: { ...output, ...initialBrowserOutput },
-      initialBrowserMaps: { ...maps, ...initialBrowserMaps } } : {}),
     routes: [...new Set(linkedRoutes.map(route => route.fullPattern))]
       .sort()
       .map(pattern => ({ pattern })),

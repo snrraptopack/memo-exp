@@ -4,6 +4,8 @@ import type { ComponentGraphNode } from '../component-linker';
 import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { ComponentExportInfo } from '../components/manifest';
 import type { CompilerRoutedPreparation } from '../routed';
+import type { InitialRenderPlan } from '../planning/initial-render';
+import type { InitialDelivery } from '../planning/initial-delivery';
 import type {
   ParameterWrite,
   MemoDomOptions,
@@ -27,6 +29,10 @@ export interface CompileModulesOptions
   /** Keep build graphs strict; editor-wide diagnostics can inspect multiple roots. */
   enforceSingleApplicationRoot?: boolean;
   frontend?: EstreeFrontend;
+  /** Emit one browser program for an HTML document, when its initial content is proved.
+   * A host predicate can validate its shell before emission. Direct JS entries omit this.
+   */
+  initialContent?: boolean | ((plan: InitialRenderPlan, delivery: InitialDelivery | undefined) => boolean);
 }
 
 export interface StateExport {

@@ -32,8 +32,8 @@ previous context, including after errors or disposal.
 Root ownership and validation live in `mount-core.ts`. Compiler-proven initial
 HTML entries select `mountInitial`, which shares creation and teardown with
 general `mount` while omitting SSR detection and recovery. Application entries
-still call `mount`; the compiler selects this operation only in its alternate
-HTML-associated product. Mounted handles retain their originating runtime for
+still call `mount`; the compiler selects the operation before emitting the
+document's sole browser program. Mounted handles retain their originating runtime for
 unmount and restore the caller's context even when cleanup throws.
 
 Full-owner invalidation uses `invalidateEntity`; compiler output carrying exact

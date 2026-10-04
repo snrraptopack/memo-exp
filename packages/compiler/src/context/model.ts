@@ -9,6 +9,7 @@
 import type * as t from '../ast/compiler-types';
 import type { BaseNode, ScopeAnalysis } from '../ast';
 import type { InitialBrowserRoot } from '../planning/initial-browser';
+import type { InitialDelivery } from '../planning/initial-delivery';
 import type { InitialDomRoot } from '../emission/initial-dom';
 import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { OwnerListOperation } from '../analysis/owner-list-structure';
@@ -146,8 +147,8 @@ export interface TransparentPresentationComponent {
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */
 export interface InternalMemoDomOptions extends MemoDomOptions {
-  initialDelivery?: { readonly key: string; readonly html: string; readonly target: string; readonly browser: 'none' | 'bindings' };
-  /** Available only in the separate HTML-associated browser target. */
+  initialDelivery?: InitialDelivery;
+  /** Placements selected before emitting the document's browser program. */
   initialBrowserRoot?: InitialBrowserRoot;
   initialDomRoot?: InitialDomRoot;
   initialDomComponents?: Readonly<Record<string,InitialDomRoot>>;

@@ -38,7 +38,7 @@ it('retains exact cause merging for a component with independent state slots', a
 });
 
 it.each(['bindings', 'mixed', 'conditional', 'list', 'input'] as const)('omits SSR mounting from the %s HTML product', async kind => {
-  const result = compileModulesDetailed({
+  const sources = {
     './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
     './App.tsx': kind === 'bindings'
       ? `export function App(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`
@@ -46,11 +46,12 @@ it.each(['bindings', 'mixed', 'conditional', 'list', 'input'] as const)('omits S
       : kind === 'list' ? `export function App(){let items=['one'];return <main><button onClick={()=>{items=[...items,'two'];}}>Add</button>{items.map((item,index)=><li key={index}>{item}</li>)}</main>;}`
       : kind === 'input' ? `export function App(){let value='seed';return <input value={value} onInput={e=>{value=e.target.value;}}/>;}`
       : `import {Counter} from './Counter';export function App(){return <main><h1>Static</h1><Counter/></main>;}`,
-    './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
-  });
-  expect(result.initialRender.kind).toBe(kind === 'conditional' || kind === 'list' || kind==='input' ? 'bindings' : kind);
+    './Counter.tsx': `export function Counter(){let n=0;${kind === 'mixed' ? '$effect(()=>{});' : ''}return <button onClick={()=>n++}>{n}</button>;}`,
+  };
   for (const initial of [true, false]) {
-    const modules = initial ? result.initialBrowserOutput! : result.output;
+    const result = compileModulesDetailed(sources, { initialContent: initial });
+    expect(result.initialRender.kind).toBe(kind === 'conditional' || kind === 'list' || kind==='input' ? 'bindings' : kind);
+    const modules = result.output;
     const bundled = await build({
       stdin: { contents: modules['./main.ts']!, resolveDir: process.cwd(), loader: 'ts' },
       bundle: true, write: false, metafile: true, minify: true, format: 'esm', platform: 'browser',

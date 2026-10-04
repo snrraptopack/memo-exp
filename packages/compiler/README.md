@@ -20,10 +20,10 @@ Public compilation APIs:
 - Unchanged `let` variables and closed primitive derivations can produce HTML
   with zero JavaScript. Unknown initializers retain browser execution.
 - A `mixed` plan retains proven static ancestors as HTML and places live child
-  components at markers. `initialBrowserOutput` and `initialBrowserMaps` contain
-  a separate compiler-generated browser target that adopts that HTML. Ordinary
-  `output`/`maps` remain valid for direct JavaScript entries. The associated HTML
-  and browser target must be used together.
+  components at markers. Document hosts select `initialContent` before emission;
+  the linker emits one browser program in `output` with its maps in `maps`.
+  Direct JavaScript entries omit this option and retain creation instructions.
+  There is no alternate browser output or virtual copy of the module graph.
 - A `bindings` plan emits a direct interactive host tree as initial HTML. Its
   browser target binds only nodes needed by events and updates; unchanged names
   and closed derived text/attributes do not get DOM update instructions. Local
@@ -36,6 +36,12 @@ Public compilation APIs:
   captured content plan, preserving authored import aliases and source maps.
   General JS, development and server entries retain ordinary mounting. The
   initial operation shares ownership/validation with it and omits SSR recovery.
+- Production SSR templates and server roots carry the same compiler delivery
+  identity. Vite chooses the document program automatically; the server checks
+  the template against the responding root before sending it. Closed initial
+  values use planned HTML, with no general hydration markers or data payload.
+  Request-dependent roots use request evaluation in the same render session.
+  Build mismatches report an error instead of switching browser programs.
 - Existing handler write plans select full-owner invalidation when the emitted
   update has no exact cause payload. Slot gates, list operations and reasoned
   prop delivery keep exact reasons. Full event/effect/source refreshes use the

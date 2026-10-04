@@ -13,10 +13,11 @@ import {
   type CompiledModules,
   type CompiledModuleMetadata,
   type CompilerSourceMap,
+  type InitialDelivery,
 } from '@memoized-dom/compiler';
 import type { ResolvedAdapterOptions } from '../options';
 import type { InitialPage } from '../initial-html';
-import { initialBrowserPrefix } from '../initial-html';
+import { applyInitialPage } from '../initial-html';
 import {
   acceptsSource,
   cleanViteId,
@@ -50,9 +51,8 @@ export interface GraphPluginContext {
 }
 
 export interface CompiledGraph {
+  readonly initialDelivery?: InitialDelivery;
   readonly initialPage?: InitialPage;
-  readonly initialBrowserOutput?: ReadonlyMap<string, string>;
-  readonly initialBrowserMaps?: ReadonlyMap<string, CompilerSourceMap>;
   files: ReadonlySet<string>;
   output: ReadonlyMap<string, string>;
   maps: ReadonlyMap<string, CompilerSourceMap>;
@@ -92,6 +92,7 @@ export async function compileGraph(
   requireMount = true,
   serverFunctionBarrelEntries: readonly ServerFunctionBarrelEntry[] = [],
   routedEnvironment: 'client' | 'server' = 'client',
+  documents: readonly { readonly filename: string; readonly html: string }[] = [],
 ): Promise<CompiledGraph> {
   const sources = new Map<string, string>();
   const sourceIds = new Map<string, string>();
@@ -252,6 +253,17 @@ export async function compileGraph(
     // default or a render can leak one request's writes into the next.
     moduleStateCells: options.moduleStateCells ?? routedEnvironment === 'server',
     routedEnvironment,
+    initialContent: (plan: CompiledModules['initialRender'], delivery: InitialDelivery | undefined) => {
+      if (hot || routedEnvironment === 'server' || !documents.length || plan.kind === 'browser' ||
+          options.serverEntry !== undefined && delivery === undefined) return false;
+      const html = emitInitialHtml(plan);
+      const entry = [...sourceIds].find(([, id]) => id === plan.mountModuleId)?.[0];
+      if (html === null || entry === undefined) return false;
+      const page: InitialPage = { entry, target: plan.target, html,
+        ...(plan.kind === 'html' ? {} : { interactive: true }) };
+      return documents.every(document => applyInitialPage(document.html, document.filename, root, page, styles,
+        options.serverEntry !== undefined) !== null);
+    },
     resolveImport(specifier: string, importer: string) {
       return resolutions.get(resolutionKey(importer, specifier));
     },
@@ -333,8 +345,6 @@ export async function compileGraph(
         .filter(style => !eagerStyles.has(style))),
     }));
   const output = new Map<string, string>();
-  const initialBrowserOutput = new Map<string, string>();
-  const initialBrowserMaps = new Map<string, CompilerSourceMap>();
   const maps = new Map<string, CompilerSourceMap>();
   const css = new Map<string, string>();
   const lazyComponentKeys = new Set(compiled.routeDefinitions
@@ -362,10 +372,6 @@ export async function compileGraph(
           )
         : code,
     );
-    if (compiled.initialBrowserOutput?.[id] !== undefined) {
-      initialBrowserOutput.set(file, (compiled.css?.[id]
-        ? `import ${JSON.stringify(`./${basename(file)}?memo-style.css`)};\n` : '') + compiled.initialBrowserOutput[id]!);
-    }
     const map = compiled.maps[id]!;
     // Vite attaches this transform map to the absolute module id. Keeping the
     // compiler's project-relative source (`./src/View.tsx`) makes Node resolve
@@ -376,18 +382,13 @@ export async function compileGraph(
       file,
       sources: map.sources.map((source) => source === id ? file : source),
     });
-    const initialMap = compiled.initialBrowserMaps?.[id];
-    if (initialMap) initialBrowserMaps.set(file, { ...initialMap, file,
-      sources: initialMap.sources.map(source => source === id ? file : source),
-    });
   }
   return {
     files: new Set(sourceIds.keys()),
-    ...(initialBrowserOutput.size ? { initialBrowserOutput, initialBrowserMaps } : {}),
-    ...(initialHtml === null || initialEntry === undefined || compiled.initialRender.kind === 'browser' ||
-        compiled.initialRender.kind !== 'html' && !compiled.initialBrowserOutput ? {} : {
+    ...(compiled.initialDelivery === undefined ? {} : { initialDelivery: compiled.initialDelivery }),
+    ...(!compiled.initialContent || initialHtml === null || initialEntry === undefined || compiled.initialRender.kind === 'browser' ? {} : {
       initialPage: { entry: initialEntry, target: compiled.initialRender.target, html: initialHtml,
-        ...(compiled.initialRender.kind !== 'html' ? { browserEntry: initialBrowserPrefix + encodeURIComponent(initialEntry) } : {}),
+        ...(compiled.initialRender.kind !== 'html' ? { interactive: true } : {}),
       },
     }),
     output,

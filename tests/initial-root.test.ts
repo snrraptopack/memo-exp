@@ -6,12 +6,15 @@ import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler'
 import { adoptInitialRoot } from '../packages/runtime/src/initial-root';
 import { mountInitial, register, registerRootFactory, has, cleanup, setScheduler, resetScheduler } from '@memoized-dom/runtime/testing';
 
+const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
+  compileModulesDetailed(sources, { initialContent: true, ...options });
+
 afterEach(() => document.body.replaceChildren());
 
 describe('initial HTML ownership', () => {
   it('updates independently reasoned children after a static instance without replacing retained HTML', async () => {
     const runtimePath = '@memoized-dom/runtime/testing';
-    const compiled = compileModulesDetailed({
+    const compiled = compileInitial({
       './main.ts': `import {mount} from '${runtimePath}';import {App} from './App';mount('root',App);`,
       './App.tsx': `import {Counter} from './Counter';export function App(){let name='Ada';
         return <main><h1>{'Hello '+name}</h1><Counter offset={0} live={false}/>
@@ -22,7 +25,7 @@ describe('initial HTML ownership', () => {
     expect(compiled.initialRender.kind).toBe('mixed');
     const directory = resolve(import.meta.dirname, 'fixtures/out/initial-reasoned-children');
     mkdirSync(directory, { recursive: true });
-    for (const [name, code] of Object.entries(compiled.initialBrowserOutput!)) {
+    for (const [name, code] of Object.entries(compiled.output!)) {
       writeFileSync(resolve(directory, name), code);
     }
     document.body.innerHTML = `<div id="root">${emitInitialHtml(compiled.initialRender)}</div>`;
