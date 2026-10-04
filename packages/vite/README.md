@@ -47,6 +47,24 @@ app.ssr(App);
 export default app;
 ```
 
+## Static production HTML
+
+Production HTML entries automatically emit proven closed static applications
+into the mount host and omit their entry script. A static Hello page and a
+closed composed page ship zero application JavaScript, including runtime code.
+Imported and extracted component CSS remains in the build. No authored code is
+executed during this proof.
+
+This first boundary requires one unconsumed two-argument `mount('id', App)`
+entry and an empty `<div id="id"></div>` directly inside the HTML body. Unknown
+initializers/imports, events, refs, effects, unsupported HTML/property semantics,
+additional scripts or ambiguous shells retain browser execution. Mixed graphs
+still ship their DOM factories. Development keeps mounting and HMR; fullstack
+`serverEntry` builds keep their existing SSR path.
+
+The compiler's initial-content plan and the next steps for interactive regions
+are documented in `../../docs/browser-bundle-architecture.md`.
+
 ## Server config contract
 
 When present, `<server>/config/index.ts` exports the application-wide server

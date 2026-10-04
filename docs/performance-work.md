@@ -1,5 +1,11 @@
 # Performance work
 
+Current focus has moved to deriving JavaScript from required interactivity.
+`browser-bundle-architecture.md` records the new initial-content boundary,
+production zero-JS static builds and the remaining mixed-page/browser-program
+work. The measurements and correctness backlog below remain historical records;
+bundle/runtime tuning no longer sets the architecture order.
+
 ## Correctness gates
 
 Benchmark timings require visible DOM changes. The DOM suite checks fresh 1k

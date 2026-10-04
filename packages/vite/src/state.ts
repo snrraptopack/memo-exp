@@ -3,8 +3,10 @@
  */
 import type { CompilerSourceMap } from '@memoized-dom/compiler';
 import type { CompiledGraph } from './graph/collector';
+import type { InitialPage } from './initial-html';
 
 export class AdapterState {
+  initialPage?: InitialPage;
   readonly files = new Set<string>();
   readonly output = new Map<string, string>();
   readonly maps = new Map<string, CompilerSourceMap>();
@@ -25,6 +27,7 @@ export class AdapterState {
   compiling: Promise<CompiledGraph> | undefined;
   hotUpdateFailed = false;
   replace(graph: CompiledGraph): void {
+    this.initialPage = graph.initialPage;
     this.files.clear();
     for (const file of graph.files) this.files.add(file);
     this.output.clear();

@@ -24,6 +24,7 @@ import {
   normalizeFile,
 } from './paths';
 import { AdapterState } from './state';
+import { applyInitialPage } from './initial-html';
 import { registerClientStyles } from './dev-assets';
 import { configureFullstackServer } from './fullstack';
 import {
@@ -414,6 +415,19 @@ export function memoizedDom(
         new Map(),
         this.environment.name,
       );
+    },
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html, context) {
+        if (config?.command !== 'build' || options.serverEntry !== undefined) return html;
+        for (const [environment, state] of states) {
+          if ((environment as { name?: string }).name !== 'client' || !state.initialPage) continue;
+          const initial = applyInitialPage(html, context.filename, config.root,
+            state.initialPage, state.eagerStyles);
+          if (initial !== null) return initial;
+        }
+        return html;
+      },
     },
     async resolveId(id, importer) {
       if (id === serverFunctionsVirtualId) {

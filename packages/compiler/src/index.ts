@@ -64,3 +64,5 @@ export {
 } from './errors';
 export type { CompilerRoutedPreparation } from './routed';
 export type { ExternalReactiveSourceDefinition } from './context';
+export type { InitialRenderNode, InitialRenderAttribute, InitialRenderPlan, BrowserRequirement } from './planning/initial-render';
+export { emitInitialHtml } from './emission/initial-html';

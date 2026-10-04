@@ -1,5 +1,11 @@
 # Benchmarks
 
+`bun run bench:size:html` builds stable authored fixtures through the production
+Vite HTML pipeline and reports HTML, all emitted JavaScript and separately
+compressed sizes in `bench/package-size/dist/html/results.{json,md}`. Static
+and larger composed static pages must emit zero JS assets. Interactive fixtures
+remain alongside them so static pruning cannot hide the current runtime cost.
+
 Each benchmark is a self-contained suite with its runner, sources, methodology,
 latest measurements, limits, and interpretation.
 

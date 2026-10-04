@@ -59,6 +59,7 @@ import {
 import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest, exportedLocals } from './linking/discovery';
 import { installCompilerIntrinsics } from './intrinsics';
+import { planInitialRendering, type InitialRenderPlan } from './planning/initial-render';
 
 export interface CompiledComponentExport {
   exported: string;
@@ -135,6 +136,8 @@ export interface CompiledModules {
   routeDefinitions: readonly CompiledRouteDefinition[];
   css?: Record<string, string>;
   applicationRoot?: CompiledApplicationRoot;
+  /** Initial content is independent of the DOM/browser program. */
+  initialRender: InitialRenderPlan;
 }
 
 function parseModule(
@@ -538,12 +541,14 @@ function compileLinkedModules(
 ): CompiledModules {
   const frontend = options.frontend ?? memoizedEstreeFrontend;
   const entries = new Map<string, ModuleEntry>();
+  const authoredPrograms = new Map<string, t.Program>();
   for (const [originalId, source] of Object.entries(modules)) {
     const id = canonicalModuleId(originalId);
     if (entries.has(id)) {
       throw new Error(`memo-dom: duplicate module id after normalization: '${id}'`);
     }
     const parsed = parseModule(id, source, frontend);
+    authoredPrograms.set(id, parsed.ast);
     entries.set(id, {
       originalId,
       id,
@@ -617,6 +622,10 @@ function compileLinkedModules(
     options,
     enforceSingleApplicationRoot,
   );
+  // Capture initial content before any backend mutates component bodies.
+  const initialRender = planInitialRendering(authoredPrograms, applicationRoot,
+    (importer, specifier) => resolveModule(importer, specifier, entries, options)?.id,
+    options.runtimePath ?? '@memoized-dom/runtime');
   const routeManifestModule =
     applicationRoot?.moduleId ?? entries.values().next().value?.id;
   const lazyImportsByModule = new Map<string, Record<string, LazyRouteImport>>();
@@ -845,6 +854,7 @@ function compileLinkedModules(
     output,
     maps,
     metadata,
+    initialRender,
     routes: [...new Set(linkedRoutes.map(route => route.fullPattern))]
       .sort()
       .map(pattern => ({ pattern })),

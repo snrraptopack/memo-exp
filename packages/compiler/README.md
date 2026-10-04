@@ -14,6 +14,9 @@ Public compilation APIs:
   per module in `maps`, optional extracted `css`, component `metadata`, and root
   metadata derived from an ordinary entry module's top-level
   `mount(target, Component)` call.
+- Linked compilation also returns an `initialRender` plan, captured before DOM
+  emission. `emitInitialHtml(plan)` emits closed initial content without runtime
+  code, or returns `null` when HTML cannot preserve the planned shape.
 
 The top-level files are orchestration and whole-program passes:
 
@@ -50,6 +53,16 @@ remain stable facades. Cross-domain callers use those facades; implementation
 modules within a domain import their siblings directly.
 
 ## Architecture and evolution rules
+
+Initial rendering and future browser execution are separate compiler products.
+`planning/initial-render.ts` proves closed content from the connected authored
+graph without executing it, recording browser requirements for unknown setup,
+events, refs or lifecycle work. `emission/initial-html.ts` consumes its content
+nodes independently of component factory emission. The Vite production HTML
+pipeline can omit the mount entry for a proven static page. Mixed interactive
+graphs still use DOM factories; deriving minimal browser regions is the next
+architecture step. See `../../docs/browser-bundle-architecture.md` for scope,
+proof limits and the implementation order.
 
 Component return structure is now planned before any component factory is
 replaced. `planComponentRendering()` consumes normalized component paths and

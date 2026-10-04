@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import {
   compileModulesDetailed,
+  emitInitialHtml,
   memoizedEstreeFrontend,
   parseWithEstreeFrontendOrThrow,
   toCompilerDiagnostic,
@@ -14,6 +15,7 @@ import {
   type CompilerSourceMap,
 } from '@memoized-dom/compiler';
 import type { ResolvedAdapterOptions } from '../options';
+import type { InitialPage } from '../initial-html';
 import {
   acceptsSource,
   cleanViteId,
@@ -47,6 +49,7 @@ export interface GraphPluginContext {
 }
 
 export interface CompiledGraph {
+  readonly initialPage?: InitialPage;
   files: ReadonlySet<string>;
   output: ReadonlyMap<string, string>;
   maps: ReadonlyMap<string, CompilerSourceMap>;
@@ -278,6 +281,11 @@ export async function compileGraph(
     });
   }
   const rootId = compiled.applicationRoot?.rootId ?? 'App';
+  const initialHtml = emitInitialHtml(compiled.initialRender);
+  const initialMountModule = compiled.initialRender.kind === 'html' ? compiled.initialRender.mountModuleId : undefined;
+  const initialEntry = initialMountModule !== undefined
+    ? [...sourceIds].find(([, id]) => id === initialMountModule)?.[0]
+    : undefined;
   const mountModuleId = compiled.applicationRoot?.mountModuleId;
   for (const [file, id] of sourceIds) {
     if (compiled.css?.[id]) recordStyle(id, `${file}?memo-style.css`);
@@ -361,6 +369,9 @@ export async function compileGraph(
   }
   return {
     files: new Set(sourceIds.keys()),
+    ...(initialHtml === null || initialEntry === undefined || compiled.initialRender.kind !== 'html' ? {} : {
+      initialPage: { entry: initialEntry, target: compiled.initialRender.target, html: initialHtml },
+    }),
     output,
     maps,
     css,

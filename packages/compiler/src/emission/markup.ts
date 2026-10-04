@@ -26,83 +26,10 @@ import { type Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 import { freshMarkupConst } from '../context/ast';
 import type { EmitScope } from './scope';
-
-/**
- * Tags whose parsing or serialization makes static markup unsafe: raw-text
- * elements terminate on '<' in text, <template> keeps its children in a
- * separate .content fragment, and table/select contexts foster-parent or
- * drop children during parsing.
- */
-const UNSAFE_TAGS = new Set([
-  'script',
-  'style',
-  'textarea',
-  'title',
-  'xmp',
-  'iframe',
-  'noembed',
-  'noframes',
-  'noscript',
-  'plaintext',
-  'listing',
-  'template',
-  'table',
-  'thead',
-  'tbody',
-  'tfoot',
-  'tr',
-  'colgroup',
-  'select',
-  'option',
-  'optgroup',
-  'datalist',
-  'frameset',
-  // Native HTML parsing can close/reparent these nodes or ignore their
-  // start/end tags depending on ancestry. Keep their factories imperative.
-  'html',
-  'head',
-  'body',
-  'caption',
-  'td',
-  'th',
-  'ruby',
-  'rb',
-  'rp',
-  'rt',
-  'rtc',
-  'pre',
-  'image',
-  'isindex',
-  'keygen',
-  'nobr',
-  'svg',
-  'math',
-]);
+import { UNSAFE_TAGS, VOID_TAGS, parserClosesAncestor } from '../planning/html-shape';
 
 /** Placeholder text node for dynamic text slots (zero-width space). */
 const TEXT_PLACEHOLDER = '​';
-
-/**
- * Void elements serialize without a closing tag — `</br>` parses as a
- * second <br> element per the HTML spec. A void element with node children
- * is never covered (children would parse as siblings).
- */
-const VOID_TAGS = new Set([
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'link',
-  'meta',
-  'param',
-  'source',
-  'track',
-  'wbr',
-]);
 
 const ATTR_NAME_RE = /^[a-zA-Z_][\w:.-]*$/;
 const STRUCTURAL_CALLS = new Set(['createCondRegion', 'createListRegion']);
@@ -119,28 +46,6 @@ const MIN_SEGMENT_SAVINGS = 100;
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MATH_NS = 'http://www.w3.org/1998/Math/MathML';
-
-const P_CLOSERS = new Set([
-  'address', 'article', 'aside', 'blockquote', 'details', 'div', 'dl',
-  'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3',
-  'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'main', 'menu', 'nav', 'ol',
-  'p', 'pre', 'search', 'section', 'table', 'ul', 'li', 'dt', 'dd',
-  'center', 'dialog', 'dir', 'summary',
-]);
-const HEADINGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
-
-function parserClosesAncestor(tag: string, ancestors: string[]): boolean {
-  if (P_CLOSERS.has(tag) && ancestors.includes('p')) return true;
-  if (['a', 'button', 'form', 'li'].includes(tag) && ancestors.includes(tag)) {
-    return true;
-  }
-  if ((tag === 'dt' || tag === 'dd') &&
-      ancestors.some(ancestor => ancestor === 'dt' || ancestor === 'dd')) {
-    return true;
-  }
-  return HEADINGS.has(tag) && ancestors.some(ancestor => HEADINGS.has(ancestor));
-}
-
 interface MarkupNode {
   kind: 'element' | 'text' | 'other';
   /** Lowercase local name for elements. */

@@ -1,16 +1,86 @@
 # Browser JavaScript architecture
 
-## Decision and measured starting point
+## Architecture decision
 
-Reduce what the browser program must do, then preserve feature boundaries so
-bundlers can remove what it does not use. A compiler optimization that adds
-runtime work to every application must account for that fixed cost.
+Interactivity determines the browser program. Initial content belongs in HTML;
+JavaScript belongs to the events, state, effects and changes that need browser
+execution. A static Hello application must ship zero application JavaScript,
+including framework runtime code. Increasing static composition should increase
+HTML, without creating client component factories for that content.
+
+Separating initial rendering from interaction is the first architecture step.
+Runtime module splitting, smaller lists and string interning are secondary.
+The former static client shell's 9.8 KB raw / 3.9 KB gzip is an unnecessary
+browser creation cost, not an acceptable floor or a bundle-size target.
 
 The performance batches and open correctness/performance work are recorded in
 `performance-work.md`. This document starts the bundle work without discarding
 those improvements. Correctness safeguards for arbitrary keys, getter reads,
 opaque calls, reentry, failed renders and cleanup belong to the paths that need
 them; they cannot be deleted merely because a small example does not exercise them.
+
+## Implemented initial-content boundary
+
+Linked compilation captures `InitialRenderPlan` before DOM emission. Its HTML
+case contains target-independent text/element content, attributes and children,
+plus the mount target and entry identity. It is independent of component factory
+ABI, runtime registrations and DOM creation statements. The browser case records
+the first requirement that prevented a closed initial-content proof, including
+events, refs, lifecycle work or unknown initialization.
+
+The proof supports closed constants, string interpolation, simple branches,
+objects used as props and component composition across linked modules. It never
+calls authored functions or evaluates source with JavaScript `eval`. Unknown
+calls, getters, external imports and module side effects retain browser execution,
+even if the JSX has no events. Host properties, mixed adjacent text coercion and
+unsupported HTML parser shapes also retain the DOM path.
+
+`emitInitialHtml()` is a separate backend over that content plan. HTML escaping
+and parser constraints belong to the backend; parser shape constraints are
+shared with existing DOM template emission. The Vite production HTML pipeline
+uses this result before bundling. For a proven static entry and an unambiguous
+empty div host directly inside body, it inserts HTML and omits the mount script.
+CSS remains an HTML build dependency, including scoped TSRX styles. Additional
+scripts, mount options, consumed handles and uncertain shells keep the browser
+entry. Development retains HMR; fullstack SSR uses its existing request path.
+
+The production Hello test emits **zero JavaScript assets** and renders in Chrome
+with JavaScript disabled. A larger page with forty instances of an imported
+component also emits zero JS assets. HTML and CSS remain visible. These tests
+use independent fixtures, never example sources.
+
+Compiler and Vite package builds and changed-source lint pass. Verification
+passes 88 tests across eight files: initial plans, production HTML builds,
+existing Vite integration, mounting, DOM templates, hydration templates and
+SSR isolation/concurrency. The production browser test verifies visible text,
+CSS and no script requests with JavaScript disabled.
+
+This is the first implementation boundary. An interactive descendant currently
+keeps the full browser graph, including static ancestors. Extracting minimal
+browser regions and adopting existing HTML is unfinished. The HTML proof is
+conservative; it is not yet a complete interaction analysis for arbitrary JS.
+The existing DOM program remains available to direct JS entry consumers.
+
+`bun run bench:size:html` measures production HTML and every emitted JS chunk
+separately, using published packages and stable authored fixtures. Its reports
+are written to `bench/package-size/dist/html/results.{json,md}`. The older
+`bench:size:audit` remains useful for attributing the current DOM runtime, but
+its direct browser mounting fixtures do not measure the HTML-first pipeline.
+
+Production measurements for the implemented boundary (default Vite minification):
+
+| Authored page | HTML raw / gzip B | All emitted JS raw / gzip sum B |
+|---|---:|---:|
+| Static shell | 149 / 129 | 0 / 0 |
+| Forty composed static cards | 2,046 / 258 | 0 / 0 |
+| Owner counter | 180 / 151 | 10,588 / 4,209 |
+| Interactive input/list | 180 / 150 | 24,850 / 9,180 |
+
+The interactive measurements show the remaining architecture work: the first
+boundary has removed JavaScript from closed static pages, while interactive
+graphs still pay for DOM creation and the existing runtime.
+
+## Historical browser-creation baseline
 
 The stable `bench:size:audit` fixtures include ordinary client mounting and
 compiler root metadata. JavaScript is minified, then each whole bundle is
@@ -143,15 +213,15 @@ Source-specific update groups must retain batching and opaque fallbacks.
 
 | Order | Work | Required evidence |
 |---|---|---|
-| 1, implemented | Preserve runtime module boundaries; maintain stable size fixtures | Smaller published application bundles; used features retained; browser interactions, SSR isolation and hydration gates |
-| 2 | Select a positional region for explicit positional keys | Input/list fixture reduction; duplicate values, insert/remove/index updates, retained node identity, failure/reentry and lifecycle tests |
-| 3 | Capture registration/lifetime requirements and remove proven empty leaf render owners | Static CSR and mixed static/dynamic composition sizes; unmount/cleanup, module routing and HMR correctness |
-| 4 | Separate creation from binding/update output; introduce optional HTML-first build output | Total HTML + state + JS, static zero-JS pages, later branch creation, SSR adoption/recovery and input/event ordering |
-| 5 | Split host context and narrow source update groups using captured facts | Owner-counter core size and dynamic behavior; async isolation, coherent commits and opaque fallback tests |
+| 1, first boundary implemented | Separate initial content from browser execution; emit closed static pages as HTML | Hello and larger static composition ship zero JS; CSS, unknown effects, dev HMR and direct JS consumers remain correct |
+| 2, next | Extend the semantic plan with interaction roots, source/slot reachability, captures and lifetime requirements | Static parent with interactive child; unused state; callbacks, hidden reads, refs and cleanup; explain every retained client region |
+| 3 | Emit HTML plus a browser binding/event/update program that adopts the needed nodes | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
+| 4 | Extend the same separation to request HTML and serialized state | Zero-JS static SSR, minimal mixed-page interaction JS, async isolation, payload safety and hydration correctness |
+| 5 | Reduce runtime capabilities required by the derived browser program | Scheduling/lifetime core, optional access routing/host adapters, positional versus keyed lists, opaque fallback and retained identity |
 
 Each step gets before/after whole-application measurements. Keep a keyed list,
 composed app and module-state app beside the tiny example so reducing one case
 does not hide growth elsewhere. Numeric key interning and code compression are
 secondary: the earlier measured gzip savings were small compared with the
-runtime and creation work above. No arbitrary size target is promised before
-the candidate implementation passes these gates.
+runtime and creation work above. Runtime module preservation is already in
+place and remains useful, but no longer sets the order of architecture work.
