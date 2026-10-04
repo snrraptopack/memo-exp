@@ -2,11 +2,11 @@
 import { getActiveEnvironment } from './kernel';
 
 export function bindInitialNodes(
-  target: string,
+  target: string | Node,
   bindings: readonly (readonly [readonly number[], string])[],
 ): Node[] {
   const document = getActiveEnvironment().document;
-  const host = document.getElementById(target);
+  const host = typeof target === 'string' ? document.getElementById(target) : target;
   if (!host) throw new Error(`memo-dom: initial HTML target '${target}' was not found`);
   const nodes = bindings.map(([path, kind]) => {
     let node: Node = host;

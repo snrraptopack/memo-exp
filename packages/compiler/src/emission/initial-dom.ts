@@ -16,16 +16,30 @@ export interface InitialDomRoot {
   readonly elements: Readonly<Record<string,InitialDomElement>>;
   readonly conditions: Readonly<Record<string, {readonly branch: number; readonly open: readonly number[];
     readonly end: readonly number[]; readonly returnSite: string | null}>>;
+  readonly lists: Readonly<Record<string, {readonly open: readonly number[]; readonly end: readonly number[];
+    readonly count: number; readonly row: InitialDomRoot}>>;
 }
 
 export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}>): InitialDomRoot | null {
   const elements: Record<string,InitialDomElement>={};
   const conditions: Record<string,InitialDomRoot['conditions'][string]>={};
+  const lists: Record<string,InitialDomRoot['lists'][string]>={};
   let valid=true;
   function visit(nodes: readonly InitialRenderNode[],parent: readonly number[], start=0): void {
     let index=start;
     nodes.forEach(node=>{
       const current=index++;
+      if (node.kind === 'list') {
+        const first=node.rows[0];
+        if (lists[node.site] || !first || first.length!==1 || first[0]?.kind!=='element' || !first[0].site) {valid=false;return;}
+        const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site});
+        if (!containerRow) {valid=false;return;}
+        const row={...containerRow,elements:Object.fromEntries(Object.entries(containerRow.elements).map(([site,element])=>
+          [site,{...element,path:element.path.slice(1),texts:element.texts.map(text=>({...text,path:text.path.slice(1)}))}]))};
+        lists[node.site]={open:[...parent,current],end:[...parent,current+node.rows.length+1],count:node.rows.length,row};
+        index += node.rows.length+1;
+        return;
+      }
       if (node.kind === 'conditional') {
         if (conditions[node.site]) {valid=false;return;}
         const children=node.children;
@@ -43,7 +57,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
       elements[node.site]={path,
         texts:node.children.flatMap(child=>{
           const current=childIndex;
-          childIndex += child.kind === 'conditional' ? child.children.length+2 : 1;
+          childIndex += child.kind === 'conditional' ? child.children.length+2 : child.kind==='list' ? child.rows.length+2 : 1;
           return child.kind === 'text' ? [{path:[...path,current],live:child.live!==false,empty:child.value===''}] : [];
         }),
         staticAttributes:node.attributes.flatMap(attribute=>attribute.live===false&&attribute.site ? [attribute.site] : []),
@@ -52,7 +66,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
     });
   }
   visit(plan.nodes,[]);
-  return valid ? {target:plan.target,component:plan.rootLocal,returnSite:plan.returnSite,elements,conditions} : null;
+  return valid ? {target:plan.target,component:plan.rootLocal,returnSite:plan.returnSite,elements,conditions,lists} : null;
 }
 
 /** Only nodes used by future browser work get a binding descriptor. */

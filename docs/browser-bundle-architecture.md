@@ -424,11 +424,97 @@ ordinary conditional/directive, SSR adoption, existing binding and compiler
 snapshot suites pass. Vite's detached `link` feature probe is excluded from the
 application-element creation count; root/branch identity is independently checked.
 
-The first structural boundary accepts closed selectors and plain host branches.
-Nested structural bindings, fragment branches, composed children, list initial
-HTML and unproved setup/ref/lifecycle/opaque behavior still use general creation.
-Extending those placement/lifetime proofs and request HTML/state delivery remains
-required; this is not completion of the architecture plan.
+That first structural boundary accepts closed selectors and plain host branches.
+At that revision, nested structural bindings, fragment branches, composed
+children, lists and unproved setup/ref/lifecycle/opaque behavior still used
+general creation. The list boundary below extends this work; additional
+placement/lifetime proofs and request HTML/state delivery remain required.
+
+## Initial HTML for lists
+
+The closed-value planner now represents arrays without executing authored code
+and uses the shared list callback normalization contract to expand initial rows.
+Unchanged lists, including composed static rows and const row derivations, can
+ship HTML with zero browser JS. Duplicate keys, unknown calls, sparse/spread
+arrays and unproved reads retain browser execution rather than silently removing
+their runtime behavior.
+
+For nonempty interactive arrays with plain host rows, the initial plan records
+the list extent separately from a reusable row placement plan. HTML contains the
+initial rows between list anchors. Browser descriptors identify those anchors;
+row descriptors use paths relative to the supplied row root. Descriptor code is
+emitted once per row factory, rather than once per initial item. Item and index
+reads remain live even though their first values are closed.
+
+The same row factory binds initially and creates later rows. Cached text starts
+from the adopted node's data on binding and from the authored expression on fresh
+creation. Row events use existing delegation; module readers retain their row
+entities. Default object/value identity remains unchanged, explicit item keys
+keep keyed reconciliation, and proven index keys retain positional reconciliation.
+Initial rows are not moved or recreated. Empty-text comments are replaced with
+text nodes by the shared binding validator.
+
+`initial-list.ts` is an optional validator around the shared list DOM/reconcile
+contracts. It is absent from ordinary JS-entry graphs. The shared runtime still
+retains its SSR row protocol and mismatch error; this batch does not remove those
+costs. Initial extents own unbound rows during interrupted construction. Disposal
+drains them, completed rows and anchors. Successful binding releases the initial
+node array and cleanup closure, so later removal does not retain detached rows.
+Ordinary row factories continue receiving three arguments; initial factories get
+their root as a fourth compiler-private argument.
+
+Same-revision Vite products, raw JS bytes / gzip sum:
+
+| Row identity / static cards | Initial HTML plus binding JS | Ordinary DOM creation JS |
+|---|---:|---:|
+| Keyed / 1 | 25,773 / 9,346 | 25,216 / 9,188 |
+| Keyed / 60 | 25,777 / 9,346 | 28,652 / 9,579 |
+| Positional / 1 | 18,524 / 6,935 | 17,963 / 6,779 |
+| Positional / 60 | 18,528 / 6,935 | 21,399 / 7,158 |
+
+Both list products have 408 B initial HTML with one card and 3,644 B with sixty.
+Adding static content costs four binding JS bytes, versus 3,436 creation bytes.
+The tiny binding products currently cost 557–561 raw JS bytes more than ordinary
+creation because of validation and retained future creation. This is a static
+content scaling improvement, not a claim that every list bundle is smaller.
+The forty-row composed static fixture ships 701 B HTML and zero JS.
+
+Against `47751b1`, the existing positional input/list grows from 17,356 / 6,697
+to 17,853 / 6,873 because its ordinary list runtime shares the initial-range
+protocol. Its controlled input still prevents initial HTML binding. The owner
+keyed-list fixture now has initial HTML but grows from 24,701 / 9,153 to
+25,311 / 9,241. Generalizing the node binder to accept row roots adds 21 raw
+bytes to bound owner/module counters: 8,730 / 3,517 and 12,028 / 4,652.
+Ordinary counter creation, composed counters and mixed roots are unchanged.
+Hello, unchanged names and closed static composition remain zero JS. Reducing
+the shared list/ownership runtime and the retained creation program remains
+necessary; none of these costs is hidden by changing the existing fixtures.
+
+All twenty-three production integration checks pass, including Chrome checks of
+both list identities, initial HTML with JS disabled, no initial application
+element creation, replacement/reorder/append/clear, later row events and retained
+outer nodes. Self-contained compiled fixtures also cover default object identity,
+module readers, independent ranges, empty row text, unmount and conservative
+fallbacks. Runtime tests cover shape/count mismatches before factories, ordinary
+factory arity, failed frames including `throw undefined`, and disposal before or
+during binding. Existing keyed/positional, SSR list and compiler golden suites
+remain passing.
+
+Empty interactive arrays, destructured interactive callbacks, nested structures,
+composed interactive rows and unproved refs/setup/lifecycle/opaque expressions
+still use general creation. Controlled inputs, nested placement, composition and
+request HTML plus serialized state are outstanding architecture work.
+
+Local DOM comparison against `47751b1` uses five samples in ABBA order for
+10k-row update/swap/append1k/clear across all eight state/row variants and vanilla.
+All twenty-one correctness scenarios and mixed sequences run before timing;
+each timed sample checks text, classes, order and retained identity afterward.
+The first before run is broadly slower, including vanilla append at 6.0 ms versus
+3.5 ms; the reverse-order pair has vanilla append at 3.7 versus 4.3 ms and mixed
+framework changes. This drift supports no CPU improvement or regression claim.
+Artifacts and both exact bundle hashes are recorded in ignored
+`bench/dom/dist/compare/47751b12-both/results.{json,md}`. These general DOM fixtures
+use ordinary creation; production Chrome checks above cover initial HTML binding.
 
 ## Historical browser-creation baseline
 
@@ -567,7 +653,7 @@ Source-specific update groups must retain batching and opaque fallbacks.
 |---|---|---|
 | 1, first boundary implemented | Separate initial content from browser execution; emit closed static pages as HTML | Hello and larger static composition ship zero JS; CSS, unknown effects, dev HMR and direct JS consumers remain correct |
 | 2, first mixed boundary implemented | Extend the semantic plan beyond closed-root/primitive-prop placements with interaction roots, source/slot reachability, captures and lifetime requirements | Static parent with interactive child; unused state; callbacks, hidden reads, refs and cleanup; explain every retained client region |
-| 3, direct host roots and first conditional boundary implemented | Extend HTML plus browser binding/event/update output to composed children and remaining structural regions | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
+| 3, direct host roots and first conditional/list boundaries implemented | Extend HTML plus browser binding/event/update output to composed children and remaining structural regions | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
 | 4 | Extend the same separation to request HTML and serialized state | Zero-JS static SSR, minimal mixed-page interaction JS, async isolation, payload safety and hydration correctness |
 | 5 | Reduce runtime capabilities required by the derived browser program | Scheduling/lifetime core, optional access routing/host adapters, positional versus keyed lists, opaque fallback and retained identity |
 

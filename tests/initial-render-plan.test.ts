@@ -10,6 +10,14 @@ function compile(app: string, modules: Record<string, string> = {}, entry = '') 
 }
 
 describe('initial content and browser requirements', () => {
+  it('renders closed arrays through shared row callback normalization as HTML only',()=>{
+    const result=compile(`function Row({label}){return <li>{label}</li>;}export function App(){
+      const items=[{id:1,label:'one'},{id:2,label:'two'}];return <ul>
+      {items.map(({id,label},index)=>{const title=index+':'+label;return <Row key={id} label={title}/>;})}</ul>;}`);
+    expect(result.initialRender.kind).toBe('html');
+    expect(emitInitialHtml(result.initialRender)).toBe('<ul><li>0:one</li><li>1:two</li></ul>');
+    expect(emitInitialHtml(compile(`export function App(){const items=[];return <ul>{items.map(item=><li>{item}</li>)}</ul>;}`).initialRender)).toBe('<ul></ul>');
+  });
   it('emits hello HTML from a compiler plan independent of the DOM factory', () => {
     const result = compile(`export function App() { return <h1>Hello</h1>; }`);
     expect(result.initialRender.kind).toBe('html');

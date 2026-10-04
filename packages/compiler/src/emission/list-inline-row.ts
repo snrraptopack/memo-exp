@@ -19,6 +19,7 @@ import {
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { applyRepeatedDomTemplate } from './dom-template';
+import type { InitialDomRoot } from './initial-dom';
 
 export function buildInlineRowCreate(
   ctx: Ctx,
@@ -31,6 +32,7 @@ export function buildInlineRowCreate(
   eventBindings: ReadonlyMap<string, t.Identifier> = new Map(),
   lightweight = false,
   sources: RegionSourcePlans | null = null,
+  initial?: InitialDomRoot,
 ): t.ArrowFunctionExpression {
   site.jsx!.openingElement.attributes =
     site.jsx!.openingElement.attributes.filter(
@@ -40,6 +42,9 @@ export function buildInlineRowCreate(
     );
   const rowScope = newEmitScope(ctx, false, sources);
   rowScope.cacheText = true;
+  const initialRoot = initial ? generatedIdentifier(ctx, 'initialRow') : null;
+  if (initial) rowScope.initialDom={plan:initial,variable:generatedIdentifier(ctx,'initialRowNodes').name,
+    descriptors:[],adopting:initialRoot!};
   for (const statement of site.prelude) {
     rowScope.creation.push(cloneEstreeNode(statement));
     rowScope.updaters.push(() => cloneEstreeNode(statement));
@@ -79,7 +84,14 @@ export function buildInlineRowCreate(
     inSvg,
     astFactory.identifier(rowId),
   );
-  applyRepeatedDomTemplate(ctx, rowScope, rootVariable);
+  if (!initial) applyRepeatedDomTemplate(ctx, rowScope, rootVariable);
+  if (initial) rowScope.prelude.unshift(astFactory.variableDeclaration('const',[
+    astFactory.variableDeclarator(astFactory.identifier(rowScope.initialDom!.variable),
+      astFactory.conditionalExpression(initialRoot!,astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+        initialRoot!,
+        astFactory.arrayExpression(rowScope.initialDom!.descriptors),
+      ]),astFactory.arrayExpression([]))),
+  ]));
   const bindingUpdates: t.Statement[] =
     [
       astFactory.expressionStatement(
@@ -121,8 +133,9 @@ export function buildInlineRowCreate(
       cloneEstreeNode(site.itemPattern, true),
       astFactory.identifier(rowId),
       ...(site.indexParam === null
-        ? []
+        ? initial ? [generatedIdentifier(ctx,'unusedIndex')] : []
         : [astFactory.identifier(site.indexParam)]),
+      ...(initialRoot ? [initialRoot] : []),
     ],
     astFactory.blockStatement([
       cacheDecl(rowScope),

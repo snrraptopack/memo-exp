@@ -47,6 +47,74 @@ async function production(root: string) {
 }
 
 describe('HTML first production builds', () => {
+  it('binds both list identity modes in Chrome and creates only later rows',async context=>{
+    const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
+      .find(path=>path&&existsSync(path));
+    if (!executablePath) {context.skip();return;}
+    const result=await production(await fixture(`export function App(){let items=[{id:1,label:'one'},{id:2,label:'two'}];let selected='none';return <main>
+      <h1>Static list surroundings</h1><button class="reverse" onClick={()=>{items=[...items].reverse();}}>Reverse</button>
+      <button class="replace" onClick={()=>{items=items.map(item=>({...item,label:item.label+'!'}));}}>Replace</button>
+      <button class="append" onClick={()=>{items=[...items,{id:3,label:'three'}];}}>Append</button>
+      <button class="clear" onClick={()=>{items=[];}}>Clear</button><ul class="keyed">
+      {items.map((item,index)=><li key={item.id} title={item.label}><b>Row: </b><button onClick={()=>{selected=item.label;}}>{index}:{item.label}</button></li>)}</ul>
+      <ul class="positional">{items.map((item,index)=><li key={index} title={item.label}><b>Row: </b><span>{index}:{item.label}</span></li>)}</ul>
+      <p>{selected}</p></main>;}`));
+    expect(result.html).toContain('mmd:initial:list:');
+    expect(result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('\n')).not.toContain('Static list surroundings');
+    const server=createHttpServer((request,response)=>{
+      const file=result.files.find(item=>item.fileName===(request.url==='/'?'index.html':request.url?.slice(1)));
+      if (!file) {response.writeHead(404).end();return;}
+      response.setHeader('Content-Type',file.type==='chunk'?'text/javascript':'text/html');
+      response.end(file.type==='chunk'?file.code:file.source);
+    });
+    await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));
+    const browser=await puppeteer.launch({executablePath,headless:true});
+    try {
+      const address=server.address();if(!address||typeof address==='string')throw new Error('Missing HTTP address');
+      const url=`http://127.0.0.1:${address.port}/`;
+      const staticPage=await browser.newPage();await staticPage.setJavaScriptEnabled(false);await staticPage.goto(url);
+      expect(await staticPage.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(['Row: 0:one','Row: 1:two','Row: 0:one','Row: 1:two']);
+      await staticPage.close();
+      const page=await browser.newPage();const errors:string[]=[];page.on('pageerror',error=>errors.push(String(error)));
+      await page.evaluateOnNewDocument(()=>{
+        const state=window as unknown as {rows?:Element[];heading?:Element;created?:string[]};state.created=[];
+        const create=document.createElement.bind(document);
+        document.createElement=((...args:Parameters<Document['createElement']>)=>{state.created!.push(args[0]);return create(...args);}) as Document['createElement'];
+        new MutationObserver(()=>{
+          if (document.querySelectorAll('li').length===4) state.rows??=[...document.querySelectorAll('li')];
+          state.heading??=document.querySelector('h1')??undefined;
+        }).observe(document,{subtree:true,childList:true});
+      });
+      await page.goto(url);await page.waitForSelector('li');
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {rows:Element[];created:string[]};
+        return {same:state.rows.every((row,index)=>row===document.querySelectorAll('li')[index]),created:state.created.filter(tag=>tag!=='link')};
+      })).toEqual({same:true,created:[]});
+      await page.click('.reverse');await page.waitForFunction(()=>document.querySelector('.keyed button')?.textContent==='0:two');
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {rows:Element[]};const current=[...document.querySelectorAll('li')];
+        return [state.rows[1],state.rows[0],state.rows[2],state.rows[3]].every((row,index)=>row===current[index]);
+      })).toBe(true);
+      await page.click('.replace');await page.waitForFunction(()=>document.querySelector('.positional li')?.getAttribute('title')==='two!');
+      await page.click('.append');await page.waitForFunction(()=>document.querySelectorAll('li').length===6);
+      expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(['Row: 0:two!','Row: 1:one!','Row: 2:three','Row: 0:two!','Row: 1:one!','Row: 2:three']);
+      await page.click('.keyed li:last-child button');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='three');
+      await page.click('.clear');await page.waitForFunction(()=>document.querySelectorAll('li').length===0);
+      await page.click('.append');await page.waitForFunction(()=>document.querySelectorAll('li').length===2);
+      expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(['Row: 0:three','Row: 0:three']);
+      expect(await page.evaluate(()=>(window as unknown as {heading:Element}).heading===document.querySelector('h1'))).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();await new Promise<void>((done,reject)=>server.close(error=>error?reject(error):done()));
+    }
+  });
+
+  it('ships a closed list with composed rows as HTML and zero JavaScript',async()=>{
+    const result=await production(await fixture(`function Row({title}){return <li>{title}</li>;}export function App(){
+      const items=[{id:1,title:'one'},{id:2,title:'two'}];return <ul>{items.map(item=><Row key={item.id} title={item.title}/>)}</ul>;}`));
+    expect(result.html).toContain('<ul><li>one</li><li>two</li></ul>');
+    expect(result.files.some(file=>file.type==='chunk')).toBe(false);
+  });
   it('binds conditional HTML in Chrome and recreates only the switched branch',async context=>{
     const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
       .find(path=>path&&existsSync(path));

@@ -86,6 +86,15 @@ growth from retained future branch creation. It is a payload comparison, not a
 CPU speed measurement. The architecture record includes the shared validator and
 conditional lifetime costs alongside the reduction in shipped static creation.
 
+The HTML audit also includes a closed composed list that must ship zero JS, and
+keyed/positional interactive lists with one versus sixty surrounding static
+cards. Initial rows bind through the same factory used to create later rows.
+These products currently cost more JS for a tiny list; static surrounding
+content adds only four bytes rather than thousands. The architecture record
+reports that cost and the increase in ordinary list bundles from sharing the
+initial-range protocol. The optional initial-list validator is omitted from
+ordinary JS-entry graphs.
+
 The runtime build preserves module boundaries so unrelated feature initialization
 does not survive alongside a used helper. The full distributed ESM graph has
 more files and can be larger in aggregate while applications ship less. Both

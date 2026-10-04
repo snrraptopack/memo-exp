@@ -95,10 +95,7 @@ export function emitText(
     astFactory.assignmentExpression('=', astFactory.identifier(slot),
       astFactory.callExpression(md(ctx, 'textValue'), [expression])),
   );
-  if (initialPath) scope.creation.push(astFactory.expressionStatement(astFactory.assignmentExpression('=',
-    astFactory.identifier(slot),astFactory.memberExpression(astFactory.identifier(varName),astFactory.identifier('data')),
-  )));
-  else scope.creation.push(
+  const freshSeed = astFactory.blockStatement([
     value(seed, true),
     // Keep the seed recognizable to markup extraction, including hydration.
     astFactory.expressionStatement(
@@ -107,7 +104,12 @@ export function emitText(
         astFactory.identifier(slot),
       ]),
     ),
-  );
+  ]);
+  if (initialPath) {
+    const adoptedSeed=astFactory.expressionStatement(astFactory.assignmentExpression('=',
+      astFactory.identifier(slot),astFactory.memberExpression(astFactory.identifier(varName),astFactory.identifier('data'))));
+    scope.creation.push(adopting ? astFactory.ifStatement(adopting,adoptedSeed,freshSeed) : adoptedSeed);
+  } else scope.creation.push(...freshSeed.body);
   const write = (expression: t.Expression): t.Statement =>
     slotGuard(scope, slot, astFactory.callExpression(md(ctx, 'textValue'), [expression]), (value) =>
       astFactory.expressionStatement(

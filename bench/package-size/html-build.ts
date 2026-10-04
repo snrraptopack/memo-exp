@@ -14,6 +14,9 @@ const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, e
 const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: repository, encoding: 'utf8' }).trim() !== '';
 const fixtures = { ...sizeFixtures,
   'static-name': { './App.tsx': `export function App(){let name='Ada';const greeting='Hello '+name;return <h1>{greeting}</h1>;}` },
+  'static-list': { './App.tsx': `function Row({label}){return <li>{label}</li>;}export function App(){
+    const items=[${Array.from({length:40},(_,index)=>`{id:${index},label:'Row ${index}'}`).join(',')}];
+    return <ul>{items.map(item=><Row key={item.id} label={item.label}/>)}</ul>;}` },
   'static-composition': {
     './App.tsx': `import {Card} from './Card';export function App(){return <main><h1>Static shell</h1>
       ${Array.from({ length: 40 }, (_, index) => `<Card title="Card ${index}"/>`).join('')}</main>;}`,
@@ -36,6 +39,12 @@ const fixtures = { ...sizeFixtures,
       <button class="toggle" onClick={()=>{open=!open;}}>Toggle</button>
       {open?<section><button class="add" onClick={()=>n++}>{n}</button></section>:<p>Closed</p>}</main>;}`,
   }])),
+  ...Object.fromEntries(['keyed','positional'].flatMap(identity=>[1,60].map(count=>[`list-${identity}-${count}-cards`, {
+    './App.tsx': `export function App(){let items=[{id:1,label:'one'},{id:2,label:'two'}];return <main>
+      ${Array.from({length:count},(_,index)=>`<section><h2>Static card ${index}</h2><p>Ready.</p></section>`).join('')}
+      <button onClick={()=>{items=[...items,{id:3,label:'three'}];}}>Append</button><ul>
+      {items.map((item,index)=><li key={${identity==='keyed'?'item.id':'index'}}><b>Row: </b><span>{index}:{item.label}</span></li>)}</ul></main>;}`,
+  }]))),
 };
 const rows: Array<{ fixture: string; html: number; htmlGzip: number;
   javascript: number; javascriptGzipSum: number; javascriptAssets: number;
@@ -64,7 +73,7 @@ for (const [name, sources] of Object.entries(fixtures)) {
     const row: (typeof rows)[number] = { fixture: name, html: Buffer.byteLength(html.source), htmlGzip: gzipSync(html.source).byteLength,
       javascript: js.reduce((size, file) => size + Buffer.byteLength(file.code), 0),
       javascriptGzipSum: js.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), javascriptAssets: js.length };
-    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.endsWith('-counter')) {
+    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.startsWith('list-') || name.endsWith('-counter')) {
       // Same authored graph through the ordinary JS-entry DOM creation target.
       const creation = await build({root,configFile:false,logLevel:'silent',
         resolve:{alias:{'@memoized-dom/runtime':resolve(repository,'packages/runtime/dist/index.js')}},

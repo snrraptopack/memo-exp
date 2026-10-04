@@ -1,20 +1,22 @@
 /** Compiler-selected index keys for rows that own DOM only. */
 import { getActiveEnvironment, type EntityId } from './kernel';
-import { createListDOM, removeListDOMRange } from './list-dom';
+import { createListDOM, removeListDOMRange, type InitialListDOM } from './list-dom';
 import { copyListItems } from './list-update';
 import type { ListEntry, ListRegion } from './list';
 
 export function createPositionalListRegion<T>(
   parent: Node,
   idPrefix: EntityId,
-  create: (item: T, rowId: EntityId, index: number) => ListEntry,
+  create: (item: T, rowId: EntityId, index: number, initialRoot?: Node) => ListEntry,
+  initial?: InitialListDOM,
 ): ListRegion<T> {
   const rows: ListEntry[] = [];
   let previous: T[] = [];
   let disposed = false;
   let generation = 0;
   let active: { cursor: number } | null = null;
-  const dom = createListDOM(parent, idPrefix, create, () => disposed, remove);
+  const initialCount=initial?.rows.length;
+  const dom = createListDOM(parent, idPrefix, create, () => disposed, remove, initial);
 
   function nodes(entry: ListEntry): readonly Node[] {
     return Array.isArray(entry.nodes) ? entry.nodes : [entry.nodes as Node];
@@ -37,6 +39,7 @@ export function createPositionalListRegion<T>(
     if (!Array.isArray(items)) {
       throw new TypeError(`[memo-dom] list '${idPrefix}' requires an array; received ${items === null ? 'null' : typeof items}`);
     }
+    if (initialCount!==undefined && dom.adopting && items.length!==initialCount) throw new Error('memo-dom: initial list row count does not match the client state');
     const recovering = active !== null;
     generation++;
     const retained = rows.length;
@@ -143,6 +146,7 @@ export function createPositionalListRegion<T>(
     while (rows.length > 0) {
       try { remove(rows.pop()!); } catch (error) { (errors ??= []).push(error); }
     }
+    try {dom.disposeInitial();} catch(error) {(errors??=[]).push(error);}
     for (const anchor of [dom.end, dom.open]) {
       try { anchor.parentNode?.removeChild(anchor); } catch (error) { (errors ??= []).push(error); }
     }

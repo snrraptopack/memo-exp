@@ -3,6 +3,9 @@ import { getActiveEnvironment, type EntityId } from './kernel';
 import { HydrationMismatchError } from './hydration-error';
 import type { ListEntry } from './list';
 
+/** Compiler-proven, single-host rows in an initial HTML range. */
+export interface InitialListDOM { readonly open: Node; readonly end: Node; readonly rows: readonly Node[]; readonly dispose: () => void }
+
 export function removeListDOMRange(parent: Node, open: Node, end: Node, first: Node | undefined,
   wholeResourceFree: boolean, isDisposed: () => boolean): boolean {
   const container = end.parentNode ?? parent;
@@ -29,27 +32,31 @@ export function removeListDOMRange(parent: Node, open: Node, end: Node, first: N
 export function createListDOM<T>(
   parent: Node,
   idPrefix: EntityId,
-  create: (item: T, rowId: EntityId, index: number) => ListEntry,
+  create: (item: T, rowId: EntityId, index: number, initialRoot?: Node) => ListEntry,
   isDisposed: () => boolean,
   cleanup: (entry: ListEntry) => void,
+  initial?: InitialListDOM,
 ) {
   const environment = getActiveEnvironment();
   const controller = environment.hydration;
-  const adopted = controller?.claimRange('l', idPrefix);
-  const open = adopted?.open ?? environment.document.createComment(`mmd:l:${idPrefix}`);
-  const end = adopted?.end ?? environment.document.createComment('/mmd');
-  if (adopted === undefined) {
+  const adopted = initial ? undefined : controller?.claimRange('l', idPrefix);
+  const open = initial?.open ?? adopted?.open ?? environment.document.createComment(`mmd:l:${idPrefix}`);
+  const end = initial?.end ?? adopted?.end ?? environment.document.createComment('/mmd');
+  let initialRows=initial?.rows;
+  let initialDispose=initial?.dispose;
+  if (initial === undefined && adopted === undefined) {
     parent.appendChild(open); parent.appendChild(end);
-  } else controller!.recordFragmentRange(parent, adopted);
+  } else if (adopted !== undefined) controller!.recordFragmentRange(parent, adopted);
   let nextAdoptedRow: Node | null = adopted?.open.nextSibling ?? null;
-  const dom = { environment, open, end, adopting: adopted !== undefined, createRow, finishAdoption };
+  const dom = { environment, open, end, adopting: adopted !== undefined || initialRows!==undefined, createRow, finishAdoption, disposeInitial };
   return dom;
 
   function createRow(item: T, key: unknown, rowId: EntityId, index: number, encoded: string | null): ListEntry | null {
-    if (dom.adopting && encoded === null) {
+    if (dom.adopting && !initialRows && encoded === null) {
       throw new HydrationMismatchError(idPrefix, 'a hydration-stable primitive row key', `${typeof key} key`);
     }
-    const row = dom.adopting ? controller!.claimRow(idPrefix, encoded!) : undefined;
+    const row = dom.adopting && !initialRows ? controller!.claimRow(idPrefix, encoded!) : undefined;
+    if (initialRows && index>=initialRows.length) throw new Error('memo-dom: initial list received additional client rows');
     if (row !== undefined && row.open !== nextAdoptedRow) {
       const actual = nextAdoptedRow?.nodeType === 8
         ? `<!--${(nextAdoptedRow as Comment).data}-->` : 'a row at a different server position';
@@ -59,7 +66,7 @@ export function createListDOM<T>(
     let entry: ListEntry | undefined;
     let failed = false;
     let failure: unknown;
-    try { entry = create(item, rowId, index); }
+    try { entry = initialRows ? create(item, rowId, index, initialRows[index]) : create(item, rowId, index); }
     catch (error) { failed = true; failure = error; }
     if (row !== undefined) {
       try { controller!.popRange(); }
@@ -77,9 +84,16 @@ export function createListDOM<T>(
 
   function finishAdoption(): void {
     if (!dom.adopting) return;
+    if (initialRows) { initialRows=undefined;initialDispose=undefined;dom.adopting=false;return; }
     if (nextAdoptedRow !== adopted!.end) {
       throw new HydrationMismatchError(idPrefix, 'the list close after the final client row', 'additional server row content');
     }
     dom.adopting = false;
+  }
+
+  function disposeInitial(): void {
+    const dispose=initialDispose;
+    initialRows=undefined;initialDispose=undefined;
+    dispose?.();
   }
 }

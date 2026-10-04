@@ -8,18 +8,20 @@ import {
   stringValue, analyzeScope, walkAst, type BaseNode, type Program, type ScopeAnalysis,
 } from '../ast';
 import { normalizeJsxText } from '../components/children';
-import { nodeHasJsx } from '../context';
+import { nodeHasJsx, type MapCallExpression } from '../context';
 import { analyzeComponentPropShape } from '../components/prop-shape';
 import { combineTextExpressions } from '../components/text-expression';
 import * as astFactory from '../ast/factory';
 import type * as t from '../ast/compiler-types';
 import { planConditionalBranches } from '../jsx/conditional-plan';
+import { planListCallback } from '../lists/callback-plan';
 
 export type InitialRenderNode =
   | { readonly kind: 'text'; readonly value: string; readonly live?: boolean }
   | { readonly kind: 'browser'; readonly id: number; readonly site: string }
   | { readonly kind: 'conditional'; readonly site: string; readonly branch: number;
       readonly children: readonly InitialRenderNode[] }
+  | { readonly kind: 'list'; readonly site: string; readonly rows: readonly (readonly InitialRenderNode[])[] }
   | { readonly kind: 'element'; readonly tag: string;
       readonly site?: string;
       readonly attributes: readonly InitialRenderAttribute[];
@@ -50,7 +52,8 @@ export type InitialRenderPlan =
       readonly nodes: readonly InitialRenderNode[] }
   | { readonly kind: 'browser'; readonly requirements: readonly BrowserRequirement[] };
 
-type Value = string | number | boolean | null | undefined | ValueObject | Component | Content;
+type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content;
+interface ValueArray { readonly kind: 'array'; readonly items: readonly Value[] }
 interface ValueObject { readonly kind: 'object'; readonly fields: ReadonlyMap<string, Value>; readonly props?: boolean }
 interface Component { readonly kind: 'component'; readonly node: BaseNode; readonly scope: Scope }
 interface Content { readonly kind: 'content'; readonly nodes: readonly InitialRenderNode[] }
@@ -86,10 +89,51 @@ export function planInitialRendering(
   let returnSite: string | undefined;
   const regions: { id: number; site: string }[] = [];
   let target: string | undefined;
-  let inConditional = false;
+  let inStructure = false;
+
+  function list(node: BaseNode, scope: Scope): Value | undefined {
+    const callee = childNode(node, 'callee');
+    if (callee?.type !== 'MemberExpression' || nodeField(callee, 'computed') ||
+        identifierLikeName(childNode(callee, 'property')) !== 'map') return undefined;
+    const input = expression(childNode(callee, 'object'), scope);
+    if (input === null || typeof input !== 'object' || input.kind !== 'array') return undefined;
+    if (bindings && inStructure) need(scope, 'Nested list bindings need a placement proof');
+    const fn=childNodes(node,'arguments')[0];
+    if (fn && (nodeField(fn,'async') || nodeField(fn,'generator'))) need(scope,'Async list callbacks need browser execution');
+    const callback = planListCallback(node as MapCallExpression, message => need(scope, message));
+    if (!callback.jsx || callback.prelude.length || bindings && callback.itemPattern.type !== 'Identifier') {
+      need(scope, 'Initial lists need a closed JSX row callback');
+    }
+    if (bindings && !input.items.length) need(scope, 'Empty initial lists need a symbolic row placement proof');
+    const previous = inStructure;
+    inStructure = true;
+    try {
+      const keys = new Set<Value>();
+      const rows = input.items.map((item, index) => {
+        const row: Scope = {...scope, values: new Map(scope.values), unstable: new Set(scope.unstable)};
+        bind(callback.itemPattern, item, row);
+        if (callback.indexParam) row.values.set(callback.indexParam, index);
+        if (bindings) {
+          row.unstable.add(callback.itemParam);
+          if (callback.indexParam) row.unstable.add(callback.indexParam);
+        }
+        const opening = childNode(callback.jsx!, 'openingElement')!;
+        const key = childNodes(opening, 'attributes').find(attribute =>
+          identifierLikeName(childNode(attribute, 'name')) === 'key');
+        const value = key && childNode(key, 'value');
+        const identity = value ? expression(value.type === 'JSXExpressionContainer' ? childNode(value, 'expression') : value, row) : item;
+        if (keys.has(identity)) need(scope, 'Duplicate initial list keys need browser diagnostics');
+        keys.add(identity);
+        return jsx(callback.jsx!, row);
+      });
+      if (!bindings) return {kind: 'content', nodes: rows.flat()};
+      if (rows.some(row => row.length !== 1 || row[0]?.kind !== 'element')) need(scope, 'Initial lists need one host root per row');
+      return {kind: 'content', nodes: [{kind: 'list', site: initialSite(node), rows}]};
+    } finally { inStructure = previous; }
+  }
 
   function conditional(node: BaseNode, scope: Scope): Value {
-    if (inConditional) need(scope, 'Nested structural bindings need a placement proof');
+    if (inStructure) need(scope, 'Nested structural bindings need a placement proof');
     const site = initialSite(node);
     if (!site) need(scope, 'Initial conditional placement needs authored source identity');
     const plan = planConditionalBranches(node as t.ConditionalExpression | t.LogicalExpression, {
@@ -97,7 +141,7 @@ export function planInitialRendering(
     });
     const branch = primitive(expression(plan.pickExpr, scope), scope);
     if (typeof branch !== 'number') need(scope, 'Initial conditional needs a closed selector');
-    inConditional = true;
+    inStructure = true;
     try {
       const alternatives = plan.branches.map(input => {
         if (input === null) return [];
@@ -105,7 +149,7 @@ export function planInitialRendering(
         return jsx(input, scope);
       });
       return {kind: 'content', nodes: [{kind: 'conditional', site, branch, children: alternatives[branch] ?? []}]};
-    } finally { inConditional = false; }
+    } finally { inStructure = false; }
   }
 
   function primitive(value: Value, scope: Scope): string | number | boolean | null | undefined {
@@ -186,6 +230,11 @@ export function planInitialRendering(
         }
         return { kind: 'object', fields };
       }
+      case 'ArrayExpression': {
+        const elements = nodeField(node, 'elements') as (BaseNode | null)[];
+        if (elements.some(item => item === null || item.type === 'SpreadElement')) need(scope, 'Sparse arrays and spreads need an initial iteration proof');
+        return {kind: 'array', items: elements.map(item => expression(item, scope))};
+      }
       case 'MemberExpression': {
         const object = expression(childNode(node, 'object'), scope);
         const name = nodeField(node, 'computed')
@@ -228,6 +277,8 @@ export function planInitialRendering(
       }
       case 'JSXElement': case 'JSXFragment': return { kind: 'content', nodes: jsx(node, scope) };
       case 'CallExpression': {
+        const mapped = list(node, scope);
+        if (mapped) return mapped;
         const name = identifierLikeName(childNode(node, 'callee'));
         const lifecycle = ['$effect', '$cleanup', 'effect', 'cleanup'].includes(name ?? '');
         return need(scope, lifecycle ? 'Lifecycle work requires a browser owner' : 'Calls need browser execution',

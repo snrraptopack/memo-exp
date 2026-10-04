@@ -2107,3 +2107,20 @@ on this list.
 
 These candidates are not completed work. Each needs a correctness test and a
 measurement before it becomes a default optimization.
+
+The initial-HTML list batch adds closed-array planning and shared row factories
+that bind first and create later. Unchanged composed lists ship zero browser JS;
+adding sixty static cards around an interactive list adds four binding JS bytes.
+Tiny list products and ordinary list bundles currently grow with the shared
+initial-range protocol and retained future creation. Exact payload comparisons,
+proof limits and cleanup guarantees are in `browser-bundle-architecture.md` under
+“Initial HTML for lists.” Controlled inputs and empty/nested/composed interactive
+list placement remain outstanding.
+
+A local comparison against `47751b1` covers update/swap/append1k/clear at 10k rows,
+five samples in ABBA order across all state/row placements plus vanilla. All
+twenty-one correctness scenarios, mixed sequences and per-sample identity checks
+pass. Vanilla and framework timings drift across the order pairs, so this batch
+has no CPU speed claim. Initial binding itself is checked separately in compiled
+DOM fixtures and production Chrome, including later row events and disposal
+before/during failed binding.

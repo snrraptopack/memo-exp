@@ -84,8 +84,9 @@ events, refs or lifecycle work. `emission/initial-html.ts` consumes its content
 nodes independently of component factory emission. The Vite production HTML
 pipeline can omit the mount entry for a proven static page. Direct interactive
 host roots can bind to initial HTML without DOM creation. Composed interactive
-children still use their existing DOM factories; structural regions, refs,
-effects and unknown setup retain the ordinary target. See `../../docs/browser-bundle-architecture.md` for scope,
+children still use their existing DOM factories. Proven root conditional and
+list regions can bind initial HTML; nested structures, refs, effects and unknown
+setup retain the ordinary target. See `../../docs/browser-bundle-architecture.md` for scope,
 proof limits and the implementation order.
 
 Component return structure is now planned before any component factory is
@@ -686,7 +687,21 @@ emission. A direct item binding, index-only key, and absence of spread/key reads
 or replayed preludes establish that proof. The DOM backend combines it with the
 existing DOM-only inline-row proof to select positional reconciliation. Rows
 requiring lifecycle or general key behavior retain keyed reconciliation.
-Omitting `key` still means item identity. List initial HTML is not yet part of the
+Omitting `key` still means item identity.
+
+## Initial list bindings
+
+Initial HTML supports nonempty closed
+arrays with plain host rows. Row callbacks use the shared normalization plan;
+row bindings remain live even when their initial values are known. The first
+mount binds existing row nodes, and the same factory creates later rows through
+the existing positional or keyed reconciler. An unchanged closed list, including
+composed static rows, can ship HTML with zero browser JavaScript.
+
+Empty interactive lists, nested structural rows, composed interactive rows,
+destructured interactive callbacks and unproved setup/ref/lifecycle behavior
+retain ordinary DOM creation. Controlled input properties also still require
+their placement/initial-value proof. These limits leave further work in the
 browser-binding target.
 
 ## Initial conditional bindings

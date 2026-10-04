@@ -28,6 +28,8 @@ import {
 } from './list-update';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
 import { preparationRead } from '../data-sources';
+import { initialSite } from '../planning/initial-render';
+import { initialNode } from './initial-dom';
 
 export function emitListRegion(
   ctx: Ctx,
@@ -47,6 +49,10 @@ export function emitListRegion(
       itemParam: parentRow.itemParam, sourceKey: parentRow.sourceKey, sourceLocal: parentRow.sourceLocal ?? false,
     });
   const site = allocateMapSite(call, plan, componentName, scope.usedPrefixes);
+  const initial=scope.initialDom?.plan.lists[initialSite(call)];
+  if (scope.initialDom && (!initial || site.form!=='inline')) {
+    throw new Error('memo-dom: initial list needs a host row placement');
+  }
   const regionVariable = generatedIdentifier(
     ctx,
     `region${scope.regionCounter++}`,
@@ -101,6 +107,7 @@ export function emitListRegion(
           eventBindings,
           ctx.lightweightInlineRows.has(call),
           scope,
+          initial?.row,
         );
 
   const args: t.Expression[] = [
@@ -204,13 +211,24 @@ export function emitListRegion(
     args.push(astFactory.booleanLiteral(true));
   }
   const positional = site.positional && site.form === 'inline' && ctx.lightweightInlineRows.has(call);
+  const initialArgument=initial ? astFactory.callExpression(md(ctx,'bindInitialList'),[
+    astFactory.identifier(parentElementVariable),
+    initialNode(scope,initial.open,`#comment:mmd:initial:list:${initialSite(call)}`),
+    initialNode(scope,initial.end,'#comment:/mmd:initial:list'),
+    astFactory.numericLiteral(initial.count),
+  ]) : null;
+  const runtimeArgs=positional ? args.slice(0,3) : args;
+  if (initialArgument) {
+    if (!positional && runtimeArgs.length===6) runtimeArgs.push(astFactory.booleanLiteral(false));
+    runtimeArgs.push(initialArgument);
+  }
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
         astFactory.identifier(regionVariable),
         astFactory.callExpression(md(ctx, positional
           ? 'createPositionalListRegion' : 'createListRegion'),
-          positional ? args.slice(0, 3) : args),
+          runtimeArgs),
       ),
     ]),
   );

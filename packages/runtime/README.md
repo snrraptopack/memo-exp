@@ -214,6 +214,21 @@ retires the entry before invoking its hook and finishes content/anchor removal
 when that hook throws. Failed construction preserves the original error,
 including a thrown `undefined`, and removes the region anchors.
 
+### Initial list HTML
+
+The compiler's optional `bindInitialList` operation validates a range containing
+one host element per initial row. Both list reconcilers accept this validated
+range and pass its root to the shared row factory on the first reconcile. They
+retain ordinary keys, entity ownership, guarded content updates and cleanup.
+Initial rows are neither recreated nor moved; later factories keep the ordinary
+three-argument call convention and create new nodes.
+
+The range owns unbound initial nodes during failed or interrupted construction.
+Disposal drains those nodes as well as completed entries and anchors. After a
+successful bind, the initial node array and its cleanup closure are released;
+removed rows are not kept alive by the initial descriptor. Initial HTML does not
+replace the existing SSR row marker protocol or hydration recovery.
+
 The package is independently buildable:
 
 ```bash

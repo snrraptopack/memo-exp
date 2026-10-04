@@ -31,7 +31,7 @@
 
 import { getActiveEnvironment, unregisterSubtree, undirty, getEntity, type EntityId } from './kernel';
 import { encodeListKey } from './list-keys';
-import { createListDOM, removeListDOMRange } from './list-dom';
+import { createListDOM, removeListDOMRange, type InitialListDOM } from './list-dom';
 import { copyListItems, retainedRowNeedsSync } from './list-update';
 
 export interface ListEntry {
@@ -145,19 +145,21 @@ function lisPositions(seq: number[], start: number, end: number): boolean[] {
 export function createListRegion<T>(
   parent: Node,
   idPrefix: EntityId,
-  create: (item: T, rowId: EntityId, index: number) => ListEntry,
+  create: (item: T, rowId: EntityId, index: number, initialRoot?: Node) => ListEntry,
   key: KeyFn<T> = identityKey,
   trackRowIds = true,
   indexSensitive = true,
   // Compiler proof: entries own DOM only, with no entity or cleanup callbacks.
   resourceFree = false,
+  initial?: InitialListDOM,
 ): ListRegion<T> {
+  const initialCount=initial?.rows.length;
   const dom = createListDOM(parent, idPrefix, create, () => disposed, entry => {
     let errors: unknown[] | null = null;
     try { entry.dispose?.(); } catch (error) { (errors ??= []).push(error); }
     try { cleanupEntry(entry); } catch (error) { (errors ??= []).push(error); }
     reportCleanupErrors(errors);
-  });
+  }, initial);
   const {environment, open: openAnchor, end: endAnchor, createRow} = dom;
 
   /**
@@ -343,6 +345,7 @@ export function createListRegion<T>(
     if (!Array.isArray(items)) {
       throw new TypeError(`[memo-dom] list '${idPrefix}' requires an array; received ${items === null ? 'null' : typeof items}`);
     }
+    if (initialCount!==undefined && dom.adopting && items.length!==initialCount) throw new Error('memo-dom: initial list row count does not match the client state');
     const container = endAnchor.parentNode ?? parent;
     const adoptingFrame = dom.adopting;
     let removalErrors: unknown[] | null = null;
@@ -965,6 +968,8 @@ export function createListRegion<T>(
     validatedKeys.length = 0;
     prevRows.length = 0;
     nextRows.length = 0;
+    try { dom.disposeInitial(); }
+    catch (error) { (errors ??= []).push(error); }
     try { endAnchor.parentNode?.removeChild(endAnchor); }
     catch (error) { (errors ??= []).push(error); }
     try { openAnchor.parentNode?.removeChild(openAnchor); }
