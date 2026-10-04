@@ -1,4 +1,5 @@
 /** Public compiler package entry. */
+export type { InitialDelivery } from './planning/initial-delivery';
 
 export {
   compile,

@@ -146,6 +146,7 @@ export interface TransparentPresentationComponent {
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */
 export interface InternalMemoDomOptions extends MemoDomOptions {
+  initialDelivery?: { readonly key: string; readonly html: string; readonly target: string; readonly browser: 'none' | 'bindings' };
   /** Available only in the separate HTML-associated browser target. */
   initialBrowserRoot?: InitialBrowserRoot;
   initialDomRoot?: InitialDomRoot;
@@ -395,6 +396,7 @@ export type HelperPath = CompilerPath<
 >;
 
 export interface Ctx {
+  initialDelivery: InternalMemoDomOptions['initialDelivery'];
   initialBrowserRoot: InitialBrowserRoot | null;
   initialDomRoot: InitialDomRoot | null;
   initialDomComponents: Readonly<Record<string,InitialDomRoot>>;
@@ -751,6 +753,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   );
   const runtimePath = opts.runtimePath ?? '@memoized-dom/runtime';
   return {
+    initialDelivery: opts.initialDelivery,
     initialBrowserRoot: opts.initialBrowserRoot ?? null,
     initialDomRoot: opts.initialDomRoot ?? null,
     initialDomComponents: opts.initialDomComponents ?? {},

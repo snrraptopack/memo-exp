@@ -360,6 +360,14 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
         astFactory.identifier(ctx.rootComponent),
         astFactory.objectExpression([
           astFactory.objectProperty(astFactory.identifier('id'), astFactory.stringLiteral(ctx.rootId)),
+          ...(ctx.initialDelivery === undefined ? [] : [astFactory.objectProperty(
+            astFactory.identifier('initialDelivery'), astFactory.objectExpression([
+              astFactory.objectProperty(astFactory.identifier('key'), astFactory.stringLiteral(ctx.initialDelivery.key)),
+              astFactory.objectProperty(astFactory.identifier('html'), astFactory.stringLiteral(ctx.initialDelivery.html)),
+              astFactory.objectProperty(astFactory.identifier('target'), astFactory.stringLiteral(ctx.initialDelivery.target)),
+              astFactory.objectProperty(astFactory.identifier('browser'), astFactory.stringLiteral(ctx.initialDelivery.browser)),
+            ]),
+          )]),
           astFactory.objectProperty(
             astFactory.identifier('create'),
             astFactory.arrowFunctionExpression(

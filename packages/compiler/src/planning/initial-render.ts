@@ -44,14 +44,14 @@ export interface BrowserRequirement {
 
 export type InitialRenderPlan =
   | { readonly kind: 'html'; readonly target: string;
-      readonly mountModuleId: string; readonly nodes: readonly InitialRenderNode[] }
+      readonly mountModuleId: string; readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true }
   | { readonly kind: 'mixed'; readonly target: string; readonly mountModuleId: string;
       readonly rootModuleId: string; readonly rootLocal: string; readonly returnSite: string;
       readonly nodes: readonly InitialRenderNode[];
       readonly regions: readonly { readonly id: number; readonly site: string }[] }
   | { readonly kind: 'bindings'; readonly target: string; readonly mountModuleId: string;
       readonly rootModuleId: string; readonly rootLocal: string; readonly returnSite: string;
-      readonly nodes: readonly InitialRenderNode[] }
+      readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true }
   | { readonly kind: 'browser'; readonly requirements: readonly BrowserRequirement[] };
 
 type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content;
@@ -645,6 +645,9 @@ export function planInitialRendering(
       need({ moduleId: root!.moduleId, values: new Map(), unstable: new Set() }, 'Unknown mounted component');
     }
     const nodes = render(component, new Map(), true);
+    const exposure = [...modules.values()].some(scope => [...scope.exports.values()].some(value =>
+      value !== null && typeof value === 'object' && (value.kind === 'array' || value.kind === 'object')))
+      ? { exposedMutableValues: true as const } : {};
     if (bindings) {
       if (!bindingEvents || !returnSite || nodes.length !== 1 || nodes[0]?.kind !== 'element') need(component.scope,'No direct interactive DOM root');
       const calls = new Map<string,Set<string>>();
@@ -686,7 +689,7 @@ export function planInitialRendering(
         }});
       }
       return {kind:'bindings',target,mountModuleId:root!.mountModuleId,rootModuleId:root!.moduleId,
-        rootLocal:root!.local,returnSite,nodes};
+        rootLocal:root!.local,returnSite,nodes,...exposure};
     }
     if (regions.some(region => region.site === returnSite) || new Set(regions.map(region => region.site)).size !== regions.length) {
       need(component.scope, 'Initial placements need distinct authored source identities');
@@ -694,7 +697,7 @@ export function planInitialRendering(
     if (mixed && regions.length && returnSite && nodes.some(node => node.kind !== 'browser')) return { kind: 'mixed', target, mountModuleId: root!.mountModuleId,
       rootModuleId: root!.moduleId, rootLocal: root!.local, returnSite, nodes, regions: [...regions] };
     if (mixed && regions.length) need(component.scope, 'No static shell to extract');
-    return { kind: 'html', mountModuleId: root!.mountModuleId, target, nodes };
+    return { kind: 'html', mountModuleId: root!.mountModuleId, target, nodes, ...exposure };
   }
   try { return plan(); } catch (error) {
     if (!(error instanceof NeedsBrowser)) throw error;

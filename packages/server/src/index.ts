@@ -45,6 +45,8 @@ export interface RenderResult {
 }
 
 export interface RenderOptions {
+  /** Host-selected matching compiler contract; omit for ordinary SSR/hydration. */
+  initialKey?: string;
   /**
    * Settle mode (RFC §16.5):
    * - 'shell' (default): serialize immediately, emitting pending arms and
@@ -122,7 +124,7 @@ function serializeString(session: RenderSession, root: Node): string {
  * request data in `resolve` mode, and return the HTML together with its
  * hydration payload (`<script type="application/mmd+json">`).
  */
-export function render(
+export async function render(
   component: ServerComponent,
   options: RenderOptions = {},
 ): Promise<RenderResult> {
@@ -135,7 +137,7 @@ export function render(
     return {
       html,
       payload,
-      scriptTag: createPayloadScriptTag(session.rootId, payload),
+      scriptTag: session.initialDelivery === undefined ? createPayloadScriptTag(session.rootId, payload) : '',
       settlement: session.settlement,
     };
   });

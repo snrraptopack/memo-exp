@@ -45,7 +45,7 @@ export function prepareRenderToReadableStream(
       const root = current.mount() as unknown as StringRenderableNode;
       await current.settle();
       const html = current.wrap(root.toString(options.markers === true));
-      return options.markers === true
+      return options.markers === true && current.initialDelivery === undefined
         ? [html, createPayloadScriptTag(current.rootId, current.payload())]
         : [html];
     },

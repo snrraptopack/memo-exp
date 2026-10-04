@@ -16,6 +16,7 @@ import {
   createApplicationRuntime,
   runWithApplicationRuntime,
   unregisterSubtree,
+  rootFactoryStore,
   type ApplicationRuntime,
   type DocumentLike,
 } from '@memoized-dom/runtime/server';
@@ -68,6 +69,7 @@ export class RenderSession {
   readonly routeRuntime: RouteRuntime;
   readonly dataRuntime: DataRuntime;
   readonly rootId: string;
+  readonly initialDelivery;
   settlement: RenderSettlement = SHELL;
 
   private readonly controller = new AbortController();
@@ -96,6 +98,12 @@ export class RenderSession {
       options.fetch === undefined ? {} : { fetch: options.fetch },
     );
     this.rootId = serverRootId(component);
+    const delivery = rootFactoryStore().get(component)?.initialDelivery;
+    if (options.initialKey !== undefined && delivery?.key !== options.initialKey) {
+      this.dispose();
+      throw new Error('memo-dom: server HTML and browser binding contracts do not match');
+    }
+    this.initialDelivery = options.initialKey === undefined ? undefined : delivery;
     // Abort releases in-flight request data immediately rather than at the
     // asynchronous disposal that follows the rejected render.
     this.controller.signal.addEventListener('abort', () => this.dataRuntime.clear(), {
@@ -148,6 +156,12 @@ export class RenderSession {
 
   mount(): Node {
     this.signal.throwIfAborted();
+    if (this.initialDelivery !== undefined) {
+      const writer = this.tier.document.htmlWriter;
+      if (writer === undefined) throw new Error('memo-dom: initial delivery requires the string renderer');
+      const html = this.initialDelivery.html;
+      return writer.create(() => html);
+    }
     return this.component(this.rootId, null);
   }
 
@@ -178,7 +192,7 @@ export class RenderSession {
 
   /** Wrap serialized application HTML in the hydration root marker pair. */
   wrap(html: string): string {
-    return this.options.markers === true
+    return this.initialDelivery === undefined && this.options.markers === true
       ? `<!--mmd:r:${this.rootId}-->${html}<!--/mmd-->`
       : html;
   }

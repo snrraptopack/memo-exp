@@ -64,6 +64,7 @@ import { planInitialRendering, type InitialRenderPlan } from './planning/initial
 import { emitInitialMount } from './emission/initial-entry';
 import { planInitialDom } from './emission/initial-dom';
 import { emitInitialHtml } from './emission/initial-html';
+import { planInitialDelivery, type InitialDelivery } from './planning/initial-delivery';
 
 export interface CompiledComponentExport {
   exported: string;
@@ -142,6 +143,8 @@ export interface CompiledModules {
   applicationRoot?: CompiledApplicationRoot;
   /** Initial content is independent of the DOM/browser program. */
   initialRender: InitialRenderPlan;
+  /** Matching server HTML and browser program; absent when request evaluation is required. */
+  initialDelivery?: InitialDelivery;
   /** Separate browser target; valid only with emitInitialHtml(initialRender). */
   initialBrowserOutput?: Record<string, string>;
   initialBrowserMaps?: Record<string, CompilerSourceMap>;
@@ -634,6 +637,13 @@ function compileLinkedModules(
     (importer, specifier) => resolveModule(importer, specifier, entries, options)?.id,
     options.runtimePath ?? '@memoized-dom/runtime');
   const initialDom = initialRender.kind === 'bindings' && emitInitialHtml(initialRender) !== null ? planInitialDom(initialRender) : null;
+  const initialDelivery = options.hot === true || options.routedEnvironment === 'server' && options.moduleStateCells === false
+    ? undefined : planInitialDelivery(
+    initialRender, emitInitialHtml(initialRender), initialDom !== null, applicationRoot?.key,
+    new Map([...entries].map(([id, entry]) => [id, entry.source])),
+    [...manifests.values()].some(manifest => Object.values(manifest.exports).some(value =>
+      value.type === 'state' || value.type === 'function' && (value.writes.length > 0 || value.unbounded))),
+  );
   const emitInitialBrowser = (initialRender.kind === 'mixed' || initialDom !== null) && options.hot !== true && options.routedEnvironment !== 'server';
   const routeManifestModule =
     applicationRoot?.moduleId ?? entries.values().next().value?.id;
@@ -847,7 +857,9 @@ function compileLinkedModules(
       ).map(([local, imported]) => [local, imported.key])),
       emitRouteManifest: entry.id === routeManifestModule,
       ...(applicationRoot?.moduleId === entry.id
-        ? { rootComponent: applicationRoot.local }
+        ? { rootComponent: applicationRoot.local,
+            ...(options.routedEnvironment === 'server' && initialDelivery !== undefined
+              ? { initialDelivery } : {}) }
         : {}),
     };
     const initialComponents=Object.fromEntries(Object.entries(initialDom?.factories??{}).flatMap(([key,plan])=>
@@ -884,6 +896,7 @@ function compileLinkedModules(
     maps,
     metadata,
     initialRender,
+    ...(initialDelivery === undefined ? {} : { initialDelivery }),
     ...(emitInitialBrowser ? { initialBrowserOutput: { ...output, ...initialBrowserOutput },
       initialBrowserMaps: { ...maps, ...initialBrowserMaps } } : {}),
     routes: [...new Set(linkedRoutes.map(route => route.fullPattern))]
