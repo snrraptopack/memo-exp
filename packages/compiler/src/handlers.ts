@@ -45,8 +45,14 @@ import {
   objectBindingName,
   propNameForBinding,
 } from './components/props';
-import { analyzeHandler } from './handlers/analyze';
+import { planHandlerWrites } from './handlers/analyze';
+import { emitHandlerWrites } from './emission/handler';
 import { callsOnlyCommittedLocalHelpers } from './handlers/local-calls';
+
+/** The coordinator owns the transition from captured writes to DOM lowering. */
+function analyzeHandler(...args: Parameters<typeof planHandlerWrites>): void {
+  emitHandlerWrites(args[0], planHandlerWrites(...args));
+}
 
 export type HandlerFn =
   | t.ArrowFunctionExpression

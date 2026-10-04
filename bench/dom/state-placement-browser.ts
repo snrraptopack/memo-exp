@@ -140,7 +140,7 @@ function validateSelectionSequence(id: string, app: App, count: number): void {
   validate(id, app, transition, before);
   operate(app, 'clear');
 }
-export interface BenchRow { name: string; timings: Record<string, number> }
+export interface BenchRow { name: string; timings: Record<string, number>; samples?: Record<string, number[]> }
 function validateAll(): void {
   // Untimed correctness gates cover every operation and placement, not only selection.
   for (const { id, app } of adapters) {
@@ -157,14 +157,19 @@ function validateAll(): void {
     for (const count of [1000, 10000]) validateSelectionSequence(id, app, count);
   }
 }
-function runAll(): BenchRow[] {
+function runAll(options: { samples?: number; names?: string[]; collectSamples?: boolean } = {}): BenchRow[] {
+  const runs = options.samples ?? RUNS;
+  if (!Number.isSafeInteger(runs) || runs < 1) throw new Error('samples must be a positive integer');
+  if (options.names?.some(name => !scenarios.some(scenario => scenario.name === name))) {
+    throw new Error('Unknown DOM comparison scenario');
+  }
   validateAll();
-  return scenarios.map((scenario, index) => {
+  return scenarios.filter(scenario => options.names === undefined || options.names.includes(scenario.name)).map((scenario, index) => {
     console.info(`measure ${scenario.name}`);
     const timings: Record<string, number> = {};
     const samples = new Map(adapters.map(({ id }) => [id, [] as number[]]));
     // Rotate adapter order to reduce a consistent first/last measurement bias.
-    for (let sample = 0; sample < RUNS; sample++) {
+    for (let sample = 0; sample < runs; sample++) {
       for (let offset = 0; offset < adapters.length; offset++) {
         const { id, app } = adapters[(index + sample + offset) % adapters.length]!;
         setup(app, scenario);
@@ -177,7 +182,7 @@ function runAll(): BenchRow[] {
       }
     }
     for (const [id, values] of samples) timings[id] = median(values);
-    return { name: scenario.name, timings };
+    return { name: scenario.name, timings, ...(options.collectSamples ? { samples: Object.fromEntries(samples) } : {}) };
   });
 }
 (window as unknown as Record<string, unknown>).__runAll = runAll;

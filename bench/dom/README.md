@@ -1,5 +1,33 @@
 # DOM List Benchmark
 
+## Local comparisons
+
+`bun run bench:dom:compare --before-ref=COMMIT` compiles the same authored DOM
+fixtures with an isolated Git snapshot and the current source, then measures
+them in before/after/after/before order. All nine variants retain the existing
+21-scenario and mixed-sequence correctness gates; every timed sample checks
+text, classes, order and retained node identity outside timing. Seven samples
+per cell are the default. Production bundles use deterministic input seeds.
+
+```sh
+bun run bench:dom:compare --before-ref=e0cd1d5
+bun run bench:dom:compare --before-ref=e0cd1d5 --isolate=runtime --operations=swap,remove,reverse --samples=15
+bun run bench:dom:compare --before-ref=e0cd1d5 --isolate=compiler --full
+```
+
+`--isolate=runtime` uses the current compiler with each runtime;
+`--isolate=compiler` uses each compiler with the current runtime. The default
+`both` uses the matching compiler and runtime from each revision. Runtime-only
+comparison requires compatible generated/runtime APIs. The default timing
+selection covers the eleven 10k scenarios; `--full` also times the 1k scenarios.
+The current side includes uncommitted source changes, recorded in the metadata.
+
+The runner writes isolated generated files, browser hashes, raw sample arrays
+and a comparison report under `dist/compare/`. It does not replace tracked
+generated apps or the main timing results. Builds finish before measurement;
+each page closes before the next comparison run. Unchanged vanilla remains a
+noise control. Local comparisons establish workload evidence, not a VM ranking.
+
 The user's latest VM report for `581b40f` covers two full executions of this
 matrix and all ten pinned Octane targets: [VM report](../octane/vm-review-581b40f.md).
 All reported gates passed. Across both DOM executions, 10k partial updates

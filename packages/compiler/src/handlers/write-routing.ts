@@ -27,7 +27,7 @@ import {
   itemFieldVisibleBeyondList,
 } from './mutation-targets';
 import { HandlerPath, walkHandler, type FunctionNode } from './traversal';
-import type { HandlerExecutionSite } from './execution-sites';
+import type { HandlerExecutionSite } from './plan';
 import { captureMutationJournals } from '../analysis/list-mutation-journals';
 import { hasKnownAccessor, isPlainDataAssignment } from './member-assignment';
 

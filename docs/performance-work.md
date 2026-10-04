@@ -1949,6 +1949,56 @@ timing. At 10k, sparse replacement medians were 6.8/5.6 ms (before/after) and
 insertion was 5.8/5.7 then 5.2/5.5. The mixed timings do not establish an overall
 benchmark gain. These are isolated structural costs, not new VM results.
 
+## Local comparison tooling and captured handler writes
+
+The local DOM comparison command is restored as `bench:dom:compare`. It builds
+the same authored fixtures into isolated directories through each compiler and
+can compare both compiler/runtime revisions or isolate either layer. It keeps
+the existing nine-variant correctness gates and validates every timed sample,
+including retained identity. Raw samples, deterministic inputs, bundle hashes,
+checkout status and ABBA run order are recorded under ignored `dist/compare/`.
+Tracked generated output and VM reports are not replaced.
+
+Handler write capture now returns `HandlerWritePlan`; the coordinator hands it
+to DOM instrumentation after capture completes. A contract test verifies that
+capture preserves the authored AST and emission header, and that emission uses
+the captured operation after the original operation map is cleared. This is a
+limited architecture extraction; shared mutation analysis still uses `Ctx`.
+All eight DOM source graphs and the Octane source graph produce byte-identical
+compiled modules against `e0cd1d5`, so this refactor establishes no runtime gain.
+
+A runtime-only comparison against `be390aa`, with the same current compiler,
+reproduced slower swap/removal work while retaining the bulk-clear gain. Other
+operations were noisy. A separate 10k-item copy check found similar `slice` and
+captured native `toSpliced` costs (roughly 0.018–0.026 ms per copy in two orders),
+so the safer snapshot copy was kept rather than assuming it caused the slowdown.
+
+A candidate moved cyclic/recovery checks outside the placement loop. It passed
+the selected regression suites and every browser gate, but a 15-sample runtime
+comparison against `e0cd1d5` rejected it. Local Chromium medians, milliseconds:
+
+| Operation / rows | Baseline / candidate, before first | Baseline / candidate, after first |
+|---|---:|---:|
+| Swap 10k / module inline | 3.2 / 4.7 | 3.1 / 4.7 |
+| Swap 10k / component-owned component rows | 4.3 / 6.2 | 4.6 / 6.0 |
+| Remove 10k / module inline | 3.7 / 5.2 | 3.9 / 4.5 |
+| Reverse 10k / module inline | 31.6 / 30.9 | 32.2 / 22.9 |
+| Reverse 10k / unchanged vanilla | 24.7 / 25.3 | 25.0 / 16.5 |
+
+Swap and removal slowed across all eight compiled variants in both orders.
+The apparent reverse gain in the second order also appeared in unchanged
+vanilla, so it does not establish a candidate gain. The candidate was removed;
+the committed runtime source remains unchanged from `e0cd1d5`. Earlier bulk
+removal, native-operation guards, text caching and recovery safeguards remain.
+
+Compiler/runtime builds and changed-source lint passed. The selected suites
+passed 260 distinct tests across 19 files after correcting the new plan test's
+missing factory-ID setup. Existing golden output remains unchanged. The current
+Octane fixture receives no guarded-list provenance and still has two subtree
+fallbacks: broader helper-result/mutation summaries and the general retained
+reconciliation path remain the next performance work. No new VM speed claim is
+made; dependencies, example sources and the Octane pin are unchanged.
+
 ## Earlier candidates retained for tracking
 
 - Prove when module-state selection can refresh only the previous and next keyed

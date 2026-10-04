@@ -34,10 +34,9 @@ import { isPublishedPropCallback } from '../components/prop-effects';
 import {
   walkHandler,
 } from './traversal';
-import { finalizeHandlerInstrumentation } from './execution-sites';
+import type { HandlerWritePlan } from './plan';
 import { createHandlerWriteRouting } from './write-routing';
 import { captureOwnerListWrites } from '../analysis/owner-list-structure';
-import { applyListOperations } from '../emission/list-update';
 
 /** A direct command on a compiler-known form publishes its own changes. */
 function isFormSubmit(ctx: Ctx, component: string | null, name: string, callee: t.MemberExpression): boolean {
@@ -90,7 +89,7 @@ function hasPrimitiveReceiver(
   return false;
 }
 
-export function analyzeHandler(
+export function planHandlerWrites(
   ctx: Ctx,
   rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
   compName: string | null,
@@ -98,9 +97,9 @@ export function analyzeHandler(
   eventBoundary = false,
   eventOriginId?: t.Expression,
   executionAwareRoot = false,
-): void {
-  // Analysis runs on a deep parser-neutral clone. Commits are appended into
-  // the clone's scopes and the mutated body is adopted wholesale at the end.
+): HandlerWritePlan {
+  // Capture writes on a deep parser-neutral clone. Emission later instruments
+  // this exact clone and adopts its body; authored code stays intact here.
   const clonedFn = cloneNode(
     rootFn as unknown as BaseNode,
   ) as unknown as typeof rootFn;
@@ -835,18 +834,6 @@ export function analyzeHandler(
     },
   }, ctx.moduleId);
 
-  applyListOperations(ctx, listWrites);
-  finalizeHandlerInstrumentation(
-    ctx,
-    rootFn,
-    clonedFn,
-    ROOT,
-    scopes,
-    executionSites,
-    compName,
-    rowCtx,
-    eventBoundary,
-    eventOriginId,
-    executionAwareRoot,
-  );
+  return { original: rootFn, copy: clonedFn, scopes, executionSites, listWrites,
+    owner: compName, row: rowCtx, eventBoundary, eventOriginId, executionAwareRoot };
 }

@@ -116,6 +116,17 @@ expression-bearing blocks remain available to read collection and transparent
 source lowering. List source/target/key queries consume captured semantic inputs
 through the shared site planner.
 
+`handlers/analyze.ts` captures callback writes as a `HandlerWritePlan` over an
+exact parser-neutral clone. It leaves the authored callback and emission header
+untouched. The coordinator in `handlers.ts` passes that plan to
+`emission/handler.ts`, which lowers guarded list operations and scheduling
+commits after analysis completes. `handlers/plan.ts` owns the shared contract;
+write routing no longer imports its execution-site type from instrumentation.
+The plan carries captured operation facts rather than rediscovering them after
+AST changes. General handler routing still uses `Ctx` and existing mutation
+services; this is one boundary extracted from the current compiler, not a
+complete target-independent handler IR.
+
 `jsx/conditional-plan.ts` owns branch flattening, source-order selection,
 renderable text wrapping and branch key validation. `ConditionalBranchPlan`
 contains neither a region suffix nor DOM operations. Read analysis combines

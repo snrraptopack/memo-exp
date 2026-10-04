@@ -15,13 +15,7 @@ import { buildEventOriginCommit } from '../handler-origin';
 import { generatedIdentifier, md } from '../identifiers';
 import { HandlerPath } from './traversal';
 import { isPlainDataAssignment } from './member-assignment';
-
-export interface HandlerExecutionSite {
-  path: HandlerPath;
-  writes: ScopeWrites;
-  flag?: t.Identifier;
-  temporaries?: t.Identifier[];
-}
+import type { HandlerExecutionSite } from './plan';
 
 export function finalizeHandlerInstrumentation(
   ctx: Ctx,
