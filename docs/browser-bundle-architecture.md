@@ -1217,6 +1217,48 @@ passes 26. Runtime, compiler, server and Vite builds/type checks pass. The route
 reduce required hydration, creation and capabilities while preserving navigation,
 pending/error behavior and retries. It is not a zero-JavaScript target.
 
+### Optional route preparation without restricting navigation
+
+Ordinary compiled routes no longer retain preparation execution, lazy-module
+caches and routed payload restoration when none of those capabilities are used.
+The existing navigation engine consults a small preparation capability; the
+preparation module installs its runner and owns its hydration bridge. Public
+`createRouteRuntime()` construction retains full preparation support for authored
+metadata. Both constructors delegate to the same engine, with the same state,
+readiness, blockers, navigation and scroll behavior. No second renderer or route
+algorithm was introduced. Router publication now preserves source modules so
+consumer bundlers can remove unused feature initialization.
+
+Paired esbuild source graphs against `802d42c`, identical current compiler and
+authored fixtures, hydration included:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Routed fetched page with Group | 94,366 / 29,582 | 90,247 / 28,351 |
+| Fetched page with Group | 45,083 / 14,927 | 45,083 / 14,927 |
+| Owner counter | 17,820 / 6,616 | 17,820 / 6,616 |
+
+All nine before/current/published browser graphs pass interaction checks,
+including navigation away from Group and back. The audit rejects preparation
+execution in ordinary route graphs. Separate minified source and published
+constructor bundles verify lazy-load failure, retry and subsequent navigation
+using only the public constructor import. Router tests pass 112 cases plus type
+checking; focused preparation, lazy-module, Group error/boundary and navigation
+readiness tests pass 39 cases. Production SSR and concurrent isolation pass
+seven cases.
+
+The production Vite routed Group fixture now emits 89,162 B raw / 27,139 B gzip
+across all browser chunks, with the same 783 B served HTML and 315 B payload.
+The preceding production measurement was 93,268 / 28,377 B. This comparison uses
+the recorded production baseline; the independently reproducible source
+comparison above isolates this router change. The SSR audit's `--before-ref`
+archives compiler/Vite only and therefore uses the current router on both sides.
+Counter and interactive-fetch production controls remain 8,730 / 3,517 B and
+45,257 / 14,839 B. These are delivered bytes, not CPU performance claims.
+
+Routing and Group retain browser execution, pending/error presentation and retry
+behavior. Numbered documentation and dependency versions are unchanged.
+
 ### Remaining order
 
 | Order | Work | Required evidence |

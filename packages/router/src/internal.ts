@@ -30,7 +30,6 @@ import {
   RoutedPreparationRedirectError,
   serializeRoutedPreparationState,
 } from './preparation';
-import type { SerializedRoutedPreparationState } from './preparation';
 export type {
   RouteModuleListener,
   RouteModuleState,
@@ -38,37 +37,12 @@ export type {
   SerializedRoutedPreparationState,
 } from './preparation';
 
-interface RouterRuntimeBridge {
-  restoreState?(state: unknown): void;
-  pendingState?: unknown;
-}
-
-const routerRuntimeBridgeKey = Symbol.for(
-  'memoized-dom:router-runtime-bridge',
-);
-const routedBridgeRealm = globalThis as unknown as Record<PropertyKey, unknown>;
-const routedBridgeExisting = routedBridgeRealm[routerRuntimeBridgeKey];
-const routedBridge =
-  typeof routedBridgeExisting === 'object' && routedBridgeExisting !== null
-    ? routedBridgeExisting as RouterRuntimeBridge
-    : {};
-routedBridgeRealm[routerRuntimeBridgeKey] = routedBridge;
-routedBridge.restoreState = state => {
-  restoreRoutedPreparationState(
-    getActiveRouteRuntime(),
-    state as SerializedRoutedPreparationState,
-  );
-};
-if (routedBridge.pendingState !== undefined) {
-  routedBridge.restoreState(routedBridge.pendingState);
-  routedBridge.pendingState = undefined;
-}
-
 export const route = activeRoute;
 export { routeRegionIdentity } from './region-identity';
 export const navigateRoute = activeNavigate;
 
-export { createRouteRuntime, supportsNavigationAPI } from './runtime';
+export { createRouteRuntime } from './runtime-full';
+export { supportsNavigationAPI } from './runtime';
 export { redirectRoute } from './types';
 export { createRouteManifest } from './manifest';
 export type {

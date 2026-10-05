@@ -93,7 +93,7 @@ cover actual server-node adoption and mismatch recovery. Record both reports
 when moving work across the browser/hydration boundary, since reducing one graph
 can increase the other.
 
-The audit includes stable fetch and promise-read fixtures. Compare runtime/data
+The audit includes stable fetch, promise-read, Group and routed Group fixtures. Compare runtime/data/router
 source changes against a commit with:
 
 ```bash

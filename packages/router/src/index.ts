@@ -60,7 +60,8 @@ export function forward() {
 }
 export { getActiveRouteRuntime, setActiveRouteRuntime, runWithRouteRuntime } from './active-runtime';
 
-export { createRouteRuntime, supportsNavigationAPI } from './runtime';
+export { createRouteRuntime } from './runtime-full';
+export { supportsNavigationAPI } from './runtime';
 export { redirectRoute } from './types';
 export type { RouteEnvironment, RouteRuntime, RouteRuntimeOptions } from './runtime';
 

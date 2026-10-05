@@ -1,4 +1,6 @@
 import type { RouteRuntime } from './runtime';
+import { getActiveRouteRuntime } from './active-runtime';
+import { installRoutePreparationRunner } from './preparation-capability';
 import type {
   RouteMatch,
   RouteQuery,
@@ -231,10 +233,7 @@ export function registerRoutedPreparation(
   definitions.set(definition.id, Object.freeze({ ...definition }));
 }
 
-export function hasRoutedPreparations(matches: readonly RouteMatch[]): boolean {
-  return preparationIds(matches).length > 0 || matches.some(match =>
-    typeof (match.metadata as RoutedPreparationMetadata | undefined)?.moduleLoader === 'function');
-}
+export { hasRoutedPreparations } from './preparation-capability';
 
 /** Compiler-owned route module cache. Re-registration replaces an HMR predecessor. */
 export function registerRouteComponent(key: string, component: unknown): unknown {
@@ -539,4 +538,34 @@ export async function invokeServerRoutedPreparation(
         },
       }
     : { kind: 'data', data: value, state: transportState(state) };
+}
+
+// Restoring routed data belongs to preparation, not ordinary URL navigation.
+// This module is retained by preparations/lazy modules or public construction.
+installRoutePreparationRunner(prepareRoutedMatches);
+
+interface RouterPreparationBridge {
+  restoreState?(state: unknown): void;
+  pendingState?: unknown;
+}
+
+const routerRuntimeBridgeKey = Symbol.for(
+  'memoized-dom:router-runtime-bridge',
+);
+const routedBridgeRealm = globalThis as unknown as Record<PropertyKey, unknown>;
+const routedBridgeExisting = routedBridgeRealm[routerRuntimeBridgeKey];
+const routedBridge =
+  typeof routedBridgeExisting === 'object' && routedBridgeExisting !== null
+    ? routedBridgeExisting as RouterPreparationBridge
+    : {};
+routedBridgeRealm[routerRuntimeBridgeKey] = routedBridge;
+routedBridge.restoreState = state => {
+  restoreRoutedPreparationState(
+    getActiveRouteRuntime(),
+    state as SerializedRoutedPreparationState,
+  );
+};
+if (routedBridge.pendingState !== undefined) {
+  routedBridge.restoreState(routedBridge.pendingState);
+  routedBridge.pendingState = undefined;
 }

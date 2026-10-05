@@ -13,6 +13,8 @@ export default defineConfig({
   output: {
     dir: './dist',
     format: 'esm',
+    preserveModules: true,
+    preserveModulesRoot: './src',
     minify: true,
     entryFileNames: '[name].js',
     chunkFileNames: 'chunks/[name]-[hash].js',

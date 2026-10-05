@@ -8,7 +8,7 @@ import { compileModules } from '@memoized-dom/compiler';
 import { sizeFixtures } from './fixtures';
 
 const args = process.argv.slice(2);
-if (args.some(arg => arg !== '--verify' && arg !== '--hydrate' && !arg.startsWith('--before-ref='))) throw new Error('Use --verify, --hydrate or --before-ref=<commit>');
+if (args.some(arg => arg !== '--verify' && arg !== '--hydrate' && !arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --verify, --hydrate, --before-ref=<commit> or --fixture=<name>');
 const hydration = process.argv.includes('--hydrate');
 
 const root = resolve(import.meta.dirname, '../..');
@@ -27,12 +27,16 @@ if (reference !== undefined) {
   const archive = resolve(baselineRoot, 'runtime.tar');
   execFileSync('git', ['archive', `--output=${archive}`, baseline,
     'packages/runtime/src', 'packages/runtime/package.json',
-    'packages/data/src', 'packages/data/package.json'], { cwd: root });
+    'packages/data/src', 'packages/data/package.json',
+    'packages/router/src', 'packages/router/package.json'], { cwd: root });
   execFileSync('tar', ['-xf', archive, '-C', baselineRoot]);
 }
 const rows: Array<{ fixture: string; graph: string; raw: number; gzip: number; brotli: number;
   inputs: Array<{ path: string; bytes: number }> }> = [];
+const selected = new Set(args.filter(arg => arg.startsWith('--fixture=')).map(arg => arg.slice(10)));
+for (const name of selected) if (!Object.hasOwn(sizeFixtures, name)) throw new Error(`Unknown fixture ${name}`);
 for (const [fixture, sources] of Object.entries(sizeFixtures)) {
+  if (selected.size && !selected.has(fixture)) continue;
   const compiled = compileModules({ ...sources,
     './main.ts': `${hydration ? "import '@memoized-dom/runtime/hydrate';" : ''}import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
   });
@@ -64,6 +68,9 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
         if (graph !== 'package') builder.onResolve({ filter: /^@memoized-dom\/data(?:\/internal)?$/ }, args => ({
           path: resolve(graphRoot, args.path.endsWith('/internal') ? 'packages/data/src/internal.ts' : 'packages/data/src/index.ts'),
         }));
+        if (graph !== 'package') builder.onResolve({ filter: /^@memoized-dom\/router(?:\/internal)?$/ }, args => ({
+          path: resolve(graphRoot, args.path.endsWith('/internal') ? 'packages/router/src/internal.ts' : 'packages/router/src/index.ts'),
+        }));
       } }],
     });
     const output = result.outputFiles[0]!;
@@ -72,6 +79,10 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       .filter(input => input.bytes > 0).sort((a, b) => b.bytes - a.bytes);
     const row = { fixture, graph, raw: output.contents.byteLength, gzip: gzipSync(output.contents).byteLength,
       brotli: brotliCompressSync(output.contents).byteLength, inputs };
+    if (fixture === 'request-routed-group' && graph !== 'source-before' &&
+      inputs.some(input => /router\/(?:src|dist)\/preparation\.(?:ts|js)$/.test(input.path))) {
+      throw new Error('Ordinary routing must not retain route preparation execution');
+    }
     rows.push(row);
     writeFileSync(resolve(directory, `${fixture}-${graph}.js`), output.contents);
     writeFileSync(resolve(directory, `${fixture}-${graph}.meta.json`), JSON.stringify(result.metafile, null, 2));
@@ -80,7 +91,7 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
 }
 const lines = ['# Browser bundle audit', '',
   `HEAD: ${revision}. Working tree includes changes: ${status !== ''}.`, '',
-  `Runtime/data source baseline: ${baseline ?? 'not requested'}. All graphs use the current compiler and identical authored fixtures.`, '',
+  `Runtime/data/router source baseline: ${baseline ?? 'not requested'}. All graphs use the current compiler and identical authored fixtures.`, '',
   'Stable authored fixtures compiled by the current compiler. Each graph includes mount and root metadata.', '',
   `Optional hydration entry included: ${hydration}. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
   '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime and data source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
@@ -95,7 +106,8 @@ if (process.argv.includes('--verify')) {
     args: ['--no-sandbox', '--disable-gpu'],
   });
   const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
-    const name = new URL(request.url).pathname.slice(1);
+    const url = new URL(request.url);
+    const name = url.searchParams.get('fixture') ?? url.pathname.slice(1);
     if (name === 'api/user') return Response.json({ name: 'Ada' });
     return allowed.has(name) ? new Response(Bun.file(resolve(directory, name))) : new Response('Not found', { status: 404 });
   } });
@@ -106,9 +118,13 @@ if (process.argv.includes('--verify')) {
       const page = await browser.newPage();
       const errors: string[] = []; page.on('pageerror', error => errors.push(String(error)));
       try {
-        await page.goto(`http://127.0.0.1:${server.port}/${row.fixture}-${row.graph}.html`);
+        await page.goto(`http://127.0.0.1:${server.port}/?fixture=${row.fixture}-${row.graph}.html`);
         await page.waitForSelector('#root>main', { timeout: 5000 });
-        if (row.fixture.startsWith('request-') || row.fixture === 'promise-data') await page.waitForFunction(() => document.querySelector('#root>main>p')?.textContent === 'Ada');
+        if (row.fixture.startsWith('request-') || row.fixture === 'promise-data') await page.waitForFunction(() => document.querySelector('#root main p')?.textContent === 'Ada');
+        if (row.fixture === 'request-routed-group') {
+          await page.click('.about'); await page.waitForSelector('h2');
+          await page.click('.home'); await page.waitForFunction(() => document.querySelector('main p')?.textContent === 'Ada');
+        }
         await page.evaluate(async fixture => {
           const main = document.querySelector('#root>main')!;
           const button = main.querySelector('button')!;

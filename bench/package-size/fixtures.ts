@@ -1,5 +1,12 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-group': { './App.tsx': `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
+    export function App(){const user=$fetch('/api/user');return <main><Group pending={Pending}><p>{user?.name}</p></Group></main>;}` },
+  'request-routed-group': { './App.tsx': `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
+    export function App(){const user=$fetch('/api/user');return <main route="/">
+      <nav><a class="home" route-to="/">Home</a><a class="about" route-to="/about">About</a></nav>
+      <section route="/"><Group pending={Pending}><p>{user?.name}</p></Group></section>
+      <section route="/about"><h2>About directory</h2></section></main>;}` },
   'request-data': { './App.tsx': `export function App(){const user=$fetch('/api/user');
     return <main><p>{user?.name}</p></main>;}` },
   'request-markup': { './App.tsx': `export function App(){const user=$fetch('/api/user');

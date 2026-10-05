@@ -10,7 +10,7 @@ import { collectRenderReadiness } from '@memoized-dom/runtime';
 import {
   hasRoutedPreparations,
   prepareRoutedMatches,
-} from './preparation';
+} from './preparation-capability';
 import {
   RouteHistoryCommittedUpdateError,
   type RouteHistory,
