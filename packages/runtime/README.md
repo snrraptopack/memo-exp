@@ -251,6 +251,12 @@ keeps the same behavior. Binding initializes from authored state; it does not
 implement replay of input events that occurred before JavaScript loaded.
 The helper is omitted from graphs without initial input binding.
 
+Compiler-generated markup uses one post-order traversal for server
+materialization and hydration claims. Browser adoption validates node types,
+tags and namespaces through the ordinary creation plan, without building a
+markup tree or decoding unused text and attributes. Value parsing stays on the
+server; ordinary client creation keeps native cached template cloning.
+
 The package is independently buildable:
 
 ```bash

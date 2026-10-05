@@ -2,6 +2,9 @@
 export const sizeFixtures: Record<string, Record<string, string>> = {
   'request-data': { './App.tsx': `export function App(){const user=$fetch('/api/user');
     return <main><p>{user?.name}</p></main>;}` },
+  'request-markup': { './App.tsx': `export function App(){const user=$fetch('/api/user');
+    return <main><p>{user?.name}</p><section>${Array.from({length:16},(_,index)=>
+      `<article data-card="${index}"><h2>Card ${index}</h2><p>{'Ready & waiting.'}</p></article>`).join('')}</section></main>;}` },
   'promise-data': { './App.tsx': `export function App(){const user=$read(Promise.resolve({name:'Ada'}));
     return <main><p>{user?.name}</p></main>;}` },
   static: { './App.tsx': `export function App(){return <main><h1>Static shell</h1><p>Ready.</p></main>;}` },

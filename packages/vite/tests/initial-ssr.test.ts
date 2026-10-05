@@ -144,25 +144,32 @@ describe('production initial SSR bootstrap', () => {
   }, 60_000);
 
   it('restores request data and retains server nodes through ordinary hydration in Chrome', async context => {
+    const cards = Array.from({length:16}, (_, index) =>
+      `<article data-card="${index}"><h2>Card ${index}</h2><p>{'Ready & waiting.'}</p></article>`).join('');
     const result = await production('request-data', `export function App(){const user=$fetch('/api/user');let count=0;return <main>
-      <h1>{user?.name}</h1><button onClick={()=>count++}>{count}</button></main>;}`);
+      <h1>{user?.name}</h1><button onClick={()=>count++}>{count}</button><section>${cards}</section></main>;}`);
     expect(result.html).not.toContain('mmd:initial-delivery:');
     expect(result.files.filter(file => file.type === 'chunk' && file.isEntry)).toHaveLength(1);
     const html = await (await result.app.fetch(new Request('https://app.test/demo/'))).text();
     expect(html.replace(/<!--[^]*?-->/g, '')).toContain('<h1>Ada</h1>');
     expect(html).toContain('mmd:r:App');
     expect(html).toContain('application/mmd+json');
+    expect(result.files.filter(file => file.type === 'chunk').map(file => file.code).join('\n'))
+      .toContain('Ready &amp; waiting.');
     const executablePath = chromeExecutable();
     if (!executablePath) { context.skip(); return; }
     await browserPage(result, html, executablePath, async (page, apiRequests) => {
       expect(await page.$eval('h1', node => node.textContent)).toBe('Ada');
+      expect(await page.$$eval('article', nodes => nodes.map(node => node.textContent)))
+        .toEqual(Array.from({length:16}, (_, index) => `Card ${index}Ready & waiting.`));
       expect(await page.$('script[type="application/mmd+json"]')).toBeNull();
       expect(await page.evaluate(() => (window as unknown as { created: string[] }).created.filter(tag => tag !== 'link'))).toEqual([]);
       await page.click('button');
       await page.waitForFunction(() => document.querySelector('button')?.textContent === '1');
       expect(await page.evaluate(() => {
         const initial = (window as unknown as { initial: Element[] }).initial;
-        return ['main', 'h1', 'button'].every(selector => initial.includes(document.querySelector(selector)!));
+        return ['main', 'h1', 'button', 'section', ...Array.from({length:16}, (_, index) =>
+          `article[data-card="${index}"]`)].every(selector => initial.includes(document.querySelector(selector)!));
       })).toBe(true);
       expect(apiRequests).toEqual([]);
     });

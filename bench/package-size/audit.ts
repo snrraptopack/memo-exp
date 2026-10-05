@@ -36,6 +36,9 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
   const compiled = compileModules({ ...sources,
     './main.ts': `${hydration ? "import '@memoized-dom/runtime/hydrate';" : ''}import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
   });
+  if (fixture === 'request-markup' && !compiled['./App.tsx']?.includes('materializeMarkup')) {
+    throw new Error('The markup fixture must exercise template materialization');
+  }
   const modules = new Map(Object.entries(compiled).map(([id, source]) => [posix.resolve('/', id), source]));
   for (const graph of ['package', 'source', ...(baselineRoot ? ['source-before'] : [])]) {
     const graphRoot = graph === 'source-before' ? baselineRoot! : root;
@@ -105,14 +108,23 @@ if (process.argv.includes('--verify')) {
       try {
         await page.goto(`http://127.0.0.1:${server.port}/${row.fixture}-${row.graph}.html`);
         await page.waitForSelector('#root>main', { timeout: 5000 });
-        if (row.fixture === 'request-data' || row.fixture === 'promise-data') await page.waitForFunction(() => document.querySelector('#root>main>p')?.textContent === 'Ada');
+        if (row.fixture.startsWith('request-') || row.fixture === 'promise-data') await page.waitForFunction(() => document.querySelector('#root>main>p')?.textContent === 'Ada');
         await page.evaluate(async fixture => {
           const main = document.querySelector('#root>main')!;
           const button = main.querySelector('button')!;
           const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
           const check = (condition: boolean) => { if (!condition) throw new Error(`Failed ${fixture} interaction`); };
           if (fixture === 'static') { check(main.textContent === 'Static shellReady.'); return; }
-          if (fixture === 'request-data' || fixture === 'promise-data') { check(main.querySelector('p')?.textContent === 'Ada'); return; }
+          if (fixture.startsWith('request-') || fixture === 'promise-data') {
+            check(main.querySelector('p')?.textContent === 'Ada');
+            if (fixture === 'request-markup') {
+              const cards = [...main.querySelectorAll('article')];
+              check(cards.length === 16 && cards.every((card,index) =>
+                card.getAttribute('data-card') === String(index) &&
+                card.textContent === `Card ${index}Ready & waiting.`));
+            }
+            return;
+          }
           if (fixture === 'input-list') {
             const input = main.querySelector('input')!;
             const originals = [...main.querySelectorAll('li')];

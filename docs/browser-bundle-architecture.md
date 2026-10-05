@@ -956,6 +956,49 @@ The production SSR fetch fixture falls from 48,915 / 15,892 to 47,524 / 15,560
 browser bytes, with the same 564-byte HTML and 315-byte payload. Static and closed
 binding SSR fixtures remain unchanged, including zero-JavaScript static output.
 
+### Traverse markup without retaining server value parsing
+
+Markup hydration previously built a complete `MarkupChild` tree, decoded every
+text and attribute value, then recursively converted the tree to node
+expectations. Adoption uses only node type, tag and namespace. The shared
+`walkMarkup` traversal now supplies those claims directly to the existing
+`HydrationNodePlan`. Server `parseMarkup` uses the same traversal to build its
+value-bearing tree; attribute/entity decoding is retained only on the server.
+The old tag parser and hydration tree-to-expectation walk were removed. Runtime
+source has over eighty fewer lines after including the shared traversal.
+
+Source baseline `56fc150`, identical current compiler and authored fixtures,
+mount plus the optional hydration entry, whole-bundle raw/gzip bytes:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Fetch-only page | 47,386 / 15,689 | 46,279 / 15,334 |
+| Fetch plus sixteen markup cards | 49,068 / 15,997 | 47,961 / 15,639 |
+| Promise-read page | 50,154 / 16,287 | 49,047 / 15,946 |
+| Owner counter | 18,929 / 6,979 | 17,820 / 6,616 |
+
+The distributed fetch graph falls from 47,080 / 15,618 to 45,997 / 15,266 bytes.
+Production SSR falls from 47,524 / 15,560 to 46,441 / 15,232, with the same
+564-byte HTML and 315-byte payload. Production static output still ships zero
+JavaScript; closed initial-binding outputs are unchanged. All nine client-only
+source bundles, including the markup fixture, are byte-identical to the baseline.
+The audit checks that the new fixture actually emits `materializeMarkup`.
+
+Both audit modes pass all 27 browser graphs. The markup tests compare creation
+order, namespaces and decoded server values with native Chrome, including
+quoted angle brackets, entities, void elements, SVG and MathML. The production
+Chrome test adopts all sixteen server cards without creating elements, retains
+their identity through a counter update, consumes the data payload and performs
+no second fetch. Hydration tests pass 69 checks in sixteen files; server tests
+pass 121 checks. These are bundle and correctness results, not a CPU speed claim.
+
+The new audit also exposed an existing compiler text issue: authored
+`<p>Ready &amp; waiting.</p>` emits `Ready &amp;amp; waiting.` in its markup
+string and displays the entity spelling. This is reproducible without the
+runtime change. The audit uses `{'Ready & waiting.'}` to measure this batch;
+literal JSX entity normalization needs a compiler fix shared by initial HTML,
+ordinary DOM emission and SSR, rather than a special case in the runtime parser.
+
 ### Remaining order
 
 | Order | Work | Required evidence |

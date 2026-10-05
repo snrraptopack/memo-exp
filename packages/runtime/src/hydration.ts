@@ -12,7 +12,7 @@ import {
   getActiveEnvironment,
   runWithRenderEnvironment,
 } from './kernel';
-import { parseMarkup, type MarkupChild } from './markup-parse';
+import { walkMarkup } from './markup-walk';
 import type { RootFactoryDefinition } from './mount';
 export { HydrationMismatchError } from './hydration-error';
 import { HydrationMismatchError } from './hydration-error';
@@ -540,8 +540,8 @@ export class HydrationDocument
   }
 
   /**
-   * Markup adoption: parse the compiler's static subtree, then claim each
-   * parsed node through the active creation plan in creation order. This is
+   * Markup adoption: traverse the compiler's static subtree and claim each
+   * node through the active creation plan in creation order. This is
    * the hydration counterpart of materializeMarkup() — the claim sequence
    * and validation are identical to the imperative factory calls the markup
    * replaced, without constructing any real DOM. Claimed elements receive
@@ -549,29 +549,15 @@ export class HydrationDocument
    * imperative appends stay correct.
    */
   claimMarkup(markup: string): Node[] {
-    const expectations: HydrationNodeExpectation[] = [];
-    const collect = (children: MarkupChild[]): void => {
-      for (const child of children) {
-        if (child.type === 'text') {
-          expectations.push({ nodeType: 3 });
-          continue;
-        }
-        collect(child.children);
-        expectations.push({
-          nodeType: 1,
-          tagName: child.tag,
-          namespaceURI: child.ns,
-        });
-      }
-    };
-    collect(parseMarkup(markup));
     const plan = this.#activePlan();
-    return expectations.map((expectation) => {
-      const claimed = plan.claimNode(expectation);
-      return expectation.nodeType === 1
-        ? this.#adoptElement(claimed as Element)
-        : claimed;
+    const nodes: Node[] = [];
+    walkMarkup(markup, (tag, namespaceURI) => {
+      const claimed = plan.claimNode(tag === null
+        ? { nodeType: 3 }
+        : { nodeType: 1, tagName: tag, namespaceURI });
+      nodes.push(tag === null ? claimed : this.#adoptElement(claimed as Element));
     });
+    return nodes;
   }
 
   createComment(data: string): Comment {

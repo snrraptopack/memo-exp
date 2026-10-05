@@ -25,6 +25,50 @@ it('preserves DOM shape and custom-element creation timing in Chromium', async c
   try {
     const page = await browser.newPage();
     await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
+    const markupBundle = await build({
+      stdin: { contents: `export {walkMarkup} from './packages/runtime/src/markup-walk';
+        export {parseMarkup} from './packages/runtime/src/markup-parse';`, resolveDir: process.cwd() },
+      bundle: true, write: false, format: 'iife', globalName: 'Markup',
+    });
+    await page.addScriptTag({ content: markupBundle.outputFiles[0]!.text });
+    // Use the native parser here: the DOM test shim does not implement MathML.
+    const markupParity = await page.evaluate(() => {
+      type Parsed = {type: string; text?: string; tag?: string; ns?: string;
+        attrs?: [string,string][]; children?: Parsed[]};
+      const api = (globalThis as unknown as {Markup: {
+        walkMarkup(source: string, visit: (tag: string | null, ns: string) => void): void;
+        parseMarkup(source: string): Parsed[];
+      }}).Markup;
+      return [
+        '<main><svg><circle cx="5"/><path d="M0 0"></path></svg><math><mi>x</mi></math></main>',
+        `<div title="a > b &amp; c" disabled><span>one &lt; two</span><img src='logo.png'/>tail</div>`,
+      ].map(source => {
+        const template = document.createElement('template');
+        template.innerHTML = source;
+        const nodes: Node[] = [];
+        const collect = (parent: Node): void => {
+          for (const node of parent.childNodes) { collect(node); nodes.push(node); }
+        };
+        collect(template.content);
+        const shape: unknown[] = [];
+        api.walkMarkup(source, (tag, ns) => shape.push(tag === null ? [3] : [1,tag,ns]));
+        const nativeShape = nodes.map(node => node.nodeType === 3 ? [3] :
+          [1,(node as Element).localName,(node as Element).namespaceURI]);
+        const values: unknown[] = [];
+        const flatten = (children: Parsed[]): void => {
+          for (const node of children) {
+            if (node.children) flatten(node.children);
+            values.push(node.type === 'text' ? node.text : Object.fromEntries(node.attrs!));
+          }
+        };
+        flatten(api.parseMarkup(source));
+        const nativeValues = nodes.map(node => node.nodeType === 3 ? node.textContent :
+          Object.fromEntries([...(node as Element).attributes].map(attr => [attr.name,attr.value])));
+        return JSON.stringify(shape) === JSON.stringify(nativeShape) &&
+          JSON.stringify(values) === JSON.stringify(nativeValues);
+      });
+    });
+    expect(markupParity).toEqual([true, true]);
     const padding = '<span data-kind="item">item</span>'.repeat(16);
     for (const tag of ['p', 'a', 'button', 'li', 'h1', 'form', 'option', 'x-widget']) {
       const child = ['p', 'option', 'x-widget'].includes(tag) ? 'div' : tag;
