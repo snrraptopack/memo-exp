@@ -5,6 +5,12 @@ This project does not support legacy APIs. All packages and consumers must use t
 Requires Node.js 24.11 or newer. Standard JavaScript and TypeScript modules are
 parsed by Yuku, while all compiler analysis and emission operates on ESTree.
 
+JSX literals are normalized at the AST boundary before initial-content planning
+and emission. Text and quoted attributes decode entities once; source indentation
+is folded before explicit whitespace entities are decoded. JavaScript expression
+strings keep their ordinary values. Host children, component slots, initial HTML
+and SSR consume the same semantic values. Entity decoding is compiler-only.
+
 Public compilation APIs:
 
 - `compile(source, options)` returns JavaScript without source maps.

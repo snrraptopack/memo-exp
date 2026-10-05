@@ -11,10 +11,7 @@ import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { nodeHasJsx } from '../context';
 import { matchCond } from '../conds';
-import {
-  normalizeJsxText,
-  type JsxChild,
-} from '../components/children';
+import type { JsxChild } from '../components/children';
 import { matchMapCall, type MapCallExpression } from '../lists';
 import { combineTextExpressions } from '../components/text-expression';
 
@@ -56,7 +53,7 @@ export function collectDirectChildren(
 
   for (const child of children) {
     if (astFactory.isJSXText(child)) {
-      const value = normalizeJsxText(child.value);
+      const value = child.value;
       if (value !== '') {
         pendingText.push(astFactory.stringLiteral(value));
       }

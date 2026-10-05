@@ -90,7 +90,7 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
         }
         if (
           element.children.some(
-            (child) => !astFactory.isJSXText(child) || child.value.trim() !== '',
+            (child) => !astFactory.isJSXText(child) || child.value !== '',
           )
         ) {
           record(target, 'children', 'jsx');

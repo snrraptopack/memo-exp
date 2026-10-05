@@ -7,7 +7,6 @@ import {
   childNode, childNodes, identifierLikeName, isFunctionNode, nodeField,
   stringValue, analyzeScope, walkAst, type BaseNode, type Program, type ScopeAnalysis,
 } from '../ast';
-import { normalizeJsxText } from '../components/children';
 import { nodeHasJsx, type MapCallExpression } from '../context';
 import { analyzeComponentPropShape } from '../components/prop-shape';
 import { combineTextExpressions } from '../components/text-expression';
@@ -447,7 +446,7 @@ export function planInitialRendering(
       }
       for (const child of childNodes(node, 'children')) {
         if (child.type === 'JSXText') {
-          const text = normalizeJsxText(String(nodeField(child, 'value')));
+          const text = String(nodeField(child, 'value'));
           if (text) pending.push(astFactory.stringLiteral(text));
           continue;
         }

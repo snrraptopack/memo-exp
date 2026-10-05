@@ -145,7 +145,7 @@ describe('production initial SSR bootstrap', () => {
 
   it('restores request data and retains server nodes through ordinary hydration in Chrome', async context => {
     const cards = Array.from({length:16}, (_, index) =>
-      `<article data-card="${index}"><h2>Card ${index}</h2><p>{'Ready & waiting.'}</p></article>`).join('');
+      `<article data-card="${index}"><h2>Card ${index}</h2><p>Ready &amp; waiting.</p></article>`).join('');
     const result = await production('request-data', `export function App(){const user=$fetch('/api/user');let count=0;return <main>
       <h1>{user?.name}</h1><button onClick={()=>count++}>{count}</button><section>${cards}</section></main>;}`);
     expect(result.html).not.toContain('mmd:initial-delivery:');

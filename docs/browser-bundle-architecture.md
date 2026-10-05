@@ -19,6 +19,45 @@ those improvements. Correctness safeguards for arbitrary keys, getter reads,
 opaque calls, reentry, failed renders and cleanup belong to the paths that need
 them; they cannot be deleted merely because a small example does not exercise them.
 
+## Current checkpoint — 2026-10-05
+
+The first separation of HTML and browser execution is implemented. Proven static
+pages ship zero JavaScript. Supported interactive roots bind server/build HTML;
+closed static composition no longer adds browser factories. The linker emits
+one browser graph, and runtime scheduling, ownership and settlement remain
+shared. The entire compiler is not yet independent of the DOM backend.
+
+Latest verified production SSR fixtures, all emitted browser chunks:
+
+| Fixture | Browser JS B | Gzip sum B |
+|---|---:|---:|
+| Static composition | 0 | 0 |
+| Counter | 8,730 | 3,517 |
+| Counter with 60 static cards | 8,728 | 3,517 |
+| Interactive composition | 10,417 | 4,107 |
+| Input / list | 17,157 | 6,449 |
+| Request-dependent fetch page | 46,441 | 15,232 |
+
+The static-card result demonstrates the architecture change: more static
+content grows HTML without growing the counter's browser program. Request data
+remains the largest gap. It still retains general hydration, serialized state
+and creation instructions. That gap needs deeper binding/reachability planning.
+
+| Area | Status |
+|---|---|
+| Shared source/render facts and one browser graph | Implemented foundations; some emission planning remains DOM-specific |
+| Closed static HTML, primitive props and supported composition | Implemented and verified in production Chrome |
+| Initial host, conditional and list bindings | Implemented first supported shapes; uncertain/nested shapes retain creation |
+| Request-dependent HTML plus minimal browser bindings | Next major architecture batch; general hydration currently retained |
+| Runtime capabilities | First cuts complete: shared data settlement, optional promise reads, unused cursor removal and lean markup adoption |
+
+Callback props, escaping mutable values, hidden reads, refs, effects and unknown
+initialization still require conservative ownership/creation proofs. Broader
+composition and future-region creation remain open. Mobile/desktop emission is
+not implemented. DOM performance work remains in `performance-work.md`; these
+bundle results do not establish faster CPU timings. A current VM comparison is
+still outstanding.
+
 ## Implemented initial-content boundary
 
 ### Single browser graph and SSR delivery — 2026-10-04
@@ -998,6 +1037,28 @@ string and displays the entity spelling. This is reproducible without the
 runtime change. The audit uses `{'Ready & waiting.'}` to measure this batch;
 literal JSX entity normalization needs a compiler fix shared by initial HTML,
 ordinary DOM emission and SSR, rather than a special case in the runtime parser.
+
+### Shared JSX literal semantics
+
+That entity issue is now fixed at the compiler AST boundary, before initial
+render planning or DOM emission. Authored text folds source indentation before
+decoding entities, so explicit non-breaking/space entities survive. Quoted JSX
+attributes decode from their original spelling and receive a correct JavaScript
+literal for lowering. Re-entering or cloning the AST does not decode twice.
+Expression strings such as `{'&amp;'}` remain literal JavaScript strings.
+Host content, component slots and initial HTML now consume these semantic
+values directly; the emission-owned text normalizer was removed.
+
+The compiler declares the already locked `entities@7.0.1` decoder as a direct
+dependency. Existing package versions are unchanged; the frozen offline install
+reports no installation changes. This dependency is compiler-only.
+The audit and production SSR fixtures now use authored `&amp;` rather than the
+expression workaround. Regressions cover both frontends, props, slots, explicit
+whitespace, unknown entities, initial HTML, server markup and retained-node
+hydration. Browser bundles for the existing fixtures remain unchanged.
+The focused compiler/composition/markup suites pass 183 tests; production
+HTML/SSR passes 28 tests. Both audit modes verify eighteen browser graphs each,
+and all eighteen source bundle hashes match the saved previous-compiler output.
 
 ### Remaining order
 

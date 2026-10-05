@@ -672,6 +672,7 @@ describe('ESTree parser and printer boundary', () => {
       refProps: [],
     };
     const context = {
+      ...createCtx(),
       astAnalysis: analyzeScope(parsed.program),
       compPaths: new Map([['Parent', { node: component! }]]),
       componentProps: new Map([

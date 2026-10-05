@@ -157,7 +157,7 @@ export function lowerTsrxTryBoundary(
 ): BaseNode {
   if (node.type !== 'JSXFragment') return node;
   const children = (node as unknown as t.JSXFragment).children.filter(
-    (child) => !astFactory.isJSXText(child) || child.value.trim() !== '',
+    (child) => !astFactory.isJSXText(child) || child.value !== '',
   );
   if (children.length !== 1 || !astFactory.isJSXElement(children[0])) {
     throw programPath.buildCodeFrameError(

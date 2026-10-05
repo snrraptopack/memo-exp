@@ -85,7 +85,7 @@ function removeDirective(element: t.JSXElement): void {
 
 function isFormattingTrivia(child: JsxChild): boolean {
   return (
-    (astFactory.isJSXText(child) && child.value.trim() === '') ||
+    (astFactory.isJSXText(child) && child.value === '') ||
     (astFactory.isJSXExpressionContainer(child) &&
       astFactory.isJSXEmptyExpression(child.expression))
   );

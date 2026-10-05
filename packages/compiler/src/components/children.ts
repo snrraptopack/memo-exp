@@ -49,21 +49,10 @@ export interface ChildContentEmitters {
   fail(message: string): never;
 }
 
-/**
- * React-compatible JSX text normalization shared by host and slot content.
- * Edge spaces are removed only when they come from source line breaks.
- */
-export function normalizeJsxText(raw: string): string {
-  let value = raw.replace(/\s+/g, ' ');
-  if (/^\s*\n/.test(raw)) value = value.replace(/^ /, '');
-  if (/\n\s*$/.test(raw)) value = value.replace(/ $/, '');
-  return value;
-}
-
 /** Does a component element contain authored, non-whitespace children? */
 export function hasComponentChildren(children: readonly JsxChild[]): boolean {
   return children.some(
-    (child) => !astFactory.isJSXText(child) || child.value.trim() !== '',
+    (child) => !astFactory.isJSXText(child) || child.value !== '',
   );
 }
 
@@ -416,7 +405,7 @@ export function emitChildrenIntoParent(
 
   for (const child of children) {
     if (astFactory.isJSXText(child)) {
-      const value = normalizeJsxText(child.value);
+      const value = child.value;
       if (value !== '') append(emitters.emitText(astFactory.stringLiteral(value)));
       continue;
     }

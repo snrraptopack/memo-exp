@@ -1,8 +1,39 @@
 /** Normalize supported frontend node spellings to strict ESTree nodes. */
 
 import { nodeFields as fields } from './access';
+import { decodeHTMLStrict } from 'entities/decode';
 import { walkAst } from './walk';
 import type { BaseNode } from './types';
+
+/** Resolve authored JSX literals before target-independent planning or emission. */
+export function normalizeJsxLiterals(root: BaseNode): void {
+  walkAst(root, {
+    enter(node) {
+      const record = fields(node);
+      if (node.type === 'JSXText' && typeof record.value === 'string') {
+        const raw = typeof record.raw === 'string' ? record.raw : record.value;
+        // Fold source indentation before decoding explicit whitespace entities.
+        let value = raw.replace(/[ \t\r\n\f]+/g, ' ');
+        if (/^[ \t\r\f]*\n/.test(raw)) value = value.replace(/^ /, '');
+        if (/\n[ \t\r\f]*$/.test(raw)) value = value.replace(/ $/, '');
+        record.value = typeof record.raw === 'string' ? decodeHTMLStrict(value) : value;
+      } else if (node.type === 'JSXAttribute') {
+        const value = record.value as BaseNode | null;
+        if (!value || !['Literal', 'StringLiteral'].includes(value.type)) return;
+        const literal = fields(value);
+        const extra = literal.extra as {raw?: string} | undefined;
+        const raw = extra?.raw ?? literal.raw;
+        if (typeof literal.value !== 'string' || typeof raw !== 'string' ||
+            !['"', "'"].includes(raw[0]!) || raw.at(-1) !== raw[0]) return;
+        literal.value = decodeHTMLStrict(raw.slice(1, -1));
+        // Preserve the authored JSX spelling across AST clones/re-entry. The
+        // printer consumes raw as JavaScript after the attribute is lowered.
+        literal.extra = {...extra, raw};
+        literal.raw = JSON.stringify(literal.value);
+      }
+    },
+  });
+}
 
 function literal(
   node: BaseNode,

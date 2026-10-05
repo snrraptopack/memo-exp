@@ -4,6 +4,7 @@ import {
   sourceTypeFromPath,
 } from 'yuku-parser';
 import type { BaseNode, SourceLocation } from './types';
+import { normalizeJsxLiterals } from './normalize';
 
 export type AstLanguage = 'js' | 'jsx' | 'ts' | 'tsx' | 'dts';
 export type AstSourceType = 'script' | 'module' | 'commonjs' | 'unambiguous';
@@ -268,7 +269,11 @@ export function parseWithEstreeFrontend(
   source: string,
   options: ParseEstreeOptions = {},
 ): ParsedEstree {
-  return frontend.parse(source, options);
+  const parsed = frontend.parse(source, options);
+  if (!parsed.diagnostics.some(diagnostic => diagnostic.severity === 'Error')) {
+    normalizeJsxLiterals(parsed.program);
+  }
+  return parsed;
 }
 
 /** Parse through an injected frontend and reject its fatal diagnostics. */

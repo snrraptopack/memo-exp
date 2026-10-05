@@ -175,7 +175,7 @@ if (innerHtmlAttribute !== undefined) {
     );
   }
   const hasMeaningfulChildren = element.children.some(
-    (child) => !astFactory.isJSXText(child) || child.value.trim() !== '',
+    (child) => !astFactory.isJSXText(child) || child.value !== '',
   );
   if (hasMeaningfulChildren) {
     throw componentPath.buildCodeFrameError(

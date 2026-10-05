@@ -114,7 +114,7 @@ export function analyzeComponent(ctx: Ctx, name: string): void {
         if (
           element.children.some(
             (child) =>
-              !astFactory.isJSXText(child) || child.value.trim() !== '',
+              !astFactory.isJSXText(child) || child.value !== '',
           ) ||
           open.attributes.some((attribute) => {
             if (

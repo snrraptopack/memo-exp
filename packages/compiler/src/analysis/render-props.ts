@@ -303,7 +303,7 @@ export function scanRenderProps(ctx: Ctx): void {
           candidates.has('children') &&
           element.children.some(
             (child) =>
-              !astFactory.isJSXText(child) || child.value.trim() !== '',
+              !astFactory.isJSXText(child) || child.value !== '',
           ) &&
           !target.renderProps.includes('children')
         ) {

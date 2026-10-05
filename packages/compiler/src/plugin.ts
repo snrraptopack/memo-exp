@@ -20,6 +20,7 @@ import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode } from './ast';
 import {
   normalizeEstreeDialect,
+  normalizeJsxLiterals,
   walkAst,
   type BaseNode,
 } from './ast';
@@ -404,6 +405,7 @@ export function transformEstreeProgram(
   programPath: ProgramTransformPath,
   opts: InternalMemoDomOptions = {},
 ): void {
+  normalizeJsxLiterals(programPath.node as unknown as BaseNode);
   transformProgramAst(programPath, opts);
   normalizeEstreeDialect(programPath.node as unknown as BaseNode);
 }
