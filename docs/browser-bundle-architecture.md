@@ -52,8 +52,9 @@ and creation instructions. That gap needs deeper binding/reachability planning.
 | Runtime capabilities | First cuts complete: shared data settlement, optional promise reads, unused cursor removal and lean markup adoption |
 
 Callback props, escaping mutable values, hidden reads, refs, effects and unknown
-initialization still require conservative ownership/creation proofs. Broader
-composition and future-region creation remain open. Mobile/desktop emission is
+initialization still require conservative ownership/creation proofs. Fixed-shape
+composed factories now bind initial instances and create later conditional
+instances. Broader composition remains open. Mobile/desktop emission is
 not implemented. DOM performance work remains in `performance-work.md`; these
 bundle results do not establish faster CPU timings. A current VM comparison is
 still outstanding.
@@ -1098,6 +1099,55 @@ modes pass all 27 browser graphs. These are bundle and correctness results,
 not a CPU speed claim. All 121 server tests and the three production SSR tests
 pass, including native Chrome adoption and no duplicate request. Request-dependent
 binding planning remains open.
+
+### Retain composed creation only where future instances require it
+
+An initial component and a later conditional instance previously forced the
+whole page to retain ordinary browser creation. The semantic plan now records
+which composed factories can be instantiated again and propagates that fact
+to their descendants. The DOM backend binds existing instances and creates
+later instances through the same factory, scheduler and lifetime machinery.
+Static surrounding markup is omitted from the browser program.
+
+Props that appeared closed at an initial placement stay updateable when that
+factory has future callers. Otherwise a newly created instance could capture
+the first caller's value. Escaped factories, incompatible initial extents and
+recreated factories with unproved structural shapes keep ordinary rendering.
+Request-dependent roots still use general hydration; this batch does not
+replace their creation program.
+
+This exposed a scalar-forwarding bug: a parameter forwarded through a wrapper
+was treated as positive JSX evidence. One shared caller-evidence resolver now
+propagates scalar and JSX contracts through local and imported wrapper chains.
+The former local usage accumulator and linker accumulator were replaced by
+that resolver. Real JSX slots retain their ownership and updates; conflicting
+scalar/JSX contracts remain errors.
+
+Production Vite HTML builds, compiler/Vite baseline `77f0fa4`, identical current
+runtime and authored fixtures, all emitted browser chunks:
+
+| Fixture | Before JS raw / gzip sum B | After JS raw / gzip sum B | After HTML raw / gzip B |
+|---|---:|---:|---:|
+| Future composition, one static card | 15,529 / 5,820 | 14,251 / 5,362 | 495 / 291 |
+| Future composition, sixty static cards | 21,158 / 6,875 | 14,257 / 5,368 | 3,731 / 465 |
+
+The static-name control remains zero JavaScript. The existing sixty-card mixed
+composition control remains 8,858 / 3,561 bytes. The ordinary JS-entry creation
+outputs are unchanged: 14,859 / 5,532 and 20,488 / 6,585 bytes respectively.
+`bench:size:html` now accepts `--before-ref=<commit>` and repeated
+`--fixture=<name>` arguments, so the compiler/Vite comparison is reproducible
+without changing the checkout or hand-editing generated code. Baseline source
+is archived under the ignored benchmark output directory; the current runtime
+is held constant. These are bundle measurements, not CPU timing claims.
+
+Focused composition, planning, conditional/list and frontend suites pass 91
+tests. Tests cover initially visible/hidden instances, recreated local state,
+prop updates, imported and local descendants, retained DOM identity, cleanup,
+real JSX wrapper slots and conflicting contracts. All eighteen hydration-entry
+browser graphs pass. Production SSR passes four tests, including Chrome binding
+without initial element creation and later child recreation. The HTML suite
+passes its checks; one existing Chrome test timed out under concurrent machine
+load and passed alone with a 60-second test limit. Numbered docs are unchanged.
 
 ### Remaining order
 

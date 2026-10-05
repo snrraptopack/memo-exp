@@ -11,7 +11,7 @@ import {
 } from '../context';
 import { generatedIdentifier, md, mr } from '../identifiers';
 import type { EmitScope } from './scope';
-import { initialNode } from './initial-dom';
+import { initialNode, initialOrCreate } from './initial-dom';
 import { initialSite } from '../planning/initial-render';
 import {
   hasComponentChildren,
@@ -436,7 +436,7 @@ export function emitComponentCall(
           ...(props.length > 0 ? [astFactory.arrayExpression(props)] : []),
           ...(dataPolicies === null ? [] : [dataPolicies]),
           ...(calleeOwnsRoutes ? [childRouteContext] : []),
-          ...(initial ? [initialNode(scope,initial.path,initial.tag)] : []),
+          ...(initial ? [initialOrCreate(scope,initialNode(scope,initial.path,initial.tag),astFactory.identifier('undefined'))] : []),
         ]),
       ),
     ]),

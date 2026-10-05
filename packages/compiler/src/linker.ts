@@ -47,7 +47,6 @@ import type {
   FunctionExport,
   ModuleEntry,
   ModuleManifest,
-  RenderUsage,
   StateExport,
 } from './linking/model';
 export type { CompileModulesOptions } from './linking/model';
@@ -59,6 +58,7 @@ import {
 import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest, exportedLocals } from './linking/discovery';
 import { installCompilerIntrinsics } from './intrinsics';
+import { resolveRenderUsage } from './components/render-usage';
 import { planInitialRendering, type InitialRenderPlan } from './planning/initial-render';
 import { emitInitialMount } from './emission/initial-entry';
 import { planInitialDom } from './emission/initial-dom';
@@ -683,17 +683,7 @@ function compileLinkedModules(
     });
   }
 
-  const renderUsage = new Map<string, RenderUsage>();
-  for (const manifest of manifests.values()) {
-    for (const usage of manifest.componentUsages) {
-      let target = renderUsage.get(usage.target);
-      if (target === undefined) {
-        target = { jsx: new Set(), scalar: new Set() };
-        renderUsage.set(usage.target, target);
-      }
-      target[usage.kind].add(usage.prop);
-    }
-  }
+  const renderUsage = resolveRenderUsage([...manifests.values()].flatMap(manifest => manifest.componentUsages));
   for (const [target, usage] of renderUsage) {
     for (const prop of usage.jsx) {
       if (usage.scalar.has(prop)) {

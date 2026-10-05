@@ -6,6 +6,7 @@ import type { ComponentExportInfo } from '../components/manifest';
 import type { CompilerRoutedPreparation } from '../routed';
 import type { InitialRenderPlan } from '../planning/initial-render';
 import type { InitialDelivery } from '../planning/initial-delivery';
+import type { ComponentPropUsage } from '../components/render-usage';
 import type {
   ParameterWrite,
   MemoDomOptions,
@@ -78,16 +79,7 @@ export interface ImportRef {
   at: BaseNode;
 }
 
-export interface ComponentPropUsage {
-  target: string;
-  prop: string;
-  kind: 'jsx' | 'scalar';
-}
-
-export interface RenderUsage {
-  jsx: Set<string>;
-  scalar: Set<string>;
-}
+export type { ComponentPropUsage, RenderUsage } from '../components/render-usage';
 
 export interface ModuleManifest {
   exports: Record<string, LinkedExport>;

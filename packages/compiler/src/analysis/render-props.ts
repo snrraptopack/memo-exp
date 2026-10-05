@@ -12,6 +12,7 @@ import {
 } from '../context';
 import { renderPropReferenceName } from '../components/children';
 import { subtreeHasJsx } from './module-discovery';
+import { resolveRenderUsage, type ComponentPropUsage } from '../components/render-usage';
 
 function scalarTsType(
   type: t.TSType,
@@ -280,10 +281,8 @@ export function scanRenderProps(ctx: Ctx): void {
   // Untyped interpolation is scalar by default. Positive caller JSX evidence
   // declares a mount slot; linked callers provide the same evidence through
   // linkedComponentRenderProps below. This avoids guessing from host layout.
-  const localUsage = new Map<
-    string,
-    Map<string, { scalar: boolean; jsx: boolean; at: ComponentPath }>
-  >();
+  const localUsage: ComponentPropUsage[] = [];
+  const usageSites = new Map<string, ComponentPath>();
   for (const [owner, ownerPath] of ctx.compPaths) {
     walkAst<BaseNode>(ownerPath.node as unknown as BaseNode, {
       enter(node) {
@@ -291,78 +290,64 @@ export function scanRenderProps(ctx: Ctx): void {
         const element = node as unknown as t.JSXElement;
         const tag = element.openingElement.name;
         if (!astFactory.isJSXIdentifier(tag) || !ctx.comps.has(tag.name)) return;
-        const target = ctx.componentProps.get(tag.name)!;
-        const candidates = potential.get(tag.name);
+        const component = tag.name;
+        const candidates = potential.get(component);
         if (candidates === undefined) return;
-        let byProp = localUsage.get(tag.name);
-        if (byProp === undefined) {
-          byProp = new Map();
-          localUsage.set(tag.name, byProp);
+        function record(prop:string,kind:ComponentPropUsage['kind'],sourceProp?:string):void {
+          localUsage.push({target:component,prop,kind,
+            ...(sourceProp===undefined?{}:{forwardedFrom:{target:owner,prop:sourceProp}})});
+          usageSites.set(`${component}\0${prop}`,ownerPath);
         }
         if (
           candidates.has('children') &&
           element.children.some(
             (child) =>
               !astFactory.isJSXText(child) || child.value !== '',
-          ) &&
-          !target.renderProps.includes('children')
+          )
         ) {
-          target.renderProps.push('children');
-          byProp.set('children', {
-            scalar: false,
-            jsx: true,
-            at: ownerPath,
-          });
+          record('children','jsx');
         }
         for (const attribute of element.openingElement.attributes) {
           if (!astFactory.isJSXAttribute(attribute)) continue;
           const name = attribute.name;
           const prop = astFactory.isJSXIdentifier(name) ? name.name : name.name.name;
-          if (
-            !candidates.has(prop)
-          ) {
-            continue;
-          }
-          const usage = byProp.get(prop) ?? {
-            scalar: false,
-            jsx: false,
-            at: ownerPath,
-          };
           const value = attribute.value;
           let carriesJsx = false;
           if (
             astFactory.isJSXExpressionContainer(value) &&
             isAstExpression(value.expression)
           ) {
-            if (
-              expressionCarriesJsx(ctx, value.expression) ||
-              renderPropReferenceName(ctx, owner, value.expression) !== null
-            ) {
+            if (expressionCarriesJsx(ctx, value.expression)) {
               carriesJsx = true;
+            } else {
+              const sourceProp=renderPropReferenceName(ctx,owner,value.expression);
+              if(sourceProp!==null) {
+                record(prop,'scalar',sourceProp);
+                continue;
+              }
             }
           }
-          if (carriesJsx) usage.jsx = true;
-          else usage.scalar = true;
-          byProp.set(prop, usage);
+          record(prop,carriesJsx?'jsx':'scalar');
         }
       },
     });
   }
-  for (const [component, byProp] of localUsage) {
+  for (const [component, usage] of resolveRenderUsage(localUsage)) {
     const plan = ctx.componentProps.get(component)!;
-    for (const [prop, usage] of byProp) {
-      if (usage.scalar && usage.jsx) {
+    for (const prop of new Set([...usage.scalar,...usage.jsx])) {
+      if (!potential.get(component)?.has(prop)) continue;
+      if (usage.scalar.has(prop) && usage.jsx.has(prop)) {
         if (prop === 'children') {
           if (!plan.renderProps.includes(prop)) plan.renderProps.push(prop);
           continue;
         }
-        throw usage.at.buildCodeFrameError(
+        throw usageSites.get(`${component}\0${prop}`)!.buildCodeFrameError(
           `memo-dom: prop '${prop}' on <${component}> is used as both scalar data and JSX content`,
         );
       }
-      if (usage.jsx) {
+      if (usage.jsx.has(prop)) {
         if (!plan.renderProps.includes(prop)) plan.renderProps.push(prop);
-      } else if (usage.scalar) {
+      } else if (usage.scalar.has(prop)) {
         plan.renderProps = plan.renderProps.filter(
           (candidate) => candidate !== prop,
         );

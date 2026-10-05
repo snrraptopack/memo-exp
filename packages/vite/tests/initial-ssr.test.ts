@@ -143,6 +143,36 @@ describe('production initial SSR bootstrap', () => {
     });
   }, 60_000);
 
+  it('binds composed SSR nodes and creates later child instances through the same factory in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('future-composition',`import {Card} from './Card';export function App(){let open=true;let n=1;
+      return <main><h1>Static surroundings</h1><button class="toggle" onClick={()=>open=!open}>Toggle</button>
+        <button class="increment" onClick={()=>n++}>Increment</button><Card value={n}/>{open&&<Card value={n+10}/>}</main>;}`,{
+      'src/Card.tsx':`import {Label} from './Label';export function Card({value}){let clicks=0;return <section>
+        <Label value={value}/><button class="child" onClick={()=>clicks++}>{clicks}</button></section>;}`,
+      'src/Label.tsx':`export function Label({value}){return <strong title={value}>{value}</strong>;}`,
+    });
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).not.toMatch(/application\/mmd\+json|mmd:r:/);
+    expect(result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('\n')).not.toContain('Static surroundings');
+    await browserPage(result,html,executablePath,async page=>{
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      await page.click('.increment');await page.waitForFunction(()=>document.querySelectorAll('strong')[1]?.textContent==='12');
+      await page.click('section:nth-of-type(2) .child');
+      await page.waitForFunction(()=>document.querySelectorAll('section .child')[1]?.textContent==='1');
+      await page.click('.toggle');await page.waitForFunction(()=>document.querySelectorAll('section').length===1);
+      await page.click('.toggle');await page.waitForFunction(()=>document.querySelectorAll('section').length===2);
+      expect(await page.$$eval('strong',nodes=>nodes.map(node=>[node.textContent,node.getAttribute('title')]))).toEqual([['2','2'],['12','12']]);
+      expect(await page.$$eval('section .child',nodes=>nodes.map(node=>node.textContent))).toEqual(['0','0']);
+      await page.click('.increment');await page.waitForFunction(()=>document.querySelectorAll('strong')[1]?.textContent==='13');
+      expect(await page.evaluate(()=>{
+        const initial=(window as unknown as {initial:Element[]}).initial;
+        return ['main','h1','.toggle','.increment','section','strong'].every(selector=>initial.includes(document.querySelector(selector)!));
+      })).toBe(true);
+    });
+  },60_000);
+
   it('restores request data and retains server nodes through ordinary hydration in Chrome', async context => {
     const cards = Array.from({length:16}, (_, index) =>
       `<article data-card="${index}"><h2>Card ${index}</h2><p>Ready &amp; waiting.</p></article>`).join('');

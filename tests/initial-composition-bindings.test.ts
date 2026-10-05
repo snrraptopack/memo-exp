@@ -89,9 +89,53 @@ it('binds structural regions relative to each composed instance and creates late
 });
 
 it.each([
-  `function Label({value}){return <strong>{value}</strong>;}export function App(){let show=false;return <main><button onClick={()=>{show=true;}}>Show</button><Label value="one"/>{show&&<Label value="two"/>}</main>;}`,
   `function Label(){return <strong>Value</strong>;}export function App(){const escaped=Label;return <main><Label/><button onClick={()=>escaped()}>Call</button></main>;}`,
-])('retains ordinary creation for a factory with future or escaped uses',source=>{
+])('retains ordinary creation for an escaped factory',source=>{
   const result=compile(source);expect(result.initialContent).toBe(false);
   expect(result.output['./App.tsx']).toMatch(/materializeMarkup|createElement/);
+});
+
+it.each([false,true])('propagates retained creation through descendants (imported=%s) and refreshes formerly closed props',async imported=>{
+  const card=`${imported?"import {Label} from './Label';":''}function Card({text}){return <section><Label text={text}/></section>;}`;
+  const label=`function Label({text}){return <strong title={text}>{text}</strong>;}`;
+  await bind(`future-descendants-${imported}`,`${imported?"import {Card} from './Card';":label+card}export function App(){let show=false;let text='later';
+    return <main><button class="toggle" onClick={()=>show=!show}>Toggle</button>
+      <button class="rename" onClick={()=>text='changed'}>Rename</button><Card text="initial"/>{show&&<Card text={text}/>}</main>;}`,
+    imported?{'./Card.tsx':card.replace('function Card','export function Card'),'./Label.tsx':`export ${label}`} : {});
+  const first=document.querySelector('section');click('.toggle');
+  expect([...document.querySelectorAll('strong')].map(node=>node.textContent)).toEqual(['initial','later']);
+  click('.rename');expect([...document.querySelectorAll('strong')].map(node=>node.textContent)).toEqual(['initial','changed']);
+  expect(document.querySelectorAll('strong')[1]!.title).toBe('changed');
+  click('.toggle');click('.toggle');
+  expect([...document.querySelectorAll('strong')].map(node=>node.textContent)).toEqual(['initial','changed']);
+  expect(document.querySelector('section')).toBe(first);
+});
+
+it('retains ordinary rendering when a recreated factory has unproved structural shape',()=>{
+  const result=compile(`function Card({show}){return <section>{show?<b>One</b>:<i>Two</i>}</section>;}
+    export function App(){let open=false;return <main><button onClick={()=>open=!open}>Toggle</button>
+      <Card show={true}/>{open&&<Card show={false}/>}</main>;}`);
+  expect(result.initialContent).toBe(false);
+  expect(result.output['./App.tsx']).toMatch(/materializeMarkup|createElement/);
+});
+
+it.each([false,true])('binds initial composition and creates future instances with show=%s',async show=>{
+  const result=await bind(`future-${show}`,`function Label({value}){let clicks=0;return <section title={value}>
+    <strong>{value}</strong><button class="child" onClick={()=>clicks++}>{clicks}</button></section>;}
+    export function App(){let show=${show};let n=1;return <main><h1>Static surroundings</h1>
+      <button class="toggle" onClick={()=>show=!show}>Toggle</button><button class="increment" onClick={()=>n++}>Increment</button>
+      <Label value={n}/>{show&&<Label value={n+10}/>}</main>;}`);
+  const first=document.querySelector('section')!;
+  expect([...document.querySelectorAll('strong')].map(node=>node.textContent)).toEqual(show?['1','11']:['1']);
+  click('.increment');expect(first.textContent).toBe('20');expect(first.title).toBe('2');
+  click('.toggle');if(show) click('.toggle');
+  const second=document.querySelectorAll('section')[1]!;
+  expect(second.textContent).toBe('120');expect(second.title).toBe('12');
+  second.querySelector('button')!.click();expect(second.textContent).toBe('121');
+  click('.increment');expect(first.textContent).toBe('30');expect(second.textContent).toBe('131');
+  click('.toggle');expect(second.isConnected).toBe(false);
+  click('.toggle');expect(document.querySelectorAll('section')[1]!.textContent).toBe('130');
+  expect(document.querySelector('section')).toBe(first);
+  expect(result.output['./App.tsx']).not.toContain('Static surroundings');
+  app!.unmount();app=undefined;expect(registeredIds()).toEqual([]);
 });

@@ -219,7 +219,8 @@ export function transformComponent(
   if (ctx.initialDomRoot?.component === name) {
     scope.initialDom={plan:ctx.initialDomRoot,variable:generatedIdentifier(ctx,'initialNodes').name,descriptors:[]};
   } else if (initialComponent) {
-    scope.initialDom={plan:initialComponent,variable:generatedIdentifier(ctx,'initialNodes').name,descriptors:[]};
+    scope.initialDom={plan:initialComponent,variable:generatedIdentifier(ctx,'initialNodes').name,descriptors:[],
+      ...(initialComponent.retainCreation?{adopting:initialRoot!}:{})};
   }
   for (const token of ctx.ownerListProvenance.get(name)?.values() ?? []) {
     scope.prelude.push(astFactory.variableDeclaration('const', [astFactory.variableDeclarator(
@@ -321,7 +322,10 @@ export function transformComponent(
     lightweight && 'jsx' in returns && astFactory.isJSXElement(returns.jsx);
   if (scope.initialDom) scope.prelude.unshift(astFactory.variableDeclaration('const',[
     astFactory.variableDeclarator(astFactory.identifier(scope.initialDom.variable),
-      astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+      scope.initialDom.adopting ? astFactory.conditionalExpression(scope.initialDom.adopting,
+        astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+          initialRoot!,astFactory.arrayExpression(scope.initialDom.descriptors),
+        ]),astFactory.arrayExpression([])) : astFactory.callExpression(md(ctx,'bindInitialNodes'),[
         initialRoot ?? astFactory.stringLiteral(scope.initialDom.plan.target),astFactory.arrayExpression(scope.initialDom.descriptors),
       ])),
   ]));

@@ -19,7 +19,7 @@ export type InitialRenderNode =
   | { readonly kind: 'text'; readonly value: string; readonly live?: boolean }
   | { readonly kind: 'browser'; readonly id: number; readonly site: string }
   | { readonly kind: 'component'; readonly site: string; readonly moduleId: string; readonly callModuleId: string; readonly component: string;
-      readonly children: readonly InitialRenderNode[]; readonly static?: boolean }
+      readonly children: readonly InitialRenderNode[]; readonly static?: boolean; readonly creation?: true }
   | { readonly kind: 'conditional'; readonly site: string; readonly branch: number;
       readonly children: readonly InitialRenderNode[] }
   | { readonly kind: 'list'; readonly site: string; readonly rows: readonly (readonly InitialRenderNode[])[] }
@@ -50,7 +50,8 @@ export type InitialRenderPlan =
       readonly regions: readonly { readonly id: number; readonly site: string }[] }
   | { readonly kind: 'bindings'; readonly target: string; readonly mountModuleId: string;
       readonly rootModuleId: string; readonly rootLocal: string; readonly returnSite: string;
-      readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true }
+      readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true;
+      readonly creationComponents?: readonly string[] }
   | { readonly kind: 'browser'; readonly requirements: readonly BrowserRequirement[] };
 
 type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content;
@@ -511,7 +512,7 @@ export function planInitialRendering(
       const component = scope.values.get(tag);
       if (component === null || typeof component !== 'object' || component.kind !== 'component') return need(scope, `Unknown component '${tag}'`);
       if (props.has('children')) return need(scope, 'Explicit children prop needs browser execution');
-      if (bindings && (inStructure || !component.local || !('exports' in component.scope))) need(scope,'Structural/local component bindings need a placement proof');
+      if (bindings && (!component.local || !('exports' in component.scope))) need(scope,'Local component bindings need a placement proof');
       if (mixed && scope.rootRender && [...props.values()].some(value => value !== null && typeof value === 'object')) {
         need(scope, 'Captured callbacks and object props need an interaction proof');
       }
@@ -531,7 +532,8 @@ export function planInitialRendering(
             node.kind==='component' ? node.static===true : false);
         }
         return [{kind:'component',site:initialSite(node),moduleId:component.scope.moduleId,callModuleId:scope.moduleId,component:component.local!,children,
-          static:eventCount===bindingEventCount && liveProps.size===0 && closed(children)}];
+          static:!inStructure && eventCount===bindingEventCount && liveProps.size===0 && closed(children),
+          ...(inStructure ? {creation:true as const} : {})}];
       }
       catch (error) {
         if (!(error instanceof NeedsBrowser) || !mixed || !scope.rootRender) throw error;
@@ -651,18 +653,24 @@ export function planInitialRendering(
       if (!bindingEvents || !returnSite || nodes.length !== 1 || nodes[0]?.kind !== 'element') need(component.scope,'No direct interactive DOM root');
       const calls = new Map<string,Set<string>>();
       const shapes = new Map<string,string>();
+      const creationComponents = new Set<string>();
+      const descendants = new Map<string, Set<string>>();
       const rootScope=component.scope;
-      function collect(nodes: readonly InitialRenderNode[]): void {
+      function collect(nodes: readonly InitialRenderNode[], owner?: string): void {
         for(const node of nodes) {
           if (node.kind==='component') {
             const key=`${node.moduleId}#${node.component}`;
-            const shape=JSON.stringify(node.children,(key,value)=>['value','live','static'].includes(key)?undefined:value);
+            if (node.creation) creationComponents.add(key);
+            if (owner) { const children=descendants.get(owner)??new Set<string>();children.add(key);descendants.set(owner,children); }
+            const shape=JSON.stringify(node.children,(key,value)=>['value','live','static','creation'].includes(key)?undefined:value);
             if (shapes.has(key) && shapes.get(key)!==shape) need(rootScope,'Repeated component initial extents need a shared binding shape');
             shapes.set(key,shape);
             const sites=calls.get(key)??new Set<string>(); sites.add(`${node.callModuleId}:${node.site}`);calls.set(key,sites);
+            collect(node.children,key);
+            continue;
           }
-          if ('children' in node) collect(node.children);
-          if (node.kind==='list') for(const row of node.rows)collect(row);
+          if ('children' in node) collect(node.children,owner);
+          if (node.kind==='list') for(const row of node.rows)collect(row,owner);
         }
       }
       collect(nodes);
@@ -684,11 +692,31 @@ export function planInitialRendering(
           const value=tag?scope.values.get(tag):undefined;
           if (!value || typeof value!=='object' || value.kind!=='component') return;
           const sites=calls.get(`${value.scope.moduleId}#${value.local}`);
-          if (sites && !sites.has(`${id}:${initialSite(node)}`)) need(scope,'Future component placements need their ordinary creation program');
+          if (sites && !sites.has(`${id}:${initialSite(node)}`)) creationComponents.add(`${value.scope.moduleId}#${value.local}`);
         }});
       }
+      // A future parent creates its composed descendants too. Keep one factory
+      // for binding and creation; only factories proved fixed in shape qualify.
+      for (const key of creationComponents) for (const child of descendants.get(key)??[]) creationComponents.add(child);
+      function retain(nodes:readonly InitialRenderNode[], creating=false):readonly InitialRenderNode[] {
+        return nodes.map(node=>{
+          if (node.kind==='component') {
+            const creation=creationComponents.has(`${node.moduleId}#${node.component}`);
+            return {...node, ...(creation?{static:false}:{}), children:retain(node.children,creation)};
+          }
+          if (creating && (node.kind==='list' || node.kind==='conditional')) need(rootScope,'Recreated composition needs a fixed host shape');
+          if (node.kind==='element') return {...node,
+            attributes:creating?node.attributes.map(attribute=>({...attribute,live:true})):node.attributes,
+            children:retain(node.children,creating)};
+          if (node.kind==='text') return creating?{...node,live:true}:node;
+          if (node.kind==='conditional') return {...node,children:retain(node.children)};
+          if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row))};
+          return node;
+        });
+      }
       return {kind:'bindings',target,mountModuleId:root!.mountModuleId,rootModuleId:root!.moduleId,
-        rootLocal:root!.local,returnSite,nodes,...exposure};
+        rootLocal:root!.local,returnSite,nodes:retain(nodes),...exposure,
+        ...(creationComponents.size?{creationComponents:[...creationComponents]}:{})};
     }
     if (regions.some(region => region.site === returnSite) || new Set(regions.map(region => region.site)).size !== regions.length) {
       need(component.scope, 'Initial placements need distinct authored source identities');

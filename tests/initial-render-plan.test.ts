@@ -161,7 +161,6 @@ describe('initial content and browser requirements', () => {
 
   it.each([
     `export function App(){let name='Ada';function change(){eval('name="Grace"');}return <main><h1>{name}</h1><Counter action={change}/></main>;}`,
-    `export function App(){return <main>{true&&<Counter/>}</main>;}`,
     `function Card({children}){return <section>{children}</section>;}export function App(){return <main><Card><Counter/></Card></main>;}`,
   ])('does not extract an unproved interaction boundary', source => {
     const result = compile(`import {Counter} from './Counter'; ${source}`, {
@@ -170,6 +169,15 @@ describe('initial content and browser requirements', () => {
     });
     expect(result.initialRender.kind).toBe('browser');
     expect(result.initialContent).toBe(false);
+  });
+
+  it('retains creation for an initially composed conditional child',()=>{
+    const result=compile(`import {Counter} from './Counter';export function App(){return <main>{true&&<Counter/>}</main>;}`,{
+      './Counter.tsx':`export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
+    });
+    expect(result.initialRender.kind).toBe('bindings');expect(result.initialContent).toBe(true);
+    expect(emitInitialHtml(result.initialRender)).toContain('<button>0</button>');
+    expect(result.output['./Counter.tsx']).toContain('createElement');
   });
 
   it('does not replace component ref or routing semantics with ordinary HTML attributes', () => {

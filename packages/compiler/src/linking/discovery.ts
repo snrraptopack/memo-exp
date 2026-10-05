@@ -31,7 +31,7 @@ import {
   type TransparentSourceMethod,
 } from '../context';
 import { DEFAULT_TRANSPARENT_ASYNC_SOURCES } from '../context/model';
-import { isRenderPropReference } from '../components/children';
+import { renderPropReferenceName } from '../components/children';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { compilerError } from '../errors';
 import type { CompilerRouteDefinition } from '../router';
@@ -52,8 +52,10 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
     target: string,
     prop: string,
     kind: ComponentPropUsage['kind'],
+    forwardedFrom?: ComponentPropUsage['forwardedFrom'],
   ): void => {
-    usages.set(`${target}\0${prop}\0${kind}`, { target, prop, kind });
+    usages.set(`${target}\0${prop}\0${kind}\0${forwardedFrom?.target??''}\0${forwardedFrom?.prop??''}`,
+      { target, prop, kind, ...(forwardedFrom?{forwardedFrom}:{}) });
   };
 
   for (const [owner, componentPath] of ctx.compPaths) {
@@ -80,10 +82,12 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
             astFactory.isJSXFragment(value) ||
             (astFactory.isJSXExpressionContainer(value) &&
               astFactory.isExpression(value.expression) &&
-              (nodeHasJsx(value.expression) ||
-                isRenderPropReference(ctx, owner, value.expression)))
+              nodeHasJsx(value.expression))
           ) {
             record(target, name, 'jsx');
+          } else if (astFactory.isJSXExpressionContainer(value) && astFactory.isExpression(value.expression)) {
+            const prop=renderPropReferenceName(ctx,owner,value.expression);
+            record(target,name,'scalar',prop===null?undefined:{target:`${ctx.moduleId}#${owner}`,prop});
           } else {
             record(target, name, 'scalar');
           }

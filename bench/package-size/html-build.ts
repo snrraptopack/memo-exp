@@ -4,15 +4,35 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { pathToFileURL } from 'node:url';
+import { build as bundle } from 'esbuild';
 import { build } from 'vite';
 import memoizedDom from '@memoized-dom/vite';
 import { sizeFixtures } from './fixtures';
 
 const repository = resolve(import.meta.dirname, '../..');
-const output = resolve(import.meta.dirname, 'dist/html');
+const args=process.argv.slice(2);
+if(args.some(arg=>!arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --before-ref=<commit> or --fixture=<name>');
+const reference=args.find(arg=>arg.startsWith('--before-ref='))?.slice(13);
+const baseline=reference===undefined?undefined:execFileSync('git',['rev-parse','--verify','--end-of-options',`${reference}^{commit}`],{cwd:repository,encoding:'utf8'}).trim();
+if(baseline!==undefined && !/^[a-f0-9]{40,64}$/.test(baseline)) throw new Error('Invalid compiler baseline');
+const output = resolve(import.meta.dirname, baseline?`dist/html-before-${baseline.slice(0,8)}`:'dist/html');
+let compilerPlugin=memoizedDom;
+if(baseline) {
+  const graph=resolve(output,'compiler-baseline');await mkdir(graph,{recursive:true});
+  const archive=resolve(graph,'compiler.tar');
+  execFileSync('git',['archive',`--output=${archive}`,baseline,'packages/compiler/src','packages/compiler/package.json','packages/vite/src','packages/vite/package.json'],{cwd:repository});
+  execFileSync('tar',['-xf',archive,'-C',graph]);
+  const entry=resolve(graph,'plugin.mjs');
+  await bundle({entryPoints:[resolve(graph,'packages/vite/src/index.ts')],outfile:entry,bundle:true,
+    platform:'node',format:'esm',packages:'external',plugins:[{name:'compiler-baseline',setup(builder){
+      builder.onResolve({filter:/^@memoized-dom\/compiler$/},()=>({path:resolve(graph,'packages/compiler/src/index.ts')}));
+    }}]});
+  compilerPlugin=(await import(pathToFileURL(entry).href)).default;
+}
 const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim();
 const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: repository, encoding: 'utf8' }).trim() !== '';
-const fixtures = { ...sizeFixtures,
+const fixtures:Record<string,Record<string,string>> = { ...sizeFixtures,
   'static-name': { './App.tsx': `export function App(){let name='Ada';const greeting='Hello '+name;return <h1>{greeting}</h1>;}` },
   'static-list': { './App.tsx': `function Row({label}){return <li>{label}</li>;}export function App(){
     const items=[${Array.from({length:40},(_,index)=>`{id:${index},label:'Row ${index}'}`).join(',')}];
@@ -52,11 +72,22 @@ const fixtures = { ...sizeFixtures,
       <button onClick={()=>{if(!temp.trim())return;items=[...items,temp];temp='';}}>Add todo</button></main>;}`,
   }])),
 };
+for(const count of [1,60]) fixtures[`future-composition-${count}-cards`]={
+  './App.tsx':`function Label({value}){let clicks=0;return <section title={value}><strong>{value}</strong>
+    <button onClick={()=>clicks++}>{clicks}</button></section>;}
+    export function App(){let open=true;let n=1;return <main>
+    ${Array.from({length:count},(_,index)=>`<article><h2>Static card ${index}</h2><p>Ready.</p></article>`).join('')}
+    <button class="toggle" onClick={()=>open=!open}>Toggle</button><button onClick={()=>n++}>Increment</button>
+    <Label value={n}/>{open&&<Label value={n+10}/>}</main>;}`,
+};
 const rows: Array<{ fixture: string; html: number; htmlGzip: number;
   javascript: number; javascriptGzipSum: number; javascriptAssets: number;
   browserCreationJavascript?: number; browserCreationJavascriptGzipSum?: number }> = [];
 await mkdir(output, { recursive: true });
+const selected=new Set(args.filter(arg=>arg.startsWith('--fixture=')).map(arg=>arg.slice(10)));
+for(const name of selected) if(!Object.hasOwn(fixtures,name)) throw new Error(`Unknown fixture ${name}`);
 for (const [name, sources] of Object.entries(fixtures)) {
+  if(selected.size && !selected.has(name)) continue;
   const root = await mkdtemp(join(tmpdir(), 'memoized-dom-html-audit-'));
   try {
     const authored = { ...sources,
@@ -70,7 +101,7 @@ for (const [name, sources] of Object.entries(fixtures)) {
     }
     const result = await build({ root, configFile: false, logLevel: 'silent',
       resolve: { alias: { '@memoized-dom/runtime': resolve(repository, 'packages/runtime/dist/index.js') } },
-      plugins: [memoizedDom({ clientEntry: 'main.ts' })], build: { write: false },
+      plugins: [compilerPlugin({ clientEntry: 'main.ts' })], build: { write: false },
     });
     const files = (Array.isArray(result) ? result : [result]).flatMap(result => result.output);
     const html = files.find(file => file.type === 'asset' && file.fileName === 'index.html');
@@ -79,11 +110,11 @@ for (const [name, sources] of Object.entries(fixtures)) {
     const row: (typeof rows)[number] = { fixture: name, html: Buffer.byteLength(html.source), htmlGzip: gzipSync(html.source).byteLength,
       javascript: js.reduce((size, file) => size + Buffer.byteLength(file.code), 0),
       javascriptGzipSum: js.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), javascriptAssets: js.length };
-    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.startsWith('list-') || name.startsWith('empty-todo-') || name==='input-list' || name.endsWith('-counter')) {
+    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.startsWith('list-') || name.startsWith('empty-todo-') || name.startsWith('future-composition-') || name==='input-list' || name.endsWith('-counter')) {
       // Same authored graph through the ordinary JS-entry DOM creation target.
       const creation = await build({root,configFile:false,logLevel:'silent',
         resolve:{alias:{'@memoized-dom/runtime':resolve(repository,'packages/runtime/dist/index.js')}},
-        plugins:[memoizedDom({clientEntry:'main.ts'})],
+        plugins:[compilerPlugin({clientEntry:'main.ts'})],
         build:{write:false,rollupOptions:{input:resolve(root,'main.ts')}},
       });
       const creationJs=(Array.isArray(creation)?creation:[creation]).flatMap(result=>result.output).filter(file=>file.type==='chunk');
@@ -101,9 +132,10 @@ for (const [name, sources] of Object.entries(fixtures)) {
       (row.browserCreationJavascript === undefined ? '' : `; ordinary DOM creation JS ${row.browserCreationJavascript} B / ${row.browserCreationJavascriptGzipSum} B gzip sum`));
   } finally { await rm(root, { recursive: true, force: true }); }
 }
-await writeFile(resolve(output, 'results.json'), JSON.stringify({ revision, dirty, rows }, null, 2));
+await writeFile(resolve(output, 'results.json'), JSON.stringify({ revision, dirty, baseline, rows }, null, 2));
 await writeFile(resolve(output, 'results.md'), [
   '# Production HTML and JavaScript audit', '', `HEAD: ${revision}; working tree changes: ${dirty}.`, '',
+  `Compiler/Vite baseline: ${baseline??'current packages'}. The runtime and authored fixtures use the current checkout.`, '',
   'Published compiler, Vite plugin and browser runtime. Stable authored fixtures, production HTML entry, default Vite minification. HTML is compressed separately. JS includes every emitted chunk; gzip sums compress each served chunk once. No SSR or network data payload is included in these fixtures.', '',
   '| Fixture | HTML B | HTML gzip B | JS B | JS gzip sum B | JS assets | Ordinary DOM creation JS B / gzip sum B |',
   '|---|---:|---:|---:|---:|---:|---:|',

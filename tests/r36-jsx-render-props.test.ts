@@ -184,4 +184,33 @@ describe('R36 - JSX render props', () => {
       `),
     ).toThrow(/JSX prop 'value'.*is not rendered by the callee/);
   });
+
+  it.each(['local','imported'])('retains JSX slot ownership through %s wrapper chains',async mode=>{
+    const frame=`function Frame({content}){return <section>{content}</section>;}`;
+    const middle=`function Middle({content}){return <Frame content={content}/>;}`;
+    const outer=`function Outer({content}){return <Middle content={content}/>;}`;
+    const app=`export function App(){let n=1;return <main><button onClick={()=>n++}>Add</button><Outer content={<b>{n}</b>}/></main>;}`;
+    const sources:Record<string,string>=mode==='local'?{'./App.tsx':frame+middle+outer+app}:{
+      './Frame.tsx':`export ${frame}`,
+      './Middle.tsx':`import {Frame} from './Frame';export ${middle}`,
+      './Outer.tsx':`import {Middle} from './Middle';export ${outer}`,
+      './App.tsx':`import {Outer} from './Outer';${app}`,
+    };
+    const output=compileModules(sources);
+    const directory=join(outDir,`r36-forward-${mode}`);mkdirSync(directory,{recursive:true});
+    for(const [id,code] of Object.entries(output))writeFileSync(join(directory,id),code);
+    const {App}=await import(/* @vite-ignore */ `./fixtures/out/r36-forward-${mode}/App.tsx`);
+    document.body.appendChild(App(`Forward-${mode}`,null));
+    const node=document.querySelector('b');expect(node?.textContent).toBe('1');
+    document.querySelector<HTMLButtonElement>('button')!.click();
+    expect(node?.textContent).toBe('2');expect(document.querySelector('b')).toBe(node);
+  });
+
+  it('rejects incompatible contracts passed through different wrappers to one slot',()=>{
+    expect(()=>compileModules({
+      './Frame.tsx':`export function Frame({content}){return <section>{content}</section>;}`,
+      './Wrapper.tsx':`import {Frame} from './Frame';export function Wrapper({value}){return <Frame content={value}/>;}`,
+      './App.tsx':`import {Wrapper} from './Wrapper';export function App(){return <main><Wrapper value="text"/><Wrapper value={<b>JSX</b>}/></main>;}`,
+    })).toThrow(/both scalar data and JSX content/);
+  });
 });

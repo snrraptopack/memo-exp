@@ -14,6 +14,7 @@ export interface InitialDomRoot {
   readonly target: string;
   readonly component: string;
   readonly returnSite: string;
+  readonly retainCreation?: true;
   readonly elements: Readonly<Record<string,InitialDomElement>>;
   readonly components: Readonly<Record<string,{readonly path:readonly number[];readonly tag:string;readonly moduleId:string;readonly component:string;readonly static?:boolean}>>;
   readonly factories?: Readonly<Record<string,InitialDomRoot>>;
@@ -42,8 +43,9 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
         }
         const nested=planInitialDom({...plan,nodes:node.children,rootLocal:node.component,returnSite:host.site},factories,false);
         if (!nested) {valid=false;return;}
-        const child=relativeInitialDom(nested);
         const key=`${node.moduleId}#${node.component}`;
+        const child={...relativeInitialDom(nested),
+          ...(plan.creationComponents?.includes(key)?{retainCreation:true as const}:{})};
         const merged=factories[key]?mergeInitialDom(factories[key]!,child):child;
         if (!merged) {valid=false;return;}
         factories[key]=merged;
@@ -69,9 +71,9 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
       if (node.kind === 'conditional') {
         if (conditions[node.site]) {valid=false;return;}
         const children=node.children;
-        if (children.length > 1 || children.length === 1 && children[0]!.kind !== 'element') {valid=false;return;}
+        if (children.length > 1 || children.length === 1 && !['element','component'].includes(children[0]!.kind)) {valid=false;return;}
         conditions[node.site]={branch:node.branch,open:[...parent,current],end:[...parent,current+children.length+1],
-          returnSite:children[0]?.kind === 'element' ? children[0].site ?? null : null};
+          returnSite:children[0] && 'site' in children[0] ? children[0].site ?? null : null};
         visit(children,parent,current+1);
         index += children.length+1;
         return;
