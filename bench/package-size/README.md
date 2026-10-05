@@ -147,6 +147,23 @@ figures are reported; the application figures drive bundle decisions.
 See [Browser JavaScript architecture](../../docs/browser-bundle-architecture.md)
 for the baseline, the Marko example analysis and the ordered implementation plan.
 
+The HTML audit includes `future-markup-1-cards` and `future-markup-24-cards`.
+These place static content inside a component that is initially rendered and
+later removed/recreated, so they measure retained creation code rather than
+only static surrounding content. Compare the same fixtures before and after a
+compiler change with:
+
+```bash
+bun run bench:size:html --before-ref=6943cb7 --fixture=future-markup-1-cards --fixture=future-markup-24-cards
+bun run bench:size:html --fixture=future-markup-1-cards --fixture=future-markup-24-cards
+```
+
+The baseline archives compiler/Vite and holds the current runtime constant.
+Production SSR browser tests separately verify initial node identity and later
+component state, prop updates and recreation. Read-only fetch/Group source
+audits also reject retained resource-write implementation code; public bundled
+constructor tests verify that explicitly exposed resource writes stay available.
+
 ## Canonical key interning estimate
 
 After building an application, run:

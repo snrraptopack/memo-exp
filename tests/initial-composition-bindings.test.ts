@@ -119,6 +119,36 @@ it('retains ordinary rendering when a recreated factory has unproved structural 
   expect(result.output['./App.tsx']).toMatch(/materializeMarkup|createElement/);
 });
 
+it.each([false,true])('clones retained creation markup without touching adopted nodes (show=%s)',async show=>{
+  const cards=Array.from({length:24},(_,index)=>`<article><h2>Card ${index}</h2><p>Ready.</p></article>`).join('');
+  const result=await bind(`future-markup-${show}`,`function Panel({value}){let clicks=0;return <section title={value}>
+    <strong>{value}</strong><button class="child" onClick={()=>clicks++}>{clicks}</button>${cards}</section>;}
+    export function App(){let show=${show};let n=1;return <main>
+      <button class="toggle" onClick={()=>show=!show}>Toggle</button><button class="increment" onClick={()=>n++}>Increment</button>
+      <Panel value={n}/>{show&&<Panel value={n+10}/>}</main>;}`);
+  expect(result.output['./App.tsx']).toContain('materializeMarkup');
+  const first=document.querySelector('section')!,cardsBefore=[...first.querySelectorAll('article')];
+  first.querySelector<HTMLButtonElement>('.child')!.click();
+  click('.increment');expect(first.title).toBe('2');
+  expect(first.querySelector('strong')!.textContent).toBe('2');
+  expect(first.querySelector('.child')!.textContent).toBe('1');
+  expect([...first.querySelectorAll('article')]).toEqual(cardsBefore);
+  click('.toggle');if(show)click('.toggle');
+  const second=document.querySelectorAll('section')[1]!;
+  expect(second.querySelectorAll('article')).toHaveLength(24);
+  expect(second.title).toBe('12');expect(second.querySelector('.child')!.textContent).toBe('0');
+  second.querySelector<HTMLButtonElement>('.child')!.click();
+  click('.increment');expect(second.title).toBe('13');
+  expect(second.querySelector('strong')!.textContent).toBe('13');
+  expect(second.querySelector('.child')!.textContent).toBe('1');
+  click('.toggle');expect(second.isConnected).toBe(false);click('.toggle');
+  const recreated=document.querySelectorAll('section')[1]!;
+  expect(recreated).not.toBe(second);expect(recreated.title).toBe('13');
+  expect(recreated.querySelector('.child')!.textContent).toBe('0');
+  expect(document.querySelector('section')).toBe(first);
+  app!.unmount();app=undefined;expect(registeredIds()).toEqual([]);
+});
+
 it.each([false,true])('binds initial composition and creates future instances with show=%s',async show=>{
   const result=await bind(`future-${show}`,`function Label({value}){let clicks=0;return <section title={value}>
     <strong>{value}</strong><button class="child" onClick={()=>clicks++}>{clicks}</button></section>;}

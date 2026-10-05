@@ -1357,6 +1357,42 @@ that throw, handles created before public capability exposure and older reads
 that ignore cancellation. A throwing write leaves its pending request running;
 a successful local write prevents an older response from replacing it.
 
+### Markup optimization for retained creation
+
+Factories that bind initial HTML and create later instances now pass their
+creation arm through the existing static-markup optimizer. The initial arm
+continues to select bound nodes; markup parsing and fresh-only static writes
+remain guarded by the creation arm. Parser safety, namespace checks and the
+minimum savings threshold use the same optimizer as ordinary DOM creation.
+This adds no browser runtime helper or alternate component implementation.
+
+Production Vite HTML-entry measurements against compiler/Vite `6943cb7`, with
+the current runtime held constant and identical authored fixtures. JavaScript
+totals include every served chunk; gzip compresses each chunk separately:
+
+| Fixture | Before JS raw / gzip B | After JS raw / gzip B | Served HTML B |
+|---|---:|---:|---:|
+| Recreated component with one static card | 15,015 / 5,584 | 15,015 / 5,584 | 563 |
+| Recreated component with 24 static cards | 21,964 / 6,671 | 15,747 / 5,673 | 2,753 |
+| Small recreated child with 60 surrounding static cards | 14,257 / 5,368 | 14,257 / 5,368 | 3,731 |
+| Owner counter | 8,730 / 3,517 | 8,730 / 3,517 | 221 |
+| Static variable-derived greeting | 0 / 0 | 0 / 0 | 120 |
+
+HTML is unchanged. Ordinary JS-entry creation for the 24-card fixture remains
+16,127 / 5,782 B; it already used the same markup optimization. Tiny factories
+retain their existing output rather than paying the markup helper's fixed cost.
+Markup needed for future instances remains in the browser program: this batch
+compresses its creation representation, it does not remove required content.
+
+Forty-nine focused composition, conditional/list binding, parser-regression and
+hydration tests pass. Six production SSR/browser cases pass, including an
+imported recreated child with 24 cards. Checks cover initial mounting without
+element creation, retained server-node identity, prop updates, child state,
+removal/recreation, state reset and disposal. Group routing and restored request
+data also remain covered by the production suite. Compiler and Vite builds and
+their build type checks pass. These measurements establish delivered-byte
+savings; they are not CPU timing claims. Numbered docs remain unchanged.
+
 ### Remaining order
 
 | Order | Work | Required evidence |

@@ -43,6 +43,59 @@ const STRUCTURAL_CALLS = new Set(['createCondRegion', 'createListRegion', 'creat
 const MIN_SCOPE_SAVINGS = 550;
 const MIN_SEGMENT_SAVINGS = 100;
 
+/** Optimize the future-creation arm while keeping initial binding read-only. */
+function applyRetainedCreationMarkup(ctx: Ctx, scope: EmitScope, rootVar: string | null, extraStmts: t.Statement[]): void {
+  const adopting = scope.initialDom!.adopting!;
+  const bindings = new Map<string, t.Expression>();
+  const guarded = new Set<t.Statement>();
+  const creation: t.Statement[] = [];
+  for (const statement of scope.creation) {
+    if (astFactory.isIfStatement(statement) && statement.alternate === null &&
+      astFactory.isUnaryExpression(statement.test, { operator: '!' }) &&
+      astFactory.isIdentifier(statement.test.argument, { name: adopting.name })) {
+      const statements = astFactory.isBlockStatement(statement.consequent)
+        ? statement.consequent.body : [statement.consequent];
+      for (const child of statements) { guarded.add(child); creation.push(child); }
+      continue;
+    }
+    if (astFactory.isVariableDeclaration(statement) && statement.declarations.length === 1) {
+      const declaration = statement.declarations[0]!;
+      const init = declaration.init;
+      if (astFactory.isIdentifier(declaration.id) && astFactory.isConditionalExpression(init) &&
+        astFactory.isIdentifier(init.test, { name: adopting.name }) &&
+        astFactory.isCallExpression(init.alternate) &&
+        memberTarget(init.alternate.callee)?.object === scope.documentVar) {
+        bindings.set(declaration.id.name, init.consequent);
+        creation.push(astFactory.variableDeclaration(statement.kind, [
+          astFactory.variableDeclarator(declaration.id, init.alternate),
+        ]));
+        continue;
+      }
+    }
+    creation.push(statement);
+  }
+  const future: EmitScope = { ...scope, initialDom: null, creation };
+  applyStaticMarkup(ctx, future, rootVar, extraStmts);
+  if (future.creation === creation) return;
+  scope.creation = future.creation.map(statement => {
+    if (guarded.has(statement)) return astFactory.ifStatement(
+      astFactory.unaryExpression('!', adopting), statement,
+    );
+    if (!astFactory.isVariableDeclaration(statement)) return statement;
+    return astFactory.variableDeclaration(statement.kind, statement.declarations.map(declaration => {
+      if (!astFactory.isIdentifier(declaration.id) || declaration.init === null) return declaration;
+      const bound = bindings.get(declaration.id.name);
+      const materializes = astFactory.isCallExpression(declaration.init) && mdCallee(declaration.init) === 'materializeMarkup';
+      if (bound === undefined && !materializes) return declaration;
+      return astFactory.variableDeclarator(declaration.id, astFactory.conditionalExpression(
+        adopting, bound ?? astFactory.nullLiteral(), declaration.init,
+      ));
+    }));
+  });
+  scope.documentVar = future.documentVar;
+  scope.prelude = future.prelude;
+}
+
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MATH_NS = 'http://www.w3.org/1998/Math/MathML';
@@ -171,6 +224,10 @@ export function applyStaticMarkup(
   rootVar: string | null,
   extraStmts: t.Statement[],
 ): void {
+  if (scope.initialDom !== null) {
+    if (scope.initialDom.adopting) applyRetainedCreationMarkup(ctx, scope, rootVar, extraStmts);
+    return;
+  }
   if (scope.documentVar === null || scope.creation.length < 2) return;
   const doc = scope.documentVar;
 

@@ -450,7 +450,7 @@ export function transformComponent(
   const writerBranch = serverWriter?.(updateStatement, buildLightweightReturn(
     ctx, scope, propPlan, positionalObjectProps, lightweightPropCount, rootVar, true,
   ));
-  if (!scope.initialDom) applyStaticMarkup(ctx, scope, rootVar, [
+  applyStaticMarkup(ctx, scope, rootVar, [
     ...scope.mounts,
     ...sourceMounts,
     ...eventSourceDisposals,

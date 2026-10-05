@@ -70,6 +70,14 @@ for(const count of [1,60]) fixtures[`future-composition-${count}-cards`]={
     <button class="toggle" onClick={()=>open=!open}>Toggle</button><button onClick={()=>n++}>Increment</button>
     <Label value={n}/>{open&&<Label value={n+10}/>}</main>;}`,
 };
+for(const count of [1,24]) fixtures[`future-markup-${count}-cards`]={
+  './App.tsx':`function Panel({value}){let clicks=0;return <section title={value}><strong>{value}</strong>
+    <button class="child" onClick={()=>clicks++}>{clicks}</button>
+    ${Array.from({length:count},(_,index)=>`<article><h2>Card ${index}</h2><p>Ready.</p></article>`).join('')}</section>;}
+    export function App(){let open=true;let n=1;return <main>
+      <button class="toggle" onClick={()=>open=!open}>Toggle</button><button onClick={()=>n++}>Increment</button>
+      <Panel value={n}/>{open&&<Panel value={n+10}/>}</main>;}`,
+};
 const rows: Array<{ fixture: string; html: number; htmlGzip: number;
   javascript: number; javascriptGzipSum: number; javascriptAssets: number;
   browserCreationJavascript?: number; browserCreationJavascriptGzipSum?: number }> = [];
@@ -100,7 +108,7 @@ for (const [name, sources] of Object.entries(fixtures)) {
     const row: (typeof rows)[number] = { fixture: name, html: Buffer.byteLength(html.source), htmlGzip: gzipSync(html.source).byteLength,
       javascript: js.reduce((size, file) => size + Buffer.byteLength(file.code), 0),
       javascriptGzipSum: js.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), javascriptAssets: js.length };
-    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.startsWith('list-') || name.startsWith('empty-todo-') || name.startsWith('future-composition-') || name==='input-list' || name.endsWith('-counter')) {
+    if (name.startsWith('mixed-') || name.startsWith('bindings-') || name.startsWith('conditions-') || name.startsWith('list-') || name.startsWith('empty-todo-') || name.startsWith('future-composition-') || name.startsWith('future-markup-') || name==='input-list' || name.endsWith('-counter')) {
       // Same authored graph through the ordinary JS-entry DOM creation target.
       const creation = await build({root,configFile:false,logLevel:'silent',
         resolve:{alias:{'@memoized-dom/runtime':resolve(repository,'packages/runtime/dist/index.js')}},
