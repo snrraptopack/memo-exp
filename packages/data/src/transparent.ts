@@ -1,4 +1,6 @@
 import { RequestError } from './errors';
+import { writeFetchResource } from './resource-writes';
+import { isReadResource } from './read-resource';
 import { isFormSource, notifyFormSource } from './forms';
 import { getActiveApplicationRuntime } from '@memoized-dom/runtime';
 import {
@@ -400,7 +402,7 @@ export function resolvedValueSnapshot<T>(
 /**
  * Compiler hook: publish an authored in-place payload mutation to every
  * structural consumer of this source. The mutation itself has already run;
- * ResourceController.mutate supplies the ordering/notification boundary and
+ * The shared resource writer supplies the ordering/notification boundary and
  * prevents an older in-flight read from overwriting the local write.
  */
 export function notifyResolvedValueMutation<T>(
@@ -411,7 +413,8 @@ export function notifyResolvedValueMutation<T>(
     notifyFormSource(target);
     return;
   }
-  target.mutate(() => {});
+  if (isReadResource(target)) target.mutate(() => {});
+  else writeFetchResource(target, () => {}, true);
 }
 
 /** Subscribe to transitions without delivering the notifier's initial value. */

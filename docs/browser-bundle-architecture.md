@@ -1324,6 +1324,39 @@ production SSR/fullstack browser tests pass seven. The change keeps entry
 failures separate from post-commit Group failures, so a Group retry does not
 duplicate history or replay route gates.
 
+### Fetch writes on the existing resource controller
+
+Replacement and mutation now use one writer over the existing controller,
+cache entry and notification queue. Public runtime construction installs that
+capability before exposing resource methods; compiler-emitted transparent
+mutation calls the same writer. Read-only fetch/Group graphs omit the writer.
+There is no second store, request lifecycle or Group implementation.
+
+Paired hydration-entry source graphs against `38e3896`, with the same compiler
+and authored fixtures:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Fetched Group | 45,083 / 14,927 | 44,299 / 14,826 |
+| Routed fetched Group | 88,569 / 28,116 | 87,785 / 28,034 |
+| Fetched text | 44,900 / 14,872 | 44,116 / 14,775 |
+| Owner counter | 17,820 / 6,616 | 17,820 / 6,616 |
+
+All twelve before/current/published browser graphs pass. The audit rejects the
+write implementation in these read-only source graphs. Published current Group,
+routed Group and fetched-text graphs measure 44,021 / 14,792 B,
+87,108 / 27,868 B and 43,838 / 14,731 B respectively. These are esbuild browser
+graphs including hydration, not production SSR asset totals.
+
+Data tests pass 65 cases plus type checking; focused Group, route-readiness and
+transparent-mutation tests pass 32 cases. Two minified source/published
+constructor bundles verify that public resource update and mutate remain
+available after tree shaking. Production initial SSR and concurrent isolation
+pass seven cases. Coverage includes paused sources, shared entries, callbacks
+that throw, handles created before public capability exposure and older reads
+that ignore cancellation. A throwing write leaves its pending request running;
+a successful local write prevents an older response from replacing it.
+
 ### Remaining order
 
 | Order | Work | Required evidence |

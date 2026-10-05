@@ -86,6 +86,10 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
     if (fixture === 'route-helper' && graph !== 'source-before' && /new RegExp\(/.test(output.text)) {
       throw new Error('Path interpolation must not retain pattern matching expressions');
     }
+    if (['request-group','request-routed-group','request-data'].includes(fixture) && graph !== 'source-before' &&
+      inputs.some(input => /data\/src\/resource-writes\.ts$/.test(input.path))) {
+      throw new Error('Read-only fetched pages must not retain the optional mutation implementation');
+    }
     rows.push(row);
     writeFileSync(resolve(directory, `${fixture}-${graph}.js`), output.contents);
     writeFileSync(resolve(directory, `${fixture}-${graph}.meta.json`), JSON.stringify(result.metafile, null, 2));

@@ -14,6 +14,40 @@ async function settled<T>(resource: FetchResource<T>): Promise<void> {
 }
 
 describe('resource concurrency', () => {
+  it('leaves a shared request running when an authored write callback throws', async () => {
+    let finish!: (response: Response) => void;
+    let signal!: AbortSignal;
+    const runtime = createDataRuntime({ fetch: ((_input, options) => {
+      signal = options!.signal as AbortSignal;
+      return new Promise<Response>(resolve => { finish = resolve; });
+    }) as typeof fetch });
+    const first = runtime.$fetch<string[]>('/shared-write');
+    const second = runtime.$fetch<string[]>('/shared-write');
+    try {
+      await vi.waitFor(() => expect(signal).toBeInstanceOf(AbortSignal));
+      expect(() => first.update(() => { throw new Error('write failed'); })).toThrow('write failed');
+      expect(signal.aborted).toBe(false);
+      expect(second.pending).toBe(true);
+      finish(json(['server']));
+      await settled(second);
+      first.mutate(value => value!.push('local'));
+      expect(first.data).toBe(second.data);
+      expect(second.data).toEqual(['server', 'local']);
+    } finally { runtime.clear(); }
+  });
+
+  it('publishes replacements and mutations on a paused source without a request', () => {
+    const runtime = createDataRuntime({fetch: vi.fn()});
+    const resource = runtime.$fetch<string[]>(null);
+    try {
+      resource.update(() => ['local']);
+      resource.mutate(value => value!.push('next'));
+      expect(resource.data).toEqual(['local','next']);
+      expect(resource.status).toBe('success');
+      expect(resource.pending).toBe(false);
+    } finally { runtime.clear(); }
+  });
+
   it('does not let an older read overwrite a newer local replacement', async () => {
     let finish!: (response: Response) => void;
     let requestSignal!: AbortSignal;

@@ -7,6 +7,7 @@ import {
   type RequestErrorKind,
 } from './errors';
 import { SnapshotNotifier } from './notifications';
+import { dispatchResourceWrite } from './resource-write-capability';
 import {
   disposeFormSource,
   formSourceOperationId,
@@ -167,7 +168,7 @@ class FetchEntry {
     }
   }
 
-  private cancelRequest(reason?: unknown): void {
+  cancelRequest(reason?: unknown): void {
     this.cancelDeferredStart();
     if (this.controller === null && this.request === null) return;
     // A response may notify consumers from its terminal `then` immediately
@@ -197,33 +198,6 @@ class FetchEntry {
     for (const consumer of this.consumers) {
       consumer.receive(this, this.snapshot);
     }
-  }
-
-  update<T>(change: (current: T | undefined) => T): void {
-    const current = this.snapshot.data as T | undefined;
-    const next = change(current);
-    // A caller-authored write is newer than any read already in flight. Abort
-    // that flight before publishing the replacement so a non-cooperative
-    // fetcher cannot later commit an older server snapshot over local state.
-    this.cancelRequest();
-    this.snapshot.data = next;
-    this.snapshot.error = null;
-    this.snapshot.status = 'success';
-    this.hasData = true;
-    this.emit();
-  }
-
-  mutate<T>(change: (current: T | undefined) => void): void {
-    const current = this.snapshot.data as T | undefined;
-    change(current);
-    // Direct mutations have the same ordering contract as replacements: the
-    // local write wins over a read that started before it.
-    this.cancelRequest();
-    this.snapshot.data = current;
-    this.snapshot.error = null;
-    this.snapshot.status = 'success';
-    this.hasData = true;
-    this.emit();
   }
 
   deferStart(): void {
@@ -746,31 +720,6 @@ class ResourceController<T> {
     if (notify) this.notify();
   }
 
-  update(change: (current: T | undefined) => T): void {
-    if (this.disposed) throw new Error('Cannot update a disposed fetch resource');
-    if (this.entry === null) {
-      const current = this.snapshot.data;
-      this.snapshot.data = change(current);
-      this.snapshot.status = 'success';
-      this.snapshot.error = null;
-      this.notify();
-      return;
-    }
-    this.entry.update(change);
-  }
-
-  mutate(change: (current: T | undefined) => void): void {
-    if (this.disposed) throw new Error('Cannot mutate a disposed fetch resource');
-    if (this.entry === null) {
-      change(this.snapshot.data);
-      this.snapshot.status = 'success';
-      this.snapshot.error = null;
-      this.notify();
-      return;
-    }
-    this.entry.mutate(change);
-  }
-
   dispose(): void {
     if (this.disposed) return;
     this.detach(false);
@@ -871,15 +820,15 @@ function resourceObject<T>(
     refresh: () => controller.refresh(),
     abort: () => controller.abort(),
     update: (change: (current: T | undefined) => T) =>
-      controller.update(change),
+      dispatchResourceWrite(resource, change, false),
     mutate: (change: (current: T | undefined) => void) =>
-      controller.mutate(change),
+      dispatchResourceWrite(resource, change, true),
   };
   controllers.set(resource, controller as ResourceController<unknown>);
   return resource as unknown as FetchResource<T>;
 }
 
-function resourceController<T>(
+export function resourceController<T>(
   resource: FetchResource<T>,
 ): ResourceController<T> {
   const controller = controllers.get(resource);

@@ -24,6 +24,9 @@ describe('optional data transfer producer', () => {
         status:'success',data:{name:'Ada'},revalidate:false,
       });
       expect(fetched.data).toEqual({name:'Ada'});
+      fetched.update(() => ({name:'Grace'}));
+      expect(fetched.data).toEqual({name:'Grace'});
+      fetched.mutate(value => { (value as {name:string}).name = 'Ada'; });
       expect(read.data).toBe('ready');
       expect(fetcher).toHaveBeenCalledTimes(1);
       const restoredFetch = vi.fn(async () => Response.json({name:'wrong'}));
