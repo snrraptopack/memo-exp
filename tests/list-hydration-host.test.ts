@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { createHydrationCursor, HydrationDocument, HydrationMismatchError } from '../packages/runtime/src/hydration';
+import { claimHydrationRoot, HydrationDocument, HydrationMismatchError } from '../packages/runtime/src/hydration';
 import { getActiveEnvironment, runWithRenderEnvironment } from '../packages/runtime/src/kernel';
 import { createListRegion, type ListRegion } from '../packages/runtime/src/list';
 import { createPositionalListRegion } from '../packages/runtime/src/list-positional';
@@ -13,7 +13,7 @@ function hydrate(positional: boolean, labels: string[], run: (region: ListRegion
     labels.map((label, index) => `<!--mmd:w:Rows:n:${index}--><li>${label}</li>`).join('') +
     '<!--/mmd--></ul><!--/mmd-->';
   document.body.append(host);
-  const doc = new HydrationDocument(document, createHydrationCursor(host, 'App'));
+  const doc = new HydrationDocument(document, claimHydrationRoot(host, 'App'));
   let region: ListRegion<string> | undefined;
   try {
     runWithRenderEnvironment({ mode: 'hydrate', document: doc, hydration: doc }, () => {
@@ -87,7 +87,7 @@ it.each([false, true])('remains disposed when a row factory disposes its region 
 it('rejects unstable object keys in the hydration controller before row creation', () => {
   const host = document.createElement('div');
   host.innerHTML = '<!--mmd:r:App--><!--mmd:l:Rows--><!--/mmd--><!--/mmd-->';
-  const doc = new HydrationDocument(document, createHydrationCursor(host, 'App'));
+  const doc = new HydrationDocument(document, claimHydrationRoot(host, 'App'));
   const create = vi.fn();
   try {
     const list = doc.claimList(host, 'Rows');

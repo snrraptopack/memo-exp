@@ -912,6 +912,50 @@ remains 564 bytes including the same 315-byte data envelope. The SSR delivery
 harness uses current data code on both adapter sides, so its two adapter rows
 both show the new size; the runtime comparison uses the previous clean result.
 
+### Remove the unused hydration sibling cursor
+
+Production adoption uses `HydrationNodePlan` for compiler creation order and
+`HydrationMarkerIndex` for structural identities. Each claimed range also used
+to construct a `LocalHydrationCursor`, but no production consumer read it. That
+second node-claim/range-walking implementation, its helper and its range field
+were removed. Root lookup now returns the bounded range directly. Cursor tests
+were migrated to the actual creation plan and marker index, retaining node
+identity, namespace failures, failed-claim position, nested/empty boundaries,
+row extents and duplicate/missing marker checks.
+
+Source baseline `f043146`, identical current compiler/fixtures, mount plus the
+optional hydration entry, whole-bundle raw/gzip bytes:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Fetch-only page | 48,778 / 15,978 | 47,386 / 15,689 |
+| Promise-read page | 51,545 / 16,581 | 50,154 / 16,287 |
+| Static JS-entry shell | 17,761 / 6,313 | 16,372 / 6,012 |
+| Owner counter | 20,318 / 7,279 | 18,929 / 6,979 |
+| Input/list | 28,287 / 10,269 | 26,896 / 9,968 |
+| Module counter | 23,648 / 8,458 | 22,261 / 8,159 |
+| Composition | 22,109 / 7,875 | 20,721 / 7,579 |
+| Keyed owner list | 35,724 / 12,992 | 34,322 / 12,674 |
+
+The distributed fetch graph falls from 48,478 / 15,978 to 47,080 / 15,618 bytes.
+This removes unused runtime work without replacing the adopted-node validator
+or adding another hydration implementation. The static JS-entry fixture above
+deliberately includes mount/hydration; production static HTML still ships zero
+JavaScript. These are bundle measurements; fewer range allocations are not a
+measured hydration speed claim.
+
+Without the hydration entry, all eight source bundles are byte-identical to
+`f043146`. Both audit modes pass their 24 browser graphs. The hydration/SSR
+suite passes all 16 files; migrated plan/list checks also cover namespace
+failure without DOM mutation. The production Chrome test restores request data
+without a second fetch, removes the consumed payload, retains the server's
+main/title/button nodes and updates the counter after adoption. The existing
+initial-binding test still covers later branch and row creation.
+
+The production SSR fetch fixture falls from 48,915 / 15,892 to 47,524 / 15,560
+browser bytes, with the same 564-byte HTML and 315-byte payload. Static and closed
+binding SSR fixtures remain unchanged, including zero-JavaScript static output.
+
 ### Remaining order
 
 | Order | Work | Required evidence |

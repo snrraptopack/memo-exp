@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { build, type Rollup } from 'vite';
-import puppeteer from 'puppeteer-core';
+import puppeteer, { type Page } from 'puppeteer-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import memoizedDom from '../src';
 
@@ -52,6 +52,55 @@ async function production(name: string, source: string, extras: Record<string, s
   return { app, html, files };
 }
 
+function chromeExecutable(): string | undefined {
+  return [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
+    .find((path): path is string => !!path && existsSync(path));
+}
+
+async function browserPage(result: Awaited<ReturnType<typeof production>>, html: string, executablePath: string,
+  check: (page: Page, apiRequests: string[]) => Promise<void>): Promise<void> {
+  const apiRequests: string[] = [];
+  const server = createServer(async (request, response) => {
+    const path = request.url?.replace(/^\/demo\//, '');
+    if (request.url?.startsWith('/api/')) apiRequests.push(request.url);
+    const asset = result.files.find(file => file.fileName === path);
+    if (request.url?.startsWith('/api/')) {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({ name: 'Unexpected client fetch' }));
+    } else if (asset) {
+      response.setHeader('content-type', asset.type === 'chunk' ? 'text/javascript' : 'text/css');
+      response.end(asset.type === 'chunk' ? asset.code : asset.source);
+    } else {
+      response.setHeader('content-type', 'text/html'); response.end(html);
+    }
+  });
+  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
+  const browser = await puppeteer.launch({ executablePath, headless: true });
+  try {
+    const page = await browser.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(String(error)));
+    await page.evaluateOnNewDocument(() => {
+      const values = window as unknown as { initial?: Element[]; created: string[] };
+      values.created = [];
+      const create = document.createElement.bind(document);
+      document.createElement = ((...args: Parameters<Document['createElement']>) => {
+        values.created.push(args[0]); return create(...args);
+      }) as Document['createElement'];
+      new MutationObserver(() => {
+        if (document.querySelector('main')) values.initial ??= [...document.querySelectorAll('#root *')];
+      }).observe(document, { childList: true, subtree: true });
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('No test address');
+    await page.goto(`http://127.0.0.1:${address.port}/demo/`);
+    await check(page, apiRequests);
+    expect(errors).toEqual([]);
+  } finally {
+    try { await browser.close(); } finally { await new Promise<void>(done => server.close(() => done())); }
+  }
+}
+
 describe('production initial SSR bootstrap', () => {
   it('serves a static composition with zero JavaScript and no hydration payload', async () => {
     const result = await production('static', `import './theme.css';function Card({name}){return <section><h2>{name}</h2></section>;}
@@ -68,8 +117,7 @@ describe('production initial SSR bootstrap', () => {
   }, 60_000);
 
   it('loads the binding entry, retains initial nodes and handles later creation in Chrome', async context => {
-    const executablePath = [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
-      .find((path): path is string => !!path && existsSync(path));
+    const executablePath = chromeExecutable();
     if (!executablePath) { context.skip(); return; }
     const result = await production('interactive', `export function App(){let n=0;let items=[];let open=true;return <main>
       <h1>Static shell</h1><button class="add" onClick={()=>{n++;items=[...items,n];}}>Add</button><p>{n}</p>
@@ -80,36 +128,7 @@ describe('production initial SSR bootstrap', () => {
     expect(html).not.toMatch(/application\/mmd\+json|mmd:r:/);
     expect(result.files.filter(file => file.type === 'chunk' && file.isEntry)).toHaveLength(1);
     expect(result.files.filter(file => file.type === 'chunk').map(file => file.code).join('\n')).not.toContain('Static shell');
-    const server = createServer(async (request, response) => {
-      const path = request.url?.replace(/^\/demo\//, '');
-      const asset = result.files.find(file => file.fileName === path);
-      if (asset) {
-        response.setHeader('content-type', asset.type === 'chunk' ? 'text/javascript' : 'text/css');
-        response.end(asset.type === 'chunk' ? asset.code : asset.source);
-      } else {
-        response.setHeader('content-type', 'text/html'); response.end(html);
-      }
-    });
-    await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-    const browser = await puppeteer.launch({ executablePath, headless: true });
-    try {
-      const page = await browser.newPage();
-      const errors: string[] = [];
-      page.on('pageerror', error => errors.push(String(error)));
-      await page.evaluateOnNewDocument(() => {
-        const values = window as unknown as { initial?: Element[]; created: string[] };
-        values.created = [];
-        const create = document.createElement.bind(document);
-        document.createElement = ((...args: Parameters<Document['createElement']>) => {
-          values.created.push(args[0]); return create(...args);
-        }) as Document['createElement'];
-        new MutationObserver(() => {
-          if (document.querySelector('main')) values.initial ??= [...document.querySelectorAll('#root *')];
-        }).observe(document, { childList: true, subtree: true });
-      });
-      const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('No test address');
-      await page.goto(`http://127.0.0.1:${address.port}/demo/`);
+    await browserPage(result, html, executablePath, async page => {
       // Vite's modulepreload capability probe creates one detached link.
       expect(await page.evaluate(() => (window as unknown as { created: string[] }).created.filter(tag => tag !== 'link'))).toEqual([]);
       await page.click('.add'); await page.waitForFunction(() => document.querySelector('li')?.textContent === '0:1');
@@ -121,17 +140,31 @@ describe('production initial SSR bootstrap', () => {
         const initial = (window as unknown as { initial: Element[] }).initial;
         return ['main', 'h1', '.add', 'p', 'ul'].every(selector => initial.includes(document.querySelector(selector)!));
       })).toBe(true);
-      expect(errors).toEqual([]);
-    } finally { await browser.close(); await new Promise<void>(done => server.close(() => done())); }
+    });
   }, 60_000);
 
-  it('keeps ordinary hydration for request data and creates no initial binding entry', async () => {
-    const result = await production('request-data', `export function App(){const user=$fetch('/api/user');return <main><h1>{user?.name}</h1></main>;}`);
+  it('restores request data and retains server nodes through ordinary hydration in Chrome', async context => {
+    const result = await production('request-data', `export function App(){const user=$fetch('/api/user');let count=0;return <main>
+      <h1>{user?.name}</h1><button onClick={()=>count++}>{count}</button></main>;}`);
     expect(result.html).not.toContain('mmd:initial-delivery:');
     expect(result.files.filter(file => file.type === 'chunk' && file.isEntry)).toHaveLength(1);
     const html = await (await result.app.fetch(new Request('https://app.test/demo/'))).text();
     expect(html.replace(/<!--[^]*?-->/g, '')).toContain('<h1>Ada</h1>');
     expect(html).toContain('mmd:r:App');
     expect(html).toContain('application/mmd+json');
+    const executablePath = chromeExecutable();
+    if (!executablePath) { context.skip(); return; }
+    await browserPage(result, html, executablePath, async (page, apiRequests) => {
+      expect(await page.$eval('h1', node => node.textContent)).toBe('Ada');
+      expect(await page.$('script[type="application/mmd+json"]')).toBeNull();
+      expect(await page.evaluate(() => (window as unknown as { created: string[] }).created.filter(tag => tag !== 'link'))).toEqual([]);
+      await page.click('button');
+      await page.waitForFunction(() => document.querySelector('button')?.textContent === '1');
+      expect(await page.evaluate(() => {
+        const initial = (window as unknown as { initial: Element[] }).initial;
+        return ['main', 'h1', 'button'].every(selector => initial.includes(document.querySelector(selector)!));
+      })).toBe(true);
+      expect(apiRequests).toEqual([]);
+    });
   }, 60_000);
 });

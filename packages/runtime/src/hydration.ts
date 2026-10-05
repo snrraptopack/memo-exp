@@ -1,7 +1,7 @@
 /**
- * Phase 3 hydration cursor — read-only adoption over the v0.2 marker stream.
+ * Hydration creation plan — read-only adoption over the v0.2 marker stream.
  *
- * The cursor never creates, moves, or removes nodes. It validates and claims
+ * The plan never creates, moves, or removes nodes. It validates and claims
  * the server tree in compiler-defined order. Mutation/recovery belongs to the
  * mount integration layer; keeping this primitive read-only makes failed
  * adoption safe and independently testable.
@@ -70,7 +70,6 @@ export interface ClaimedHydrationRange {
   readonly open: Comment;
   /** Exclusive end: the pair close, next row marker, or enclosing list close. */
   readonly end: Node;
-  readonly cursor: LocalHydrationCursor;
 }
 
 const PAIRED_KINDS: ReadonlySet<HydrationMarkerKind> = new Set([
@@ -121,143 +120,6 @@ function findPairClose(
   );
 }
 
-function expectOpen(
-  node: Node | null,
-  kind: HydrationMarkerKind,
-  identity: string,
-  boundary: string,
-): Comment {
-  const marker = markerFor(node);
-  if (
-    marker?.type !== 'open' ||
-    marker.kind !== kind ||
-    marker.identity !== identity
-  ) {
-    throw new HydrationMismatchError(
-      boundary,
-      `<!--mmd:${kind}:${identity}-->`,
-      describeNode(node),
-    );
-  }
-  return node as Comment;
-}
-
-/** A deterministic sibling cursor bounded by one structural owner. */
-export class LocalHydrationCursor {
-  readonly boundary: string;
-  readonly end: Node;
-  #next: Node | null;
-
-  constructor(boundary: string, first: Node | null, end: Node) {
-    this.boundary = boundary;
-    this.#next = first;
-    this.end = end;
-  }
-
-  get nextNode(): Node | null {
-    return this.#next === this.end ? null : this.#next;
-  }
-
-  get done(): boolean {
-    return this.#next === this.end;
-  }
-
-  /** Claim one ordinary node and validate kind/tag/namespace in place. */
-  claimNode(expectation: HydrationNodeExpectation): Node {
-    const node = this.nextNode;
-    if (node === null) {
-      throw new HydrationMismatchError(
-        this.boundary,
-        nodeExpectation(expectation),
-        describeNode(null),
-      );
-    }
-    if (markerFor(node) !== null || node.nodeType !== expectation.nodeType) {
-      throw new HydrationMismatchError(
-        this.boundary,
-        nodeExpectation(expectation),
-        describeNode(node),
-      );
-    }
-    if (node.nodeType === 1) {
-      const element = node as Element;
-      if (
-        (expectation.tagName !== undefined &&
-          element.localName !== expectation.tagName.toLowerCase()) ||
-        (expectation.namespaceURI !== undefined &&
-          element.namespaceURI !== expectation.namespaceURI)
-      ) {
-        throw new HydrationMismatchError(
-          this.boundary,
-          nodeExpectation(expectation),
-          describeNode(node),
-        );
-      }
-    }
-    this.#next = node.nextSibling;
-    return node;
-  }
-
-  /** Claim the next paired component/conditional/list region. */
-  claimRange(
-    kind: Exclude<PairedHydrationMarkerKind, 'r'>,
-    identity: string,
-  ): ClaimedHydrationRange {
-    const open = expectOpen(this.nextNode, kind, identity, this.boundary);
-    const close = findPairClose(open, this.end, identity);
-    this.#next = close.nextSibling;
-    return {
-      kind,
-      identity,
-      open,
-      end: close,
-      cursor: new LocalHydrationCursor(identity, open.nextSibling, close),
-    };
-  }
-
-  /**
-   * Claim one v0.2 single-opening row. Its exclusive end is the next row
-   * marker at list depth zero or the enclosing list close.
-   */
-  claimRow(listId: string, encodedKey: string): ClaimedHydrationRange {
-    const identity = `${listId}:${encodedKey}`;
-    const open = expectOpen(this.nextNode, 'w', identity, this.boundary);
-    let depth = 0;
-    let end: Node = this.end;
-    for (let node = open.nextSibling; node !== this.end; node = node?.nextSibling ?? null) {
-      if (node === null) break;
-      const marker = markerFor(node);
-      if (marker?.type === 'open') {
-        if (depth === 0 && marker.kind === 'w') {
-          end = node;
-          break;
-        }
-        if (PAIRED_KINDS.has(marker.kind)) depth++;
-      } else if (marker?.type === 'close' && depth > 0) {
-        depth--;
-      }
-    }
-    this.#next = end;
-    return {
-      kind: 'w',
-      identity,
-      open,
-      end,
-      cursor: new LocalHydrationCursor(identity, open.nextSibling, end),
-    };
-  }
-
-  expectDone(): void {
-    if (!this.done) {
-      throw new HydrationMismatchError(
-        this.boundary,
-        'the end of the boundary',
-        describeNode(this.nextNode),
-      );
-    }
-  }
-}
-
 function nodeExpectation(expectation: HydrationNodeExpectation): string {
   if (expectation.nodeType === 1) {
     const tag = expectation.tagName ?? '*';
@@ -273,7 +135,7 @@ function nodeExpectation(expectation: HydrationNodeExpectation): string {
 }
 
 /** Locate and validate one application-root marker pair inside a host. */
-export function createHydrationCursor(
+export function claimHydrationRoot(
   host: Element,
   rootId: string,
 ): ClaimedHydrationRange {
@@ -308,7 +170,6 @@ export function createHydrationCursor(
     identity: rootId,
     open,
     end: close,
-    cursor: new LocalHydrationCursor(rootId, open.nextSibling, close),
   };
 }
 
@@ -504,11 +365,6 @@ export class HydrationMarkerIndex {
       identity,
       open: range.open,
       end: range.end,
-      cursor: new LocalHydrationCursor(
-        identity,
-        range.open.nextSibling,
-        range.end,
-      ),
     };
   }
 
@@ -825,7 +681,7 @@ export function hydrateApplicationRoot(
   host: Element,
   definition: RootFactoryDefinition,
 ): HydratedApplicationRoot {
-  const range = createHydrationCursor(host, definition.id);
+  const range = claimHydrationRoot(host, definition.id);
   const hydrationDocument = new HydrationDocument(
     getActiveEnvironment().document,
     range,
