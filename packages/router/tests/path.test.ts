@@ -15,6 +15,22 @@ import {
 import type { RouteParams } from '../src';
 
 describe('route paths', () => {
+  it('shares templates safely between interpolation and exact/prefix matching', () => {
+    const pattern = '/release.v1/:name/*';
+    const url = buildRoutePath(pattern, { name: 'Ada Lovelace', '*': 'notes/intro' });
+    expect(url).toBe('/release.v1/Ada%20Lovelace/notes/intro');
+    expect(matchRoutePattern(pattern, url)?.params).toEqual({ name: 'Ada Lovelace', '*': 'notes/intro' });
+    expect(matchRoutePattern(pattern, '/releaseXv1/Ada/notes')).toBeNull();
+    expect(matchRoutePattern('/release.v1/:name', url, { end: false })).toMatchObject({
+      params: { name: 'Ada Lovelace' }, remaining: '/notes/intro',
+    });
+    expect(matchRoutePattern('/release.v1/:name', url)).toBeNull();
+    const exact = matchRoutePattern('/release.v1', '/release.v1');
+    expect(matchRoutePattern('/release.v1', '/release.v1/child', { end: false })?.remaining).toBe('/child');
+    expect(matchRoutePattern('/release.v1', '/release.v1')).toBe(exact);
+    expect(buildRoutePath(pattern, { name: 'Grace', '*': 'other' })).toBe('/release.v1/Grace/other');
+  });
+
   it('resolves route-relative destinations with directory semantics', () => {
     expect(resolveRoutePath('/projects/one', 'details')).toBe('/projects/one/details');
     expect(resolveRoutePath('/projects/one', '../two')).toBe('/projects/two');

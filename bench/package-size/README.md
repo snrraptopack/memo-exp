@@ -93,6 +93,12 @@ cover actual server-node adoption and mismatch recovery. Record both reports
 when moving work across the browser/hydration boundary, since reducing one graph
 can increase the other.
 
+Select individual stable fixtures with repeated `--fixture=<name>` arguments.
+For example, `--fixture=route-helper --fixture=request-routed-group` compares a
+reactive link constructed by `buildRoutePath` with full routed Group navigation.
+The helper fixture verifies parameter updates and excludes matching expressions;
+the routing fixture retains matching and verifies navigation away and back.
+
 The audit includes stable fetch, promise-read, Group and routed Group fixtures. Compare runtime/data/router
 source changes against a commit with:
 

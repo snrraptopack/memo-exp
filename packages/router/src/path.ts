@@ -36,9 +36,9 @@ interface CompiledPattern {
   readonly keys: readonly string[];
   readonly chunks: readonly PatternChunk[];
   readonly isStatic: boolean;
-  readonly end: RegExp;
-  readonly prefix: RegExp;
-  readonly exactMatch: PatternMatch;
+  end?: RegExp;
+  prefix?: RegExp;
+  exactMatch?: PatternMatch;
   lastPath?: string;
   lastEnd?: boolean;
   lastResult?: PatternMatch | null;
@@ -251,7 +251,7 @@ export function validateRoutePatterns(
 }
 
 /**
- * Compiles a route pattern into cached regular expressions, parameter keys, and template chunks.
+ * Compiles the shared path template; matching state is created only by matching.
  */
 function compilePattern(pattern: string): CompiledPattern {
   const normalized = validateRoutePattern(pattern);
@@ -261,13 +261,11 @@ function compilePattern(pattern: string): CompiledPattern {
   const keys: string[] = [];
   const chunks: PatternChunk[] = [];
   const segments = pathSegments(normalized);
-  let body = '';
 
   for (const segment of segments) {
     if (segment === '*') {
       keys.push('*');
       chunks.push({ kind: 'wildcard' });
-      body += '(?:/(.*))?';
       continue;
     }
     const param = PARAM_SEGMENT.exec(segment);
@@ -275,31 +273,20 @@ function compilePattern(pattern: string): CompiledPattern {
       const name = param[1]!;
       keys.push(name);
       chunks.push({ kind: 'param', name });
-      body += '/([^/]+)';
       continue;
     }
     chunks.push({ kind: 'static', text: `/${segment}` });
-    body += `/${escapeRegExp(segment)}`;
   }
 
-  if (segments.length === 0) body = '/';
-  const source = body === '/' ? '' : body;
   const isStatic = keys.length === 0 && !normalized.includes('*') && !normalized.includes(':');
-  const exactMatch: PatternMatch = Object.freeze({
-    pattern: normalized,
-    pathname: normalized,
-    params: EMPTY_PARAMS,
-    consumed: normalized,
-    remaining: '/',
-  });
   const compiled: CompiledPattern = {
     pattern: normalized,
     keys,
     chunks,
     isStatic,
-    end: new RegExp(`^${source || '/'}/*$`),
-    prefix: new RegExp(`^${source || ''}(?=/|$)`),
-    exactMatch,
+    end: undefined,
+    prefix: undefined,
+    exactMatch: undefined,
   };
   if (compiledPatterns.size >= PATTERN_CACHE_LIMIT) {
     const oldest = compiledPatterns.keys().next().value as string | undefined;
@@ -307,6 +294,18 @@ function compilePattern(pattern: string): CompiledPattern {
   }
   compiledPatterns.set(normalized, compiled);
   return compiled;
+}
+
+function patternMatcher(compiled: CompiledPattern, end: boolean): RegExp {
+  let source = '';
+  for (const chunk of compiled.chunks) {
+    source += chunk.kind === 'wildcard' ? '(?:/(.*))?'
+      : chunk.kind === 'param' ? '/([^/]+)' : escapeRegExp(chunk.text);
+  }
+  const matcher = new RegExp(end ? `^${source || '/'}/*$` : `^${source}(?=/|$)`);
+  if (end) compiled.end = matcher;
+  else compiled.prefix = matcher;
+  return matcher;
 }
 
 /**
@@ -345,7 +344,13 @@ export function matchRoutePattern(
   if (compiled.isStatic) {
     if (matchEnd) {
       if (normalizedPathname === compiled.pattern) {
-        result = compiled.exactMatch;
+        result = compiled.exactMatch ??= Object.freeze({
+          pattern: compiled.pattern,
+          pathname: compiled.pattern,
+          params: EMPTY_PARAMS,
+          consumed: compiled.pattern,
+          remaining: '/',
+        });
       }
     } else if (
       compiled.pattern === '/' ||
@@ -365,7 +370,7 @@ export function matchRoutePattern(
     }
   } else {
     // Dynamic parameterized or wildcard match via compiled regex
-    const matcher = matchEnd ? compiled.end : compiled.prefix;
+    const matcher = (matchEnd ? compiled.end : compiled.prefix) ?? patternMatcher(compiled, matchEnd);
     const match = matcher.exec(normalizedPathname);
     if (match !== null) {
       let params: Readonly<Record<string, string>>;

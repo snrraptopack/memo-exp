@@ -1259,6 +1259,53 @@ Counter and interactive-fetch production controls remain 8,730 / 3,517 B and
 Routing and Group retain browser execution, pending/error presentation and retry
 behavior. Numbered documentation and dependency versions are unchanged.
 
+### Path interpolation without matching initialization
+
+A URL helper audit showed that path helpers already exclude the navigation
+engine. No ambient-runtime change was needed. The remaining coupling was inside
+the shared pattern template: constructing a parameterized URL also built both
+matching expressions and a static match object. Matching now creates those
+values on first use; interpolation and matching still share one bounded template
+cache. Static matching creates no regular expression. Pattern fields keep a
+stable object shape, and cached matching reads its expression directly.
+
+Paired esbuild source graphs against `37263c6`, current compiler and identical
+authored fixtures:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Reactive link helper, client creation | 15,636 / 6,145 | 15,372 / 5,993 |
+| Reactive link helper, hydration included | 24,397 / 9,041 | 24,133 / 8,898 |
+| Routed fetched Group, hydration included | 90,247 / 28,351 | 90,359 / 28,389 |
+| Owner counter, hydration included | 17,820 / 6,616 | 17,820 / 6,616 |
+
+The full routing graph grows by 112 raw / 38 gzip bytes for deferred matching;
+this is not a reduction in every app. The helper no longer ships matching
+expression construction. The combined production routed Group checkpoint is
+89,274 / 27,165 B, versus the earlier 93,268 / 28,377 B; HTML and payload remain
+783 and 315 B. All emitted browser chunks are counted.
+
+Router tests pass 113 cases plus type checking. Twelve bundled-constructor,
+compiled navigation, destination identity and route-fragment hydration tests
+pass; production SSR passes six cases. All nine paired/published hydration-entry
+browser graphs pass. A new regression alternates interpolation, exact/prefix
+matching, escaped literals and wildcards on shared templates, including retained
+static match identity. The helper audit rejects retained matching expressions.
+
+The existing path/matcher benchmarks were run before and after with archived
+router source and identical benchmark fixtures. Separate processes showed a
+large shift in unchanged trie code, so those results do not establish a CPU
+improvement. An additional interleaved Node diagnostic, seven samples of 100,000
+calls with alternating order and equivalent-output checks, did not reproduce
+that shift across two fresh processes. Dynamic, wildcard and prefix differences
+changed direction or were small; no end-to-end speed claim is made.
+
+The largest retained modules remain the navigation engine (about 23.5 KB
+minified raw), fetch resource lifecycle (12.2 KB) and hydration (6.6 KB).
+Continue reducing their required work and shared orchestration, preserving
+Group readiness/error/retry behavior and request isolation. Numbered docs and
+dependency versions remain unchanged.
+
 ### Remaining order
 
 | Order | Work | Required evidence |

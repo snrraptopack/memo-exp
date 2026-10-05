@@ -83,6 +83,9 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       inputs.some(input => /router\/(?:src|dist)\/preparation\.(?:ts|js)$/.test(input.path))) {
       throw new Error('Ordinary routing must not retain route preparation execution');
     }
+    if (fixture === 'route-helper' && graph !== 'source-before' && /new RegExp\(/.test(output.text)) {
+      throw new Error('Path interpolation must not retain pattern matching expressions');
+    }
     rows.push(row);
     writeFileSync(resolve(directory, `${fixture}-${graph}.js`), output.contents);
     writeFileSync(resolve(directory, `${fixture}-${graph}.meta.json`), JSON.stringify(result.metafile, null, 2));
@@ -94,7 +97,7 @@ const lines = ['# Browser bundle audit', '',
   `Runtime/data/router source baseline: ${baseline ?? 'not requested'}. All graphs use the current compiler and identical authored fixtures.`, '',
   'Stable authored fixtures compiled by the current compiler. Each graph includes mount and root metadata.', '',
   `Optional hydration entry included: ${hydration}. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
-  '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime and data source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
+  '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime, data and router source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
   '| Fixture | Graph | Raw B | Gzip B | Brotli B |', '|---|---|---:|---:|---:|',
   ...rows.map(row => `| ${row.fixture} | ${row.graph} | ${row.raw} | ${row.gzip} | ${row.brotli} |`), ''];
 if (process.argv.includes('--verify')) {
@@ -131,6 +134,11 @@ if (process.argv.includes('--verify')) {
           const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
           const check = (condition: boolean) => { if (!condition) throw new Error(`Failed ${fixture} interaction`); };
           if (fixture === 'static') { check(main.textContent === 'Static shellReady.'); return; }
+          if (fixture === 'route-helper') {
+            check(main.querySelector('a')?.getAttribute('href') === '/person/1');
+            button.click(); await settle();
+            check(main.querySelector('a')?.getAttribute('href') === '/person/2'); return;
+          }
           if (fixture.startsWith('request-') || fixture === 'promise-data') {
             check(main.querySelector('p')?.textContent === 'Ada');
             if (fixture === 'request-markup') {

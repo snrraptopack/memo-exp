@@ -1,5 +1,8 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'route-helper': { './App.tsx': `import {buildRoutePath} from '@memoized-dom/router';
+    export function App(){let id=1;return <main><button onClick={()=>id++}>Next</button>
+      <a href={buildRoutePath('/person/:id',{id})}>Person</a></main>;}` },
   'request-group': { './App.tsx': `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
     export function App(){const user=$fetch('/api/user');return <main><Group pending={Pending}><p>{user?.name}</p></Group></main>;}` },
   'request-routed-group': { './App.tsx': `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
