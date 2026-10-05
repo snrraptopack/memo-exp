@@ -1306,6 +1306,24 @@ Continue reducing their required work and shared orchestration, preserving
 Group readiness/error/retry behavior and request isolation. Numbered docs and
 dependency versions remain unchanged.
 
+### Shared navigation preparation and settlement
+
+Direct navigation, browser history traversal, Navigation API traversal and
+memory-history traversal now call one preparation coordinator. It owns gate
+execution, supersession checks, redirect resolution and awaiting render
+readiness. Host callbacks still own publication, rollback and retry: browser
+history recovery cannot be replaced by a memory-history commit. This removes
+100 net source lines without introducing a second navigation engine.
+
+Paired hydration-entry source graphs against `b01ce15`, identical compiler and
+fixtures: routed Group falls from 90,359 / 28,389 B raw/gzip to 88,569 / 28,116 B.
+Fetched Group remains 45,083 / 14,927 B; the owner counter remains 17,820 / 6,616 B.
+All nine browser graphs pass. Router tests pass 113 cases and type checking;
+prepared/lazy route, readiness and bundled-constructor tests pass 25 cases;
+production SSR/fullstack browser tests pass seven. The change keeps entry
+failures separate from post-commit Group failures, so a Group retry does not
+duplicate history or replay route gates.
+
 ### Remaining order
 
 | Order | Work | Required evidence |
