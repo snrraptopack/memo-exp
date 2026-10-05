@@ -223,8 +223,8 @@ export function adoptReadResource<T>(
 }
 
 /** Install the promise capability only when exposed or used; its store stays lazy. */
-export function enableDataReads(runtime: CoreDataRuntime): DataRuntime {
-  if ('$read' in runtime) return runtime as DataRuntime;
+export function enableDataReads<T extends CoreDataRuntime>(runtime: T): T & Pick<DataRuntime, '$read'> {
+  if ('$read' in runtime) return runtime as T & Pick<DataRuntime, '$read'>;
   let store: ReadStore | undefined;
   return Object.assign(runtime, {
     $read<T>(promise: PromiseLike<T>, replay?: () => PromiseLike<T>): FetchResource<T> {

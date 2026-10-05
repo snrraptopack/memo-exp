@@ -15,14 +15,15 @@ import {
 } from './transparent';
 import { $forms, isFormSource, trackForm } from './forms';
 import { enableDataReads } from './read-resource';
+import { exposeDataRuntime } from './client';
 
 export { createDataRuntime } from './client';
 export const runWithDataRuntime: <T>(runtime: DataRuntime, fn: () => T) => T = withActiveRuntime;
 export function getActiveDataRuntime(): DataRuntime {
-  return enableDataReads(activeDataRuntime());
+  return exposeDataRuntime(activeDataRuntime());
 }
 export function setActiveDataRuntime(runtime: DataRuntime | null): DataRuntime {
-  return enableDataReads(setActiveRuntime(runtime));
+  return exposeDataRuntime(setActiveRuntime(runtime));
 }
 // Delegating facades: server rendering swaps the active runtime per request,
 // so the public bindings must never capture the singleton implementation.
@@ -34,7 +35,7 @@ export const $read = <T>(
   promise: PromiseLike<T>,
   replay?: () => PromiseLike<T>,
 ): ResolvedValue<Awaited<T>> =>
-  getActiveDataRuntime().$read(promise, replay) as unknown as ResolvedValue<Awaited<T>>;
+  enableDataReads(activeDataRuntime()).$read(promise, replay) as unknown as ResolvedValue<Awaited<T>>;
 export { $forms };
 export function $track<T>(value: import('./forms').FormSource<T>): import('./forms').FormTracker<T>;
 export function $track<T>(value: import('./transparent-module').ModuleSourceRef): import('./types').TrackedValue<T>;

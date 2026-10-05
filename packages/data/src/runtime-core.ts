@@ -16,21 +16,22 @@ import type {
   StandardSchemaV1,
 } from './types';
 
-export type CoreDataRuntime = Omit<DataRuntime, '$read'>;
+export type CoreDataRuntime = Omit<DataRuntime, '$read' | 'serializeState'>;
 
-interface HydrationControls {
-  resume(): void;
-  cancel(): void;
+const stores = new WeakMap<CoreDataRuntime, FetchStore>();
+
+export function fetchStoreForRuntime(runtime: CoreDataRuntime): FetchStore {
+  const store = stores.get(runtime);
+  if (store === undefined) throw new TypeError('Runtime has no fetch store');
+  return store;
 }
 
-const hydrationControls = new WeakMap<CoreDataRuntime, HydrationControls>();
-
 export function resumeDataHydration(runtime: CoreDataRuntime): void {
-  hydrationControls.get(runtime)?.resume();
+  stores.get(runtime)?.resumeHydration();
 }
 
 export function cancelDataHydration(runtime: CoreDataRuntime): void {
-  hydrationControls.get(runtime)?.cancel();
+  stores.get(runtime)?.cancelHydration();
 }
 
 /** Create an isolated request/cache/action ownership boundary. */
@@ -60,17 +61,11 @@ export function createCoreDataRuntime(
     settle(timeoutMs) {
       return settleDataRuntimeSources(runtime, timeoutMs);
     },
-    serializeState() {
-      return store.serialize();
-    },
     restoreState(state) {
       store.installRestoreRecords(state);
     },
   };
   registerDataRuntimeProvider(runtime, store);
-  hydrationControls.set(runtime, {
-    resume: () => store.resumeHydration(),
-    cancel: () => store.cancelHydration(),
-  });
+  stores.set(runtime, store);
   return runtime;
 }

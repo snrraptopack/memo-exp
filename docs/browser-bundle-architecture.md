@@ -36,7 +36,7 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Counter with 60 static cards | 8,728 | 3,517 |
 | Interactive composition | 10,417 | 4,107 |
 | Input / list | 17,157 | 6,449 |
-| Request-dependent fetch page | 46,441 | 15,232 |
+| Request-dependent fetch page | 45,062 | 14,775 |
 
 The static-card result demonstrates the architecture change: more static
 content grows HTML without growing the counter's browser program. Request data
@@ -1059,6 +1059,45 @@ hydration. Browser bundles for the existing fixtures remain unchanged.
 The focused compiler/composition/markup suites pass 183 tests; production
 HTML/SSR passes 28 tests. Both audit modes verify eighteen browser graphs each,
 and all eighteen source bundle hashes match the saved previous-compiler output.
+
+### Optional transfer production on the shared data runtime
+
+The browser needs to restore server data; it normally does not produce a new
+transfer envelope. `FetchStore.serialize`, its JSON transfer checks and record
+producer were moved to `serialization.ts`. This is one producer over the same
+fetch store, not a second cache or runtime. The existing runtime-to-hydration
+WeakMap now stores that fetch store directly, removing two adapter closures.
+
+Public `createDataRuntime`, `getActiveDataRuntime` and `setActiveDataRuntime`
+still expose the complete API on the same object. Internal fetch initialization
+and `$read` install only the capabilities they need. Server rendering uses the
+public runtime and retains serialization; browser restoration stays in the core.
+Transfer safety checks, redacted errors and source identities are unchanged.
+
+Source baseline `8a61ddd`, same compiler and authored fixtures, mount plus
+hydration, whole-bundle raw/gzip bytes:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Fetch-only page | 46,279 / 15,334 | 44,900 / 14,872 |
+| Fetch plus sixteen markup cards | 47,961 / 15,639 | 46,582 / 15,192 |
+| Promise-read page | 49,047 / 15,946 | 47,642 / 15,461 |
+
+Without hydration the source fetch fixture falls from 37,519 / 12,524 to
+36,140 / 12,069 bytes. All six non-data fixture sizes are unchanged in both
+audit modes. Production SSR fetch output falls from 46,441 / 15,232 to
+45,062 / 14,775 browser bytes; HTML remains 564 bytes with a 315-byte payload.
+Production static output remains zero JavaScript. Public runtime consumers
+retain the producer because they explicitly expose serialization.
+
+The new tests install capabilities after requests/reads exist, verify unchanged
+runtime identity and one network call, restore serialized data without a fetch,
+clear the shared boundary and check that getters, rich objects and cycles remain
+excluded from transfer. Data tests/type checks pass all 63 tests; both audit
+modes pass all 27 browser graphs. These are bundle and correctness results,
+not a CPU speed claim. All 121 server tests and the three production SSR tests
+pass, including native Chrome adoption and no duplicate request. Request-dependent
+binding planning remains open.
 
 ### Remaining order
 
