@@ -27,6 +27,12 @@ closed static composition no longer adds browser factories. The linker emits
 one browser graph, and runtime scheduling, ownership and settlement remain
 shared. The entire compiler is not yet independent of the DOM backend.
 
+Zero JavaScript is an automatic result for proven noninteractive pages, not a
+constraint on authoring. Routing, `Group`, pending/error presentation, retries
+and navigation retain their semantics and browser program. Reducing their
+required code remains the goal; removing those features or forcing their pages
+to fit a zero-JavaScript subset is not the goal.
+
 Latest verified production SSR fixtures, all emitted browser chunks:
 
 | Fixture | Browser JS B | Gzip sum B |
@@ -36,19 +42,23 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Counter with 60 static cards | 8,728 | 3,517 |
 | Interactive composition | 10,417 | 4,107 |
 | Input / list | 17,157 | 6,449 |
-| Request-dependent fetch page | 45,062 | 14,775 |
+| Noninteractive fetched page | 0 | 0 |
+| Noninteractive fetched composition | 0 | 0 |
+| Interactive fetched page | 45,257 | 14,839 |
+| Routed fetched page with Group | 93,268 | 28,377 |
 
 The static-card result demonstrates the architecture change: more static
-content grows HTML without growing the counter's browser program. Request data
-remains the largest gap. It still retains general hydration, serialized state
-and creation instructions. That gap needs deeper binding/reachability planning.
+content grows HTML without growing the counter's browser program. Interactive
+request data remains the largest gap: it still retains general hydration,
+serialized state and creation instructions. That gap needs deeper
+binding/reachability planning while preserving routing and data presentation.
 
 | Area | Status |
 |---|---|
 | Shared source/render facts and one browser graph | Implemented foundations; some emission planning remains DOM-specific |
 | Closed static HTML, primitive props and supported composition | Implemented and verified in production Chrome |
 | Initial host, conditional and list bindings | Implemented first supported shapes; uncertain/nested shapes retain creation |
-| Request-dependent HTML plus minimal browser bindings | Next major architecture batch; general hydration currently retained |
+| Request-dependent HTML plus minimal browser bindings | Read-only noninteractive fetch pages implemented; interactive/routed/Group pages retain general hydration |
 | Runtime capabilities | First cuts complete: shared data settlement, optional promise reads, unused cursor removal and lean markup adoption |
 
 Callback props, escaping mutable values, hidden reads, refs, effects and unknown
@@ -1149,6 +1159,64 @@ without initial element creation and later child recreation. The HTML suite
 passes its checks; one existing Chrome test timed out under concurrent machine
 load and passed alone with a 60-second test limit. Numbered docs are unchanged.
 
+### Request-dependent HTML without a browser program
+
+The same initial-render proof now carries an unknown request value through
+supported text/attribute slots and component props. It recognizes the actual
+framework `$fetch` binding, including import aliases and shadows. It does not
+fetch at build time or invent data. GET requests need closed options; callbacks,
+validators, opaque calls, request-derived structure, refs, effects and exposed
+mutable values retain browser execution. Routing and `Group` remain supported
+through ordinary hydration; their interactive and presentation semantics are
+preserved. This is a limited automatic optimization, not a new authoring mode.
+
+Delivery uses the existing compiler metadata, Vite shell adapter and server
+factory inside `RenderSession`. The absence of precomputed HTML means the
+factory must run for each request. No alternate renderer, cache, bootstrap or
+scheduler was added. The session waits for settlement, omits all hydration
+markers and payload production, and rejects incomplete data. `serve()` buffers
+these responses so failures occur before committing headers. No user-supplied
+contract key or new public API is required. Client-only builds and development
+retain their browser entry.
+
+Failure testing exposed scheduled SSR exceptions that escaped the render
+promise. The session now uses the kernel's existing scheduler to keep the same
+microtask ordering and forward update errors into its abort/disposal lifecycle.
+A failed request rejects its render without affecting a concurrent successful
+request. Ordinary hydration receives the same fix. A retained DOM runtime gets
+its normal scheduler back when handed to its caller.
+
+Production compiler/Vite baseline `4cb1f6e`, identical current runtime/data/server
+packages and stable authored fixtures; every emitted browser chunk is counted:
+
+| Fixture | Before JS raw / gzip sum B | After JS raw / gzip sum B | Before / after payload B | Before / after served HTML B |
+|---|---:|---:|---:|---:|
+| Fetched text | 45,062 / 14,775 | 0 / 0 | 315 / 0 | 564 / 111 |
+| Fetched composition | 43,274 / 14,123 | 0 / 0 | 315 / 0 | 599 / 179 |
+| Interactive fetched page | 45,257 / 14,839 | 45,257 / 14,839 | 315 / 315 | 595 / 595 |
+| Routed fetched page with Group | 93,268 / 28,377 | 93,268 / 28,377 | 315 / 315 | 783 / 783 |
+| Counter | 8,730 / 3,517 | 8,730 / 3,517 | 0 / 0 | 218 / 218 |
+| Static page | 0 / 0 | 0 / 0 | 0 / 0 | 146 / 146 |
+
+`bench:size:ssr --before-ref=4cb1f6e` archives compiler/Vite source and holds the
+other packages fixed. Repeated `--fixture=<name>` selections are supported. The
+HTML and SSR audits share one baseline loader instead of duplicating archive
+and bundle machinery. These are delivered-byte measurements, not CPU timings.
+
+Compiler tests cover both frontends, aliases, composition and rejected browser
+behavior. Server checks cover concurrent request isolation, cancellation,
+timeout, stale builds, stream settlement, synchronous-render rejection and
+failures before response commit. Production Chrome verifies fetched HTML/CSS
+with no JavaScript or duplicate browser request, and route navigation with
+`Group` retains fetched data through normal hydration. Numbered docs are unchanged.
+
+The focused compiler checks pass 62 tests; the server suite plus added isolation
+cases pass 128. Production SSR passes six cases, and HTML-first production
+passes 26. Runtime, compiler, server and Vite builds/type checks pass. The routed
+`Group` fixture's retained 93,268 browser bytes establish an explicit next target:
+reduce required hydration, creation and capabilities while preserving navigation,
+pending/error behavior and retries. It is not a zero-JavaScript target.
+
 ### Remaining order
 
 | Order | Work | Required evidence |
@@ -1156,7 +1224,7 @@ load and passed alone with a 60-second test limit. Numbered docs are unchanged.
 | 1, first boundary implemented | Separate initial content from browser execution; emit closed static pages as HTML | Hello and larger static composition ship zero JS; CSS, unknown effects, dev HMR and direct JS consumers remain correct |
 | 2, first mixed boundary implemented | Extend the semantic plan beyond closed-root/primitive-prop placements with interaction roots, source/slot reachability, captures and lifetime requirements | Static parent with interactive child; unused state; callbacks, hidden reads, refs and cleanup; explain every retained client region |
 | 3, direct host roots and first conditional/list boundaries implemented | Extend HTML plus browser binding/event/update output to composed children and remaining structural regions | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
-| 4 | Extend the same separation to request HTML and serialized state | Zero-JS static SSR, minimal mixed-page interaction JS, async isolation, payload safety and hydration correctness |
+| 4, first noninteractive request boundary implemented | Extend the same separation to request HTML and serialized state without restricting routing or Group | Zero-JS static SSR, minimal mixed-page interaction JS, async isolation, payload safety and hydration correctness |
 | 5 | Reduce runtime capabilities required by the derived browser program | Scheduling/lifetime core, optional access routing/host adapters, positional versus keyed lists, opaque fallback and retained identity |
 
 Each step gets before/after whole-application measurements. Keep a keyed list,

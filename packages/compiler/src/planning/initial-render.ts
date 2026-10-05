@@ -52,9 +52,14 @@ export type InitialRenderPlan =
       readonly rootModuleId: string; readonly rootLocal: string; readonly returnSite: string;
       readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true;
       readonly creationComponents?: readonly string[] }
+  | { readonly kind: 'request'; readonly target: string; readonly mountModuleId: string;
+      readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true }
   | { readonly kind: 'browser'; readonly requirements: readonly BrowserRequirement[] };
 
-type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content;
+type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content | RequestValue | RequestFactory;
+interface RequestValue { readonly kind: 'request-value' }
+interface RequestFactory { readonly kind: 'request-factory' }
+const requestValue: RequestValue = { kind: 'request-value' };
 interface ValueArray { readonly kind: 'array'; readonly items: readonly Value[] }
 interface ValueObject { readonly kind: 'object'; readonly fields: ReadonlyMap<string, Value>; readonly props?: boolean; readonly live?: ReadonlySet<string> }
 interface Component { readonly kind: 'component'; readonly node: BaseNode; readonly scope: Scope; readonly local?: string }
@@ -87,6 +92,8 @@ export function planInitialRendering(
   const analyses = new Map<string, ScopeAnalysis>();
   let mixed = false;
   let bindings = false;
+  let request = false;
+  let requestReads = false;
   let bindingEvents = false;
   let bindingEventCount = 0;
   let returnSite: string | undefined;
@@ -159,6 +166,12 @@ export function planInitialRendering(
     return value;
   }
 
+  function closedData(value: Value): boolean {
+    if (value === null || typeof value !== 'object') return true;
+    if (value.kind === 'array') return value.items.every(closedData);
+    return value.kind === 'object' && [...value.fields.values()].every(closedData);
+  }
+
   function expression(node: BaseNode | null, scope: Scope): Value {
     if (node === null) return undefined;
     if (isFunctionNode(node)) return { kind: 'component', node, scope, local: identifierLikeName(childNode(node,'id')) ?? undefined };
@@ -187,8 +200,16 @@ export function planInitialRendering(
         }
       }
       case 'BinaryExpression': {
-        const left = primitive(expression(childNode(node, 'left'), scope), scope);
-        const right = primitive(expression(childNode(node, 'right'), scope), scope);
+        const leftValue = expression(childNode(node, 'left'), scope);
+        const rightValue = expression(childNode(node, 'right'), scope);
+        if (leftValue === requestValue || rightValue === requestValue) {
+          if (leftValue !== requestValue) primitive(leftValue, scope);
+          if (rightValue !== requestValue) primitive(rightValue, scope);
+          if (['in', 'instanceof'].includes(String(nodeField(node, 'operator')))) need(scope, 'Unproved request operation');
+          return requestValue;
+        }
+        const left = primitive(leftValue, scope);
+        const right = primitive(rightValue, scope);
         // Only primitives reach these operators: no user coercion hooks run.
         switch (nodeField(node, 'operator')) {
           case '+': return typeof left === 'string' || typeof right === 'string'
@@ -215,7 +236,7 @@ export function planInitialRendering(
           default: return need(scope, 'Unsupported binary operation');
         }
       }
-      case 'TSAsExpression': case 'TSSatisfiesExpression': case 'TSNonNullExpression': case 'ParenthesizedExpression':
+      case 'ChainExpression': case 'TSAsExpression': case 'TSSatisfiesExpression': case 'TSNonNullExpression': case 'ParenthesizedExpression':
         return expression(childNode(node, 'expression'), scope);
       case 'ObjectExpression': {
         const fields = new Map<string, Value>();
@@ -239,6 +260,7 @@ export function planInitialRendering(
       }
       case 'MemberExpression': {
         const object = expression(childNode(node, 'object'), scope);
+        if (object === requestValue && !nodeField(node,'computed')) return requestValue;
         const name = nodeField(node, 'computed')
           ? primitive(expression(childNode(node, 'property'), scope), scope)
           : identifierLikeName(childNode(node, 'property'));
@@ -280,6 +302,18 @@ export function planInitialRendering(
       }
       case 'JSXElement': case 'JSXFragment': return { kind: 'content', nodes: jsx(node, scope) };
       case 'CallExpression': {
+        const callee=scope.values.get(identifierLikeName(childNode(node,'callee'))??'');
+        if (request && callee!==null && typeof callee==='object' && callee.kind === 'request-factory') {
+          const args=childNodes(node,'arguments');
+          if (args.length < 1 || args.length > 2 || typeof expression(args[0]!,scope) !== 'string') need(scope,'Request HTML needs a closed fetch URL');
+          const options=args[1] ? expression(args[1],scope) : undefined;
+          if (options!==undefined && (options===null || typeof options!=='object' || options.kind!=='object' || !closedData(options) ||
+              options.fields.has('method') && options.fields.get('method')!=='GET' || options.fields.has('body'))) {
+            need(scope,'Request HTML needs a read-only fetch');
+          }
+          requestReads=true;
+          return requestValue;
+        }
         const mapped = list(node, scope);
         if (mapped) return mapped;
         const name = identifierLikeName(childNode(node, 'callee'));
@@ -371,6 +405,7 @@ export function planInitialRendering(
   }
 
   function content(value: Value, scope: Scope): readonly InitialRenderNode[] {
+    if (value === requestValue) return [{kind:'text',value:''}];
     if (value !== null && typeof value === 'object') {
       if (value.kind === 'content') return value.nodes;
       return need(scope, 'Non-content object child');
@@ -436,7 +471,9 @@ export function planInitialRendering(
       function flush(): void {
         if (!pending.length) return;
         const joined=combineTextExpressions(pending);
-        const value=primitive(expression(joined,scope),scope);
+        const resolved=expression(joined,scope);
+        if (resolved===requestValue) {result.push({kind:'text',value:''});pending.length=0;return;}
+        const value=primitive(resolved,scope);
         if (bindings) {
           const live = !staysClosed(joined, scope);
           if (astFactory.isStringLiteral(joined) && joined.value === '') need(scope,'Empty static text needs an HTML representation proof');
@@ -457,6 +494,7 @@ export function planInitialRendering(
           if (input?.type === 'Identifier' && nodeField(input, 'name') === 'undefined') continue;
           if (input && (nodeField(input, 'value') === null || typeof nodeField(input, 'value') === 'boolean')) continue;
           const value = expression(input, scope);
+          if (value===requestValue) {pending.push(input as t.Expression);continue;}
           if (value !== null && typeof value === 'object' || input && nodeHasJsx(input)) {
             flush();
             result.push(...content(value, scope));
@@ -497,6 +535,7 @@ export function planInitialRendering(
         continue;
       }
       if (name === 'ref') return need(scope, 'Refs require browser execution', 'ref');
+      if (request && !host && ['pending','error'].includes(name)) need(scope,'Request presentation policies need a browser interaction proof');
       if (['route', 'route-to', 'if', 'else-if', 'else', 'innerHTML'].includes(name)) {
         return need(scope, 'Compiler directives need their browser semantics');
       }
@@ -504,7 +543,7 @@ export function planInitialRendering(
       const input = childNode(attribute, 'value');
       const valueNode = input?.type === 'JSXExpressionContainer' ? childNode(input, 'expression') : input;
       const value = input === null ? true : expression(valueNode, scope);
-      if (host && name !== 'key') attributes.push({ name, value: primitive(value, scope),
+      if (host && name !== 'key') attributes.push({ name, value: value===requestValue ? null : primitive(value, scope),
         ...(bindings ? {site:initialSite(attribute),live:!staysClosed(valueNode,scope)} : {}) });
       else { props.set(name, value); if (bindings && !staysClosed(valueNode,scope)) liveProps.add(name); }
     }
@@ -563,6 +602,11 @@ export function planInitialRendering(
         const specifiers = childNodes(statement, 'specifiers').filter(item => nodeField(item, 'importKind') !== 'type');
         if (childNodes(statement, 'specifiers').length && !specifiers.length) continue;
         const source = stringValue(childNode(statement, 'source'))!;
+        if (request && source==='@memoized-dom/data' && specifiers.length && specifiers.every(item=>
+            item.type==='ImportSpecifier' && identifierLikeName(childNode(item,'imported'))==='$fetch')) {
+          for(const item of specifiers) scope.values.set(identifierLikeName(childNode(item,'local'))!,{kind:'request-factory'});
+          continue;
+        }
         if (source === runtimePath && specifiers.length && specifiers.every(item =>
           item.type === 'ImportSpecifier' && identifierLikeName(childNode(item, 'imported')) === 'mount')) {
           for (const item of specifiers) mountBindings.add(identifierLikeName(childNode(item, 'local'))!);
@@ -649,6 +693,7 @@ export function planInitialRendering(
     const exposure = [...modules.values()].some(scope => [...scope.exports.values()].some(value =>
       value !== null && typeof value === 'object' && (value.kind === 'array' || value.kind === 'object')))
       ? { exposedMutableValues: true as const } : {};
+    if (request && requestReads) return {kind:'request',target,mountModuleId:root!.mountModuleId,nodes,...exposure};
     if (bindings) {
       if (!bindingEvents || !returnSite || nodes.length !== 1 || nodes[0]?.kind !== 'element') need(component.scope,'No direct interactive DOM root');
       const calls = new Map<string,Set<string>>();
@@ -741,7 +786,12 @@ export function planInitialRendering(
     try { return plan(); } catch (error) {
       if (!(error instanceof NeedsBrowser)) throw error;
     }
-    bindings=false; mixed=true;
+    bindings=false; request=true;
+    modules.clear(); visiting.clear(); rendering.clear(); returnSite=undefined; target=undefined;
+    try { return plan(); } catch (error) {
+      if (!(error instanceof NeedsBrowser)) throw error;
+    }
+    request=false; mixed=true;
     modules.clear(); visiting.clear(); rendering.clear(); regions.length=0; returnSite=undefined; target=undefined;
     try { return plan(); } catch (error) {
       if (!(error instanceof NeedsBrowser)) throw error;

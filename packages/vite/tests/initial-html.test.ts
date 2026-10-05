@@ -32,6 +32,8 @@ async function fixture(app: string, modules: Record<string, string> = {}, entry 
 function options(root: string) {
   return { root, configFile: false as const, logLevel: 'silent' as const,
     resolve: { alias: [
+      { find: '@memoized-dom/data/internal', replacement: resolve(import.meta.dirname, '../../data/src/internal.ts') },
+      { find: '@memoized-dom/data', replacement: resolve(import.meta.dirname, '../../data/src/index.ts') },
       { find: '@memoized-dom/runtime/hot', replacement: runtimeHot },
       { find: '@memoized-dom/runtime', replacement: runtime },
     ] },
@@ -47,6 +49,13 @@ async function production(root: string) {
 }
 
 describe('HTML first production builds', () => {
+  it('retains the browser program for request data without a paired server entry', async () => {
+    const result = await production(await fixture(`export function App(){const user=$fetch('/api/user');return <h1>{user?.name}</h1>;}`));
+    expect(result.files.some(file => file.type === 'chunk' && file.isEntry)).toBe(true);
+    expect(result.html).toMatch(/<script[^>]+src=/);
+    expect(result.html).not.toContain('mmd:initial-delivery:');
+  });
+
   it('binds nested composed children without creating their initial elements in Chrome', async context => {
     const executablePath = [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
       .find((path): path is string => !!path && existsSync(path));

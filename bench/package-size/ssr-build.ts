@@ -8,20 +8,19 @@ import { gzipSync } from 'node:zlib';
 import { build, type Rollup } from 'vite';
 import memoizedDom from '@memoized-dom/vite';
 import { sizeFixtures } from './fixtures';
+import { compilerBaseline } from './compiler-baseline';
 
 const repository = resolve(import.meta.dirname, '../..');
 const output = resolve(import.meta.dirname, 'dist/ssr');
-const reference = process.argv.slice(2).find(arg => arg.startsWith('--before-ref='))?.slice(13) ?? 'cc5ce13';
+const args = process.argv.slice(2);
+if (args.some(arg => !arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --before-ref=<commit> or --fixture=<name>');
+const reference = args.find(arg => arg.startsWith('--before-ref='))?.slice(13) ?? 'cc5ce13';
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
 const baseline = git('rev-parse', '--verify', '--end-of-options', `${reference}^{commit}`);
-if (!/^[a-f0-9]{40,64}$/.test(baseline)) throw new Error('Invalid adapter baseline');
+if (!/^[a-f0-9]{40,64}$/.test(baseline)) throw new Error('Invalid compiler/Vite baseline');
 await mkdir(output, { recursive: true });
 const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
-await mkdir(snapshot, { recursive: true });
-const archive = resolve(snapshot, 'adapter.tar');
-execFileSync('git', ['archive', `--output=${archive}`, baseline, 'packages/vite'], { cwd: repository });
-execFileSync('tar', ['-xf', archive, '-C', snapshot]);
-const { default: before } = await import(pathToFileURL(resolve(snapshot, 'packages/vite/src/index.ts')).href);
+const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
   static: sizeFixtures.static!,
@@ -32,6 +31,16 @@ const fixtures = {
     ${Array.from({ length: 60 }, (_, index) => `<section><h2>Card ${index}</h2><p>Ready.</p></section>`).join('')}
     <button onClick={()=>n++}>{n}</button></main>;}` },
   'request-data': { './App.tsx': `export function App(){const user=$fetch('/api/user');return <h1>{user?.name}</h1>;}` },
+  'request-composition': {
+    './App.tsx': `import {Card} from './Card';export function App(){const user=$fetch('/api/user');return <main><h1>Directory</h1><Card name={user?.name}/></main>;}`,
+    './Card.tsx': `export function Card({name}){return <section><h2 title={name}>{'Hello '+name}</h2></section>;}`,
+  },
+  'request-interactive': { './App.tsx': `export function App(){const user=$fetch('/api/user');let n=0;return <main><h1>{user?.name}</h1><button onClick={()=>n++}>{n}</button></main>;}` },
+  'request-routed-group': { './App.tsx': `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
+    export function App(){const user=$fetch('/api/user');return <main route="/">
+      <nav><a route-to="/">Home</a><a route-to="/about">About</a></nav>
+      <section route="/"><Group pending={Pending}><h1>{user?.name}</h1></Group></section>
+      <section route="/about"><h2>About directory</h2></section></main>;}` },
 };
 const aliases = (server = false) => Object.entries({
   '@memoized-dom/runtime/hydrate': 'packages/runtime/dist/hydrate.js',
@@ -45,7 +54,10 @@ const aliases = (server = false) => Object.entries({
   '@memoized-dom/server': 'packages/server/dist/index.js',
 }).map(([name, file]) => ({ find: new RegExp(`^${name}$`), replacement: resolve(repository, file) }));
 const rows: Array<{ fixture: string; version: string; html: number; payload: number; javascript: number; gzip: number; chunks: number }> = [];
+const selected = new Set(args.filter(arg => arg.startsWith('--fixture=')).map(arg => arg.slice(10)));
+for (const name of selected) if (!Object.hasOwn(fixtures, name)) throw new Error(`Unknown fixture ${name}`);
 for (const [fixture, sources] of Object.entries(fixtures)) {
+  if (selected.size && !selected.has(fixture)) continue;
   const root = await mkdtemp(join(tmpdir(), 'memoized-dom-ssr-size-'));
   if (!root.startsWith(resolve(tmpdir()) + sep)) throw new Error('Unexpected temporary fixture path');
   try {
@@ -79,7 +91,8 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
       const response = await app.fetch(new Request('https://app.test/'));
       if (response.status !== 200) throw new Error(`SSR failed: ${await response.text()}`);
       const html = await response.text();
-      if (fixture === 'request-data' && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
+      if (['request-data', 'request-interactive', 'request-routed-group'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
+      if (fixture === 'request-composition' && !html.replace(/<!--[^]*?-->/g, '').includes('Hello Ada')) throw new Error('Composed request data did not settle');
       // All emitted chunks, including shared/imported code and later capabilities.
       const chunks = assets.filter(file => file.type === 'chunk');
       const payload = html.match(/<script\b[^>]*type="application\/mmd\+json"[^>]*>[^]*?<\/script>/g) ?? [];
@@ -87,6 +100,8 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
         javascript: chunks.reduce((size, file) => size + Buffer.byteLength(file.code), 0),
         gzip: chunks.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), chunks: chunks.length };
       if (fixture === 'static' && version === 'after' && row.javascript !== 0) throw new Error('Static page emitted JavaScript');
+      if (['request-data', 'request-composition'].includes(fixture) && version === 'after' && (row.javascript !== 0 || row.payload !== 0 || /<!--/.test(html))) throw new Error('Request-only page retained browser delivery');
+      if (['request-interactive', 'request-routed-group'].includes(fixture) && row.javascript === 0) throw new Error('Interactive behavior lost its browser program');
       rows.push(row);
       await writeFile(resolve(directory, 'response.html'), html);
       console.log(`${fixture} ${version}: HTML ${row.html} B; payload ${row.payload} B; JS ${row.javascript} B / ${row.gzip} B gzip (${row.chunks} chunks)`);
@@ -99,8 +114,8 @@ const metadata = { baseline, head: git('rev-parse', 'HEAD'), dirty: !!git('statu
 await writeFile(resolve(output, 'results.json'), JSON.stringify(metadata, null, 2));
 await writeFile(resolve(output, 'results.md'), [
   '# Production SSR delivery audit', '',
-  `Adapter baseline: ${baseline}; current HEAD: ${metadata.head}; dirty: ${metadata.dirty}.`, '',
-  'Both builds use the current compiler and runtime; this isolates the Vite SSR delivery change. Stable authored fixtures, identical HTML shells, actual served responses, production minification. HTML includes its payload; payload is also reported separately. JS counts every emitted chunk once, including shared and future code. Gzip compresses each chunk separately. Server JavaScript is excluded.', '',
+  `Compiler/Vite baseline: ${baseline}; current HEAD: ${metadata.head}; dirty: ${metadata.dirty}.`, '',
+  'Both builds use the current runtime/data/server packages and stable authored fixtures; the baseline archives compiler and Vite source without changing the checkout. Identical HTML shells, actual served responses, production minification. HTML includes its payload; payload is also reported separately. JS counts every emitted chunk once, including shared and future code. Gzip compresses each chunk separately. Server JavaScript is excluded.', '',
   '| Fixture | Delivery | HTML B | Payload B | JS B | JS gzip sum B | Chunks |',
   '|---|---|---:|---:|---:|---:|---:|',
   ...rows.map(row => `| ${row.fixture} | ${row.version} | ${row.html} | ${row.payload} | ${row.javascript} | ${row.gzip} | ${row.chunks} |`), '',

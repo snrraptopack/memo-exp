@@ -119,7 +119,7 @@ describe('shared initial server delivery', () => {
     `export const value={name:'Ada'};export function App(){return <h1>{value.name}</h1>;}`,
     `let name='Ada';export function change(){name='Grace';}export function App(){return <h1>{name}</h1>;}`,
     `const value={get name(){return 'Ada';}};export function App(){return <h1>{value.name}</h1>;}`,
-    `export function App(){const data=$fetch('/api/name');return <h1>{data.name}</h1>;}`,
+    `export function App(){const data=$fetch('/api/name');let n=0;return <main><h1>{data.name}</h1><button onClick={()=>n++}>{n}</button></main>;}`,
     `export function App(){let n=0;$effect(()=>n++);return <h1>{n}</h1>;}`,
   ])('keeps request-dependent or externally writable roots on ordinary SSR: %s', source => {
     const compiled = compileInitial({ './main.ts': entry, './App.tsx': source }, { routedEnvironment: 'server' });

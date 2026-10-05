@@ -635,16 +635,18 @@ function compileLinkedModules(
     (importer, specifier) => resolveModule(importer, specifier, entries, options)?.id,
     options.runtimePath ?? '@memoized-dom/runtime');
   const initialHtml = emitInitialHtml(initialRender);
+  const requestHtmlShape = initialRender.kind === 'request' &&
+    emitInitialHtml({...initialRender,kind:'html'}) !== null;
   const initialDom = initialRender.kind === 'bindings' && initialHtml !== null ? planInitialDom(initialRender) : null;
   const initialDelivery = options.hot === true || options.routedEnvironment === 'server' && options.moduleStateCells === false
     ? undefined : planInitialDelivery(
-    initialRender, initialHtml, initialDom !== null, applicationRoot?.key,
+    initialRender, initialHtml, initialDom !== null || requestHtmlShape, applicationRoot?.key,
     new Map([...entries].map(([id, entry]) => [id, entry.source])),
     [...manifests.values()].some(manifest => Object.values(manifest.exports).some(value =>
       value.type === 'state' || value.type === 'function' && (value.writes.length > 0 || value.unbounded))),
   );
-  const initialContent = initialHtml !== null &&
-    (initialRender.kind === 'html' || initialRender.kind === 'mixed' || initialDom !== null) &&
+  const initialContent = (initialHtml !== null || requestHtmlShape) &&
+    (initialRender.kind === 'html' || initialRender.kind === 'mixed' || initialRender.kind === 'request' || initialDom !== null) &&
     options.hot !== true && options.routedEnvironment !== 'server' &&
     (typeof options.initialContent === 'function'
       ? options.initialContent(initialRender, initialDelivery) : options.initialContent === true);

@@ -40,7 +40,7 @@ export interface RenderPolicy {
   readonly mode?: RenderOptions['mode'];
   /** Emit hydration markers and the payload (default `true`). */
   readonly markers?: boolean;
-  /** Soft settle budget in ms; pending UI is serialized when it elapses. */
+  /** Soft settle budget in ms; delivery without a browser rejects incomplete data. */
   readonly timeout?: number;
   /** Hard budget in ms for the whole render, route preparation included. */
   readonly deadline?: number;
@@ -55,6 +55,8 @@ export interface RenderPolicy {
    * together only after the render succeeds. If it fails after commit, the
    * document closes with an empty outlet and `mount()` performs a fresh client
    * render, so the page still works and no partial markup is ever adopted.
+   * Compiler-proven pages without browser code are buffered so incomplete
+   * data and render failures remain response errors before headers commit.
    */
   readonly delivery?: 'stream' | 'buffer';
 }
@@ -278,12 +280,15 @@ async function renderPage<
   }
 
   const policy: RenderPolicy = { ...options.render, ...target.policy };
-  const delivery = policy.delivery ?? 'stream';
   const markers = policy.markers ?? true;
   const contract = rootFactoryStore().get(target.component)?.initialDelivery;
   const initial = template.initial;
+  const requestHtml = initial!==undefined && contract?.browser==='none' && contract.html===undefined;
+  // With no browser program, incomplete request data cannot resume on the
+  // client. Settle and validate the body before committing the response.
+  const delivery = requestHtml ? 'buffer' : policy.delivery ?? 'stream';
   const renderOptions: RenderOptions = {
-    mode: policy.mode ?? 'resolve',
+    mode: requestHtml ? 'resolve' : policy.mode ?? 'resolve',
     markers,
     ...(initial === undefined ? {} : { initialKey: initial.key }),
     timeout: policy.timeout ?? DEFAULT_TIMEOUT,

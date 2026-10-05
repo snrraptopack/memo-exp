@@ -4,11 +4,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { pathToFileURL } from 'node:url';
-import { build as bundle } from 'esbuild';
 import { build } from 'vite';
 import memoizedDom from '@memoized-dom/vite';
 import { sizeFixtures } from './fixtures';
+import { compilerBaseline } from './compiler-baseline';
 
 const repository = resolve(import.meta.dirname, '../..');
 const args=process.argv.slice(2);
@@ -19,16 +18,7 @@ if(baseline!==undefined && !/^[a-f0-9]{40,64}$/.test(baseline)) throw new Error(
 const output = resolve(import.meta.dirname, baseline?`dist/html-before-${baseline.slice(0,8)}`:'dist/html');
 let compilerPlugin=memoizedDom;
 if(baseline) {
-  const graph=resolve(output,'compiler-baseline');await mkdir(graph,{recursive:true});
-  const archive=resolve(graph,'compiler.tar');
-  execFileSync('git',['archive',`--output=${archive}`,baseline,'packages/compiler/src','packages/compiler/package.json','packages/vite/src','packages/vite/package.json'],{cwd:repository});
-  execFileSync('tar',['-xf',archive,'-C',graph]);
-  const entry=resolve(graph,'plugin.mjs');
-  await bundle({entryPoints:[resolve(graph,'packages/vite/src/index.ts')],outfile:entry,bundle:true,
-    platform:'node',format:'esm',packages:'external',plugins:[{name:'compiler-baseline',setup(builder){
-      builder.onResolve({filter:/^@memoized-dom\/compiler$/},()=>({path:resolve(graph,'packages/compiler/src/index.ts')}));
-    }}]});
-  compilerPlugin=(await import(pathToFileURL(entry).href)).default;
+  compilerPlugin=await compilerBaseline(repository,baseline,resolve(output,'compiler-baseline'));
 }
 const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim();
 const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: repository, encoding: 'utf8' }).trim() !== '';

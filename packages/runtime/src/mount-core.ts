@@ -23,7 +23,7 @@ export interface RootFactoryDefinition {
   /** Server-only build contract. Never needed by a browser binding factory. */
   readonly initialDelivery?: {
     readonly key: string;
-    readonly html: string;
+    readonly html?: string;
     readonly target: string;
     readonly browser: 'none' | 'bindings';
   };

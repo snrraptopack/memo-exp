@@ -256,11 +256,12 @@ export async function compileGraph(
     initialContent: (plan: CompiledModules['initialRender'], delivery: InitialDelivery | undefined) => {
       if (hot || routedEnvironment === 'server' || !documents.length || plan.kind === 'browser' ||
           options.serverEntry !== undefined && delivery === undefined) return false;
-      const html = emitInitialHtml(plan);
+      if (plan.kind==='request' && options.serverEntry===undefined) return false;
+      const html = plan.kind==='request' ? '' : emitInitialHtml(plan);
       const entry = [...sourceIds].find(([, id]) => id === plan.mountModuleId)?.[0];
       if (html === null || entry === undefined) return false;
       const page: InitialPage = { entry, target: plan.target, html,
-        ...(plan.kind === 'html' ? {} : { interactive: true }) };
+        ...(plan.kind === 'html' || plan.kind === 'request' ? {} : { interactive: true }) };
       return documents.every(document => applyInitialPage(document.html, document.filename, root, page, styles,
         options.serverEntry !== undefined) !== null);
     },
@@ -386,9 +387,9 @@ export async function compileGraph(
   return {
     files: new Set(sourceIds.keys()),
     ...(compiled.initialDelivery === undefined ? {} : { initialDelivery: compiled.initialDelivery }),
-    ...(!compiled.initialContent || initialHtml === null || initialEntry === undefined || compiled.initialRender.kind === 'browser' ? {} : {
-      initialPage: { entry: initialEntry, target: compiled.initialRender.target, html: initialHtml,
-        ...(compiled.initialRender.kind !== 'html' ? { interactive: true } : {}),
+    ...(!compiled.initialContent || (initialHtml === null && compiled.initialRender.kind !== 'request') || initialEntry === undefined || compiled.initialRender.kind === 'browser' ? {} : {
+      initialPage: { entry: initialEntry, target: compiled.initialRender.target, html: initialHtml??'',
+        ...(compiled.initialRender.kind !== 'html' && compiled.initialRender.kind !== 'request' ? { interactive: true } : {}),
       },
     }),
     output,

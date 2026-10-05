@@ -102,6 +102,32 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it('serves fetched composition with zero JavaScript, preserved CSS and no browser fetch in Chrome', async context => {
+    const result = await production('request-only', `import './theme.css';import {Card} from './Card';
+      export function App(){const user=$fetch('/api/user');return <main><h1>Directory</h1><Card name={user?.name}/></main>;}`, {
+      'src/theme.css': 'h2{color:rgb(1,2,3)}',
+      'src/Card.tsx': `export function Card({name}){return <section><h2 title={name}>{'Hello '+name}</h2></section>;}`,
+    });
+    expect(result.html).toContain('mmd:initial-delivery:');
+    expect(result.files.filter(file => file.type === 'chunk')).toHaveLength(0);
+    const responses = await Promise.all([0, 1].map(() => result.app.fetch(new Request('https://app.test/demo/'))));
+    for (const response of responses) expect(response.status).toBe(200);
+    const documents = await Promise.all(responses.map(response => response.text()));
+    expect(documents[0]).toBe(documents[1]);
+    const html = documents[0]!;
+    expect(html).toContain('<section><h2 title="Ada">Hello Ada</h2></section>');
+    expect(html).toMatch(/rel="stylesheet"[^>]+href="\/demo\/assets\//);
+    expect(html).not.toMatch(/<script|modulepreload|application\/mmd\+json|<!--|initial-delivery/);
+    const executablePath = chromeExecutable();
+    if (!executablePath) { context.skip(); return; }
+    await browserPage(result, html, executablePath, async (page, apiRequests) => {
+      expect(await page.$eval('h2', node => [node.textContent, getComputedStyle(node).color]))
+        .toEqual(['Hello Ada', 'rgb(1, 2, 3)']);
+      expect(await page.evaluate(() => (window as unknown as { created: string[] }).created)).toEqual([]);
+      expect(apiRequests).toEqual([]);
+    });
+  }, 60_000);
+
   it('serves a static composition with zero JavaScript and no hydration payload', async () => {
     const result = await production('static', `import './theme.css';function Card({name}){return <section><h2>{name}</h2></section>;}
       export function App(){let name='Ada';const greeting='Hello '+name;return <main><Card name={greeting}/></main>;}`,
@@ -201,6 +227,33 @@ describe('production initial SSR bootstrap', () => {
         return ['main', 'h1', 'button', 'section', ...Array.from({length:16}, (_, index) =>
           `article[data-card="${index}"]`)].every(selector => initial.includes(document.querySelector(selector)!));
       })).toBe(true);
+      expect(apiRequests).toEqual([]);
+    });
+  }, 60_000);
+
+  it('retains routing, Group request presentation and client navigation in Chrome', async context => {
+    const result = await production('request-routes', `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
+      export function App(){const user=$fetch('/api/user');return <main route="/">
+      <nav><a class="home" route-to="/demo/">Home</a><a class="about" route-to="/demo/about">About</a></nav>
+      <section route="/demo/"><Group pending={Pending}><h1>{user?.name}</h1></Group></section>
+      <section route="/demo/about"><h2>About directory</h2></section></main>;}`);
+    expect(result.html).not.toContain('mmd:initial-delivery:');
+    expect(result.files.some(file => file.type === 'chunk' && file.isEntry)).toBe(true);
+    const response = await result.app.fetch(new Request('https://app.test/demo/'));
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html.replace(/<!--[^]*?-->/g, '')).toContain('<h1>Ada</h1>');
+    expect(html).toContain('application/mmd+json');
+    const executablePath = chromeExecutable();
+    if (!executablePath) { context.skip(); return; }
+    await browserPage(result, html, executablePath, async (page, apiRequests) => {
+      expect(await page.$eval('h1', node => node.textContent)).toBe('Ada');
+      await page.click('.about'); await page.waitForSelector('h2');
+      expect(await page.$eval('h2', node => node.textContent)).toBe('About directory');
+      expect(new URL(page.url()).pathname).toBe('/demo/about');
+      expect(await page.$('h1')).toBeNull();
+      await page.click('.home'); await page.waitForSelector('h1');
+      expect(await page.$eval('h1', node => node.textContent)).toBe('Ada');
       expect(apiRequests).toEqual([]);
     });
   }, 60_000);

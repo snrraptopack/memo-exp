@@ -10,7 +10,7 @@ function escape(value: string, attribute = false): string {
 
 /** null means the HTML parser cannot preserve the planned DOM shape safely. */
 export function emitInitialHtml(plan: InitialRenderPlan): string | null {
-  if (plan.kind === 'browser') return null;
+  if (plan.kind === 'browser' || plan.kind === 'request') return null;
   function emit(nodes: readonly InitialRenderNode[], ancestors: string[]): string | null {
     let html = '';
     for (const node of nodes) {

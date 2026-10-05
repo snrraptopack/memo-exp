@@ -17,6 +17,8 @@ import {
   runWithApplicationRuntime,
   unregisterSubtree,
   rootFactoryStore,
+  setScheduler,
+  resetScheduler,
   type ApplicationRuntime,
   type DocumentLike,
 } from '@memoized-dom/runtime/server';
@@ -104,6 +106,15 @@ export class RenderSession {
       throw new Error('memo-dom: server HTML and browser binding contracts do not match');
     }
     this.initialDelivery = options.initialKey === undefined ? undefined : delivery;
+    // The session owns asynchronous update failures too. Preserve the normal
+    // microtask drain, but reject this render instead of reporting a process-
+    // global exception and serializing partially updated HTML.
+    runWithApplicationRuntime(this.applicationRuntime, () => setScheduler(flush => {
+      queueMicrotask(() => {
+        if (this.disposed || this.signal.aborted) return;
+        try { flush(); } catch (error) { this.abort(error); }
+      });
+    }));
     // Abort releases in-flight request data immediately rather than at the
     // asynchronous disposal that follows the rejected render.
     this.controller.signal.addEventListener('abort', () => this.dataRuntime.clear(), {
@@ -156,7 +167,7 @@ export class RenderSession {
 
   mount(): Node {
     this.signal.throwIfAborted();
-    if (this.initialDelivery !== undefined) {
+    if (this.initialDelivery?.html !== undefined) {
       const writer = this.tier.document.htmlWriter;
       if (writer === undefined) throw new Error('memo-dom: initial delivery requires the string renderer');
       const html = this.initialDelivery.html;
@@ -165,14 +176,17 @@ export class RenderSession {
     return this.component(this.rootId, null);
   }
 
-  /** In `resolve` mode, wait for request data within the settle budget. */
+  /** Request-only delivery always settles; other roots honor the mode. */
   async settle(): Promise<RenderSettlement> {
-    if (this.options.mode !== 'resolve') return (this.settlement = SHELL);
+    if (this.options.mode !== 'resolve' && !(this.initialDelivery && this.initialDelivery.html===undefined)) return (this.settlement = SHELL);
     const started = performance.now();
     const settled = await this.untilAborted(
       this.dataRuntime.settle(this.options.timeout ?? DEFAULT_SETTLE_TIMEOUT),
     );
     this.signal.throwIfAborted();
+    if (!settled && this.initialDelivery && this.initialDelivery.html===undefined) {
+      throw new DOMException('memo-dom: request-only HTML did not settle before its timeout','TimeoutError');
+    }
     return (this.settlement = Object.freeze({
       status: settled ? 'complete' : 'timeout',
       settleMs: performance.now() - started,
@@ -181,6 +195,7 @@ export class RenderSession {
 
   /** The hydration payload: data state plus routed preparation state. */
   payload(): RenderPayload {
+    if (this.initialDelivery?.browser==='none') return {version:1};
     const state = this.dataRuntime.serializeState();
     const routed = serializeRoutedPreparationState(this.routeRuntime);
     return {
@@ -192,14 +207,19 @@ export class RenderSession {
 
   /** Wrap serialized application HTML in the hydration root marker pair. */
   wrap(html: string): string {
-    return this.initialDelivery === undefined && this.options.markers === true
+    return this.markers
       ? `<!--mmd:r:${this.rootId}-->${html}<!--/mmd-->`
       : html;
+  }
+
+  get markers(): boolean {
+    return this.initialDelivery===undefined && this.options.markers===true;
   }
 
   /** Hand the application runtime to the caller on success. */
   retain(): ApplicationRuntime {
     this.retained = this.tier.callerOwnsRuntime === true;
+    if (this.retained) resetScheduler();
     return this.applicationRuntime;
   }
 

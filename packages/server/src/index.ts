@@ -115,7 +115,7 @@ const stringTier = () =>
 
 function serializeString(session: RenderSession, root: Node): string {
   return session.wrap(
-    (root as unknown as StringRenderableNode).toString(session.options.markers === true),
+    (root as unknown as StringRenderableNode).toString(session.markers),
   );
 }
 
@@ -152,8 +152,12 @@ export function renderToString(
   component: ServerComponent,
   options: Omit<RenderOptions, 'mode' | 'timeout' | 'deadline' | 'signal'> = {},
 ): string {
-  return RenderSession.execute(component, options, stringTier(), session =>
-    serializeString(session, session.mount()));
+  return RenderSession.execute(component, options, stringTier(), session => {
+    if (session.initialDelivery && session.initialDelivery.html===undefined) {
+      throw new Error('memo-dom: request-only HTML requires asynchronous rendering');
+    }
+    return serializeString(session, session.mount());
+  });
 }
 
 export { renderToReadableStream } from './stream';
