@@ -1512,13 +1512,15 @@ secondary: the earlier measured gzip savings were small compared with the
 runtime and creation work above. Runtime module preservation is already in
 place and remains useful, but no longer sets the order of architecture work.
 
-## Phase closeout — 2026-10-06
+## Verified milestone — 2026-10-06
 
-The initial-content/browser-program rearchitecture phase is closed. Its
+The initial-content/browser-program boundary has reached a verified milestone. Its
 boundaries, composition/future creation, request delivery and optional adoption
-capabilities are implemented and checked. Subsequent performance work is a
-separate batch with its own evidence. This does not claim that every compiler
-pass is backend-independent or that remaining bundle costs are solved.
+capabilities are implemented and checked. The architecture remains active:
+separating JSX semantics from emission, reducing runtime fixed costs and refining
+capability selection are required follow-up work. This checkpoint does not claim
+that every compiler pass is backend-independent or that remaining bundle costs
+are solved.
 
 ### Ownership and duplication audit
 
@@ -1617,4 +1619,19 @@ Manual consumers of the full entry do not receive a universal size reduction.
 
 Reproduce the final payload checks using the commands in
 `bench/package-size/README.md`. The existing correctness/performance backlog
-remains in `performance-work.md`; it is not an extension of this closed phase.
+remains in `performance-work.md` and continues alongside the architecture work.
+
+### Active batch: direct child semantics
+
+JSX child planning now returns text expressions, authored nodes, list sites,
+conditions and forwarded slots without creating DOM variables or invoking an
+emitter. Host elements and fragments consume that plan through one DOM
+materializer, preserving post-order node creation and authored insertion order.
+The previous combined classifier/emitter was removed. This is a concrete
+semantic boundary; attributes, handler contracts and some planning context
+still require further separation.
+
+The compiler build and eight focused suites (58 cases) pass, covering pure
+planning, composition, initial list binding, render callbacks, literals,
+conditional regions and initial-bound DOM updates. This refactor does not
+claim a runtime speed or bundle-size reduction.

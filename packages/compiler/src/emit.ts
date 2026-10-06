@@ -36,9 +36,10 @@ import {
   isRenderPropReference,
 } from './components/children';
 import {
-  collectDirectChildren,
+  planDirectChildren,
   type JsxNode,
 } from './jsx/children';
+import { materializeDirectChildren } from './emission/direct-children';
 import {
   buildConditionalBranchCreate,
   emitConditionalRegion,
@@ -130,7 +131,14 @@ function emitFragment(
   inSvg = false,
   ownerId: t.Expression = componentId(ctx, compName),
 ): string {
-  const operations = collectDirectChildren(fragment.children, {
+  const plan = planDirectChildren(fragment.children, {
+    isForwarded: (expression) =>
+      isRenderPropReference(ctx, compName, expression),
+    fail: (message) => {
+      throw compPath.buildCodeFrameError(message);
+    },
+  });
+  const operations = materializeDirectChildren(plan, {
     emitText: (expression) => emitText(ctx, scope, expression, ownerId),
     emitNode: (node) =>
       emitNode(
@@ -145,11 +153,6 @@ function emitFragment(
         inSvg,
         ownerId,
       ),
-    isForwarded: (expression) =>
-      isRenderPropReference(ctx, compName, expression),
-    fail: (message) => {
-      throw compPath.buildCodeFrameError(message);
-    },
   });
   const variable = freshNodeName(ctx, scope, 'fragment');
   scope.creation.push(

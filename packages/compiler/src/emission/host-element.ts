@@ -27,10 +27,8 @@ import {
   emitForwardedSlotMount,
   isRenderPropReference,
 } from '../components/children';
-import {
-  collectDirectChildren,
-  type DirectChildOperation,
-} from '../jsx/children';
+import { planDirectChildren } from '../jsx/children';
+import { materializeDirectChildren, type DirectChildOperation } from './direct-children';
 import { buildOrderedAttributes, jsxAttributeName } from '../jsx/attributes';
 import {
   domAttributeWrite,
@@ -187,7 +185,14 @@ if (innerHtmlAttribute !== undefined) {
 // Children emit post-order; insertion operations retain authored order.
 const initial=scope.initialDom?.plan.elements[initialSite(element)];
 let initialTextIndex=0;
-const childOperations = collectDirectChildren(element.children, {
+const childPlan = planDirectChildren(element.children, {
+  isForwarded: (expression) =>
+    isRenderPropReference(ctx, componentName, expression),
+  fail: (message) => {
+    throw componentPath.buildCodeFrameError(message);
+  },
+});
+const childOperations = materializeDirectChildren(childPlan, {
   emitText: (expression) => {
     const text=initial?.texts[initialTextIndex++];
     return emitText(ctx, scope, expression, ownerId, text?.path, text?.live === false, text?.empty);
@@ -205,11 +210,6 @@ const childOperations = collectDirectChildren(element.children, {
       childSvg,
       ownerId,
     ),
-  isForwarded: (expression) =>
-    isRenderPropReference(ctx, componentName, expression),
-  fail: (message) => {
-    throw componentPath.buildCodeFrameError(message);
-  },
 });
 const varName = freshNodeName(ctx, scope, tag);
 const adopting=scope.initialDom?.adopting;

@@ -9,16 +9,17 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
-import { nodeHasJsx } from '../context';
+import { nodeHasJsx } from '../context/ast';
 import { matchCond } from '../conds';
-import type { JsxChild } from '../components/children';
-import { matchMapCall, type MapCallExpression } from '../lists';
+import type { MapCallExpression } from '../context/model';
+import { matchMapCall } from '../lists/source-shapes';
 import { combineTextExpressions } from '../components/text-expression';
 
 export type JsxNode = t.JSXElement | t.JSXFragment;
 
-export type DirectChildOperation =
-  | { type: 'node'; variable: string }
+export type DirectChildPlan =
+  | { type: 'text'; expression: t.Expression }
+  | { type: 'node'; node: JsxNode }
   | { type: 'list'; expression: MapCallExpression }
   | {
       type: 'condition';
@@ -26,19 +27,17 @@ export type DirectChildOperation =
     }
   | { type: 'slot'; expression: t.Expression };
 
-export interface DirectChildEmitters {
-  emitText(expression: t.Expression): string;
-  emitNode(node: JsxNode): string;
+export interface DirectChildClassifier {
   isForwarded(expression: t.Expression): boolean;
   fail(message: string): never;
 }
 
-/** Classify and emit immediate child nodes in authored source order. */
-export function collectDirectChildren(
-  children: readonly JsxChild[],
-  emitters: DirectChildEmitters,
-): DirectChildOperation[] {
-  const result: DirectChildOperation[] = [];
+/** Plan child semantics without allocating nodes or emitting backend code. */
+export function planDirectChildren(
+  children: readonly t.JSXElement['children'][number][],
+  classifier: DirectChildClassifier,
+): DirectChildPlan[] {
+  const result: DirectChildPlan[] = [];
   let pendingText: t.Expression[] = [];
 
   const flushText = (): void => {
@@ -46,8 +45,8 @@ export function collectDirectChildren(
     const combined = combineTextExpressions(pendingText);
     pendingText = [];
     result.push({
-      type: 'node',
-      variable: emitters.emitText(combined),
+      type: 'text',
+      expression: combined,
     });
   };
 
@@ -61,19 +60,19 @@ export function collectDirectChildren(
     }
     if (astFactory.isJSXElement(child) || astFactory.isJSXFragment(child)) {
       flushText();
-      result.push({ type: 'node', variable: emitters.emitNode(child) });
+      result.push({ type: 'node', node: child });
       continue;
     }
     if (!astFactory.isJSXExpressionContainer(child)) {
-      emitters.fail('memo-dom: spread children are not supported');
+      classifier.fail('memo-dom: spread children are not supported');
     }
     if (astFactory.isJSXEmptyExpression(child.expression)) continue;
     if (!astFactory.isExpression(child.expression)) {
-      emitters.fail('memo-dom: unsupported expression in JSX child position');
+      classifier.fail('memo-dom: unsupported expression in JSX child position');
     }
 
     const expression = child.expression;
-    if (emitters.isForwarded(expression)) {
+    if (classifier.isForwarded(expression)) {
       flushText();
       result.push({ type: 'slot', expression: cloneEstreeNode(expression) });
       continue;

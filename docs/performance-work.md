@@ -1,9 +1,10 @@
 # Performance work
 
-The initial-content/browser-program rearchitecture phase closed on 2026-10-06.
-`browser-bundle-architecture.md` records its implemented boundaries, final
-payload/correctness checkpoint and explicit limitations. The measurements and
-correctness backlog below remain available for subsequent performance batches,
+The rearchitecture remains active. The 2026-10-06 initial-content/browser-program
+checkpoint verifies an implemented milestone, not completion of the architecture.
+`browser-bundle-architecture.md` records the remaining compiler separation,
+runtime fixed-cost and capability-selection work. The measurements and
+correctness backlog below remain available for performance batches,
 with before/after timing and retained-node validation required for speed claims.
 
 The host-scope/polling separation removes unused request storage and opaque

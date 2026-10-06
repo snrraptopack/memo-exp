@@ -185,9 +185,9 @@ component state, prop updates and recreation. Read-only fetch/Group source
 audits also reject retained resource-write implementation code; public bundled
 constructor tests verify that explicitly exposed resource writes stay available.
 
-## Phase closeout checkpoint
+## Architecture milestone checkpoint
 
-The 2026-10-06 phase-closeout checkpoint is recorded in
+The 2026-10-06 architecture milestone checkpoint is recorded in
 [Browser JavaScript architecture](../../docs/browser-bundle-architecture.md).
 Reproduce its three distinct products after building runtime and compiler:
 
