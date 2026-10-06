@@ -1651,3 +1651,27 @@ The runtime build and four focused suites (22 cases) pass, including concurrent
 SSR cell isolation, compiler cell lowering and runtime disposal/reuse. These
 small byte savings do not establish a CPU improvement for applications using
 cells, which now perform an extension lookup.
+
+### Active batch: emitted capability requirements
+
+Capability discovery now walks the finished backend program, including retained
+future factories. Identifier allocation no longer maintains a second mutable
+record of every helper expression constructed. Static computed helper names
+are recognized; unknown generated lookups retain both adoption features.
+External/dynamic authored host code still uses the linker's existing conservative
+policy. This changes neither the hydration engine nor its ownership contract.
+
+The compiler build and five focused suites (68 cases) pass. The selected-adoption
+counter, keyed-list and fetched-markup audit also passes all nine browser graphs.
+No over-retention was reproduced in the existing fixture probe and no current
+fixture byte reduction is attributed to this change. That audit's source-before
+uses the full hydration bootstrap; its differences measure the already-existing
+bootstrap selection, not this batch's requirement discovery.
+All eight production SSR integration cases also pass after the three batches,
+including request delivery, composition and routed lifecycle/ref/opaque behavior.
+
+Architecture completion remains outstanding. The next semantic boundaries are
+ordered attribute planning and handler facts that still carry DOM context;
+runtime scheduling/access/lifetime costs remain candidates requiring measured
+whole-application evidence. These three batches remove specific coupling and
+unconditional storage, not all remaining architecture work.

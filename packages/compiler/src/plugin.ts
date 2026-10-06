@@ -40,6 +40,7 @@ import { buildAccessTable } from './analysis';
 import { prepareProgramAnalysis } from './analysis/prepare';
 import { liftModuleStateCells } from './cells';
 import { emitDomComponents } from './emission/dom';
+import { emittedRuntimeHelpers } from './emission/runtime-requirements';
 import { planComponentListSites } from './planning/list-sites';
 import { planComponentRendering, type ModuleRenderPlan } from './planning/component-render';
 import { planExpressionSources } from './planning/expression-sources';
@@ -398,7 +399,11 @@ function transformProgramAst(
   const renderPlan = prepareProgram(ctx, programPath);
   emitDomComponents(ctx, renderPlan);
   finishProgram(ctx, programPath);
-  opts.onRuntimeHelpers?.(requireIdentifiers(ctx).runtimeHelpers);
+  if (opts.onRuntimeHelpers) {
+    opts.onRuntimeHelpers(emittedRuntimeHelpers(
+      programPath.node as unknown as BaseNode, requireIdentifiers(ctx).runtimeId,
+    ));
+  }
 }
 
 /** Transform a plain ESTree program and leave the result in strict ESTree. */
