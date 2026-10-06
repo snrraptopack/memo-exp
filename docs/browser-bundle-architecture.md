@@ -1729,3 +1729,30 @@ composition 10,403/4,100, todo 17,142/6,442, interactive request 43,231/14,090
 and routed request/Group 85,473/26,277. These batches establish semantic/backend
 boundaries without increasing delivered browser code. Broader analysis context,
 request-dependent binding and remaining fixed runtime costs are still active.
+
+Final browser verification passes all eight production SSR cases and the
+self-contained development lazy-route lifecycle case. Test discovery now
+ignores generated benchmark archives and compiled-fixture output; the Vite
+test configuration anchors its root to the package. The authored benchmark UI
+export test still passes. Attribute emission also drops an unused source-copy
+array and result wrapper: source values remain available directly in its
+semantic plan. The compiler build and five final attribute/ref/composition
+suites pass 56 cases after that removal.
+
+### Remaining completion requirements
+
+- Preserve the newly separated child/attribute/write facts while auditing other
+  analysis-to-backend compatibility data, including generated operation bindings.
+- Extend fixed request-dependent interactive content to the same initial binding
+  program. Share payload restoration; do not add another hydration coordinator.
+  Unknown request structure, routing and Group must keep correct creation,
+  recovery, pending/error, retry and lifetime behavior.
+- Review the remaining unconditional scheduler/access/lifetime costs using
+  whole-application attribution. Remove unnecessary work with the owning
+  subsystem, retaining cycle, isolation and teardown safeguards.
+- Repeat delivered-byte and cross-feature correctness gates against the final
+  implementation, including retained future branches/rows and direct entry use.
+- Keep CPU conclusions separate from architecture closure. Current local timing
+  remains noisy; a stable-machine comparison is still unavailable here.
+
+These are outstanding requirements, not reasons to mark the architecture closed.

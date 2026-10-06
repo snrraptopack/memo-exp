@@ -368,7 +368,7 @@ export function buildComponentRowCreate(
         name === 'ref' || targetPlan?.refProps.includes(name) === true
           ? compileRefValue(ctx, componentPath, componentName, value)
           : value,
-    }).expression;
+    });
     for (const property of propObjectExpression.properties) {
       if (
         !astFactory.isObjectProperty(property) ||

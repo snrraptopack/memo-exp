@@ -4,6 +4,6 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
-    exclude: [...configDefaults.exclude, 'packages/*/tests/**', 'bench/octane/upstream/**'],
+    exclude: [...configDefaults.exclude, 'packages/*/tests/**', 'bench/octane/upstream/**', '**/dist/**', 'tests/fixtures/out/**'],
   },
 });

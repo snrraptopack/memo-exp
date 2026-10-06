@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  root: import.meta.dirname,
   test: {
     // Live Vite servers and Chrome teardown compete for the same machine.
     // Concurrent browser files can time out after their assertions passed,

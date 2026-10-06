@@ -277,8 +277,8 @@ if (hasSpread) {
     },
   });
   const propObject = generatedIdentifier(ctx, `${tag}Props`);
-  const sources = transparentExpressionSources(ctx, ordered.expression);
-  const preparedProps = preparationRead(ctx, scope, ownerId, ordered.expression, sources);
+  const sources = transparentExpressionSources(ctx, ordered);
+  const preparedProps = preparationRead(ctx, scope, ownerId, ordered, sources);
   scope.creation.push(
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
@@ -294,7 +294,7 @@ if (hasSpread) {
         cloneEstreeNode(value),
         astFactory.stringLiteral(ctx.rootId),
         astFactory.arrayExpression(
-          ordered.safeEventKeys.map((name) => astFactory.stringLiteral(name)),
+          attributePlan.safeEventKeys.map((name) => astFactory.stringLiteral(name)),
         ),
       ]),
     );

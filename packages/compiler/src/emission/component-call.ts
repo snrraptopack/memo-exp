@@ -125,7 +125,7 @@ export function emitComponentCall(
           ? compileRefValue(ctx, componentPath, componentName, value)
           : value,
     });
-    orderedPropObject = ordered.expression;
+    orderedPropObject = ordered;
     for (const property of orderedPropObject.properties) {
       if (
         !astFactory.isObjectProperty(property) ||

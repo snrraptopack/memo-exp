@@ -22,7 +22,7 @@ it('captures spread order, event overrides and non-identifier names without back
   const planned=JSON.stringify(plan);
   const emitted=emitOrderedAttributes(plan);
   expect(JSON.stringify(plan)).toBe(planned);
-  const value=new Function('first','left','last','right','input',`return (${printEstree(emitted.expression).code});`);
+  const value=new Function('first','left','last','right','input',`return (${printEstree(emitted).code});`);
   expect(value('first',{onClick:'left'},'last',{onClick:'right'},'input'))
     .toEqual({onClick:'right',disabled:true,'data-role':'run',onInput:'input'});
 });
@@ -36,7 +36,8 @@ it('lets backend instrumentation change cloned values without altering the seman
   });
   expect(visits).toEqual(['ref','onClick','event:onClick']);
   expect(JSON.stringify(plan)).toBe(before);
-  expect(output.sources.map(value=>printEstree(value).code)).toEqual(['target','callback','props']);
+  expect(printEstree(output).code).toContain('generated');
+  expect(plan.entries.map(entry=>printEstree(entry.value).code)).toEqual(['target','callback','props']);
 });
 
 it('omits only list keys and retains namespaced attributes',()=>{
