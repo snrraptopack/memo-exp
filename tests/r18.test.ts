@@ -103,7 +103,7 @@ describe('R18 - scoped event-boundary invalidation', () => {
       }
     `);
     expect(code).toMatch(
-      /const _returnValue\d* = Math\.random\(\);\s+_MD\d*\.markDirty\(_id\d* \+ "\/when0"\)/,
+      /const _returnValue\d* = Math\.random\(\);\s+_MD\d*\.invalidateEntity\(_id\d* \+ "\/when0"\)/,
     );
   });
 
@@ -119,10 +119,10 @@ describe('R18 - scoped event-boundary invalidation', () => {
       }
     `);
     expect(code).toMatch(
-      /const _returnValue\d* = inspect\(_event\d*\);\s+_MD\d*\.markDirty\(_id\d*\)/,
+      /const _returnValue\d* = inspect\(_event\d*\);\s+_MD\d*\.invalidateEntity\(_id\d*\)/,
     );
     expect(code).toMatch(
-      /const _returnValue\d* = inspect\(_event\d*\);\s+_MD\d*\.markDirty\(_id\d* \+ "\/when0"\)/,
+      /const _returnValue\d* = inspect\(_event\d*\);\s+_MD\d*\.invalidateEntity\(_id\d* \+ "\/when0"\)/,
     );
   });
 });

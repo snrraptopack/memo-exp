@@ -5,10 +5,10 @@
  * closure of ONE instance. It is readable only by that instance — children
  * receive it exclusively through props (R10 re-push on every parent render),
  * nested rows are resynced by the M5.5 reconcile machinery — so writes need
- * NO access-table routing: the commit is unconditionally `markDirty(id)`.
+ * NO access-table routing: the commit invalidates that entity directly.
  *
  *   - two instances of the same component are fully independent
- *   - instance writes emit markDirty(id), never a write-set const
+ *   - instance writes invalidate their entity, never a write-set const
  *   - instance OBJECT field writes commit the same way
  *   - instance state SHADOWS same-named module state in its component
  *   - instance state passed as a prop re-pushes the child (R10)
@@ -40,28 +40,28 @@ function importCompiled(name: string): Promise<any> {
 // ---------------------------------------------------------------------
 
 describe('R12 — instance state, code generation', () => {
-  it('instance writes commit markDirty(id) — no write-set const', () => {
+  it('instance writes invalidate their entity — no write-set const', () => {
     const code = compile(
       `function Counter() { let n = 0; return <button onClick={() => { n++; }}>{n}</button>; }`,
     );
-    expect(code).toMatch(/\.markDirty\(_id\d*\)/);
+    expect(code).toMatch(/\.invalidateEntity\(_id\d*\)/);
     expect(code).not.toContain('WRITES');
     expect(code).not.toContain('commitWrites');
   });
 
-  it('instance OBJECT field writes commit markDirty(id) too', () => {
+  it('instance OBJECT field writes invalidate their entity too', () => {
     const code = compile(
       `function Form() { let form = { name: '' }; return <button onClick={() => { form.name = 'x'; }}>{form.name}</button>; }`,
     );
-    expect(code).toMatch(/\.markDirty\(_id\d*\)/);
+    expect(code).toMatch(/\.invalidateEntity\(_id\d*\)/);
     expect(code).not.toContain('commitWrites');
   });
 
-  it('instance mutator calls commit markDirty(id)', () => {
+  it('instance mutator calls invalidate their entity', () => {
     const code = compile(
       `function L() { let list = [1]; return <button onClick={() => { list.push(2); }}>{list.length}</button>; }`,
     );
-    expect(code).toMatch(/\.markDirty\(_id\d*\)/);
+    expect(code).toMatch(/\.invalidateEntity\(_id\d*\)/);
   });
 
   it('instance state shadows same-named module state', () => {
@@ -69,7 +69,7 @@ describe('R12 — instance state, code generation', () => {
       `let n = 0;\nfunction C() { let n = 10; return <button onClick={() => { n++; }}>{n}</button>; }`,
     );
     // the component's n is its own — no table write for module 'n'
-    expect(code).toMatch(/\.markDirty\(_id\d*\)/);
+    expect(code).toMatch(/\.invalidateEntity\(_id\d*\)/);
     expect(code).not.toContain('commitWrites');
     // and module 'n' is read by nobody → no table entry for it
     expect(code).not.toContain('"n": [');

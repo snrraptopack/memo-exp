@@ -344,7 +344,7 @@ describe('conditional gated maps', () => {
     expect(code).toMatch(/_id\d* \+ "\/when0" \+ "\/items"/);
     expect(code).toContain('dispose: () =>');
     expect(code).toContain('.dispose()');
-    expect(code).toContain('register({ id: _id, parent: _parent, render: _update })');
+    expect(code).toContain('registerEntity({ id: _id, parent: _parent, render: _update })');
     expect(code).toContain('entities: [_rowId]');
   });
 

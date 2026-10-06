@@ -60,7 +60,7 @@ describe('real TODO compiler regression', () => {
     `);
 
     expect(future).toContain('values.futureRead()');
-    expect(future).toContain('_MD.markDirty(');
+    expect(future).toContain('_MD.invalidateEntity(');
   });
 
   it('does not schedule an update for an empty submit', async () => {

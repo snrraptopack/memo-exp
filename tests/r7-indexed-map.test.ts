@@ -133,7 +133,7 @@ describe('R7 - indexed map callbacks', () => {
     expect(code).toMatch(
       /createListRegion\([^]*?\(item, _rowId\d*, index\) =>/,
     );
-    expect(code).toContain('(item, index) => index');
+    expect(code).toContain('.createPositionalListRegion(');
   });
 
   it('accepts a block body containing a single JSX return', () => {

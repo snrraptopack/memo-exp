@@ -89,8 +89,7 @@ describe('R14 - code generation', () => {
     `);
     expect(code).toContain('doubled = count * 2');
     expect(code).toContain("label = 'v=' + doubled");
-    const timer = code.slice(code.indexOf('setTimeout'), code.indexOf('}, 0)'));
-    expect(timer).toMatch(/\.markDirty\(_id\d*\)/);
+    expect(code).toMatch(/setTimeout\(\s*\(\) => \{[\s\S]*?\.invalidateEntity\(_id\d*\)/);
   });
 
   it('accepts a local let derivation and rejects later writes to it', () => {
@@ -124,7 +123,7 @@ describe('R14 - code generation', () => {
         return <button onClick={() => items.push(2)}>{items.length}</button>;
       }
     `);
-    expect(code).toContain('markDirty');
+    expect(code).toContain('invalidateEntity');
   });
 
   it('does not infer local-derivation method semantics from method names', () => {
