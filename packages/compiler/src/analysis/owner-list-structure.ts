@@ -9,12 +9,11 @@ import { matchMapCall } from '../lists/source-shapes';
 import { isPlainScalarValue } from './plain-scalar';
 import { plainListReturn } from './plain-list-return';
 import { publishedOwnerDependency } from './published-owner-dependency';
-import { generatedIdentifier } from '../identifiers';
 import { LIST_METHOD_OPTIMIZATIONS } from '../lists/mutation-shapes';
 
 export interface OwnerListOperation {
   readonly owner: string;
-  readonly token: string;
+  readonly source: string;
   readonly operations: string[];
   readonly guards: string[];
   readonly fresh: boolean;
@@ -432,17 +431,16 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
       if (guarded && mutableContents) continue;
       if (mutableContents && structuralWrites.size === 0) continue;
       if (guarded) {
-        const token = generatedIdentifier(ctx, `${source}Provenance`).name;
-        let slots = ctx.ownerListProvenance.get(owner);
-        if (slots === undefined) ctx.ownerListProvenance.set(owner, slots = new Map());
-        slots.set(source, token);
+        let sources = ctx.ownerListGuards.get(owner);
+        if (sources === undefined) ctx.ownerListGuards.set(owner, sources = new Set());
+        sources.add(source);
         for (const [write, methods] of operations) {
           const guards = new Set<string>();
           for (const method of methods) {
             if (method === 'iterator') guards.add('iterator');
             else for (const guard of LIST_METHOD_OPTIMIZATIONS[method]?.guards ?? []) guards.add(guard);
           }
-          ctx.ownerListOperations.set(write as t.Node, { owner, token, operations: methods.filter(method => method !== 'iterator'),
+          ctx.ownerListOperations.set(write as t.Node, { owner, source, operations: methods.filter(method => method !== 'iterator'),
             guards: [...guards].sort(), fresh: freshWrites.get(write)! });
         }
       }
@@ -465,7 +463,7 @@ export function captureOwnerListWrites(ctx: Ctx, owner: string | null, original:
   const writes = new WeakMap<t.Node, string>();
   const operations: Array<{ assignment: t.AssignmentExpression; plan: OwnerListOperation }> = [];
   const captured = { structuralWrites: writes, operations };
-  if (owner === null || !ctx.ownerListStructureReasonKeys.has(owner) && !ctx.ownerListProvenance.has(owner)) return captured;
+  if (owner === null || !ctx.ownerListStructureReasonKeys.has(owner) && !ctx.ownerListGuards.has(owner)) return captured;
   const pair = (source: BaseNode, target: BaseNode): void => {
     if (source.type !== target.type) return;
     const fact = ctx.ownerListStructureWriteSources.get(source as t.Node);

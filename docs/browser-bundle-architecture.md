@@ -1811,6 +1811,22 @@ selection/reorder/removal sequences across eight compiled variants and vanilla,
 including retained-node checks after every timed sample. Local update, swap and
 reverse timings are mixed and noisy; this batch establishes no CPU speed claim.
 
+### Native-operation guard bindings — 2026-10-06
+
+Closed-list analysis now records the owner/source and required native-operation
+guards without allocating a JavaScript variable. Structural replay captures a
+boolean guard requirement; factory, handler and region emission share one
+backend binding for that source. Guard and changed-key bindings use one backend
+allocator, replacing the narrower journal allocator. Method/iterator/species
+checks, sticky escape distrust and fresh-record recovery are unchanged.
+
+The compiler build, changed-source lint and six suites pass 97 cases, including
+captured-plan independence and synchronous/deferred operation execution. The
+compiler-only DOM comparison against `8d99edd` passes all 21 scenarios, mixed
+sequences and retained identity after every timed sample. Its browser artifacts
+are byte-identical; this removes compiler coupling without a delivered-byte or
+runtime speed claim.
+
 ### Remaining completion requirements
 
 - Preserve the newly separated child/attribute/write facts while auditing other

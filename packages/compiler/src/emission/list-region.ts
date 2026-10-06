@@ -1,5 +1,5 @@
 import type * as t from '../ast/compiler-types';
-import { mutationJournalVariable } from './mutation-journals';
+import { listProvenanceVariable, mutationJournalVariable } from './list-bindings';
 import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
@@ -256,7 +256,7 @@ export function emitListRegion(
     dependency,
     cache: generatedIdentifier(ctx, `${dependency.value}ListKey`).name,
   }));
-  const { structuralSource, fixedPositions, moduleIndices, ownerStructuralReason, ownerProvenance } = scope.regionReplay!.listFor(call, {
+  const { structuralSource, fixedPositions, moduleIndices, ownerStructuralReason, ownerGuarded } = scope.regionReplay!.listFor(call, {
     sourceExpr: site.sourceExpr, sourceKey: site.sourceKey, sourceLocal: site.sourceLocal,
     hasPrelude: site.prelude.length > 0,
   });
@@ -286,8 +286,11 @@ export function emitListRegion(
     ]) : astFactory.callExpression(md(ctx, 'reasonsOnly'), [
       astFactory.identifier(scope.reasonVar), freshReasonConst(ctx, [ownerStructuralReason]),
     ]);
-    return ownerProvenance === undefined ? reason : astFactory.logicalExpression('&&',
-      astFactory.memberExpression(astFactory.identifier(ownerProvenance), astFactory.identifier('valid')), reason,
+    return !ownerGuarded ? reason : astFactory.logicalExpression('&&',
+      astFactory.memberExpression(
+        astFactory.identifier(listProvenanceVariable(ctx, componentName, site.sourceKey)),
+        astFactory.identifier('valid'),
+      ), reason,
     );
   };
   const reconcile = (update = false): t.Statement =>

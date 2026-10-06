@@ -141,3 +141,20 @@ it('captures a separate cause and transfers write facts only from original owner
   ctx.ownerListStructureReasonKeys.clear();ctx.instanceReasonIds.clear();ctx.ownerListStructureSources=new WeakMap();
   expect(facts.listFor(call!,source).ownerStructuralReason).toBe(reason);
 });
+
+it('captures native-operation guards as source facts without a generated binding', () => {
+  const program=parse(`function View(){let items=[{id:1,text:'one'},{id:2,text:'two'}];
+    return <main><button onClick={()=>{items=items.toReversed()}}>reverse</button>
+      <ul>{items.map(item=><li key={item.id}>{item.text}</li>)}</ul></main>;}`);
+  const ctx=createCtx();prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
+  let call:t.Node|undefined;
+  walkAst(program,{enter(node){if(matchMapCall(node)!==null)call=node;}});
+  const original=JSON.stringify(program), headers=[...ctx.header];
+  const facts=planRegionReplays(ctx).get('View')!,source={...list(),sourceLocal:true};
+  expect(facts.listFor(call!,source).ownerGuarded).toBe(true);
+  expect(facts.listFor(call!,source)).not.toHaveProperty('ownerProvenance');
+  ctx.ownerListGuards.clear();ctx.ownerListStructureSources=new WeakMap();
+  expect(facts.listFor(call!,source).ownerGuarded).toBe(true);
+  expect(facts.listFor(cloneNode(call!),source).ownerGuarded).toBeUndefined();
+  expect(JSON.stringify(program)).toBe(original);expect(ctx.header).toEqual(headers);
+});

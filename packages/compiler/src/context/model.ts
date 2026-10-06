@@ -571,8 +571,8 @@ export interface Ctx {
   ownerListStructureWriteSources: WeakMap<t.Node, { owner: string; source: string }>;
   /** Separate safe-write cause for closed arrays that also permit content writes. */
   ownerListStructureReasonKeys: Map<string, Map<string, string>>;
-  /** Runtime trust slots for closed lists using guarded array semantics. */
-  ownerListProvenance: Map<string, Map<string, string>>;
+  /** Closed owner sources requiring native array guards during structural replay. */
+  ownerListGuards: Map<string, Set<string>>;
   /** Exact assignment operations captured before handler cloning. */
   ownerListOperations: WeakMap<t.Node, OwnerListOperation>;
   /** Shared static arrays for native-operation and guard requirements. */
@@ -884,7 +884,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     ownerListStructureSources: new WeakMap(),
     ownerListStructureWriteSources: new WeakMap(),
     ownerListStructureReasonKeys: new Map(),
-    ownerListProvenance: new Map(),
+    ownerListGuards: new Map(),
     ownerListOperations: new WeakMap(),
     listOperationConsts: new Map(),
     moduleListTargets: new Map(),

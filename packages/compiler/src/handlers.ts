@@ -47,7 +47,7 @@ import {
 } from './components/props';
 import { planHandlerWrites } from './handlers/analyze';
 import { emitHandlerWrites } from './emission/handler';
-import { mutationJournalVariable } from './emission/mutation-journals';
+import { mutationJournalVariable } from './emission/list-bindings';
 import { callsOnlyCommittedLocalHelpers } from './handlers/local-calls';
 
 /** The coordinator owns the transition from captured writes to DOM lowering. */

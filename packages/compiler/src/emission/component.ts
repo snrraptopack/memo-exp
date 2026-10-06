@@ -56,6 +56,7 @@ import { applyStaticMarkup } from './markup';
 import { transparentSourceMounts } from '../data-sources';
 import { selectedRouteSubscriptionBinding } from '../external-reactivity';
 import { routeSelectorExpression } from './route-selectors';
+import { listProvenanceVariable } from './list-bindings';
 
 type ComponentEmitScope = ReturnType<typeof newEmitScope>;
 
@@ -222,7 +223,8 @@ export function transformComponent(
     scope.initialDom={plan:initialComponent,variable:generatedIdentifier(ctx,'initialNodes').name,descriptors:[],
       ...(initialComponent.retainCreation?{adopting:initialRoot!}:{})};
   }
-  for (const token of ctx.ownerListProvenance.get(name)?.values() ?? []) {
+  for (const source of ctx.ownerListGuards.get(name) ?? []) {
+    const token = listProvenanceVariable(ctx, name, source);
     scope.prelude.push(astFactory.variableDeclaration('const', [astFactory.variableDeclarator(
       astFactory.identifier(token), astFactory.callExpression(md(ctx, 'createListProvenance'), []),
     )]));

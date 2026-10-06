@@ -6,7 +6,7 @@ import type { Ctx, RowCtx } from '../context';
 import type { HandlerWritePlan } from '../handlers/plan';
 import { finalizeHandlerInstrumentation } from './handler-execution';
 import { applyListOperations } from './list-update';
-import { mutationJournalVariable } from './mutation-journals';
+import { mutationJournalVariable } from './list-bindings';
 
 export function emitHandlerWrites(ctx: Ctx, plan: HandlerWritePlan, target: {
   row?:RowCtx; eventOriginId?:t.Expression;

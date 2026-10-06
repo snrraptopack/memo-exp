@@ -5,7 +5,7 @@ import { createCtx } from '../packages/compiler/src/context';
 import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepare';
 import { planHandlerWrites } from '../packages/compiler/src/handlers/analyze';
 import { emitHandlerWrites } from '../packages/compiler/src/emission/handler';
-import { mutationJournalVariable } from '../packages/compiler/src/emission/mutation-journals';
+import { listProvenanceVariable, mutationJournalVariable } from '../packages/compiler/src/emission/list-bindings';
 
 function preparedHandler(source:string) {
   const program=parseEstreeOrThrow(source,{filename:'./plan.tsx'}).program as unknown as t.Program;
@@ -73,12 +73,20 @@ it('captures a native-operation write without mutating authored code or emitting
   expect(JSON.stringify(program)).toBe(original);
   expect(ctx.header).toEqual(header);
   expect(plan.listWrites.operations).toHaveLength(1);
+  const operation = plan.listWrites.operations[0]!.plan;
+  expect(operation.source).toBe('items');
+  expect(operation).not.toHaveProperty('token');
+  expect(ctx.ownerListGuards.get('App')).toEqual(new Set(['items']));
+  const token = listProvenanceVariable(ctx, 'App', operation.source);
+  expect(JSON.stringify(plan)).not.toContain(token);
   expect(JSON.stringify(plan.copy)).not.toContain('evaluateListOperation');
   expect(JSON.stringify(plan.copy)).not.toContain('markDirty');
   // Lowering consumes the captured operation; it need not rediscover that
   // operation in the original analysis maps after another pass clears them.
   ctx.ownerListOperations = new WeakMap();
+  ctx.ownerListGuards.clear();
   emitHandlerWrites(ctx, plan);
+  expect(JSON.stringify(handler)).toContain(token);
   expect(JSON.stringify(handler)).toContain('evaluateListOperation');
   expect(JSON.stringify(handler)).toContain('markDirty');
   expect(ctx.header.length).toBeGreaterThan(header.length);

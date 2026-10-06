@@ -11,7 +11,7 @@ import { directItemWrite } from '../packages/compiler/src/lists/item-write';
 import { directListItemMutationKey } from '../packages/compiler/src/handlers/mutation-targets';
 import { matchMapCall } from '../packages/compiler/src/lists/source-shapes';
 import { planComponentListSites } from '../packages/compiler/src/planning/list-sites';
-import { mutationJournalVariable } from '../packages/compiler/src/emission/mutation-journals';
+import { listProvenanceVariable, mutationJournalVariable } from '../packages/compiler/src/emission/list-bindings';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source, { filename: './mutation-plan.tsx' }).program as unknown as t.Program;
@@ -146,6 +146,10 @@ it('allocates shared backend variables without adding generated bindings to sema
   expect(mutationJournalVariable(ctx,'View',journal.source)).toBe(variable);
   expect(mutationJournalVariable(ctx,'Other',journal.source)).not.toBe(variable);
   expect(JSON.stringify(journal)).toBe(before);
+  const guard=listProvenanceVariable(ctx,'View',journal.source);
+  expect(listProvenanceVariable(ctx,'View',journal.source)).toBe(guard);
+  expect(listProvenanceVariable(ctx,'Other',journal.source)).not.toBe(guard);
+  expect(guard).not.toBe(variable);
 });
 
 it('disables an independently consumed journal when two list regions use the same source', () => {

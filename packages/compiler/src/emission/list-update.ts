@@ -9,7 +9,7 @@ import {
 import { generatedIdentifier, md } from '../identifiers';
 import { registerStmt } from './scope';
 import type { CapturedOwnerListWrites } from '../analysis/owner-list-structure';
-import type { EmittedMutationJournal } from './mutation-journals';
+import { listProvenanceVariable, type EmittedMutationJournal } from './list-bindings';
 
 /** Requirement arrays are compiler-owned and reused across actions/instances. */
 function operationConstant(ctx: Ctx, values: readonly string[]): t.Identifier {
@@ -28,7 +28,8 @@ function operationConstant(ctx: Ctx, values: readonly string[]): t.Identifier {
 export function applyListOperations(ctx: Ctx, captured: CapturedOwnerListWrites): void {
   for (const { assignment, plan } of captured.operations) {
     assignment.right = astFactory.callExpression(md(ctx, 'evaluateListOperation'), [
-      astFactory.identifier(plan.token), operationConstant(ctx, plan.operations), operationConstant(ctx, plan.guards),
+      astFactory.identifier(listProvenanceVariable(ctx, plan.owner, plan.source)),
+      operationConstant(ctx, plan.operations), operationConstant(ctx, plan.guards),
       astFactory.booleanLiteral(plan.fresh), astFactory.arrowFunctionExpression([], assignment.right),
     ]);
   }
