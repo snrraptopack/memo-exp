@@ -43,6 +43,8 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
     './main.ts': `${hydration ? `import '${programHydration ? hydrationVirtualId : '@memoized-dom/runtime/hydrate'}';` : ''}import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
   });
   const compiled = compilation.output;
+  if (fixture === 'mixed-lists' && (!compiled['./App.tsx']?.includes('createListRegion') ||
+      !compiled['./App.tsx']?.includes('createPositionalListRegion'))) throw new Error('The mixed fixture must exercise both list capabilities');
   if (fixture === 'request-markup' && !compiled['./App.tsx']?.includes('materializeMarkup')) {
     throw new Error('The markup fixture must exercise template materialization');
   }
@@ -184,6 +186,14 @@ if (process.argv.includes('--verify')) {
             const nodes = [...main.querySelectorAll('li')];
             check(nodes.every((node, index) => node === originals[2 - index]));
             check(nodes.map(node => node.textContent).join('|') === 'three|two|one'); return;
+          }
+          if (fixture === 'mixed-lists') {
+            const keyed=[...main.querySelectorAll('.keyed li')],positional=[...main.querySelectorAll('.positional li')];
+            button.click();await settle();
+            const nextKeyed=[...main.querySelectorAll('.keyed li')],nextPositional=[...main.querySelectorAll('.positional li')];
+            check(nextKeyed[0]===keyed[1]&&nextKeyed[1]===keyed[0]);
+            check(nextPositional[0]===positional[0]&&nextPositional[1]===positional[1]);
+            check(nextPositional.map(node=>node.textContent).join('|')==='0:a|1:b|2:c');return;
           }
           button.click(); await settle();
           check(main.querySelector(fixture === 'composition' ? 'strong' : 'p')!.textContent === '1');

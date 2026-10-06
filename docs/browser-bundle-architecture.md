@@ -1448,6 +1448,53 @@ rows through reverse/append and recovers a malformed row without refetching
 restored data. Runtime, compiler and Vite builds and build type checks pass.
 These are payload measurements, not CPU speed claims. Numbered docs remain unchanged.
 
+### Shared list DOM disposal
+
+Keyed and positional reconcilers now ask their existing DOM owner to release
+the initial range and both anchors. Row ownership, failed-frame cleanup and
+entity teardown remain in the reconciler that owns them. The DOM owner returns
+its collected failures to that reconciler's existing error reporter, preserving
+the order and shape of aggregate errors. This removes duplicated anchor cleanup
+without adding another lifetime manager or changing the reconciliation algorithm.
+
+Paired ordinary client source graphs against `674001c`, same compiler and
+authored fixtures:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Owner counter | 9,070 / 3,716 | 9,070 / 3,716 |
+| Positional input/list | 17,029 / 6,765 | 17,028 / 6,772 |
+| Keyed owner list | 24,442 / 9,507 | 24,409 / 9,519 |
+| Both list types in one app | 28,703 / 10,952 | 28,550 / 10,929 |
+
+The mixed graph loses 153 raw / 23 gzip bytes. Single-list raw sizes shrink,
+but gzip grows by seven and twelve bytes; this is a cleanup of shared ownership,
+not a substantial bundle improvement by itself. All twelve before/current/
+published graphs pass, including retained keyed rows and positional rows in the
+same app. The fixture asserts that both reconcilers are actually emitted.
+
+Eight cleanup/reentrancy/ownership suites pass 99 cases. Four initial-list and
+adoption suites pass 33 cases, including two new checks that initial release
+and both anchor removals may throw while disposal still completes and preserves
+all three errors in order. Repeated disposal does not run release twice. The
+runtime build and build type check pass. This batch does not change scheduling,
+list selection, key evaluation or list reconciliation fast paths.
+
+Two local runtime-only ABBA diagnostics against `674001c` used Chrome,
+three samples per cell, all eight compiled state-placement variants and
+vanilla. All 21 scenarios and mixed sequences validated before timing; every
+timed sample checked text, classes, order and retained identity. The first
+measured 10k replacement and reversal; a sequential follow-up isolated
+replacement after other checks finished. Results were mixed, with slower
+module-component replacement samples and large outliers. Even unchanged
+vanilla replacement medians ranged from 30.8 to 51.7 ms in the follow-up.
+No CPU gain or stable regression conclusion is claimed. These diagnostics
+used the intermediate cleanup implementation; final cleanup reuses `dom.end`
+and `dom.open` to avoid adding two closure-captured anchor slots. Final bundle
+checks pass all twelve graphs, four final ownership suites pass 47 cases, and
+the production keyed-list adoption/recovery case passes. CPU confirmation
+for the final capture change remains for a stable environment.
+
 ### Remaining order
 
 | Order | Work | Required evidence |
@@ -1456,7 +1503,7 @@ These are payload measurements, not CPU speed claims. Numbered docs remain uncha
 | 2, first mixed boundary implemented | Extend the semantic plan beyond closed-root/primitive-prop placements with interaction roots, source/slot reachability, captures and lifetime requirements | Static parent with interactive child; unused state; callbacks, hidden reads, refs and cleanup; explain every retained client region |
 | 3, direct host roots and first conditional/list boundaries implemented | Extend HTML plus browser binding/event/update output to composed children and remaining structural regions | Static markup absent from client factories; counter and input/todo fixtures; later branches/lists, event ordering, coherent commits and recovery |
 | 4, first noninteractive request boundary implemented | Extend the same separation to request HTML and serialized state without restricting routing or Group | Zero-JS static SSR, minimal mixed-page interaction JS, async isolation, payload safety and hydration correctness |
-| 5 | Reduce runtime capabilities required by the derived browser program | Scheduling/lifetime core, optional access routing/host adapters, positional versus keyed lists, opaque fallback and retained identity |
+| 5, first compiler-selected adoption capabilities implemented | Reduce runtime capabilities required by the derived browser program | Scheduling/lifetime core, optional access routing/host adapters, positional versus keyed lists, opaque fallback and retained identity |
 
 Each step gets before/after whole-application measurements. Keep a keyed list,
 composed app and module-state app beside the tiny example so reducing one case

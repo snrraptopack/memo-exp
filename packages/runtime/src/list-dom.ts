@@ -45,7 +45,7 @@ export function createListDOM<T>(
   if (initial === undefined && adopted === undefined) {
     parent.appendChild(open); parent.appendChild(end);
   }
-  const dom = { environment, open, end, adopting: adopted !== undefined || initialRows!==undefined, createRow, finishAdoption, disposeInitial };
+  const dom = { environment, open, end, adopting: adopted !== undefined || initialRows!==undefined, createRow, finishAdoption, dispose };
   return dom;
 
   function createRow(item: T, key: unknown, rowId: EntityId, index: number, encoded: string | null): ListEntry | null {
@@ -74,9 +74,14 @@ export function createListDOM<T>(
     dom.adopting = false;
   }
 
-  function disposeInitial(): void {
-    const dispose=initialDispose;
+  function dispose(errors: unknown[] | null): unknown[] | null {
+    const release=initialDispose;
     initialRows=undefined;initialDispose=undefined;
-    dispose?.();
+    try { release?.(); } catch (error) { (errors ??= []).push(error); }
+    // Reuse the existing owner reference; do not add two captured anchor slots.
+    for (const anchor of [dom.end, dom.open]) {
+      try { anchor.parentNode?.removeChild(anchor); } catch (error) { (errors ??= []).push(error); }
+    }
+    return errors;
   }
 }

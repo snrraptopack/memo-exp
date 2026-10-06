@@ -32,4 +32,8 @@ export const sizeFixtures: Record<string, Record<string, string>> = {
   'owner-list': { './App.tsx': `export function App(){let rows=[{id:1,label:'one'},{id:2,label:'two'},{id:3,label:'three'}];
     return <main><button onClick={()=>{rows=rows.toReversed();}}>Reverse</button>
       <ul>{rows.map(row=><li key={row.id}>{row.label}</li>)}</ul></main>;}` },
+  'mixed-lists': { './App.tsx': `export function App(){let keyed=[{id:1,label:'one'},{id:2,label:'two'}];let positional=['a','b'];
+    return <main><button onClick={()=>{keyed=keyed.toReversed();positional=[...positional,'c'];}}>Change</button>
+      <ul class="keyed">{keyed.map(row=><li key={row.id}>{row.label}</li>)}</ul>
+      <ul class="positional">{positional.map((item,index)=><li key={index}>{index}:{item}</li>)}</ul></main>;}` },
 };

@@ -968,12 +968,7 @@ export function createListRegion<T>(
     validatedKeys.length = 0;
     prevRows.length = 0;
     nextRows.length = 0;
-    try { dom.disposeInitial(); }
-    catch (error) { (errors ??= []).push(error); }
-    try { endAnchor.parentNode?.removeChild(endAnchor); }
-    catch (error) { (errors ??= []).push(error); }
-    try { openAnchor.parentNode?.removeChild(openAnchor); }
-    catch (error) { (errors ??= []).push(error); }
+    errors = dom.dispose(errors);
     reportCleanupErrors(errors);
   }
 

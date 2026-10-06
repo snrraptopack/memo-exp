@@ -107,6 +107,13 @@ omission of unneeded adoption implementations. Keep the general `--hydrate`
 report and ordinary client report as controls; the compatibility entry has a
 small dispatch cost. Production SSR tests cover actual adoption and recovery.
 
+`--fixture=mixed-lists` exercises keyed and positional regions in one app. Its
+browser checks preserve both sets of retained nodes through keyed reverse and
+positional append, and assert that both list capabilities are emitted. Keep
+this fixture alongside single-list controls when factoring shared lifecycle
+code: compression can improve in the mixed graph while growing slightly in a
+single-list graph.
+
 Select individual stable fixtures with repeated `--fixture=<name>` arguments.
 For example, `--fixture=route-helper --fixture=request-routed-group` compares a
 reactive link constructed by `buildRoutePath` with full routed Group navigation.

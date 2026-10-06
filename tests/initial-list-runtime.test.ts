@@ -71,3 +71,24 @@ it.each([false,true])('cleans unbound initial rows on disposal and interrupted c
     expect(parent.childNodes).toHaveLength(0);region.dispose();
   }
 });
+
+it.each([false,true])('aggregates initial release and both anchor failures in order (positional=%s)',positional=>{
+  const {parent,open,end}=initial();const descriptor=bindInitialList(parent,open,end,2);
+  const releaseError=new Error('initial release'),endError=new Error('end anchor'),openError=new Error('open anchor');
+  let released=0;
+  const initialDOM={...descriptor,dispose(){released++;descriptor.dispose();throw releaseError;}};
+  const create=vi.fn(()=>({nodes:document.createElement('li'),entities:[]}));
+  const region=positional?createPositionalListRegion(parent,'Rows',create,initialDOM)
+    :createListRegion(parent,'Rows',create,(_item,index)=>index,false,true,true,initialDOM);
+  const remove=parent.removeChild.bind(parent);
+  const spy=vi.spyOn(parent,'removeChild').mockImplementation(node=>{
+    const result=remove(node);if(node===end)throw endError;if(node===open)throw openError;return result;
+  });
+  try {
+    let failure:unknown;try{region.dispose();}catch(error){failure=error;}
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([releaseError,endError,openError]);
+    expect(parent.childNodes).toHaveLength(0);expect(create).not.toHaveBeenCalled();
+    region.dispose();expect(released).toBe(1);
+  } finally {spy.mockRestore();}
+});

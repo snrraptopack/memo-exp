@@ -146,10 +146,7 @@ export function createPositionalListRegion<T>(
     while (rows.length > 0) {
       try { remove(rows.pop()!); } catch (error) { (errors ??= []).push(error); }
     }
-    try {dom.disposeInitial();} catch(error) {(errors??=[]).push(error);}
-    for (const anchor of [dom.end, dom.open]) {
-      try { anchor.parentNode?.removeChild(anchor); } catch (error) { (errors ??= []).push(error); }
-    }
+    errors = dom.dispose(errors);
     report(errors);
   }
   return { reconcile, refreshKey, refreshIndices, size: () => disposed ? 0 : rows.length, dispose };
