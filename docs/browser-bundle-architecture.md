@@ -1635,3 +1635,19 @@ The compiler build and eight focused suites (58 cases) pass, covering pure
 planning, composition, initial list binding, render callbacks, literals,
 conditional regions and initial-bound DOM updates. This refactor does not
 claim a runtime speed or bundle-size reduction.
+
+### Active batch: optional state-cell storage
+
+Lifted module-state cells now initialize their per-application map in the
+existing extension store on first use. The kernel no longer allocates or clears
+a second map in every application. Extension disposal already resets this
+storage; concurrent request identity and canonical write routing are unchanged.
+
+Against `fe0d72b`, source counter output changes from 9,070/3,716 to
+9,056/3,709 B (raw/gzip); keyed owner list from 24,409/9,519 to 24,395/9,514;
+routed request/Group from 79,010/25,244 to 78,996/25,240. All nine source,
+baseline and package browser graphs pass interaction and retained-node checks.
+The runtime build and four focused suites (22 cases) pass, including concurrent
+SSR cell isolation, compiler cell lowering and runtime disposal/reuse. These
+small byte savings do not establish a CPU improvement for applications using
+cells, which now perform an extension lookup.

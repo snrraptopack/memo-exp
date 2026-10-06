@@ -29,7 +29,7 @@
  */
 
 import { commitWrites } from './events';
-import { getActiveApplicationRuntime } from './kernel';
+import { getExtensionStore } from './kernel';
 
 export interface StateCell {
   /** Canonical linker identity, e.g. './src/state.ts#count'. */
@@ -63,13 +63,15 @@ function instantiate(input: unknown): unknown {
 }
 
 function slot<T>(cell: StateCell): { value: T } {
-  const runtime = getActiveApplicationRuntime();
-  let holder = runtime.state.cells.get(cell.key) as { value: T } | undefined;
+  const cells = getExtensionStore<Map<string, { value: unknown }>>(
+    'state-cells', () => new Map(),
+  );
+  let holder = cells.get(cell.key) as { value: T } | undefined;
   if (holder === undefined) {
     holder = {
       value: instantiate(authoredDefaults.get(cell.key)) as T,
     };
-    runtime.state.cells.set(cell.key, holder);
+    cells.set(cell.key, holder);
   }
   return holder;
 }
