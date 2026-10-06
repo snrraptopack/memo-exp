@@ -11,6 +11,7 @@ import {
 } from '../../ast';
 import { astBindingAt, type Ctx } from '../../context';
 import { generatedIdentifier, mdd } from '../../identifiers';
+import {annotateAsyncRead} from '../../planning/async-reads';
 import {
   isBoundTo,
   isEventSourceHolderReference,
@@ -153,10 +154,10 @@ export function replaceSourceReadsWithRenderGates(
     const name = (identifier as unknown as AstIdentifier).name;
     overwriteNode(
       identifier,
-      astFactory.callExpression(
+      annotateAsyncRead(astFactory.callExpression(
         mdd(ctx, 'readResolvedValueForRender'),
         [astFactory.identifier(name)],
-      ) as unknown as BaseNode,
+      ),[name],'undefined') as unknown as BaseNode,
     );
   }
 }
@@ -210,12 +211,12 @@ export function resolvedRenderExpression(
     cloneEstreeNode(expression, true),
   );
   ctx.compilerOwnedCallbacks.add(callback);
-  return astFactory.callExpression(mdd(ctx, helper), [
+  return annotateAsyncRead(astFactory.callExpression(mdd(ctx, helper), [
     astFactory.arrayExpression(
       dependencies.map((source) => astFactory.identifier(source)),
     ),
     callback,
-  ]);
+  ]),dependencies,'undefined');
 }
 
 /**

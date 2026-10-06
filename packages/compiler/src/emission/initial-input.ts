@@ -22,7 +22,7 @@ export function emitInitialInputValue(ctx:Ctx,scope:EmitScope,node:string,attrib
   const adopting=scope.initialDom!.adopting;
   scope.creation.push(adopting?astFactory.ifStatement(adopting,bind,fresh()):bind);
   if (live) {
-    registerTransparentDataSite(ctx,scope,transparentExpressionSources(ctx,expression),owner,fresh());
+    registerTransparentDataSite(ctx,scope,transparentExpressionSources(expression),owner,fresh());
     pushSlotUpdater(scope,fresh,expression);
   }
 }

@@ -18,10 +18,11 @@ import {
   type Ctx,
 } from '../../context';
 import { mdd } from '../../identifiers';
+import {annotateAsyncRead} from '../../planning/async-reads';
+import {initialReadPlacement} from '../../emission/initial-dom';
 import { wrapAutomaticSite } from './automatic-sites';
 import { lowerModuleRefReadsEstree } from './module-read-lowering';
 import {
-  initialReadPlacement,
   isActionRefreshTarget,
   isBoundTo,
   isDirectSourceComponentProp,
@@ -331,11 +332,11 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         : `${ctx.moduleId}:${identifier.loc.start.line}:${identifier.loc.start.column + 1}`;
       overwriteNode(
         identifier,
-        astFactory.callExpression(mdd(ctx, 'readResolvedValue'), [
+        annotateAsyncRead(astFactory.callExpression(mdd(ctx, 'readResolvedValue'), [
           astFactory.identifier(name),
           astFactory.stringLiteral(name),
           astFactory.stringLiteral(site),
-        ]) as unknown as BaseNode,
+        ]),[name],'throw') as unknown as BaseNode,
       );
     }
     refresh();

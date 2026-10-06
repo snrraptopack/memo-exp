@@ -83,7 +83,7 @@ export function emitText(
       );
     if (!initialPath || adopting) scope.creation.push(freshInitialStatement(scope,setter()));
     registerTransparentDataSite(
-      ctx, scope, transparentExpressionSources(ctx, expr), ownerId, setter(),
+      ctx, scope, transparentExpressionSources(expr), ownerId, setter(),
     );
     pushSlotUpdater(scope, setter, expr);
     return varName;
@@ -127,7 +127,7 @@ export function emitText(
   registerTransparentDataSite(
     ctx,
     scope,
-    transparentExpressionSources(ctx, expr),
+    transparentExpressionSources(expr),
     ownerId,
     updater(),
   );

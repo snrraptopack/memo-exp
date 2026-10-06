@@ -5,6 +5,18 @@ import { renderDocument } from './scope';
 import type { Ctx } from '../context';
 import * as astFactory from '../ast/factory';
 import type * as t from '../ast/compiler-types';
+import {nodeHasJsx} from '../context/ast';
+import {initialSite} from '../planning/initial-render';
+import type {BaseNode} from '../ast';
+
+/** DOM read lowering preserves every region with a proved source placement. */
+export function initialReadPlacement(ctx:Ctx,component:string,expression:BaseNode):{scalar:boolean;structural:boolean} {
+  const plan=ctx.initialDomRoot?.component===component ? ctx.initialDomRoot :
+    ctx.initialDomComponents[component] ?? ctx.initialServerComponents[component];
+  const site=initialSite(expression);
+  return {scalar:plan!=null&&!nodeHasJsx(expression as unknown as t.Node),
+    structural:plan?.conditions[site]!==undefined || plan?.lists[site]!==undefined};
+}
 
 export interface InitialDomElement {
   readonly path: readonly number[];

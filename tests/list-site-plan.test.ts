@@ -9,6 +9,7 @@ import {captureListSiteInputs, planComponentListSites} from '../packages/compile
 import {captureRenderCallbackProps} from '../packages/compiler/src/components/render-callbacks';
 import {analyzeComponentProps} from '../packages/compiler/src/components/props';
 import {prepareProgramAnalysis} from '../packages/compiler/src/analysis/prepare';
+import {annotateAsyncRead} from '../packages/compiler/src/planning/async-reads';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source,{filename:'./list-plan.tsx'}).program as unknown as t.Program;
@@ -31,7 +32,7 @@ it.each([
 function inputs(): ListSiteInputs {
   return {localRoots:new Set(['owned','props']), state:new Map<string,StateKind>([['items','let'],['store','store']]),
     staticDerived:new Map(), components:new Set(['Row']),
-    callbackProps:{objectBinding:null,bindingProps:new Map()},dataRuntimeId:'_Data'};
+    callbackProps:{objectBinding:null,bindingProps:new Map()}};
 }
 function component(source: string) {
   const program=parse(source), ctx=createCtx();
@@ -106,10 +107,25 @@ it('captures aliased and generic callback props while preserving direct item/ind
 
 it('preserves unresolved async source gating and uses current lowered expressions',()=>{
   const map=call('_Data.readResolvedValueForRender(resource).map(item=><li/>)');
+  annotateAsyncRead((map.callee as t.MemberExpression).object as t.Expression,['resource'],'undefined');
   const plan=planListSite(inputs(),map,fail);
   expect(plan.sourceKey).toBe('resource');expect(printEstree(plan.sourceExpr).code).toContain('|| []');
-  const imperative=planListSite(inputs(),call('_Data.readResolvedValue(resource).map(item=><li/>)'),fail);
+  const required=call('_Data.readResolvedValue(resource).map(item=><li/>)');
+  annotateAsyncRead((required.callee as t.MemberExpression).object as t.Expression,['resource'],'throw');
+  const imperative=planListSite(inputs(),required,fail);
   expect(printEstree(imperative.sourceExpr).code).not.toContain('|| []');
+});
+
+it('uses async provenance across cloning and namespace changes, rejecting unproved lookalike calls',()=>{
+  const map=call('transport(resource).map(item=><li/>)');
+  annotateAsyncRead((map.callee as t.MemberExpression).object as t.Expression,['./source.ts#rows'],'empty-list');
+  const copied=cloneNode(map);
+  ((copied.callee as t.MemberExpression).object as t.CallExpression).callee=expression('otherBackend.read');
+  const plan=planListSite(inputs(),copied,fail);
+  expect(plan).toMatchObject({sourceKey:'./source.ts#rows',sourceLocal:true});
+  expect(printEstree(plan.sourceExpr).code).toContain('otherBackend.read');
+  expect(printEstree(plan.sourceExpr).code).not.toContain('|| []');
+  expect(()=>planListSite(inputs(),call('_Data.readResolvedValueForRender(resource).map(item=><li/>)'),fail)).toThrow(/ordered collection view/);
 });
 
 it('copies analyzed identities and semantic facts without granting a clone the original source proof',()=>{

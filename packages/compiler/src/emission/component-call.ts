@@ -277,7 +277,7 @@ export function emitComponentCall(
     }
     const inlineCallback = isInlineScalarCallback(v);
     if (!inlineCallback) {
-      for (const source of transparentExpressionSources(ctx, v)) {
+      for (const source of transparentExpressionSources(v)) {
         dataPropSources.add(source);
       }
       if (dataPropSources.size > 0) needsPush = true;
@@ -374,7 +374,7 @@ export function emitComponentCall(
   const preparedPropObject = orderedPropObject === null ? null
     : preparationRead(ctx, scope, ownerId, orderedPropObject);
   if (orderedPropObject !== null) {
-    for (const source of transparentExpressionSources(ctx, orderedPropObject)) dataPropSources.add(source);
+    for (const source of transparentExpressionSources(orderedPropObject)) dataPropSources.add(source);
     if (dataPropSources.size > 0) needsPush = true;
   }
   if (orderedPropObject !== null) {

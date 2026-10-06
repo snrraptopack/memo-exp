@@ -12,8 +12,9 @@ import {
 } from '../../ast';
 import { astBindingAt, type Ctx } from '../../context';
 import { generatedIdentifier, mdd } from '../../identifiers';
+import {annotateAsyncRead} from '../../planning/async-reads';
+import {initialReadPlacement} from '../../emission/initial-dom';
 import {
-  initialReadPlacement,
   isActionRefreshTarget,
   isBoundTo,
   isEventOrRefContainer,
@@ -99,10 +100,10 @@ export function lowerModuleRefReadsEstree(
   ): void => {
     overwriteNode(
       identifier,
-      astFactory.callExpression(
+      annotateAsyncRead(astFactory.callExpression(
         mdd(ctx, helper),
         [refCall(entry.key)],
-      ) as unknown as BaseNode,
+      ),[entry.key],helper==='readModuleSourceList'?'empty-list':'undefined') as unknown as BaseNode,
     );
   };
 
@@ -197,17 +198,16 @@ export function lowerModuleRefReadsEstree(
           ctx.compilerOwnedCallbacks.add(callback);
           overwriteNode(
             rawExpression,
-            astFactory.callExpression(mdd(ctx, 'readResolvedValuesForRender'), [
+            annotateAsyncRead(astFactory.callExpression(mdd(ctx, 'readResolvedValuesForRender'), [
               astFactory.arrayExpression(uniqueEntries.map((entry) => refCall(entry.key))),
               callback,
-            ]) as unknown as BaseNode,
+            ]),uniqueEntries.map(entry=>entry.key),'undefined') as unknown as BaseNode,
           );
         }
       }
       annotateTransparentSources(
         rawExpression as unknown as t.Expression,
         transparentExpressionSources(
-          ctx,
           rawExpression as unknown as t.Expression,
         ),
       );
@@ -242,11 +242,11 @@ export function lowerModuleRefReadsEstree(
       : `${ctx.moduleId}:${identifier.loc.start.line}:${identifier.loc.start.column + 1}`;
     overwriteNode(
       identifier,
-      astFactory.callExpression(mdd(ctx, 'readResolvedValue'), [
+      annotateAsyncRead(astFactory.callExpression(mdd(ctx, 'readResolvedValue'), [
         refCall(entry.key),
         astFactory.stringLiteral(entry.name),
         astFactory.stringLiteral(site),
-      ]) as unknown as BaseNode,
+      ]),[entry.key],'throw') as unknown as BaseNode,
     );
   }
   refresh();

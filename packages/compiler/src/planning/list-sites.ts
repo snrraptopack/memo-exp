@@ -43,7 +43,7 @@ export function captureListSiteInputs(ctx: Ctx, name: string): ListSiteInputs {
   }
   return {localRoots, state: new Map(ctx.state), staticDerived,
     components: new Set([...ctx.comps.keys(), ...ctx.importedComponents.keys()]),
-    callbackProps: captureRenderCallbackProps(ctx.componentProps.get(name)), dataRuntimeId: ctx.identifiers?.dataRuntimeId};
+    callbackProps: captureRenderCallbackProps(ctx.componentProps.get(name))};
 }
 
 export function planComponentListSites(ctx: Ctx): ReadonlyMap<string, ComponentListSites> {

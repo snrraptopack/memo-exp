@@ -1983,6 +1983,23 @@ this suite, so these results verify unchanged behavior rather than a CPU gain.
 
 ### Remaining completion requirements
 
+#### Closure batch 1: explicit async read facts
+
+Async read lowering now carries source identity and unavailable-value behavior
+as semantic metadata that survives owned AST cloning. List planning and source
+dependency queries consume those facts without a generated runtime namespace or
+helper-name recognizer. Imperative reads still throw; render sinks remain gated;
+module list reads preserve their existing empty-list behavior. DOM placement
+queries now belong to the DOM backend. Two overlapping helper recognizers were
+removed rather than retained as compatibility fallbacks.
+
+Compiler build and changed-source lint pass. Eight focused suites pass 126 tests,
+including module/component sources, forms, opaque reads and initial composition.
+The paired production audit against `bb16a52` preserves HTML, payload and browser
+bytes for counter, composition, fetched list, fetched page and routed Group.
+This batch makes no CPU or bundle-size improvement claim. Callback publication,
+lifetime reachability and mutable backend-state separation remain open.
+
 - Preserve the newly separated child/attribute/write facts while auditing other
   analysis-to-backend compatibility data and normalization before final backend
   planning. Journal and native-operation bindings now belong to emission.

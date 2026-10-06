@@ -277,7 +277,7 @@ if (hasSpread) {
     },
   });
   const propObject = generatedIdentifier(ctx, `${tag}Props`);
-  const sources = transparentExpressionSources(ctx, ordered);
+  const sources = transparentExpressionSources(ordered);
   const preparedProps = preparationRead(ctx, scope, ownerId, ordered, sources);
   scope.creation.push(
     astFactory.variableDeclaration('const', [
@@ -462,7 +462,7 @@ if (hasSpread) {
       `memo-dom: attribute '${attrName}' needs a string or an expression (L1)`,
     );
   }
-  const dataSources = transparentExpressionSources(ctx, v);
+  const dataSources = transparentExpressionSources(v);
   const expr = preparationRead(ctx, scope, ownerId, cloneEstreeNode(v));
   if (attrName === 'style') {
     const setStyle = (): t.Statement =>

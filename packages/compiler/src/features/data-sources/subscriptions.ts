@@ -2,14 +2,13 @@
 import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
 import {
-  ESTREE_VISITOR_KEYS,
   cloneNode,
-  walkAst,
-  type BaseNode,
 } from '../../ast';
 import type { Ctx } from '../../context';
 import { generatedIdentifier, md, mdd } from '../../identifiers';
 import { registerStmt, type EmitScope } from '../../emission/scope';
+import {transparentExpressionSources} from '../../planning/async-reads';
+export {transparentExpressionSources} from '../../planning/async-reads';
 
 export function sourceArray(names: readonly string[]): t.ArrayExpression {
   return astFactory.arrayExpression(
@@ -23,7 +22,7 @@ export function preparationRead(
   scope: EmitScope,
   owner: t.Expression,
   expression: t.Expression,
-  sources: readonly string[] = transparentExpressionSources(ctx, expression),
+  sources: readonly string[] = transparentExpressionSources(expression),
 ): t.Expression {
   if (sources.length === 0) return expression;
   const site = generatedIdentifier(ctx, 'readSite').name;
@@ -44,129 +43,10 @@ export function preparationRead(
   ]);
 }
 
-type TransparentDataExpression = t.Expression & {
-  __memoDomTransparentSources?: readonly string[];
-  __memoDomTransparentSubscriptionExclusions?: readonly string[];
-};
+export {annotateTransparentSources, excludeTransparentSubscriptions} from '../../planning/async-reads';
 
 /** Authored control flow whose payload sinks self-gate per render site. */
-export type RenderGatedExpression = t.Expression & {
-  __memoDomRenderGated?: true;
-};
-
-export function annotateTransparentSources(
-  expression: t.Expression,
-  sources: readonly string[],
-): void {
-  const current = (expression as TransparentDataExpression)
-    .__memoDomTransparentSources ?? [];
-  (expression as TransparentDataExpression).__memoDomTransparentSources = [
-    ...new Set([...current, ...sources]),
-  ].sort();
-}
-
-export function excludeTransparentSubscriptions(
-  expression: t.Expression,
-  sources: readonly string[],
-): void {
-  if (sources.length === 0) return;
-  walkAst(expression as unknown as BaseNode, {
-    enter(node) {
-      if (!astFactory.isExpression(node as unknown as t.Node)) return;
-      const target = node as unknown as TransparentDataExpression;
-      const current = target.__memoDomTransparentSubscriptionExclusions ?? [];
-      target.__memoDomTransparentSubscriptionExclusions = [
-        ...new Set([...current, ...sources]),
-      ].sort();
-    },
-  });
-}
-
-/** Base source bindings whose transition must update an emitted expression. */
-export function transparentExpressionSources(
-  ctx: Ctx,
-  expression: t.Expression,
-): readonly string[] {
-  const found = new Set(
-    (expression as TransparentDataExpression).__memoDomTransparentSources ?? [],
-  );
-  const visit = (node: t.Node): void => {
-    if (
-      astFactory.isCallExpression(node) &&
-      astFactory.isMemberExpression(node.callee) &&
-      !node.callee.computed &&
-      astFactory.isIdentifier(node.callee.object, {
-        name: ctx.identifiers?.dataRuntimeId,
-      }) &&
-      astFactory.isIdentifier(node.callee.property)
-    ) {
-      const helper = node.callee.property.name;
-      if (
-        (helper === 'readResolvedValue' ||
-          helper === 'readResolvedValueForRender') &&
-        astFactory.isIdentifier(node.arguments[0])
-      ) {
-        found.add(node.arguments[0].name);
-      }
-      if (
-        (helper === 'readModuleSourceList' ||
-          helper === 'readResolvedValueForRender') &&
-        astFactory.isCallExpression(node.arguments[0]) &&
-        astFactory.isMemberExpression(node.arguments[0].callee) &&
-        astFactory.isIdentifier(node.arguments[0].callee.property, {
-          name: 'sourceRef',
-        }) &&
-        astFactory.isStringLiteral(node.arguments[0].arguments[0])
-      ) {
-        found.add(node.arguments[0].arguments[0].value);
-      }
-      if (
-        (helper === 'readResolvedValuesForRender' ||
-          helper === 'deriveResolvedValues') &&
-        astFactory.isArrayExpression(node.arguments[0])
-      ) {
-        for (const element of node.arguments[0].elements) {
-          if (astFactory.isIdentifier(element)) {
-            found.add(element.name);
-            continue;
-          }
-          if (
-            astFactory.isCallExpression(element) &&
-            astFactory.isMemberExpression(element.callee) &&
-            astFactory.isIdentifier(element.callee.property, {
-              name: 'sourceRef',
-            }) &&
-            astFactory.isStringLiteral(element.arguments[0])
-          ) {
-            found.add(element.arguments[0].value);
-          }
-        }
-      }
-    }
-    for (const key of ESTREE_VISITOR_KEYS[node.type] ?? []) {
-      const child = (node as unknown as Record<string, unknown>)[key];
-      if (Array.isArray(child)) {
-        for (const entry of child) {
-          if (entry !== null && typeof entry === 'object' && 'type' in entry) {
-            visit(entry as t.Node);
-          }
-        }
-      } else if (
-        child !== null &&
-        typeof child === 'object' &&
-        'type' in child
-      ) {
-        visit(child as t.Node);
-      }
-    }
-  };
-  visit(expression);
-  const excluded = new Set(
-    (expression as TransparentDataExpression)
-      .__memoDomTransparentSubscriptionExclusions ?? [],
-  );
-  return [...found].filter(source => !excluded.has(source)).sort();
-}
+export type RenderGatedExpression = t.Expression & {__memoDomRenderGated?: true};
 
 function routedSourceName(ctx: Ctx, source: string): string {
   for (const [name, key] of ctx.transparentModuleSources) {
@@ -245,7 +125,7 @@ export function subscribeTransparentStructuralSite(
   subscribeTransparentEntity(
     ctx,
     scope,
-    transparentExpressionSources(ctx, expression),
+    transparentExpressionSources(expression),
     entityId,
   );
 }

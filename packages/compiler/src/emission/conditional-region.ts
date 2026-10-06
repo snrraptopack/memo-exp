@@ -101,7 +101,7 @@ export function emitConditionalRegion(
     scope.disposableEntities.push(cloneEstreeNode(regionId));
     return;
   }
-  const transparentSources = transparentExpressionSources(ctx, expression);
+  const transparentSources = transparentExpressionSources(expression);
 
   // Route regions are real runtime owners (`App/route0/...`). Conditional
   // read analysis runs before emission and starts from the component path, so

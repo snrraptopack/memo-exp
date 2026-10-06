@@ -1,7 +1,8 @@
 /** Shared list meaning, independent of occurrence IDs and DOM emission. */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import {cloneNode as cloneEstreeNode, walkAst, type BaseNode} from '../ast';
+import {cloneNode as cloneEstreeNode} from '../ast';
+import {asyncReadFact, scalarAsyncSources} from '../planning/async-reads';
 import {attrExpr, memberKey, memberRootName, type MapCallExpression, type StateKind} from '../context';
 import {planRenderCallbackMap, type RenderCallbackProps} from '../components/render-callbacks';
 import {isStaticListExpression, isStaticPrimitiveList, transparentListExpression} from './source-shapes';
@@ -16,8 +17,6 @@ export interface ListSiteInputs {
   readonly staticDerived: ReadonlyMap<string, t.Expression>;
   readonly components: ReadonlySet<string>;
   readonly callbackProps: RenderCallbackProps;
-  /** Compatibility with already lowered transparent-data reads; allocates no runtime names. */
-  readonly dataRuntimeId: string | undefined;
 }
 export interface ListSitePlan extends Readonly<Omit<MapSite, 'owner' | 'suffix' | 'prefix'>> {
   readonly suffixBase: string;
@@ -35,7 +34,7 @@ export function planListSite(
   const source = identity === undefined
     ? analyzeSource(inputs, callee.object, parentRow, fail)
     : {expression: astFactory.isExpression(callee.object)
-        ? emptyListWhileUnresolved(inputs, callee.object)
+        ? emptyListWhileUnresolved(callee.object)
         : fail('memo-dom: list source must be an expression', callee.object), ...identity};
   const callback = analyzeCallback(inputs, call, fail, prepared);
   const row = analyzeRow(inputs, callback, fail);
@@ -55,11 +54,10 @@ export function planListSite(
 }
 
 function emptyListWhileUnresolved(
-  inputs: ListSiteInputs,
   expression: t.Expression,
 ): t.Expression {
   const current = transparentListExpression(expression);
-  if (compilerResolvedRoots(inputs, current).length === 0) return current;
+  if (scalarAsyncSources(current).length === 0) return current;
   if (
     astFactory.isLogicalExpression(current) &&
     current.operator === '||' &&
@@ -75,42 +73,6 @@ function emptyListWhileUnresolved(
   );
 }
 
-function compilerResolvedRoots(inputs: ListSiteInputs, expression: t.Expression): string[] {
-  const roots = new Set<string>();
-  walkAst(transparentListExpression(expression) as unknown as BaseNode, {
-    enter(node) {
-      if (!astFactory.isCallExpression(node)) return;
-      const callee = node.callee;
-      if (
-        !astFactory.isMemberExpression(callee) ||
-        callee.computed ||
-        !astFactory.isIdentifier(callee.object, {
-          name: inputs.dataRuntimeId,
-        }) ||
-        !astFactory.isIdentifier(callee.property)
-      ) return;
-      if (
-        (callee.property.name === 'readResolvedValue' ||
-          callee.property.name === 'readResolvedValueForRender') &&
-        astFactory.isIdentifier(node.arguments[0])
-      ) {
-        roots.add(node.arguments[0].name);
-        return;
-      }
-      if (
-        (callee.property.name === 'readResolvedValuesForRender' ||
-          callee.property.name === 'deriveResolvedValues') &&
-        astFactory.isArrayExpression(node.arguments[0])
-      ) {
-        for (const element of node.arguments[0].elements) {
-          if (astFactory.isIdentifier(element)) roots.add(element.name);
-        }
-      }
-    },
-  });
-  return [...roots];
-}
-
 function analyzeSource(
   inputs: ListSiteInputs,
   source: t.Expression | t.Super,
@@ -123,67 +85,27 @@ function analyzeSource(
   if (astFactory.isIdentifier(current)) {
     return analyzeIdentifierSource(inputs, current, fail);
   }
-  if (
-    astFactory.isCallExpression(current) &&
-    astFactory.isMemberExpression(current.callee) &&
-    !current.callee.computed &&
-    astFactory.isIdentifier(current.callee.object, {
-      name: inputs.dataRuntimeId,
-    }) &&
-    astFactory.isIdentifier(current.callee.property, {
-      name: 'readModuleSourceList',
-    })
-  ) {
-    // Source references carry module-source identity (RFC §16.4).
-    const argument = current.arguments[0];
-    const key = astFactory.isCallExpression(argument) &&
-        astFactory.isMemberExpression(argument.callee) &&
-        astFactory.isIdentifier(argument.callee.property, { name: 'sourceRef' }) &&
-        astFactory.isStringLiteral(argument.arguments[0])
-      ? argument.arguments[0].value
-      : null;
-    if (key !== null) {
-      return {
-        expression: current,
-        key,
-        local: true,
-        suffixBase: key,
-      };
-    }
-  }
-  if (
-    astFactory.isCallExpression(current) &&
-    astFactory.isMemberExpression(current.callee) &&
-    !current.callee.computed &&
-    astFactory.isIdentifier(current.callee.object, {
-      name: inputs.dataRuntimeId,
-    }) &&
-    astFactory.isIdentifier(current.callee.property) &&
-    (current.callee.property.name === 'readResolvedValue' ||
-      current.callee.property.name === 'readResolvedValueForRender') &&
-    astFactory.isIdentifier(current.arguments[0])
-  ) {
-    const source = current.arguments[0];
-    const renderGated =
-      current.callee.property.name === 'readResolvedValueForRender';
+  const read=asyncReadFact(current);
+  if (astFactory.isExpression(current) && read && read.sources.length===1) {
+    const key=read.sources[0]!;
     return {
       // Render-gated sources yield no rows while unavailable (§10: no
       // Group → empty local region); the imperative form stays loud.
-      expression: renderGated
-        ? emptyListWhileUnresolved(inputs, current)
+      expression: read.unavailable==='undefined'
+        ? emptyListWhileUnresolved(current)
         : current,
-      key: source.name,
+      key,
       local: true,
-      suffixBase: source.name,
+      suffixBase: key,
     };
   }
   const resolvedRoots = astFactory.isExpression(current)
-    ? compilerResolvedRoots(inputs, current)
+    ? scalarAsyncSources(current)
     : [];
   if (astFactory.isExpression(current) && resolvedRoots.length > 0) {
     const key = resolvedRoots.join('$');
     return {
-      expression: emptyListWhileUnresolved(inputs, current),
+      expression: emptyListWhileUnresolved(current),
       key,
       local: true,
       suffixBase: key,
