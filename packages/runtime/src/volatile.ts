@@ -10,14 +10,15 @@ let installed = false;
 interface VolatileState { ids: Set<string>; scheduled: boolean }
 const STORE = 'mmd:volatile';
 
-function stateFor(runtime: ApplicationRuntime): VolatileState {
+function stateFor(runtime: ApplicationRuntime, observedId?: string): VolatileState {
   let state = runtime.state.extensions.get(STORE) as VolatileState | undefined;
   if (state === undefined) {
     // Compiler-known registration may precede installation of this capability.
-    const ids = new Set<string>();
-    for (const entity of runtime.state.registry.values()) if (entity.volatile === true) ids.add(entity.id);
-    state = { ids, scheduled: false };
+    state = { ids: new Set(), scheduled: false };
     runtime.state.extensions.set(STORE, state);
+    for (const [id, entity] of runtime.state.registry) {
+      if (id !== observedId && entity.volatile === true) state.ids.add(id);
+    }
   }
   return state;
 }
@@ -44,12 +45,13 @@ function scheduleVolatileFrame(runtime: ApplicationRuntime): void {
 
 /** General registration includes the opaque-pull capability. */
 export function register(entity: Entity): void {
+  const runtime = getActiveApplicationRuntime();
   if (!installed) {
     installed = true;
     onRegistryChange((id, kind) => {
       const runtime = getActiveApplicationRuntime();
       const volatile = kind === 'add' && runtime.state.registry.get(id)?.volatile === true;
-      const state = volatile ? stateFor(runtime)
+      const state = volatile ? stateFor(runtime, id)
         : runtime.state.extensions.get(STORE) as VolatileState | undefined;
       if (state === undefined) return;
       if (volatile) state.ids.add(id);
@@ -61,8 +63,10 @@ export function register(entity: Entity): void {
       state?.ids.clear();
     });
   }
-  registerEntity(entity);
   // General registration explicitly selects this capability, including older
-  // compiler output. Seed any previously registered pull entities once.
-  scheduleVolatileFrame(getActiveApplicationRuntime());
+  // compiler output. Seed earlier entities before the new entity enters the
+  // registry, so its getter is read exactly once by the registry listener.
+  stateFor(runtime);
+  registerEntity(entity);
+  scheduleVolatileFrame(runtime);
 }

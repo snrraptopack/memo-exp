@@ -79,7 +79,7 @@ it('runs a delayed opaque pull in its originating runtime and stops after dispos
   expect(frames).toHaveLength(0);
 });
 
-it('reads volatility once, after the entity enters the registry', () => {
+it.each([true,false])('reads volatility once after registration (volatile=%s)', volatile => {
   const frames: Array<() => void> = [];
   const runtime = isolated('getter-order',frames);
   let reads = 0;
@@ -87,11 +87,26 @@ it('reads volatility once, after the entity enters the registry', () => {
     register({id:'App',parent:null,render(){},get volatile() {
       reads++;
       expect(runtime.state.registry.has('App')).toBe(true);
-      return true;
+      return volatile;
     }});
   });
   expect(reads).toBe(1);
-  expect(frames).toHaveLength(1);
+  expect(frames).toHaveLength(volatile?1:0);
+});
+
+it('keeps pull scheduling on the registration owner when a volatility getter changes the ambient runtime',()=>{
+  const framesA:Array<()=>void>=[],framesB:Array<()=>void>=[];
+  const a=isolated('getter-a',framesA),b=isolated('getter-b',framesB);
+  const render=vi.fn(()=>expect(getActiveApplicationRuntime()).toBe(a));
+  let reads=0;
+  runWithApplicationRuntime(a,()=>{
+    setScheduler(run=>run());
+    register({id:'App',parent:null,render,get volatile(){
+      reads++;setActiveApplicationRuntime(b);return true;
+    }});
+  });
+  expect(reads).toBe(1);expect(framesA).toHaveLength(1);expect(framesB).toHaveLength(0);
+  framesA.shift()!();expect(render).toHaveBeenCalledTimes(1);
 });
 
 it('does not let a disposed runtime\'s queued commit drain another runtime', () => {
