@@ -5,6 +5,16 @@ import { decodeHTMLStrict } from 'entities/decode';
 import { walkAst } from './walk';
 import type { BaseNode } from './types';
 
+/** Remove TypeScript-only wrappers without changing runtime semantics. */
+export function unwrapTypeExpression<TExpression extends BaseNode>(expression: TExpression): TExpression {
+  let current: BaseNode = expression;
+  while (['TSAsExpression', 'TSTypeAssertion', 'TSNonNullExpression',
+    'TSSatisfiesExpression', 'TSInstantiationExpression'].includes(current.type)) {
+    current = (current as unknown as {expression: BaseNode}).expression;
+  }
+  return current as TExpression;
+}
+
 /** Resolve authored JSX literals before target-independent planning or emission. */
 export function normalizeJsxLiterals(root: BaseNode): void {
   walkAst(root, {

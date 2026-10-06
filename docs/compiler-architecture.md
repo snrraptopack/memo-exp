@@ -277,7 +277,7 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | Retained row replay for owner writes | Closed structural-only sources capture original-call/source/reason facts; other numeric/journal causes keep full replay | Extend to per-write content/opaque publication and component-row props while preserving mixed-cause fallback |
 | Props and region identities | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
-| Normalization and transparent read/callback lowering | Group presentation validation and lexical captures are planned before target lowering; other transforms remain mixed | Extend explicit source plans to remaining read/callback transforms |
+| Normalization and transparent read/callback lowering | Group presentation policies and read replay operations are planned before target lowering; other transforms remain mixed | Extend explicit source plans to remaining callback/source transforms |
 | Generated IDs, headers, imports and output buffers | One mutable DOM emission state referenced by `Ctx`; no mirrored facade fields | Replace remaining runtime-producing normalization with explicit target lowering |
 | Generated-header coverage | Deferred header insertion after some rewrites | Passes explicitly cover authored, generated or complete module trees |
 
@@ -345,6 +345,51 @@ classes, order and retained identity after every timed sample. Three samples run
 in ABBA order. The before/after browser hashes are identical, so noisy local
 timings establish no speed change. Final compiler output is also checked against
 all eight recorded component modules after the coordinator/validator cleanup.
+
+### Read replay operations before target lowering — 2026-10-06
+
+`planning/read-replay.ts` accepts the authored program, its lexical scope index
+and the read-factory catalog. It snapshots the promise creation expression,
+follows unchanged identifier const aliases, and records lexical placement when
+a read crosses the creation scope. The planner owns cloned operation nodes and
+allocates no generated names or runtime calls. Lowering requires these facts;
+it only needs the identifier allocator and does not rescan source or scopes.
+The former context-based discovery/lowering pass is removed. Type-expression
+unwrapping and binding-to-declarator lookup each have one AST implementation;
+the context facade delegates to them.
+
+The old pass copied an outer promise initializer into the read's scope. A
+component shadow could therefore change the endpoint used by retry. Crossing
+reads now share a private factory beside the original declaration, retaining
+its lexical bindings, `this` and `arguments`. Initial promise evaluation order
+is preserved, and exported promises do not export generated factories. Direct
+and same-scope operations keep their inline replay callback. Both placements
+use the existing read controller; no runtime path or dependency version was
+added. Generated names reserve identifiers from descendant scopes.
+
+Destructured promises also keep their selected promise rather than replaying
+the entire object or array initializer. Mutable, imported, parameter and cyclic
+bindings retain conservative behavior; this batch does not infer a new creation
+operation for them. Explicit replay arguments and locally shadowed read calls
+remain authored operations.
+
+Self-contained tests cover owned source snapshots, lexical shadows, aliases,
+factory sharing, export privacy, evaluation order, `this`/`arguments`, and
+completed refreshes of object/array destructured promises. The local DOM
+comparison against `fc09d7b` passes all 21 scenarios and mixed sequences across
+eight compiled variants plus vanilla, with text, class, order and retained-node
+identity checks. Update and swap timings use three samples in ABBA order; the
+browser hashes are identical, so this batch establishes no CPU improvement.
+Other callback transforms, module-source lowering and TSRX validation remain
+open architecture work.
+
+Compiler build, workspace typecheck and changed-source lint pass. The final
+focused gate passes 177 cases across 14 files, including Group policy planning
+and execution after the coordinator cleanup. The two production Chrome
+routing/lifetime checks pass. The whole root suite was not repeated. Program
+preparation shares its source scope index with Group planning when no read
+lowering changed the tree, avoiding a redundant scope-analysis pass on ordinary
+components. Final compiler output matches all eight recorded DOM modules.
 
 ## Migration order and gates
 

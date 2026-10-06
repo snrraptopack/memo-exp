@@ -2123,7 +2123,9 @@ The complete architecture remains open in these concrete areas:
   and callback transforms. Explicit facts remove consumers' helper guessing;
   they do not yet make the whole source pipeline backend independent.
   Group presentation policies now have an explicit source plan before lowering;
-  remaining read/callback transforms and TSRX boundary validation are still open.
+  read replay operations also carry owned creation expressions and lexical
+  placement into lowering. Other callback/source transforms and TSRX boundary
+  validation are still open.
 - Generic callback/child-slot composition and escaping values need broader
   ownership and lifetime reachability. Named effects and unproved ref expressions
   retain ordinary creation rather than acquiring a guessed placement.

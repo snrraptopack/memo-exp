@@ -221,6 +221,16 @@ export interface ScopeAnalysis {
   indexByNode: Map<BaseNode, number | undefined>;
 }
 
+/** Find the variable declarator that owns a binding in this source index. */
+export function variableDeclaratorForBinding(analysis: ScopeAnalysis | null | undefined, binding: Binding): BaseNode | null {
+  let current: BaseNode | null = binding.identifier;
+  while (current !== null && current !== binding.declarationNode) {
+    if (current.type === 'VariableDeclarator') return current;
+    current = analysis?.parentByNode.get(current) ?? null;
+  }
+  return null;
+}
+
 export function analyzeScope(root: Program | BaseNode): ScopeAnalysis {
   const rootScope = new Scope(root, null, false);
   const nodeToScope = new Map<BaseNode, Scope>();

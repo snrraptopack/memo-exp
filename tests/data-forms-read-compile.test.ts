@@ -11,6 +11,7 @@ describe('$read and $forms compiler integration', () => {
     for (const id of _internals().registry.keys()) unregister(id);
     document.body.replaceChildren();
     resetScheduler();
+    vi.unstubAllGlobals();
   });
   it('retains promise creation for direct and bound reads', () => {
     const output = compileModules({
@@ -154,5 +155,68 @@ describe('$read and $forms compiler integration', () => {
     await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('1'));
     root.querySelector('button')!.click();
     await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('2'));
+  });
+
+  it.each(['const', 'export const'])('retries an outer %s promise in its creation scope despite component shadows', async declaration => {
+    const load = vi.fn((endpoint: string): Promise<{endpoint: string; attempt: number}> =>
+      Promise.resolve({endpoint, attempt: load.mock.calls.length}));
+    vi.stubGlobal('__readReplayLoader', load);
+    const output = compileModules({
+      './app.tsx': `
+        const endpoint = 'outer';
+        ${declaration} promise = globalThis.__readReplayLoader(endpoint);
+        const alias = promise;
+        export function App() {
+          const endpoint = 'shadow';
+          const value = $read(alias);
+          const request = $track(value);
+          return <main><span>{value.endpoint}:{value.attempt}</span><button onClick={() => request.refresh()}>Retry</button></main>;
+        }
+      `,
+    });
+    const directory = join(import.meta.dirname, 'fixtures', 'out', 'forms-read');
+    mkdirSync(directory, { recursive: true });
+    const fixture = join(directory, declaration === 'const' ? 'read-shadow.ts' : 'read-export-shadow.ts');
+    writeFileSync(fixture, output['./app.tsx']!);
+    const { App } = await import(pathToFileURL(fixture).href);
+    setScheduler(run => run());
+    const root = App('ReadShadowApp', null) as HTMLElement;
+    document.body.append(root);
+    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('outer:1'));
+    root.querySelector('button')!.click();
+    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('outer:2'));
+    expect(load.mock.calls).toEqual([['outer'], ['outer']]);
+  });
+
+  it.each([
+    ['object', 'const {promise} = {promise: Promise.resolve({id: 7})};'],
+    ['array', 'const [promise] = [Promise.resolve({id: 7})];'],
+  ])('refreshes a promise from %s destructuring without replaying its carrier', async (name, declaration) => {
+    const output = compileModules({
+      './app.tsx': `
+        export function App() {
+          ${declaration}
+          const value = $read(promise);
+          const request = $track(value);
+          let refreshed = false;
+          return <main><span>{value.id}</span>
+            <button onClick={async () => { await request.refresh(); refreshed = true; }}>Retry</button>
+            <output>{refreshed ? 'refreshed' : 'initial'}</output>
+          </main>;
+        }
+      `,
+    });
+    const directory = join(import.meta.dirname, 'fixtures', 'out', 'forms-read');
+    mkdirSync(directory, { recursive: true });
+    const fixture = join(directory, `read-destructured-${name}.ts`);
+    writeFileSync(fixture, output['./app.tsx']!);
+    const {App} = await import(pathToFileURL(fixture).href);
+    setScheduler(run => run());
+    const root = App(`ReadDestructured${name}`, null) as HTMLElement;
+    document.body.append(root);
+    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('7'));
+    root.querySelector('button')!.click();
+    await vi.waitFor(() => expect(root.querySelector('output')?.textContent).toBe('refreshed'));
+    expect(root.querySelector('span')?.textContent).toBe('7');
   });
 });

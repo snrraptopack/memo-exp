@@ -3,7 +3,7 @@ export {
   normalizeTransparentSourceDestructuring,
   scanTransparentSourceImports,
 } from './discovery';
-export { addReadReplayFactories } from './read-replay';
+export { lowerReadReplays } from './read-replay';
 export {
   registerTransparentSourceRoots,
   scanAndLowerModuleSourceDeclarations,

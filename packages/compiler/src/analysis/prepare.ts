@@ -1,6 +1,7 @@
 /** Shared preparation for linked manifests and final program emission. */
 import {refreshAstAnalysis,type Ctx,type ProgramPath} from '../context';
 import {planGroupPresentations} from '../planning/presentation-policy';
+import {planReadReplays} from '../planning/read-replay';
 import { runAnalysis } from '../analysis';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { installLinkedDynamicComponentImports } from '../jsx/dynamic-tags';
@@ -11,7 +12,7 @@ import { analyzeRouterJsx } from '../router';
 import { installCompilerIntrinsics } from '../intrinsics';
 import {
   scanTransparentSourceImports,
-  addReadReplayFactories,
+  lowerReadReplays,
   lowerTransparentGroups,
   scanAndLowerModuleSourceDeclarations,
   rejectNonGetServerFunctionRenderCalls,
@@ -26,9 +27,13 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   initializeGeneratedIdentifiers(ctx, programPath.node);
   scanExternalReactiveImports(ctx, programPath);
   scanTransparentSourceImports(ctx, programPath);
-  addReadReplayFactories(ctx, programPath.node);
+  let sourceAnalysis = refreshAstAnalysis(ctx, programPath.node);
+  const reads = planReadReplays(programPath.node, sourceAnalysis, ctx.transparentReadFactories);
+  lowerReadReplays(ctx, reads);
+  // Refresh only when lowering introduced callbacks or lexical declarations.
+  if (reads.length > 0) sourceAnalysis = refreshAstAnalysis(ctx, programPath.node);
   const presentations=planGroupPresentations(programPath.node,
-    refreshAstAnalysis(ctx,programPath.node),ctx.transparentGroups,programPath);
+    sourceAnalysis,ctx.transparentGroups,programPath);
   lowerTransparentGroups(ctx, programPath,presentations);
   scanAndLowerModuleSourceDeclarations(ctx, programPath);
   analyzeRouterJsx(ctx, programPath);

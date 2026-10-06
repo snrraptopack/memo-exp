@@ -3,11 +3,14 @@ import * as astFactory from '../ast/factory';
 import {
   analyzeScope,
   walkAst,
+  variableDeclaratorForBinding,
+  unwrapTypeExpression,
   type BaseNode,
   type Binding as AstBinding,
   type Scope,
   type ScopeAnalysis,
 } from '../ast';
+export { unwrapTypeExpression } from '../ast';
 import type { Ctx, StateKind } from './model';
 import type { RowWriteFacts } from '../handlers/write-facts';
 import { canonicalKeyFor } from './state-keys';
@@ -41,14 +44,7 @@ export function variableDeclaratorFor(
   ctx: Ctx,
   binding: AstBinding,
 ): (BaseNode & t.VariableDeclarator) | null {
-  let current: BaseNode | null = binding.identifier;
-  while (current !== null && current !== binding.declarationNode) {
-    if (current.type === 'VariableDeclarator') {
-      return current as BaseNode & t.VariableDeclarator;
-    }
-    current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
-  }
-  return null;
+  return variableDeclaratorForBinding(ctx.astAnalysis, binding) as (BaseNode & t.VariableDeclarator) | null;
 }
 
 /** Whether a binding has a visible rebind or receiver/member mutation site. */
@@ -106,24 +102,6 @@ export function bindingHasVisibleWrite(
     }
   }
   return false;
-}
-
-/** Remove TypeScript-only wrappers without changing runtime semantics. */
-export function unwrapTypeExpression<TExpression extends BaseNode>(
-  expression: TExpression,
-): TExpression {
-  let current: BaseNode = expression;
-  while (
-    current.type === 'TSAsExpression' ||
-    current.type === 'TSTypeAssertion' ||
-    current.type === 'TSNonNullExpression' ||
-    current.type === 'TSSatisfiesExpression' ||
-    current.type === 'TSInstantiationExpression'
-  ) {
-    const inner = (current as unknown as { expression: BaseNode }).expression;
-    current = inner;
-  }
-  return current as TExpression;
 }
 
 /** Register a state binding while preserving a linker-provided import entry. */
