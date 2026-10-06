@@ -269,7 +269,7 @@ export function buildConditionalBranchCreate(
   );
   if (initialTarget && initial?.adopting) branchScope.prelude.unshift(astFactory.variableDeclaration('const',[
     astFactory.variableDeclarator(astFactory.identifier(initial.variable),astFactory.conditionalExpression(
-      cloneEstreeNode(initial.adopting),astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+      cloneEstreeNode(initial.adopting),astFactory.callExpression(md(ctx,initial.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),[
         initialTarget,astFactory.arrayExpression(initial.descriptors),
       ]),astFactory.arrayExpression([]))),
   ]));

@@ -110,6 +110,42 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it.each([0,2])('retains fixed siblings around %i fetched rows in Chrome',async(count,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const initial=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
+    const result=await production(`request-siblings-${count}`,`export function App(){const user=$fetch('/api/user');
+      const request=$track(user);let n=0;let show=true;let fixed=['fixed'];
+      return <main><h1>{user?.name}</h1>{user?.rows?.map((item,index)=><li key={item.id}>{index}:{item.label}</li>)}
+        <button class="add" onClick={()=>n++}>{n}</button>{n}
+        <button class="reload" onClick={()=>request.refresh()}>Reload</button>
+        <button class="toggle" onClick={()=>show=!show}>Toggle</button>{show&&<p>Shown</p>}
+        {fixed.map(item=><aside>{item}</aside>)}<footer>After</footer></main>;}`,{}, {name:'Ada',rows:initial});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const response=await result.app.fetch(new Request('https://app.test/demo/'));
+    expect(response.status).toBe(200);const html=await response.text();expect(html).not.toContain('mmd:w:');
+    let next=[...initial].reverse();
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(requests).toEqual([]);
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {created:string[];initial:Element[];rows:Element[];footer:Element};
+        state.rows=[...document.querySelectorAll('li')];state.footer=document.querySelector('footer')!;
+        return {created:state.created.filter(tag=>tag!=='link'),retained:state.initial.filter(node=>node.localName!=='script').every(node=>node.isConnected)};
+      })).toEqual({created:[],retained:true});
+      await page.click('.add');await page.waitForFunction(()=>document.querySelector('.add')?.textContent==='1');
+      expect(await page.$eval('main',node=>[...node.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(''))).toBe('1');
+      await page.click('.reload');await page.waitForFunction(expected=>[...document.querySelectorAll('li')].map(n=>n.textContent).join('|')===expected,
+        {},next.map((row,index)=>`${index}:${row.label}`).join('|'));
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {rows:Element[]};return [...document.querySelectorAll('li')].every((node,index)=>node===state.rows[state.rows.length-index-1]);
+      })).toBe(true);
+      next=[];await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('li').length===0);
+      next=[{id:3,label:'three'}];await page.click('.reload');await page.waitForFunction(()=>document.querySelector('li')?.textContent==='0:three');
+      await page.click('.toggle');await page.waitForFunction(()=>!document.querySelector('p'));
+      await page.click('.toggle');await page.waitForSelector('p');
+      expect(await page.$eval('aside',node=>node.textContent)).toBe('fixed');
+      expect(await page.evaluate(()=>(window as unknown as {footer:Element}).footer===document.querySelector('footer'))).toBe(true);
+    },'/demo/',()=>({name:'Ada',rows:next}));
+  },60_000);
   it('binds a composed lifetime owner and reruns its effect in Chrome',async context=>{
     const result=await production('lifetime-owner',`function Panel(){let n=0;let node=null;
       $effect(()=>{if(node)node.title='count:'+n;});

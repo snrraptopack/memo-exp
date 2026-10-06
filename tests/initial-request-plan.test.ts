@@ -123,14 +123,34 @@ it('retains metadata presentation and shadowed tracking calls on ordinary browse
 });
 
 it.each([
-  `{user?.rows?.map(item=><li key={item.id}>{item.label}</li>)}<p>Sibling</p>`,
-  `<ul>Before{user?.rows?.map(item=><li>{item.label}</li>)}</ul>`,
+  `{user?.rows?.map(item=><li>{item.label}</li>)}{user?.rows?.map(item=><li>{item.label}</li>)}`,
   `<ul>{user?.rows?.map(item=><li>{show&&<b>{item.label}</b>}</li>)}</ul>`,
   `<ul>{user?.rows?.map(item=><li><Card text={item.label}/></li>)}</ul>`,
   `<ul>{user?.rows?.map(({label})=><li>{label}</li>)}</ul>`,
 ])('retains general creation for unproved fetched row placement: %s',children=>{
   expect(compile(`function Card({text}){return <b>{text}</b>;}export function App(){const user=$fetch('/api/user');let show=true;
     return <main><button onClick={()=>show=!show}>Toggle</button>${children}</main>;}`).initialDelivery).toBeUndefined();
+});
+
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds fixed siblings around a variable fetched extent (%s)',frontend=>{
+  const source=`export function App(){const user=$fetch('/api/user');let n=0;
+    return <main><h1>Before</h1>{user?.rows?.map(item=><li key={item.id}>{item.label}</li>)}
+      <button onClick={()=>n++}>{n}</button>{n}<footer>After</footer></main>;}`;
+  const client=compile(source,{frontend}),server=compile(source,{frontend,routedEnvironment:'server',moduleStateCells:true});
+  expect(client.initialDelivery).toMatchObject({browser:'bindings',key:server.initialDelivery?.key});
+  expect(client.output['./App.tsx']).toContain('bindInitialListNodes');
+  expect(server.output['./App.tsx']).not.toContain('bindInitialListNodes');
+  if(client.initialRender.kind!=='bindings')throw new Error('Missing bindings');
+  const plan=planInitialDom(client.initialRender)!;
+  expect(plan.dynamicPaths).toBe(true);
+  expect(Object.values(plan.lists)[0]!.end).toEqual([0,-4]);
+});
+
+it('uses ordinary addresses when the fetched list follows fixed siblings',()=>{
+  const result=compile(`export function App(){const user=$fetch('/api/user');let n=0;
+    return <main><button onClick={()=>n++}>{n}</button><ul>Before{user?.rows?.map(item=><li>{item.label}</li>)}</ul></main>;}`);
+  expect(result.initialDelivery?.browser).toBe('bindings');
+  expect(result.output['./App.tsx']).not.toContain('bindInitialListNodes');
 });
 
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds request-selected host branches with one retained extent (%s)',frontend=>{

@@ -36,6 +36,18 @@ async function mount(name:string,source:string) {
 function click(selector:string) {document.querySelector<HTMLButtonElement>(selector)!.click();}
 function rows() {return [...document.querySelectorAll('li')];}
 
+it('retains row ref ownership for bound and later-created rows',async()=>{
+  const refs:Node[]=[],disposed:Node[]=[];vi.stubGlobal('__initialRowRefs',refs);vi.stubGlobal('__initialRowDisposed',disposed);
+  await mount('row-refs',`export function App(){let items=['one'];return <main>
+    <button onClick={()=>items=['two']}>Replace</button>{items.map(item=><li ref={node=>{
+      globalThis.__initialRowRefs.push(node);return ()=>globalThis.__initialRowDisposed.push(node);
+    }}>{item}</li>)}</main>;}`);
+  await Promise.resolve();const first=rows()[0]!;expect(refs).toEqual([first]);
+  click('button');await Promise.resolve();const second=rows()[0]!;
+  expect(second).not.toBe(first);expect(refs).toEqual([first,second]);expect(disposed).toEqual([first]);
+  app!.unmount();app=undefined;expect(disposed).toEqual([first,second]);
+});
+
 it.each(['key={item.id}','key={index}'])('binds initial rows and preserves the %s reconciliation contract',async(key)=>{
   const result=await mount(key.includes('item')?'keyed':'positional',`export function App(){
     let items=[{id:1,label:'one'},{id:2,label:'two'}];return <main><h1>Static outside list</h1>
@@ -119,7 +131,7 @@ it.each([
 });
 
 it.each([
-  `<li>{show?<b>{item}</b>:null}</li>`, `<li ref={node=>{}}>{item}</li>`,
+  `<li>{show?<b>{item}</b>:null}</li>`,
   `<li>{Date.now()}</li>`, `<li {...{title:item}}>{item}</li>`,
 ])('falls back for unproved row semantics: %s',row=>{
   const result=compile(`export function App(){let items=['one'];let show=true;return <main>

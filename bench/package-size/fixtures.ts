@@ -1,5 +1,8 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-list-siblings': { './App.tsx': `export function App(){const user=$fetch('/api/user');let n=0;
+    return <main><h1>{user?.name}</h1>{user?.rows?.map((item,index)=><li key={item.id}>{index}:{item.label}</li>)}
+      <button onClick={()=>n++}>{n}</button>{n}<footer>After</footer></main>;}` },
   'request-list': { './App.tsx': `export function App(){const user=$fetch('/api/user');let suffix='!';return <main>
     <h1>{user?.name}</h1><button onClick={()=>suffix+='!'}>Change</button>
     <ul>{user?.rows?.map((item,index)=><li key={item.id} title={item.label}>{index}:{item.label}{suffix}</li>)}</ul><footer>Kept</footer></main>;}` },

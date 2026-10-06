@@ -29,6 +29,8 @@ export interface InitialDomRoot {
   readonly component: string;
   readonly returnSite: string;
   readonly retainCreation?: true;
+  /** Fixed siblings following one request list are addressed from the host end. */
+  readonly dynamicPaths?: true;
   readonly elements: Readonly<Record<string,InitialDomElement>>;
   readonly components: Readonly<Record<string,{readonly path:readonly number[];readonly tag:string;readonly moduleId:string;readonly component:string;readonly static?:boolean}>>;
   readonly factories?: Readonly<Record<string,InitialDomRoot>>;
@@ -44,10 +46,28 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
   const conditions: Record<string,InitialDomRoot['conditions'][string]>={};
   const lists: Record<string,InitialDomRoot['lists'][string]>={};
   let valid=true;
-  function visit(nodes: readonly InitialRenderNode[],parent: readonly number[], start=0): void {
+  let dynamicPaths=false;
+  const width=(node:InitialRenderNode):number=>node.kind==='list' ? node.rows.length+2 :
+    node.kind==='conditional' ? (node.branch===null?1:node.children.length)+2 : 1;
+  function positions(nodes:readonly InitialRenderNode[],start:number):number[] {
+    const variable=nodes.flatMap((node,index)=>node.kind==='list'&&node.requestRow?[index]:[]);
+    if(variable.length>1){valid=false;return [];}
     let index=start;
-    nodes.forEach(node=>{
-      const current=index++;
+    return nodes.map((node,offset)=>{
+      const current=index;
+      if(offset===variable[0]) {
+        const suffix=nodes.slice(offset+1).reduce((size,node)=>size+width(node),0);
+        index=-suffix;
+        if(suffix>0)dynamicPaths=true;
+      } else index+=width(node);
+      return current;
+    });
+  }
+  function visit(nodes: readonly InitialRenderNode[],parent: readonly number[], start=0): void {
+    const addresses=positions(nodes,start);
+    if(!valid)return;
+    nodes.forEach((node,offset)=>{
+      const current=addresses[offset]!;
       if (node.kind==='component') {
         const host=node.children[0];
         if (components[node.site] || node.children.length!==1 || host?.kind!=='element' || !host.site) {valid=false;return;}
@@ -68,10 +88,9 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
       }
       if (node.kind === 'list') {
         if (lists[node.site]) {valid=false;return;}
-        if (node.requestRow && (nodes.length!==1 || parent.length===0)) {valid=false;return;}
+        if (node.requestRow && parent.length===0) {valid=false;return;}
         if (!node.requestRow && !node.rows.length) {
           lists[node.site]={open:[...parent,current],end:[...parent,current+1],count:0,row:null};
-          index++;
           return;
         }
         const first=node.requestRow ?? node.rows[0];
@@ -79,9 +98,9 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
         const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site},factories,false);
         if (!containerRow) {valid=false;return;}
         const row=relativeInitialDom(containerRow);
-        lists[node.site]={open:[...parent,current],end:node.requestRow?'last-child':[...parent,current+node.rows.length+1],
+        const suffix=nodes.slice(offset+1).reduce((size,node)=>size+width(node),0);
+        lists[node.site]={open:[...parent,current],end:node.requestRow?(suffix===0?'last-child':[...parent,-suffix-1]):[...parent,current+node.rows.length+1],
           count:node.requestRow?null:node.rows.length,row};
-        index += node.rows.length+1;
         return;
       }
       if (node.kind === 'conditional') {
@@ -98,24 +117,21 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
           if (!branches?.length || branches.some(branch=>branch===null)) {valid=false;return;}
           conditions[node.site]={branch:null,open:[...parent,current],end:[...parent,current+2],
             returnSite:null,branches:branches as InitialDomRoot[]};
-          index+=2;
           return;
         }
         conditions[node.site]={branch:node.branch,open:[...parent,current],end:[...parent,current+children.length+1],
           returnSite:children[0] && 'site' in children[0] ? children[0].site ?? null : null};
         visit(children,parent,current+1);
-        index += children.length+1;
         return;
       }
       if (node.kind !== 'element') return;
       if (!node.site || elements[node.site]) {valid=false;return;}
       const path=[...parent,current];
-      let childIndex=0;
+      const childAddresses=positions(node.children,0);
       elements[node.site]={path,
         ...(node.tag==='input' ? {inputValueSite:node.attributes.find(attribute=>attribute.name==='value')?.site} : {}),
-        texts:node.children.flatMap(child=>{
-          const current=childIndex;
-          childIndex += child.kind === 'conditional' ? child.children.length+2 : child.kind==='list' ? child.rows.length+2 : 1;
+        texts:node.children.flatMap((child,offset)=>{
+          const current=childAddresses[offset]!;
           return child.kind === 'text' ? [{path:[...path,current],live:child.live!==false,empty:child.value===''}] : [];
         }),
         staticAttributes:node.attributes.flatMap(attribute=>attribute.live===false&&attribute.site ? [attribute.site] : []),
@@ -125,6 +141,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
   }
   visit(plan.nodes,[]);
   return valid ? {target:plan.target,component:plan.rootLocal,returnSite:plan.returnSite,elements,components,conditions,lists,
+    ...(dynamicPaths?{dynamicPaths:true as const}:{}),
     ...(top?{factories}: {})} : null;
 }
 

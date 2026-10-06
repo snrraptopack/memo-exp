@@ -23,6 +23,7 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  'request-list-siblings': sizeFixtures['request-list-siblings']!,
   'request-list': sizeFixtures['request-list']!,
   'request-local-list': sizeFixtures['request-local-list']!,
   'request-conditional': sizeFixtures['request-conditional']!,
@@ -66,7 +67,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
   const root = await mkdtemp(join(tmpdir(), 'memoized-dom-ssr-size-'));
   if (!root.startsWith(resolve(tmpdir()) + sep)) throw new Error('Unexpected temporary fixture path');
   try {
-    const user = fixture==='request-list' ? {name:'Ada',rows:[{id:1,label:'one'},{id:2,label:'two'}]} : {name:'Ada'};
+    const user = fixture==='request-list'||fixture==='request-list-siblings' ? {name:'Ada',rows:[{id:1,label:'one'},{id:2,label:'two'}]} : {name:'Ada'};
     const files = { ...sources,
       './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
       './server.ts': `import {serve} from '@memoized-dom/server';import {App} from './App';const app=serve();
@@ -99,6 +100,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
       const html = await response.text();
       if (['request-data', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
       if (fixture==='request-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li title="one">0:one!</li><li title="two">1:two!</li>')) throw new Error('Fetched rows did not settle');
+      if(fixture==='request-list-siblings' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Ada</h1><li>0:one</li><li>1:two</li><button>0</button>0<footer>After</footer>'))throw new Error('Fetched sibling placement did not settle');
       if (fixture==='request-local-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li>one</li><li>two</li>')) throw new Error('Local rows lost their initial content');
       if (fixture === 'request-conditional' && !html.replace(/<!--[^]*?-->/g, '').includes('<section><h2>Ada:0</h2></section>')) throw new Error('Request conditional selected the wrong branch');
       if (fixture === 'request-local-conditional' && !html.includes('<p>Shown</p>')) throw new Error('Local conditional lost its initial branch');

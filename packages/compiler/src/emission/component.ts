@@ -325,9 +325,9 @@ export function transformComponent(
   if (scope.initialDom) scope.prelude.unshift(astFactory.variableDeclaration('const',[
     astFactory.variableDeclarator(astFactory.identifier(scope.initialDom.variable),
       scope.initialDom.adopting ? astFactory.conditionalExpression(scope.initialDom.adopting,
-        astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+        astFactory.callExpression(md(ctx,scope.initialDom.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),[
           initialRoot!,astFactory.arrayExpression(scope.initialDom.descriptors),
-        ]),astFactory.arrayExpression([])) : astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+        ]),astFactory.arrayExpression([])) : astFactory.callExpression(md(ctx,scope.initialDom.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),[
         initialRoot ?? astFactory.stringLiteral(scope.initialDom.plan.target),astFactory.arrayExpression(scope.initialDom.descriptors),
       ])),
   ]));

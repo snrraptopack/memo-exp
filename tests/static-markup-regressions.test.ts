@@ -16,6 +16,13 @@ function compiled(body: string): (id: string, parent: string | null) => Node {
 afterEach(() => runtime.unregisterSubtree('App'));
 
 describe('static markup preserves imperative DOM semantics', () => {
+  it.each(['list','conditional'])('preserves %s insertion between static siblings',kind=>{
+    const region=kind==='list'?`{['row'].map(item=><aside>{item}</aside>)}`:`{true&&<aside>row</aside>}`;
+    const app=compiled(`<main><section>${padding}</section>${region}<footer>After</footer></main>`);
+    const root=app('App',null) as Element;
+    expect([...root.children].map(node=>node.localName)).toEqual(['section','aside','footer']);
+    expect(root.querySelectorAll('span')).toHaveLength(16);
+  });
   it.each(['p', 'a', 'button', 'li', 'h1', 'form'])(
     'preserves parser-sensitive nesting of <%s>', tag => {
       const child = tag === 'p' ? 'div' : tag;

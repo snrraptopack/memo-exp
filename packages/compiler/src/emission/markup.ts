@@ -264,6 +264,13 @@ export function applyStaticMarkup(
     ) {
       const declarator = stmt.declarations[0]!;
       const init = declarator.init;
+      // Region constructors normally initialize a local, rather than appearing
+      // as standalone expressions. They insert children at this exact point.
+      if(astFactory.isCallExpression(init) && STRUCTURAL_CALLS.has(mdCallee(init)??'') &&
+          astFactory.isIdentifier(init.arguments[0])) {
+        addChild(init.arguments[0].name,{index,kind:'structural'});
+        return;
+      }
       if (
         astFactory.isIdentifier(declarator.id) &&
         init !== null &&
@@ -345,13 +352,13 @@ export function applyStaticMarkup(
         if (
           target !== null &&
           target.property === 'appendChild' &&
-          expr.arguments.length === 1 &&
-          astFactory.isIdentifier(expr.arguments[0])
+          expr.arguments.length === 1
         ) {
+          const child=expr.arguments[0];
           addChild(target.object, {
             index,
-            kind: nodes.has(expr.arguments[0].name) ? 'node' : 'foreign',
-            child: expr.arguments[0].name,
+            kind: astFactory.isIdentifier(child)&&nodes.has(child.name) ? 'node' : 'foreign',
+            ...(astFactory.isIdentifier(child)?{child:child.name}:{}),
           });
           return;
         }

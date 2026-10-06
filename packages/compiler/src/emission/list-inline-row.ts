@@ -87,7 +87,7 @@ export function buildInlineRowCreate(
   if (!initial) applyRepeatedDomTemplate(ctx, rowScope, rootVariable);
   if (initial) rowScope.prelude.unshift(astFactory.variableDeclaration('const',[
     astFactory.variableDeclarator(astFactory.identifier(rowScope.initialDom!.variable),
-      astFactory.conditionalExpression(initialRoot!,astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+      astFactory.conditionalExpression(initialRoot!,astFactory.callExpression(md(ctx,rowScope.initialDom!.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),[
         initialRoot!,
         astFactory.arrayExpression(rowScope.initialDom!.descriptors),
       ]),astFactory.arrayExpression([]))),

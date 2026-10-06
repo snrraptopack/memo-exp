@@ -2028,4 +2028,26 @@ interactive production bytes are unchanged against `e3ed73a`. This extends the
 placement proof rather than removing required lifecycle JavaScript; generic
 callback, child-slot and structural reachability still need further work.
 
+#### Closure batch 3: variable list extents with fixed siblings
+
+One fetched list per host can now retain fixed siblings before and after its
+variable row extent. Prefix addresses remain absolute; suffix addresses resolve
+from the host end through an optional helper, then use the same shape validator.
+Multiple variable extents and unproved nested row shapes remain on adoption.
+Ordinary counter and dedicated-list programs do not retain the new helper.
+
+The Chrome matrix covers zero/two initial rows, retained keyed reorder, clear,
+new rows, changing suffix text, a later conditional and a later fixed list.
+It exposed a markup bug: region constructors in variable declarations and
+nonlocal append operations were missing from ordering barriers. Markup now
+keeps those barriers when absorbing static siblings. Independent creation
+regressions cover list/conditional insertion between static siblings.
+
+Production before/after against `049ee9f`, with current runtime in both builds:
+the new sibling fixture falls from 58,884 to 46,950 JavaScript bytes and from
+19,017 to 15,573 gzip bytes. HTML falls from 834 to 693 bytes; its 370-byte
+payload is unchanged. Counter remains 8,613 bytes and dedicated fetched list
+46,434 bytes. These are whole emitted browser graphs, including future code;
+the gain comes from proven initial binding replacing general adoption.
+
 These are outstanding requirements, not reasons to mark the architecture closed.
