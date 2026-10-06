@@ -1,7 +1,7 @@
 /** General mount keeps SSR detection and optional hydration recovery. */
 import { rootNodes } from './jsx-dom';
 import { HydrationMismatchError } from './hydration-error';
-import type { HydratedApplicationRoot } from './hydration';
+import type { HydratedApplicationRoot, HydrationCapabilities } from './hydration';
 import { parseHydrationMarker } from './hydration-marker';
 import {
   resolveMount, createApplication, createMountedApplication,
@@ -17,6 +17,7 @@ export type {
 } from './mount-core';
 
 interface HydrationRuntimeBridge {
+  capabilities?: HydrationCapabilities;
   hydrate?(
     host: Element,
     definition: RootFactoryDefinition,
@@ -46,8 +47,15 @@ function hydrationRuntimeBridge(): HydrationRuntimeBridge {
  */
 export function installHydrationRuntime(
   hydrate: NonNullable<HydrationRuntimeBridge['hydrate']>,
-): void {
-  hydrationRuntimeBridge().hydrate = hydrate;
+  capabilities: HydrationCapabilities = {},
+): HydrationCapabilities {
+  const bridge = hydrationRuntimeBridge();
+  // Independently bundled roots may share this realm. Later narrow programs
+  // must not discard capabilities an earlier root still needs for adoption.
+  const shared = bridge.capabilities ??= {};
+  Object.assign(shared, capabilities);
+  bridge.hydrate = hydrate;
+  return shared;
 }
 
 function hydrationRootId(host: Element): string | null {

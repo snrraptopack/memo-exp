@@ -4,15 +4,17 @@ import { execFileSync } from 'node:child_process';
 import { posix, resolve } from 'node:path';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
 import { build } from 'esbuild';
-import { compileModules } from '@memoized-dom/compiler';
+import { compileModulesDetailed } from '@memoized-dom/compiler';
 import { sizeFixtures } from './fixtures';
+import { hydrationBootstrap, hydrationVirtualId } from '../../packages/vite/src/hydration';
 
 const args = process.argv.slice(2);
-if (args.some(arg => arg !== '--verify' && arg !== '--hydrate' && !arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --verify, --hydrate, --before-ref=<commit> or --fixture=<name>');
-const hydration = process.argv.includes('--hydrate');
+if (args.some(arg => arg !== '--verify' && arg !== '--hydrate' && arg !== '--hydrate-program' && !arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --verify, --hydrate, --hydrate-program, --before-ref=<commit> or --fixture=<name>');
+const programHydration = args.includes('--hydrate-program');
+const hydration = args.includes('--hydrate') || programHydration;
 
 const root = resolve(import.meta.dirname, '../..');
-const directory = resolve(import.meta.dirname, hydration ? 'dist/audit-hydration' : 'dist/audit');
+const directory = resolve(import.meta.dirname, programHydration ? 'dist/audit-program-hydration' : hydration ? 'dist/audit-hydration' : 'dist/audit');
 const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 const status = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim();
 mkdirSync(directory, { recursive: true });
@@ -37,9 +39,10 @@ const selected = new Set(args.filter(arg => arg.startsWith('--fixture=')).map(ar
 for (const name of selected) if (!Object.hasOwn(sizeFixtures, name)) throw new Error(`Unknown fixture ${name}`);
 for (const [fixture, sources] of Object.entries(sizeFixtures)) {
   if (selected.size && !selected.has(fixture)) continue;
-  const compiled = compileModules({ ...sources,
-    './main.ts': `${hydration ? "import '@memoized-dom/runtime/hydrate';" : ''}import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
+  const compilation = compileModulesDetailed({ ...sources,
+    './main.ts': `${hydration ? `import '${programHydration ? hydrationVirtualId : '@memoized-dom/runtime/hydrate'}';` : ''}import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
   });
+  const compiled = compilation.output;
   if (fixture === 'request-markup' && !compiled['./App.tsx']?.includes('materializeMarkup')) {
     throw new Error('The markup fixture must exercise template materialization');
   }
@@ -50,6 +53,13 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       bundle: true, write: false, format: 'esm', platform: 'browser', minify: true, metafile: true,
       define: { 'process.env.NODE_ENV': '"production"' }, outfile: 'browser.js',
       plugins: [{ name: 'size-fixtures', setup(builder) {
+        if (programHydration) {
+          builder.onResolve({ filter: /^virtual:memoized-dom\/hydration$/ }, () => ({ path: '/hydration.ts', namespace: 'hydration-boot' }));
+          builder.onLoad({ filter: /.*/, namespace: 'hydration-boot' }, () => ({
+            contents: graph === 'source-before' ? "import '@memoized-dom/runtime/hydrate';" : hydrationBootstrap(compilation.hydrationCapabilities),
+            loader: 'ts', resolveDir: root,
+          }));
+        }
         builder.onResolve({ filter: /^@size-fixture\// }, args => ({
           path: `/${args.path.slice('@size-fixture/'.length)}`, namespace: 'fixture',
         }));
@@ -62,8 +72,8 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({
           contents: modules.get(args.path)!, loader: 'ts', resolveDir: root,
         }));
-        if (graph !== 'package') builder.onResolve({ filter: /^@memoized-dom\/runtime(?:\/client|\/hydrate)?$/ }, args => ({
-          path: resolve(graphRoot, args.path.endsWith('/hydrate') ? 'packages/runtime/src/hydrate.ts' : 'packages/runtime/src/index.ts'),
+        if (graph !== 'package') builder.onResolve({ filter: /^@memoized-dom\/runtime(?:\/client|\/hydrate|\/hydrate-program)?$/ }, args => ({
+          path: resolve(graphRoot, args.path.endsWith('/hydrate-program') ? 'packages/runtime/src/hydrate-program.ts' : args.path.endsWith('/hydrate') ? 'packages/runtime/src/hydrate.ts' : 'packages/runtime/src/index.ts'),
         }));
         if (graph !== 'package') builder.onResolve({ filter: /^@memoized-dom\/data(?:\/internal)?$/ }, args => ({
           path: resolve(graphRoot, args.path.endsWith('/internal') ? 'packages/data/src/internal.ts' : 'packages/data/src/index.ts'),
@@ -79,6 +89,10 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       .filter(input => input.bytes > 0).sort((a, b) => b.bytes - a.bytes);
     const row = { fixture, graph, raw: output.contents.byteLength, gzip: gzipSync(output.contents).byteLength,
       brotli: brotliCompressSync(output.contents).byteLength, inputs };
+    if (programHydration && graph === 'source') {
+      if (!compilation.hydrationCapabilities.list && inputs.some(input => input.path.endsWith('/hydration-list.ts'))) throw new Error('A program without lists retained list adoption');
+      if (!compilation.hydrationCapabilities.markup && inputs.some(input => /\/(?:hydration-markup|markup-walk)\.ts$/.test(input.path))) throw new Error('A program without markup retained markup adoption');
+    }
     if (fixture === 'request-routed-group' && graph !== 'source-before' &&
       inputs.some(input => /router\/(?:src|dist)\/preparation\.(?:ts|js)$/.test(input.path))) {
       throw new Error('Ordinary routing must not retain route preparation execution');
@@ -100,7 +114,7 @@ const lines = ['# Browser bundle audit', '',
   `HEAD: ${revision}. Working tree includes changes: ${status !== ''}.`, '',
   `Runtime/data/router source baseline: ${baseline ?? 'not requested'}. All graphs use the current compiler and identical authored fixtures.`, '',
   'Stable authored fixtures compiled by the current compiler. Each graph includes mount and root metadata.', '',
-  `Optional hydration entry included: ${hydration}. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
+  `Optional hydration included: ${hydration}; compiler-selected capabilities: ${programHydration}. Program baselines use the preceding general hydration entry. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
   '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime, data and router source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
   '| Fixture | Graph | Raw B | Gzip B | Brotli B |', '|---|---|---:|---:|---:|',
   ...rows.map(row => `| ${row.fixture} | ${row.graph} | ${row.raw} | ${row.gzip} | ${row.brotli} |`), ''];

@@ -25,6 +25,7 @@ import {
   normalizeFile,
 } from './paths';
 import { AdapterState } from './state';
+import { hydrationBootstrap, hydrationVirtualId, resolvedHydrationVirtualId } from './hydration';
 import { applyInitialPage } from './initial-html';
 import { initialBootstrapDescriptor } from '@memoized-dom/runtime/server';
 import { registerClientStyles } from './dev-assets';
@@ -281,7 +282,7 @@ export function memoizedDom(
     // Fullstack entries mount over server markup: append the side-effect
     // import that installs the hydration runtime. Appending after the
     // compiled body keeps existing sourcemap lines exact.
-    return `${code}\nimport '@memoized-dom/runtime/hydrate';\n`;
+    return `${code}\nimport ${JSON.stringify(config?.command === 'build' ? hydrationVirtualId : '@memoized-dom/runtime/hydrate')};\n`;
   }
 
   async function transformModule(
@@ -453,6 +454,7 @@ export function memoizedDom(
       },
     },
     async resolveId(id, importer) {
+      if (id === hydrationVirtualId) return resolvedHydrationVirtualId;
       if (id === serverFunctionsVirtualId) {
         return resolvedServerFunctionsVirtualId;
       }
@@ -489,6 +491,9 @@ export function memoizedDom(
       return null;
     },
     async load(id) {
+      if (id === resolvedHydrationVirtualId) {
+        return { code: hydrationBootstrap(stateFor(this.environment).hydrationCapabilities), map: { mappings: '' } };
+      }
       if (isServerFunctionImplementation(id)) {
         if (this.environment.name === 'client') {
           this.error('memoized-dom: server function implementations cannot be imported by the client graph');

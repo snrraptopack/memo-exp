@@ -147,6 +147,8 @@ export interface TransparentPresentationComponent {
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */
 export interface InternalMemoDomOptions extends MemoDomOptions {
+  /** Emitted helper requirements, including retained future factories. */
+  onRuntimeHelpers?: (helpers: ReadonlySet<string>) => void;
   initialDelivery?: InitialDelivery;
   /** Placements selected before emitting the document's browser program. */
   initialBrowserRoot?: InitialBrowserRoot;

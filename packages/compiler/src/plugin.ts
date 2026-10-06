@@ -398,6 +398,7 @@ function transformProgramAst(
   const renderPlan = prepareProgram(ctx, programPath);
   emitDomComponents(ctx, renderPlan);
   finishProgram(ctx, programPath);
+  opts.onRuntimeHelpers?.(requireIdentifiers(ctx).runtimeHelpers);
 }
 
 /** Transform a plain ESTree program and leave the result in strict ESTree. */

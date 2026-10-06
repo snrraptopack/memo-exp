@@ -31,6 +31,11 @@
       "import": "./dist/hydrate.js",
       "default": "./dist/hydrate.js"
     },
+    "./hydrate-program": {
+      "types": "./dist/hydrate-program.d.ts",
+      "import": "./dist/hydrate-program.js",
+      "default": "./dist/hydrate-program.js"
+    },
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",

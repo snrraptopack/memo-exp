@@ -131,6 +131,8 @@ export interface CompiledRouteDefinition extends CompiledRoutePattern {
 }
 
 export interface CompiledModules {
+  /** Adoption capabilities required by generated and unproved host code. */
+  hydrationCapabilities: { list: boolean; markup: boolean };
   output: Record<string, string>;
   maps: Record<string, CompilerSourceMap>;
   metadata: Record<string, CompiledModuleMetadata>;
@@ -704,7 +706,32 @@ function compileLinkedModules(
   const maps: Record<string, CompilerSourceMap> = {};
   const metadata: Record<string, CompiledModuleMetadata> = {};
   const css: Record<string, string> = {};
+  const hydrationCapabilities = { list: false, markup: false };
   for (const entry of entries.values()) {
+    // Open host code can create structure outside the linked component graph.
+    // Keep full adoption there, including dynamic imports and runtime escapes.
+    walkAst(entry.ast as unknown as BaseNode, { enter(node) {
+      if (node.type === 'ImportExpression') {
+        hydrationCapabilities.list = hydrationCapabilities.markup = true;
+      }
+    } });
+    for (const statement of entry.ast.body) {
+      if (statement.type !== 'ImportDeclaration' || statement.importKind === 'type' ||
+          statement.specifiers.length > 0 && statement.specifiers.every(specifier => specifier.type === 'ImportSpecifier' && specifier.importKind === 'type')) continue;
+      const source = statement.source.value;
+      if (typeof source !== 'string') continue;
+      if (source === (options.runtimePath ?? '@memoized-dom/runtime')) {
+        if (statement.specifiers.some(specifier => specifier.type !== 'ImportSpecifier' ||
+            specifier.imported.type !== 'Identifier' || !['mount','mountInitial'].includes(specifier.imported.name))) {
+          hydrationCapabilities.list = hydrationCapabilities.markup = true;
+        }
+      } else if (!resolveModule(entry.id, source, entries, options) &&
+          !['@memoized-dom/runtime/hydrate','virtual:memoized-dom/hydration'].includes(source) &&
+          !/^@memoized-dom\/(?:data|router)(?:\/internal)?$/.test(source) &&
+          !/\.(?:css|less|sass|scss|styl|stylus)(?:[?#]|$)/.test(source)) {
+        hydrationCapabilities.list = hydrationCapabilities.markup = true;
+      }
+    }
     const manifest = manifests.get(entry.id)!;
     metadata[entry.originalId] = {
       componentExports: Object.entries(manifest.exports)
@@ -838,6 +865,10 @@ function compileLinkedModules(
     }
     let compileOptions: InternalMemoDomOptions = {
       ...compilerOptions(options, rootId),
+      onRuntimeHelpers(helpers) {
+        if (helpers.has('createListRegion') || helpers.has('createPositionalListRegion')) hydrationCapabilities.list = true;
+        if (helpers.has('materializeMarkup')) hydrationCapabilities.markup = true;
+      },
       moduleId: entry.id,
       linkedImports,
       linkedComponentPaths,
@@ -882,6 +913,7 @@ function compileLinkedModules(
     output,
     maps,
     metadata,
+    hydrationCapabilities,
     initialRender,
     initialContent,
     ...(initialDelivery === undefined ? {} : { initialDelivery }),

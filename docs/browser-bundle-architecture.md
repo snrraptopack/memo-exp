@@ -1393,6 +1393,61 @@ data also remain covered by the production suite. Compiler and Vite builds and
 their build type checks pass. These measurements establish delivered-byte
 savings; they are not CPU timing claims. Numbered docs remain unchanged.
 
+### Compiler-selected hydration capabilities
+
+The hydration document previously retained list transactions and markup parsing
+for every SSR entry. These operations are now capabilities passed to the same
+document, marker index, node plan and payload restoration coordinator. General
+hydration installs both. Production Vite bootstraps import only those required
+by emitted helper usage across the linked graph, including future factories.
+External host code, dynamic imports and authored runtime escapes retain full
+support. Development keeps the general entry so HMR can introduce new features.
+The bootstrap runs as an imported module before the authored mount call.
+
+Capability installations accumulate on the existing realm bridge: loading a
+narrower program cannot remove list support needed by an earlier root. Mismatch
+recovery, payload restoration, deferred reads and Group routing still use their
+existing implementations. Client-only graphs do not import the adoption engine.
+
+Paired esbuild source graphs against `9f844f2`, same current compiler and authored
+fixtures. Before uses the general hydration entry; after uses its compiler-selected
+capabilities. Every whole application is compressed once:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Owner counter | 17,820 / 6,616 | 16,626 / 6,006 |
+| Composition | 19,613 / 7,220 | 18,418 / 6,603 |
+| Positional input/list | 25,789 / 9,623 | 25,284 / 9,280 |
+| Keyed owner list | 33,215 / 12,341 | 32,710 / 11,990 |
+| Routed fetched Group | 87,785 / 28,036 | 86,589 / 27,458 |
+| Fetched markup | 45,798 / 15,092 | 45,547 / 14,957 |
+
+All eighteen before/current/published browser graphs pass. Metafiles reject
+list adoption or markup parsing when the compiler reports no requirement. The
+ordinary client-creation counter, keyed list and positional list source graphs
+remain 9,070 / 3,716 B, 24,442 / 9,508 B and 17,029 / 6,766 B respectively.
+
+The general compatibility entry grows: the counter graph is 18,263 / 6,759 B
+versus 17,820 / 6,616 B; the keyed graph is 33,656 / 12,473 B versus
+33,215 / 12,341 B. Optional dispatch, capability validation and cumulative
+installation cost bytes when every capability is retained. This is not a
+reduction for manual general-entry consumers.
+
+Production SSR compares compiler/Vite `9f844f2` against current compiler/Vite
+while holding the current runtime constant. Request-interactive JS falls from
+44,913 / 14,874 B to 43,253 / 14,098 B; routed Group falls from
+87,156 / 27,025 B to 85,495 / 26,284 B. Served HTML and payload remain
+595 / 315 B and 783 / 315 B. The initial counter and todo binding products
+remain 8,730 / 3,517 B and 17,157 / 6,449 B; neither needs general hydration.
+
+Eighty-six focused tests pass, including capability planning, list and markup
+adoption, throwing factories, failed-frame disposal, structural recovery and
+cumulative installation. Nine Vite integration cases pass, including seven
+production cases. The new production keyed-list case verifies retained server
+rows through reverse/append and recovers a malformed row without refetching
+restored data. Runtime, compiler and Vite builds and build type checks pass.
+These are payload measurements, not CPU speed claims. Numbered docs remain unchanged.
+
 ### Remaining order
 
 | Order | Work | Required evidence |

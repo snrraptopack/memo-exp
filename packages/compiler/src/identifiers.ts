@@ -11,6 +11,7 @@ import * as astFactory from './ast/factory';
 import { toIdentifier, walkAst, type BaseNode } from './ast';
 
 export class GeneratedIdentifiers {
+  readonly runtimeHelpers = new Set<string>();
   readonly runtimeId: string;
   readonly hotRuntimeId: string;
   readonly routerId: string;
@@ -69,6 +70,7 @@ export class GeneratedIdentifiers {
   }
 
   runtimeMember(name: string): t.MemberExpression {
+    this.runtimeHelpers.add(name);
     return astFactory.memberExpression(
       astFactory.identifier(this.runtimeId),
       astFactory.identifier(name),

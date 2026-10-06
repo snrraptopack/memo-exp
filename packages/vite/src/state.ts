@@ -6,6 +6,7 @@ import type { CompiledGraph } from './graph/collector';
 import type { InitialPage } from './initial-html';
 
 export class AdapterState {
+  hydrationCapabilities: CompiledGraph['hydrationCapabilities'] = { list: true, markup: true };
   initialDelivery?: InitialDelivery;
   initialPage?: InitialPage;
   readonly files = new Set<string>();
@@ -28,6 +29,7 @@ export class AdapterState {
   compiling: Promise<CompiledGraph> | undefined;
   hotUpdateFailed = false;
   replace(graph: CompiledGraph): void {
+    this.hydrationCapabilities = graph.hydrationCapabilities;
     this.initialDelivery = graph.initialDelivery;
     this.initialPage = graph.initialPage;
     this.files.clear();

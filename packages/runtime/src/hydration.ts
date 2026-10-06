@@ -12,7 +12,6 @@ import {
   getActiveEnvironment,
   runWithRenderEnvironment,
 } from './kernel';
-import { walkMarkup } from './markup-walk';
 import type { RootFactoryDefinition } from './mount';
 export { HydrationMismatchError } from './hydration-error';
 import { HydrationMismatchError } from './hydration-error';
@@ -423,6 +422,11 @@ export class HydrationMarkerIndex {
  * surface, push it for the initial factory, then pop after all ordinary
  * nodes were served.
  */
+export interface HydrationCapabilities {
+  readonly list?: (document: HydrationDocument, parent: Node, identity: string) => ClaimedHydrationList;
+  readonly markup?: (document: HydrationDocument, markup: string) => Node[];
+}
+
 export class HydrationDocument
   implements DocumentLike, HydrationController
 {
@@ -432,7 +436,7 @@ export class HydrationDocument
   #hydrating = true;
   readonly #patchedElements: Element[] = [];
 
-  constructor(fallback: DocumentLike, range: ClaimedHydrationRange) {
+  constructor(fallback: DocumentLike, range: ClaimedHydrationRange, readonly capabilities: HydrationCapabilities = {}) {
     this.#fallback = fallback;
     this.#index = new HydrationMarkerIndex(range);
     this.#plans = [new HydrationNodePlan(range)];
@@ -450,40 +454,8 @@ export class HydrationDocument
   }
 
   claimList(parent: Node, identity: string): ClaimedHydrationList {
-    const range = this.claimRange('l', identity);
-    this.recordFragmentRange(parent, range);
-    let next: Node | null = range.open.nextSibling;
-    return {
-      open: range.open,
-      end: range.end,
-      adoptRow: <T>(key: unknown, encoded: string | null, create: () => T) => {
-        if (encoded === null) {
-          throw new HydrationMismatchError(identity, 'a hydration-stable primitive row key', `${typeof key} key`);
-        }
-        const row = this.claimRow(identity, encoded);
-        if (row.open !== next) {
-          const actual = next?.nodeType === 8
-            ? `<!--${(next as Comment).data}-->` : 'a row at a different server position';
-          throw new HydrationMismatchError(`${identity}:${encoded}`, `<!--mmd:w:${identity}:${encoded}--> in client key order`, actual);
-        }
-        next = row.end;
-        this.pushRange(row);
-        let value: T;
-        let failed = false;
-        let failure: unknown;
-        try { value = create(); }
-        catch (error) { failed = true; failure = error; }
-        try { this.popRange(); }
-        catch (error) { if (!failed) throw error; }
-        if (failed) throw failure;
-        return { value: value!, marker: row.open };
-      },
-      finish: () => {
-        if (next !== range.end) {
-          throw new HydrationMismatchError(identity, 'the list close after the final client row', 'additional server row content');
-        }
-      },
-    };
+    if (!this.capabilities.list) throw new HydrationMismatchError(identity, 'list adoption capability', 'an incomplete browser program');
+    return this.capabilities.list(this, parent, identity);
   }
 
   pushRange(range: ClaimedHydrationRange): void {
@@ -549,15 +521,8 @@ export class HydrationDocument
    * imperative appends stay correct.
    */
   claimMarkup(markup: string): Node[] {
-    const plan = this.#activePlan();
-    const nodes: Node[] = [];
-    walkMarkup(markup, (tag, namespaceURI) => {
-      const claimed = plan.claimNode(tag === null
-        ? { nodeType: 3 }
-        : { nodeType: 1, tagName: tag, namespaceURI });
-      nodes.push(tag === null ? claimed : this.#adoptElement(claimed as Element));
-    });
-    return nodes;
+    if (!this.capabilities.markup) throw new HydrationMismatchError(this.#activePlan().boundary, 'markup adoption capability', 'an incomplete browser program');
+    return this.capabilities.markup(this, markup);
   }
 
   createComment(data: string): Comment {
@@ -666,11 +631,13 @@ export interface HydratedApplicationRoot {
 export function hydrateApplicationRoot(
   host: Element,
   definition: RootFactoryDefinition,
+  capabilities: HydrationCapabilities = {},
 ): HydratedApplicationRoot {
   const range = claimHydrationRoot(host, definition.id);
   const hydrationDocument = new HydrationDocument(
     getActiveEnvironment().document,
     range,
+    capabilities,
   );
   try {
     const root = runWithRenderEnvironment(

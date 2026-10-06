@@ -44,6 +44,7 @@ const fixtures = {
 };
 const aliases = (server = false) => Object.entries({
   '@memoized-dom/runtime/hydrate': 'packages/runtime/dist/hydrate.js',
+  '@memoized-dom/runtime/hydrate-program': 'packages/runtime/dist/hydrate-program.js',
   '@memoized-dom/runtime/server': 'packages/runtime/dist/server.js',
   '@memoized-dom/runtime': `packages/runtime/dist/${server ? 'server' : 'index'}.js`,
   '@memoized-dom/data/internal': 'packages/data/dist/internal.js',

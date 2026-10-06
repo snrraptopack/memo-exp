@@ -93,6 +93,20 @@ cover actual server-node adoption and mismatch recovery. Record both reports
 when moving work across the browser/hydration boundary, since reducing one graph
 can increase the other.
 
+Measure compiler-selected adoption capabilities separately with:
+
+```bash
+bun run bench:size:audit --hydrate-program --verify --before-ref=9f844f2
+```
+
+This writes `dist/audit-program-hydration/`. The baseline uses the preceding
+general hydration entry; current source and published graphs use the same
+bootstrap generator as production Vite. Compiler helper requirements select
+list/markup adoption, with full support for unproved host code. Metafiles enforce
+omission of unneeded adoption implementations. Keep the general `--hydrate`
+report and ordinary client report as controls; the compatibility entry has a
+small dispatch cost. Production SSR tests cover actual adoption and recovery.
+
 Select individual stable fixtures with repeated `--fixture=<name>` arguments.
 For example, `--fixture=route-helper --fixture=request-routed-group` compares a
 reactive link constructed by `buildRoutePath` with full routed Group navigation.

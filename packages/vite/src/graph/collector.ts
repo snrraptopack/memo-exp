@@ -51,6 +51,7 @@ export interface GraphPluginContext {
 }
 
 export interface CompiledGraph {
+  readonly hydrationCapabilities: CompiledModules['hydrationCapabilities'];
   readonly initialDelivery?: InitialDelivery;
   readonly initialPage?: InitialPage;
   files: ReadonlySet<string>;
@@ -212,6 +213,7 @@ export async function compileGraph(
   }
   if (seeds.length === 0) {
     return {
+      hydrationCapabilities: { list: true, markup: true },
       files: new Set(),
       output: new Map(),
       maps: new Map(),
@@ -385,6 +387,7 @@ export async function compileGraph(
     });
   }
   return {
+    hydrationCapabilities: compiled.hydrationCapabilities,
     files: new Set(sourceIds.keys()),
     ...(compiled.initialDelivery === undefined ? {} : { initialDelivery: compiled.initialDelivery }),
     ...(!compiled.initialContent || (initialHtml === null && compiled.initialRender.kind !== 'request') || initialEntry === undefined || compiled.initialRender.kind === 'browser' ? {} : {

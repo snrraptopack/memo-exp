@@ -24,6 +24,7 @@ async function production(name: string, source: string, extras: Record<string, s
   const config = (ssr = false) => ({ root: fixture!, configFile: false as const, logLevel: 'silent' as const,
     resolve: { alias: Object.entries({
       '@memoized-dom/runtime/hydrate': 'packages/runtime/dist/hydrate.js',
+      '@memoized-dom/runtime/hydrate-program': 'packages/runtime/dist/hydrate-program.js',
       '@memoized-dom/runtime/server': 'packages/runtime/dist/server.js',
       '@memoized-dom/runtime': `packages/runtime/dist/${ssr ? 'server' : 'index'}.js`,
       '@memoized-dom/data/internal': 'packages/data/dist/internal.js',
@@ -235,6 +236,33 @@ describe('production initial SSR bootstrap', () => {
       expect(apiRequests).toEqual([]);
     });
   }, 60_000);
+
+  it('selects keyed-list adoption, retains row identity and recovers mismatched rows in Chrome', async context => {
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('request-list',`export function App(){const user=$fetch('/api/user');
+      let rows=[{id:1,label:'one'},{id:2,label:'two'}];return <main><h1>{user?.name}</h1>
+        <button class="reverse" onClick={()=>rows=rows.toReversed()}>Reverse</button>
+        <button class="append" onClick={()=>rows=[...rows,{id:3,label:'three'}]}>Append</button>
+        <ul>{rows.map(row=><li key={row.id}>{row.label}</li>)}</ul></main>;}`);
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).toContain('mmd:w:');expect(html).not.toContain('mmd:initial-delivery:');
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      await page.click('.reverse');await page.waitForFunction(()=>document.querySelector('li')?.textContent==='two');
+      await page.click('.append');await page.waitForFunction(()=>document.querySelectorAll('li').length===3);
+      expect(await page.evaluate(()=>{
+        const original=(window as unknown as {initial:Element[]}).initial.filter(node=>node.localName==='li');
+        const rows=[...document.querySelectorAll('li')];return rows[0]===original[1]&&rows[1]===original[0];
+      })).toBe(true);
+      expect(requests).toEqual([]);
+    });
+    await browserPage(result,html.replace('<li>one</li>','<aside>one</aside>'),executablePath,async(page,requests)=>{
+      expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(['one','two']);
+      expect(await page.$('aside')).toBeNull();
+      await page.click('.reverse');await page.waitForFunction(()=>document.querySelector('li')?.textContent==='two');
+      expect(await page.$eval('h1',node=>node.textContent)).toBe('Ada');expect(requests).toEqual([]);
+    });
+  },60_000);
 
   it('retains routing, Group request presentation and client navigation in Chrome', async context => {
     const result = await production('request-routes', `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}

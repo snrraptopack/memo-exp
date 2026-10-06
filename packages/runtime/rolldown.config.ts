@@ -5,6 +5,7 @@ export default defineConfig({
     index: './src/index.ts',
     hot: './src/hot.ts',
     hydrate: './src/hydrate.ts',
+    'hydrate-program': './src/hydrate-program.ts',
     server: './src/server.ts',
     testing: './src/testing.ts',
   },
