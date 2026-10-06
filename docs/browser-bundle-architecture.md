@@ -19,7 +19,7 @@ those improvements. Correctness safeguards for arbitrary keys, getter reads,
 opaque calls, reentry, failed renders and cleanup belong to the paths that need
 them; they cannot be deleted merely because a small example does not exercise them.
 
-## Current checkpoint — 2026-10-05
+## Current checkpoint — 2026-10-06
 
 The first separation of HTML and browser execution is implemented. Proven static
 pages ship zero JavaScript. Supported interactive roots bind server/build HTML;
@@ -41,11 +41,11 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Counter | 8,730 | 3,517 |
 | Counter with 60 static cards | 8,728 | 3,517 |
 | Interactive composition | 10,417 | 4,107 |
-| Input / list | 17,157 | 6,449 |
+| Input / list | 17,156 | 6,449 |
 | Noninteractive fetched page | 0 | 0 |
 | Noninteractive fetched composition | 0 | 0 |
-| Interactive fetched page | 45,257 | 14,839 |
-| Routed fetched page with Group | 93,268 | 28,377 |
+| Interactive fetched page | 43,245 | 14,095 |
+| Routed fetched page with Group | 85,487 | 26,281 |
 
 The static-card result demonstrates the architecture change: more static
 content grows HTML without growing the counter's browser program. Interactive
@@ -1495,7 +1495,7 @@ checks pass all twelve graphs, four final ownership suites pass 47 cases, and
 the production keyed-list adoption/recovery case passes. CPU confirmation
 for the final capture change remains for a stable environment.
 
-### Remaining order
+### Implementation record
 
 | Order | Work | Required evidence |
 |---|---|---|
@@ -1511,3 +1511,110 @@ does not hide growth elsewhere. Numeric key interning and code compression are
 secondary: the earlier measured gzip savings were small compared with the
 runtime and creation work above. Runtime module preservation is already in
 place and remains useful, but no longer sets the order of architecture work.
+
+## Phase closeout — 2026-10-06
+
+The initial-content/browser-program rearchitecture phase is closed. Its
+boundaries, composition/future creation, request delivery and optional adoption
+capabilities are implemented and checked. Subsequent performance work is a
+separate batch with its own evidence. This does not claim that every compiler
+pass is backend-independent or that remaining bundle costs are solved.
+
+### Ownership and duplication audit
+
+| Concern | Shared implementation and retained boundary |
+|---|---|
+| Initial content | `planning/initial-render.ts` captures authored content before DOM emission; JSX conditional/list callback plans are shared. HTML emission and DOM binding addresses remain backend responsibilities. |
+| Initial binding and future creation | The same component/row factories and lifetime machinery bind existing nodes or create later instances. Retained markup uses the ordinary markup optimizer. |
+| Hydration | General and selected entries install one payload coordinator, hydration document, marker index and node plan. Selection supplies list/markup capabilities to that engine. |
+| Mounting | Initial and general mount share validation, mounted handles and disposal in `mount-core.ts`. Their retained differences are planned-address binding versus marker adoption and recovery. |
+| Lists | Keyed and positional algorithms share DOM range/anchor ownership. Each retains the reconciliation logic required by its identity contract. |
+| Data and routing | Optional resource writes use the existing resource controller/entry; navigation hosts use the same route preparation/settlement coordinator. |
+
+The final audit removed impossible optional restoration states from the payload
+coordinator. No unused second adoption engine or reconciler was found in these
+paths. Lint reports no errors or unused-code warnings across compiler, runtime,
+Vite, data, router and server source; existing type/style warnings remain.
+Snapshot iteration during disposal is intentional because cleanup can mutate
+the registry. This audit covers the rearchitecture paths, not an assertion that
+every public export in the repository is removable or globally unused.
+
+### Combined lifecycle gate
+
+The lazy-route browser test now owns stable fixture sources and has no dependency
+on an example directory. Development and production share those authored sources.
+Both navigation and a direct SSR detail visit check Group data restoration,
+lazy component loading, initial input identity, state updates through a bound
+ref, effect rerun/cleanup, external getter polling, route disposal and state reset
+on re-entry. Removal stops both effect execution and opaque getter reads.
+
+This gate exposed a false write in an effect's returned disposer: an opaque
+imported call emitted broad invalidation, which rerendered the owner and invoked
+cleanup again until the cycle guard fired. Proven returned inline/named disposers
+now share the callback's existing consumption boundary. Explicit writes, visible
+helper writes and deferred callbacks retain mutation publication. Reassigned or
+escaped named functions remain conservative. Six regression cases check cleanup
+forms, deferred publication and a visible cleanup write reaching another component.
+
+Fifteen focused suites pass 146 cases across effects, refs, callback boundaries,
+cleanup, initial planning and hydration. Nine development/production browser
+cases pass, including all eight production SSR cases. Runtime/compiler builds
+and build type checks pass. The final combined lifecycle cases also check that
+opaque reads stop after route removal. Numbered documentation is unchanged.
+
+### Final delivered-byte checkpoint
+
+Production Vite SSR compares compiler/Vite `9f844f2` with `0c97ba6`, holding
+current runtime/data/server packages constant. Identical fixtures and shells;
+all emitted browser chunks counted once, gzip compressed per chunk. Server
+JavaScript is excluded. Served HTML and data payloads are unchanged.
+
+| Fixture | Before JS raw / gzip B | Final JS raw / gzip B |
+|---|---:|---:|
+| Static composition | 0 / 0 | 0 / 0 |
+| Owner counter | 8,730 / 3,517 | 8,730 / 3,517 |
+| Counter with 60 static cards | 8,728 / 3,517 | 8,728 / 3,517 |
+| Interactive composition | 10,417 / 4,107 | 10,417 / 4,107 |
+| Input / todo list | 17,156 / 6,449 | 17,156 / 6,449 |
+| Noninteractive fetched page/composition | 0 / 0 | 0 / 0 |
+| Interactive fetched page | 44,905 / 14,873 | 43,245 / 14,095 |
+| Routed fetched Group | 87,148 / 27,022 | 85,487 / 26,281 |
+
+The ordinary source audit against runtime `674001c` again passes all twelve
+before/current/published graphs. Final raw/gzip values remain counter
+9,070/3,716 B, positional input/list 17,028/6,772 B, keyed list 24,409/9,519 B,
+and both list types 28,550/10,929 B. Single-list gzip growth reported above remains.
+
+The selected-hydration source audit against `9f844f2` passes all eighteen graphs.
+Final raw/gzip values are counter 16,618/6,003 B, composition 18,410/6,600 B,
+positional input/list 25,275/9,278 B, keyed list 32,669/11,997 B, routed Group
+86,581/27,442 B and fetched markup 45,539/14,955 B. These whole-source esbuild
+graphs differ from production SSR delivery and are compressed once each.
+
+General hydration retains its capability-dispatch cost: counter 18,255/6,755 B
+versus 17,820/6,616 B, keyed list 33,615/12,482 B versus 33,215/12,341 B.
+Manual consumers of the full entry do not receive a universal size reduction.
+
+### Explicit limitations and subsequent work
+
+- Zero JS requires proven noninteractivity in an HTML-associated build. Direct
+  JavaScript entry consumers retain client creation factories.
+- Refs, effects, unknown host behavior, request-derived structure and escaped
+  values may retain general creation/adoption. Routing, Group and navigation
+  remain supported browser features.
+- Production selects adoption capabilities conservatively across linked and
+  future code. External/dynamic runtime access retains full support; development
+  keeps full support for HMR. This is feature selection, not serialized closures
+  or resumability of arbitrary application execution.
+- Shared semantic contracts exist, but portions of JSX analysis and transformation
+  still use DOM context. A complete portable backend IR and mobile/desktop backends
+  are future work.
+- Scheduling, access routing, lifetime management, keyed reconciliation and
+  opaque polling still carry measurable fixed costs. Further reductions need
+  whole-application evidence and existing correctness gates.
+- Local DOM timing diagnostics remain noisy. No CPU speed gain is claimed;
+  confirmation of the final list cleanup on a stable machine remains outstanding.
+
+Reproduce the final payload checks using the commands in
+`bench/package-size/README.md`. The existing correctness/performance backlog
+remains in `performance-work.md`; it is not an extension of this closed phase.

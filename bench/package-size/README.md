@@ -185,6 +185,25 @@ component state, prop updates and recreation. Read-only fetch/Group source
 audits also reject retained resource-write implementation code; public bundled
 constructor tests verify that explicitly exposed resource writes stay available.
 
+## Phase closeout checkpoint
+
+The 2026-10-06 phase-closeout checkpoint is recorded in
+[Browser JavaScript architecture](../../docs/browser-bundle-architecture.md).
+Reproduce its three distinct products after building runtime and compiler:
+
+```bash
+bun run bench:size:ssr --before-ref=9f844f2
+bun run bench:size:audit --verify --before-ref=674001c --fixture=owner-counter --fixture=input-list --fixture=owner-list --fixture=mixed-lists
+bun run bench:size:audit --hydrate-program --verify --before-ref=9f844f2 --fixture=owner-counter --fixture=composition --fixture=input-list --fixture=owner-list --fixture=request-routed-group --fixture=request-markup
+```
+
+SSR archives compiler/Vite while holding current runtime packages constant.
+Source audits archive runtime/data/router and use the current compiler; the
+hydration comparison uses the baseline's general entry and current selected
+bootstrap. Reports include HEAD, baseline and dirty state. These payload checks
+do not measure CPU performance. The general entry's separate cost is available
+with `--hydrate` instead of `--hydrate-program`.
+
 ## Canonical key interning estimate
 
 After building an application, run:
