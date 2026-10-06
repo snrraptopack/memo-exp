@@ -333,6 +333,7 @@ export function planHandlerWrites(
     noteBoundedArguments,
     noteOriginWrite,
     isComputedOrigin,
+    isSynchronousConsumption,
   } = createHandlerWriteRouting({
     ctx,
     structuralWrites,
@@ -810,16 +811,13 @@ export function planHandlerWrites(
         mutateScope(p, (scope) => {
           for (const w of sum.writes) recordRoutedWrite(scope, w);
           for (const w of sum.boundedWrites) recordRoutedWrite(scope, w);
-          // Guard: in an effect callback's direct body (executionAwareRoot=true,
-          // call is at the ROOT function scope), calling an unbounded external
+          // In a lifecycle callback or its proven returned disposer, an unbounded external
           // function is CONSUMPTION — the same reasoning noteBoundedArguments
           // applies to reactive values passed as arguments. Without this guard,
-          // any unbounded imported call (e.g. getEventLog()) sets rootFallback=true
+          // an unbounded imported call (e.g. getEventLog()) sets rootFallback=true
           // which emits markDirtySubtree(rootId) into the effect body, causing
           // an infinite commit cascade (100-pass guard fires).
-          const isEffectBodyDirectCall =
-            executionAwareRoot && p.getFunctionParent()?.node === ROOT;
-          if (sum.unbounded && !isEffectBodyDirectCall) {
+          if (sum.unbounded && !isSynchronousConsumption(p)) {
             scope.rootFallback = true;
           }
         });

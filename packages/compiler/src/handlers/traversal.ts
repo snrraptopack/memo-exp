@@ -97,6 +97,7 @@ export class HandlerPath<TNode extends t.Node = t.Node> {
 }
 
 export interface HandlerVisitor {
+  ReturnStatement?(path: HandlerPath<t.ReturnStatement>): void;
   VariableDeclarator?(path: HandlerPath<t.VariableDeclarator>): void;
   ForOfStatement?(path: HandlerPath<t.ForOfStatement>): void;
   Function?(path: HandlerPath<FunctionNode>): void;
@@ -115,6 +116,9 @@ export function walkHandler(
   walkAst(root as unknown as BaseNode, {
     enter(node) {
       const path = new HandlerPath(node, analysis, moduleId);
+      if (node.type === 'ReturnStatement') {
+        visitor.ReturnStatement?.(path as HandlerPath<t.ReturnStatement>);
+      }
       if (node.type === 'VariableDeclarator') {
         visitor.VariableDeclarator?.(
           path as HandlerPath<t.VariableDeclarator>,

@@ -50,6 +50,7 @@ export interface HandlerWriteRouting {
   ): void;
   noteOriginWrite(path: HandlerPath, origin: ReactiveOrigin): void;
   isComputedOrigin(origin: ReactiveOrigin): boolean;
+  isSynchronousConsumption(path: HandlerPath): boolean;
 }
 
 export function createHandlerWriteRouting({
@@ -86,6 +87,10 @@ export function createHandlerWriteRouting({
   transparentRootFor(expression: t.Expression): string | null;
 }): HandlerWriteRouting {
   const ROOT = root;
+  const consumedFunctions = new Set<t.Node>(executionAwareRoot ? [ROOT] : []);
+  if (executionAwareRoot && astFactory.isFunction(clonedFn.body)) consumedFunctions.add(clonedFn.body);
+  const isSynchronousConsumption = (path: HandlerPath): boolean =>
+    consumedFunctions.has(path.getFunctionParent()?.node ?? ROOT);
   const wrapper = clonedFn;
   const compName = componentName;
   const rowCtx = rowContext;
@@ -164,6 +169,21 @@ export function createHandlerWriteRouting({
 
   // pass A: locals declared anywhere inside the handler
   walkHandler(wrapper, {
+    ReturnStatement(path) {
+      if (!executionAwareRoot || path.getFunctionParent()?.node !== ROOT) return;
+      // A proven returned disposer shares its lifecycle owner's consumption
+      // boundary. Reassigned/escaped functions and deferred callbacks do not.
+      let returned: t.Node | null = path.node.argument;
+      if (astFactory.isIdentifier(returned)) {
+        const binding = path.scope.getBinding(returned.name);
+        if (!binding || binding.constantViolations.length > 0 || binding.references.length !== 1) return;
+        const declaration = binding.declarationNode as t.Node;
+        returned = astFactory.isVariableDeclaration(declaration)
+          ? declaration.declarations.find(item => item.id === binding.identifier)?.init ?? null
+          : astFactory.isFunctionDeclaration(declaration) ? declaration : null;
+      }
+      if (astFactory.isFunction(returned)) consumedFunctions.add(returned);
+    },
     ForOfStatement(p) {
       if (!astFactory.isVariableDeclaration(p.node.left)) return;
       const item = p.node.left.declarations[0];
@@ -456,10 +476,7 @@ export function createHandlerWriteRouting({
     p: HandlerPath,
     args: t.CallExpression['arguments'],
   ): void => {
-    if (
-      executionAwareRoot &&
-      p.getFunctionParent()?.node === ROOT
-    ) {
+    if (isSynchronousConsumption(p)) {
       // The direct effect body is an external-synchronization boundary.
       // Passing reactive values to unknown APIs is consumption, not a hidden
       // reactive mutation; otherwise calls such as console.log(count) would
@@ -662,5 +679,6 @@ export function createHandlerWriteRouting({
     noteBoundedArguments,
     noteOriginWrite,
     isComputedOrigin,
+    isSynchronousConsumption,
   };
 }

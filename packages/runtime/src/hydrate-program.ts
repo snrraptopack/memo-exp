@@ -53,7 +53,7 @@ function routerRuntimeBridge(): RouterRuntimeBridge {
 function restorePayload(
   rootId: string,
   host: Element,
-): { script?: Element; data: DataRuntimeBridge } | undefined {
+): { script?: Element; data: DataRuntimeBridge } {
   const document = host.ownerDocument;
   const data = getExtensionStore<DataRuntimeBridge>(
     'mmd:data-runtime-active',
@@ -115,16 +115,16 @@ function hydrateWithPayload(
   } catch (error) {
     unregisterSubtree(definition.id);
     if (error instanceof HydrationMismatchError) {
-      restoration?.data?.completeHydration?.();
+      restoration.data.completeHydration?.();
     } else {
-      restoration?.data?.cancelHydration?.();
+      restoration.data.cancelHydration?.();
     }
-    restoration?.script?.remove();
+    restoration.script?.remove();
     throw error;
   }
   const mounted = adopt(adopted);
-  restoration?.data?.completeHydration?.();
-  restoration?.script?.remove();
+  restoration.data.completeHydration?.();
+  restoration.script?.remove();
   return mounted;
 }
 

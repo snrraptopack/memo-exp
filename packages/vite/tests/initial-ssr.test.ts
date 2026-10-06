@@ -8,6 +8,7 @@ import { build, type Rollup } from 'vite';
 import puppeteer, { type Page } from 'puppeteer-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import memoizedDom from '../src';
+import { routedApp, routedDetail, routedOpaque, initializeRoutedLifecycles, checkRoutedLifecycles } from './fixtures/routed-lifecycles';
 
 let fixture: string | undefined;
 afterEach(async () => { if (fixture) await rm(fixture, { recursive: true, force: true }); fixture = undefined; });
@@ -59,7 +60,7 @@ function chromeExecutable(): string | undefined {
 }
 
 async function browserPage(result: Awaited<ReturnType<typeof production>>, html: string, executablePath: string,
-  check: (page: Page, apiRequests: string[]) => Promise<void>): Promise<void> {
+  check: (page: Page, apiRequests: string[]) => Promise<void>, pathname = '/demo/'): Promise<void> {
   const apiRequests: string[] = [];
   const server = createServer(async (request, response) => {
     const path = request.url?.replace(/^\/demo\//, '');
@@ -79,6 +80,7 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
   const browser = await puppeteer.launch({ executablePath, headless: true });
   try {
     const page = await browser.newPage();
+    await initializeRoutedLifecycles(page);
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(String(error)));
     await page.evaluateOnNewDocument(() => {
@@ -94,7 +96,7 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
     });
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('No test address');
-    await page.goto(`http://127.0.0.1:${address.port}/demo/`);
+    await page.goto(`http://127.0.0.1:${address.port}${pathname}`);
     await check(page, apiRequests);
     expect(errors).toEqual([]);
   } finally {
@@ -127,6 +129,28 @@ describe('production initial SSR bootstrap', () => {
       expect(await page.evaluate(() => (window as unknown as { created: string[] }).created)).toEqual([]);
       expect(apiRequests).toEqual([]);
     });
+  }, 60_000);
+
+  it('preserves lazy route lifecycles with compiler-selected production hydration in Chrome', async context => {
+    const executablePath = chromeExecutable();
+    if (!executablePath) { context.skip(); return; }
+    const result = await production('routed-lifecycles', routedApp, {
+      'src/Detail.tsx': routedDetail, 'src/opaque.mjs': routedOpaque,
+    });
+    expect(result.html).not.toContain('mmd:initial-delivery:');
+    expect(result.files.filter(file => file.type === 'chunk' && !file.isEntry).length).toBeGreaterThan(0);
+    for (const pathname of ['/demo/', '/demo/detail']) {
+      const html = await (await result.app.fetch(new Request(`https://app.test${pathname}`))).text();
+      expect(html).toContain('application/mmd+json');
+      await browserPage(result, html, executablePath, async (page, requests) => {
+        if (pathname === '/demo/') {
+          expect(await page.$eval('h1', node => node.textContent)).toBe('Ada');
+          await page.click('.detail');
+        }
+        await checkRoutedLifecycles(page);
+        expect(requests).toEqual([]);
+      }, pathname);
+    }
   }, 60_000);
 
   it('serves a static composition with zero JavaScript and no hydration payload', async () => {
