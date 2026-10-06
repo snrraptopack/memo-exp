@@ -22,6 +22,26 @@ async function fixture(name: string, source: string) {
 }
 
 describe('request-only server delivery', () => {
+  it.each([0,2])('settles a fetched list of %s rows with source anchors for bindings and general markers otherwise',async count=>{
+    const value=await fixture(`fetched-list-${count}`,`export function App(){const user=$fetch('/api/user');let suffix='!';
+      return <main><h1>{user?.name}</h1><button onClick={()=>suffix+='!'}>Change</button>
+        <ul>{user?.rows?.map((item,index)=><li key={item.id}>{index}:{item.label}{suffix}</li>)}</ul><footer>Kept</footer></main>;}`);
+    const contract=value.server.initialDelivery!;
+    expect(contract).toMatchObject({browser:'bindings',key:value.client.initialDelivery?.key});
+    const rows=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
+    const fetch=(async()=>Response.json({name:'Ada',rows})) as typeof globalThis.fetch;
+    const options={initialKey:contract.key,fetch,mode:'shell' as const};
+    const result=await render(value.serverModule.App,options);
+    expect(result.settlement.status).toBe('complete');expect(result.html).toContain('<!--mmd:initial:list:');
+    expect(result.html).toContain('<!--/mmd:initial:list-->');expect(result.html).not.toMatch(/mmd:[rglw]:/);
+    expect(result.html.match(/<li>/g)?.length??0).toBe(count);
+    if(count)expect(result.html).toContain('<li>0:one!</li><li>1:two!</li>');
+    expect(await new Response(renderToReadableStream(value.serverModule.App,options)).text()).toBe(result.html+result.scriptTag);
+    const ordinary=await render(value.serverModule.App,{mode:'resolve',markers:true,fetch});
+    expect(ordinary.html).toContain('mmd:l:');expect(ordinary.html).not.toContain('mmd:initial:list');
+    expect(ordinary.html.replace(/<!--[^]*?-->/g,'')).toBe(result.html.replace(/<!--[^]*?-->/g,''));
+  });
+
   it.each(['Ada','Other'])('settles request-selected regions with contract-only anchors (%s)',async name=>{
     const value=await fixture(`request-condition-${name}`,`export function App(){const user=$fetch('/api/user');let show=true;
       return <main><h1>{user?.name}</h1><button onClick={()=>show=!show}>Toggle</button>
@@ -46,7 +66,7 @@ describe('request-only server delivery', () => {
 
   it('emits reserved initial conditional comments only for a binding contract',()=>{
     const document=new StringDocument();
-    for(const data of ['mmd:initial:when:1:2','/mmd:initial:when']) {
+    for(const data of ['mmd:initial:when:1:2','/mmd:initial:when','mmd:initial:list:1:2','/mmd:initial:list']) {
       const node=document.createComment(data) as unknown as StringRenderableNode;
       expect(node.toString(false,true)).toBe(`<!--${data}-->`);
       expect(node.toString(false,false)).toBe('');expect(node.toString(true,false)).toBe('');

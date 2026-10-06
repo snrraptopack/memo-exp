@@ -8,8 +8,18 @@ import {
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
 } from '../../ast';
-import { astBindingAt, type Ctx } from '../../context';
+import { astBindingAt, nodeHasJsx, type Ctx } from '../../context';
 import { jsxAttributeName } from '../../jsx/attributes';
+import { initialSite } from '../../planning/initial-render';
+
+/** Lowering preserves every region whose source placement was proved. */
+export function initialReadPlacement(ctx:Ctx,component:string,expression:BaseNode):{scalar:boolean;structural:boolean} {
+  const plan=ctx.initialDomRoot?.component===component ? ctx.initialDomRoot :
+    ctx.initialDomComponents[component] ?? ctx.initialServerComponents[component];
+  const site=initialSite(expression);
+  return {scalar:plan!=null&&!nodeHasJsx(expression as unknown as t.Node),
+    structural:plan?.conditions[site]!==undefined || plan?.lists[site]!==undefined};
+}
 
 export interface TransparentDerivation {
   binding: AstBinding;

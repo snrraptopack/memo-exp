@@ -30,7 +30,7 @@ import {
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
 import { preparationRead } from '../data-sources';
 import { initialSite } from '../planning/initial-render';
-import { initialNode } from './initial-dom';
+import { initialNode, initialServerAnchor } from './initial-dom';
 
 export function emitListRegion(
   ctx: Ctx,
@@ -51,6 +51,8 @@ export function emitListRegion(
     });
   const site = allocateMapSite(call, plan, componentName, scope.usedPrefixes);
   const initial=scope.initialDom?.plan.lists[initialSite(call)];
+  const serverPlacement=ctx.initialServerComponents[componentName]?.lists[initialSite(call)];
+  if(serverPlacement) scope.creation.push(initialServerAnchor(ctx,scope,parentElementVariable,'list',initialSite(call),false));
   if (scope.initialDom && (!initial || initial.row!==null && site.form!=='inline')) {
     throw new Error('memo-dom: initial list needs a host row placement');
   }
@@ -215,8 +217,9 @@ export function emitListRegion(
   const initialArgument=initial ? astFactory.callExpression(md(ctx,'bindInitialList'),[
     astFactory.identifier(parentElementVariable),
     initialNode(scope,initial.open,`#comment:mmd:initial:list:${initialSite(call)}`),
-    initialNode(scope,initial.end,'#comment:/mmd:initial:list'),
-    astFactory.numericLiteral(initial.count),
+    initial.end==='last-child' ? astFactory.memberExpression(astFactory.identifier(parentElementVariable),astFactory.identifier('lastChild')) :
+      initialNode(scope,initial.end,'#comment:/mmd:initial:list'),
+    ...(initial.count===null?[]:[astFactory.numericLiteral(initial.count)]),
   ]) : null;
   const runtimeArgs=positional ? args.slice(0,3) : args;
   if (initialArgument) {
@@ -234,6 +237,7 @@ export function emitListRegion(
     ]),
   );
   scope.disposableRegions.push(regionVariable);
+  if(serverPlacement) scope.creation.push(initialServerAnchor(ctx,scope,parentElementVariable,'list',initialSite(call),true));
   scope.creation.push(...moduleListSelectionSetup(ctx, ownerId, site.suffix, regionVariable,
     ctx.moduleListSelections.get(call) ?? []));
 

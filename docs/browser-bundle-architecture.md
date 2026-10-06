@@ -41,20 +41,24 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Counter | 8,613 | 3,483 |
 | Counter with 60 static cards | 8,611 | 3,483 |
 | Interactive composition | 10,300 | 4,074 |
-| Input / list | 17,039 | 6,415 |
+| Input / list | 17,140 | 6,443 |
 | Noninteractive fetched page | 0 | 0 |
 | Noninteractive fetched composition | 0 | 0 |
 | Interactive fetched page | 31,761 | 10,619 |
 | Interactive fetched page with request-selected host branches | 35,604 | 11,871 |
 | Interactive fetched page with a local conditional | 33,966 | 11,397 |
+| Interactive fetched list | 46,434 | 15,501 |
+| Interactive local list beside fetched text | 47,176 | 15,792 |
 | Routed fetched page with Group | 85,319 | 26,246 |
 
 The static-card result demonstrates the architecture change: more static
 content grows HTML without growing the counter's browser program. Fixed
 interactive fetched layouts now use initial bindings with the shared data
 envelope. Request-selected conditionals with one host root per alternative also
-bind their selected nodes. Variable extents, nested regions, request-dependent
-lists and routing/Group retain general adoption and creation instructions.
+bind their selected nodes. Fetched lists with fixed host rows in dedicated
+containers bind arbitrary initial row counts through the shared list engine.
+Unproved sibling extents, nested regions, component rows and routing/Group retain
+general adoption and creation instructions.
 Their remaining cost needs deeper binding/reachability
 planning while preserving routing and data presentation.
 
@@ -63,7 +67,7 @@ planning while preserving routing and data presentation.
 | Shared source/render facts and one browser graph | Implemented foundations; some emission planning remains DOM-specific |
 | Closed static HTML, primitive props and supported composition | Implemented and verified in production Chrome |
 | Initial host, conditional and list bindings | Implemented first supported shapes; uncertain/nested shapes retain creation |
-| Request-dependent HTML plus minimal browser bindings | Noninteractive fetch pages, fixed interactive fetched layouts and single-host conditional branches implemented; variable/nested/list/routed/Group shapes retain general adoption |
+| Request-dependent HTML plus minimal browser bindings | Noninteractive fetch pages, fixed interactive fetched layouts, single-host conditional branches and dedicated-container fetched lists implemented; unproved extents, nested/component rows and routed/Group shapes retain general adoption |
 | Runtime capabilities | Shared data settlement, optional promise reads/payload/polling, unused cursor removal, lean markup adoption and lazy state-cell storage implemented |
 
 Callback props, escaping mutable values, hidden reads, refs, effects and unknown
@@ -1914,6 +1918,68 @@ Unknown empty or fragment branches, nested regions, component descendants
 inside request-selected alternatives and request-dependent row counts remain
 on general adoption. This is a bounded placement extension, not architecture
 closure or a CPU speed claim.
+
+### Fetched-list placement and transfer safety — 2026-10-06
+
+The initial render proof now captures a fixed host-row shape separately from
+its unknown request row count. A fetched list must occupy its own host container;
+later siblings outside that container retain stable addresses. The optional
+list-binding helper validates the source closing anchor and every row extent,
+then supplies retained rows to the existing keyed or positional list engine.
+That engine checks the restored item count before calling factories and retains
+its ordinary ordering, key, update and disposal behavior. Known local lists beside
+fetched text use the same server source anchors. Conditional and list server
+anchor emission share one helper.
+
+The first address implementation added 20 raw bytes to counters. That change was
+removed: terminal-anchor discovery belongs to optional list binding, leaving the
+general node binder and counter bundles unchanged. The optional list helper
+grows the existing input/list fixture by 101 raw bytes / 28 B gzip relative to
+`2b9684d`; the row-count and marker checks remain explicit.
+
+Event-only `$track` controls can stay with initial bindings. Reading request
+metadata for pending/error presentation still retains ordinary browser work.
+Module and component source lowering share one initial-placement check. Proved
+module-source lists and conditionals preserve their authored structure instead
+of becoming callback-wrapped value expressions with no binding address.
+Browser testing exposed a previously overbroad proof: query-bearing fetches
+intentionally omit transfer snapshots, so their interactive layouts must not
+assume restored data. Such query, header, explicit-key and credential-bearing
+fetches retain general adoption. Noninteractive request rendering remains
+available; the transfer restriction applies to interactive binding delivery.
+
+Paired production compiler/Vite audit against `2b9684d`, holding the current
+runtime/data/server packages fixed and counting all emitted browser chunks:
+
+| Fixture | Before JS B / gzip B | After JS B / gzip B | Before / after HTML B | Payload B |
+|---|---:|---:|---:|---:|
+| Fetched list | 58,787 / 19,022 | 46,434 / 15,501 | 872 / 730 | 370 |
+| Local list beside fetched text | 58,579 / 19,238 | 47,176 / 15,792 | 737 / 647 | 315 |
+
+The eleven existing controls preserve their paired HTML, payload and JavaScript
+counts. The runtime-only cost in the input/list control is reported separately
+above. Response checks confirm resolved row text and initial list content.
+
+Rows with nested regions, component descendants or unproved callbacks and
+unknown lists with sibling content in the same container retain general adoption.
+The row shape proof does not guess offsets from a server response. Broader
+placement and remaining runtime costs are still open.
+
+Verification: compiler/runtime/server builds and changed-source lint pass.
+Eight compiler/runtime suites pass 130 cases, including both frontends and
+module/component source placements; three server suites pass 41 cases.
+The full production HTML/SSR run passes 47 of 48 cases and exposes the module
+lowering failure described above. After correction, all four fetched-list Chrome
+cases pass together, including the module-owned case. Checks cover empty/nonempty
+and keyed/positional rows, retained identity during local updates, row events,
+request refresh replacement/append/clear/repopulation, no initial duplicate fetch,
+and untransferred-query/general row recovery. The full root suite was not repeated.
+
+The paired DOM comparison against `2b9684d` passes all 21 scenarios and mixed
+sequences across eight compiled variants plus vanilla, with three samples in
+ABBA order. Every timed sample checks text, classes, order and retained node
+identity outside timing. Both revisions emit identical browser artifacts for
+this suite, so these results verify unchanged behavior rather than a CPU gain.
 
 ### Remaining completion requirements
 

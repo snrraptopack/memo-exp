@@ -22,7 +22,8 @@ export type InitialRenderNode =
       readonly children: readonly InitialRenderNode[]; readonly static?: boolean; readonly creation?: true }
   | { readonly kind: 'conditional'; readonly site: string; readonly branch: number | null;
       readonly children: readonly InitialRenderNode[]; readonly alternatives?: readonly (readonly InitialRenderNode[])[] }
-  | { readonly kind: 'list'; readonly site: string; readonly rows: readonly (readonly InitialRenderNode[])[] }
+  | { readonly kind: 'list'; readonly site: string; readonly rows: readonly (readonly InitialRenderNode[])[];
+      readonly requestRow?: readonly InitialRenderNode[] }
   | { readonly kind: 'element'; readonly tag: string;
       readonly site?: string;
       readonly attributes: readonly InitialRenderAttribute[];
@@ -56,9 +57,10 @@ export type InitialRenderPlan =
       readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true }
   | { readonly kind: 'browser'; readonly requirements: readonly BrowserRequirement[] };
 
-type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content | RequestValue | RequestFactory;
+type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content | RequestValue | RequestFactory | RequestTracker;
 interface RequestValue { readonly kind: 'request-value' }
-interface RequestFactory { readonly kind: 'request-factory' }
+interface RequestFactory { readonly kind: 'request-factory'; readonly track?: true }
+interface RequestTracker { readonly kind: 'request-tracker' }
 const requestValue: RequestValue = { kind: 'request-value' };
 interface ValueArray { readonly kind: 'array'; readonly items: readonly Value[] }
 interface ValueObject { readonly kind: 'object'; readonly fields: ReadonlyMap<string, Value>; readonly props?: boolean; readonly live?: ReadonlySet<string> }
@@ -101,25 +103,30 @@ export function planInitialRendering(
   let target: string | undefined;
   let inStructure = false;
 
+  function hostsOnly(nodes: readonly InitialRenderNode[]): boolean {
+    return nodes.every(node => node.kind === 'text' || node.kind === 'element' && hostsOnly(node.children));
+  }
+
   function list(node: BaseNode, scope: Scope): Value | undefined {
     const callee = childNode(node, 'callee');
     if (callee?.type !== 'MemberExpression' || nodeField(callee, 'computed') ||
         identifierLikeName(childNode(callee, 'property')) !== 'map') return undefined;
     const input = expression(childNode(callee, 'object'), scope);
-    if (input === null || typeof input !== 'object' || input.kind !== 'array') return undefined;
-    if (request && bindings) need(scope, 'Request list extents need matching server placement');
+    const unknown = bindings && input === requestValue;
+    if (!unknown && (input === null || typeof input !== 'object' || input.kind !== 'array')) return undefined;
     if (bindings && inStructure) need(scope, 'Nested list bindings need a placement proof');
     const fn=childNodes(node,'arguments')[0];
     if (fn && (nodeField(fn,'async') || nodeField(fn,'generator'))) need(scope,'Async list callbacks need browser execution');
     const callback = planListCallback(node as MapCallExpression, message => need(scope, message));
-    if (!callback.jsx || input.items.length>0 && (callback.prelude.length || bindings && callback.itemPattern.type !== 'Identifier')) {
+    const items = unknown ? [requestValue] : (input as ValueArray).items;
+    if (!callback.jsx || items.length>0 && (callback.prelude.length || bindings && callback.itemPattern.type !== 'Identifier')) {
       need(scope, 'Initial lists need a closed JSX row callback');
     }
     const previous = inStructure;
     inStructure = true;
     try {
       const keys = new Set<Value>();
-      const rows = input.items.map((item, index) => {
+      const rows = items.map((item, index) => {
         const row: Scope = {...scope, values: new Map(scope.values), unstable: new Set(scope.unstable)};
         bind(callback.itemPattern, item, row);
         if (callback.indexParam) row.values.set(callback.indexParam, index);
@@ -138,7 +145,9 @@ export function planInitialRendering(
       });
       if (!bindings) return {kind: 'content', nodes: rows.flat()};
       if (rows.some(row => row.length !== 1 || row[0]?.kind !== 'element')) need(scope, 'Initial lists need one host root per row');
-      return {kind: 'content', nodes: [{kind: 'list', site: initialSite(node), rows}]};
+      if (unknown && !hostsOnly(rows[0]!)) need(scope, 'Request list rows need fixed host descendants');
+      return {kind: 'content', nodes: [{kind: 'list', site: initialSite(node), rows:unknown?[]:rows,
+        ...(unknown ? {requestRow:rows[0]!} : {})}]};
     } finally { inStructure = previous; }
   }
 
@@ -163,8 +172,6 @@ export function planInitialRendering(
         // Runtime data chooses the branch, but every alternative must occupy
         // one host position. Rows, nested regions and component factories need
         // a separate extent proof; do not guess their placement from data.
-        const hostsOnly = (nodes: readonly InitialRenderNode[]): boolean => nodes.every(node =>
-          node.kind === 'text' || node.kind === 'element' && hostsOnly(node.children));
         if (alternatives.some(nodes => nodes.length !== 1 || nodes[0]?.kind !== 'element' || !hostsOnly(nodes))) {
           need(scope, 'Request conditionals need one fixed host extent per branch');
         }
@@ -332,11 +339,26 @@ export function planInitialRendering(
         const callee=scope.values.get(identifierLikeName(childNode(node,'callee'))??'');
         if (request && callee!==null && typeof callee==='object' && callee.kind === 'request-factory') {
           const args=childNodes(node,'arguments');
-          if (args.length < 1 || args.length > 2 || typeof expression(args[0]!,scope) !== 'string') need(scope,'Request HTML needs a closed fetch URL');
+          if(callee.track) {
+            if(!bindings || args.length!==1 || expression(args[0]!,scope)!==requestValue) need(scope,'Request tracking needs a bound request owner');
+            return {kind:'request-tracker'};
+          }
+          const target=args[0] ? expression(args[0],scope) : undefined;
+          if (args.length < 1 || args.length > 2 || typeof target !== 'string') need(scope,'Request HTML needs a closed fetch URL');
           const options=args[1] ? expression(args[1],scope) : undefined;
           if (options!==undefined && (options===null || typeof options!=='object' || options.kind!=='object' || !closedData(options) ||
               options.fields.has('method') && options.fields.get('method')!=='GET' || options.fields.has('body'))) {
             need(scope,'Request HTML needs a read-only fetch');
+          }
+          if(bindings) {
+            // Binding needs a restored payload. These options intentionally
+            // have no transfer identity in the data runtime; keep adoption.
+            if(options && typeof options==='object' && options.kind==='object' &&
+                ['query','headers','key'].some(key=>options.fields.has(key))) need(scope,'Request bindings need transferable fetch options');
+            let url:URL;
+            try {url=new URL(target as string,'http://memoized-dom.invalid');}
+            catch {return need(scope,'Request bindings need a valid transferable URL');}
+            if(url.username || url.password || url.search && !url.pathname.startsWith('/_fn/')) need(scope,'Request bindings need a transferable URL');
           }
           requestReads=true;
           return requestValue;
@@ -630,8 +652,9 @@ export function planInitialRendering(
         if (childNodes(statement, 'specifiers').length && !specifiers.length) continue;
         const source = stringValue(childNode(statement, 'source'))!;
         if (request && source==='@memoized-dom/data' && specifiers.length && specifiers.every(item=>
-            item.type==='ImportSpecifier' && identifierLikeName(childNode(item,'imported'))==='$fetch')) {
-          for(const item of specifiers) scope.values.set(identifierLikeName(childNode(item,'local'))!,{kind:'request-factory'});
+            item.type==='ImportSpecifier' && ['$fetch','$track'].includes(identifierLikeName(childNode(item,'imported'))??''))) {
+          for(const item of specifiers) scope.values.set(identifierLikeName(childNode(item,'local'))!,{kind:'request-factory',
+            ...(identifierLikeName(childNode(item,'imported'))==='$track'?{track:true as const}:{})});
           continue;
         }
         if (source === runtimePath && specifiers.length && specifiers.every(item =>
@@ -782,7 +805,8 @@ export function planInitialRendering(
             children:retain(node.children,creating)};
           if (node.kind==='text') return creating?{...node,live:true}:node;
           if (node.kind==='conditional') return {...node,children:retain(node.children)};
-          if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row))};
+          if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row)),
+            ...(node.requestRow?{requestRow:retain(node.requestRow)}:{})};
           return node;
         });
       }

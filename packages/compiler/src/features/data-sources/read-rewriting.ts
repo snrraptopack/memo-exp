@@ -18,10 +18,10 @@ import {
   type Ctx,
 } from '../../context';
 import { mdd } from '../../identifiers';
-import { initialSite } from '../../planning/initial-render';
 import { wrapAutomaticSite } from './automatic-sites';
 import { lowerModuleRefReadsEstree } from './module-read-lowering';
 import {
+  initialReadPlacement,
   isActionRefreshTarget,
   isBoundTo,
   isDirectSourceComponentProp,
@@ -246,14 +246,10 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         const eventDependencies = allDependencies.filter(source =>
           eventSources.has(source)
         );
-        // Proven scalar sinks and fixed-extent conditionals keep their authored
+        // Proven scalar sinks and structural regions keep their authored
         // placement. Gate individual reads rather than adding an automatic
         // region that would invent an unplanned DOM extent.
-        const initial = ctx.initialDomRoot?.component === component ? ctx.initialDomRoot :
-          ctx.initialDomComponents[component] ?? ctx.initialServerComponents[component];
-        const fixedInitialSink = initial !== undefined && initial !== null &&
-          !nodeHasJsx(rawExpression as unknown as t.Node);
-        const fixedInitialStructure = initial?.conditions[initialSite(rawExpression)] !== undefined;
+        const {scalar:fixedInitialSink,structural:fixedInitialStructure}=initialReadPlacement(ctx,component,rawExpression);
         if (
           !fixedInitialSink && !spread && ctx.astAnalysis?.parentByNode.get(container)?.type !== 'JSXAttribute' && (
             nodeHasJsx(rawExpression as unknown as t.Node) ||

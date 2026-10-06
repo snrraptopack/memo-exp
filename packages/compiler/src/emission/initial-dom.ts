@@ -1,6 +1,8 @@
 /** DOM binding addresses derived from parser-safe initial content. */
 import type { InitialRenderNode, InitialRenderPlan } from '../planning/initial-render';
 import type { EmitScope } from './scope';
+import { renderDocument } from './scope';
+import type { Ctx } from '../context';
 import * as astFactory from '../ast/factory';
 import type * as t from '../ast/compiler-types';
 
@@ -20,8 +22,8 @@ export interface InitialDomRoot {
   readonly factories?: Readonly<Record<string,InitialDomRoot>>;
   readonly conditions: Readonly<Record<string, {readonly branch: number | null; readonly open: readonly number[];
     readonly end: readonly number[]; readonly returnSite: string | null; readonly branches?: readonly InitialDomRoot[]}>>;
-  readonly lists: Readonly<Record<string, {readonly open: readonly number[]; readonly end: readonly number[];
-    readonly count: number; readonly row: InitialDomRoot | null}>>;
+  readonly lists: Readonly<Record<string, {readonly open: readonly number[]; readonly end: readonly number[] | 'last-child';
+    readonly count: number | null; readonly row: InitialDomRoot | null}>>;
 }
 
 export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}>, factories: Record<string,InitialDomRoot>={}, top=true): InitialDomRoot | null {
@@ -54,17 +56,19 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
       }
       if (node.kind === 'list') {
         if (lists[node.site]) {valid=false;return;}
-        if (!node.rows.length) {
+        if (node.requestRow && (nodes.length!==1 || parent.length===0)) {valid=false;return;}
+        if (!node.requestRow && !node.rows.length) {
           lists[node.site]={open:[...parent,current],end:[...parent,current+1],count:0,row:null};
           index++;
           return;
         }
-        const first=node.rows[0];
+        const first=node.requestRow ?? node.rows[0];
         if (!first || first.length!==1 || first[0]?.kind!=='element' || !first[0].site) {valid=false;return;}
         const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site},factories,false);
         if (!containerRow) {valid=false;return;}
         const row=relativeInitialDom(containerRow);
-        lists[node.site]={open:[...parent,current],end:[...parent,current+node.rows.length+1],count:node.rows.length,row};
+        lists[node.site]={open:[...parent,current],end:node.requestRow?'last-child':[...parent,current+node.rows.length+1],
+          count:node.requestRow?null:node.rows.length,row};
         index += node.rows.length+1;
         return;
       }
@@ -117,7 +121,8 @@ function relativeInitialDom(root:InitialDomRoot):InitialDomRoot {
     [site,{...element,path:element.path.slice(1),texts:element.texts.map(text=>({...text,path:text.path.slice(1)}))}])),
     components:Object.fromEntries(Object.entries(root.components).map(([site,component])=>[site,{...component,path:component.path.slice(1)}])),
     conditions:Object.fromEntries(Object.entries(root.conditions).map(([site,condition])=>[site,{...condition,open:condition.open.slice(1),end:condition.end.slice(1)}])),
-    lists:Object.fromEntries(Object.entries(root.lists).map(([site,list])=>[site,{...list,open:list.open.slice(1),end:list.end.slice(1)}]))};
+    lists:Object.fromEntries(Object.entries(root.lists).map(([site,list])=>[site,{...list,open:list.open.slice(1),
+      end:list.end==='last-child'?list.end:list.end.slice(1)}]))};
 }
 
 /** Repeated factories share shape, but every potentially live slot stays live. */
@@ -142,6 +147,15 @@ export function initialNode(scope: EmitScope,path: readonly number[],kind: strin
     astFactory.arrayExpression(path.map(index=>astFactory.numericLiteral(index))),astFactory.stringLiteral(kind),
   ]));
   return astFactory.memberExpression(astFactory.identifier(initial.variable),astFactory.numericLiteral(index),true);
+}
+
+/** Server placement emits the same source anchors that the browser validates. */
+export function initialServerAnchor(ctx:Ctx,scope:EmitScope,parent:string,kind:'when'|'list',site:string,closing:boolean):t.Statement {
+  return astFactory.expressionStatement(astFactory.callExpression(
+    astFactory.memberExpression(astFactory.identifier(parent),astFactory.identifier('appendChild')),
+    [astFactory.callExpression(astFactory.memberExpression(renderDocument(ctx,scope),astFactory.identifier('createComment')),
+      [astFactory.stringLiteral(closing?`/mmd:initial:${kind}`:`mmd:initial:${kind}:${site}`)])],
+  ));
 }
 
 /** Branches bind once; later activations use the same factory's creation path. */

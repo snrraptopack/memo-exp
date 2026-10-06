@@ -20,6 +20,20 @@ it('validates all initial row extents before any factory runs',()=>{
   expect(()=>bindInitialList(parent,open,end,3)).toThrow(/host root/);
 });
 
+it('discovers request row counts while preserving strict anchor and host checks',()=>{
+  const {parent,open,end,rows}=initial();
+  (end as Comment).data='/mmd:initial:list';
+  expect(bindInitialList(parent,open,end).rows).toEqual(rows);
+  expect(()=>bindInitialList(parent,open,open)).toThrow(/anchors/);
+  expect(()=>bindInitialList(parent,end,open)).toThrow(/anchors/);
+  expect(()=>bindInitialList(parent,open,null)).toThrow(/anchors/);
+  (end as Comment).data='wrong';expect(()=>bindInitialList(parent,open,end)).toThrow(/anchors/);
+  (end as Comment).data='/mmd:initial:list';
+  for(const row of rows)row.remove();expect(bindInitialList(parent,open,end).rows).toEqual([]);
+  parent.insertBefore(document.createTextNode('unexpected'),end);
+  expect(()=>bindInitialList(parent,open,end)).toThrow(/host root/);
+});
+
 it.each([false,true])('shares ordinary row ownership after binding (positional=%s)',positional=>{
   const {parent,open,end,rows}=initial();const descriptor=bindInitialList(parent,open,end,2);
   const calls: number[]=[];

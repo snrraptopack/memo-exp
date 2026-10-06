@@ -13,14 +13,14 @@ import { routedApp, routedDetail, routedOpaque, initializeRoutedLifecycles, chec
 let fixture: string | undefined;
 afterEach(async () => { if (fixture) await rm(fixture, { recursive: true, force: true }); fixture = undefined; });
 
-async function production(name: string, source: string, extras: Record<string, string> = {}, userName = 'Ada') {
+async function production(name: string, source: string, extras: Record<string, string> = {}, userName: string | Record<string,unknown> = 'Ada') {
   fixture = await mkdtemp(join(tmpdir(), 'memoized-dom-initial-ssr-'));
   await mkdir(join(fixture, 'src'));
   await writeFile(join(fixture, 'index.html'), '<!doctype html><html><head><title>SSR</title></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="./src/main.ts"></script></body></html>');
   await writeFile(join(fixture, 'src/main.ts'), `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`);
   await writeFile(join(fixture, 'src/App.tsx'), source);
   for (const [file, content] of Object.entries(extras)) await writeFile(join(fixture, file), content);
-  await writeFile(join(fixture, 'server.ts'), `import {serve} from '@memoized-dom/server';import {App} from './src/App';const app=serve();app.get('/api/user',()=>({name:${JSON.stringify(userName)}}));app.ssr(App);export default app;`);
+  await writeFile(join(fixture, 'server.ts'), `import {serve} from '@memoized-dom/server';import {App} from './src/App';const app=serve();app.get('/api/user',()=>(${JSON.stringify(typeof userName==='string'?{name:userName}:userName)}));app.ssr(App);export default app;`);
   const repository = resolve(import.meta.dirname, '../../..');
   const config = (ssr = false) => ({ root: fixture!, configFile: false as const, logLevel: 'silent' as const,
     resolve: { alias: Object.entries({
@@ -60,7 +60,8 @@ function chromeExecutable(): string | undefined {
 }
 
 async function browserPage(result: Awaited<ReturnType<typeof production>>, html: string, executablePath: string,
-  check: (page: Page, apiRequests: string[]) => Promise<void>, pathname = '/demo/'): Promise<void> {
+  check: (page: Page, apiRequests: string[]) => Promise<void>, pathname = '/demo/',
+  apiData: () => unknown = () => ({name:'Unexpected client fetch'})): Promise<void> {
   const apiRequests: string[] = [];
   const server = createServer(async (request, response) => {
     const path = request.url?.replace(/^\/demo\//, '');
@@ -68,7 +69,7 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
     const asset = result.files.find(file => file.fileName === path);
     if (request.url?.startsWith('/api/')) {
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ name: 'Unexpected client fetch' }));
+      response.end(JSON.stringify(apiData()));
     } else if (asset) {
       response.setHeader('content-type', asset.type === 'chunk' ? 'text/javascript' : 'text/css');
       response.end(asset.type === 'chunk' ? asset.code : asset.source);
@@ -372,13 +373,71 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it('selects keyed-list adoption, retains row identity and recovers mismatched rows in Chrome', async context => {
+  it.each([{count:0,positional:false,placement:'component'},{count:2,positional:false,placement:'component'},
+    {count:2,positional:true,placement:'component'},{count:2,positional:false,placement:'module'}])('binds fetched rows and shares later reconciliation in Chrome (%j)',async({count,positional,placement},context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const initialRows=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
+    const declaration=`const user=$fetch('/api/user');`;
+    const result=await production(`fetched-rows-${placement}-${count}-${positional}`,`${placement==='module'?declaration:''}export function App(){${placement==='component'?declaration:''}const request=$track(user);let suffix='!';let selected='';
+      return <main><h1>{user?.name}</h1><button class="suffix" onClick={()=>suffix+='!'}>Suffix</button>
+        <button class="reload" onClick={()=>request.refresh()}>Reload</button>
+        <ul>{user?.rows?.map((item,index)=><li key={${positional?'index':'item.id'}} title={item.label}>
+          <button class="select" onClick={()=>selected=item.label}>{index}:{item.label}{suffix}</button></li>)}</ul>
+        <p>{selected}</p><footer>Kept</footer></main>;}`,{},{name:'Ada',rows:initialRows});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).toContain('mmd:initial:list:');expect(html).not.toContain('mmd:w:');
+    let next=initialRows;
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(initialRows.map((row,index)=>`${index}:${row.label}!`));
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      expect(requests).toEqual([]);
+      await page.click('.suffix');
+      if(count) {
+        await page.waitForFunction(()=>document.querySelector('li')?.textContent==='0:one!!');
+        await page.click('.select');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='one');
+      }
+      expect(await page.evaluate(()=>{
+        const initial=(window as unknown as {initial:Element[]}).initial;
+        return [...document.querySelectorAll('li')].every(node=>initial.includes(node));
+      })).toBe(true);
+      for(const rows of [[{id:2,label:'two'},{id:1,label:'changed'},{id:3,label:'three'}],[],[{id:4,label:'new'}]]) {
+        next=rows;await page.click('.reload');
+        await page.waitForFunction(expected=>JSON.stringify([...document.querySelectorAll('li')].map(node=>node.textContent))===JSON.stringify(expected),{},rows.map((row,index)=>`${index}:${row.label}!!`));
+        expect(await page.$$eval('li',nodes=>nodes.map(node=>node.getAttribute('title')))).toEqual(rows.map(row=>row.label));
+      }
+      await page.click('.select');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='new');
+      expect(await page.evaluate(()=>{
+        const initial=(window as unknown as {initial:Element[]}).initial;
+        return ['main','h1','ul','footer','.suffix','.reload'].every(selector=>initial.includes(document.querySelector(selector)!));
+      })).toBe(true);expect(requests).toEqual(['/api/user','/api/user','/api/user']);
+    },'/demo/',()=>({name:'Ada',rows:next}));
+  },60_000);
+
+  it('keeps untransferred query lists on general adoption without duplicate rows in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const data={name:'Ada',rows:[{id:1,label:'one'},{id:2,label:'two'}]};
+    const result=await production('fetched-query-adoption',`export function App(){const user=$fetch('/api/user',{query:{id:7}});let suffix='!';
+      return <main><h1>{user?.name}</h1><button onClick={()=>suffix+='!'}>Change</button>
+        <ul>{user?.rows?.map(item=><li key={item.id}>{item.label}{suffix}</li>)}</ul></main>;}`,{},data);
+    expect(result.html).not.toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).toContain('mmd:w:');
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      await page.waitForFunction(()=>document.querySelector('h1')?.textContent==='Ada'&&document.querySelectorAll('li').length===2);
+      await page.click('button');await page.waitForFunction(()=>document.querySelector('li')?.textContent==='one!!');
+      expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(['one!!','two!!']);
+      expect(requests).toEqual(['/api/user?id=7']);
+    },'/demo/',()=>data);
+  },60_000);
+
+  it('selects general keyed-list adoption and recovers unproved rows in Chrome', async context => {
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const result=await production('request-list',`export function App(){const user=$fetch('/api/user');
-      let rows=[{id:1,label:'one'},{id:2,label:'two'}];return <main><h1>{user?.name}</h1>
+      let rows=[{id:1,label:'one'},{id:2,label:'two'}];let show=false;return <main><h1>{user?.name}</h1>
         <button class="reverse" onClick={()=>rows=rows.toReversed()}>Reverse</button>
         <button class="append" onClick={()=>rows=[...rows,{id:3,label:'three'}]}>Append</button>
-        <ul>{rows.map(row=><li key={row.id}>{row.label}</li>)}</ul></main>;}`);
+        <ul>{rows.map(row=><li key={row.id}>{row.label}{show&&<b>Extra</b>}</li>)}</ul></main>;}`);
     const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
     expect(html).toContain('mmd:w:');expect(html).not.toContain('mmd:initial-delivery:');
     await browserPage(result,html,executablePath,async(page,requests)=>{
@@ -391,7 +450,7 @@ describe('production initial SSR bootstrap', () => {
       })).toBe(true);
       expect(requests).toEqual([]);
     });
-    await browserPage(result,html.replace('<li>one</li>','<aside>one</aside>'),executablePath,async(page,requests)=>{
+    await browserPage(result,html.replace(/<li>one([^]*?)<\/li>/,'<aside>one$1</aside>'),executablePath,async(page,requests)=>{
       expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(['one','two']);
       expect(await page.$('aside')).toBeNull();
       await page.click('.reverse');await page.waitForFunction(()=>document.querySelector('li')?.textContent==='two');

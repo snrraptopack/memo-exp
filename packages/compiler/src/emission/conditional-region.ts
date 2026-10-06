@@ -2,7 +2,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { initialSite } from '../planning/initial-render';
-import { initialNode } from './initial-dom';
+import { initialNode, initialServerAnchor } from './initial-dom';
 import {
   type ComponentPath,
   type Ctx,
@@ -14,7 +14,6 @@ import {
   newEmitScope,
   registerStmt,
   updateDecl,
-  renderDocument,
   type EmitScope,
   type RegionSourcePlans,
 } from './scope';
@@ -160,11 +159,7 @@ export function emitConditionalRegion(
   });
 
   const serverPlacement=ctx.initialServerComponents[componentName]?.conditions[initialSite(expression)];
-  const serverAnchor=(closing:boolean):t.Statement=>astFactory.expressionStatement(astFactory.callExpression(
-    astFactory.memberExpression(astFactory.identifier(parentElementVariable),astFactory.identifier('appendChild')),
-    [astFactory.callExpression(astFactory.memberExpression(renderDocument(ctx,scope),astFactory.identifier('createComment')),
-      [astFactory.stringLiteral(closing?'/mmd:initial:when':`mmd:initial:when:${initialSite(expression)}`)])],
-  ));
+  const serverAnchor=(closing:boolean)=>initialServerAnchor(ctx,scope,parentElementVariable,'when',initialSite(expression),closing);
   if (serverPlacement) scope.creation.push(serverAnchor(false));
 
   scope.creation.push(

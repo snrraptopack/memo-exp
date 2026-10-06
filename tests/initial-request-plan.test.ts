@@ -71,8 +71,59 @@ it('keeps fixed fetched text as a gated scalar binding without inventing present
 
 it.each([
   `let rows=[{id:1}];return <main><h1>{user?.name}</h1><button onClick={()=>rows=[]}>Clear</button>{rows.map(row=><p key={row.id}>{row.id}</p>)}</main>;`,
-])('keeps request structure on the general server placement contract: %s',body=>{
-  expect(compile(`export function App(){const user=$fetch('/api/user');${body}}`).initialDelivery).toBeUndefined();
+])('binds closed local lists alongside fetched text: %s',body=>{
+  expect(compile(`export function App(){const user=$fetch('/api/user');${body}}`).initialDelivery?.browser).toBe('bindings');
+});
+
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend].flatMap(frontend=>['component','module'].map(placement=>({frontend,placement}))))('binds unknown fetched row counts in a dedicated host container (%j)',({frontend,placement})=>{
+  const declaration=`const user=$fetch('/api/user');`;
+  const source=`${placement==='module'?declaration:''}export function App(){${placement==='component'?declaration:''}let suffix='!';return <main>
+    <h1>{user?.name}</h1><button onClick={()=>suffix+='!'}>Change</button>
+    <ul>{user?.rows?.map((item,index)=><li key={item.id} title={item.label}>{index}:{item.label}{suffix}</li>)}</ul><footer>Kept</footer></main>;}`;
+  const client=compile(source,{frontend});const server=compile(source,{frontend,routedEnvironment:'server',moduleStateCells:true});
+  expect(client.initialDelivery).toMatchObject({browser:'bindings',key:server.initialDelivery?.key});
+  expect(client.initialDelivery).not.toHaveProperty('html');
+  expect(client.output['./App.tsx']).toContain('bindInitialList');expect(server.output['./App.tsx']).toContain('mmd:initial:list:');
+  expect(server.output['./App.tsx']).not.toContain('bindInitialList');
+});
+
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('retains event-only request tracking for a bound list (%s)',frontend=>{
+  const result=compile(`export function App(){const user=$fetch('/api/user');const request=$track(user);
+    return <main><button onClick={()=>request.refresh()}>Refresh</button><ul>{user?.rows?.map(item=><li key={item.id}>{item.label}</li>)}</ul></main>;}`,{frontend});
+  expect(result.initialDelivery?.browser).toBe('bindings');
+});
+
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('keeps module-owned request selectors as bound conditional regions (%s)',frontend=>{
+  const result=compile(`const user=$fetch('/api/user');export function App(){let show=true;
+    return <main><button onClick={()=>show=!show}>Toggle</button>{user?.name==='Ada'&&show?<p>{user?.name}</p>:<b>Hidden</b>}</main>;}`,{frontend});
+  expect(result.initialDelivery?.browser).toBe('bindings');
+  expect(result.output['./App.tsx']).toContain('createCondRegion');
+});
+
+it.each([
+  `'/api/user',{query:{id:7}}`, `'/api/user?id=7'`, `'/api/user',{headers:{authorization:'test'}}`,
+  `'/api/user',{key:'user'}`, `'https://user:password@api.test/user'`,
+])('retains adoption when an interactive fetch cannot transfer its snapshot: %s',input=>{
+  expect(compile(`export function App(){const user=$fetch(${input});let n=0;
+    return <main><button onClick={()=>n++}>{n}</button><h1>{user?.name}</h1></main>;}`).initialDelivery).toBeUndefined();
+});
+
+it('retains metadata presentation and shadowed tracking calls on ordinary browser creation',()=>{
+  expect(compile(`export function App(){const user=$fetch('/api/user');const request=$track(user);
+    return <main><button onClick={()=>request.refresh()}>Retry</button>{request.pending?<p>Loading</p>:<h1>{user?.name}</h1>}</main>;}`).initialDelivery).toBeUndefined();
+  expect(compile(`function $track(value){return value;}export function App(){const user=$fetch('/api/user');const request=$track(user);
+    return <main><button onClick={()=>{}}>Change</button><h1>{user?.name}</h1></main>;}`).initialDelivery).toBeUndefined();
+});
+
+it.each([
+  `{user?.rows?.map(item=><li key={item.id}>{item.label}</li>)}<p>Sibling</p>`,
+  `<ul>Before{user?.rows?.map(item=><li>{item.label}</li>)}</ul>`,
+  `<ul>{user?.rows?.map(item=><li>{show&&<b>{item.label}</b>}</li>)}</ul>`,
+  `<ul>{user?.rows?.map(item=><li><Card text={item.label}/></li>)}</ul>`,
+  `<ul>{user?.rows?.map(({label})=><li>{label}</li>)}</ul>`,
+])('retains general creation for unproved fetched row placement: %s',children=>{
+  expect(compile(`function Card({text}){return <b>{text}</b>;}export function App(){const user=$fetch('/api/user');let show=true;
+    return <main><button onClick={()=>show=!show}>Toggle</button>${children}</main>;}`).initialDelivery).toBeUndefined();
 });
 
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds request-selected host branches with one retained extent (%s)',frontend=>{

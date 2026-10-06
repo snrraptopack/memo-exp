@@ -20,6 +20,7 @@ export function emitInitialHtml(plan: InitialRenderPlan): string | null {
         html+=children;continue;
       }
       if (node.kind === 'list') {
+        if (node.requestRow && emit(node.requestRow, ancestors) === null) return null;
         const rows = emit(node.rows.flat(), ancestors);
         if (rows === null) return null;
         html += `<!--mmd:initial:list:${node.site}-->${rows}<!--/mmd:initial:list-->`;

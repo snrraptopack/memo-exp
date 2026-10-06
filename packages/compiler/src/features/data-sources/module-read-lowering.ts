@@ -13,6 +13,7 @@ import {
 import { astBindingAt, type Ctx } from '../../context';
 import { generatedIdentifier, mdd } from '../../identifiers';
 import {
+  initialReadPlacement,
   isActionRefreshTarget,
   isBoundTo,
   isEventOrRefContainer,
@@ -169,7 +170,9 @@ export function lowerModuleRefReadsEstree(
       const remaining = collect(rawExpression);
       if (remaining.length > 0) {
         const direct = entryFor(rawExpression);
-        if (direct !== null) {
+        if(initialReadPlacement(ctx,componentName,rawExpression).structural) {
+          for(const {identifier,entry} of remaining) replaceRead(identifier,entry,'readResolvedValueForRender');
+        } else if (direct !== null) {
           replaceRead(rawExpression, direct, 'readResolvedValueForRender');
         } else {
           const uniqueEntries = [

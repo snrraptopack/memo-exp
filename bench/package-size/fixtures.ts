@@ -1,5 +1,11 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-list': { './App.tsx': `export function App(){const user=$fetch('/api/user');let suffix='!';return <main>
+    <h1>{user?.name}</h1><button onClick={()=>suffix+='!'}>Change</button>
+    <ul>{user?.rows?.map((item,index)=><li key={item.id} title={item.label}>{index}:{item.label}{suffix}</li>)}</ul><footer>Kept</footer></main>;}` },
+  'request-local-list': { './App.tsx': `export function App(){const user=$fetch('/api/user');let rows=[{id:1,label:'one'},{id:2,label:'two'}];
+    return <main><h1>{user?.name}</h1><button onClick={()=>rows=rows.toReversed()}>Reverse</button>
+      <ul>{rows.map(row=><li key={row.id}>{row.label}</li>)}</ul><footer>Kept</footer></main>;}` },
   'request-conditional': { './App.tsx': `export function App(){const user=$fetch('/api/user');let show=true;let n=0;
     return <main><h1>{user?.name}</h1><button class="toggle" onClick={()=>show=!show}>Toggle</button>
       <button class="add" onClick={()=>n++}>{n}</button>
